@@ -1,18 +1,15 @@
 //! The conversation flow: what the driver pastes into the pane (the opening, the queue, the
-//! closing message), how a paste is confirmed or times out, the Escape press, and the turns
-//! a prompt opens and a Stop closes.
+//! closing message), how a paste is confirmed or times out, and the Escape press.
 
 use std::time::Instant;
 
-use chrono::{DateTime, Utc};
-
-use super::commands::{Effect, Step};
+use super::commands::Step;
 use super::session::{Closing, Delivering, Phase, Session};
-use super::{Bridge, BridgeConfig, BridgeEvent};
+use super::{Bridge, BridgeConfig, EndMode};
 use crate::plan_session::attachments::{parse_message, Attachment};
-use crate::plan_session::input::sanitize;
+use crate::plan_session::input::{check_delivered, sanitize};
 use crate::plan_session::model::{
-    Activity, ChangedFile, ChatDelta, Delivery, FailureKind, Item, Origin, SessionState,
+    Activity, Delivery, FailureKind, Item, NoticeKind, Origin, SessionState,
 };
 use crate::plan_session::state::Input;
 
@@ -76,7 +73,7 @@ impl Session {
         }
         if self.flow.delivering.is_none() {
             self.flow.delivering = match closing.filter(|_| self.closing_due()) {
-                Some(text) => Some(self.closing_delivery(text, step)),
+                Some(text) => self.closing_delivery(text, step),
                 None => self.next_delivery(step),
             };
         }
@@ -118,15 +115,26 @@ impl Session {
         Some(self.delivery(queued.text, queued.attachments, None, step))
     }
 
-    fn closing_delivery(&mut self, text: String, step: &mut Step) -> Delivering {
+    /// The closing message, sanitised and bounded like every paste. One that cannot be sent is
+    /// never pasted: the final write turns into a teardown, and the log and the chat say why.
+    fn closing_delivery(&mut self, text: String, step: &mut Step) -> Option<Delivering> {
         let text = sanitize(&text);
+        if let Err(refusal) = check_delivered(&text) {
+            tracing::warn!(session = %self.id, %refusal, "the closing message cannot be sent");
+            let why = format!("The closing message cannot be sent: {refusal}");
+            self.notice(NoticeKind::Info, &why, step);
+            if let Some(plan) = &mut self.flow.end {
+                (plan.mode, plan.closing) = (EndMode::Teardown, Closing::Skip);
+            }
+            return None;
+        }
         self.mapper.expect_closing(text.clone());
         if let Some(plan) = &mut self.flow.end {
             plan.closing = Closing::Sent;
         }
         let mut delivering = self.delivery(text, Vec::new(), Some(Origin::Closing), step);
         delivering.closing = true;
-        delivering
+        Some(delivering)
     }
 
     /// A `sent` user item `s-<n>` for `text` (sanitised, attachment block included).
@@ -309,84 +317,12 @@ impl Session {
         texts
     }
 
-    pub(super) fn take_queue(&mut self, step: &mut Step) -> Vec<String> {
+    fn take_queue(&mut self, step: &mut Step) -> Vec<String> {
         if self.flow.queue.is_empty() {
             return Vec::new();
         }
         let texts: Vec<String> = self.flow.queue.drain(..).map(|q| q.user_text).collect();
         self.publish_queue(step);
         texts
-    }
-
-    /// Open (or adopt) a turn, pin it, announce it.
-    pub(super) fn begin_turn(&mut self, at: DateTime<Utc>, step: &mut Step) {
-        if self.flow.turn.is_some() {
-            self.end_turn(step);
-        }
-        let (turn, deltas) = self.mapper.begin_turn(at);
-        self.emit(deltas, step);
-        self.flow.pressed = false;
-        step.effects.push(Effect::BeginPins { turn: turn.clone() });
-        let (id, turn_id) = (self.id.clone(), turn.clone());
-        step.event(BridgeEvent::TurnStarted { id, turn_id });
-        self.flow.turn = Some(turn);
-    }
-
-    /// Close the mapper's open turn; a started turn also gets its pins ended and, after them,
-    /// `finish_turn`. A turn already ended is not ended again (px-state-03).
-    pub(super) fn end_turn(&mut self, step: &mut Step) {
-        let deltas = self.mapper.end_turn();
-        self.emit(deltas, step);
-        if let Some(turn) = self.flow.turn.take() {
-            step.effects.push(Effect::EndPins { turn });
-        }
-        self.flow.pressed = false;
-    }
-
-    /// Merge the pins' changes with the tool-reported paths; publish them and `TurnEnded`.
-    pub(super) fn finish_turn(
-        &mut self,
-        turn: &str,
-        pinned: Vec<(String, Option<String>)>,
-        step: &mut Step,
-    ) {
-        let by_tool = self.mapper.changed_by_tool(turn);
-        let mut changed: Vec<ChangedFile> = pinned
-            .into_iter()
-            .map(|(path, before_hash)| ChangedFile {
-                by_tool: by_tool.contains(&path),
-                path,
-                before_hash,
-            })
-            .collect();
-        for path in by_tool {
-            if !changed.iter().any(|file| file.path == path) {
-                let (before_hash, by_tool) = (None, true);
-                changed.push(ChangedFile {
-                    path,
-                    before_hash,
-                    by_tool,
-                });
-            }
-        }
-        changed.sort_by(|a, b| a.path.cmp(&b.path));
-        self.flow.changed.insert(turn.to_owned(), changed.clone());
-        if let Some(found) = self.mapper.turns().iter().find(|found| found.id == turn) {
-            let delta = ChatDelta::TurnUpdated {
-                turn_id: found.id.clone(),
-                duration_ms: found.duration_ms,
-                open: found.open,
-                tokens: found.tokens.clone(),
-                changed_files: changed.clone(),
-                summaries_rebuilding: found.summaries_rebuilding.clone(),
-            };
-            self.emit(vec![delta], step);
-        }
-        let (id, turn_id) = (self.id.clone(), turn.to_owned());
-        step.event(BridgeEvent::TurnEnded {
-            id,
-            turn_id,
-            changed,
-        });
     }
 }

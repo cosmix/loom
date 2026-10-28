@@ -208,7 +208,8 @@ impl Bridge {
         }
     }
 
-    /// Stop the running turn: deny what is pending, return the queue, press Escape once.
+    /// Stop the running turn: deny what is pending, return the queue and a message not yet
+    /// pasted, press Escape once.
     pub fn interrupt(&self, id: &str) -> Result<Vec<String>, BridgeError> {
         let stopped = self.with_session(id, |session, step| session.interrupt(step));
         self.flush();
@@ -273,7 +274,7 @@ impl Session {
         self.flow.end.is_none() && self.active() && !torn && !ended
     }
 
-    fn send(
+    pub(super) fn send(
         &mut self,
         text: String,
         attachments: Vec<Attachment>,
@@ -309,7 +310,9 @@ impl Session {
         Ok(SendOutcome::Queued { queue_id })
     }
 
-    /// Only while a turn runs; one Escape per turn (px-state-04).
+    /// Only while a turn runs; one Escape per turn (px-state-04). A message accepted at an
+    /// idle and held since (a task notification started a turn first) comes back too: nothing
+    /// is pasted at the idle the interrupt causes.
     fn interrupt(&mut self, step: &mut Step) -> Result<Vec<String>, BridgeError> {
         let running = matches!(
             self.state(),
@@ -319,7 +322,7 @@ impl Session {
             return Err(BridgeError::NotRunning);
         }
         self.deny_open(DenyReason::Interrupt, INTERRUPTED, step);
-        let texts = self.take_queue(step);
+        let texts = self.return_unsent(step);
         if !self.flow.pressed {
             self.flow.pressed = true;
             self.flow.press_pending = true;

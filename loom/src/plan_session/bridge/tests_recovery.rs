@@ -3,6 +3,7 @@
 use std::fs;
 use std::os::unix::fs::DirBuilderExt;
 use std::process::{Child, Command};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -11,7 +12,7 @@ use serde_json::json;
 
 use super::fake_host::*;
 use super::registry::{read_record, write_record, ChildRecord, SessionRecord, SCHEMA};
-use super::{BridgeError, BridgeEvent, EndOutcome, RecoveryReport};
+use super::{BridgeError, BridgeEvent, EndCause, EndMode, EndOutcome, RecoveryReport};
 use crate::plan_session::kind::SessionKind::{Authoring, Summary};
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::DenyReason;
@@ -238,4 +239,41 @@ fn on_recovered_runs_after_recovery_or_at_once() {
     assert_eq!(again, RecoveryReport::default());
     let ended = h.count_events(|e| matches!(e, BridgeEvent::Ended { .. }));
     assert_eq!(ended, 0);
+}
+
+#[test]
+fn a_panicking_listener_stops_neither_recovery_nor_the_driver() {
+    let h = Harness::new(|_| {});
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counted = calls.clone();
+    h.bridge.subscribe(Box::new(move |_: &BridgeEvent| {
+        if counted.fetch_add(1, Ordering::SeqCst) == 0 {
+            panic!("a listener's first call panics");
+        }
+    }));
+    let heard: Arc<Mutex<Vec<BridgeEvent>>> = Arc::default();
+    let second = heard.clone();
+    h.bridge.subscribe(Box::new(move |event: &BridgeEvent| {
+        second.lock().unwrap().push(event.clone());
+    }));
+    let ended = |id: &str| {
+        let heard = heard.lock().unwrap();
+        heard.iter().any(|event| match event {
+            BridgeEvent::Ended { id: ended, .. } => ended == id,
+            _ => false,
+        })
+    };
+    // Recovery cleans a dead server's provisional record; its flush meets the panic first.
+    let provisional = recorded(&h, Authoring, None);
+    h.bridge.recover();
+    assert!(
+        ended(&provisional.id),
+        "the second listener missed the Ended"
+    );
+    let s = h.idle(Authoring);
+    h.bridge
+        .end(&s.id, EndMode::Teardown, EndCause::Caller)
+        .unwrap();
+    wait_until("the end", || ended(&s.id));
+    assert!(calls.load(Ordering::SeqCst) > 1, "the listener was dropped");
 }
