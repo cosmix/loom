@@ -1,0 +1,268 @@
+//! The shell script a planning session runs inside its tmux pane: environment, flags and the claude command line.
+
+use std::ffi::OsString;
+use std::path::Path;
+
+use shell_escape::escape;
+
+use crate::plan_session::bridge::host::LaunchSpec;
+
+/// Build the fresh session's launch line, with an argv opening only when explicitly supplied.
+pub fn launch_script(spec: &LaunchSpec, settings: &Path, env: &[(OsString, OsString)]) -> String {
+    let mut words = vec!["exec".to_owned(), "env".to_owned(), "-i".to_owned()];
+    words.extend(environment_words(spec, env));
+    words.extend(
+        [
+            spec.claude_bin.to_string_lossy(),
+            "--session-id".into(),
+            spec.id.as_str().into(),
+            "--name".into(),
+            spec.guidance.display_name.as_str().into(),
+            "--settings".into(),
+            settings.to_string_lossy(),
+            "--setting-sources".into(),
+            "user,project".into(),
+            "--model".into(),
+            spec.guidance.model.as_str().into(),
+            "--effort".into(),
+            spec.guidance.effort.as_str().into(),
+            "--permission-mode".into(),
+            "default".into(),
+            "--plugin-dir".into(),
+            spec.guidance.plugin_dir.to_string_lossy(),
+            "--strict-mcp-config".into(),
+            "--append-system-prompt-file".into(),
+            spec.guidance.brief_path.to_string_lossy(),
+        ]
+        .into_iter()
+        .map(|word| escape(word).into_owned()),
+    );
+    if let Some(opening) = &spec.opening_argv {
+        words.push(escape(opening.as_str().into()).into_owned());
+    }
+    format!(
+        "#!/bin/sh\ncd {} || exit 1\n{}\n",
+        escape(spec.project_root.to_string_lossy()),
+        words.join(" ")
+    )
+}
+
+fn environment_words(spec: &LaunchSpec, env: &[(OsString, OsString)]) -> Vec<String> {
+    // Pin planning identity here too: callers cannot replace it with a stage's identity.
+    let planning = [
+        (
+            OsString::from("LOOM_PLAN_STATE"),
+            spec.runtime.dir.as_os_str().to_owned(),
+        ),
+        (
+            OsString::from("LOOM_PLAN_SESSION"),
+            OsString::from(&spec.id),
+        ),
+    ];
+    env.iter()
+        .filter(|(name, _)| {
+            !matches!(
+                name.to_str(),
+                Some(
+                    "LOOM_STAGE_ID"
+                        | "LOOM_SESSION_ID"
+                        | "LOOM_WORK_DIR"
+                        | "LOOM_PLAN_STATE"
+                        | "LOOM_PLAN_SESSION"
+                )
+            )
+        })
+        .chain(planning.iter())
+        .map(|(name, value)| {
+            let mut assignment = name.clone();
+            assignment.push("=");
+            assignment.push(value);
+            escape(assignment.to_string_lossy()).into_owned()
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::{Command, Output};
+    use std::time::Duration;
+
+    use crate::plan_session::bridge::LaunchGuidance;
+    use crate::plan_session::kind::{SessionDir, SessionKind};
+    use crate::planning::runtime::runtime_paths_under;
+    use crate::process::run_bounded_output;
+
+    const OPENING: &str = "OPENING-7f3a: private document contents";
+    const NAME: &str = "-it's $(touch pwned)\nsecond line";
+    const FAKE_CLAUDE: &str = "#!/bin/sh\nprintf '%s\\0' \"$PWD\" \
+        \"${LOOM_PLAN_SESSION-}\" \"${LOOM_PLAN_STATE-}\" \
+        \"${LOOM_STAGE_ID+set}\" \"${LOOM_SESSION_ID+set}\" \
+        \"${LOOM_WORK_DIR+set}\" \"${CUSTOM-}\" \"$@\"\n";
+
+    fn spec(base: &Path) -> LaunchSpec {
+        let root = base.join("project '$\nspace");
+        fs::create_dir(&root).unwrap();
+        let runtime = runtime_paths_under(&base.join("loom-home"), &root).unwrap();
+        let dir = SessionDir::new(runtime.sessions.join("session-test"));
+        let claude_bin = base.join("claude '$\nspace");
+        fs::write(&claude_bin, FAKE_CLAUDE).unwrap();
+        fs::set_permissions(&claude_bin, fs::Permissions::from_mode(0o700)).unwrap();
+        LaunchSpec {
+            id: "session-test".into(),
+            kind: SessionKind::Authoring,
+            socket: "loom-plan-test".into(),
+            tmux_session: "plan-authoring".into(),
+            guidance: LaunchGuidance {
+                brief_path: dir.brief(),
+                plugin_dir: dir.plugin(),
+                opening_message: OPENING.into(),
+                model: "opus".into(),
+                effort: "medium".into(),
+                display_name: NAME.into(),
+                opening_on_argv: false,
+            },
+            dir,
+            extra_env: Vec::new(),
+            opening_argv: None,
+            project_root: root,
+            runtime,
+            loom_bin: base.join("loom"),
+            claude_bin,
+            home: base.join("home"),
+        }
+    }
+
+    fn run(script: &str, base: &Path, syntax_only: bool) -> Output {
+        let path = base.join("launch.sh");
+        fs::write(&path, script).unwrap();
+        let mut command = Command::new("sh");
+        if syntax_only {
+            command.arg("-n");
+        }
+        command.arg(path).current_dir(base);
+        for name in ["LOOM_STAGE_ID", "LOOM_SESSION_ID", "LOOM_WORK_DIR"] {
+            command.env(name, "inherited-stage");
+        }
+        let output =
+            run_bounded_output(&mut command, Duration::from_secs(5), "launch script").unwrap();
+        assert!(output.status.success(), "{output:?}\n{script}");
+        output
+    }
+
+    fn fields(output: Output) -> Vec<String> {
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .split_terminator('\0')
+            .map(str::to_owned)
+            .collect()
+    }
+
+    #[test]
+    fn flags_are_present_once_with_no_positional_prompt_or_resume() {
+        let tmp = tempfile::tempdir().unwrap();
+        let spec = spec(tmp.path());
+        let settings = spec.dir.settings();
+
+        let script = launch_script(&spec, &settings, &[]);
+        let actual = fields(run(&script, tmp.path(), false));
+
+        assert_eq!(
+            &actual[7..],
+            [
+                "--session-id",
+                spec.id.as_str(),
+                "--name",
+                NAME,
+                "--settings",
+                settings.to_str().unwrap(),
+                "--setting-sources",
+                "user,project",
+                "--model",
+                "opus",
+                "--effort",
+                "medium",
+                "--permission-mode",
+                "default",
+                "--plugin-dir",
+                spec.guidance.plugin_dir.to_str().unwrap(),
+                "--strict-mcp-config",
+                "--append-system-prompt-file",
+                spec.guidance.brief_path.to_str().unwrap(),
+            ]
+        );
+        assert!(!script.contains(OPENING));
+        assert!(!script.contains("--resume"));
+        assert!(!script.contains("--continue"));
+        assert!(!tmp.path().join("pwned").exists());
+        assert!(!spec.project_root.join("pwned").exists());
+    }
+
+    #[test]
+    fn planning_environment_is_pinned_and_stage_variables_are_dropped() {
+        let tmp = tempfile::tempdir().unwrap();
+        let spec = spec(tmp.path());
+        let custom = "it's $HOME $(touch pwned)\nsecond line";
+        let env: Vec<_> = [
+            ("LOOM_STAGE_ID", "stage"),
+            ("LOOM_SESSION_ID", "parent"),
+            ("LOOM_WORK_DIR", "/parent"),
+            ("LOOM_PLAN_STATE", "/wrong"),
+            ("LOOM_PLAN_SESSION", "wrong"),
+            ("CUSTOM", custom),
+        ]
+        .map(|(name, value)| (name.into(), value.into()))
+        .into();
+
+        let script = launch_script(&spec, &spec.dir.settings(), &env);
+        let actual = fields(run(&script, tmp.path(), false));
+
+        assert_eq!(
+            &actual[..7],
+            [
+                spec.project_root.to_str().unwrap(),
+                spec.id.as_str(),
+                spec.runtime.dir.to_str().unwrap(),
+                "",
+                "",
+                "",
+                custom,
+            ]
+        );
+        for name in ["LOOM_STAGE_ID", "LOOM_SESSION_ID", "LOOM_WORK_DIR"] {
+            assert!(!script.contains(name), "stage variable leaked: {name}");
+        }
+        assert_eq!(script.matches("LOOM_PLAN_SESSION=").count(), 1);
+        assert_eq!(script.matches("LOOM_PLAN_STATE=").count(), 1);
+        assert!(!spec.project_root.join("pwned").exists());
+    }
+
+    #[test]
+    fn explicit_opening_is_the_last_escaped_word() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut spec = spec(tmp.path());
+        let opening = "/loom-plan:pressure doc/plans/it's-$(touch pwned)\nplan.md";
+        spec.opening_argv = Some(opening.into());
+
+        let script = launch_script(&spec, &spec.dir.settings(), &[]);
+        let actual = fields(run(&script, tmp.path(), false));
+
+        assert_eq!(actual.len(), 27);
+        assert_eq!(actual.last().unwrap(), opening);
+        assert!(!script.contains(OPENING));
+        assert!(!spec.project_root.join("pwned").exists());
+    }
+
+    #[test]
+    fn shell_accepts_the_script_syntax_with_and_without_an_opening() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut spec = spec(tmp.path());
+        for opening in [None, Some("/loom-plan:pressure doc/plans/PLAN-x.md".into())] {
+            spec.opening_argv = opening;
+            let script = launch_script(&spec, &spec.dir.settings(), &[]);
+            run(&script, tmp.path(), true);
+        }
+    }
+}
