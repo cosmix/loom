@@ -9,27 +9,10 @@ use serde_json::{json, Value};
 use tempfile::TempDir;
 
 use super::run_pre_tool_use;
+use super::tests_reads_fixture::{kinds, put, seed_tree, CREDENTIALS};
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::sandbox::{write_session_sandbox, SandboxInputs};
 use crate::planning::runtime::{runtime_paths_under, RuntimePaths};
-
-const CREDENTIALS: &[&str] = &[
-    ".ssh/id_rsa",
-    ".aws/credentials",
-    ".config/gcloud/credentials.db",
-    ".gnupg/private.key",
-    ".claude/.credentials.json",
-    ".config/gh/hosts.yml",
-    ".netrc",
-    ".npmrc",
-    ".git-credentials",
-    ".docker/config.json",
-    ".kube/config",
-    ".pypirc",
-    ".cargo/credentials.toml",
-    ".cargo/credentials",
-    ".codex/auth.json",
-];
 
 struct Fixture {
     root: PathBuf,
@@ -99,61 +82,6 @@ impl Fixture {
         symlink(base.join("real"), base.join("link"))?;
         Ok(base.join("link/proj"))
     }
-}
-
-fn put(path: impl AsRef<Path>) -> Result<()> {
-    let path = path.as_ref();
-    fs::create_dir_all(path.parent().unwrap())?;
-    fs::write(path, "# Fixture\n")?;
-    Ok(())
-}
-
-fn seed_tree(root: &Path, home: &Path) -> Result<()> {
-    for dir in [
-        ".git",
-        "loom",
-        ".claude",
-        ".loom/work",
-        "doc/product",
-        "doc/notes",
-        "doc/plans/archive",
-        "doc/plans/briefs/a",
-        "doc/plans/briefs/b",
-        "doc/loom/knowledge",
-        "doc/loom/summaries",
-    ] {
-        fs::create_dir_all(root.join(dir))?;
-    }
-    for file in [
-        "README.md",
-        "doc/plans/PLAN-a.md",
-        "doc/plans/IN_PROGRESS-PLAN-b.md",
-        "doc/plans/REVIEW-PLAN-b.md",
-        "doc/plans/archive/DONE-PLAN-c.md",
-        "doc/plans/briefs/b/x.md",
-        "doc/plans/briefs/a/y.md",
-        "loom/src/lib.rs",
-        ".loom/work/admin.token",
-        ".loom/work/user.token",
-        ".loom/work/completion-attestation.key",
-        ".loom/work/terminal-history/log",
-    ] {
-        put(root.join(file))?;
-    }
-    for credential in CREDENTIALS {
-        put(home.join(credential))?;
-    }
-    Ok(())
-}
-
-fn kinds() -> [SessionKind; 3] {
-    [
-        SessionKind::Authoring,
-        SessionKind::Summary,
-        SessionKind::Pressure {
-            plan: PathBuf::from("doc/plans/PLAN-a.md"),
-        },
-    ]
 }
 
 fn assert_denied(answer: Option<String>) {
@@ -279,7 +207,14 @@ fn absent_search_path_uses_payload_cwd() -> Result<()> {
 #[test]
 fn glob_patterns_cannot_escape_the_checked_root() -> Result<()> {
     let f = Fixture::new(SessionKind::Authoring)?;
-    for pattern in ["/x/*", "~/x", "../*"] {
+    for pattern in [
+        "/x/*",
+        "~/x",
+        "../*",
+        "{/etc/*,x}",
+        "{/home/u/.ssh/*,x}",
+        "{~/.ssh/*,x}",
+    ] {
         assert_denied(f.run("Glob", json!({"path": f.root, "pattern": pattern}), &f.root));
     }
     Ok(())
@@ -382,5 +317,20 @@ fn dangling_link_is_read_denied() -> Result<()> {
     let link = f.root.join("doc/missing");
     symlink(f.root.join("does-not-exist"), &link)?;
     assert_denied(f.read(link));
+    Ok(())
+}
+
+#[test]
+fn non_utf8_state_root_denies_reads() -> Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let f = Fixture::new(SessionKind::Authoring)?;
+    let work = f.root.join(".loom/work");
+    let target = f
+        .temp
+        .path()
+        .join(std::ffi::OsStr::from_bytes(b"state-\xff"));
+    fs::rename(&work, &target)?;
+    symlink(&target, &work)?;
+    assert_denied(f.read(work.join("admin.token")));
     Ok(())
 }

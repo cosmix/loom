@@ -19,6 +19,8 @@ use crate::fs::safe_fs::{safe_create_dir_all, safe_open_dirfd};
 const STATE_VAR: &str = "LOOM_PLAN_STATE";
 /// Environment variable carrying the planning session id.
 const SESSION_VAR: &str = "LOOM_PLAN_SESSION";
+/// Name of the drafts directory inside the runtime directory.
+pub(crate) const DRAFTS_DIR: &str = "drafts";
 
 /// Every runtime path of one project's planning state.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,7 +47,7 @@ impl RuntimePaths {
     fn new(planning_root: PathBuf, dir: PathBuf) -> Self {
         RuntimePaths {
             lock: dir.join("lock"),
-            drafts: dir.join("drafts"),
+            drafts: dir.join(DRAFTS_DIR),
             claims: dir.join("claims"),
             summaries_lock: dir.join("summaries.lock"),
             summary_cost: dir.join("summary-cost.jsonl"),

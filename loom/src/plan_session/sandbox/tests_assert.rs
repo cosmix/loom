@@ -2,7 +2,8 @@
 
 use serde_json::{json, Value};
 
-use super::tests_kinds::{expected_common, Fixture};
+use super::tests_kinds::Fixture;
+use super::tests_kinds_fixture::expected_common;
 use super::{assert_planning_settings, HookSpec};
 use crate::plan_session::kind::SessionKind;
 

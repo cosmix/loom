@@ -38,12 +38,22 @@ pub(super) fn check_search(
 
 /// A `Glob` pattern is matched below its `path`; an absolute, `~` or `..` pattern would search
 /// a root the guard never checked. Any `..` counts, as in the shell guard's `filtered_search`:
-/// a brace alternative such as `{..,x}/*` climbs without being a `..` component.
+/// a brace alternative such as `{..,x}/*` climbs without being a `..` component. For the same
+/// reason a `/` or `~` right after `{` or `,` counts: `{/etc/*,x}` or `{~/.ssh/*,x}` names an
+/// absolute or home root once the braces expand.
 fn check_glob_pattern(input: &Value) -> Result<(), String> {
     let Some(pattern) = input.get("pattern").and_then(Value::as_str) else {
         return Ok(());
     };
-    if pattern.starts_with('/') || pattern.starts_with('~') || pattern.contains("..") {
+    let rooted_alternative = pattern
+        .as_bytes()
+        .windows(2)
+        .any(|pair| matches!(pair, [b'{' | b',', b'/' | b'~']));
+    if pattern.starts_with('/')
+        || pattern.starts_with('~')
+        || pattern.contains("..")
+        || rooted_alternative
+    {
         return Err(format!("the Glob pattern {pattern} leaves its path"));
     }
     Ok(())

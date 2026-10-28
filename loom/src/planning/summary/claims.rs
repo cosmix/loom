@@ -24,14 +24,12 @@ use crate::fs::safe_fs::{
     safe_remove_in_workdir,
 };
 use crate::fs::safe_read::{is_not_found, list_dir_no_follow, read_bounded};
-use crate::planning::runtime::RuntimePaths;
+use crate::planning::runtime::{RuntimePaths, DRAFTS_DIR};
 
 /// Environment variable naming the planning session that runs the command.
 const SESSION_VAR: &str = "LOOM_PLAN_SESSION";
 /// Name of the claims directory inside the runtime directory.
 const CLAIMS_DIR: &str = "claims";
-/// Name of the drafts directory inside the runtime directory.
-const DRAFTS_DIR: &str = "drafts";
 /// Times a claim is attempted when the holder releases between our failed create and our read.
 const CLAIM_ATTEMPTS: usize = 2;
 /// Largest claim file read.

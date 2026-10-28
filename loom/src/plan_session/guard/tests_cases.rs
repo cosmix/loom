@@ -4,7 +4,7 @@
 use std::ffi::CString;
 use std::fs;
 use std::os::unix::{ffi::OsStrExt, fs::symlink};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use serde_json::{json, Value};
@@ -194,6 +194,27 @@ case!(
 );
 case!(parent_above_root_denied, SessionKind::Authoring, f, {
     f.write(Path::new("/../../doc/x.md"), true);
+});
+
+/// A file under `<session dir>/done/`, the one session directory a pressure session may read.
+fn done_file(f: &Fixture) -> Result<PathBuf> {
+    fs::create_dir_all(f.session.done())?;
+    let file = f.session.done().join("note.md");
+    fs::write(&file, "x")?;
+    Ok(file)
+}
+
+case!(pressure_reads_its_done_directory, pressure(), f, {
+    f.check(payload("Read", &done_file(&f)?), false);
+    // The carve-out is `done/` alone, not the session directory around it.
+    fs::write(f.session.events(), "x")?;
+    f.check(payload("Read", &f.session.events()), true);
+});
+case!(authoring_done_read_denied, SessionKind::Authoring, f, {
+    f.check(payload("Read", &done_file(&f)?), true);
+});
+case!(summary_done_read_denied, SessionKind::Summary, f, {
+    f.check(payload("Read", &done_file(&f)?), true);
 });
 
 macro_rules! bad_payload {

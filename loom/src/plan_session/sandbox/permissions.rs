@@ -81,10 +81,17 @@ fn authoring(build: &Build<'_>) -> Result<Rules> {
         path_rule("Edit", &doc.join("product"), "/**"),
         path_rule("Edit", &doc.join("plans"), "/**"),
     ];
-    for dir in doc_dirs(build)? {
-        allow.push(path_rule("Edit", &doc.join(dir), "/**"));
+    for dir in doc_entries(build, EntryKind::Directory)? {
+        if !NOT_PER_DIR.contains(&dir.as_str()) {
+            allow.push(path_rule("Edit", &doc.join(dir), "/**"));
+        }
     }
-    allow.push(path_rule("Edit", &doc, "/*"));
+    // Each top-level file by its literal path: `Edit` paths match with gitignore semantics, so
+    // `doc/*` would match the directory `doc/loom` and so everything beneath it. A file created
+    // later prompts the holder, and the guard still decides it.
+    for file in doc_entries(build, EntryKind::File)? {
+        allow.push(path_rule("Edit", &doc.join(file), ""));
+    }
     allow.extend(runtime_rules(build));
     allow.extend(AUTHORING_BASH.map(String::from));
     allow.push(WEB_SEARCH.to_owned());
@@ -103,7 +110,7 @@ fn summary(build: &Build<'_>) -> Rules {
 
 fn pressure(build: &Build<'_>, plan: &Path, bundle: &Path) -> Result<Rules> {
     for path in [plan, bundle] {
-        if !literal(&path.to_string_lossy()) {
+        if !rule_syntax_chars(&path.to_string_lossy()).is_empty() {
             bail!(
                 "pressure path {} holds permission-rule syntax",
                 path.display()
@@ -145,20 +152,21 @@ fn base_denies(peer_tools: bool) -> Vec<String> {
     tools.map(String::from).collect()
 }
 
-/// Existing real directories directly under `doc/` other than `loom`, `product` and `plans`,
-/// sorted; a symlinked directory is skipped, matching discovery, and so is a name holding rule
-/// syntax (a directory named `*` would otherwise allow every directory, `doc/loom` included).
-fn doc_dirs(build: &Build<'_>) -> Result<Vec<String>> {
-    let mut dirs: Vec<String> = build
+/// The names of the existing entries of `kind` directly under a real `doc/`, sorted, listed
+/// without following a link: a symlink or special entry is skipped, matching discovery, and so
+/// is a name holding rule syntax (a directory named `*` would otherwise allow every directory,
+/// `doc/loom` included).
+fn doc_entries(build: &Build<'_>, kind: EntryKind) -> Result<Vec<String>> {
+    let mut names: Vec<String> = build
         .tree
         .real_dir_entries(Path::new("doc"))?
         .into_iter()
-        .filter(|(_, kind)| *kind == EntryKind::Directory)
+        .filter(|(_, entry)| *entry == kind)
         .filter_map(|(name, _)| name.into_string().ok())
-        .filter(|name| !NOT_PER_DIR.contains(&name.as_str()) && literal(name))
+        .filter(|name| rule_syntax_chars(name).is_empty())
         .collect();
-    dirs.sort();
-    Ok(dirs)
+    names.sort();
+    Ok(names)
 }
 
 /// The authoring `Edit` denies of the locked set: each existing locked plan file, the run
@@ -187,13 +195,15 @@ fn locked_denies(build: &Build<'_>) -> Result<Vec<String>> {
     slugs.extend(archived_slugs(build)?);
     let files = plan_files
         .iter()
-        .filter(|rel| literal(&rel.to_string_lossy()));
+        .filter(|rel| rule_syntax_chars(&rel.to_string_lossy()).is_empty());
     let mut deny: Vec<String> = files
         .map(|rel| path_rule("Edit", &root.join(rel), ""))
         .collect();
     deny.push(path_rule("Edit", &plans.join("REVIEW-*.md"), ""));
     deny.push(path_rule("Edit", &plans.join("archive"), "/**"));
-    let bundles = slugs.iter().filter(|slug| literal(slug));
+    let bundles = slugs
+        .iter()
+        .filter(|slug| rule_syntax_chars(slug).is_empty());
     deny.extend(bundles.map(|slug| path_rule("Edit", &plans.join("briefs").join(slug), "/**")));
     Ok(deny)
 }
@@ -223,10 +233,6 @@ fn archived_slugs(build: &Build<'_>) -> Result<Vec<String>> {
         }
     }
     Ok(slugs)
-}
-
-fn literal(text: &str) -> bool {
-    !text.contains(RULE_SYNTAX)
 }
 
 /// The permission-rule syntax characters `text` holds, in order of appearance, without repeats.
