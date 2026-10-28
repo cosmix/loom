@@ -133,7 +133,9 @@ The server finds the runtime directory from `LOOM_HOME` alone and ignores `LOOM_
 warning when it is set. Inside a planning session the runtime directory is passed as
 `LOOM_PLAN_STATE`, since the session's environment carries no `LOOM_HOME`. The summary CLI accepts
 it only when `LOOM_PLAN_SESSION` is also set and the directory is absolute, real, owned by the
-user, named for this project, and has a parent the process cannot write.
+user, named for this project, and either has a parent the process cannot write or, where the
+sandbox covers the read-denied planning root with a private tmpfs (srt on Linux), has `drafts/`,
+`claims/` and `summaries.lock` mounted into it from another filesystem.
 
 The summary store is project content, not runtime state; it lives in `doc/loom/summaries/`
 (vision, Decisions; section 04).
