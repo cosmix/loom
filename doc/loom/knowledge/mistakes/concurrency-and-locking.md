@@ -3,7 +3,7 @@
 
 # Concurrency And Locking
 
-> Locking races
+>
 
 ## File Locking: Writing to Locked Handles
 

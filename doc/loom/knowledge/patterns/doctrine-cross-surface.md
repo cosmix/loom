@@ -138,3 +138,7 @@ Any sweep that kills or deletes must resolve _uncertainty_ toward inaction:
   checkouts' live resources.
 - **Report what you skipped.** Unattributable resources are surfaced to the user, never silently
   killed and never silently ignored.
+
+## One Source for Text a Plugin Shares With a Command
+
+The `loom-plan` plugin never keeps a second copy of a command: `commands/pressure.md` and `commands/address.md` are rendered from `CLAUDE_COMMANDS` per session, and the `knowledge` skill quotes `commands/distill.md`'s routing bullets. Only the quote is pinned, by position: `knowledge_skill_preserves_every_distill_routing_line` reads distill.md lines 14-19 and asserts each appears in the skill, so inserting a line above the list shifts the window and an edit to the list fails the test (a blank line in the window passes vacuously; see [follow-ups](../concerns/planning-guidance-followups.md)). Agent frontmatter is the other pinned surface: `rewrite_agent` fails unless exactly one `model:` and one `effort:` line exists, and `agent_frontmatter_follows_non_default_config` proves a non-default pair reaches the rendered files. Details: [Planning Session Guidance](../architecture/planning-guidance.md).

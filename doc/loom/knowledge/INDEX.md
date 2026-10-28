@@ -27,7 +27,7 @@
 | [codex-plugin](architecture/codex-plugin.md) |  | 391 |
 | [completion-recovery](architecture/completion-recovery.md) | Attestation | 36 |
 | [config-value-types](architecture/config-value-types.md) | Typed | 85 |
-| [context-ceiling](architecture/context-ceiling.md) | Ceiling tiers | 111 |
+| [context-ceiling](architecture/context-ceiling.md) |  | 111 |
 | [context-retrieval](architecture/context-retrieval.md) |  | 397 |
 | [context-retrieval-corpus](architecture/context-retrieval-corpus.md) | BM25 | 178 |
 | [context-retrieval-routing](architecture/context-retrieval-routing.md) |  | 75 |
@@ -50,18 +50,19 @@
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 257 |
 | [plan-server](architecture/plan-server.md) |  | 193 |
 | [planning-document-model](architecture/planning-document-model.md) | Doc model | 173 |
-| [planning-session-bridge](architecture/planning-session-bridge.md) | Planning bridge: tmux, spool, chat model | 185 |
+| [planning-guidance](architecture/planning-guidance.md) |  | 35 |
+| [planning-session-bridge](architecture/planning-session-bridge.md) | Bridge | 187 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) | Plan sandbox | 135 |
 | [quota-poller](architecture/quota-poller.md) | Polling | 35 |
 | [remote-control](architecture/remote-control.md) | Capability | 81 |
-| [security-and-isolation](architecture/security-and-isolation.md) | Isolation | 187 |
+| [security-and-isolation](architecture/security-and-isolation.md) | Isolation | 188 |
 | [signal-generation](architecture/signal-generation.md) | Signals | 241 |
 | [skill-catalog](architecture/skill-catalog.md) |  | 155 |
 | [source-graph](architecture/source-graph.md) | Contract | 369 |
 | [source-graph-build](architecture/source-graph-build.md) | Builder | 128 |
 | [source-graph-evaluation](architecture/source-graph-evaluation.md) | Evaluator | 68 |
 | [source-graph-resolution](architecture/source-graph-resolution.md) | Bindings | 123 |
-| [source-graph-view](architecture/source-graph-view.md) | Resolved view | 76 |
+| [source-graph-view](architecture/source-graph-view.md) |  | 76 |
 | [status-data-model](architecture/status-data-model.md) | Fields | 239 |
 | [summary-store](architecture/summary-store.md) |  | 146 |
 | [target-guard](architecture/target-guard.md) | Accepted tip | 127 |
@@ -70,7 +71,7 @@
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger | 376 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | Host jobs | 239 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | Host jobs | 240 |
 | [web-dashboard](architecture/web-dashboard.md) | status --web | 110 |
 | [web-terminal](architecture/web-terminal.md) | Terminals | 181 |
 
@@ -90,14 +91,14 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [cli-process-and-conventions](patterns/cli-process-and-conventions.md) | CLI, TUI | 239 |
-| [doctrine-cross-surface](patterns/doctrine-cross-surface.md) | Pinned text | 140 |
+| [doctrine-cross-surface](patterns/doctrine-cross-surface.md) | Pinned text | 144 |
 | [hook-content-stripping](patterns/hook-content-stripping.md) | Hook text | 163 |
 | [merge-and-recovery](patterns/merge-and-recovery.md) | Merge flow | 111 |
 | [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Poll loop | 117 |
 | [remote-control](patterns/remote-control.md) | RC detection | 51 |
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) |  | 140 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) | Channels | 191 |
-| [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage states | 202 |
+| [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) |  | 202 |
 | [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out | 100 |
 
 ### conventions
@@ -107,13 +108,13 @@
 | [code-style-and-structure](conventions/code-style-and-structure.md) | Rust style | 283 |
 | [commits](conventions/commits.md) | Format | 24 |
 | [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 23 |
-| [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute rules | 119 |
+| [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 119 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 235 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 139 |
-| [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 131 |
+| [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 137 |
 | [plan-web](conventions/plan-web.md) |  | 34 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
-| [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard CSS | 51 |
+| [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 51 |
 
 ### mistakes
 
@@ -131,7 +132,7 @@
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 196 |
 | [completion-runtime](mistakes/completion-runtime.md) | Cargo churn | 72 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Couplings | 284 |
-| [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locking races | 47 |
+| [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 47 |
 | [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Chain bypass | 65 |
 | [contract-phase-human-blocking](mistakes/contract-phase-human-blocking.md) | Waits | 11 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork | 38 |
@@ -149,11 +150,11 @@
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | Cleanup bug | 171 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Operator git | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) |  | 15 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Incidents | 342 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Incidents | 343 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merged flag | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 322 |
-| [plan-server-delivery](mistakes/plan-server-delivery.md) |  | 199 |
-| [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) | Sandbox slips | 73 |
+| [plan-server-delivery](mistakes/plan-server-delivery.md) |  | 227 |
+| [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | Renames | 319 |
 | [release-feature-review](mistakes/release-feature-review.md) | Release gaps | 13 |
@@ -179,7 +180,7 @@
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Vacuous | 392 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux | 164 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Dev server | 76 |
-| [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Boundaries | 253 |
+| [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Boundaries | 254 |
 | [verification-harness](mistakes/verification-harness.md) |  | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | v2 misses | 396 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) |  | 141 |
@@ -193,20 +194,21 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 379 |
-| [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Smoke gaps | 78 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Hook debt | 264 |
+| [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Smoke gaps | 79 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Hook debt | 265 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 49 |
-| [contract-autonomy-followups](concerns/contract-autonomy-followups.md) | Contract gaps | 63 |
+| [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 63 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) |  | 49 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 103 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge edges | 125 |
-| [planning-document-model-followups](concerns/planning-document-model-followups.md) | Planning TODO | 127 |
+| [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 127 |
+| [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 42 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 192 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 210 |
-| [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | Orphans, tmux | 156 |
+| [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 156 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 384 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Graph limits | 79 |
-| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Backlog | 328 |
+| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Backlog | 329 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 17 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 349 |
 | [typed-config-values](concerns/typed-config-values.md) | Config gaps | 27 |

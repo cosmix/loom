@@ -116,15 +116,21 @@ Claude Code `/fast`; it is not a model id and never belongs in `CODEX_MODELS`.
 
 ## `[plan]` Keys and Defaults
 
-Four string keys pick the model and reasoning effort of plan summary sessions (`planning/summary/config.rs`,
+Eight string keys pick the model and reasoning effort of planning sessions. Summary keys (`planning/summary/config.rs`,
 `SummaryModels::resolve`): `plan.document_summary_model` haiku and `plan.document_summary_effort` medium for a
 document summary; `plan.overview_model` sonnet and `plan.overview_effort` high for an overview and the summary session
-that rebuilds them. The user tier is the `[plan]` table of `~/.loom/config.toml` (`user_config/plan.rs`, defaults
-`DEFAULT_PLAN_*`, values validated as model and effort enums); the project tier is the `[planning]` table of
-`.loom/work/config.toml` (`fs/work_dir/config_sections/plan_config.rs`, `read_plan_config`, `deny_unknown_fields`).
-The tables differ because the project `[plan]` table already holds the run identity (`plan_id`, `source_path`, ...), so
-the keys sit in `[planning]` there. A project table holding one unknown or malformed key is dropped whole without a log
-line, so all four project overrides revert to the user tier; this mirrors `read_pressure_config`.
+that rebuilds them. Authoring keys (`planning/guidance/models.rs`, `GuidanceModels::resolve`; `user_config/plan_authoring.rs`):
+`plan.spec_authoring_model` opus and `plan.spec_authoring_effort` medium for steps that write the product spec;
+`plan.plan_authoring_model` opus and `plan.plan_authoring_effort` high for steps that write metaplans and plans.
+`step_class` (`planning/guidance/start.rs`) sorts each authoring start into the spec or plan class (the rules are in
+[Planning Session Guidance](../architecture/planning-guidance.md#plan-authoring-keys-and-step-classes)). The user tier
+is the `[plan]` table of `~/.loom/config.toml` (`user_config/plan.rs`, defaults `DEFAULT_PLAN_*`, values validated as model
+and effort enums); the project tier is the `[planning]` table of `.loom/work/config.toml`
+(`fs/work_dir/config_sections/plan_config.rs`, `read_plan_config`, `deny_unknown_fields`). The tables differ because the
+project `[plan]` table already holds the run identity (`plan_id`, `source_path`, ...), so the keys sit in `[planning]`
+there. A project table holding one unknown or malformed key is dropped whole without a log line, so all eight project
+overrides revert to the user tier; this mirrors `read_pressure_config`. The README configuration table lists all eight
+rows. The server resolves them once at start (see [follow-ups](../concerns/planning-guidance-followups.md)).
 
 ## Planner Execution Worker Allocation
 

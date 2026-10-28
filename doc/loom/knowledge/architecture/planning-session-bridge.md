@@ -1,6 +1,6 @@
 # Planning Session Bridge
 >
-> Planning bridge: tmux, spool, chat model
+> Bridge
 
 The bridge owns Claude Code sessions for `loom plan`: it starts each in its own tmux server, reads the
 hook spool and the transcript, runs the state machine, delivers chat input, answers permission
@@ -160,9 +160,10 @@ new tab can repeat an item already in the snapshot ([concerns](../concerns/plann
 ## Guidance slot and dispatch
 
 `GuidanceSlot` (`RwLock<Arc<dyn GuidanceProvider>>`, `get`/`set`) in `plan_server/chat/guidance.rs` supplies
-launch files and the closing message; plan 8's engine replaces the installed provider with `set`. The
-installed default is `ChecklistGuidance`: it refuses an offer id the checklist does not currently offer, then
-defers to `FixedGuidance` (kept separate because `FixedGuidance` unit tests pin acceptance of unoffered ids).
+launch files and the closing message. Chat installation sets `ChecklistGuidance` (it refuses an offer id the checklist
+does not currently offer, then defers to `FixedGuidance`, kept separate because `FixedGuidance` unit tests pin
+acceptance of unoffered ids); `plan_server::guidance::install` then `set`s the shared `PlanGuidance`, which renders the
+plugin and brief ([Planning Session Guidance](planning-guidance.md)).
 `dispatch` validates the text before `take_authoring`, records the starter inside the guidance closure (the
 session directory name is the session id), serialises starts with `ChatState::starting` (a plain send to a
 running chat skips it), and `give_back` frees authoring a refused start took unless a chat is reserved or
