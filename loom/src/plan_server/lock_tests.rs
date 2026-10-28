@@ -26,6 +26,20 @@ fn published_record_is_visible_to_second_opener() {
 }
 
 #[test]
+fn a_dropped_lock_is_free_while_a_child_still_holds_its_descriptor() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lock");
+    let Acquired::Held(lock) = acquire(&path).unwrap() else {
+        panic!("lock not acquired")
+    };
+    // The copy a child spawned by another thread keeps until its exec.
+    let inherited = lock.duplicate().unwrap();
+    drop(lock);
+    assert!(matches!(acquire(&path).unwrap(), Acquired::Held(_)));
+    drop(inherited);
+}
+
+#[test]
 fn symlink_is_refused_without_touching_target() {
     let dir = tempfile::tempdir().unwrap();
     let target = dir.path().join("target");

@@ -93,4 +93,20 @@ impl ServerLock {
         self.file.sync_all()?;
         Ok(())
     }
+
+    /// A second descriptor of the locked file, like the copy a child holds until its exec.
+    #[cfg(test)]
+    pub(super) fn duplicate(&self) -> std::io::Result<File> {
+        self.file.try_clone()
+    }
+}
+
+impl Drop for ServerLock {
+    /// Unlocks the open file description itself: a child spawned on another thread holds a
+    /// copy of the descriptor until its exec, so closing ours alone would not release the lock.
+    /// The record stays; the next holder overwrites it.
+    fn drop(&mut self) {
+        // SAFETY: file owns a valid descriptor until it closes after this returns.
+        unsafe { libc::flock(self.file.as_raw_fd(), libc::LOCK_UN) };
+    }
 }
