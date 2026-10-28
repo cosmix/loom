@@ -25,7 +25,7 @@ function renderTokens(stageId: string, mutate?: (raw: typeof fixtureJson) => voi
 }
 
 describe("StageTokens", () => {
-  it("folds to the four chip trends and labels until opened, then keeps the reader's choice", () => {
+  it("folds to the four chips, unchanged from the open view, until opened, then keeps the reader's choice", () => {
     const { store, raw } = renderTokens("server", undefined, false);
 
     const toggle = screen.getByRole("button", { name: "tokens" });
@@ -43,9 +43,12 @@ describe("StageTokens", () => {
     }
     expect(screen.queryAllByTestId("token-lane")).toHaveLength(0);
     expect(screen.queryByText("30 s cells")).toBeNull();
+    const chips = () => screen.getByText("fresh, 5 min avg").closest(".grid")?.outerHTML;
+    const foldedChips = chips();
 
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(chips()).toBe(foldedChips);
     expect(screen.getAllByTestId("token-lane")).toHaveLength(3);
     expect(screen.getByText("agents live")).toBeTruthy();
     expect(screen.getByText("30 s cells")).toBeTruthy();
