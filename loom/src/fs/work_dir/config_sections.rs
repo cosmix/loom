@@ -35,7 +35,10 @@ mod plan_config;
 mod pressure_config;
 mod terminal_config;
 
-pub use models_config::{resolve_code_reviewer_model_effort, resolve_stage_model_effort};
+pub use models_config::{
+    resolve_code_reviewer_model_effort, resolve_contract_writer_model_effort,
+    resolve_stage_model_effort,
+};
 pub use plan_config::{read_plan_config, PlanConfig};
 pub use pressure_config::{read_pressure_config, PressureConfig};
 pub use terminal_config::{read_terminal_config, write_terminal_config};

@@ -147,7 +147,7 @@ export interface SectionRows {
 
 export const SECTION_CAPTIONS: Readonly<Record<string, string>> = {
   pressure: "who runs each step of loom pressure",
-  models: "a stage's main agent session, by stage type",
+  models: "model and effort per session kind",
   plan: "what loom plan's summary sessions run on",
 };
 
@@ -156,6 +156,7 @@ export const ROW_CAPTIONS: Readonly<Record<string, string>> = {
   "pressure.codex": "$pressure, Codex",
   "pressure.address": "/address reconciliation",
   "models.code_reviewer": "loom-code-reviewer subagent",
+  "models.contract_writer": "contract test writer",
 };
 
 /// A `_model`/`_effort` suffix's prefix, or null when the field doesn't end

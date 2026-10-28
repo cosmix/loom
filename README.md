@@ -651,6 +651,8 @@ The keys, with their built-in defaults:
 | `models.integration_verify_effort` | `xhigh`       | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 | `models.code_reviewer_model`       | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `models.code_reviewer_effort`      | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
+| `models.contract_writer_model`     | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
+| `models.contract_writer_effort`    | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 
 "Whole section" means a project `[terminal]` or `[context]` section replaces the user tier's section outright, so a key it omits takes the built-in. "Per key" means a project `[pressure]` or `[models]` section overrides only the keys it names and the rest fall through to the user file. The `pressure.*` keys are explained under [Primary Commands](#primary-commands), the `models.*` keys under [Model Allocation](#model-allocation).
 
@@ -1053,9 +1055,11 @@ integration_verify_model = "opus"
 integration_verify_effort = "xhigh"
 code_reviewer_model = "opus"
 code_reviewer_effort = "high"
+contract_writer_model = "opus"
+contract_writer_effort = "high"
 ```
 
-A plan stage's `model` / `reasoning_effort` field overrides both config tiers for that one stage. `standard_model`/`standard_effort` set the orchestrator of standard (implementation) stages. `code_reviewer_model`/`code_reviewer_effort` are not a stage type: they set the model and effort of the `loom-code-reviewer` subagent, applied by the spawn guard to every `loom-code-reviewer` spawn and overriding a model the caller passes. Merge and base-conflict sessions stay pinned at opus/high and adjudication keeps its own `[adjudication] model`; neither is configurable through `[models]`.
+A plan stage's `model` / `reasoning_effort` field overrides both config tiers for that one stage. `standard_model`/`standard_effort` set the orchestrator of standard (implementation) stages. `code_reviewer_model`/`code_reviewer_effort` are not a stage type: they set the model and effort of the `loom-code-reviewer` subagent, applied by the spawn guard to every `loom-code-reviewer` spawn and overriding a model the caller passes. `contract_writer_model`/`contract_writer_effort` set the model and effort of the contract test writer session; a plan stage's `model`/`reasoning_effort` do not apply to it. Merge and base-conflict sessions stay pinned at opus/high and adjudication keeps its own `[adjudication] model`; neither is configurable through `[models]`.
 
 The orchestrator decomposes the work, hands each subagent full context, then runs the gate and commits. In a `standard` stage the gate is the orchestrator's single `loom check`, and a fix round re-checks with `--criterion <n>`; an `integration-verify` stage keeps its own gate. Either way the orchestrator owns the fixes and the commit. It makes a change itself only when that is cheaper than a spawn: at most 20 changed lines in at most 2 files it has already read, proven by one command; a fable session delegates even those. Implementation is delegated to as few subagents as the work allows, each spawned **by agent type** so the model choice is explicit:
 

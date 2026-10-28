@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::knowledge::KnowledgeDir;
 
-mod config_sections;
+pub(crate) mod config_sections;
 mod discovery;
 pub use config_sections::{
     insert_key, read_config, read_context_config, read_plan_config, read_plan_sandbox,

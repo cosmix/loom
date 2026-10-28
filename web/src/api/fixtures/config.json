@@ -458,6 +458,50 @@
       }
     },
     {
+      "name": "models.contract_writer_model",
+      "help": "Model the contract test writer session runs on",
+      "kind": {
+        "type": "enum",
+        "variants": ["haiku", "sonnet", "opus", "fable"]
+      },
+      "scopes": ["user", "project"],
+      "default": "opus",
+      "user": {
+        "value": "opus",
+        "set": false
+      },
+      "project": {
+        "value": "opus",
+        "set": false
+      },
+      "effective": {
+        "value": "opus",
+        "source": "default"
+      }
+    },
+    {
+      "name": "models.contract_writer_effort",
+      "help": "Reasoning effort the contract test writer session runs at",
+      "kind": {
+        "type": "enum",
+        "variants": ["low", "medium", "high", "xhigh", "max"]
+      },
+      "scopes": ["user", "project"],
+      "default": "high",
+      "user": {
+        "value": "high",
+        "set": false
+      },
+      "project": {
+        "value": "high",
+        "set": false
+      },
+      "effective": {
+        "value": "high",
+        "source": "default"
+      }
+    },
+    {
       "name": "plan.document_summary_model",
       "help": "Model the loom-plan summary agent builds document summaries on",
       "kind": {

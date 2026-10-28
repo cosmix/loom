@@ -198,29 +198,35 @@ fn remote_control_session_name_contract_is_prefixed() {
     );
 }
 
-/// The contract writer is the stage's own agent for its first phase, so it
-/// runs on whatever the stage would run on: the plan field, then the config
-/// tier, then the stage type's built-in.
+/// The contract writer has its own `[models]` slot (default opus/high); the
+/// plan's model fields and the standard-stage config do not reach it.
 #[test]
-fn contract_sessions_resolve_model_and_effort_exactly_as_stage_sessions() {
-    let (_temp, work_dir) = work_dir_without_config();
+fn contract_sessions_use_the_contract_writer_slot_only() {
+    let (temp, work_dir) = work_dir_without_config();
+    let user_config = temp.path().join("user-config.toml");
+    std::fs::write(&user_config, "").unwrap();
+    let _redirect = crate::user_config::redirect_user_config(user_config);
     let mut stage = stage_named("my-stage", "My Stage");
-    let same = |stage: &Stage| {
-        assert_eq!(
-            model_and_effort(SessionType::Contract, stage, &work_dir),
-            model_and_effort(SessionType::Stage, stage, &work_dir)
-        );
-    };
-    same(&stage);
+    let contract = |stage: &Stage| model_and_effort(SessionType::Contract, stage, &work_dir);
+    let pair = |m: &str, e: &str| (m.to_string(), e.to_string());
+
+    assert_eq!(contract(&stage), pair("opus", "high"));
+
     std::fs::write(
         work_dir.join("config.toml"),
         "[models]\nstandard_model = \"sonnet\"\nstandard_effort = \"low\"\n",
     )
     .unwrap();
-    same(&stage);
     stage.model = Some("haiku".to_string());
-    stage.reasoning_effort = Some("xhigh".to_string());
-    same(&stage);
+    stage.reasoning_effort = Some("medium".to_string());
+    assert_eq!(contract(&stage), pair("opus", "high"));
+
+    std::fs::write(
+        work_dir.join("config.toml"),
+        "[models]\ncontract_writer_model = \"fable\"\ncontract_writer_effort = \"xhigh\"\n",
+    )
+    .unwrap();
+    assert_eq!(contract(&stage), pair("fable", "xhigh"));
 }
 
 #[test]

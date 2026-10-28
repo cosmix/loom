@@ -202,6 +202,20 @@ pub const KEYS: &[KeySpec] = &[
         help: "Reasoning effort the loom-code-reviewer subagent runs at",
     },
     KeySpec {
+        name: "models.contract_writer_model",
+        section: "models",
+        field: "contract_writer_model",
+        kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
+        help: "Model the contract test writer session runs on",
+    },
+    KeySpec {
+        name: "models.contract_writer_effort",
+        section: "models",
+        field: "contract_writer_effort",
+        kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
+        help: "Reasoning effort the contract test writer session runs at",
+    },
+    KeySpec {
         name: "plan.document_summary_model",
         section: "plan",
         field: "document_summary_model",

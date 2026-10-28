@@ -54,17 +54,18 @@ describe("sectionRows", () => {
     expect(pressure?.caption).toBe("who runs each step of loom pressure");
   });
 
-  it("pairs models into five rows", () => {
+  it("pairs models into six rows", () => {
     const models = sections[4];
-    expect(models?.rows).toHaveLength(5);
+    expect(models?.rows).toHaveLength(6);
     expect(models?.rows.map((row) => rowLabel(row))).toEqual([
       "standard",
       "knowledge",
       "knowledge_distill",
       "integration_verify",
       "code_reviewer",
+      "contract_writer",
     ]);
-    expect(models?.caption).toBe("a stage's main agent session, by stage type");
+    expect(models?.caption).toBe("model and effort per session kind");
   });
 
   it("projectAllowed matches whether any entry in the section scopes to project", () => {
