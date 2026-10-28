@@ -31,6 +31,7 @@ use crate::fs::safe_read::read_to_string_bounded;
 use crate::plan_session::kind::SessionKind;
 use crate::plan_session::sandbox::filesystem::OMISSIONS;
 use crate::plan_session::sandbox::PRE_TOOL_USE;
+use crate::plan_session::spool::try_read_payload;
 use crate::planning::paths::{classify_write, symlink_component, DocArea, LockReason, LockedSet};
 use crate::planning::runtime::DRAFTS_DIR;
 use crate::planning::slug::PlanState;
@@ -41,8 +42,6 @@ const SCHEMA: u32 = 1;
 const GUARD_FILE: &str = "guard.json";
 /// `guard.json` is the host's and small; anything larger is not one.
 const MAX_POLICY_BYTES: usize = 64 * 1024;
-/// The payload bound of `commands/hook/worker_brief.rs` (`MAX_STDIN_BYTES`): more is a deny.
-const MAX_STDIN_BYTES: u64 = 1024 * 1024;
 const DOC: &str = "doc";
 
 /// The guard's only input besides the payload and the live tree, written beside
@@ -128,7 +127,8 @@ pub fn run_pre_tool_use(session_dir: &Path, stdin: impl Read) -> Option<String> 
 
 fn answer(session_dir: &Path, stdin: impl Read) -> Option<String> {
     let deny = |why: String| Some(render_deny(&format!("loom plan: {why}")));
-    let payload = match read_payload(stdin) {
+    // The spool's 1 MiB bound, the one of `commands/hook/worker_brief.rs`: more is a deny.
+    let payload = match try_read_payload(stdin) {
         Ok(payload) => payload,
         Err(why) => return deny(why),
     };
@@ -148,18 +148,6 @@ fn answer(session_dir: &Path, stdin: impl Read) -> Option<String> {
         Decision::Defer => None,
         Decision::Deny(reason) => Some(render_deny(&reason)),
     }
-}
-
-fn read_payload(stdin: impl Read) -> Result<Value, String> {
-    let mut raw = Vec::new();
-    stdin
-        .take(MAX_STDIN_BYTES + 1)
-        .read_to_end(&mut raw)
-        .map_err(|error| format!("cannot read the payload: {error}"))?;
-    if raw.len() as u64 > MAX_STDIN_BYTES {
-        return Err("the payload is over 1 MiB".into());
-    }
-    serde_json::from_slice(&raw).map_err(|error| format!("the payload is not JSON: {error}"))
 }
 
 /// What a file tool does with the path it names.

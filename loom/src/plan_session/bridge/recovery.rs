@@ -227,11 +227,7 @@ impl Bridge {
 fn deny_unanswered(dir: &SessionDir) -> HashMap<String, Answer> {
     let mut answers = HashMap::new();
     for event in SpoolReader::new(dir.events()).read_new() {
-        let auto_denied = event
-            .payload
-            .get("auto_denied")
-            .is_some_and(|tag| !tag.is_null());
-        if event.event != "PermissionRequest" || auto_denied {
+        if event.event != "PermissionRequest" || event.auto_denied() {
             continue;
         }
         let Some(request_id) = event.request_id.filter(|id| canonical(id)) else {
