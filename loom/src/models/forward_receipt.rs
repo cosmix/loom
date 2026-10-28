@@ -226,9 +226,12 @@ impl ForwardObservation {
             self.codex_thread_id.as_deref().is_none_or(is_safe_id),
             "unsafe codex thread id"
         );
+        // Only the direct wrapper reports an unknown outcome (an `unknown` END,
+        // or its separator with no END); a companion verdict comes from the
+        // job record.
         ensure!(
-            self.state != ForwardState::Unknown,
-            "unknown is not an observation state"
+            self.state != ForwardState::Unknown || self.backend == ForwardBackend::Direct,
+            "unknown is an observation state only for a direct forward"
         );
         ensure!(
             self.model.as_ref().is_none_or(|value| value.len() <= 64),
@@ -267,6 +270,9 @@ pub struct ForwardReceipt {
     pub effort: Option<String>,
 }
 impl ForwardReceipt {
+    /// The hook always records `Running` first, so a sequence that opens with
+    /// a verdict (terminal or unknown), or with an invalid direct shape, names
+    /// no exact forward and folds to `Unknown`.
     fn from_first(observation: ForwardObservation) -> Self {
         let identity = ForwardIdentity {
             parent_session_id: observation.parent_session_id.clone(),
@@ -275,25 +281,32 @@ impl ForwardReceipt {
             stage_id: observation.stage_id.clone(),
             loom_session_id: observation.loom_session_id.clone(),
         };
-        let invalid = observation.state.is_terminal() || invalid_direct(&observation);
-        Self {
+        let invalid = observation.state.is_terminal()
+            || observation.state == ForwardState::Unknown
+            || invalid_direct(&observation);
+        let mut receipt = Self {
             identity,
             receipt_id: observation.receipt_id,
             backend: observation.backend,
             backend_id: observation.backend_id,
-            state: if invalid {
-                ForwardState::Unknown
-            } else {
-                observation.state
-            },
+            state: observation.state,
             observed_at: observation.observed_at,
             exit_code: observation.exit_code,
             codex_thread_id: observation.codex_thread_id,
             locator: observation.locator,
             model: observation.model,
             effort: observation.effort,
+        };
+        if invalid {
+            receipt.mark_unknown();
         }
+        receipt
     }
+    /// `Unknown` absorbs every later observation. It is reached by a reported
+    /// unknown outcome, by observations that disagree on identity, thread, or
+    /// locator, or by a verdict that differs from an earlier terminal one; a
+    /// terminal verdict followed by `Unknown` is such a disagreement, so the
+    /// earlier exit code does not survive.
     fn apply(&mut self, observation: ForwardObservation) {
         self.observed_at = observation.observed_at;
         if self.state == ForwardState::Unknown {
@@ -305,22 +318,26 @@ impl ForwardReceipt {
             || merge_conflicts(&mut self.codex_thread_id, observation.codex_thread_id)
             || merge_conflicts(&mut self.locator, observation.locator)
         {
-            self.state = ForwardState::Unknown;
+            self.mark_unknown();
             return;
         }
         keep_first(&mut self.model, observation.model);
         keep_first(&mut self.effort, observation.effort);
         if observation.state == ForwardState::Unknown {
-            self.state = ForwardState::Unknown;
+            self.mark_unknown();
         } else if self.state.is_terminal() {
             let repeat = observation.state == self.state && observation.exit_code == self.exit_code;
             if observation.state.is_terminal() && !repeat {
-                self.state = ForwardState::Unknown;
+                self.mark_unknown();
             }
         } else {
             self.state = observation.state;
             self.exit_code = observation.exit_code;
         }
+    }
+    fn mark_unknown(&mut self) {
+        self.state = ForwardState::Unknown;
+        self.exit_code = None;
     }
 }
 fn invalid_direct(observation: &ForwardObservation) -> bool {

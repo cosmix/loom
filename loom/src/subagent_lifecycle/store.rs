@@ -1,12 +1,14 @@
+pub(crate) use super::append::append_all_locked;
+#[cfg(test)]
+pub(crate) use super::append::append_locked;
 pub(crate) use super::codex_evidence::codex_event_id;
 use super::codex_evidence::codex_records_outcome;
-use super::lock::JournalLock;
 use super::model::{LifecycleRecord, WorkerIdentity, WorkerOutcome};
 use super::validation::{fold_states, validate_record, validate_safe_id, Validation};
 use anyhow::{ensure, Context, Result};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
@@ -35,35 +37,10 @@ pub struct LifecycleIndex {
 }
 
 /// True when `error` wraps an `io::Error` of kind `NotFound`.
-fn is_not_found(error: &anyhow::Error) -> bool {
+pub(super) fn is_not_found(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<std::io::Error>()
         .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound)
-}
-
-pub(crate) fn append_locked(work_dir: &Path, record: &LifecycleRecord) -> Result<AppendOutcome> {
-    validate_safe_id(record.identity.stage_id())?;
-    let rel_dir = PathBuf::from("subagents").join(record.identity.stage_id());
-    crate::fs::safe_fs::safe_create_dir_all(work_dir, &rel_dir, 0o700)?;
-    let relpath = rel_dir.join("lifecycle.jsonl");
-    let journal = work_dir.join(&relpath);
-    let _lock = JournalLock::acquire(&journal)?;
-    let existing = match read_journal(&journal) {
-        Ok(records) => records,
-        Err(error) if is_not_found(&error) => Vec::new(),
-        Err(error) => return Err(error),
-    };
-    ensure!(
-        !journal_lacks_final_newline(&journal)?,
-        "refusing to append after a torn lifecycle line"
-    );
-    let outcome = duplicate_outcome(&existing, record);
-    if outcome != AppendOutcome::Duplicate {
-        let mut line = serde_json::to_vec(record)?;
-        line.push(b'\n');
-        crate::fs::safe_fs::safe_append(work_dir, &relpath, &line)?;
-    }
-    Ok(outcome)
 }
 
 pub fn replay(work_dir: &Path) -> Result<LifecycleIndex> {
@@ -323,7 +300,7 @@ fn load_stage_records(
     Ok(Some(loaded))
 }
 
-fn read_journal(path: &Path) -> Result<Vec<LifecycleRecord>> {
+pub(super) fn read_journal(path: &Path) -> Result<Vec<LifecycleRecord>> {
     let mut file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW)
@@ -360,38 +337,4 @@ fn read_journal(path: &Path) -> Result<Vec<LifecycleRecord>> {
         records.push(record);
     }
     Ok(records)
-}
-
-fn journal_lacks_final_newline(path: &Path) -> Result<bool> {
-    let mut file = match OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-    {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error.into()),
-    };
-    let len = file.metadata()?.len();
-    if len == 0 {
-        return Ok(false);
-    }
-    file.seek(SeekFrom::End(-1))?;
-    let mut byte = [0_u8; 1];
-    file.read_exact(&mut byte)?;
-    Ok(byte[0] != b'\n')
-}
-
-fn duplicate_outcome(existing: &[LifecycleRecord], incoming: &LifecycleRecord) -> AppendOutcome {
-    let mut matching = existing
-        .iter()
-        .filter(|record| record.event_id == incoming.event_id);
-    let Some(first) = matching.next() else {
-        return AppendOutcome::Appended;
-    };
-    if first == incoming && matching.all(|record| record == incoming) {
-        AppendOutcome::Duplicate
-    } else {
-        AppendOutcome::Conflict
-    }
 }

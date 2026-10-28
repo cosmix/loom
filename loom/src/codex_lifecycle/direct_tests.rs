@@ -1,7 +1,5 @@
-use std::fs;
-
 use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use serde_json::{json, Value};
 
 use crate::commands::status::data::execution_models_for_stage;
@@ -9,77 +7,23 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::forward_receipt::marker::{decode_marker_channel, MarkerChannel};
 use crate::models::forward_receipt::{load_receipts, ForwardObservation, ForwardState};
 use crate::subagent_lifecycle::{
-    replay, CodexEvidence, CodexExecution, LifecycleProducer, LifecycleRecord, LifecycleState,
-    WorkerIdentity, WorkerOutcome,
+    replay, CodexEvidence, LifecycleProducer, LifecycleState, WorkerOutcome,
 };
 
 use super::super::reconcile::reconcile_with_state_root;
 use super::super::test_support::{
-    identity, liquidmon_direct_fixture, receipt_line, Fixture, EFFORT, FORWARDER, INV_A,
-    LIQUIDMON_RUNNING, LIQUIDMON_STAGE, LIQUIDMON_SUCCEEDED, MODEL, PARENT, SESSION, STAGE,
+    assert_nothing_written, at, direct_identity, identity, liquidmon, liquidmon_direct_fixture,
+    only_outcome, receipt_line, records, run, Fixture, EFFORT, FORWARDER, INV_A, LIQUIDMON_RUNNING,
+    LIQUIDMON_STAGE, LIQUIDMON_SUCCEEDED, MODEL, PARENT, SESSION, STAGE, THREAD,
 };
-use super::super::{
-    codex_worker_identity, has_correlated_lifecycle, reconcile_at, CodexAuthorization,
-    ReconcileReport,
-};
+use super::super::{has_correlated_lifecycle, CodexAuthorization};
 use super::{AWAITING_RECEIPT, RECEIPT_WINDOW_SECS};
-
-const THREAD: &str = "01a169b0-a2fd-7793-9874-db0889fa035c";
-
-/// `secs` after the liquidmon authorization's `ts`.
-fn at(secs: i64) -> DateTime<Utc> {
-    let authorized_at: DateTime<Utc> = "2026-10-23T16:55:45Z".parse().expect("fixture ts");
-    authorized_at + Duration::seconds(secs)
-}
-
-fn run(fixture: &Fixture, now: DateTime<Utc>) -> Result<ReconcileReport> {
-    reconcile_at(
-        &fixture.work_dir,
-        std::slice::from_ref(&fixture.session),
-        &fixture.state_root,
-        now,
-    )
-}
-
-/// The liquidmon fixture with `lines` as its receipt journal.
-fn liquidmon<S: AsRef<str>>(lines: &[S]) -> Result<(Fixture, CodexAuthorization)> {
-    let fixture = liquidmon_direct_fixture()?;
-    fixture.write_receipts(lines)?;
-    let authorization =
-        CodexAuthorization::from_v2_value(&fixture.liquidmon_authorization_value()?)?;
-    Ok((fixture, authorization))
-}
 
 fn terminal(state: &str, exit_code: i32) -> Result<String> {
     receipt_line(LIQUIDMON_SUCCEEDED, |value| {
         value["state"] = json!(state);
         value["exit_code"] = json!(exit_code);
     })
-}
-
-fn direct_identity(authorization: &CodexAuthorization, thread_id: &str) -> WorkerIdentity {
-    let execution = CodexExecution::Direct {
-        thread_id: thread_id.into(),
-        tool_use_id: authorization.tool_use_id.clone(),
-    };
-    codex_worker_identity(authorization, execution)
-}
-
-fn records(fixture: &Fixture) -> Result<Vec<LifecycleRecord>> {
-    fs::read_to_string(fixture.stage_path("lifecycle.jsonl"))?
-        .lines()
-        .map(|line| serde_json::from_str(line).context("lifecycle record"))
-        .collect()
-}
-
-fn only_outcome(report: &ReconcileReport) -> Result<&WorkerOutcome> {
-    assert_eq!(report.entries.len(), 1, "{report:?}");
-    Ok(&report.entries.first().context("one entry")?.outcome)
-}
-
-fn assert_nothing_written(fixture: &Fixture, authorization: &CodexAuthorization) {
-    assert!(!fixture.stage_path("lifecycle.jsonl").exists());
-    assert!(!has_correlated_lifecycle(&fixture.work_dir, authorization));
 }
 
 #[test]
@@ -360,7 +304,7 @@ fn direct_forward_conflicting_terminal_receipts_stay_unknown() -> Result<()> {
     let folded = loaded.receipts.first().context("folded receipt")?;
     assert_eq!(
         (folded.state, folded.exit_code),
-        (ForwardState::Unknown, Some(2))
+        (ForwardState::Unknown, None)
     );
 
     let report = run(&fixture, at(600))?;

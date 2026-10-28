@@ -15,6 +15,7 @@ mod jobs;
 mod ledger;
 mod progress;
 mod reconcile;
+mod reconcile_records;
 mod token_threads;
 
 pub use authorization::CodexAuthorization;

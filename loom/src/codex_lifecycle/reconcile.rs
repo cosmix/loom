@@ -7,17 +7,17 @@ use chrono::{DateTime, Utc};
 use crate::models::forward_receipt::is_safe_id;
 use crate::models::forward_receipt::job_record::CompanionJob;
 use crate::models::session::Session;
-use crate::subagent_lifecycle::store::{append_locked, codex_event_id};
 use crate::subagent_lifecycle::{
-    replay, AppendOutcome, CodexEvidence, CodexEvidenceKind, CodexExecution, LifecycleRecord,
-    LifecycleState, WorkerIdentity, WorkerOutcome, LIFECYCLE_VERSION,
+    replay, AppendOutcome, CodexEvidence, CodexEvidenceKind, CodexEvidenceOutcome, CodexExecution,
+    LifecycleRecord, LifecycleState, WorkerIdentity, WorkerOutcome,
 };
 
 use super::authorization::CodexAuthorization;
 use super::direct::{self, DirectOutcome, StageReceipts};
 use super::jobs::{classify_job, locate_job, outcome, JobObservation};
 use super::ledger::{read_authorization_rows, read_lifecycle_records, LedgerRow};
-use super::{codex_worker_identity, ReconcileEntry, ReconcileReport};
+use super::reconcile_records::append_records;
+use super::{ReconcileEntry, ReconcileReport};
 
 const MAX_ACTIVE_STAGES: usize = 64;
 const MAX_ACTIVE_SESSIONS: usize = 256;
@@ -274,83 +274,21 @@ fn record_appends(
     ));
 }
 
-fn append_records(
-    work_dir: &Path,
-    authorization: &CodexAuthorization,
-    execution: CodexExecution,
-    observation: &JobObservation,
-) -> Result<[AppendOutcome; 2]> {
-    let identity = codex_worker_identity(authorization, execution);
-    let authorized = lifecycle_record(
-        &identity,
-        authorization.authorized_at,
-        LifecycleState::Running,
-        direct::base_evidence(authorization, &identity),
-    )?;
-    let observed = observation_record(authorization, &identity, observation)?;
-    let authorization_outcome = append_locked(work_dir, &authorized)?;
-    let observation_outcome = append_locked(work_dir, &observed)?;
-    Ok([authorization_outcome, observation_outcome])
-}
-
-fn observation_record(
-    authorization: &CodexAuthorization,
-    identity: &WorkerIdentity,
-    observation: &JobObservation,
-) -> Result<LifecycleRecord> {
-    let observed_at = observation
-        .terminal_at
-        .unwrap_or(authorization.authorized_at);
-    let evidence = CodexEvidence {
-        evidence_kind: CodexEvidenceKind::Observation,
-        thread_id: observation.thread_id.clone(),
-        turn_id: observation.turn_id.clone(),
-        terminal_at: observation.terminal_at,
-        outcome: observation.outcome,
-        detail: observation.detail.clone(),
-        ..direct::base_evidence(authorization, identity)
-    };
-    lifecycle_record(identity, observed_at, observation.state, evidence)
-}
-
-fn lifecycle_record(
-    identity: &WorkerIdentity,
-    observed_at: DateTime<Utc>,
-    state: LifecycleState,
-    evidence: CodexEvidence,
-) -> Result<LifecycleRecord> {
-    let mut record = LifecycleRecord {
-        version: LIFECYCLE_VERSION,
-        event_id: String::new(),
-        producer: direct::producer_of(identity),
-        identity: identity.clone(),
-        observed_at,
-        state,
-        evidence: serde_json::to_value(&evidence)?,
-    };
-    record.event_id = codex_event_id(&record, &evidence)?;
-    Ok(record)
-}
-
 fn observation_outcome(observation: &JobObservation) -> WorkerOutcome {
+    let detail = |fallback: &str| {
+        observation
+            .detail
+            .clone()
+            .unwrap_or_else(|| fallback.into())
+    };
     match observation.outcome {
-        crate::subagent_lifecycle::CodexEvidenceOutcome::Running => WorkerOutcome::Active,
-        crate::subagent_lifecycle::CodexEvidenceOutcome::Succeeded => WorkerOutcome::Succeeded,
-        crate::subagent_lifecycle::CodexEvidenceOutcome::Failed => WorkerOutcome::Failed(
-            observation
-                .detail
-                .clone()
-                .unwrap_or_else(|| "Codex companion failed".into()),
-        ),
-        crate::subagent_lifecycle::CodexEvidenceOutcome::Cancelled => WorkerOutcome::Cancelled(
-            observation
-                .detail
-                .clone()
-                .unwrap_or_else(|| "Codex companion cancelled".into()),
-        ),
-        crate::subagent_lifecycle::CodexEvidenceOutcome::Unknown => {
-            WorkerOutcome::Unknown("unknown companion outcome".into())
+        CodexEvidenceOutcome::Running => WorkerOutcome::Active,
+        CodexEvidenceOutcome::Succeeded => WorkerOutcome::Succeeded,
+        CodexEvidenceOutcome::Failed => WorkerOutcome::Failed(detail("Codex companion failed")),
+        CodexEvidenceOutcome::Cancelled => {
+            WorkerOutcome::Cancelled(detail("Codex companion cancelled"))
         }
+        CodexEvidenceOutcome::Unknown => WorkerOutcome::Unknown(detail("unknown Codex outcome")),
     }
 }
 

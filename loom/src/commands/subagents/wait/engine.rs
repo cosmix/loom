@@ -1,7 +1,6 @@
-use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
-use crate::subagent_lifecycle::{CodexExecution, LifecycleState, WorkerIdentity, WorkerOutcome};
+use crate::subagent_lifecycle::WorkerOutcome;
 
 use super::lease::{deadline_state, BootClock, DeadlineState};
 use super::model::{BootDeadline, BoundWorker, TerminalOutcome, WaitIdentity, WorkerKind};
@@ -29,188 +28,13 @@ impl Sleeper for ThreadSleeper {
 pub trait EvidenceSource {
     /// Read and classify fresh evidence for `worker`.
     fn outcome(&self, worker: &BoundWorker) -> WorkerOutcome;
-}
 
-/// Filesystem-backed lifecycle evidence reader.
-pub struct LifecycleEvidence {
-    /// Loom work directory containing lifecycle journals.
-    pub work_dir: PathBuf,
-    /// How long a worker may make no observable progress before it counts as
-    /// hung. Only ever consulted for a worker the journal still calls active.
-    pub stall_budget: Duration,
-}
-
-impl EvidenceSource for LifecycleEvidence {
-    fn outcome(&self, worker: &BoundWorker) -> WorkerOutcome {
-        let outcome = match worker.worker.kind {
-            WorkerKind::Claude => self.claude_outcome(worker),
-            WorkerKind::Codex => self.codex_outcome(worker),
-        };
-        match outcome {
-            WorkerOutcome::Active => stall::detect(worker, &self.work_dir, self.stall_budget)
-                .unwrap_or(WorkerOutcome::Active),
-            outcome => outcome,
-        }
+    /// Whether an [`WorkerOutcome::Unknown`] for `worker` is final: its
+    /// lifecycle journal closed the execution as `unknown`, so no later poll
+    /// can change the answer. Missing or inconclusive evidence is not final.
+    fn unknown_settled(&self, _worker: &BoundWorker) -> bool {
+        false
     }
-}
-
-impl LifecycleEvidence {
-    fn claude_outcome(&self, worker: &BoundWorker) -> WorkerOutcome {
-        let index = match crate::subagent_lifecycle::replay(&self.work_dir) {
-            Ok(index) => index,
-            Err(error) => return replay_error(error),
-        };
-        match &worker.lifecycle_identity {
-            WorkerIdentity::ClaudeSubagent {
-                stage_id,
-                loom_session_id,
-                parent_session_id,
-                agent_id,
-                transcript_path,
-                ..
-            } => {
-                let outcome = index.claude_outcome(
-                    stage_id,
-                    loom_session_id,
-                    parent_session_id,
-                    agent_id,
-                    transcript_path,
-                );
-                if matches!(
-                    &outcome,
-                    WorkerOutcome::Unknown(reason) if reason == "no matching lifecycle evidence"
-                ) && missing_or_idle_claude_evidence(
-                    &self.work_dir,
-                    &index,
-                    &worker.lifecycle_identity,
-                ) {
-                    WorkerOutcome::Active
-                } else {
-                    outcome
-                }
-            }
-            WorkerIdentity::ClaudeTeammate { .. } => index.outcome(&worker.lifecycle_identity),
-            WorkerIdentity::Codex { .. } => {
-                WorkerOutcome::Unknown("Claude worker has a Codex lifecycle identity".into())
-            }
-        }
-    }
-
-    fn codex_outcome(&self, worker: &BoundWorker) -> WorkerOutcome {
-        let Some(authority) = &worker.authority else {
-            return WorkerOutcome::Unknown("missing Codex authority".into());
-        };
-        let index = match crate::subagent_lifecycle::replay(&self.work_dir) {
-            Ok(index) => index,
-            Err(error) => return replay_error(error),
-        };
-        match &worker.lifecycle_identity {
-            WorkerIdentity::Codex {
-                execution: CodexExecution::Companion { .. },
-                ..
-            } => {
-                let journal = index.outcome(&worker.lifecycle_identity);
-                if terminal_outcome(&journal)
-                    || has_exact_terminal_record(&self.work_dir, &worker.lifecycle_identity)
-                {
-                    journal
-                } else {
-                    crate::codex_lifecycle::companion_outcome_with_progress(
-                        &self.work_dir,
-                        &authority.authorization(),
-                        self.stall_budget,
-                        SystemTime::now(),
-                    )
-                }
-            }
-            WorkerIdentity::Codex {
-                execution: CodexExecution::Direct { .. },
-                ..
-            } => index.outcome(&worker.lifecycle_identity),
-            _ => WorkerOutcome::Unknown("Codex worker has a non-Codex lifecycle identity".into()),
-        }
-    }
-}
-
-fn missing_or_idle_claude_evidence(
-    work_dir: &std::path::Path,
-    index: &crate::subagent_lifecycle::LifecycleIndex,
-    expected: &WorkerIdentity,
-) -> bool {
-    let WorkerIdentity::ClaudeSubagent {
-        stage_id,
-        loom_session_id,
-        parent_session_id,
-        agent_id,
-        ..
-    } = expected
-    else {
-        return false;
-    };
-    let records = match lifecycle_records(work_dir, stage_id) {
-        Ok(records) => records,
-        Err(error) => return error.kind() == std::io::ErrorKind::NotFound,
-    };
-    records.iter().all(|record| match &record.identity {
-        WorkerIdentity::ClaudeSubagent { agent_id: seen, .. } => seen != agent_id,
-        WorkerIdentity::ClaudeTeammate {
-            stage_id: stage,
-            loom_session_id: loom,
-            parent_session_id: parent,
-            teammate_name,
-            ..
-        } if teammate_name == agent_id => {
-            stage == stage_id
-                && loom == loom_session_id
-                && parent == parent_session_id
-                && index.outcome(&record.identity) == WorkerOutcome::Active
-        }
-        _ => true,
-    })
-}
-
-fn has_exact_terminal_record(work_dir: &std::path::Path, expected: &WorkerIdentity) -> bool {
-    let records = match lifecycle_records(work_dir, expected.stage_id()) {
-        Ok(records) => records,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return false,
-        Err(_) => return true,
-    };
-    records.iter().any(|record| {
-        &record.identity == expected
-            && matches!(
-                record.state,
-                LifecycleState::Completed
-                    | LifecycleState::Failed
-                    | LifecycleState::Cancelled
-                    | LifecycleState::Unknown
-            )
-    })
-}
-
-fn lifecycle_records(
-    work_dir: &std::path::Path,
-    stage_id: &str,
-) -> std::io::Result<Vec<crate::subagent_lifecycle::LifecycleRecord>> {
-    let path = work_dir
-        .join("subagents")
-        .join(stage_id)
-        .join("lifecycle.jsonl");
-    crate::codex_lifecycle::read_lifecycle_records(&path).map_err(|error| {
-        error
-            .downcast::<std::io::Error>()
-            .unwrap_or_else(|error| std::io::Error::other(error.to_string()))
-    })
-}
-
-fn terminal_outcome(outcome: &WorkerOutcome) -> bool {
-    matches!(
-        outcome,
-        WorkerOutcome::Succeeded | WorkerOutcome::Failed(_) | WorkerOutcome::Cancelled(_)
-    )
-}
-
-fn replay_error(error: anyhow::Error) -> WorkerOutcome {
-    WorkerOutcome::Unknown(format!("lifecycle replay failed: {error}"))
 }
 
 /// Terminal result returned by the bounded wait engine.
@@ -240,7 +64,15 @@ pub fn wait_for_workers(
             .iter()
             .map(|worker| evidence.outcome(worker))
             .collect();
-        if let Some(result) = terminal_evidence(identity, &outcomes, polls) {
+        let settled: Vec<bool> = identity
+            .workers
+            .iter()
+            .zip(&outcomes)
+            .map(|(worker, outcome)| {
+                matches!(outcome, WorkerOutcome::Unknown(_)) && evidence.unknown_settled(worker)
+            })
+            .collect();
+        if let Some(result) = terminal_evidence(identity, &outcomes, &settled, polls) {
             return result;
         }
         match deadline_state(deadline, clock) {
@@ -267,37 +99,50 @@ pub fn wait_for_workers(
     }
 }
 
+/// The first worker whose outcome `pick` accepts, with the reason it carries.
+fn first_outcome<'a>(
+    outcomes: &'a [WorkerOutcome],
+    pick: impl Fn(usize, &'a WorkerOutcome) -> Option<&'a String>,
+) -> Option<(usize, &'a String)> {
+    outcomes
+        .iter()
+        .enumerate()
+        .find_map(|(index, outcome)| pick(index, outcome).map(|reason| (index, reason)))
+}
+
+/// `settled[i]` says worker `i`'s `Unknown` outcome is final (see
+/// [`EvidenceSource::unknown_settled`]); it ends the wait like a terminal
+/// verdict, after any failure or cancellation. An unsettled `Unknown` holds
+/// the wait until the deadline.
 fn terminal_evidence(
     identity: &WaitIdentity,
     outcomes: &[WorkerOutcome],
+    settled: &[bool],
     polls: u64,
 ) -> Option<EngineResult> {
-    if let Some((index, reason)) =
-        outcomes
-            .iter()
-            .enumerate()
-            .find_map(|(index, outcome)| match outcome {
-                WorkerOutcome::Failed(reason) => Some((index, reason)),
-                _ => None,
-            })
-    {
-        let detail = format!("{} failed: {reason}", worker_name(&identity.workers[index]));
+    let name = |index: usize| worker_name(&identity.workers[index]);
+    if let Some((index, reason)) = first_outcome(outcomes, |_, outcome| match outcome {
+        WorkerOutcome::Failed(reason) => Some(reason),
+        _ => None,
+    }) {
+        let detail = format!("{} failed: {reason}", name(index));
         return Some(result(TerminalOutcome::Failed, detail, polls));
     }
-    if let Some((index, reason)) =
-        outcomes
-            .iter()
-            .enumerate()
-            .find_map(|(index, outcome)| match outcome {
-                WorkerOutcome::Cancelled(reason) => Some((index, reason)),
-                _ => None,
-            })
-    {
-        let detail = format!(
-            "{} cancelled: {reason}",
-            worker_name(&identity.workers[index])
-        );
+    if let Some((index, reason)) = first_outcome(outcomes, |_, outcome| match outcome {
+        WorkerOutcome::Cancelled(reason) => Some(reason),
+        _ => None,
+    }) {
+        let detail = format!("{} cancelled: {reason}", name(index));
         return Some(result(TerminalOutcome::Cancelled, detail, polls));
+    }
+    if let Some((index, reason)) = first_outcome(outcomes, |index, outcome| match outcome {
+        WorkerOutcome::Unknown(reason) if settled.get(index).copied().unwrap_or(false) => {
+            Some(reason)
+        }
+        _ => None,
+    }) {
+        let detail = format!("{} unknown: {reason}", name(index));
+        return Some(result(TerminalOutcome::Unknown, detail, polls));
     }
     if let Some(detail) = stall::stalled_detail(identity, outcomes) {
         return Some(result(TerminalOutcome::Stalled, detail, polls));

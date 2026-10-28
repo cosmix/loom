@@ -122,11 +122,11 @@ parse_supervisor_result() {
 		select($rows | length == 1) |
 		($rows[0] | ltrimstr("LOOM-CODEX-DIRECT-RESULT ") | fromjson?) as $r |
 		select($r != null and ($r | type == "object") and
-		 ($r | keys | sort) == (["exit_code","ownership_retained","state","terminal_at","thread_id","turn_id","v"] | sort) and
+		 ($r | keys | sort) == (["announced_thread_id","exit_code","ownership_retained","state","terminal_at","thread_id","turn_id","v"] | sort) and
 		 $r.v == 1 and ($r.state | IN("succeeded","failed","cancelled","unknown")) and
 		 ($r.thread_id | type == "string") and ($r.turn_id == null or ($r.turn_id | type == "string")) and
 		 ($r.terminal_at | type == "string") and ($r.exit_code | type == "number" and floor == .) and
-		 ($r.ownership_retained | type == "boolean")) |
+		 ($r.ownership_retained | type == "boolean") and $r.announced_thread_id == $r.thread_id) |
 		[$r.state,$r.thread_id,($r.turn_id // "-"),$r.terminal_at,($r.exit_code|tostring),
 		 ($r.ownership_retained|tostring)] | @tsv' 2>/dev/null) || return 1
 	IFS=$'\t' read -r STATE THREAD_ID TURN_ID TERMINAL_AT RESULT_STATUS RETAINED <<<"$fields"
@@ -134,7 +134,7 @@ parse_supervisor_result() {
 	if [[ "$TURN_ID" == - ]]; then TURN_ID=; else loom_lifecycle_safe_id "$TURN_ID" || return 1; fi
 	[[ "$TERMINAL_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$ ]] || return 1
 	case "$STATE:$RESULT_STATUS:$RETAINED" in
-	succeeded:0:false | cancelled:124:false | unknown:125:true) ;;
+	succeeded:0:false | cancelled:124:false | unknown:125:true | unknown:125:false) ;;
 	failed:*:false) ((RESULT_STATUS > 0 && RESULT_STATUS < 126)) || return 1 ;;
 	*) return 1 ;;
 	esac
@@ -214,7 +214,10 @@ append_records() {
 	succeeded) lifecycle_state=completed; outcome=succeeded ;;
 	failed) lifecycle_state=failed; outcome=failed ;;
 	cancelled) lifecycle_state=cancelled; outcome=cancelled ;;
-	unknown) lifecycle_state=unknown; outcome=unknown; detail='ownership retained' ;;
+	unknown)
+		lifecycle_state=unknown; outcome=unknown; detail='incomplete event stream'
+		[[ "$RETAINED" == true ]] && detail='ownership retained'
+		;;
 	*) return 1 ;;
 	esac
 	terminal_hash=${TERMINAL_AT%Z}+00:00

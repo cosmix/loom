@@ -53,6 +53,60 @@ fn wait_active_receipt_exits_two_at_deadline() {
     );
 }
 
+/// A direct receipt that folded to `Unknown` returns at once with exit 2;
+/// only a receipt that does not exist yet keeps the wait polling.
+#[test]
+fn wait_unknown_direct_receipt_returns_before_deadline() {
+    let fixture = WaitFixture::new("running", None);
+    fixture.write_direct_receipts(&[ForwardState::Running, ForwardState::Unknown]);
+    let started = std::time::Instant::now();
+    let output = wait_until_with_roots(
+        &fixture.work,
+        Some("stage-a"),
+        &fixture.id,
+        30,
+        std::slice::from_ref(&fixture.state),
+    );
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert_eq!(
+        (output.state, wait_exit_code(output.state)),
+        (ForwardState::Unknown, 2)
+    );
+
+    let started = std::time::Instant::now();
+    let missing = wait_until_with_roots(
+        &fixture.work,
+        Some("stage-a"),
+        &"b".repeat(64),
+        1,
+        std::slice::from_ref(&fixture.state),
+    );
+    assert!(started.elapsed() >= Duration::from_secs(1));
+    assert_eq!(missing.state, ForwardState::Unknown);
+}
+
+/// A companion receipt's printed state comes from its live job record, so a
+/// companion receipt that folded to `Unknown` (here: two observations that
+/// disagree on the thread) keeps polling while the job runs.
+#[test]
+fn wait_unknown_companion_receipt_polls_live_job_until_deadline() {
+    let fixture = WaitFixture::new("running", None);
+    fixture.append_companion_observation(ForwardState::Running, "thread-a");
+    fixture.append_companion_observation(ForwardState::Running, "thread-b");
+    assert_eq!(fixture.folded_state(), ForwardState::Unknown);
+    let started = std::time::Instant::now();
+    let output = wait_until_with_roots(
+        &fixture.work,
+        Some("stage-a"),
+        &fixture.id,
+        1,
+        std::slice::from_ref(&fixture.state),
+    );
+    assert!(started.elapsed() >= Duration::from_secs(1));
+    assert_eq!(output.state, ForwardState::Running);
+    assert!(!output.settled);
+}
+
 #[test]
 fn public_wait_rejects_noncanonical_receipt_id() {
     let error = wait("ABCDEF".into(), 0, false).unwrap_err();
@@ -93,6 +147,7 @@ fn wait_output_contains_only_receipt_backend_and_state() {
         receipt_id: "a".repeat(64),
         backend_id: Some("job-a".into()),
         state: ForwardState::Running,
+        settled: false,
     };
 
     assert_eq!(
@@ -161,6 +216,59 @@ impl WaitFixture {
             state,
             id,
         }
+    }
+
+    /// Append a later observation of the fixture's companion receipt that
+    /// names `thread_id` as the Codex thread.
+    fn append_companion_observation(&self, state: ForwardState, thread_id: &str) {
+        let path = receipts_path(&self.work, "stage-a").unwrap();
+        let journal = fs::read_to_string(&path).unwrap();
+        let first = journal.lines().next().unwrap();
+        let mut observation = ForwardObservation::decode_line(first).unwrap();
+        observation.state = state;
+        observation.codex_thread_id = Some(thread_id.into());
+        let line = observation.encode_line().unwrap();
+        fs::write(&path, format!("{journal}{line}\n")).unwrap();
+    }
+
+    /// The folded state of the fixture's receipt in its stage journal.
+    fn folded_state(&self) -> ForwardState {
+        let loaded = load_receipts(&receipts_path(&self.work, "stage-a").unwrap()).unwrap();
+        loaded
+            .receipts
+            .iter()
+            .find(|receipt| receipt.receipt_id == self.id)
+            .unwrap()
+            .state
+    }
+
+    /// Replace the stage journal with direct observations for the fixture id.
+    fn write_direct_receipts(&self, states: &[ForwardState]) {
+        let lines: String = states
+            .iter()
+            .map(|state| {
+                let observation = ForwardObservation {
+                    schema: 1,
+                    receipt_id: self.id.clone(),
+                    parent_session_id: "parent-a".into(),
+                    agent_id: "agent-a".into(),
+                    tool_use_id: "tool-a".into(),
+                    stage_id: "stage-a".into(),
+                    loom_session_id: "loom-a".into(),
+                    backend: ForwardBackend::Direct,
+                    backend_id: "thread-a".into(),
+                    state: *state,
+                    observed_at: chrono::Utc::now(),
+                    exit_code: None,
+                    codex_thread_id: Some("thread-a".into()),
+                    locator: None,
+                    model: None,
+                    effort: None,
+                };
+                format!("{}\n", observation.encode_line().unwrap())
+            })
+            .collect();
+        fs::write(receipts_path(&self.work, "stage-a").unwrap(), lines).unwrap();
     }
 
     fn write_unrelated_receipt(&self) {

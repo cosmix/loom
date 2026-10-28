@@ -8,7 +8,7 @@ use crate::models::forward_receipt::marker::MarkerChannel;
 use crate::models::forward_receipt::transcript::{
     self as transcript_reader, ForwardingResult, Transcript,
 };
-use crate::models::forward_receipt::{ForwardIdentity, ForwardState};
+use crate::models::forward_receipt::{ForwardBackend, ForwardIdentity, ForwardState};
 
 use super::{classify, forward_jobs::ForwardIndex};
 
@@ -116,6 +116,11 @@ impl ForwardTranscript {
 
 fn marker_state(channel: MarkerChannel) -> Option<ForwardState> {
     match channel {
+        // A direct separator without END is a fail-closed exit after START,
+        // matching the receipt hook's terminal_evidence.
+        MarkerChannel::Started(start) if start.backend == ForwardBackend::Direct => {
+            Some(ForwardState::Unknown)
+        }
         MarkerChannel::Streaming(_) | MarkerChannel::Started(_) => Some(ForwardState::Running),
         MarkerChannel::Finished(_, end) => Some(end.outcome),
         MarkerChannel::Absent | MarkerChannel::Invalid(_) => None,

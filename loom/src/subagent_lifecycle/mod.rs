@@ -69,6 +69,7 @@
 //! terminal RFC3339 (or empty), and bounded outcome. Use
 //! `store::codex_event_id`; replay recomputes it.
 
+mod append;
 pub mod claude;
 mod claude_event;
 mod claude_files;
@@ -90,5 +91,7 @@ pub use store::{replay, AppendOutcome, LifecycleIndex};
 // `commands::hook::review_harvest` checks a transcript path the same way.
 pub(crate) use claude_files::reject_symlink_components;
 
+#[cfg(test)]
+mod store_append_tests;
 #[cfg(test)]
 mod tests;

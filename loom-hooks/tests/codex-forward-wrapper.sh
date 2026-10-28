@@ -126,6 +126,16 @@ assert_line() {
 	}
 }
 
+# Require rg to report no match (exit 1); a read error (exit 2) fails too.
+assert_absent() {
+	local status=0
+	rg -q "$@" || status=$?
+	[[ $status -eq 1 ]] || {
+		printf '%s\n' "FAIL: rg $* exited $status, expected 1 (no match)"
+		exit 1
+	}
+}
+
 assert_terminal() {
 	local scenario="$1" marker_outcome="$2" evidence_state="$3" exit_code="$4"
 	local stdout="$d/${scenario}.stdout" stderr="$d/${scenario}.stderr"
@@ -203,7 +213,7 @@ run_companion wait-fail "$OUT" "$ERR"
 [[ $RUN_STATUS -eq 7 && ! -s "$ERR" ]]
 assert_line "$OUT" 1 "$START"
 assert_line "$OUT" 2 "$SEPARATOR"
-! rg -q '^LOOM-FORWARD-END ' "$OUT"
+assert_absent '^LOOM-FORWARD-END ' "$OUT"
 rg -qF 'simulated wait failure' "$OUT"
 rg -qFx 'state: unknown' "$OUT"
 
@@ -216,7 +226,7 @@ OUT="$d/unsupported.stdout"
 ERR="$d/unsupported.stderr"
 run_companion completed "$OUT" "$ERR" "$UNSUPPORTED_HOME"
 [[ $RUN_STATUS -eq 1 && ! -e "$NODE_CALLED" ]]
-! rg -q '^LOOM-FORWARD-START ' "$OUT"
+assert_absent '^LOOM-FORWARD-START ' "$OUT"
 rg -qF 'Supported codex companion 1.0.6 is missing or unsafe' "$OUT"
 
 UNWRITABLE_HOME="$d/unwritable-home"
@@ -229,7 +239,7 @@ OUT="$d/unwritable.stdout"
 ERR="$d/unwritable.stderr"
 run_companion completed "$OUT" "$ERR" "$UNWRITABLE_HOME"
 [[ $RUN_STATUS -eq 1 && ! -e "$NODE_CALLED" ]]
-! rg -q '^LOOM-FORWARD-START ' "$OUT"
+assert_absent '^LOOM-FORWARD-START ' "$OUT"
 rg -qF 'canonical plugin data state root is not writable' "$OUT"
 
 # Direct exec schema: Codex 0.162.1, commit 092d3acd6bec3e3a14bdc7e7a2810ab628ab759d.

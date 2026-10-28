@@ -138,6 +138,31 @@ fn rejects_invalid_marker_json_and_schema() {
 }
 
 #[test]
+fn decodes_the_direct_unknown_verdict() {
+    let unknown_end = r#"LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"thread-1","outcome":"unknown","exit_code":125}"#;
+    let text = format!("{DIRECT_START}\n{unknown_end}\n{SEPARATOR}");
+    assert!(matches!(
+        decode_marker_channel(&text),
+        MarkerChannel::Finished(
+            _,
+            EndMarker {
+                outcome: ForwardState::Unknown,
+                exit_code: 125,
+                ..
+            }
+        )
+    ));
+
+    // Only the direct wrapper reports `unknown`; a companion END never does.
+    let companion_unknown = r#"LOOM-FORWARD-END {"v":1,"backend":"companion","job_id":"job-1","outcome":"unknown","exit_code":125}"#;
+    let text = format!("{COMPANION_START}\n{companion_unknown}\n{SEPARATOR}");
+    assert_eq!(
+        decode_marker_channel(&text),
+        MarkerChannel::Invalid("invalid end marker")
+    );
+}
+
+#[test]
 fn incomplete_prefix_remains_streaming() {
     assert!(matches!(
         decode_marker_channel(COMPANION_START),
