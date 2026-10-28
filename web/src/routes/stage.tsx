@@ -6,7 +6,8 @@ import type { StageSummary } from "@/api/schema";
 import { EmptyState } from "@/aurora-ui/feedback/EmptyState";
 
 import { CopyCommand } from "@/components/copy-command";
-import { StageHeading, ThreadChips } from "@/components/stage-heading";
+import { StageHeading } from "@/components/stage-heading";
+import { ThreadChips } from "@/components/stage-thread";
 import { stageHref } from "@/components/stage-href";
 import { StageReport } from "@/components/stage-report";
 import { TerminalMark, terminalGate, terminalHistory } from "@/components/terminal/terminal-glyph";
