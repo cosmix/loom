@@ -14,7 +14,7 @@ mod tests;
 mod tests_table {
     use super::{
         Asset, AGENTS_MD_TEMPLATE, CLAUDE_AGENTS, CLAUDE_COMMANDS, CLAUDE_MD_TEMPLATE,
-        CODEX_SKILLS, SKILLS,
+        CODEX_SKILLS, PLAN_PLUGIN, SKILLS,
     };
 
     // Codex loads ~/.codex/AGENTS.md into every session and truncates a project
@@ -55,6 +55,38 @@ mod tests_table {
     }
 
     #[test]
+    fn plan_plugin_includes_required_files() {
+        for key in [
+            ".claude-plugin/plugin.json",
+            "skills/brainstorming/SKILL.md",
+            "skills/vision/SKILL.md",
+            "skills/section/SKILL.md",
+            "skills/metaplan/SKILL.md",
+            "skills/plan/SKILL.md",
+            "skills/refine/SKILL.md",
+            "skills/retro/SKILL.md",
+            "skills/knowledge/SKILL.md",
+            "skills/summaries/SKILL.md",
+            "agents/summary.md",
+            "agents/overview.md",
+        ] {
+            assert!(has_key(PLAN_PLUGIN, key), "PLAN_PLUGIN is missing {key}");
+        }
+    }
+
+    #[test]
+    fn plan_plugin_manifest_has_expected_name() {
+        let (_, contents) = PLAN_PLUGIN
+            .iter()
+            .find(|(key, _)| *key == ".claude-plugin/plugin.json")
+            .expect("PLAN_PLUGIN must include its plugin manifest");
+        let manifest: serde_json::Value =
+            serde_json::from_str(contents).expect("plan plugin manifest must be valid JSON");
+
+        assert_eq!(manifest["name"], "loom-plan");
+    }
+
+    #[test]
     fn asset_keys_are_clean_sorted_and_unique() {
         for (name, assets) in groups() {
             assert_clean_keys(name, assets);
@@ -82,12 +114,13 @@ mod tests_table {
         );
     }
 
-    fn groups() -> [(&'static str, &'static [Asset]); 4] {
+    fn groups() -> [(&'static str, &'static [Asset]); 5] {
         [
             ("CLAUDE_AGENTS", CLAUDE_AGENTS),
             ("CLAUDE_COMMANDS", CLAUDE_COMMANDS),
             ("SKILLS", SKILLS),
             ("CODEX_SKILLS", CODEX_SKILLS),
+            ("PLAN_PLUGIN", PLAN_PLUGIN),
         ]
     }
 

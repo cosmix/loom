@@ -20,6 +20,7 @@
 pub mod briefs;
 pub mod checklist;
 pub mod discover;
+pub mod guidance;
 pub mod implements;
 pub mod kinds;
 pub mod metaplan;
