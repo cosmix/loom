@@ -1,6 +1,6 @@
 # Runtime And Session Safety
 
-> Orphans, tmux
+>
 
 ## `evaluate_new_session` Fails a Working Spawn on a Benign `~/.tmux.conf` Warning
 
