@@ -83,7 +83,7 @@ cases:
 
   # --- Failure shape 2: a filesystem path extracts prose-collision terms --
   - name: filesystem-path-write-home-collision
-    query: "write the recommendation in /home/dkaponis/src/loom/doc"
+    query: "write the recommendation in /home/username/src/loom/doc"
     forbid:
       - "loom/tests/integration/plan_verify.rs#constant:LOOM"
       - "loom/src/orchestrator/scheduling_report.rs#function:write"
@@ -152,6 +152,9 @@ cases:
     relevant:
       - "architecture/source-graph.md#the-honesty-contract#0"
 
+  # The section moved to the context-retrieval-state topic when
+  # context-retrieval.md was split; the new id was observed at rank 1 on
+  # 2026-09-30.
   - name: genuine-win-delivery-epoch-suppression
     query: "Delivery Records and Epoch Suppression"
     expect:
