@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 68 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 169 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 172 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 125 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 237 |
 
@@ -108,7 +108,7 @@
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute rules | 119 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, build | 235 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance | 139 |
-| [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 123 |
+| [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 131 |
 | [plan-web](conventions/plan-web.md) | Plan web | 34 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard CSS | 51 |
@@ -142,6 +142,7 @@
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Ledger TUI | 84 |
 | [live-state-pollution](mistakes/live-state-pollution.md) | Pollution | 123 |
+| [maintainability-baseline](mistakes/maintainability-baseline.md) | cargo test stops early; maintainability baseline | 10 |
 | [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay leaks | 37 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | Cleanup bug | 171 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Operator git | 70 |

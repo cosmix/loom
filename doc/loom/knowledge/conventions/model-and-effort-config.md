@@ -42,6 +42,14 @@ overriding a model the caller passes. They resolve project -> user -> built-in p
 `fs::work_dir::resolve_code_reviewer_model_effort`, which the hidden `loom hook reviewer-model`
 prints as `model=<m> effort=<e>` (non-zero exit on a config parse error).
 
+`models.contract_writer_model` opus / `models.contract_writer_effort` high set the contract
+writer session (`SessionType::Contract`), independently of the stage type it writes for: a weak
+contract turns into disputes, adjudication and delay, so it does not inherit a cheaper
+orchestrator model. They resolve project -> user -> built-in per key through
+`fs::work_dir::resolve_contract_writer_model_effort`, called from
+`terminal/native/launch.rs::model_and_effort`; a plan stage's `model` / `reasoning_effort`
+fields never reach it. A malformed project section falls through, as for stage sessions.
+
 ## KEY-Level vs SECTION-Level Fallback
 
 All five project-backed sections (`[pressure]`, `[models]`, `[terminal]`, `[context]` and `[planning]`) resolve **per key**: a project section that omits a key lets that key fall through to the user config, then the built-in. A keyless section changes nothing (`fs/work_dir/config_sections.rs::remove_key` drops a section once its last key goes). The runtime readers are `read_context_config`, `read_terminal_config` and `read_plan_config` in `fs/work_dir/`, and the web `/api/config` resolves through the same predicate.
