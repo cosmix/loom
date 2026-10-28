@@ -180,7 +180,7 @@
 | [verification-harness](mistakes/verification-harness.md) | Harness | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | v2 misses | 396 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | Visibility | 141 |
-| [web-dashboard](mistakes/web-dashboard.md) | Dashboard UI | 18 |
+| [web-dashboard](mistakes/web-dashboard.md) | Dashboard UI | 17 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Server races | 278 |
 | [web-terminal](mistakes/web-terminal.md) | Bridge | 135 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Ignored keys | 105 |
