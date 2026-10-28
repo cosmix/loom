@@ -113,7 +113,7 @@ impl Session {
             "UserPromptSubmit" => self.on_prompt(at, text(&event.payload, "prompt"), step),
             "PermissionRequest" => self.on_request(event, config, step),
             "Notification" if wins && is_idle_prompt(&event.payload) => self.on_idle(false, step),
-            "Stop" if wins => self.on_idle(true, step),
+            "Stop" | "StopFailure" if wins => self.on_idle(true, step),
             "SubagentStart" => {
                 if let Some(agent) = text(&event.payload, "agent_id") {
                     self.flow.agents.entry(agent.to_owned()).or_default();
@@ -165,7 +165,7 @@ impl Session {
         }
     }
 
-    /// A Stop, an idle prompt or an interrupt record that won: the turn is over.
+    /// A Stop or StopFailure, an idle prompt or an interrupt record that won: the turn is over.
     fn on_idle(&mut self, stop: bool, step: &mut Step) {
         self.end_turn(step);
         self.flow.paused = false;

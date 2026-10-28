@@ -183,7 +183,8 @@ impl StateMachine {
             "Notification" if is_idle_prompt(payload) => {
                 self.idle(at);
             }
-            "Stop" => {
+            // Claude Code ends a turn whose API call failed with StopFailure, never Stop.
+            "Stop" | "StopFailure" => {
                 if self.idle(at) {
                     self.pending.clear();
                 }

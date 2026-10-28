@@ -37,6 +37,18 @@ fn a_summary_session_stays_open_at_a_stop_while_a_subagent_runs() {
 }
 
 #[test]
+fn a_summary_session_ends_at_a_stop_failure() {
+    let h = Harness::ready(|_| {});
+    let s = h.start(Summary);
+    h.spool(&s, "SessionStart", json!({"source": "startup"}));
+    wait_until("the opening", || h.host.delivered(&s.socket) == [OPENING]);
+    h.spool(&s, "UserPromptSubmit", json!({"prompt": OPENING}));
+    h.spool(&s, "StopFailure", json!({"error": "server_error"}));
+    wait_until("the end", || h.ended(&s.id) == Some(EndOutcome::Closed));
+    assert_eq!(h.host.count(&Call::Teardown(s.socket.clone())), 1);
+}
+
+#[test]
 fn abort_waits_for_a_launch_in_flight_and_tears_it_down() {
     let h = Harness::ready(|_| {});
     h.host.hold_spawn(true);

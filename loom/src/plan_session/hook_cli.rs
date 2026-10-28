@@ -18,8 +18,8 @@ pub fn run(event: &str, session_dir: &Path, stdin: impl Read, mut stdout: impl W
             }
         }
         "PermissionRequest" => super::permission::run_hook(session_dir, stdin, stdout),
-        "SessionStart" | "UserPromptSubmit" | "Notification" | "Stop" | "SubagentStart"
-        | "SubagentStop" | "PreCompact" | "SessionEnd" => {
+        "SessionStart" | "UserPromptSubmit" | "Notification" | "Stop" | "StopFailure"
+        | "SubagentStart" | "SubagentStop" | "PreCompact" | "SessionEnd" => {
             // A spool event prints nothing whatever happens: the bridge reads the spool, and a
             // panic is no reason to fail Claude Code's hook.
             let _ = catch_unwind(AssertUnwindSafe(|| spool(event, session_dir, stdin)));
@@ -48,11 +48,12 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    const SPOOL: [&str; 8] = [
+    const SPOOL: [&str; 9] = [
         "SessionStart",
         "UserPromptSubmit",
         "Notification",
         "Stop",
+        "StopFailure",
         "SubagentStart",
         "SubagentStop",
         "PreCompact",

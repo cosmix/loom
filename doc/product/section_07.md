@@ -150,6 +150,7 @@ and the hook payload's `session_id`, `transcript_path`, and the event-specific f
 | `PermissionRequest` | A permission decision is needed (below)                                    |
 | `Notification`      | `idle_prompt` backs up the idle state; other types are logged only         |
 | `Stop`              | The main agent's turn ended                                                |
+| `StopFailure`       | The main agent's turn ended on an API error; handled as `Stop`             |
 | `SubagentStart`     | A subagent started (count of running subagents)                            |
 | `SubagentStop`      | A subagent ended; never changes the session's own state                    |
 | `PreCompact`        | Compaction started; shown as a notice                                      |
@@ -213,17 +214,17 @@ working.
 ## Session state
 
 A **turn** runs from the `UserPromptSubmit` of a delivered message (or of the opening message) to
-the next main-agent `Stop`.
+the next main-agent `Stop` or `StopFailure`.
 
-| State         | Entered on                                                                   |
-| ------------- | ---------------------------------------------------------------------------- |
-| Starting      | Spawn                                                                        |
-| Idle          | `SessionStart` (startup), main-agent `Stop`, interrupt record, `idle_prompt` |
-| Working       | `UserPromptSubmit`; a transcript record newer than the last idle event        |
-| Permission    | `PermissionRequest`, until the server answers it                             |
-| Ending        | The server asked for the final write                                         |
-| Ended         | `SessionEnd`, or the process identity check finds the process gone          |
-| Failed        | The spawn failed, or the process died outside Ending                         |
+| State         | Entered on                                                                                    |
+| ------------- | --------------------------------------------------------------------------------------------- |
+| Starting      | Spawn                                                                                         |
+| Idle          | `SessionStart` (startup), main-agent `Stop` or `StopFailure`, interrupt record, `idle_prompt` |
+| Working       | `UserPromptSubmit`; a transcript record newer than the last idle event                        |
+| Permission    | `PermissionRequest`, until the server answers it                                              |
+| Ending        | The server asked for the final write                                                          |
+| Ended         | `SessionEnd`, or the process identity check finds the process gone                            |
+| Failed        | The spawn failed, or the process died outside Ending                                          |
 
 Two rules keep the state honest. A hook event never moves the state alone if the transcript
 contradicts it: an assistant or tool record written after the last `Stop` means the session is

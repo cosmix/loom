@@ -275,7 +275,7 @@ fn missing_and_symlinked_spools_are_not_read_or_written() {
 }
 
 #[test]
-fn hook_registrations_cover_all_nine_events() {
+fn hook_registrations_cover_every_spool_event() {
     assert_eq!(
         SPOOL_EVENTS.map(|hook| hook.event),
         [
@@ -284,6 +284,7 @@ fn hook_registrations_cover_all_nine_events() {
             "PermissionRequest",
             "Notification",
             "Stop",
+            "StopFailure",
             "SubagentStart",
             "SubagentStop",
             "PreCompact",
