@@ -1,0 +1,23 @@
+[
+  {
+    "kind": "suggestion",
+    "id": "sg-1",
+    "from": "Ada",
+    "passage": {
+      "path": "doc/product/section_10.md",
+      "anchor": "suggestions-and-restores",
+      "text": "A viewer can send a passage to the authoring holder.",
+      "lines": [24, 24],
+      "stage": null,
+      "summary_sentence": null
+    },
+    "note": "Clarify what happens when the holder is away."
+  },
+  {
+    "kind": "suggestion_status",
+    "id": "sg-1",
+    "state": "sent",
+    "holder": "Alex",
+    "away": true
+  }
+]

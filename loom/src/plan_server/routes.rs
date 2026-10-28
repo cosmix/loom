@@ -67,6 +67,7 @@ pub fn all_routes() -> Vec<RouteSpec> {
     routes.extend(super::search::routes());
     routes.extend(super::concept::routes());
     routes.extend(super::guidance::routes());
+    routes.extend(super::review::routes());
     routes
 }
 
@@ -81,6 +82,7 @@ pub fn install_all(ctx: &Arc<PlanContext>) {
     super::concept::install(ctx);
     crate::plan_server::chat::install(ctx);
     super::guidance::install(ctx);
+    super::review::install(ctx);
 }
 
 /// The outcome of looking a request up in the route table.

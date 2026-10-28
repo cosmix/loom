@@ -44,6 +44,8 @@ pub enum PlanMessage {
     ConceptChanged(ConceptChanged),
     /// A chat snapshot, delta, command result or returned queue.
     Chat(Box<crate::plan_server::wire::chat::ChatFrame>),
+    /// A review suggestion, status, open-question count or refusal.
+    Review(crate::plan_server::wire::review::ReviewMessage),
 }
 
 impl PlanMessage {
@@ -62,6 +64,8 @@ pub enum ClientMessage {
     Reading { path: Option<String> },
     /// A chat command.
     Chat(crate::plan_server::wire::chat::ChatCommand),
+    /// A review suggestion or answer.
+    Review(crate::plan_server::wire::review::ReviewCommand),
 }
 
 #[cfg(test)]
