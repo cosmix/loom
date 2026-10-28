@@ -173,5 +173,5 @@ lagged the worktree fix until merge.
 
 **What happened:** The pre-commit hook failed to compile loom/src/commands/knowledge/eval.rs. I attributed the edit to another live session and asked the user to wait, though no other agent was running: the edit was a half-applied held fix from finish-eval-fix.sh that duplicated HEAD's own refresh_source_graph call.
 **Why:** I inferred ownership from the files being outside my change instead of checking their origin (git diff, held-fix scripts, stash list).
-**Prevention:** When unrelated uncommitted edits break the build, trace where they came from before assuming a concurrent owner, and ask the user only once that trace is inconclusive.
-**Fix:** Reconciled the tree against HEAD and dropped the duplicate call.
+**Prevention:** When unrelated uncommitted edits break the build, trace where they came from before assuming a concurrent owner, and ask the user only once that trace is inconclusive. Reconciling a stash apply covers its untracked files too: `git show --stat stash^3` lists them.
+**Fix:** Reconciled eval.rs against HEAD and dropped the duplicate call. That left the stash's untracked loom/src/commands/knowledge/eval/refresh.rs behind as an orphan, deleted later; HEAD's eval.rs already refreshes the graph inline.
