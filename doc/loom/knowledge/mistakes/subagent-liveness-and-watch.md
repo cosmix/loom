@@ -378,10 +378,10 @@ applies only below it. Never weaken the refusal to admit a symlinked root.
 
 ## Operator monitoring cadence
 
-**What happened:** Plan monitoring polled too often and restarted the daemon while another agent managed the runtime. The operator subsequently resumed loom, extended execution through feat-planner plan 11 when healthy, changed the monitoring interval to five minutes, and renamed the blockage log to blockages.md.
+**What happened:** The operator held execution before plan 07 to reinstall Loom, then confirmed the new dev binary with fixes is installed and explicitly resumed plans 07–11. Plans 04–06 are complete; plan 06 resources were cleaned, with cleanup commit status to recheck.
 
-**Why:** Passive monitoring and runtime recovery need explicit coordination with concurrent work and the latest requested cadence and file names.
+**Why:** Runtime installation and concurrent work require coordination before the next plan starts.
 
-**Prevention:** Check status every five minutes. The operator authorizes known recovery actions when a plan gets stuck; preserve concurrent edits and record encountered Loom blockages and workarounds in root blockages.md. Never recreate the obsolete misspelled log path.
+**Prevention:** Proceed through feat-planner plans 07–11 in order. Check status every five minutes, preserve concurrent edits, and record encountered Loom blockages and workarounds in root blockages.md. Never recreate the obsolete misspelled log path. Use the installed PATH binary for orchestration.
 
-**Fix:** Finish plan 06 and continue feat-planner plans 07–11 in order when healthy, cleaning completed resources and committing plan-related changes between plans.
+**Fix:** Recheck checkout and cleanup status, then initialize and execute plan 07. Clean completed resources and commit plan-related changes between plans.
