@@ -135,7 +135,7 @@ fn writes_to_the_planning_root_and_runtime_never_reach_the_host() {
             "the shell did not reach its last line: {}",
             probe.diag()
         );
-        assert!(!target.exists(), "{} reached the host", target.display());
+        assert!(!target.exists(), "{} was created", target.display());
     }
     assert_eq!(
         fs::read_to_string(&fx.runtime.lock).unwrap(),
