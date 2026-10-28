@@ -276,8 +276,8 @@ The knowledge base is read-only in the app, and changes reach it only through `l
 run by a chat session. This skill carries the routing and the current-truth rules of
 `commands/distill.md`, with one change: the user's message names what to record, so the skill does
 not read `loom memory pending`, which holds stage journals a planning session has nothing to do
-with. Every write goes through `loom knowledge update`, `replace-section`, or `annotate`, never a
-file tool.
+with. Every write goes through `loom knowledge update`, `replace-section`, or `annotate` (and
+`delete-section` only to remove a section that a heading miss appended), never a file tool.
 
 ## Opening messages
 

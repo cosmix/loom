@@ -5,8 +5,10 @@ description: Load when a planning session writes or revises a numbered product s
 
 # Write a product section
 
-Write only the target `doc/product/section_<nn>.md`; write nothing else directly. Never
-stage, commit or branch, and never run `loom init`, `loom run` or `loom pressure`.
+Write the target `doc/product/section_<nn>.md`, plus any other editable document under
+`doc/` that a settled decision or an open point binds. Put a decision that spans sections
+under `## Decisions` in `doc/product/index.md`. Never stage, commit or branch, and never
+run `loom init`, `loom run` or `loom pressure`.
 Rebuild summaries only through the turn-end procedure below; never write directly under
 `doc/loom/summaries/`. Keep code, configuration, locked plans and their brief bundles,
 archived plans and `REVIEW-*.md` files read-only. Never write knowledge with a file tool;

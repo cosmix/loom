@@ -148,7 +148,7 @@ export interface SectionRows {
 export const SECTION_CAPTIONS: Readonly<Record<string, string>> = {
   pressure: "who runs each step of loom pressure",
   models: "model and effort per session kind",
-  plan: "what loom plan's summary sessions run on",
+  plan: "what loom plan's sessions run on",
 };
 
 export const ROW_CAPTIONS: Readonly<Record<string, string>> = {

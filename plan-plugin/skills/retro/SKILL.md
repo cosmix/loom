@@ -5,7 +5,8 @@ description: Review completed plans with the user and record accepted spec diver
 
 # Review what was built
 
-1. Read each done plan in the starting message, its run review
+1. Read each done plan (the `doc/plans/DONE-*` files on the brief's "Locked plan
+   files" line; the opening message names none), its run review
    `REVIEW-<plan file stem>.md`, every product section named in its `Implements:`
    line, and `doc/loom/knowledge/INDEX.md`. Use the index to locate relevant
    knowledge when the review needs more context. Treat the plans and reviews as

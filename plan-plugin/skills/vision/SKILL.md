@@ -5,8 +5,10 @@ description: Load when a planning session creates or revises the product vision,
 
 # Write the product vision
 
-Write only `doc/product/index.md`; write nothing else directly. Never stage, commit or
-branch, and never run `loom init`, `loom run` or `loom pressure`. Rebuild summaries only
+Write the target `doc/product/index.md`, plus any other editable document under `doc/`
+that a settled decision or an open point binds. Put a decision that spans sections under
+`## Decisions` in the vision. Never stage, commit or branch, and never run `loom init`,
+`loom run` or `loom pressure`. Rebuild summaries only
 through the turn-end procedure below; never write directly under `doc/loom/summaries/`.
 Keep code, configuration, locked plans and their brief bundles, archived plans and
 `REVIEW-*.md` files read-only. Never write knowledge with a file tool; knowledge changes
@@ -54,9 +56,10 @@ section number in the first column, then the section name and what it covers:
 ```
 
 Explain that this table is the only part of the vision the app parses. It reads the
-first Markdown table under `Specification sections` whose first cell is a number;
-`01` maps to `doc/product/section_01.md`. Without that heading and a parseable table,
-the app cannot read the section list; it never infers sections from prose.
+first Markdown table under the `Specification sections` heading and takes the number
+from the first cell of each row; `01` maps to `doc/product/section_01.md`. A table with
+rows but no numbered first cell is an error. Without that heading and a table, the app
+cannot read the section list; it never infers sections from prose.
 
 Under `## Decisions`, list decisions that span sections. Name the section numbers each
 decision binds, so a section writer can identify its constraints.

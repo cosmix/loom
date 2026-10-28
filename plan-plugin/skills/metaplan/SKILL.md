@@ -5,10 +5,13 @@ description: Load when a planning session creates a metaplan, starts a later pla
 
 # Write a metaplan
 
-Write only the target metaplan: `doc/plans/index.md` for the first round,
-`doc/plans/metaplan-<nn>.md` for a later round, or the selected existing metaplan
-when adding an unlisted plan. Write nothing else directly. Never stage, commit,
-or branch, and never run `loom init`, `loom run`, or `loom pressure`.
+Write the target metaplan: `doc/plans/index.md` for the first round,
+`doc/plans/metaplan-<nn>.md` for a later round, or an existing metaplan when adding
+an unlisted plan (ask which one when more than one exists). Also write any other
+editable document under `doc/` that a settled decision or an open point binds; put a
+decision that spans product sections under `## Decisions` in `doc/product/index.md`.
+Never stage, commit, or branch, and never run `loom init`, `loom run`, or
+`loom pressure`.
 
 Keep plans with an `IN_PROGRESS-`, `DONE-`, or `RETIRED-` prefix, their brief
 bundles, everything under `doc/plans/archive/`, and all `REVIEW-*.md` files
@@ -64,7 +67,8 @@ mistaken for a malformed entry.
 
 ## Add an unlisted plan
 
-Read the unlisted plan and the selected metaplan. Add an entry naming its
+Read the unlisted plan and the metaplan it joins; the opening message names none, so
+ask which one when the brief lists more than one. Add an entry naming its
 `PLAN-<slug>.md` file in the heading and describing its actual scope, product
 sections, dependencies, and risks in the same form above. Place it in execution
 order. Keep the existing plan unchanged, including its lifecycle spelling on

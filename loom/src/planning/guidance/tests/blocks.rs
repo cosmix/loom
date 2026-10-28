@@ -7,7 +7,7 @@ use crate::planning::project::Project;
 use crate::planning::runtime::{runtime_paths_under, RuntimePaths};
 use std::ffi::OsString;
 use std::fs;
-use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+use std::os::unix::fs::{symlink, DirBuilderExt, PermissionsExt};
 use std::path::Path;
 
 const REASON: &str = "session hooks changed; review configuration before starting";
@@ -239,4 +239,55 @@ fn test_start_block_uses_server_runtime_despite_session_state_environment() {
         assert_refused(&fixture, kind, &session, REASON);
     }
     assert!(!other_state.path().join("config-block.json").exists());
+}
+
+#[test]
+fn test_start_block_works_when_an_ancestor_of_the_loom_user_dir_is_a_symlink() {
+    // macOS `/tmp` and `/var` are symlinks: only components below the loom user dir are refused.
+    let temp = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    fs::create_dir(temp.path().join("real")).unwrap();
+    symlink(temp.path().join("real"), temp.path().join("link")).unwrap();
+    let runtime = runtime_paths_under(&temp.path().join("link/loom"), project.path()).unwrap();
+
+    assert!(StartBlocks::current(&runtime).unwrap().is_none());
+    StartBlocks::block(&runtime, REASON, &[".mcp.json".into()]).unwrap();
+    let block = StartBlocks::current(&runtime).unwrap().unwrap();
+    assert_eq!(block.reason, REASON);
+    let written = runtime.dir.strip_prefix(temp.path().join("link")).unwrap();
+    assert!(temp
+        .path()
+        .join("real")
+        .join(written)
+        .join("config-block.json")
+        .is_file());
+
+    StartBlocks::clear(&runtime).unwrap();
+    assert!(StartBlocks::current(&runtime).unwrap().is_none());
+}
+
+#[test]
+fn test_start_block_refuses_a_symlink_below_the_loom_user_dir() {
+    for below_planning_root in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let runtime = runtime_paths_under(&temp.path().join("loom"), project.path()).unwrap();
+        let linked = if below_planning_root {
+            fs::create_dir_all(&runtime.planning_root).unwrap();
+            &runtime.dir
+        } else {
+            fs::create_dir_all(temp.path().join("loom")).unwrap();
+            &runtime.planning_root
+        };
+        symlink(elsewhere.path(), linked).unwrap();
+
+        assert!(
+            StartBlocks::current(&runtime).is_err(),
+            "{linked:?} must be refused"
+        );
+        assert!(StartBlocks::block(&runtime, REASON, &[]).is_err());
+        assert!(StartBlocks::clear(&runtime).is_err());
+        assert_eq!(fs::read_dir(elsewhere.path()).unwrap().count(), 0);
+    }
 }
