@@ -205,3 +205,10 @@ export function historyCounts(events: HistoryEvent[]): string {
     })
     .join(" · ");
 }
+
+/// Whether any event is a failure: a stage blocked or completed with failures
+/// now, or an archived issue of kind failure. Reviews, merge conflicts and
+/// adjudications are not.
+export function hasFailure(events: HistoryEvent[]): boolean {
+  return events.some((event) => event.tag === KIND.failure.tag);
+}

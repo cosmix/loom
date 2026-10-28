@@ -67,7 +67,12 @@ function renderModal(stage: StageSummary, attention: Attention[], hash = "") {
 }
 
 const region = (name: string) => within(screen.getByRole("region", { name }));
-const historyItems = () => region("history").getAllByRole("listitem");
+/// The history rows, opening the card first when it is folded.
+const historyItems = () => {
+  const toggle = region("history").getByRole("button", { name: "history" });
+  if (toggle.getAttribute("aria-expanded") === "false") fireEvent.click(toggle);
+  return region("history").getAllByRole("listitem");
+};
 
 /// `count` archived reviews an hour apart, newest first as the daemon sends them.
 function reviews(count: number): StageIssue[] {
@@ -243,6 +248,31 @@ describe("the history card", () => {
     expect(region("history").getByText("1 merge conflict · 9 reviews")).toBeTruthy();
   });
 
+  it("is folded to its header unless the history holds a failure", () => {
+    renderModal(fixtureStage("docs", { history: reviews(2) }), [fixtureEntry("docs")]);
+
+    const toggle = region("history").getByRole("button", { name: "history" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(region("history").queryAllByRole("listitem")).toHaveLength(0);
+    expect(region("history").getByText("3 events · newest first")).toBeTruthy();
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(region("history").getAllByRole("listitem")).toHaveLength(3);
+    fireEvent.click(toggle);
+    expect(region("history").queryAllByRole("listitem")).toHaveLength(0);
+  });
+
+  it("opens by itself on an archived failure and folds on request", () => {
+    renderModal(fixtureStage("docs", { history: [issue()] }), [fixtureEntry("docs")]);
+
+    const toggle = region("history").getByRole("button", { name: "history" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(region("history").getAllByRole("listitem")).toHaveLength(2);
+    fireEvent.click(toggle);
+    expect(region("history").queryAllByRole("listitem")).toHaveLength(0);
+  });
+
   it("has no show-all control while every event fits", () => {
     renderModal(fixtureStage("docs", { history: reviews(5) }), [fixtureEntry("docs")]);
 
@@ -299,6 +329,7 @@ describe("long text", () => {
     (id) => {
       const entry = fixture.attention.filter((candidate) => candidate.id === id);
       renderModal(fixtureStage(id, { history: reviews(9) }), entry);
+      historyItems();
       fireEvent.click(screen.getByRole("button", { name: /^Show all/ }));
       fireEvent.click(screen.getByRole("button", { name: /^details/ }));
 
