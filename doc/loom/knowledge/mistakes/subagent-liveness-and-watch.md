@@ -378,10 +378,10 @@ applies only below it. Never weaken the refusal to admit a symlinked root.
 
 ## Operator monitoring cadence
 
-**What happened:** The operator held execution before plan 07 to reinstall Loom, then confirmed the new dev binary with fixes is installed and explicitly resumed plans 07–11. Plans 04–06 are complete; plan 06 resources were cleaned, with cleanup commit status to recheck.
+**What happened:** Monitoring was too frequent, and a cold-start handoff included resolved incidents and an obsolete filename. The operator requested quiet five-minute checks and handoffs limited to information needed to continue.
 
-**Why:** Runtime installation and concurrent work require coordination before the next plan starts.
+**Why:** Session history was mistaken for actionable handoff context.
 
-**Prevention:** Proceed through feat-planner plans 07–11 in order. Check status every five minutes, preserve concurrent edits, and record encountered Loom blockages and workarounds in root blockages.md. Never recreate the obsolete misspelled log path. Use the installed PATH binary for orchestration.
+**Prevention:** Check status roughly every five minutes and stay quiet between checks. Handoffs contain the objective, current plan and stage state, next actions, active constraints and unresolved blockers. Omit superseded names and resolved incidents unless they directly affect the next action. Preserve concurrent edits; record new blockages in root blockages.md. Use the installed PATH loom for orchestration.
 
-**Fix:** Recheck checkout and cleanup status, then initialize and execute plan 07. Clean completed resources and commit plan-related changes between plans.
+**Fix:** Continue feat-planner plans 07–11 in order when healthy, cleaning completed resources and committing task-related changes between plans. Keep takeover prompts concise and current.
