@@ -354,18 +354,6 @@
     align-items: baseline;
     gap: 6px;
   }
-  .details-chevron {
-    width: 14px;
-    height: 14px;
-    flex-shrink: 0;
-    margin-left: auto;
-    color: var(--muted-foreground);
-    transition: rotate 150ms ease;
-  }
-  .details-toggle[aria-expanded="true"] .details-chevron {
-    rotate: 90deg;
-  }
-
   /* A section heading that folds its card. */
   .disclosure-toggle {
     display: inline-flex;
@@ -387,7 +375,8 @@
     color: var(--muted-foreground);
     transition: rotate 150ms ease;
   }
-  .disclosure-toggle[aria-expanded="true"] .disclosure-chevron {
+  .disclosure-toggle[aria-expanded="true"] .disclosure-chevron,
+  .details-toggle[aria-expanded="true"] .disclosure-chevron {
     rotate: 90deg;
   }
 
@@ -400,7 +389,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .details-chevron,
   .disclosure-chevron,
   .thread-chip {
     transition: none;

@@ -360,6 +360,18 @@ describe("the details disclosure", () => {
     expect(within(toggle).getByRole("img", { name: "context 39% of ceiling" })).toBeTruthy();
   });
 
+  it("puts the chevron before the label", () => {
+    renderModal(fixtureStage("server"), []);
+
+    const toggle = screen.getByRole("button", { name: "details" });
+    const chevron = toggle.querySelector(".disclosure-chevron");
+    const label = within(toggle).getByText("details", { selector: ".eyebrow" });
+    expect(chevron).toBeTruthy();
+    expect(
+      (chevron as Element).compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("stays folded until opened, then lists the sections", () => {
     renderModal(fixtureStage("server"), []);
 

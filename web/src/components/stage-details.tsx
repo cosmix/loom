@@ -70,6 +70,7 @@ export function StageDetails({
         aria-controls={open ? panel : undefined}
         onClick={() => setOpen((value) => !value)}
       >
+        <ChevronRight aria-hidden="true" className="disclosure-chevron" />
         <span className="ledger-icon">
           <Fingerprint aria-hidden="true" className="size-3" />
         </span>
@@ -82,7 +83,6 @@ export function StageDetails({
             </span>
           ))}
         </span>
-        <ChevronRight aria-hidden="true" className="details-chevron" />
       </button>
       {open && (
         <div id={panel}>
