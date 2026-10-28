@@ -15,6 +15,8 @@ mod tests;
 mod tests_cases;
 #[cfg(test)]
 mod tests_reads;
+#[cfg(test)]
+mod tests_reads_fixture;
 
 use std::io::Read;
 use std::os::unix::fs::MetadataExt;
@@ -27,7 +29,10 @@ use serde_json::{json, Value};
 use self::paths::{inside, normalize, ReadRules};
 use crate::fs::safe_read::read_to_string_bounded;
 use crate::plan_session::kind::SessionKind;
+use crate::plan_session::sandbox::filesystem::OMISSIONS;
+use crate::plan_session::sandbox::PRE_TOOL_USE;
 use crate::planning::paths::{classify_write, symlink_component, DocArea, LockReason, LockedSet};
+use crate::planning::runtime::DRAFTS_DIR;
 use crate::planning::slug::PlanState;
 
 /// The `guard.json` schema this guard reads.
@@ -38,12 +43,7 @@ const GUARD_FILE: &str = "guard.json";
 const MAX_POLICY_BYTES: usize = 64 * 1024;
 /// The payload bound of `commands/hook/worker_brief.rs` (`MAX_STDIN_BYTES`): more is a deny.
 const MAX_STDIN_BYTES: u64 = 1024 * 1024;
-const PRE_TOOL_USE: &str = "PreToolUse";
 const DOC: &str = "doc";
-/// A pressure session's notes file at the project root (`sandbox/filesystem.rs`, `OMISSIONS`).
-const OMISSIONS: &str = "planning-omissions.md";
-/// The runtime drafts directory, as `planning/runtime.rs` (`RuntimePaths::new`) names it.
-const DRAFTS: &str = "drafts";
 
 /// The guard's only input besides the payload and the live tree, written beside
 /// `settings.json` by `sandbox::write_session_sandbox`.
@@ -192,9 +192,9 @@ fn evaluate(policy: &GuardPolicy, payload: &Value) -> Result<(), String> {
     let path = paths::tool_path(tool, input, cwd, &policy.project_root)?;
     match access {
         Access::Write => check_write(policy, &path),
-        Access::Read => ReadRules::new(policy).check(&path, false),
+        Access::Read => ReadRules::new(policy)?.check(&path, false),
         Access::Search => {
-            ReadRules::new(policy).check(&path, true)?;
+            ReadRules::new(policy)?.check(&path, true)?;
             search::check_search(&policy.project_root, tool, input, &path)
         }
     }
@@ -214,7 +214,7 @@ fn check_write(policy: &GuardPolicy, path: &Path) -> Result<(), String> {
         return confined_file(root, Path::new(OMISSIONS));
     }
     let runtime = &policy.runtime_dir;
-    let drafts = runtime.join(DRAFTS);
+    let drafts = runtime.join(DRAFTS_DIR);
     if inside(path, &drafts) && path != drafts.as_path() {
         if pressure {
             return Err("a pressure session does not write runtime drafts".into());

@@ -291,6 +291,14 @@ write_row!(
     true
 );
 write_row!(claims, runtime.dir, "claims/x.json", true, true, true);
+write_row!(
+    summaries_lock,
+    runtime.dir,
+    "summaries.lock",
+    true,
+    true,
+    true
+);
 write_row!(drafts, runtime.dir, "drafts/x.md", false, false, true);
 write_row!(
     marker,

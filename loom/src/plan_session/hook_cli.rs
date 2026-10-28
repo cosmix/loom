@@ -3,9 +3,11 @@
 use std::io::{Read, Write};
 use std::path::Path;
 
+use super::sandbox::PRE_TOOL_USE;
+
 /// Write the hook answer, if any, and always return a successful hook exit code.
 pub fn run(event: &str, session_dir: &Path, stdin: impl Read, mut stdout: impl Write) -> i32 {
-    if event == "PreToolUse" {
+    if event == PRE_TOOL_USE {
         if let Some(answer) = super::guard::run_pre_tool_use(session_dir, stdin) {
             let _ = writeln!(stdout, "{answer}");
         }
