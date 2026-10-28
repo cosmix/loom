@@ -9,8 +9,8 @@ Take the summary ids in the opening message as the complete batch. Rebuild only
 those ids; leave summaries invalidated during this session for the next batch.
 Never ask the user anything: nobody is present in a background session.
 
-Write only the runtime draft files named by `loom plan summary brief <id>`, under
-`~/.loom/plan/<project-key>/drafts/`. Publish summaries under `doc/loom/summaries/`
+Write only the runtime draft files named by `loom plan summary brief <id>`, at the
+draft paths that brief gives; never assume a drafts directory. Publish summaries under `doc/loom/summaries/`
 only through `loom plan summary seal <id>`; never write there directly.
 Never edit a source document or any other file under `doc/`.
 Never stage, commit, branch, or run `loom init`, `loom run`, or `loom pressure`.

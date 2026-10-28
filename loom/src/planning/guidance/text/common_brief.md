@@ -15,6 +15,10 @@ under the heading that covers the topic, as soon as the user settles it. Use pla
 words a reader without the chat understands; give the reason when it is not obvious.
 Leave nothing a later session needs only in this conversation.
 
+A correction about the product is a decision: record it in the document it affects, even
+where another instruction says to record corrections as knowledge. The knowledge base takes
+facts about the code only.
+
 ## What the writing sessions keep to
 
 Section 09 gives the sessions their skills; these are the conventions the skills must produce:

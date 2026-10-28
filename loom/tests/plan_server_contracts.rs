@@ -117,6 +117,28 @@ fn token_on_other_path_sets_no_cookie() {
     let _ = server.stop();
 }
 
+/// `install_all` must run `chat::install` before `guidance::install`: guidance looks up the
+/// chat module's slot and, finding none, installs nothing, which makes the brief route answer
+/// 500 `internal` for every id. An unknown id answering 404 `unknown_session` proves the
+/// provider reached the context extensions.
+#[test]
+fn brief_route_has_its_provider_after_the_real_install_order() {
+    let repo = project_repo();
+    let server = serve(&repo);
+    let boot = get(server.local, &format!("/?token={}", server.token), "");
+    let cookies = cookies_of(&boot);
+    let resp = get(
+        server.local,
+        "/api/session/brief?session=no-such-session",
+        &cookies,
+    );
+    let status = resp.status().as_u16();
+    let body = resp.text().expect("brief body");
+    assert_eq!(status, 404, "unknown session id: {body}");
+    assert!(body.contains("unknown_session"), "{body}");
+    let _ = server.stop();
+}
+
 #[test]
 fn ws_upgrade_with_loopback_alias_origin_is_refused() {
     let repo = project_repo();
