@@ -25,7 +25,7 @@
 mod capture;
 mod history;
 mod reconcile;
-mod socket;
+pub(crate) mod socket;
 /// `pub` (not `pub(crate)`) rather than re-exported piecemeal: `commands/attach`
 /// consumes most of this module, its tests share `viewer::tests::stub_session`,
 /// and the real-tmux e2e test (`tests/e2e/tmux_reconcile.rs`) needs
@@ -141,7 +141,7 @@ fn run_tmux_command(
 /// `TERM` — is assertable on the `Command` value directly, with no
 /// subprocess run and no process-global environment mutation. See
 /// `tests::control_command_pins_term_dumb`.
-fn tmux_control_command(args: &[&str]) -> Command {
+pub(crate) fn tmux_control_command(args: &[&str]) -> Command {
     let mut command = Command::new("tmux");
     command.args(args);
     crate::process::apply_stage_environment(&mut command);
@@ -306,7 +306,7 @@ pub fn await_tmux_session_pid(
 ///
 /// A failed server kill is uncertainty: retain the socket (the only remaining
 /// control handle) and propagate the error to the fail-closed handoff path.
-fn teardown_socket(socket: &str) -> Result<()> {
+pub(crate) fn teardown_socket(socket: &str) -> Result<()> {
     let socket_path = socket_path_for(socket);
     if !socket_path.exists() {
         return Ok(());
