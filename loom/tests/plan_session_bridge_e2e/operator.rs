@@ -4,10 +4,12 @@
 //! Claude Code does where common.md assumes it.
 
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use loom::fs::permissions::untrust_worktree;
 use loom::plan_session::bridge::registry::read_record;
 use loom::plan_session::bridge::{BridgeEvent, EndCause, EndMode, SendOutcome};
 use loom::plan_session::kind::SessionDir;
@@ -16,12 +18,52 @@ use serde_json::Value;
 use serial_test::serial;
 use tempfile::TempDir;
 
-use super::{config, project, request, wait, Running};
+use super::{config, project, request, socket_of, wait, Running};
 
+/// Removes the temp project's trust entry from the real `~/.claude.json` when the run ends.
+struct TrustGuard<'a>(&'a Path);
+
+impl Drop for TrustGuard<'_> {
+    fn drop(&mut self) {
+        let _ = untrust_worktree(self.0);
+    }
+}
+
+/// What the session's tmux pane shows, stdout then stderr.
+fn pane_text(id: &str) -> String {
+    let socket = socket_of(id);
+    let args = [
+        "-L",
+        &socket,
+        "capture-pane",
+        "-p",
+        "-J",
+        "-t",
+        "plan-authoring",
+    ];
+    match Command::new("tmux").args(args).output() {
+        Ok(out) => format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ),
+        Err(error) => format!("cannot run tmux: {error}"),
+    }
+}
+
+/// Waits for Idle; a timeout names the session's state and what its pane shows.
 fn wait_idle(r: &Running, id: &str) {
     thread::sleep(Duration::from_secs(1));
-    let idle = || r.state(id) == Some(SessionState::Idle);
-    wait("Idle", Duration::from_secs(300), idle);
+    let deadline = Instant::now() + Duration::from_secs(300);
+    while r.state(id) != Some(SessionState::Idle) {
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for Idle; state {:?}; pane:\n{}",
+            r.state(id),
+            pane_text(id)
+        );
+        thread::sleep(Duration::from_millis(100));
+    }
 }
 
 fn send(r: &Running, id: &str, text: &str) -> SendOutcome {
@@ -193,7 +235,11 @@ fn operator_end_to_end_with_claude_code() {
     let git = Command::new("git").args(["init", "-q"]).arg(&root).status();
     assert!(git.unwrap().success(), "git init failed");
     let bound = Duration::from_secs(300);
-    let r = Running::new(config(&root, &runtime, claude, bound));
+    // The logged-in Claude Code reads the real HOME; the launch trusts the temp project there
+    // and the guard removes that entry. Declared before `r` so it drops after the bridge stops.
+    let home = PathBuf::from(std::env::var_os("HOME").expect("the operator run needs HOME"));
+    let _trust = TrustGuard(&root);
+    let r = Running::new(config(&root, &runtime, claude, &home, bound));
     r.bridge.recover();
     let (id, dir) = open_chat(&r, |id| SessionDir::new(runtime.sessions.join(id)));
     queue_round(&r, &id);

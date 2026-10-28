@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::fs::permissions::trust_project;
 use crate::fs::safe_fs::{safe_open_dirfd, safe_write_with_mode_in_workdir};
 use crate::orchestrator::terminal::tmux::{spawn_in_tmux, teardown_socket};
 use crate::plan_session::bridge::host::{LaunchSpec, Spawned, TeardownFailed};
@@ -29,9 +30,19 @@ pub fn launch(spec: &LaunchSpec) -> Result<Spawned> {
     }
 }
 
-/// `settings.json` and `guard.json` with the spool hooks registered, then `launch.sh` (0700);
-/// returns the script's path.
+/// The project root's trust entry in `<home>/.claude.json`, `settings.json` and `guard.json` with
+/// the spool hooks registered, then `launch.sh` (0700); returns the script's path.
 fn prepare(spec: &LaunchSpec) -> Result<PathBuf> {
+    // Claude Code runs no hook, `SessionStart` included, while its folder-trust dialog is open,
+    // and neither a `--settings` key nor a trusted parent directory skips it: only this entry
+    // does. Without it the session never leaves Starting, so a failure here is a hard error.
+    trust_project(&spec.home, &spec.project_root).with_context(|| {
+        format!(
+            "cannot record {} as trusted in {}: the session would wait at Claude Code's trust dialog",
+            spec.project_root.display(),
+            spec.home.join(".claude.json").display()
+        )
+    })?;
     let inputs = SandboxInputs {
         project_root: &spec.project_root,
         runtime: &spec.runtime,

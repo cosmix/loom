@@ -48,11 +48,14 @@ pub fn launch_script(spec: &LaunchSpec, settings: &Path, env: &[(OsString, OsStr
 }
 
 fn environment_words(spec: &LaunchSpec, env: &[(OsString, OsString)]) -> Vec<String> {
-    // Pin planning identity here too: callers cannot replace it with a stage's identity.
+    // Pin planning identity here too: callers cannot replace it with a stage's identity, and
+    // HOME is `spec.home`, the home the trust entry and the sandbox use, so no inherited or
+    // `extra_env` HOME can split them from the one claude runs under.
     // The server's own TMUX, TMUX_PANE and TMUX_TMPDIR name the user's outer tmux server
     // (when `loom plan` runs inside one); the session reaches no tmux server, so they go too.
     // The private pane's own values never arrive: `env -i` clears them.
     let planning = [
+        (OsString::from("HOME"), spec.home.as_os_str().to_owned()),
         (
             OsString::from("LOOM_PLAN_STATE"),
             spec.runtime.dir.as_os_str().to_owned(),
@@ -67,7 +70,8 @@ fn environment_words(spec: &LaunchSpec, env: &[(OsString, OsString)]) -> Vec<Str
             !matches!(
                 name.to_str(),
                 Some(
-                    "LOOM_STAGE_ID"
+                    "HOME"
+                        | "LOOM_STAGE_ID"
                         | "LOOM_SESSION_ID"
                         | "LOOM_WORK_DIR"
                         | "LOOM_PLAN_STATE"
@@ -261,7 +265,25 @@ mod tests {
         let script = launch_script(&spec, &spec.dir.settings(), &env);
 
         assert!(!script.contains("TMUX"), "{script}");
-        assert!(script.contains("HOME=/home/u"), "{script}");
+    }
+
+    #[test]
+    fn home_is_the_spec_home_whatever_the_inherited_or_extra_environment_says() {
+        let tmp = tempfile::tempdir().unwrap();
+        let spec = spec(tmp.path());
+        fs::write(&spec.claude_bin, "#!/bin/sh\nprintf '%s' \"$HOME\"\n").unwrap();
+        let env: Vec<_> = [("HOME", "/home/inherited"), ("HOME", "/home/extra")]
+            .map(|(name, value)| (name.into(), value.into()))
+            .into();
+
+        let script = launch_script(&spec, &spec.dir.settings(), &env);
+        let output = run(&script, tmp.path(), false);
+
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            spec.home.to_str().unwrap()
+        );
+        assert_eq!(script.matches("HOME=").count(), 1, "{script}");
     }
 
     #[test]
