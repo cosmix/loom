@@ -232,9 +232,12 @@ its directory (`architecture/execution-containment.md`, path syntax). Only `Edit
 bind file writes; `Write(...)` rules are inert (`mistakes/sandbox-write-rules-inert.md`).
 
 - `allow`: `Edit` on each directory directly under `doc/` except `loom`, enumerated at spawn,
-  plus `doc/product/**` and `doc/plans/**` whether or not they exist yet, plus `Edit` on the
-  top-level files of `doc/`; `Edit` and `Read` on `drafts/**`; `Read` on `claims/**`. No
-  allow rule covers `doc/loom/`, so a file-tool write there can never pass silently.
+  plus `doc/product/**` and `doc/plans/**` whether or not they exist yet, plus `Edit` on
+  each existing top-level regular file of `doc/` by its literal path; `Edit` and `Read` on
+  `drafts/**`; `Read` on `claims/**`. No allow rule covers `doc/loom/`, so a file-tool write
+  there can never pass silently. `Edit` rule paths match with gitignore semantics, where a
+  pattern matching a directory covers everything beneath it, so no wildcard over `doc/`'s
+  entries is written: `doc/*` would match `doc/loom`. A top-level file created later prompts.
 - `deny`: `Edit` on each locked plan file, on `doc/plans/REVIEW-*.md`, and on
   `doc/plans/archive/**`. Deny rules on
   `doc/loom/knowledge/` or `doc/loom/summaries/` are impossible: an `Edit` deny also becomes
@@ -367,7 +370,7 @@ and `plans`.
     "defaultMode": "default",
     "disableBypassPermissionsMode": "disable",
     "allow": ["Edit(//<root>/doc/product/**)", "Edit(//<root>/doc/plans/**)",
-              "Edit(//<root>/doc/<each other dir>/**)", "Edit(//<root>/doc/*)",
+              "Edit(//<root>/doc/<each other dir>/**)", "Edit(//<root>/doc/<each file>)",
               "Edit(//<rt>/drafts/**)", "Read(//<rt>/drafts/**)", "Read(//<rt>/claims/**)",
               "Bash(loom knowledge *)", "Bash(loom plan summary *)", "Bash(loom plan verify *)",
               "Bash(loom plan check*)", "Bash(loom map *)", "WebSearch"],
