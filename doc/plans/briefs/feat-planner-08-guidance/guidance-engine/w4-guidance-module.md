@@ -313,7 +313,9 @@ extra_env })` creates the session directory, then calls the closure. Authoring c
 `plan_server::chat::guidance::GuidanceSlot` (an extension in `ctx.extensions()`) holding
 `Arc<dyn GuidanceProvider>`:
 `fn authoring(&self, ctx: &PlanContext, dir: &SessionDir, offer: Option<&str>, first_message: Option<&str>) -> Result<LaunchGuidance>`
-and `fn closing_message(&self) -> String`. Plan 7 installs `FixedGuidance`; you replace it.
+and `fn closing_message(&self) -> String`. Plan 7 installs `ChecklistGuidance`
+(`plan_server/chat/guidance.rs`), which refuses an offer id the checklist does not offer now; you
+replace it, and a replacing provider owns that "not offered now" refusal for its own ids.
 
 - In `src/planning/guidance/mod.rs`: `impl From<SessionGuidance> for crate::plan_session::bridge::LaunchGuidance`
   (field for field: `brief_path, plugin_dir, opening_message, model, effort, display_name`,

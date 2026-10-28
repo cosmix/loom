@@ -235,7 +235,7 @@ Mapping (section 07 "The transcript" table, made exact):
 | `user`, content a string, not `isMeta`, `origin.kind` absent or `"human"`, text not starting with a wrapper tag (`<command-`, `<local-command-`, `<bash-`, `<task-notification>`, `<system-reminder>`) | `user` item: `attachments::parse_message` splits text and chips |
 | `user`, `isMeta`, a wrapper tag, or `origin.kind` other than `human` | nothing; a `<task-notification>` record (or `origin.kind` `task-notification`) after the last idle event is reported as `SelfStartedTurn` so the bridge opens a turn for it (px-state-08) |
 | `user`, a text block or string starting with `[Request interrupted by user` | `notice` "Interrupted", the open turn ends; every pending tool of the turn becomes `not_finished` |
-| `user`, `tool_result` block | replaces the tool item with that `tool_use_id`: status `done`, or `error` when `is_error` (first line of the content as `error_line`), result text capped at 64 KiB with `result_truncated`; for a result with `toolUseResult.filePath`, `added`/`removed` counted from `structuredPatch` lines starting `+`/`-`, `patch` = unified text built from `structuredPatch`, and `filePath` joins the turn's by-tool changed paths |
+| `user`, `tool_result` block | replaces the tool item with that `tool_use_id`: status `done`, or `error` when `is_error` (first line of the content as `error_line`), result text capped at 64 KiB with `result_truncated`; for a result with `toolUseResult.filePath`, `added`/`removed` counted from `structuredPatch` lines starting `+`/`-`, `patch` = unified text built from `structuredPatch`, and `filePath` joins the turn's by-tool changed paths when its repo-relative form (an absolute path inside the project, or a relative path, with plain components only) lies under `doc/`; any other path (a runtime draft, a tmp file) is dropped |
 | `assistant`, `text` block | `text` item, markdown |
 | `assistant`, `thinking` block | `thinking` item; `duration_ms` = this record's timestamp to the next record's of the same session, filled when that record arrives |
 | `assistant`, `tool_use` block | `tool` item, status `pending`, `summary` per section 08's table (below), `input` = the input object pretty-printed |
@@ -247,7 +247,8 @@ Assistant records sharing `message.id` are one message; its usage counts once pe
 LAST record's usage winning (later records carry the final counts), parsed with
 `provider_data::claude::parse` (`provider_data/claude.rs:13`, `pub(crate)`), into the turn's
 `tokens` (`input`, `cache_write` = `cache_creation`, `cache_read`, `output`). Subagent records map
-the same way into `tool` items with `subagent: Some(<agent id>)` nested under the spawning tool
+the same way into `tool` items with `subagent: Some(<agent id>)` and `parent: Some(<the spawning
+tool call's tool_use_id>)` (main-agent rows have `parent: None`), nested under the spawning tool
 call; their text and thinking are not shown (only their tool rows), and their usage is added to the
 turn's tokens. `Mapper::ingest_tokens_only(line)` adds a record's usage to the open turn and
 produces no item; plan 11 routes in-process teammates' transcripts to it (section 11: teammates
@@ -290,7 +291,8 @@ pub enum Item {
     Thinking { id: String, duration_ms: Option<u64> },
     Text { id: String, markdown: String },
     Tool { id: String, tool_use_id: String, name: String, summary: String, status: ToolStatus,
-           subagent: Option<String>, input: String, result: Option<String>, result_truncated: bool,
+           subagent: Option<String>, parent: Option<String> /* spawning tool_use_id */,
+           input: String, result: Option<String>, result_truncated: bool,
            error_line: Option<String>, added: Option<u32>, removed: Option<u32>, patch: Option<String>,
            nested_tools: u32 },
     Permission { id: String, request_id: String, tool: String, input: String, status: PermissionStatus,
@@ -341,7 +343,7 @@ Wire (`loom/src/plan_server/wire/chat.rs`):
 #[serde(tag = "frame", rename_all = "snake_case")]
 pub enum ChatFrame { Snapshot(ChatSnapshot), Delta(ChatDelta), Result(CommandResult), QueueReturned { texts: Vec<String> } }
 pub struct CommandResult { pub client_id: Option<String>, pub ok: bool, pub error: Option<String> }
-#[serde(tag = "command", rename_all = "snake_case")]
+#[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ChatCommand {
     Start { client_id: Option<String>, offer: Option<String>, text: Option<String>, attachments: Vec<AttachmentInput> },
     Send { client_id: Option<String>, text: String, attachments: Vec<AttachmentInput> },
@@ -352,7 +354,8 @@ pub enum ChatCommand {
 }
 ```
 
-`PlanMessage::Chat(ChatFrame)` and `ClientMessage::Chat(ChatCommand)` are the one variant plan 7
+`PlanMessage::Chat(Box<ChatFrame>)` (boxed like plan 2's `Hello(Box<Hello>)`) and
+`ClientMessage::Chat(ChatCommand)` are the one variant plan 7
 adds to each enum (bridge-runtime). Fixtures: `web/src/plan/api/fixtures/chat-snapshot.json` (a
 snapshot with one closed turn holding one of every item type and status, one open turn, a queue,
 and a previous chat), `chat-deltas.json` (an array, one of every `op`), `chat-commands.json` (an
@@ -472,7 +475,7 @@ pub enum EndOutcome { Closed, Marker, TornDown, Failed(String) }
 // Marker ends keep the session's verified children alive and its directory (codex.log) on disk
 // until `release_session`; every other end terminates children and removes the directory (px-seams-01).
 pub trait SessionHost: Send + Sync {
-    fn spawn(&self, spec: &LaunchSpec) -> anyhow::Result<Spawned /* { socket: String, identity: ProcessIdentity } */>;
+    fn spawn(&self, spec: &LaunchSpec) -> anyhow::Result<Spawned /* { identity: ProcessIdentity } */>;
     fn deliver(&self, socket: &str, target: &str, text: &str) -> anyhow::Result<()>;
     fn interrupt(&self, socket: &str, target: &str) -> anyhow::Result<()>;
     fn teardown(&self, socket: &str) -> anyhow::Result<()>;
@@ -528,8 +531,14 @@ pub trait GuidanceProvider: Send + Sync {
 }
 pub struct GuidanceSlot(RwLock<Arc<dyn GuidanceProvider>>);
 impl GuidanceSlot { pub fn get(&self) -> Arc<dyn GuidanceProvider>; pub fn set(&self, provider: Arc<dyn GuidanceProvider>); }
-pub struct FixedGuidance; // plan 7's provider
+pub struct ChecklistGuidance; // plan 7's installed provider
+pub struct FixedGuidance; // the fixed files and opening, for any offer id
 ```
+
+`ChecklistGuidance::authoring` refuses an offer id the checklist does not offer now (`the step
+"<id>" is not offered now`), then delegates to `FixedGuidance`. Dispatch passes every offer id
+through: the provider decides which ids start a chat, so plan 8's provider accepts its own start
+ids. A refused start frees the authoring it took.
 
 `FixedGuidance::authoring` writes `brief.md` (0600, a fixed paragraph: "You are a planning
 session started by `loom plan`. Write only under doc/. Ask in plain text, never with a question

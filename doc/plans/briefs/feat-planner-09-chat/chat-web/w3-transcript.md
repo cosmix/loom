@@ -43,7 +43,8 @@ result as monospace text (`white-space: pre-wrap`, rendered as text), the result
 lines with "Show all". `Edit`/`Write` expand to a unified diff from the result's
 `structuredPatch` in `patch-view.tsx` (added lines `--tone-completed`, removed `--tone-blocked`,
 plain text, never CodeMirror). `Agent` rows show the subagent's tool-call count and a
-`BusyRoundel` while running; nested rows (`subagent` set to its id) render under it indented one
+`BusyRoundel` while running; a nested row (`subagent` set to its id) renders under the `Agent`
+row whose `tool_use_id` equals the nested row's `parent` (`Item::Tool.parent`), indented one
 step, collapsed by default; expanding also shows the subagent's final result.
 
 ## tool-group.ts

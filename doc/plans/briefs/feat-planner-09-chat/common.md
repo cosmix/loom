@@ -35,7 +35,7 @@ settled:
   `addAttachmentAtom`, `AttachmentDraft`, `<AddToChat />`, `files/tree-entry-extras.tsx`.
 - **Concept mode (plan 5)**: the browser files `web/src/plan/concept/{page-header-extras, key-chip-extras, empty-offer}.tsx` that
   render nothing or a disabled offer until this plan fills them.
-- **Session bridge (plan 7)**: `PlanMessage::Chat(ChatFrame)` (`snapshot` with `ChatSnapshot {
+- **Session bridge (plan 7)**: `PlanMessage::Chat(Box<ChatFrame>)` (`snapshot` with `ChatSnapshot {
   session: Option<SessionView>, turns, queue, previous }`, `delta` with `ChatDelta` ops, `result`
   with `client_id`, `queue_returned { texts }`) and `ClientMessage::Chat(ChatCommand)` (`start`,
   `send`, `withdraw`, `permission`, `interrupt`, `end`), all in
