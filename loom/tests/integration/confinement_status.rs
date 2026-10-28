@@ -17,16 +17,10 @@ use serde_json::{json, Value};
 use tempfile::TempDir;
 
 use crate::helpers::{clear_relay_env, init_test_repo, loom_bin_path};
+use loom::fs::work_dir::STATE_SUBDIRS;
 use loom::models::stage::Stage;
 use loom::process::sandbox_probe::skip_unless;
 use loom::verify::transitions::save_stage;
-
-/// The directories `WorkDir::load` creates when one is missing. All exist
-/// here, so a status run has no reason to create one.
-const STATE_DIRS: [&str; 10] = [
-    "signals", "handoffs", "archive", "stages", "sessions", "crashes", "memory", "wrappers",
-    "pids", "logs",
-];
 
 fn srt_settings(allow_write: &[&Path], deny_write: &[&Path]) -> Value {
     let paths = |list: &[&Path]| -> Vec<String> {
@@ -125,10 +119,11 @@ fn snapshot(dir: &Path) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
 }
 
 /// `repo`'s state directory, complete, with one stage for `loom status` to
-/// read.
+/// read. Every directory `WorkDir::load` creates when one is missing exists,
+/// so a status run has no reason to create one.
 fn state_dir(repo: &Path) -> PathBuf {
     let work_dir = repo.join(".loom").join("work");
-    for dir in STATE_DIRS {
+    for dir in STATE_SUBDIRS {
         fs::create_dir_all(work_dir.join(dir)).unwrap();
     }
     fs::write(work_dir.join("config.toml"), "").unwrap();
