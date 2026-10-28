@@ -18,7 +18,8 @@ pub struct Hello {
     pub authoring: AuthoringView,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+// `PartialEq` only: the chat model carries no `Eq` types.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PlanMessage {
     /// Initial snapshot for a newly connected client.
@@ -41,6 +42,8 @@ pub enum PlanMessage {
     Validation(ValidationChanged),
     /// Concept pages or their sources changed.
     ConceptChanged(ConceptChanged),
+    /// A chat snapshot, delta, command result or returned queue.
+    Chat(Box<crate::plan_server::wire::chat::ChatFrame>),
 }
 
 impl PlanMessage {
@@ -50,13 +53,15 @@ impl PlanMessage {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ClientMessage {
     /// Change the browser's display name.
     SetName { name: String },
     /// Report the document currently being read.
     Reading { path: Option<String> },
+    /// A chat command.
+    Chat(crate::plan_server::wire::chat::ChatCommand),
 }
 
 #[cfg(test)]
@@ -135,6 +140,28 @@ mod tests {
             serde_json::from_value::<ClientMessage>(json!({"type": "reading", "path": null}))
                 .unwrap(),
             reading
+        );
+    }
+
+    #[test]
+    fn chat_frames_and_commands_nest_under_the_chat_type() {
+        use crate::plan_server::wire::chat::{ChatCommand, ChatFrame, CommandResult};
+        let result = PlanMessage::Chat(Box::new(ChatFrame::Result(CommandResult {
+            client_id: Some("c1".into()),
+            ok: false,
+            error: Some("no chat is running".into()),
+        })));
+        let expected = json!({"type": "chat", "frame": "result", "client_id": "c1", "ok": false,
+            "error": "no chat is running"});
+        assert_eq!(serde_json::to_value(&result).unwrap(), expected);
+        assert_eq!(
+            serde_json::from_value::<PlanMessage>(expected).unwrap(),
+            result
+        );
+        let command = json!({"type": "chat", "command": "interrupt", "client_id": null});
+        assert_eq!(
+            serde_json::from_value::<ClientMessage>(command).unwrap(),
+            ClientMessage::Chat(ChatCommand::Interrupt { client_id: None })
         );
     }
 

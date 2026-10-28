@@ -28,7 +28,7 @@ pub enum Input<'a> {
     SelfStartedTurn { at: DateTime<Utc> },
     /// The Claude Code process is gone.
     ProcessGone,
-    /// The session never started.
+    /// The session never started, or its opening could not be pasted so no turn ever ran.
     SpawnFailed,
     /// The bridge began ending the session.
     EndRequested,
@@ -260,13 +260,14 @@ impl StateMachine {
     }
 }
 
-fn text<'a>(payload: &'a Value, key: &str) -> Option<&'a str> {
+/// The string at `key` in a hook payload.
+pub(crate) fn text<'a>(payload: &'a Value, key: &str) -> Option<&'a str> {
     payload.get(key).and_then(Value::as_str)
 }
 
 /// `notification_type: idle_prompt`, or a message saying Claude waits for input (older
 /// Claude Code versions send no type).
-fn is_idle_prompt(payload: &Value) -> bool {
+pub(crate) fn is_idle_prompt(payload: &Value) -> bool {
     match text(payload, "notification_type") {
         Some(kind) => kind == "idle_prompt",
         None => text(payload, "message")
