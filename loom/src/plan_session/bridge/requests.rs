@@ -2,8 +2,9 @@
 //! call it names, its expiry, and the cards closed when the session stops waiting on them.
 //!
 //! The state machine's pending set drives the state; the bridge keeps one `Request` per card
-//! and closes every open card the machine no longer holds (Stop, interrupt record, the bound
-//! tool's result) as denied `session_ended`, with a deny answer file (px-state-05, -R03).
+//! and closes every open card the machine no longer holds (Stop or StopFailure, interrupt
+//! record, the bound tool's result) as denied `session_ended`, with a deny answer file
+//! (px-state-05, -R03).
 
 use std::collections::HashSet;
 

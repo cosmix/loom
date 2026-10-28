@@ -83,12 +83,13 @@ and report it; if one is missing, stop that piece and report it.
 ## Hooks registered per session (bridge-runtime passes them to `write_session_sandbox`)
 
 ```rust
-pub const SPOOL_EVENTS: [HookSpec; 9] = [
+pub const SPOOL_EVENTS: [HookSpec; 10] = [
     HookSpec { event: "SessionStart", matcher: None, timeout_secs: None },
     HookSpec { event: "UserPromptSubmit", matcher: None, timeout_secs: None },
     HookSpec { event: "PermissionRequest", matcher: Some("*"), timeout_secs: Some(3600) },
     HookSpec { event: "Notification", matcher: None, timeout_secs: None },
     HookSpec { event: "Stop", matcher: None, timeout_secs: None },
+    HookSpec { event: "StopFailure", matcher: None, timeout_secs: None },
     HookSpec { event: "SubagentStart", matcher: None, timeout_secs: None },
     HookSpec { event: "SubagentStop", matcher: None, timeout_secs: None },
     HookSpec { event: "PreCompact", matcher: None, timeout_secs: None },
@@ -153,17 +154,19 @@ doing underneath Ending, so the bridge knows when an Ending session is idle),
 `pub fn pending_requests(&self) -> &BTreeSet<String>`, `pub fn subagents_running(&self) -> u32`.
 Rules (section 07 table and its two honesty rules, made exact by the fix round):
 
-- Starting -> Idle on `SessionStart` with `source == "startup"`. Idle on a main `Stop`, an
-  interrupt record (`Interrupted`), or `Notification` idle_prompt.
+- Starting -> Idle on `SessionStart` with `source == "startup"`. Idle on a main `Stop` or
+  `StopFailure` (Claude Code ends a turn whose API call failed with `StopFailure`, never `Stop`),
+  an interrupt record (`Interrupted`), or `Notification` idle_prompt.
 - Working on `UserPromptSubmit`, on `SelfStartedTurn` (a turn Claude Code starts without a prompt:
   a `task-notification` user record, px-state-08), and on a main record whose `at` is later than
   the last idle event's `received_at` (a record after the last `Stop` means working, whatever the
-  spool says). An `idle_prompt` or `Stop` received before a later main record does not win.
+  spool says). An `idle_prompt`, `Stop` or `StopFailure` received before a later main record does
+  not win.
 - Pending permissions are a SET of request ids (px-state-05). `PermissionRequest` (not
   auto-denied) adds one; `PermissionAnswered { id }` and `PermissionExpired { id }` remove one;
   Permission while the set is non-empty, then Working. Requests are removed only by evidence that
-  names them (px-state-R03): a main `Stop` or an interrupt record clears the whole set, and
-  `RequestResolved { request_id }` removes one. The bridge applies `RequestResolved` when the
+  names them (px-state-R03): a main `Stop`, a `StopFailure` or an interrupt record clears the
+  whole set, and `RequestResolved { request_id }` removes one. The bridge applies `RequestResolved` when the
   `tool_result` of the very `tool_use` the request names arrives: it binds each request to the
   pending `tool_use` item with the same tool name and an equal `tool_input` (the earliest unbound
   one), and that tool's result means Claude Code no longer waits on it. A result of ANY OTHER tool

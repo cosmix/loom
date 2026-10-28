@@ -64,6 +64,17 @@ fn queued_messages_go_out_one_per_idle() {
 }
 
 #[test]
+fn a_turn_ended_by_stop_failure_delivers_the_next_queued_message() {
+    let h = Harness::ready(|_| {});
+    let s = h.idle(Authoring);
+    h.working(&s);
+    assert!(matches!(send(&h, &s, "B"), SendOutcome::Queued { .. }));
+    h.spool(&s, "StopFailure", json!({"error": "server_error"}));
+    wait_until("B", || h.sent(&s) == ["B"]);
+    assert!(h.bridge.chat_snapshot(true).queue.is_empty());
+}
+
+#[test]
 fn an_unconfirmed_paste_turns_undelivered_and_a_late_prompt_delivers_it() {
     let h = Harness::ready(|c| c.delivery_timeout = Duration::from_millis(400));
     let s = h.idle(Authoring);
