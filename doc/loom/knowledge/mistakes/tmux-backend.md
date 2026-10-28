@@ -144,3 +144,21 @@ tmux spawn test for reasons unrelated to the code under test unless two RAII gua
 **Prevention:** a test that needs an exited pane's last output observes it while the agent is alive, then releases the agent and waits for `#{pane_dead}` before capturing.
 
 **Fix:** the release-gated agent and `pane_dead` helper in `tmux/tests_history.rs`.
+
+## An Interactive `claude` in an Untrusted Directory Never Starts a Session (2026-10-28)
+
+**What happened:** the planning bridge launched `claude` in a project root Claude Code had never trusted. The operator e2e (a temp project) stayed in `Starting` for 300 s: Claude Code 2.1.312 shows "Is this a project you trust?" (default "No, exit") and runs no hook, `SessionStart` included, until it is accepted.
+
+**Why:** `plan_session/launch.rs` never wrote the trust entry that `git/worktree/operations.rs` `trust_worktree` writes for stage worktrees. A pty probe showed `hasTrustDialogAccepted` in a `--settings` file does not skip the dialog and a trusted parent directory does not either; only `$HOME/.claude.json` `projects[<exact canonical cwd>].hasTrustDialogAccepted = true` does.
+
+**Prevention:** every path that spawns an interactive `claude` in a directory loom chose writes the exact-path trust entry into the HOME that `claude` runs under, before the spawn (`fs::permissions::trust::trust_project`).
+
+**Fix:** `launch::prepare` calls `trust_project`; the launch script pins `HOME` to the bridge's home.
+
+## A Test Round That Waits for `Idle` Reads the Previous Turn (2026-10-28)
+
+**What happened:** the operator e2e waited for each round with a bare `wait_idle` (1 s sleep, then state == `Idle`) right after sending. Checks then read the previous turn's text, order and queue.
+
+**Why:** the state stays `Idle` from the previous Stop (or the startup `SessionStart`) until the new message's `UserPromptSubmit`, and `Idle` is visible under the bridge lock before `finish_turn` flushes its `TurnEnded`.
+
+**Prevention:** wait for evidence of the round's own turn first (its user item `Delivered`, a `TurnEnded` count above the count read before the send, or the round's own notice), reading `before` ahead of the send, then wait for `Idle`.
