@@ -1,6 +1,6 @@
 import { cn } from "cn";
 import { useAtomValue } from "jotai/react";
-import { ArrowRight, Flag, Sprout, type LucideIcon } from "lucide-react";
+import { ChevronRight, Flag, Sprout, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 
 import type { StageSummary } from "@/api/schema";
@@ -31,21 +31,34 @@ export function ThreadChips({
   const waits = stage.dependencies.flatMap((id) => stages.find((entry) => entry.id === id) ?? []);
   return (
     <div className={cn("fulcrum", className)}>
-      {stage.dependencies.length === 0 ? (
-        <ThreadCap icon={Sprout} text="start" title="No dependencies: this stage starts first" />
-      ) : (
-        <ThreadRun label="waits for" stages={waits} pick={pick} />
-      )}
-      <ArrowRight aria-hidden="true" className="fulcrum-arrow" />
-      <span className="fulcrum-self" aria-current="true">
-        this stage
-      </span>
-      <ArrowRight aria-hidden="true" className="fulcrum-arrow" />
-      {feeds.length === 0 ? (
-        <ThreadCap icon={Flag} text="end" title="Nothing waits on this stage" end />
-      ) : (
-        <ThreadRun label="feeds" stages={feeds} pick={pick} />
-      )}
+      <div className="fulcrum-track">
+        {stage.dependencies.length === 0 ? (
+          <ThreadCap icon={Sprout} text="start" title="No dependencies: this stage starts first" />
+        ) : (
+          <>
+            <ThreadRun label="waits for" stages={waits} pick={pick} />
+            <span aria-hidden="true" className="fulcrum-caption">
+              waits for
+            </span>
+          </>
+        )}
+        <ChevronRight aria-hidden="true" className="fulcrum-arrow" />
+        <span className="fulcrum-self" aria-current="true">
+          <span aria-hidden="true" className="fulcrum-self-dot" />
+          this stage
+        </span>
+        <ChevronRight aria-hidden="true" className="fulcrum-arrow fulcrum-arrow-end" />
+        {feeds.length === 0 ? (
+          <ThreadCap icon={Flag} text="end" title="Nothing waits on this stage" end />
+        ) : (
+          <>
+            <ThreadRun label="feeds" stages={feeds} pick={pick} end />
+            <span aria-hidden="true" className="fulcrum-caption fulcrum-caption-end">
+              feeds
+            </span>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -73,16 +86,19 @@ function ThreadRun({
   label,
   stages,
   pick,
+  end,
 }: {
   label: string;
   stages: StageSummary[];
   pick: (id: string) => void;
+  end?: boolean;
 }) {
+  const runClass = cn("fulcrum-run", end && "fulcrum-run-end");
   const [open, setOpen] = useState(false);
   const foldable = stages.length > FOLD_ABOVE;
   if (foldable && !open) {
     return (
-      <div className="fulcrum-run" role="group" aria-label={label}>
+      <div className={runClass} role="group" aria-label={label}>
         <button
           type="button"
           className="fulcrum-fold"
@@ -104,7 +120,7 @@ function ThreadRun({
     );
   }
   return (
-    <div className="fulcrum-run" role="group" aria-label={label}>
+    <div className={runClass} role="group" aria-label={label}>
       {stages.map((entry) => (
         <ThreadChip key={entry.id} stage={entry} pick={pick} />
       ))}
