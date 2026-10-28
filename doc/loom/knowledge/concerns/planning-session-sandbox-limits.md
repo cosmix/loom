@@ -159,13 +159,6 @@ first turn; the interrupt report matches only `Stop`; `diagnose.rs` finds the tr
 `session.json` and runs `capture-pane` twice. `config()` docs overstate that `home` is the HOME the recovery
 test's `claude` reads.
 
-## Plans 8 and 9 documents
-
-`PLAN-feat-planner-09-chat.md:63` writes `PlanMessage::Chat(ChatFrame { ... })` (tree: `Box<ChatFrame>`);
-`briefs/feat-planner-09-chat/chat-web/w3-transcript.md` does not name the nesting field (a nested row goes under
-the Agent row whose `tool_use_id` equals the row's `parent`); `briefs/feat-planner-08-guidance/.../w4-guidance-module.md:316`
-says plan 7 installs `FixedGuidance` (tree: `ChecklistGuidance`).
-
 ## Review nits not applied
 
 `state.rs` `last_idle_at`/`last_main_at` are public and used only by tests; the `$deserializes` wire tests are

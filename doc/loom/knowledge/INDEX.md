@@ -52,7 +52,6 @@
 | [planning-document-model](architecture/planning-document-model.md) | Doc model | 173 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 35 |
 | [planning-session-bridge](architecture/planning-session-bridge.md) | Bridge | 187 |
-| [planning-session-bridge](architecture/planning-session-bridge.md) | Planning bridge: tmux, spool, chat model | 186 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) | Plan sandbox | 135 |
 | [quota-poller](architecture/quota-poller.md) | Polling | 35 |
 | [remote-control](architecture/remote-control.md) | Capability | 81 |
@@ -204,7 +203,7 @@
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge edges | 125 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 127 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 42 |
-| [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 192 |
+| [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 185 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 210 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 156 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 384 |
