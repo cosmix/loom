@@ -375,3 +375,17 @@ Review rounds are counted per reviewer and per stage. A gate runs once per tree,
 **Why:** a settled decision and a zero-tolerance fix were treated as user choices.
 
 **Prevention:** in integration-verify, fix every failing test and file every decided dispute without asking; the signal already authorizes both.
+
+## Bridge Plan Process Mistakes (2026-10-28)
+
+- **Worker cwd is `loom/`, not the worktree root.** Three subagents and every codex forward read repo-relative `doc/` and `web/` paths from the crate directory and failed their first read; a forward reporting `succeeded` had written nothing (a missing `chat-frames.json`). Prevention: briefs for units touching `doc/` or `web/` give absolute paths, and the orchestrator checks the owned file exists after every unit.
+- **Codex forwards pin the contract.** A unit derived `Copy` on chat enums beyond the frozen `common.md`; the frozen helper calls `.clone()`, so `clippy -D warnings` failed on a file nobody may edit. Prevention: pin enum derives in codex briefs and check them against frozen contract files before the next wave.
+- **No codex lane in a no-network stage.** A forward from integration-verify exited 125 (`Read-only file system`, denied `ab.chatgpt.com:443`) and the stage lists only claude in `implementers`. A stage that should use codex needs codex in `implementers` and a plan-level network allow.
+- **`loom check` in the foreground.** Run in the background, its `LOOM_RELAY_V1` ticket never reached the relay hook, `loom request status` said "not relayed yet" and a second `loom check` was refused. Run it foreground, then `loom request status <id> --wait 90` as its own call.
+- **Small edit, small check.** A test-only edit got a full `loom check` and a review round before a block, and the user objected. After a small edit run only the targeted clippy/fmt; completion reruns acceptance; hold the next review round until the tree is final, scoped to files changed since the last round.
+- **Operator answers are loom's automation.** Block answers in a recovery signal were reported as the user running host tests; the user ran none. Describe them as loom's automated operator flow unless told otherwise.
+- **`cp -p` restores an old mtime**, so cargo keeps the artifact compiled from a mutation; `touch` the restored file after the last mutation.
+- **`loom stage block` caps its reason at 500 characters**; a plan-mandated 639-character text failed with a clap error. Plan writers keep mandated block text under 500 characters or name a memory note.
+- **Test-integrity profile globs** cover a Rust test file only when its name is `tests`, starts with `tests_`, or ends with `_tests` or `_test` before the extension; `state_tests_more` matches none, so assertion removals there raise no event. Name extra test files `tests_<topic>`.
+- **A worker file list must fit the 400-line limit**: the bridge-runtime list could not hold ~3000 lines of non-test code, and the worker added `flow.rs`, `requests.rs` and `recovery.rs` owned by nobody.
+- **`Skill(skill="loom-skills", args=...)` returned only the loader text** in one session; the body was read from the absolute path `/home/<user>/.claude/loom-skill-catalog/<name>/SKILL.md`.

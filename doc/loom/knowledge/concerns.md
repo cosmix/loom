@@ -1,6 +1,6 @@
 # Concerns & Technical Debt
 
-> Debt and open issues
+> Tech debt and known issues
 > Every section here must be an OPEN concern. When one is resolved, DELETE it — do not strike the
 > heading and leave the body, which is how eleven dead entries accumulated before 2026-08-26. Git
 > history keeps the record and [mistakes.md](mistakes.md) keeps the lesson. If a resolved concern
@@ -239,3 +239,7 @@ Reviewer suggestions left open on concept mode: engine-failure and claims-fallba
 ## Planning Session Sandbox Limits
 
 Accepted limits of the planning sandbox (Bash writes inside `doc/loom/`, new top-level paths, locks taken mid-session, the guard's check-to-write race), the untested Seatbelt and provenance paths, and the unimplemented reviewer suggestions. → [Planning Session Sandbox Limits](concerns/planning-session-sandbox-limits.md)
+
+## Planning Session Bridge Follow-ups
+
+Open teardown, race, transcript-mapper, chat-wire and trust-entry items from the bridge plan, the unverified operator e2e, and a recurring flock-after-drop proposal. → [Planning Session Sandbox Limits](concerns/planning-session-sandbox-limits.md#planning-session-bridge-follow-ups)

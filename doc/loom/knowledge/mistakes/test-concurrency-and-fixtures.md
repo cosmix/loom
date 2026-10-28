@@ -14,6 +14,8 @@
 
 **Note for production:** the same window applies to the daemon singleton lock. A child forked during the microseconds `orchestrator.lock` is open can hold it past daemon exit until that child execs, so an immediate restart could briefly see "another daemon instance holds the singleton lock". Not observed in practice; recorded so the symptom is recognisable.
 
+**Third instance (2026-10-28):** `ServerLock` (`plan_server/lock.rs`) had no `Drop`; `flock(LOCK_EX)` on its `O_CLOEXEC` descriptor stayed held while a child on another test thread held a copy until exec, so `drop(lock)` left it held and the next acquire read `Running` (flaky `lock_tests`). The fix is a `Drop` that calls `flock(LOCK_UN)`, which unlocks the description for all copies, plus a regression test that duplicates the descriptor across the drop. A lock type that relies on close-on-drop needs the explicit unlock; see the proposal in [Planning Session Bridge Follow-ups](../concerns/planning-session-sandbox-limits.md#recurring-flock-after-drop).
+
 ## A Non-Serial Test Read an Env Var a `#[serial]` Sibling Mutates (2026-09-03)
 
 **What happened:** `verify::criteria::tests::runner_tests::test_run_acceptance_caches_pass_and_skips_second_execution` failed the pre-push gate on one machine at `assertion failed: second.results()[0].cached`, and passed on the same tree in another environment.

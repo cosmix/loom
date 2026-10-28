@@ -1,6 +1,6 @@
 # Planning Session Sandbox
 
-> Planning sandbox: settings per kind, guard
+> Plan sandbox
 
 ## Overview (`loom::plan_session`)
 
@@ -20,7 +20,7 @@ The contract is `doc/product/section_12.md` ("Planning sessions"); the code is `
 | `sandbox/reads.rs` | `read_denies` -> `ReadDenies { denied, carve_outs }`, shared with the guard |
 | `sandbox/assert.rs` | `assert_planning_settings`: refuses a settings object that lost a switch, a deny or the guard hook |
 | `guard/` | layer 3, `loom plan hook PreToolUse`: `mod.rs` (decide), `paths.rs` (read rules), `search.rs` (Grep/Glob) |
-| `hook_cli.rs` | `loom plan hook <event> --session-dir <dir>`: always exit 0, prints a deny line or nothing |
+| `hook_cli.rs` | `loom plan hook <event> --session-dir <dir>`: always exit 0, prints a deny line or nothing; `PreToolUse` is the guard, the ten spool events are in [Planning Session Bridge](planning-session-bridge.md) |
 
 ## Three layers, per kind
 
