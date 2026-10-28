@@ -197,3 +197,31 @@ containing `git commit`, even in a scratch fixture repo, so prove a no-diff rese
 **What happened:** shrinking an over-400-line test file by moving whole tests verbatim into a new test file raised a `TI-edit-<file>` event (assertion lines removed from a file that exists at base). The rule that a moved line does not count does not follow lines across files.
 
 **Prevention:** to shrink a test file, extract non-assertion setup into helpers and leave the tests in place.
+
+## A Filtered Stage Gate Hid Three Failures Until integration-verify (2026-10-28)
+
+**What happened:** `guidance-engine` passed its gate, then the integration-verify full suite found (1) `tests/planning_guidance_contracts.rs` spawning `CARGO_BIN_EXE_loom` without the `LOOM_*` scrub, which fails `tests/integration/binary_spawn_guard.rs`; (2) `web/src/api/fixtures/config.json` regenerated with `serde_json::to_string_pretty`, which `oxfmt --check` rejects because it collapses short arrays; (3) `web/src/components/settings-plan-section.test.ts`, which still expected two plan rows and the old caption after the four `[plan]` authoring keys made it four pairs.
+
+**Why:** the stage's criteria ran filtered targets only (no `--test integration`, one vitest file, no `oxfmt`). A filtered web criterion misses sibling tests over the same fixture. The same spawn-guard failure is in "A New Test Target Spawned the Loom Binary and Failed the Spawn Guard Only in integration-verify".
+
+**Prevention:** a test surface that spawns the loom binary uses the scrub idiom of `planning_check_cli_contracts.rs::check` and joins `SANCTIONED_SPAWNERS`. After `REGEN_FIXTURE=<path>`, run `web/node_modules/.bin/oxfmt` on the fixture (the `config_api` tests compare parsed JSON, so formatting is safe). When a registry key changes the fixture, run every vitest file importing it (`rg -l 'fixtures/config.json' web/src`). Changing the assertion lines of a test that exists at base raises a test-integrity event; dispute it with `loom stage dispute-integrity`. Proposal: [planning-guidance-followups](../concerns/planning-guidance-followups.md#proposals-for-hooks-and-plan-checks).
+
+**Fix:** the caption reads "what loom plan's sessions run on", the test pins all four pairs and `web/dist` was rebuilt.
+
+## Adding `[plan]` Keys Breaks Goldens and the Size Gate Outside the Owned Files (2026-10-28)
+
+**What happened:** adding the four authoring keys broke `user_config/plan/tests.rs::plan_toml_lists_all_resolved_keys` and `user_config/tests.rs::value_of_has_an_arm_for_every_registered_key`, neither in the stage's owned list; the new match arms pushed `user_config/tests.rs` (already 400 lines) and a 409-line operator test over `tests/maintainability.rs`, which counts files over 400 lines and functions over 50 lines in `tests/` too.
+
+**Prevention:** list both golden tests in the briefs that add registry keys, and give every forwarded unit the current line count of each file it extends.
+
+## A Codex Forward Reported Success and Wrote No Files (2026-10-28)
+
+**What happened:** forwarder unit `c6-opening` returned `state succeeded`, exit 0 and an evidence trailer, but wrote nothing: codex read the skills and the brief, then searched for the forwarder wrapper named in the prompt and stopped.
+
+**Prevention:** after every forward, check `git status` for the unit's files, not the trailer. Keep forwarded prompts free of orchestration wording and end them with "write the files before finishing".
+
+## Small Brief Slips in the Guidance Stages (2026-10-28)
+
+- Task briefs name repo-relative paths while `working_dir` is `loom/`; a read from `loom/` fails and a file-tool path using `../` is rejected by the worktree hook. Resolve the path from the working directory and give file tools absolute worktree paths. Locate embedded asset roots through `loom/build/assets.rs` before searching their contents.
+- A 120-character display limit was exceeded by an appended ellipsis. Count the truncation marker inside the budget (replace the last retained character) and pin it with a Unicode regression test.
+- A mutation check (`rewrite_agent` returning the source frontmatter unchanged) must fail `planning_guidance_contracts::agent_frontmatter_follows_non_default_config`; keep that test, it is the only one that sees a non-default pair reach the agent files.

@@ -1,6 +1,6 @@
 # Web Dashboard Typography
 
-> Dashboard CSS
+>
 
 ## Where the Dashboard's Theme Tokens Live
 
