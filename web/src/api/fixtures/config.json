@@ -594,17 +594,9 @@
       "help": "Claude model a loom plan authoring session runs on for spec steps",
       "kind": {
         "type": "enum",
-        "variants": [
-          "haiku",
-          "sonnet",
-          "opus",
-          "fable"
-        ]
+        "variants": ["haiku", "sonnet", "opus", "fable"]
       },
-      "scopes": [
-        "user",
-        "project"
-      ],
+      "scopes": ["user", "project"],
       "default": "opus",
       "user": {
         "value": "opus",
@@ -624,18 +616,9 @@
       "help": "Reasoning effort a loom plan authoring session runs at for spec steps",
       "kind": {
         "type": "enum",
-        "variants": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "variants": ["low", "medium", "high", "xhigh", "max"]
       },
-      "scopes": [
-        "user",
-        "project"
-      ],
+      "scopes": ["user", "project"],
       "default": "medium",
       "user": {
         "value": "medium",
@@ -655,17 +638,9 @@
       "help": "Claude model a loom plan authoring session runs on for plan steps",
       "kind": {
         "type": "enum",
-        "variants": [
-          "haiku",
-          "sonnet",
-          "opus",
-          "fable"
-        ]
+        "variants": ["haiku", "sonnet", "opus", "fable"]
       },
-      "scopes": [
-        "user",
-        "project"
-      ],
+      "scopes": ["user", "project"],
       "default": "opus",
       "user": {
         "value": "opus",
@@ -685,18 +660,9 @@
       "help": "Reasoning effort a loom plan authoring session runs at for plan steps",
       "kind": {
         "type": "enum",
-        "variants": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ]
+        "variants": ["low", "medium", "high", "xhigh", "max"]
       },
-      "scopes": [
-        "user",
-        "project"
-      ],
+      "scopes": ["user", "project"],
       "default": "high",
       "user": {
         "value": "high",

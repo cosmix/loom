@@ -186,10 +186,12 @@ fn a_default_tree_resolves_every_key_to_its_built_in() {
 /// fixture is regenerated, which is the point: the page would otherwise be
 /// parsing a shape the server no longer sends.
 ///
-/// To regenerate, print the payload this test builds and write it to the
-/// fixture with `serde_json::to_string_pretty` plus a trailing newline — the
-/// scenario is the four lines above, and nothing but `csrf_token` varies
-/// between runs.
+/// To regenerate, run this test with `REGEN_FIXTURE=<path>` set: it writes
+/// the payload it builds there as pretty JSON plus a trailing newline (the
+/// existing `csrf_token` is kept, so nothing else varies between runs).
+/// Afterwards run `node_modules/.bin/oxfmt src/api/fixtures/config.json`
+/// from `web/`: the web gate's `oxfmt --check` rejects serde's pretty layout, and
+/// this test compares parsed JSON, so the reformat does not affect it.
 #[test]
 fn the_config_fixture_matches_a_real_payload() {
     let scratch = scratch();
