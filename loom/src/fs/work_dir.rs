@@ -97,10 +97,10 @@ const LOOM_DIR: &str = ".loom";
 const WORK_DIR: &str = "work";
 /// The pre-move spelling of the state root, directly under the project root.
 const LEGACY_WORK_DIR: &str = ".work";
-/// The state root's private subdirectories. `terminal-history` exists from the start: every
-/// session capsule denies reading it, and the sandbox skips a deny whose path is missing.
+/// The state root's subdirectories, created by `WorkDir::load` when missing. `terminal-history`
+/// exists from the start: session capsules deny it, and the sandbox skips a missing deny path.
 #[rustfmt::skip]
-const STATE_SUBDIRS: [&str; 11] = [
+pub const STATE_SUBDIRS: [&str; 11] = [
     "signals", "handoffs", "archive", "stages", "sessions", "crashes", "memory",
     "wrappers", "pids", "logs", "terminal-history",
 ];
