@@ -1,5 +1,18 @@
 # Loom blockages
 
+## Plan 07: host-only session bridge verification
+
+- User decision: no further direct unsandboxed host tests. The operator e2e requirement is waived; retain failed/unverified status and use confined verification only. Defer live tmux testing and the unresolved submission diagnosis to a separate follow-up after merge; do not hold integration-verify for it. Complete and merge using required confined checks. This applies through plans 08–11.
+- Completion: user personally ran `loom stage complete integration-verify --no-verify`; All four plan 07 stages subsequently completed and merged; `loom clean --all` finished. This is an explicit verification waiver, not a passing end-to-end result.
+
+- Symptom: integration-verify blocked after its automated checks and review, requesting the Claude Code end-to-end and real-tmux tests outside the worker sandbox.
+- Cause: these tests require host Unix sockets, network access and a logged-in Claude Code; skips are failures with `LOOM_TEST_REQUIRE_SANDBOX_FREE=1`.
+- Host result: reviewed integration-verify tree, Claude Code 2.1.312 and tmux 3.6: end-to-end suite failed (1 passed, 1 failed, zero skips). The authoring session emitted Started but timed out waiting for Idle; recovery passed. Interrupt Stop, /compact order and session TMPDIR were not reached. Log: `/tmp/loom-plan07-host-e2e.log`.
+- Host lib results: plan_session:: passed 462/462; orchestrator::terminal::tmux:: passed 76/76, zero skips. Logs: `/tmp/loom-plan07-host-session.log`, `/tmp/loom-plan07-host-tmux.log`.
+- Recovery: recorded all results in integration-verify memory and retried with the end-to-end timeout as a finding to diagnose and correct.
+- Diagnosed cause: Claude Code's folder-trust dialog held the session in Starting. Stage fix `e9f3fdc1` trusts the project before launch and adds pane diagnostics on Idle timeout. Host rerun on `e9f3fdc1` reached Idle, confirming the trust fix, then failed waiting for the queue to drain (1 passed, 1 failed, zero skips). Recovery passed. Log: `/tmp/loom-plan07-host-e2e-r2.log`. Returned this new failure to integration-verify.
+- Next recovery: stage added StopFailure handling and hardened per-round test waits, permission handling and failure diagnostics (`a7d644c2`). Third host run failed (1 passed, 1 failed, zero skips): session reached Idle but timed out after 120s waiting for the opening's delivery. Saved pane shows the opening text still in the input box, zero tokens; report shows Undelivered and no UserPromptSubmit. Submission failure is established; exact cause remains unresolved. Log: `.worktrees/integration-verify/loom/target/plan07-host-e2e-r3.log`; diagnostics: `loom/target/tmp/plan-session-e2e/1793208662-the-opening-s-delivery` in that worktree (removed by completed-plan cleanup; the observed failure is preserved here and in distilled knowledge).
+
 ## Plan 06 to 07: concurrent operator-checkout edits
 
 - Symptom: the cleanup-only commit's pre-commit gate failed while another agent was editing `loom/src/commands/knowledge/eval.rs`: duplicate `refresh_source_graph`, mismatched arguments and a `?` on `()` prevented compilation.
