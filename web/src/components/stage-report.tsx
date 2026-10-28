@@ -9,7 +9,7 @@ import { NowCard } from "@/components/stage-now";
 import { StageTokens } from "@/components/stage-tokens";
 
 /// The stage in reading order, shared by the stage dialog and the stage page:
-/// where it stands now and what to do, what it has been through, the
+/// what to do now (only when the stage has an attention entry), what it has been through, the
 /// remaining detail behind one disclosure, and the token flow. A `#history` hash (the attention
 /// card's "earlier issues" link) brings the history card into view.
 export function StageReport({
@@ -34,7 +34,7 @@ export function StageReport({
 
   return (
     <div className="flex flex-col gap-4">
-      <NowCard stage={stage} entry={entry} />
+      {entry && <NowCard stage={stage} entry={entry} />}
       {/* Keyed by stage so moving along the thread resets the fold of each. */}
       <HistoryCard key={`history:${stage.id}`} ref={history} stage={stage} entry={entry} />
       <StageDetails
