@@ -1,6 +1,6 @@
 # Knowledge Cli Gaps
 
-> CLI gaps
+>
 
 ## `loom knowledge update` Cannot Set a Topic Blurb
 

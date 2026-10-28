@@ -1,6 +1,6 @@
 # Codex Lane Rogue Wrapper
 
-> Wrapper
+>
 
 ## A forwarding wrapper implemented the task itself (2026-08-07)
 

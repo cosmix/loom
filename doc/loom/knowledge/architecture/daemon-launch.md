@@ -1,6 +1,6 @@
 # Daemon Launch
 
-> Launch
+>
 
 ## Launching the Daemon: Re-Exec and Readiness Pipe
 

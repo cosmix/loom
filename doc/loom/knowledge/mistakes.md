@@ -171,3 +171,7 @@ Codex lanes were grouped all together instead of per forwarder/job pair, and a n
 ## Cargo test stops at the first failing target
 
 A failing test binary stops cargo before it runs the rest, which can hide a `tests/maintainability.rs` baseline failure. See [maintainability-baseline](mistakes/maintainability-baseline.md).
+
+## Planning Sandbox Delivery
+
+A read-denied directory is a writable private tmpfs under srt, a skipped real-sandbox test leaves the sandbox unproven, `Edit(doc/*)` covers `doc/loom`, and an `.ignore` file does not make an ancestor search safe. → [Planning Sandbox Delivery](mistakes/planning-sandbox-delivery.md)

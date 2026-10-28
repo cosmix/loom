@@ -1,6 +1,6 @@
 # Plan Server Delivery
 
-> Server
+>
 
 ## A New Test Target Spawned the Loom Binary and Failed the Spawn Guard Only in integration-verify (2026-10-27)
 

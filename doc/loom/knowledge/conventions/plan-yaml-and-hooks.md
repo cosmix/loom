@@ -3,7 +3,7 @@
 
 # Plan Yaml And Hooks
 
-> Plan YAML
+>
 
 ## Plan YAML Schema
 

@@ -1,6 +1,6 @@
 # Execution Containment
 
-> Containment
+>
 
 ## Read This First: What "Containment" Means In Loom
 
@@ -110,6 +110,8 @@ Two things not to "fix" without reading the reasoning first:
 `allow_write` rules also have parent traversal filtered out at the emitter, which
 is what actually closes the path-escape hole at the point of use.
 
+The planning sessions' settings are the second producer: `loom::plan_session::sandbox` writes their `settings.json` per session kind and not through `generate_settings_json` ([Planning Session Sandbox](planning-session-sandbox.md)).
+
 ## Package-Manager Caches Are Granted To Every Stage
 
 `sandbox::PACKAGE_MANAGER_CACHE_WRITE_PATHS` (`sandbox/package_caches.rs`) lists the
@@ -216,8 +218,11 @@ repository), these sandbox rules decide what loom's capsule can and cannot expre
   when the parent is a host directory bound into the sandbox, so host processes see an empty
   regular file there while each sandboxed command runs; Claude Code removes it afterwards (a killed
   sandbox can leave it). A `denyRead` path that does not exist mounts nothing.
-- **Reads.** A `denyRead` file is bound from `/dev/null`; a directory is covered by a tmpfs with
-  the `allowRead` and `allowWrite` paths inside it re-mounted.
+- **Reads.** A `denyRead` file is bound from `/dev/null`; a directory is covered by a private
+  writable tmpfs for one command, with the `allowRead` and `allowWrite` paths inside it
+  re-mounted. A write under it succeeds and never reaches the host, and no `denyWrite` can make it
+  read-only (srt 0.0.78 `pushReadDenyDirMounts` skips a `denyWrite` outside `allowWrite` as
+  already read-only).
 - **Environment.** A top-level `env` in a `--settings` file reaches Bash commands; Claude Code
   sets `TMPDIR` per command to `<CLAUDE_CODE_TMPDIR or /tmp>/claude-<uid>`.
 - **srt.** `@anthropic-ai/sandbox-runtime` 0.0.78 shares this bind logic but not the git-dir
