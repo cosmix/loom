@@ -460,6 +460,7 @@ When the codex model is unavailable to the account (codex rejects it as not supp
 loom plan [--port <PORT>] [--host <HOST>] [--no-open]
 loom plan verify <plan-path> [--strict] [--json] [--no-color]
 loom plan check [--json]
+loom plan hook <event> --session-dir <dir>              # Hidden internal PreToolUse path guard run by Claude Code for planning sessions; not run by hand
 loom plan summary brief <SUMMARY_ID>... [--note <TEXT>]  # Claim summaries and print rebuild briefs
 loom plan summary seal <SUMMARY_ID> [--force]            # Validate and save a draft
 loom plan summary status [--json]                        # List summary states

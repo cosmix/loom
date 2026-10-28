@@ -689,6 +689,8 @@ Planning sessions run `loom plan check` after editing planning documents. Exit 1
 
 Sessions rebuild summaries with `loom plan summary brief`, write the draft, and run `loom plan summary seal` until it is accepted. `loom plan summary status` lists what is out of date.
 
+`loom plan hook` is internal and must never be run by hand.
+
 ## Anti-Patterns
 
 | Anti-Pattern | Why It's Wrong | Do This Instead |
