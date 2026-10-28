@@ -167,3 +167,7 @@ A chain check that read attributes by position and refused by deny-list (a `cfg`
 ## Web Dashboard Layout
 
 Codex lanes were grouped all together instead of per forwarder/job pair, and a nested cluster frame narrowed its heat strips out of line with the plain lanes. Group on AgentFlow.forwarder, cancel a nested frame's border and padding, and measure strip x ranges in a real browser. → [Web Dashboard](mistakes/web-dashboard.md)
+
+## Cargo test stops at the first failing target
+
+A failing test binary stops cargo before it runs the rest, which can hide a `tests/maintainability.rs` baseline failure. See [maintainability-baseline](mistakes/maintainability-baseline.md).
