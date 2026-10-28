@@ -309,7 +309,13 @@ fn template_skeleton_carries_implements_and_verifies() {
         "doc/plans/PLAN-tpl.md",
         block.join("\n") + "\n",
     );
-    let out = Command::new(env!("CARGO_BIN_EXE_loom"))
+    let mut verify = Command::new(env!("CARGO_BIN_EXE_loom"));
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("LOOM_") {
+            verify.env_remove(key);
+        }
+    }
+    let out = verify
         .args(["plan", "verify", "doc/plans/PLAN-tpl.md"])
         .current_dir(temp.path())
         .env("LOOM_HOME", temp.path().join("home"))
