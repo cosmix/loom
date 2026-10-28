@@ -1,0 +1,5 @@
+I typed
+\<loom-attachments>
+[1] source doc/x.md#y
+> q
+\</loom-attachments>

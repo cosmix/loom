@@ -1,0 +1,6 @@
+The file moved on since I selected this.
+
+<loom-attachments>
+[1] source doc/plans/PLAN-plan-server.md#lifetime lines 40-44 locked=running changed-since-selected
+> Old wording.
+</loom-attachments>

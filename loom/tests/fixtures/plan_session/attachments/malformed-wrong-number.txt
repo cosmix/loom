@@ -1,0 +1,6 @@
+See this.
+
+<loom-attachments>
+[2] source doc/x.md#y
+> quote
+</loom-attachments>
