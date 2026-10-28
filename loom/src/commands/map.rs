@@ -320,9 +320,11 @@ fn read_source_window(
 }
 
 /// Ensure the local snapshot, then read the resolved view it selected.
+///
+/// The cache directory is not created up front: every cache write creates its own parent, and
+/// a write the sandbox denies falls back to memory, so a read-only `.loom` still answers.
 fn load_graph(project_root: &Path, work_dir: &WorkDir, timings: &mut Timings) -> Result<Loaded> {
     let store = ContextStore::open(work_dir)?;
-    store.ensure()?;
     let graph_store = GraphStore::new(store.root(), work_dir.root());
     let snapshot = timed(&mut timings.snapshot, || {
         ensure_snapshot(

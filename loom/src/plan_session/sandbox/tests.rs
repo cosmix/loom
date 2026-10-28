@@ -43,6 +43,7 @@ impl Fixture {
         }
         for file in [
             "README.md",
+            "doc/index.md",
             "doc/plans/PLAN-a.md",
             "doc/plans/IN_PROGRESS-PLAN-b.md",
             "doc/plans/REVIEW-PLAN-b.md",
@@ -135,7 +136,7 @@ fn expected_permissions(f: &Fixture) -> Value {
             format!("Edit(/{root}/doc/product/**)"),
             format!("Edit(/{root}/doc/plans/**)"),
             format!("Edit(/{root}/doc/notes/**)"),
-            format!("Edit(/{root}/doc/*)"),
+            format!("Edit(/{root}/doc/index.md)"),
             format!("Edit(/{}/**)", rt.drafts.display()),
             format!("Read(/{}/**)", rt.drafts.display()),
             format!("Read(/{}/**)", rt.claims.display()),

@@ -229,7 +229,7 @@ literal `terminal-history` is named once in `sandbox/reads.rs` with that citatio
 
 | Kind | `allow` | `ask` | `deny` |
 | --- | --- | --- | --- |
-| authoring | `Edit(//<root>/doc/product/**)`, `Edit(//<root>/doc/plans/**)`, `Edit(//<root>/doc/<d>/**)` for each existing directory `d` directly under `doc/` other than `loom`, `product`, `plans`, `Edit(//<root>/doc/*)`, `Edit(//<rt>/drafts/**)`, `Read(//<rt>/drafts/**)`, `Read(//<rt>/claims/**)`, `Bash(loom knowledge *)`, `Bash(loom plan summary *)`, `Bash(loom plan verify *)`, `Bash(loom plan check*)`, `Bash(loom map *)`, `WebSearch` | `WebFetch` | the tool denies (below), `AskUserQuestion`, `Edit(//<root>/<p>)` for each existing locked plan file, `Edit(//<root>/doc/plans/REVIEW-*.md)`, `Edit(//<root>/doc/plans/archive/**)`, `Edit(//<root>/doc/plans/briefs/<slug>/**)` for each locked plan's slug |
+| authoring | `Edit(//<root>/doc/product/**)`, `Edit(//<root>/doc/plans/**)`, `Edit(//<root>/doc/<d>/**)` for each existing directory `d` directly under `doc/` other than `loom`, `product`, `plans`, `Edit(//<root>/doc/<f>)` for each existing top-level regular file `f` of `doc/` (listed no-follow; a symlink, a special file and a name holding rule syntax are skipped), `Edit(//<rt>/drafts/**)`, `Read(//<rt>/drafts/**)`, `Read(//<rt>/claims/**)`, `Bash(loom knowledge *)`, `Bash(loom plan summary *)`, `Bash(loom plan verify *)`, `Bash(loom plan check*)`, `Bash(loom map *)`, `WebSearch` | `WebFetch` | the tool denies (below), `AskUserQuestion`, `Edit(//<root>/<p>)` for each existing locked plan file, `Edit(//<root>/doc/plans/REVIEW-*.md)`, `Edit(//<root>/doc/plans/archive/**)`, `Edit(//<root>/doc/plans/briefs/<slug>/**)` for each locked plan's slug |
 | summary | `Edit(//<rt>/drafts/**)`, `Read(//<rt>/drafts/**)`, `Read(//<rt>/claims/**)`, `Bash(loom plan summary *)` | none | the tool denies (below), `AskUserQuestion`, `WebSearch`, `WebFetch` |
 | pressure | `Edit(//<root>/<plan>)`, `Edit(//<root>/<bundle>/**)`, `Edit(//<root>/planning-omissions.md)`, `Bash(touch <marker>)` with `<marker>` = `session_dir.marker()` absolute, the five authoring `Bash(...)` rules, `WebSearch` | `WebFetch` | the pressure tool denies (below), `AskUserQuestion` |
 
@@ -246,8 +246,10 @@ servers outside the sandbox; `RemoteTrigger` and `CronCreate` act with nobody se
 
 No `Edit` deny on `doc/loom/knowledge/` or `doc/loom/summaries/`, ever: an `Edit` deny also becomes
 an OS write deny and would block `loom knowledge` and `loom plan summary seal`, which run as Bash
-subprocesses in this sandbox. No allow rule covers `doc/loom/` (it is excluded from the per-dir
-allow list and `Edit(//<root>/doc/*)` matches only top-level files). `Bash(touch <marker>)` must
+subprocesses in this sandbox. No allow rule covers `doc/loom/`: it is excluded from the per-dir
+allow list, and top-level files are allowed by their literal paths because `Edit` rule paths
+match with gitignore semantics, under which `Edit(//<root>/doc/*)` would match the directory
+`doc/loom` and so everything beneath it. `Bash(touch <marker>)` must
 be exactly the command `completion_instruction` (`loom/src/commands/pressure/spawn.rs:21-30`)
 tells the agent to run: `touch <absolute marker path>`, no quoting added.
 
@@ -315,7 +317,7 @@ Decisions, in this order, for `tool_name` in the matcher list:
    canonical form too, each canonicalized when it exists). An existing path whose canonicalize
    fails is a deny. Deny when either form equals or lies inside a
    read-denied path (the `denyRead` list of the settings, recomputed by the same function
-   `sandbox::reads::read_denies(home, root, rt)` returns, with `~/` expanded to `home` and a
+   `sandbox::read_denies(home, root, rt)` returns, with `~/` expanded to `home` and a
    trailing `/**` meaning "the directory and everything in it"), unless it equals or lies inside
    one of the session's own `allowRead` grants. `Grep` and `Glob` are also denied when the search
    root is a strict ancestor (lexically or canonically) of a home-side denied path (a credential
@@ -323,6 +325,9 @@ Decisions, in this order, for `tool_name` in the matcher list:
    the search root itself is a symlink (ripgrep follows a symlink named on its command line). A search root that is an ancestor only of
    the project's own token files (`.loom/work/...`) is allowed: the daemon's `.ignore` at the
    state root (`state_root.rs:94`, `search_ignore_body`) keeps ripgrep out of them.
+   `read_denies` refuses a path that is not valid UTF-8 after symlink resolution (a lossy
+   conversion would deny a path that does not exist); the settings build fails on it, and the
+   guard denies every read and search while it fails.
 6. Otherwise `Defer`.
 
 Output: `Defer` prints NOTHING. Never print `permissionDecision: "allow"`: an allow from a

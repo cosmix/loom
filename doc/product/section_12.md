@@ -224,7 +224,10 @@ inside this sandbox; stages keep the knowledge directory writable for the same r
 (`sandbox/config.rs:12-19`). Every entry is a literal existing path, and no entry lies beneath
 another denied directory, since bubblewrap refuses to mount a deny inside a read-only bind
 (`architecture/execution-containment.md`). The read denies above go into `denyRead`, with
-`allowRead` on the session's own three runtime grants.
+`allowRead` on the session's own three runtime grants. On Linux srt covers each `denyRead`
+directory with a private tmpfs for the length of one command and binds those grants back into it,
+so a command can create files under the planning root; they vanish when it exits and never reach
+the host's runtime directory.
 
 **2. Permission rules (file tools).** Rules use the absolute `//` form throughout, because
 the settings file lives outside the project and a single leading `/` would resolve against
@@ -232,9 +235,12 @@ its directory (`architecture/execution-containment.md`, path syntax). Only `Edit
 bind file writes; `Write(...)` rules are inert (`mistakes/sandbox-write-rules-inert.md`).
 
 - `allow`: `Edit` on each directory directly under `doc/` except `loom`, enumerated at spawn,
-  plus `doc/product/**` and `doc/plans/**` whether or not they exist yet, plus `Edit` on the
-  top-level files of `doc/`; `Edit` and `Read` on `drafts/**`; `Read` on `claims/**`. No
-  allow rule covers `doc/loom/`, so a file-tool write there can never pass silently.
+  plus `doc/product/**` and `doc/plans/**` whether or not they exist yet, plus `Edit` on
+  each existing top-level regular file of `doc/` by its literal path; `Edit` and `Read` on
+  `drafts/**`; `Read` on `claims/**`. No allow rule covers `doc/loom/`, so a file-tool write
+  there can never pass silently. `Edit` rule paths match with gitignore semantics, where a
+  pattern matching a directory covers everything beneath it, so no wildcard over `doc/`'s
+  entries is written: `doc/*` would match `doc/loom`. A top-level file created later prompts.
 - `deny`: `Edit` on each locked plan file, on `doc/plans/REVIEW-*.md`, and on
   `doc/plans/archive/**`. Deny rules on
   `doc/loom/knowledge/` or `doc/loom/summaries/` are impossible: an `Edit` deny also becomes
@@ -286,10 +292,11 @@ person at the chat should see it. Commands that start sessions or runs
 (`loom run`, `loom init`, `loom pressure`) are not on the list and would fail in this sandbox
 anyway; section 11 runs them from the server.
 
-`loom map` and `loom knowledge context` refresh an overlay under `.loom/work` when they can.
-In a planning session `.loom` is write-denied, as it is for checkout-rooted knowledge stages,
-so both must answer from what exists when the refresh cannot write. Acceptance needs a test
-that runs each inside a planning sandbox.
+`loom map` and `loom knowledge context` refresh the source graph cache under
+`.loom/cache/context-v1` when they can. In a planning session `.loom` is write-denied,
+as it is for checkout-rooted knowledge stages, so a layer either one cannot write is
+kept in memory for the rest of the command and answered from there. Acceptance needs a
+test that runs each inside a planning sandbox.
 
 ### Network and web tools
 
@@ -367,7 +374,7 @@ and `plans`.
     "defaultMode": "default",
     "disableBypassPermissionsMode": "disable",
     "allow": ["Edit(//<root>/doc/product/**)", "Edit(//<root>/doc/plans/**)",
-              "Edit(//<root>/doc/<each other dir>/**)", "Edit(//<root>/doc/*)",
+              "Edit(//<root>/doc/<each other dir>/**)", "Edit(//<root>/doc/<each file>)",
               "Edit(//<rt>/drafts/**)", "Read(//<rt>/drafts/**)", "Read(//<rt>/claims/**)",
               "Bash(loom knowledge *)", "Bash(loom plan summary *)", "Bash(loom plan verify *)",
               "Bash(loom plan check*)", "Bash(loom map *)", "WebSearch"],

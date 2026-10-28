@@ -12,6 +12,11 @@ use tracing_subscriber::{fmt, EnvFilter};
 /// config -k <key>` prints a bare value meant for a script to read. Terminal
 /// recovery writes ANSI escape sequences to stdout, which on these commands
 /// would be bytes inside that payload rather than a restored display.
+///
+/// `loom plan hook <event> --session-dir <dir>`, the PreToolUse guard of a
+/// planning session, is the same kind of entry point, but `plan` is also the
+/// interactive planner server and so cannot be listed here; [`is_plan_hook`]
+/// matches it on its first two arguments.
 const MACHINE_PROTOCOL_COMMANDS: [&str; 3] = ["hook", "context", "config"];
 
 /// Subcommands that must never check for updates or print a notice.
@@ -20,9 +25,11 @@ const MACHINE_PROTOCOL_COMMANDS: [&str; 3] = ["hook", "context", "config"];
 /// [`MACHINE_PROTOCOL_COMMANDS`]) invoked from every Claude Code hook — an
 /// update notice on stderr is tolerable there in principle, but there is no
 /// value in checking on every single hook call, so they are excluded too.
-/// `complete` runs at the tail of a stage and should stay quiet. `run` covers
-/// both `loom run` and the daemon itself, which `loom run` starts by
-/// re-executing the binary as `loom run --daemon-child`
+/// `loom plan hook` runs on every file-tool call of a planning session and is
+/// excluded the same way through [`is_plan_hook`], while `loom plan` itself
+/// keeps its notice. `complete` runs at the tail of a stage and should stay
+/// quiet. `run` covers both `loom run` and the daemon itself, which `loom run`
+/// starts by re-executing the binary as `loom run --daemon-child`
 /// (`daemon/server/launch.rs`), so the daemon needs no entry of its own.
 const UPDATE_SILENT_COMMANDS: [&str; 4] = ["hook", "context", "complete", "run"];
 
@@ -49,9 +56,11 @@ fn main() -> Result<()> {
 
     // Recover terminal state if a previous TUI was killed without cleanup —
     // before anything else, so a corrupted terminal is fixed before a command
-    // renders into it. Exempt: the entry points whose stdout is a protocol,
-    // and the daemon child, whose stdout is the readiness pipe.
+    // renders into it. Exempt: the entry points whose stdout is a protocol
+    // (including the planning session's `loom plan hook`), and the daemon
+    // child, whose stdout is the readiness pipe.
     if !writes_a_machine_protocol(first_arg.as_deref())
+        && !is_plan_hook(first_arg.as_deref(), second_arg.as_deref())
         && !is_daemon_child(first_arg.as_deref(), second_arg.as_deref())
     {
         loom::utils::recover_terminal_if_needed();
@@ -71,7 +80,9 @@ fn main() -> Result<()> {
 
     // Best-effort, silent update notice — see `loom::update_check`'s module
     // docs for why this takes no network call on the hot path.
-    if !suppresses_update_check(first_arg.as_deref()) {
+    if !suppresses_update_check(first_arg.as_deref())
+        && !is_plan_hook(first_arg.as_deref(), second_arg.as_deref())
+    {
         loom::update_check::notify_and_maybe_refresh();
     }
 
@@ -87,6 +98,18 @@ fn main() -> Result<()> {
 /// anything starting with `-` matches nothing in the list.
 fn writes_a_machine_protocol(first_arg: Option<&str>) -> bool {
     first_arg.is_some_and(|arg| MACHINE_PROTOCOL_COMMANDS.contains(&arg))
+}
+
+/// True for `loom plan hook <event> --session-dir <dir>`, the PreToolUse guard
+/// Claude Code runs before every file-tool call of a planning session. Its
+/// stdout is a JSON answer the harness parses, and it runs too often to spend a
+/// stderr notice or a detached refresh child on, so it skips both terminal
+/// recovery and the update check. Terminal recovery would also remove a stale
+/// `tui.pid` in the hook's working directory. `loom plan` alone, the planner
+/// server, matches neither this nor [`MACHINE_PROTOCOL_COMMANDS`] and keeps
+/// both.
+fn is_plan_hook(first_arg: Option<&str>, second_arg: Option<&OsStr>) -> bool {
+    first_arg == Some("plan") && second_arg.is_some_and(|arg| arg == "hook")
 }
 
 /// True for `loom run --daemon-child <root>`, the daemon `loom run` starts.
@@ -126,6 +149,21 @@ mod tests {
         assert!(!is_daemon_child(Some("run"), None), "a plain `loom run`");
         assert!(!is_daemon_child(Some("status"), flag));
         assert!(!is_daemon_child(None, None), "a bare `loom` invocation");
+    }
+
+    #[test]
+    fn the_planning_hook_is_exempt_but_the_planner_server_is_not() {
+        let hook = Some(OsStr::new("hook"));
+        assert!(is_plan_hook(Some("plan"), hook));
+        assert!(!is_plan_hook(Some("plan"), None), "a plain `loom plan`");
+        assert!(!is_plan_hook(Some("plan"), Some(OsStr::new("serve"))));
+        assert!(!is_plan_hook(Some("plan"), Some(OsStr::new("--hook"))));
+        assert!(!is_plan_hook(Some("status"), hook));
+        assert!(!is_plan_hook(Some("hook"), hook), "`hook` is a list entry");
+        assert!(!is_plan_hook(None, None), "a bare `loom` invocation");
+        // `plan` stays out of both lists, so the server keeps recovery and the notice.
+        assert!(!writes_a_machine_protocol(Some("plan")));
+        assert!(!suppresses_update_check(Some("plan")));
     }
 
     #[test]

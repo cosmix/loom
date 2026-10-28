@@ -108,7 +108,6 @@ fn ensure_local_snapshot(work_dir_hint: &Path) -> Result<SnapshotOutcome> {
         .project_root()
         .context("Could not determine project root")?;
     let store = ContextStore::open(&work_dir)?;
-    store.ensure()?;
     let graph_store = GraphStore::new(store.root(), work_dir.root());
     Ok(ensure_snapshot(
         &store,

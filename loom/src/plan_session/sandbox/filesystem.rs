@@ -22,7 +22,8 @@ const LOOM: &str = "loom";
 const SUMMARIES: &str = "summaries";
 const PLANS: &str = "plans";
 const BRIEFS: &str = "briefs";
-pub(super) const OMISSIONS: &str = "planning-omissions.md";
+/// A pressure session's notes file at the project root.
+pub(crate) const OMISSIONS: &str = "planning-omissions.md";
 
 /// The project tree, listed through one no-follow descriptor of its root.
 pub(super) struct Tree {
@@ -197,7 +198,11 @@ fn utf8_name(path: &Path) -> Result<&str> {
 pub(super) fn text(path: &Path) -> Result<String> {
     match path.to_str() {
         Some(text) => Ok(text.to_owned()),
-        None => bail!("{} is not valid UTF-8", path.display()),
+        None => bail!(
+            "the planning sandbox cannot name {} in its settings: the path is not valid UTF-8; \
+             rename it to a UTF-8 name",
+            path.display()
+        ),
     }
 }
 
