@@ -32,6 +32,14 @@ pub struct PlanServeArgs {
 
 #[derive(Subcommand)]
 pub enum PlanCommands {
+    /// The hook entry Claude Code runs for planning sessions; not user-facing.
+    #[command(hide = true)]
+    Hook {
+        event: String,
+        #[arg(long)]
+        session_dir: std::path::PathBuf,
+    },
+
     /// Verify a plan file without side effects (no .loom/work/, no git repo required)
     Verify {
         /// Path to the plan file to validate

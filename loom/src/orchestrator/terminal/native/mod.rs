@@ -10,7 +10,7 @@ mod launch;
 mod pid_guard;
 mod pid_tracking;
 mod session_log;
-mod session_settings;
+pub(crate) mod session_settings;
 mod spawner;
 mod window_ops;
 mod wrapper;

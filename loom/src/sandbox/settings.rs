@@ -13,7 +13,7 @@ use crate::fs::permissions::state_root::resolve_state_root;
 #[cfg(test)]
 use std::fs;
 
-mod policy;
+pub(crate) mod policy;
 pub(crate) use policy::validate_emittable;
 
 /// Write Claude Code's `permissions.defaultMode` into a settings JSON value.
