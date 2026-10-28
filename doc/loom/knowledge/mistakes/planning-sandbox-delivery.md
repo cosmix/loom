@@ -1,6 +1,6 @@
 # Planning Sandbox Delivery
 
-> Sandbox slips
+>
 
 ## Assumed a Read-Denied Directory Is Read-Only Under srt
 

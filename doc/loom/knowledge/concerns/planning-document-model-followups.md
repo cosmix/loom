@@ -4,7 +4,7 @@ sources:
 ---
 # Planning Document Model Followups
 
-> Planning TODO
+>
 
 ## Open Items in `loom::planning`
 
