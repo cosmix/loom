@@ -1,6 +1,6 @@
 # Agent Rule-Bending Hardening
 
-> Rule bending
+>
 
 ## Why This Entry Exists
 

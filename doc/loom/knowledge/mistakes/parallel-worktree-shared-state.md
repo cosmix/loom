@@ -1,6 +1,6 @@
 # Parallel Worktree Shared State
 
-> Shared state
+>
 
 ## The One Question That Catches This Whole Class
 

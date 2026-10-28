@@ -1,6 +1,6 @@
 # Maintainability Baseline
 
-> cargo test stops early; maintainability baseline
+>
 
 ## Cargo stops at the first failing test target and hides later ones
 

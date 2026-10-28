@@ -1,6 +1,6 @@
 # Adjudication Autonomy Deadlock
 
-> Deadlock
+>
 
 ## Adoption Matched Sessions by stage_id Alone
 

@@ -1,6 +1,6 @@
 # Stage-to-Daemon Channels
 
-> Channels
+>
 > routes rather than one.
 
 ## Three Routes, Chosen by What the Caller Can Actually Do

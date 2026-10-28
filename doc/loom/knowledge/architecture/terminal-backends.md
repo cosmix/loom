@@ -1,6 +1,6 @@
 # Terminal Backends
 
-> Backends
+>
 
 ## Two Lanes Behind One Dispatcher
 

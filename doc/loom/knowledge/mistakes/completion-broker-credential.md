@@ -1,6 +1,6 @@
 # Completion Broker Credential
 
-> Broker
+>
 
 ## A Designed Fallback Existed on the Server, and the Client Could Never Reach It (2026-08-11)
 
