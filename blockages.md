@@ -1,5 +1,18 @@
 # Loom blockages
 
+## Plan 06 to 07: concurrent operator-checkout edits
+
+- Symptom: the cleanup-only commit's pre-commit gate failed while another agent was editing `loom/src/commands/knowledge/eval.rs`: duplicate `refresh_source_graph`, mismatched arguments and a `?` on `()` prevented compilation.
+- Cause: the repository hook checks the live working tree even when `git commit --only` limits the commit's paths. The edits are unfinished concurrent work, not plan 06 changes.
+- Recovery: the other agent's fixes and plan 06 cleanup are committed (cleanup `d2c9dc2c`). The operator installed dev.177 and explicitly resumed plans 07–11. The tracked checkout is ready once this monitoring note is committed; unrelated untracked files remain preserved.
+
+## Plan 06: real-host confinement verification
+
+- Symptom: integration-verify intentionally blocked after its ordinary gates, asking for `LOOM_TEST_REQUIRE_SANDBOX_FREE=1 cargo test --manifest-path loom/Cargo.toml --test plan_session_confinement -- --nocapture` outside the worker sandbox.
+- Cause: the confinement probes require real host sandbox facilities; the nested worker sandbox cannot establish the same environment. This is a planned operator gate.
+- Host result: Linux, srt `0.0.78`, 11 passed and 3 failed. `map_prints_an_outline_with_the_cache_write_denied` cannot create `.loom/cache/context-v1`; `summary_seal_writes_the_summary_with_the_session_environment` refuses the writable planning-root parent; `the_planning_root_and_runtime_are_write_denied` permits the planning-root probe write (`LOOM_PROBE_RC=0`). These are real failures, not skipped tests or sandbox-launch failures.
+- Recovery: returned all three findings to integration-verify. After its fixes, the same Linux host command passed all 14 tests with srt `0.0.78` (zero skips). The planning-root probe now verifies that writes never reach the host. Recorded the passing result in stage memory and resumed verification. No macOS host is available in this environment.
+
 ## Plan 06: missing srt host prerequisite
 
 - Symptom: planning-sandbox's preflight truth check for host-installed `srt` (`@anthropic-ai/sandbox-runtime 0.0.78`) exited 127 before the stage could start.
