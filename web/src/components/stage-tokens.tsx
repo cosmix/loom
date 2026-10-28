@@ -2,10 +2,10 @@ import { useAtomValue } from "jotai/react";
 import { Coins } from "lucide-react";
 import { useId } from "react";
 
-import type { AgentFlow, StageFlow, TokenFlow } from "@/api/schema";
+import type { StageFlow, TokenFlow } from "@/api/schema";
 import { HeatStrip, Sparkline } from "@/components/sparkline";
+import { TokenLanes } from "@/components/stage-token-lanes";
 import {
-  agentLabel,
   cacheHitPercent,
   carryForward,
   codexPairs,
@@ -41,19 +41,33 @@ function chipTrends(tokens: TokenFlow, flow: StageFlow) {
   };
 }
 
-/// The lanes' series over the same window as the chips' trends: always
-/// `TREND_POINTS` cells, so the strips keep one width as the stage ages. Newer
-/// buckets sit on the right and a young or idle series starts with empty cells
-/// on the left, shifting left as time passes. Also returns the maximum the cells
-/// are scaled to. Loops over the series rather than spreading them into
-/// arguments, which throws a RangeError on a long series.
-function laneSeries(stage: StageFlow): { lanes: number[][]; max: number } {
-  const lanes = stage.agents.map((agent) => lastValues(agent.series, TREND_POINTS));
+/// The lanes keep the whole series the API sends (120 buckets, 60 min) so an
+/// agent that ran an hour ago still lights its strip. Revisit if the API's
+/// bucket count changes; the cap also bounds the DOM for a runaway series.
+const LANE_POINTS = 120;
+
+/// The lanes' series over one window of cells: as long as the longest series
+/// (at least `TREND_POINTS`, at most `LANE_POINTS`), so the strips keep one
+/// width. Newer buckets sit on the right and a young or idle series starts with
+/// empty cells on the left. Also returns the maximum the cells are scaled to,
+/// over the visible window, and the window's span in minutes. Loops over the
+/// series rather than spreading them into arguments, which throws a RangeError
+/// on a long series.
+function laneSeries(
+  stage: StageFlow,
+  bucketSecs: number,
+): { lanes: number[][]; max: number; minutes: number } {
+  const longest = stage.agents.reduce(
+    (best, agent) => Math.max(best, agent.series.length),
+    stage.series.length,
+  );
+  const cells = Math.min(LANE_POINTS, Math.max(TREND_POINTS, longest));
+  const lanes = stage.agents.map((agent) => lastValues(agent.series, cells));
   const max = lanes.reduce(
     (best, series) => maxOf(series, best),
-    maxOf(lastValues(stage.series, TREND_POINTS)),
+    maxOf(lastValues(stage.series, cells)),
   );
-  return { lanes, max };
+  return { lanes, max, minutes: Math.round((cells * bucketSecs) / 60) };
 }
 
 function Chip({ value, label, trend }: { value: string; label: string; trend: Trend }) {
@@ -72,72 +86,6 @@ function Chip({ value, label, trend }: { value: string; label: string; trend: Tr
         className="text-(--tone-executing)"
       />
     </div>
-  );
-}
-
-function LaneIdentity({ agent }: { agent: AgentFlow }) {
-  const label = agentLabel(agent);
-  const state = agent.active ? "live" : "idle";
-  return (
-    <div className="flex min-w-0 flex-col">
-      <span className="flex items-center gap-1.5 text-sm font-medium">
-        <span
-          role="img"
-          aria-label={state}
-          data-testid="agent-dot"
-          data-state={state}
-          className={`size-2 shrink-0 rounded-full bg-(--tone) ${agent.active ? "tone-completed dot-live" : "tone-dimmed"}`}
-        />
-        <span className="min-w-0 wrap-anywhere" title={label}>
-          {label}
-        </span>
-        {agent.kind === "codex" && (
-          <span className="rounded-sm border border-hairline px-1 text-[10px] text-muted-foreground">
-            codex
-          </span>
-        )}
-      </span>
-      <span className="flex min-w-0 items-baseline font-mono text-[11px] text-muted-foreground">
-        <span className="shrink-0">{agent.model ?? "unknown model"}</span>
-        <span className="shrink-0 whitespace-pre"> · </span>
-        <span className="min-w-0 wrap-anywhere" title={agent.id}>
-          {agent.id}
-        </span>
-      </span>
-    </div>
-  );
-}
-
-function Lane({
-  agent,
-  series,
-  max,
-  compact = false,
-}: {
-  agent: AgentFlow;
-  series: number[];
-  max: number;
-  compact?: boolean;
-}) {
-  return (
-    <li
-      data-testid="token-lane"
-      className={`grid grid-cols-[minmax(0,20rem)_minmax(0,1fr)_auto_auto] items-center gap-x-3 max-md:grid-cols-[minmax(0,1fr)_auto_auto] ${compact ? "gap-y-0.5" : "gap-y-1"}`}
-    >
-      <LaneIdentity agent={agent} />
-      <HeatStrip
-        values={series}
-        max={max}
-        label={`${agentLabel(agent)} fresh tokens per 30 s, last 30 min`}
-        className="max-md:order-last max-md:col-span-3"
-      />
-      <span className="w-16 text-right font-mono text-xs tabular-nums text-muted-foreground">
-        {agent.active ? `${compactTokens(fresh(agent.rate))}/m` : "—"}
-      </span>
-      <span className="w-16 text-right font-mono text-xs tabular-nums">
-        {compactTokens(fresh(agent.total))}
-      </span>
-    </li>
   );
 }
 
@@ -173,34 +121,9 @@ function Chips({ tokens, flow }: { tokens: TokenFlow; flow: StageFlow }) {
   );
 }
 
-/// A forwarder subagent and the codex job(s) it forwarded to, clustered in one
-/// tighter frame so the lanes read as a unit; every lane keeps all its fields.
-/// The frame pulls outward by its own border and padding (1px + `px-2.5`), so
-/// the lanes inside keep the width, and the heat-strip cells the x positions,
-/// of the plain lanes above.
-function CodexCluster({
-  rows,
-  max,
-}: {
-  rows: Array<{ agent: AgentFlow; series: number[] }>;
-  max: number;
-}) {
-  return (
-    <li data-testid="codex-cluster" className="list-none">
-      <div className="-mx-[11px] flex flex-col gap-1.5 rounded-md border border-hairline bg-background px-2.5 py-2">
-        <span className="eyebrow">codex</span>
-        <ul className="flex flex-col gap-1.5">
-          {rows.map(({ agent, series }) => (
-            <Lane key={agent.id} agent={agent} series={series} max={max} compact />
-          ))}
-        </ul>
-      </div>
-    </li>
-  );
-}
-
-/// The stage's token flow: headline chips and one heat-strip lane per agent,
-/// each forwarder and its codex job clustered last. Folded to the chips' labels
+/// The stage's token flow: headline chips and one heat-strip lane per agent
+/// active in the window, each forwarder and its codex job clustered last, the
+/// idle ones folded under "earlier agents". Folded to the chips' labels
 /// and trends until the reader opens it.
 /// Renders nothing for a stage the tracker has not seen.
 export function StageTokens({ stageId }: { stageId: string }) {
@@ -210,7 +133,7 @@ export function StageTokens({ stageId }: { stageId: string }) {
   const panel = useId();
   if (!tokens || !flow) return null;
 
-  const { lanes, max } = laneSeries(flow);
+  const { lanes, max, minutes } = laneSeries(flow, tokens.bucket_secs);
   const rows = flow.agents.map((agent, index) => ({
     agent,
     series: lanes[index] ?? [],
@@ -234,12 +157,12 @@ export function StageTokens({ stageId }: { stageId: string }) {
         />
         {open && (
           <div className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">
-            <span>30 s cells</span>
+            <span>{tokens.bucket_secs} s cells</span>
             <span className="font-mono tabular-nums">0</span>
             <HeatStrip
               values={RAMP}
               max={4}
-              label={`intensity, 0 to ${max} fresh tokens per 30 s`}
+              label={`intensity, 0 to ${max} fresh tokens per ${tokens.bucket_secs} s`}
               className="w-16"
             />
             <span className="font-mono tabular-nums">{compactTokens(max)}</span>
@@ -249,14 +172,7 @@ export function StageTokens({ stageId }: { stageId: string }) {
       <div id={open ? panel : undefined} className="flex flex-col gap-2.5 p-3.5">
         <Chips tokens={tokens} flow={flow} />
         {open && (
-          <ul className="flex flex-col gap-2.5">
-            {plain.map(({ agent, series }) => (
-              <Lane key={agent.id} agent={agent} series={series} max={max} />
-            ))}
-            {clusters.map((cluster) => (
-              <CodexCluster key={cluster[0]?.agent.id} rows={cluster} max={max} />
-            ))}
-          </ul>
+          <TokenLanes plain={plain} clusters={clusters} max={max} window={`last ${minutes} min`} />
         )}
       </div>
     </section>
