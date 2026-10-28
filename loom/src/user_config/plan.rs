@@ -21,6 +21,10 @@ pub(super) struct PlanSection {
     document_summary_effort: Option<String>,
     overview_model: Option<String>,
     overview_effort: Option<String>,
+    pub(super) spec_authoring_model: Option<String>,
+    pub(super) spec_authoring_effort: Option<String>,
+    pub(super) plan_authoring_model: Option<String>,
+    pub(super) plan_authoring_effort: Option<String>,
 }
 
 impl PlanSection {
@@ -38,6 +42,10 @@ impl PlanSection {
             )?,
             overview_model: parse::get_enum(doc, "plan", "overview_model", models)?,
             overview_effort: parse::get_enum(doc, "plan", "overview_effort", efforts)?,
+            spec_authoring_model: parse::get_enum(doc, "plan", "spec_authoring_model", models)?,
+            spec_authoring_effort: parse::get_enum(doc, "plan", "spec_authoring_effort", efforts)?,
+            plan_authoring_model: parse::get_enum(doc, "plan", "plan_authoring_model", models)?,
+            plan_authoring_effort: parse::get_enum(doc, "plan", "plan_authoring_effort", efforts)?,
         })
     }
 }
@@ -94,6 +102,22 @@ impl UserConfig {
                 ConfigValue::Text(self.plan_overview_effort().to_string()),
                 self.origin_of(self.plan.overview_effort.as_ref()),
             ),
+            "plan.spec_authoring_model" => (
+                ConfigValue::Text(self.plan_spec_authoring_model().to_string()),
+                self.origin_of(self.plan.spec_authoring_model.as_ref()),
+            ),
+            "plan.spec_authoring_effort" => (
+                ConfigValue::Text(self.plan_spec_authoring_effort().to_string()),
+                self.origin_of(self.plan.spec_authoring_effort.as_ref()),
+            ),
+            "plan.plan_authoring_model" => (
+                ConfigValue::Text(self.plan_plan_authoring_model().to_string()),
+                self.origin_of(self.plan.plan_authoring_model.as_ref()),
+            ),
+            "plan.plan_authoring_effort" => (
+                ConfigValue::Text(self.plan_plan_authoring_effort().to_string()),
+                self.origin_of(self.plan.plan_authoring_effort.as_ref()),
+            ),
             _ => return None,
         })
     }
@@ -101,11 +125,15 @@ impl UserConfig {
     /// Render the resolved `[plan]` section with a final newline.
     pub(super) fn plan_toml(&self) -> String {
         format!(
-            "[plan]\ndocument_summary_model = {}\ndocument_summary_effort = {}\noverview_model = {}\noverview_effort = {}\n",
+            "[plan]\ndocument_summary_model = {}\ndocument_summary_effort = {}\noverview_model = {}\noverview_effort = {}\nspec_authoring_model = {}\nspec_authoring_effort = {}\nplan_authoring_model = {}\nplan_authoring_effort = {}\n",
             ConfigValue::Text(self.plan_document_summary_model().to_string()).to_toml_literal(),
             ConfigValue::Text(self.plan_document_summary_effort().to_string()).to_toml_literal(),
             ConfigValue::Text(self.plan_overview_model().to_string()).to_toml_literal(),
             ConfigValue::Text(self.plan_overview_effort().to_string()).to_toml_literal(),
+            ConfigValue::Text(self.plan_spec_authoring_model().to_string()).to_toml_literal(),
+            ConfigValue::Text(self.plan_spec_authoring_effort().to_string()).to_toml_literal(),
+            ConfigValue::Text(self.plan_plan_authoring_model().to_string()).to_toml_literal(),
+            ConfigValue::Text(self.plan_plan_authoring_effort().to_string()).to_toml_literal(),
         )
     }
 }
