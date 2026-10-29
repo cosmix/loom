@@ -252,3 +252,43 @@ containing `git commit`, even in a scratch fixture repo, so prove a no-diff rese
 - `ChatAnnouncer` returning early with no chat satisfied `shell.test.tsx` ("renders the dock as nothing") and broke `announcer.test.tsx` ("with no panel mounted"): two tests owned by different units pinned opposite behavior. The test owner decides: the dock renders nothing without a chat session (`shell.test.tsx`), so the announcer tests mount with a session.
 - Tests that failed to compile or run: `exact` passed to `getByRole` (role queries take the name string; this recurs from [Web Dashboard Server](web-dashboard-server.md)), fixtures built from guessed wire fields (build them from schema exports), a resolver returning `null` where `SentenceResolver` returns `undefined`, an unquoted optional shell glob that zsh rejects as unmatched (`rg --files` finds optional config paths), `timeout 600000ms` (GNU `timeout` takes `600s`), a nullable property used after narrowing only its local alias, and `Array.map` losing the nonempty tuple a zod `discriminatedUnion` needs.
 - oxfmt rewrites the string escapes for U+202E and U+200B into the raw invisible characters; build them with `String.fromCodePoint`.
+
+## A Codex Unit Reported Succeeded With No Files Written (2026-10-29)
+
+**What happened:** the Codex unit `rebuild-engine-c3-wire` ended `outcome=succeeded`, exit 0, with no file written.
+
+**Why:** the wrapper's injected rules told Codex to record a `loom memory` note; the note returned PENDING RELAY and Codex stopped to report it. The prompt also gave brief paths relative to the repository root while the Codex working directory is `loom/`.
+
+**Prevention:** a Codex prompt states that the working directory is `loom/` and repository files are at `../`, that no `loom memory` command runs, and that a run with no files written is failed. After every forward, run `git status` for the unit's files before accepting `succeeded`. Resolve every brief path against the current directory before reading: the shell in a stage can start in the `loom` crate, not the worktree root.
+
+**Fix:** re-forward the unit with those three lines and check the tree.
+
+## A Fixer's Test Passed `cargo test` and Failed the Gate's Clippy (2026-10-29)
+
+**What happened:** a fixer subagent added a scheduler test with a local `[&dyn Fn(&mut Scheduler, &Stub, Instant) -> &'static str; 3]` and ran only `cargo test`. The gate's `clippy --all-targets` failed on `type_complexity`; a plain `type X = dyn Fn(..)` alias then failed with E0597.
+
+**Why:** the brief's one targeted check was `cargo test`. A trait object in a type alias defaults to `'static`.
+
+**Prevention:** a Rust fixer brief that adds tests names `cargo clippy --lib --tests -- -D warnings` as its one check. Alias closures as `type X<'a> = dyn Fn(..) + 'a`.
+
+**Fix:** the alias with the explicit lifetime, in `scheduler/tests_session.rs`.
+
+## A Rust Stage Committed a Web Fixture Unformatted (2026-10-29)
+
+**What happened:** `web/src/plan/api/fixtures/summary-panel.json`, written by the engine stage, was not formatted for `oxfmt` (the `failed` array spanned three lines), so `bun run check` (`format:check`) failed on the merged tree.
+
+**Why:** the Rust stage's gates never run the web formatter.
+
+**Prevention:** a Rust stage that writes a web fixture runs web's `oxfmt` on it, or its acceptance includes `bun run format:check`.
+
+**Fix:** integration-verify ran `oxfmt` on the file.
+
+## A Plan Assumed a Measurement Its Predecessor Had Deferred (2026-10-29)
+
+**What happened:** the knowledge stage of plan 10 was told to record the operator-run rebuild's measured cost from a `rebuild-cost:` memory. No such memory exists: integration-verify could not run a live summary session in its sandbox (no headless Chrome, no live tmux) and deferred the run, so no cost was recorded.
+
+**Why:** the stage description was written as if the predecessor's acceptance would produce the figure, and nothing checked that the figure had a producer that could run in the sandbox.
+
+**Prevention:** a downstream stage that must record a measurement names the producing stage's acceptance command, and that command runs in the producer's sandbox. A distiller greps `loom memory show --all` for the exact tag before writing a measured fact, and records "not measured" with the deferral when the tag is absent; it never writes a figure it did not read.
+
+**Fix:** `architecture/summary-store.md` (Cost Ledger and Estimates) states that no cost is measured.

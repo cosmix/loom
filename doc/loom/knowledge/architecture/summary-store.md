@@ -1,4 +1,6 @@
 # Summary Store
+>
+> Store, seal, claims, rebuild scheduler, cost
 
 >
 
@@ -144,3 +146,112 @@ uses `access(W_OK)`). Tests that mutate `LOOM_HOME` carry `#[serial]`, which exc
 
 The `reachable` check's source graph does not resolve a module-path call such as `seal::seal(...)` through a module
 import: import the function directly or call it by its full `crate::` path, as `dispatch` does for `check::execute`.
+
+The graph also drops every call edge to a method name with more than `MAX_CANDIDATES` (8) definitions
+(`loom/src/context/source_graph/mod.rs`), and the `SessionSpawner` trait declaration has no body, so it is not a node. A
+ninth test stub named `start_summary` silently cut the dyn-call path from `install` to `start_summary`. Reuse one
+`SessionSpawner` stub across the tests and keep `start_summary` definitions at 7 or fewer.
+
+## Rebuilds and Cost
+
+The planning server rebuilds out-of-date summaries on its own, one summary session at a time, and logs what each
+rebuild spends. Code: `loom/src/plan_server/summaries/` (`scheduler.rs` and `scheduler/` hold the pure rules,
+`rebuilds.rs` and `rebuilds/` the facade, `spawner.rs` the real session start, `attribution.rs` claim attribution and
+cost lines, `routes.rs` the four `/api/summaries/{panel,rebuild,release,answer}` routes) and
+`loom/src/planning/summary/cost.rs` with `cost/estimate.rs`. Web: `web/src/plan/summaries/`.
+
+- **Pure scheduler, two-phase facade.** `Scheduler` does no I/O and reads no clock: every call takes `now` and a
+  `SessionSpawner`. The facade (`Rebuilds`) runs each call twice over: under its lock the scheduler talks to a recording
+  spawner that answers a pending id (`(starting)`); after the lock the facade calls the real `start_summary` or `stop` and
+  settles the id with `Scheduler::resolve_start`. The lock cannot be held across `start_summary`, because `start_session`
+  flushes bridge events synchronously into the facade's own bridge listener. An `Ended` that arrives before the settle is
+  kept in `State.ended_early` and applied after the start is published.
+- **Locks.** `Attribution` has its own mutex beside the scheduler state (it deletes claims and appends cost lines, both
+  file writes); the two are never held together. `publish` holds `panel_sent` across the question broadcasts and reads
+  the current question under the state lock, so the lock order is `panel_sent`, state, log.
+- **Install order.** `summaries::install` needs the chat's `Bridge` in `ctx.extensions()`, so its line in
+  `routes.rs` `install_all` follows `chat::install`; installed earlier it prints `summaries: no rebuilds` and never starts a
+  session.
+- **Concept pages.** `publish` computes the pages to refresh from the evaluation's `Scope` through
+  `concept::delta::page_keys`, so it needs no `Project` and takes no project lock. A `ConceptChanged` broadcast follows every
+  rebuild state change.
+- **Quota.** The panel reads the quota cache through `crate::quota::read_snapshot(runtime)`, the file the shared
+  poller writes (`architecture/quota-poller.md`); the summaries add no poller of their own. The read runs under
+  `panel_sent`, so a cost record from the bridge's flushing thread waits behind a panel build.
+
+## Rebuild Scheduler
+
+Source: `plan_server/summaries/scheduler.rs`, `scheduler/queue.rs`, `scheduler/session.rs`.
+
+- **Limit.** `AUTO_LIMIT` is 5. `try_start` starts the whole queue when it holds at most 5 ids or every id skips the
+  limit. Otherwise it starts the Button and approved ids alone, the front of the queue, and holds the batch ids. With no
+  such ids it opens one question (`q<n>`) naming the whole queue and starts nothing until it is answered. A first
+  evaluation counts like any other, so a repository with more than five missing summaries asks first. Yes promotes the ids
+  as approved and starts them with no second check; a Button press never asks.
+- **Newly invalidated counting.** `on_update` queues only the `invalidated` ids (newly out of date in this batch), minus
+  the declined, the running session's pending ids and the queued ones, and first drops every id no longer out of date from
+  the queue, declined, failed, unsealed and question sets. A question that loses ids is re-sent with the rest and closes
+  when none remain. The ids already out of date when the server starts, or when a turn or suspension ends, enter through
+  `refresh`.
+- **Decline memory.** No to a question moves its ids to `declined`. A declined id is skipped by `on_update` and `refresh`
+  until a Button press (`forget` clears declined, failed and unsealed) or until it stops being out of date. A failed id
+  is skipped by `refresh`, and `on_update` clears the failure of an id that is newly invalidated.
+- **Suspension guards.** Nothing starts while any of these holds: `read_only` is set, the server is stopping, a
+  suspension token is live (`AuthoringTurn` from `turn_started` until `turn_ended`, or the authoring session going Idle
+  or Ended with its turn open; `PressureRun`), a session is running, or a question is open. Releasing the last token
+  runs `refresh` and `try_start`.
+- **One session at a time.** `try_start` returns while `running` is set. A start that errors keeps the ids queued and
+  shows the error in the panel until the next start.
+- **The ends of a summary session.**
+  - *Claims done* (`claims_changed`): the session stops with the claims kept (`stop(session, false)`) once every id was
+    seen claimed or sealed and no claim is held. The rule is "seen", not "at least one", because the brief rebuilds the
+    documents in subagents and claims the overviews afterwards: an empty listing before every id was claimed is a gap.
+  - *Stalled* (`tick`): no seal within `NO_SEAL_TIMEOUT` (10 minutes, reset by each `seal_seen`) stops the session with
+    its claims released; the unsealed ids fail with the last seal error, or `no seal in 10 minutes`.
+  - *Ended* (`session_ended`, `session_failed`): the session ended on its own. Unsealed ids requeue at the front of
+    their part of the queue; with a failure reason they fail with it. The server stopping clears the queue and question
+    and only reports the stop; the bridge drain ends the session.
+- **Unsealed twice.** An id the session claimed and left unsealed at a normal end is marked; a second such end moves it to
+  `failed` with `ENDED_UNSEALED`, so a summary whose seal never validates does not rebuild forever at a token cost per
+  round. A seal, a prune, a Button press or a failure clears the mark; an id the session never claimed requeues and
+  keeps its mark. Limits: a session that keeps ending without claiming anything restarts without bound, and `on_update`
+  clears `failed` but not the mark of a newly invalidated id, so after a source edit one more claimed unsealed end fails it.
+- **Claim clearing.** `Attribution::on_session_ended` deletes every claim the session holds; a stopped subagent's claims
+  on the ids it briefed are deleted first. `sweep_after_recovery` deletes the claims of sessions that are neither live
+  nor left alone and returns the terminal (session-less) claims, which stay and are offered for release in the panel. The
+  facade applies a claims listing from its 5 s tick only when two consecutive listings agree: a seal deletes its claim up
+  to a second before the batch shows the sealed file, and acting on one listing could requeue a summary that is already
+  sealed. The batch path applies claims from the evaluation at once.
+
+## Cost Ledger and Estimates
+
+- **Ledger.** `summary-cost.jsonl` in the planning runtime directory (`RuntimePaths.summary_cost`) holds one JSON
+  `CostLine` per record: time, trigger (`refinement`, `background`, `button`), the summary ids sharing the cost, level
+  (`document`, `overview`), model, source bytes and a `TokenVector` of fresh input, cache write, cache read and output.
+  An absent component means unknown usage, never zero. `append` writes a complete line under an exclusive lock on a
+  no-follow open; `read_log` reads the last 8 MiB (`MAX_LOG_BYTES`), drops the partial first line and skips malformed or
+  unfinished records, so older records fall out of estimates and totals. Known gaps: `append` has no `O_NONBLOCK` or
+  regular-file check, so a FIFO at the path blocks the open under the attribution lock, and `read_tail` drops a complete
+  first record when the cut falls exactly on a record boundary.
+- **Accumulator reuse.** `transcript_tokens` feeds the complete lines of a transcript to `AgentState::new(AgentKind::Main,
+  path)` through `tokens::tail::read_lines` and reads `state.total`. It is the token tracker's parser, so message-id
+  merging and the synthetic-model filter match the dashboard's figures; an unreadable transcript is an all-`None` vector
+  and an unfinished final line is skipped.
+- **Per-summary versus per-batch attribution.** A subagent whose transcript ran `loom plan summary brief <ids>` is bound to
+  those ids (`attribution/scan.rs`); when it stops, its tokens are one line for the ids it briefed. A summary session's own
+  transcript, costed when it ends, is one line for the ids no subagent briefed (the overviews it built itself), else for
+  all of them. A line with one id is an individual cost; a line shared by several cannot be split, so the turn footer shows
+  tokens only for single-id lines and `tokens unknown` otherwise. The trigger is Button when any id was pressed, else
+  Background; refinement subagents log Refinement.
+- **Estimates.** `estimate` sums one figure per pending summary, counting fresh tokens (cache reads excluded) and the
+  weakest basis used: `Last` (the summary's latest single-summary line with every fresh component known), else `PerByte`
+  (the median tokens-per-source-byte of single-summary lines at the same level, rounded up), else `Starting`: 40,000
+  tokens for a document (`DOCUMENT_STARTING_TOKENS`) and 150,000 for an overview (`OVERVIEW_STARTING_TOKENS`). These
+  starting figures are placeholders until the ledger holds real lines. `totals` sums known components per local calendar
+  day and over the trailing 168 hours, excludes records dated after `now`, and leaves a component absent when no record in
+  its window knows it. Arithmetic saturates at `u64::MAX`.
+- **Measured cost: none.** No operator-run rebuild of this repository's summaries has been made, so no token cost is
+  recorded and the starting figures are unchecked. Integration-verify deferred it: headless Chrome, a live tmux probe
+  and a real summary session cannot run in the stage sandbox. The scheduler, the facade over a fake bridge host, the
+  routes on loopback and the web components are covered by tests; the first operator run should append its figures here
+  with the date and the project's size.

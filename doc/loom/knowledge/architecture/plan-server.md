@@ -132,7 +132,7 @@ The server resolves, the browser renders. A page arrives with key chips (colour,
 - `ImplementsView` is `not_stated` or `sections { links }`; `implemented_by` and `PlanLink` list only plans with a concept page (`links.rs`: a plan with no summary id, or whose page key `PageKey::parse` rejects, is left out), while `key.rs` computes `no_plan` from `project.implemented_by`, which still counts them. The two views can disagree for an unlisted archived plan.
 - Enum names on the wire are `SummaryStateView`, `OutOfDateReason` (`source_changed`, `rebuilding`, `awaiting_approval`, `cannot_rebuild`, `failed`) and `EmptyKind`; `Option` fields serialize as `null` (no `skip_serializing_if`). `Block` and `Citation` carry a snake_case `kind` tag.
 - `state::out_of_date_reason(id, state: SummaryState, ctx: &PageContext)` is `pub(crate)` and takes the state by value (`SummaryState` is `Copy`). `PageContext` holds `read_only: Option<String>`; `routes::page_context` fills it from the first read-only problem, with `#[allow(clippy::needless_update)]` on the `..Default::default()` tail so a later field compiles.
-- `page_keys_for_summary(id, &Project)` is public and returns the page keys a summary shows on (its own page and its scope's overview); `ConceptState::latest()` returns `Arc<Evaluation>`.
+- `delta::page_keys(id, &Scope)` is `pub(crate)` and returns the page keys a summary shows on (its own page and its scope's overview); `ConceptState::latest()` returns `Arc<Evaluation>`.
 
 Adding a `PlanMessage` variant (`ConceptChanged`) needs the `Eq` derive (`PlanMessage` derives it), an arm in `wire/tests_schema.rs::all_plan_messages`, and `concept_changed` in `web/src/plan/api/schema.ts` (`PLAN_MESSAGE_TYPES`, `conceptMessageSchemas`). `PageContext` and the plan 10 hooks: `progress(ctx)` in `page.rs` returns `(None, None)` until plan 10 fills `building` and `estimate`.
 
@@ -144,7 +144,7 @@ Adding a `PlanMessage` variant (`ConceptChanged`) needs the `Eq` derive (`PlanMe
 
 - An engine error with readable claims prints one `lifecycle::line` (through `safe_error`), keeps the previous evaluation, and publishes the batch's `sources` alone so open passages refetch; the page names are unknown, so a title, plan-state or pressure change in that batch is never named.
 - An engine error with unreadable claims (the engine's one failing step) evaluates the project without claims (`without_claims`) and publishes normally. Listeners are not called on that path, so plan 10's scheduler sees no invalidations from those batches.
-- Plan 10's scheduler reads `invalidated` from a `subscribe` listener and broadcasts `ConceptChanged` for `page_keys_for_summary` results.
+- The summary scheduler reads `invalidated` from a `subscribe` listener (`summaries/mod.rs`), and its facade broadcasts `ConceptChanged` for the `delta::page_keys` of the evaluation's scope (`architecture/summary-store.md`, Rebuilds and Cost).
 
 ## The concept_changed delta
 
@@ -214,15 +214,6 @@ View state is `openRunsAtom(pageKey)` (`view-state.ts`): a jotai atom per page k
 
 **Accessibility.** Server-supplied text renders through `<Untrusted>` (`visible-controls.ts`: a left-to-right isolated block with `unicode-bidi: isolate`, format characters shown visibly). `y` and `n` act only while the pinned permission card has focus, and a card never takes composer focus. Answered permission rows are `role="group"`. `ChatAnnouncer` is always mounted by `ChatRegistrations` and is the only writer of the per-store `announcedAtom` and `noticeAtom`; the two live regions render inside the sheet's `Dialog.Content` while it is open, because `aria-hidden` (used by Radix modals) leaves existing `[aria-live]` elements visible and hides only those mounted after the modal opens. A repeated request for the same tool is made audible by emptying the region and rewriting it after 50 ms. Focus after "New chat" is read in a `useLayoutEffect` cleanup of the unmounting `ConcludedChat`, because a parent-level cleanup runs after the child DOM is gone and focus is already on `body`.
 
-## Extension Points Plans 10 and 11 Fill
-
-Plan 9 filled `page-header-extras.tsx` (open-question count and the "Changed after … was built" marker, limited to `product/section_<n>` pages), `key-chip-extras.tsx` and `files/tree-entry-extras.tsx` (the "changed since you looked" mark), `header-extras.tsx` (`ChangedSinceControl`, and `ChatSheetButton` when `compact`) and `empty-offer.tsx` (the offer is a button for the holder, or while nobody holds authoring, and runs the registered `OfferButton` handler; viewers and read-only mode see text). Slots that still render `null`:
-
-- `concept/key-row-extras.tsx` (`<KeyRowExtras page />`, props exactly `{ page }`): plan 10 adds the above-budget notice and its approve button.
-- `files/plan/plan-actions-extras.tsx` (`<PlanActionsExtras plan path />`, end of the plan header): plan 11 adds "Pressure-test" for written plans and the done-plan actions. `header-extras.tsx` takes one more line from each of plans 10 and 11.
-- `chat/footer-extras.tsx` (`<TurnFooterExtras turn />`, end of the turn footer) and `chat/rebuilt-summary-extras.tsx` (`<RebuiltSummaryExtras id turn />`, per rebuilt summary in the footer). The footer shows only the states `Turn` carries: `ChangedFile` has `path`, `before_hash` and `by_tool`, and `summaries_rebuilding` lists ids without per-summary outcomes.
-- Server: `PageContext` gains plan 10's rebuild fields, `state::out_of_date_reason` its `awaiting_approval` and `failed` arms, `page::progress` the `building` and `estimate` values, and the scheduler subscribes through `ConceptState::subscribe`. A direct `Bridge::start_session` caller (plan 11) holds `ChatState::starting` or a lease from before it reserves.
-
 ## Producer Names the Chat Plan Briefs Got Wrong
 
 Names in the plan 9 briefs that differ from the tree; use the tree's.
@@ -234,3 +225,17 @@ Names in the plan 9 briefs that differ from the tree; use the tree's.
 - `BusyRoundel` comes from `@/aurora-ui/feedback/BusyRoundel`.
 - `files/address.ts` `resolveLink` reads `doc/product/x.md` as doc-relative (`doc/doc/product/x.md`) and returns `mailto:` as external; chat items normalize repo-prefixed destinations first and keep non-http(s) links inert.
 - Plan 1 to 8 names the chat-server brief used (`save_document`, `TextStore`, `require_authoring`, `send_to_browser`, `name_of`, `turn_running`, `to_repo_rel`) all matched the merged tree.
+
+## Web Extension Slots
+
+The extension slots in `web/src/plan/` and what fills them:
+
+- `concept/page-header-extras.tsx` (open-question count and the "Changed after … was built" marker, limited to `product/section_<n>` pages), `concept/key-chip-extras.tsx` and `files/tree-entry-extras.tsx` (the "changed since you looked" mark), `header-extras.tsx` (`ChangedSinceControl`, `ChatSheetButton` when `compact`, and `SummaryStatus`, the rebuild popover with the panel, question and cost lines) and `empty-offer.tsx` (the offer is a button for the holder, or while nobody holds authoring, and runs the registered `OfferButton` handler; viewers and read-only mode see text).
+- `concept/key-row-extras.tsx` (`<KeyRowExtras page />`, props exactly `{ page }`) renders `PendingApprovalNotice`, the above-budget notice with its approve button.
+- `chat/rebuilt-summary-extras.tsx` (`<RebuiltSummaryExtras id turn />`, per rebuilt summary in the turn footer) shows the summary's cost from the turn's live `summary_turn_cost` frames.
+- Server: `PageContext` carries `read_only` and `rebuilds: Option<Arc<Rebuilds>>`; `state::out_of_date_reason` has the `awaiting_approval` and `failed` arms, `page::progress` the `building` and `estimate` values, and the scheduler subscribes through `ConceptState::subscribe`. A direct `Bridge::start_session` caller (plan 11) holds `ChatState::starting` or a lease from before it reserves.
+
+Slots that still render `null` and are reserved for plan 11:
+
+- `files/plan/plan-actions-extras.tsx` (`<PlanActionsExtras plan path />`, end of the plan header): "Pressure-test" for written plans and the done-plan actions. `header-extras.tsx` takes one more line from plan 11.
+- `chat/footer-extras.tsx` (`<TurnFooterExtras turn />`, end of the turn footer). The footer shows only the states `Turn` carries: `ChangedFile` has `path`, `before_hash` and `by_tool`, and `summaries_rebuilding` lists ids without per-summary outcomes.

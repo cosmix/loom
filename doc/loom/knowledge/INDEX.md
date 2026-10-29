@@ -48,10 +48,10 @@
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Tick order | 79 |
 | [owned-waits](architecture/owned-waits.md) | Waits | 70 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 257 |
-| [plan-server](architecture/plan-server.md) | Review, chat | 235 |
+| [plan-server](architecture/plan-server.md) | Review, chat | 241 |
 | [planning-document-model](architecture/planning-document-model.md) | Doc model | 173 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 35 |
-| [planning-session-bridge](architecture/planning-session-bridge.md) | Bridge | 187 |
+| [planning-session-bridge](architecture/planning-session-bridge.md) | Bridge | 191 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) | Plan sandbox | 135 |
 | [quota-poller](architecture/quota-poller.md) | Polling | 35 |
 | [remote-control](architecture/remote-control.md) | Capability | 81 |
@@ -64,7 +64,7 @@
 | [source-graph-resolution](architecture/source-graph-resolution.md) | Bindings | 123 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 76 |
 | [status-data-model](architecture/status-data-model.md) | Fields | 239 |
-| [summary-store](architecture/summary-store.md) |  | 146 |
+| [summary-store](architecture/summary-store.md) | Store, seal, claims, rebuild scheduler, cost | 256 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 280 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 57 |
@@ -112,7 +112,7 @@
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 235 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 139 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 137 |
-| [plan-web](conventions/plan-web.md) |  | 44 |
+| [plan-web](conventions/plan-web.md) |  | 48 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 51 |
 
@@ -153,7 +153,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Incidents | 343 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merged flag | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 322 |
-| [plan-server-delivery](mistakes/plan-server-delivery.md) |  | 254 |
+| [plan-server-delivery](mistakes/plan-server-delivery.md) |  | 294 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | Renames | 319 |
@@ -202,7 +202,7 @@
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 103 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge edges | 125 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat backlog | 40 |
-| [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 127 |
+| [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 143 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 42 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 185 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 210 |

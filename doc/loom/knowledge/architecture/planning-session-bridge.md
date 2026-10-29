@@ -185,3 +185,7 @@ never reached. pty probes (outside tmux) showed a paste at the first `SessionSta
 0.1 s with the bridge's full launch flags, so the stall is not the paste itself. The integration-verify stage
 was completed by the operator with `--no-verify`; direct unsandboxed host test runs are not repeated. The
 open diagnosis is post-merge work.
+
+## Rebuilding Ids on a Turn
+
+`Bridge::set_rebuilding` (`bridge/rebuilding.rs`) stores a turn's rebuilt summary ids through `transcript::Mapper::set_summaries_rebuilding(turn_id, ids)` and publishes the returned `TurnUpdated` deltas. The mapper owns the `turns` field, so a delta alone would show the ids once and lose them on the next snapshot or `TurnUpdated` for that turn. Attribution calls it as the turn's summaries are named (`name_on_turn`).
