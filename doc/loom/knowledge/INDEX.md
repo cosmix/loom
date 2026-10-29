@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 68 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 181 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 188 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 125 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 249 |
 
@@ -64,7 +64,7 @@
 | [source-graph-resolution](architecture/source-graph-resolution.md) | Bindings | 123 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 76 |
 | [status-data-model](architecture/status-data-model.md) | Fields | 239 |
-| [summary-store](architecture/summary-store.md) | Store, seal, claims, rebuild scheduler, cost | 256 |
+| [summary-store](architecture/summary-store.md) | Store, seal, claims, rebuild scheduler, cost | 257 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 280 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 57 |

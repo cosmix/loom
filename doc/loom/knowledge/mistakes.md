@@ -179,3 +179,10 @@ A read-denied directory is a writable private tmpfs under srt, a skipped real-sa
 ## Plan Chat Delivery
 
 Review handlers briefed without lock, guard and subscriber order; codex and fixer units that passed their own checks and failed the full gate, the reviewers or the 400/50-line limits; web logic slips (turn ids repeat across sessions, hunk-relative diff parsing, both authoring refusals). → [Plan Server Delivery](mistakes/plan-server-delivery.md#review-loop-handlers-were-briefed-without-lock-guard-and-subscriber-facts-2026-10-29)
+
+## Treating this repository's conventions as loom's product behaviour
+
+**What happened:** While planning the planner redesign, a draft decision asked whether loom should ignore DONE- plans inside feature directories, citing this repository's own .gitignore as if it were loom's behaviour.
+**Why:** loom is developed with loom, so this repository's doc/, .gitignore and plan habits are easy to mistake for what loom does in every project. Loom is a product used to build other projects.
+**Prevention:** Before stating what loom does in a project, find the code that does it. In target projects loom only manages the .loom/work and .worktrees ignore entries (loom/src/commands/repair/workspace.rs); everything else in a project's .gitignore is the project's choice, and planner features must work whatever the project ignores.
+**Fix:** PLAN-planner-ui-redesign.md moves the DONE-/REVIEW- pattern change to this repository's migration stage only.
