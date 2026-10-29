@@ -8,7 +8,7 @@ import {
   type PressureStepView,
 } from "@/plan/api/schema-pressure";
 
-import { codexRunsAlone, endLine, stepForSession, stepLabel } from "./steps";
+import { codexRunsAlone, endLine, runEndMs, stepForSession, stepLabel } from "./steps";
 
 const run = pressureRunSchema.parse(fixture);
 const codex = run.steps[1]!;
@@ -72,6 +72,21 @@ it.each<PressureEnd["kind"]>(["recorded", "stopped", "failed", "interrupted"])(
 
 it("does not report Codex alone without a run", () => {
   expect(codexRunsAlone(null)).toBe(false);
+});
+
+it("ends the run at the last step that has an end timestamp", () => {
+  const first: PressureStepView = { ...codex, ended_ms: 31_000 };
+  const trailing: PressureStepView = { ...codex, ended_ms: null };
+
+  expect(runEndMs({ ...run, steps: [first, trailing] }, 99_000)).toBe(31_000);
+  expect(runEndMs({ ...run, steps: [{ ...first, ended_ms: 5_000 }, first] }, 99_000)).toBe(31_000);
+});
+
+it("ends the run at the arrival time when no step has ended", () => {
+  const open: PressureStepView = { ...codex, ended_ms: null };
+
+  expect(runEndMs({ ...run, steps: [open, open] }, 99_000)).toBe(99_000);
+  expect(runEndMs({ ...run, steps: [] }, 99_000)).toBe(99_000);
 });
 
 it.each<[PressureEnd, string]>([

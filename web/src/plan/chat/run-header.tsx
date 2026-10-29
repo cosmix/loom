@@ -4,6 +4,8 @@ import { formatClock } from "@/lib/format";
 import { compactTokens } from "@/lib/tokens";
 import type { SessionView } from "@/plan/api/schema-chat";
 import { authoringAtom, isHolderAtom, presenceAtom } from "@/plan/state/atoms";
+import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
+import { BUSY_STATES } from "./chat-state-glyph";
 import { turnsAtom } from "./model";
 import { PressureHeader } from "./pressure/pressure-header";
 import { Untrusted, visibleControls } from "./visible-controls";
@@ -25,8 +27,14 @@ export function RunHeader({ session }: { session: SessionView }) {
   );
   // Authoring presence clears on return before the next session snapshot arrives.
   const awayUntil = holder ? holder.frees_at : session.away_until;
+  const activity = BUSY_STATES.has(session.state)
+    ? "drafting"
+    : session.state === "idle"
+      ? "waiting"
+      : null;
   return (
-    <div className="chat-run-header flex flex-wrap gap-x-1 px-3 text-xs text-muted-foreground">
+    <div className="chat-run-header flex flex-wrap items-center gap-x-1 px-3 text-xs text-muted-foreground">
+      {activity && <ActivityGlyph kind={activity} />}
       {awayUntil ? (
         <span>
           <Untrusted text={name} /> is away · authoring frees at{" "}

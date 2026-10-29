@@ -1,10 +1,10 @@
 import { Link } from "react-router";
 
-import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 import { useNow } from "@/components/hooks/use-now";
 import { formatElapsed } from "@/lib/format";
 import type { CodexStatus } from "@/plan/api/schema-pressure";
 import { toAddress } from "@/plan/files/address";
+import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
 import { Untrusted } from "../visible-controls";
 
 function RunningCodex({ startedMs }: { startedMs?: number }) {
@@ -12,7 +12,10 @@ function RunningCodex({ startedMs }: { startedMs?: number }) {
   const seconds = startedMs === undefined ? 0 : Math.max(0, Math.floor((now - startedMs) / 1000));
   return (
     <>
-      <BusyRoundel busy size={14} busyLabel="Codex is reviewing" />
+      <ActivityGlyph kind="codex" />
+      <span role="status" aria-live="polite" className="sr-only">
+        Codex is reviewing
+      </span>
       <span>Running · {formatElapsed(seconds)}</span>
     </>
   );
@@ -28,7 +31,9 @@ export function CodexStatusItem({
   return (
     <div className="space-y-2 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <span>{status.model}</span>
+        <span>
+          <Untrusted text={status.model} />
+        </span>
         {status.state === "running" && <RunningCodex startedMs={startedMs} />}
         {status.state === "review_written" &&
           (status.report_path !== null ? (

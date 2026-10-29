@@ -106,6 +106,15 @@ it("removes the elapsed clock and busy indicator when the review finishes", () =
   expect(vi.getTimerCount()).toBe(0);
 });
 
+it("shows control characters in the model name as visible markers", () => {
+  const rlo = String.fromCodePoint(0x202e);
+
+  render(<CodexStatusItem status={{ ...status, model: `gpt${rlo}6` }} />);
+
+  expect(screen.getByText("gpt⟨U+202E⟩6")).toBeTruthy();
+  expect(document.body.textContent).not.toContain(rlo);
+});
+
 it("shows control characters in the log tail as visible markers", () => {
   const { container } = render(
     <CodexStatusItem status={{ ...status, state: "failed", log_tail: "rm ‮fdp.sh" }} />,

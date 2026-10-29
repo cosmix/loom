@@ -1,0 +1,140 @@
+import { render, screen, within } from "@testing-library/react";
+import { Provider } from "jotai";
+import { expect, it, vi } from "vitest";
+
+import fixture from "@/plan/api/fixtures/chat-snapshot.json";
+import hello from "@/plan/api/fixtures/hello.json";
+import { checklistViewSchema } from "@/plan/api/schema";
+import { chatSnapshotSchema, type SessionView } from "@/plan/api/schema-chat";
+import { checklistAtom, presenceAtom } from "@/plan/state/atoms";
+import { snapshotAtom } from "./model";
+import { installPanelLifecycle, mount, permissionSnapshot, storeFor } from "./panel-test-kit";
+import { panelCollapsedAtom } from "./prefs";
+import { RunHeader } from "./run-header";
+
+vi.mock("./transcript", () => ({ Transcript: () => <div role="log">Transcript</div> }));
+vi.mock("./composer", () => ({ ComposerArea: () => <div>Composer</div> }));
+vi.mock("./attention", () => ({ useAttention: vi.fn() }));
+vi.mock("./start-chat", () => ({
+  NewChatButton: () => <button>New chat</button>,
+  StartingBrief: () => <div>Starting brief</div>,
+}));
+vi.mock("./end-chat", () => ({ EndChatMenuItem: () => null, useCanEndChat: () => false }));
+vi.mock("./suggestion-cards", async (original) => ({
+  ...(await original<typeof import("./suggestion-cards")>()),
+  useSuggestionFeed: vi.fn(),
+}));
+vi.mock("@/plan/review/live", () => ({ useReviewLive: vi.fn() }));
+vi.mock("./model", async (original) => ({
+  ...(await original<typeof import("./model")>()),
+  useChatSocket: vi.fn(),
+}));
+
+installPanelLifecycle();
+
+it.each([true, false])("separates the empty label and hint (primary offer: %s)", (primary) => {
+  const store = storeFor();
+  const checklist = checklistViewSchema.parse(hello.checklists[0]);
+  const title = "Pressure-test adopt-ecc-…";
+  store.set(checklistAtom, {
+    ...checklist,
+    primary: primary ? { ...checklist.primary!, label: title } : null,
+  });
+  const { container } = mount(store);
+  const line = container.querySelector<HTMLElement>(".chat-state-line")!;
+  const row = line.querySelector<HTMLElement>('[aria-live="off"] > .flex')!;
+  const label = within(row.children[1] as HTMLElement).getByText("No chat");
+  const hint = within(row).getByText(primary ? title : "New chat");
+  expect(row.children[0].getAttribute("aria-hidden")).toBe("true");
+  expect(row.children[1].contains(label)).toBe(true);
+  expect(row.children[1].contains(hint)).toBe(false);
+  expect([...row.children].slice(2).some((child) => child.contains(hint))).toBe(true);
+  expect(within(line).getByRole("status").textContent).toBe("No chat");
+  // jsdom has no layout: assert the scoped grid rules that keep offers below the label.
+  expect(line.parentElement?.className).toContain(
+    "[&_.chat-state-line_[aria-live=off]>.flex]:grid-cols-[auto_1fr]",
+  );
+  expect(line.parentElement?.className).toContain(
+    "[&_.chat-state-line_[aria-live=off]>.flex]:gap-y-3",
+  );
+  expect(line.parentElement?.className).toContain(
+    "[&_.chat-state-line_[aria-live=off]>.flex>:nth-child(n+3)]:col-span-2",
+  );
+});
+
+const headerStates: Array<[SessionView["state"], string | null]> = [
+  ["starting", "drafting"],
+  ["working", "drafting"],
+  ["ending", "drafting"],
+  ["idle", "waiting"],
+  ["permission", null],
+  ["ended", null],
+  ["failed", null],
+];
+
+it.each(headerStates)("run header uses the expected glyph while %s", (state, kind) => {
+  const store = storeFor();
+  const snapshot = chatSnapshotSchema.parse(fixture);
+  const session = { ...snapshot.session!, kind: "section", state };
+  store.set(snapshotAtom, {
+    ...snapshot,
+    session,
+    turns: [
+      {
+        ...snapshot.turns[0],
+        tokens: { input: 1000, cache_write: 200, cache_read: 9999, output: 300 },
+      },
+    ],
+  });
+  store.set(presenceAtom, {
+    entries: [
+      { public_id: "watcher", name: "Alex", holder: false, away: false, reading: null, tabs: 1 },
+    ],
+  });
+  const { container } = render(
+    <Provider store={store}>
+      <RunHeader session={session} />
+    </Provider>,
+  );
+  const header = container.querySelector<HTMLElement>(".chat-run-header")!;
+  const glyph = header.querySelector(".activity-glyph");
+  if (kind) {
+    expect(glyph?.getAttribute("data-kind")).toBe(kind);
+    expect(glyph?.getAttribute("aria-hidden")).toBe("true");
+    expect(header.firstElementChild).toBe(glyph);
+  } else {
+    expect(glyph).toBeNull();
+  }
+  expect(header.textContent).toContain(`${hello.you.name} authoring`);
+  expect(screen.getByLabelText("1 watching: Alex").getAttribute("title")).toBe("Alex");
+  expect(screen.getByText("· 1.5k tokens")).toBeTruthy();
+});
+
+it("permission glyph keeps its role and accessible name", () => {
+  const store = storeFor();
+  store.set(snapshotAtom, permissionSnapshot());
+  store.set(panelCollapsedAtom, true);
+  mount(store);
+  const glyph = screen.getByRole("img", { name: "Needs a decision" });
+  expect(glyph.querySelector('[data-kind="permission"]')).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Expand chat, 1 decision waiting" })).toBeTruthy();
+});
+
+it.each([
+  ["starting", "Starting session", "starting"],
+  ["working", "Working", "drafting"],
+  ["ending", "Writing final notes", "drafting"],
+] as const)("collapsed %s glyph keeps its status text", (state, label, kind) => {
+  const store = storeFor();
+  const snapshot = chatSnapshotSchema.parse(fixture);
+  store.set(snapshotAtom, {
+    ...snapshot,
+    session: { ...snapshot.session!, state },
+    turns: [],
+  });
+  store.set(panelCollapsedAtom, true);
+  mount(store);
+  const button = screen.getByRole("button", { name: `Expand chat, ${label}` });
+  expect(within(button).getByRole("status").textContent).toBe(label);
+  expect(button.querySelector(`.activity-glyph[data-kind="${kind}"]`)).toBeTruthy();
+});

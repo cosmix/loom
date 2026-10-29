@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai/react";
-import { useMemo, useEffect, useRef, type JSX, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, type JSX, type ReactNode, type RefObject } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 
 import { Button } from "@/components/ui/button";
@@ -9,11 +9,11 @@ import { openDiff } from "@/plan/diff/open-diff";
 import { EditMode } from "@/plan/editor/edit-mode";
 import { toAddress } from "@/plan/files/address";
 import { openDocAtom, previousOpenTextAtom } from "@/plan/files/atoms";
-import { DocHeader } from "@/plan/files/doc-header";
-import { LockNotice } from "@/plan/files/lock-notice";
+import { FileDocHeading } from "@/plan/files/doc-heading-view";
 import { useOpenDoc, type Load, type SlugRef, type StaleRefresh } from "@/plan/files/open-doc";
 import { PlanView } from "@/plan/files/plan/plan-view";
-import { docPathsOf, planSlug, renamedPlan, treeDocs } from "@/plan/files/tree";
+import { planSlug, renamedPlan, treeDocs } from "@/plan/files/tree";
+import { useDocMarkdownProps } from "@/plan/files/use-doc-markdown";
 import { Markdown } from "@/plan/markdown";
 import { LoadState } from "@/plan/ui/load-state";
 
@@ -37,10 +37,29 @@ function useMarks(): string[] {
   return Array.isArray(marks) ? marks.filter((m): m is string => typeof m === "string") : [];
 }
 
+function DocMarkdown({
+  doc,
+  tree,
+  marks,
+}: {
+  doc: DocView;
+  tree: FileTree | null;
+  marks: string[];
+}) {
+  const links = useDocMarkdownProps(doc, tree);
+  return (
+    <Markdown
+      source={doc.text}
+      path={doc.path}
+      sections={doc.sections}
+      marks={marks}
+      suppressTitle={doc.title}
+      {...links}
+    />
+  );
+}
+
 function DocBody({ doc, tree, marks }: { doc: DocView; tree: FileTree | null; marks: string[] }) {
-  const navigate = useNavigate();
-  const docPaths = useMemo(() => docPathsOf(tree, doc.path), [tree, doc.path]);
-  const anchors = useMemo(() => new Set(doc.sections.map((s) => s.anchor)), [doc.sections]);
   if (doc.truncated) {
     return (
       <>
@@ -55,17 +74,7 @@ function DocBody({ doc, tree, marks }: { doc: DocView; tree: FileTree | null; ma
     );
   }
   if (doc.plan) return <PlanView doc={doc} />;
-  return (
-    <Markdown
-      source={doc.text}
-      path={doc.path}
-      sections={doc.sections}
-      marks={marks}
-      onNavigate={(address) => navigate(address)}
-      docPaths={docPaths}
-      anchorsOf={(target) => (target === doc.path ? anchors : null)}
-    />
-  );
+  return <DocMarkdown doc={doc} tree={tree} marks={marks} />;
 }
 
 function Missing({
@@ -162,7 +171,6 @@ function Notices({
 }) {
   return (
     <>
-      {doc.lock && !doc.plan && <LockNotice lock={doc.lock} />}
       {refresh && <StaleNotice refresh={refresh} />}
       {previous?.path === doc.path && (
         <p className="px-6 pt-2 text-[13px] text-muted-foreground">
@@ -242,7 +250,7 @@ function DocPane({
 }) {
   return (
     <>
-      <DocHeader doc={doc} />
+      <FileDocHeading doc={doc} />
       <Notices
         doc={doc}
         anchor={anchor}
