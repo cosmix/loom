@@ -1,6 +1,6 @@
 # Plan Chat Followups
 
-> Chat backlog
+> Chat
 
 ## Unverified Against a Live Session
 

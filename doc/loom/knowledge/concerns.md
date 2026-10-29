@@ -113,9 +113,8 @@ Open and fixed reviewer findings on the host-verification code, one bullet per d
 ## Pressure Gaps
 
 `loom pressure`'s two real-invocation smokes are manual-only, its dry-run argv is not shell-quoted so it cannot be
-pasted into a shell, and repo-root resolution is duplicated in two places.
-
-→ [Pressure Gaps](concerns/automatic-knowledge-source-graph-followups.md)
+pasted into a shell, and repo-root resolution is duplicated in two places. The app pressure and run-lane backlog is in
+[Handoff Follow-ups](concerns/handoff-followups.md).
 
 ## Execution Graph and Forward Guard Gaps
 

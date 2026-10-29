@@ -439,6 +439,8 @@ Each of the three steps spawns with an independently selectable model and reason
 
 When the codex model is unavailable to the account (codex rejects it as not supported or not found), `loom pressure` retries with the same family's nearest newer version first and then the nearest older one, never another tier; the default `gpt-6.1-sol` falls back to `gpt-6-sol`. The fallback notice prints after the Claude session ends. When every model in the family is unavailable the run fails and shows the codex error.
 
+A run that finishes all its rounds appends one line to a `## Pressure tests` section of the plan (created after the plan's `END loom METADATA` marker when missing): the date, the Claude model, the Codex model that wrote each round's review, the round count, and whether the review was addressed. A stopped or failed run writes no record, and neither does a run whose plan moved or was replaced while it ran. The planning app's pressure dialog runs the same pipeline and writes the same record.
+
 | Key                       | Default       |
 | ------------------------- | ------------- |
 | `pressure.claude_model`   | `opus`        |

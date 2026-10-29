@@ -1,6 +1,6 @@
 # Web Dashboard
 
-> status --web
+> Web
 
 ## Server
 

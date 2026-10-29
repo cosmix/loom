@@ -1,6 +1,6 @@
 # Planning Session Sandbox
 
-> Plan sandbox
+> Sandbox
 
 ## Overview (`loom::plan_session`)
 
