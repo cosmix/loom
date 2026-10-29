@@ -12,6 +12,7 @@ import { Tree } from "@/plan/files/tree";
 import { DrawerOpener, TreeDrawer, TreeDrawerRoot, useTreeDrawer } from "@/plan/files/tree-drawer";
 import { OfferButton } from "@/plan/offers/offer-button";
 import { checklistAtom } from "@/plan/state/atoms";
+import { DocHeading } from "@/plan/ui/doc-heading";
 import { LoadState } from "@/plan/ui/load-state";
 
 /** Wide enough for the 18rem tree beside a reading column. */
@@ -23,17 +24,19 @@ function GapView({ title }: { title: string }): JSX.Element {
   const needle = title.toLowerCase();
   const item = checklist?.items.find((candidate) => candidate.text.toLowerCase().includes(needle));
   return (
-    <div className="flex flex-col gap-3 p-6">
-      <h1 className="font-display text-2xl">{title}</h1>
-      <p className="text-[13px] text-muted-foreground">This document is missing.</p>
+    <div className="flex flex-col gap-3">
+      <DocHeading breadcrumb={[{ label: "Planner" }, { label: title }]} kind={null} title={title} />
+      <p className="px-6 text-[13px] text-muted-foreground">This document is missing.</p>
       {item ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-6 pb-6 text-[13px]">
           <span className="text-muted-foreground">Step {item.step}</span>
           <span className="font-medium">{item.text}</span>
           {item.offer && <OfferButton offer={item.offer} />}
         </div>
       ) : (
-        <p className="text-[13px] text-muted-foreground">No checklist item asks for it yet.</p>
+        <p className="px-6 pb-6 text-[13px] text-muted-foreground">
+          No checklist item asks for it yet.
+        </p>
       )}
     </div>
   );

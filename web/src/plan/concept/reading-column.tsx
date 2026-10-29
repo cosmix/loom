@@ -13,10 +13,11 @@ import {
 import { useNavigate } from "react-router";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
-import type { ConceptPage, SourceAnchor } from "@/plan/api/schema-concept";
+import type { Block, ConceptPage, SourceAnchor } from "@/plan/api/schema-concept";
 import type { AttachmentDraft } from "@/plan/attachments/types";
 import { treeAtom } from "@/plan/files/atoms";
 import { docPathsOf } from "@/plan/files/tree";
+import { normalizeTitle } from "@/plan/markdown/render";
 import type { Store } from "@/state/store";
 
 import { Announcer, type Arrival } from "./announce";
@@ -36,6 +37,16 @@ import type { ColumnTarget, OpenRun } from "./types";
 import { notesAtom, openRunsAtom } from "./view-state";
 
 import "./concept.css";
+
+/** A leading level-1 block repeating the page title, dropped where the page heading shows it. */
+function withoutTitleBlock(blocks: Block[], title: string): Block[] {
+  const [first, ...rest] = blocks;
+  const repeated =
+    first?.kind === "heading" &&
+    first.level === 1 &&
+    normalizeTitle(first.text) === normalizeTitle(title);
+  return repeated ? rest : blocks;
+}
 
 /** Every document path the page names, so a link in a passage to one of them opens file mode. */
 function useDocPaths(page: ConceptPage): ReadonlySet<string> {
@@ -175,6 +186,11 @@ function useContextValue(
 type Props = {
   pageKey: string;
   page: ConceptPage;
+  /**
+   * True where a page heading above the column already shows the title (summary pages), so the
+   * page's own leading level-1 title block is not rendered twice. Overviews keep it as their H1.
+   */
+  dropTitle?: boolean;
   /** Called by the `a` key with the focused sentence or passage; absent for read-only browsers. */
   onAttach?: (draft: AttachmentDraft) => void;
 };
@@ -185,7 +201,7 @@ type Props = {
  * view state of this browser tab; a page replacement carries them forward by the source
  * sections they rest on.
  */
-export function ReadingColumn({ pageKey, page, onAttach }: Props): JSX.Element {
+export function ReadingColumn({ pageKey, page, dropTitle = false, onAttach }: Props): JSX.Element {
   const store = useStore();
   const columnRef = useRef<HTMLDivElement>(null);
   const model = useColumnModel(store, columnRef, pageKey, page);
@@ -220,7 +236,7 @@ export function ReadingColumn({ pageKey, page, onAttach }: Props): JSX.Element {
           onFocus={model.roving.onFocus}
           onBlur={model.roving.onBlur}
         >
-          <Blocks blocks={page.blocks} />
+          <Blocks blocks={dropTitle ? withoutTitleBlock(page.blocks, page.title) : page.blocks} />
           <Announcer title={page.title} arrival={model.arrival} />
         </div>
       </ColumnContext.Provider>

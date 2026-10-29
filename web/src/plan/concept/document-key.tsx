@@ -9,7 +9,7 @@ import type { ConceptPage, ImplementsView, KeyChip } from "@/plan/api/schema-con
 import { KeyChipExtras } from "./key-chip-extras";
 import { KeyRowExtras } from "./key-row-extras";
 import { conceptPageAtom } from "./page-state";
-import { outOfDateText } from "./page-header";
+import { outOfDateText } from "./summary-text";
 import { openRunsAtom } from "./view-state";
 
 function implementsText(view: ImplementsView | null): string | null {

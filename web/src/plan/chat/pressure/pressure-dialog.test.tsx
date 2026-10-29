@@ -27,8 +27,6 @@ import { pressureOptionsAtom } from "./use-pressure";
 const options = pressureOptionsSchema.parse(optionsFixture);
 const plan = "doc/plans/PLAN-example.md";
 const otherPlan = "doc/plans/PLAN-other.md";
-const notice =
-  "This takes a while, edits the plan, and writes planning-omissions.md at the repository root.";
 const closingNotice = "The open chat ends first, with its closing write.";
 
 function holderStore(value: PressureOptions = options) {
@@ -137,16 +135,9 @@ it("preselects the atom plan by equality with repo-relative options", async () =
 
   await mount(store);
 
-  expect((screen.getByRole("combobox", { name: "Plan" }) as HTMLSelectElement).value).toBe(
+  expect((screen.getByRole("combobox", { name: "Change plan" }) as HTMLSelectElement).value).toBe(
     otherPlan,
   );
-});
-
-it("shows the plan-editing notice", async () => {
-  await mount();
-
-  expect(screen.getByText(notice)).toBeTruthy();
-  expect(screen.queryByText(closingNotice)).toBeNull();
 });
 
 it("warns that an active authoring chat ends with its closing write", async () => {
@@ -190,12 +181,14 @@ it.each([
   const unavailable = { ...options, available: false, disabled_reason: reason };
   const fetchSpy = stubFetch({ options: () => jsonReply(unavailable) });
   await mount(holderStore(unavailable));
-  const start = screen.getByRole("button", { name: "Start" });
+  const start = screen.getByRole("button", { name: "Start pressure test" });
 
   fireEvent.click(start);
 
   expect(start.getAttribute("aria-disabled")).toBe("true");
-  expect(screen.getByRole("button", { name: "Start", description: reason })).toBe(start);
+  expect(screen.getByRole("button", { name: "Start pressure test", description: reason })).toBe(
+    start,
+  );
   expect(start.hasAttribute("disabled")).toBe(false);
   expect(screen.getByText(reason)).toBeTruthy();
   expect(callsTo(fetchSpy, "/api/pressure/start")).toEqual([]);
@@ -208,19 +201,22 @@ it("gives a read-only browser an authoring reason instead of a working Start", a
   store.set(authoringAtom, { holder: null });
   const fetchSpy = stubFetch({ options: () => jsonReply(unavailable) });
   await mount(store);
-  const start = screen.getByRole("button", { name: "Start" });
+  const start = screen.getByRole("button", { name: "Start pressure test" });
 
   fireEvent.click(start);
 
   expect(start.getAttribute("aria-disabled")).toBe("true");
   expect(
     screen.getByRole("button", {
-      name: "Start",
+      name: "Start pressure test",
       description: "loom plan is in read-only mode: Claude is not logged in",
     }),
   ).toBe(start);
   expect(
-    screen.getByRole("button", { name: "Start", description: store.get(authorBlockReasonAtom)! }),
+    screen.getByRole("button", {
+      name: "Start pressure test",
+      description: store.get(authorBlockReasonAtom)!,
+    }),
   ).toBe(start);
   expect(callsTo(fetchSpy, "/api/pressure/start")).toEqual([]);
 });
@@ -230,7 +226,7 @@ it("posts the selected plan and slots and closes on success", async () => {
   const store = holderStore(listed);
   const fetchSpy = stubFetch({ options: () => jsonReply(listed) });
   await mount(store);
-  fireEvent.change(screen.getByRole("combobox", { name: "Plan" }), {
+  fireEvent.change(screen.getByRole("combobox", { name: "Change plan" }), {
     target: { value: otherPlan },
   });
   fireEvent.change(screen.getByRole("spinbutton", { name: "Rounds" }), { target: { value: "3" } });
@@ -250,7 +246,7 @@ it("posts the selected plan and slots and closes on success", async () => {
     target: { value: "medium" },
   });
 
-  fireEvent.click(screen.getByRole("button", { name: "Start" }));
+  fireEvent.click(screen.getByRole("button", { name: "Start pressure test" }));
 
   await waitFor(() => expect(store.get(pressureDialogAtom).open).toBe(false));
   const starts = callsTo(fetchSpy, "/api/pressure/start");
@@ -276,7 +272,7 @@ it.each(["", "0", "11", "1.5"])("rejects invalid rounds %j before sending Start"
   await mount();
   fireEvent.change(screen.getByRole("spinbutton", { name: "Rounds" }), { target: { value } });
 
-  fireEvent.click(screen.getByRole("button", { name: "Start" }));
+  fireEvent.click(screen.getByRole("button", { name: "Start pressure test" }));
 
   expect(
     (screen.getByRole("spinbutton", { name: "Rounds" }) as HTMLInputElement).validity.valid,
@@ -289,12 +285,14 @@ it("renders a start error as text and keeps the dialog open", async () => {
   stubFetch({ start: () => jsonReply({ error: "start_failed", message }, 409) });
   const store = await mount();
 
-  fireEvent.click(screen.getByRole("button", { name: "Start" }));
+  fireEvent.click(screen.getByRole("button", { name: "Start pressure test" }));
 
   expect((await screen.findByRole("alert")).textContent).toContain(message);
   expect(document.body.querySelector("img")).toBeNull();
   expect(store.get(pressureDialogAtom).open).toBe(true);
-  expect(screen.getByRole("button", { name: "Start" }).hasAttribute("aria-disabled")).toBe(false);
+  expect(
+    screen.getByRole("button", { name: "Start pressure test" }).hasAttribute("aria-disabled"),
+  ).toBe(false);
 });
 
 it("renders LoadState until the open-time refetch settles, even with cached options", async () => {
@@ -317,7 +315,7 @@ it("renders LoadState until the open-time refetch settles, even with cached opti
   );
 
   expect(screen.getByRole("status", { name: "Loading pressure options" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Start" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Start pressure test" })).toBeNull();
 
   await act(async () => {
     release(jsonReply(optionsFixture));
@@ -334,8 +332,10 @@ it("preselects and posts the clicked plan when only the refetched options list i
   const fetchSpy = stubFetch({ options: () => jsonReply(refetched) });
   const store = await mount(holderStore(cached));
 
-  expect((screen.getByRole("combobox", { name: "Plan" }) as HTMLSelectElement).value).toBe(plan);
-  fireEvent.click(screen.getByRole("button", { name: "Start" }));
+  expect((screen.getByRole("combobox", { name: "Change plan" }) as HTMLSelectElement).value).toBe(
+    plan,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Start pressure test" }));
 
   await waitFor(() => expect(store.get(pressureDialogAtom).open).toBe(false));
   const [[, request]] = callsTo(fetchSpy, "/api/pressure/start");
@@ -358,7 +358,7 @@ it("renders a failed options response through LoadState", async () => {
 
   expect(screen.getByText("Could not load pressure options")).toBeTruthy();
   expect(screen.getByText("Try again later")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Start" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Start pressure test" })).toBeNull();
 });
 
 it("resets form defaults when reopened and cancels without posting", async () => {
@@ -381,7 +381,7 @@ it("refetches options on every open so a newly written plan becomes selectable",
   const listed = { ...options, plans: [plan, otherPlan] };
   const fetchSpy = stubFetch({ options: () => jsonReply(listed) });
   const store = await mount();
-  const select = () => screen.getByRole("combobox", { name: "Plan" }) as HTMLSelectElement;
+  const select = () => screen.getByRole("combobox", { name: "Change plan" }) as HTMLSelectElement;
   const planChoices = () =>
     within(select())
       .getAllByRole("option")

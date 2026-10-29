@@ -14,7 +14,7 @@ import { conceptPageSchema } from "@/plan/api/schema-concept";
 import { treeEntrySchema } from "@/plan/api/schema-files";
 import { storageKey } from "@/plan/chat/storage";
 import { KeyChipExtras } from "@/plan/concept/key-chip-extras";
-import { PageHeader } from "@/plan/concept/page-header";
+import { PageHeading } from "@/plan/concept/page-heading";
 import { TreeEntryRow } from "@/plan/files/tree-entry";
 import { TreeEntryExtras } from "@/plan/files/tree-entry-extras";
 import { PLANNER_SHORTCUT_GROUPS } from "@/plan/help/shortcuts";
@@ -192,8 +192,8 @@ it("resolveRef refusal shown", async () => {
 it("count on summary header and tree entry", async () => {
   const { store } = mount(
     <>
-      <PageHeader page={page} />
-      <ul>
+      <PageHeading page={page} />
+      <ul aria-label="Tree">
         <TreeEntryRow entry={entry} forceOpen={false} />
       </ul>
     </>,
@@ -202,7 +202,10 @@ it("count on summary header and tree entry", async () => {
     within(screen.getByRole("banner")).getByRole("link", { name: "Open questions · 3" }),
   ).toBeTruthy();
   expect(
-    within(screen.getByRole("listitem")).getByRole("link", { name: "Open questions · 3" }),
+    within(within(screen.getByRole("list", { name: "Tree" })).getByRole("listitem")).getByRole(
+      "link",
+      { name: "Open questions · 3" },
+    ),
   ).toBeTruthy();
   act(() => store.set(openQuestionsAtom, { [path]: 0 }));
   expect(screen.getAllByRole("link", { name: "Open questions · 0" })).toHaveLength(2);
@@ -214,7 +217,7 @@ it("count on summary header and tree entry", async () => {
 it("count links to open-questions anchor", () => {
   mount(
     <>
-      <PageHeader page={page} />
+      <PageHeading page={page} />
       <TreeEntryExtras entry={{ ...entry, path: "product/section_01.md" }} />
     </>,
   );
@@ -242,7 +245,7 @@ it("dots on key chip and tree entry", () => {
 
 it("marker links diff from base commit", async () => {
   replies[builtUrl] = { notes: [changedAfter] };
-  const { store } = mount(<PageHeader page={page} />);
+  const { store } = mount(<PageHeading page={page} />);
   const marker = await screen.findByRole("link", { name: "Changed after feat-review was built" });
   expect(marker.getAttribute("href")).toBe("/files/product/section_01.md?base_commit=base");
   fireEvent.click(marker);
@@ -262,7 +265,7 @@ it("marker links diff from base commit", async () => {
 
 it("marker tooltip states limits", async () => {
   replies[builtUrl] = { notes: [changedAfter] };
-  mount(<PageHeader page={page} />);
+  mount(<PageHeading page={page} />);
   const marker = await screen.findByRole("link", { name: "Changed after feat-review was built" });
   fireEvent.focus(marker);
   const tooltip = await screen.findByRole("tooltip");
@@ -274,7 +277,7 @@ it("marker tooltip states limits", async () => {
 
 it("running note", async () => {
   replies[builtUrl] = { notes: [{ kind: "running", slug: "feat-running" }] };
-  mount(<PageHeader page={page} />);
+  mount(<PageHeading page={page} />);
   const note = await screen.findByRole("note");
   expect(note.textContent).toContain("This plan is running; changes here do not reach it");
   expect(note.textContent).toContain("feat-running");
@@ -337,7 +340,7 @@ it("resync refetches the compare list", async () => {
 it.each(["product", "product/vision", "engineering/feat-review"])(
   "does not request build markers for %s",
   (key) => {
-    mount(<PageHeader page={{ ...page, key }} />);
+    mount(<PageHeading page={{ ...page, key }} />);
     expect(fetchMock).not.toHaveBeenCalled();
   },
 );
@@ -345,7 +348,7 @@ it.each(["product", "product/vision", "engineering/feat-review"])(
 it("pathless summaries and folders have no review indicators", () => {
   const { view } = mount(
     <>
-      <PageHeader page={{ ...conceptPageSchema.parse(overviewFixture), path: null }} />
+      <PageHeading page={{ ...conceptPageSchema.parse(overviewFixture), path: null }} />
       <TreeEntryExtras entry={{ ...entry, path: null }} />
     </>,
   );
