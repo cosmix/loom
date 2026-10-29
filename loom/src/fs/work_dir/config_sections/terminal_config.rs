@@ -61,3 +61,6 @@ pub fn read_terminal_config(work_dir: &Path) -> Result<TerminalConfig> {
 pub fn write_terminal_config(work_dir: &Path, config: &TerminalConfig) -> Result<()> {
     super::write_section(work_dir, TERMINAL_SECTION, config)
 }
+
+#[cfg(test)]
+mod tests;

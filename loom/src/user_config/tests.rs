@@ -175,6 +175,12 @@ fn parses_every_key_out_of_a_document() {
 }
 
 #[test]
+fn parses_terminal_backend_native_out_of_a_document() {
+    let config = parse_document("[terminal]\nbackend = \"native\"\n").unwrap();
+    assert_eq!(config.terminal_backend(), SessionBackendKind::Native);
+}
+
+#[test]
 fn a_type_mismatched_field_in_the_document_is_an_error() {
     assert!(parse_document("[update]\ncheck = \"nope\"\n").is_err());
     assert!(parse_document("[context]\nceiling_tokens = \"nope\"\n").is_err());
