@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use anyhow::Result;
 
-use crate::plan_server::concept::delta::{delta, page_keys, snapshot, sources, Snapshot};
+use crate::plan_server::concept::delta::{delta, snapshot, sources, Snapshot};
 use crate::plan_server::concept::routes::page_context;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::lifecycle;
@@ -16,7 +16,6 @@ use crate::planning::runtime::RuntimePaths;
 use crate::planning::summary::claims::list_claims;
 use crate::planning::summary::engine::{EngineUpdate, SummaryEngine};
 use crate::planning::summary::evaluate::{evaluate, Evaluation};
-use crate::planning::summary::store;
 use crate::planning::watch::Batch;
 
 /// A callback run with every successful engine update (plan 10 registers its rebuild hooks).
@@ -149,12 +148,6 @@ fn without_claims(project: &Project, error: &anyhow::Error) -> Evaluation {
         safe_error(error)
     ));
     evaluate(project, &[])
-}
-
-/// The page keys whose content depends on summary `id`: its own page and, when it is a member
-/// of an overview's scope, that overview.
-pub fn page_keys_for_summary(id: &str, project: &Project) -> Vec<String> {
-    page_keys(id, &store::scope(project))
 }
 
 /// Build the engine, run it once, and follow every watcher batch.

@@ -6,6 +6,8 @@ pub mod routes;
 pub mod scheduler;
 pub mod spawner;
 
+pub use routes::routes;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::thread;
@@ -45,8 +47,10 @@ pub fn install(ctx: &Arc<PlanContext>) {
     let bridge = ctx.extensions().get::<Bridge>();
     match (&concept, &bridge) {
         (Some(concept), Some(bridge)) => {
-            after_recovery(bridge, concept, &rebuilds);
+            // Subscribed first: the recovery callback below runs at once when recovery is
+            // already done, and a session it starts must have its events seen.
             follow_bridge(bridge, &rebuilds);
+            after_recovery(bridge, concept, &rebuilds);
         }
         _ => line("summaries: no rebuilds: concept mode or the session bridge is missing"),
     }
@@ -65,8 +69,8 @@ pub fn install(ctx: &Arc<PlanContext>) {
     register_shutdown(ctx, &rebuilds, stop);
 }
 
-/// Plan 7's recovery ends the sessions of the last server before this subscribes (it runs at
-/// once when recovery is done): sweep their claims, then queue what the engine's first
+/// Plan 7's recovery ends the sessions of the last server before this callback runs (at once
+/// when recovery is already done): sweep their claims, then queue what the engine's first
 /// evaluation found out of date.
 fn after_recovery(bridge: &Arc<Bridge>, concept: &Arc<ConceptState>, rebuilds: &Arc<Rebuilds>) {
     let (events, weak) = (Arc::downgrade(bridge), Arc::downgrade(rebuilds));

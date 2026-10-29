@@ -11,7 +11,7 @@ pub mod routes;
 pub mod state;
 
 pub(crate) use delta::page_keys;
-pub use engine::{install, page_keys_for_summary, ConceptState};
+pub use engine::{install, ConceptState};
 pub use page::{load_page, PageContext, PageKey, Scope};
 pub use routes::routes;
 

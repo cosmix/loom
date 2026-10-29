@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use super::rebuilds::{Rebuilds, ReleaseRefused};
 use super::scheduler::{AnswerRefused, AnswerRight};
-use crate::plan_server::lifecycle::safe;
+use crate::plan_server::lifecycle::{line, safe};
 use crate::plan_server::request::{ApiRequest, ApiResponse};
 use crate::plan_server::routes::{BodyKind, Method, Role, RouteSpec};
 use crate::planning::summary::cost::Trigger;
@@ -14,6 +14,8 @@ use crate::planning::summary::store::{expected_ids, validate_id};
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_installed;
 
 #[derive(Deserialize)]
 struct Ids {
@@ -162,7 +164,14 @@ fn release(req: &ApiRequest<'_>) -> ApiResponse {
             "not_terminal",
             &format!("no terminal claim for {}", safe(&id)),
         ),
-        Err(ReleaseRefused::Failed(why)) => ApiResponse::error(500, "internal", &safe(&why)),
+        Err(ReleaseRefused::Failed(why)) => {
+            // The chain can name the absolute runtime directory; it goes to the terminal only.
+            line(&format!(
+                "summaries: cannot release the terminal claims: {}",
+                safe(&why)
+            ));
+            ApiResponse::error(500, "internal", "the claims could not be released")
+        }
     }
 }
 
