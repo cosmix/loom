@@ -6,7 +6,7 @@
 ## Planning Session Sandbox Limits
 
 Open items of [Planning Session Sandbox](../architecture/planning-session-sandbox.md). The accepted
-limits are the ones `doc/product/section_12.md` lists ("Bash writes inside `doc/loom/`", "New
+limits are the ones `doc/product/planner-ui/section_12.md` lists ("Bash writes inside `doc/loom/`", "New
 top-level paths", "Locked plans locked mid-session"); the implementation matches them.
 
 ### Accepted limits the implementation confirmed
@@ -55,12 +55,12 @@ top-level paths", "Locked plans locked mid-session"); the implementation matches
   `Fixture`; consolidate. The module doc of `sandbox/tests_kinds.rs` still says the expected-value
   helpers are reused by `tests_assert`; rewording it raises a test-integrity event, because the line
   contains `tests_assert`.
-- `doc/product/section_12.md` (graph-cache paragraph) and `context/graph_store/fallback.rs` say
+- `doc/product/planner-ui/section_12.md` (graph-cache paragraph) and `context/graph_store/fallback.rs` say
   `loom knowledge context` refreshes the source graph cache; retrieval refreshes structurally and a
   denied write falls back to an in-memory knowledge catalog, not a graph layer. Reword: `loom map`
   refreshes the source graph and `loom knowledge context` the knowledge catalog, both under
   `.loom/cache/context-v1`.
-- `doc/plans/briefs/feat-planner-06-session-sandbox/planning-sandbox/w1-settings.md` states
+- `doc/plans/planner-ui/briefs/feat-planner-06-session-sandbox/planning-sandbox/w1-settings.md` states
   `read_denies(...) -> ReadDenies`; the function returns `anyhow::Result<ReadDenies>`.
 
 ## Planning Session Bridge Follow-ups

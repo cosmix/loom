@@ -16,8 +16,8 @@ sources:
 
 | Module | Owns |
 | --- | --- |
-| `kinds` | `DocKind` and `DocId` from a path alone; `VISION_PATH = doc/product/index.md` (the only definition) |
-| `slug` | `plan_slug`, `plan_state`, `resolve_plans` (the winner per slug) |
+| `kinds` | `DocKind` and `DocId` from a path alone; a vision is `vision_path(feature)` = `doc/product/<feature>/index.md` |
+| `slug` | `plan_slug`, `plan_state`, `resolve_plans` (the winner per slug; strays and cross-home conflicts) |
 | `discover` | no-follow walk of `doc/` (`DocTree`), bounded reads (`read_doc`, `read_doc_bytes`) |
 | `sections`, `sections/metadata` | heading sections, GitHub anchors, line spans, hashes, plan metadata and stage spans |
 | `paths` | `LockedSet`, `classify_write`, `check_relpath_syntax`, `symlink_component` |
@@ -34,21 +34,25 @@ against its test, so a test going green under the mutated rule is a defect in th
 
 ## Kinds, Ids and Slugs
 
-`classify(rel)` reads no file. `doc/product/index.md` is the vision; `doc/product/section_<digits>.md` a product
-section; anything else under `doc/product/` a product note; the plans directory `index.md` or a `doc/plans/*metaplan*.md` a
-metaplan; a `PLAN-` file in `doc/plans/` or `doc/plans/archive/` a plan; `doc/plans/briefs/<slug>/<file>` a brief;
-`REVIEW-<plan file>` in those two directories a run review; `doc/loom/knowledge/` knowledge; the rest other.
+`classify(rel)` reads no file. A feature is a name (`[a-z0-9][a-z0-9-]*`, not `archive`, `briefs`, `plans` or `overview`; a bad name classifies as `other`) shared by `doc/product/<feature>/` and
+`doc/plans/<feature>/`. `doc/product/<feature>/index.md` is the vision; `doc/product/<feature>/section_<digits>.md` a
+product section; anything else under `doc/product/<feature>/` a product note; `doc/plans/<feature>/index.md` or a
+`*metaplan*.md` there a metaplan; a `PLAN-` file in `doc/plans/<feature>/` or its `archive/` a feature plan;
+`doc/plans/<feature>/briefs/<slug>/<file>` a brief. A `PLAN-` file in `doc/plans/` or `doc/plans/archive/` is a
+standalone plan with briefs under `doc/plans/briefs/<slug>/`. A vision, section or metaplan at the top level
+(`doc/product/index.md`, `doc/plans/index.md`, `doc/plans/*metaplan*.md`) raises `needs-feature`. `REVIEW-<plan file>` beside a plan is a run
+review; `doc/loom/knowledge/` is knowledge; the rest other.
 
-`doc_id` is `product/index`, `product/section_NN`, `plan/<slug>` (the state is not part of the id, so an id survives
-`loom run` renaming the file), else the path without `doc/`.
+`doc_id` is `product/<feature>/index`, `product/<feature>/section_NN`, `plan/<slug>` (the state is not part of the id,
+so an id survives `loom run` renaming the file), else the path without `doc/`.
 
 `plan_slug` strips at most one of `IN_PROGRESS-`, `DONE-`, `RETIRED-` (constants in `fs::plan_lifecycle`, imported, never
 copied) and then requires `PLAN-` and a nonempty remainder. `plan_state`: `RETIRED-` is `Retired`; the archive
 directory or `DONE-` is `Done`; `IN_PROGRESS-` is `Running`; else `Written`. `PlanState` orders
 `Written < Running < Done < Retired`. `resolve_plans` keeps the most advanced copy per slug (ties: the smallest path);
-the others are `strays`, each reported as a `stray-plan-copy` problem. Everything referring to a plan goes through the
+a losing copy in the winner's home is a `stray` (`stray-plan-copy` problem), one in another home a conflict (`duplicate-plan-slug` problem). Everything referring to a plan goes through the
 slug, so a link spelled `PLAN-foo.md` keeps working after the rename. The `RETIRED-` prefix marks an abandoned plan
-under `doc/plans/archive/`; a retired plan closes its metaplan entry and is read-only.
+under `<home>/archive/` (`doc/plans/archive/` or `doc/plans/<feature>/archive/`); a retired plan closes its metaplan entry and is read-only.
 
 ## Sections, Anchors and Hashes
 
@@ -79,11 +83,11 @@ ask the same `classify_write(locked, rel)`, which returns `DocArea`: `Locked(Loc
 The locked set, by name and by reference:
 
 - **By name** (locks a path whether or not it exists): `IN_PROGRESS-`, `DONE-` and `RETIRED-` plan spellings
-  (`LockReason::PlanState`), anything under `doc/plans/archive/` (`Archive`), `doc/plans/REVIEW-*.md` (`RunReview`).
+  (`LockReason::PlanState`), anything under a plan home's `archive/` (`Archive`), a plan home's `REVIEW-*.md` (`RunReview`); a plan home is `doc/plans/` or `doc/plans/<feature>/`.
   Every comparison is made on the lowercased path (`fold`), so a plan file typed in lowercase is locked on a
   case-insensitive file system; folding only adds matches.
 - **Brief-to-plan rule:** the briefs of a locked plan are locked (`BriefOfLockedPlan { slug }`): its bundle directory
-  `doc/plans/briefs/<slug>/` by prefix, and every input `collect_inputs` lists for it. A `Written` plan and its briefs
+  `<home>/briefs/<slug>/` by prefix, and every input `collect_inputs` lists for it. A `Written` plan and its briefs
   stay editable.
 - `locked_paths()` feeds the spawn-time deny lists: it lists existing locked files outside the archive plus the
   `doc/plans/archive` directory itself, because the sandbox forbids a deny entry beneath another denied directory.
