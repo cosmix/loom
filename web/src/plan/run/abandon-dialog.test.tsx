@@ -10,6 +10,7 @@ import { runStateSchema, type RunStateView, type UnmergedBranch } from "@/plan/a
 import { authoringAtom, connectionAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
 
 import { AbandonDialog } from "./abandon-dialog";
+import { runOutputAtom } from "./use-run";
 
 type Viewer = "holder" | "other" | "read_only" | "unclaimed";
 const fetchMock = vi.fn<typeof fetch>();
@@ -335,4 +336,50 @@ it("shows a finish-abandon failure and allows retry", async () => {
   expect(await screen.findByText("Plan could not be retired")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Finish abandoning" }));
   expect(await screen.findByText("Plan retired")).toBeTruthy();
+});
+
+it("shows loom clean's output and an alert in the dialog when the abandon stops", async () => {
+  fetchMock.mockResolvedValueOnce(
+    jsonReply({ error: "step_failed", message: "loom clean left work behind" }, 409),
+  );
+  const { store } = show(runState([]));
+  store.set(runOutputAtom, {
+    ...store.get(runOutputAtom),
+    abandon: ["loom clean: refusing to delete .worktrees/implementation"],
+  });
+  const first = openFirst();
+  // Output from an earlier attempt is not shown before this one is submitted.
+  expect(within(first).queryByRole("log")).toBeNull();
+  fireEvent.click(within(first).getByRole("button", { name: "Abandon run" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe("loom clean left work behind");
+  const dialog = screen.getByRole("dialog", { name: "Abandon run" });
+  expect(within(dialog).getByRole("log", { name: "abandon output" }).textContent).toBe(
+    "loom clean: refusing to delete .worktrees/implementation\n",
+  );
+});
+
+it("announces a finish-abandon failure as an alert", async () => {
+  fetchMock.mockResolvedValueOnce(
+    jsonReply({ error: "refused", message: "Plan could not be retired" }, 409),
+  );
+  show({ ...runState(), abandon: null, finish_abandon: "doc/plans/IN_PROGRESS-PLAN-example.md" });
+  fireEvent.click(screen.getByRole("button", { name: "Finish abandoning" }));
+
+  expect((await screen.findByRole("alert")).textContent).toBe("Plan could not be retired");
+});
+
+it("shows format characters in the plan, stages and branches as visible markers", () => {
+  const state = runState([{ branch: "loom/\u202Eexe", ahead: 1 }]);
+  state.abandon!.plan = "doc/plans/PLAN-\u202Ex.md";
+  state.abandon!.unmerged_stages = ["impl\u200Bementation"];
+  show(state);
+  const first = openFirst();
+  expect(within(first).getByText("Abandon the run for doc/plans/PLAN-⟨U+202E⟩x.md?")).toBeTruthy();
+  expect(within(first).getByText("impl⟨U+200B⟩ementation")).toBeTruthy();
+  fireEvent.click(within(first).getByRole("button", { name: "Abandon run" }));
+
+  expect(screen.getByText("loom/⟨U+202E⟩exe: 1 commit ahead of main")).toBeTruthy();
+  expect(document.body.textContent).not.toMatch(/[\u202E\u200B]/);
 });

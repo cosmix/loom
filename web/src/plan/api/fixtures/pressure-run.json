@@ -29,7 +29,12 @@
       "started_ms": 2000,
       "ended_ms": null,
       "tokens": null,
-      "codex": { "model": "gpt-6.1-terra", "state": "running", "report_path": null, "log_tail": null },
+      "codex": {
+        "model": "gpt-6.1-terra",
+        "state": "running",
+        "report_path": null,
+        "log_tail": null
+      },
       "edits": []
     }
   ],

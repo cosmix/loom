@@ -171,21 +171,15 @@ it.each<[Partial<PressureEnd>, string]>([
   expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
 });
 
-it("lists configuration changes and posts the holder's confirmation", async () => {
+it("lists configuration changes and leaves the confirmation to the config-block notice", () => {
   const reason = "Codex changed session configuration: AGENTS.md, .codex/config.toml";
-  const fetch = vi.fn<typeof globalThis.fetch>(async () => reply({ cleared: true }));
+  const fetch = vi.fn<typeof globalThis.fetch>();
   vi.stubGlobal("fetch", fetch);
   mount(setupStore(endedRun({ kind: "failed", step: "codex", reason })));
   expect(screen.getByText(reason)).toBeTruthy();
 
-  fireEvent.click(screen.getByRole("button", { name: "I have checked these files" }));
-
-  await waitFor(() =>
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/pressure/confirm-config",
-      expect.objectContaining({ method: "POST" }),
-    ),
-  );
+  expect(screen.queryByRole("button", { name: "I have checked these files" })).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
 });
 
 it("shows configuration changes to a read-only browser without a confirmation control", () => {
@@ -261,4 +255,65 @@ it("ticks elapsed time each second and freezes it when the run ends", () => {
   );
   act(() => vi.advanceTimersByTime(2000));
   expect(screen.getByText("4s")).toBeTruthy();
+});
+
+it("ignores a second Stop click while the stop request is pending and after it was accepted", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  let answer: (response: Response) => void = () => {};
+  const fetch = vi.fn<typeof globalThis.fetch>(
+    () =>
+      new Promise<Response>((resolve) => {
+        answer = resolve;
+      }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  mount();
+  const stop = screen.getByRole("button", { name: "Stop" });
+
+  fireEvent.click(stop);
+  fireEvent.click(stop);
+
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("button", { name: "Stop", description: "Stopping…" })).toBe(stop);
+  await act(async () => answer(reply({ stopping: true })));
+  fireEvent.click(stop);
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it("enables Stop again after the server refuses the stop", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => reply({ error: "no_run", message: "No pressure test is running." }, 409)),
+  );
+  mount();
+
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+
+  expect((await screen.findByRole("alert")).textContent).toBe("No pressure test is running.");
+  expect(screen.getByRole("button", { name: "Stop" }).getAttribute("aria-disabled")).toBeNull();
+});
+
+it("shows control characters in edit paths, the end reason and the plan name as markers", () => {
+  const reason = "Codex changed session configuration: AGENTS.md\u202E.md";
+  const shown = "Codex changed session configuration: AGENTS.md⟨U+202E⟩.md";
+  const run = endedRun({ kind: "failed", step: "codex", reason });
+  run.plan = "doc/plans/PLAN-\u202Eevil.md";
+  run.steps = run.steps.map((step, index) =>
+    index === 0 ? { ...step, edits: ["doc/plans/PLAN-\u202Eevil.md"] } : step,
+  );
+  mount(setupStore(run));
+
+  expect(screen.getByRole("link", { name: "doc/plans/PLAN-⟨U+202E⟩evil.md" })).toBeTruthy();
+  expect(screen.getByText(`Step codex failed: ${shown}`)).toBeTruthy();
+  expect(screen.getByText(shown)).toBeTruthy();
+  expect(screen.getByText(/Pressure test · PLAN-⟨U\+202E⟩evil.md/)).toBeTruthy();
+  expect(document.body.textContent).not.toContain("\u202E");
+});
+
+it("labels each step footer as a group", () => {
+  mount();
+  expect(screen.getByRole("group", { name: "Round 2 /pressure" })).toBeTruthy();
 });

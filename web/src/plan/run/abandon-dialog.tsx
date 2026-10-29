@@ -10,11 +10,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { AbandonView, RunStateView, UnmergedBranch } from "@/plan/api/schema-run";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { authorBlockReasonAtom, isHolderAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { ActionError } from "@/plan/ui/action-error";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { LoadState } from "@/plan/ui/load-state";
 
-import { abandonRun, finishAbandon } from "./use-run";
+import { RunOutput } from "./run-output";
+import { abandonRun, finishAbandon, runOutputAtom } from "./use-run";
 
 type Confirmation = { step: "first" | "branches"; branches: UnmergedBranch[] };
 
@@ -125,12 +128,19 @@ function AbandonFlow({ abandon, busy }: { abandon: AbandonView; busy: boolean })
             />
           )}
           {flow.pending && <LoadState state="loading" title="Abandoning run" />}
-          {flow.error && <LoadState state="error" message={flow.error} />}
+          {(flow.pending || flow.error !== null) && <AbandonOutput />}
+          {flow.error && <ActionError message={flow.error} />}
           <ConfirmationActions flow={flow} />
         </DialogContent>
       </Dialog>
     </div>
   );
+}
+
+/** loom clean's output: what it left behind is the reason an abandon stopped (section 11). */
+function AbandonOutput() {
+  const hasLines = useAtomValue(runOutputAtom).abandon.length > 0;
+  return hasLines ? <RunOutput job="abandon" /> : null;
 }
 
 function ConfirmationActions({ flow }: { flow: ReturnType<typeof useAbandonFlow> }) {
@@ -152,7 +162,9 @@ function FirstConfirmation({ abandon }: { abandon: AbandonView }) {
   return (
     <>
       <DialogTitle>Abandon run</DialogTitle>
-      <DialogDescription>Abandon the run for {abandon.plan}?</DialogDescription>
+      <DialogDescription>
+        <Untrusted text={`Abandon the run for ${abandon.plan}?`} />
+      </DialogDescription>
       <ul className="list-disc space-y-1 pl-5">
         <li>
           The plan moves to doc/plans/archive/RETIRED-PLAN-&lt;slug&gt;.md and its metaplan entry
@@ -176,13 +188,17 @@ function FirstConfirmation({ abandon }: { abandon: AbandonView }) {
 function StageList({ title, stages }: { title: string; stages: string[] }) {
   return (
     <section className="space-y-1">
-      <h3 className="font-medium">{title}</h3>
+      <h3 className="font-medium">
+        <Untrusted text={title} />
+      </h3>
       {stages.length === 0 ? (
         <p>None</p>
       ) : (
         <ul className="list-disc pl-5">
           {stages.map((stage) => (
-            <li key={stage}>{stage}</li>
+            <li key={stage}>
+              <Untrusted text={stage} />
+            </li>
           ))}
         </ul>
       )}
@@ -205,12 +221,16 @@ function BranchConfirmation({
     <>
       <DialogTitle>Delete branches with unmerged commits?</DialogTitle>
       <DialogDescription>
-        These branches have commits ahead of {baseBranch}. Abandoning the run deletes them.
+        <Untrusted
+          text={`These branches have commits ahead of ${baseBranch}. Abandoning the run deletes them.`}
+        />
       </DialogDescription>
       <ul className="list-disc space-y-1 pl-5">
         {branches.map(({ branch, ahead }) => (
           <li key={branch}>
-            {branch}: {ahead} {ahead === 1 ? "commit" : "commits"} ahead of {baseBranch}
+            <Untrusted
+              text={`${branch}: ${ahead} ${ahead === 1 ? "commit" : "commits"} ahead of ${baseBranch}`}
+            />
           </li>
         ))}
       </ul>
@@ -253,7 +273,7 @@ function FinishAbandon({ busy }: { busy: boolean }) {
         </DisabledReason>
       )}
       {pending && <LoadState state="loading" title="Finishing abandoning" />}
-      {error && <LoadState state="error" message={error} />}
+      {error && <ActionError message={error} />}
       <p role="status">{finished && "Plan retired"}</p>
     </>
   );

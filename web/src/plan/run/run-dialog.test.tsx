@@ -237,6 +237,59 @@ it("Start and Commit describe the authoring restriction first", () => {
   ).toBeTruthy();
 });
 
+it("Start and Commit need the holder even while nobody holds authoring", async () => {
+  const reason = "Start a chat to take authoring, then commit or start a run.";
+  const { store, fetchSpy } = renderRun({
+    offer: "start",
+    doc_changes: [{ path: "doc/notes.md", status: " M" }],
+  });
+  act(() => store.set(authoringAtom, { holder: null }));
+  expect(store.get(authorBlockReasonAtom)).toBeNull();
+  const start = screen.getByRole("button", { name: "Start", description: reason });
+  const commit = screen.getByRole("button", {
+    name: "Commit changes under doc/",
+    description: reason,
+  });
+  fireEvent.click(commit);
+  fireEvent.click(start);
+  await act(async () => {});
+  expect(fetchSpy.mock.calls.some(([url]) => /\/api\/run\/(start|commit)$/.test(String(url)))).toBe(
+    false,
+  );
+});
+
+it("sends one request when Start is clicked twice before the form re-renders", async () => {
+  const { fetchSpy } = renderRun({ offer: "start", doc_changes: [] });
+  const start = screen.getByRole("button", { name: "Start" });
+  act(() => {
+    start.click();
+    start.click();
+  });
+  const posts = () => fetchSpy.mock.calls.filter(([url]) => String(url).endsWith("/api/run/start"));
+  await waitFor(() => expect(posts()).toHaveLength(1));
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(posts()).toHaveLength(1);
+});
+
+it("shows format characters in paths and branch names as visible markers", () => {
+  const evil = "doc/\u202Etxt.md";
+  renderRun({
+    offer: "start",
+    branch: "main\u202E",
+    doc_changes: [{ path: evil, status: " M" }],
+    blocking_changes: [{ path: "src/\u200Bhidden.rs", status: "??" }],
+    plans: [{ path: "doc/plans/PLAN-\u202Ex.md", slug: "x", listed: false }],
+    preselected: "doc/plans/PLAN-\u202Ex.md",
+  });
+  expect(screen.getByText("doc/⟨U+202E⟩txt.md ( M)")).toBeTruthy();
+  expect(screen.getByText("src/⟨U+200B⟩hidden.rs (??)")).toBeTruthy();
+  expect(screen.getByText("merges into main⟨U+202E⟩")).toBeTruthy();
+  expect(screen.getByRole("option", { name: /PLAN-⟨U\+202E⟩x\.md/ })).toBeTruthy();
+  expect(document.body.textContent).not.toMatch(/[\u202E\u200B]/);
+});
+
 it("blocks Start while a job is busy and renders its output as text", () => {
   const { store } = renderRun({ offer: "start", busy: "commit" });
   act(() =>
@@ -265,6 +318,18 @@ it("shows request failures without starting a run", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Commit changes under doc/" }));
   expect(await screen.findByText("Signing failed")).toBeTruthy();
   expect(fetchSpy.mock.calls.some(([url]) => String(url).endsWith("/start"))).toBe(false);
+});
+
+it("announces a failed action as an alert", async () => {
+  const { fetchSpy } = renderRun({ doc_changes: [{ path: "doc/notes.md", status: " M" }] });
+  fetchSpy.mockImplementation(
+    async () =>
+      new Response(JSON.stringify({ error: "refused", message: "Signing failed" }), {
+        status: 409,
+      }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Commit changes under doc/" }));
+  expect((await screen.findByRole("alert")).textContent).toBe("Signing failed");
 });
 
 it("refreshes after a resync missed a run_state frame", async () => {
