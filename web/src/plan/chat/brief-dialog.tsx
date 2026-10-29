@@ -1,3 +1,5 @@
+import { atom } from "jotai";
+import { useAtom } from "jotai/react";
 import { useRef, type JSX } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useSessionBrief, type BriefState } from "@/plan/chat/use-session-brief";
@@ -27,18 +29,28 @@ function BriefBody({ state }: { state: BriefState }): JSX.Element {
   }
 }
 
-/** `state` lets a caller that already polls the brief share it; without it the dialog polls. */
+/**
+ * The session whose brief is open, or null. Held outside the Starting row: that row unmounts the
+ * moment the session leaves `starting`, and an open dialog must not vanish with it mid-read.
+ */
+export const briefOpenAtom = atom<string | null>(null);
+
+/** Renders the open Brief dialog; mounted with the chat registrations so it outlives the row. */
+export function BriefDialogHost(): JSX.Element | null {
+  const [sessionId, setSessionId] = useAtom(briefOpenAtom);
+  return sessionId === null ? null : (
+    <BriefDialog sessionId={sessionId} onClose={() => setSessionId(null)} />
+  );
+}
+
 export function BriefDialog({
   sessionId,
-  state: shared,
   onClose,
 }: {
   sessionId: string;
-  state?: BriefState;
   onClose: () => void;
 }): JSX.Element {
-  const own = useSessionBrief(shared ? null : sessionId);
-  const state = shared ?? own;
+  const state = useSessionBrief(sessionId);
   const returnFocus = useRef<HTMLElement | null>(null);
   return (
     <Dialog
@@ -48,7 +60,7 @@ export function BriefDialog({
       }}
     >
       <DialogContent
-        className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+        className="max-h-[85vh] overflow-y-auto sm:max-w-2xl motion-reduce:animate-none"
         aria-describedby={undefined}
         onOpenAutoFocus={() => {
           returnFocus.current =
@@ -56,7 +68,11 @@ export function BriefDialog({
         }}
         onCloseAutoFocus={(event) => {
           event.preventDefault();
-          returnFocus.current?.focus();
+          // The opener (the Brief link) is gone once the session has started; the panel heading
+          // is the stable place to land, not the page body.
+          const opener = returnFocus.current;
+          const stable = opener && opener !== document.body && opener.isConnected;
+          (stable ? opener : document.querySelector<HTMLElement>("[data-chat-heading]"))?.focus();
         }}
       >
         <DialogHeader>

@@ -220,3 +220,23 @@ it("unregister removes the sender dialog and its status subscription", async () 
   unregister = undefined;
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
+
+it("closing the dialog returns focus to the reading region that held the selection", async () => {
+  const region = document.createElement("div");
+  region.setAttribute("data-reading-scroll", "");
+  region.tabIndex = -1;
+  const passage = document.createElement("p");
+  passage.textContent = "Selected passage";
+  region.append(passage);
+  document.body.append(region);
+  window.getSelection()?.selectAllChildren(passage);
+  harness();
+  await openForm();
+
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(region));
+  window.getSelection()?.removeAllRanges();
+  region.remove();
+});

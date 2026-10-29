@@ -7,12 +7,13 @@ import { Untrusted } from "./visible-controls";
 
 /**
  * In-app address of a summary id from the server. Leading slashes and empty or dot segments are
- * dropped so the id can never form a protocol-relative (`//host`) or parent-relative link.
+ * dropped so the id can never form a protocol-relative (`//host`) or parent-relative link. The
+ * optional anchor becomes the fragment. Every link to a summary page, chips included, uses this.
  */
-export function summaryLink(id: string): string {
+export function summaryLink(id: string, anchor: string | null = null): string {
   const segments = id.split("/").filter((part) => part !== "" && part !== "." && part !== "..");
   const page = segments[0] === "plans" ? ["engineering", ...segments.slice(1)] : segments;
-  return `/${page.map(encodeURIComponent).join("/")}`;
+  return `/${page.map(encodeURIComponent).join("/")}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
 }
 
 export function RebuiltSummaries({ turn }: { turn: Turn }) {

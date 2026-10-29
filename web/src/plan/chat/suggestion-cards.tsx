@@ -4,16 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import type { DocView } from "@/plan/api/schema-files";
 import {
   addAttachmentAtom,
+  MAX_ATTACHMENT_BYTES,
   pendingAttachmentsAtom,
   type AttachmentDraft,
 } from "@/plan/attachments";
-import { MAX_ATTACHMENT_BYTES } from "@/plan/attachments/add-to-chat";
-import { docRel } from "@/plan/files/address";
 import { fetchDoc } from "@/plan/files/api";
 import type { ReviewMessage } from "@/plan/review/api";
-import { hashesAtom } from "@/plan/review/live";
 import {
   authorBlockReasonAtom,
+  authoringAtom,
   canAuthorAtom,
   isHolderAtom,
   planSocketAtom,
@@ -21,9 +20,9 @@ import {
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
-import { chipLabel } from "./chips";
+import { chipLabel, summaryIdOf } from "./chips";
 import { answerSuggestion } from "./commands";
-import { draftAtom } from "./drafts";
+import { ATTACHMENT_LIMIT_NOTE, draftAtom, MAX_ATTACHMENTS, mergeAttachments } from "./drafts";
 import { Untrusted } from "./visible-controls";
 
 type Suggestion = Extract<ReviewMessage, { kind: "suggestion" }>;
@@ -34,6 +33,8 @@ const suggestionsAtom = atom<Suggestion[]>([]);
  * Keeps the pending suggestions in the store so frames arriving while the panel is collapsed or
  * the sheet is closed are not lost. Mount it once, beside the panel, in a component that stays
  * mounted. A resync or a replaced socket resets the list: status frames sent meanwhile are gone.
+ * So does a change of the authoring holder: the server empties its box on every take and free and
+ * tells only the senders, so a card kept across one would be refused as unknown when answered.
  */
 export function useSuggestionFeed(): void {
   const store = useStore();
@@ -60,8 +61,16 @@ export function useSuggestionFeed(): void {
       detach();
       detach = attach();
     });
+    const holder = () => store.get(authoringAtom)?.holder?.public_id ?? null;
+    let holding = holder();
+    const unwatchHolder = store.sub(authoringAtom, () => {
+      if (holder() === holding) return;
+      holding = holder();
+      store.set(suggestionsAtom, []);
+    });
     return () => {
       unwatch();
+      unwatchHolder();
       detach();
     };
   }, [store]);
@@ -88,9 +97,7 @@ function currentAttachment(suggestion: Suggestion, doc: DocView): AttachmentDraf
   if (passage.summary_sentence !== null) {
     return {
       kind: "summary",
-      summary: docRel(passage.path)
-        .replace(/^loom\/summaries\//, "")
-        .replace(/\.md$/, ""),
+      summary: summaryIdOf(passage.path),
       sentence: passage.summary_sentence,
       text,
       restsOn: [],
@@ -117,19 +124,10 @@ function fillDraft(store: Store, suggestion: Suggestion, doc: DocView): void {
   const attachment = currentAttachment(suggestion, doc);
   const draft = store.get(draftAtom);
   const pending = store.get(pendingAttachmentsAtom);
-  const all = [
-    ...draft.attachments,
-    ...pending.filter(
-      (item) => !draft.attachments.some((saved) => JSON.stringify(saved) === JSON.stringify(item)),
-    ),
-  ];
-  if (all.length >= 10) throw new Error("At most 10 attachments per message");
+  const all = mergeAttachments(draft.attachments, pending);
+  if (all.length >= MAX_ATTACHMENTS) throw new Error(ATTACHMENT_LIMIT_NOTE);
   store.set(pendingAttachmentsAtom, all);
   store.set(addAttachmentAtom, attachment);
-  store.set(hashesAtom, (current) => ({
-    head: current?.head ?? null,
-    docs: { ...current?.docs, [suggestion.passage.path]: doc.hash },
-  }));
   const request = `${suggestion.from} asks: ${suggestion.note}`;
   store.set(draftAtom, (current) => ({
     text: current.text ? `${current.text}\n\n${request}` : request,
@@ -210,7 +208,11 @@ function SuggestionCard({ suggestion }: { suggestion: Suggestion }) {
           Dismiss
         </DisabledReason>
       </div>
-      {pending && <LoadState state="loading" title="Answering suggestion" />}
+      {pending && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Answering suggestion…
+        </p>
+      )}
       {error && (
         <>
           <LoadState state="error" title="Could not answer suggestion" />

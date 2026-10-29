@@ -20,6 +20,7 @@ import {
   source,
   type,
 } from "./composer-harness";
+import { endChat } from "./commands";
 import { ComposerArea } from "./composer";
 import { draftAtom } from "./drafts";
 import { snapshotAtom } from "./model";
@@ -194,6 +195,18 @@ it("refill uses only queue_returned when the queue changed after Stop", async ()
   expect(box().value).toBe("Draft");
   h.receive("chat", { frame: "queue_returned", texts: ["Authoritative", "New queue"] });
   await waitFor(() => expect(box().value).toBe("Draft\n\nAuthoritative\n\nNew queue"));
+});
+it("the texts End chat returns reach the draft although the concluded view has no composer", async () => {
+  const h = setup("working");
+  mount(h.store);
+  void endChat(h.store);
+  await h.result();
+  act(() =>
+    h.store.set(snapshotAtom, (s) => ({ ...s, session: { ...s.session!, state: "ended" } })),
+  );
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  h.receive("chat", { frame: "queue_returned", texts: ["first", "second"] });
+  expect(h.store.get(draftAtom).text).toBe("first\n\nsecond");
 });
 it("slash commands and the delivered attachment byte limit block sending", () => {
   const h = setup();
