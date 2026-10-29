@@ -330,3 +330,40 @@ fn native_backend_omits_terminals() {
         "status --web --host 127.0.0.1\n"
     );
 }
+
+fn wait_until_child_exits(ctx: &PlanContext) {
+    let dashboard = ctx.extensions().get::<Dashboard>().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let exited = {
+            let mut state = dashboard.state.lock().unwrap();
+            let child = state.child.as_mut().unwrap();
+            matches!(child.process.try_wait(), Ok(Some(_)))
+        };
+        if exited {
+            return;
+        }
+        assert!(Instant::now() < deadline, "the fake dashboard never exited");
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn a_dead_child_is_replaced_instead_of_reusing_its_url() {
+    let (temp, ctx) = context();
+    // Prints its URL and exits, so the next request finds the child dead.
+    let bin = fake(temp.path(), &format!("printf '%s\\n' '{STARTUP}'"));
+    assert_eq!(call(&ctx, &bin).status, 200);
+    wait_until_child_exits(&ctx);
+    assert_eq!(current_url(&ctx), None);
+
+    let second = call(&ctx, &bin);
+
+    assert_eq!(second.status, 200);
+    assert_eq!(
+        json(&second)["url"].as_str(),
+        Some("http://127.0.0.1:7373/")
+    );
+    let starts = fs::read_to_string(temp.path().join("starts")).unwrap();
+    assert_eq!(starts.lines().count(), 2);
+}

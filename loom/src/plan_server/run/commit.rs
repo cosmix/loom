@@ -53,28 +53,44 @@ pub fn commit_doc_changes(
     run_sequence(root, paths, message, |_, _, line| on_line(line))
 }
 
+/// The ticked paths `git add` can match. A staged deletion or a rename's source is in neither
+/// the index nor the worktree, and `git add` exits 128 on such a pathspec; `git commit -- <paths>`
+/// still records those paths from HEAD, so they stay on the commit's pathspec only.
+fn addable_paths<'a>(root: &Path, paths: &'a [String]) -> Vec<&'a String> {
+    paths
+        .iter()
+        .filter(|path| root.join(path).symlink_metadata().is_ok())
+        .collect()
+}
+
 fn run_sequence(
     root: &Path,
     paths: &[String],
     message: &str,
     mut on_line: impl FnMut(&str, OutputStream, &str),
 ) -> Result<i32> {
-    // Do not use run_git: its hook suppression would bypass the user's checks.
-    let mut add = Command::new("git");
-    add.args([
-        "-c",
-        "core.quotepath=off",
-        "--literal-pathspecs",
-        "add",
-        "--",
-    ])
-    .args(paths);
+    let mut steps = Vec::new();
+    let addable = addable_paths(root, paths);
+    if !addable.is_empty() {
+        // Do not use run_git: its hook suppression would bypass the user's checks.
+        let mut add = Command::new("git");
+        add.args([
+            "-c",
+            "core.quotepath=off",
+            "--literal-pathspecs",
+            "add",
+            "--",
+        ])
+        .args(addable);
+        steps.push(("git add", add));
+    }
     let mut commit = Command::new("git");
     // Explicit pathspecs give --only semantics, preserving everything else staged.
     commit
         .args(["--literal-pathspecs", "commit", "-m", message, "--"])
         .args(paths);
-    for (name, mut cmd) in [("git add", add), ("git commit", commit)] {
+    steps.push(("git commit", commit));
+    for (name, mut cmd) in steps {
         cmd.current_dir(root).stdin(Stdio::null());
         let status = child::run_streamed(cmd, |stream, line| on_line(name, stream, line))
             .with_context(|| format!("running {name}"))?;

@@ -87,6 +87,16 @@ fn init_backend_effective_backend_inherits_user_config_when_none_chosen() {
 }
 
 #[test]
+fn init_backend_effective_backend_inherits_native_user_config_when_none_chosen() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("config.toml");
+    std::fs::write(&path, "[terminal]\nbackend = \"native\"\n").unwrap();
+    let _guard = redirect_user_config(path);
+
+    assert_eq!(effective_backend(None), SessionBackendKind::Native);
+}
+
+#[test]
 fn init_backend_effective_backend_defaults_to_tmux_without_user_config() {
     let temp = tempdir().unwrap();
     let _guard = redirect_user_config(temp.path().join("config.toml"));

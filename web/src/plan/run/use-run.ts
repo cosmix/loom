@@ -57,9 +57,21 @@ export function appendRunOutput(store: Store, frame: RunOutput): void {
   }));
 }
 
+// Per-store state request generation: overlapping refetches (an action, a done frame and a
+// resync) resolve in any order, so a response is applied only while it is the latest request and
+// no run_state frame arrived since.
+const stateRequests = new WeakMap<Store, number>();
+
+function nextStateRequest(store: Store): number {
+  const next = (stateRequests.get(store) ?? 0) + 1;
+  stateRequests.set(store, next);
+  return next;
+}
+
 export async function fetchRunState(store: Store): Promise<ApiResult<RunStateView>> {
+  const current = nextStateRequest(store);
   const result = await apiGet("/api/run/state", runStateSchema);
-  if (result.ok) store.set(runStateAtom, result.value);
+  if (result.ok && current === stateRequests.get(store)) store.set(runStateAtom, result.value);
   return result;
 }
 
@@ -117,7 +129,8 @@ export function finishAbandon(store: Store): Promise<ApiResult<AbandonResult>> {
 }
 
 export function fetchDashboard(_store: Store): Promise<ApiResult<RunDashboard>> {
-  return apiPost("/api/run/dashboard", {}, dashboardSchema, { contentType: "json" });
+  // The route takes no body and its gate refuses any byte with 413, so post an empty text body.
+  return apiPost("/api/run/dashboard", "", dashboardSchema, { contentType: "text" });
 }
 
 // Jobs whose output is streaming. runOutputAtom keeps a finished job's lines for inspection, so
@@ -134,6 +147,7 @@ export function installRunSubscription(store: Store): () => void {
     const socket = store.get(planSocketAtom);
     if (!socket) return;
     const stopState = socket.subscribe("run_state", ({ type: _type, ...state }) => {
+      nextStateRequest(store);
       store.set(runStateAtom, state);
     });
     const stopOutput = socket.subscribe("run_output", ({ type: _type, ...output }) => {

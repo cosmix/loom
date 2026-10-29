@@ -19,6 +19,12 @@ use crate::models::worktree::Worktree;
 use super::native::NativeBackend;
 use super::tmux::{self, TmuxBackend};
 
+/// Why a configured tmux backend with no `tmux` on PATH cannot run: the `loom run` preflight
+/// and the spawn dispatcher both fail with it.
+pub const TMUX_MISSING_MESSAGE: &str = "terminal backend \"tmux\" (configured or the built-in \
+    default) is selected but tmux is not on PATH; install tmux or set [terminal] backend = \
+    \"native\" (.loom/work/config.toml or ~/.loom/config.toml)";
+
 /// The stage worktree a merge resolver works in. Errors when its directory
 /// is missing: the caller routes the stage to human review.
 pub fn merge_resolver_worktree(repo_root: &Path, stage_id: &str) -> Result<Worktree> {
@@ -144,11 +150,7 @@ impl SessionBackend {
             SessionBackendKind::Native => self.spawn_native_lane(session, spawn_native),
             SessionBackendKind::Tmux => {
                 if !(self.tmux_available)() {
-                    anyhow::bail!(
-                        "terminal backend \"tmux\" is configured but tmux is not on PATH; \
-                         install tmux or set [terminal] backend = \"native\" \
-                         (.loom/work/config.toml or ~/.loom/config.toml)"
-                    );
+                    anyhow::bail!(TMUX_MISSING_MESSAGE);
                 }
                 let mut tmux_session = session;
                 tmux_session.backend = SessionBackendKind::Tmux;

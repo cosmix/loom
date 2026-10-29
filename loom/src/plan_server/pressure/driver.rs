@@ -31,6 +31,7 @@ use crate::plan_server::ids::{BrowserId, PublicId};
 use crate::plan_server::lifecycle;
 use crate::plan_server::summaries::rebuilds::{Rebuilds, SuspendGuard};
 use crate::plan_server::summaries::scheduler::SuspendReason;
+use crate::plan_server::wire::message::PlanMessage;
 use crate::plan_server::wire::pressure::{
     PressureEnd, PressureRunView, PressureSlots, PressureStart,
 };
@@ -255,12 +256,6 @@ fn execute(env: &RunEnv) -> PressureEnd {
     };
     let mut driver = AppDriver(env);
     let outcome = run_pipeline(&mut driver, &input);
-    if outcome.is_err() {
-        // A failed record or cleanup: the report must still not outlive the run.
-        if let Err(error) = crate::claude::remove_if_exists(&report) {
-            tracing::warn!(%error, "cannot delete the Codex report");
-        }
-    }
     view::ended(&outcome, env.run.cause().as_ref())
 }
 
@@ -278,7 +273,15 @@ fn finish(env: &RunEnv, end: PressureEnd, holds: Holds) {
     let reason = FreeReason::Released("pressure run ended");
     env.ctx.authoring().release_if(&env.run.starter, reason);
     env.runs.end(&env.run);
+    // After the slot is free: the options a browser fetches on this cue read `running: false`.
+    announce_options_changed(&env.ctx);
     env.run.mark_done();
+}
+
+/// Tell every browser to fetch the pressure options again. Sent only after the change they
+/// show (the run slot, the configuration block) is in place, so the refetch reads it.
+pub(super) fn announce_options_changed(ctx: &PlanContext) {
+    ctx.hub().broadcast(&PlanMessage::PressureOptionsChanged);
 }
 
 /// The planning server's [`PressureDriver`]: Claude steps are pressure sessions.

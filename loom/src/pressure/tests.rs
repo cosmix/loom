@@ -12,6 +12,8 @@ enum Call {
 #[derive(Default)]
 struct RecordingDriver {
     calls: Vec<Call>,
+    /// `run_pressure` fails (Codex did not start) after recording its call.
+    fail_pressure: bool,
 }
 
 fn input<'a>(rounds: u32, plan: &'a Path, report: &'a Path) -> PipelineInput<'a> {
@@ -35,6 +37,7 @@ impl PressureDriver for RecordingDriver {
         assert_eq!(claude, "/pressure PLAN-test.md");
         assert_eq!(codex, "$pressure PLAN-test.md");
         self.calls.push(Call::Pressure(round));
+        anyhow::ensure!(!self.fail_pressure, "codex did not start");
         Ok(PressureResult {
             verdict: StepVerdict::Continue,
             codex_model_used: Some("gpt-6.1-sol".into()),
@@ -100,6 +103,31 @@ fn test_record_failure_still_deletes_report_and_returns_error() {
             Call::Delete,
         ],
         "the final delete_report ran after the failed record"
+    );
+}
+
+#[test]
+fn test_failed_step_still_deletes_report_and_returns_its_error() {
+    let dir = TempDir::new().unwrap();
+    let plan = dir.path().join("PLAN-test.md");
+    let report = dir.path().join("codex-PLAN-test.md");
+    std::fs::write(&plan, "<!-- END loom METADATA -->\n").unwrap();
+    let mut driver = RecordingDriver {
+        fail_pressure: true,
+        ..RecordingDriver::default()
+    };
+
+    let error = run_pipeline(&mut driver, &input(2, &plan, &report)).unwrap_err();
+
+    assert_eq!(error.to_string(), "codex did not start");
+    assert_eq!(
+        driver.calls,
+        vec![Call::Delete, Call::Pressure(1), Call::Delete],
+        "the report was not deleted after the failed step"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&plan).unwrap(),
+        "<!-- END loom METADATA -->\n"
     );
 }
 

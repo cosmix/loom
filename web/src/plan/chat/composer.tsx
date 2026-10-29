@@ -32,6 +32,7 @@ import {
 import { CONTROLS } from "./model-identity";
 import { NewChatOffers } from "./new-chat-offers";
 import { PermissionCard } from "./permission-card";
+import { ConfigBlockNotice } from "./pressure/config-block-notice";
 import { codexRunsAlone } from "./pressure/steps";
 import { pressureRunAtom } from "./pressure/use-pressure";
 import { QueueStrip } from "./queue-strip";
@@ -250,6 +251,7 @@ export function ComposerArea() {
   const onLeave = useFocusHandoff(view);
   return (
     <div className="flex min-h-0 shrink-0 flex-col gap-2 border-t border-border p-3 font-sans">
+      <ConfigBlockNotice context="chat" />
       <div className="max-h-[33vh] min-h-0 overflow-y-auto space-y-2">
         <QueueStrip />
         {permissions[0] && (

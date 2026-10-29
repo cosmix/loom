@@ -15,5 +15,6 @@
   "claude_efforts": ["medium", "high"],
   "codex_models": ["gpt-6.1-terra"],
   "codex_efforts": ["medium", "high"],
-  "running": false
+  "running": false,
+  "config_block": null
 }

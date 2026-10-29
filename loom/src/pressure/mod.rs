@@ -86,7 +86,16 @@ pub fn run_pipeline(
             Step::DeleteReport(report) if steps.peek().is_none() => {
                 return finish_pipeline(driver, input, results, &report);
             }
-            step => run_step(driver, input.report, &mut results, step)?,
+            step => match run_step(driver, input.report, &mut results, step) {
+                Ok(verdict) => verdict,
+                Err(error) => {
+                    // The report must not outlive a failed step either; the step's error wins.
+                    if let Err(cleanup) = driver.delete_report(input.report) {
+                        tracing::warn!(error = %cleanup, "cannot delete the Codex report");
+                    }
+                    return Err(error);
+                }
+            },
         };
         if let StepVerdict::Stop { step, reason } = verdict {
             driver.delete_report(input.report)?;

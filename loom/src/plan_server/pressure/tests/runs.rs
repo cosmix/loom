@@ -5,7 +5,7 @@ use std::time::Duration;
 use serial_test::serial;
 
 use super::fake::{Call, Script};
-use super::{wait_for, wait_until, Fixture, PLAN, REPORT};
+use super::{call_on, wait_for, wait_until, Fixture, PLAN, REPORT};
 use crate::plan_server::ids::BrowserId;
 use crate::plan_server::wire::pressure::{
     CodexState, PressureRunView, PressureStepKind, RunEndKind, StepState,
@@ -156,6 +156,27 @@ fn a_stop_in_round_one_writes_no_record_and_deletes_the_report() {
     let teardown = Call::End("s-1".into(), EndMode::Teardown, EndCause::Caller);
     let end = calls.iter().position(|call| *call == teardown);
     assert!(interrupt.is_some() && interrupt < end, "{calls:?}");
+}
+
+#[test]
+#[serial]
+fn a_stop_after_the_last_address_marker_writes_no_record() {
+    let f = Fixture::new();
+    let (ctx, holder) = (std::sync::Arc::downgrade(&f.ctx), f.holder.clone());
+    // The last `/address` session (s-2) is released after its marker, before the record.
+    *f.fake.on_release.lock().unwrap() = Some(Box::new(move |id: &str| {
+        if let Some(ctx) = ctx.upgrade().filter(|_| id == "s-2") {
+            call_on(&ctx, "/api/pressure/stop", &holder, None);
+        }
+    }));
+    f.start(1);
+    let end = f.ended();
+    assert_eq!(end.kind, RunEndKind::Stopped, "{end:?}");
+    assert!(
+        !f.plan_text().contains("## Pressure tests"),
+        "a stopped run recorded: {}",
+        f.plan_text()
+    );
 }
 
 #[test]

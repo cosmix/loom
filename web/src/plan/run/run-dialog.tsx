@@ -1,12 +1,14 @@
 import { useAtom, useAtomValue, useStore } from "jotai";
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import type { ApiResult } from "@/plan/api/client";
 import { runJobSchema, type Backend, type RunJob, type RunStateView } from "@/plan/api/schema-run";
+import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { runDialogAtom } from "@/plan/offers/actions-run";
-import { authorBlockReasonAtom } from "@/plan/state/atoms";
+import { authorBlockReasonAtom, isHolderAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
+import { ActionError } from "@/plan/ui/action-error";
 import { LoadState } from "@/plan/ui/load-state";
 
 import { AbandonDialog } from "./abandon-dialog";
@@ -41,7 +43,7 @@ export function RunDialog(): JSX.Element | null {
         <DialogDescription>
           Choose a plan and prepare the workspace for execution.
         </DialogDescription>
-        {error && <LoadState state="error" message={error} />}
+        {error && <ActionError message={error} />}
         {state ? (
           <RunForm key={plan} state={state} initialPlan={plan} />
         ) : (
@@ -55,19 +57,36 @@ export function RunDialog(): JSX.Element | null {
 function useRunRequest() {
   const [pending, setPending] = useState<RunJob | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A synchronous guard: two clicks in one task both see the render before `pending` is set.
+  const inFlight = useRef(false);
   async function submit(job: RunJob, request: () => Promise<ApiResult<unknown>>) {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setPending(job);
     setError(null);
     const result = await request();
+    inFlight.current = false;
     if (!result.ok) setError(result.message);
     setPending(null);
   }
   return { pending, error, submit };
 }
 
+/**
+ * Commit and Start are holder-only on the server. While nobody holds authoring, authorReason is
+ * null but a browser that has not taken it would get a 403.
+ */
+function useWriteReason(): string | null {
+  const authorReason = useAtomValue(authorBlockReasonAtom);
+  const holder = useAtomValue(isHolderAtom);
+  return (
+    authorReason ?? (holder ? null : "Start a chat to take authoring, then commit or start a run.")
+  );
+}
+
 function useRunForm(state: RunStateView, initialPlan: string) {
   const store = useStore();
-  const authorReason = useAtomValue(authorBlockReasonAtom);
+  const writeReason = useWriteReason();
   const [plan, setPlan] = useState(initialPlan);
   const [choice, setBackend] = useState<Backend>(state.default_backend);
   const request = useRunRequest();
@@ -77,9 +96,9 @@ function useRunForm(state: RunStateView, initialPlan: string) {
     (state.workspace === "initialized" && state.active_plan !== null && plan !== state.active_plan);
   const backend = state.backends.includes(choice) ? choice : state.backends[0];
   const busyReason = busy ? `Waiting for ${busy} to finish` : null;
-  const commitReason = authorReason ?? busyReason;
+  const commitReason = writeReason ?? busyReason;
   const startReason =
-    authorReason ??
+    writeReason ??
     changesReason(state) ??
     busyReason ??
     (!plan ? "Choose a plan first" : !backend ? "No backend is available" : null);
@@ -115,7 +134,9 @@ function RunForm({ state, initialPlan }: { state: RunStateView; initialPlan: str
   return (
     <div className="space-y-4">
       <PlanSelect state={state} plan={form.plan} onChange={form.setPlan} />
-      <p>merges into {state.branch}</p>
+      <p>
+        <Untrusted text={`merges into ${state.branch}`} />
+      </p>
       <DocChanges
         key={form.plan}
         state={state}
@@ -134,7 +155,7 @@ function RunForm({ state, initialPlan }: { state: RunStateView; initialPlan: str
       {form.request.pending && (
         <LoadState state="loading" title={`Submitting ${form.request.pending}`} />
       )}
-      {form.request.error && <LoadState state="error" message={form.request.error} />}
+      {form.request.error && <ActionError message={form.request.error} />}
       <RunActions state={state} form={form} />
       <JobOutputs busy={form.busy} />
     </div>
@@ -190,11 +211,11 @@ function PlanSelect({
         onChange={(event) => onChange(event.target.value)}
       >
         {!choices.some((choice) => choice.path === plan) && (
-          <option value={plan}>{plan || "Choose a plan"}</option>
+          <option value={plan}>{plan ? visibleControls(plan) : "Choose a plan"}</option>
         )}
         {choices.map((choice) => (
           <option key={choice.path} value={choice.path}>
-            {choice.path}
+            {visibleControls(choice.path)}
             {!choice.listed && " (unlisted)"}
           </option>
         ))}
@@ -271,7 +292,7 @@ function DocPaths({
             onChange={(event) => toggle(path, event.target.checked)}
           />
           <span>
-            {path} ({status})
+            <Untrusted text={`${path} (${status})`} />
           </span>
         </label>
       ))}
@@ -287,7 +308,7 @@ function BlockingChanges({ state }: { state: RunStateView }) {
       <ul>
         {state.blocking_changes.map(({ path, status }) => (
           <li key={path}>
-            {path} ({status})
+            <Untrusted text={`${path} (${status})`} />
           </li>
         ))}
       </ul>

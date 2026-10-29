@@ -23,6 +23,16 @@ pub struct PressureOptions {
     pub codex_models: Vec<String>,
     pub codex_efforts: Vec<String>,
     pub running: bool,
+    /// The persisted configuration block every planning launch waits on, for every browser.
+    pub config_block: Option<PressureConfigBlock>,
+}
+
+/// A Codex configuration change (or one that could not be checked) waiting for the holder.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct PressureConfigBlock {
+    pub reason: String,
+    pub changed: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
