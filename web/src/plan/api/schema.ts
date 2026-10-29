@@ -40,6 +40,7 @@ export const PLAN_MESSAGE_TYPES = [
   "summary_question_closed",
   "summary_turn_cost",
   "pressure_run",
+  "pressure_options_changed",
   "run_state",
   "run_output",
   "run_strip",

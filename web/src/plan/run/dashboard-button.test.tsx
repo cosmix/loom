@@ -11,7 +11,7 @@ import { authoringAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
 import { DashboardButton } from "./dashboard-button";
 import { runStripAtom } from "./use-run";
 
-function renderDashboard(holder = true) {
+function renderDashboard(holder = true, variant?: "full" | "link" | "icon") {
   const store = createStore();
   store.set(serverInfoAtom, { ...hello.server, read_only: [] });
   store.set(youAtom, hello.you);
@@ -28,7 +28,7 @@ function renderDashboard(holder = true) {
     store,
     ...render(
       <Provider store={store}>
-        <DashboardButton />
+        <DashboardButton variant={variant} />
       </Provider>,
     ),
   };
@@ -139,3 +139,79 @@ it("shows the failure when the dashboard is unavailable and no url is known", as
   expect(await screen.findByText("Dashboard did not start")).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Open dashboard" })).toBeNull();
 });
+
+// Let the mocked fetch and the state update it triggers finish before asserting an absence.
+const settle = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+
+const withTunnel = () =>
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            url: "http://localhost:7373/",
+            tunnel: "ssh -L 7373:localhost:7373 host",
+          }),
+        ),
+    ),
+  );
+
+it("styles the link as a link", async () => {
+  withTunnel();
+  renderDashboard();
+  const link = await screen.findByRole("link", { name: "Open dashboard" });
+  expect(link.classList.contains("underline")).toBe(true);
+});
+
+it("renders the narrow header form as an icon link with a name and no tunnel line", async () => {
+  withTunnel();
+  renderDashboard(true, "icon");
+  const link = await screen.findByRole("link", { name: "Open dashboard" });
+  expect(link.getAttribute("aria-label")).toBe("Open dashboard");
+  expect(link.textContent).toBe("");
+  expect(link.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+  expect(screen.queryByText(/ssh -L/)).toBeNull();
+});
+
+it("keeps the tunnel line out of the wide header form", async () => {
+  withTunnel();
+  renderDashboard(true, "link");
+  await screen.findByRole("link", { name: "Open dashboard" });
+  expect(screen.queryByText(/ssh -L/)).toBeNull();
+});
+
+it("shows no failure panel in the header forms", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({ error: "dashboard_unavailable", message: "Dashboard did not start" }),
+          {
+            status: 502,
+          },
+        ),
+    ),
+  );
+  const { container } = renderDashboard(true, "link");
+  await settle();
+  expect(container.innerHTML).toBe("");
+});
+
+it.each(["javascript:alert(1)", "data:text/html,x", "file:///etc/passwd", "//evil.example/"])(
+  "does not render a link for the non-web URL %s",
+  async (url) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ url }))),
+    );
+    const { container } = renderDashboard();
+    await settle();
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(container.innerHTML).toBe("");
+  },
+);
