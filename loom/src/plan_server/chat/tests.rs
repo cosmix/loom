@@ -254,13 +254,12 @@ pub(super) fn browser() -> BrowserId {
 }
 
 pub(super) fn start() -> ChatCommand {
-    let (offer, text, attachments) = (None, None, Vec::new());
-    let client_id = Some("c1".into());
     ChatCommand::Start {
-        client_id,
-        offer,
-        text,
-        attachments,
+        client_id: Some("c1".into()),
+        offer: None,
+        feature: None,
+        text: None,
+        attachments: Vec::new(),
     }
 }
 
@@ -374,7 +373,8 @@ fn a_pressure_session_neither_ends_at_grace_expiry_nor_releases_authoring() {
     f.connect(&holder);
     f.ctx.require_authoring(&holder, Take::TakeIfFree).unwrap();
     let ctx = Arc::clone(&f.ctx);
-    let guidance = Box::new(move |dir: &SessionDir| FixedGuidance.authoring(&ctx, dir, None, None));
+    let guidance =
+        Box::new(move |dir: &SessionDir| FixedGuidance.authoring(&ctx, dir, None, None, None));
     let request = StartRequest {
         kind: SessionKind::Pressure {
             plan: "doc/plans/PLAN-x.md".into(),

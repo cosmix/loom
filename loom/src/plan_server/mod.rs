@@ -11,6 +11,7 @@ pub mod chat;
 pub mod concept;
 pub mod context;
 pub mod extensions;
+pub mod features;
 pub mod files;
 pub mod gate;
 pub mod guidance;

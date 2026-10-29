@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::checklist::ChecklistView;
+use super::checklist::{ChecklistView, OfferView, ProjectChecklistView, StandalonePlanView};
 use super::concept::ConceptChanged;
 use super::files::{DocChanged, FileTree, ValidationChanged};
 use super::presence::{AuthoringView, PresenceList};
@@ -11,17 +11,28 @@ use super::run::{RunOutput, RunStateView, RunStrip};
 use super::server::{Refused, ServerInfo, You};
 use super::summaries::{SummaryPanel, SummaryQuestion, SummaryTurnCost};
 
+/// Initial planning snapshot for one connected browser.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Hello {
+    /// The current browser's public identity.
     pub you: You,
+    /// Server availability and connection details.
     pub server: ServerInfo,
-    pub checklist: ChecklistView,
+    /// One checklist per feature, sorted by feature name.
+    pub checklists: Vec<ChecklistView>,
+    /// Standalone plans, sorted by slug.
+    pub standalone: Vec<StandalonePlanView>,
+    /// Offers to move misplaced documents into features.
+    pub moves: Vec<OfferView>,
+    /// Connected browsers and their reading activity.
     pub presence: PresenceList,
+    /// The current authoring holder, if any.
     pub authoring: AuthoringView,
 }
 
 // `PartialEq` only: the chat model carries no `Eq` types.
+/// A server-to-client planning frame.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PlanMessage {
@@ -31,8 +42,8 @@ pub enum PlanMessage {
     Presence(PresenceList),
     /// Current authoring holder.
     Authoring(AuthoringView),
-    /// Current planning checklist.
-    Checklist(ChecklistView),
+    /// Current feature checklists, standalone plans and move offers.
+    Checklist(ProjectChecklistView),
     /// The server is shutting down.
     ServerStopping,
     /// A command was refused.
@@ -71,12 +82,14 @@ pub enum PlanMessage {
 }
 
 impl PlanMessage {
+    /// Serialize this message into one WebSocket text frame.
     pub fn to_frame(&self) -> String {
         serde_json::to_string(self)
             .expect("planning messages contain only JSON-serializable values")
     }
 }
 
+/// A command sent by a planning browser.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ClientMessage {
@@ -104,12 +117,28 @@ mod tests {
 
     #[test]
     fn hello_fixture_matches_serde_output() {
-        let fixture = include_str!("../../../../web/src/plan/api/fixtures/hello.json");
+        let fixture = include_str!("fixtures/hello.json");
         assert_fixture::<PlanMessage>(fixture);
         let message: PlanMessage = serde_json::from_str(fixture).unwrap();
         assert_eq!(
             serde_json::from_str::<Value>(&message.to_frame()).unwrap(),
             serde_json::from_str::<Value>(fixture).unwrap()
+        );
+    }
+
+    #[test]
+    fn checklist_message_fixture_contains_the_complete_planning_snapshot() {
+        let fixture = include_str!("fixtures/checklist-message.json");
+        assert_fixture::<PlanMessage>(fixture);
+        let message: PlanMessage = serde_json::from_str(fixture).unwrap();
+        let PlanMessage::Checklist(snapshot) = message else {
+            panic!("expected the existing checklist message type");
+        };
+        assert_eq!(snapshot.checklists[0].feature, "demo");
+        assert_eq!(snapshot.standalone[0].slug, "example");
+        assert_eq!(
+            snapshot.moves[0].kind,
+            crate::plan_server::wire::checklist::OfferKind::MoveIntoFeature
         );
     }
 

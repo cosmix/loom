@@ -23,6 +23,7 @@ use crate::planning::watch::OwnWrites;
 use crate::user_config::UserConfig;
 use crate::web_server::http::parse_head;
 
+mod features;
 mod install;
 
 struct HomeGuard(Option<OsString>);
@@ -54,10 +55,17 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        Self::with_files(&[])
+    }
+
+    fn with_files(files: &[(&str, &str)]) -> Self {
         let temp = tempfile::tempdir().unwrap();
         let home = HomeGuard::set(&temp.path().join("home"));
         let root = temp.path().join("project");
         project_files(&root);
+        for (path, text) in files {
+            put(&root, path, text);
+        }
         let bind = BindInfo::new("127.0.0.1:7272".parse().unwrap(), &"ab".repeat(32));
         let ctx = PlanContext::new(
             root,
@@ -81,23 +89,23 @@ impl Fixture {
 
     fn render(&self, offer: Option<&str>, message: Option<&str>) -> anyhow::Result<LaunchGuidance> {
         self.provider
-            .authoring(&self.ctx, &self.session, offer, message)
+            .authoring(&self.ctx, &self.session, offer, message, Some("demo"))
     }
 }
 
 fn project_files(root: &Path) {
     put(
         root,
-        "doc/product/index.md",
+        "doc/product/demo/index.md",
         concat!(
             "# Vision\n\n## Specification sections\n\n",
             "| # | Section |\n| --- | --- |\n| 01 | Alpha |\n",
         ),
     );
-    put(root, "doc/product/section_01.md", "# Alpha\n\nBody.\n");
+    put(root, "doc/product/demo/section_01.md", "# Alpha\n\nBody.\n");
     put(
         root,
-        "doc/plans/index.md",
+        "doc/plans/demo/index.md",
         "# Metaplan\n\n## 1. Delivery (`PLAN-delivery.md`)\n\nDeliver it.\n",
     );
 }
@@ -149,9 +157,16 @@ fn brief_response(ctx: &PlanContext, session_id: &str) -> ApiResponse {
 fn write_plan_offer_renders_with_plan_step_model() {
     let fixture = Fixture::new();
     assert_eq!(
-        fixture.ctx.project().checklist.primary,
+        fixture
+            .ctx
+            .project()
+            .feature("demo")
+            .unwrap()
+            .checklist
+            .primary,
         Some(Offer::WritePlan {
-            metaplan: "doc/plans/index.md".into(),
+            feature: "demo".into(),
+            metaplan: "doc/plans/demo/index.md".into(),
             slug: "delivery".into(),
         })
     );
@@ -187,7 +202,7 @@ fn plan_attachment_selects_plan_model_and_preserves_formatted_opening() {
     let fixture = Fixture::new();
     let message = concat!(
         "  Discuss this plan.\nKeep this line.\n\n<loom-attachments>\n",
-        "[1] source doc/plans/index.md\n> # Metaplan\n</loom-attachments>",
+        "[1] source doc/plans/demo/index.md\n> # Metaplan\n</loom-attachments>",
     );
 
     let guidance = fixture.render(None, Some(message)).unwrap();
@@ -204,7 +219,7 @@ fn product_attachment_selects_spec_model() {
     let fixture = Fixture::new();
     let message = concat!(
         "Discuss this section.\n\n<loom-attachments>\n",
-        "[1] source doc/product/section_01.md\n> # Alpha\n</loom-attachments>",
+        "[1] source doc/product/demo/section_01.md\n> # Alpha\n</loom-attachments>",
     );
 
     let guidance = fixture.render(None, Some(message)).unwrap();
@@ -242,7 +257,7 @@ fn brief_route_returns_rendered_session_brief() {
         view,
         SessionBriefView {
             session_id: "rendered-session".into(),
-            label: "Write PLAN-delivery.md".into(),
+            label: "Write plan delivery".into(),
             brief,
             model: "plan-model".into(),
             effort: "high".into(),
@@ -257,11 +272,12 @@ fn brief_route_returns_rendered_session_brief() {
 
 fn assert_not_offered(ctx: &PlanContext, id: &str) {
     let project = ctx.project();
-    assert!(!project
+    let feature = project.feature("demo").unwrap();
+    assert!(!feature
         .checklist
         .primary
         .iter()
-        .chain(project.checklist.secondary.iter())
+        .chain(feature.checklist.secondary.iter())
         .any(|offer| offer.id() == id));
 }
 
@@ -269,14 +285,14 @@ fn assert_not_offered(ctx: &PlanContext, id: &str) {
 #[serial_test::serial]
 fn refine_existing_document_is_accepted_without_a_checklist_offer() {
     let fixture = Fixture::new();
-    let id = "refine:plans/index.md";
+    let id = "refine:plans/demo/index.md";
     assert_not_offered(&fixture.ctx, id);
 
     let guidance = fixture.render(Some(id), None).unwrap();
 
     assert!(guidance
         .opening_message
-        .contains("Refine doc/plans/index.md."));
+        .contains("Refine doc/plans/demo/index.md."));
     assert_eq!(guidance.model, "plan-model");
 }
 
@@ -286,11 +302,14 @@ fn offer_with_typed_message_appends_the_message_to_the_generated_opening() {
     let fixture = Fixture::new();
     let message = concat!(
         "Tighten this passage.\n\n<loom-attachments>\n",
-        "[1] source doc/product/section_01.md\n> # Alpha\n</loom-attachments>",
+        "[1] source doc/product/demo/section_01.md\n> # Alpha\n</loom-attachments>",
     );
 
     let guidance = fixture
-        .render(Some("refine-passage:product/section_01.md"), Some(message))
+        .render(
+            Some("refine-passage:product/demo/section_01.md"),
+            Some(message),
+        )
         .unwrap();
 
     let generated = guidance
@@ -299,7 +318,7 @@ fn offer_with_typed_message_appends_the_message_to_the_generated_opening() {
         .and_then(|head| head.strip_suffix("\n\n"))
         .expect("opening ends with a blank line and the typed message");
     assert!(
-        generated.contains("Refine doc/product/section_01.md."),
+        generated.contains("Refine doc/product/demo/section_01.md."),
         "{generated}"
     );
 }
@@ -326,7 +345,7 @@ fn start_block_refuses_a_provider_created_after_a_restart() {
     let restarted = PlanGuidance::new(models());
 
     let error = restarted
-        .authoring(&fixture.ctx, &fixture.session, None, None)
+        .authoring(&fixture.ctx, &fixture.session, None, None, None)
         .unwrap_err();
 
     assert!(format!("{error:#}").contains(reason), "{error:#}");

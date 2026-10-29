@@ -30,7 +30,7 @@ fn product_project(numbers: &[u32]) -> (tempfile::TempDir, std::path::PathBuf) {
         overview.push_str(&format!("Member {n} is kept. [§]({link})\n\n"));
     }
     overview.push_str(&format!("The vision frames them. [§]({VISION_LINK})\n"));
-    sealed(&root, &home, "product", &overview);
+    sealed(&root, &home, PRODUCT_OVERVIEW, &overview);
     (temp, root)
 }
 
@@ -76,20 +76,20 @@ fn overview_rests_on_cited_sources() {
         "# Product\n\nDetection is tested. [§]({la}) [§]({lb})\n\n\
          The vision frames it. [§]({VISION_LINK})\n"
     );
-    sealed(&root, &home, "product", &overview);
+    sealed(&root, &home, PRODUCT_OVERVIEW, &overview);
     let page = page_of(&root, &product_overview_key());
     let s = sentence(&page, "Detection is tested.");
     let citations = json!([
-        {"kind": "sentence", "summary": "product/section_01", "id": sid(a)},
-        {"kind": "sentence", "summary": "product/section_01", "id": sid(b)},
+        {"kind": "sentence", "summary": "demo/product/section_01", "id": sid(a)},
+        {"kind": "sentence", "summary": "demo/product/section_01", "id": sid(b)},
     ]);
     assert_eq!(
         s["citations"], citations,
         "summary-sentence citations in link order"
     );
     let rests_on = json!([
-        {"path": "doc/product/section_01.md", "anchor": "detection-rules"},
-        {"path": "doc/product/section_01.md", "anchor": "pressure-tests"},
+        {"path": "doc/product/demo/section_01.md", "anchor": "detection-rules"},
+        {"path": "doc/product/demo/section_01.md", "anchor": "pressure-tests"},
     ]);
     assert_eq!(
         s["rests_on"], rests_on,
@@ -101,7 +101,7 @@ fn overview_rests_on_cited_sources() {
         1,
         "one mark per distinct cited document: {marks:?}"
     );
-    assert_eq!(marks[0]["doc"]["path"], "doc/product/section_01.md");
+    assert_eq!(marks[0]["doc"]["path"], "doc/product/demo/section_01.md");
 }
 
 #[test]
@@ -109,12 +109,14 @@ fn vision_citation_is_source() {
     let (_t, root) = product_project(&[1]);
     let page = page_of(&root, &product_overview_key());
     let s = sentence(&page, "The vision frames them.");
-    let citations = json!([{"kind": "source", "path": "doc/product/index.md", "anchor": "vision"}]);
+    let citations = json!([
+        {"kind": "source", "path": "doc/product/demo/index.md", "anchor": "vision"}
+    ]);
     assert_eq!(
         s["citations"], citations,
         "a vision link is Citation::Source"
     );
-    let rests_on = json!([{"path": "doc/product/index.md", "anchor": "vision"}]);
+    let rests_on = json!([{"path": "doc/product/demo/index.md", "anchor": "vision"}]);
     assert_eq!(
         s["rests_on"], rests_on,
         "a direct source citation is rested on"
@@ -122,7 +124,7 @@ fn vision_citation_is_source() {
     let marks = s["marks"].as_array().expect("marks");
     assert_eq!(marks.len(), 1, "one mark for the vision: {marks:?}");
     assert_eq!(marks[0]["colour"], 0, "the vision's mark has colour 0");
-    assert_eq!(marks[0]["doc"]["path"], "doc/product/index.md");
+    assert_eq!(marks[0]["doc"]["path"], "doc/product/demo/index.md");
 }
 
 #[test]
@@ -131,7 +133,7 @@ fn implements_not_stated() {
     let (_t, root, home) = tree(&[(path, text)]);
     sealed(&root, &home, "plans/a", &plan_draft("a"));
     let page = page_of(&root, &summary_key(Scope::Engineering, "a"));
-    assert_eq!(page["path"], "doc/plans/PLAN-a.md");
+    assert_eq!(page["path"], "doc/plans/demo/PLAN-a.md");
     assert_eq!(
         page["implements"],
         json!({"kind": "not_stated"}),
@@ -155,7 +157,7 @@ fn implements_broken_name_kept() {
     let links = implements["links"].as_array().expect("links");
     assert_eq!(links.len(), 2, "both named sections are kept: {links:?}");
     assert_eq!(links[0]["number"], 2);
-    assert_eq!(links[0]["doc"]["path"], "doc/product/section_02.md");
+    assert_eq!(links[0]["doc"]["path"], "doc/product/demo/section_02.md");
     assert_eq!(links[1]["number"], 99);
     assert_eq!(links[1]["name"], "section_99", "the broken name as written");
     assert_eq!(
@@ -182,12 +184,12 @@ fn unlisted_plans_listed() {
         "# Engineering\n\nA is planned. [§]({link})\n\n\
          The metaplan orders it. [§]({META_LINK})\n"
     );
-    sealed(&root, &home, "engineering", &overview);
+    sealed(&root, &home, ENGINEERING_OVERVIEW, &overview);
     let page = page_of(&root, &engineering_overview_key());
     let chips = doc_paths(&page, "key_chips", "doc");
     assert_eq!(
         chips,
-        vec!["doc/plans/PLAN-a.md"],
+        vec!["doc/plans/demo/PLAN-a.md"],
         "only metaplan plans get chips"
     );
     let unlisted: Vec<&str> = page["unlisted"]
@@ -196,7 +198,11 @@ fn unlisted_plans_listed() {
         .iter()
         .filter_map(|d| d["path"].as_str())
         .collect();
-    assert_eq!(unlisted, vec!["doc/plans/PLAN-b.md"], "plan b is unlisted");
+    assert_eq!(
+        unlisted,
+        vec!["doc/plans/demo/PLAN-b.md"],
+        "plan b is unlisted"
+    );
 }
 
 #[test]
@@ -229,15 +235,20 @@ fn rejects_unsafe_page_key() {
         "product/a/b",
         "product/",
         "engineering/%2e%2e",
+        "demo/product/../x",
+        "demo/product/a/b",
+        "demo/product/",
+        "demo/engineering/%2e%2e",
     ] {
         assert!(PageKey::parse(rest).is_none(), "{rest} must be rejected");
     }
-    let parsed = PageKey::parse("product/section_04");
+    let parsed = PageKey::parse("demo/product/section_04");
     assert!(
         matches!(
             &parsed,
-            Some(PageKey::Summary { scope: Scope::Product, doc }) if doc == "section_04"
+            Some(PageKey::Summary { feature: Some(feature), scope: Scope::Product, doc })
+                if feature == "demo" && doc == "section_04"
         ),
-        "product/section_04 is a product summary key"
+        "demo/product/section_04 is a product summary key belonging to demo"
     );
 }

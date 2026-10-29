@@ -5,22 +5,25 @@ use crate::plan_server::wire::concept::{DocLink, KeyChip};
 use crate::planning::project::Project;
 use crate::planning::summary::{evaluate::Evaluation, store};
 
+/// The ordered key chips for one feature overview.
 pub(crate) fn key_chips(
     project: &Project,
     eval: &Evaluation,
+    feature: &str,
     scope: Scope,
     ctx: &PageContext,
 ) -> Vec<KeyChip> {
+    let members = store::scope(project, feature);
     let ids = match scope {
-        Scope::Product => &eval.scope.product,
-        Scope::Engineering => &eval.scope.engineering,
+        Scope::Product => &members.product,
+        Scope::Engineering => &members.engineering,
     };
     ids.iter()
         .enumerate()
         .filter_map(|(index, id)| {
             let path = store::source_of(project, id)?;
             let doc = project.docs.get(&path)?;
-            let (label, page, no_plan) = chip_label(project, eval, scope, id)?;
+            let (label, page, no_plan) = chip_label(project, &members, scope, id)?;
             // A page key the web client would reject (a slug past 128 characters) drops the
             // chip instead of failing every page that embeds the key row.
             PageKey::parse(&page)?;
@@ -46,27 +49,30 @@ pub(crate) fn key_chips(
 /// A chip's label, page key and "no plan" marker; `None` for an id outside the scope's form.
 fn chip_label(
     project: &Project,
-    eval: &Evaluation,
+    members: &store::Scope,
     scope: Scope,
     id: &str,
 ) -> Option<(String, String, bool)> {
     match scope {
         Scope::Product => {
-            let number = id.strip_prefix("product/section_")?;
-            let no_plan = !eval.scope.engineering.is_empty()
+            let prefix = format!("{}/product/section_", members.feature);
+            let number = id.strip_prefix(prefix.as_str())?;
+            let feature = project.feature(&members.feature)?;
+            let no_plan = !members.engineering.is_empty()
                 && number
                     .parse::<u32>()
                     .ok()
-                    .is_some_and(|n| !project.implemented_by.contains_key(&n));
+                    .is_some_and(|n| !feature.implemented_by.contains_key(&n));
             Some((number.to_string(), id.to_owned(), no_plan))
         }
         Scope::Engineering => {
             let slug = id.strip_prefix("plans/")?;
-            Some((slug.to_string(), page_key_of(id), false))
+            Some((slug.to_string(), page_key_of(project, id)?, false))
         }
     }
 }
 
+/// The colour assigned to a document in this key row.
 pub(crate) fn colour_of(chips: &[KeyChip], doc_path: &str) -> Option<u8> {
     chips
         .iter()

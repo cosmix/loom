@@ -16,20 +16,17 @@ use crate::plan_server::wire::files::{
 use crate::plan_server::wire::message::PlanMessage;
 use crate::planning::project::Project;
 use crate::planning::sections::sections_of;
-use crate::planning::slug::plan_slug;
+use crate::planning::slug::{plan_home, plan_slug, plan_state, PlanState};
 
 use super::texts::TextStore;
 
 /// The note a plan without a metadata block gets: drafting prose first is normal (section 06).
 pub const NO_METADATA_NOTE: &str = "No metadata block yet; the plan is saved as prose.";
 
-/// Whether `rel` (repo-relative) is a written plan file, `doc/plans/PLAN-*.md`: the only
-/// files saves and the cache validate.
+/// Whether `rel` is a written plan in a standalone or feature home: the only files
+/// saves and the cache validate.
 pub fn is_plan_file(rel: &Path) -> bool {
-    let name = rel.file_name().and_then(|name| name.to_str()).unwrap_or("");
-    rel.parent() == Some(Path::new("doc/plans"))
-        && name.starts_with("PLAN-")
-        && name.ends_with(".md")
+    plan_state(rel) == Some(PlanState::Written)
 }
 
 /// Validate `text` as the content of the plan `rel` (repo-relative) under `root`, with the
@@ -126,9 +123,6 @@ fn line_number(n: impl TryInto<u32>) -> u32 {
     n.try_into().unwrap_or(u32::MAX)
 }
 
-/// Where briefs live; every brief a plan names is under it.
-const BRIEFS_DIR: &str = "doc/plans/briefs";
-
 /// The knowledge tree: the plan checks read it (the "consider a knowledge-bootstrap stage"
 /// warning, the strict `loom knowledge check` error), so a change under it affects every plan.
 const KNOWLEDGE_DIR: &str = "doc/loom/knowledge";
@@ -140,7 +134,7 @@ pub struct PlanInputs {
     /// Every input file `loom plan verify` discovered (present or missing).
     pub files: BTreeSet<PathBuf>,
     /// The directory a brief added under it becomes an input of: the plan's conventional
-    /// bundle, or all of `doc/plans/briefs` when discovery failed.
+    /// bundle, or all briefs in its home when discovery failed.
     pub bundle: Option<PathBuf>,
 }
 
@@ -149,6 +143,7 @@ impl PlanInputs {
     /// referenced directory outside the bundle is picked up at the plan's next revalidation;
     /// record directory and glob inputs here if such references become common.
     fn of(root: &Path, rel: &Path, text: &str) -> PlanInputs {
+        let briefs = plan_home(rel).map(|home| home.join("briefs"));
         match collect_inputs_with_text(root, &root.join(rel), Some(text)) {
             Ok(inputs) => PlanInputs {
                 files: inputs.files.into_keys().collect(),
@@ -156,14 +151,14 @@ impl PlanInputs {
                     .file_name()
                     .and_then(|name| name.to_str())
                     .and_then(plan_slug)
-                    .map(|slug| Path::new(BRIEFS_DIR).join(slug)),
+                    .and_then(|slug| briefs.as_ref().map(|base| base.join(slug))),
             },
             // The failure is already one of the view's errors (verify ran the same walk), but
             // which inputs the walk reached is unknown, and any brief may be the one that fixes
             // it: every brief counts until the next walk succeeds.
             Err(_) => PlanInputs {
                 files: BTreeSet::new(),
-                bundle: Some(PathBuf::from(BRIEFS_DIR)),
+                bundle: briefs,
             },
         }
     }
@@ -199,6 +194,7 @@ impl CachedValidation {
 pub struct ValidationCache(Mutex<HashMap<PathBuf, CachedValidation>>);
 
 impl ValidationCache {
+    /// Seed the cache with already computed validation results.
     pub fn new(entries: HashMap<PathBuf, CachedValidation>) -> ValidationCache {
         ValidationCache(Mutex::new(entries))
     }

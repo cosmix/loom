@@ -12,10 +12,10 @@ use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 use super::compare::is_commit_id;
 use crate::git::runner::run_git_checked;
 use crate::planning::discover::read_doc;
-use crate::planning::kinds::{classify, DocKind};
+use crate::planning::kinds::DocKind;
 use crate::planning::paths::check_relpath_syntax;
 use crate::planning::project::Project;
-use crate::planning::slug::PlanState;
+use crate::planning::slug::{plan_home, PlanState};
 
 /// The marker before the build stamp in a run review.
 const GENERATED_MARK: &str = "**Generated:** ";
@@ -74,8 +74,8 @@ enum PlanInput {
     },
 }
 
-/// Notes for `section` (relative to `doc/`) from every plan implementing it. A path that is
-/// not a numbered product section has no implementing plans and gives no notes.
+/// Notes for a section DocId from every plan implementing it in the same feature.
+/// Unknown ids and documents outside feature product sections give no notes.
 pub fn built_notes(project: &Project, section: &str) -> Result<Vec<BuiltNote>> {
     built_from(built_inputs(project, section)?)
 }
@@ -83,19 +83,30 @@ pub fn built_notes(project: &Project, section: &str) -> Result<Vec<BuiltNote>> {
 /// The part of `built_notes` that reads `project`: no git, no file reads.
 pub(crate) fn built_inputs(project: &Project, section: &str) -> Result<BuiltInputs> {
     let root = project.root.clone();
-    let rel = check_relpath_syntax(section).map_err(|e| anyhow!("invalid section path: {e}"))?;
+    check_relpath_syntax(section).map_err(|e| anyhow!("invalid section id: {e}"))?;
     let none = |root| BuiltInputs {
         root,
         rel: String::new(),
         plans: Vec::new(),
     };
-    let DocKind::ProductSection { number } = classify(&rel) else {
+    let Some(doc) = project.tree.by_id(section) else {
         return Ok(none(root));
     };
-    let Some(slugs) = project.implemented_by.get(&number) else {
+    let DocKind::ProductSection {
+        number,
+        feature: Some(feature),
+    } = &doc.kind
+    else {
         return Ok(none(root));
     };
-    let rel = rel
+    let Some(slugs) = project
+        .feature(feature)
+        .and_then(|feature| feature.implemented_by.get(number))
+    else {
+        return Ok(none(root));
+    };
+    let rel = doc
+        .path
         .to_str()
         .context("section path is not UTF-8")?
         .to_owned();
@@ -147,11 +158,23 @@ pub(crate) fn built_from(inputs: BuiltInputs) -> Result<Vec<BuiltNote>> {
 /// Every run review of `slug`, wherever discovery found it and however `generate` spelled
 /// its name.
 fn review_paths(project: &Project, slug: &str) -> Vec<PathBuf> {
+    let Some(home) = project
+        .tree
+        .plan(slug)
+        .and_then(|plan| plan_home(&plan.path))
+    else {
+        return Vec::new();
+    };
+    let archive = home.join("archive");
     project
         .tree
         .docs
         .iter()
         .filter(|doc| matches!(&doc.kind, DocKind::RunReview { slug: of } if of == slug))
+        .filter(|doc| {
+            doc.path.parent() == Some(home.as_path())
+                || doc.path.parent() == Some(archive.as_path())
+        })
         .map(|doc| doc.path.clone())
         .collect()
 }

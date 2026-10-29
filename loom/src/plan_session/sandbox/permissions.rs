@@ -9,7 +9,7 @@
 //! and `loom plan summary seal`.
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Result};
 use serde_json::{json, Map, Value};
@@ -175,64 +175,65 @@ fn doc_entries(build: &Build<'_>, kind: EntryKind) -> Result<Vec<String>> {
 /// lists it literally) and the guard.
 fn locked_denies(build: &Build<'_>) -> Result<Vec<String>> {
     let root = build.inputs.project_root;
-    let plans = root.join("doc/plans");
-    let mut plan_files = Vec::new();
-    let mut slugs = BTreeSet::new();
-    for rel in build.locked.locked_paths() {
-        match build.locked.lock_reason(&rel) {
-            Some(LockReason::PlanState(_)) => {
-                let name = rel.file_name().and_then(|name| name.to_str());
-                slugs.extend(name.and_then(plan_slug));
-                plan_files.push(rel);
-            }
-            Some(LockReason::BriefOfLockedPlan { slug }) => {
-                slugs.insert(slug);
-            }
-            _ => {}
-        }
-    }
-    slugs.extend(locked_bundles(build)?.into_iter().map(|(_, slug)| slug));
-    slugs.extend(archived_slugs(build)?);
+    let plan_files = build.locked.locked_paths();
     let files = plan_files
         .iter()
+        .filter(|rel| {
+            matches!(
+                build.locked.lock_reason(rel),
+                Some(LockReason::PlanState(_))
+            )
+        })
         .filter(|rel| rule_syntax_chars(&rel.to_string_lossy()).is_empty());
     let mut deny: Vec<String> = files
         .map(|rel| path_rule("Edit", &root.join(rel), ""))
         .collect();
-    deny.push(path_rule("Edit", &plans.join("REVIEW-*.md"), ""));
-    deny.push(path_rule("Edit", &plans.join("archive"), "/**"));
-    let bundles = slugs
-        .iter()
-        .filter(|slug| rule_syntax_chars(slug).is_empty());
-    deny.extend(bundles.map(|slug| path_rule("Edit", &plans.join("briefs").join(slug), "/**")));
+    let existing_bundles = locked_bundles(build)?;
+    for home in build.tree.plan_homes()? {
+        let plans = root.join(&home);
+        deny.push(path_rule("Edit", &plans.join("REVIEW-*.md"), ""));
+        deny.push(path_rule("Edit", &plans.join("archive"), "/**"));
+        let mut bundles = locked_plan_bundles(build, &home)?;
+        let briefs = home.join("briefs");
+        bundles.extend(
+            existing_bundles
+                .iter()
+                .filter(|(dir, _)| dir.parent() == Some(briefs.as_path()))
+                .map(|(_, slug)| briefs.join(slug)),
+        );
+        deny.extend(
+            bundles
+                .iter()
+                .filter(|rel| rule_syntax_chars(&rel.to_string_lossy()).is_empty())
+                .map(|rel| path_rule("Edit", &root.join(rel), "/**")),
+        );
+    }
     Ok(deny)
 }
 
-/// The slugs of the locked plan files directly in `doc/plans/archive/`. `locked_paths` lists the
-/// archive directory in place of its files, and a bundle directory that does not exist is not
-/// listed by `locked_bundles`, so without these an archived plan's bundle could be created.
-/// A symlinked archive lists nothing here; layer 1 denies it and the guard decides beneath it.
-fn archived_slugs(build: &Build<'_>) -> Result<Vec<String>> {
-    let archive = Path::new("doc/plans/archive");
-    let mut slugs = Vec::new();
-    for (name, kind) in build.tree.real_dir_entries(archive)? {
-        let Some(name) = name.to_str().filter(|_| kind == EntryKind::File) else {
-            continue;
-        };
-        // `LockedSet` stays the only authority on what is locked: keep the slug when it says
-        // the plan's bundle belongs to a locked plan.
-        let Some(slug) = plan_slug(name) else {
-            continue;
-        };
-        let bundle = Path::new("doc/plans/briefs").join(&slug);
-        if matches!(
-            build.locked.lock_reason(&bundle),
-            Some(LockReason::BriefOfLockedPlan { .. })
-        ) {
-            slugs.push(slug);
+/// Include missing bundles of locked plans in the home and its archive. `locked_paths`
+/// collapses archives to their directory, so list their plan names without following links.
+fn locked_plan_bundles(build: &Build<'_>, home: &Path) -> Result<BTreeSet<PathBuf>> {
+    let mut bundles = BTreeSet::new();
+    for dir in [home.to_path_buf(), home.join("archive")] {
+        for (name, kind) in build.tree.real_dir_entries(&dir)? {
+            let Some(name) = name.to_str().filter(|_| kind == EntryKind::File) else {
+                continue;
+            };
+            let Some(slug) = plan_slug(name) else {
+                continue;
+            };
+            let bundle = home.join("briefs").join(slug);
+            // The locked set is the authority, including same-slug conflicts across homes.
+            if matches!(
+                build.locked.lock_reason(&bundle),
+                Some(LockReason::BriefOfLockedPlan { .. })
+            ) {
+                bundles.insert(bundle);
+            }
         }
     }
-    Ok(slugs)
+    Ok(bundles)
 }
 
 /// The permission-rule syntax characters `text` holds, in order of appearance, without repeats.

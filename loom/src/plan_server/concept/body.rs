@@ -30,6 +30,7 @@ struct Cx<'a> {
     chips: &'a [KeyChip],
     level: Level,
     ctx: &'a PageContext,
+    feature: Option<&'a str>,
 }
 
 /// A cited document and whether one of its cited sentences no longer exists.
@@ -38,6 +39,7 @@ struct Cited {
     missing: bool,
 }
 
+/// Render a summary body with its citations and feature-local plan links.
 pub(crate) fn blocks(
     project: &Project,
     file: &SummaryFile,
@@ -52,6 +54,10 @@ pub(crate) fn blocks(
         chips,
         level,
         ctx,
+        feature: project
+            .tree
+            .get(Path::new(&file.front.of))
+            .and_then(|doc| doc.kind.feature()),
     };
     let section = match level {
         Level::Document => section_number(project, &file.front.of),
@@ -77,7 +83,7 @@ pub(crate) fn blocks(
 
 fn section_number(project: &Project, of: &str) -> Option<u32> {
     match project.tree.get(Path::new(of))?.kind {
-        DocKind::ProductSection { number } => Some(number),
+        DocKind::ProductSection { number, .. } => Some(number),
         _ => None,
     }
 }
@@ -99,7 +105,8 @@ fn sentence(cx: &Cx, file: &SummaryFile, one: &format::Sentence, number: Option<
         citations,
         rests_on,
         plans: number
-            .map(|number| implemented_by(cx.project, number))
+            .zip(cx.feature)
+            .map(|(number, feature)| implemented_by(cx.project, feature, number))
             .unwrap_or_default(),
     }
 }
@@ -222,12 +229,22 @@ pub(crate) fn doc_link(project: &Project, path: &Path) -> Option<DocLink> {
     let doc = project.docs.get(path)?;
     let (id, page) = match summary_id_for(project, path) {
         Some(id) => {
-            let page = page_key_of(&id);
+            let page = page_key_of(project, &id)?;
             (id, page)
         }
-        None => match doc.doc.kind {
-            DocKind::Vision => ("product".to_owned(), "product".to_owned()),
-            DocKind::Metaplan => ("engineering".to_owned(), "engineering".to_owned()),
+        None => match &doc.doc.kind {
+            DocKind::Vision {
+                feature: Some(feature),
+            } => {
+                let id = format!("overview/{feature}/product");
+                (id.clone(), id)
+            }
+            DocKind::Metaplan {
+                feature: Some(feature),
+            } => {
+                let id = format!("overview/{feature}/engineering");
+                (id.clone(), id)
+            }
             _ => return None,
         },
     };

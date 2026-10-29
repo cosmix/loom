@@ -1,5 +1,6 @@
 use super::{collect_inputs, Origin};
 use crate::planning::discover::MAX_DOC_BYTES;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -87,6 +88,71 @@ fn bundle_members_carry_the_bundle_origin() {
     assert_eq!(
         inputs.files[Path::new("doc/plans/briefs/foo/w.md")],
         Origin::Bundle
+    );
+}
+
+#[test]
+fn feature_bundle_follows_recursive_brief_references_once() {
+    let temp = TempDir::new().unwrap();
+    let plan = "doc/plans/feature-1/PLAN-foo.md";
+    let first = "doc/plans/feature-1/briefs/foo/a.md";
+    let second = "doc/plans/feature-1/briefs/shared/b.md";
+    write(temp.path(), plan, "no references");
+    write(temp.path(), first, &format!("See {second} and {second}."));
+    write(temp.path(), second, &format!("Back to {first}."));
+    write(temp.path(), "doc/plans/briefs/foo/decoy.md", "unrelated");
+
+    let inputs = collect_inputs(temp.path(), Path::new(plan)).unwrap();
+
+    assert!(inputs.invalid.is_empty(), "{:?}", inputs.invalid);
+    assert_eq!(
+        inputs.files,
+        BTreeMap::from([
+            (PathBuf::from(plan), Origin::Plan),
+            (PathBuf::from(first), Origin::Bundle),
+            (PathBuf::from(second), Origin::File(PathBuf::from(first))),
+        ])
+    );
+}
+
+#[test]
+fn archived_feature_plan_resolves_bundle_in_feature_home() {
+    let temp = TempDir::new().unwrap();
+    let plan = "doc/plans/feature-1/archive/DONE-PLAN-x.md";
+    let brief = "doc/plans/feature-1/briefs/x/common.md";
+    write(temp.path(), plan, "no references");
+    write(temp.path(), brief, "common");
+    write(temp.path(), "doc/plans/briefs/x/decoy.md", "unrelated");
+    write(
+        temp.path(),
+        "doc/plans/feature-1/archive/briefs/x/decoy.md",
+        "unrelated",
+    );
+
+    let inputs = collect_inputs(temp.path(), Path::new(plan)).unwrap();
+
+    assert!(inputs.invalid.is_empty(), "{:?}", inputs.invalid);
+    assert_eq!(
+        inputs.files,
+        BTreeMap::from([
+            (PathBuf::from(plan), Origin::Plan),
+            (PathBuf::from(brief), Origin::Bundle),
+        ])
+    );
+}
+
+#[test]
+fn plan_without_a_home_does_not_use_a_standalone_bundle() {
+    let temp = TempDir::new().unwrap();
+    let plan = "custom/PLAN-foo.md";
+    write(temp.path(), plan, "no references");
+    write(temp.path(), "doc/plans/briefs/foo/decoy.md", "unrelated");
+
+    let inputs = collect_inputs(temp.path(), Path::new(plan)).unwrap();
+
+    assert_eq!(
+        inputs.files,
+        BTreeMap::from([(PathBuf::from(plan), Origin::Plan)])
     );
 }
 

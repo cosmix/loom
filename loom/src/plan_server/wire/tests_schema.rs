@@ -1,10 +1,11 @@
 //! Check that planning wire enum values appear in their matching TypeScript arrays.
 
-use super::checklist::{ChecklistView, CurrentView, MarkView, OfferKind};
+use super::checklist::{offer_view, CurrentView, MarkView, OfferKind};
 use super::concept::ConceptChanged;
 use super::message::{ClientMessage, PlanMessage};
 use super::presence::{AuthoringView, PresenceList};
 use super::server::{BindKind, PrereqKind, Refused};
+use crate::planning::checklist::Offer;
 
 const SCHEMA_TS: &str = include_str!("../../../../web/src/plan/api/schema.ts");
 
@@ -81,19 +82,90 @@ fn all_current_views() -> Vec<CurrentView> {
     ]
 }
 
+fn section_offers() -> Vec<Offer> {
+    let feature = "demo".to_owned();
+    vec![
+        Offer::StartVision {
+            feature: feature.clone(),
+        },
+        Offer::FixVisionTable {
+            feature: feature.clone(),
+        },
+        Offer::WriteSection {
+            feature: feature.clone(),
+            number: 1,
+        },
+        Offer::AddSectionToVision {
+            feature: feature.clone(),
+            number: 1,
+        },
+        Offer::DraftAllSections { feature },
+    ]
+}
+
+fn plan_offers() -> Vec<Offer> {
+    let feature = "demo".to_owned();
+    vec![
+        Offer::StartMetaplan {
+            feature: feature.clone(),
+        },
+        Offer::WritePlan {
+            feature: feature.clone(),
+            metaplan: "doc/plans/demo/index.md".into(),
+            slug: "x".into(),
+        },
+        Offer::PressureTest {
+            feature: feature.clone(),
+            slug: "x".into(),
+        },
+        Offer::DraftAllPlans { feature },
+    ]
+}
+
+fn all_offers() -> Vec<Offer> {
+    match Offer::StartRun {
+        Offer::StartVision { .. }
+        | Offer::FixVisionTable { .. }
+        | Offer::WriteSection { .. }
+        | Offer::AddSectionToVision { .. }
+        | Offer::StartMetaplan { .. }
+        | Offer::WritePlan { .. }
+        | Offer::PressureTest { .. }
+        | Offer::StartRun
+        | Offer::RefineSpec
+        | Offer::NewMetaplanRound
+        | Offer::DraftAllSections { .. }
+        | Offer::DraftAllPlans { .. }
+        | Offer::MoveIntoFeature { .. } => {}
+    }
+    let mut offers = section_offers();
+    offers.extend(plan_offers());
+    offers.extend([
+        Offer::StartRun,
+        Offer::RefineSpec,
+        Offer::NewMetaplanRound,
+        Offer::MoveIntoFeature {
+            path: "doc/product/index.md".into(),
+        },
+    ]);
+    offers
+}
+
 fn all_offer_kinds() -> Vec<OfferKind> {
-    match OfferKind::StartVision {
+    match OfferKind::StartRun {
         OfferKind::StartVision
         | OfferKind::FixVisionTable
         | OfferKind::WriteSection
         | OfferKind::AddSectionToVision
         | OfferKind::StartMetaplan
         | OfferKind::WritePlan
-        | OfferKind::AddPlanToMetaplan
         | OfferKind::PressureTest
         | OfferKind::StartRun
         | OfferKind::RefineSpec
-        | OfferKind::NewMetaplanRound => {}
+        | OfferKind::NewMetaplanRound
+        | OfferKind::DraftAllSections
+        | OfferKind::DraftAllPlans
+        | OfferKind::MoveIntoFeature => {}
     }
     vec![
         OfferKind::StartVision,
@@ -102,11 +174,13 @@ fn all_offer_kinds() -> Vec<OfferKind> {
         OfferKind::AddSectionToVision,
         OfferKind::StartMetaplan,
         OfferKind::WritePlan,
-        OfferKind::AddPlanToMetaplan,
         OfferKind::PressureTest,
         OfferKind::StartRun,
         OfferKind::RefineSpec,
         OfferKind::NewMetaplanRound,
+        OfferKind::DraftAllSections,
+        OfferKind::DraftAllPlans,
+        OfferKind::MoveIntoFeature,
     ]
 }
 
@@ -139,10 +213,8 @@ fn assert_exhaustive(message: &PlanMessage) {
 
 fn all_plan_messages() -> Vec<PlanMessage> {
     assert_exhaustive(&PlanMessage::ServerStopping);
-    let tree_changed: PlanMessage = serde_json::from_str(include_str!(
-        "../../../../web/src/plan/api/fixtures/files-tree-changed.json"
-    ))
-    .unwrap();
+    let tree_changed: PlanMessage =
+        serde_json::from_str(include_str!("fixtures/files-tree-changed.json")).unwrap();
     let doc_changed = serde_json::from_str(include_str!(
         "../../../../web/src/plan/api/fixtures/files-doc-changed.json"
     ))
@@ -151,22 +223,13 @@ fn all_plan_messages() -> Vec<PlanMessage> {
         "../../../../web/src/plan/api/fixtures/files-validation.json"
     ))
     .unwrap();
-    let hello: PlanMessage = serde_json::from_str(include_str!(
-        "../../../../web/src/plan/api/fixtures/hello.json"
-    ))
-    .unwrap();
-    let checklist = ChecklistView {
-        current: CurrentView::Ready,
-        steps: vec![],
-        primary: None,
-        secondary: vec![],
-        items: vec![],
-    };
+    let hello = serde_json::from_str(include_str!("fixtures/hello.json")).unwrap();
+    let checklist = serde_json::from_str(include_str!("fixtures/checklist-message.json")).unwrap();
     vec![
         hello,
         PlanMessage::Presence(PresenceList { entries: vec![] }),
         PlanMessage::Authoring(AuthoringView { holder: None }),
-        PlanMessage::Checklist(checklist),
+        checklist,
         PlanMessage::ServerStopping,
         PlanMessage::PressureOptionsChanged,
         PlanMessage::Refused(Refused {
@@ -177,6 +240,7 @@ fn all_plan_messages() -> Vec<PlanMessage> {
         PlanMessage::DocChanged(doc_changed),
         PlanMessage::Validation(validation),
         PlanMessage::ConceptChanged(ConceptChanged {
+            feature: None,
             pages: vec![],
             out_of_date: vec![],
             sources: vec![],
@@ -227,6 +291,8 @@ fn current_view_wire_values_are_in_plan_schema() {
 #[test]
 fn offer_kind_wire_values_are_in_plan_schema() {
     assert_all_in_schema(&all_offer_kinds(), "OfferKind", "OFFER_KINDS", None);
+    let offers: Vec<_> = all_offers().iter().map(offer_view).collect();
+    assert_all_in_schema(&offers, "OfferView", "OFFER_KINDS", Some("kind"));
 }
 
 #[test]

@@ -1,4 +1,4 @@
-//! The rename into `doc/plans/archive/`, and finishing an interrupted abandon.
+//! The rename into a plan home's `archive/`, and finishing an interrupted abandon.
 
 use std::fs;
 use std::io::ErrorKind;
@@ -8,11 +8,12 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::fs::safe_fs::{safe_create_dir_all_in_workdir, safe_open_dirfd, safe_rename_in_workdir};
+use crate::planning::kinds::{is_feature_name, plans_dir};
 use crate::planning::paths::symlink_component;
 use crate::planning::runtime::RuntimePaths;
 
 use super::marker;
-use super::plan::{leftover, RunningPlan, Worktrees, ARCHIVE_DIR, PLANS_DIR};
+use super::plan::{leftover, RunningPlan, Worktrees, PLANS_DIR};
 use super::AbandonOutcome;
 
 /// Why the rename of `plan` must not run, or `None` when it may: a symlink on either path,
@@ -45,7 +46,7 @@ pub(super) fn rename_refusal(root: &Path, plan: &RunningPlan) -> Result<Option<S
     }
 }
 
-/// Move `plan` to `doc/plans/archive/RETIRED-PLAN-<slug>.md` without following any link,
+/// Move `plan` to `<plan home>/archive/RETIRED-PLAN-<slug>.md` without following any link,
 /// creating the archive when absent. Commits nothing.
 ///
 /// `renameat` replaces an existing target, so [`rename_refusal`] checks the target is absent
@@ -63,7 +64,8 @@ pub(super) fn rename_to_retired(root: &Path, plan: &RunningPlan) -> Result<Aband
     if let Some(reason) = rename_refusal(root, plan)? {
         return Ok(AbandonOutcome::Refused { reason });
     }
-    safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), Path::new(ARCHIVE_DIR), 0o755)?;
+    let archive = plans_dir(plan.feature.as_deref()).join("archive");
+    safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), &archive, 0o755)?;
     safe_rename_in_workdir(dirfd.as_raw_fd(), &plan.source(), &plan.retired())?;
     Ok(AbandonOutcome::Renamed { to: plan.retired() })
 }
@@ -105,7 +107,7 @@ fn describe(outcome: &AbandonOutcome) -> String {
 }
 
 /// The plan an interrupted abandon left, or why there is none: an abandon marker in `runtime`
-/// names an `IN_PROGRESS-` plan under `doc/plans/`, and nothing of the run remains.
+/// names an `IN_PROGRESS-` plan in a standalone or feature home, and nothing of the run remains.
 pub(super) fn stranded(root: &Path, runtime: &RuntimePaths) -> Result<RunningPlan, String> {
     let plan = marked_plan(root, runtime).ok_or_else(|| {
         "no abandon marker from this server names a running plan; nothing to finish".to_string()
@@ -118,15 +120,29 @@ pub(super) fn stranded(root: &Path, runtime: &RuntimePaths) -> Result<RunningPla
     }
 }
 
-/// The first `IN_PROGRESS-` plan under `doc/plans/`, by file name, that a marker names.
+/// The first `IN_PROGRESS-` plan in any home, by relative path, that a marker names.
 fn marked_plan(root: &Path, runtime: &RuntimePaths) -> Option<RunningPlan> {
-    let mut names: Vec<String> = fs::read_dir(root.join(PLANS_DIR))
-        .ok()?
-        .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
-        .collect();
-    names.sort();
-    names
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(root.join(PLANS_DIR)).ok()?.flatten() {
+        let name = entry.file_name();
+        let rel = Path::new(PLANS_DIR).join(&name);
+        if name.to_str().is_some_and(is_feature_name)
+            && entry.file_type().is_ok_and(|kind| kind.is_dir())
+        {
+            paths.extend(
+                fs::read_dir(entry.path())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|child| child.ok())
+                    .map(|child| rel.join(child.file_name())),
+            );
+        } else {
+            paths.push(rel);
+        }
+    }
+    paths.sort();
+    paths
         .iter()
-        .filter_map(|name| RunningPlan::from_rel(&Path::new(PLANS_DIR).join(name)))
+        .filter_map(|path| RunningPlan::from_rel(path))
         .find(|plan| marker::names(runtime, plan))
 }

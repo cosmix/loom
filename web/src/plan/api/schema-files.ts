@@ -1,6 +1,7 @@
 import { z } from "@/api/zod";
 
 export const ENTRY_KINDS = [
+  "feature",
   "vision",
   "section",
   "note",
@@ -35,6 +36,8 @@ const u32 = z.number().int().min(0).max(4294967295);
 const u64 = z.number().int().min(0);
 
 type TreeEntry = {
+  feature: string | null;
+  misplaced: boolean;
   path: string | null;
   title: string;
   file_name: string | null;
@@ -48,6 +51,8 @@ type TreeEntry = {
   children: TreeEntry[];
 };
 export const treeEntrySchema: z.ZodType<TreeEntry> = z.strictObject({
+  feature: z.string().nullable(),
+  misplaced: z.boolean(),
   path: z.string().nullable(),
   title: z.string(),
   file_name: z.string().nullable(),
@@ -123,6 +128,8 @@ export const planViewSchema = z.strictObject({
   metadata_line: u32.nullable(),
 });
 export const docViewSchema = z.strictObject({
+  feature: z.string().nullable(),
+  misplaced: z.boolean(),
   path: z.string(),
   title: z.string(),
   text: z.string(),

@@ -235,6 +235,7 @@ export const chatCommandSchema = z.discriminatedUnion("command", [
     command: z.literal("start"),
     ...clientId,
     offer: z.string().nullable(),
+    feature: z.string().nullable().optional(),
     text: z.string().nullable(),
     attachments: z.array(attachmentInputSchema),
   }),

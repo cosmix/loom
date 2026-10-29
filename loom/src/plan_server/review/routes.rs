@@ -1,5 +1,6 @@
 //! HTTP routes of the review loop.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -11,7 +12,7 @@ use crate::plan_server::routes::{BodyKind, Method, Role, RouteSpec};
 use crate::plan_server::wire::paths::to_doc_rel;
 use crate::plan_server::wire::review::{
     AtCommitResponse, BuiltNoteWire, BuiltResponse, ChangedDocWire, CompareResponse, DocChange,
-    HashesResponse, ImplementedByResponse, OpenQuestionsMessage, RefResponse,
+    HashesResponse, OpenQuestionsMessage, RefResponse,
 };
 use crate::planning::paths::{check_relpath_syntax, symlink_component};
 
@@ -22,6 +23,7 @@ use super::compare::{
 };
 use super::questions::open_question_counts;
 
+/// The review-loop HTTP endpoints and their authorization rules.
 pub fn routes() -> Vec<RouteSpec> {
     let viewer = |path, handler: fn(&ApiRequest<'_>) -> ApiResponse| RouteSpec {
         method: Method::Get,
@@ -49,6 +51,7 @@ pub fn routes() -> Vec<RouteSpec> {
     ]
 }
 
+/// Install review state and authoring, reconnect and watcher hooks.
 pub fn install(ctx: &Arc<PlanContext>) {
     super::setup::install(ctx);
 }
@@ -192,7 +195,16 @@ fn built(req: &ApiRequest<'_>) -> ApiResponse {
         Ok(section) => section,
         Err(error) => return error,
     };
-    if let Err(error) = validate_doc_path(req.ctx.root(), section) {
+    let path = {
+        let project = req.ctx.project();
+        project.tree.by_id(section).map(|doc| doc.path.clone())
+    };
+    let raw = path
+        .as_deref()
+        .and_then(|path| path.to_str())
+        .and_then(to_doc_rel)
+        .unwrap_or(section);
+    if let Err(error) = validate_doc_path(req.ctx.root(), raw) {
         return error;
     }
     // The guard covers only the project reads; git runs after it is dropped.
@@ -234,12 +246,14 @@ fn open_questions(req: &ApiRequest<'_>) -> ApiResponse {
 
 fn implemented_by(req: &ApiRequest<'_>) -> ApiResponse {
     let project = req.ctx.project();
-    let sections = project
-        .implemented_by
-        .keys()
-        .map(|&number| (number, section_plans(&project, number)))
-        .collect();
-    ApiResponse::json(200, &ImplementedByResponse { sections })
+    let mut sections = BTreeMap::new();
+    for feature in &project.features {
+        for &number in feature.implemented_by.keys() {
+            let id = format!("product/{}/section_{number:02}", feature.name);
+            sections.insert(id, section_plans(&project, &feature.name, number));
+        }
+    }
+    ApiResponse::json(200, &serde_json::json!({ "sections": sections }))
 }
 
 fn parameter<'a>(query: &'a QueryParams, name: &str) -> Result<&'a str, ApiResponse> {

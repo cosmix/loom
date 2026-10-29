@@ -169,25 +169,27 @@ fn available_with_free_authoring_or_the_requesters_lease() {
 fn written_plans_follow_metaplan_then_filename_order_without_duplicates() {
     let (_temp, project) = project(&[
         (
-            "doc/plans/index.md",
+            "doc/plans/feature/index.md",
             "# Plans\n\n## First `PLAN-z.md`\n\n## Again `PLAN-z.md`\n",
         ),
         (
-            "doc/plans/other-metaplan.md",
+            "doc/plans/feature/other-metaplan.md",
             "# Other\n\n## First `PLAN-y.md`\n\n## Again `PLAN-z.md`\n",
         ),
-        ("doc/plans/PLAN-a.md", "# A\n"),
-        ("doc/plans/PLAN-b.md", "# B\n"),
-        ("doc/plans/PLAN-y.md", "# Y\n"),
-        ("doc/plans/PLAN-z.md", "# Z\n"),
+        ("doc/plans/feature/PLAN-a.md", "# A\n"),
+        ("doc/plans/feature/PLAN-a-child.md", "# A child\n"),
+        ("doc/plans/feature/PLAN-b.md", "# B\n"),
+        ("doc/plans/feature/PLAN-y.md", "# Y\n"),
+        ("doc/plans/feature/PLAN-z.md", "# Z\n"),
     ]);
     assert_eq!(
         written_plans(&project),
         [
-            "doc/plans/PLAN-z.md",
-            "doc/plans/PLAN-y.md",
-            "doc/plans/PLAN-a.md",
-            "doc/plans/PLAN-b.md",
+            "doc/plans/feature/PLAN-z.md",
+            "doc/plans/feature/PLAN-y.md",
+            "doc/plans/feature/PLAN-a-child.md",
+            "doc/plans/feature/PLAN-a.md",
+            "doc/plans/feature/PLAN-b.md",
         ]
     );
 }

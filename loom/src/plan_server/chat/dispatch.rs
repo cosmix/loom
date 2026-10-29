@@ -57,10 +57,11 @@ fn run(ctx: &Arc<PlanContext>, conn: &ConnCtx, cmd: ChatCommand) -> Outcome {
     match cmd {
         ChatCommand::Start {
             offer,
+            feature,
             text,
             attachments,
             ..
-        } => start(ctx, conn, offer, text, attachments),
+        } => start(ctx, conn, offer, text, attachments, feature),
         ChatCommand::Send {
             text, attachments, ..
         } => send(ctx, conn, &text, attachments),
@@ -113,6 +114,7 @@ fn start(
     offer: Option<String>,
     text: Option<String>,
     inputs: Vec<AttachmentInput>,
+    feature: Option<String>,
 ) -> Outcome {
     refuse_new_work(ctx)?;
     if ctx.read_only().is_read_only() {
@@ -126,7 +128,7 @@ fn start(
     let took = take_authoring(ctx, conn)?;
     // The offer is the guidance provider's to accept: plan 7's refuses one the checklist
     // does not offer now, plan 8's also knows its own start ids.
-    let started = launch(ctx, conn, &bridge, &state, offer, message);
+    let started = launch(ctx, conn, &bridge, &state, offer, message, feature);
     if started.is_err() {
         give_back(ctx, conn, &bridge, took);
     }
@@ -155,7 +157,7 @@ fn send(
             sent.map(|_| Vec::new()).map_err(|error| error.to_string())
         }
         None => {
-            let started = launch(ctx, conn, &bridge, &state, None, Some(message));
+            let started = launch(ctx, conn, &bridge, &state, None, Some(message), None);
             if started.is_err() {
                 give_back(ctx, conn, &bridge, took);
             }
@@ -172,6 +174,7 @@ fn launch(
     state: &Arc<ChatState>,
     offer: Option<String>,
     message: Option<Message>,
+    feature: Option<String>,
 ) -> Outcome {
     let Some(slot) = ctx.extensions().get::<GuidanceSlot>() else {
         return Err(UNAVAILABLE.to_owned());
@@ -187,7 +190,7 @@ fn launch(
     let (starter, state) = (conn.public_id.clone(), Arc::clone(state));
     let guidance = Box::new(move |dir: &SessionDir| -> anyhow::Result<LaunchGuidance> {
         let (offer, first) = (guide_offer.as_deref(), first_message.as_deref());
-        let guidance = provider.authoring(&guide_ctx, dir, offer, first)?;
+        let guidance = provider.authoring(&guide_ctx, dir, offer, first, feature.as_deref())?;
         // Recorded before the bridge can launch (and fail) the session, so its `Ended`
         // always finds the starter; the directory is named after the session id.
         if let Some(id) = dir.path().file_name() {

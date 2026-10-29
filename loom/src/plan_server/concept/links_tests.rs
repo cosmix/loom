@@ -20,7 +20,7 @@ fn fixture(files: &[(&str, &str)]) -> (TempDir, Project) {
 
 #[test]
 fn unmapped_is_not_stated() {
-    let (_temp, project) = fixture(&[("doc/plans/PLAN-a.md", "# A\n")]);
+    let (_temp, project) = fixture(&[("doc/plans/demo/PLAN-a.md", "# A\n")]);
     assert_eq!(implements_view(&project, "a"), ImplementsView::NotStated);
     assert_eq!(
         implements_view(&project, "missing"),
@@ -30,7 +30,7 @@ fn unmapped_is_not_stated() {
 
 #[test]
 fn none_declared_is_empty() {
-    let (_temp, project) = fixture(&[("doc/plans/PLAN-a.md", "# A\nImplements: none\n")]);
+    let (_temp, project) = fixture(&[("doc/plans/demo/PLAN-a.md", "# A\nImplements: none\n")]);
     assert_eq!(
         implements_view(&project, "a"),
         ImplementsView::Sections { links: vec![] }
@@ -41,10 +41,10 @@ fn none_declared_is_empty() {
 fn bad_token_kept_as_written() {
     let (_temp, project) = fixture(&[
         (
-            "doc/plans/PLAN-a.md",
+            "doc/plans/demo/PLAN-a.md",
             "# A\nImplements: section_02, section_03, Bad-Token\n",
         ),
-        ("doc/product/section_02.md", "# Product title\n"),
+        ("doc/product/demo/section_02.md", "# Product title\n"),
     ]);
     assert_eq!(
         implements_view(&project, "a"),
@@ -54,10 +54,10 @@ fn bad_token_kept_as_written() {
                     number: Some(2),
                     name: "Product title".into(),
                     doc: Some(DocLink {
-                        id: "product/section_02".into(),
+                        id: "demo/product/section_02".into(),
                         title: "Product title".into(),
-                        path: "doc/product/section_02.md".into(),
-                        page: "product/section_02".into(),
+                        path: "doc/product/demo/section_02.md".into(),
+                        page: "demo/product/section_02".into(),
                     })
                 },
                 SectionLink {
@@ -78,22 +78,23 @@ fn bad_token_kept_as_written() {
 #[test]
 fn implemented_by_in_slug_order() {
     let (_temp, project) = fixture(&[
-        ("doc/plans/PLAN-b.md", "# Beta\nImplements: section_02\n"),
+        ("doc/plans/demo/index.md", "# Plans\n\n## A (`PLAN-a.md`)\n\n## B (`PLAN-b.md`)\n\n## C (`PLAN-c.md`)\n\n## D (`PLAN-d.md`)\n"),
+        ("doc/plans/demo/PLAN-b.md", "# Beta\nImplements: section_02\n"),
         (
-            "doc/plans/IN_PROGRESS-PLAN-a.md",
+            "doc/plans/demo/IN_PROGRESS-PLAN-a.md",
             "# Alpha\nImplements: section_02\n",
         ),
         (
-            "doc/plans/DONE-PLAN-c.md",
+            "doc/plans/demo/DONE-PLAN-c.md",
             "# Gamma\nImplements: section_02\n",
         ),
         (
-            "doc/plans/RETIRED-PLAN-d.md",
+            "doc/plans/demo/RETIRED-PLAN-d.md",
             "# Delta\nImplements: section_02\n",
         ),
     ]);
     assert_eq!(
-        implemented_by(&project, 2),
+        implemented_by(&project, "demo", 2),
         vec![
             PlanLink {
                 slug: "a".into(),
@@ -117,29 +118,72 @@ fn implemented_by_in_slug_order() {
             },
         ]
     );
-    assert!(implemented_by(&project, 99).is_empty());
+    assert!(implemented_by(&project, "demo", 99).is_empty());
 }
 
 #[test]
 fn implemented_by_skips_plans_without_a_concept_page() {
     let (_temp, project) = fixture(&[
-        ("doc/plans/PLAN-a#b.md", "# Hash\nImplements: section_02\n"),
+        ("doc/plans/demo/index.md", "# Plans\n\n## B (`PLAN-b.md`)\n"),
         (
-            "doc/plans/archive/DONE-PLAN-c.md",
+            "doc/plans/demo/PLAN-a#b.md",
+            "# Hash\nImplements: section_02\n",
+        ),
+        (
+            "doc/plans/demo/archive/DONE-PLAN-c.md",
             "# Archived\nImplements: section_02\n",
         ),
-        ("doc/plans/PLAN-b.md", "# Beta\nImplements: section_02\n"),
+        (
+            "doc/plans/demo/PLAN-b.md",
+            "# Beta\nImplements: section_02\n",
+        ),
     ]);
     assert_eq!(
-        project.implemented_by.get(&2).map(|slugs| slugs.len()),
+        project
+            .feature("demo")
+            .unwrap()
+            .implemented_by
+            .get(&2)
+            .map(|slugs| slugs.len()),
         Some(3)
     );
     assert_eq!(
-        implemented_by(&project, 2),
+        implemented_by(&project, "demo", 2),
         vec![PlanLink {
             slug: "b".into(),
             title: "Beta".into(),
             state: "written".into()
         }]
     );
+}
+
+#[test]
+fn implements_and_implemented_by_resolve_in_the_plans_own_feature() {
+    let (_temp, project) = fixture(&[
+        ("doc/product/demo/section_02.md", "# Demo section\n"),
+        ("doc/product/other/section_02.md", "# Other section\n"),
+        ("doc/plans/demo/index.md", "# Plans\n\n## A (`PLAN-a.md`)\n"),
+        (
+            "doc/plans/other/index.md",
+            "# Plans\n\n## B (`PLAN-b.md`)\n",
+        ),
+        (
+            "doc/plans/demo/PLAN-a.md",
+            "# A\n\nImplements: section_02\n",
+        ),
+        (
+            "doc/plans/other/PLAN-b.md",
+            "# B\n\nImplements: section_02\n",
+        ),
+    ]);
+
+    let ImplementsView::Sections { links } = implements_view(&project, "b") else {
+        panic!("section links");
+    };
+
+    let doc = links[0].doc.as_ref().unwrap();
+    assert_eq!(doc.page, "other/product/section_02");
+    assert_eq!(doc.title, "Other section");
+    assert_eq!(implemented_by(&project, "demo", 2)[0].slug, "a");
+    assert_eq!(implemented_by(&project, "other", 2)[0].slug, "b");
 }

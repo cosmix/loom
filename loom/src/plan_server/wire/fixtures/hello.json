@@ -1,0 +1,120 @@
+{
+  "type": "hello",
+  "you": {
+    "public_id": "0123456789abcdef",
+    "name": "Ada"
+  },
+  "server": {
+    "project": "example",
+    "project_key": "example-1234",
+    "port": 7272,
+    "remote": false,
+    "read_only": [
+      {
+        "what": "claude_login",
+        "message": "Claude is not logged in",
+        "fix": "Log in to Claude"
+      }
+    ],
+    "stopping": false,
+    "you": {
+      "public_id": "0123456789abcdef",
+      "name": "Ada"
+    }
+  },
+  "presence": {
+    "entries": [
+      {
+        "public_id": "0123456789abcdef",
+        "name": "Ada",
+        "holder": true,
+        "away": true,
+        "reading": "doc/plans/PLAN-example.md",
+        "tabs": 2
+      }
+    ]
+  },
+  "authoring": {
+    "holder": {
+      "public_id": "0123456789abcdef",
+      "name": "Ada",
+      "away_since": "2026-10-27T10:00:00Z",
+      "frees_at": "2026-10-27T10:10:00Z"
+    }
+  },
+  "checklists": [
+    {
+      "current": {
+        "kind": "step",
+        "number": 2
+      },
+      "steps": [
+        {
+          "number": 1,
+          "name": "Vision",
+          "mark": "done"
+        },
+        {
+          "number": 2,
+          "name": "Product spec",
+          "mark": "gap"
+        }
+      ],
+      "primary": {
+        "id": "write-section:05",
+        "kind": "write_section",
+        "label": "Write section 05",
+        "target": "doc/product/demo/section_05.md",
+        "feature": "demo",
+        "number": 5
+      },
+      "secondary": [
+        {
+          "id": "start-metaplan",
+          "kind": "start_metaplan",
+          "label": "Start a metaplan from the product spec",
+          "target": null,
+          "feature": "demo"
+        }
+      ],
+      "items": [
+        {
+          "step": 1,
+          "text": "product vision",
+          "path": "doc/product/demo/index.md",
+          "offer": null
+        },
+        {
+          "step": 2,
+          "text": "section 05: Example",
+          "path": "doc/product/demo/section_05.md",
+          "offer": {
+            "id": "write-section:05",
+            "kind": "write_section",
+            "label": "Write section 05",
+            "target": "doc/product/demo/section_05.md",
+            "feature": "demo",
+            "number": 5
+          }
+        }
+      ],
+      "feature": "demo"
+    }
+  ],
+  "standalone": [
+    {
+      "slug": "example",
+      "path": "doc/plans/PLAN-example.md",
+      "state": "written",
+      "title": "Example plan"
+    }
+  ],
+  "moves": [
+    {
+      "id": "move-into-feature:doc/product/index.md",
+      "kind": "move_into_feature",
+      "label": "Move doc/product/index.md into a feature",
+      "target": "doc/product/index.md"
+    }
+  ]
+}

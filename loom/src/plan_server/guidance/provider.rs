@@ -5,10 +5,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 
 use super::brief_route::SessionBriefView;
-use crate::plan_server::chat::guidance::GuidanceProvider;
+use crate::plan_server::chat::guidance::{validate_feature, GuidanceProvider};
 use crate::plan_server::context::PlanContext;
 use crate::plan_session::attachments::parse_message;
 use crate::plan_session::bridge::LaunchGuidance;
@@ -17,6 +17,7 @@ use crate::planning::guidance::{
     render_session_guidance, AuthoringStart, GuidanceModels, SessionGuidance, SessionGuidanceKind,
     CLOSING_MESSAGE,
 };
+use crate::planning::project::Project;
 
 /// The bridge's authoring provider and the brief route's shared session store.
 pub struct PlanGuidance {
@@ -65,34 +66,27 @@ impl PlanGuidance {
     }
 }
 
-impl GuidanceProvider for PlanGuidance {
-    fn authoring(
+impl PlanGuidance {
+    /// Render a start in an explicitly requested feature, or without a feature.
+    pub fn authoring_in_feature(
         &self,
         ctx: &PlanContext,
         dir: &SessionDir,
         offer: Option<&str>,
         first_message: Option<&str>,
+        feature: Option<&str>,
     ) -> Result<LaunchGuidance> {
         let project = ctx.project();
-        let start = match (offer, first_message) {
-            (Some(id), _) => AuthoringStart::from_offer_id(id, &project)
-                .ok_or_else(|| anyhow!("the step \"{id}\" is not offered now"))?,
-            (None, Some(text)) => AuthoringStart::Message {
-                paths: parse_message(text)
-                    .1
-                    .into_iter()
-                    .map(|attachment| PathBuf::from(attachment.path))
-                    .collect(),
-            },
-            (None, None) => AuthoringStart::NoStep,
-        };
-        let label = start.label(&project);
+        validate_feature(&project, feature)?;
+        let start = authoring_start(&project, offer, first_message, feature)?;
+        let label = start.label();
         let mut guidance = render_session_guidance(
             &SessionGuidanceKind::Authoring(start),
             &project,
             ctx.runtime(),
             dir,
             &self.models,
+            feature,
         )?;
         drop(project);
         // A typed message is delivered only through the opening, so it must
@@ -107,8 +101,42 @@ impl GuidanceProvider for PlanGuidance {
         self.remember(dir, label, &guidance)?;
         Ok(guidance.into())
     }
+}
+
+impl GuidanceProvider for PlanGuidance {
+    fn authoring(
+        &self,
+        ctx: &PlanContext,
+        dir: &SessionDir,
+        offer: Option<&str>,
+        first_message: Option<&str>,
+        feature: Option<&str>,
+    ) -> Result<LaunchGuidance> {
+        self.authoring_in_feature(ctx, dir, offer, first_message, feature)
+    }
 
     fn closing_message(&self) -> String {
         CLOSING_MESSAGE.to_owned()
+    }
+}
+
+fn authoring_start(
+    project: &Project,
+    offer: Option<&str>,
+    first_message: Option<&str>,
+    feature: Option<&str>,
+) -> Result<AuthoringStart> {
+    match (offer, first_message) {
+        (Some(id), _) => {
+            AuthoringStart::from_offer_id(id, project, feature).map_err(anyhow::Error::from)
+        }
+        (None, Some(text)) => Ok(AuthoringStart::Message {
+            paths: parse_message(text)
+                .1
+                .into_iter()
+                .map(|attachment| PathBuf::from(attachment.path))
+                .collect(),
+        }),
+        (None, None) => Ok(AuthoringStart::NoStep),
     }
 }

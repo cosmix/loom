@@ -21,7 +21,6 @@ use crate::planning::summary::cost::Trigger;
 use crate::planning::summary::engine::EngineUpdate;
 use crate::planning::summary::evaluate::fixtures::{self, Fixture, ID1};
 use crate::planning::summary::evaluate::{Evaluation, SummaryEval, SummaryState};
-use crate::planning::summary::store::Scope;
 
 pub(super) const PANEL: &str = "/api/summaries/panel";
 pub(super) const REBUILD: &str = "/api/summaries/rebuild";
@@ -91,7 +90,7 @@ fn terminal_claim_update(id: &str) -> EngineUpdate {
     EngineUpdate {
         evaluation: Evaluation {
             summaries: BTreeMap::from([(id.to_owned(), eval)]),
-            scope: Scope::default(),
+            scopes: BTreeMap::new(),
             orphans: Vec::new(),
         },
         rewritten: Vec::new(),
@@ -110,7 +109,9 @@ fn refused(response: &str, expected_status: u16, code: &str) {
 }
 
 fn ask(rebuilds: &Rebuilds) -> String {
-    let ids = (1..=6).map(|n| format!("product/section_{n:02}")).collect();
+    let ids = (1..=6)
+        .map(|n| format!("demo/product/section_{n:02}"))
+        .collect();
     rebuilds.enqueue(ids, Trigger::Background);
     rebuilds.panel().question.expect("six ids ask").id
 }
@@ -143,7 +144,7 @@ fn id_routes_refuse_bad_unknown_and_over_limit_ids_without_mutation() {
             assert_eq!(snapshot(&rebuilds), before);
         }
     }
-    let unknown = json!({"ids": [ID1, "product/section_99"]}).to_string();
+    let unknown = json!({"ids": [ID1, "demo/product/section_99"]}).to_string();
     refused(
         &post_json(&server, REBUILD, &cookies, &unknown),
         400,
@@ -239,7 +240,7 @@ fn release_accepts_a_terminal_claim_on_a_summary_that_is_no_longer_expected() {
     let fixture = fixtures::two_sections();
     let (server, rebuilds, _) = serve(&fixture, None);
     let cookies = bootstrap(&server);
-    let gone = "product/section_99";
+    let gone = "demo/product/section_99";
     rebuilds.on_update(&terminal_claim_update(gone));
     assert_eq!(snapshot(&rebuilds)["terminal_claims"], json!([gone]));
 
@@ -297,11 +298,13 @@ fn rebuild_accepts_64_ids_as_a_button_without_taking_authoring() {
         return;
     }
     let fixture = fixtures::two_sections();
-    let expected: Vec<String> = (1..=6).map(|n| format!("product/section_{n:02}")).collect();
+    let expected: Vec<String> = (1..=6)
+        .map(|n| format!("demo/product/section_{n:02}"))
+        .collect();
     for n in 3..=6 {
         fixtures::put(
             &fixture.root,
-            &format!("doc/product/section_{n:02}.md"),
+            &format!("doc/product/demo/section_{n:02}.md"),
             &fixtures::section(n, "Alpha.", "Beta."),
         );
     }

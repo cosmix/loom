@@ -2,7 +2,6 @@
 //! `Rebuilds` facade's broadcasts.
 
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -108,10 +107,10 @@ fn auto_rebuild_up_to_five() {
 #[test]
 fn first_start_asks() {
     let mut all: Vec<String> = (1..=12)
-        .map(|i| format!("product/section_{i:02}"))
+        .map(|i| format!("demo/product/section_{i:02}"))
         .collect();
     all.extend(plans(8));
-    all.extend(ids(&["product", "engineering"]));
+    all.extend(ids(&["overview/demo/product", "overview/demo/engineering"]));
     let (now, stub, mut s) = setup(None);
     let events = s.on_update(&all, &all, now, &stub);
     assert!(stub.starts().is_empty(), "missing is not free");
@@ -323,23 +322,25 @@ fn turn_suspension_released_on_idle() {
     assert_eq!(stub.starts(), vec![two], "idle ends the turn");
 }
 
-/// An update in which every id is a missing product section listed by the vision.
+/// Missing section summaries listed by the vision at `doc/product/demo/index.md`.
 fn missing_sections(ids: &[String]) -> EngineUpdate {
     let eval = |id: &String| SummaryEval {
         id: id.clone(),
-        source: Some(PathBuf::from(format!("doc/{id}.md"))),
+        source: Some(format!("{}.md", id.replace("demo/product/", "doc/product/demo/")).into()),
         state: SummaryState::Missing,
         file: None,
         sentences: Vec::new(),
         claim: None,
         error: None,
     };
+    let scope = Scope {
+        feature: "demo".to_string(),
+        product: ids.to_vec(),
+        ..Scope::default()
+    };
     let evaluation = Evaluation {
         summaries: ids.iter().map(|id| (id.clone(), eval(id))).collect(),
-        scope: Scope {
-            product: ids.to_vec(),
-            ..Scope::default()
-        },
+        scopes: [("demo".to_string(), scope)].into(),
         orphans: Vec::new(),
     };
     EngineUpdate {
@@ -362,10 +363,10 @@ fn assert_concept_changed(sent: &Mutex<Vec<PlanMessage>>, sections: &[String], s
         })
         .unwrap_or_else(|| panic!("{step} broadcasts no concept_changed"));
     let mut pages = sections.to_vec();
-    pages.push("product".to_string());
-    assert_eq!(sorted(changed.pages), sorted(pages), "{step}");
-    let out_of_date = sorted(changed.out_of_date);
-    assert_eq!(out_of_date, sorted(sections.to_vec()), "{step}");
+    pages.push("overview/demo/product".to_string());
+    assert_eq!(changed.feature.as_deref(), Some("demo"), "{step}");
+    assert_eq!(changed.pages, sorted(pages), "{step}");
+    assert_eq!(changed.out_of_date, sorted(sections.to_vec()), "{step}");
     assert!(changed.sources.is_empty(), "{step}: no source");
 }
 
@@ -376,7 +377,9 @@ fn rebuild_state_change_notifies_concept() {
     let sink = sent.clone();
     let broadcast = Arc::new(move |m: &PlanMessage| sink.lock().unwrap().push(m.clone()));
     let rebuilds = Rebuilds::new_for_test(stub.clone(), None, broadcast);
-    let sections: Vec<String> = (1..=6).map(|i| format!("product/section_{i:02}")).collect();
+    let sections: Vec<String> = (1..=6)
+        .map(|i| format!("demo/product/section_{i:02}"))
+        .collect();
 
     rebuilds.on_update(&missing_sections(&sections));
     assert_concept_changed(&sent, &sections, "opening the question");

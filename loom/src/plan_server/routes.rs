@@ -65,6 +65,7 @@ pub fn all_routes() -> Vec<RouteSpec> {
     routes.extend(super::server_info::routes());
     routes.extend(super::files::routes());
     routes.extend(super::search::routes());
+    routes.extend(super::features::routes());
     routes.extend(super::concept::routes());
     routes.extend(super::guidance::routes());
     routes.extend(super::review::routes());

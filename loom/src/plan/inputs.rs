@@ -1,5 +1,5 @@
-//! Discover a plan's inputs: the plan file, its conventional brief bundle, and
-//! every `doc/plans/briefs/...` reference found in them, recursively.
+//! Discover a plan's inputs: the plan file, its `briefs/<slug>` bundle in the
+//! plan's home, and standalone or feature brief references found in them, recursively.
 //!
 //! Shared by `loom run` (which refuses to start on any problem here) and
 //! `loom plan verify` (which reports the same problems before the run).
@@ -12,10 +12,10 @@ use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-use crate::fs::plan_lifecycle::{DONE_PREFIX, IN_PROGRESS_PREFIX, RETIRED_PREFIX};
 use crate::fs::safe_read::{read_to_string_bounded, OverLimit};
 use crate::plan::schema::extract_brief_paths;
 use crate::planning::discover::MAX_DOC_BYTES;
+use crate::planning::slug::{plan_home, plan_slug};
 
 mod git_state;
 #[cfg(test)]
@@ -32,7 +32,7 @@ use git_state::{changed_paths, committed_objects, working_objects};
 pub(crate) enum Origin {
     /// The plan file itself.
     Plan,
-    /// The conventional `doc/plans/briefs/<slug>` bundle.
+    /// The conventional `briefs/<slug>` bundle in the plan's home.
     Bundle,
     /// A token extracted from this input file.
     File(PathBuf),
@@ -155,14 +155,8 @@ pub(crate) fn collect_inputs_with_text(
 /// The conventional bundle, so every worker brief is an input even when the
 /// plan only links to coordinator briefs that in turn name the workers.
 fn bundle_dir(root: &Path, plan: &Path) -> Option<PathBuf> {
-    let slug = plan
-        .file_stem()?
-        .to_str()?
-        .trim_start_matches(IN_PROGRESS_PREFIX)
-        .trim_start_matches(DONE_PREFIX)
-        .trim_start_matches(RETIRED_PREFIX)
-        .trim_start_matches("PLAN-");
-    let bundle = PathBuf::from("doc/plans/briefs").join(slug);
+    let slug = plan_slug(plan.file_name()?.to_str()?)?;
+    let bundle = plan_home(plan)?.join("briefs").join(slug);
     root.join(&bundle).exists().then_some(bundle)
 }
 
@@ -335,4 +329,39 @@ pub(crate) fn uncommitted_reasons(
         Some(_) => None,
     };
     Ok(paths.iter().map(|&path| reason(path)).collect())
+}
+
+#[cfg(test)]
+mod bundle_tests {
+    use super::*;
+
+    #[test]
+    fn repeated_plan_prefix_keeps_the_same_bundle_slug_as_the_locked_set() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let root = temp.path();
+        let plan = Path::new("doc/plans/demo/PLAN-PLAN-x.md");
+        let brief = Path::new("doc/plans/demo/briefs/PLAN-x/worker.md");
+        let wrong = Path::new("doc/plans/demo/briefs/x/worker.md");
+        fs::create_dir_all(root.join(brief.parent().unwrap())).unwrap();
+        fs::create_dir_all(root.join(wrong.parent().unwrap())).unwrap();
+        fs::write(root.join(plan), "# Plan\n").unwrap();
+        fs::write(root.join(brief), "# Worker\n").unwrap();
+        fs::write(root.join(wrong), "# Wrong bundle\n").unwrap();
+
+        let inputs = collect_inputs(root, plan).unwrap();
+
+        assert_eq!(inputs.files.get(brief), Some(&Origin::Bundle));
+        assert!(!inputs.files.contains_key(wrong));
+        assert!(inputs.invalid.is_empty());
+    }
+
+    #[test]
+    fn non_plan_names_have_no_bundle() {
+        let temp = tempfile::TempDir::new().unwrap();
+        fs::create_dir_all(temp.path().join("doc/plans/briefs/notes")).unwrap();
+        assert_eq!(
+            bundle_dir(temp.path(), Path::new("doc/plans/notes.md")),
+            None
+        );
+    }
 }

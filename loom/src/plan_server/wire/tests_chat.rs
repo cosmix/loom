@@ -339,3 +339,27 @@ fn a_start_whose_attachment_has_a_misspelt_field_is_refused() {
         .collect();
     assert_eq!(hashes, [Some("sha256:ab")]);
 }
+
+#[test]
+fn chat_start_round_trips_with_or_without_a_feature() {
+    for feature in [None, Some("demo")] {
+        let mut value = serde_json::json!({
+            "type": "chat", "command": "start", "client_id": null,
+            "offer": "write-section:01", "text": null, "attachments": []
+        });
+        if let Some(name) = feature {
+            value["feature"] = Value::from(name);
+        }
+
+        let parsed: ClientMessage = serde_json::from_value(value.clone()).unwrap();
+
+        let ClientMessage::Chat(ChatCommand::Start {
+            feature: selected, ..
+        }) = &parsed
+        else {
+            panic!("not a start: {parsed:?}");
+        };
+        assert_eq!(selected.as_deref(), feature);
+        assert_eq!(serde_json::to_value(parsed).unwrap(), value);
+    }
+}

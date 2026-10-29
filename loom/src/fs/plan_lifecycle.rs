@@ -22,8 +22,8 @@ use commit::commit_post_completion_changes;
 // Filename prefix constants
 pub const IN_PROGRESS_PREFIX: &str = "IN_PROGRESS-";
 pub const DONE_PREFIX: &str = "DONE-";
-/// An abandoned plan, only ever at `doc/plans/archive/RETIRED-PLAN-<slug>.md`.
-/// Nothing in `loom run` writes it yet; it is read so every consumer agrees on the slug.
+/// An abandoned plan at `<plan home>/archive/RETIRED-PLAN-<slug>.md`, where the home is
+/// `doc/plans` for a standalone plan or `doc/plans/<feature>` for a feature plan.
 pub const RETIRED_PREFIX: &str = "RETIRED-";
 
 // ===== Filename Operations =====

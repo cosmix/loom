@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::fixtures::{self as fx, Fixture};
 use super::page::{load_page, PageContext, PageKey, Scope};
 use super::routes::page_context;
 use super::state::out_of_date_reason;
@@ -17,7 +18,6 @@ use crate::plan_session::kind::SessionKind;
 use crate::plan_session::tmux_host::TmuxHost;
 use crate::planning::summary::cost::Trigger;
 use crate::planning::summary::engine::EngineUpdate;
-use crate::planning::summary::evaluate::fixtures::{self as fx, Fixture};
 use crate::planning::summary::evaluate::{evaluate, Evaluation, SummaryState};
 use crate::planning::watch::OwnWrites;
 
@@ -55,7 +55,9 @@ fn update(evaluation: &Evaluation, invalidated: Vec<String>) -> EngineUpdate {
 
 fn awaiting_context() -> PageContext {
     let ctx = context();
-    let ids = (1..=6).map(|i| format!("product/section_{i:02}")).collect();
+    let ids = (1..=6)
+        .map(|i| format!("demo/product/section_{i:02}"))
+        .collect();
     ctx.rebuilds
         .as_ref()
         .unwrap()
@@ -95,7 +97,7 @@ fn an_id_in_the_open_question_awaits_approval() {
         })
     );
     assert_eq!(
-        out_of_date_reason("product/unasked", SummaryState::Stale, &ctx),
+        out_of_date_reason("demo/product/unasked", SummaryState::Stale, &ctx),
         Some(OutOfDate {
             reason: OutOfDateReason::SourceChanged,
             detail: None,
@@ -179,8 +181,12 @@ fn concept_pages_show_progress_and_estimate_during_a_rebuild() {
     rebuilds.on_update(&update(&evaluation, Vec::new()));
 
     for key in [
-        PageKey::Overview(Scope::Product),
+        PageKey::Overview {
+            feature: "demo".into(),
+            scope: Scope::Product,
+        },
         PageKey::Summary {
+            feature: Some("demo".into()),
             scope: Scope::Product,
             doc: "section_01".into(),
         },
@@ -205,7 +211,10 @@ fn a_never_built_project_shows_an_estimate_without_running_progress() {
         .unwrap()
         .on_update(&update(&evaluation, Vec::new()));
 
-    let key = PageKey::Overview(Scope::Product);
+    let key = PageKey::Overview {
+        feature: "demo".into(),
+        scope: Scope::Product,
+    };
     let page = load_page(&project, &evaluation, &key, &ctx).expect("page");
 
     assert_eq!(page.empty.expect("empty state").kind, EmptyKind::NeverBuilt);

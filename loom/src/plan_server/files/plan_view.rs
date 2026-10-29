@@ -113,15 +113,18 @@ pub(crate) fn latest_pressure_date(text: &str) -> Option<String> {
         .max()
 }
 
-/// Every discovered product section's repo-relative path by section number; of two files with
-/// one number, the first discovered wins.
-pub fn product_sections(tree: &DocTree) -> BTreeMap<u32, String> {
+/// Product section paths in the plan's feature, by number. Standalone plans have no links;
+/// of two files with one number in a feature, the first discovered wins.
+pub fn product_sections(tree: &DocTree, feature: Option<&str>) -> BTreeMap<u32, String> {
     tree.docs
         .iter()
         .rev()
-        .filter_map(|doc| match doc.kind {
-            DocKind::ProductSection { number } => {
-                Some((number, doc.path.to_string_lossy().into_owned()))
+        .filter_map(|doc| match &doc.kind {
+            DocKind::ProductSection {
+                number,
+                feature: owner,
+            } if feature.is_some() && owner.as_deref() == feature => {
+                Some((*number, doc.path.to_string_lossy().into_owned()))
             }
             _ => None,
         })
