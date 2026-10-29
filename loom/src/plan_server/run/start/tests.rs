@@ -17,7 +17,7 @@ fn request() -> RunStartRequest {
     }
 }
 
-fn state() -> RunStateView {
+pub(super) fn state() -> RunStateView {
     RunStateView {
         workspace: WorkspaceState::Absent,
         active_plan: None,

@@ -1,6 +1,6 @@
 //! The execution strip shared with planning clients.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -50,10 +50,44 @@ fn changed_strip(
     Ok((last != Some(&next)).then_some(next))
 }
 
+/// The latest strip sent, replayed to each tab that opens: the poller sends only changes, so a
+/// tab opened or reloaded during a stable run would otherwise never receive the strip. It holds
+/// no dashboard token (`build_strip` redacts it).
+#[derive(Default)]
+struct PublishedStrip(Mutex<Option<RunStrip>>);
+
+impl PublishedStrip {
+    fn get(&self) -> Option<RunStrip> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Remember `strip` before sending it, so a tab that opens meanwhile still gets it.
+    fn publish(&self, ctx: &PlanContext, strip: RunStrip) {
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = Some(strip.clone());
+        ctx.hub().broadcast(&PlanMessage::RunStrip(strip));
+    }
+}
+
+fn install_replay(ctx: &PlanContext) -> Arc<PublishedStrip> {
+    let published = Arc::new(PublishedStrip::default());
+    let replay = Arc::clone(&published);
+    ctx.hub().on_open(Box::new(move |_| {
+        replay
+            .get()
+            .map(|strip| vec![PlanMessage::RunStrip(strip)])
+            .unwrap_or_default()
+    }));
+    published
+}
+
 pub(super) fn spawn_strip(ctx: Arc<PlanContext>) {
+    let published = install_replay(&ctx);
     let spawned = thread::Builder::new()
         .name("loom-plan-run-strip".into())
-        .spawn(move || poll_strip(&ctx));
+        .spawn(move || poll_strip(&ctx, &published));
     if let Err(error) = spawned {
         lifecycle::line(&format!(
             "run strip: cannot start poll thread: {}",
@@ -62,20 +96,18 @@ pub(super) fn spawn_strip(ctx: Arc<PlanContext>) {
     }
 }
 
-fn poll_strip(ctx: &PlanContext) {
-    let mut last = None;
+fn poll_strip(ctx: &PlanContext, published: &PublishedStrip) {
     let mut reported_error = false;
     while !ctx.is_stopping() {
         let next = WorkDir::new(ctx.root()).and_then(|work_dir| {
             let url = super::dashboard::current_url(ctx);
             build_strip(&work_dir, url.as_deref())
         });
-        match changed_strip(last.as_ref(), next) {
+        match changed_strip(published.get().as_ref(), next) {
             Ok(next) => {
                 reported_error = false;
                 if let Some(strip) = next {
-                    ctx.hub().broadcast(&PlanMessage::RunStrip(strip.clone()));
-                    last = Some(strip);
+                    published.publish(ctx, strip);
                 }
             }
             Err(error) if !reported_error => {
