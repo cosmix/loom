@@ -6,6 +6,9 @@ use std::time::Instant;
 use super::{Running, Scheduler, SchedulerEvent, SessionSpawner, StopReason, Via};
 use crate::planning::summary::cost::Trigger;
 
+/// Why a summary fails when a second normal end leaves it claimed but unsealed.
+pub(super) const ENDED_UNSEALED: &str = "the summary session ended twice without sealing it";
+
 impl Scheduler {
     pub fn running_session(&self) -> Option<&str> {
         self.running
@@ -90,6 +93,7 @@ impl Scheduler {
         if let Some(running) = self.running.as_mut().filter(runs_it) {
             running.sealed.insert(id.to_owned());
             running.since = now;
+            self.unsealed.remove(id);
         }
     }
 
@@ -170,9 +174,25 @@ impl Scheduler {
         self.out.push(SchedulerEvent::Stopped { session, reason });
         match failure {
             Some(why) => self.fail(unsealed, why),
-            None => self.requeue(unsealed, &running.vias),
+            None => self.requeue_unsealed(unsealed, &running),
         }
         self.try_start(now, spawner);
+    }
+
+    /// After a normal end, requeue the unsealed ids. An id the session claimed was worked on
+    /// and released without a seal; when the previous normal end did the same to it, it fails
+    /// instead (a summary whose seal never validates would otherwise rebuild forever, at a
+    /// token cost every round). An id the session never claimed (it ended before reaching it)
+    /// requeues and keeps its mark.
+    fn requeue_unsealed(&mut self, unsealed: Vec<String>, running: &Running) {
+        let worked = |id: &String| running.claimed.contains(id);
+        let (twice, again): (Vec<String>, Vec<String>) = unsealed
+            .into_iter()
+            .partition(|id| worked(id) && self.unsealed.contains(id));
+        self.unsealed
+            .extend(again.iter().filter(|id| worked(id)).cloned());
+        self.fail(twice, ENDED_UNSEALED);
+        self.requeue(again, &running.vias);
     }
 
     fn stall(&mut self, spawner: &dyn SessionSpawner) {
@@ -202,6 +222,7 @@ impl Scheduler {
         }
         for id in &ids {
             self.failed.insert(id.clone(), error.to_owned());
+            self.unsealed.remove(id);
         }
         let error = error.to_owned();
         self.out.push(SchedulerEvent::Failed { ids, error });
