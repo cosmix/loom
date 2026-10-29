@@ -336,5 +336,6 @@ fn plan_entry_must_belong_to_selected_metaplan() {
         .contains("write-plan:foo"));
 }
 
+mod drafting;
 mod features;
 mod names;

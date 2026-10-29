@@ -202,6 +202,8 @@ fn assert_exhaustive(message: &PlanMessage) {
         | PlanMessage::SummaryQuestionClosed { .. }
         | PlanMessage::SummaryTurnCost(_)
         | PlanMessage::Chat(_)
+        | PlanMessage::Kickoff(_)
+        | PlanMessage::DraftTeam(_)
         | PlanMessage::Review(_)
         | PlanMessage::PressureRun(_)
         | PlanMessage::PressureOptionsChanged

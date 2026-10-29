@@ -9,7 +9,7 @@ use std::thread;
 
 use super::guidance::GuidanceSlot;
 use super::lease::AuthoringLeases;
-use super::ChatState;
+use super::{kickoff_cmd, ChatState};
 use crate::plan_server::authoring::{FreeReason, Refusal, Take};
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::ids::{ConnCtx, PublicId};
@@ -26,17 +26,17 @@ use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::{Origin, SessionState};
 
 const UNAVAILABLE: &str = "the chat is not available";
-const NO_CHAT: &str = "no chat is running";
+pub(super) const NO_CHAT: &str = "no chat is running";
 const NO_TURN: &str = "no turn is running";
 const CLOSING: &str = "the chat is closing";
 
 /// The queued texts to hand back to the connection, or the error it is shown.
-type Outcome = Result<Vec<String>, String>;
+pub(super) type Outcome = Result<Vec<String>, String>;
 
 /// A checked message: what the session receives and its chips.
-struct Message {
-    formatted: String,
-    attachments: Vec<Attachment>,
+pub(super) struct Message {
+    pub(super) formatted: String,
+    pub(super) attachments: Vec<Attachment>,
 }
 
 /// Handle one chat command from `conn`.
@@ -44,6 +44,7 @@ pub fn dispatch(ctx: &Arc<PlanContext>, conn: &ConnCtx, cmd: ChatCommand) {
     let client_id = match &cmd {
         ChatCommand::Start { client_id, .. }
         | ChatCommand::Send { client_id, .. }
+        | ChatCommand::ConfirmKickoff { client_id, .. }
         | ChatCommand::Withdraw { client_id, .. }
         | ChatCommand::Permission { client_id, .. }
         | ChatCommand::Interrupt { client_id }
@@ -65,6 +66,9 @@ fn run(ctx: &Arc<PlanContext>, conn: &ConnCtx, cmd: ChatCommand) -> Outcome {
         ChatCommand::Send {
             text, attachments, ..
         } => send(ctx, conn, &text, attachments),
+        ChatCommand::ConfirmKickoff { size, name, .. } => {
+            kickoff_cmd::confirm(ctx, conn, size, &name)
+        }
         ChatCommand::Withdraw { queue_id, .. } => on_chat(ctx, conn, CLOSING, |bridge, id| {
             bridge.withdraw(id, &queue_id).map(|()| Vec::new())
         }),
@@ -185,12 +189,14 @@ fn launch(
         (None, Some(_)) => None,
         (None, None) => Some(Origin::Start),
     };
+    let extra_env = super::team::extra_env(offer.as_deref(), feature.as_deref())?;
     let first_message = message.map(|message| message.formatted);
     let (provider, guide_ctx, guide_offer) = (slot.get(), Arc::clone(ctx), offer.clone());
     let (starter, state) = (conn.public_id.clone(), Arc::clone(state));
     let guidance = Box::new(move |dir: &SessionDir| -> anyhow::Result<LaunchGuidance> {
         let (offer, first) = (guide_offer.as_deref(), first_message.as_deref());
         let guidance = provider.authoring(&guide_ctx, dir, offer, first, feature.as_deref())?;
+        super::team::prepare_scope(&guide_ctx, dir, offer, feature.as_deref())?;
         // Recorded before the bridge can launch (and fail) the session, so its `Ended`
         // always finds the starter; the directory is named after the session id.
         if let Some(id) = dir.path().file_name() {
@@ -203,7 +209,7 @@ fn launch(
         guidance,
         opening_origin,
         offer,
-        extra_env: Vec::new(),
+        extra_env,
     };
     let started = bridge.start_session(request);
     started
@@ -230,7 +236,7 @@ fn on_chat(
     })
 }
 
-fn refuse_new_work(ctx: &PlanContext) -> Result<(), String> {
+pub(super) fn refuse_new_work(ctx: &PlanContext) -> Result<(), String> {
     match ctx.is_stopping() {
         true => Err(ctx.refusal_message(&Refusal::Stopping)),
         false => Ok(()),
@@ -311,26 +317,30 @@ fn chat_open(bridge: &Bridge) -> bool {
     })
 }
 
-fn remember_holder(ctx: &PlanContext, conn: &ConnCtx) {
+pub(super) fn remember_holder(ctx: &PlanContext, conn: &ConnCtx) {
     if let Some(state) = ctx.extensions().get::<ChatState>() {
         state.remember_holder(&conn.browser);
     }
 }
 
-fn bridge(ctx: &PlanContext) -> Result<Arc<Bridge>, String> {
+pub(super) fn bridge(ctx: &PlanContext) -> Result<Arc<Bridge>, String> {
     ctx.extensions()
         .get::<Bridge>()
         .ok_or_else(|| UNAVAILABLE.to_owned())
 }
 
-fn chat_state(ctx: &PlanContext) -> Result<Arc<ChatState>, String> {
+pub(super) fn chat_state(ctx: &PlanContext) -> Result<Arc<ChatState>, String> {
     ctx.extensions()
         .get::<ChatState>()
         .ok_or_else(|| UNAVAILABLE.to_owned())
 }
 
 /// Resolve the attachments server-side, then the send checks on what the session receives.
-fn checked(ctx: &PlanContext, text: &str, inputs: Vec<AttachmentInput>) -> Result<Message, String> {
+pub(super) fn checked(
+    ctx: &PlanContext,
+    text: &str,
+    inputs: Vec<AttachmentInput>,
+) -> Result<Message, String> {
     if inputs.len() > MAX_ATTACHMENTS {
         return Err(InputRefusal::TooManyAttachments.to_string());
     }

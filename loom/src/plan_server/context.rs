@@ -112,6 +112,13 @@ impl PlanContext {
         })
     }
 
+    /// Replace the runtime paths, so a test keeps its sessions out of the user's `~/.loom`.
+    #[cfg(test)]
+    pub(crate) fn with_runtime(mut self, runtime: RuntimePaths) -> Self {
+        self.runtime = runtime;
+        self
+    }
+
     pub fn root(&self) -> &Path {
         &self.root
     }

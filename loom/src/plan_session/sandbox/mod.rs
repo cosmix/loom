@@ -22,6 +22,8 @@ mod tests_features;
 mod tests_kinds;
 #[cfg(test)]
 mod tests_kinds_fixture;
+#[cfg(test)]
+mod tests_scope;
 
 use std::borrow::Cow;
 use std::fs::File;
@@ -40,6 +42,7 @@ use crate::fs::safe_fs::{
     safe_write_with_mode_in_workdir,
 };
 use crate::plan_session::kind::{SessionDir, SessionKind};
+use crate::plan_session::scope::{self, SessionScope};
 use crate::planning::paths::LockedSet;
 use crate::planning::runtime::{create_runtime_dir, RuntimePaths};
 
@@ -100,6 +103,7 @@ struct Build<'a> {
     locked: &'a LockedSet,
     tree: filesystem::Tree,
     target: Target,
+    scope: SessionScope,
     /// The session's `done/`, a pressure session's only write grant.
     done: PathBuf,
 }
@@ -126,6 +130,7 @@ pub fn build_settings(
         locked,
         tree: filesystem::Tree::open(inputs.project_root)?,
         target: target(inputs.kind)?,
+        scope: scope::load(inputs.session_dir)?,
         done: inputs.session_dir.done(),
     };
     let (deny_write, allow_write) = filesystem::write_lists(&build)?;
@@ -153,8 +158,8 @@ pub fn build_settings(
         "worktree": { "bgIsolation": "none" },
         "hooks": permissions::hooks(&build, extra_hooks)?,
     });
-    if pressure {
-        // `/pressure` uses an agent team: teammates stay inside the session's own process, so
+    if pressure || build.scope.peer_tools() {
+        // Pressure and team-scoped sessions keep teammates inside their own process, so
         // they open no tmux pane the bridge does not watch (section 11). A top-level key; Claude
         // Code does not read it inside `permissions`.
         settings["teammateMode"] = json!("in-process");

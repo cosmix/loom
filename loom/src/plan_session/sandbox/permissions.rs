@@ -27,8 +27,8 @@ use crate::planning::paths::LockReason;
 use crate::planning::slug::plan_slug;
 
 pub(super) const ASK_USER_QUESTION: &str = "AskUserQuestion";
-/// Tools that address another local Claude Code session, a self-approval route; a pressure
-/// session keeps them because `/pressure` teammates need them.
+/// Tools that address another local Claude Code session, a self-approval route; pressure and
+/// team-scoped sessions keep them for their teammates.
 const PEER_TOOLS: [&str; 2] = ["SendMessage", "ListAgents"];
 const WEB_SEARCH: &str = "WebSearch";
 const WEB_FETCH: &str = "WebFetch";
@@ -95,7 +95,7 @@ fn authoring(build: &Build<'_>) -> Result<Rules> {
     allow.extend(runtime_rules(build));
     allow.extend(AUTHORING_BASH.map(String::from));
     allow.push(WEB_SEARCH.to_owned());
-    let mut deny = base_denies(true);
+    let mut deny = base_denies(!build.scope.peer_tools());
     deny.extend(locked_denies(build)?);
     Ok((allow, vec![WEB_FETCH.to_owned()], deny))
 }

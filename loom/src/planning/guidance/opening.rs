@@ -1,11 +1,11 @@
 //! Opening instructions and display names for planning sessions.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
 
 use super::start::AuthoringStart;
-use super::PressureCommand;
+use super::{draft_run, PressureCommand, MAX_TEAMMATES};
 use crate::planning::checklist::Offer;
 use crate::planning::kinds::{plans_dir, product_dir, vision_path};
 use crate::planning::project::Project;
@@ -48,6 +48,7 @@ fn authoring_opening(
     feature: Option<&str>,
 ) -> Result<String> {
     match start {
+        AuthoringStart::Kickoff { small } => Ok(kickoff_opening(*small)),
         AuthoringStart::Offer(offer) => {
             let feature = feature.context("an authoring offer requires a feature")?;
             let (step, skill) = offer_step_and_skill(offer)?;
@@ -80,6 +81,19 @@ fn authoring_opening(
     }
 }
 
+fn kickoff_opening(small: bool) -> String {
+    let step = if small {
+        "Kickoff, small work"
+    } else {
+        "Kickoff"
+    };
+    three_lines(
+        step,
+        "Discuss the work and confirm its size and name before writing anything under doc/.",
+        "kickoff",
+    )
+}
+
 fn three_lines(step: &str, target: &str, skill: &str) -> String {
     format!(
         "loom plan: {step}.\n{target}\nLoad the skill loom-plan:{skill}, then begin by \
@@ -93,8 +107,10 @@ fn offer_step_and_skill(offer: &Offer) -> Result<(&'static str, &'static str)> {
         Offer::StartVision { .. } | Offer::FixVisionTable { .. } => ("step 1, Vision", "vision"),
         Offer::AddSectionToVision { .. } => ("step 2, Product spec", "vision"),
         Offer::WriteSection { .. } => ("step 2, Product spec", "section"),
+        Offer::DraftAllSections { .. } => ("step 2, Draft all missing sections", "section"),
         Offer::StartMetaplan { .. } => ("step 3, Metaplan", "metaplan"),
         Offer::WritePlan { .. } => ("step 4, Plans", "plan"),
+        Offer::DraftAllPlans { .. } => ("step 4, Draft all missing plans", "plan"),
         Offer::RefineSpec => ("done, Review what was built", "retro"),
         Offer::NewMetaplanRound => ("done, New metaplan round", "metaplan"),
         _ => bail!("{} is not an authoring offer", offer.id()),
@@ -116,22 +132,16 @@ fn offer_target(offer: &Offer, project: &Project, feature: &str) -> Result<Strin
             product.display(),
             vision.display()
         ),
-        Offer::WriteSection { number, .. } => format!(
-            "Write {}/section_{number:02}.md, listed in the vision as \"{}\".",
-            product.display(),
-            section_row(*number, offer, project, feature)?
-        ),
+        Offer::WriteSection { number, .. } => section_target(*number, offer, project, feature)?,
         Offer::StartMetaplan { .. } => {
             format!("Write {}/index.md, the first metaplan.", plans.display())
         }
-        Offer::WritePlan { metaplan, slug, .. } => format!(
-            "Write {}/PLAN-{slug}.md for the entry \"{}\" in {}. \
-             Write its briefs under {}/briefs/{slug}/.",
-            plans.display(),
-            plan_heading(metaplan, slug, offer, project, feature)?,
-            metaplan.display(),
-            plans.display()
-        ),
+        Offer::WritePlan { metaplan, slug, .. } => {
+            plan_target(metaplan, slug, offer, project, feature)?
+        }
+        Offer::DraftAllSections { .. } | Offer::DraftAllPlans { .. } => {
+            team_target(offer, project, feature)?
+        }
         Offer::RefineSpec => format!(
             "Review the done plans and their run reviews in {}/ against the product spec in {}/.",
             plans.display(),
@@ -144,6 +154,71 @@ fn offer_target(offer: &Offer, project: &Project, feature: &str) -> Result<Strin
         ),
         _ => bail!("{} is not an authoring offer", offer.id()),
     })
+}
+
+pub(super) fn section_path(feature: &str, number: u32) -> PathBuf {
+    product_dir(feature).join(format!("section_{number:02}.md"))
+}
+
+pub(super) fn plan_path(feature: &str, slug: &str) -> PathBuf {
+    plans_dir(Some(feature)).join(format!("PLAN-{slug}.md"))
+}
+
+pub(super) fn plan_bundle(feature: &str, slug: &str) -> PathBuf {
+    plans_dir(Some(feature)).join("briefs").join(slug)
+}
+
+fn section_target(number: u32, offer: &Offer, project: &Project, feature: &str) -> Result<String> {
+    Ok(format!(
+        "Write {}, listed in the vision as \"{}\".",
+        section_path(feature, number).display(),
+        section_row(number, offer, project, feature)?
+    ))
+}
+
+fn plan_target(
+    metaplan: &Path,
+    slug: &str,
+    offer: &Offer,
+    project: &Project,
+    feature: &str,
+) -> Result<String> {
+    Ok(format!(
+        "Write {} for the entry \"{}\" in {}. Write its briefs under {}/.",
+        plan_path(feature, slug).display(),
+        plan_heading(metaplan, slug, offer, project, feature)?,
+        metaplan.display(),
+        plan_bundle(feature, slug).display()
+    ))
+}
+
+fn team_target(offer: &Offer, project: &Project, feature: &str) -> Result<String> {
+    let run = draft_run(project, &offer.id(), feature)?;
+    let documents = run
+        .documents
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut target = format!(
+        "Draft these missing documents in reading order: {documents}. \
+         Use the skill's team mode with {} teammates (cap: {MAX_TEAMMATES}).",
+        run.teammates
+    );
+    if run.bundles.is_empty() {
+        target.push_str(" Write nothing outside these documents.");
+    } else {
+        let bundles = run
+            .bundles
+            .iter()
+            .map(|path| format!("{}/", path.display()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        target.push_str(&format!(
+            " Brief bundles: {bundles}. Write nothing outside these documents and brief bundles."
+        ));
+    }
+    Ok(target)
 }
 
 fn section_row(number: u32, offer: &Offer, project: &Project, feature: &str) -> Result<String> {
@@ -236,6 +311,7 @@ pub fn pressure_opening_message(cmd: PressureCommand, plan_rel: &str) -> String 
 /// Name a session by its authoring skill or non-authoring task label.
 pub fn display_name(kind_label: &str, start: Option<&AuthoringStart>) -> String {
     let skill = match start {
+        Some(AuthoringStart::Kickoff { .. }) => "kickoff",
         Some(AuthoringStart::Offer(Offer::WriteSection { number, .. })) => {
             return format!("loom plan: section {number:02}");
         }

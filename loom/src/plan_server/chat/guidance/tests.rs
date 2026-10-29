@@ -126,6 +126,26 @@ fn checklist_guidance_refuses_an_offer_the_checklist_does_not_offer() {
 }
 
 #[test]
+fn kickoff_ids_are_offered_without_a_matching_checklist_or_feature() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir(temp.path().join("doc")).unwrap();
+    let bind = BindInfo::new("127.0.0.1:7272".parse().unwrap(), &"ab".repeat(32));
+    let ctx = PlanContext::new(
+        temp.path().to_path_buf(),
+        ReadOnly::from_problems(Vec::new()),
+        bind,
+        OwnWrites::default(),
+    )
+    .unwrap();
+    for id in ["kickoff", "kickoff-small"] {
+        for feature in [None, Some("absent")] {
+            assert!(offered(&ctx, id, feature), "{id}: {feature:?}");
+        }
+    }
+    assert!(!offered(&ctx, "unknown", None));
+}
+
+#[test]
 fn refuses_a_symlinked_plugin_directory() {
     let (_root, ctx, dir) = fixture();
     let outside = tempfile::tempdir().unwrap();

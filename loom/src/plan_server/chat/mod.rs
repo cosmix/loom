@@ -2,8 +2,12 @@
 
 mod dispatch;
 pub mod guidance;
+mod kickoff;
+mod kickoff_cmd;
 pub mod lease;
 pub mod pins;
+mod publish;
+mod team;
 
 #[cfg(test)]
 mod tests;
@@ -30,13 +34,14 @@ use super::lifecycle;
 use super::shutdown::ShutdownHook;
 use super::wire::chat::ChatFrame;
 use super::wire::message::PlanMessage;
+use super::wire::team::DraftTeamView;
 use crate::plan_session::bridge::host::SessionHost;
 use crate::plan_session::bridge::registry::read_record;
 use crate::plan_session::bridge::{
     Bridge, BridgeConfig, BridgeEvent, EndCause, EndMode, EndOutcome, TurnPins, TEARDOWN_FAILED,
 };
 use crate::plan_session::kind::{SessionDir, SessionKind};
-use crate::plan_session::model::{ChatDelta, QueuedMessage, SessionView};
+use crate::plan_session::model::{ChatDelta, SessionView};
 use crate::plan_session::tmux_host::TmuxHost;
 use crate::planning::runtime::RuntimePaths;
 
@@ -50,6 +55,9 @@ struct ChatState {
     /// Held by a start from its take of authoring to its give-back, so another start's take,
     /// reserve and listing check cannot fall in between (dispatch's `give_back`).
     starting: Mutex<()>,
+    kickoff: Mutex<kickoff::KickoffTracker>,
+    kickoff_scopes: Mutex<HashMap<String, bool>>,
+    team: Mutex<Option<DraftTeamView>>,
 }
 
 impl ChatState {
@@ -121,7 +129,7 @@ pub(crate) fn install_with(
     ctx.extensions().insert(Arc::clone(&leases));
     ctx.extensions().insert(Arc::clone(&state));
     ctx.extensions().insert(Arc::clone(&bridge));
-    publish_deltas(ctx, &bridge, &state);
+    publish::subscribe(ctx, &bridge, &state);
     open_snapshots(ctx, &bridge, &state);
     follow_authoring(ctx, &bridge);
     follow_sessions(ctx, &bridge, state, leases, runtime);
@@ -170,40 +178,6 @@ fn turn_pins(ctx: &Arc<PlanContext>) -> Option<Arc<dyn TurnPins>> {
     Some(Arc::new(TextPins::new(store, Arc::downgrade(ctx))))
 }
 
-fn publish_deltas(ctx: &Arc<PlanContext>, bridge: &Bridge, state: &Arc<ChatState>) {
-    let (weak, state) = (Arc::downgrade(ctx), Arc::clone(state));
-    bridge.subscribe_chat(Box::new(move |delta| {
-        if let Some(ctx) = weak.upgrade() {
-            publish(&ctx, &state, delta);
-        }
-    }));
-}
-
-/// Every tab gets every delta; queued texts reach only the holder's tabs.
-fn publish(ctx: &PlanContext, state: &ChatState, delta: &ChatDelta) {
-    let hub = ctx.hub();
-    match delta {
-        ChatDelta::Queue { queue } => {
-            let hidden = queue.iter().map(|queued| QueuedMessage {
-                text: None,
-                ..queued.clone()
-            });
-            let queue = hidden.collect();
-            hub.broadcast(&delta_message(ChatDelta::Queue { queue }));
-            hub.send_to_holder(state.holder(ctx).as_ref(), &delta_message(delta.clone()));
-        }
-        ChatDelta::Session { session } => {
-            let session = with_holder(ctx, session.clone());
-            hub.broadcast(&delta_message(ChatDelta::Session { session }));
-        }
-        other => hub.broadcast(&delta_message(other.clone())),
-    }
-}
-
-fn delta_message(delta: ChatDelta) -> PlanMessage {
-    PlanMessage::Chat(Box::new(ChatFrame::Delta(delta)))
-}
-
 /// The bridge leaves the holder out of the view; it comes from authoring and presence.
 fn with_holder(ctx: &PlanContext, mut session: SessionView) -> SessionView {
     let holder = ctx.authoring().view(ctx.presence()).holder;
@@ -225,7 +199,9 @@ fn open_snapshots(ctx: &Arc<PlanContext>, bridge: &Arc<Bridge>, state: &Arc<Chat
         }
         let mut snapshot = bridge.chat_snapshot(holder);
         snapshot.session = snapshot.session.map(|view| with_holder(&ctx, view));
-        vec![PlanMessage::Chat(Box::new(ChatFrame::Snapshot(snapshot)))]
+        let mut messages = vec![PlanMessage::Chat(Box::new(ChatFrame::Snapshot(snapshot)))];
+        messages.extend(team::snapshots(&state));
+        messages
     }));
 }
 
@@ -246,8 +222,8 @@ fn follow_authoring(ctx: &Arc<PlanContext>, bridge: &Arc<Bridge>) {
         // The session view names the holder: every tab hears when that changes.
         if let Some(session) = bridge.chat_snapshot(false).session {
             let session = with_holder(&ctx, session);
-            ctx.hub()
-                .broadcast(&delta_message(ChatDelta::Session { session }));
+            let delta = ChatDelta::Session { session };
+            ctx.hub().broadcast(&publish::delta_message(delta));
         }
     }));
 }
@@ -284,7 +260,11 @@ fn follow_sessions(
                 let (name, socket) = describe(&bridge, &runtime, id, kind);
                 lifecycle::line(&started_line(kind, &name, &socket));
             }
+            BridgeEvent::Team { id, teammates } => {
+                team::publish_draft_team(&ctx, &state, id, teammates);
+            }
             BridgeEvent::Ended { id, kind, outcome } => {
+                team::clear(&state, id);
                 let (name, socket) = describe(&bridge, &runtime, id, kind);
                 lifecycle::line(&ended_line(id, kind, &name, &socket, outcome));
                 let starter = state.take_starter(id);

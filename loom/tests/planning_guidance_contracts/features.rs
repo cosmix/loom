@@ -68,18 +68,16 @@ fn feature_session_brief_uses_only_its_checklist() {
 
 #[test]
 #[serial]
-fn unavailable_offer_refusal_does_not_write_session_artifacts() {
+fn non_authoring_offer_refusal_does_not_write_session_artifacts() {
     let fx = Fixture::new();
     let models = fx.models("");
-    let kind = SessionGuidanceKind::Authoring(AuthoringStart::Offer(Offer::DraftAllSections {
-        feature: "f".into(),
-    }));
+    let kind = SessionGuidanceKind::Authoring(AuthoringStart::Offer(Offer::StartRun));
 
     let error = fx.render(&kind, &fx.session, &models).unwrap_err();
 
     assert_eq!(
         error.downcast_ref::<StartError>(),
-        Some(&StartError::NotAvailableYet("draft-all-sections".into()))
+        Some(&StartError::NotAuthoring(Offer::StartRun.id()))
     );
     assert!(!fx.session.brief().exists());
     assert!(!fx.session.plugin().exists());

@@ -72,11 +72,51 @@ user starts them.
 Write several missing plans in one chat when requested. You may give each plan
 to its own subagent with its scope or metaplan entry, these conventions, and the
 chat's decisions. Have each load `loom-plan-writer` and review each returned plan
-against its scope and the app conventions. Do not use agent teams in authoring.
+against its scope and the app conventions. Outside Team mode below, do not use
+agent teams in authoring.
 
 After writing a plan, run `loom plan verify <plan>`, substituting the plan's
 full path, and fix every reported error before the turn ends. Do this for each
 plan written in the chat.
+
+## Team mode
+
+Use team mode only when the opening message says to use it for a draft-all run.
+Otherwise keep the guided behavior above. The opening names the missing plans
+and the teammate count: at most five teammates, fewer when fewer plans are
+missing.
+
+The lead reads the metaplan, the product sections it names and the settled
+decisions, then writes a short shared brief in the runtime drafts directory
+the session may write. Include terms, decisions, which document owns each
+topic and the cross-references to expect. Use the metaplan's product-section
+mapping for each plan and leave unresolved mapping questions explicit.
+Create one team with the stated teammate count and assign each teammate its
+plans and the shared brief. Give each file exactly one owner.
+
+Each plan teammate loads `loom-plan-writer` with its metaplan entries, the
+shared brief and the app conventions above. It writes its plans plus their
+brief bundles. While drafting, teammates message each other with `SendMessage`
+to agree on a term, settle an overlap or ask which document owns a topic.
+Keep unresolved choices explicit rather than silently deciding them.
+
+A teammate writes only its own plans and brief bundles. The run's listed
+documents and bundle paths are the complete write scope under `doc/`; the
+planning hook refuses a write to any other path. This scope also governs
+turn-end duties. Report needed changes to the metaplan, summaries or other
+documents outside the list rather than writing them. Never try to work around
+a refusal.
+
+When every teammate has finished, the lead makes one consistency pass over
+the set: terms, cross-references, duplicated or missing topics, `Implements:`
+lines, and `loom plan verify <plan>` for each plan using its full path. Check
+that briefs agree with their plans and make corrections only within the run's
+write scope. Hand the user a review queue ordered by open-question count,
+highest first, with a note per document on what the pass changed, including
+when no changes were needed. Report anything that could not be resolved.
+
+The lead never starts a second team. If the user says “Stop the team”, end it;
+documents already written stay.
 
 ## Finish the turn
 
