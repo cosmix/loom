@@ -5,6 +5,7 @@ import { compactTokens } from "@/lib/tokens";
 import type { SessionView } from "@/plan/api/schema-chat";
 import { authoringAtom, isHolderAtom, presenceAtom } from "@/plan/state/atoms";
 import { turnsAtom } from "./model";
+import { PressureHeader } from "./pressure/pressure-header";
 import { Untrusted, visibleControls } from "./visible-controls";
 
 export function RunHeader({ session }: { session: SessionView }) {
@@ -12,6 +13,7 @@ export function RunHeader({ session }: { session: SessionView }) {
   const presence = useAtomValue(presenceAtom);
   const isHolder = useAtomValue(isHolderAtom);
   const turns = useAtomValue(turnsAtom);
+  if (session.kind === "pressure") return <PressureHeader session={session} />;
   const holder = authoring?.holder;
   const name = holder?.name ?? session.holder ?? "No one";
   const watchers =
@@ -23,7 +25,6 @@ export function RunHeader({ session }: { session: SessionView }) {
   );
   // Authoring presence clears on return before the next session snapshot arrives.
   const awayUntil = holder ? holder.frees_at : session.away_until;
-  // Plan 11 adds a pressure-session branch on session.kind here.
   return (
     <div className="chat-run-header flex flex-wrap gap-x-1 px-3 text-xs text-muted-foreground">
       {awayUntil ? (

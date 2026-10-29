@@ -15,6 +15,8 @@ import {
   unconfirmedSendsAtom,
 } from "@/plan/chat/model";
 import { sameMessage } from "@/plan/chat/model-identity";
+import { codexRunsAlone } from "@/plan/chat/pressure/steps";
+import { pressureRunAtom } from "@/plan/chat/pressure/use-pressure";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { canAuthorAtom, connectionAtom, serverInfoAtom, stoppingAtom } from "@/plan/state/atoms";
@@ -41,13 +43,15 @@ function useMayResend(item: UserItem, turn: Turn): boolean {
   const canAuthor = useAtomValue(canAuthorAtom);
   const session = useAtomValue(sessionAtom);
   const stopping = useAtomValue(stoppingAtom);
+  const codexAlone = codexRunsAlone(useAtomValue(pressureRunAtom));
   const readOnly = (useAtomValue(serverInfoAtom)?.read_only.length ?? 0) > 0;
   const resent = useAtomValue(resentItemsAtom).has(resendKey(turn, item.id));
   const inCurrentChat = useAtomValue(turnsAtom).some(
     (entry) => entry.id === turn.id && entry.started_at === turn.started_at,
   );
   // An ended chat has no composer (ComposerArea), so there is nothing left to resend into.
-  const blocked = composerBlock(session, { stopping, readOnly }) ?? session?.state === "ended";
+  const blocked =
+    composerBlock(session, { stopping, readOnly, codexAlone }) ?? session?.state === "ended";
   return canAuthor && item.origin === null && inCurrentChat && !blocked && !resent;
 }
 

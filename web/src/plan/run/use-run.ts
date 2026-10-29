@@ -1,0 +1,170 @@
+import { atom } from "jotai/vanilla";
+
+import { z } from "@/api/zod";
+import { apiGet, apiPost, type ApiResult } from "@/plan/api/client";
+import {
+  runStateSchema,
+  unmergedBranchSchema,
+  type CommitRequest,
+  type RunJob,
+  type RunOutput,
+  type RunStartRequest,
+  type RunStateView,
+  type RunStrip,
+  type UnmergedBranch,
+} from "@/plan/api/schema-run";
+import { planSocketAtom } from "@/plan/state/atoms";
+import type { Store } from "@/state/store";
+
+export const runStateAtom = atom<RunStateView | null>(null);
+export const runStripAtom = atom<RunStrip | null>(null);
+export const runOutputAtom = atom<Record<RunJob, string[]>>({
+  commit: [],
+  start: [],
+  abandon: [],
+  finish_abandon: [],
+  dashboard: [],
+});
+
+const acceptedSchema = z.strictObject({ accepted: z.literal(true) });
+const renamedSchema = z.strictObject({ to: z.string() });
+const unmergedSchema = z.strictObject({
+  error: z.literal("unmerged_branches"),
+  message: z.string(),
+  unmerged_branches: z.array(unmergedBranchSchema),
+});
+const abandonResponseSchema = z.union([
+  renamedSchema,
+  unmergedSchema,
+  z.strictObject({
+    error: z.enum(["busy", "not_abandonable", "refused", "step_failed"]),
+    message: z.string(),
+  }),
+]);
+const dashboardSchema = z.strictObject({ url: z.string(), tunnel: z.string().optional() });
+
+export type RunAccepted = z.infer<typeof acceptedSchema>;
+export type AbandonResult = z.infer<typeof renamedSchema> | z.infer<typeof unmergedSchema>;
+export type RunDashboard = z.infer<typeof dashboardSchema>;
+
+export function appendRunOutput(store: Store, frame: RunOutput): void {
+  const { job, line } = frame;
+  // Completion frames carry no line; retain the job's output for inspection.
+  if (line === null) return;
+  store.set(runOutputAtom, (previous) => ({
+    ...previous,
+    [job]: [...previous[job], line].slice(-5000),
+  }));
+}
+
+export async function fetchRunState(store: Store): Promise<ApiResult<RunStateView>> {
+  const result = await apiGet("/api/run/state", runStateSchema);
+  if (result.ok) store.set(runStateAtom, result.value);
+  return result;
+}
+
+/** The server sends no run_state frames; state is refetched after every action that changes it. */
+async function refetchAfter<T>(
+  store: Store,
+  request: Promise<ApiResult<T>>,
+  changed: (value: T) => boolean = () => true,
+): Promise<ApiResult<T>> {
+  const result = await request;
+  if (result.ok && changed(result.value)) void fetchRunState(store);
+  return result;
+}
+
+// An unmerged_branches reply asks for confirmation and changes nothing.
+const wasRenamed = (value: AbandonResult) => "to" in value;
+
+export function commitRun(store: Store, body: CommitRequest): Promise<ApiResult<RunAccepted>> {
+  return refetchAfter(
+    store,
+    apiPost("/api/run/commit", body, acceptedSchema, { contentType: "json" }),
+  );
+}
+
+export function startRun(store: Store, body: RunStartRequest): Promise<ApiResult<RunAccepted>> {
+  return refetchAfter(
+    store,
+    apiPost("/api/run/start", body, acceptedSchema, { contentType: "json" }),
+  );
+}
+
+async function postAbandon(path: string, body: unknown): Promise<ApiResult<AbandonResult>> {
+  const result = await apiPost(path, body, abandonResponseSchema, {
+    contentType: "json",
+    resultStatuses: [409],
+  });
+  if (!result.ok) return result;
+  const value = result.value;
+  // Only the branch-list conflict is a confirmation result; other 409s remain errors.
+  if ("error" in value && value.error !== "unmerged_branches") {
+    return { ok: false, status: 409, error: value.error, message: value.message };
+  }
+  return { ok: true, value };
+}
+
+export function abandonRun(
+  store: Store,
+  confirmed_unmerged: UnmergedBranch[],
+): Promise<ApiResult<AbandonResult>> {
+  return refetchAfter(store, postAbandon("/api/run/abandon", { confirmed_unmerged }), wasRenamed);
+}
+
+export function finishAbandon(store: Store): Promise<ApiResult<AbandonResult>> {
+  return refetchAfter(store, postAbandon("/api/run/finish-abandon", {}), wasRenamed);
+}
+
+export function fetchDashboard(_store: Store): Promise<ApiResult<RunDashboard>> {
+  return apiPost("/api/run/dashboard", {}, dashboardSchema, { contentType: "json" });
+}
+
+// Jobs whose output is streaming. runOutputAtom keeps a finished job's lines for inspection, so
+// it cannot tell a second job of the same kind from a continuing one.
+const streamingJobs = new WeakMap<Store, Set<RunJob>>();
+
+/** Install once per store; follow socket replacement and refetch state after reconnects. */
+export function installRunSubscription(store: Store): () => void {
+  let detach = () => {};
+  const attach = () => {
+    detach();
+    // A done frame may have been missed on the old socket; start tracking afresh.
+    streamingJobs.get(store)?.clear();
+    const socket = store.get(planSocketAtom);
+    if (!socket) return;
+    const stopState = socket.subscribe("run_state", ({ type: _type, ...state }) => {
+      store.set(runStateAtom, state);
+    });
+    const stopOutput = socket.subscribe("run_output", ({ type: _type, ...output }) => {
+      // No frame announces a job start; a frame from a job not yet streaming is the signal that it is busy.
+      const streaming = streamingJobs.get(store) ?? new Set<RunJob>();
+      streamingJobs.set(store, streaming);
+      const starts = !streaming.has(output.job);
+      if (output.done) streaming.delete(output.job);
+      else streaming.add(output.job);
+      appendRunOutput(store, output);
+      if (output.done || starts) void fetchRunState(store);
+    });
+    const stopStrip = socket.subscribe("run_strip", ({ type: _type, ...strip }) => {
+      store.set(runStripAtom, strip);
+    });
+    const stopResync = socket.onResync(() => {
+      // Frames were missed while disconnected, possibly a done frame.
+      streamingJobs.get(store)?.clear();
+      void fetchRunState(store);
+    });
+    detach = () => {
+      stopState();
+      stopOutput();
+      stopStrip();
+      stopResync();
+    };
+  };
+  attach();
+  const stopSocket = store.sub(planSocketAtom, attach);
+  return () => {
+    detach();
+    stopSocket();
+  };
+}

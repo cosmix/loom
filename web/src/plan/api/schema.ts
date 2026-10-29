@@ -2,6 +2,8 @@ import { z } from "@/api/zod";
 import { chatMessageSchema, chatWireCommandSchema } from "./schema-chat";
 import { conceptMessageSchemas } from "./schema-concept";
 import { filesMessageSchemas } from "./schema-files";
+import { pressureMessageSchemas } from "./schema-pressure";
+import { runMessageSchemas } from "./schema-run";
 import { reviewWireCommandSchema, reviewWireMessageSchema } from "./schema-review";
 import { summaryMessageSchemas } from "./schema-summaries";
 
@@ -37,6 +39,10 @@ export const PLAN_MESSAGE_TYPES = [
   "summary_question",
   "summary_question_closed",
   "summary_turn_cost",
+  "pressure_run",
+  "run_state",
+  "run_output",
+  "run_strip",
 ] as const;
 export const CLIENT_MESSAGE_TYPES = ["set_name", "reading"] as const;
 
@@ -128,6 +134,8 @@ export const planMessageSchema = z.discriminatedUnion("type", [
   ...filesMessageSchemas,
   ...conceptMessageSchemas,
   ...summaryMessageSchemas,
+  ...pressureMessageSchemas,
+  ...runMessageSchemas,
 ]);
 export const clientMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("set_name"), name: z.string() }),
