@@ -4,7 +4,7 @@
 
 ## Scope
 
-The planning server drives a written plan to execution without a terminal: `loom/src/plan_server/run/` (routes, jobs, state, strip, dashboard) beside the pressure routes ([pressure](pressure.md)), and `web/src/plan/run/` for the dialogs. Spec: `doc/product/section_11.md`.
+The planning server drives a written plan to execution without a terminal: `loom/src/plan_server/run/` (routes, jobs, state, strip, dashboard) beside the pressure routes ([pressure](pressure.md)), and `web/src/plan/run/` for the dialogs. Spec: `doc/product/planner-ui/section_11.md`.
 
 | Route | Role | Job |
 | --- | --- | --- |
