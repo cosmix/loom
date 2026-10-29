@@ -21,15 +21,15 @@ fn tree(files: &[(&str, &str)]) -> TempDir {
 fn zero_count_kept_for_empty_heading() {
     let temp = tree(&[
         (
-            "doc/product/section_02.md",
+            "doc/product/demo/section_02.md",
             "# Product\n\n## Open questions\n",
         ),
         (
-            "doc/plans/index.md",
+            "doc/plans/demo/index.md",
             "# Metaplan\n\n## Open questions\n- One\n- Two\n",
         ),
         (
-            "doc/plans/PLAN-example.md",
+            "doc/plans/demo/PLAN-example.md",
             "# Plan\n\n## Open questions\n- One\n",
         ),
     ]);
@@ -38,9 +38,9 @@ fn zero_count_kept_for_empty_heading() {
     assert_eq!(
         open_question_counts(&project),
         BTreeMap::from([
-            ("doc/plans/PLAN-example.md".to_string(), 1),
-            ("doc/plans/index.md".to_string(), 2),
-            ("doc/product/section_02.md".to_string(), 0),
+            ("doc/plans/demo/PLAN-example.md".to_string(), 1),
+            ("doc/plans/demo/index.md".to_string(), 2),
+            ("doc/product/demo/section_02.md".to_string(), 0),
         ])
     );
 }
@@ -48,14 +48,14 @@ fn zero_count_kept_for_empty_heading() {
 #[test]
 fn documents_without_the_heading_omitted() {
     let temp = tree(&[
-        ("doc/product/section_01.md", "# Product\n\n## Notes\n"),
+        ("doc/product/demo/section_01.md", "# Product\n\n## Notes\n"),
         (
-            "doc/plans/index.md",
+            "doc/plans/demo/index.md",
             "# Metaplan\n\n## open questions\n- One\n",
         ),
-        ("doc/plans/PLAN-example.md", "# Plan\n"),
+        ("doc/plans/demo/PLAN-example.md", "# Plan\n"),
         (
-            "doc/product/index.md",
+            "doc/product/demo/index.md",
             "# Vision\n\n## Open questions\n- One\n",
         ),
         ("doc/other.md", "# Other\n\n## Open questions\n- One\n"),

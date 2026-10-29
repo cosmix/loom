@@ -5,8 +5,12 @@ description: Load when a planning session creates or revises the product vision,
 
 # Write the product vision
 
-Write the target `doc/product/index.md`, plus any other editable document under `doc/`
-that a settled decision or an open point binds. Put a decision that spans sections under
+Use the feature name given in the session's opening prompt. It is shared by
+`doc/product/<feature>/` and `doc/plans/<feature>/` and matches
+`[a-z0-9][a-z0-9-]*`, excluding `archive`, `briefs`, `plans`, and `overview`.
+
+Write the target `doc/product/<feature>/index.md`, plus any other editable document
+under `doc/` that a settled decision or an open point binds. Put a decision that spans sections under
 `## Decisions` in the vision. Never stage, commit or branch, and never run `loom init`,
 `loom run` or `loom pressure`. Rebuild summaries only
 through the turn-end procedure below; never write directly under `doc/loom/summaries/`.
@@ -16,12 +20,13 @@ belong to `loom knowledge`.
 
 ## Discuss the direction
 
-Read the existing vision before revising it. Read any existing product sections needed to
-understand the direction and the section list. Keep settled decisions unless the user is
+Read the feature's existing vision before revising it. Read any existing product
+sections needed to understand the direction and the section list. Keep settled decisions unless the user is
 revising them.
 
-Load `loom-plan:brainstorming` to run the discussion, with `doc/product/index.md` as its
-target. Ask about the problem, users and goals one question at a time. Offer choices when
+Load `loom-plan:brainstorming` to run the discussion, with
+`doc/product/<feature>/index.md` as its target. Ask about the problem, users and
+goals one question at a time. Offer choices when
 the answer space is small. Before settling a direction, propose two or three approaches
 with their trade-offs and your recommendation. Play your understanding back to the user.
 
@@ -57,7 +62,7 @@ section number in the first column, then the section name and what it covers:
 
 Explain that this table is the only part of the vision the app parses. It reads the
 first Markdown table under the `Specification sections` heading and takes the number
-from the first cell of each row; `01` maps to `doc/product/section_01.md`. A table with
+from the first cell of each row; `01` maps to `doc/product/<feature>/section_01.md`. A table with
 rows but no numbered first cell is an error. Without that heading and a table, the app
 cannot read the section list; it never infers sections from prose.
 
@@ -70,8 +75,9 @@ For “fix the vision's section list”, edit the table into the parseable form 
 preserving the intended sections and their numbers. Resolve unclear names or scope
 through the same discussion procedure.
 
-For “add this unlisted section to the vision”, read `doc/product/section_<nn>.md` and add
-its number, title and coverage to the table. Keep the existing file and its number;
+For “add this unlisted section to the vision”, read
+`doc/product/<feature>/section_<nn>.md` and add its number, title and coverage to
+the table. Keep the existing file and its number;
 write only the vision. Do not create or rewrite the section as part of this repair.
 
 ## Close the session

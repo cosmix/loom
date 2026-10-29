@@ -36,6 +36,7 @@ impl GuidanceProvider for GatedGuidance {
         dir: &SessionDir,
         offer: Option<&str>,
         first_message: Option<&str>,
+        feature: Option<&str>,
     ) -> anyhow::Result<LaunchGuidance> {
         let gate = self.release.lock().unwrap().take();
         if let Some(release) = gate {
@@ -46,7 +47,7 @@ impl GuidanceProvider for GatedGuidance {
         }
         let held = ctx.authoring().is_holder(&self.holder);
         self.held.lock().unwrap().push(held);
-        FixedGuidance.authoring(ctx, dir, offer, first_message)
+        FixedGuidance.authoring(ctx, dir, offer, first_message, feature)
     }
 
     fn closing_message(&self) -> String {
@@ -61,6 +62,7 @@ fn a_refused_start_leaves_authoring_free() {
     let cmd = ChatCommand::Start {
         client_id: Some("c1".into()),
         offer: None,
+        feature: None,
         text: Some("/help".into()),
         attachments: Vec::new(),
     };
@@ -78,6 +80,7 @@ fn a_start_with_an_id_the_checklist_does_not_offer_is_refused_by_the_provider() 
     let cmd = ChatCommand::Start {
         client_id: Some("c1".into()),
         offer: Some(offer.into()),
+        feature: None,
         text: None,
         attachments: Vec::new(),
     };
@@ -103,6 +106,7 @@ fn a_replaced_provider_decides_which_offer_ids_start_a_chat() {
     let cmd = ChatCommand::Start {
         client_id: Some("c1".into()),
         offer: Some(offer.into()),
+        feature: None,
         text: None,
         attachments: Vec::new(),
     };
@@ -131,7 +135,7 @@ fn reserve_held(f: &Fixture, other: &Tab) -> (mpsc::Receiver<()>, mpsc::Sender<(
             .to_string_lossy()
             .into_owned();
         state.started(id, starter);
-        FixedGuidance.authoring(&ctx, dir, None, None)
+        FixedGuidance.authoring(&ctx, dir, None, None, None)
     });
     let request = StartRequest {
         kind: SessionKind::Authoring,

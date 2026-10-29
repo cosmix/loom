@@ -1,18 +1,57 @@
 {
-  "schema": 1,
-  "current": "vision",
-  "steps": [
-    { "step": "vision", "mark": "gap" },
-    { "step": "product_spec", "mark": "gap" },
-    { "step": "metaplan", "mark": "gap" },
-    { "step": "plans", "mark": "gap" },
-    { "step": "pressure_test", "mark": "optional" },
-    { "step": "review", "mark": "optional" },
-    { "step": "run", "mark": "active" }
+  "schema": 2,
+  "root": "<repo>",
+  "features": [
+    {
+      "name": "alpha",
+      "checklist": {
+        "feature": "alpha",
+        "current": "vision",
+        "steps": [
+          { "step": "vision", "mark": "gap" },
+          { "step": "product_spec", "mark": "gap" },
+          { "step": "metaplan", "mark": "gap" },
+          { "step": "plans", "mark": "gap" },
+          { "step": "pressure_test", "mark": "optional" },
+          { "step": "review", "mark": "optional" },
+          { "step": "run", "mark": "optional" }
+        ],
+        "primary": "start-vision",
+        "secondary": ["start-metaplan", "pressure-test:alpha"]
+      }
+    },
+    {
+      "name": "beta",
+      "checklist": {
+        "feature": "beta",
+        "current": "vision",
+        "steps": [
+          { "step": "vision", "mark": "gap" },
+          { "step": "product_spec", "mark": "gap" },
+          { "step": "metaplan", "mark": "gap" },
+          { "step": "plans", "mark": "gap" },
+          { "step": "pressure_test", "mark": "optional" },
+          { "step": "review", "mark": "optional" },
+          { "step": "run", "mark": "optional" }
+        ],
+        "primary": "start-vision",
+        "secondary": ["start-metaplan", "pressure-test:beta"]
+      }
+    }
   ],
-  "primary": "start-vision",
-  "secondary": ["start-metaplan", "pressure-test:alpha", "pressure-test:beta"],
+  "standalone": [
+    { "slug": "solo", "path": "doc/plans/IN_PROGRESS-PLAN-solo.md", "state": "running" }
+  ],
+  "moves": [
+    {
+      "id": "move-into-feature:doc/product/index.md",
+      "kind": "move-into-feature",
+      "path": "doc/product/index.md",
+      "target": "doc/product/index.md"
+    }
+  ],
   "problems": [
-    { "code": "implements-missing", "path": "doc/plans/PLAN-beta.md", "line": null }
+    { "code": "implements-missing", "path": "doc/plans/beta/PLAN-beta.md", "line": null },
+    { "code": "needs-feature", "path": "doc/product/index.md", "line": null }
   ]
 }

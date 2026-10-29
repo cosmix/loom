@@ -15,6 +15,7 @@ use anyhow::{bail, Context, Result};
 use super::{Build, Target};
 use crate::fs::safe_fs::safe_open_dirfd;
 use crate::fs::safe_read::{is_not_found, list_dir_no_follow, EntryKind};
+use crate::planning::kinds::is_feature_name;
 use crate::planning::paths::{symlink_component, LockReason};
 
 const DOC: &str = "doc";
@@ -81,6 +82,19 @@ impl Tree {
             Ok(Vec::new())
         }
     }
+
+    /// Snapshot the standalone home and existing direct feature directories, without links.
+    pub(super) fn plan_homes(&self) -> Result<Vec<PathBuf>> {
+        let plans = Path::new(DOC).join(PLANS);
+        let mut homes = vec![plans.clone()];
+        for (name, kind) in self.real_dir_entries(&plans)? {
+            if kind == EntryKind::Directory && name.to_str().is_some_and(is_feature_name) {
+                homes.push(plans.join(name));
+            }
+        }
+        homes.sort();
+        Ok(homes)
+    }
 }
 
 /// `(denyWrite, allowWrite)` of the session, absolute and sorted.
@@ -141,6 +155,7 @@ fn pressure(tree: &Tree, plan: &Path, bundle: &Path) -> Result<Vec<PathBuf>> {
     let plan_name = utf8_name(plan)?;
     let slug = utf8_name(bundle)?;
     let plans = Path::new(DOC).join(PLANS);
+    let home = plan.parent().context("pressure plan has no home")?;
     let mut deny = Vec::new();
     let top = tree.confine(Path::new(""), &[(DOC, dir), (OMISSIONS, file)], &mut deny)?;
     if !top.iter().any(|name| name == DOC)
@@ -150,26 +165,37 @@ fn pressure(tree: &Tree, plan: &Path, bundle: &Path) -> Result<Vec<PathBuf>> {
     {
         return Ok(deny);
     }
-    let kept = tree.confine(&plans, &[(plan_name, file), (BRIEFS, dir)], &mut deny)?;
+    if home != plans {
+        let feature = utf8_name(home)?;
+        if tree
+            .confine(&plans, &[(feature, dir)], &mut deny)?
+            .is_empty()
+        {
+            return Ok(deny);
+        }
+    }
+    let kept = tree.confine(home, &[(plan_name, file), (BRIEFS, dir)], &mut deny)?;
     if kept.iter().any(|name| name == BRIEFS) {
-        tree.confine(&plans.join(BRIEFS), &[(slug, dir)], &mut deny)?;
+        tree.confine(&home.join(BRIEFS), &[(slug, dir)], &mut deny)?;
     }
     Ok(deny)
 }
 
-/// The existing real bundle directories of locked plans, `doc/plans/briefs/<dir>`, each with
+/// The existing real bundle directories of locked plans, `<home>/briefs/<dir>`, each with
 /// the locked plan's slug. A bundle directory is locked when the locked set locks the
 /// directory path itself, which it does by the bundle prefix of a locked plan.
 pub(super) fn locked_bundles(build: &Build<'_>) -> Result<Vec<(PathBuf, String)>> {
-    let briefs = Path::new(DOC).join(PLANS).join(BRIEFS);
     let mut bundles = Vec::new();
-    for (name, kind) in build.tree.real_dir_entries(&briefs)? {
-        if kind != EntryKind::Directory {
-            continue;
-        }
-        let rel = briefs.join(name);
-        if let Some(LockReason::BriefOfLockedPlan { slug }) = build.locked.lock_reason(&rel) {
-            bundles.push((rel, slug));
+    for home in build.tree.plan_homes()? {
+        let briefs = home.join(BRIEFS);
+        for (name, kind) in build.tree.real_dir_entries(&briefs)? {
+            if kind != EntryKind::Directory {
+                continue;
+            }
+            let rel = briefs.join(name);
+            if let Some(LockReason::BriefOfLockedPlan { slug }) = build.locked.lock_reason(&rel) {
+                bundles.push((rel, slug));
+            }
         }
     }
     Ok(bundles)

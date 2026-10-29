@@ -1,4 +1,4 @@
-//! The project view: the doc/ tree, its parsed documents, problems and checklist.
+//! The project view: the doc/ tree, its features, standalone plans and problems.
 //!
 //! The view keeps the text of every Markdown document it read, so `refresh` re-reads only the
 //! paths a watcher batch names and recomputes every derived field from the cached texts. A
@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use crate::planning::checklist::{build_checklist, Checklist, ParsedDocs};
+use crate::planning::checklist::{build_checklist, move_offers, Checklist, Offer, ParsedDocs};
 use crate::planning::discover::{discover, read_doc, DocTree, Document};
 use crate::planning::implements::{self, Implements, ImplementsLine};
-use crate::planning::kinds::{DocKind, VISION_PATH};
+use crate::planning::kinds::{plans_dir, product_dir, vision_path, DocKind};
 use crate::planning::metaplan::{self, MetaplanEntry};
 use crate::planning::paths::{LockReason, LockedSet};
 use crate::planning::pressure;
@@ -27,6 +27,7 @@ pub use crate::planning::problems::Problem;
 
 /// The text of every Markdown document, or why it could not be read.
 type Sources = BTreeMap<PathBuf, std::result::Result<String, String>>;
+type PlanPressure = BTreeMap<String, Vec<pressure::PressureRecord>>;
 
 /// One document of the loaded project with what was parsed from it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +48,21 @@ pub struct ProjectDoc {
     pub read_error: Option<String>,
 }
 
+/// One feature's product and engineering documents and planning checklist.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Feature {
+    /// The directory name shared by the feature's product and planning documents.
+    pub name: String,
+    /// The vision's section rows (`Err` also when there is no vision).
+    pub vision_rows: Result<Vec<VisionRow>, VisionProblem>,
+    /// This feature's metaplan entries, sorted by metaplan path.
+    pub metaplans: Vec<(PathBuf, Vec<MetaplanEntry>)>,
+    /// The slugs of this feature's plans implementing each section number.
+    pub implemented_by: BTreeMap<u32, Vec<String>>,
+    /// This feature's planning checklist.
+    pub checklist: Checklist,
+}
+
 /// The loaded project: what the planning server holds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {
@@ -56,16 +72,14 @@ pub struct Project {
     pub tree: DocTree,
     /// Every document by repo-relative path.
     pub docs: BTreeMap<PathBuf, ProjectDoc>,
-    /// The vision's section rows (`Err` also when there is no vision).
-    pub vision_rows: Result<Vec<VisionRow>, VisionProblem>,
-    /// Every metaplan's entries, sorted by metaplan path.
-    pub metaplans: Vec<(PathBuf, Vec<MetaplanEntry>)>,
+    /// The discovered features, sorted by name.
+    pub features: Vec<Feature>,
+    /// Sorted slugs of winning plans outside features.
+    pub standalone: Vec<String>,
+    /// Offers to move misplaced top-level documents into features.
+    pub moves: Vec<Offer>,
     /// The `Implements:` declaration of every readable plan, by slug.
     pub implements: BTreeMap<String, ImplementsLine>,
-    /// The slugs of the plans implementing each section number.
-    pub implemented_by: BTreeMap<u32, Vec<String>>,
-    /// The planning checklist.
-    pub checklist: Checklist,
     /// Convention problems, sorted by path, line and code.
     pub problems: Vec<Problem>,
     /// The locked documents.
@@ -75,6 +89,11 @@ pub struct Project {
 }
 
 impl Project {
+    /// The feature with the given directory name.
+    pub fn feature(&self, name: &str) -> Option<&Feature> {
+        self.features.iter().find(|feature| feature.name == name)
+    }
+
     /// Discover `doc/` under `root`, read every Markdown document and derive the view. A
     /// document that cannot be read gets a `read_error`; an error scanning the locked set
     /// fails the load (fail closed).
@@ -157,17 +176,36 @@ impl Project {
 fn derive(root: PathBuf, tree: DocTree, sources: Sources) -> Result<Project> {
     let locked = LockedSet::scan(&root)?;
     let docs = project_docs(&tree, &sources, &locked);
-    let (parsed, implements) = parse_docs(&tree, &sources, &locked);
-    let checklist = build_checklist(&tree, &parsed);
+    let (implements, pressure) = parse_plans(&tree, &sources);
+    let features = tree
+        .feature_names()
+        .into_iter()
+        .map(|name| {
+            let parsed = parse_docs(&tree, &sources, &locked, &pressure, &name);
+            let checklist = build_checklist(&tree, &parsed, &name);
+            Feature {
+                implemented_by: implemented_by(&tree, &implements, &name),
+                name,
+                vision_rows: parsed.vision_rows,
+                metaplans: parsed.metaplans,
+                checklist,
+            }
+        })
+        .collect();
+    let standalone = tree
+        .plans
+        .values()
+        .filter(|plan| plan.feature.is_none())
+        .map(|plan| plan.slug.clone())
+        .collect();
     let mut project = Project {
         root,
-        implemented_by: implemented_by(&implements),
+        moves: move_offers(&tree),
         tree,
         docs,
-        vision_rows: parsed.vision_rows,
-        metaplans: parsed.metaplans,
+        features,
+        standalone,
         implements,
-        checklist,
         problems: Vec::new(),
         locked,
         sources,
@@ -176,47 +214,58 @@ fn derive(root: PathBuf, tree: DocTree, sources: Sources) -> Result<Project> {
     Ok(project)
 }
 
-/// Parse the vision table, metaplans, `Implements` lines and pressure records of every
-/// readable document.
+/// Parse one feature's vision, metaplans and written sections with project-wide plan facts.
 fn parse_docs(
     tree: &DocTree,
     sources: &Sources,
     locked: &LockedSet,
-) -> (ParsedDocs, BTreeMap<String, ImplementsLine>) {
+    pressure: &PlanPressure,
+    feature: &str,
+) -> ParsedDocs {
     let text = |rel: &Path| sources.get(rel).and_then(|source| source.as_deref().ok());
-    let vision = text(Path::new(VISION_PATH));
+    let vision = text(&vision_path(feature));
     let vision_rows = vision.map_or(Err(VisionProblem::NoHeading), parse_sections_table);
     let metaplan_docs = tree
-        .docs
-        .iter()
-        .filter(|doc| metaplan::is_metaplan(&doc.path));
+        .feature_docs(feature)
+        .filter(|doc| matches!(&doc.kind, DocKind::Metaplan { .. }));
     let metaplans = metaplan_docs
         .map(|doc| {
             let entries = text(&doc.path).map(metaplan::entries);
             (doc.path.clone(), entries.unwrap_or_default())
         })
         .collect();
-    let plan_texts: Vec<(&String, &str)> = tree
-        .plans
-        .values()
-        .filter_map(|plan| Some((&plan.slug, text(&plan.path)?)))
-        .collect();
-    let implements: BTreeMap<String, ImplementsLine> = plan_texts
-        .iter()
-        .map(|&(slug, text)| (slug.clone(), implements::parse(text)))
-        .collect();
-    let pressure = plan_texts
-        .iter()
-        .map(|&(slug, text)| (slug.clone(), pressure::records(text)))
-        .collect();
-    let parsed = ParsedDocs {
+    ParsedDocs {
         vision_rows,
         metaplans,
-        pressure,
-        locked_files: locked.locked_paths(),
-        sections_written: sections_written(tree, sources),
-    };
-    (parsed, implements)
+        pressure: pressure.clone(),
+        locked_files: feature_locked_files(locked, feature),
+        sections_written: sections_written(tree, sources, feature),
+    }
+}
+
+/// The existing locked files under the feature's product and plans directories.
+fn feature_locked_files(locked: &LockedSet, feature: &str) -> Vec<PathBuf> {
+    let (product, plans) = (product_dir(feature), plans_dir(Some(feature)));
+    let mut files = locked.locked_paths();
+    files.retain(|path| path.starts_with(&product) || path.starts_with(&plans));
+    files
+}
+
+/// Parse every readable winning plan, including standalone plans.
+fn parse_plans(
+    tree: &DocTree,
+    sources: &Sources,
+) -> (BTreeMap<String, ImplementsLine>, PlanPressure) {
+    let mut implements = BTreeMap::new();
+    let mut pressure = BTreeMap::new();
+    for plan in tree.plans.values() {
+        let Some(Ok(text)) = sources.get(&plan.path) else {
+            continue;
+        };
+        implements.insert(plan.slug.clone(), implements::parse(text));
+        pressure.insert(plan.slug.clone(), pressure::records(text));
+    }
+    (implements, pressure)
 }
 
 /// Every document's view, then the references of each readable Markdown document, which
@@ -282,31 +331,48 @@ fn project_doc(
 /// Section numbers whose file holds a non-whitespace character, sorted. A file that exists
 /// but cannot be read (invalid UTF-8, over the size bound) counts as written when it is not
 /// empty: section 01 calls a section present when its file exists and is not empty.
-fn sections_written(tree: &DocTree, sources: &Sources) -> Vec<u32> {
-    let written = tree.docs.iter().filter_map(|doc| match doc.kind {
-        DocKind::ProductSection { number } => {
-            let present = match sources.get(&doc.path)? {
-                Ok(text) => text.contains(|c: char| !c.is_whitespace()),
-                Err(_) => doc.size > 0,
-            };
-            present.then_some(number)
-        }
-        _ => None,
-    });
+fn sections_written(tree: &DocTree, sources: &Sources, feature: &str) -> Vec<u32> {
+    let written = tree
+        .feature_docs(feature)
+        .filter_map(|doc| match &doc.kind {
+            DocKind::ProductSection {
+                feature: Some(_),
+                number,
+            } => {
+                let present = match sources.get(&doc.path)? {
+                    Ok(text) => text.contains(|c: char| !c.is_whitespace()),
+                    Err(_) => doc.size > 0,
+                };
+                present.then_some(*number)
+            }
+            _ => None,
+        });
     written.collect::<BTreeSet<u32>>().into_iter().collect()
 }
 
 /// Plans by the section numbers their `Implements:` line names, each plan once per section.
-fn implemented_by(implements: &BTreeMap<String, ImplementsLine>) -> BTreeMap<u32, Vec<String>> {
+fn implemented_by(
+    tree: &DocTree,
+    implements: &BTreeMap<String, ImplementsLine>,
+    feature: &str,
+) -> BTreeMap<u32, Vec<String>> {
     let mut by_section: BTreeMap<u32, Vec<String>> = BTreeMap::new();
-    for (slug, line) in implements {
-        let Implements::Sections(numbers) = &line.value else {
+    let plans = tree
+        .plans
+        .values()
+        .filter(|entry| entry.feature.as_deref() == Some(feature));
+    for plan in plans {
+        let Some(ImplementsLine {
+            value: Implements::Sections(numbers),
+            ..
+        }) = implements.get(&plan.slug)
+        else {
             continue;
         };
         for number in numbers {
             let slugs = by_section.entry(*number).or_default();
-            if !slugs.contains(slug) {
-                slugs.push(slug.clone());
+            if !slugs.contains(&plan.slug) {
+                slugs.push(plan.slug.clone());
             }
         }
     }

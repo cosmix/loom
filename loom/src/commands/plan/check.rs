@@ -7,9 +7,10 @@ use anyhow::Result;
 use serde::Serialize;
 
 use crate::context::untrusted::inline_safe;
-use crate::planning::checklist::{Checklist, CurrentStep, Step};
+use crate::planning::checklist::{Checklist, CurrentStep, Offer, Step};
 use crate::planning::problems::Problem;
 use crate::planning::project::Project;
+use crate::planning::slug::PlanState;
 
 #[cfg(test)]
 mod tests;
@@ -18,15 +19,51 @@ mod tests;
 pub(crate) struct CheckReport<'a> {
     schema: u8,
     root: &'a Path,
-    checklist: &'a Checklist,
+    features: Vec<FeatureReport<'a>>,
+    standalone: Vec<StandaloneReport<'a>>,
+    moves: &'a [Offer],
     problems: &'a [Problem],
+}
+
+#[derive(Serialize)]
+struct FeatureReport<'a> {
+    name: &'a str,
+    checklist: &'a Checklist,
+}
+
+#[derive(Serialize)]
+struct StandaloneReport<'a> {
+    slug: &'a str,
+    path: &'a Path,
+    state: PlanState,
+}
+
+fn standalone(project: &Project) -> impl Iterator<Item = StandaloneReport<'_>> {
+    project
+        .standalone
+        .iter()
+        .filter_map(|slug| project.tree.plan(slug))
+        .map(|plan| StandaloneReport {
+            slug: &plan.slug,
+            path: &plan.path,
+            state: plan.state,
+        })
 }
 
 pub(crate) fn report(project: &Project) -> CheckReport<'_> {
     CheckReport {
-        schema: 1,
+        schema: 2,
         root: &project.root,
-        checklist: &project.checklist,
+        features: project
+            .features
+            .iter()
+            .map(|feature| FeatureReport {
+                name: &feature.name,
+                checklist: &feature.checklist,
+            })
+            .collect(),
+        standalone: standalone(project).collect(),
+        moves: &project.moves,
         problems: &project.problems,
     }
 }
@@ -43,9 +80,7 @@ fn step_name(step: Step) -> &'static str {
     }
 }
 
-fn human(project: &Project) -> String {
-    let checklist = &project.checklist;
-    let mut out = String::new();
+fn human_checklist(out: &mut String, checklist: &Checklist) {
     for (step, mark) in &checklist.steps {
         let _ = writeln!(out, "{} {}: {mark:?}", *step as u8, step_name(*step));
     }
@@ -63,6 +98,23 @@ fn human(project: &Project) -> String {
     }
     for offer in &checklist.secondary {
         let _ = writeln!(out, "Secondary: {}", inline_safe(&offer.id()));
+    }
+}
+
+fn human(project: &Project) -> String {
+    let mut out = String::new();
+    for feature in &project.features {
+        let _ = writeln!(out, "{}", inline_safe(&feature.name));
+        human_checklist(&mut out, &feature.checklist);
+    }
+    let _ = writeln!(out, "standalone plans");
+    for plan in standalone(project) {
+        let _ = writeln!(
+            out,
+            "  {}: {}",
+            inline_safe(plan.slug),
+            inline_safe(&format!("{:?}", plan.state))
+        );
     }
     for problem in &project.problems {
         let path = inline_safe(&problem.path.to_string_lossy());

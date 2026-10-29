@@ -39,7 +39,7 @@ Section 09 gives the sessions their skills; these are the conventions the skills
   project's `CLAUDE.md` untouched. If a `CLAUDE.md` names other locations for planning
   documents, follow this brief and say so once.
 - **Locked plans.** Treat files prefixed `IN_PROGRESS-`, `DONE-` or `RETIRED-`, everything
-  under `doc/plans/archive/`, and each locked plan's brief bundle as read-only.
+  under a standalone or feature `archive/` directory in `doc/plans/`, and each locked plan's brief bundle as read-only.
   Later stages read the committed briefs; changing them would split a run across
   versions. Decline requests to edit these files with that reason. Offer a new metaplan
   entry or a refinement of the spec for corrections to running or finished work.

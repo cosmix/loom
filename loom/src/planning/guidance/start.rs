@@ -3,74 +3,96 @@
 use std::path::PathBuf;
 
 use crate::planning::checklist::Offer;
+use crate::planning::kinds::is_feature_name;
 use crate::planning::paths::check_relpath_syntax;
 use crate::planning::project::Project;
+
+mod error;
+pub use error::StartError;
 
 /// The action that starts an authoring session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthoringStart {
+    /// A feature checklist action.
     Offer(Offer),
+    /// Refine a loaded document or an attached passage from it.
     Refine {
+        /// The repository-relative document path.
         target: PathBuf,
+        /// Whether the next message carries a selected passage.
         passage: bool,
     },
+    /// Discuss changes to the knowledge base.
     Knowledge {
+        /// An optional document providing context.
         open_file: Option<PathBuf>,
     },
     /// The user's opening message supplies the text and its parsed attachment paths.
     Message {
+        /// Repository-relative attachments, in message order.
         paths: Vec<PathBuf>,
     },
+    /// Begin a discussion without choosing a step.
     NoStep,
 }
 
 impl AuthoringStart {
-    /// Pressure testing and running plans have their own session flows.
-    pub fn from_offer(offer: &Offer) -> Option<AuthoringStart> {
+    /// Convert an offer, refusing team drafts, file moves and separate execution flows.
+    pub fn from_offer(offer: &Offer) -> Result<AuthoringStart, StartError> {
         match offer {
-            Offer::PressureTest { .. } | Offer::StartRun => None,
-            _ => Some(Self::Offer(offer.clone())),
+            Offer::DraftAllSections { .. } | Offer::DraftAllPlans { .. } => {
+                Err(StartError::NotAvailableYet(offer.id()))
+            }
+            Offer::MoveIntoFeature { .. } => Err(StartError::FileMove(offer.id())),
+            Offer::PressureTest { .. } | Offer::StartRun => {
+                Err(StartError::NotAuthoring(offer.id()))
+            }
+            _ => Ok(Self::Offer(offer.clone())),
         }
     }
 
-    /// Look up a current checklist offer, or a document start relative to `doc/`.
-    /// Document starts must name a document in the loaded project.
-    pub fn from_offer_id(id: &str, project: &Project) -> Option<AuthoringStart> {
-        if let Some(offer) = project
-            .checklist
-            .primary
-            .iter()
-            .chain(project.checklist.secondary.iter())
-            .find(|offer| offer.id() == id)
-        {
+    /// Look up an offer in the requested feature or a loaded document relative to `doc/`.
+    /// `None` selects no feature checklist; offer ids are not unique across features.
+    pub fn from_offer_id(
+        id: &str,
+        project: &Project,
+        feature: Option<&str>,
+    ) -> Result<AuthoringStart, StartError> {
+        validate_feature(feature)?;
+        let checklist = feature.and_then(|name| project.feature(name));
+        let offers = checklist.into_iter().flat_map(|feature| {
+            feature
+                .checklist
+                .primary
+                .iter()
+                .chain(&feature.checklist.secondary)
+        });
+        if let Some(offer) = offers.chain(&project.moves).find(|offer| offer.id() == id) {
             return Self::from_offer(offer);
         }
-        if id == "knowledge" {
-            return Some(Self::Knowledge { open_file: None });
+        document_start(id, project).ok_or_else(|| StartError::NotOffered(id.into()))
+    }
+
+    /// Validate the requested scope and prevent a start from crossing feature boundaries.
+    pub(super) fn feature<'a>(
+        &self,
+        requested: Option<&'a str>,
+    ) -> Result<Option<&'a str>, StartError> {
+        validate_feature(requested)?;
+        if let Self::Offer(offer) = self {
+            Self::from_offer(offer)?;
+            let selected = requested.ok_or(StartError::FeatureRequired)?;
+            if offer.feature().is_some_and(|owner| owner != selected) {
+                return Err(StartError::FeatureMismatch(offer.id()));
+            }
         }
-        let (kind, raw) = id.split_once(':')?;
-        if !matches!(kind, "refine" | "refine-passage" | "knowledge") {
-            return None;
-        }
-        let target = check_relpath_syntax(raw).ok()?;
-        if !project.docs.contains_key(&target) {
-            return None;
-        }
-        match kind {
-            "knowledge" => Some(Self::Knowledge {
-                open_file: Some(target),
-            }),
-            _ => Some(Self::Refine {
-                target,
-                passage: kind == "refine-passage",
-            }),
-        }
+        Ok(requested)
     }
 
     /// The action label displayed on the opening message.
-    pub fn label(&self, project: &Project) -> String {
+    pub fn label(&self) -> String {
         match self {
-            Self::Offer(offer) => offer_label(offer, project),
+            Self::Offer(offer) => offer.label(),
             Self::Refine { target, .. } => format!("Refine {}", target.display()),
             Self::Knowledge {
                 open_file: Some(path),
@@ -86,34 +108,42 @@ impl AuthoringStart {
     }
 }
 
-fn offer_label(offer: &Offer, project: &Project) -> String {
-    match offer {
-        Offer::StartVision => "Start a vision discussion".into(),
-        Offer::FixVisionTable => "Fix the vision's section list".into(),
-        Offer::AddSectionToVision { number } => format!("Add section {number:02} to vision"),
-        Offer::WriteSection { number } => {
-            let label = format!("Write section {number:02}");
-            project
-                .vision_rows
-                .as_ref()
-                .ok()
-                .and_then(|rows| rows.iter().find(|row| row.number == *number))
-                .map_or_else(|| label.clone(), |row| format!("{label} — {}", row.name))
-        }
-        Offer::StartMetaplan => "Start a metaplan".into(),
-        Offer::WritePlan { slug, .. } => format!("Write PLAN-{slug}.md"),
-        Offer::AddPlanToMetaplan { slug } => format!("Add PLAN-{slug}.md to a metaplan"),
-        Offer::RefineSpec => "Review what was built".into(),
-        Offer::NewMetaplanRound => "Start a new metaplan round".into(),
-        Offer::PressureTest { slug } => format!("Pressure-test PLAN-{slug}.md"),
-        Offer::StartRun => "Start run".into(),
+fn validate_feature(feature: Option<&str>) -> Result<(), StartError> {
+    if let Some(name) = feature.filter(|name| !is_feature_name(name)) {
+        return Err(StartError::InvalidTarget(name.into()));
     }
+    Ok(())
+}
+
+fn document_start(id: &str, project: &Project) -> Option<AuthoringStart> {
+    if id == "knowledge" {
+        return Some(AuthoringStart::Knowledge { open_file: None });
+    }
+    let (kind, raw) = id.split_once(':')?;
+    if !matches!(kind, "refine" | "refine-passage" | "knowledge") {
+        return None;
+    }
+    let target = check_relpath_syntax(raw).ok()?;
+    if !project.docs.contains_key(&target) {
+        return None;
+    }
+    Some(match kind {
+        "knowledge" => AuthoringStart::Knowledge {
+            open_file: Some(target),
+        },
+        _ => AuthoringStart::Refine {
+            target,
+            passage: kind == "refine-passage",
+        },
+    })
 }
 
 /// Which authoring model and effort pair a start uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepClass {
+    /// Product vision, sections and general discussion.
     Spec,
+    /// Metaplans and execution plans.
     Plan,
 }
 
@@ -121,17 +151,13 @@ pub enum StepClass {
 pub fn step_class(start: &AuthoringStart) -> StepClass {
     match start {
         AuthoringStart::Offer(offer) => match offer {
-            Offer::StartVision
-            | Offer::FixVisionTable
+            Offer::StartVision { .. }
+            | Offer::FixVisionTable { .. }
             | Offer::AddSectionToVision { .. }
             | Offer::WriteSection { .. }
+            | Offer::DraftAllSections { .. }
             | Offer::RefineSpec => StepClass::Spec,
-            Offer::StartMetaplan
-            | Offer::WritePlan { .. }
-            | Offer::AddPlanToMetaplan { .. }
-            | Offer::NewMetaplanRound
-            | Offer::PressureTest { .. }
-            | Offer::StartRun => StepClass::Plan,
+            _ => StepClass::Plan,
         },
         AuthoringStart::Refine { target, .. } => {
             if target.starts_with("doc/product") {

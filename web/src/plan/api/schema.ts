@@ -1,7 +1,7 @@
 import { z } from "@/api/zod";
 import { chatMessageSchema, chatWireCommandSchema } from "./schema-chat";
 import { conceptMessageSchemas } from "./schema-concept";
-import { filesMessageSchemas } from "./schema-files";
+import { filesMessageSchemas, planStateViewSchema } from "./schema-files";
 import { pressureMessageSchemas } from "./schema-pressure";
 import { runMessageSchemas } from "./schema-run";
 import { reviewWireCommandSchema, reviewWireMessageSchema } from "./schema-review";
@@ -18,11 +18,13 @@ export const OFFER_KINDS = [
   "add_section_to_vision",
   "start_metaplan",
   "write_plan",
-  "add_plan_to_metaplan",
   "pressure_test",
   "start_run",
   "refine_spec",
   "new_metaplan_round",
+  "draft_all_sections",
+  "draft_all_plans",
+  "move_into_feature",
 ] as const;
 export const PLAN_MESSAGE_TYPES = [
   "hello",
@@ -104,6 +106,10 @@ export const offerViewSchema = z.strictObject({
   kind: offerKindSchema,
   label: z.string(),
   target: z.string().nullable(),
+  feature: z.string().optional(),
+  number: z.number().int().min(0).max(4294967295).optional(),
+  slug: z.string().optional(),
+  metaplan: z.string().optional(),
 });
 export const itemViewSchema = z.strictObject({
   step: u8,
@@ -112,16 +118,28 @@ export const itemViewSchema = z.strictObject({
   offer: offerViewSchema.nullable(),
 });
 export const checklistViewSchema = z.strictObject({
+  feature: z.string(),
   current: currentViewSchema,
   steps: z.array(stepViewSchema),
   primary: offerViewSchema.nullable(),
   secondary: z.array(offerViewSchema),
   items: z.array(itemViewSchema),
 });
+export const standalonePlanViewSchema = z.strictObject({
+  slug: z.string(),
+  path: z.string(),
+  state: planStateViewSchema,
+  title: z.string(),
+});
+export const projectChecklistViewSchema = z.strictObject({
+  checklists: z.array(checklistViewSchema),
+  standalone: z.array(standalonePlanViewSchema),
+  moves: z.array(offerViewSchema),
+});
 export const helloSchema = z.strictObject({
   you: youSchema,
   server: serverInfoSchema,
-  checklist: checklistViewSchema,
+  ...projectChecklistViewSchema.shape,
   presence: presenceListSchema,
   authoring: authoringViewSchema,
 });
@@ -129,7 +147,7 @@ export const planMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("hello"), ...helloSchema.shape }),
   z.strictObject({ type: z.literal("presence"), ...presenceListSchema.shape }),
   z.strictObject({ type: z.literal("authoring"), ...authoringViewSchema.shape }),
-  z.strictObject({ type: z.literal("checklist"), ...checklistViewSchema.shape }),
+  z.strictObject({ type: z.literal("checklist"), ...projectChecklistViewSchema.shape }),
   z.strictObject({ type: z.literal("server_stopping") }),
   z.strictObject({ type: z.literal("refused"), ...refusedSchema.shape }),
   ...filesMessageSchemas,
@@ -161,6 +179,8 @@ export type CurrentView = z.infer<typeof currentViewSchema>;
 export type OfferView = z.infer<typeof offerViewSchema>;
 export type ItemView = z.infer<typeof itemViewSchema>;
 export type ChecklistView = z.infer<typeof checklistViewSchema>;
+export type StandalonePlanView = z.infer<typeof standalonePlanViewSchema>;
+export type ProjectChecklistView = z.infer<typeof projectChecklistViewSchema>;
 export type Hello = z.infer<typeof helloSchema>;
 // Chat and review frames share a `type` tag across several wire shapes, so they sit beside the
 // discriminated unions (which the Rust tag-array tests read) rather than inside them.

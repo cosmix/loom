@@ -23,8 +23,8 @@ fn line(id: &str, level: Level, bytes: Option<u64>, fresh_input: Option<u64>) ->
 #[test]
 fn estimate_without_history_uses_starting_figures() {
     let pending = [
-        ("document".into(), Level::Document, 100),
-        ("overview".into(), Level::Overview, 100),
+        ("demo/product/section_01".into(), Level::Document, 100),
+        ("overview/demo/product".into(), Level::Overview, 100),
     ];
 
     let result = estimate(&[], &pending);
@@ -33,25 +33,41 @@ fn estimate_without_history_uses_starting_figures() {
     assert_eq!(result.basis, EstimateBasis::Starting);
     assert_eq!(
         result.per_summary,
-        vec![("document".into(), 40_000), ("overview".into(), 150_000)]
+        vec![
+            ("demo/product/section_01".into(), 40_000),
+            ("overview/demo/product".into(), 150_000)
+        ]
     );
 }
 
 #[test]
 fn estimate_uses_last_complete_individual_record_and_excludes_cache_reads() {
-    let mut recent = line("document", Level::Document, None, Some(20));
+    let mut recent = line("demo/product/section_01", Level::Document, None, Some(20));
     recent.tokens.cache_write = Some(30);
     recent.tokens.output = Some(40);
-    let mut batch = line("document", Level::Document, Some(1), Some(9_000));
-    batch.summaries.push("other".into());
+    let mut batch = line(
+        "demo/product/section_01",
+        Level::Document,
+        Some(1),
+        Some(9_000),
+    );
+    batch.summaries.push("plans/other".into());
     let log = [
-        line("document", Level::Document, Some(100), Some(10)),
+        line(
+            "demo/product/section_01",
+            Level::Document,
+            Some(100),
+            Some(10),
+        ),
         recent,
         batch,
-        line("document", Level::Document, Some(1), None),
+        line("demo/product/section_01", Level::Document, Some(1), None),
     ];
 
-    let result = estimate(&log, &[("document".into(), Level::Document, 90_000)]);
+    let result = estimate(
+        &log,
+        &[("demo/product/section_01".into(), Level::Document, 90_000)],
+    );
 
     assert_eq!(result.tokens, 90);
     assert_eq!(result.basis, EstimateBasis::Last);
@@ -60,14 +76,19 @@ fn estimate_uses_last_complete_individual_record_and_excludes_cache_reads() {
 #[test]
 fn estimate_uses_median_of_three_rates_at_the_same_level() {
     let log = [
-        line("a", Level::Document, Some(100), Some(900)),
-        line("b", Level::Document, Some(200), Some(400)),
-        line("c", Level::Document, Some(50), Some(150)),
-        line("overview", Level::Overview, Some(1), Some(1_000_000)),
+        line("plans/a", Level::Document, Some(100), Some(900)),
+        line("plans/b", Level::Document, Some(200), Some(400)),
+        line("plans/c", Level::Document, Some(50), Some(150)),
+        line(
+            "overview/demo/product",
+            Level::Overview,
+            Some(1),
+            Some(1_000_000),
+        ),
     ];
     let pending = [
-        ("a".into(), Level::Document, 10_000),
-        ("new".into(), Level::Document, 100),
+        ("plans/a".into(), Level::Document, 10_000),
+        ("plans/new".into(), Level::Document, 100),
     ];
 
     let result = estimate(&log, &pending);
@@ -76,18 +97,18 @@ fn estimate_uses_median_of_three_rates_at_the_same_level() {
     assert_eq!(result.basis, EstimateBasis::PerByte);
     assert_eq!(
         result.per_summary,
-        vec![("a".into(), 900), ("new".into(), 300)]
+        vec![("plans/a".into(), 900), ("plans/new".into(), 300)]
     );
 }
 
 #[test]
 fn estimate_averages_middle_rates_and_rounds_fractional_tokens_up() {
     let log = [
-        line("a", Level::Overview, Some(2), Some(1)),
-        line("b", Level::Overview, Some(2), Some(2)),
+        line("overview/a/product", Level::Overview, Some(2), Some(1)),
+        line("overview/b/product", Level::Overview, Some(2), Some(2)),
     ];
 
-    let result = estimate(&log, &[("new".into(), Level::Overview, 3)]);
+    let result = estimate(&log, &[("overview/new/product".into(), Level::Overview, 3)]);
 
     assert_eq!(result.tokens, 3);
     assert_eq!(result.basis, EstimateBasis::PerByte);
@@ -95,19 +116,19 @@ fn estimate_averages_middle_rates_and_rounds_fractional_tokens_up() {
 
 #[test]
 fn estimate_ignores_unknown_zero_size_and_batch_rates() {
-    let mut batch = line("a", Level::Document, Some(1), Some(1));
-    batch.summaries.push("b".into());
-    let mut incomplete = line("c", Level::Document, Some(1), Some(1));
+    let mut batch = line("plans/a", Level::Document, Some(1), Some(1));
+    batch.summaries.push("plans/b".into());
+    let mut incomplete = line("plans/c", Level::Document, Some(1), Some(1));
     incomplete.tokens.output = None;
     let log = [
         batch,
         incomplete,
-        line("d", Level::Document, Some(0), Some(1)),
-        line("e", Level::Document, None, Some(1)),
-        line("f", Level::Document, Some(1), None),
+        line("plans/d", Level::Document, Some(0), Some(1)),
+        line("plans/e", Level::Document, None, Some(1)),
+        line("plans/f", Level::Document, Some(1), None),
     ];
 
-    let result = estimate(&log, &[("new".into(), Level::Document, 100)]);
+    let result = estimate(&log, &[("plans/new".into(), Level::Document, 100)]);
 
     assert_eq!(result.tokens, 40_000);
     assert_eq!(result.basis, EstimateBasis::Starting);
@@ -115,11 +136,11 @@ fn estimate_ignores_unknown_zero_size_and_batch_rates() {
 
 #[test]
 fn estimate_reports_weakest_basis_in_a_mixed_batch() {
-    let log = [line("a", Level::Document, Some(10), Some(20))];
+    let log = [line("plans/a", Level::Document, Some(10), Some(20))];
     let pending = [
-        ("a".into(), Level::Document, 10),
-        ("b".into(), Level::Document, 10),
-        ("c".into(), Level::Overview, 10),
+        ("plans/a".into(), Level::Document, 10),
+        ("plans/b".into(), Level::Document, 10),
+        ("overview/c/product".into(), Level::Overview, 10),
     ];
 
     let result = estimate(&log, &pending);
@@ -145,7 +166,7 @@ fn local_now() -> DateTime<Local> {
 }
 
 fn timed_line(time: DateTime<Local>, input: u64) -> CostLine {
-    let mut record = line("a", Level::Document, None, Some(input));
+    let mut record = line("plans/a", Level::Document, None, Some(input));
     // Use UTC in the log so the totals must convert back to the local date.
     record.time = time.with_timezone(&Utc).to_rfc3339();
     record
@@ -235,11 +256,11 @@ fn token_arithmetic_saturates_on_overflow() {
     first.tokens.cache_write = Some(1);
     first.tokens.output = Some(1);
     let mut second = timed_line(now, 1);
-    second.summaries = vec!["b".into()];
+    second.summaries = vec!["plans/b".into()];
     let log = [first, second];
     let pending = [
-        ("a".into(), Level::Document, 1),
-        ("b".into(), Level::Document, 1),
+        ("plans/a".into(), Level::Document, 1),
+        ("plans/b".into(), Level::Document, 1),
     ];
 
     let usage = totals(&log, now);

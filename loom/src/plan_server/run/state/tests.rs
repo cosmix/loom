@@ -158,15 +158,16 @@ fn malformed_config_is_an_error() {
 }
 
 fn ordered_plans(root: &Path) {
-    for slug in ["z", "a", "c", "b"] {
-        put(root, &format!("doc/plans/PLAN-{slug}.md"), "# Plan\n");
+    let home = root.join("doc/plans/feature");
+    for slug in ["z", "a", "c", "b", "b-child"] {
+        put(&home, &format!("PLAN-{slug}.md"), "# Plan\n");
     }
-    put(root, "doc/plans/IN_PROGRESS-PLAN-running.md", "# Running\n");
-    put(root, "doc/plans/DONE-PLAN-done.md", "# Done\n");
-    put(root, "doc/plans/archive/PLAN-archived.md", "# Archived\n");
+    put(&home, "IN_PROGRESS-PLAN-running.md", "# Running\n");
+    put(&home, "DONE-PLAN-done.md", "# Done\n");
+    put(&home, "archive/PLAN-archived.md", "# Archived\n");
     put(
-        root,
-        "doc/plans/index.md",
+        &home,
+        "index.md",
         "# Metaplan\n\n\
         ## 1. `PLAN-z.md`\n\n## 2. `PLAN-a.md`\n\n\
         ## 3. `PLAN-running.md`\n\n## 4. `PLAN-missing.md`\n\n\
@@ -188,10 +189,11 @@ fn written_plans_follow_metaplan_headings_then_unlisted_filenames() {
     assert_eq!(
         choices,
         vec![
-            ("doc/plans/PLAN-z.md", "z", true),
-            ("doc/plans/PLAN-a.md", "a", true),
-            ("doc/plans/PLAN-b.md", "b", false),
-            ("doc/plans/PLAN-c.md", "c", false),
+            ("doc/plans/feature/PLAN-z.md", "z", true),
+            ("doc/plans/feature/PLAN-a.md", "a", true),
+            ("doc/plans/feature/PLAN-b-child.md", "b-child", false),
+            ("doc/plans/feature/PLAN-b.md", "b", false),
+            ("doc/plans/feature/PLAN-c.md", "c", false),
         ]
     );
 }
@@ -204,7 +206,10 @@ fn first_written_plan_is_preselected() {
 
     let view = state_view(&ctx).unwrap();
 
-    assert_eq!(view.preselected.as_deref(), Some("doc/plans/PLAN-z.md"));
+    assert_eq!(
+        view.preselected.as_deref(),
+        Some("doc/plans/feature/PLAN-z.md")
+    );
     assert_eq!(view.branch, "main");
     assert_eq!(view.default_backend, Backend::Tmux);
     assert!(!view.clean_notice);
@@ -214,12 +219,15 @@ fn first_written_plan_is_preselected() {
 fn initialized_plan_overrides_the_first_written_plan() {
     let dir = repo();
     ordered_plans(dir.path());
-    workspace(dir.path(), "doc/plans/PLAN-c.md");
+    workspace(dir.path(), "doc/plans/feature/PLAN-c.md");
     let ctx = context(dir.path());
 
     let view = state_view(&ctx).unwrap();
 
-    assert_eq!(view.preselected.as_deref(), Some("doc/plans/PLAN-c.md"));
+    assert_eq!(
+        view.preselected.as_deref(),
+        Some("doc/plans/feature/PLAN-c.md")
+    );
     assert_eq!(view.active_plan, view.preselected);
     assert!(!view.clean_notice);
 }
@@ -228,13 +236,16 @@ fn initialized_plan_overrides_the_first_written_plan() {
 fn done_workspace_shows_clean_notice_and_selects_the_next_written_plan() {
     let dir = repo();
     ordered_plans(dir.path());
-    workspace(dir.path(), "doc/plans/DONE-PLAN-old.md");
+    workspace(dir.path(), "doc/plans/feature/DONE-PLAN-old.md");
     let ctx = context(dir.path());
 
     let view = state_view(&ctx).unwrap();
 
     assert!(view.clean_notice);
-    assert_eq!(view.preselected.as_deref(), Some("doc/plans/PLAN-z.md"));
+    assert_eq!(
+        view.preselected.as_deref(),
+        Some("doc/plans/feature/PLAN-z.md")
+    );
     assert_eq!(view.offer, RunOffer::StartNext);
     assert_eq!(view.abandon, None);
     assert_eq!(view.finish_abandon, None);

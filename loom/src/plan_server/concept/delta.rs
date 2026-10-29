@@ -1,86 +1,128 @@
-//! The `concept_changed` delta: which pages changed between two batches, which summaries went
-//! out of date, and which source paths the batch touched.
+//! Feature-scoped concept changes between watcher batches.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use crate::plan_server::concept::links::{implemented_by, implements_view};
-use crate::plan_server::concept::page::{
-    load_page, page_key_of, summary_file_hash, PageContext, PageKey, Scope,
-};
+use super::links::{implemented_by, implements_view};
+use super::page::{load_page, page_key_of, summary_file_hash, PageContext, PageKey, Scope};
 use crate::plan_server::wire::concept::{
     ConceptChanged, ConceptPage, DocLink, ImplementsView, PlanLink,
 };
+use crate::planning::kinds::{feature_dir_name, is_feature_name};
 use crate::planning::project::Project;
 use crate::planning::summary::evaluate::{Evaluation, SummaryState};
 use crate::planning::summary::store::{self, summary_id_for, STORE_DIR};
 use crate::planning::watch::Batch;
 
-/// What the pages showed after one batch, compared with the next batch's to name the pages
-/// whose content changed.
+/// The content and dependencies shown after a watcher batch.
 #[derive(Debug)]
 pub(crate) struct Snapshot {
-    /// Per summary id: its state and the content hash of its summary file.
     summaries: BTreeMap<String, (SummaryState, Option<String>)>,
-    /// Per page key: what the page shows beyond its own summary.
     shown: BTreeMap<String, Shown>,
+    dependencies: BTreeMap<String, Vec<String>>,
+    features: BTreeMap<String, Option<String>>,
 }
 
-/// Page content that does not follow from one summary's state and file.
 #[derive(Debug, PartialEq)]
 enum Shown {
-    /// An overview page whole: its key chips, `unlisted` list and empty state list documents
-    /// that are added, removed or retitled without any summary changing.
     Overview(Box<ConceptPage>),
-    /// A product section page's "Implemented by" plans, which follow the plans' `Implements:`
-    /// lines.
     ImplementedBy(Vec<PlanLink>),
-    /// A plan page's `Implements:` links, which carry the sections' titles.
     Implements(ImplementsView),
 }
 
+/// Capture every feature's overview and document page dependencies.
 pub(crate) fn snapshot(project: &Project, eval: &Evaluation, ctx: &PageContext) -> Snapshot {
     let summaries = eval
         .summaries
         .iter()
-        .map(|(id, summary)| {
-            let hash = summary_file_hash(project, id);
-            (id.clone(), (summary.state, hash))
-        })
+        .map(|(id, summary)| (id.clone(), (summary.state, summary_file_hash(project, id))))
         .collect();
-    let mut shown = BTreeMap::new();
-    for scope in [Scope::Product, Scope::Engineering] {
-        let key = PageKey::Overview(scope);
-        if let Some(page) = load_page(project, eval, &key, ctx) {
-            shown.insert(key.as_key(), Shown::Overview(Box::new(page)));
+    let mut result = Snapshot {
+        summaries,
+        shown: BTreeMap::new(),
+        dependencies: BTreeMap::new(),
+        features: BTreeMap::new(),
+    };
+    for feature in &project.features {
+        let members = store::scope(project, &feature.name);
+        for scope in [Scope::Product, Scope::Engineering] {
+            let key = PageKey::Overview {
+                feature: feature.name.clone(),
+                scope,
+            };
+            if let Some(page) = load_page(project, eval, &key, ctx) {
+                result
+                    .features
+                    .insert(key.as_key(), Some(feature.name.clone()));
+                result
+                    .shown
+                    .insert(key.as_key(), Shown::Overview(Box::new(page)));
+            }
+        }
+        for id in eval.summaries.keys() {
+            let keys = page_keys(id, &members);
+            if !keys.is_empty() {
+                result.dependencies.insert(id.clone(), keys);
+            }
         }
     }
+    snapshot_documents(project, eval, &mut result);
+    result
+}
+
+fn snapshot_documents(project: &Project, eval: &Evaluation, result: &mut Snapshot) {
     for id in eval.summaries.keys() {
+        let Some(key) = page_key_of(project, id) else {
+            continue;
+        };
+        let feature = PageKey::parse(&key).and_then(|key| key.feature().map(str::to_owned));
+        result.features.insert(key.clone(), feature);
+        result
+            .dependencies
+            .entry(id.clone())
+            .or_insert_with(|| vec![key.clone()]);
         if let Some(fields) = document_fields(project, id) {
-            shown.insert(page_key_of(id), fields);
+            result.shown.insert(key, fields);
         }
     }
-    Snapshot { summaries, shown }
 }
 
-/// What summary `id`'s page shows from documents other than its own source.
 fn document_fields(project: &Project, id: &str) -> Option<Shown> {
-    if let Some(number) = id.strip_prefix("product/section_") {
-        let number = number.parse::<u32>().ok()?;
-        return Some(Shown::ImplementedBy(implemented_by(project, number)));
+    if let Some((feature, section)) = id.split_once("/product/section_") {
+        let number = section.parse::<u32>().ok()?;
+        return Some(Shown::ImplementedBy(implemented_by(
+            project, feature, number,
+        )));
     }
-    let slug = id.strip_prefix("plans/")?;
-    Some(Shown::Implements(implements_view(project, slug)))
+    Some(Shown::Implements(implements_view(
+        project,
+        id.strip_prefix("plans/")?,
+    )))
 }
 
+/// Compare snapshots and emit one payload per affected feature (or standalone documents).
 pub(crate) fn delta(
     project: &Project,
     before: &Snapshot,
     after: &Snapshot,
     batch: &Batch,
-) -> ConceptChanged {
-    let scope = store::scope(project);
-    let ids: BTreeSet<&String> = before
+) -> Vec<ConceptChanged> {
+    let (mut pages, out_of_date) = summary_changes(before, after);
+    let keys: BTreeSet<_> = before.shown.keys().chain(after.shown.keys()).collect();
+    pages.extend(
+        keys.into_iter()
+            .filter(|key| before.shown.get(*key) != after.shown.get(*key))
+            .cloned(),
+    );
+    pages.extend(key_row_pages(before, after));
+    pages.extend(
+        batch_paths(batch).filter_map(|path| page_key_of(project, &summary_id_for(project, path)?)),
+    );
+    group_changes(before, after, pages, out_of_date, batch)
+}
+
+fn summary_changes(before: &Snapshot, after: &Snapshot) -> (BTreeSet<String>, BTreeSet<String>) {
+    let ids: BTreeSet<_> = before
         .summaries
         .keys()
         .chain(after.summaries.keys())
@@ -92,58 +134,104 @@ pub(crate) fn delta(
         if old == new {
             continue;
         }
-        pages.extend(page_keys(id, &scope));
-        let became = new.is_some_and(|(state, _)| is_pending(*state));
-        if became && old.map(|(state, _)| *state) != new.map(|(state, _)| *state) {
+        for snapshot in [before, after] {
+            pages.extend(snapshot.dependencies.get(id).into_iter().flatten().cloned());
+        }
+        if new.is_some_and(|(state, _)| is_pending(*state))
+            && old.map(|(state, _)| *state) != new.map(|(state, _)| *state)
+        {
             out_of_date.insert(id.clone());
         }
     }
-    let keys: BTreeSet<&String> = before.shown.keys().chain(after.shown.keys()).collect();
-    let moved = keys
-        .into_iter()
-        .filter(|key| before.shown.get(*key) != after.shown.get(*key));
-    pages.extend(moved.cloned());
-    pages.extend(key_row_pages(before, after));
-    // A page shows its source's title, plan state and pressure dates whatever its summary does.
-    let touched = batch_paths(batch).filter_map(|path| summary_id_for(project, path));
-    pages.extend(touched.map(|id| page_key_of(&id)));
-    ConceptChanged {
-        pages: pages.into_iter().collect(),
-        out_of_date: out_of_date.into_iter().collect(),
-        sources: sources(batch),
-    }
+    (pages, out_of_date)
 }
 
-/// An overview's key row without the out-of-date marks: the chips' documents, colours, labels
-/// and `no_plan` flags.
+fn group_changes(
+    before: &Snapshot,
+    after: &Snapshot,
+    pages: BTreeSet<String>,
+    out_of_date: BTreeSet<String>,
+    batch: &Batch,
+) -> Vec<ConceptChanged> {
+    let mut groups = source_groups(batch);
+    for page in pages {
+        let feature = after
+            .features
+            .get(&page)
+            .or_else(|| before.features.get(&page))
+            .cloned()
+            .flatten();
+        group(&mut groups, feature).pages.push(page);
+    }
+    for id in out_of_date {
+        let own_page = after
+            .dependencies
+            .get(&id)
+            .or_else(|| before.dependencies.get(&id))
+            .and_then(|keys| keys.first());
+        let feature = own_page
+            .and_then(|page| {
+                after
+                    .features
+                    .get(page)
+                    .or_else(|| before.features.get(page))
+            })
+            .cloned()
+            .flatten();
+        group(&mut groups, feature).out_of_date.push(id);
+    }
+    groups.into_values().collect()
+}
+
+fn group(
+    groups: &mut BTreeMap<Option<String>, ConceptChanged>,
+    feature: Option<String>,
+) -> &mut ConceptChanged {
+    groups
+        .entry(feature.clone())
+        .or_insert_with(|| ConceptChanged {
+            feature,
+            pages: Vec::new(),
+            out_of_date: Vec::new(),
+            sources: Vec::new(),
+        })
+}
+
 fn key_row<'a>(snapshot: &'a Snapshot, overview: &str) -> Vec<(&'a DocLink, u8, &'a str, bool)> {
     let Some(Shown::Overview(page)) = snapshot.shown.get(overview) else {
         return Vec::new();
     };
-    let chips = page.key_chips.iter();
-    chips
+    page.key_chips
+        .iter()
         .map(|chip| (&chip.doc, chip.colour, chip.label.as_str(), chip.no_plan))
         .collect()
 }
 
-/// Every summary page of a scope whose key row changed, in either snapshot, listed in the row
-/// or not: each of them embeds the scope's key chips and takes its own colour from them, so a
-/// document added to, removed from, retitled or recoloured in the row is stale on all of its
-/// siblings, including the unlisted summaries (`product/` ids for the product scope, `plans/`
-/// ids for engineering). The out-of-date marks stay out of the comparison: the client dashes
-/// those from `out_of_date`, and a rebuild names the pages that changed.
+/// A changed key row invalidates the listed and unlisted pages of that feature and scope.
 fn key_row_pages(before: &Snapshot, after: &Snapshot) -> Vec<String> {
-    [("product", "product/"), ("engineering", "plans/")]
-        .into_iter()
-        .filter(|(overview, _)| key_row(before, overview) != key_row(after, overview))
-        .flat_map(|(_, prefix)| {
-            [before, after].into_iter().flat_map(move |snapshot| {
-                let ids = snapshot.summaries.keys();
-                ids.filter(move |id| id.starts_with(prefix))
-                    .map(|id| page_key_of(id))
-            })
-        })
-        .collect()
+    let overviews: BTreeSet<_> = before
+        .shown
+        .keys()
+        .chain(after.shown.keys())
+        .filter(|key| store::is_overview(key))
+        .collect();
+    let mut pages = BTreeSet::new();
+    for overview in overviews {
+        if key_row(before, overview) == key_row(after, overview) {
+            continue;
+        }
+        let Some(PageKey::Overview { feature, scope }) = PageKey::parse(overview) else {
+            continue;
+        };
+        for key in before.features.keys().chain(after.features.keys()) {
+            if matches!(PageKey::parse(key), Some(PageKey::Summary { feature: Some(ref f), scope: s, .. })
+                if *f == feature && s == scope)
+            {
+                pages.insert(key.clone());
+            }
+        }
+    }
+    pages.into_iter().collect()
 }
 
 fn is_pending(state: SummaryState) -> bool {
@@ -151,6 +239,22 @@ fn is_pending(state: SummaryState) -> bool {
         state,
         SummaryState::Stale | SummaryState::Incomplete | SummaryState::Rebuilding
     )
+}
+
+/// Source-only payloads when the engine cannot produce an evaluation.
+pub(crate) fn source_deltas(batch: &Batch) -> Vec<ConceptChanged> {
+    source_groups(batch).into_values().collect()
+}
+
+fn source_groups(batch: &Batch) -> BTreeMap<Option<String>, ConceptChanged> {
+    let mut groups = BTreeMap::new();
+    for path in sources(batch) {
+        let feature = feature_dir_name(std::path::Path::new(&path))
+            .filter(|name| is_feature_name(name))
+            .map(str::to_owned);
+        group(&mut groups, feature).sources.push(path);
+    }
+    groups
 }
 
 /// Every batch path under `doc/` outside the summary store, sorted.
@@ -163,7 +267,6 @@ pub(crate) fn sources(batch: &Batch) -> Vec<String> {
         .collect()
 }
 
-/// Every path the batch names, renames by both ends.
 fn batch_paths(batch: &Batch) -> impl Iterator<Item = &PathBuf> {
     let moved = batch.renamed.iter().flat_map(|(from, to)| [from, to]);
     batch
@@ -174,21 +277,40 @@ fn batch_paths(batch: &Batch) -> impl Iterator<Item = &PathBuf> {
         .chain(moved)
 }
 
-/// The page keys whose content depends on summary `id`: its own page and, when it is a member
-/// of an overview's scope, that overview.
+/// Pages that show summary `id` within this feature's scope. Unknown plans are excluded.
 pub(crate) fn page_keys(id: &str, scope: &store::Scope) -> Vec<String> {
-    let (page, overview, members) = if id == "product" || id == "engineering" {
-        return vec![id.to_owned()];
-    } else if id.starts_with("product/") {
-        (id.to_owned(), "product", &scope.product)
-    } else if id.starts_with("plans/") {
-        (page_key_of(id), "engineering", &scope.engineering)
+    if store::is_overview(id) {
+        return PageKey::parse(id)
+            .filter(|key| key.feature() == Some(scope.feature.as_str()))
+            .map(|key| vec![key.as_key()])
+            .unwrap_or_default();
+    }
+    let (page, overview, members) = if id.starts_with(&format!("{}/product/", scope.feature)) {
+        (
+            id.to_owned(),
+            format!("overview/{}/product", scope.feature),
+            &scope.product,
+        )
+    } else if let Some(slug) = id.strip_prefix("plans/") {
+        if !scope
+            .engineering
+            .iter()
+            .chain(&scope.outside)
+            .any(|member| member == id)
+        {
+            return Vec::new();
+        }
+        (
+            format!("{}/engineering/{slug}", scope.feature),
+            format!("overview/{}/engineering", scope.feature),
+            &scope.engineering,
+        )
     } else {
         return Vec::new();
     };
     let mut keys = vec![page];
-    if members.iter().any(|member| member == id) {
-        keys.push(overview.to_owned());
+    if members.contains(&id.to_owned()) {
+        keys.push(overview);
     }
     keys
 }

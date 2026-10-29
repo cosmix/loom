@@ -66,10 +66,12 @@ fn view(ctx: &PlanContext, raw: &str) -> DocView {
 #[test]
 fn plain_section_is_editable_and_paths_are_repo_relative() {
     let text = "# Section 1\n\n## Purpose\nWhy.\n";
-    let dir = write_files(&[("doc/product/section_01.md", text)]);
+    let dir = write_files(&[("doc/product/demo/section_01.md", text)]);
     let ctx = context(&dir);
-    let doc = view(&ctx, "product/section_01.md");
-    assert_eq!(doc.path, "doc/product/section_01.md");
+    let doc = view(&ctx, "product/demo/section_01.md");
+    assert_eq!(doc.path, "doc/product/demo/section_01.md");
+    assert_eq!(doc.feature.as_deref(), Some("demo"));
+    assert!(!doc.misplaced);
     assert_eq!(doc.title, "Section 1");
     assert_eq!(doc.kind, EntryKind::Section);
     assert_eq!(doc.text, text);
@@ -260,4 +262,48 @@ fn bad_and_undiscovered_paths_are_refused() {
         doc_view(&ctx, Path::new(".env")).is_err(),
         "outside doc/ is never served"
     );
+}
+
+#[test]
+fn feature_plan_links_and_locked_briefs_resolve_in_their_own_home() {
+    let dir = write_files(&[
+        ("doc/product/alpha/section_01.md", "# Alpha\n"),
+        ("doc/product/beta/section_01.md", "# Beta\n"),
+        (
+            "doc/plans/beta/IN_PROGRESS-PLAN-demo.md",
+            "# Demo\nImplements: section_01\n",
+        ),
+        ("doc/plans/beta/briefs/demo/common.md", "# Brief\n"),
+    ]);
+    let ctx = context(&dir);
+    let doc = view(&ctx, "plans/beta/IN_PROGRESS-PLAN-demo.md");
+    assert_eq!(doc.feature.as_deref(), Some("beta"));
+    assert_eq!(
+        doc.plan.unwrap().implements[0].path.as_deref(),
+        Some("doc/product/beta/section_01.md")
+    );
+    let brief = view(&ctx, "plans/beta/briefs/demo/common.md");
+    assert_eq!(brief.feature.as_deref(), Some("beta"));
+    assert_eq!(
+        brief.lock.unwrap().plan.as_deref(),
+        Some("doc/plans/beta/IN_PROGRESS-PLAN-demo.md")
+    );
+}
+
+#[test]
+fn top_level_planning_documents_are_marked_misplaced() {
+    let dir = write_files(&[
+        ("doc/product/section_01.md", "# Section\n"),
+        ("doc/plans/index.md", "# Metaplan\n"),
+    ]);
+    let ctx = context(&dir);
+    for path in [
+        "product/index.md",
+        "product/section_01.md",
+        "plans/index.md",
+    ] {
+        let doc = view(&ctx, path);
+        assert!(doc.misplaced, "{path}");
+        assert_eq!(doc.feature, None);
+    }
 }

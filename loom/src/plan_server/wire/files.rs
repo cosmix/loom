@@ -15,6 +15,10 @@ pub struct FileTree {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TreeEntry {
+    /// The owning feature, or null for standalone and unscoped documents.
+    pub feature: Option<String>,
+    /// Whether a top-level vision, section or metaplan needs a feature home.
+    pub misplaced: bool,
     pub path: Option<String>,
     pub title: String,
     pub file_name: Option<String>,
@@ -31,6 +35,8 @@ pub struct TreeEntry {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EntryKind {
+    /// A group of documents sharing a feature directory.
+    Feature,
     Vision,
     Section,
     Note,
@@ -57,6 +63,10 @@ pub enum PlanStateView {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DocView {
+    /// The owning feature, or null for standalone and unscoped documents.
+    pub feature: Option<String>,
+    /// Whether this document needs to move into a feature directory.
+    pub misplaced: bool,
     pub path: String,
     pub title: String,
     pub text: String,

@@ -85,15 +85,21 @@ fn install_replaces_the_chat_provider_and_serves_the_same_one_to_the_brief_route
     let ctx = chat_installed(&temp);
     let slot = ctx.extensions().get::<GuidanceSlot>().unwrap();
     let before = session_dir(&temp, "before-install");
-    let chat_guidance = slot.get().authoring(&ctx, &before, None, None).unwrap();
+    let chat_guidance = slot
+        .get()
+        .authoring(&ctx, &before, None, None, None)
+        .unwrap();
     let chat_brief = fs::read_to_string(chat_guidance.brief_path).unwrap();
     assert!(!chat_brief.contains("## Starting point"), "{chat_brief}");
 
     super::super::install(&ctx);
 
     let session = session_dir(&temp, "after-install");
-    let offer = Some("write-plan:delivery");
-    let guidance = slot.get().authoring(&ctx, &session, offer, None).unwrap();
+    let offer = Some("refine:plans/demo/index.md");
+    let guidance = slot
+        .get()
+        .authoring(&ctx, &session, offer, None, None)
+        .unwrap();
     let brief = fs::read_to_string(&guidance.brief_path).unwrap();
     assert!(brief.contains("## Starting point"), "{brief}");
     let response = brief_response(&ctx, "after-install");

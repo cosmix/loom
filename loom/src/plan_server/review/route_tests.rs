@@ -19,7 +19,7 @@ use crate::plan_server::tests::support::{
 use crate::plan_server::RunningServer;
 
 const MISSING_COMMIT: &str = "1111111111111111111111111111111111111111";
-const SECTION: &str = "doc/product/section_01.md";
+const SECTION: &str = "doc/product/demo/section_01.md";
 const END_TEXT: &str = "# Turn end\n";
 const INVALID_PLAN: &str = "# Invalid plan\n\n<!-- loom METADATA -->\n\n```yaml\nloom: [\n```\n\n<!-- END loom METADATA -->\n";
 
@@ -287,10 +287,94 @@ fn built_with_no_plans_is_empty() -> Result<()> {
     let (_dir, server) = served(&[(SECTION, "# Section one\n")])?;
     let cookie = bootstrap(&server);
 
-    let response = get(&server, "/api/built?section=product/section_01.md", &cookie);
+    let response = get(
+        &server,
+        "/api/built?section=product/demo/section_01",
+        &cookie,
+    );
 
     assert_eq!(status(&response), 200, "{response}");
     assert_eq!(json_body(&response), json!({"notes": []}));
+    server.stop()?;
+    Ok(())
+}
+
+#[test]
+fn built_accepts_feature_section_ids_and_scopes_the_plans() -> Result<()> {
+    if skip("built_accepts_feature_section_ids_and_scopes_the_plans") {
+        return Ok(());
+    }
+    let (_dir, server) = served(&[
+        (SECTION, "# One\n"),
+        ("doc/product/other/section_01.md", "# Other\n"),
+        (
+            "doc/plans/demo/IN_PROGRESS-PLAN-demo.md",
+            "# Demo\nImplements: section_01\n",
+        ),
+        (
+            "doc/plans/other/IN_PROGRESS-PLAN-other.md",
+            "# Other\nImplements: section_01\n",
+        ),
+    ])?;
+    let cookie = bootstrap(&server);
+    let response = get(
+        &server,
+        "/api/built?section=product/demo/section_01",
+        &cookie,
+    );
+    assert_eq!(status(&response), 200, "{response}");
+    assert_eq!(
+        json_body(&response),
+        json!({"notes": [{"kind": "running", "slug": "demo"}]})
+    );
+    server.stop()?;
+    Ok(())
+}
+
+#[test]
+fn implementing_plans_are_keyed_by_feature_section_doc_id() -> Result<()> {
+    if skip("implementing_plans_are_keyed_by_feature_section_doc_id") {
+        return Ok(());
+    }
+    let (_dir, server) = served(&[
+        (SECTION, "# One\n"),
+        ("doc/product/other/section_01.md", "# Other\n"),
+        (
+            "doc/plans/demo/PLAN-demo.md",
+            "# Demo\nImplements: section_01\n",
+        ),
+        (
+            "doc/plans/other/PLAN-other.md",
+            "# Other\nImplements: section_01\n",
+        ),
+    ])?;
+    let cookie = bootstrap(&server);
+    let response = get(&server, "/api/implemented-by", &cookie);
+    assert_eq!(status(&response), 200, "{response}");
+    let body = json_body(&response);
+    assert_eq!(body["sections"].as_object().unwrap().len(), 2);
+    assert_eq!(
+        body["sections"]["product/demo/section_01"][0]["slug"],
+        "demo"
+    );
+    assert_eq!(
+        body["sections"]["product/other/section_01"][0]["slug"],
+        "other"
+    );
+    assert_eq!(
+        body["sections"]["product/demo/section_01"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        body["sections"]["product/other/section_01"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
     server.stop()?;
     Ok(())
 }

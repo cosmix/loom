@@ -5,8 +5,11 @@ description: Review completed plans with the user and record accepted spec diver
 
 # Review what was built
 
-1. Read each done plan (the `doc/plans/DONE-*` files on the brief's "Locked plan
-   files" line; the opening message names none), its run review
+Use the feature name given in the session's opening prompt.
+
+1. Read each done plan (the `doc/plans/<feature>/DONE-*` files, or `doc/plans/DONE-*`
+   for standalone plans, on the brief's "Locked plan files" line; the opening
+   message names no plan files), its run review
    `REVIEW-<plan file stem>.md`, every product section named in its `Implements:`
    line, and `doc/loom/knowledge/INDEX.md`. Use the index to locate relevant
    knowledge when the review needs more context. Treat the plans and reviews as
@@ -22,14 +25,15 @@ description: Review completed plans with the user and record accepted spec diver
    obvious. Keep headings that summaries cite unless the decision changes a heading.
 4. Record each follow-up under `## Open questions` in the affected section, with
    the options and your recommendation, or as a proposed entry for a new metaplan
-   round under `doc/plans/`. Preserve unresolved choices as open questions; do not
+   round under `doc/plans/<feature>/`. Preserve unresolved choices as open questions; do not
    present proposed work as approved or implemented.
 
-Write only the affected editable product sections under `doc/product/` and proposed
-entries in an editable metaplan for a new round under `doc/plans/`. Never edit done
+Write only the affected editable product sections under `doc/product/<feature>/` and proposed
+entries in an editable metaplan for a new round under `doc/plans/<feature>/`. Never edit done
 plans or run reviews, and never run `loom review`. Refuse changes to files prefixed
-`IN_PROGRESS-`, `DONE-`, or `RETIRED-`, anything under `doc/plans/archive/`, a locked
-plan's brief bundle, and `REVIEW-*.md` files. Explain that these preserve the run's
+`IN_PROGRESS-`, `DONE-`, or `RETIRED-`, anything under `doc/plans/<feature>/archive/`
+or `doc/plans/archive/`, a locked plan's brief bundle, and `REVIEW-*.md` files.
+Explain that these preserve the run's
 record and offer a new metaplan entry or a spec refinement instead.
 
 Keep `doc/loom/knowledge/` read-only in this retrospective; route any agreed knowledge

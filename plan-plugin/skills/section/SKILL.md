@@ -5,10 +5,12 @@ description: Load when a planning session writes or revises a numbered product s
 
 # Write a product section
 
-Write the target `doc/product/section_<nn>.md`, plus any other editable document under
-`doc/` that a settled decision or an open point binds. Put a decision that spans sections
-under `## Decisions` in `doc/product/index.md`. Never stage, commit or branch, and never
-run `loom init`, `loom run` or `loom pressure`.
+Use the feature name given in the session's opening prompt.
+
+Write the target `doc/product/<feature>/section_<nn>.md`, plus any other editable
+document under `doc/` that a settled decision or an open point binds. Put a decision
+that spans sections under `## Decisions` in `doc/product/<feature>/index.md`.
+Never stage, commit or branch, and never run `loom init`, `loom run` or `loom pressure`.
 Rebuild summaries only through the turn-end procedure below; never write directly under
 `doc/loom/summaries/`. Keep code, configuration, locked plans and their brief bundles,
 archived plans and `REVIEW-*.md` files read-only. Never write knowledge with a file tool;
@@ -17,8 +19,9 @@ knowledge changes belong to `loom knowledge`.
 ## Read the constraints
 
 Identify the target's two-digit number, title and scope from the vision's section list
-and the session brief. Read `doc/product/index.md` and every product section already
-written, including the target when revising it. Treat the vision and written sections
+and the session brief. Read `doc/product/<feature>/index.md` and every product
+section already written in the feature, including the target when revising it.
+Treat the vision and written sections
 as binding constraints; identify the decisions and section boundaries that apply.
 
 Read `doc/loom/knowledge/INDEX.md`, then pull only the knowledge topics this section
@@ -28,7 +31,8 @@ rules in the tree, and keep their `path:line` references for the document.
 ## Settle decisions as you write
 
 Load `loom-plan:brainstorming` to discuss the section's open decisions with the user,
-using `doc/product/section_<nn>.md` as its target. Discuss one decision at a time; offer
+using `doc/product/<feature>/section_<nn>.md` as its target. Discuss one decision
+at a time; offer
 choices where the answer space is small and two or three approaches with trade-offs
 and a recommendation before settling a direction. Play your understanding back.
 

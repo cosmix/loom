@@ -97,10 +97,12 @@ fn claim_rel(id: &str) -> PathBuf {
     Path::new(CLAIMS_DIR).join(format!("{}.json", id.replace('/', "__")))
 }
 
-/// The summary id a claim file name stands for; ids hold at most one `/`, and the prefixes
-/// `product` and `plans` hold no `__`, so the first `__` is the separator.
+/// Decode structural separators only: features and overview kinds cannot contain `__`,
+/// while plan slugs can, so their underscores must survive unchanged.
 fn id_from_file(name: &str) -> Option<String> {
-    let id = name.strip_suffix(".json")?.replacen("__", "/", 1);
+    let stem = name.strip_suffix(".json")?;
+    let separators = if stem.starts_with("plans__") { 1 } else { 2 };
+    let id = stem.replacen("__", "/", separators);
     store::validate_id(&id).is_ok().then_some(id)
 }
 
@@ -139,6 +141,9 @@ pub(crate) fn create_claim_as(
     ensure_runtime_dir(paths)?;
     let dirfd = safe_open_dirfd(&paths.dir)?;
     safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), Path::new(CLAIMS_DIR), 0o700)?;
+    let draft = draft_rel(id);
+    let parent = draft.parent().context("draft path has no parent")?;
+    safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), parent, 0o700)?;
     let claim = Claim {
         summary: id.to_string(),
         session,

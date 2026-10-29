@@ -9,24 +9,20 @@ use crate::plan_server::concept::links::{implemented_by, implements_view, plan_s
 use crate::plan_server::concept::state::out_of_date_reason;
 use crate::plan_server::summaries::rebuilds::Rebuilds;
 use crate::plan_server::wire::concept::{
-    ConceptPage, DocLink, EmptyKind, EmptyState, Progress, SummaryStateView, SummaryView,
+    ConceptPage, DocLink, EmptyKind, EmptyState, KeyChip, Progress, SummaryStateView, SummaryView,
 };
-use crate::planning::checklist::Offer;
 use crate::planning::discover::read_doc;
-use crate::planning::kinds::{DocKind, VISION_PATH};
+use crate::planning::kinds::DocKind;
 use crate::planning::pressure;
 use crate::planning::project::Project;
 use crate::planning::sections::normalized_hash;
 use crate::planning::summary::evaluate::{Evaluation, SummaryState};
-use crate::planning::summary::store::source_of;
+use crate::planning::summary::store::{self, source_of};
+
 use crate::planning::summary::write::read_summary;
 
-/// Which overview a page belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Scope {
-    Product,
-    Engineering,
-}
+use super::empty::empty_state;
+pub use super::page_key::{PageKey, Scope};
 
 /// Server state a page depends on beyond the project and its evaluation.
 #[derive(Clone, Default)]
@@ -46,59 +42,6 @@ impl std::fmt::Debug for PageContext {
     }
 }
 
-/// The page a request addresses.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PageKey {
-    Overview(Scope),
-    /// A document summary page; `doc` is a product section file stem or a plan slug.
-    Summary {
-        scope: Scope,
-        doc: String,
-    },
-}
-
-impl PageKey {
-    /// Parses the path after `/api/concept/`; `None` for anything but `product`,
-    /// `engineering` or `<scope>/<name>` where the name matches `[A-Za-z0-9._-]{1,128}` and is
-    /// not `.` or `..`.
-    pub fn parse(rest: &str) -> Option<PageKey> {
-        let (scope, doc) = match rest.split_once('/') {
-            Some((scope, doc)) => (scope, Some(doc)),
-            None => (rest, None),
-        };
-        let scope = match scope {
-            "product" => Scope::Product,
-            "engineering" => Scope::Engineering,
-            _ => return None,
-        };
-        let Some(doc) = doc else {
-            return Some(PageKey::Overview(scope));
-        };
-        let plain = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_');
-        let safe =
-            (1..=128).contains(&doc.len()) && doc.chars().all(plain) && doc != "." && doc != "..";
-        safe.then(|| PageKey::Summary {
-            scope,
-            doc: doc.to_owned(),
-        })
-    }
-
-    /// The key as it appears in URLs and `DocLink.page`.
-    pub fn as_key(&self) -> String {
-        match self {
-            PageKey::Overview(scope) => scope_name(*scope).to_owned(),
-            PageKey::Summary { scope, doc } => format!("{}/{doc}", scope_name(*scope)),
-        }
-    }
-}
-
-fn scope_name(scope: Scope) -> &'static str {
-    match scope {
-        Scope::Product => "product",
-        Scope::Engineering => "engineering",
-    }
-}
-
 /// Builds the page `key` addresses; `None` when the project has no such document.
 pub fn load_page(
     project: &Project,
@@ -106,9 +49,18 @@ pub fn load_page(
     key: &PageKey,
     ctx: &PageContext,
 ) -> Option<ConceptPage> {
+    if let Some(feature) = key.feature() {
+        project.feature(feature)?;
+    }
     match key {
-        PageKey::Overview(scope) => Some(overview_page(project, eval, *scope, ctx)),
-        PageKey::Summary { scope, doc } => summary_page(project, eval, *scope, doc, ctx),
+        PageKey::Overview { feature, scope } => {
+            Some(overview_page(project, eval, feature, *scope, ctx))
+        }
+        PageKey::Summary {
+            feature,
+            scope,
+            doc,
+        } => summary_page(project, eval, feature.as_deref(), *scope, doc, ctx),
     }
 }
 
@@ -123,10 +75,11 @@ pub fn progress(ctx: &PageContext) -> (Option<Progress>, Option<String>) {
     )
 }
 
-fn blank(key: String, title: String, ctx: &PageContext) -> ConceptPage {
+fn blank(key: &PageKey, title: String, ctx: &PageContext) -> ConceptPage {
     let (building, estimate) = progress(ctx);
     ConceptPage {
-        key,
+        feature: key.feature().map(str::to_owned),
+        key: key.as_key(),
         title,
         path: None,
         file_hash: None,
@@ -166,55 +119,85 @@ pub(crate) fn summary_file_hash(project: &Project, id: &str) -> Option<String> {
     Some(normalized_hash(&text))
 }
 
-/// The concept page key of summary `id`: `plans/<slug>` pages live under `engineering/<slug>`,
-/// every other id is its own key.
-pub(crate) fn page_key_of(id: &str) -> String {
-    match id.strip_prefix("plans/") {
-        Some(slug) => format!("engineering/{slug}"),
-        None => id.to_owned(),
+/// The concept key of a summary, using its source to identify a plan's feature.
+pub(crate) fn page_key_of(project: &Project, id: &str) -> Option<String> {
+    if store::is_overview(id) {
+        return PageKey::parse(id).map(|key| key.as_key());
     }
+    let path = source_of(project, id)?;
+    let feature = project.tree.get(&path)?.kind.feature().map(str::to_owned);
+    let (scope, doc) = match id.strip_prefix("plans/") {
+        Some(slug) => (Scope::Engineering, slug),
+        None => (Scope::Product, id.rsplit('/').next()?),
+    };
+    let key = PageKey::Summary {
+        feature,
+        scope,
+        doc: doc.to_owned(),
+    };
+    PageKey::parse(&key.as_key()).map(|key| key.as_key())
 }
 
 fn overview_page(
     project: &Project,
     eval: &Evaluation,
+    feature: &str,
     scope: Scope,
     ctx: &PageContext,
 ) -> ConceptPage {
-    let (id, title) = match scope {
-        Scope::Product => ("product", "Product overview"),
-        Scope::Engineering => ("engineering", "Engineering overview"),
+    let key = PageKey::Overview {
+        feature: feature.to_owned(),
+        scope,
     };
-    let mut page = blank(id.to_owned(), title.to_owned(), ctx);
-    let chips = key_chips(project, eval, scope, ctx);
-    let summary = eval.summaries.get(id);
-    page.state = summary.map(|summary| state_view(id, summary.state, ctx));
+    let id = key.as_key();
+    let title = match scope {
+        Scope::Product => "Product overview",
+        Scope::Engineering => "Engineering overview",
+    };
+    let mut page = blank(&key, title.to_owned(), ctx);
+    let chips = key_chips(project, eval, feature, scope, ctx);
+    let summary = eval.summaries.get(&id);
+    page.state = summary.map(|summary| state_view(&id, summary.state, ctx));
     match summary.and_then(|summary| summary.file.as_ref()) {
         Some(file) => {
             page.blocks = body::blocks(project, file, eval, &chips, Level::Overview, ctx);
-            page.file_hash = summary_file_hash(project, id);
+            page.file_hash = summary_file_hash(project, &id);
         }
-        None => page.empty = Some(empty_state(project, eval, scope)),
+        None => page.empty = Some(empty_state(project, eval, feature, scope)),
     }
-    let listed_in_empty = page.empty.as_ref().is_some_and(|empty| {
-        matches!(
-            empty.kind,
-            EmptyKind::SectionsNoVision | EmptyKind::PlansNoMetaplan
-        )
-    });
-    if !listed_in_empty {
-        let outside = eval.scope.outside.iter();
-        let ids = outside.filter(|id| id.starts_with(id_prefix(scope)));
-        page.unlisted = ids.filter_map(|id| summary_link(project, id)).collect();
-    }
+    page.unlisted = unlisted(project, feature, scope, page.empty.as_ref());
     page.key_chips = chips;
     page
 }
 
-fn id_prefix(scope: Scope) -> &'static str {
+fn unlisted(
+    project: &Project,
+    feature: &str,
+    scope: Scope,
+    empty: Option<&EmptyState>,
+) -> Vec<DocLink> {
+    if empty.is_some_and(|empty| {
+        matches!(
+            empty.kind,
+            EmptyKind::SectionsNoVision | EmptyKind::PlansNoMetaplan
+        )
+    }) {
+        return Vec::new();
+    }
+    let members = store::scope(project, feature);
+    let prefix = id_prefix(feature, scope);
+    members
+        .outside
+        .iter()
+        .filter(|id| id.starts_with(&prefix))
+        .filter_map(|id| summary_link(project, id))
+        .collect()
+}
+
+fn id_prefix(feature: &str, scope: Scope) -> String {
     match scope {
-        Scope::Product => "product/",
-        Scope::Engineering => "plans/",
+        Scope::Product => format!("{feature}/product/"),
+        Scope::Engineering => "plans/".to_owned(),
     }
 }
 
@@ -222,98 +205,73 @@ fn summary_link(project: &Project, id: &str) -> Option<DocLink> {
     doc_link(project, &source_of(project, id)?)
 }
 
-/// Why an overview without a file cannot render. `eval.summaries` iterates in id order, which
-/// is file-name order for the document summaries.
-fn empty_state(project: &Project, eval: &Evaluation, scope: Scope) -> EmptyState {
-    let (root_exists, absent, only_documents, offer) = match scope {
-        Scope::Product => (
-            project.tree.get(Path::new(VISION_PATH)).is_some(),
-            EmptyKind::NoVision,
-            EmptyKind::SectionsNoVision,
-            Offer::StartVision,
-        ),
-        Scope::Engineering => (
-            !project.metaplans.is_empty(),
-            EmptyKind::NoMetaplan,
-            EmptyKind::PlansNoMetaplan,
-            Offer::StartMetaplan,
-        ),
-    };
-    let prefix = id_prefix(scope);
-    let documents = eval
-        .summaries
-        .iter()
-        .filter(|(id, _)| id.starts_with(prefix));
-    let documents: Vec<_> = documents.collect();
-    let mut empty = EmptyState {
-        kind: EmptyKind::Building,
-        count: None,
-        offer: None,
-        docs: Vec::new(),
-    };
-    if !root_exists && documents.is_empty() {
-        empty.kind = absent;
-        empty.offer = Some(offer.id());
-    } else if !root_exists {
-        empty.kind = only_documents;
-        empty.docs = documents
-            .iter()
-            .filter_map(|(id, _)| summary_link(project, id))
-            .collect();
-    } else if !documents.is_empty()
-        && documents
-            .iter()
-            .all(|(_, one)| one.state == SummaryState::Missing)
-    {
-        empty.kind = EmptyKind::NeverBuilt;
-        empty.count = Some(documents.len() as u32);
-    }
-    empty
-}
-
 fn summary_page(
     project: &Project,
     eval: &Evaluation,
+    feature: Option<&str>,
     scope: Scope,
     doc: &str,
     ctx: &PageContext,
 ) -> Option<ConceptPage> {
-    let id = format!("{}{doc}", id_prefix(scope));
+    let id = match scope {
+        Scope::Product => format!("{}{doc}", id_prefix(feature?, scope)),
+        Scope::Engineering => format!("plans/{doc}"),
+    };
     let path = source_of(project, &id)?;
-    let title = project.docs.get(&path)?.title.clone();
+    let document = project.docs.get(&path)?;
+    if document.doc.kind.feature() != feature {
+        return None;
+    }
+    let title = document.title.clone();
     let key = PageKey::Summary {
+        feature: feature.map(str::to_owned),
         scope,
         doc: doc.to_owned(),
     };
-    let mut page = blank(key.as_key(), title, ctx);
-    let chips = key_chips(project, eval, scope, ctx);
+    let mut page = blank(&key, title, ctx);
+    let chips = feature
+        .map(|feature| key_chips(project, eval, feature, scope, ctx))
+        .unwrap_or_default();
     let path_text = path.to_string_lossy().into_owned();
     page.colour = colour_of(&chips, &path_text);
-    let summary = eval.summaries.get(&id);
-    page.state = summary.map(|summary| state_view(&id, summary.state, ctx));
-    match summary.and_then(|summary| summary.file.as_ref()) {
-        Some(file) => {
-            page.blocks = body::blocks(project, file, eval, &chips, Level::Document, ctx);
-            page.file_hash = summary_file_hash(project, &id);
-        }
-        None => {
-            let rebuilding = summary.is_some_and(|s| s.state == SummaryState::Rebuilding);
-            page.empty = Some(EmptyState {
-                kind: if rebuilding {
-                    EmptyKind::Building
-                } else {
-                    EmptyKind::NeverBuilt
-                },
-                count: (!rebuilding).then_some(1),
-                offer: None,
-                docs: Vec::new(),
-            });
-        }
-    }
+    summary_body(project, eval, &id, &chips, &mut page, ctx);
     document_fields(project, &mut page, &path);
     page.path = Some(path_text);
     page.key_chips = chips;
     Some(page)
+}
+
+fn summary_body(
+    project: &Project,
+    eval: &Evaluation,
+    id: &str,
+    chips: &[KeyChip],
+    page: &mut ConceptPage,
+    ctx: &PageContext,
+) {
+    let summary = eval.summaries.get(id);
+    page.state = summary.map(|summary| state_view(id, summary.state, ctx));
+    match summary.and_then(|summary| summary.file.as_ref()) {
+        Some(file) => {
+            page.blocks = body::blocks(project, file, eval, chips, Level::Document, ctx);
+            page.file_hash = summary_file_hash(project, id);
+        }
+        None => page.empty = Some(summary_empty(summary.map(|one| one.state))),
+    }
+}
+
+fn summary_empty(state: Option<SummaryState>) -> EmptyState {
+    let rebuilding = state == Some(SummaryState::Rebuilding);
+    EmptyState {
+        kind: if rebuilding {
+            EmptyKind::Building
+        } else {
+            EmptyKind::NeverBuilt
+        },
+        count: (!rebuilding).then_some(1),
+        offer: None,
+        docs: Vec::new(),
+    }
 }
 
 /// The fields that depend on what kind of document the page summarizes.
@@ -322,15 +280,18 @@ fn document_fields(project: &Project, page: &mut ConceptPage, path: &Path) {
         return;
     };
     match &doc.kind {
-        DocKind::Plan { slug, state } => {
+        DocKind::Plan { slug, state, .. } => {
             page.plan_state = Some(plan_state_name(*state).to_owned());
             page.implements = Some(implements_view(project, slug));
             let text = read_doc(&project.root, path).ok();
             let dates = text.iter().flat_map(|text| pressure::records(text));
             page.last_pressure = dates.map(|record| record.date).max();
         }
-        DocKind::ProductSection { number } => {
-            page.implemented_by = implemented_by(project, *number);
+        DocKind::ProductSection {
+            feature: Some(feature),
+            number,
+        } => {
+            page.implemented_by = implemented_by(project, feature, *number);
         }
         _ => {}
     }

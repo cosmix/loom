@@ -2,7 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{offers, ChecklistItem, Facts, ItemStatus, Offer, Step, VISION};
+use super::{ChecklistItem, Facts, ItemStatus, Offer, Step};
+use crate::planning::kinds::{plans_dir, product_dir, vision_path};
+use crate::planning::vision::VisionRow;
 
 impl Facts<'_> {
     /// Every item in step order.
@@ -13,6 +15,7 @@ impl Facts<'_> {
         items.extend(self.untested.iter().map(|plan| {
             let label = format!("plan {} has no pressure-test record", plan.slug);
             let offer = Some(Offer::PressureTest {
+                feature: self.feature.to_string(),
                 slug: plan.slug.clone(),
             });
             let path = Some(plan.path.clone());
@@ -27,8 +30,10 @@ impl Facts<'_> {
         } else {
             ItemStatus::Gap
         };
-        let offer = (!self.vision).then_some(Offer::StartVision);
-        let path = Some(PathBuf::from(VISION));
+        let offer = (!self.vision).then(|| Offer::StartVision {
+            feature: self.feature.to_string(),
+        });
+        let path = Some(vision_path(self.feature));
         item(
             Step::Vision,
             status,
@@ -44,27 +49,15 @@ impl Facts<'_> {
         };
         let mut items = Vec::new();
         match self.rows {
-            Some(rows) => items.extend(rows.iter().map(|row| {
-                let number = row.number;
-                let label = format!("section {number:02}: {}", row.name);
-                if self.missing_sections.contains(&number) {
-                    let offer = Some(Offer::WriteSection { number });
-                    section(ItemStatus::Gap, offers::section_path(number), label, offer)
-                } else {
-                    section(
-                        ItemStatus::Present,
-                        offers::section_path(number),
-                        label,
-                        None,
-                    )
-                }
-            })),
+            Some(rows) => items.extend(rows.iter().map(|row| self.section_item(row))),
             None if self.vision => {
                 let label = "the vision lists no sections in a form the app can read".to_string();
-                let offer = Some(Offer::FixVisionTable);
+                let offer = Some(Offer::FixVisionTable {
+                    feature: self.feature.to_string(),
+                });
                 items.push(section(
                     ItemStatus::Gap,
-                    PathBuf::from(VISION),
+                    vision_path(self.feature),
                     label,
                     offer,
                 ));
@@ -73,7 +66,10 @@ impl Facts<'_> {
         }
         for &(number, path) in &self.unlisted_sections {
             let label = format!("section {number:02} is not in the vision's table");
-            let offer = self.vision.then_some(Offer::AddSectionToVision { number });
+            let offer = self.vision.then(|| Offer::AddSectionToVision {
+                feature: self.feature.to_string(),
+                number,
+            });
             items.push(section(
                 ItemStatus::Unlisted,
                 path.to_path_buf(),
@@ -82,6 +78,28 @@ impl Facts<'_> {
             ));
         }
         items
+    }
+
+    fn section_item(&self, row: &VisionRow) -> ChecklistItem {
+        let number = row.number;
+        let missing = self.missing_sections.contains(&number);
+        let status = if missing {
+            ItemStatus::Gap
+        } else {
+            ItemStatus::Present
+        };
+        let offer = missing.then(|| Offer::WriteSection {
+            feature: self.feature.to_string(),
+            number,
+        });
+        let path = product_dir(self.feature).join(format!("section_{number:02}.md"));
+        item(
+            Step::ProductSpec,
+            status,
+            Some(path),
+            format!("section {number:02}: {}", row.name),
+            offer,
+        )
     }
 
     fn plan_items(&self) -> Vec<ChecklistItem> {
@@ -97,7 +115,9 @@ impl Facts<'_> {
         });
         let mut items: Vec<ChecklistItem> = metaplans.collect();
         if !self.has_metaplan() {
-            let offer = Some(Offer::StartMetaplan);
+            let offer = Some(Offer::StartMetaplan {
+                feature: self.feature.to_string(),
+            });
             let label = "no metaplan".to_string();
             items.push(item(Step::Metaplan, ItemStatus::Gap, None, label, offer));
         }
@@ -108,19 +128,15 @@ impl Facts<'_> {
         );
         for plan in &self.unlisted_plans {
             let label = format!("plan {} is not in a metaplan", plan.slug);
-            let slug = plan.slug.clone();
-            let offer = self
-                .has_metaplan()
-                .then_some(Offer::AddPlanToMetaplan { slug });
             let path = Some(plan.path.clone());
-            items.push(item(Step::Plans, ItemStatus::Unlisted, path, label, offer));
+            items.push(item(Step::Plans, ItemStatus::Unlisted, path, label, None));
         }
         items
     }
 
     /// The item for one metaplan entry: the plan when written, else an offer to write it.
     fn entry_item(&self, metaplan: &Path, slug: &str) -> ChecklistItem {
-        match self.tree.plan(slug) {
+        match self.plan(slug) {
             Some(plan) => {
                 let path = Some(plan.path.clone());
                 item(
@@ -135,10 +151,11 @@ impl Facts<'_> {
                 let named_in = metaplan.display();
                 let label = format!("plan {slug} named in {named_in} is not written");
                 let offer = Offer::WritePlan {
+                    feature: self.feature.to_string(),
                     metaplan: metaplan.to_path_buf(),
                     slug: slug.to_string(),
                 };
-                let path = Some(offers::plan_path(slug));
+                let path = Some(plans_dir(Some(self.feature)).join(format!("PLAN-{slug}.md")));
                 item(Step::Plans, ItemStatus::Gap, path, label, Some(offer))
             }
         }

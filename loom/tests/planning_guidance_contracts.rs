@@ -29,13 +29,17 @@ const SKILLS: [&str; 9] = [
 
 fn write_plan() -> AuthoringStart {
     AuthoringStart::Offer(Offer::WritePlan {
-        metaplan: PathBuf::from("doc/plans/index.md"),
+        feature: "f".into(),
+        metaplan: PathBuf::from("doc/plans/f/index.md"),
         slug: "delivery-truth".to_string(),
     })
 }
 
 fn write_section_3() -> AuthoringStart {
-    AuthoringStart::Offer(Offer::WriteSection { number: 3 })
+    AuthoringStart::Offer(Offer::WriteSection {
+        feature: "f".into(),
+        number: 3,
+    })
 }
 
 #[test]
@@ -69,7 +73,7 @@ fn summary_plugin_carries_only_summaries_skill() {
     let fx = Fixture::new();
     let models = fx.models("");
     let kind = SessionGuidanceKind::Summary {
-        ids: vec!["product".to_string()],
+        ids: vec!["overview/f/product".to_string()],
     };
     fx.render(&kind, &fx.session, &models).unwrap();
     let plugin = fx.session.plugin();
@@ -131,7 +135,7 @@ fn agent_frontmatter_follows_non_default_config() {
          overview_model = \"opus\"\noverview_effort = \"max\"\n",
     );
     let kind = SessionGuidanceKind::Summary {
-        ids: vec!["product".to_string()],
+        ids: vec!["overview/f/product".to_string()],
     };
     let guidance = fx.render(&kind, &fx.session, &models).unwrap();
     let agents = fx.session.plugin().join("agents");
@@ -212,7 +216,7 @@ fn starting_point_block_counts_the_fixture() {
         "## Starting point",
         "Skill: loom-plan:section.",
         "- Vision: present, 3 sections listed, 2 written (01, 02).",
-        "- Locked plan files: doc/plans/IN_PROGRESS-PLAN-b.md.",
+        "- Locked plan files: doc/plans/f/IN_PROGRESS-PLAN-b.md.",
     ] {
         assert!(
             brief.lines().any(|line| line == want),
@@ -224,12 +228,12 @@ fn starting_point_block_counts_the_fixture() {
 #[test]
 fn write_plan_opening_names_entry_heading() {
     let fx = Fixture::new();
-    let message = opening_message(&write_plan(), &fx.project).unwrap();
+    let message = opening_message(&write_plan(), &fx.project, Some("f")).unwrap();
     assert_eq!(
-        message,
+        message.lines().take(3).collect::<Vec<_>>().join("\n"),
         "loom plan: step 4, Plans.\n\
-         Write doc/plans/PLAN-delivery-truth.md for the entry \"1. Delivery truth\" in \
-         doc/plans/index.md.\n\
+         Write doc/plans/f/PLAN-delivery-truth.md for the entry \"1. Delivery truth\" in \
+         doc/plans/f/index.md. Write its briefs under doc/plans/f/briefs/delivery-truth/.\n\
          Load the skill loom-plan:plan, then begin by telling me what you read and what you \
          plan to ask."
     );
@@ -240,18 +244,21 @@ fn offer_id_lookup_rejects_unknown_ids() {
     let fx = Fixture::new();
     let primary = fx
         .project
+        .feature("f")
+        .unwrap()
         .checklist
         .primary
         .clone()
         .expect("a primary offer");
     let id = primary.id();
-    let found = AuthoringStart::from_offer_id(&id, &fx.project);
+    let found = AuthoringStart::from_offer_id(&id, &fx.project, Some("f"));
     assert!(
-        matches!(found, Some(AuthoringStart::Offer(ref offer)) if *offer == primary),
+        matches!(found, Ok(AuthoringStart::Offer(ref offer)) if *offer == primary),
         "primary offer {id} not found as itself"
     );
-    let refine = AuthoringStart::from_offer_id("refine:product/section_01.md", &fx.project);
-    assert!(refine.is_some(), "refine of an existing section");
+    let refine =
+        AuthoringStart::from_offer_id("refine:product/f/section_01.md", &fx.project, Some("f"));
+    assert!(refine.is_ok(), "refine of an existing section");
     for id in [
         "write-section:99",
         "",
@@ -260,8 +267,8 @@ fn offer_id_lookup_rejects_unknown_ids() {
         "refine:product/missing.md",
         "start-run",
     ] {
-        let found = AuthoringStart::from_offer_id(id, &fx.project);
-        assert!(found.is_none(), "{id:?} gave a start");
+        let found = AuthoringStart::from_offer_id(id, &fx.project, Some("f"));
+        assert!(found.is_err(), "{id:?} gave a start");
     }
 }
 
@@ -328,3 +335,6 @@ fn template_skeleton_carries_implements_and_verifies() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+#[path = "planning_guidance_contracts/features.rs"]
+mod features;

@@ -10,42 +10,49 @@ use crate::commands::common::resolve_state_dir;
 use crate::fs::plan_lifecycle::{IN_PROGRESS_PREFIX, RETIRED_PREFIX};
 use crate::git::branch::list_loom_branches;
 use crate::git::worktree::list_worktrees;
-use crate::planning::slug::{plan_slug, plan_state, PlanState};
+use crate::planning::kinds::plans_dir;
+use crate::planning::slug::{plan_feature, plan_slug, plan_state, PlanState};
 use crate::verify::transitions::list_all_stages;
 
-/// Where plans live, and where retired plans go.
+/// The standalone plans directory and parent of feature homes.
 pub(super) const PLANS_DIR: &str = "doc/plans";
-pub(super) const ARCHIVE_DIR: &str = "doc/plans/archive";
 
-/// A running plan, named by its slug: every path is rebuilt from the slug, never taken from
-/// the workspace configuration as written.
+/// A running plan, named by its slug and feature: every path is rebuilt from those fields,
+/// never taken from the workspace configuration as written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RunningPlan {
     pub slug: String,
+    pub feature: Option<String>,
 }
 
 impl RunningPlan {
-    /// `doc/plans/IN_PROGRESS-PLAN-<slug>.md`.
+    /// `<plan home>/IN_PROGRESS-PLAN-<slug>.md`.
     pub fn source(&self) -> PathBuf {
-        Path::new(PLANS_DIR).join(format!("{IN_PROGRESS_PREFIX}PLAN-{}.md", self.slug))
+        plans_dir(self.feature.as_deref())
+            .join(format!("{IN_PROGRESS_PREFIX}PLAN-{}.md", self.slug))
     }
 
-    /// `doc/plans/archive/RETIRED-PLAN-<slug>.md`.
+    /// `<plan home>/archive/RETIRED-PLAN-<slug>.md`.
     pub fn retired(&self) -> PathBuf {
-        Path::new(ARCHIVE_DIR).join(format!("{RETIRED_PREFIX}PLAN-{}.md", self.slug))
+        plans_dir(self.feature.as_deref())
+            .join("archive")
+            .join(format!("{RETIRED_PREFIX}PLAN-{}.md", self.slug))
     }
 
     pub fn source_string(&self) -> String {
         self.source().to_string_lossy().into_owned()
     }
 
-    /// The plan `rel` names when it is a running plan directly under `doc/plans/`.
+    /// The plan `rel` names when it is a running plan directly in a standalone or feature home.
     pub fn from_rel(rel: &Path) -> Option<RunningPlan> {
         if plan_state(rel) != Some(PlanState::Running) {
             return None;
         }
         let slug = plan_slug(rel.file_name()?.to_str()?)?;
-        let plan = RunningPlan { slug };
+        let plan = RunningPlan {
+            slug,
+            feature: plan_feature(rel),
+        };
         (plan.source() == rel).then_some(plan)
     }
 }

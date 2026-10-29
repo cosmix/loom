@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct ConceptPage {
+    /// The owning feature, or null for a standalone plan.
+    pub feature: Option<String>,
     pub key: String,
     pub title: String,
     /// Repo-relative path starting with `doc/`.
@@ -179,6 +181,8 @@ pub struct Progress {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct ConceptChanged {
+    /// The affected feature, or null for standalone documents.
+    pub feature: Option<String>,
     pub pages: Vec<String>,
     pub out_of_date: Vec<String>,
     /// Repo-relative paths starting with `doc/`.

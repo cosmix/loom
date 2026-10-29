@@ -5,11 +5,15 @@
 mod items;
 mod offers;
 #[cfg(test)]
+mod offers_tests;
+#[cfg(test)]
 mod order_tests;
+#[cfg(test)]
+mod scope_tests;
 #[cfg(test)]
 mod tests;
 
-pub use offers::Offer;
+pub use offers::{move_offers, Offer};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -17,9 +21,7 @@ use std::path::{Path, PathBuf};
 use serde::{Serialize, Serializer};
 
 use crate::planning::discover::DocTree;
-use crate::planning::kinds::DocKind;
-// Child modules (`items`, `offers`) import this alias through `super::VISION`.
-use crate::planning::kinds::VISION_PATH as VISION;
+use crate::planning::kinds::{vision_path, DocKind};
 use crate::planning::metaplan::MetaplanEntry;
 use crate::planning::pressure::PressureRecord;
 use crate::planning::slug::{PlanEntry, PlanState};
@@ -34,7 +36,7 @@ pub struct ParsedDocs {
     pub metaplans: Vec<(PathBuf, Vec<MetaplanEntry>)>,
     /// Pressure-test records by plan slug.
     pub pressure: BTreeMap<String, Vec<PressureRecord>>,
-    /// The existing locked files.
+    /// The existing locked files under this feature's directories.
     pub locked_files: Vec<PathBuf>,
     /// Sorted numbers of the product section files that hold a non-whitespace character, or
     /// that could not be read and are not empty.
@@ -129,7 +131,7 @@ pub struct ChecklistItem {
 /// The starting-point facts a planning session is briefed with.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ProjectState {
-    /// Whether `doc/product/index.md` exists.
+    /// Whether the feature's vision exists.
     pub vision_present: bool,
     /// Rows of the vision's table (0 when it cannot be read).
     pub sections_listed: usize,
@@ -142,13 +144,15 @@ pub struct ProjectState {
     pub plans_unlisted: usize,
     /// Plan count per state (states with no plan are absent).
     pub plans_by_state: BTreeMap<PlanState, usize>,
-    /// The existing locked files.
+    /// The existing locked files under this feature's directories.
     pub locked_files: Vec<PathBuf>,
 }
 
-/// The project checklist of section 01.
+/// One feature's checklist of section 01.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Checklist {
+    /// The feature this checklist describes.
+    pub feature: String,
     /// The current step.
     pub current: CurrentStep,
     /// All seven steps in order with their marks (JSON `[{"step", "mark"}]`).
@@ -174,12 +178,13 @@ fn steps_json<S: Serializer>(steps: &[(Step, StepMark)], serializer: S) -> Resul
 }
 
 /// Compute the checklist from a discovered tree and its parsed documents (pure).
-pub fn build_checklist(tree: &DocTree, parsed: &ParsedDocs) -> Checklist {
-    let facts = Facts::new(tree, parsed);
+pub fn build_checklist(tree: &DocTree, parsed: &ParsedDocs, feature: &str) -> Checklist {
+    let facts = Facts::new(tree, parsed, feature);
     let steps = facts.marks();
     let current = current_step(&steps);
     let (primary, secondary) = offers::choose(&current, &facts);
     Checklist {
+        feature: feature.to_string(),
         current,
         steps,
         items: facts.items(),
@@ -191,6 +196,7 @@ pub fn build_checklist(tree: &DocTree, parsed: &ParsedDocs) -> Checklist {
 
 /// The facts every rule reads, computed once, each list in reading order.
 struct Facts<'a> {
+    pub(super) feature: &'a str,
     tree: &'a DocTree,
     parsed: &'a ParsedDocs,
     vision: bool,
@@ -222,20 +228,32 @@ fn metaplan_entries(parsed: &ParsedDocs) -> Vec<(&Path, &str)> {
         .collect()
 }
 
+fn unlisted_sections<'a>(
+    tree: &'a DocTree,
+    feature: &str,
+    rows: Option<&[VisionRow]>,
+) -> Vec<(u32, &'a Path)> {
+    let listed: BTreeSet<u32> = rows.unwrap_or_default().iter().map(|r| r.number).collect();
+    tree.docs
+        .iter()
+        .filter(|doc| doc.kind.feature() == Some(feature))
+        .filter_map(|doc| match &doc.kind {
+            DocKind::ProductSection { number, .. } if !listed.contains(number) => {
+                Some((*number, doc.path.as_path()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 impl<'a> Facts<'a> {
-    fn new(tree: &'a DocTree, parsed: &'a ParsedDocs) -> Self {
-        let vision = tree.get(Path::new(VISION)).is_some();
+    fn new(tree: &'a DocTree, parsed: &'a ParsedDocs, feature: &'a str) -> Self {
+        let vision = tree.get(&vision_path(feature)).is_some();
         let rows = parsed.vision_rows.as_deref().ok().filter(|_| vision);
-        let listed: BTreeSet<u32> = rows.unwrap_or_default().iter().map(|r| r.number).collect();
         let written: BTreeSet<u32> = parsed.sections_written.iter().copied().collect();
         let numbers = rows.unwrap_or_default().iter().map(|row| row.number);
         let missing_sections = numbers.filter(|n| !written.contains(n)).collect();
-        let unlisted_sections = tree.docs.iter().filter_map(|doc| match doc.kind {
-            DocKind::ProductSection { number } if !listed.contains(&number) => {
-                Some((number, doc.path.as_path()))
-            }
-            _ => None,
-        });
+        let unlisted_sections = unlisted_sections(tree, feature, rows);
         let entries = metaplan_entries(parsed);
         let mut named = BTreeSet::new();
         let firsts: Vec<_> = entries
@@ -244,23 +262,30 @@ impl<'a> Facts<'a> {
             .filter(|(_, s)| named.insert(*s))
             .collect();
         let unwritten = firsts.iter().copied();
+        let plan_for = |slug: &str| {
+            tree.plan(slug)
+                .filter(|plan| plan.feature.as_deref() == Some(feature))
+        };
+        // Slugs are repository-wide: a misplaced plan must be moved, never rewritten.
         let missing_plans = unwritten.filter(|(_, s)| tree.plan(s).is_none()).collect();
         let mut unlisted_plans: Vec<&PlanEntry> = tree
             .plans
             .values()
+            .filter(|p| p.feature.as_deref() == Some(feature))
             .filter(|p| !named.contains(p.slug.as_str()))
             .collect();
         unlisted_plans.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
-        let listed_plans = firsts.iter().filter_map(|(_, slug)| tree.plan(slug));
+        let listed_plans = firsts.iter().filter_map(|(_, slug)| plan_for(slug));
         let untested = listed_plans.chain(unlisted_plans.iter().copied());
         let untested = untested.filter(|plan| is_untested(plan, parsed)).collect();
         Facts {
+            feature,
             tree,
             parsed,
             vision,
             rows,
             missing_sections,
-            unlisted_sections: unlisted_sections.collect(),
+            unlisted_sections,
             entries,
             missing_plans,
             unlisted_plans,
@@ -270,6 +295,18 @@ impl<'a> Facts<'a> {
 
     fn has_metaplan(&self) -> bool {
         !self.parsed.metaplans.is_empty()
+    }
+
+    fn plans(&self) -> impl Iterator<Item = &'a PlanEntry> + '_ {
+        self.tree
+            .plans
+            .values()
+            .filter(|plan| plan.feature.as_deref() == Some(self.feature))
+    }
+
+    fn plan(&self, slug: &str) -> Option<&PlanEntry> {
+        // Entry presence and completion follow the unique slug, even in a foreign home.
+        self.tree.plan(slug)
     }
 
     fn marks(&self) -> Vec<(Step, StepMark)> {
@@ -291,16 +328,11 @@ impl<'a> Facts<'a> {
     }
 
     fn run_mark(&self) -> StepMark {
-        if self
-            .tree
-            .plans
-            .values()
-            .any(|plan| plan.state == PlanState::Running)
-        {
+        if self.plans().any(|plan| plan.state == PlanState::Running) {
             return StepMark::Active;
         }
         let finished = |slug: &str| {
-            let plan = self.tree.plan(slug);
+            let plan = self.plan(slug);
             plan.is_some_and(|plan| plan.state >= PlanState::Done)
         };
         if !self.entries.is_empty() && self.entries.iter().all(|(_, slug)| finished(slug)) {
@@ -312,7 +344,7 @@ impl<'a> Facts<'a> {
 
     fn state(&self) -> ProjectState {
         let mut plans_by_state = BTreeMap::new();
-        for plan in self.tree.plans.values() {
+        for plan in self.plans() {
             *plans_by_state.entry(plan.state).or_insert(0) += 1;
         }
         ProjectState {

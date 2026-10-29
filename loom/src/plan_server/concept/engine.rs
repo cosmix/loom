@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use anyhow::Result;
 
-use crate::plan_server::concept::delta::{delta, snapshot, sources, Snapshot};
+use crate::plan_server::concept::delta::{delta, snapshot, source_deltas, Snapshot};
 use crate::plan_server::concept::routes::page_context;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::lifecycle;
@@ -49,7 +49,7 @@ impl ConceptState {
 
     /// Process one batch (the project is already refreshed with it) and broadcast the delta.
     /// Returns what was broadcast.
-    pub(crate) fn handle(&self, ctx: &PlanContext, batch: &Batch) -> Option<ConceptChanged> {
+    pub(crate) fn handle(&self, ctx: &PlanContext, batch: &Batch) -> Vec<ConceptChanged> {
         let result = {
             let project = ctx.project();
             let mut engine = self.engine.lock().unwrap_or_else(PoisonError::into_inner);
@@ -67,7 +67,7 @@ impl ConceptState {
         ctx: &PlanContext,
         batch: &Batch,
         result: Result<EngineUpdate>,
-    ) -> Option<ConceptChanged> {
+    ) -> Vec<ConceptChanged> {
         let error = match result {
             Ok(update) => {
                 let evaluation = self.store(update.evaluation.clone());
@@ -108,7 +108,7 @@ impl ConceptState {
         ctx: &PlanContext,
         batch: &Batch,
         evaluation: Option<&Evaluation>,
-    ) -> Option<ConceptChanged> {
+    ) -> Vec<ConceptChanged> {
         let changed = match evaluation {
             Some(eval) => {
                 let project = ctx.project();
@@ -118,21 +118,13 @@ impl ConceptState {
                 *previous = after;
                 changed
             }
-            None => ConceptChanged {
-                pages: Vec::new(),
-                out_of_date: Vec::new(),
-                sources: sources(batch),
-            },
+            None => source_deltas(batch),
         };
-        let empty = changed.pages.is_empty()
-            && changed.out_of_date.is_empty()
-            && changed.sources.is_empty();
-        if empty {
-            return None;
+        for payload in &changed {
+            ctx.hub()
+                .broadcast(&PlanMessage::ConceptChanged(payload.clone()));
         }
-        ctx.hub()
-            .broadcast(&PlanMessage::ConceptChanged(changed.clone()));
-        Some(changed)
+        changed
     }
 }
 

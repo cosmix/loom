@@ -1,17 +1,24 @@
 //! Contracts for `loom::planning`'s document model.
 
 use loom::planning::discover::{discover, read_doc};
-use loom::planning::kinds::{classify, doc_id, DocKind};
-use loom::planning::paths::{check_relpath_syntax, classify_write, symlink_component};
-use loom::planning::paths::{DocArea, LockReason, LockedSet};
+use loom::planning::paths::{check_relpath_syntax, symlink_component};
 use loom::planning::runtime::{project_key, runtime_paths_from, runtime_paths_under};
 use loom::planning::sections::{github_slug, normalized_hash, sections_of};
-use loom::planning::slug::{plan_slug, PlanState};
+use loom::planning::slug::plan_slug;
 use loom::planning::watch::{OwnWrites, Watcher};
 use std::fs;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
+
+#[path = "planning_documents_contracts/features.rs"]
+mod features;
+#[path = "planning_documents_contracts/kinds.rs"]
+mod kinds;
+#[path = "planning_documents_contracts/locks.rs"]
+mod locks;
+#[path = "planning_documents_contracts/plans.rs"]
+mod plans;
 
 fn tmp() -> (TempDir, PathBuf) {
     let builder = tempfile::Builder::new().prefix("loom-planning-").clone();
@@ -53,28 +60,6 @@ fn settle(watcher: &mut Watcher) -> Vec<PathBuf> {
         seen.extend(batch.renamed.into_iter().map(|(_, to)| to));
     }
     seen
-}
-
-#[test]
-fn plan_slug_most_advanced_wins() {
-    let (_temp, root) = tmp();
-    let files = "PLAN-foo IN_PROGRESS-PLAN-foo archive/DONE-PLAN-foo \
-                 archive/RETIRED-PLAN-bar PLAN-bar";
-    for name in files.split(' ') {
-        put(&root, &format!("doc/plans/{name}.md"), "# Plan\n");
-    }
-    let tree = discover(&root).unwrap();
-    let foo = tree.plan("foo").expect("plan foo");
-    assert_eq!((foo.slug.as_str(), foo.state), ("foo", PlanState::Done));
-    assert_eq!(foo.path, p("doc/plans/archive/DONE-PLAN-foo.md"));
-    let mut strays = foo.strays.clone();
-    strays.sort();
-    let want = ["doc/plans/IN_PROGRESS-PLAN-foo.md", "doc/plans/PLAN-foo.md"];
-    assert_eq!(strays, want.map(p));
-    let bar = tree.plan("bar").expect("plan bar");
-    assert_eq!(bar.state, PlanState::Retired);
-    assert_eq!(bar.path, p("doc/plans/archive/RETIRED-PLAN-bar.md"));
-    assert_eq!(bar.strays, [p("doc/plans/PLAN-bar.md")]);
 }
 
 #[test]
@@ -158,40 +143,6 @@ fn discovery_skips_escaping_symlinks() {
     assert_eq!(read("doc/link-in.md").unwrap(), "alpha\n");
     assert!(read("doc/link-out.md").is_err(), "escaping link");
     assert!(read("doc/../.env").is_err(), "a .. path");
-}
-
-#[test]
-fn locked_brief_of_running_plan() {
-    let (_temp, root) = tmp();
-    let b = format!("doc/plans/{}", "briefs");
-    let plan = format!("Read {b}/shared/x.md first.\n");
-    put(&root, "doc/plans/IN_PROGRESS-PLAN-run.md", plan);
-    for rel in ["run/common.md", "shared/x.md", "free/common.md"] {
-        put(&root, &format!("{b}/{rel}"), "# Brief\n");
-    }
-    for rel in "PLAN-free.md REVIEW-PLAN-free.md archive/notes.md".split(' ') {
-        put(&root, &format!("doc/plans/{rel}"), "# Free\n");
-    }
-    let set = LockedSet::scan(&root).unwrap();
-    let check = |rel: &str, want: Option<LockReason>| {
-        assert_eq!(set.lock_reason(Path::new(rel)), want, "{rel}");
-        let area = want.map_or(DocArea::Doc, DocArea::Locked);
-        assert_eq!(classify_write(&set, Path::new(rel)), area, "{rel}");
-    };
-    let brief = || Some(LockReason::BriefOfLockedPlan { slug: "run".into() });
-    let running = Some(LockReason::PlanState(PlanState::Running));
-    check("doc/plans/IN_PROGRESS-PLAN-run.md", running);
-    check(&format!("{b}/run/common.md"), brief());
-    check(&format!("{b}/shared/x.md"), brief());
-    check(&format!("{b}/run/new.md"), brief());
-    check("doc/plans/REVIEW-PLAN-free.md", Some(LockReason::RunReview));
-    check("doc/plans/archive/notes.md", Some(LockReason::Archive));
-    check("doc/plans/PLAN-free.md", None);
-    check(&format!("{b}/free/common.md"), None);
-    let area = |rel: &str| classify_write(&set, Path::new(rel));
-    assert_eq!(area("doc/loom/knowledge/x.md"), DocArea::Knowledge);
-    assert_eq!(area("doc/loom/summaries/x.md"), DocArea::Summaries);
-    assert_eq!(area("src/main.rs"), DocArea::OutsideDoc);
 }
 
 #[test]
@@ -346,37 +297,6 @@ fn runtime_dir_from_session_state() {
     let fallback = runtime_paths_from(None, None, &loom_dir, &root).unwrap();
     assert_eq!(fallback.dir, loom_dir.join("plan").join(&key));
     server_ignores_state(&r.join("home"), &good, &root, &key);
-}
-
-fn kind_and_id(rel: &str, kind: DocKind, id: &str) {
-    assert_eq!(classify(Path::new(rel)), kind, "{rel}");
-    assert_eq!(doc_id(Path::new(rel), &kind).0, id, "{rel}");
-}
-
-#[test]
-fn kinds_and_ids_from_path() {
-    use DocKind::{Knowledge, Metaplan, Other, ProductNote, Vision};
-    let x = || "x".to_string();
-    let plan = |state| DocKind::Plan { slug: x(), state };
-    kind_and_id("doc/product/index.md", Vision, "product/index");
-    let section = DocKind::ProductSection { number: 7 };
-    kind_and_id("doc/product/section_07.md", section, "product/section_07");
-    kind_and_id("doc/product/notes.md", ProductNote, "product/notes.md");
-    kind_and_id("doc/plans/index.md", Metaplan, "plans/index.md");
-    let round = "doc/plans/round-2-metaplan.md";
-    kind_and_id(round, Metaplan, &round[4..]);
-    let running = "doc/plans/IN_PROGRESS-PLAN-x.md";
-    kind_and_id(running, plan(PlanState::Running), "plan/x");
-    let done = "doc/plans/archive/DONE-PLAN-x.md";
-    kind_and_id(done, plan(PlanState::Done), "plan/x");
-    let brief = format!("doc/plans/{}/x/common.md", "briefs");
-    kind_and_id(&brief, DocKind::Brief { slug: x() }, &brief[4..]);
-    let review = "doc/plans/REVIEW-IN_PROGRESS-PLAN-x.md";
-    kind_and_id(review, DocKind::RunReview { slug: x() }, &review[4..]);
-    let index = "doc/loom/knowledge/INDEX.md";
-    kind_and_id(index, Knowledge, &index[4..]);
-    kind_and_id("doc/other/readme.md", Other, "other/readme.md");
-    kind_and_id("doc/plans/sub/PLAN-y.md", Other, "plans/sub/PLAN-y.md");
 }
 
 #[test]

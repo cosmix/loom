@@ -5,10 +5,10 @@ use std::path::Path;
 
 use super::*;
 
-const LINK: &str = "[§](../../../product/section_01.md#a)";
+const LINK: &str = "[§](../../../../product/alpha/section_01.md#a)";
 
 fn draft(body: &str) -> Result<SummaryBody, Vec<FormatError>> {
-    parse_draft("product/section_01", body)
+    parse_draft("alpha/product/section_01", body)
 }
 
 fn lines_of(errors: &[FormatError]) -> Vec<usize> {
@@ -179,14 +179,18 @@ fn first_line_must_be_a_title() {
 
 #[test]
 fn trailing_links_keep_every_label() {
-    let text =
-        format!("# T\n\nThe app keeps  no state. {LINK} [two](../../../product/section_02.md#b)\n");
+    let text = format!(
+        "# T\n\nThe app keeps  no state. {LINK} [two](../../../../product/alpha/section_02.md#b)\n"
+    );
     let body = draft(&text).unwrap();
     let sentence = sentences(&body)[0].clone();
     assert_eq!(sentence.text, "The app keeps no state.");
     let labels: Vec<_> = sentence.links.iter().map(|l| l.label.as_str()).collect();
     assert_eq!(labels, ["§", "two"]);
-    assert_eq!(sentence.links[1].target, "../../../product/section_02.md#b");
+    assert_eq!(
+        sentence.links[1].target,
+        "../../../../product/alpha/section_02.md#b"
+    );
 }
 
 #[test]
@@ -199,17 +203,17 @@ fn sentence_id_matches_the_contract() {
 
 #[test]
 fn links_are_classified() {
-    let text = "# T\n\nA. [s](../../../product/section_01.md#a)\nB. [t](../product/section_02.md#s-1234abcd)\nC. [u](https://x.org/a.md) [v](../../..)\n";
+    let text = "# T\n\nA. [s](../../../product/alpha/section_01.md#a)\nB. [t](../alpha/product/section_02.md#s-1234abcd)\nC. [u](https://x.org/a.md) [v](../../..)\n";
     let body = parse_draft("plans/p", text).unwrap();
     let list = sentences(&body);
     assert!(
         matches!(&list[0].links[0].resolved, LinkTarget::Source { path, anchor }
-        if path == Path::new("doc/product/section_01.md") && anchor == "a")
+        if path == Path::new("doc/product/alpha/section_01.md") && anchor == "a")
     );
     assert_eq!(
         list[1].links[0].resolved,
         LinkTarget::Sentence {
-            summary: "product/section_02".into(),
+            summary: "alpha/product/section_02".into(),
             id: "s-1234abcd".into()
         }
     );
@@ -235,8 +239,10 @@ fn sentence_caps_depend_on_the_id() {
     assert!(parse_draft("plans/p", &many(15)).is_ok());
     let errors = parse_draft("plans/p", &many(16)).unwrap_err();
     assert_eq!(lines_of(&errors), vec![18]);
-    assert!(parse_draft("product", &many(30)).is_ok());
-    assert!(parse_draft("engineering", &many(31)).is_err());
+    assert!(parse_draft("overview/alpha/product", &many(30)).is_ok());
+    assert!(parse_draft("overview/alpha/product", &many(31)).is_err());
+    assert!(parse_draft("overview/alpha/engineering", &many(30)).is_ok());
+    assert!(parse_draft("overview/alpha/engineering", &many(31)).is_err());
 }
 
 #[test]
@@ -253,7 +259,7 @@ fn file(key: &str) -> SummaryFile {
     let cites = BTreeMap::from([(key.to_string(), "sha256:ab".to_string())]);
     let front = FrontMatter {
         kind: SummaryKind::Document,
-        of: "doc/product/section_01.md".into(),
+        of: "doc/product/alpha/section_01.md".into(),
         file: Some("sha256:cd".into()),
         cites,
         members: BTreeMap::new(),
@@ -271,9 +277,9 @@ fn file(key: &str) -> SummaryFile {
 
 #[test]
 fn file_round_trips_with_awkward_keys() {
-    let rel = Path::new("doc/loom/summaries/product/section_01.md");
+    let rel = Path::new("doc/loom/summaries/alpha/product/section_01.md");
     for key in [
-        "doc/product/section_01.md#a",
+        "doc/product/alpha/section_01.md#a",
         "doc/p.md#a: b",
         "doc/p.md#q\"uote",
         "doc/p.md",
@@ -293,7 +299,7 @@ fn file_round_trips_with_awkward_keys() {
 
 #[test]
 fn parse_rejects_bad_files() {
-    let rel = Path::new("doc/loom/summaries/product/section_01.md");
+    let rel = Path::new("doc/loom/summaries/alpha/product/section_01.md");
     let good = render(&file("doc/p.md#a"));
     assert!(parse(rel, &good).is_ok());
     assert!(

@@ -11,8 +11,8 @@ use super::built::{built_notes, parse_generated, BuiltNote};
 use super::compare::{changed_since, commit_exists, text_at, ChangedDoc, ChangedDocChange};
 use crate::planning::project::Project;
 
-const SECTION: &str = "doc/product/section_02.md";
-const SECTION_ARG: &str = "product/section_02.md";
+const SECTION: &str = "doc/product/demo/section_02.md";
+const SECTION_ARG: &str = "product/demo/section_02";
 pub(super) const BEFORE: &str = "1999-06-01T10:00:00Z";
 const BUILT: &str = "2000-01-01 00:00 UTC";
 const LATER_BUILT: &str = "2000-01-02 00:00 UTC";
@@ -215,8 +215,11 @@ fn text_at_missing_path_is_none() {
 #[test]
 fn uncommitted_section_counts_as_changed_now() {
     let files = [
-        ("doc/plans/DONE-PLAN-u.md", plan_doc("u")),
-        ("doc/plans/REVIEW-PLAN-u.md", review_doc("PLAN-u", BUILT)),
+        ("doc/plans/demo/DONE-PLAN-u.md", plan_doc("u")),
+        (
+            "doc/plans/demo/REVIEW-PLAN-u.md",
+            review_doc("PLAN-u", BUILT),
+        ),
     ];
     let (repo, base) = built_fixture(&files, false);
     assert!(notes_of(&repo).is_empty(), "committed before the build");
@@ -229,7 +232,7 @@ fn uncommitted_section_counts_as_changed_now() {
 
 #[test]
 fn done_plan_without_review_gives_nothing() {
-    let files = [("doc/plans/DONE-PLAN-d.md", plan_doc("d"))];
+    let files = [("doc/plans/demo/DONE-PLAN-d.md", plan_doc("d"))];
     let (repo, _) = built_fixture(&files, true);
     assert!(notes_of(&repo).is_empty());
 }
@@ -237,9 +240,9 @@ fn done_plan_without_review_gives_nothing() {
 #[test]
 fn section_changed_before_the_build_gives_nothing() {
     let files = [
-        ("doc/plans/DONE-PLAN-e.md", plan_doc("e")),
+        ("doc/plans/demo/DONE-PLAN-e.md", plan_doc("e")),
         (
-            "doc/plans/REVIEW-PLAN-e.md",
+            "doc/plans/demo/REVIEW-PLAN-e.md",
             review_doc("PLAN-e", "2001-01-01 00:00 UTC"),
         ),
     ];
@@ -250,10 +253,16 @@ fn section_changed_before_the_build_gives_nothing() {
 #[test]
 fn retired_and_written_plans_give_nothing() {
     let files = [
-        ("doc/plans/RETIRED-PLAN-r.md", plan_doc("r")),
-        ("doc/plans/REVIEW-PLAN-r.md", review_doc("PLAN-r", BUILT)),
-        ("doc/plans/PLAN-w.md", plan_doc("w")),
-        ("doc/plans/REVIEW-PLAN-w.md", review_doc("PLAN-w", BUILT)),
+        ("doc/plans/demo/RETIRED-PLAN-r.md", plan_doc("r")),
+        (
+            "doc/plans/demo/REVIEW-PLAN-r.md",
+            review_doc("PLAN-r", BUILT),
+        ),
+        ("doc/plans/demo/PLAN-w.md", plan_doc("w")),
+        (
+            "doc/plans/demo/REVIEW-PLAN-w.md",
+            review_doc("PLAN-w", BUILT),
+        ),
     ];
     let (repo, _) = built_fixture(&files, true);
     assert!(notes_of(&repo).is_empty());
@@ -281,9 +290,9 @@ fn commit_exists_false_for_an_unknown_commit() {
 #[test]
 fn review_under_archive_is_found() {
     let files = [
-        ("doc/plans/archive/PLAN-a.md", plan_doc("a")),
+        ("doc/plans/demo/archive/PLAN-a.md", plan_doc("a")),
         (
-            "doc/plans/archive/REVIEW-PLAN-a.md",
+            "doc/plans/demo/archive/REVIEW-PLAN-a.md",
             review_doc("PLAN-a", BUILT),
         ),
     ];
@@ -297,9 +306,9 @@ fn review_under_archive_is_found() {
 #[test]
 fn review_in_progress_is_found() {
     let files = [
-        ("doc/plans/DONE-PLAN-c.md", plan_doc("c")),
+        ("doc/plans/demo/DONE-PLAN-c.md", plan_doc("c")),
         (
-            "doc/plans/REVIEW-IN_PROGRESS-PLAN-c.md",
+            "doc/plans/demo/REVIEW-IN_PROGRESS-PLAN-c.md",
             review_doc("IN_PROGRESS-PLAN-c", BUILT),
         ),
     ];
@@ -313,10 +322,13 @@ fn review_in_progress_is_found() {
 #[test]
 fn newest_of_two_reviews_wins() {
     let files = [
-        ("doc/plans/DONE-PLAN-n.md", plan_doc("n")),
-        ("doc/plans/REVIEW-PLAN-n.md", review_doc("PLAN-n", BUILT)),
+        ("doc/plans/demo/DONE-PLAN-n.md", plan_doc("n")),
         (
-            "doc/plans/archive/REVIEW-DONE-PLAN-n.md",
+            "doc/plans/demo/REVIEW-PLAN-n.md",
+            review_doc("PLAN-n", BUILT),
+        ),
+        (
+            "doc/plans/demo/archive/REVIEW-DONE-PLAN-n.md",
             review_doc("DONE-PLAN-n", LATER_BUILT),
         ),
     ];
@@ -325,4 +337,36 @@ fn newest_of_two_reviews_wins() {
         notes_of(&repo),
         vec![changed_after("n", "2000-01-02T00:00:00Z", &base)]
     );
+}
+
+#[test]
+fn built_notes_do_not_cross_feature_boundaries() {
+    let temp = TempDir::new().unwrap();
+    for feature in ["alpha", "beta"] {
+        put(
+            temp.path(),
+            &format!("doc/product/{feature}/section_02.md"),
+            "# Two\n",
+        );
+        put(
+            temp.path(),
+            &format!("doc/plans/{feature}/IN_PROGRESS-PLAN-{feature}.md"),
+            &plan_doc(feature),
+        );
+    }
+    put(
+        temp.path(),
+        "doc/plans/IN_PROGRESS-PLAN-solo.md",
+        &plan_doc("solo"),
+    );
+    let project = Project::load(temp.path()).unwrap();
+    assert_eq!(
+        built_notes(&project, "product/beta/section_02").unwrap(),
+        vec![BuiltNote::Running {
+            slug: "beta".to_owned()
+        }]
+    );
+    assert!(built_notes(&project, "product/section_02")
+        .unwrap()
+        .is_empty());
 }

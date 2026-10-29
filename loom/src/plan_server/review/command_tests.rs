@@ -20,10 +20,10 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("doc/product")).unwrap();
-        std::fs::write(dir.path().join("doc/product/index.md"), "# Demo\n").unwrap();
+        std::fs::create_dir_all(dir.path().join("doc/product/demo")).unwrap();
+        std::fs::write(dir.path().join("doc/product/demo/index.md"), "# Demo\n").unwrap();
         std::fs::write(
-            dir.path().join("doc/product/section_01.md"),
+            dir.path().join("doc/product/demo/section_01.md"),
             "# Section 1\n",
         )
         .unwrap();
@@ -83,7 +83,7 @@ impl Tab {
 
 fn passage() -> SuggestedPassageWire {
     SuggestedPassageWire {
-        path: "doc/product/section_01.md".into(),
+        path: "doc/product/demo/section_01.md".into(),
         anchor: "goals".into(),
         text: "Keep one author at a time.".into(),
         lines: Some((3, 4)),
@@ -359,7 +359,7 @@ fn missing_holder_and_unknown_suggestion_have_refusal_text() {
 
 #[test]
 fn suggestion_for_an_undiscovered_path_is_refused_without_a_slot() {
-    for path in ["doc/.hidden/x.md", "doc/product/missing.md"] {
+    for path in ["doc/.hidden/x.md", "doc/product/demo/missing.md"] {
         let f = Fixture::new();
         let holder = f.connect("Dana");
         let sender = f.connect("Sam");

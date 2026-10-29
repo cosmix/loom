@@ -10,6 +10,7 @@ use super::page::{load_page, PageContext, PageKey};
 
 const PREFIX: &str = "/api/concept/";
 
+/// Register feature-qualified concept page routes.
 pub fn routes() -> Vec<RouteSpec> {
     vec![RouteSpec {
         method: Method::Get,
