@@ -32,6 +32,7 @@ export function RebuildQuestion({
       </p>
       <ul
         aria-label="Out-of-date summaries"
+        tabIndex={0}
         className="max-h-48 min-w-0 space-y-1 overflow-y-auto font-mono text-xs [overflow-wrap:anywhere]"
       >
         {question.ids.map((id) => (

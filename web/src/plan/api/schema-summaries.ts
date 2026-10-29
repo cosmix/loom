@@ -84,14 +84,5 @@ export const summaryMessageSchemas = [
 ] as const;
 
 export type TokenVector = z.infer<typeof tokenVectorSchema>;
-export type CostLine = z.infer<typeof costLineSchema>;
-export type RunningRebuild = z.infer<typeof runningRebuildSchema>;
-export type FailedSummary = z.infer<typeof failedSummarySchema>;
 export type SummaryQuestion = z.infer<typeof summaryQuestionSchema>;
-export type TurnCostRow = z.infer<typeof turnCostRowSchema>;
-export type SummaryTurnCost = z.infer<typeof summaryTurnCostSchema>;
 export type SummaryPanel = z.infer<typeof summaryPanelSchema>;
-export type SummaryPanelMessage = z.infer<typeof summaryPanelMessageSchema>;
-export type SummaryQuestionMessage = z.infer<typeof summaryQuestionMessageSchema>;
-export type SummaryQuestionClosedMessage = z.infer<typeof summaryQuestionClosedMessageSchema>;
-export type SummaryTurnCostMessage = z.infer<typeof summaryTurnCostMessageSchema>;
