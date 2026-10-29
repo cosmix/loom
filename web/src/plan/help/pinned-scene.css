@@ -1,0 +1,178 @@
+.planner-help-scene {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  color: var(--card-foreground);
+  font-family: var(--font-sans);
+}
+
+.planner-help-scene .planner-help-scene__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  padding: 18px 20px;
+}
+
+.planner-help-scene .planner-help-scene__label,
+.planner-help-scene .planner-help-scene__hint {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.planner-help-scene .planner-help-scene__header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.planner-help-scene .planner-help-scene__hint {
+  margin-left: auto;
+}
+
+.planner-help-scene .planner-help-scene__scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.planner-help-scene .planner-help-scene__canvas {
+  position: relative;
+  box-sizing: border-box;
+  /* Keep samples readable on phones; the surrounding viewport owns scrolling. */
+  min-width: 544px;
+  background:
+    radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0) 0 0 / 16px 16px,
+    color-mix(in oklch, var(--muted) 45%, var(--card));
+}
+
+.planner-help-scene .planner-help-scene__frame {
+  position: relative;
+}
+
+.planner-help-scene .planner-help-scene__stage {
+  display: flow-root;
+  transform-origin: top left;
+  border-radius: 12px;
+  background: var(--background);
+  box-shadow: 0 8px 24px color-mix(in oklch, var(--foreground) 14%, transparent);
+}
+
+.planner-help-scene .planner-help-scene__overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.planner-help-scene .planner-help-scene__pin,
+.planner-help-scene .planner-help-scene__note-number {
+  display: grid;
+  box-sizing: border-box;
+  place-items: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.planner-help-scene .planner-help-scene__pin {
+  position: absolute;
+  z-index: 2;
+  transition: transform 140ms ease;
+}
+
+.planner-help-scene .planner-help-scene__pin::before {
+  position: absolute;
+  inset: -4px;
+  border: 2px solid color-mix(in oklch, var(--primary) 32%, transparent);
+  border-radius: inherit;
+  content: "";
+}
+
+.planner-help-scene .planner-help-scene__pin[data-active] {
+  transform: scale(1.18);
+}
+
+.planner-help-scene .planner-help-scene__pin[data-active]::before {
+  animation: planner-help-scene-halo 1.3s ease-out infinite;
+}
+
+.planner-help-scene .planner-help-scene__ring {
+  position: absolute;
+  z-index: 1;
+  border-radius: 8px;
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px color-mix(in oklch, var(--primary) 18%, transparent);
+}
+
+.planner-help-scene .planner-help-scene__notes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 20px;
+  margin: 0;
+  padding: 16px 20px;
+  list-style: none;
+}
+
+.planner-help-scene .planner-help-scene__notes li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+}
+
+.planner-help-scene .planner-help-scene__notes li[data-active] {
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
+}
+
+.planner-help-scene .planner-help-scene__notes li:focus-visible,
+.planner-help-scene .planner-help-scene__scroll:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.planner-help-scene .planner-help-scene__notes p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+@keyframes planner-help-scene-halo {
+  to {
+    transform: scale(1.55);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 639px) {
+  .planner-help-scene .planner-help-scene__notes {
+    grid-template-columns: 1fr;
+  }
+
+  .planner-help-scene .planner-help-scene__hint {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .planner-help-scene .planner-help-scene__pin {
+    transition: none;
+  }
+
+  .planner-help-scene .planner-help-scene__pin[data-active]::before {
+    animation: none;
+  }
+}
