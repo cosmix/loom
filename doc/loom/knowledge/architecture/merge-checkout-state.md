@@ -1,6 +1,6 @@
 # Merge Checkout State
 
-> Fast-forward
+> FF
 
 ## Merge Checkout State
 

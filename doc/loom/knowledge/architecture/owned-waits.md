@@ -14,7 +14,7 @@ verified: ace1efbd8fd861fc0efcb26e8d49c2ef29876c67
 
 # Owned Waits
 
-> Worker waits
+> Waits
 
 ## Never Pipe a Background `loom subagents watch`/`wait` Through `tail`
 

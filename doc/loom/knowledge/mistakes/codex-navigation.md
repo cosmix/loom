@@ -1,6 +1,6 @@
 # Codex Navigation
 
-> Codex reader
+> Reader
 
 ## We Answered a Slow Reader by Forbidding Reading (2026-08-29)
 

@@ -1,6 +1,6 @@
 # Completion Runtime
 
-> Cargo churn
+> Churn
 
 ## A Per-Command Cargo Home Rebuilt Every Dependency, and Stall Recovery Killed the Completion (2026-10-20)
 

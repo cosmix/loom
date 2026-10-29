@@ -1,6 +1,6 @@
 # Web Dashboard
 
-> Dashboard UI
+> UI
 
 ## Codex lanes clustered as one group instead of per forwarder/job pair
 

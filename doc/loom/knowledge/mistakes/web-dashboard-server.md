@@ -1,6 +1,6 @@
 # Web Dashboard Server (loom status --web)
 
-> Server races
+> Races
 > server under `loom/src/commands/status/web/` and its React frontend. See
 > [architecture/web-dashboard.md](../architecture/web-dashboard.md) for the shape of the
 > system these fixes apply to.
