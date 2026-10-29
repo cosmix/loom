@@ -4,8 +4,8 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use super::engine::{page_keys_for_summary, ConceptState};
-use super::{install, routes};
+use super::engine::ConceptState;
+use super::{install, page_keys, routes};
 use crate::plan_server::context::{BindInfo, PlanContext};
 use crate::plan_server::ids::BrowserId;
 use crate::plan_server::prereq::ReadOnly;
@@ -14,6 +14,7 @@ use crate::plan_server::tests::support::{bootstrap, get, json_body, post_json, s
 use crate::plan_server::wire::server::{MissingPrereq, PrereqKind};
 use crate::plan_server::ServerOptions;
 use crate::planning::summary::evaluate::fixtures::{self, Fixture, ID1};
+use crate::planning::summary::store;
 use crate::planning::watch::{Batch, OwnWrites};
 
 fn served(fixture: &Fixture, read_only: ReadOnly) -> crate::plan_server::RunningServer {
@@ -187,7 +188,7 @@ fn page_keys_for_a_summary() {
         ("doc/plans/PLAN-a.md", "# A\n"),
     ]);
     let project = fixtures::load(&fixture.root);
-    let keys = |id| page_keys_for_summary(id, &project);
+    let keys = |id| page_keys(id, &store::scope(&project));
     assert_eq!(
         keys("product/section_01"),
         ["product/section_01", "product"]

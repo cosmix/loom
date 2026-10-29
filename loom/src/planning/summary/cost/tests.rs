@@ -1,4 +1,5 @@
 use super::*;
+use crate::tokens::tail::MAX_LINE_BYTES;
 use serde_json::json;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::sync::{Arc, Barrier};
@@ -165,6 +166,27 @@ fn log_over_read_limit_is_rejected() {
         .unwrap();
 
     assert!(read_log(&paths).is_err());
+}
+
+#[test]
+fn log_over_read_limit_yields_its_tail() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = paths(dir.path());
+    // The first record alone fills the read window, so the cut falls inside it.
+    let mut filler = cost_line("plans/filler");
+    filler.model = Some("x".repeat(MAX_LOG_BYTES));
+    for line in [filler, cost_line("plans/a"), cost_line("plans/b")] {
+        append(&paths, &line).unwrap();
+    }
+    let len = std::fs::metadata(&paths.summary_cost).unwrap().len();
+    assert!(len > MAX_LOG_BYTES as u64);
+
+    let ids: Vec<_> = read_log(&paths)
+        .unwrap()
+        .into_iter()
+        .flat_map(|line| line.summaries)
+        .collect();
+    assert_eq!(ids, ["plans/a", "plans/b"]);
 }
 
 #[test]

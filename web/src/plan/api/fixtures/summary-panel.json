@@ -7,9 +7,7 @@
     "started_at": "2026-10-29T08:10:00Z"
   },
   "queue": ["product/section_03"],
-  "failed": [
-    { "id": "plans/loom-planner-ui", "error": "no seal in 10 minutes" }
-  ],
+  "failed": [{ "id": "plans/loom-planner-ui", "error": "no seal in 10 minutes" }],
   "question": null,
   "last": {
     "time": "2026-10-29T08:11:30Z",

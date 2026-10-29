@@ -6,13 +6,14 @@ use std::time::Instant;
 use super::{QuestionView, Queued, Running, Scheduler, SchedulerEvent, SessionSpawner, Via};
 
 impl Scheduler {
-    /// Drop every queued, declined, failed and asked id that is no longer out of date.
+    /// Drop every queued, declined, failed, unsealed and asked id that is no longer out of date.
     pub(super) fn prune(&mut self, out_of_date: &[String]) {
         let keep: BTreeSet<&str> = out_of_date.iter().map(String::as_str).collect();
         self.queue
             .retain(|queued| keep.contains(queued.id.as_str()));
         self.declined.retain(|id| keep.contains(id.as_str()));
         self.failed.retain(|id, _| keep.contains(id.as_str()));
+        self.unsealed.retain(|id| keep.contains(id.as_str()));
         let Some(open) = self.question.as_mut() else {
             return;
         };
@@ -36,6 +37,15 @@ impl Scheduler {
             if !known && !self.in_session(id) && !self.is_queued(id) {
                 self.push_batch(id);
             }
+        }
+    }
+
+    /// A Button pressed for `ids`: forget that they were declined, failed or left unsealed.
+    pub(super) fn forget(&mut self, ids: &[String]) {
+        for id in ids {
+            self.declined.remove(id);
+            self.failed.remove(id);
+            self.unsealed.remove(id);
         }
     }
 

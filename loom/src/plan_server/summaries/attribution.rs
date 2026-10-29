@@ -164,7 +164,8 @@ impl Attribution {
 
     /// A subagent stopped: bind what its transcript briefed, delete those claims of `session`
     /// (plan 4's `release` reads `LOOM_PLAN_SESSION` and `clear_session_claims` takes every id,
-    /// so each is deleted here), and log its tokens.
+    /// so each is deleted here), and log its tokens. A claim error is returned after the
+    /// costing: the tokens were spent either way.
     pub fn on_subagent_stopped(
         &mut self,
         session: &str,
@@ -175,17 +176,37 @@ impl Attribution {
         let ids = found.briefed;
         let key = (session.to_owned(), agent.to_owned());
         self.by_agent.insert(key, ids.clone());
+        let released = self.release_claims(session, &ids);
+        let costed = if ids.is_empty() {
+            Ok(Attributed::default())
+        } else {
+            self.cost_stopped(session, ids, transcript, found.model)
+        };
+        released?;
+        costed
+    }
+
+    /// Delete the claims `session` holds on `ids`.
+    fn release_claims(&self, session: &str, ids: &[String]) -> Result<()> {
         for claim in list_claims(&self.paths)? {
             if ids.contains(&claim.summary) && claim.session.as_deref() == Some(session) {
                 delete_claim(&self.paths, &claim.summary)?;
             }
         }
-        if ids.is_empty() {
-            return Ok(Attributed::default());
-        }
+        Ok(())
+    }
+
+    /// Log the cost of a stopped subagent that briefed `ids`.
+    fn cost_stopped(
+        &mut self,
+        session: &str,
+        ids: Vec<String>,
+        transcript: &Path,
+        model: Option<String>,
+    ) -> Result<Attributed> {
         let tokens = cost::transcript_tokens(transcript)?;
         let trigger = trigger_of(self.sessions.get(session), &ids);
-        let line = self.cost_line(ids.clone(), tokens, found.model, trigger);
+        let line = self.cost_line(ids.clone(), tokens, model, trigger);
         cost::append(&self.paths, &line)?;
         let turn_cost = self.name_on_turn(session, &ids).map(|turn| {
             let tokens = match ids.as_slice() {
@@ -209,9 +230,17 @@ impl Attribution {
     }
 
     /// A session ended: clear every claim it holds; a summary session's own transcript is one
-    /// line for the ids no subagent briefed (the overviews it built itself), else for all.
+    /// line for the ids no subagent briefed (the overviews it built itself), else for all. A
+    /// claim error is returned after the costing and the bookkeeping cleanup.
     pub fn on_session_ended(&mut self, session: &str) -> Result<Vec<CostLine>> {
-        clear_session_claims(&self.paths, session)?;
+        let cleared = clear_session_claims(&self.paths, session);
+        let costed = self.cost_ended(session);
+        cleared?;
+        costed
+    }
+
+    /// Forget the session's subagents and role, and cost its own transcript.
+    fn cost_ended(&mut self, session: &str) -> Result<Vec<CostLine>> {
         let bound: BTreeSet<String> = self
             .by_agent
             .iter()
@@ -297,7 +326,8 @@ impl Attribution {
         model: Option<String>,
         trigger: Trigger,
     ) -> CostLine {
-        let level = if ids.iter().all(|id| is_overview(id)) {
+        let overviews = ids.iter().all(|id| level_of(id) == Level::Overview);
+        let level = if overviews {
             Level::Overview
         } else {
             Level::Document

@@ -1,0 +1,188 @@
+//! Calls that race: a session's end arriving before its start settles, a question closed or
+//! pruned before an earlier call published it; and what concept mode and the stall timer see
+//! of stalls and seals.
+
+use std::collections::BTreeSet;
+use std::thread;
+use std::time::Duration;
+
+use super::publish::Snapshot;
+use super::tests::{facade, owned, update, Row, Sent};
+use super::tests_bridge::{Rig, ID};
+use super::*;
+use crate::plan_server::concept::page_keys;
+use crate::plan_server::summaries::scheduler::{AnswerRight, QuestionView, NO_SEAL_TIMEOUT};
+use crate::plan_server::wire::concept::ConceptChanged;
+use crate::plan_server::wire::summaries::{FailedSummary, SummaryQuestion};
+use crate::plan_session::bridge::EndOutcome;
+use crate::plan_session::tmux_host::TmuxHost;
+use crate::planning::summary::evaluate::SummaryState::{Current, Missing, Rebuilding, Stale};
+use crate::planning::summary::store::Scope;
+
+/// Regression: a launch that fails at once delivers its session's end before `start_summary`
+/// returns, while the scheduler still runs the pending placeholder. The end must fail the ids
+/// with its reason, not be dropped and leave a dead session running until the tick's generic
+/// "the session failed".
+#[test]
+fn an_end_before_the_start_settles_fails_the_ids_with_its_reason() {
+    let rig = Rig::new(true);
+    let why = "the launch was refused: the brief was not delivered";
+    let failed = EndOutcome::Failed(why.into());
+    rig.probe.end_next_start_first(&rig.bridge, failed);
+    rig.report_missing();
+    let failed = FailedSummary {
+        id: ID.to_owned(),
+        error: why.to_owned(),
+    };
+    let panel = rig.rebuilds.panel();
+    assert_eq!((panel.failed, panel.running), (vec![failed.clone()], None));
+    rig.rebuilds.tick();
+    rig.rebuilds.tick();
+    assert_eq!(
+        rig.rebuilds.panel().failed,
+        vec![failed],
+        "the ticks change nothing"
+    );
+    assert_eq!(rig.starts().len(), 1, "failed ids are not restarted");
+}
+
+/// The same race with a normal end: the ids return to the queue and start again.
+#[test]
+fn an_end_before_the_start_settles_requeues_and_restarts_the_ids() {
+    let rig = Rig::new(false);
+    rig.probe
+        .end_next_start_first(&rig.bridge, EndOutcome::Closed);
+    rig.report_missing();
+    assert_eq!(rig.starts(), vec![owned(&[ID]), owned(&[ID])], "s1 ended");
+    assert_eq!(rig.rebuilds.panel().running.expect("s2 runs").session, "s2");
+}
+
+fn questions(sent: &Sent) -> Vec<SummaryQuestion> {
+    let sent = sent.lock().unwrap();
+    let question = |message: &PlanMessage| match message {
+        PlanMessage::SummaryQuestion(question) => Some(question.clone()),
+        _ => None,
+    };
+    sent.iter().filter_map(question).collect()
+}
+
+/// Regression: a question event computed under an earlier lock is published as the state
+/// holds the question when sent: pruned ids are left out and a closed question is not sent,
+/// so a late broadcast never shows browsers a question that no longer exists.
+#[test]
+fn a_question_is_published_as_the_state_holds_it_when_sent() {
+    let (_, rebuilds, sent) = facade();
+    let ids: Vec<String> = (1..=7).map(|i| format!("plans/p{i}")).collect();
+    let rows: Vec<Row<'_>> = ids
+        .iter()
+        .map(|id| (id.as_str(), Missing, None, None))
+        .collect();
+    let invalidated: Vec<&str> = ids.iter().map(String::as_str).collect();
+    rebuilds.on_update(&update(&rows, &invalidated));
+    let asked = rebuilds.panel().question.expect("seven ask");
+    let stale = SchedulerEvent::Asked(QuestionView {
+        id: asked.id.clone(),
+        ids: asked.ids,
+    });
+    rebuilds.on_update(&update(&rows[1..], &[]));
+    sent.lock().unwrap().clear();
+    let before = Snapshot::of(&rebuilds.lock().scheduler);
+    rebuilds.publish(&before, std::slice::from_ref(&stale));
+    let published: Vec<Vec<String>> = questions(&sent).into_iter().map(|q| q.ids).collect();
+    assert_eq!(published, vec![ids[1..].to_vec()], "the pruned question");
+    let declined = rebuilds.answer(&asked.id, false, AnswerRight::Holder);
+    assert_eq!(declined, Ok(()));
+    sent.lock().unwrap().clear();
+    let before = Snapshot::of(&rebuilds.lock().scheduler);
+    rebuilds.publish(&before, &[stale]);
+    assert_eq!(
+        questions(&sent),
+        vec![],
+        "a closed question is not sent again"
+    );
+}
+
+fn concept_changes(sent: &Sent) -> Vec<ConceptChanged> {
+    let sent = sent.lock().unwrap();
+    let changed = |message: &PlanMessage| match message {
+        PlanMessage::ConceptChanged(changed) => Some(changed.clone()),
+        _ => None,
+    };
+    sent.iter().filter_map(changed).collect()
+}
+
+/// The `concept_changed` naming `ids` and the pages that show them.
+fn changed(ids: &[&str]) -> ConceptChanged {
+    let scope = Scope::default();
+    let pages: BTreeSet<String> = ids.iter().flat_map(|id| page_keys(id, &scope)).collect();
+    ConceptChanged {
+        pages: pages.into_iter().collect(),
+        out_of_date: owned(ids),
+        sources: Vec::new(),
+    }
+}
+
+#[test]
+fn a_stall_failing_the_running_ids_notifies_concept_mode() {
+    // A zero timeout makes the first tick a stall; the production timeout is ten minutes.
+    let config = SchedulerConfig {
+        no_seal_timeout: Duration::ZERO,
+        ..SchedulerConfig::standard(None)
+    };
+    let rig = Rig::build(Arc::new(TmuxHost), false, config, false);
+    rig.report_missing();
+    rig.sent.lock().unwrap().clear();
+    rig.rebuilds.tick();
+    assert_eq!(rig.stops(), vec![("s1".to_owned(), true)], "stalled");
+    let running = rig.rebuilds.panel().running.map(|running| running.session);
+    assert_eq!(running.as_deref(), Some("s1"), "s1 runs until its end");
+    assert_eq!(concept_changes(&rig.sent), vec![changed(&[ID])]);
+}
+
+#[test]
+fn a_seal_changing_the_done_count_notifies_concept_mode() {
+    let (_, rebuilds, sent) = facade();
+    let missing = [
+        ("plans/a", Missing, None, None),
+        ("plans/b", Missing, None, None),
+    ];
+    rebuilds.on_update(&update(&missing, &["plans/a", "plans/b"]));
+    sent.lock().unwrap().clear();
+    let a_sealed = [
+        ("plans/a", Current, Some("A"), None),
+        ("plans/b", Missing, None, Some("s1")),
+    ];
+    rebuilds.on_update(&update(&a_sealed, &[]));
+    assert_eq!(rebuilds.building(), Some(Building { done: 1, total: 2 }));
+    let expected = changed(&["plans/a", "plans/b"]);
+    assert_eq!(concept_changes(&sent), vec![expected]);
+}
+
+/// A seal is a changed file of a running id that evaluates non-missing: a file that vanished
+/// or fails validation (Missing) neither counts as sealed nor restarts the stall timer.
+#[test]
+fn a_running_summary_evaluating_missing_is_not_sealed_and_keeps_the_stall_timer() {
+    let (_, rebuilds, _) = facade();
+    let stale: [Row<'_>; 1] = [(ID, Stale, Some("old"), None)];
+    rebuilds.on_update(&update(&stale, &[ID]));
+    let started = Instant::now();
+    thread::sleep(Duration::from_millis(20));
+    let gone: [Row<'_>; 1] = [(ID, Missing, None, Some("s1"))];
+    rebuilds.on_update(&update(&gone, &[]));
+    let invalid: [Row<'_>; 1] = [(ID, Missing, Some("draft"), Some("s1"))];
+    rebuilds.on_update(&update(&invalid, &[]));
+    let due = started + NO_SEAL_TIMEOUT;
+    let unsealed = Some(Building { done: 0, total: 1 });
+    assert_eq!(rebuilds.building(), unsealed, "not sealed");
+    let stall = rebuilds.lock().scheduler.stall_due(due).map(str::to_owned);
+    assert_eq!(
+        stall.as_deref(),
+        Some("s1"),
+        "the timer runs from the start"
+    );
+    let sealed: [Row<'_>; 1] = [(ID, Rebuilding, Some("new"), Some("s1"))];
+    rebuilds.on_update(&update(&sealed, &[]));
+    assert_eq!(rebuilds.building(), Some(Building { done: 1, total: 1 }));
+    let stall = rebuilds.lock().scheduler.stall_due(due).map(str::to_owned);
+    assert_eq!(stall, None, "a seal restarts the timer");
+}

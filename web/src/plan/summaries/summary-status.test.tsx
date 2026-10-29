@@ -276,3 +276,70 @@ it("shows the question to a browser that cannot answer", async () => {
   fireEvent.click(rebuild);
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
+
+function answerPosts() {
+  return fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/summaries/answer"));
+}
+
+it("moves focus into the popover when the user opens it from the trigger", async () => {
+  show();
+  fireEvent.click(await screen.findByRole("button", { name: /Summaries up to date/ }));
+  const dialog = await screen.findByRole("dialog", { name: "Summary rebuilds" });
+  await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+});
+
+it("reopens from the trigger with focus inside, and Escape returns focus to the trigger", async () => {
+  show();
+  const trigger = await screen.findByRole("button", { name: /Summaries up to date/ });
+  const textbox = screen.getByRole("textbox", { name: "Message" });
+  act(() => textbox.focus());
+  deliver("summary_question", question);
+  await screen.findByRole("button", { name: "Not now" });
+  expect(document.activeElement).toBe(textbox);
+  fireEvent.click(trigger);
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  fireEvent.click(trigger);
+  const dialog = await screen.findByRole("dialog", { name: "Summary rebuilds" });
+  await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape", code: "Escape" });
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+});
+
+it("leaves focus in the composer when Escape closes a popover a question opened", async () => {
+  show();
+  await screen.findByRole("button", { name: /Summaries up to date/ });
+  const textbox = screen.getByRole("textbox", { name: "Message" });
+  act(() => textbox.focus());
+  deliver("summary_question", question);
+  await screen.findByRole("button", { name: "Not now" });
+  fireEvent.keyDown(textbox, { key: "Escape", code: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  // Radix restores focus from a timeout once the content unmounts; let it run.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(document.activeElement).toBe(textbox);
+});
+
+it("sends one answer when an answer button is clicked twice before the reply", async () => {
+  show();
+  await screen.findByRole("button", { name: /Summaries up to date/ });
+  deliver("summary_question", question);
+  let reply!: (response: Response) => void;
+  fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => (reply = resolve)));
+  const notNow = await screen.findByRole("button", { name: "Not now" });
+  fireEvent.click(notNow);
+  fireEvent.click(notNow);
+  await waitFor(() => expect(answerPosts()).toHaveLength(1));
+  await act(async () => {});
+  expect(answerPosts()).toHaveLength(1);
+  await act(async () => {
+    reply(
+      new Response(JSON.stringify(idle), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  });
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Not now" })).toBeNull());
+});

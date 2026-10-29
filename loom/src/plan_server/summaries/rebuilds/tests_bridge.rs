@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use tempfile::TempDir;
 
-use super::tests::{owned, update, Probe, Row};
+use super::tests::{owned, update, Probe, Row, Sent};
 use super::*;
 use crate::plan_server::wire::summaries::FailedSummary;
 use crate::plan_session::bridge::host::SessionHost;
@@ -29,17 +29,30 @@ pub(super) struct Rig {
     pub(super) bridge: Arc<Bridge>,
     pub(super) paths: RuntimePaths,
     pub(super) tmp: TempDir,
+    /// Every message the facade broadcast.
+    pub(super) sent: Sent,
 }
 
 impl Rig {
     /// A facade over a temp runtime directory; `env_bridge` lets its tick see the bridge, which
     /// knows no session.
-    fn new(env_bridge: bool) -> Rig {
+    pub(super) fn new(env_bridge: bool) -> Rig {
         Rig::with_host(Arc::new(TmuxHost), env_bridge)
     }
 
     /// [`Rig::new`] over `host`, the program the bridge launches sessions with.
     pub(super) fn with_host(host: Arc<dyn SessionHost>, env_bridge: bool) -> Rig {
+        Rig::build(host, env_bridge, SchedulerConfig::standard(None), false)
+    }
+
+    /// [`Rig::with_host`] with the scheduler's `config` and, with `attributed`, attribution
+    /// over the rig's runtime directory.
+    pub(super) fn build(
+        host: Arc<dyn SessionHost>,
+        env_bridge: bool,
+        scheduler: SchedulerConfig,
+        attributed: bool,
+    ) -> Rig {
         let tmp = TempDir::new().expect("temp dir");
         let root: PathBuf = tmp.path().join("project");
         std::fs::create_dir_all(&root).expect("project root");
@@ -61,9 +74,14 @@ impl Rig {
         let bridge = Bridge::new(config, host, None);
         let probe = Arc::new(Probe::default());
         let held = env_bridge.then(|| Arc::clone(&bridge));
-        let broadcast: Broadcast = Arc::new(|_| {});
+        let sent: Sent = Arc::default();
+        let sink = Arc::clone(&sent);
+        let broadcast: Broadcast =
+            Arc::new(move |message: &PlanMessage| sink.lock().unwrap().push(message.clone()));
+        let attribution = attributed.then(|| Attribution::new(paths.clone()));
+        let (spawner, runtime) = (probe.clone(), paths.clone());
         let rebuilds =
-            Rebuilds::new_for_test_in(probe.clone(), None, broadcast, paths.clone(), held);
+            Rebuilds::new_for_test_in(spawner, scheduler, broadcast, runtime, held, attribution);
         probe.rebuilds.set(Arc::downgrade(&rebuilds)).ok();
         Rig {
             probe,
@@ -71,6 +89,7 @@ impl Rig {
             bridge,
             paths,
             tmp,
+            sent,
         }
     }
 
@@ -92,7 +111,7 @@ impl Rig {
         self.probe.stops.lock().unwrap().clone()
     }
 
-    fn claim(&self, session: &str) {
+    pub(super) fn claim(&self, session: &str) {
         let made = create_claim_as(&self.paths, ID, Some(session.to_owned())).expect("claim");
         made.expect("no earlier claim");
     }
@@ -128,7 +147,7 @@ fn ended(id: &str, kind: SessionKind) -> BridgeEvent {
     ended_with(id, kind, EndOutcome::Closed)
 }
 
-fn ended_with(id: &str, kind: SessionKind, outcome: EndOutcome) -> BridgeEvent {
+pub(super) fn ended_with(id: &str, kind: SessionKind, outcome: EndOutcome) -> BridgeEvent {
     BridgeEvent::Ended {
         id: id.into(),
         kind,

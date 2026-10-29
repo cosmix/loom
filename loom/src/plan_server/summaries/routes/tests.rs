@@ -23,8 +23,8 @@ use crate::planning::summary::evaluate::fixtures::{self, Fixture, ID1};
 use crate::planning::summary::evaluate::{Evaluation, SummaryEval, SummaryState};
 use crate::planning::summary::store::Scope;
 
-const PANEL: &str = "/api/summaries/panel";
-const REBUILD: &str = "/api/summaries/rebuild";
+pub(super) const PANEL: &str = "/api/summaries/panel";
+pub(super) const REBUILD: &str = "/api/summaries/rebuild";
 const RELEASE: &str = "/api/summaries/release";
 const ANSWER: &str = "/api/summaries/answer";
 
@@ -40,7 +40,8 @@ impl SessionSpawner for Spawner {
     fn stop(&self, _: &str, _: bool) {}
 }
 
-fn serve(f: &Fixture, read_only: Option<&str>) -> (RunningServer, Arc<Rebuilds>, Arc<Spawner>) {
+/// A server over `f` with the summary routes; its facade is the one `install` made.
+pub(super) fn start(f: &Fixture, read_only: Option<&str>) -> RunningServer {
     let problems = read_only.map(|message| MissingPrereq {
         what: PrereqKind::Tmux,
         message: message.to_owned(),
@@ -54,7 +55,12 @@ fn serve(f: &Fixture, read_only: Option<&str>) -> (RunningServer, Arc<Rebuilds>,
     };
     let mut table = routes();
     table.extend(test_routes());
-    let server = start_with_routes(options, table).expect("start the planning server");
+    start_with_routes(options, table).expect("start the planning server")
+}
+
+/// [`start`] with the facade replaced by one over a recording spawner.
+fn serve(f: &Fixture, read_only: Option<&str>) -> (RunningServer, Arc<Rebuilds>, Arc<Spawner>) {
+    let server = start(f, read_only);
     let spawner = Arc::new(Spawner::default());
     let rebuilds = Rebuilds::new_for_test(
         spawner.clone(),
