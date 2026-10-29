@@ -9,7 +9,7 @@ use crate::planning::summary::evaluate::fixtures::{fixture, put, two_sections, F
 use crate::planning::watch::{Batch, Watcher};
 
 const TEXT: &str = "summary text\n";
-const ID2_SIBLING: &str = "product/section_02";
+const ID2_SIBLING: &str = "demo/product/section_02";
 
 fn on_disk(fx: &Fixture, id: &str) -> Option<String> {
     fs::read_to_string(fx.root.join(store::summary_path(id))).ok()
@@ -138,7 +138,7 @@ fn symlinked_store_directory_is_refused() {
 fn symlinked_summary_file_is_not_read() {
     let fx = two_sections();
     put(&fx.root, "doc/elsewhere.md", TEXT);
-    fs::create_dir_all(fx.root.join("doc/loom/summaries/product")).unwrap();
+    fs::create_dir_all(fx.root.join("doc/loom/summaries/demo/product")).unwrap();
     symlink(
         fx.root.join("doc/elsewhere.md"),
         fx.root.join(store::summary_path(ID1)),
@@ -185,4 +185,54 @@ fn store_lock_creates_runtime_dir_and_refuses_a_symlinked_lock() {
         "followed a symlinked lock"
     );
     assert!(!fx.root.join("target").exists());
+}
+
+#[test]
+fn lists_nested_sections_and_overviews_and_skips_unsafe_directories() {
+    let fx = fixture(&[]);
+    let expected = [
+        ID1,
+        "other/product/section_01",
+        "overview/demo/engineering",
+        "overview/demo/product",
+        "overview/other/product",
+        "plans/x",
+    ];
+    for id in expected {
+        write_summary(&fx.root, &fx.paths, id, TEXT, None).expect("write nested id");
+    }
+    put(
+        &fx.root,
+        "doc/loom/summaries/overview/demo/.product.md.tmp-1",
+        TEXT,
+    );
+    put(
+        &fx.root,
+        "doc/loom/summaries/demo/product/section_1.md",
+        TEXT,
+    );
+    put(
+        &fx.root,
+        "doc/loom/summaries/.hidden/product/section_01.md",
+        TEXT,
+    );
+    let outside = fx.root.join("outside");
+    fs::create_dir_all(outside.join("product")).unwrap();
+    fs::write(outside.join("product/section_01.md"), TEXT).unwrap();
+    symlink(&outside, fx.root.join("doc/loom/summaries/linked")).unwrap();
+
+    assert_eq!(stored_ids(&fx.root).expect("list"), expected);
+}
+
+#[test]
+fn nested_store_parent_symlink_refuses_writes_and_reads() {
+    let fx = fixture(&[]);
+    let outside = fx.root.join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    fs::create_dir_all(fx.root.join("doc/loom/summaries/demo")).unwrap();
+    symlink(&outside, fx.root.join("doc/loom/summaries/demo/product")).unwrap();
+
+    assert!(write_summary(&fx.root, &fx.paths, ID1, TEXT, None).is_err());
+    assert!(read_summary(&fx.root, ID1).is_err());
+    assert!(fs::read_dir(&outside).unwrap().next().is_none());
 }

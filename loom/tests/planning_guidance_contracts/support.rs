@@ -34,19 +34,23 @@ impl Fixture {
             .tempdir_in(std::env::temp_dir())
             .unwrap();
         let root = temp.path().join("repo");
-        put(&root, "doc/product/index.md", VISION);
+        put(&root, "doc/product/f/index.md", VISION);
         put(
             &root,
-            "doc/product/section_01.md",
+            "doc/product/f/section_01.md",
             "# Alpha\n\nAlpha body.\n",
         );
-        put(&root, "doc/product/section_02.md", "# Beta\n\nBeta body.\n");
-        put(&root, "doc/plans/index.md", METAPLAN);
-        let truth = "# Plan: Delivery truth\n\nImplements: 01\n";
-        put(&root, "doc/plans/PLAN-delivery-truth.md", truth);
         put(
             &root,
-            "doc/plans/IN_PROGRESS-PLAN-b.md",
+            "doc/product/f/section_02.md",
+            "# Beta\n\nBeta body.\n",
+        );
+        put(&root, "doc/plans/f/index.md", METAPLAN);
+        let truth = "# Plan: Delivery truth\n\nImplements: 01\n";
+        put(&root, "doc/plans/f/PLAN-delivery-truth.md", truth);
+        put(
+            &root,
+            "doc/plans/f/IN_PROGRESS-PLAN-b.md",
             "# Plan: B\n\nImplements: 02\n",
         );
         let home = temp.path().join("home");
@@ -85,7 +89,14 @@ impl Fixture {
         session: &SessionDir,
         models: &GuidanceModels,
     ) -> anyhow::Result<SessionGuidance> {
-        render_session_guidance(kind, &self.project, &self.runtime, session, models)
+        render_session_guidance(
+            kind,
+            &self.project,
+            &self.runtime,
+            session,
+            models,
+            Some("f"),
+        )
     }
 }
 
@@ -98,6 +109,7 @@ fn session_dir(base: &Path, name: &str) -> SessionDir {
     SessionDir::new(dir)
 }
 
+/// Write a fixture document, creating its parent directories.
 pub fn put(root: &Path, rel: &str, content: impl AsRef<[u8]>) {
     fs::create_dir_all(root.join(rel).parent().unwrap()).unwrap();
     fs::write(root.join(rel), content).unwrap();

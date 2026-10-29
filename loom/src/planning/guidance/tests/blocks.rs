@@ -45,18 +45,18 @@ impl Fixture {
         let root = base.join("repo");
         for (relative, text) in [
             (
-                "doc/product/index.md",
+                "doc/product/f/index.md",
                 "# Vision\n\n## Specification sections\n\n\
                  | # | Section |\n| --- | --- |\n| 01 | Alpha |\n| 02 | Beta |\n",
             ),
-            ("doc/product/section_01.md", "# Alpha\n\nAlpha body.\n"),
-            ("doc/product/section_02.md", "# Beta\n\nBeta body.\n"),
+            ("doc/product/f/section_01.md", "# Alpha\n\nAlpha body.\n"),
+            ("doc/product/f/section_02.md", "# Beta\n\nBeta body.\n"),
             (
-                "doc/plans/index.md",
+                "doc/plans/f/index.md",
                 "# Metaplan\n\n## 1. Delivery truth (`PLAN-foo.md`)\n",
             ),
             (
-                "doc/plans/IN_PROGRESS-PLAN-foo.md",
+                "doc/plans/f/IN_PROGRESS-PLAN-foo.md",
                 "# Plan\n\nImplements: 01\n",
             ),
         ] {
@@ -81,18 +81,18 @@ fn kinds() -> [SessionGuidanceKind; 4] {
     [
         SessionGuidanceKind::Authoring(AuthoringStart::NoStep),
         SessionGuidanceKind::Summary {
-            ids: vec!["product/section_01".into()],
+            ids: vec!["f/product/section_01".into()],
         },
         SessionGuidanceKind::Pressure {
             command: PressureCommand::Pressure,
-            plan_rel: "doc/plans/PLAN-foo.md".into(),
+            plan_rel: "doc/plans/f/PLAN-foo.md".into(),
             brief: "Review this plan.\n".into(),
             model: "opus".into(),
             effort: "high".into(),
         },
         SessionGuidanceKind::Pressure {
             command: PressureCommand::Address,
-            plan_rel: "doc/plans/PLAN-foo.md".into(),
+            plan_rel: "doc/plans/f/PLAN-foo.md".into(),
             brief: "Address this plan's review.\n".into(),
             model: "opus".into(),
             effort: "high".into(),
@@ -120,6 +120,7 @@ fn assert_refused(
         &fixture.runtime,
         session,
         &fixture.models,
+        Some("f"),
     )
     .expect_err("a launch block must refuse guidance");
 
@@ -214,6 +215,7 @@ fn test_clearing_start_block_allows_every_kind_to_render() {
             &fixture.runtime,
             &session,
             &fixture.models,
+            Some("f"),
         )
         .unwrap();
         assert_eq!(guidance.brief_path, session.brief());

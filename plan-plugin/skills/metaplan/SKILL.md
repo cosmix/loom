@@ -5,17 +5,19 @@ description: Load when a planning session creates a metaplan, starts a later pla
 
 # Write a metaplan
 
-Write the target metaplan: `doc/plans/index.md` for the first round,
-`doc/plans/metaplan-<nn>.md` for a later round, or an existing metaplan when adding
-an unlisted plan (ask which one when more than one exists). Also write any other
+Use the feature name given in the session's opening prompt.
+
+Write the target metaplan: `doc/plans/<feature>/index.md` for the first round,
+`doc/plans/<feature>/metaplan-<nn>.md` for a later round, or an existing metaplan
+when adding an unlisted plan (ask which one when more than one exists). Also write any other
 editable document under `doc/` that a settled decision or an open point binds; put a
-decision that spans product sections under `## Decisions` in `doc/product/index.md`.
+decision that spans product sections under `## Decisions` in `doc/product/<feature>/index.md`.
 Never stage, commit, or branch, and never run `loom init`, `loom run`, or
 `loom pressure`.
 
 Keep plans with an `IN_PROGRESS-`, `DONE-`, or `RETIRED-` prefix, their brief
-bundles, everything under `doc/plans/archive/`, and all `REVIEW-*.md` files
-read-only. Leave finished metaplans unchanged; add a new round instead. If asked
+bundles, everything under `doc/plans/<feature>/archive/` or `doc/plans/archive/`,
+and all `REVIEW-*.md` files read-only. Leave finished metaplans unchanged; add a new round instead. If asked
 to change locked work, explain the limit and offer a new metaplan entry or a
 refinement of the product spec. Never write knowledge or summaries directly;
 knowledge changes go through `loom knowledge`, and summary changes go through
@@ -23,14 +25,14 @@ knowledge changes go through `loom knowledge`, and summary changes go through
 
 ## Read before discussing
 
-Read the product spec, including `doc/product/index.md` and every written
-product section. Read every existing metaplan and every plan in any state,
-including running, done, retired, and archived plans. Use these to establish
+Read the feature's product spec, including `doc/product/<feature>/index.md` when present
+and every written product section. Read every existing metaplan and every plan
+in the feature in any state, including running, done, retired, and archived plans. Use these to establish
 what is already planned, underway, or delivered so the new round repeats none
 of that work.
 
 For a later round, choose the next free two-digit number for
-`doc/plans/metaplan-<nn>.md`. Keep the first round at `doc/plans/index.md`.
+`doc/plans/<feature>/metaplan-<nn>.md`. Keep the first round at `doc/plans/<feature>/index.md`.
 
 ## Settle the cut into plans
 
@@ -58,7 +60,8 @@ Follow each entry with three or four paragraphs covering what the plan delivers,
 the product sections it implements by number, what it depends on and what
 depends on it, and its risks. State explicitly when it implements no product
 section. Keep the entry's description precise enough to bind the later plan's
-scope. Do not put `Implements:` lines in a metaplan; those belong in plans.
+scope. Plans live beside the metaplan, and their slugs must be unique across the
+repository. Do not put `Implements:` lines in a metaplan; those belong in plans.
 
 Put entries in their intended execution order. Use prose headings without a
 plan file name for material such as policy notes. Keep such headings unnumbered;

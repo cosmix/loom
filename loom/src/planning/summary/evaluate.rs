@@ -6,6 +6,8 @@
 
 mod cite;
 #[cfg(test)]
+mod feature_tests;
+#[cfg(test)]
 pub(crate) mod fixtures;
 #[cfg(test)]
 mod tests;
@@ -122,33 +124,38 @@ pub struct SummaryEval {
     pub error: Option<String>,
 }
 
-/// Every expected summary evaluated, with the overview scope and the store's orphans.
+/// Every expected summary evaluated, with feature overview scopes and the store's orphans.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Evaluation {
     /// Evaluations by summary id.
     pub summaries: BTreeMap<String, SummaryEval>,
-    /// Overview members in reading order, and the documents outside both overviews.
-    pub scope: Scope,
+    /// Overview members and outside documents, keyed by feature name.
+    pub scopes: BTreeMap<String, Scope>,
     /// Ids of store files no expected summary owns (the engine deletes them).
     pub orphans: Vec<String>,
 }
 
 /// Evaluate every expected summary of `project`; `claims` decide which are rebuilding.
 pub fn evaluate(project: &Project, claims: &[Claim]) -> Evaluation {
-    let scope = store::scope(project);
+    let scopes: BTreeMap<_, _> = project
+        .features
+        .iter()
+        .map(|feature| (feature.name.clone(), store::scope(project, &feature.name)))
+        .collect();
     let expected = store::expected_ids(project);
     let (overviews, documents): (Vec<&String>, Vec<&String>) =
         expected.iter().partition(|id| store::is_overview(id));
     let mut summaries = BTreeMap::new();
     for id in documents.into_iter().chain(overviews) {
         let claim = claims.iter().find(|c| &c.summary == id).cloned();
+        let scope = Scope::of(project, id).unwrap_or_default();
         let eval = evaluate_one(project, &scope, &summaries, id, claim);
         summaries.insert(id.clone(), eval);
     }
     let orphans = orphans_among(project, &expected);
     Evaluation {
         summaries,
-        scope,
+        scopes,
         orphans,
     }
 }

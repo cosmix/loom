@@ -8,7 +8,7 @@ use super::front::{parse_front, render_front, FrontMatter, SummaryKind};
 fn maps_round_trip_special_characters_and_render_stably() {
     let front = FrontMatter {
         kind: SummaryKind::Overview,
-        of: "product".into(),
+        of: "overview/alpha/product".into(),
         file: None,
         cites: BTreeMap::from([
             (
@@ -17,7 +17,10 @@ fn maps_round_trip_special_characters_and_render_stably() {
             ),
             ("doc/z.md".into(), "sha256:other".into()),
         ]),
-        members: BTreeMap::from([("product/section_01#x: \"y\"".into(), "hash\nvalue".into())]),
+        members: BTreeMap::from([(
+            "alpha/product/section_01#x: \"y\"".into(),
+            "hash\nvalue".into(),
+        )]),
     };
     let rendered = render_front(&front);
     assert_eq!(rendered, render_front(&front));
@@ -47,10 +50,22 @@ fn document_requires_file() {
 
 #[test]
 fn overview_requires_members_and_document_cannot_have_them() {
-    assert!(parse_front("kind: overview\nof: product\ncites: {}\n", 2).is_err());
+    assert!(parse_front("kind: overview\nof: overview/alpha/product\ncites: {}\n", 2).is_err());
     assert!(parse_front(
         "kind: document\nof: doc/a.md\nfile: sha256:abc\ncites: {}\nmembers: {}\n",
         2
     )
     .is_err());
+}
+
+#[test]
+fn overview_front_matter_requires_a_feature_overview_id() {
+    for id in ["product", "engineering", "overview/Bad/product", "plans/p"] {
+        let yaml = format!("kind: overview\nof: {id}\ncites: {{}}\nmembers: {{}}\n");
+        let errors = parse_front(&yaml, 2).unwrap_err();
+        assert!(
+            errors[0].message.contains("valid feature overview id"),
+            "{id}"
+        );
+    }
 }

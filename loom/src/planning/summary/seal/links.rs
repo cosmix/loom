@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use crate::planning::kinds::VISION_PATH;
+use crate::planning::kinds::vision_path;
 use crate::planning::project::Project;
 use crate::planning::summary::evaluate::{cite_key, Evaluation, SentenceState, SummaryState};
 use crate::planning::summary::format::{Block, FormatError, LinkTarget, SummaryBody};
@@ -34,27 +34,31 @@ pub(super) struct Rules<'a> {
 impl Rules<'_> {
     /// The documents a passage link may point at.
     pub(super) fn allowed_sources(&self) -> Vec<PathBuf> {
-        match self.id {
-            "product" => vec![PathBuf::from(VISION_PATH)],
-            "engineering" => self
-                .project
-                .metaplans
-                .iter()
-                .map(|(p, _)| p.clone())
-                .collect(),
-            id => store::source_of(self.project, id).into_iter().collect(),
+        let Some(scope) = store::Scope::of(self.project, self.id) else {
+            return store::source_of(self.project, self.id)
+                .into_iter()
+                .collect();
+        };
+        if self.id.ends_with("/product") {
+            vec![vision_path(&scope.feature)]
+        } else {
+            self.project
+                .feature(&scope.feature)
+                .into_iter()
+                .flat_map(|feature| feature.metaplans.iter().map(|(path, _)| path.clone()))
+                .collect()
         }
     }
 
     /// The member summaries of an overview, in reading order.
     pub(super) fn members(&self) -> Vec<String> {
-        let Some(evaluation) = self.evaluation else {
+        let Some(scope) = store::Scope::of(self.project, self.id) else {
             return Vec::new();
         };
-        match self.id {
-            "product" => evaluation.scope.product.clone(),
-            "engineering" => evaluation.scope.engineering.clone(),
-            _ => Vec::new(),
+        if self.id.ends_with("/product") {
+            scope.product
+        } else {
+            scope.engineering
         }
     }
 }

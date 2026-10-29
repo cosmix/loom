@@ -20,16 +20,15 @@ use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
 use crate::fs::plan_lifecycle::{DONE_PREFIX, IN_PROGRESS_PREFIX, RETIRED_PREFIX};
-use crate::plan::inputs::collect_inputs;
-use crate::planning::discover::{discover, DocTree, Document, SUMMARIES};
+use crate::planning::discover::SUMMARIES;
+use crate::planning::kinds::is_feature_name;
 use crate::planning::slug::{plan_state, PlanState};
 
+mod scan;
 #[cfg(test)]
 mod tests;
 
 const PLANS: &str = "doc/plans";
-const ARCHIVE: &str = "doc/plans/archive";
-const BRIEFS: &str = "doc/plans/briefs";
 const KNOWLEDGE: &str = "doc/loom/knowledge";
 /// Longest request path, in bytes, `check_relpath_syntax` accepts.
 const MAX_RELPATH_BYTES: usize = 1024;
@@ -42,11 +41,11 @@ pub enum LockReason {
     /// (JSON `{"reason":"plan_state","state":"running"}`).
     #[serde(serialize_with = "serialize_plan_state")]
     PlanState(PlanState),
-    /// A path under `doc/plans/archive/`.
+    /// A path under a standalone or feature plan home's `archive/`.
     Archive,
-    /// A run review, `doc/plans/REVIEW-*.md`.
+    /// A run review, `REVIEW-*.md`, directly in a plan home.
     RunReview,
-    /// A brief of a locked plan: under its bundle `doc/plans/briefs/<slug>/` or an input
+    /// A brief of a locked plan: under its home's `briefs/<slug>/` bundle or an input
     /// `collect_inputs` lists for it.
     BriefOfLockedPlan {
         /// The locked plan's slug.
@@ -87,37 +86,11 @@ pub struct LockedSet {
     briefs: BTreeMap<PathBuf, LockReason>,
     /// Lowercased bundle directories of locked plans, with each plan's slug.
     bundles: Vec<(PathBuf, String)>,
-    /// Existing locked files plus the archive directory, sorted.
+    /// Existing locked files plus each home's archive directory, sorted.
     existing: Vec<PathBuf>,
 }
 
 impl LockedSet {
-    /// Scan the tree under `root` (the repository root). An error, including one from
-    /// `collect_inputs`, must make the caller deny: the set would be incomplete.
-    pub fn scan(root: &Path) -> Result<LockedSet> {
-        let tree = discover(root)?;
-        let mut set = LockedSet {
-            briefs: BTreeMap::new(),
-            bundles: Vec::new(),
-            existing: Vec::new(),
-        };
-        for (slug, plan) in locked_plan_files(&tree) {
-            let bundle = fold(&Path::new(BRIEFS).join(&slug));
-            if !set.bundles.iter().any(|(prefix, _)| *prefix == bundle) {
-                set.bundles.push((bundle, slug.clone()));
-            }
-            let inputs = collect_inputs(root, &plan).with_context(|| {
-                format!("cannot list the inputs of locked plan {}", plan.display())
-            })?;
-            for file in inputs.files.into_keys().filter(|file| *file != plan) {
-                let reason = LockReason::BriefOfLockedPlan { slug: slug.clone() };
-                set.briefs.entry(fold(&file)).or_insert(reason);
-            }
-        }
-        set.existing = existing_locked(root, &tree.docs, &set)?;
-        Ok(set)
-    }
-
     /// Why `rel` (repo-relative, `doc/...`, syntax-checked) is locked: an input of a locked
     /// plan first, then the name rules and the bundle prefixes.
     pub fn lock_reason(&self, rel: &Path) -> Option<LockReason> {
@@ -134,50 +107,10 @@ impl LockedSet {
     }
 
     /// The existing locked files, repo-relative and sorted: plans, run reviews, briefs, and
-    /// `doc/plans/archive` itself in place of the files under it, so no entry lies beneath
+    /// each home's `archive` itself in place of the files under it, so no entry lies beneath
     /// another (the spawn-time deny lists need that).
     pub fn locked_paths(&self) -> Vec<PathBuf> {
         self.existing.clone()
-    }
-}
-
-/// Every plan file, winner or stray, whose own name puts it past `Written`, with its slug.
-fn locked_plan_files(tree: &DocTree) -> Vec<(String, PathBuf)> {
-    let mut files = Vec::new();
-    for entry in tree.plans.values() {
-        for path in std::iter::once(&entry.path).chain(&entry.strays) {
-            if plan_state(path).is_some_and(|state| state > PlanState::Written) {
-                files.push((entry.slug.clone(), path.clone()));
-            }
-        }
-    }
-    files
-}
-
-/// The discovered documents the set locks, outside the archive, plus the archive directory
-/// when it is a real directory.
-fn existing_locked(root: &Path, docs: &[Document], set: &LockedSet) -> Result<Vec<PathBuf>> {
-    let mut existing: Vec<PathBuf> = docs
-        .iter()
-        .map(|doc| &doc.path)
-        .filter(|path| !path.starts_with(ARCHIVE) && set.lock_reason(path).is_some())
-        .cloned()
-        .collect();
-    if is_real_dir(root, Path::new(ARCHIVE))? {
-        existing.push(PathBuf::from(ARCHIVE));
-    }
-    existing.sort();
-    Ok(existing)
-}
-
-fn is_real_dir(root: &Path, rel: &Path) -> Result<bool> {
-    if symlink_component(root, rel)?.is_some() {
-        return Ok(false);
-    }
-    match std::fs::symlink_metadata(root.join(rel)) {
-        Ok(meta) => Ok(meta.is_dir()),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(error).with_context(|| format!("cannot stat {}", rel.display())),
     }
 }
 
@@ -186,20 +119,43 @@ fn fold(path: &Path) -> PathBuf {
 }
 
 /// The name rules on a lowercased path: a locked plan spelling, then the archive, then a
-/// run review directly in `doc/plans/`.
+/// run review directly in a standalone or feature plan home.
 fn name_reason(folded: &Path) -> Option<LockReason> {
     let state = case_canonical_plan(folded).and_then(|plan| plan_state(&plan));
     if let Some(state) = state.filter(|state| *state > PlanState::Written) {
         return Some(LockReason::PlanState(state));
     }
-    if folded.starts_with(ARCHIVE) {
+    if archive_root(folded).is_some() {
         return Some(LockReason::Archive);
     }
     let name = folded.file_name()?.to_str()?;
-    let review = folded.parent() == Some(Path::new(PLANS))
+    let review = folded.parent().is_some_and(is_plan_home)
         && name.starts_with("review-")
         && name.ends_with(".md");
     review.then_some(LockReason::RunReview)
+}
+
+/// Whether a directory is the standalone shelf or a valid feature home.
+fn is_plan_home(path: &Path) -> bool {
+    path == Path::new(PLANS)
+        || (path.parent() == Some(Path::new(PLANS))
+            && path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(is_feature_name))
+}
+
+/// The archive directory enclosing a path, including the directory itself.
+fn archive_root(path: &Path) -> Option<PathBuf> {
+    let mut parts = path.strip_prefix(PLANS).ok()?.components();
+    let first = parts.next()?.as_os_str().to_str()?;
+    if first == "archive" {
+        return Some(Path::new(PLANS).join("archive"));
+    }
+    if is_feature_name(first) && parts.next()?.as_os_str() == "archive" {
+        return Some(Path::new(PLANS).join(first).join("archive"));
+    }
+    None
 }
 
 /// Restore the upper-case lifecycle and `PLAN-` tokens of a lowercased plan file name, so

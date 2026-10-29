@@ -23,7 +23,7 @@ pub struct MetaplanEntry {
 
 /// Whether a repository-relative path names a metaplan.
 pub fn is_metaplan(rel: &Path) -> bool {
-    matches!(classify(rel), DocKind::Metaplan)
+    matches!(classify(rel), DocKind::Metaplan { .. })
 }
 
 /// Extract metaplan entries in heading order, ignoring fenced headings.

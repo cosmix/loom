@@ -7,7 +7,7 @@ use crate::plan::schema::extract_prefixed_paths;
 use crate::planning::discover::{DocTree, SUMMARIES};
 use crate::planning::kinds::DocId;
 use crate::planning::sections::DocSections;
-use crate::planning::slug::plan_slug;
+use crate::planning::slug::{plan_slug, plan_state};
 
 /// The syntax used to name a document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,9 +107,7 @@ fn resolve(
     sections: &dyn Fn(&Path) -> Option<DocSections>,
 ) -> Option<(DocId, Option<String>)> {
     let doc = tree.get(path).or_else(|| {
-        if path.parent() != Some(Path::new("doc/plans")) {
-            return None;
-        }
+        plan_state(path)?;
         let slug = plan_slug(path.file_name()?.to_str()?)?;
         tree.get(&tree.plan(&slug)?.path)
     })?;

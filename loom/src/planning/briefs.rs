@@ -4,11 +4,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::plan::inputs::collect_inputs;
 use crate::planning::discover::DocTree;
-use crate::planning::slug::PlanEntry;
+use crate::planning::kinds::DocKind;
+use crate::planning::slug::{plan_home, PlanEntry};
 
 /// The inputs of a plan, grouped by their place in its bundle.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -26,7 +27,8 @@ pub struct PlanBriefs {
 /// Collect and group the same inputs that a plan run uses.
 pub fn plan_briefs(root: &Path, entry: &PlanEntry, stage_ids: &[String]) -> Result<PlanBriefs> {
     let inputs = collect_inputs(root, &entry.path)?;
-    let bundle = Path::new("doc/plans/briefs").join(&entry.slug);
+    let home = plan_home(&entry.path).context("plan path has no planning home")?;
+    let bundle = home.join("briefs").join(&entry.slug);
     let mut result = PlanBriefs {
         broken: inputs.invalid.iter().map(ToString::to_string).collect(),
         ..PlanBriefs::default()
@@ -75,17 +77,11 @@ fn group_input(result: &mut PlanBriefs, bundle: &Path, stages: &[String], path: 
 
 /// Return sorted bundle slugs represented in the tree that have no plan.
 pub fn orphan_bundles(tree: &DocTree) -> Vec<String> {
-    let base = Path::new("doc/plans/briefs");
     let mut orphans = BTreeSet::new();
     for doc in &tree.docs {
-        if let Ok(relative) = doc.path.strip_prefix(base) {
-            let mut parts = relative.components();
-            if let (Some(slug), Some(_)) = (parts.next(), parts.next()) {
-                if let Some(slug) = slug.as_os_str().to_str() {
-                    if !tree.plans.contains_key(slug) {
-                        orphans.insert(slug.to_owned());
-                    }
-                }
+        if let DocKind::Brief { slug } = &doc.kind {
+            if !tree.plans.contains_key(slug) {
+                orphans.insert(slug.clone());
             }
         }
     }

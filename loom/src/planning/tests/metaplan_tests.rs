@@ -6,7 +6,12 @@ use crate::planning::metaplan::{entries, is_metaplan};
 
 #[test]
 fn recognizes_only_direct_metaplan_paths() {
-    for path in ["doc/plans/index.md", "doc/plans/optim-token-metaplan.md"] {
+    for path in [
+        "doc/plans/index.md",
+        "doc/plans/optim-token-metaplan.md",
+        "doc/plans/a/index.md",
+        "doc/plans/b/metaplan-02.md",
+    ] {
         assert!(is_metaplan(Path::new(path)), "{path}");
     }
     for path in [
@@ -14,6 +19,9 @@ fn recognizes_only_direct_metaplan_paths() {
         "doc/plans/metaplan.txt",
         "doc/product/metaplan.md",
         "doc/plans/PLAN-example.md",
+        "doc/plans/a/archive/metaplan.md",
+        "doc/plans/a/briefs/example/metaplan.md",
+        "doc/plans/Bad/index.md",
     ] {
         assert!(!is_metaplan(Path::new(path)), "{path}");
     }

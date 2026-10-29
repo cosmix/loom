@@ -5,6 +5,8 @@ mod front;
 #[cfg(test)]
 mod front_tests;
 #[cfg(test)]
+mod id_tests;
+#[cfg(test)]
 mod tests;
 
 use std::fmt;
@@ -48,7 +50,7 @@ pub enum LinkTarget {
     },
     /// A sentence of another summary in the store.
     Sentence {
-        /// Id of that summary, for example `product/section_01`.
+        /// Id of that summary, for example `feature/product/section_01`.
         summary: String,
         /// Sentence id, `s-` and 8 hex digits.
         id: String,
@@ -137,10 +139,14 @@ fn classify_href(summary_id: &str, href: &str) -> LinkTarget {
     };
     let summary = inside.to_str().and_then(|s| s.strip_suffix(".md"));
     match (summary, fragment) {
-        (Some(summary), Some(id)) if id.starts_with("s-") => LinkTarget::Sentence {
-            summary: summary.to_string(),
-            id,
-        },
+        (Some(summary), Some(id))
+            if store::validate_id(summary).is_ok() && id.starts_with("s-") =>
+        {
+            LinkTarget::Sentence {
+                summary: summary.to_string(),
+                id,
+            }
+        }
         _ => unresolved(),
     }
 }
@@ -163,10 +169,12 @@ fn one_error(line: usize, message: &str) -> Vec<FormatError> {
     }]
 }
 
-/// Summary id of a store-relative file path such as `doc/loom/summaries/product.md`.
+/// Valid summary id of a path such as `doc/loom/summaries/overview/feature/product.md`.
 fn id_of(summary_rel: &Path) -> Option<String> {
     let inside = summary_rel.strip_prefix(STORE_DIR).ok()?;
-    Some(inside.to_str()?.strip_suffix(".md")?.to_string())
+    let id = inside.to_str()?.strip_suffix(".md")?;
+    store::validate_id(id).ok()?;
+    Some(id.to_string())
 }
 
 /// Splits `text` into the front matter lines and the number of lines before the body.
@@ -217,6 +225,7 @@ pub fn parse(summary_rel: &Path, text: &str) -> Result<SummaryFile, Vec<FormatEr
 
 /// Parses the draft of summary `id`: a body with no front matter.
 pub fn parse_draft(id: &str, text: &str) -> Result<SummaryBody, Vec<FormatError>> {
+    store::validate_id(id).map_err(|error| one_error(1, &error.to_string()))?;
     let conflicts = conflict_errors(text);
     if !conflicts.is_empty() {
         return Err(conflicts);
@@ -227,9 +236,10 @@ pub fn parse_draft(id: &str, text: &str) -> Result<SummaryBody, Vec<FormatError>
             "a draft is the body only, without front matter",
         ));
     }
-    let limit = match id {
-        "product" | "engineering" => MAX_OVERVIEW_SENTENCES,
-        _ => MAX_DOCUMENT_SENTENCES,
+    let limit = if store::is_overview(id) {
+        MAX_OVERVIEW_SENTENCES
+    } else {
+        MAX_DOCUMENT_SENTENCES
     };
     let resolve = |href: &str| classify_href(id, href);
     body::parse_body(text, 0, limit, &resolve)

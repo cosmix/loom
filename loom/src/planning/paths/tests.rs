@@ -8,6 +8,9 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use super::*;
+use crate::planning::discover::discover;
+
+mod feature;
 
 fn tmp() -> TempDir {
     tempfile::Builder::new()

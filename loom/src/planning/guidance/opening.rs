@@ -7,15 +7,55 @@ use anyhow::{anyhow, bail, Context, Result};
 use super::start::AuthoringStart;
 use super::PressureCommand;
 use crate::planning::checklist::Offer;
-use crate::planning::kinds::VISION_PATH;
+use crate::planning::kinds::{plans_dir, product_dir, vision_path};
 use crate::planning::project::Project;
 
-/// Render the generated opening for an authoring start.
-pub fn opening_message(start: &AuthoringStart, project: &Project) -> Result<String> {
+/// Render the generated opening with optional feature context.
+pub fn opening_message(
+    start: &AuthoringStart,
+    project: &Project,
+    feature: Option<&str>,
+) -> Result<String> {
+    let feature = start.feature(feature)?;
+    let mut opening = authoring_opening(start, project, feature)?;
+    if let Some(name) = feature.filter(|_| !opening.is_empty()) {
+        opening.push_str(&format!(
+            "\nFeature: {name}.\n{}",
+            feature_checklist(project, name)
+        ));
+    }
+    Ok(opening)
+}
+
+/// Describe the selected feature's seven checklist marks at launch.
+pub(super) fn feature_checklist(project: &Project, name: &str) -> String {
+    let Some(feature) = project.feature(name) else {
+        return "Checklist: absent (new feature).".into();
+    };
+    let steps = feature
+        .checklist
+        .steps
+        .iter()
+        .map(|(step, mark)| format!("{step:?}={mark:?}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("Checklist: {steps}.")
+}
+
+fn authoring_opening(
+    start: &AuthoringStart,
+    project: &Project,
+    feature: Option<&str>,
+) -> Result<String> {
     match start {
         AuthoringStart::Offer(offer) => {
+            let feature = feature.context("an authoring offer requires a feature")?;
             let (step, skill) = offer_step_and_skill(offer)?;
-            Ok(three_lines(step, &offer_target(offer, project)?, skill))
+            Ok(three_lines(
+                step,
+                &offer_target(offer, project, feature)?,
+                skill,
+            ))
         }
         AuthoringStart::Refine { target, passage } => {
             let mut target = format!("Refine {}.", target.display());
@@ -48,67 +88,73 @@ fn three_lines(step: &str, target: &str, skill: &str) -> String {
 }
 
 fn offer_step_and_skill(offer: &Offer) -> Result<(&'static str, &'static str)> {
+    AuthoringStart::from_offer(offer)?;
     Ok(match offer {
-        Offer::StartVision | Offer::FixVisionTable => ("step 1, Vision", "vision"),
+        Offer::StartVision { .. } | Offer::FixVisionTable { .. } => ("step 1, Vision", "vision"),
         Offer::AddSectionToVision { .. } => ("step 2, Product spec", "vision"),
         Offer::WriteSection { .. } => ("step 2, Product spec", "section"),
-        Offer::StartMetaplan => ("step 3, Metaplan", "metaplan"),
+        Offer::StartMetaplan { .. } => ("step 3, Metaplan", "metaplan"),
         Offer::WritePlan { .. } => ("step 4, Plans", "plan"),
-        Offer::AddPlanToMetaplan { .. } => ("step 4, Plans", "metaplan"),
         Offer::RefineSpec => ("done, Review what was built", "retro"),
         Offer::NewMetaplanRound => ("done, New metaplan round", "metaplan"),
-        Offer::PressureTest { .. } | Offer::StartRun => {
-            bail!("{} is not an authoring offer", offer.id());
-        }
+        _ => bail!("{} is not an authoring offer", offer.id()),
     })
 }
 
-fn offer_target(offer: &Offer, project: &Project) -> Result<String> {
+fn offer_target(offer: &Offer, project: &Project, feature: &str) -> Result<String> {
+    let product = product_dir(feature);
+    let plans = plans_dir(Some(feature));
+    let vision = vision_path(feature);
     Ok(match offer {
-        Offer::StartVision => "Write doc/product/index.md, the product vision.".into(),
-        Offer::FixVisionTable => "Fix the \"Specification sections\" table in \
-             doc/product/index.md so the app can read it."
-            .into(),
-        Offer::AddSectionToVision { number } => format!(
-            "Add doc/product/section_{number:02}.md to the \"Specification sections\" \
-             table in doc/product/index.md."
+        Offer::StartVision { .. } => format!("Write {}, the product vision.", vision.display()),
+        Offer::FixVisionTable { .. } => format!(
+            "Fix the \"Specification sections\" table in {} so the app can read it.",
+            vision.display()
         ),
-        Offer::WriteSection { number } => format!(
-            "Write doc/product/section_{number:02}.md, listed in the vision as \"{}\".",
-            section_row(*number, offer, project)?
+        Offer::AddSectionToVision { number, .. } => format!(
+            "Add {}/section_{number:02}.md to the \"Specification sections\" table in {}.",
+            product.display(),
+            vision.display()
         ),
-        Offer::StartMetaplan => "Write doc/plans/index.md, the first metaplan.".into(),
-        Offer::WritePlan { metaplan, slug } => format!(
-            "Write doc/plans/PLAN-{slug}.md for the entry \"{}\" in {}.",
-            plan_heading(metaplan, slug, offer, project)?,
-            metaplan.display()
+        Offer::WriteSection { number, .. } => format!(
+            "Write {}/section_{number:02}.md, listed in the vision as \"{}\".",
+            product.display(),
+            section_row(*number, offer, project, feature)?
         ),
-        Offer::AddPlanToMetaplan { slug } => {
-            format!("Add an entry for PLAN-{slug}.md to a metaplan in doc/plans/.")
+        Offer::StartMetaplan { .. } => {
+            format!("Write {}/index.md, the first metaplan.", plans.display())
         }
-        Offer::RefineSpec => {
-            "Review the done plans and their run reviews against the product spec.".into()
-        }
+        Offer::WritePlan { metaplan, slug, .. } => format!(
+            "Write {}/PLAN-{slug}.md for the entry \"{}\" in {}. \
+             Write its briefs under {}/briefs/{slug}/.",
+            plans.display(),
+            plan_heading(metaplan, slug, offer, project, feature)?,
+            metaplan.display(),
+            plans.display()
+        ),
+        Offer::RefineSpec => format!(
+            "Review the done plans and their run reviews in {}/ against the product spec in {}/.",
+            plans.display(),
+            product.display()
+        ),
         Offer::NewMetaplanRound => format!(
-            "Write doc/plans/metaplan-{:02}.md, the next metaplan round.",
-            next_round(project)
+            "Write {}/metaplan-{:02}.md, the next metaplan round.",
+            plans.display(),
+            next_round(project, feature)
         ),
-        Offer::PressureTest { .. } | Offer::StartRun => {
-            bail!("{} is not an authoring offer", offer.id());
-        }
+        _ => bail!("{} is not an authoring offer", offer.id()),
     })
 }
 
-fn section_row(number: u32, offer: &Offer, project: &Project) -> Result<String> {
+fn section_row(number: u32, offer: &Offer, project: &Project, feature: &str) -> Result<String> {
     let missing = || anyhow!("{}: missing vision table row", offer.id());
     let row = project
-        .vision_rows
-        .as_ref()
-        .ok()
+        .feature(feature)
+        .and_then(|feature| feature.vision_rows.as_ref().ok())
         .and_then(|rows| rows.iter().find(|row| row.number == number))
         .ok_or_else(missing)?;
     let line = project
-        .text(Path::new(VISION_PATH))
+        .text(&vision_path(feature))
         .and_then(|text| text.lines().nth(row.line))
         .ok_or_else(missing)?;
     let trimmed = line.trim();
@@ -133,10 +179,12 @@ fn plan_heading<'a>(
     slug: &str,
     offer: &Offer,
     project: &'a Project,
+    feature: &str,
 ) -> Result<&'a str> {
     let entry = project
-        .metaplans
-        .iter()
+        .feature(feature)
+        .into_iter()
+        .flat_map(|feature| &feature.metaplans)
         .find(|(path, _)| path == metaplan)
         .and_then(|(_, entries)| {
             entries
@@ -157,11 +205,11 @@ fn plan_heading<'a>(
         .unwrap_or(heading))
 }
 
-fn next_round(project: &Project) -> u64 {
+fn next_round(project: &Project, feature: &str) -> u64 {
     let mut number = 2;
     while project
         .docs
-        .contains_key(Path::new(&format!("doc/plans/metaplan-{number:02}.md")))
+        .contains_key(&plans_dir(Some(feature)).join(format!("metaplan-{number:02}.md")))
     {
         number += 1;
     }
@@ -188,7 +236,7 @@ pub fn pressure_opening_message(cmd: PressureCommand, plan_rel: &str) -> String 
 /// Name a session by its authoring skill or non-authoring task label.
 pub fn display_name(kind_label: &str, start: Option<&AuthoringStart>) -> String {
     let skill = match start {
-        Some(AuthoringStart::Offer(Offer::WriteSection { number })) => {
+        Some(AuthoringStart::Offer(Offer::WriteSection { number, .. })) => {
             return format!("loom plan: section {number:02}");
         }
         Some(AuthoringStart::Offer(offer)) => offer_step_and_skill(offer)

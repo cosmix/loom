@@ -2,6 +2,11 @@
 
 use chrono::{DateTime, Duration, Local};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+use crate::planning::project::Project;
+use crate::planning::summary::evaluate::Evaluation;
+use crate::planning::summary::store::is_overview;
 
 use super::{CostLine, Level, TokenVector};
 
@@ -9,6 +14,39 @@ use super::{CostLine, Level, TokenVector};
 pub const DOCUMENT_STARTING_TOKENS: u64 = 40_000;
 /// Starting estimate for an overview without usable history.
 pub const OVERVIEW_STARTING_TOKENS: u64 = 150_000;
+
+/// Source bytes by summary id; each overview sums only its own feature's members.
+pub fn source_sizes(project: &Project, evaluation: &Evaluation) -> BTreeMap<String, u64> {
+    let mut sizes: BTreeMap<String, u64> = evaluation
+        .summaries
+        .values()
+        .filter(|summary| !is_overview(&summary.id))
+        .map(|summary| {
+            let bytes = summary
+                .source
+                .as_deref()
+                .and_then(|path| project.tree.get(path))
+                .map_or(0, |doc| doc.size);
+            (summary.id.clone(), bytes)
+        })
+        .collect();
+    for scope in evaluation.scopes.values() {
+        for (kind, members) in [
+            ("product", &scope.product),
+            ("engineering", &scope.engineering),
+        ] {
+            let id = format!("overview/{}/{kind}", scope.feature);
+            if evaluation.summaries.contains_key(&id) {
+                let bytes = members
+                    .iter()
+                    .filter_map(|id| sizes.get(id))
+                    .fold(0_u64, |total, bytes| total.saturating_add(*bytes));
+                sizes.insert(id, bytes);
+            }
+        }
+    }
+    sizes
+}
 
 /// Evidence supporting an estimate, ordered from strongest to weakest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
