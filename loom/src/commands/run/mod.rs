@@ -27,6 +27,7 @@ use std::path::PathBuf;
 use crate::daemon::{DaemonConfig, DaemonServer};
 use crate::fs::work_dir::{read_terminal_config, write_terminal_config, WorkDir};
 use crate::models::session::{SessionBackendKind, TerminalConfig};
+use crate::orchestrator::terminal::backend::TMUX_MISSING_MESSAGE;
 
 use checks::prepare_repo_for_run;
 
@@ -230,10 +231,7 @@ fn resolve_backend_flag_with_probe(
     if read_terminal_config(work_dir.root())?.backend == SessionBackendKind::Tmux
         && !tmux_available()
     {
-        bail!(
-            "terminal backend \"tmux\" is configured but tmux is not on PATH; install tmux or \
-             set [terminal] backend = \"native\" (.loom/work/config.toml or ~/.loom/config.toml)"
-        );
+        bail!(TMUX_MISSING_MESSAGE);
     }
 
     Ok(())
