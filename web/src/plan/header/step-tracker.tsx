@@ -1,22 +1,18 @@
-import {
-  CheckIcon,
-  ChevronDownIcon,
-  CircleAlertIcon,
-  CircleDashedIcon,
-  CircleDotIcon,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import type { ChecklistView, CurrentView, MarkView, StepView } from "@/plan/api/schema";
 import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
+import { OTHER_GLYPHS, STEP_GLYPHS } from "@/plan/ui/glyphs";
 
-const MARKS: Record<MarkView, { icon: LucideIcon; label: string; tone: string }> = {
-  done: { icon: CheckIcon, label: "done", tone: "text-(--tone-completed)" },
-  gap: { icon: CircleAlertIcon, label: "has gaps", tone: "text-(--tone-warning)" },
-  active: { icon: CircleDotIcon, label: "in progress", tone: "text-(--tone-executing)" },
-  optional: { icon: CircleDashedIcon, label: "optional", tone: "text-(--tone-dimmed)" },
+import "./step-rail.css";
+
+const MARKS: Record<MarkView, { label: string; tone: string }> = {
+  done: { label: "done", tone: "text-(--tone-completed)" },
+  gap: { label: "has gaps", tone: "text-(--tone-warning)" },
+  active: { label: "in progress", tone: "text-(--tone-executing)" },
+  optional: { label: "optional", tone: "text-(--tone-dimmed)" },
 };
 
 export function isCurrentStep(current: CurrentView, step: StepView): boolean {
@@ -30,39 +26,50 @@ export function readyLabel(current: CurrentView): string | null {
   return null;
 }
 
-/** The step list; the mark is a glyph plus a label for screen readers. */
+function StepCell({ step, current }: { step: StepView; current: boolean }) {
+  const mark = MARKS[step.mark];
+  const Glyph = step.mark === "done" ? OTHER_GLYPHS.stepDone : STEP_GLYPHS[step.number - 1];
+  return (
+    <li
+      aria-current={current ? "step" : undefined}
+      className={cn(
+        "plan-step-cell border-b-2",
+        current
+          ? "border-b-primary bg-muted text-foreground"
+          : "border-b-transparent text-muted-foreground",
+      )}
+    >
+      <span className="flex h-[18px] items-center gap-1.5">
+        {Glyph && <Glyph className={cn("size-3.5 shrink-0", mark.tone)} aria-hidden="true" />}
+        <span className="font-display text-lg leading-none font-semibold tabular-nums">
+          {step.number}
+        </span>
+      </span>
+      <span className="plan-step-name">{step.name}</span>
+      <span className="sr-only">, {mark.label}</span>
+    </li>
+  );
+}
+
+/** Counter cells share their mark labels with the compact popover. */
 export function StepList({
   checklist,
   className,
-  showNames = true,
 }: {
   checklist: ChecklistView;
   className?: string;
-  showNames?: boolean;
 }) {
   return (
-    <ol aria-label="Steps" className={className}>
-      {checklist.steps.map((step) => {
-        const current = isCurrentStep(checklist.current, step);
-        const mark = MARKS[step.mark];
-        return (
-          <li
-            key={step.number}
-            aria-current={current ? "step" : undefined}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs font-medium",
-              current ? "bg-muted text-foreground" : "text-muted-foreground",
-            )}
-          >
-            <mark.icon className={cn("size-3.5 shrink-0", mark.tone)} aria-hidden="true" />
-            <span>{step.number}</span>
-            <span className={cn(!showNames && !current && "sr-only xl:not-sr-only")}>
-              {step.name}
-            </span>
-            <span className="sr-only">, {mark.label}</span>
-          </li>
-        );
-      })}
+    <ol
+      aria-label="Steps"
+      className={cn(
+        "plan-step-rail overflow-hidden rounded-lg border border-hairline bg-card/60 shadow-xs",
+        className,
+      )}
+    >
+      {checklist.steps.map((step) => (
+        <StepCell key={step.number} step={step} current={isCurrentStep(checklist.current, step)} />
+      ))}
     </ol>
   );
 }
@@ -92,17 +99,26 @@ export function StepTracker({
             <ChevronDownIcon aria-hidden="true" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" aria-label="Steps">
-          <StepList checklist={checklist} className="flex flex-col gap-0.5" />
+        <PopoverContent
+          data-loom-plan
+          align="start"
+          aria-label="Steps"
+          className="max-h-(--radix-popover-content-available-height) overflow-y-auto"
+        >
+          <StepList checklist={checklist} className="plan-step-rail-vertical" />
         </PopoverContent>
       </Popover>
     );
   }
   const ready = readyLabel(checklist.current);
   return (
-    <div className="flex min-w-0 items-center gap-2">
-      <StepList checklist={checklist} className="plan-steps" showNames={false} />
-      {ready && <span className="text-xs font-medium text-(--tone-completed)">{ready}</span>}
+    <div className="flex min-w-0 max-w-full items-center gap-3 overflow-x-auto">
+      <StepList checklist={checklist} />
+      {ready && (
+        <span className="shrink-0 text-xs font-medium whitespace-nowrap text-(--tone-completed)">
+          {ready}
+        </span>
+      )}
     </div>
   );
 }
