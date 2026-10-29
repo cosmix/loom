@@ -17,6 +17,9 @@ fn spec_offers_use_spec_class() {
             feature: "f".into(),
             number: 5,
         },
+        Offer::DraftAllSections {
+            feature: "f".into(),
+        },
         Offer::RefineSpec,
     ] {
         let start = AuthoringStart::from_offer(&offer).unwrap();
@@ -37,6 +40,9 @@ fn plan_offers_use_plan_class() {
             slug: "delivery-truth".into(),
         },
         Offer::NewMetaplanRound,
+        Offer::DraftAllPlans {
+            feature: "f".into(),
+        },
     ] {
         let start = AuthoringStart::from_offer(&offer).unwrap();
         assert_eq!(step_class(&start), StepClass::Plan, "{offer:?}");
@@ -45,20 +51,7 @@ fn plan_offers_use_plan_class() {
 }
 
 #[test]
-fn unavailable_offers_return_typed_errors() {
-    for offer in [
-        Offer::DraftAllSections {
-            feature: "f".into(),
-        },
-        Offer::DraftAllPlans {
-            feature: "f".into(),
-        },
-    ] {
-        assert_eq!(
-            AuthoringStart::from_offer(&offer),
-            Err(StartError::NotAvailableYet(offer.id()))
-        );
-    }
+fn file_moves_return_typed_errors() {
     let offer = Offer::MoveIntoFeature {
         path: "doc/product/index.md".into(),
     };
@@ -126,8 +119,10 @@ fn message_class_depends_only_on_first_attachment() {
 }
 
 #[test]
-fn knowledge_and_no_step_use_spec_class() {
+fn kickoff_knowledge_and_no_step_use_spec_class() {
     for start in [
+        AuthoringStart::Kickoff { small: false },
+        AuthoringStart::Kickoff { small: true },
         AuthoringStart::Knowledge { open_file: None },
         AuthoringStart::Knowledge {
             open_file: Some("doc/plans/f/index.md".into()),

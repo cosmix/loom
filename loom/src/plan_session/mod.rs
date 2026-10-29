@@ -12,6 +12,7 @@ pub mod launch;
 pub mod model;
 pub mod permission;
 pub mod sandbox;
+pub mod scope;
 pub mod spool;
 pub mod state;
 pub mod tmux_host;

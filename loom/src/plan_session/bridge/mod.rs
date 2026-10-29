@@ -20,6 +20,7 @@ mod requests;
 mod session;
 mod start;
 mod stopping;
+pub mod team;
 mod turns;
 
 #[cfg(test)]
@@ -40,6 +41,8 @@ mod tests_queue;
 mod tests_rebuilding;
 #[cfg(test)]
 mod tests_recovery;
+#[cfg(test)]
+mod tests_team;
 
 use std::fmt;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -49,9 +52,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-pub use self::ending::TEARDOWN_FAILED;
-
 use self::commands::Out;
+pub use self::ending::TEARDOWN_FAILED;
 use self::host::SessionHost;
 use self::registry::{transcripts_of, ChildRecord, Feeds};
 use self::session::Inner;
@@ -134,6 +136,10 @@ pub enum BridgeEvent {
     SubagentStopped {
         id: String,
         agent_id: String,
+    },
+    Team {
+        id: String,
+        teammates: Vec<team::TeammateStatus>,
     },
     Ended {
         id: String,

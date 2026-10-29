@@ -5,8 +5,6 @@ use std::fmt;
 /// Why an action cannot start an authoring session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StartError {
-    /// Team authoring is implemented by the later kickoff-session stage.
-    NotAvailableYet(String),
     /// Moving a document is a file operation, not an authoring session.
     FileMove(String),
     /// Pressure and run actions have separate session flows.
@@ -24,7 +22,6 @@ pub enum StartError {
 impl fmt::Display for StartError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NotAvailableYet(id) => write!(f, "{id} is not available yet"),
             Self::FileMove(id) => write!(f, "{id} is a file move, not a session"),
             Self::NotAuthoring(id) => write!(f, "{id} is not an authoring offer"),
             Self::NotOffered(id) => write!(f, "the step \"{id}\" is not offered now"),

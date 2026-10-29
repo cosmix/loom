@@ -18,7 +18,12 @@ use crate::plan_session::kind::SessionDir;
 use crate::plan_session::model::{Item, Origin, SessionState};
 use crate::planning::project::Project;
 
+mod kickoff;
+mod regressions;
+mod scopes;
 mod start;
+mod team;
+mod wiring;
 
 fn fixture(read_only: bool) -> Fixture {
     let f = Fixture::new(read_only);

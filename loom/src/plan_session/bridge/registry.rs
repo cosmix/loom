@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::ErrorKind;
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::Context;
 use chrono::{DateTime, Utc};
@@ -21,13 +22,15 @@ use crate::process::{terminate_verified, ProcessIdentity};
 use crate::provider_data::resolve::{agent_id_from_path, list_agent_files};
 use crate::tokens::tail::Line;
 
+#[path = "agents.rs"]
+mod agents;
+use agents::AgentFeed;
+
 /// The record schema this build writes and reads.
 pub const SCHEMA: u32 = 1;
 const RECORD: &str = "session.json";
 /// A record is a few hundred bytes; the bound only stops a planted giant file.
 const MAX_RECORD_BYTES: usize = 256 * 1024;
-/// Agent meta files hold a few ids.
-const MAX_META_BYTES: usize = 64 * 1024;
 
 /// One session as a later server finds it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -167,12 +170,6 @@ fn read_text(tail: &mut Tail) -> Vec<String> {
     lines
 }
 
-struct AgentFeed {
-    tail: Tail,
-    agent_id: String,
-    spawned_by: Option<String>,
-}
-
 /// What the driver tails for one session.
 pub(super) struct FeedPaths {
     pub(super) events: PathBuf,
@@ -185,6 +182,8 @@ pub(super) struct Batch {
     pub(super) main: Vec<String>,
     /// `(agent id, spawning tool_use_id, lines)`.
     pub(super) agents: Vec<(String, Option<String>, Vec<String>)>,
+    /// `(agent id, teammate name, lines)`; excluded from ordered chat entries.
+    pub(super) teammates: Vec<(String, String, Vec<String>)>,
     pub(super) tokens: Vec<String>,
     pub(super) events: Vec<SpoolEvent>,
 }
@@ -249,6 +248,7 @@ pub(super) struct Feed {
     spool: SpoolReader,
     main: Option<Tail>,
     agents: BTreeMap<PathBuf, AgentFeed>,
+    pub(super) metadata_grace: Duration,
     tokens: Vec<Tail>,
     /// Agent id to the `tool_use_id` of the Agent call whose result named it.
     spawners: HashMap<String, String>,
@@ -260,6 +260,7 @@ impl Feed {
             spool: SpoolReader::new(events),
             main: None,
             agents: BTreeMap::new(),
+            metadata_grace: Duration::from_secs(2),
             tokens: Vec::new(),
             spawners: HashMap::new(),
         }
@@ -286,54 +287,54 @@ impl Feed {
         for line in &main {
             note_spawner(line, &mut self.spawners);
         }
-        let agents = self.read_agents();
         let tokens = self.tokens.iter_mut().flat_map(read_text).collect();
-        Batch {
+        let mut batch = Batch {
             main,
-            agents,
+            agents: Vec::new(),
+            teammates: Vec::new(),
             tokens,
             events,
-        }
+        };
+        self.read_agents(&mut batch);
+        batch
     }
 
-    fn read_agents(&mut self) -> Vec<(String, Option<String>, Vec<String>)> {
+    fn read_agents(&mut self, batch: &mut Batch) {
         let Some(dir) = self
             .main
             .as_ref()
             .and_then(|main| subagent_dir(main.path()))
         else {
-            return Vec::new();
+            return;
         };
         for path in list_agent_files(&dir) {
             self.agents
                 .entry(path.clone())
-                .or_insert_with(|| AgentFeed {
-                    agent_id: agent_id_from_path(&path),
-                    tail: Tail::new(path),
-                    spawned_by: None,
-                });
+                .or_insert_with(|| AgentFeed::new(path));
         }
-        let mut read = Vec::new();
         for feed in self.agents.values_mut() {
+            if !feed.classify(&dir, self.metadata_grace) {
+                continue;
+            }
             if feed.spawned_by.is_none() {
-                feed.spawned_by = spawning_tool(&dir, &feed.agent_id)
-                    .or_else(|| self.spawners.get(&feed.agent_id).cloned());
+                feed.spawned_by = self.spawners.get(&feed.agent_id).cloned();
             }
             let lines = read_text(&mut feed.tail);
-            if !lines.is_empty() {
-                read.push((feed.agent_id.clone(), feed.spawned_by.clone(), lines));
+            if lines.is_empty() {
+                continue;
+            }
+            if let Some(name) = &feed.teammate {
+                batch.tokens.extend(lines.iter().cloned());
+                batch
+                    .teammates
+                    .push((feed.agent_id.clone(), name.clone(), lines));
+            } else {
+                batch
+                    .agents
+                    .push((feed.agent_id.clone(), feed.spawned_by.clone(), lines));
             }
         }
-        read
     }
-}
-
-/// The spawning call's `toolUseId` from `agent-<id>.meta.json`, read bounded and no-follow.
-fn spawning_tool(dir: &Path, agent_id: &str) -> Option<String> {
-    let name = PathBuf::from(format!("agent-{agent_id}.meta.json"));
-    let bytes = read_bounded(dir, &name, MAX_META_BYTES).ok()?;
-    let meta: Value = serde_json::from_slice(&bytes).ok()?;
-    meta.get("toolUseId")?.as_str().map(str::to_owned)
 }
 
 /// The fallback for a subagent without a meta file: the Agent tool result naming it.
