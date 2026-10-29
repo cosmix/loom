@@ -13,12 +13,14 @@ use crate::planning::summary::evaluate::{cite_key, members_hash};
 use crate::planning::summary::format::{self, FrontMatter, SummaryFile, SummaryKind};
 use crate::planning::summary::store;
 
-pub(crate) const VISION: &str = "doc/product/index.md";
-pub(crate) const S1: &str = "doc/product/section_01.md";
-pub(crate) const S2: &str = "doc/product/section_02.md";
-pub(crate) const META: &str = "doc/plans/index.md";
-pub(crate) const ID1: &str = "product/section_01";
-pub(crate) const ID2: &str = "product/section_02";
+pub(crate) const VISION: &str = "doc/product/demo/index.md";
+pub(crate) const S1: &str = "doc/product/demo/section_01.md";
+pub(crate) const S2: &str = "doc/product/demo/section_02.md";
+pub(crate) const META: &str = "doc/plans/demo/index.md";
+pub(crate) const PRODUCT: &str = "overview/demo/product";
+pub(crate) const ENGINEERING: &str = "overview/demo/engineering";
+pub(crate) const ID1: &str = "demo/product/section_01";
+pub(crate) const ID2: &str = "demo/product/section_02";
 
 /// A scratch repository with a loom user dir beside it.
 pub(crate) struct Fixture {
@@ -49,6 +51,30 @@ pub(crate) fn fixture(files: &[(&str, &str)]) -> Fixture {
 pub(crate) fn two_sections() -> Fixture {
     let (s1, s2) = (section(1, "Alpha.", "Beta."), section(2, "Alpha.", "Beta."));
     fixture(&[(VISION, &vision(&[1, 2])), (S1, &s1), (S2, &s2)])
+}
+
+/// Two features with distinct product and engineering members, plus a standalone plan.
+pub(crate) fn two_features() -> Fixture {
+    fixture(&[
+        (VISION, &vision(&[1])),
+        (S1, &section(1, "Alpha.", "Beta.")),
+        (META, &metaplan(&["PLAN-x.md"])),
+        ("doc/plans/demo/PLAN-x.md", "# Plan: X\n\nDoes x.\n"),
+        ("doc/product/other/index.md", &vision(&[1])),
+        (
+            "doc/product/other/section_01.md",
+            &section(1, "Other alpha.", "Other beta."),
+        ),
+        ("doc/plans/other/index.md", &metaplan(&["PLAN-y.md"])),
+        (
+            "doc/plans/other/PLAN-y.md",
+            "# Plan: Y\n\nDoes y with more detail.\n",
+        ),
+        (
+            "doc/plans/PLAN-solo.md",
+            "# Plan: Solo\n\nImplements: none\n",
+        ),
+    ])
 }
 
 pub(crate) fn put(root: &Path, rel: &str, text: &str) {
@@ -173,7 +199,8 @@ pub(crate) fn seal_overview(
     let mut body = String::from("# Overview\n\n");
     for (i, (member, text)) in cited.iter().enumerate() {
         let sid = format::sentence_id(text);
-        body.push_str(&format!("Member {i} is kept. [§]({member}.md#{sid})\n\n"));
+        let link = store::link_from_summary(id, &store::summary_path(member));
+        body.push_str(&format!("Member {i} is kept. [§]({link}#{sid})\n\n"));
     }
     for (i, (path, anchor)) in raw.iter().enumerate() {
         let link = store::link_from_summary(id, Path::new(path));
@@ -196,8 +223,8 @@ pub(crate) fn seal_overview(
 }
 
 fn members_now(root: &Path, project: &Project, id: &str) -> BTreeMap<String, String> {
-    let scope = store::scope(project);
-    let members = if id == "product" {
+    let scope = store::Scope::of(project, id).expect("overview scope");
+    let members = if id.ends_with("/product") {
         scope.product
     } else {
         scope.engineering

@@ -1,0 +1,391 @@
+//! Offer wire contracts, feature targets and draft-all placement.
+
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use serde_json::{json, Value};
+use tempfile::TempDir;
+
+use super::{build_checklist, offers::move_offers, Checklist, Offer, ParsedDocs};
+use crate::planning::discover::discover;
+use crate::planning::kinds::DocKind;
+use crate::planning::{metaplan, vision::parse_sections_table};
+
+fn assert_offer(offer: Offer, id: &str, label: &str, target: Option<&str>, expected: Value) {
+    assert_eq!(offer.id(), id);
+    assert_eq!(offer.label(), label);
+    assert_eq!(offer.feature(), expected["feature"].as_str());
+    assert_eq!(offer.target(), target.map(PathBuf::from));
+    assert_eq!(serde_json::to_value(offer).unwrap(), expected);
+}
+
+#[test]
+fn start_vision_contract() {
+    assert_offer(
+        Offer::StartVision {
+            feature: "demo".into(),
+        },
+        "start-vision",
+        "Start a vision discussion",
+        None,
+        json!({"id": "start-vision", "kind": "start-vision",
+            "feature": "demo", "target": null}),
+    );
+}
+
+#[test]
+fn fix_vision_table_contract() {
+    assert_offer(
+        Offer::FixVisionTable {
+            feature: "demo".into(),
+        },
+        "fix-vision-table",
+        "Fix the vision's section table",
+        Some("doc/product/demo/index.md"),
+        json!({"id": "fix-vision-table", "kind": "fix-vision-table",
+            "feature": "demo", "target": "doc/product/demo/index.md"}),
+    );
+}
+
+#[test]
+fn write_section_contract() {
+    assert_offer(
+        Offer::WriteSection {
+            feature: "demo".into(),
+            number: 7,
+        },
+        "write-section:07",
+        "Write section 07",
+        Some("doc/product/demo/section_07.md"),
+        json!({"id": "write-section:07", "kind": "write-section", "feature": "demo",
+            "number": 7, "target": "doc/product/demo/section_07.md"}),
+    );
+}
+
+#[test]
+fn add_section_to_vision_contract() {
+    assert_offer(
+        Offer::AddSectionToVision {
+            feature: "demo".into(),
+            number: 7,
+        },
+        "add-section-to-vision:07",
+        "Add section 07 to the vision's table",
+        Some("doc/product/demo/section_07.md"),
+        json!({"id": "add-section-to-vision:07", "kind": "add-section-to-vision",
+            "feature": "demo", "number": 7, "target": "doc/product/demo/section_07.md"}),
+    );
+}
+
+#[test]
+fn start_metaplan_contract() {
+    assert_offer(
+        Offer::StartMetaplan {
+            feature: "demo".into(),
+        },
+        "start-metaplan",
+        "Start a metaplan from the product spec",
+        None,
+        json!({"id": "start-metaplan", "kind": "start-metaplan",
+            "feature": "demo", "target": null}),
+    );
+}
+
+#[test]
+fn write_plan_contract() {
+    assert_offer(
+        Offer::WritePlan {
+            feature: "demo".into(),
+            metaplan: "doc/plans/demo/metaplan-02.md".into(),
+            slug: "alpha".into(),
+        },
+        "write-plan:alpha",
+        "Write plan alpha",
+        Some("doc/plans/demo/PLAN-alpha.md"),
+        json!({"id": "write-plan:alpha", "kind": "write-plan", "feature": "demo",
+            "metaplan": "doc/plans/demo/metaplan-02.md", "slug": "alpha",
+            "target": "doc/plans/demo/PLAN-alpha.md"}),
+    );
+}
+
+#[test]
+fn pressure_test_contract() {
+    assert_offer(
+        Offer::PressureTest {
+            feature: "demo".into(),
+            slug: "alpha".into(),
+        },
+        "pressure-test:alpha",
+        "Pressure-test alpha",
+        Some("doc/plans/demo/PLAN-alpha.md"),
+        json!({"id": "pressure-test:alpha", "kind": "pressure-test", "feature": "demo",
+            "slug": "alpha", "target": "doc/plans/demo/PLAN-alpha.md"}),
+    );
+}
+
+#[test]
+fn shared_action_contracts() {
+    assert_offer(
+        Offer::StartRun,
+        "start-run",
+        "Start a run",
+        None,
+        json!({"id": "start-run", "kind": "start-run", "target": null}),
+    );
+    assert_offer(
+        Offer::RefineSpec,
+        "refine-spec",
+        "Refine the spec in light of what was built",
+        None,
+        json!({"id": "refine-spec", "kind": "refine-spec", "target": null}),
+    );
+    assert_offer(
+        Offer::NewMetaplanRound,
+        "new-metaplan-round",
+        "Start a new metaplan round",
+        None,
+        json!({"id": "new-metaplan-round", "kind": "new-metaplan-round", "target": null}),
+    );
+}
+
+#[test]
+fn draft_all_sections_contract() {
+    assert_offer(
+        Offer::DraftAllSections {
+            feature: "demo".into(),
+        },
+        "draft-all-sections",
+        "Draft all missing sections with a team",
+        None,
+        json!({"id": "draft-all-sections", "kind": "draft-all-sections",
+            "feature": "demo", "target": null}),
+    );
+}
+
+#[test]
+fn draft_all_plans_contract() {
+    assert_offer(
+        Offer::DraftAllPlans {
+            feature: "demo".into(),
+        },
+        "draft-all-plans",
+        "Draft all missing plans with a team",
+        None,
+        json!({"id": "draft-all-plans", "kind": "draft-all-plans",
+            "feature": "demo", "target": null}),
+    );
+}
+
+#[test]
+fn move_into_feature_contract() {
+    assert_offer(
+        Offer::MoveIntoFeature {
+            path: "doc/product/section_07.md".into(),
+        },
+        "move-into-feature:doc/product/section_07.md",
+        "Move doc/product/section_07.md into a feature",
+        Some("doc/product/section_07.md"),
+        json!({"id": "move-into-feature:doc/product/section_07.md", "kind": "move-into-feature",
+            "path": "doc/product/section_07.md", "target": "doc/product/section_07.md"}),
+    );
+}
+
+fn put(root: &Path, rel: &str, text: &str) {
+    let path = root.join(rel);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+}
+
+#[test]
+fn move_offers_include_only_misplaced_documents_in_path_order() {
+    let temp = TempDir::new().unwrap();
+    for path in [
+        "doc/product/section_07.md",
+        "doc/product/index.md",
+        "doc/plans/metaplan-02.md",
+        "doc/plans/index.md",
+        "doc/plans/PLAN-standalone.md",
+        "doc/plans/archive/DONE-PLAN-finished.md",
+        "doc/product/demo/index.md",
+        "doc/product/demo/section_01.md",
+        "doc/product/demo/notes.md",
+        "doc/plans/demo/index.md",
+        "doc/plans/demo/metaplan-02.md",
+        "doc/plans/demo/PLAN-scoped.md",
+        "doc/other.md",
+    ] {
+        put(temp.path(), path, "# Document\n");
+    }
+    let mut tree = discover(temp.path()).unwrap();
+    // The public helper sorts its result even if a caller supplies an unsorted tree.
+    tree.docs.reverse();
+
+    let offers = move_offers(&tree);
+
+    assert_eq!(
+        offers.iter().map(Offer::id).collect::<Vec<_>>(),
+        [
+            "move-into-feature:doc/plans/index.md",
+            "move-into-feature:doc/plans/metaplan-02.md",
+            "move-into-feature:doc/product/index.md",
+            "move-into-feature:doc/product/section_07.md",
+        ]
+    );
+}
+
+fn checklist(numbers: &[u32], slugs: &[&str], written: &[&str]) -> Checklist {
+    let temp = TempDir::new().unwrap();
+    let rows: String = numbers
+        .iter()
+        .map(|n| format!("| {n:02} | S{n} |\n"))
+        .collect();
+    let vision =
+        format!("# Vision\n\n## Specification sections\n\n| # | Name |\n| --- | --- |\n{rows}");
+    let headings: String = slugs
+        .iter()
+        .enumerate()
+        .map(|(i, slug)| format!("## {}. Plan (`PLAN-{slug}.md`)\n\n", i + 1))
+        .collect();
+    let metaplan = format!("# Metaplan\n\n{headings}");
+    put(temp.path(), "doc/product/demo/index.md", &vision);
+    put(temp.path(), "doc/plans/demo/index.md", &metaplan);
+    for path in written {
+        put(temp.path(), path, "# Written\n\nImplements: none\n");
+    }
+    let tree = discover(temp.path()).unwrap();
+    let sections_written = tree
+        .docs
+        .iter()
+        .filter_map(|doc| match &doc.kind {
+            DocKind::ProductSection { number, .. } => Some(*number),
+            _ => None,
+        })
+        .collect();
+    let parsed = ParsedDocs {
+        vision_rows: parse_sections_table(&vision),
+        metaplans: vec![(
+            "doc/plans/demo/index.md".into(),
+            metaplan::entries(&metaplan),
+        )],
+        pressure: BTreeMap::new(),
+        locked_files: Vec::new(),
+        sections_written,
+    };
+    build_checklist(&tree, &parsed, "demo")
+}
+
+fn ids(checklist: &Checklist) -> Vec<String> {
+    checklist
+        .primary
+        .iter()
+        .chain(&checklist.secondary)
+        .map(Offer::id)
+        .collect()
+}
+
+#[test]
+fn draft_all_sections_follows_first_missing_section_in_table_order() {
+    let checklist = checklist(&[7, 3, 9], &[], &[]);
+
+    assert_eq!(
+        ids(&checklist),
+        [
+            "write-section:07",
+            "draft-all-sections",
+            "write-section:03",
+            "write-section:09",
+        ]
+    );
+    assert_eq!(
+        checklist.secondary[0],
+        Offer::DraftAllSections {
+            feature: "demo".into()
+        }
+    );
+}
+
+#[test]
+fn draft_all_sections_requires_two_missing_sections() {
+    let one = checklist(&[7, 3], &[], &["doc/product/demo/section_07.md"]);
+    let none = checklist(&[7], &[], &["doc/product/demo/section_07.md"]);
+
+    assert_eq!(ids(&one), ["write-section:03"]);
+    assert!(!ids(&none).iter().any(|id| id == "draft-all-sections"));
+}
+
+#[test]
+fn draft_all_plans_follows_first_missing_plan_in_metaplan_order() {
+    let checklist = checklist(&[], &["zeta", "alpha", "beta"], &[]);
+
+    assert_eq!(
+        ids(&checklist),
+        [
+            "write-plan:zeta",
+            "draft-all-plans",
+            "write-plan:alpha",
+            "write-plan:beta",
+        ]
+    );
+    assert_eq!(
+        checklist.secondary[0],
+        Offer::DraftAllPlans {
+            feature: "demo".into()
+        }
+    );
+}
+
+#[test]
+fn draft_all_plans_requires_two_missing_plans() {
+    let one = checklist(&[], &["zeta", "alpha"], &["doc/plans/demo/PLAN-zeta.md"]);
+    let none = checklist(&[], &["zeta"], &["doc/plans/demo/PLAN-zeta.md"]);
+
+    assert_eq!(ids(&one), ["write-plan:alpha", "pressure-test:zeta"]);
+    assert!(!ids(&none).iter().any(|id| id == "draft-all-plans"));
+}
+
+#[test]
+fn both_draft_all_offers_stay_beside_their_guided_offer() {
+    let checklist = checklist(&[7, 3], &["zeta", "alpha"], &[]);
+
+    assert_eq!(
+        ids(&checklist),
+        [
+            "write-section:07",
+            "draft-all-sections",
+            "write-section:03",
+            "write-plan:zeta",
+            "draft-all-plans",
+            "write-plan:alpha",
+        ]
+    );
+}
+
+#[test]
+fn repeated_plan_entries_do_not_offer_a_team_for_one_missing_plan() {
+    let checklist = checklist(&[], &["alpha", "alpha"], &[]);
+
+    assert_eq!(ids(&checklist), ["write-plan:alpha"]);
+}
+
+#[test]
+fn unlisted_sections_keep_add_offers_and_unlisted_plans_have_no_add_offer() {
+    let checklist = checklist(
+        &[1],
+        &["alpha"],
+        &[
+            "doc/product/demo/section_07.md",
+            "doc/plans/demo/PLAN-unlisted.md",
+        ],
+    );
+
+    assert_eq!(
+        ids(&checklist),
+        [
+            "write-section:01",
+            "write-plan:alpha",
+            "pressure-test:unlisted",
+            "add-section-to-vision:07",
+        ]
+    );
+}

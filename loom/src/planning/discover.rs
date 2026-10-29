@@ -4,7 +4,7 @@
 //! write `doc/`. A symlink is kept only when it resolves to a regular file inside the
 //! canonical `doc/` and outside the summary store.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::Metadata;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
@@ -13,7 +13,7 @@ use anyhow::{bail, Context, Result};
 
 use crate::fs::safe_fs::safe_open_dirfd;
 use crate::fs::safe_read::{list_dir_no_follow, read_bounded, EntryKind};
-use crate::planning::kinds::{classify, doc_id, DocId, DocKind};
+use crate::planning::kinds::{classify, doc_id, is_feature_name, DocId, DocKind};
 use crate::planning::slug::{resolve_plans, PlanEntry};
 
 /// Largest document `read_doc` returns.
@@ -51,12 +51,12 @@ pub enum DocDirState {
     Symlinked,
 }
 
-/// Every document under `doc/` and the plans among them.
+/// Every document under `doc/`, including feature documents and standalone plans.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocTree {
     /// All documents, sorted by path.
     pub docs: Vec<Document>,
-    /// Plans by slug, the most advanced copy winning.
+    /// Plans by repository-wide slug, with winning copies, same-home strays and home conflicts.
     pub plans: BTreeMap<String, PlanEntry>,
     /// State of the `doc/` directory itself.
     pub doc_dir: DocDirState,
@@ -72,8 +72,9 @@ impl DocTree {
         self.docs.get(index)
     }
 
-    /// The document with the given id string (e.g. `plan/foo`). Every copy of a plan shares
-    /// its id, so a `plan/<slug>` id resolves to the winning copy in `plans`.
+    /// The document with the stored id, such as `product/foo/index` or
+    /// `product/foo/section_01`. A `plan/<slug>` id resolves to the winning copy in
+    /// `plans`, whether its home is standalone or inside a feature.
     pub fn by_id(&self, id: &str) -> Option<&Document> {
         let winner = id
             .strip_prefix("plan/")
@@ -94,6 +95,24 @@ impl DocTree {
     /// The plan with the given slug.
     pub fn plan(&self, slug: &str) -> Option<&PlanEntry> {
         self.plans.get(slug)
+    }
+
+    /// The valid feature names found in the tree: every name that some document's kind carries.
+    pub fn feature_names(&self) -> BTreeSet<String> {
+        self.docs
+            .iter()
+            .filter_map(|doc| doc.kind.feature())
+            .filter(|name| is_feature_name(name))
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// Documents belonging to `feature`, sorted by path: its vision, sections, notes,
+    /// metaplans and plans, including all plan copies.
+    pub fn feature_docs<'a>(&'a self, feature: &'a str) -> impl Iterator<Item = &'a Document> + 'a {
+        self.docs
+            .iter()
+            .filter(move |doc| doc.kind.feature() == Some(feature))
     }
 }
 

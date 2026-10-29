@@ -15,7 +15,9 @@ const SESSION: &str = "LOOM_PLAN_SESSION";
 #[test]
 fn session_cli_brief_records_the_session_and_release_is_scoped_to_it() {
     let (_t, root, home) = git_project(&[(S1, &section(1, "Alpha.", "Beta."))]);
-    let claim = paths(&root, &home).claims.join("product__section_01.json");
+    let claim = paths(&root, &home)
+        .claims
+        .join("demo__product__section_01.json");
     let out = loom_summary(&root, &home, &["brief", ID], &[(SESSION, "s1")]);
     assert!(out.status.success(), "brief failed: {}", stderr(&out));
     let text = fs::read_to_string(&claim).expect("the brief wrote no claim");
@@ -41,7 +43,7 @@ fn session_cli_brief_records_the_session_and_release_is_scoped_to_it() {
 
 #[test]
 fn session_cli_force_overrides_a_claim_only_from_a_terminal() {
-    let (_t, root, home) = git_project(&[(PLAN_X, "# Plan: X\n\nDoes x.\n")]);
+    let (_t, root, home) = git_plan_x();
     let summary = root.join(summary_rel("plans/x"));
     let claim = plant_claim(&root, &home);
     let args = ["seal", "plans/x", "--force"];
@@ -65,7 +67,7 @@ fn session_cli_force_overrides_a_claim_only_from_a_terminal() {
 
 #[test]
 fn session_cli_ids_without_a_source_name_the_id() {
-    let (_t, root, home) = git_project(&[(PLAN_X, "# Plan: X\n\nDoes x.\n")]);
+    let (_t, root, home) = git_plan_x();
     let claim = paths(&root, &home).claims.join("plans__missing.json");
 
     let out = loom_summary(&root, &home, &["brief", "plans/missing"], &[]);

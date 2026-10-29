@@ -17,15 +17,17 @@ use loom::planning::summary::format::{Block, Sentence, SummaryFile};
 use loom::planning::summary::seal::{seal, SealError};
 use tempfile::TempDir;
 
-pub const VISION: &str = "doc/product/index.md";
-pub const S1: &str = "doc/product/section_01.md";
-pub const S2: &str = "doc/product/section_02.md";
-pub const META: &str = "doc/plans/index.md";
-pub const PLAN_X: &str = "doc/plans/PLAN-x.md";
+pub const PRODUCT: &str = "overview/demo/product";
+pub const ENGINEERING: &str = "overview/demo/engineering";
+pub const VISION: &str = "doc/product/demo/index.md";
+pub const S1: &str = "doc/product/demo/section_01.md";
+pub const S2: &str = "doc/product/demo/section_02.md";
+pub const META: &str = "doc/plans/demo/index.md";
+pub const PLAN_X: &str = "doc/plans/demo/PLAN-x.md";
 /// Link from the product overview to the vision's sections table.
-pub const VISION_LINK: &str = "../../product/index.md#specification-sections";
+pub const VISION_LINK: &str = "../../../../product/demo/index.md#specification-sections";
 /// Link from the engineering overview to the metaplan's title section.
-pub const META_LINK: &str = "../../plans/index.md#metaplan";
+pub const META_LINK: &str = "../../../../plans/demo/index.md#metaplan";
 
 /// A git-less tree under `<tmp>/repo` holding `files`; returns the temp dir, the
 /// repository root and the loom user dir `<tmp>/home`.
@@ -175,9 +177,9 @@ pub fn section(n: u32, a: &str, b: &str) -> String {
     format!("# Section {n:02}\n\nIntro.\n\n## A\n\n{a}\n\n## B\n\n{b}\n")
 }
 
-/// Link from summary `product/section_<n>` to `anchor` of its source.
+/// Link from summary `demo/product/section_<n>` to `anchor` of its source.
 pub fn doc_link(n: u32, anchor: &str) -> String {
-    format!("../../../product/section_{n:02}.md#{anchor}")
+    format!("../../../../product/demo/section_{n:02}.md#{anchor}")
 }
 
 /// A document summary draft for section `n`: one `<text> [§](#anchor)` line per pair.
@@ -196,7 +198,7 @@ pub fn sid(text: &str) -> String {
 
 /// Link from an overview to sentence `text` of member summary `member`.
 pub fn member_link(member: &str, text: &str) -> String {
-    format!("{member}.md#{}", sid(text))
+    format!("../../{member}.md#{}", sid(text))
 }
 
 /// A metaplan naming each plan file in `files`, one numbered entry each.

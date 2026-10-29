@@ -172,4 +172,6 @@ mod contract_tests;
 #[cfg(test)]
 mod estimate_tests;
 #[cfg(test)]
+mod feature_tests;
+#[cfg(test)]
 mod tests;

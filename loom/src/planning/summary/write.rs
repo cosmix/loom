@@ -52,18 +52,22 @@ pub fn read_summary(root: &Path, id: &str) -> Result<Option<String>> {
 pub(crate) fn stored_ids(root: &Path) -> Result<Vec<String>> {
     let dirfd = safe_open_dirfd(root)?;
     let mut ids = Vec::new();
-    for (name, kind) in listing(&dirfd, Path::new(STORE_DIR))? {
-        match kind {
-            EntryKind::Directory if name == "product" || name == "plans" => {
-                let dir = Path::new(STORE_DIR).join(&name);
-                for (inner, kind) in listing(&dirfd, &dir)? {
-                    if kind != EntryKind::Directory {
-                        ids.extend(id_of(&format!("{name}/"), &inner));
-                    }
-                }
+    let mut pending = vec![String::new()];
+    while let Some(prefix) = pending.pop() {
+        let dir = Path::new(STORE_DIR).join(&prefix);
+        for (name, kind) in listing(&dirfd, &dir)? {
+            if name.starts_with('.') {
+                continue;
             }
-            EntryKind::Directory => {}
-            _ => ids.extend(id_of("", &name)),
+            if kind == EntryKind::Directory {
+                // Valid ids have at most three components. Bound traversal even when
+                // unrelated directories are planted in the store.
+                if prefix.bytes().filter(|b| *b == b'/').count() < 2 {
+                    pending.push(format!("{prefix}{name}/"));
+                }
+            } else {
+                ids.extend(id_of(&prefix, &name));
+            }
         }
     }
     ids.sort();
@@ -83,7 +87,7 @@ fn listing(dirfd: &OwnedFd, dir: &Path) -> Result<Vec<(String, EntryKind)>> {
     Ok(named.collect())
 }
 
-/// The id of store file `name` in the directory `prefix` (`""`, `product/` or `plans/`).
+/// The id of store file `name` in the slash-terminated directory `prefix`.
 fn id_of(prefix: &str, name: &str) -> Option<String> {
     let stem = name
         .strip_suffix(".md")

@@ -6,7 +6,7 @@ use std::os::unix::fs::{symlink, PermissionsExt};
 
 use super::*;
 use crate::planning::runtime::runtime_paths_under;
-use crate::planning::summary::evaluate::fixtures::{fixture, Fixture, ID1};
+use crate::planning::summary::evaluate::fixtures::{fixture, Fixture, ID1, PRODUCT};
 use crate::planning::summary::lock::with_store_lock;
 
 const PLAN: &str = "plans/x";
@@ -35,8 +35,11 @@ fn second_claim_is_refused_with_the_existing_one() {
     );
     assert_eq!(first.pid, std::process::id());
     assert!(chrono::DateTime::parse_from_rfc3339(&first.created_at).is_ok());
-    let file = fx.paths.claims.join("product__section_01.json");
-    assert!(file.is_file(), "claim stored as product__section_01.json");
+    let file = fx.paths.claims.join("demo__product__section_01.json");
+    assert!(
+        file.is_file(),
+        "claim stored as demo__product__section_01.json"
+    );
     let second = create_claim_as(&fx.paths, ID1, Some("s2".into())).expect("create");
     assert_eq!(second, Err(first.clone()), "the existing claim is returned");
     assert_eq!(list_claims(&fx.paths).expect("list"), vec![first]);
@@ -63,10 +66,10 @@ fn release_is_scoped_to_the_session() {
     );
     assert_eq!(
         claimed_ids(&fx),
-        ids(&[PLAN, ID1]),
+        ids(&[ID1, PLAN]),
         "nothing deleted on refusal"
     );
-    let released = release_as(&fx.paths, &ids(&[ID1, "product"]), Some("s1")).expect("own");
+    let released = release_as(&fx.paths, &ids(&[ID1, PRODUCT]), Some("s1")).expect("own");
     assert_eq!(released, ids(&[ID1]), "an unclaimed id is skipped");
     let released = release_as(&fx.paths, &ids(&[PLAN]), None).expect("terminal");
     assert_eq!(released, ids(&[PLAN]));
@@ -78,7 +81,7 @@ fn unparsable_claim_counts_with_no_session() {
     let fx = fixture(&[]);
     fs::create_dir_all(&fx.paths.claims).unwrap();
     fs::write(fx.paths.claims.join("plans__x.json"), "{not json").unwrap();
-    let other = r#"{"summary":"product","session":"s9","pid":3,"created_at":"t"}"#;
+    let other = r#"{"summary":"overview/demo/product","session":"s9","pid":3,"created_at":"t"}"#;
     fs::write(fx.paths.claims.join("plans__y.json"), other).unwrap();
     let ctl = r#"{"summary":"plans/z","session":"s\u001b[31m1","pid":4,"created_at":"t"}"#;
     fs::write(fx.paths.claims.join("plans__z.json"), ctl).unwrap();
@@ -107,14 +110,14 @@ fn clear_session_claims_removes_only_that_session() {
     let fx = fixture(&[]);
     claim(&fx, ID1, Some("s1"));
     claim(&fx, PLAN, Some("s2"));
-    claim(&fx, "product", None);
+    claim(&fx, PRODUCT, None);
     assert_eq!(
         clear_session_claims(&fx.paths, "s1").expect("clear"),
         vec![ID1.to_string()]
     );
     assert_eq!(
         claimed_ids(&fx),
-        vec!["plans/x".to_string(), "product".to_string()]
+        vec![PRODUCT.to_string(), "plans/x".to_string()]
     );
     assert!(clear_session_claims(&fx.paths, "s1")
         .expect("again")
@@ -134,7 +137,7 @@ fn symlinked_claims_directory_is_refused() {
         create_claim_as(&fx.paths, ID1, None).is_err(),
         "created through the link"
     );
-    assert!(!elsewhere.join("product__section_01.json").exists());
+    assert!(!elsewhere.join("demo__product__section_01.json").exists());
     assert!(
         delete_claim(&fx.paths, PLAN).is_err(),
         "deleted through the link"
@@ -165,10 +168,13 @@ fn session_text_is_sanitised_and_drafts_live_under_the_runtime_dir() {
     let fx = fixture(&[]);
     assert_eq!(
         draft_path(&fx.paths, ID1),
-        fx.paths.drafts.join("product/section_01.md")
+        fx.paths.drafts.join("demo/product/section_01.md")
     );
     assert_eq!(draft_path(&fx.paths, "../x"), std::path::PathBuf::new());
-    assert_eq!(draft_rel(ID1), Path::new("drafts/product/section_01.md"));
+    assert_eq!(
+        draft_rel(ID1),
+        Path::new("drafts/demo/product/section_01.md")
+    );
     assert_eq!(draft_rel("../x"), PathBuf::new());
     assert_eq!(
         id_from_file("plans__a__b.json").as_deref(),
@@ -239,4 +245,64 @@ fn store_lock_creates_a_missing_loom_user_directory() {
     let value = with_store_lock(&paths, || Ok(5)).expect("lock");
     assert_eq!(value, 5);
     assert!(paths.summaries_lock.is_file());
+}
+
+#[test]
+fn nested_ids_round_trip_and_claims_create_draft_parents() {
+    let fx = fixture(&[]);
+    let ids = [
+        ID1,
+        "other/product/section_01",
+        PRODUCT,
+        "overview/other/engineering",
+        "plans/a__b",
+    ];
+    for id in ids {
+        claim(&fx, id, Some("s1"));
+        let rel = claim_rel(id);
+        let name = rel.file_name().unwrap().to_str().unwrap();
+        assert_eq!(id_from_file(name).as_deref(), Some(id));
+        assert!(draft_path(&fx.paths, id).parent().unwrap().is_dir());
+    }
+    let mut expected = ids.map(str::to_string);
+    expected.sort();
+
+    assert_eq!(claimed_ids(&fx), expected);
+    assert_eq!(clear_session_claims(&fx.paths, "s1").unwrap(), expected);
+    assert!(claimed_ids(&fx).is_empty());
+}
+
+#[test]
+fn symlinked_nested_draft_parent_cannot_escape_runtime() {
+    let fx = fixture(&[]);
+    let outside = fx.root.join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    fs::create_dir_all(fx.paths.drafts.join("demo")).unwrap();
+    symlink(&outside, fx.paths.drafts.join("demo/product")).unwrap();
+
+    assert!(create_claim_as(&fx.paths, ID1, None).is_err());
+    assert!(claimed_ids(&fx).is_empty());
+    assert!(fs::read_dir(&outside).unwrap().next().is_none());
+    for id in [
+        "demo/product/section_01/../../escape",
+        "overview/demo/../../escape",
+        "../escape",
+    ] {
+        assert!(draft_rel(id).as_os_str().is_empty());
+        assert!(create_claim_as(&fx.paths, id, None).is_err());
+    }
+}
+
+#[test]
+fn claim_filenames_reject_old_and_noncanonical_ids() {
+    for name in [
+        "product.json",
+        "engineering.json",
+        "product__section_01.json",
+        "overview__Bad__product.json",
+        "demo__product__section_01__escape.json",
+        "plans__..__escape.json",
+    ] {
+        assert_eq!(id_from_file(name), None, "{name}");
+    }
 }

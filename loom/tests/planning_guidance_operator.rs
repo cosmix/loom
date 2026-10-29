@@ -1,9 +1,11 @@
 //! Operator-only proof that the rendered plugin loads and authors each document family.
 
+#[path = "planning_guidance_operator/support.rs"]
+mod support;
+
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -23,13 +25,20 @@ use loom::planning::guidance::{
 use loom::planning::runtime::create_runtime_dir;
 use reqwest::blocking::Client;
 use serde_json::Value;
+use support::fixture;
 use tempfile::TempDir;
 
 #[test]
 #[ignore = "needs a logged-in Claude Code, tmux and network"]
 #[serial_test::serial]
 fn operator_vision_session_loads_its_skill() -> Result<()> {
-    operator(Offer::StartVision, "vision", "doc/product/index.md")
+    operator(
+        Offer::StartVision {
+            feature: "demo".into(),
+        },
+        "vision",
+        "doc/product/demo/index.md",
+    )
 }
 
 #[test]
@@ -37,9 +46,12 @@ fn operator_vision_session_loads_its_skill() -> Result<()> {
 #[serial_test::serial]
 fn operator_section_session_loads_its_skill() -> Result<()> {
     operator(
-        Offer::WriteSection { number: 2 },
+        Offer::WriteSection {
+            feature: "demo".into(),
+            number: 2,
+        },
         "section",
-        "doc/product/section_02.md",
+        "doc/product/demo/section_02.md",
     )
 }
 
@@ -47,7 +59,13 @@ fn operator_section_session_loads_its_skill() -> Result<()> {
 #[ignore = "needs a logged-in Claude Code, tmux and network"]
 #[serial_test::serial]
 fn operator_metaplan_session_loads_its_skill() -> Result<()> {
-    operator(Offer::StartMetaplan, "metaplan", "doc/plans/index.md")
+    operator(
+        Offer::StartMetaplan {
+            feature: "demo".into(),
+        },
+        "metaplan",
+        "doc/plans/demo/index.md",
+    )
 }
 
 #[test]
@@ -56,11 +74,12 @@ fn operator_metaplan_session_loads_its_skill() -> Result<()> {
 fn operator_plan_session_loads_its_skill() -> Result<()> {
     operator(
         Offer::WritePlan {
-            metaplan: "doc/plans/index.md".into(),
+            feature: "demo".into(),
+            metaplan: "doc/plans/demo/index.md".into(),
             slug: "notes".into(),
         },
         "plan",
-        "doc/plans/PLAN-notes.md",
+        "doc/plans/demo/PLAN-notes.md",
     )
 }
 
@@ -107,62 +126,6 @@ impl Drop for TrustGuard {
             eprintln!("cannot remove temporary project trust: {error:#}");
         }
     }
-}
-
-fn fixture(target: &str) -> Result<TempDir> {
-    let repo = tempfile::tempdir()?;
-    let root = repo.path();
-    fs::create_dir_all(root.join("doc/product"))?;
-    fs::create_dir_all(root.join("doc/plans"))?;
-    fs::write(
-        root.join("doc/product/index.md"),
-        "# Pocket notes\n\nA local plain-text notebook for one person.\n\n\
-         ## Specification sections\n\n| # | Section |\n| --- | --- |\n\
-         | 01 | Notes |\n| 02 | Search |\n",
-    )?;
-    fs::write(
-        root.join("doc/product/section_01.md"),
-        "# Notes\n\nCreate, edit and delete plain-text notes stored locally.\n",
-    )?;
-    fs::write(
-        root.join("doc/plans/index.md"),
-        "# Metaplan\n\n## 1. Notes (`PLAN-notes.md`)\n\n\
-         Implement local note storage and editing from section 01.\n",
-    )?;
-    // Starting a missing document must prove a new write, not pass on fixture content.
-    if root.join(target).exists() {
-        fs::remove_file(root.join(target))?;
-    }
-    git(root, &["init", "-q", "-b", "main"])?;
-    git(root, &["add", "doc"])?;
-    git(root, &["commit", "-q", "-m", "seed"])?;
-    Ok(repo)
-}
-
-fn git(root: &Path, args: &[&str]) -> Result<()> {
-    let output = Command::new("git")
-        .args([
-            "-c",
-            "user.name=Operator test",
-            "-c",
-            "user.email=test@example.com",
-            "-c",
-            "commit.gpgsign=false",
-            "-c",
-            "core.hooksPath=/dev/null",
-        ])
-        .args(args)
-        .current_dir(root)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .output()?;
-    ensure!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    Ok(())
 }
 
 fn operator(offer: Offer, skill: &str, target: &str) -> Result<()> {
@@ -264,8 +227,15 @@ fn exercise(running: &RunningServer, offer: Offer, skill: &str, target: &Path) -
     let id = bridge.start_session(StartRequest {
         kind: SessionKind::Authoring,
         guidance: Box::new(move |dir| {
-            render_session_guidance(&kind, &ctx.project(), ctx.runtime(), dir, &models)
-                .map(Into::into)
+            render_session_guidance(
+                &kind,
+                &ctx.project(),
+                ctx.runtime(),
+                dir,
+                &models,
+                Some("demo"),
+            )
+            .map(Into::into)
         }),
         opening_origin: Some(Origin::Offer),
         offer: Some(offer_id),

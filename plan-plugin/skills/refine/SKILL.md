@@ -5,13 +5,19 @@ description: Refine a planning document or passage and carry the change through 
 
 # Refine a document
 
+Use the feature name given in the session's opening prompt. Its vision and
+sections live under `doc/product/<feature>/`; its metaplans and plans live under
+`doc/plans/<feature>/`. A standalone plan lives at `doc/plans/PLAN-<slug>.md`,
+has `Implements: none`, and has no metaplan.
+
 1. Read the target document and any attached passage in context. Read the documents it
    binds or is bound by: for a product section, its vision; for a plan, its metaplan
-   entry and every product section named in its `Implements:` line. Follow references
+   entry if any and every product section named in its `Implements:` line. Follow references
    to find the other documents that state the same requirement or decision.
 2. Check the write limits before editing. Refuse changes to files prefixed
-   `IN_PROGRESS-`, `DONE-`, or `RETIRED-`, anything under `doc/plans/archive/`, a locked
-   plan's brief bundle, and `REVIEW-*.md` files. Explain that running and completed
+   `IN_PROGRESS-`, `DONE-`, or `RETIRED-`, anything under `doc/plans/<feature>/archive/`
+   or `doc/plans/archive/`, a locked plan's brief bundle, and `REVIEW-*.md` files.
+   Explain that running and completed
    plans and their briefs preserve the execution record, and run reviews are read-only.
    Offer a new metaplan entry or a spec refinement for the correction instead.
 3. Make the change the user asks for. Resolve material ambiguity with the user in
@@ -26,7 +32,7 @@ description: Refine a planning document or passage and carry the change through 
    itself. Keep cross-references consistent with any deliberate heading change.
 
 Write only the target and affected editable documents under `doc/`, including an
-agreed new metaplan entry under `doc/plans/`. Never edit code or configuration.
+agreed new metaplan entry under `doc/plans/<feature>/`. Never edit code or configuration.
 Never write `doc/loom/knowledge/` with a file tool; use the `loom-plan:knowledge`
 skill for an agreed knowledge change. Never write `doc/loom/summaries/` directly;
 summary agents write only the runtime draft paths their briefs name and publish
