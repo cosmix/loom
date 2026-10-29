@@ -11,6 +11,9 @@ use super::*;
 use crate::planning::runtime::{create_runtime_dir, runtime_paths_under};
 use crate::planning::summary::claims::create_claim_as;
 
+mod costing;
+mod sweep;
+
 fn runtime() -> (TempDir, RuntimePaths) {
     let tmp = TempDir::new().expect("temp dir");
     let root = tmp.path().join("project");

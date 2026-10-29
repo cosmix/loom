@@ -1,22 +1,23 @@
 //! Transcript token accounting and the append-only summary cost ledger.
 
-use crate::fs::safe_read::{is_not_found, read_bounded};
+use crate::fs::safe_read::open_regular_no_follow;
 use crate::planning::runtime::RuntimePaths;
 use crate::tokens::accumulate::AgentState;
+use crate::tokens::tail::{self, Line};
 use crate::tokens::AgentKind;
 use anyhow::{Context, Result};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 /// Estimates and rolling totals derived from recorded summary costs.
 pub mod estimate;
 
-// Keep the transcript line bound aligned with tokens::tail::MAX_LINE_BYTES.
-const MAX_LINE_BYTES: usize = 32 * 1024 * 1024;
+/// Largest tail of the ledger read.
 const MAX_LOG_BYTES: usize = 8 * 1024 * 1024;
 
 /// Token counts with absent fields representing unknown usage.
@@ -79,41 +80,21 @@ pub struct CostLine {
     pub tokens: TokenVector,
 }
 
-/// Count complete transcript lines; an unreadable transcript has unknown usage.
+/// Count complete transcript lines; an unreadable transcript has unknown usage. The read is
+/// the token tracker's: no-follow, non-blocking, complete lines only, bounded line length.
 pub fn transcript_tokens(path: &Path) -> Result<TokenVector> {
-    Ok(File::open(path)
-        .and_then(|file| read_transcript(file, path))
-        .unwrap_or_default())
-}
-
-fn read_transcript(file: File, path: &Path) -> io::Result<TokenVector> {
+    let Some(stat) = tail::stat(path) else {
+        return Ok(TokenVector::default());
+    };
     let mut state = AgentState::new(AgentKind::Main, &path.to_string_lossy());
-    let mut reader = BufReader::new(file);
-    let mut line = Vec::new();
-    loop {
-        line.clear();
-        let count = reader
-            .by_ref()
-            .take(MAX_LINE_BYTES as u64 + 1)
-            .read_until(b'\n', &mut line)?;
-        if count == 0 {
-            break;
-        }
-        if line.len() > MAX_LINE_BYTES {
-            if !line.ends_with(b"\n") {
-                reader.skip_until(b'\n')?;
-            }
-            continue;
-        }
-        if line.pop() != Some(b'\n') {
-            break;
-        }
-        if line.last() == Some(&b'\r') {
-            line.pop();
-        }
-        if let Ok(text) = std::str::from_utf8(&line) {
+    let stop = AtomicBool::new(false);
+    let read = tail::read_lines(path, &mut 0, stat.len, &stop, |line| {
+        if let Line::Text(text) = line {
             state.ingest(text);
         }
+    });
+    if read.is_err() {
+        return Ok(TokenVector::default());
     }
     Ok(TokenVector {
         fresh_input: Some(state.total.input),
@@ -141,23 +122,49 @@ pub fn append(paths: &RuntimePaths, line: &CostLine) -> Result<()> {
     Ok(())
 }
 
-/// Read up to 8 MiB of the ledger, skipping malformed and unfinished records.
-/// An absent ledger is empty; unsafe paths and other read errors are reported.
+/// Read the last 8 MiB of the ledger, skipping malformed and unfinished records; older records
+/// fall out of estimates and totals. An absent ledger is empty; unsafe paths, other read errors
+/// and a tail holding no complete record are reported.
 pub fn read_log(paths: &RuntimePaths) -> Result<Vec<CostLine>> {
     let relative = paths
         .summary_cost
         .strip_prefix(&paths.dir)
         .context("summary cost log is outside the runtime directory")?;
-    let bytes = match read_bounded(&paths.dir, relative, MAX_LOG_BYTES) {
-        Ok(bytes) => bytes,
-        Err(error) if is_not_found(&error) => return Ok(Vec::new()),
-        Err(error) => return Err(error),
+    let relative = relative
+        .to_str()
+        .context("summary cost log path is not UTF-8")?;
+    let Some(file) = open_regular_no_follow(&paths.dir, relative, libc::O_RDONLY)? else {
+        return Ok(Vec::new());
     };
+    let bytes = read_tail(file, MAX_LOG_BYTES as u64)?;
     Ok(bytes
         .split_inclusive(|byte| *byte == b'\n')
         .filter(|line| line.ends_with(b"\n"))
         .filter_map(|line| serde_json::from_slice(line).ok())
         .collect())
+}
+
+/// The last `cap` bytes of `file`. A cut inside a record drops that partial first line, so the
+/// bytes start at a record; a tail of one unbroken line is an error, not an empty ledger.
+fn read_tail(mut file: File, cap: u64) -> Result<Vec<u8>> {
+    let len = file
+        .metadata()
+        .context("inspecting summary cost log")?
+        .len();
+    let start = len.saturating_sub(cap);
+    file.seek(SeekFrom::Start(start))
+        .context("seeking in summary cost log")?;
+    let mut bytes = Vec::new();
+    file.take(cap)
+        .read_to_end(&mut bytes)
+        .context("reading summary cost log")?;
+    if start > 0 {
+        let first = bytes.iter().position(|byte| *byte == b'\n');
+        let first = first
+            .with_context(|| format!("no complete record in the last {cap} bytes of the log"))?;
+        bytes.drain(..=first);
+    }
+    Ok(bytes)
 }
 
 #[cfg(test)]
