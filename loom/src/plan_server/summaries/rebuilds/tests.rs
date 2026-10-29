@@ -99,7 +99,7 @@ pub(super) fn facade() -> (Arc<Probe>, Arc<Rebuilds>, Sent) {
 pub(super) fn file(title: &str) -> SummaryFile {
     let front = FrontMatter {
         kind: SummaryKind::Document,
-        of: "doc/plans/x.md".into(),
+        of: "doc/plans/demo/PLAN-x.md".into(),
         file: None,
         cites: BTreeMap::new(),
         members: BTreeMap::new(),
@@ -124,7 +124,12 @@ fn summary(&(id, state, title, session): &Row<'_>) -> SummaryEval {
     });
     SummaryEval {
         id: id.to_owned(),
-        source: Some(PathBuf::from(format!("doc/{id}.md"))),
+        source: if let Some(slug) = id.strip_prefix("plans/") {
+            Some(PathBuf::from(format!("doc/plans/demo/PLAN-{slug}.md")))
+        } else {
+            id.strip_prefix("demo/product/")
+                .map(|section| PathBuf::from(format!("doc/product/demo/{section}.md")))
+        },
         state,
         file: title.map(file),
         sentences: Vec::new(),
@@ -135,9 +140,23 @@ fn summary(&(id, state, title, session): &Row<'_>) -> SummaryEval {
 
 pub(super) fn update(rows: &[Row<'_>], invalidated: &[&str]) -> EngineUpdate {
     let summaries = rows.iter().map(|row| (row.0.to_owned(), summary(row)));
+    let ids = rows.iter().map(|row| row.0);
+    let scope = Scope {
+        feature: "demo".into(),
+        product: ids
+            .clone()
+            .filter(|id| id.starts_with("demo/product/"))
+            .map(str::to_owned)
+            .collect(),
+        engineering: ids
+            .filter(|id| id.starts_with("plans/"))
+            .map(str::to_owned)
+            .collect(),
+        outside: Vec::new(),
+    };
     let evaluation = Evaluation {
         summaries: summaries.collect(),
-        scope: Scope::default(),
+        scopes: BTreeMap::from([("demo".into(), scope)]),
         orphans: Vec::new(),
     };
     EngineUpdate {

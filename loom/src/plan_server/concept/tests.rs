@@ -1,9 +1,9 @@
 //! Tests for page loading: chips, empty states, bodies, marks and plan fields.
 
+use super::fixtures::{self as fx, Fixture};
 use super::page::{load_page, PageContext, PageKey, Scope};
 use crate::plan_server::wire::concept::{Block, Citation, ConceptPage, EmptyKind, Sentence};
 use crate::planning::summary::evaluate::evaluate;
-use crate::planning::summary::evaluate::fixtures::{self as fx, Fixture};
 use crate::planning::summary::format::{self, sentence_id};
 use crate::planning::summary::store::summary_path;
 
@@ -18,15 +18,22 @@ fn page(f: &Fixture, key: &PageKey) -> ConceptPage {
 }
 
 fn product() -> PageKey {
-    PageKey::Overview(Scope::Product)
+    PageKey::Overview {
+        feature: "demo".into(),
+        scope: Scope::Product,
+    }
 }
 
 fn engineering() -> PageKey {
-    PageKey::Overview(Scope::Engineering)
+    PageKey::Overview {
+        feature: "demo".into(),
+        scope: Scope::Engineering,
+    }
 }
 
 fn summary(scope: Scope, doc: &str) -> PageKey {
     PageKey::Summary {
+        feature: Some("demo".into()),
         scope,
         doc: doc.to_owned(),
     }
@@ -34,7 +41,7 @@ fn summary(scope: Scope, doc: &str) -> PageKey {
 
 fn plan(slug: &str, extra: &str) -> (String, String) {
     (
-        format!("doc/plans/PLAN-{slug}.md"),
+        format!("doc/plans/demo/PLAN-{slug}.md"),
         format!("# Plan: {slug}\n\n{extra}Does {slug}.\n"),
     )
 }
@@ -64,7 +71,7 @@ fn two_metaplans_give_chips_in_metaplan_then_entry_order() {
     let second = fx::metaplan(&["PLAN-a.md", "PLAN-c.md"]);
     let f = fx::fixture(&[
         (fx::META, &first),
-        ("doc/plans/second-metaplan.md", &second),
+        ("doc/plans/demo/second-metaplan.md", &second),
         (&pa, &ta),
         (&pb, &tb),
         (&pc, &tc),
@@ -80,12 +87,12 @@ fn two_metaplans_give_chips_in_metaplan_then_entry_order() {
 fn latest_pressure_date_wins() {
     let extra = "## Pressure tests\n\n- 2026-03-04: second\n- 2026-01-02: first\n\n";
     let (path, text) = plan("a", extra);
-    let f = fx::fixture(&[(&path, &text)]);
+    let f = fx::fixture(&[(fx::META, &fx::metaplan(&["PLAN-a.md"])), (&path, &text)]);
     fx::seal_document(&f.root, "plans/a", &[("Plan a does.", "plan-a")]);
     let page = page(&f, &summary(Scope::Engineering, "a"));
     assert_eq!(page.last_pressure.as_deref(), Some("2026-03-04"));
     assert_eq!(page.plan_state.as_deref(), Some("written"));
-    assert_eq!(page.path.as_deref(), Some("doc/plans/PLAN-a.md"));
+    assert_eq!(page.path.as_deref(), Some("doc/plans/demo/PLAN-a.md"));
 }
 
 #[test]
@@ -95,7 +102,7 @@ fn summary_page_colour_equals_its_overview_chip_colour() {
     let chip = &overview.key_chips[1];
     let one = page(&f, &summary(Scope::Product, "section_02"));
     assert_eq!(one.colour, Some(chip.colour));
-    assert_eq!(chip.doc.path, "doc/product/section_02.md");
+    assert_eq!(chip.doc.path, "doc/product/demo/section_02.md");
     assert!(
         one.file_hash.is_some(),
         "a summary with a file carries its hash"
@@ -127,6 +134,7 @@ fn implemented_by_on_a_section_page() {
     let f = fx::fixture(&[
         (fx::VISION, &fx::vision(&[1])),
         (fx::S1, &fx::section(1, "Alpha.", "Beta.")),
+        (fx::META, &fx::metaplan(&["PLAN-a.md"])),
         (&path, &text),
     ]);
     let page = page(&f, &summary(Scope::Product, "section_01"));
@@ -145,6 +153,7 @@ fn plans_on_the_first_sentence_of_each_paragraph_only() {
     let f = fx::fixture(&[
         (fx::VISION, &fx::vision(&[1])),
         (fx::S1, &fx::section(1, "Alpha.", "Beta.")),
+        (fx::META, &fx::metaplan(&["PLAN-a.md"])),
         (&path, &text),
     ]);
     let lines = [
@@ -187,7 +196,7 @@ fn sections_no_vision_lists_in_file_name_order() {
 
 #[test]
 fn no_vision_and_no_metaplan_offer_a_start() {
-    let f = fx::fixture(&[]);
+    let f = fx::fixture(&[("doc/product/demo/notes.md", "# Notes\n")]);
     let vision = page(&f, &product()).empty.expect("empty state");
     assert_eq!(vision.kind, EmptyKind::NoVision);
     assert_eq!(vision.offer.as_deref(), Some("start-vision"));
@@ -204,7 +213,10 @@ fn plans_no_metaplan_lists_plans() {
     let empty = page(&f, &engineering()).empty.expect("empty state");
     assert_eq!(empty.kind, EmptyKind::PlansNoMetaplan);
     let paths: Vec<_> = empty.docs.iter().map(|d| d.path.as_str()).collect();
-    assert_eq!(paths, ["doc/plans/PLAN-a.md", "doc/plans/PLAN-b.md"]);
+    assert_eq!(
+        paths,
+        ["doc/plans/demo/PLAN-a.md", "doc/plans/demo/PLAN-b.md"]
+    );
 }
 
 #[test]
@@ -235,12 +247,18 @@ fn building_state_keeps_the_key() {
 #[test]
 fn sealed_overview_renders_whatever_its_state_and_missing_gives_building() {
     let f = sealed_sections();
-    fx::seal_overview(&f.root, "product", &[(fx::ID1, "Section 1 holds.")], &[]);
+    fx::seal_overview(
+        &f.root,
+        "overview/demo/product",
+        &[(fx::ID1, "Section 1 holds.")],
+        &[],
+    );
     fx::put(&f.root, fx::S1, &fx::section(1, "Edited.", "Beta."));
     let stale = page(&f, &product());
     assert!(stale.empty.is_none() && !stale.blocks.is_empty());
     assert!(stale.file_hash.is_some());
-    std::fs::remove_file(f.root.join(summary_path("product"))).expect("remove overview");
+    std::fs::remove_file(f.root.join(summary_path("overview/demo/product")))
+        .expect("remove overview");
     let missing = page(&f, &product());
     assert_eq!(
         missing.empty.expect("empty state").kind,
@@ -253,7 +271,12 @@ fn sealed_overview_renders_whatever_its_state_and_missing_gives_building() {
 fn missing_cited_sentence_keeps_the_citation_and_dashes_its_mark() {
     let f = fx::two_sections();
     fx::seal_document(&f.root, fx::ID1, &[("Old claim.", "a")]);
-    fx::seal_overview(&f.root, "product", &[(fx::ID1, "Old claim.")], &[]);
+    fx::seal_overview(
+        &f.root,
+        "overview/demo/product",
+        &[(fx::ID1, "Old claim.")],
+        &[],
+    );
     fx::seal_document(&f.root, fx::ID2, &[("Other.", "a")]);
     fx::seal_document(&f.root, fx::ID1, &[("New claim.", "a")]);
     let page = page(&f, &product());
@@ -274,10 +297,12 @@ fn missing_cited_sentence_keeps_the_citation_and_dashes_its_mark() {
 #[test]
 fn page_keys_round_trip_and_reject_unsafe_names() {
     for key in [
-        "product",
-        "engineering",
-        "product/section_04",
-        "engineering/my-plan",
+        "overview/demo/product",
+        "overview/demo/engineering",
+        "demo/product/section_04",
+        "demo/engineering/my-plan",
+        "plans/standalone",
+        "overview/another-feature/product",
     ] {
         assert_eq!(PageKey::parse(key).expect(key).as_key(), key);
     }
@@ -287,23 +312,28 @@ fn page_keys_round_trip_and_reject_unsafe_names() {
 #[test]
 fn page_key_name_rule() {
     assert_eq!(
-        PageKey::parse("engineering/feat.v2"),
+        PageKey::parse("demo/engineering/feat.v2"),
         Some(summary(Scope::Engineering, "feat.v2"))
     );
     let longest = "a".repeat(128);
     assert_eq!(
-        PageKey::parse(&format!("product/{longest}")),
+        PageKey::parse(&format!("demo/product/{longest}")),
         Some(summary(Scope::Product, &longest))
     );
     let too_long = "a".repeat(129);
-    assert!(PageKey::parse(&format!("product/{too_long}")).is_none());
+    assert!(PageKey::parse(&format!("demo/product/{too_long}")).is_none());
     for key in [
-        "product/.",
-        "product/..",
-        "product/a%2e",
-        "product/",
-        "product/a/b",
+        "demo/product/.",
+        "demo/product/..",
+        "demo/product/a%2e",
+        "demo/product/",
+        "demo/product/a/b",
         "other",
+        "product",
+        "engineering",
+        "overview/Bad/product",
+        "overview/../product",
+        "overview/demo/other",
     ] {
         assert!(PageKey::parse(key).is_none(), "{key} must be rejected");
     }

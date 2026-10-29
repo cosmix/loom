@@ -6,6 +6,8 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use crate::planning::kinds::is_feature_name;
+
 use super::types::StageDefinition;
 
 pub(super) mod declared_skills;
@@ -31,15 +33,31 @@ pub(super) fn check_missing_summaries(stages: &[StageDefinition]) -> Vec<String>
         .collect()
 }
 
-/// Extract `doc/plans/briefs/...` path-like tokens from free-form text.
+/// Extract standalone and feature brief path-like tokens from free-form text.
 ///
 /// A plain substring/token scan, not a markdown-link parser: split on
 /// whitespace and common delimiters, trim surrounding punctuation, and keep
-/// tokens that contain the brief-directory prefix. Templates such as
+/// tokens under `doc/plans/briefs/` or `doc/plans/<feature>/briefs/` with a valid
+/// feature name. Templates such as
 /// `doc/plans/briefs/<plan>/<stage-id>/` name a layout, not a file, and are
 /// skipped.
 pub(crate) fn extract_brief_paths(text: &str) -> Vec<String> {
-    extract_prefixed_paths(text, "doc/plans/briefs/")
+    extract_prefixed_paths(text, "doc/plans/")
+        .into_iter()
+        .filter(|path| {
+            let rest = path.strip_prefix("doc/plans/").unwrap_or_default();
+            let Some((home, rest)) = rest.split_once('/') else {
+                return false;
+            };
+            if home == "briefs" {
+                return !rest.is_empty();
+            }
+            is_feature_name(home)
+                && rest
+                    .strip_prefix("briefs/")
+                    .is_some_and(|suffix| !suffix.is_empty())
+        })
+        .collect()
 }
 
 /// Extract path-like tokens containing `prefix`, skipping placeholder paths.
@@ -281,6 +299,45 @@ mod tests {
         let expected = vec!["doc/plans/briefs/v2/a.md"];
         assert_eq!(extract_prefixed_paths(text, "doc/plans/briefs/"), expected);
         assert_eq!(extract_brief_paths(text), expected);
+    }
+
+    #[test]
+    fn feature_brief_paths_preserve_token_rules_and_order() {
+        let text = "See (`doc/plans/feature-1/briefs/run/a.md#heading`), \
+                    doc/plans/briefs/shared/b.md. Then \
+                    **`doc/plans/2nd-feature/briefs/run/c.md`.** \
+                    Layout: doc/plans/feature-1/briefs/<stage-id>/ \
+                    and `doc/plans/feature-1/briefs/`.";
+        assert_eq!(
+            extract_brief_paths(text),
+            vec![
+                "doc/plans/feature-1/briefs/run/a.md",
+                "doc/plans/briefs/shared/b.md",
+                "doc/plans/2nd-feature/briefs/run/c.md",
+            ]
+        );
+    }
+
+    #[test]
+    fn invalid_feature_names_are_not_brief_references() {
+        let text = "doc/plans/Bad_Name/briefs/run/a.md \
+                    doc/plans/-bad/briefs/run/a.md \
+                    doc/plans/plans/briefs/run/a.md \
+                    doc/plans/overview/briefs/run/a.md \
+                    doc/plans/archive/briefs/run/a.md";
+        assert!(extract_brief_paths(text).is_empty());
+    }
+
+    #[test]
+    fn reserved_names_keep_their_standalone_brief_meaning() {
+        let text = "doc/plans/briefs/briefs/a.md doc/plans/briefs/archive/b.md";
+        assert_eq!(
+            extract_brief_paths(text),
+            vec![
+                "doc/plans/briefs/briefs/a.md",
+                "doc/plans/briefs/archive/b.md"
+            ]
+        );
     }
 
     #[test]

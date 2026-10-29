@@ -72,8 +72,9 @@ fn plain_brief_calls_bind_their_ids() {
         brief("loom plan summary brief plans/a"),
         Some(owned(&["plans/a"]))
     );
-    let noted = brief("loom plan summary brief plans/a product --note keep the order");
-    assert_eq!(noted, Some(owned(&["plans/a", "product"])));
+    let noted =
+        brief("loom plan summary brief plans/a overview/demo/product --note keep the order");
+    assert_eq!(noted, Some(owned(&["plans/a", "overview/demo/product"])));
     let pathed = brief("/home/u/.local/bin/loom  plan summary brief plans/a");
     assert_eq!(pathed, Some(owned(&["plans/a"])));
     let compound = [
@@ -193,12 +194,15 @@ fn one_summary_is_its_own_line_and_a_set_shares_one() {
 #[test]
 fn a_summary_sessions_transcript_costs_what_no_subagent_briefed() {
     let (tmp, paths) = runtime();
-    claim(&paths, "product", Some("s1"));
+    claim(&paths, "overview/demo/product", Some("s1"));
     let mut attribution = Attribution::new(paths.clone());
-    let ids = ["product", "product/section_01"];
+    let ids = ["overview/demo/product", "demo/product/section_01"];
     let triggers = ids.map(|id| (id.to_owned(), Trigger::Background));
     attribution.summary_started("s1", BTreeMap::from(triggers));
-    let agent = [bash("t1", "loom plan summary brief product/section_01")];
+    let agent = [bash(
+        "t1",
+        "loom plan summary brief demo/product/section_01",
+    )];
     let agent = transcript(tmp.path(), "agent-x.jsonl", &agent);
     attribution
         .on_subagent_stopped("s1", "x", &agent)
@@ -206,14 +210,14 @@ fn a_summary_sessions_transcript_costs_what_no_subagent_briefed() {
     let main = transcript(
         tmp.path(),
         "main.jsonl",
-        &[bash("t2", "loom plan summary brief product")],
+        &[bash("t2", "loom plan summary brief overview/demo/product")],
     );
     attribution.note_main_transcript("s1", Some(main));
     let lines = attribution.on_session_ended("s1").expect("end");
     assert_eq!(lines.len(), 1);
     assert_eq!(
         (&lines[0].summaries, lines[0].level),
-        (&owned(&["product"]), Level::Overview)
+        (&owned(&["overview/demo/product"]), Level::Overview)
     );
     assert!(
         claimed(&paths).is_empty(),

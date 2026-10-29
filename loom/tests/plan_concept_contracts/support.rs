@@ -13,12 +13,14 @@ use loom::planning::summary::seal::{seal, SealError};
 use serde_json::Value;
 use tempfile::TempDir;
 
-pub const VISION: &str = "doc/product/index.md";
-pub const META: &str = "doc/plans/index.md";
+pub const VISION: &str = "doc/product/demo/index.md";
+pub const META: &str = "doc/plans/demo/index.md";
+pub const PRODUCT_OVERVIEW: &str = "overview/demo/product";
+pub const ENGINEERING_OVERVIEW: &str = "overview/demo/engineering";
 /// Link from the product overview to the vision's title section.
-pub const VISION_LINK: &str = "../../product/index.md#vision";
+pub const VISION_LINK: &str = "../../../../product/demo/index.md#vision";
 /// Link from the engineering overview to the metaplan's title section.
-pub const META_LINK: &str = "../../plans/index.md#metaplan";
+pub const META_LINK: &str = "../../../../plans/demo/index.md#metaplan";
 
 /// A git-less tree under `<tmp>/repo` holding `files`, with the loom user dir `<tmp>/home`.
 pub fn tree(files: &[(String, String)]) -> (TempDir, PathBuf, PathBuf) {
@@ -75,15 +77,22 @@ pub fn page_of(root: &Path, key: &PageKey) -> Value {
 }
 
 pub fn product_overview_key() -> PageKey {
-    PageKey::Overview(Scope::Product)
+    PageKey::Overview {
+        feature: "demo".to_string(),
+        scope: Scope::Product,
+    }
 }
 
 pub fn engineering_overview_key() -> PageKey {
-    PageKey::Overview(Scope::Engineering)
+    PageKey::Overview {
+        feature: "demo".to_string(),
+        scope: Scope::Engineering,
+    }
 }
 
 pub fn summary_key(scope: Scope, doc: &str) -> PageKey {
     PageKey::Summary {
+        feature: Some("demo".to_string()),
         scope,
         doc: doc.to_string(),
     }
@@ -101,12 +110,12 @@ pub fn vision(numbers: &[u32]) -> String {
 }
 
 pub fn section_path(n: u32) -> String {
-    format!("doc/product/section_{n:02}.md")
+    format!("doc/product/demo/section_{n:02}.md")
 }
 
 /// Summary id of product section `n`.
 pub fn section_id(n: u32) -> String {
-    format!("product/section_{n:02}")
+    format!("demo/product/section_{n:02}")
 }
 
 /// A product section with one `## <heading>` per entry, each holding a line of text.
@@ -123,7 +132,7 @@ pub fn section_draft(n: u32, lines: &[(&str, &str)]) -> String {
     let body: String = lines
         .iter()
         .map(|(text, anchor)| {
-            format!("{text} [§](../../../product/section_{n:02}.md#{anchor})\n\n")
+            format!("{text} [§](../../../../product/demo/section_{n:02}.md#{anchor})\n\n")
         })
         .collect();
     format!("# S{n}\n\n{body}")
@@ -136,7 +145,7 @@ pub fn sid(text: &str) -> String {
 
 /// Link from an overview to sentence `text` of member summary `member`.
 pub fn member_link(member: &str, text: &str) -> String {
-    format!("{member}.md#{}", sid(text))
+    format!("../../{member}.md#{}", sid(text))
 }
 
 /// A metaplan titled `# Metaplan` naming each plan file in `files`, one entry each.
@@ -151,14 +160,14 @@ pub fn metaplan(files: &[&str]) -> String {
 
 /// A plan `PLAN-<slug>.md` titled `# Plan: <slug>` with `extra` lines after the title.
 pub fn plan(slug: &str, extra: &str) -> (String, String) {
-    let path = format!("doc/plans/PLAN-{slug}.md");
+    let path = format!("doc/plans/demo/PLAN-{slug}.md");
     (path, format!("# Plan: {slug}\n\n{extra}Does {slug}.\n"))
 }
 
 /// The one-sentence summary draft of plan `slug`, citing its title section.
 pub fn plan_draft(slug: &str) -> String {
     format!(
-        "# {slug}\n\n{} [§](../../../plans/PLAN-{slug}.md#plan-{slug})\n",
+        "# {slug}\n\n{} [§](../../../plans/demo/PLAN-{slug}.md#plan-{slug})\n",
         plan_sentence(slug)
     )
 }

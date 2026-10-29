@@ -22,9 +22,18 @@ macro_rules! fixture_test {
     };
 }
 
-fixture_test!(tree_fixture_matches_serde_output, FileTree, "tree");
-fixture_test!(doc_fixture_matches_serde_output, DocView, "doc");
-fixture_test!(doc_plan_fixture_matches_serde_output, DocView, "doc-plan");
+#[test]
+fn tree_fixture_matches_serde_output() {
+    assert_fixture::<FileTree>(include_str!("fixtures/files-tree.json"));
+}
+#[test]
+fn doc_fixture_matches_serde_output() {
+    assert_fixture::<DocView>(include_str!("fixtures/files-doc.json"));
+}
+#[test]
+fn doc_plan_fixture_matches_serde_output() {
+    assert_fixture::<DocView>(include_str!("fixtures/files-doc-plan.json"));
+}
 fixture_test!(
     save_saved_fixture_matches_serde_output,
     SaveResult,
@@ -58,11 +67,10 @@ fixture_test!(
 enum TreeMessage {
     TreeChanged(FileTree),
 }
-fixture_test!(
-    tree_changed_fixture_matches_serde_output,
-    TreeMessage,
-    "tree-changed"
-);
+#[test]
+fn tree_changed_fixture_matches_serde_output() {
+    assert_fixture::<TreeMessage>(include_str!("fixtures/files-tree-changed.json"));
+}
 
 fn assert_schema_values<T: Serialize + std::fmt::Debug>(schema: &str, array: &str, values: &[T]) {
     let declaration = format!("export const {array} = [");
@@ -89,10 +97,26 @@ const SCHEMA_FILES_TS: &str = include_str!("../../../../web/src/plan/api/schema-
 
 #[test]
 fn entry_kinds_are_in_schema() {
+    match EntryKind::Feature {
+        EntryKind::Feature
+        | EntryKind::Vision
+        | EntryKind::Section
+        | EntryKind::Note
+        | EntryKind::Metaplan
+        | EntryKind::MetaplanEntry
+        | EntryKind::Plan
+        | EntryKind::Brief
+        | EntryKind::BriefFolder
+        | EntryKind::Knowledge
+        | EntryKind::KnowledgeFolder
+        | EntryKind::Review
+        | EntryKind::Other => {}
+    }
     assert_schema_values(
         SCHEMA_FILES_TS,
         "ENTRY_KINDS",
         &[
+            EntryKind::Feature,
             EntryKind::Vision,
             EntryKind::Section,
             EntryKind::Note,

@@ -10,7 +10,9 @@ use crate::plan_server::lifecycle::{line, safe};
 use crate::plan_session::bridge::{Bridge, EndCause, EndMode, GuidanceFn, StartRequest};
 use crate::plan_session::kind::SessionKind;
 use crate::planning::guidance::{render_session_guidance, GuidanceModels, SessionGuidanceKind};
+use crate::planning::project::Project;
 use crate::planning::summary::claims::clear_session_claims;
+use crate::planning::summary::store::validate_id;
 
 /// Starts summary sessions through the bridge in `ctx.extensions()`.
 pub struct RealSpawner {
@@ -48,10 +50,12 @@ impl SessionSpawner for RealSpawner {
         let project = ctx.project().clone();
         let runtime = ctx.runtime().clone();
         let root = ctx.root().to_path_buf();
+        let feature = batch_feature(&project, ids).map(str::to_owned);
         let kind = SessionGuidanceKind::Summary { ids: ids.to_vec() };
         let guidance: GuidanceFn = Box::new(move |dir| {
             let models = GuidanceModels::load(&root)?;
-            render_session_guidance(&kind, &project, &runtime, dir, &models).map(Into::into)
+            render_session_guidance(&kind, &project, &runtime, dir, &models, feature.as_deref())
+                .map(Into::into)
         });
         let request = StartRequest {
             kind: SessionKind::Summary,
@@ -94,6 +98,91 @@ impl SessionSpawner for RealSpawner {
                     safe(session)
                 ));
             }
+        }
+    }
+}
+
+fn summary_feature<'a>(project: &'a Project, id: &'a str) -> Option<&'a str> {
+    validate_id(id).ok()?;
+    if let Some(slug) = id.strip_prefix("plans/") {
+        return project.tree.plan(slug)?.feature.as_deref();
+    }
+    let scoped = id.strip_prefix("overview/").unwrap_or(id);
+    let (feature, _) = scoped.split_once('/')?;
+    project.feature(feature).map(|_| feature)
+}
+
+fn batch_feature<'a>(project: &'a Project, ids: &'a [String]) -> Option<&'a str> {
+    let feature = summary_feature(project, ids.first()?)?;
+    // The scheduler can batch several features and standalone plans into one session.
+    ids.iter()
+        .all(|id| summary_feature(project, id) == Some(feature))
+        .then_some(feature)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{batch_feature, summary_feature};
+    use crate::planning::project::Project;
+
+    fn fixture() -> (tempfile::TempDir, Project) {
+        let temp = tempfile::tempdir().unwrap();
+        for path in [
+            "doc/product/demo/section_01.md",
+            "doc/plans/demo/PLAN-a.md",
+            "doc/plans/demo/archive/DONE-PLAN-archived.md",
+            "doc/plans/other/PLAN-b.md",
+            "doc/plans/PLAN-solo.md",
+        ] {
+            let path = temp.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "# Document\nImplements: none\n").unwrap();
+        }
+        let project = Project::load(temp.path()).unwrap();
+        (temp, project)
+    }
+
+    #[test]
+    fn summary_ids_select_their_own_features() {
+        let (_temp, project) = fixture();
+
+        for (id, expected) in [
+            ("overview/demo/product", Some("demo")),
+            ("overview/demo/engineering", Some("demo")),
+            ("demo/product/section_01", Some("demo")),
+            ("plans/a", Some("demo")),
+            ("plans/archived", Some("demo")),
+            ("plans/b", Some("other")),
+            ("plans/solo", None),
+            ("plans/missing", None),
+            ("overview/missing/product", None),
+            ("overview/demo/invalid", None),
+        ] {
+            assert_eq!(summary_feature(&project, id), expected, "{id}");
+        }
+    }
+
+    #[test]
+    fn summary_batch_is_scoped_only_when_all_ids_share_a_feature() {
+        let (_temp, project) = fixture();
+
+        for (ids, expected) in [
+            (
+                vec![
+                    "overview/demo/product",
+                    "demo/product/section_01",
+                    "plans/a",
+                ],
+                Some("demo"),
+            ),
+            (vec!["plans/a", "plans/b"], None),
+            (vec!["plans/a", "plans/solo"], None),
+            (vec!["plans/solo", "plans/a"], None),
+            (vec!["plans/solo"], None),
+            (vec![], None),
+        ] {
+            let ids: Vec<String> = ids.into_iter().map(str::to_owned).collect();
+            assert_eq!(batch_feature(&project, &ids), expected, "{ids:?}");
         }
     }
 }

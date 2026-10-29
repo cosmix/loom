@@ -13,7 +13,7 @@ pub fn open_question_counts(project: &Project) -> BTreeMap<String, usize> {
         .filter(|(_, doc)| {
             matches!(
                 doc.doc.kind,
-                DocKind::ProductSection { .. } | DocKind::Metaplan | DocKind::Plan { .. }
+                DocKind::ProductSection { .. } | DocKind::Metaplan { .. } | DocKind::Plan { .. }
             ) && doc
                 .sections
                 .headings

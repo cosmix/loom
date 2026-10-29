@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use super::engine::ConceptState;
+use super::fixtures::{self, Fixture, ID1};
 use super::{install, page_keys, routes};
 use crate::plan_server::context::{BindInfo, PlanContext};
 use crate::plan_server::ids::BrowserId;
@@ -13,7 +14,6 @@ use crate::plan_server::start_with_routes;
 use crate::plan_server::tests::support::{bootstrap, get, json_body, post_json, skip, status};
 use crate::plan_server::wire::server::{MissingPrereq, PrereqKind};
 use crate::plan_server::ServerOptions;
-use crate::planning::summary::evaluate::fixtures::{self, Fixture, ID1};
 use crate::planning::summary::store;
 use crate::planning::watch::{Batch, OwnWrites};
 
@@ -39,10 +39,11 @@ fn overview_200_with_chips() {
     let fixture = fixtures::two_sections();
     let server = served(&fixture, open());
     let cookies = bootstrap(&server);
-    let response = get(&server, "/api/concept/product", &cookies);
+    let response = get(&server, "/api/concept/overview/demo/product", &cookies);
     assert_eq!(status(&response), 200, "{response}");
     let page = json_body(&response);
-    assert_eq!(page["key"], "product");
+    assert_eq!(page["feature"], "demo");
+    assert_eq!(page["key"], "overview/demo/product");
     assert_eq!(page["key_chips"].as_array().map(Vec::len), Some(2));
 }
 
@@ -59,7 +60,14 @@ fn viewer_gets_200() {
     };
     let server = served(&fixture, ReadOnly::from_problems(vec![problem]));
     let cookies = bootstrap(&server);
-    assert_eq!(status(&get(&server, "/api/concept/product", &cookies)), 200);
+    assert_eq!(
+        status(&get(
+            &server,
+            "/api/concept/overview/demo/product",
+            &cookies
+        )),
+        200
+    );
 }
 
 #[test]
@@ -69,7 +77,7 @@ fn unknown_section_404() {
     }
     let server = served(&fixtures::two_sections(), open());
     let cookies = bootstrap(&server);
-    let response = get(&server, "/api/concept/product/section_99", &cookies);
+    let response = get(&server, "/api/concept/demo/product/section_99", &cookies);
     assert_eq!(status(&response), 404, "{response}");
 }
 
@@ -80,7 +88,7 @@ fn dot_dot_key_400() {
     }
     let server = served(&fixtures::two_sections(), open());
     let cookies = bootstrap(&server);
-    let response = get(&server, "/api/concept/product/../x", &cookies);
+    let response = get(&server, "/api/concept/demo/product/../x", &cookies);
     assert_eq!(status(&response), 400, "{response}");
     assert_eq!(json_body(&response)["error"], "bad_page");
 }
@@ -92,7 +100,12 @@ fn post_refused() {
     }
     let server = served(&fixtures::two_sections(), open());
     let cookies = bootstrap(&server);
-    let response = post_json(&server, "/api/concept/product", &cookies, "{}");
+    let response = post_json(
+        &server,
+        "/api/concept/overview/demo/product",
+        &cookies,
+        "{}",
+    );
     assert!(matches!(status(&response), 404 | 405), "{response}");
 }
 
@@ -125,8 +138,15 @@ fn delta_once_then_none() {
     let text = fixtures::section(1, "Changed.", "Beta.");
     fixtures::put(&fixture.root, fixtures::S1, &text);
     let batch = edit_batch(&ctx, fixtures::S1);
-    let changed = state.handle(&ctx, &batch).expect("a delta");
-    assert_eq!(changed.pages, ["product", "product/section_01"]);
+    let changed = state
+        .handle(&ctx, &batch)
+        .into_iter()
+        .next()
+        .expect("a delta");
+    assert_eq!(
+        changed.pages,
+        ["demo/product/section_01", "overview/demo/product"]
+    );
     assert_eq!(changed.out_of_date, [ID1]);
     assert_eq!(changed.sources, [fixtures::S1]);
     assert!(frames
@@ -134,7 +154,7 @@ fn delta_once_then_none() {
         .expect("one frame")
         .contains("concept_changed"));
 
-    assert_eq!(state.handle(&ctx, &Batch::default()), None);
+    assert!(state.handle(&ctx, &Batch::default()).is_empty());
     assert!(frames.try_recv().is_err());
 }
 
@@ -146,8 +166,15 @@ fn resealed_summary_with_unchanged_state_is_in_pages() {
     install(&ctx);
     let state = ctx.extensions().get::<ConceptState>().expect("state");
     fixtures::seal_document(&fixture.root, ID1, &[("Alpha still holds.", "a")]);
-    let changed = state.handle(&ctx, &Batch::default()).expect("a delta");
-    assert_eq!(changed.pages, ["product", "product/section_01"]);
+    let changed = state
+        .handle(&ctx, &Batch::default())
+        .into_iter()
+        .next()
+        .expect("a delta");
+    assert_eq!(
+        changed.pages,
+        ["demo/product/section_01", "overview/demo/product"]
+    );
     assert!(changed.out_of_date.is_empty());
 }
 
@@ -174,7 +201,7 @@ fn engine_error_keeps_the_previous_evaluation() {
     let state = ctx.extensions().get::<ConceptState>().expect("state");
     let before = state.latest();
     let result = Err(anyhow::anyhow!("claims unreadable"));
-    assert_eq!(state.apply(&ctx, &Batch::default(), result), None);
+    assert!(state.apply(&ctx, &Batch::default(), result).is_empty());
     assert!(Arc::ptr_eq(&before, &state.latest()));
 }
 
@@ -183,19 +210,25 @@ fn page_keys_for_a_summary() {
     let fixture = fixtures::fixture(&[
         (fixtures::VISION, &fixtures::vision(&[1])),
         (fixtures::S1, "# One\n"),
-        ("doc/product/section_03.md", "# Three\n"),
+        ("doc/product/demo/section_03.md", "# Three\n"),
         (fixtures::META, &fixtures::metaplan(&["PLAN-a.md"])),
-        ("doc/plans/PLAN-a.md", "# A\n"),
+        ("doc/plans/demo/PLAN-a.md", "# A\n"),
     ]);
     let project = fixtures::load(&fixture.root);
-    let keys = |id| page_keys(id, &store::scope(&project));
+    let keys = |id| page_keys(id, &store::scope(&project, "demo"));
     assert_eq!(
-        keys("product/section_01"),
-        ["product/section_01", "product"]
+        keys("demo/product/section_01"),
+        ["demo/product/section_01", "overview/demo/product"]
     );
-    assert_eq!(keys("product/section_03"), ["product/section_03"]);
-    assert_eq!(keys("plans/a"), ["engineering/a", "engineering"]);
-    assert_eq!(keys("plans/zzz"), ["engineering/zzz"]);
-    assert_eq!(keys("product"), ["product"]);
-    assert_eq!(keys("engineering"), ["engineering"]);
+    assert_eq!(keys("demo/product/section_03"), ["demo/product/section_03"]);
+    assert_eq!(
+        keys("plans/a"),
+        ["demo/engineering/a", "overview/demo/engineering"]
+    );
+    assert!(keys("plans/zzz").is_empty());
+    assert_eq!(keys("overview/demo/product"), ["overview/demo/product"]);
+    assert_eq!(
+        keys("overview/demo/engineering"),
+        ["overview/demo/engineering"]
+    );
 }

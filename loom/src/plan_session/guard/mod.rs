@@ -14,6 +14,8 @@ mod tests;
 #[cfg(test)]
 mod tests_cases;
 #[cfg(test)]
+mod tests_features;
+#[cfg(test)]
 mod tests_reads;
 #[cfg(test)]
 mod tests_reads_fixture;
@@ -250,8 +252,10 @@ fn check_doc_write(policy: &GuardPolicy, rel: &Path) -> Result<(), String> {
             SessionKind::Authoring => Ok(()),
             SessionKind::Summary => Err("a summary session writes only runtime drafts".into()),
             SessionKind::Pressure { plan } => {
-                let bundle = policy.kind.pressure_bundle();
-                let in_bundle = bundle.is_some_and(|b| inside(rel, &b) && rel != b.as_path());
+                let bundle = policy.kind.pressure_bundle().ok_or_else(|| {
+                    "a pressure session needs a PLAN-<slug>.md in a valid plan home".to_owned()
+                })?;
+                let in_bundle = inside(rel, &bundle) && rel != bundle.as_path();
                 if rel == plan.as_path() || in_bundle {
                     return Ok(());
                 }

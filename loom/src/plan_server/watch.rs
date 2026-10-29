@@ -9,7 +9,7 @@ use std::time::{Duration, Instant, SystemTime};
 use anyhow::{Context, Result};
 
 use super::context::PlanContext;
-use super::wire::checklist::ChecklistView;
+use super::wire::checklist::ProjectChecklistView;
 use super::wire::message::PlanMessage;
 use crate::planning::watch::{Batch, OwnWrites, Watcher};
 
@@ -36,7 +36,7 @@ pub fn baseline(root: PathBuf, own_writes: OwnWrites) -> Watcher {
 
 /// Poll `watcher` (from [`baseline`], sharing `ctx.own_writes()`) every second until `stop`
 /// is set. Every batch after the initial one refreshes the project, runs the `on_batch` hooks
-/// in order, and broadcasts the checklist when it changed. Returns the thread and the
+/// in order, and broadcasts the planning snapshot when it changed. Returns the thread and the
 /// watcher's error slot, which `Watcher::spawn` would otherwise hide: hand it to
 /// [`spawn_tick`].
 pub fn spawn_watcher(
@@ -55,11 +55,11 @@ pub(super) fn apply_batch(ctx: &PlanContext, batch: &Batch) {
     }
     let changed = {
         let mut project = ctx.project_mut();
-        let before = ChecklistView::from(&project.checklist);
+        let before = ProjectChecklistView::from(&*project);
         if let Err(error) = project.refresh(batch) {
             tracing::warn!("loom plan could not refresh the project: {error:#}");
         }
-        let after = ChecklistView::from(&project.checklist);
+        let after = ProjectChecklistView::from(&*project);
         (before != after).then_some(after)
     };
     for hook in ctx.batch_hooks() {
@@ -112,5 +112,116 @@ fn sleep_unless_stopped(stop: &AtomicBool) {
             return;
         }
         thread::sleep(left.min(STOP_CHECK));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plan_server::context::BindInfo;
+    use crate::plan_server::ids::BrowserId;
+    use crate::plan_server::prereq::ReadOnly;
+    use serde_json::{json, Value};
+    use std::path::Path;
+
+    fn put(root: &Path, relative: &str, contents: &str) {
+        let path = root.join(relative);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, contents).unwrap();
+    }
+
+    fn context(root: &Path) -> Arc<PlanContext> {
+        Arc::new(
+            PlanContext::new(
+                root.to_path_buf(),
+                ReadOnly::from_problems(Vec::new()),
+                BindInfo::new("127.0.0.1:7272".parse().unwrap(), "token"),
+                OwnWrites::default(),
+            )
+            .unwrap(),
+        )
+    }
+
+    #[test]
+    fn standalone_title_change_broadcasts_even_without_feature_checklists() {
+        let root = tempfile::tempdir().unwrap();
+        put(root.path(), "doc/plans/PLAN-fix.md", "# Before\n");
+        let ctx = context(root.path());
+        let conn = ctx.conn_ctx(BrowserId::parse(&"a".repeat(32)).unwrap());
+        let frames = ctx.hub().register(&conn);
+        put(root.path(), "doc/plans/PLAN-fix.md", "# After\n");
+        let batch = Batch {
+            changed: vec!["doc/plans/PLAN-fix.md".into()],
+            ..Batch::default()
+        };
+
+        apply_batch(&ctx, &batch);
+
+        let frame = frames.try_recv().expect("the standalone shelf changed");
+        let value: Value = serde_json::from_str(&frame).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "type": "checklist", "checklists": [], "moves": [],
+                "standalone": [{"slug":"fix", "path":"doc/plans/PLAN-fix.md", "state":"written", "title":"After"}]
+            })
+        );
+        apply_batch(&ctx, &batch);
+        assert!(
+            frames.try_recv().is_err(),
+            "an unchanged snapshot is not broadcast"
+        );
+    }
+
+    #[test]
+    fn misplaced_document_broadcasts_its_move_offer_without_an_implicit_feature() {
+        let root = tempfile::tempdir().unwrap();
+        let ctx = context(root.path());
+        let conn = ctx.conn_ctx(BrowserId::parse(&"b".repeat(32)).unwrap());
+        let frames = ctx.hub().register(&conn);
+        put(root.path(), "doc/product/index.md", "# Misplaced\n");
+
+        apply_batch(
+            &ctx,
+            &Batch {
+                added: vec!["doc/product/index.md".into()],
+                ..Batch::default()
+            },
+        );
+
+        let frame = frames.try_recv().expect("the move offers changed");
+        let value: Value = serde_json::from_str(&frame).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "type":"checklist", "checklists":[], "standalone":[],
+                "moves":[{
+                    "id":"move-into-feature:doc/product/index.md", "kind":"move_into_feature",
+                    "label":"Move doc/product/index.md into a feature",
+                    "target":"doc/product/index.md"
+                }]
+            })
+        );
+    }
+
+    #[test]
+    fn hello_contains_the_same_feature_snapshot_as_checklist_updates() {
+        let root = tempfile::tempdir().unwrap();
+        put(root.path(), "doc/product/zeta/index.md", "# Zeta\n");
+        put(root.path(), "doc/plans/alpha/index.md", "# Alpha\n");
+        put(root.path(), "doc/plans/PLAN-fix.md", "# Fix\n");
+        let ctx = context(root.path());
+        PlanContext::install_hub_hooks(&ctx);
+        let conn = ctx.conn_ctx(BrowserId::parse(&"c".repeat(32)).unwrap());
+
+        let frames = ctx.hub().open_frames(&conn);
+
+        let PlanMessage::Hello(hello) = serde_json::from_str(&frames[0]).unwrap() else {
+            panic!("the first frame must be hello");
+        };
+        let snapshot = ProjectChecklistView::from(&*ctx.project());
+        assert_eq!(hello.checklists, snapshot.checklists);
+        assert_eq!(hello.standalone, snapshot.standalone);
+        assert_eq!(hello.moves, snapshot.moves);
     }
 }

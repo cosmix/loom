@@ -1,20 +1,26 @@
-//! Build the file-mode navigation tree from the discovered project.
+//! Build feature-grouped file-mode navigation from the discovered project.
+
+mod archive;
+mod bundles;
+mod knowledge;
+mod plans;
+mod product;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::plan_server::wire::files::{EntryKind, FileTree, PlanStateView, TreeEntry};
-use crate::planning::slug::{PlanEntry, PlanState};
-use crate::planning::{briefs, kinds::DocKind, project::Project};
+use crate::planning::kinds::{classify, plans_dir, vision_path, DocKind};
+use crate::planning::project::{Feature, Project};
+use crate::planning::slug::{plan_home, PlanEntry, PlanState};
 
-use super::doc::{entry_kind, is_markdown};
-use super::knowledge_index::parse_index;
+use super::doc::{document_feature, entry_kind, is_markdown, misplaced};
 use super::plan_view::latest_pressure_date;
 use super::texts::TextStore;
 
-/// The navigation tree of `project`. Plan pressure dates and the knowledge index come from
-/// `texts` (no file is read); `errors` is each validated plan's error count.
+/// The navigation tree of `project`, grouped by feature within each shelf. Text and
+/// validation counts come from the stores; building the tree never reads a file.
 pub fn build_tree(
     project: &Project,
     texts: &TextStore,
@@ -29,12 +35,11 @@ pub fn build_tree(
     let product = builder.product();
     let plans = builder.plans();
     let knowledge = builder.knowledge();
-    let archive = builder.archive();
+    let archive = group_features(builder.archive());
     let other = project
         .docs
         .iter()
-        .filter(|(path, _)| !builder.used.contains(*path))
-        .filter(|(path, _)| is_markdown(path))
+        .filter(|(path, _)| !builder.used.contains(*path) && is_markdown(path))
         .map(|(path, doc)| {
             entry(
                 Some(path),
@@ -48,7 +53,7 @@ pub fn build_tree(
         product,
         plans,
         knowledge,
-        other,
+        other: group_features(other),
         archive,
     }
 }
@@ -73,84 +78,6 @@ impl Builder<'_> {
         (self.project.content_hash(path)? == pinned.hash).then_some(pinned.text)
     }
 
-    fn product(&mut self) -> Vec<TreeEntry> {
-        let mut result = Vec::new();
-        if let Some(vision) = self.document(Path::new("doc/product/index.md"), EntryKind::Vision) {
-            result.push(vision);
-        }
-        let sections: Vec<_> = self
-            .project
-            .docs
-            .iter()
-            .filter_map(|(path, doc)| match doc.doc.kind {
-                DocKind::ProductSection { number } => Some((number, path.clone())),
-                _ => None,
-            })
-            .collect();
-        if let Ok(rows) = self.project.vision_rows.clone() {
-            for row in rows {
-                if let Some((_, path)) = sections.iter().find(|(n, _)| *n == row.number) {
-                    if let Some(item) = self.document(path, EntryKind::Section) {
-                        result.push(item);
-                    }
-                } else {
-                    let mut gap = entry(None, &row.name, EntryKind::Section, false);
-                    gap.gap = true;
-                    result.push(gap);
-                }
-            }
-        }
-        for (_, path) in sections {
-            if !self.used.contains(&path) {
-                if let Some(item) = self.document(&path, EntryKind::Section) {
-                    result.push(item);
-                }
-            }
-        }
-        result
-    }
-
-    fn plans(&mut self) -> Vec<TreeEntry> {
-        let mut result = Vec::new();
-        let mut named = HashSet::new();
-        for (path, rows) in self.project.metaplans.clone() {
-            let Some(mut meta) = self.document(&path, EntryKind::Metaplan) else {
-                continue;
-            };
-            for row in rows {
-                let plan = row
-                    .slug
-                    .as_ref()
-                    .and_then(|slug| self.project.tree.plans.get(slug))
-                    .cloned();
-                if let Some(plan) = plan {
-                    named.insert(plan.slug.clone());
-                    meta.children.push(self.plan(&plan));
-                } else {
-                    let mut gap = entry(None, &row.heading, EntryKind::MetaplanEntry, false);
-                    gap.gap = true;
-                    meta.children.push(gap);
-                }
-            }
-            result.push(meta);
-        }
-        for plan in self
-            .project
-            .tree
-            .plans
-            .values()
-            .cloned()
-            .collect::<Vec<_>>()
-        {
-            if !named.contains(&plan.slug)
-                && matches!(plan.state, PlanState::Written | PlanState::Running)
-            {
-                result.push(self.plan(&plan));
-            }
-        }
-        result
-    }
-
     fn plan(&mut self, plan: &PlanEntry) -> TreeEntry {
         let mut item = self
             .document(&plan.path, EntryKind::Plan)
@@ -165,158 +92,38 @@ impl Builder<'_> {
             .text(&plan.path)
             .and_then(|text| latest_pressure_date(&text));
         item.errors = self.errors.get(&plan.path).copied().unwrap_or(0);
-        item.children = self.bundle(&plan.slug);
+        if let Some(home) = plan_home(&plan.path) {
+            item.children = self.bundle(&home.join("briefs").join(&plan.slug));
+        }
         item
-    }
-
-    fn bundle(&mut self, slug: &str) -> Vec<TreeEntry> {
-        let base = Path::new("doc/plans/briefs").join(slug);
-        let paths: Vec<_> = self
-            .project
-            .docs
-            .keys()
-            .filter(|p| p.starts_with(&base) && is_markdown(p))
-            .cloned()
-            .collect();
-        let mut common = Vec::new();
-        let mut folders: BTreeMap<String, Vec<TreeEntry>> = BTreeMap::new();
-        let mut root = Vec::new();
-        for path in paths {
-            let Ok(relative) = path.strip_prefix(&base) else {
-                continue;
-            };
-            let parts: Vec<_> = relative.components().collect();
-            let folder =
-                (parts.len() > 1).then(|| parts[0].as_os_str().to_string_lossy().into_owned());
-            if let Some(item) = self.document(&path, EntryKind::Brief) {
-                if let Some(folder) = folder {
-                    folders.entry(folder).or_default().push(item);
-                } else if relative == Path::new("common.md") {
-                    common.push(item);
-                } else {
-                    root.push(item);
-                }
-            }
-        }
-        common.extend(root);
-        for (name, children) in folders {
-            let mut folder = entry(None, &name, EntryKind::BriefFolder, false);
-            folder.children = children;
-            common.push(folder);
-        }
-        common
-    }
-
-    fn knowledge(&mut self) -> Vec<TreeEntry> {
-        let base = Path::new("doc/loom/knowledge");
-        let index = base.join("INDEX.md");
-        let topics = self
-            .text(&index)
-            .map(|text| parse_index(&text))
-            .unwrap_or_default();
-        let mut result = Vec::new();
-        if let Some(item) = self.document(&index, EntryKind::Knowledge) {
-            result.push(item);
-        }
-        let root_files: Vec<_> = self
-            .project
-            .docs
-            .keys()
-            .filter(|p| p.parent() == Some(base) && is_markdown(p) && **p != index)
-            .cloned()
-            .collect();
-        for path in root_files {
-            if let Some(item) = self.document(&path, EntryKind::Knowledge) {
-                result.push(item);
-            }
-        }
-        let mut folders: BTreeMap<String, Vec<TreeEntry>> = BTreeMap::new();
-        for topic in topics {
-            let path = base.join(&topic.path);
-            if let Some(mut item) = self.document(&path, EntryKind::Knowledge) {
-                item.blurb = Some(topic.blurb);
-                folders.entry(topic.category).or_default().push(item);
-            }
-        }
-        self.add_unindexed_knowledge(base, &mut folders);
-        for (name, children) in folders {
-            let mut folder = entry(None, &name, EntryKind::KnowledgeFolder, false);
-            folder.children = children;
-            result.push(folder);
-        }
-        result
-    }
-
-    /// Unindexed knowledge remains reachable, including newly created topics.
-    fn add_unindexed_knowledge(
-        &mut self,
-        base: &Path,
-        folders: &mut BTreeMap<String, Vec<TreeEntry>>,
-    ) {
-        let remaining: Vec<_> = self
-            .project
-            .docs
-            .keys()
-            .filter(|p| p.starts_with(base) && is_markdown(p) && !self.used.contains(*p))
-            .cloned()
-            .collect();
-        for path in remaining {
-            let category = path
-                .strip_prefix(base)
-                .ok()
-                .and_then(|p| p.components().next())
-                .map(|c| c.as_os_str().to_string_lossy().into_owned());
-            if let (Some(category), Some(item)) =
-                (category, self.document(&path, EntryKind::Knowledge))
-            {
-                folders.entry(category).or_default().push(item);
-            }
-        }
-    }
-
-    fn archive(&mut self) -> Vec<TreeEntry> {
-        let mut result = Vec::new();
-        for plan in self
-            .project
-            .tree
-            .plans
-            .values()
-            .cloned()
-            .collect::<Vec<_>>()
-        {
-            if !self.used.contains(&plan.path)
-                && matches!(plan.state, PlanState::Done | PlanState::Retired)
-            {
-                result.push(self.plan(&plan));
-            }
-        }
-        let paths: Vec<_> = self
-            .project
-            .docs
-            .keys()
-            .filter(|p| {
-                p.starts_with("doc/plans/archive") && is_markdown(p) && !self.used.contains(*p)
-            })
-            .cloned()
-            .collect();
-        for path in paths {
-            let entry_kind = entry_kind(&self.project.docs[&path].doc.kind);
-            if let Some(item) = self.document(&path, entry_kind) {
-                result.push(item);
-            }
-        }
-        for slug in briefs::orphan_bundles(&self.project.tree) {
-            let mut folder = entry(None, &slug, EntryKind::BriefFolder, false);
-            folder.children = self.bundle(&slug);
-            if !folder.children.is_empty() {
-                result.push(folder);
-            }
-        }
-        result
     }
 }
 
+fn group_features(entries: Vec<TreeEntry>) -> Vec<TreeEntry> {
+    let mut groups: BTreeMap<String, Vec<TreeEntry>> = BTreeMap::new();
+    let mut ungrouped = Vec::new();
+    for item in entries {
+        if let Some(feature) = &item.feature {
+            groups.entry(feature.clone()).or_default().push(item);
+        } else {
+            ungrouped.push(item);
+        }
+    }
+    let mut result: Vec<_> = groups
+        .into_iter()
+        .map(|(name, children)| {
+            let mut group = entry(None, &name, EntryKind::Feature, false);
+            group.feature = Some(name);
+            group.children = children;
+            group
+        })
+        .collect();
+    result.extend(ungrouped);
+    result
+}
+
 fn entry(path: Option<&Path>, title: &str, kind: EntryKind, locked: bool) -> TreeEntry {
+    let doc_kind = path.map(classify);
     TreeEntry {
         path: path.map(|p| p.to_string_lossy().into_owned()),
         title: title.to_owned(),
@@ -324,6 +131,10 @@ fn entry(path: Option<&Path>, title: &str, kind: EntryKind, locked: bool) -> Tre
             .and_then(|p| p.file_name())
             .map(|n| n.to_string_lossy().into_owned()),
         kind,
+        feature: path
+            .zip(doc_kind.as_ref())
+            .and_then(|(path, kind)| document_feature(path, kind)),
+        misplaced: doc_kind.as_ref().is_some_and(misplaced),
         state: None,
         locked,
         gap: false,

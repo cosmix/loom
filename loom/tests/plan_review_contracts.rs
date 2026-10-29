@@ -253,18 +253,24 @@ fn changed_after(notes: &[BuiltNote], slug: &str) -> Option<Option<String>> {
 #[test]
 fn marker_after_build_date() {
     let files = [
-        ("doc/plans/archive/DONE-PLAN-a.md", support::plan_doc("a")),
         (
-            "doc/plans/archive/REVIEW-PLAN-a.md",
+            "doc/plans/demo/archive/DONE-PLAN-a.md",
+            support::plan_doc("a"),
+        ),
+        (
+            "doc/plans/demo/archive/REVIEW-PLAN-a.md",
             support::review_doc("PLAN-a", support::BUILT),
         ),
-        ("doc/plans/IN_PROGRESS-PLAN-b.md", support::plan_doc("b")),
+        (
+            "doc/plans/demo/IN_PROGRESS-PLAN-b.md",
+            support::plan_doc("b"),
+        ),
     ];
     let (repo, base) = support::section_changed_after_build(&files);
     // The file time predates the build, so only the git history shows the later change.
     support::set_mtime(&repo.root, support::SECTION_02, support::BEFORE_BUILD);
     let project = Project::load(&repo.root).expect("load fixture project");
-    let notes = built_notes(&project, "product/section_02.md").expect("built notes");
+    let notes = built_notes(&project, "product/demo/section_02").expect("built notes");
     assert_eq!(
         changed_after(&notes, "a"),
         Some(Some(base)),
@@ -279,15 +285,15 @@ fn marker_after_build_date() {
 #[test]
 fn marker_finds_in_progress_named_review() {
     let files = [
-        ("doc/plans/DONE-PLAN-c.md", support::plan_doc("c")),
+        ("doc/plans/demo/DONE-PLAN-c.md", support::plan_doc("c")),
         (
-            "doc/plans/archive/REVIEW-IN_PROGRESS-PLAN-c.md",
+            "doc/plans/demo/archive/REVIEW-IN_PROGRESS-PLAN-c.md",
             support::review_doc("IN_PROGRESS-PLAN-c", support::BUILT),
         ),
     ];
     let (repo, base) = support::section_changed_after_build(&files);
     let project = Project::load(&repo.root).expect("load fixture project");
-    let notes = built_notes(&project, "product/section_02.md").expect("built notes");
+    let notes = built_notes(&project, "product/demo/section_02").expect("built notes");
     assert_eq!(
         changed_after(&notes, "c"),
         Some(Some(base)),

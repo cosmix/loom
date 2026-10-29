@@ -17,6 +17,8 @@ mod tests;
 #[cfg(test)]
 mod tests_assert;
 #[cfg(test)]
+mod tests_features;
+#[cfg(test)]
 mod tests_kinds;
 #[cfg(test)]
 mod tests_kinds_fixture;
@@ -85,7 +87,7 @@ pub struct SandboxFiles {
 enum Target {
     Authoring,
     Summary,
-    /// `plan` is `doc/plans/PLAN-<slug>.md`, `bundle` is `doc/plans/briefs/<slug>`.
+    /// `plan` is `<home>/PLAN-<slug>.md`, `bundle` is `<home>/briefs/<slug>`.
     Pressure {
         plan: PathBuf,
         bundle: PathBuf,
@@ -280,10 +282,9 @@ fn target(kind: &SessionKind) -> Result<Target> {
         SessionKind::Authoring => Target::Authoring,
         SessionKind::Summary => Target::Summary,
         SessionKind::Pressure { plan } => {
-            let in_plans = plan.parent() == Some(Path::new("doc/plans"));
-            let Some(bundle) = kind.pressure_bundle().filter(|_| in_plans) else {
+            let Some(bundle) = kind.pressure_bundle() else {
                 bail!(
-                    "a pressure session needs a plan doc/plans/PLAN-<slug>.md, got {}",
+                    "a pressure session needs a PLAN-<slug>.md in a valid plan home, got {}",
                     plan.display()
                 );
             };

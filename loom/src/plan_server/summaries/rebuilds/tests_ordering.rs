@@ -2,7 +2,6 @@
 //! pruned before an earlier call published it; and what concept mode and the stall timer see
 //! of stalls and seals.
 
-use std::collections::BTreeSet;
 use std::thread;
 use std::time::Duration;
 
@@ -10,13 +9,15 @@ use super::publish::Snapshot;
 use super::tests::{facade, owned, update, Row, Sent};
 use super::tests_bridge::{Rig, ID};
 use super::*;
-use crate::plan_server::concept::page_keys;
 use crate::plan_server::summaries::scheduler::{AnswerRight, QuestionView, NO_SEAL_TIMEOUT};
 use crate::plan_server::wire::concept::ConceptChanged;
 use crate::plan_server::wire::summaries::{FailedSummary, SummaryQuestion};
 use crate::plan_session::bridge::EndOutcome;
 use crate::plan_session::tmux_host::TmuxHost;
+use crate::planning::summary::cost::Trigger;
+use crate::planning::summary::engine::EngineUpdate;
 use crate::planning::summary::evaluate::SummaryState::{Current, Missing, Rebuilding, Stale};
+use crate::planning::summary::evaluate::{evaluate, fixtures};
 use crate::planning::summary::store::Scope;
 
 /// Regression: a launch that fails at once delivers its session's end before `start_summary`
@@ -113,10 +114,14 @@ fn concept_changes(sent: &Sent) -> Vec<ConceptChanged> {
 
 /// The `concept_changed` naming `ids` and the pages that show them.
 fn changed(ids: &[&str]) -> ConceptChanged {
-    let scope = Scope::default();
-    let pages: BTreeSet<String> = ids.iter().flat_map(|id| page_keys(id, &scope)).collect();
+    let mut pages: Vec<String> = ids
+        .iter()
+        .map(|id| format!("demo/engineering/{}", id.strip_prefix("plans/").unwrap()))
+        .collect();
+    pages.push("overview/demo/engineering".into());
     ConceptChanged {
-        pages: pages.into_iter().collect(),
+        feature: Some("demo".into()),
+        pages,
         out_of_date: owned(ids),
         sources: Vec::new(),
     }
@@ -156,6 +161,77 @@ fn a_seal_changing_the_done_count_notifies_concept_mode() {
     assert_eq!(rebuilds.building(), Some(Building { done: 1, total: 2 }));
     let expected = changed(&["plans/a", "plans/b"]);
     assert_eq!(concept_changes(&sent), vec![expected]);
+}
+
+#[test]
+fn concept_changes_are_grouped_by_feature_and_exclude_standalone_plans() {
+    let fixture = fixtures::two_features();
+    let project = fixtures::load(&fixture.root);
+    let (_, rebuilds, sent) = facade();
+    let update = EngineUpdate {
+        evaluation: evaluate(&project, &[]),
+        rewritten: Vec::new(),
+        deleted: Vec::new(),
+        invalidated: Vec::new(),
+    };
+    rebuilds.on_update(&update);
+    sent.lock().unwrap().clear();
+
+    rebuilds.enqueue(
+        owned(&[
+            "demo/product/section_01",
+            "plans/x",
+            "plans/y",
+            "plans/solo",
+        ]),
+        Trigger::Button,
+    );
+
+    assert_eq!(
+        concept_changes(&sent),
+        vec![
+            ConceptChanged {
+                feature: Some("demo".into()),
+                pages: owned(&[
+                    "demo/engineering/x",
+                    "demo/product/section_01",
+                    "overview/demo/engineering",
+                    "overview/demo/product",
+                ]),
+                out_of_date: owned(&["demo/product/section_01", "plans/x"]),
+                sources: Vec::new(),
+            },
+            ConceptChanged {
+                feature: Some("other".into()),
+                pages: owned(&["other/engineering/y", "overview/other/engineering"]),
+                out_of_date: owned(&["plans/y"]),
+                sources: Vec::new(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn an_overview_change_notifies_only_its_own_feature() {
+    let (_, rebuilds, sent) = facade();
+    let rows = [("overview/demo/product", Missing, None, None)];
+    let mut update = update(&rows, &["overview/demo/product"]);
+    let other = Scope {
+        feature: "other".into(),
+        ..Scope::default()
+    };
+    update.evaluation.scopes.insert("other".into(), other);
+    rebuilds.on_update(&update);
+
+    assert_eq!(
+        concept_changes(&sent),
+        vec![ConceptChanged {
+            feature: Some("demo".into()),
+            pages: owned(&["overview/demo/product"]),
+            out_of_date: owned(&["overview/demo/product"]),
+            sources: Vec::new(),
+        }]
+    );
 }
 
 /// A seal is a changed file of a running id that evaluates non-missing: a file that vanished

@@ -16,6 +16,9 @@ use crate::planning::summary::cost::{CostLine, Level};
 use crate::planning::summary::evaluate::{Evaluation, SummaryState};
 use crate::planning::summary::store::is_overview;
 
+#[cfg(test)]
+mod tests;
+
 /// `(id, level, source bytes)` of summaries waiting for an estimate.
 pub(super) type Pending = Vec<(String, Level, u64)>;
 
@@ -100,13 +103,14 @@ impl Rebuilds {
             .filter(|eval| !is_overview(&eval.id));
         let sized = documents.map(|eval| (eval.id.clone(), eval.source.as_deref().map_or(0, size)));
         let mut sizes: BTreeMap<String, u64> = sized.collect();
-        let scope = &evaluation.scope;
-        for (overview, members) in [
-            ("product", &scope.product),
-            ("engineering", &scope.engineering),
-        ] {
-            let total = members.iter().filter_map(|id| sizes.get(id)).sum();
-            sizes.insert(overview.to_owned(), total);
+        for scope in evaluation.scopes.values() {
+            for (kind, members) in [
+                ("product", &scope.product),
+                ("engineering", &scope.engineering),
+            ] {
+                let total = members.iter().filter_map(|id| sizes.get(id)).sum();
+                sizes.insert(format!("overview/{}/{kind}", scope.feature), total);
+            }
         }
         Some(sizes)
     }

@@ -51,7 +51,7 @@ impl Rebuilds {
     /// earlier also sends earlier, so a stale question never follows its closing message.
     pub(super) fn publish(&self, before: &Snapshot, events: &[SchedulerEvent]) {
         let mut sent = lock(&self.panel_sent);
-        let (after, scope, mut asked) = {
+        let (after, scopes, mut asked) = {
             let state = self.lock();
             let open = state.scheduler.panel_state().question;
             let asked: Vec<_> = events
@@ -64,10 +64,10 @@ impl Rebuilds {
                     _ => None,
                 })
                 .collect();
-            let scope = state.latest.as_ref().map(|eval| eval.scope.clone());
+            let scopes = state.latest.as_ref().map(|eval| eval.scopes.clone());
             (
                 Snapshot::of(&state.scheduler),
-                scope.unwrap_or_default(),
+                scopes.unwrap_or_default(),
                 asked.into_iter(),
             )
         };
@@ -92,25 +92,35 @@ impl Rebuilds {
                 line(&format!("summaries: cannot start a rebuild: {}", safe(why)));
             }
         }
-        self.concept_changed(&before.marks, &after.marks, &scope);
+        self.concept_changed(&before.marks, &after.marks, &scopes);
         self.send_panel(&mut sent);
     }
 
-    fn concept_changed(&self, before: &Marks, after: &Marks, scope: &Scope) {
+    fn concept_changed(&self, before: &Marks, after: &Marks, scopes: &BTreeMap<String, Scope>) {
         let ids: BTreeSet<&String> = before.keys().chain(after.keys()).collect();
         let changed = ids
             .into_iter()
             .filter(|id| before.get(*id) != after.get(*id));
-        let out_of_date: Vec<String> = changed.cloned().collect();
-        if out_of_date.is_empty() {
-            return;
+        let changed: Vec<String> = changed.cloned().collect();
+        for scope in scopes.values() {
+            // Membership resolves a plan's feature without taking the project lock.
+            // Standalone plans belong to no feature scope and emit no concept change.
+            let out_of_date: Vec<String> = changed
+                .iter()
+                .filter(|id| !page_keys(id, scope).is_empty())
+                .cloned()
+                .collect();
+            if out_of_date.is_empty() {
+                continue;
+            }
+            let changed = ConceptChanged {
+                feature: Some(scope.feature.clone()),
+                pages: pages_of(&out_of_date, scope),
+                out_of_date,
+                sources: Vec::new(),
+            };
+            (self.broadcast)(&PlanMessage::ConceptChanged(changed));
         }
-        let changed = ConceptChanged {
-            pages: pages_of(&out_of_date, scope),
-            out_of_date,
-            sources: Vec::new(),
-        };
-        (self.broadcast)(&PlanMessage::ConceptChanged(changed));
     }
 
     /// Broadcast the panel when it differs from the one last sent.

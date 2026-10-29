@@ -1,0 +1,151 @@
+{
+  "type": "tree_changed",
+  "product": [
+    {
+      "feature": "demo",
+      "misplaced": false,
+      "path": null,
+      "title": "demo",
+      "file_name": null,
+      "kind": "feature",
+      "state": null,
+      "locked": false,
+      "gap": false,
+      "pressure_date": null,
+      "errors": 0,
+      "blurb": null,
+      "children": [
+        {
+          "path": "doc/product/demo/index.md",
+          "title": "Vision",
+          "file_name": "index.md",
+          "kind": "vision",
+          "state": null,
+          "locked": false,
+          "gap": false,
+          "pressure_date": null,
+          "errors": 0,
+          "blurb": null,
+          "children": [],
+          "feature": "demo",
+          "misplaced": false
+        },
+        {
+          "path": null,
+          "title": "Section 2",
+          "file_name": null,
+          "kind": "section",
+          "state": null,
+          "locked": false,
+          "gap": true,
+          "pressure_date": null,
+          "errors": 0,
+          "blurb": null,
+          "children": [],
+          "feature": "demo",
+          "misplaced": false
+        }
+      ]
+    }
+  ],
+  "plans": [
+    {
+      "path": "doc/plans/PLAN-file-mode.md",
+      "title": "File mode",
+      "file_name": "PLAN-file-mode.md",
+      "kind": "plan",
+      "state": "written",
+      "locked": false,
+      "gap": false,
+      "pressure_date": "2026-10-17",
+      "errors": 1,
+      "blurb": null,
+      "children": [],
+      "feature": null,
+      "misplaced": false
+    }
+  ],
+  "knowledge": [
+    {
+      "path": null,
+      "title": "Architecture",
+      "file_name": null,
+      "kind": "knowledge_folder",
+      "state": null,
+      "locked": false,
+      "gap": false,
+      "pressure_date": null,
+      "errors": 0,
+      "blurb": null,
+      "children": [
+        {
+          "path": "doc/loom/knowledge/architecture/overview.md",
+          "title": "Overview",
+          "file_name": "overview.md",
+          "kind": "knowledge",
+          "state": null,
+          "locked": true,
+          "gap": false,
+          "pressure_date": null,
+          "errors": 0,
+          "blurb": "System overview",
+          "children": [],
+          "feature": null,
+          "misplaced": false
+        }
+      ],
+      "feature": null,
+      "misplaced": false
+    }
+  ],
+  "other": [
+    {
+      "path": "doc/notes.md",
+      "title": "Notes",
+      "file_name": "notes.md",
+      "kind": "other",
+      "state": null,
+      "locked": false,
+      "gap": false,
+      "pressure_date": null,
+      "errors": 0,
+      "blurb": null,
+      "children": [],
+      "feature": null,
+      "misplaced": false
+    }
+  ],
+  "archive": [
+    {
+      "path": null,
+      "title": "Orphan briefs",
+      "file_name": null,
+      "kind": "brief_folder",
+      "state": null,
+      "locked": true,
+      "gap": false,
+      "pressure_date": null,
+      "errors": 0,
+      "blurb": null,
+      "children": [
+        {
+          "path": "doc/plans/archive/briefs/old.md",
+          "title": "Old brief",
+          "file_name": "old.md",
+          "kind": "brief",
+          "state": null,
+          "locked": true,
+          "gap": false,
+          "pressure_date": null,
+          "errors": 0,
+          "blurb": null,
+          "children": [],
+          "feature": null,
+          "misplaced": false
+        }
+      ],
+      "feature": null,
+      "misplaced": false
+    }
+  ]
+}
