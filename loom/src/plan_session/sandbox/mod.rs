@@ -129,10 +129,11 @@ pub fn build_settings(
     let (deny_write, allow_write) = filesystem::write_lists(&build)?;
     let reads = read_denies(inputs.home, inputs.project_root, &inputs.runtime.dir)?;
     let mut allow_read = reads.carve_outs;
-    if matches!(build.target, Target::Pressure { .. }) {
+    let pressure = matches!(build.target, Target::Pressure { .. });
+    if pressure {
         allow_read.push(filesystem::text(&build.done)?);
     }
-    Ok(json!({
+    let mut settings = json!({
         "sandbox": {
             "enabled": true,
             "failIfUnavailable": true,
@@ -149,7 +150,14 @@ pub fn build_settings(
         "permissions": permissions::permissions(&build)?,
         "worktree": { "bgIsolation": "none" },
         "hooks": permissions::hooks(&build, extra_hooks)?,
-    }))
+    });
+    if pressure {
+        // `/pressure` uses an agent team: teammates stay inside the session's own process, so
+        // they open no tmux pane the bridge does not watch (section 11). A top-level key; Claude
+        // Code does not read it inside `permissions`.
+        settings["teammateMode"] = json!("in-process");
+    }
+    Ok(settings)
 }
 
 /// Create the runtime directory and its grants: `drafts/` and `claims/` (0700) and an empty
