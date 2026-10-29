@@ -1,7 +1,7 @@
 //! Transcript record lines, mapper views and attachment values for the bridge-core contracts.
 //!
 //! Record lines follow the shapes captured from Claude Code transcripts in
-//! `doc/plans/briefs/feat-planner-07-session-bridge/common.md` "Transcript mapping", keeping
+//! `doc/plans/planner-ui/briefs/feat-planner-07-session-bridge/common.md` "Transcript mapping", keeping
 //! every key those shapes show.
 
 use loom::plan_session::attachments::{Attachment, AttachmentKind, LockedTag};

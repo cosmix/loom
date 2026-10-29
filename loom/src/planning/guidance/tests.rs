@@ -16,7 +16,7 @@ fn asset(assets: &[Asset], key: &str) -> &'static str {
 
 fn product_lines(file: &str, first: usize, last: usize) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../doc/product")
+        .join("../doc/product/planner-ui")
         .join(file);
     let text = fs::read_to_string(&path).unwrap();
     let lines: Vec<_> = text
