@@ -1,12 +1,9 @@
-import { useAtom } from "jotai";
 import type { ReactElement } from "react";
-import { useEffect, useState } from "react";
 
 import { ThemePicker } from "@/components/theme-picker";
 import {
-  notificationSupport,
-  notificationsEnabledAtom,
-  requestNotificationPermission,
+  notificationStatus,
+  useNotificationToggle,
   type NotificationSupport,
 } from "@/state/notifications";
 
@@ -16,21 +13,6 @@ const WEBUI_HAYSTACK =
 export function webuiMatches(query: string): boolean {
   const normalized = query.trim().toLowerCase();
   return normalized === "" || WEBUI_HAYSTACK.includes(normalized);
-}
-
-function notificationStatus(support: NotificationSupport, on: boolean): string {
-  switch (support) {
-    case "unsupported":
-      return "this browser has no notification support";
-    case "insecure":
-      return "notifications need localhost or HTTPS; this page is plain HTTP on a LAN address";
-    case "denied":
-      return "the browser has blocked notifications for this page";
-    case "granted":
-      return on ? "on" : "off";
-    case "default":
-      return "the browser will ask when you turn this on";
-  }
 }
 
 function ThemeRow(): ReactElement {
@@ -98,32 +80,9 @@ function NotificationsRow({
 }
 
 export function SettingsWebui({ query }: { query: string }): ReactElement | null {
-  const [enabled, setEnabled] = useAtom(notificationsEnabledAtom);
-  const [support, setSupport] = useState<NotificationSupport>(() => notificationSupport());
-  const on = enabled === true && support === "granted";
-  const disabled = support === "unsupported" || support === "insecure" || support === "denied";
-
-  useEffect(() => {
-    if (enabled && support !== "granted") setEnabled(false);
-  }, [enabled, support, setEnabled]);
+  const { on, disabled, support, toggle } = useNotificationToggle();
 
   if (!webuiMatches(query)) return null;
-
-  async function toggleNotifications(): Promise<void> {
-    if (on) {
-      setEnabled(false);
-      return;
-    }
-
-    if (support === "default") {
-      const result = await requestNotificationPermission();
-      setSupport(result);
-      setEnabled(result === "granted");
-      return;
-    }
-
-    if (support === "granted") setEnabled(true);
-  }
 
   return (
     <section className="settings-webui border-b border-border px-[22px] py-5">
@@ -135,12 +94,7 @@ export function SettingsWebui({ query }: { query: string }): ReactElement | null
       </div>
 
       <ThemeRow />
-      <NotificationsRow
-        on={on}
-        disabled={disabled}
-        support={support}
-        onToggle={toggleNotifications}
-      />
+      <NotificationsRow on={on} disabled={disabled} support={support} onToggle={toggle} />
     </section>
   );
 }

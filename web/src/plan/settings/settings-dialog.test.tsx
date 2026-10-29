@@ -1,0 +1,267 @@
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { createStore, Provider } from "jotai";
+import { useState } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { notificationsEnabledAtom } from "@/state/notifications";
+import {
+  autoRebuildAtom,
+  READING_FACES,
+  READING_SIZES,
+  readingFaceAtom,
+  readingSizeAtom,
+  sourceMarksAtom,
+} from "./preferences";
+import { SettingsDialog } from "./settings-dialog";
+
+const NOTIFICATION_LABEL = "Browser notification when a session needs you";
+const ENGLISH_PREVIEW = "A quiet morning leaves room for a new idea.";
+const GREEK_PREVIEW = "Ένα ήσυχο πρωινό αφήνει χώρο για μια νέα ιδέα.";
+
+function stubNotifications(
+  permission: NotificationPermission,
+  result: NotificationPermission = permission,
+) {
+  const requestPermission = vi.fn(async () => result);
+  class NotificationStub {
+    static permission = permission;
+    static requestPermission = requestPermission;
+  }
+  vi.stubGlobal("Notification", NotificationStub);
+  vi.stubGlobal("isSecureContext", true);
+  return requestPermission;
+}
+
+function renderSettings(store = createStore()) {
+  return {
+    store,
+    ...render(
+      <Provider store={store}>
+        <SettingsDialog open onOpenChange={() => {}} />
+      </Provider>,
+    ),
+  };
+}
+
+function SettingsLauncher() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        Open settings
+      </button>
+      <SettingsDialog open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
+beforeEach(() => {
+  localStorage.clear();
+  stubNotifications("granted");
+});
+
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  vi.unstubAllGlobals();
+});
+
+describe("planner settings sections", () => {
+  it("renders the title, browser description and four section headings", () => {
+    renderSettings();
+
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    expect(within(dialog).getByText("Saved in this browser")).toBeTruthy();
+    for (const name of ["Theme", "Reading face", "Reading size", "Reading toggles"]) {
+      expect(within(dialog).getByRole("heading", { name })).toBeTruthy();
+    }
+    expect(screen.getByRole("radiogroup", { name: "Reading face" })).toBeTruthy();
+    expect(screen.getByRole("radiogroup", { name: "Reading size" })).toBeTruthy();
+  });
+
+  it("uses all four planner swatches at 120 by 76, hidden from assistive technology", () => {
+    renderSettings();
+
+    const theme = screen.getByRole("group", { name: "theme" });
+    const swatches = theme.querySelectorAll('svg[width="120"][height="76"][aria-hidden="true"]');
+    expect(swatches).toHaveLength(4);
+    for (const label of ["Ledger", "Aubergine", "Pacific", "Graphite"]) {
+      const card = within(theme).getByRole("button", { name: `${label} theme` });
+      expect(card.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 120 76");
+      expect(card.querySelector('[data-region="steps"]')).toBeTruthy();
+    }
+  });
+
+  it("shows each face specimen in its own family with its script coverage", () => {
+    renderSettings();
+
+    const group = screen.getByRole("radiogroup", { name: "Reading face" });
+    expect(within(group).getAllByRole("radio")).toHaveLength(3);
+    for (const face of READING_FACES) {
+      const card = within(group).getByRole("radio", { name: face.label }).closest("label")!;
+      const specimen = within(card).getByText(/Aa/);
+      expect(specimen.textContent).toBe("Aa Ωω");
+      expect(specimen.style.fontFamily).toBe(face.family);
+      expect(within(card).getByText(face.scripts)).toBeTruthy();
+    }
+    const defaultCard = screen.getByRole("radio", { name: "Source Serif 4" }).closest("label")!;
+    expect(within(defaultCard).getByText("Default")).toBeTruthy();
+  });
+
+  it.each(READING_FACES)("selects $label and writes the reading face atom", (face) => {
+    const store = createStore();
+    store.set(readingFaceAtom, face.id === "piazzolla" ? "source-serif" : "piazzolla");
+    renderSettings(store);
+    const radio = screen.getByRole("radio", { name: face.label });
+
+    fireEvent.click(radio);
+
+    expect(store.get(readingFaceAtom)).toBe(face.id);
+    expect(radio).toHaveProperty("checked", true);
+    const group = screen.getByRole("radiogroup", { name: "Reading face" });
+    expect(within(group).getAllByRole("radio", { checked: true })).toEqual([radio]);
+  });
+
+  it.each(READING_SIZES)(
+    "selects $label $size px and writes the reading size atom",
+    ({ size, label }) => {
+      const store = createStore();
+      store.set(readingSizeAtom, size === 19 ? 17 : 19);
+      renderSettings(store);
+      const radio = screen.getByRole("radio", { name: `${label} ${size}px` });
+
+      fireEvent.click(radio);
+
+      expect(store.get(readingSizeAtom)).toBe(size);
+      expect(radio).toHaveProperty("checked", true);
+      const group = screen.getByRole("radiogroup", { name: "Reading size" });
+      expect(within(group).getAllByRole("radio", { checked: true })).toEqual([radio]);
+    },
+  );
+
+  it("updates the bilingual preview from the selected face and size", () => {
+    const store = createStore();
+    store.set(readingFaceAtom, "source-serif");
+    store.set(readingSizeAtom, 19);
+    renderSettings(store);
+    const preview = screen.getByText(ENGLISH_PREVIEW).parentElement!;
+
+    expect(preview.style.fontFamily).toBe(READING_FACES[0]!.family);
+    expect(preview.style.fontSize).toBe("19px");
+    fireEvent.click(screen.getByRole("radio", { name: "Literata" }));
+    expect(preview.style.fontFamily).toBe(READING_FACES[1]!.family);
+    expect(preview.style.fontSize).toBe("19px");
+    fireEvent.click(screen.getByRole("radio", { name: "Large 21px" }));
+    expect(preview.style.fontFamily).toBe(READING_FACES[1]!.family);
+    expect(preview.style.fontSize).toBe("21px");
+    expect(preview.style.lineHeight).toBe("1.6");
+    expect(screen.getByText(ENGLISH_PREVIEW).getAttribute("lang")).toBe("en");
+    expect(screen.getByText(GREEK_PREVIEW).getAttribute("lang")).toBe("el");
+  });
+
+  it.each([
+    ["Show source marks", sourceMarksAtom],
+    ["Rebuild summaries automatically", autoRebuildAtom],
+  ] as const)("toggles %s in the provided store", (label, preference) => {
+    const store = createStore();
+    store.set(preference, true);
+    renderSettings(store);
+    const toggle = screen.getByRole("switch", { name: label });
+
+    fireEvent.click(toggle);
+
+    expect(store.get(preference)).toBe(false);
+    expect(toggle).toHaveProperty("checked", false);
+    fireEvent.click(toggle);
+    expect(store.get(preference)).toBe(true);
+    expect(toggle).toHaveProperty("checked", true);
+  });
+});
+
+describe("planner notification preference", () => {
+  it("enables and disables the shared notification atom with permission already granted", () => {
+    const requestPermission = stubNotifications("granted");
+    const { store } = renderSettings();
+    const toggle = screen.getByRole("switch", { name: NOTIFICATION_LABEL });
+
+    fireEvent.click(toggle);
+
+    expect(store.get(notificationsEnabledAtom)).toBe(true);
+    expect(toggle).toHaveProperty("checked", true);
+    expect(screen.getByRole("status").textContent).toBe("on");
+    fireEvent.click(toggle);
+    expect(store.get(notificationsEnabledAtom)).toBe(false);
+    expect(toggle).toHaveProperty("checked", false);
+    expect(requestPermission).not.toHaveBeenCalled();
+  });
+
+  it.each(["granted", "denied", "default"] as const)(
+    "requests permission and handles a %s response",
+    async (result) => {
+      const requestPermission = stubNotifications("default", result);
+      const { store } = renderSettings();
+      const toggle = screen.getByRole("switch", { name: NOTIFICATION_LABEL });
+      expect(screen.getByRole("status").textContent).toBe(
+        "the browser will ask when you turn this on",
+      );
+
+      fireEvent.click(toggle);
+
+      await waitFor(() => {
+        expect(requestPermission).toHaveBeenCalledOnce();
+        expect(store.get(notificationsEnabledAtom)).toBe(result === "granted");
+        expect(toggle).toHaveProperty("checked", result === "granted");
+        expect(toggle).toHaveProperty("disabled", result === "denied");
+      });
+    },
+  );
+
+  it.each([
+    ["unsupported", "this browser has no notification support"],
+    ["insecure", "notifications need localhost or HTTPS; this page is plain HTTP on a LAN address"],
+    ["denied", "the browser has blocked notifications for this page"],
+  ] as const)(
+    "disables notifications when %s and clears a stale preference",
+    async (support, message) => {
+      if (support === "unsupported") Reflect.deleteProperty(window, "Notification");
+      if (support === "insecure") vi.stubGlobal("isSecureContext", false);
+      if (support === "denied") stubNotifications("denied");
+      const store = createStore();
+      store.set(notificationsEnabledAtom, true);
+      renderSettings(store);
+      const toggle = screen.getByRole("switch", { name: NOTIFICATION_LABEL });
+
+      expect(toggle).toHaveProperty("disabled", true);
+      expect(toggle).toHaveProperty("checked", false);
+      expect(screen.getByRole("status").textContent).toBe(message);
+      expect(toggle.getAttribute("aria-describedby")).toBe(screen.getByRole("status").id);
+      await waitFor(() => expect(store.get(notificationsEnabledAtom)).toBe(false));
+    },
+  );
+});
+
+describe("planner settings focus", () => {
+  it.each(["close button", "Escape"] as const)(
+    "returns focus to the opener after %s",
+    async (method) => {
+      render(
+        <Provider store={createStore()}>
+          <SettingsLauncher />
+        </Provider>,
+      );
+      expect(screen.queryByRole("dialog")).toBeNull();
+      const opener = screen.getByRole("button", { name: "Open settings" });
+      opener.focus();
+
+      fireEvent.click(opener);
+
+      const dialog = screen.getByRole("dialog", { name: "Settings" });
+      expect(dialog.contains(document.activeElement)).toBe(true);
+      if (method === "Escape") fireEvent.keyDown(dialog, { key: "Escape" });
+      else fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      await waitFor(() => expect(document.activeElement).toBe(opener));
+    },
+  );
+});
