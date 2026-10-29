@@ -3,6 +3,7 @@ import { chatMessageSchema, chatWireCommandSchema } from "./schema-chat";
 import { conceptMessageSchemas } from "./schema-concept";
 import { filesMessageSchemas } from "./schema-files";
 import { reviewWireCommandSchema, reviewWireMessageSchema } from "./schema-review";
+import { summaryMessageSchemas } from "./schema-summaries";
 
 export const PREREQ_KINDS = ["tmux", "claude", "claude_login", "sandbox"] as const;
 export const BIND_KINDS = ["loopback", "remote"] as const;
@@ -32,6 +33,10 @@ export const PLAN_MESSAGE_TYPES = [
   "doc_changed",
   "validation",
   "concept_changed",
+  "summary_panel",
+  "summary_question",
+  "summary_question_closed",
+  "summary_turn_cost",
 ] as const;
 export const CLIENT_MESSAGE_TYPES = ["set_name", "reading"] as const;
 
@@ -122,6 +127,7 @@ export const planMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("refused"), ...refusedSchema.shape }),
   ...filesMessageSchemas,
   ...conceptMessageSchemas,
+  ...summaryMessageSchemas,
 ]);
 export const clientMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("set_name"), name: z.string() }),
