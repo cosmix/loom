@@ -1,6 +1,6 @@
 # Plan Authoring
 
-> Plan structure gaps that shipped stale artifacts
+> Plan gaps
 
 ## Web stages left the embedded bundle stale
 

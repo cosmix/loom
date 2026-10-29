@@ -1,6 +1,6 @@
 # Typed Config Values: Process and Verification Gotchas
 
-> Dev server
+> Dev
 > itself — verification-brief authorship, local dev-server checks, and plan-file formatting.
 
 ## A Verification Brief's Negative Expectation Must Trace to the Plan, Not an Assumption
