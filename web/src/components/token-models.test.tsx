@@ -23,7 +23,7 @@ function renderPanel(mutate?: (raw: typeof fixture) => void) {
 afterEach(cleanup);
 
 describe("TokenModels", () => {
-  it("uses distinct model colors without cycling after six models", () => {
+  it("gives each of seven models its own color, matching the legend swatches", () => {
     renderPanel((raw) => {
       raw.status.tokens.models = Array.from({ length: 7 }, (_, index) => ({
         model: `model-${index}`,
@@ -36,11 +36,6 @@ describe("TokenModels", () => {
       slice.getAttribute("stroke")!,
     );
     expect(new Set(colors).size).toBe(7);
-    const hues = colors.map((color) => Number(color.split(" ")[2]?.replace(")", "")));
-    for (let index = 0; index < 3; index++) {
-      const gap = (hues[(index + 1) % 3]! - hues[index]! + 360) % 360;
-      expect(Math.min(gap, 360 - gap)).toBeGreaterThanOrEqual(75);
-    }
     const swatches = screen.getByRole("list", { name: "models" }).querySelectorAll("[aria-hidden]");
     swatches.forEach((swatch, index) => {
       const expected = document.createElement("span");

@@ -1,27 +1,10 @@
 import type { TokenFlow } from "@/api/schema";
 import { ModelHistoryChart } from "@/components/model-history-chart";
+import { modelColor } from "@/lib/model-color";
 import { compactTokens, modelGroups, modelRates, modelShares, wholePercents } from "@/lib/tokens";
 
-const MODEL_COLORS = [
-  "oklch(0.66 0.18 255)", // blue
-  "oklch(0.76 0.16 75)", // amber
-  "oklch(0.65 0.20 330)", // magenta
-  "oklch(0.70 0.15 155)", // green
-  "oklch(0.65 0.19 25)", // coral
-  "oklch(0.68 0.16 295)", // violet
-  "oklch(0.78 0.15 110)", // lime
-  "oklch(0.72 0.12 205)", // cyan
-] as const;
-
-/// Contrast comes first; name order keeps colors stable as shares change.
 function modelColors(shares: ReturnType<typeof modelShares>): Map<string, string> {
-  const names = shares.map(({ model }) => model).sort();
-  return new Map(
-    names.map((model, index) => [
-      model,
-      MODEL_COLORS[index] ?? `oklch(0.58 0.13 ${(index * 137.508) % 360})`,
-    ]),
-  );
+  return new Map(shares.map(({ model }) => [model, modelColor(model)]));
 }
 
 /// Radius of a circle whose circumference is 100, so a dash length is a percentage.
