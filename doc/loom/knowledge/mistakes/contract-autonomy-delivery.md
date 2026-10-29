@@ -1,6 +1,6 @@
 # Contract Autonomy Delivery
 
-> Chain bypass
+> Bypass
 
 ## The Chain Check Read Attributes by Position and Refused by Deny-List
 

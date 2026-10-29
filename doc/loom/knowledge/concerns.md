@@ -243,3 +243,7 @@ Accepted limits of the planning sandbox (Bash writes inside `doc/loom/`, new top
 ## Planning Session Bridge Follow-ups
 
 Open teardown, race, transcript-mapper, chat-wire and trust-entry items from the bridge plan, the unverified operator e2e, and a recurring flock-after-drop proposal. → [Planning Session Sandbox Limits](concerns/planning-session-sandbox-limits.md#planning-session-bridge-follow-ups)
+
+## Plan Chat Follow-ups
+
+The chat plan left the live-session operator test unrun, a SHA-256 ref gap and git edge cases in the review server, reconnect, draft and layout-state defects in the chat model, accessibility notes, and a list of duplicated helpers and missing tests, each with its file. → [Plan Chat Follow-ups](concerns/plan-chat-followups.md)

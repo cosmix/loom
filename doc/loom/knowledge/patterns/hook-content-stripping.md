@@ -1,6 +1,6 @@
 # Hook Command Matching
 
-> Hook text
+> Text
 > argv, match command words and argument values — and fall back to the old regexes when the
 > command will not parse.
 

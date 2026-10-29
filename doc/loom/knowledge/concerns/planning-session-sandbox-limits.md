@@ -101,7 +101,7 @@ three tmux tests that print SKIP inside the stage sandbox.
   counting `TurnEnded` right after `Idle` can miss that turn.
 - An opening whose paste succeeds but times out leaves the session paused with no turn; a `FinalWrite` end
   then pastes the closing message into it (bounded by `final_write_bound`).
-- `turn_running()` is false during `Ending` while the closing turn writes documents, so plan 9's Restore can
+- `turn_running()` is false during `Ending` while the closing turn writes documents, so a Restore can
   race the final write. `end` during `Preparing` is refused and the browser shows "the chat is closing".
 - `StopFailure` is assumed main-agent only; one carrying `agent_id` would idle the main session mid-turn.
 - `SessionEnd` outside `Ending` gives `Ended`, not `Failed (died)`.
@@ -122,12 +122,12 @@ three tmux tests that print SKIP inside the stage sandbox.
 ## Chat server and wire
 
 - A new tab can receive `ItemAdded`/`TurnAdded` twice (the hub registers a connection before `on_open`; the
-  bridge outbox may hold deltas already in the snapshot). Plan 9 needs upsert-by-id semantics or a sequence number.
+  bridge outbox may hold deltas already in the snapshot). `web/src/plan/chat/model.ts` appends `item_added` without checking the id, so a repeat shows twice; it needs upsert-by-id semantics or a sequence number.
 - `follow_authoring` and `describe` clone the whole chat snapshot under the bridge lock to read one
   `SessionView`; a `Bridge::chat_view()` accessor would avoid it.
 - `plan_server/chat/mod.rs` is 398 of 400 lines; the next addition needs a split.
-- `Chat` is matched but absent from `all_plan_messages()`/`all_client_messages()` in `wire/tests_schema.rs`;
-  plan 9 adds it with the zod `chat` type. Fixtures have no nested subagent row (`parent` is always null).
+- `Chat` and `Review` are matched but absent from `all_plan_messages()`/`all_client_messages()` in `wire/tests_schema.rs`;
+  the web validates them through `socketMessageSchema`. Fixtures have no nested subagent row (`parent` is always null).
 - A request too large to show is denied `hook_error`, the nearest reason in the closed list; the browser shows
   it as a hook fault.
 - `ChatState::starting` guards `give_back` and the ended-chat release; a direct `Bridge::start_session`
