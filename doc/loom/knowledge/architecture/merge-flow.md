@@ -1,6 +1,6 @@
 # Merge Flow
 
-> Stage merge
+> Merge
 
 ## Merge Flow
 

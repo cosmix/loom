@@ -1,6 +1,6 @@
 # Merge Cleanup Boundary
 
-> Cleanup bug
+> Cleanup
 
 ## What Happened
 

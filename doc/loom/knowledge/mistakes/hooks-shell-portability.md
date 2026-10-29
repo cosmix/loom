@@ -3,7 +3,7 @@
 
 # Hooks Shell Portability
 
-> Hook shells
+> Shells
 
 ## gawk vs POSIX awk (2026-03-31)
 

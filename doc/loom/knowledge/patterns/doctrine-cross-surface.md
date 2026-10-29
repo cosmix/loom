@@ -1,6 +1,6 @@
 # Doctrine Cross Surface
 
-> Pinned text
+> Pins
 
 ## Doctrine Block Cross-Surface Pinning
 
