@@ -104,6 +104,7 @@ impl AuditRow {
             AmendmentField::WiringTests => "wiring_tests",
             AmendmentField::Contracts => "contracts",
             AmendmentField::Harness => "harness",
+            AmendmentField::Reachable => "reachable",
         };
         format!(
             "| {} | {} | {} | {} | {} | {} | {} | {} |\n",

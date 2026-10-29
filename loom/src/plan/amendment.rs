@@ -7,7 +7,7 @@
 //!
 //! This module provides exactly that, subject to a tight contract:
 //!
-//! - **Scope:** only `acceptance`, `wiring`, `wiring_tests`, `contracts` and `harness`
+//! - **Scope:** only `acceptance`, `wiring`, `wiring_tests`, `contracts`, `harness` and `reachable`
 //!   arrays on a single stage are mutable. Everything else (stage IDs, dependencies,
 //!   working_dir, plan structure) is off-limits.
 //! - **Versioned + atomic:** under an `flock` on
@@ -53,7 +53,7 @@ use crate::plan::amendment_fields::{
     sync_stage_from_definition,
 };
 use crate::plan::parser::{extract_yaml_metadata_with_ranges, parse_and_validate};
-use crate::plan::schema::{AcceptanceCriterion, ContractSpec, LoomMetadata};
+use crate::plan::schema::{AcceptanceCriterion, ContractSpec, LoomMetadata, ReachableCheck};
 use crate::verify::transitions::{load_stage, update_stage};
 
 /// Which field of a stage is being amended.
@@ -70,6 +70,8 @@ pub enum AmendmentField {
     Contracts,
     /// Mutate the `harness` array (glob strings naming harness files).
     Harness,
+    /// Mutate the `reachable` array (goal-backward reachability checks).
+    Reachable,
 }
 
 fn field_from_name(name: &str) -> Option<AmendmentField> {
@@ -225,6 +227,7 @@ pub(super) enum ParsedAmendmentValue {
     Contract(ContractSpec),
     /// A harness glob, taken verbatim (never parsed as YAML).
     Harness(String),
+    Reachable(ReachableCheck),
     None,
 }
 

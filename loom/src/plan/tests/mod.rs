@@ -6,4 +6,5 @@
 
 pub mod amendment;
 pub mod amendment_catch_up;
+pub mod amendment_reachable;
 pub mod amendment_wiring_tests;

@@ -114,6 +114,7 @@ fn stage_def_field_matches(
         }
         AmendmentField::Contracts => live.contracts == snap.contracts,
         AmendmentField::Harness => live.harness == snap.harness,
+        AmendmentField::Reachable => live.reachable == snap.reachable,
     }
 }
 
@@ -125,6 +126,7 @@ fn copy_field(dest: &mut StageDefinition, src: &StageDefinition, field: Amendmen
         AmendmentField::WiringTests => dest.wiring_tests = src.wiring_tests.clone(),
         AmendmentField::Contracts => dest.contracts = src.contracts.clone(),
         AmendmentField::Harness => dest.harness = src.harness.clone(),
+        AmendmentField::Reachable => dest.reachable = src.reachable.clone(),
     }
 }
 

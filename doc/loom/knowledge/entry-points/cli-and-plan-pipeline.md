@@ -125,7 +125,7 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 
 `plan/schema/types.rs::StageDefinition` is the struct; `plan/amendment.rs::AmendmentField` names the fields a plan amendment may mutate:
 
-- Amendable: `acceptance`, `wiring`, `wiring_tests`, `contracts`, `harness`
+- Amendable: `acceptance`, `wiring`, `wiring_tests`, `contracts`, `harness`, `reachable`
 - NOT amendable: `before_stage`, `after_stage`, `artifacts`, `id`, `name`, `dependencies`, `working_dir`, `model`, `sandbox`, `execution`
 
 ## `loom pressure` — Plan Pressure-Testing Files
