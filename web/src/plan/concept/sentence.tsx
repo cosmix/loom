@@ -1,12 +1,14 @@
 import { cn } from "cn";
-import type { JSX } from "react";
+import { ChevronDown } from "lucide-react";
+import type { CSSProperties, JSX } from "react";
 
 import type { ConceptPage, PlanLink, SectionLink, Sentence } from "@/plan/api/schema-concept";
 
 import { canOpen, runDomId, sentenceKey, useColumn, type SentenceSite } from "./column-context";
 import { FLASH_CLASS, flashKey } from "./flash";
-import { Marks } from "./marks";
+import { docColour, Marks } from "./marks";
 import { PlanGlyph } from "./plan-glyph";
+import { SentenceText } from "./sentence-text";
 
 /** A click that ends a text selection selects; it opens nothing (selection is for chat). */
 export function endsSelection(): boolean {
@@ -14,29 +16,30 @@ export function endsSelection(): boolean {
   return selection !== null && !selection.isCollapsed && selection.toString().length > 0;
 }
 
-/**
- * A summary sentence that is not open. With citations it is a button that opens in place; with
- * none it is a defect (section 05) and shows a muted "no source" mark instead of colour marks.
- * The text is one text node; marks and the plan glyph sit after it, outside the button.
- */
-export function ClosedSentence({
-  site,
-  glyph,
-  flashPage,
-}: {
+type ClosedSentenceProps = {
   site: SentenceSite;
   /** Show the plan glyph: this is the first sentence of a drilled-into document. */
   glyph: boolean;
   /** The page key whose arrival flashes this sentence. */
   flashPage: string;
-}): JSX.Element {
+};
+
+/**
+ * A summary sentence that is not open. With citations it is a button that opens in place; with
+ * none it is a defect (section 05) and shows a muted "no source" mark instead of colour marks.
+ * Marks, the chevron and the plan glyph sit after the inline text, outside the button.
+ */
+export function ClosedSentence({ site, glyph, flashPage }: ClosedSentenceProps): JSX.Element {
   const column = useColumn();
   const { sentence, summary, parent } = site;
   const button = canOpen(sentence);
   const flashing = column.flashing.has(flashKey(flashPage, sentence.id));
   const cited = glyph ? column.citedPage(summary) : null;
   return (
-    <span>
+    <span
+      className="concept-sentence-wrap"
+      style={{ "--sentence-colour": docColour(site.marks[0]?.colour ?? 0) } as CSSProperties}
+    >
       <span
         role={button ? "button" : undefined}
         aria-expanded={button ? false : undefined}
@@ -58,10 +61,13 @@ export function ClosedSentence({
             : undefined
         }
       >
-        {sentence.text}
+        <SentenceText text={sentence.text} />
       </span>
       {button ? (
-        <Marks marks={site.marks} onOpen={column.openPage} />
+        <>
+          <Marks marks={site.marks} onOpen={column.openPage} />
+          <ChevronDown aria-hidden="true" className="concept-sentence-chevron" />
+        </>
       ) : (
         <span className="concept-no-source">no source</span>
       )}

@@ -211,3 +211,37 @@ export function renderInlines(
     <Fragment key={index}>{renderInline(node, context, insideLink)}</Fragment>
   ));
 }
+
+/** Summary citations own navigation, so inline Markdown never creates a link here. */
+function renderSummaryInline(node: PhrasingContent): ReactNode {
+  const fallbackText = "value" in node ? node.value : "";
+  switch (node.type) {
+    case "text":
+      return node.value;
+    case "inlineCode":
+      return <code>{node.value}</code>;
+    case "emphasis":
+      return <em>{renderSummaryInlines(node.children)}</em>;
+    case "strong":
+      return <strong>{renderSummaryInlines(node.children)}</strong>;
+    case "link":
+    case "linkReference":
+    case "delete":
+      return renderSummaryInlines(node.children);
+    case "image":
+    case "imageReference":
+      return node.alt ?? "";
+    case "break":
+      return " ";
+    case "html":
+      return rawHtmlText(node.value);
+    case "footnoteReference":
+      return node.label ?? node.identifier;
+    default:
+      return fallbackText;
+  }
+}
+
+export function renderSummaryInlines(nodes: readonly PhrasingContent[]): ReactNode[] {
+  return nodes.map((node, index) => <Fragment key={index}>{renderSummaryInline(node)}</Fragment>);
+}

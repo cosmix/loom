@@ -155,20 +155,29 @@ it("handle folding", async () => {
   const { column } = mountProduct([sent("a", "Foldable one.", [src(S2, "intro")])]);
   fireEvent.click(button(column, /^Foldable one/));
   await group(column);
-  fireEvent.click(button(column, "Fold"));
+  fireEvent.click(within(column).getAllByRole("button", { name: "Fold" })[0]!);
   expect(within(column).queryByRole("group")).toBeNull();
   await waitFor(() => expect(active().textContent).toMatch(/^Foldable one/));
 });
 
-it("nested runs have nested handles", async () => {
+it("nested runs have their own caps", async () => {
   const { column } = nested();
   fireEvent.click(button(column, /^Overview opens/));
   fireEvent.click(await within(column).findByRole("button", { name: /^Detail opens/ }));
   await within(column).findByRole("group", { name: /^Detail of Detail/ });
-  const depths = within(column)
-    .getAllByRole("button", { name: "Fold" })
-    .map((b) => b.getAttribute("data-depth"));
-  expect(depths.sort()).toEqual(["0", "1"]);
+  const caps = within(column).getAllByRole("button", { name: "Fold" });
+  expect(caps).toHaveLength(4);
+  expect(caps.map((cap) => cap.getAttribute("data-side"))).toEqual([
+    "start",
+    "start",
+    "end",
+    "end",
+  ]);
+  expect(caps[0]!.getAttribute("aria-describedby")).toBe(caps[3]!.getAttribute("aria-describedby"));
+  expect(caps[1]!.getAttribute("aria-describedby")).toBe(caps[2]!.getAttribute("aria-describedby"));
+  expect(caps[0]!.getAttribute("aria-describedby")).not.toBe(
+    caps[1]!.getAttribute("aria-describedby"),
+  );
 });
 
 it("ArrowLeft folds like Escape", async () => {

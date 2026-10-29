@@ -1,4 +1,5 @@
 import { cn } from "cn";
+import { FileText } from "lucide-react";
 import { useMemo, type JSX } from "react";
 import { Link } from "react-router";
 
@@ -58,9 +59,10 @@ function missingText(failed: boolean, doc: DocView | null): string {
 }
 
 /**
- * One source passage: a heading section of a file under `doc/`, set as an inset block on the
- * card surface with a hairline border. Its body goes through file mode's Markdown renderer
- * as an excerpt (line offset, no heading ids), so a cut never claims another section's id.
+ * One source passage: a heading section of a file under `doc/`, flowing inline in the opened
+ * run after a chip naming its file and heading, with no card or border. Its body goes through
+ * file mode's Markdown renderer as an excerpt (line offset, no heading ids), so a cut never
+ * claims another section's id.
  */
 export function PassageBlock({
   parent,
@@ -87,7 +89,8 @@ export function PassageBlock({
       data-end-line={lines?.end}
       tabIndex={-1}
     >
-      <Link tabIndex={-1} className="concept-passage-head" to={passageHref(anchor, lines)}>
+      <Link tabIndex={-1} className="concept-passage-chip" to={passageHref(anchor, lines)}>
+        <FileText aria-hidden="true" size={12} />
         <span className="concept-passage-path">{fileName(anchor.path)}</span>
         {" › "}
         {passage?.title ?? anchor.anchor}

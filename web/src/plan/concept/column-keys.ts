@@ -12,6 +12,7 @@ import { pageSentences, type CitedLookup } from "./open-state";
 import { pageKeyOfSummary } from "./page-state";
 import { docViewAtom, passageOf } from "./passages";
 import type { ColumnTarget, OpenRun } from "./types";
+import { openRunsAtom } from "./view-state";
 
 export type KeyEnv = {
   page: ConceptPage;
@@ -161,9 +162,25 @@ function openFocused(env: KeyEnv, target: ColumnTarget): boolean {
   return true;
 }
 
+function foldFromKey(event: KeyboardEvent<HTMLElement>, env: KeyEnv, target: ColumnTarget): void {
+  if (event.shiftKey && event.key === "Escape") {
+    event.preventDefault();
+    env.store.set(openRunsAtom(env.pageKey), []);
+    return;
+  }
+  const run =
+    runAround(env, target) ?? (event.key === "Escape" ? env.open[env.open.length - 1] : undefined);
+  if (run) {
+    event.preventDefault();
+    env.foldRun(run);
+  }
+}
+
 /**
  * The reading column's keys (section 05, "Keyboard"). Keys are ignored while the user types
  * and when they come from a control inside the column (a link in a passage keeps Enter).
+ * Escape folds the innermost run around focus, else the last opened; Shift+Escape folds all.
+ * ArrowLeft folds only the innermost run around focus.
  * `g p` and `g e` live in `useGoKeys` (concept-route.tsx), active only on concept routes.
  */
 export function handleColumnKey(
@@ -198,14 +215,8 @@ export function handleColumnKey(
       if (openFocused(env, target)) consume();
       return;
     case "Escape":
-    case "ArrowLeft": {
-      const run = runAround(env, target);
-      if (run) {
-        consume();
-        env.foldRun(run);
-      }
-      return;
-    }
+    case "ArrowLeft":
+      return foldFromKey(event, env, target);
     case "f":
       return openFile(env, target);
     case "d":
