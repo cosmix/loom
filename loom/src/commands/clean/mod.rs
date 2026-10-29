@@ -14,6 +14,7 @@ use std::path::Path;
 use relay_dirs::{clean_relay_dirs, print_relay_cleanup, RelayScope};
 use sessions::{clean_sessions, SessionReapMode};
 use worktrees::{clean_worktrees, confirm_branch_deletion, run_bare_clean};
+pub(crate) use worktrees::{unmerged_loom_branches, UnmergedBranches};
 
 use crate::commands::common::resolve_state_dir;
 use crate::daemon::{DaemonServer, DaemonStatus};

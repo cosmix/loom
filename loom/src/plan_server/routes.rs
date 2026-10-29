@@ -69,6 +69,8 @@ pub fn all_routes() -> Vec<RouteSpec> {
     routes.extend(super::guidance::routes());
     routes.extend(super::review::routes());
     routes.extend(super::summaries::routes());
+    routes.extend(super::pressure::routes());
+    routes.extend(super::run::routes());
     routes
 }
 
@@ -86,6 +88,8 @@ pub fn install_all(ctx: &Arc<PlanContext>) {
     super::summaries::install(ctx);
     super::guidance::install(ctx);
     super::review::install(ctx);
+    super::pressure::install(ctx);
+    super::run::install(ctx);
 }
 
 /// The outcome of looking a request up in the route table.
