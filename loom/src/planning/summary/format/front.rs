@@ -6,6 +6,7 @@ use std::fmt::Write;
 use serde::{Deserialize, Serialize};
 
 use super::FormatError;
+use crate::planning::summary::store;
 
 /// The type of summary described by the front matter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,7 +23,7 @@ pub enum SummaryKind {
 pub struct FrontMatter {
     /// Whether this summarizes a document or a collection.
     pub kind: SummaryKind,
-    /// The source path or overview scope.
+    /// The source path or `overview/<feature>/{product,engineering}` id.
     pub of: String,
     /// The source document's hash, for document summaries.
     pub file: Option<String>,
@@ -59,6 +60,9 @@ pub(crate) fn parse_front(yaml: &str, first_line: usize) -> Result<FrontMatter, 
         }
         (SummaryKind::Overview, Some(_), _) => Some("overview front matter must not contain file"),
         (SummaryKind::Overview, _, None) => Some("overview front matter requires members"),
+        (SummaryKind::Overview, _, _) if !store::is_overview(&raw.of) => {
+            Some("overview front matter requires a valid feature overview id")
+        }
         _ => None,
     };
     if let Some(message) = problem {
@@ -116,7 +120,7 @@ fn write_map(output: &mut String, name: &str, entries: &BTreeMap<String, String>
 
 fn plain_or_quoted(value: &str) -> String {
     let known_prefix = value.starts_with("doc/") || value.starts_with("sha256:");
-    if (known_prefix || matches!(value, "product" | "engineering"))
+    if (known_prefix || store::is_overview(value))
         && value
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | ':'))

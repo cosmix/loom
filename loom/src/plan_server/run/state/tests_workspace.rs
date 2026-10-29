@@ -25,7 +25,10 @@ fn workspace_naming_no_plan_is_an_initialized_start_that_needs_clean() {
     assert_eq!(view.offer, O::Start);
     assert_eq!(view.active_plan, None);
     assert!(view.clean_notice);
-    assert_eq!(view.preselected.as_deref(), Some("doc/plans/PLAN-z.md"));
+    assert_eq!(
+        view.preselected.as_deref(),
+        Some("doc/plans/feature/PLAN-z.md")
+    );
     assert_eq!(view.abandon, None);
     assert_eq!(view.finish_abandon, None);
 }
@@ -69,7 +72,10 @@ fn assert_clean_withheld(view: RunStateView, left: &str) {
     assert_eq!(view.offer, O::Start);
     assert_eq!(view.active_plan, None);
     assert!(!view.clean_notice);
-    assert_eq!(view.preselected.as_deref(), Some("doc/plans/PLAN-z.md"));
+    assert_eq!(
+        view.preselected.as_deref(),
+        Some("doc/plans/feature/PLAN-z.md")
+    );
     assert_eq!(
         view.blocking_changes.len(),
         1,

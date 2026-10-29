@@ -8,8 +8,10 @@ use std::process::{Command, Output};
 use tempfile::TempDir;
 
 const SCHEMA: &str = include_str!("fixtures/planning/check_schema.json");
-const PLAN: &str = "doc/plans/PLAN-alpha.md";
-const SECTION: &str = "doc/product/section_01.md";
+const PLAN: &str = "doc/plans/alpha/PLAN-alpha.md";
+const SECTION: &str = "doc/product/alpha/section_01.md";
+const VISION: &str = "doc/product/alpha/index.md";
+const METAPLAN: &str = "doc/plans/alpha/index.md";
 
 fn tmp() -> (TempDir, PathBuf) {
     let builder = tempfile::Builder::new().prefix("loom-plan-check-").clone();
@@ -37,15 +39,20 @@ fn repo(files: &[(&str, &str)]) -> (TempDir, PathBuf) {
     (temp, root)
 }
 
-/// The clean fixture: vision, its one section, a metaplan and its plan.
+/// Two features and a standalone plan, written out of feature-name order.
 fn clean() -> (TempDir, PathBuf) {
     repo(&[
         (
-            "doc/product/index.md",
+            "doc/plans/beta/PLAN-beta.md",
+            "# Plan: Beta\n\nImplements: none\n",
+        ),
+        ("doc/plans/IN_PROGRESS-PLAN-solo.md", "# Plan: Solo\n"),
+        (
+            VISION,
             "# Vision\n\n## Specification sections\n\n| # | Section |\n| --- | --- |\n| 01 | Workflow |\n",
         ),
         (SECTION, "# Section 01\n\nThe workflow.\n"),
-        ("doc/plans/index.md", "# Metaplan\n\n## 1. Alpha (`PLAN-alpha.md`)\n"),
+        (METAPLAN, "# Metaplan\n\n## 1. Alpha (`PLAN-alpha.md`)\n"),
         (PLAN, "# Plan: Alpha\n\nImplements: section_01\n"),
     ])
 }
@@ -53,6 +60,10 @@ fn clean() -> (TempDir, PathBuf) {
 /// Runs `loom plan check --json` in `dir` with a scratch `LOOM_HOME` and no
 /// other inherited `LOOM_*` variable.
 fn check(dir: &Path, envs: &[(&str, &Path)]) -> Output {
+    run_check(dir, true, envs)
+}
+
+fn run_check(dir: &Path, json: bool, envs: &[(&str, &Path)]) -> Output {
     let home = TempDir::new().unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_loom"));
     for (key, _) in std::env::vars_os() {
@@ -60,7 +71,10 @@ fn check(dir: &Path, envs: &[(&str, &Path)]) -> Output {
             command.env_remove(key);
         }
     }
-    command.args(["plan", "check", "--json"]).current_dir(dir);
+    command.args(["plan", "check"]).current_dir(dir);
+    if json {
+        command.arg("--json");
+    }
     command
         .env("LOOM_HOME", home.path())
         .envs(envs.iter().copied());
@@ -73,26 +87,97 @@ fn stdout_json(output: &Output) -> Value {
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("{e}: stdout {text} stderr {stderr}"))
 }
 
-/// The projection checklist-check/common.md "Schema fixture" pins.
+/// Pin stable checklist details and every new schema-2 field; normalize the temp root.
 fn projection(out: &Value) -> Value {
-    let checklist = &out["checklist"];
-    let ids = |offers: &Value| -> Vec<Value> {
-        let all = offers.as_array().cloned().unwrap_or_default();
-        all.iter().map(|offer| offer["id"].clone()).collect()
-    };
-    let problems = out["problems"].as_array().cloned().unwrap_or_default();
-    let problems: Vec<Value> = problems
+    let features: Vec<Value> = out["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|feature| {
+            let checklist = &feature["checklist"];
+            let secondary: Vec<_> = checklist["secondary"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|offer| &offer["id"])
+                .collect();
+            json!({
+                "name": feature["name"],
+                "checklist": {
+                    "feature": checklist["feature"],
+                    "current": checklist["current"],
+                    "steps": checklist["steps"],
+                    "primary": checklist["primary"]["id"],
+                    "secondary": secondary,
+                },
+            })
+        })
+        .collect();
+    let problems: Vec<Value> = out["problems"]
+        .as_array()
+        .unwrap()
         .iter()
         .map(|p| json!({ "code": p["code"], "path": p["path"], "line": p["line"] }))
         .collect();
     json!({
         "schema": out["schema"],
-        "current": checklist["current"],
-        "steps": checklist["steps"],
-        "primary": checklist["primary"]["id"],
-        "secondary": ids(&checklist["secondary"]),
+        "root": "<repo>",
+        "features": features,
+        "standalone": out["standalone"],
+        "moves": out["moves"],
         "problems": problems,
     })
+}
+
+fn assert_shape(out: &Value) {
+    let keys =
+        |value: &Value| -> Vec<String> { value.as_object().unwrap().keys().cloned().collect() };
+    assert_eq!(
+        keys(out),
+        [
+            "features",
+            "moves",
+            "problems",
+            "root",
+            "schema",
+            "standalone"
+        ]
+    );
+    assert_eq!(out["schema"], 2);
+    assert!(out["root"].is_string());
+    for field in ["features", "standalone", "moves", "problems"] {
+        assert!(out[field].is_array(), "{field}: {out:#}");
+    }
+    for feature in out["features"].as_array().unwrap() {
+        assert_eq!(keys(feature), ["checklist", "name"]);
+        assert!(feature["name"].is_string());
+        let checklist = &feature["checklist"];
+        assert_eq!(
+            keys(checklist),
+            [
+                "current",
+                "feature",
+                "items",
+                "primary",
+                "secondary",
+                "state",
+                "steps"
+            ]
+        );
+        assert_eq!(checklist["feature"], feature["name"]);
+        assert_eq!(checklist["steps"].as_array().unwrap().len(), 7);
+        assert!(checklist["items"].is_array());
+        assert!(checklist["state"].is_object());
+    }
+    for plan in out["standalone"].as_array().unwrap() {
+        assert_eq!(keys(plan), ["path", "slug", "state"]);
+        assert!(plan["slug"].is_string());
+        assert!(plan["path"].is_string());
+        assert!(matches!(
+            plan["state"].as_str(),
+            Some("written" | "running" | "done" | "retired")
+        ));
+    }
 }
 
 fn codes(out: &Value) -> Vec<String> {
@@ -109,24 +194,68 @@ fn codes(out: &Value) -> Vec<String> {
 #[test]
 fn plan_check_json_cli() {
     let (_temp, root) = repo(&[
-        (
-            "doc/plans/PLAN-alpha.md",
-            "# Plan: Alpha\n\nImplements: none\n",
-        ),
-        ("doc/plans/PLAN-beta.md", "# Plan: Beta\n"),
-        ("doc/plans/IN_PROGRESS-PLAN-gamma.md", "# Plan: Gamma\n"),
+        ("doc/plans/beta/PLAN-beta.md", "# Plan: Beta\n"),
+        (PLAN, "# Plan: Alpha\n\nImplements: none\n"),
+        ("doc/plans/IN_PROGRESS-PLAN-solo.md", "# Plan: Solo\n"),
+        ("doc/product/index.md", "# Vision\n"),
     ]);
     let output = check(&root, &[]);
     let out = stdout_json(&output);
+    assert_shape(&out);
+    assert_eq!(out["root"], json!(root.canonicalize().unwrap()));
     assert_eq!(output.status.code(), Some(1), "{out:#}");
     let want: Value = serde_json::from_str(SCHEMA).expect("check_schema.json parses");
     assert_eq!(projection(&out), want, "{out:#}");
+}
 
+#[test]
+fn plan_check_clean_exits_zero() {
     let (_temp, root) = clean();
     let output = check(&root, &[]);
     let out = stdout_json(&output);
+    assert_shape(&out);
     assert_eq!(out["problems"], json!([]), "{out:#}");
     assert_eq!(output.status.code(), Some(0), "{out:#}");
+}
+
+#[test]
+fn plan_check_human_groups_features_then_standalone_then_problems() {
+    let (_temp, root) = clean();
+    put(&root, "doc/product/index.md", "# Vision\n");
+
+    let output = run_check(&root, false, &[]);
+    let text = String::from_utf8(output.stdout).unwrap();
+
+    assert_eq!(output.status.code(), Some(1), "{text}");
+    let (alpha, rest) = text.split_once("beta\n").unwrap();
+    let (beta, rest) = rest.split_once("standalone plans\n").unwrap();
+    assert!(alpha.starts_with("alpha\n1 Vision: Done\n"), "{text}");
+    assert!(alpha.contains("Primary: pressure-test:alpha\n"), "{text}");
+    assert!(beta.starts_with("1 Vision: Gap\n"), "{text}");
+    assert!(beta.contains("Primary: start-vision\n"), "{text}");
+    assert!(!alpha.contains("pressure-test:beta"), "{text}");
+    assert!(!beta.contains("pressure-test:alpha"), "{text}");
+    assert!(rest.starts_with("  solo: Running\n"), "{text}");
+    assert!(
+        rest.contains("doc/product/index.md: needs-feature:"),
+        "{text}"
+    );
+    assert!(!rest.contains("Current:"), "{text}");
+}
+
+#[test]
+fn plan_check_repository_docs_follow_shape_and_exit_contract() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let output = check(root, &[]);
+    let out = stdout_json(&output);
+
+    assert_shape(&out);
+    let expected = if out["problems"].as_array().unwrap().is_empty() {
+        0
+    } else {
+        1
+    };
+    assert_eq!(output.status.code(), Some(expected), "{out:#}");
 }
 
 #[test]
@@ -145,10 +274,10 @@ fn plan_check_outside_repo() {
 }
 
 /// Defects made by writing one file: the code it must raise, the file and its new text.
-const WRITES: [(&str, &str, &str); 9] = [
+const WRITES: [(&str, &str, &str); 12] = [
     (
         "unlisted-section",
-        "doc/product/section_09.md",
+        "doc/product/alpha/section_09.md",
         "# Section 09\n\nBody.\n",
     ),
     (
@@ -158,7 +287,7 @@ const WRITES: [(&str, &str, &str); 9] = [
     ),
     (
         "metaplan-entry-without-plan",
-        "doc/plans/index.md",
+        METAPLAN,
         "# Metaplan\n\n## 1. Alpha (`PLAN-alpha.md`)\n\n## 2. Missing name\n",
     ),
     ("implements-missing", PLAN, "# Plan: Alpha\n\nNo line.\n"),
@@ -181,14 +310,25 @@ const WRITES: [(&str, &str, &str); 9] = [
         "broken-brief-reference",
         PLAN,
         concat!(
-            "# Plan: Alpha\n\nImplements: section_01\n\nBrief: `doc/plans/",
+            "# Plan: Alpha\n\nImplements: section_01\n\nBrief: `doc/plans/alpha/",
             "briefs/alpha/w1.md`.\n"
         ),
     ),
     (
         "stray-plan-copy",
-        "doc/plans/DONE-PLAN-alpha.md",
+        "doc/plans/alpha/DONE-PLAN-alpha.md",
         "# Plan: Alpha\n\nImplements: section_01\n",
+    ),
+    ("needs-feature", "doc/product/index.md", "# Vision\n"),
+    (
+        "bad-feature-name",
+        "doc/product/Bad_Name/index.md",
+        "# Vision\n",
+    ),
+    (
+        "duplicate-plan-slug",
+        "doc/plans/beta/PLAN-alpha.md",
+        "# Plan: Alpha copy\n\nImplements: none\n",
     ),
 ];
 
@@ -197,7 +337,7 @@ fn make_defect(code: &str, root: &Path) {
     match code {
         "vision-table-unreadable" => {
             let text = "# Vision\n\n## Specification sections\n\nSee the list.\n";
-            put(root, "doc/product/index.md", text);
+            put(root, VISION, text);
             fs::remove_file(root.join(SECTION)).unwrap();
             put(root, PLAN, "# Plan: Alpha\n\nImplements: none\n");
         }

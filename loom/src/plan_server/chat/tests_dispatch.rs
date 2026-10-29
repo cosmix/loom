@@ -16,8 +16,22 @@ use crate::plan_session::bridge::LaunchGuidance;
 use crate::plan_session::input::InputRefusal;
 use crate::plan_session::kind::SessionDir;
 use crate::plan_session::model::{Item, Origin, SessionState};
+use crate::planning::project::Project;
 
 mod start;
+
+fn fixture(read_only: bool) -> Fixture {
+    let f = Fixture::new(read_only);
+    let root = f.ctx.root();
+    std::fs::create_dir_all(root.join("doc/product/demo")).unwrap();
+    std::fs::rename(
+        root.join("doc/product/index.md"),
+        root.join("doc/product/demo/index.md"),
+    )
+    .unwrap();
+    *f.ctx.project_mut() = Project::load(root).unwrap();
+    f
+}
 
 fn attachment(path: &str) -> AttachmentInput {
     AttachmentInput {
@@ -46,7 +60,7 @@ fn refused(error: impl ToString) -> Value {
         "ok": false, "error": error.to_string()})
 }
 
-type GuidanceCall = (Option<String>, Option<String>);
+type GuidanceCall = (Option<String>, Option<String>, Option<String>);
 
 #[derive(Default)]
 struct RecordingGuidance {
@@ -60,12 +74,14 @@ impl GuidanceProvider for RecordingGuidance {
         dir: &SessionDir,
         offer: Option<&str>,
         first_message: Option<&str>,
+        feature: Option<&str>,
     ) -> anyhow::Result<LaunchGuidance> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push((offer.map(str::to_owned), first_message.map(str::to_owned)));
-        FixedGuidance.authoring(ctx, dir, offer, first_message)
+        self.calls.lock().unwrap().push((
+            offer.map(str::to_owned),
+            first_message.map(str::to_owned),
+            feature.map(str::to_owned),
+        ));
+        FixedGuidance.authoring(ctx, dir, offer, first_message, feature)
     }
 
     fn closing_message(&self) -> String {
@@ -120,7 +136,7 @@ fn received_frames(f: &Fixture, tab: &Tab) -> Vec<Value> {
 
 #[test]
 fn observer_commands_are_refused_while_another_browser_holds_authoring() {
-    let f = Fixture::new(false);
+    let f = fixture(false);
     let holder = f.connect(&browser());
     let observer = f.connect(&browser());
     let s = f.start(&holder);
@@ -156,7 +172,7 @@ fn observer_commands_are_refused_while_another_browser_holds_authoring() {
 
 #[test]
 fn a_slash_command_is_refused_with_the_input_refusal_text() {
-    let f = Fixture::new(false);
+    let f = fixture(false);
     let tab = f.connect(&browser());
 
     let result = f.command(&tab, send("\0  /help", Vec::new()));
@@ -167,7 +183,7 @@ fn a_slash_command_is_refused_with_the_input_refusal_text() {
 
 #[test]
 fn a_message_over_100_kb_is_refused_with_the_input_refusal_text() {
-    let f = Fixture::new(false);
+    let f = fixture(false);
     let tab = f.connect(&browser());
 
     let result = f.command(&tab, send(&"x".repeat(100_001), Vec::new()));
@@ -184,9 +200,9 @@ fn a_message_over_100_kb_is_refused_with_the_input_refusal_text() {
 
 #[test]
 fn eleven_attachments_are_refused() {
-    let f = Fixture::new(false);
+    let f = fixture(false);
     let tab = f.connect(&browser());
-    let inputs = vec![attachment("doc/product/index.md"); 11];
+    let inputs = vec![attachment("doc/product/demo/index.md"); 11];
 
     let result = f.command(&tab, send("review", inputs));
 
@@ -196,9 +212,9 @@ fn eleven_attachments_are_refused() {
 
 #[test]
 fn an_attachment_with_a_parent_path_is_refused() {
-    let f = Fixture::new(false);
+    let f = fixture(false);
     let tab = f.connect(&browser());
-    let path = "doc/product/../product/index.md";
+    let path = "doc/product/demo/../demo/index.md";
 
     let result = f.command(&tab, send("review", vec![attachment(path)]));
 
@@ -208,7 +224,7 @@ fn an_attachment_with_a_parent_path_is_refused() {
 
 #[test]
 fn start_is_refused_in_read_only_mode() {
-    let f = Fixture::new(true);
+    let f = fixture(true);
     let tab = f.connect(&browser());
 
     let result = f.command(&tab, start());
@@ -220,7 +236,7 @@ fn start_is_refused_in_read_only_mode() {
 
 #[test]
 fn start_is_refused_while_the_server_is_stopping() {
-    let f = Fixture::new(false);
+    let f = fixture(false);
     let tab = f.connect(&browser());
     f.ctx.shutdown().abort_all();
 
@@ -233,7 +249,7 @@ fn start_is_refused_while_the_server_is_stopping() {
 
 #[test]
 fn start_without_offer_or_text_takes_authoring_and_marks_the_opening_as_start() {
-    let f = Fixture::new(false);
+    let f = fixture(false);
     let tab = f.connect(&browser());
     let guidance = record_guidance(&f);
     assert!(f.ctx.authoring().holder().is_none());
@@ -242,7 +258,7 @@ fn start_without_offer_or_text_takes_authoring_and_marks_the_opening_as_start() 
     let item = opening(&f, &s);
 
     assert!(f.ctx.authoring().is_holder(&tab.conn.browser));
-    assert_eq!(*guidance.calls.lock().unwrap(), vec![(None, None)]);
+    assert_eq!(*guidance.calls.lock().unwrap(), vec![(None, None, None)]);
     assert!(matches!(
         item,
         Item::User {
@@ -254,16 +270,16 @@ fn start_without_offer_or_text_takes_authoring_and_marks_the_opening_as_start() 
 
 #[test]
 fn start_with_a_current_offer_marks_the_opening_as_offer() {
-    let f = Fixture::new(false);
+    let f = fixture(false);
     let tab = f.connect(&browser());
     let guidance = record_guidance(&f);
     let offer = {
         let project = f.ctx.project();
-        project
-            .checklist
+        let checklist = &project.feature("demo").unwrap().checklist;
+        checklist
             .primary
             .iter()
-            .chain(&project.checklist.secondary)
+            .chain(&checklist.secondary)
             .next()
             .expect("the fixture has an offered step")
             .id()
@@ -271,6 +287,7 @@ fn start_with_a_current_offer_marks_the_opening_as_offer() {
     let cmd = ChatCommand::Start {
         client_id: Some("c1".into()),
         offer: Some(offer.clone()),
+        feature: Some("demo".into()),
         text: None,
         attachments: Vec::new(),
     };
@@ -281,7 +298,7 @@ fn start_with_a_current_offer_marks_the_opening_as_offer() {
 
     assert_eq!(
         *guidance.calls.lock().unwrap(),
-        vec![(Some(offer.clone()), None)]
+        vec![(Some(offer.clone()), None, Some("demo".into()))]
     );
     assert!(matches!(
         item,
@@ -298,16 +315,17 @@ fn start_with_a_current_offer_marks_the_opening_as_offer() {
 
 #[test]
 fn a_typed_start_passes_the_formatted_first_message_and_has_no_origin() {
-    let f = Fixture::new(false);
+    let f = fixture(false);
     let tab = f.connect(&browser());
     let guidance = record_guidance(&f);
     let expected = "Review\nthis\n\n<loom-attachments>\n\
-        [1] source doc/product/index.md#demo\n> # Demo\n</loom-attachments>";
+        [1] source doc/product/demo/index.md#demo\n> # Demo\n</loom-attachments>";
     let cmd = ChatCommand::Start {
         client_id: Some("c1".into()),
         offer: None,
+        feature: None,
         text: Some("\0Review\r\nthis".into()),
-        attachments: vec![attachment("doc/product/index.md")],
+        attachments: vec![attachment("doc/product/demo/index.md")],
     };
 
     assert_eq!(f.command(&tab, cmd), ok_result());
@@ -317,7 +335,7 @@ fn a_typed_start_passes_the_formatted_first_message_and_has_no_origin() {
 
     assert_eq!(
         *guidance.calls.lock().unwrap(),
-        vec![(None, Some(expected.into()))]
+        vec![(None, Some(expected.into()), None)]
     );
     assert_eq!(f.host.delivered_to(&s.socket), vec![expected.to_owned()]);
     assert!(matches!(item, Item::User { origin: None, text, .. }
@@ -326,7 +344,7 @@ fn a_typed_start_passes_the_formatted_first_message_and_has_no_origin() {
 
 #[test]
 fn queue_returned_reaches_only_the_interrupting_connection() {
-    let f = Fixture::new(false);
+    let f = fixture(false);
     let holder = browser();
     let tab = f.connect(&holder);
     let second = f.connect(&holder);

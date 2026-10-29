@@ -6,8 +6,8 @@ use serde_json::{json, Value};
 use super::concept::{ConceptChanged, ConceptPage, EmptyKind, OutOfDateReason, SummaryStateView};
 use super::message::PlanMessage;
 
-const OVERVIEW: &str = include_str!("../../../../web/src/plan/api/fixtures/concept-overview.json");
-const SUMMARY: &str = include_str!("../../../../web/src/plan/api/fixtures/concept-summary.json");
+const OVERVIEW: &str = include_str!("fixtures/concept-overview.json");
+const SUMMARY: &str = include_str!("fixtures/concept-summary.json");
 
 fn assert_fixture<T: DeserializeOwned + Serialize>(fixture: &str) -> T {
     let expected: Value = serde_json::from_str(fixture).unwrap();
@@ -40,7 +40,8 @@ fn summary_fixture_matches_serde_output() {
 #[test]
 fn summary_fixture_deserializes() {
     let page: ConceptPage = serde_json::from_str(SUMMARY).unwrap();
-    assert_eq!(page.key, "product/section_01");
+    assert_eq!(page.key, "demo/product/section_01");
+    assert_eq!(page.feature.as_deref(), Some("demo"));
     assert_eq!(page.implemented_by.len(), 1);
     assert_eq!(page.state.unwrap().state, SummaryStateView::Stale);
 }
@@ -48,15 +49,17 @@ fn summary_fixture_deserializes() {
 #[test]
 fn concept_changed_message_round_trips() {
     let message = PlanMessage::ConceptChanged(ConceptChanged {
-        pages: vec!["overview".into()],
-        out_of_date: vec!["product/section_01".into()],
-        sources: vec!["doc/product/vision.md".into()],
+        feature: Some("demo".into()),
+        pages: vec!["overview/demo/product".into()],
+        out_of_date: vec!["demo/product/section_01".into()],
+        sources: vec!["doc/product/demo/index.md".into()],
     });
     let expected = json!({
         "type": "concept_changed",
-        "pages": ["overview"],
-        "out_of_date": ["product/section_01"],
-        "sources": ["doc/product/vision.md"],
+        "feature": "demo",
+        "pages": ["overview/demo/product"],
+        "out_of_date": ["demo/product/section_01"],
+        "sources": ["doc/product/demo/index.md"],
     });
     assert_eq!(serde_json::to_value(&message).unwrap(), expected);
     assert_eq!(

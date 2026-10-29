@@ -34,11 +34,13 @@ SOFTWARE.
 ## Scope and writes
 
 Work on the target document named by the step skill that loaded you. Follow that
-skill's write scope and document shape.
+skill's write scope and document shape. Use the feature name given in the session's
+opening prompt for paths under `doc/product/<feature>/` and `doc/plans/<feature>/`.
 Never stage, commit, or branch. Never run `loom init`, `loom run`, or `loom pressure`.
 Treat plans prefixed `IN_PROGRESS-`, `DONE-`, or `RETIRED-`, their brief bundles,
-`doc/plans/archive/`, and `REVIEW-*.md` files as read-only. If asked to change
-one, explain the limit and offer a new metaplan entry or a spec refinement.
+`doc/plans/<feature>/archive/`, `doc/plans/archive/`, and `REVIEW-*.md` files as
+read-only. If asked to change one, explain the limit and offer a new metaplan entry
+or a spec refinement.
 
 Find out what the user wants and why before settling how it should work.
 Record each decision in the document it binds (usually the target; the step

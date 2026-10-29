@@ -15,6 +15,7 @@ use crate::planning::runtime::RuntimePaths;
 fn plan_a() -> RunningPlan {
     RunningPlan {
         slug: "a".to_string(),
+        feature: None,
     }
 }
 

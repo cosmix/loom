@@ -17,7 +17,7 @@ fn minutes(at: Instant, minutes: u64) -> Instant {
 fn a_gap_between_claim_waves_does_not_stop_the_session() {
     let (mut s, stub, now) = setup();
     let mut batch = ids(&["d1", "d2"]);
-    batch.push("engineering".into());
+    batch.push("overview/demo/engineering".into());
     s.on_update(&batch, &batch, now, &stub);
     s.claims_changed("s1", &batch[..2], now, &stub);
     s.claims_changed("s1", &[], now, &stub);
@@ -155,7 +155,9 @@ fn the_server_stopping_drops_the_queue_and_starts_nothing() {
     let (mut s, stub, now) = setup();
     let two = ids(&["a", "b"]);
     s.on_update(&two, &two, now, &stub);
-    let mut nine: Vec<String> = (1..=9).map(|i| format!("product/section_0{i}")).collect();
+    let mut nine: Vec<String> = (1..=9)
+        .map(|i| format!("demo/product/section_0{i}"))
+        .collect();
     let asked = question_of(&s.on_update(&nine, &nine, now, &stub));
     assert!(asked.is_none(), "s1 runs: the nine wait");
     s.server_stopping();
@@ -178,7 +180,9 @@ fn the_server_stopping_drops_the_queue_and_starts_nothing() {
 #[test]
 fn the_server_stopping_closes_an_open_question() {
     let (mut s, stub, now) = setup();
-    let nine: Vec<String> = (1..=9).map(|i| format!("product/section_0{i}")).collect();
+    let nine: Vec<String> = (1..=9)
+        .map(|i| format!("demo/product/section_0{i}"))
+        .collect();
     let asked = question_of(&s.on_update(&nine, &nine, now, &stub)).expect("asks");
     s.server_stopping();
     let closed = SchedulerEvent::QuestionClosed { id: asked.id };

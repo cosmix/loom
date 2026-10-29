@@ -6,13 +6,13 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 
 use super::claims::{create_claim, delete_claim, draft_path, ClaimHeld};
-use super::evaluate::{evaluate, Evaluation, SentenceState, SummaryEval};
+use super::evaluate::{evaluate, SentenceState, SummaryEval};
 use super::format::{MAX_DOCUMENT_SENTENCES, MAX_OVERVIEW_SENTENCES};
 use super::lock::with_store_lock;
 use super::store::{self, validate_id};
 use super::write::read_summary;
 use crate::context::untrusted::terminal_safe;
-use crate::planning::kinds::VISION_PATH;
+use crate::planning::kinds::vision_path;
 use crate::planning::project::Project;
 use crate::planning::runtime::RuntimePaths;
 
@@ -74,7 +74,7 @@ fn build_brief(
             .summaries
             .get(id)
             .context("summary disappeared from evaluation")?;
-        write_summary_brief(&mut out, project, paths, &evaluation, eval, note)?;
+        write_summary_brief(&mut out, project, paths, eval, note)?;
     }
     Ok(out)
 }
@@ -83,13 +83,12 @@ fn write_summary_brief(
     out: &mut String,
     project: &Project,
     paths: &RuntimePaths,
-    evaluation: &Evaluation,
     eval: &SummaryEval,
     note: Option<&str>,
 ) -> Result<()> {
     let id = &eval.id;
     let overview = store::is_overview(id);
-    write_heading(out, project, evaluation, eval, overview)?;
+    write_heading(out, project, eval, overview)?;
     let matched = note.and_then(|n| {
         eval.sentences.iter().find(|s| {
             !n.is_empty()
@@ -127,7 +126,6 @@ fn write_summary_brief(
 fn write_heading(
     out: &mut String,
     project: &Project,
-    evaluation: &Evaluation,
     eval: &SummaryEval,
     overview: bool,
 ) -> Result<()> {
@@ -138,36 +136,27 @@ fn write_heading(
         if overview { "overview" } else { "document" }
     )?;
     writeln!(out, "Sources:")?;
-    for path in sources(project, evaluation, eval) {
+    for path in sources(project, eval) {
         writeln!(out, "- {}", terminal_safe(&path.to_string_lossy()))?;
     }
     Ok(())
 }
 
-fn sources(project: &Project, evaluation: &Evaluation, eval: &SummaryEval) -> Vec<PathBuf> {
-    match eval.id.as_str() {
-        "product" => std::iter::once(PathBuf::from(VISION_PATH))
-            .chain(
-                evaluation
-                    .scope
-                    .product
-                    .iter()
-                    .map(|id| store::summary_path(id)),
-            )
-            .collect(),
-        "engineering" => project
-            .metaplans
-            .iter()
-            .map(|(path, _)| path.clone())
-            .chain(
-                evaluation
-                    .scope
-                    .engineering
-                    .iter()
-                    .map(|id| store::summary_path(id)),
-            )
-            .collect(),
-        _ => eval.source.iter().cloned().collect(),
+fn sources(project: &Project, eval: &SummaryEval) -> Vec<PathBuf> {
+    let Some(scope) = store::Scope::of(project, &eval.id) else {
+        return eval.source.iter().cloned().collect();
+    };
+    if eval.id.ends_with("/product") {
+        std::iter::once(vision_path(&scope.feature))
+            .chain(scope.product.iter().map(|id| store::summary_path(id)))
+            .collect()
+    } else {
+        project
+            .feature(&scope.feature)
+            .into_iter()
+            .flat_map(|feature| feature.metaplans.iter().map(|(path, _)| path.clone()))
+            .chain(scope.engineering.iter().map(|id| store::summary_path(id)))
+            .collect()
     }
 }
 

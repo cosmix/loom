@@ -11,7 +11,7 @@ use loom::plan_server::review::suggest::{BrowserRef, SuggestedPassage};
 use tempfile::TempDir;
 
 /// The product section the built-marker fixtures change, repo-relative.
-pub const SECTION_02: &str = "doc/product/section_02.md";
+pub const SECTION_02: &str = "doc/product/demo/section_02.md";
 /// The build date every fixture review carries.
 pub const BUILT: &str = "2026-10-20 14:05 UTC";
 /// Commit dates on either side of [`BUILT`].

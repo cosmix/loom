@@ -2,7 +2,7 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use crate::planning::slug::plan_slug;
+use crate::planning::slug::{plan_home, plan_slug};
 
 /// The purpose of a planning session.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -12,7 +12,7 @@ pub enum SessionKind {
     Authoring,
     /// A session that summarizes planning work.
     Summary,
-    /// A pressure session for a repository-relative `doc/plans/PLAN-<slug>.md`.
+    /// A pressure session for a repository-relative `PLAN-<slug>.md` in a plan home.
     Pressure { plan: PathBuf },
 }
 
@@ -31,18 +31,28 @@ impl SessionKind {
         let Self::Pressure { plan } = self else {
             return None;
         };
+        let home = plan_home(plan)?;
+        // Pressure targets are unarchived plans in a home, with no traversal components.
+        if plan.parent()? != home.as_path()
+            || plan
+                .to_str()?
+                .split('/')
+                .any(|part| matches!(part, "." | ".."))
+        {
+            return None;
+        }
         let name = plan.file_name()?.to_str()?;
         if !name.starts_with("PLAN-") {
             return None;
         }
         let slug = plan_slug(name)?;
-        // `PLAN-..md` has the slug `.`, which would make the bundle `doc/plans/briefs` itself.
+        // `PLAN-..md` has the slug `.`, which would name the home's `briefs` directory itself.
         let mut parts = Path::new(&slug).components();
         let one_name = matches!(
             (parts.next(), parts.next()),
             (Some(Component::Normal(part)), None) if part == slug.as_str()
         );
-        one_name.then(|| Path::new("doc/plans/briefs").join(slug))
+        one_name.then(|| home.join("briefs").join(slug))
     }
 }
 
@@ -145,6 +155,10 @@ mod tests {
             pressure("doc/plans/PLAN-x.md").pressure_bundle(),
             Some("doc/plans/briefs/x".into())
         );
+        assert_eq!(
+            pressure("doc/plans/alpha/PLAN-z.md").pressure_bundle(),
+            Some("doc/plans/alpha/briefs/z".into())
+        );
         assert_eq!(pressure("doc/plans/other.md").pressure_bundle(), None);
         assert_eq!(pressure("doc/plans/DONE-PLAN-x.md").pressure_bundle(), None);
         assert_eq!(SessionKind::Authoring.pressure_bundle(), None);
@@ -155,13 +169,40 @@ mod tests {
     fn pressure_bundle_refuses_a_slug_that_is_not_one_plain_name() {
         let pressure = |plan: &str| SessionKind::Pressure { plan: plan.into() };
         // Slugs `.` and `..` would name `doc/plans/briefs` or its parent.
-        for plan in ["doc/plans/PLAN-..md", "doc/plans/PLAN-...md"] {
-            assert_eq!(pressure(plan).pressure_bundle(), None, "{plan}");
+        for home in ["doc/plans", "doc/plans/alpha"] {
+            for name in ["PLAN-..md", "PLAN-...md"] {
+                let plan = format!("{home}/{name}");
+                assert_eq!(pressure(&plan).pressure_bundle(), None, "{plan}");
+            }
         }
         assert_eq!(
             pressure("doc/plans/PLAN-x.y.md").pressure_bundle(),
             Some("doc/plans/briefs/x.y".into())
         );
+    }
+
+    #[test]
+    fn pressure_bundle_refuses_invalid_homes() {
+        for home in [
+            "doc/plans/Bad",
+            "doc/plans/-bad",
+            "doc/plans/bad_name",
+            "doc/plans/briefs",
+            "doc/plans/archive",
+            "doc/plans/plans",
+            "doc/plans/overview",
+            "doc/plans/alpha/nested",
+            "doc/plans/alpha/archive",
+            "doc/plans/.",
+            "doc/plans/..",
+            "elsewhere",
+            "/doc/plans",
+        ] {
+            let kind = SessionKind::Pressure {
+                plan: format!("{home}/PLAN-z.md").into(),
+            };
+            assert_eq!(kind.pressure_bundle(), None, "{home}");
+        }
     }
 
     #[test]

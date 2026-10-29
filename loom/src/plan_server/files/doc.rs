@@ -17,9 +17,9 @@ use super::validate::ValidationCache;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::request::{ApiRequest, ApiResponse};
 use crate::plan_server::wire::files::{
-    DocView, EntryKind, LockKind, LockView, SectionView, ValidationView,
+    DocView, EntryKind, LockKind, LockView, PlanView, SectionView, ValidationView,
 };
-use crate::planning::kinds::DocKind;
+use crate::planning::kinds::{feature_dir_name, is_feature_name, DocKind};
 use crate::planning::paths::{check_relpath_syntax, classify_write, DocArea, LockReason};
 use crate::planning::project::Project;
 use crate::planning::sections::{sections_of, DocSections};
@@ -59,17 +59,13 @@ pub fn doc_view(ctx: &PlanContext, rel: &Path) -> Result<DocView, ApiResponse> {
         _ => None,
     };
     let plan = match (&facts.kind, &sections) {
-        (DocKind::Plan { .. }, Some(sections)) => {
-            let validation = cached_validation(ctx, rel, &pinned.text);
-            Some(plan_view(
-                ctx.root(),
-                rel,
-                &pinned.text,
-                sections,
-                &facts.product_sections,
-                validation,
-            ))
-        }
+        (DocKind::Plan { .. }, Some(sections)) => Some(plan_panel(
+            ctx,
+            rel,
+            &pinned.text,
+            sections,
+            &facts.product_sections,
+        )),
         _ => None,
     };
     let size = pinned.text.len();
@@ -80,6 +76,8 @@ pub fn doc_view(ctx: &PlanContext, rel: &Path) -> Result<DocView, ApiResponse> {
         text: shown_text(&pinned, too_large),
         hash: pinned.hash.clone(),
         kind: entry_kind(&facts.kind),
+        feature: document_feature(rel, &facts.kind),
+        misplaced: misplaced(&facts.kind),
         editable: facts.editable && !too_large,
         lock: facts.lock,
         sections: sections.as_ref().map(section_views).unwrap_or_default(),
@@ -88,6 +86,17 @@ pub fn doc_view(ctx: &PlanContext, rel: &Path) -> Result<DocView, ApiResponse> {
         truncated: too_large,
         size: u64::try_from(size).unwrap_or(u64::MAX),
     })
+}
+
+fn plan_panel(
+    ctx: &PlanContext,
+    rel: &Path,
+    text: &str,
+    sections: &DocSections,
+    product: &BTreeMap<u32, String>,
+) -> PlanView {
+    let validation = cached_validation(ctx, rel, text);
+    plan_view(ctx.root(), rel, text, sections, product, validation)
 }
 
 /// What the project view knows of a discovered document, copied out so the project lock is
@@ -119,7 +128,9 @@ impl Facts {
             lock: lock_view(project, rel),
             editable: editable(project, rel),
             product_sections: match doc.kind {
-                DocKind::Plan { .. } => product_sections(&project.tree),
+                DocKind::Plan { ref feature, .. } => {
+                    product_sections(&project.tree, feature.as_deref())
+                }
                 _ => BTreeMap::new(),
             },
         })
@@ -167,6 +178,7 @@ fn cached_validation(ctx: &PlanContext, rel: &Path, text: &str) -> Option<Valida
 pub fn editable(project: &Project, rel: &Path) -> bool {
     is_markdown(rel)
         && !is_under_loom(rel)
+        && !feature_dir_name(rel).is_some_and(|name| !is_feature_name(name))
         && matches!(classify_write(&project.locked, rel), DocArea::Doc)
 }
 
@@ -220,16 +232,34 @@ fn brief_lock(project: &Project, slug: &str) -> LockView {
 /// The wire kind of a discovered document.
 pub fn entry_kind(kind: &DocKind) -> EntryKind {
     match kind {
-        DocKind::Vision => EntryKind::Vision,
+        DocKind::Vision { .. } => EntryKind::Vision,
         DocKind::ProductSection { .. } => EntryKind::Section,
-        DocKind::ProductNote => EntryKind::Note,
-        DocKind::Metaplan => EntryKind::Metaplan,
+        DocKind::ProductNote { .. } => EntryKind::Note,
+        DocKind::Metaplan { .. } => EntryKind::Metaplan,
         DocKind::Plan { .. } => EntryKind::Plan,
         DocKind::Brief { .. } => EntryKind::Brief,
         DocKind::RunReview { .. } => EntryKind::Review,
         DocKind::Knowledge => EntryKind::Knowledge,
         DocKind::Other => EntryKind::Other,
     }
+}
+
+/// The feature of a document, including briefs and reviews whose kind stores only a slug.
+pub(crate) fn document_feature(rel: &Path, kind: &DocKind) -> Option<String> {
+    kind.feature()
+        .or_else(|| feature_dir_name(rel))
+        .filter(|name| is_feature_name(name))
+        .map(str::to_owned)
+}
+
+/// Whether a document needs to move from the top level into a feature.
+pub(crate) fn misplaced(kind: &DocKind) -> bool {
+    matches!(
+        kind,
+        DocKind::Vision { feature: None }
+            | DocKind::ProductSection { feature: None, .. }
+            | DocKind::Metaplan { feature: None }
+    )
 }
 
 /// Whether `rel` names a Markdown file.

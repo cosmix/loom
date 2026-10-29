@@ -12,18 +12,18 @@ const PLAN: &str = "# Plan\nImplements: section_1, section_02\n\n<!-- loom METAD
 #[test]
 fn exposes_parsed_stages_links_and_lines() {
     let temp = tempfile::tempdir().unwrap();
-    fs::create_dir_all(temp.path().join("doc/product")).unwrap();
-    fs::create_dir_all(temp.path().join("doc/plans")).unwrap();
-    fs::write(temp.path().join("doc/product/section_1.md"), "# One").unwrap();
-    let rel = Path::new("doc/plans/IN_PROGRESS-PLAN-demo.md");
+    fs::create_dir_all(temp.path().join("doc/product/demo")).unwrap();
+    fs::create_dir_all(temp.path().join("doc/plans/demo")).unwrap();
+    fs::write(temp.path().join("doc/product/demo/section_1.md"), "# One").unwrap();
+    let rel = Path::new("doc/plans/demo/IN_PROGRESS-PLAN-demo.md");
     fs::write(temp.path().join(rel), PLAN).unwrap();
-    let sections = product_sections(&discover(temp.path()).unwrap());
+    let sections = product_sections(&discover(temp.path()).unwrap(), Some("demo"));
     let view = plan_view(temp.path(), rel, PLAN, &sections_of(PLAN), &sections, None);
     assert_eq!(view.slug, "demo");
     assert_eq!(view.state, PlanStateView::Running);
     assert_eq!(
         view.implements[0].path.as_deref(),
-        Some("doc/product/section_1.md")
+        Some("doc/product/demo/section_1.md")
     );
     assert_eq!(view.implements[1].path, None);
     assert_eq!(view.pressure_date.as_deref(), Some("2025-02-02"));
@@ -124,4 +124,22 @@ fn implements_links_resolve_against_the_given_sections_without_walking_the_disk(
         view.implements[0].path.as_deref(),
         Some("doc/product/section_07.md")
     );
+}
+
+#[test]
+fn product_links_are_scoped_to_the_plans_feature() {
+    let temp = tempfile::tempdir().unwrap();
+    for feature in ["alpha", "beta"] {
+        let path = temp
+            .path()
+            .join(format!("doc/product/{feature}/section_01.md"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, "# One\n").unwrap();
+    }
+    let tree = discover(temp.path()).unwrap();
+    assert_eq!(
+        product_sections(&tree, Some("beta")),
+        BTreeMap::from([(1, "doc/product/beta/section_01.md".to_owned())])
+    );
+    assert!(product_sections(&tree, None).is_empty());
 }

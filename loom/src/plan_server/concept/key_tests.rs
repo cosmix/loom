@@ -3,9 +3,10 @@
 use std::path::Path;
 
 use super::body::doc_link;
+use super::fixtures;
 use super::key::*;
 use super::page::{PageContext, Scope};
-use crate::planning::summary::evaluate::{evaluate, fixtures};
+use crate::planning::summary::evaluate::evaluate;
 
 #[test]
 fn chips_follow_scope_order() {
@@ -17,20 +18,20 @@ fn chips_follow_scope_order() {
             fixtures::META,
             "# Plans\n\n## One (`PLAN-b.md`)\n\n## Two (`PLAN-a.md`)\n",
         ),
-        ("doc/plans/PLAN-a.md", "# A\n"),
-        ("doc/plans/DONE-PLAN-b.md", "# B\n"),
+        ("doc/plans/demo/PLAN-a.md", "# A\n"),
+        ("doc/plans/demo/DONE-PLAN-b.md", "# B\n"),
     ]);
     let project = fixtures::load(&fixture.root);
     let eval = evaluate(&project, &[]);
     let ctx = PageContext::default();
-    let product = key_chips(&project, &eval, Scope::Product, &ctx);
-    let engineering = key_chips(&project, &eval, Scope::Engineering, &ctx);
+    let product = key_chips(&project, &eval, "demo", Scope::Product, &ctx);
+    let engineering = key_chips(&project, &eval, "demo", Scope::Engineering, &ctx);
     assert_eq!(
         product
             .iter()
             .map(|c| c.doc.id.as_str())
             .collect::<Vec<_>>(),
-        ["product/section_02", "product/section_01"]
+        ["demo/product/section_02", "demo/product/section_01"]
     );
     assert_eq!(
         engineering
@@ -39,8 +40,8 @@ fn chips_follow_scope_order() {
             .collect::<Vec<_>>(),
         ["plans/b", "plans/a"]
     );
-    assert_eq!(engineering[0].doc.path, "doc/plans/DONE-PLAN-b.md");
-    assert_eq!(engineering[0].doc.page, "engineering/b");
+    assert_eq!(engineering[0].doc.path, "doc/plans/demo/DONE-PLAN-b.md");
+    assert_eq!(engineering[0].doc.page, "demo/engineering/b");
 }
 
 #[test]
@@ -49,7 +50,7 @@ fn colours_repeat_after_eight() {
     for n in 3..=9 {
         fixtures::put(
             &fixture.root,
-            &format!("doc/product/section_{n:02}.md"),
+            &format!("doc/product/demo/section_{n:02}.md"),
             &fixtures::section(n, "A", "B"),
         );
     }
@@ -62,6 +63,7 @@ fn colours_repeat_after_eight() {
     let chips = key_chips(
         &project,
         &evaluate(&project, &[]),
+        "demo",
         Scope::Product,
         &PageContext::default(),
     );
@@ -76,12 +78,18 @@ fn no_plan_only_with_an_engineering_scope() {
     let fixture = fixtures::two_sections();
     fixtures::put(
         &fixture.root,
-        "doc/plans/PLAN-a.md",
+        "doc/plans/demo/PLAN-a.md",
         "# A\n\nImplements: section_01\n",
     );
     let project = fixtures::load(&fixture.root);
     let ctx = PageContext::default();
-    let chips = key_chips(&project, &evaluate(&project, &[]), Scope::Product, &ctx);
+    let chips = key_chips(
+        &project,
+        &evaluate(&project, &[]),
+        "demo",
+        Scope::Product,
+        &ctx,
+    );
     assert!(chips.iter().all(|c| !c.no_plan));
     fixtures::put(
         &fixture.root,
@@ -90,12 +98,12 @@ fn no_plan_only_with_an_engineering_scope() {
     );
     let project = fixtures::load(&fixture.root);
     let eval = evaluate(&project, &[]);
-    let chips = key_chips(&project, &eval, Scope::Product, &ctx);
+    let chips = key_chips(&project, &eval, "demo", Scope::Product, &ctx);
     assert_eq!(
         chips.iter().map(|c| c.no_plan).collect::<Vec<_>>(),
         [false, true]
     );
-    assert!(!key_chips(&project, &eval, Scope::Engineering, &ctx)[0].no_plan);
+    assert!(!key_chips(&project, &eval, "demo", Scope::Engineering, &ctx)[0].no_plan);
 }
 
 #[test]
@@ -104,7 +112,13 @@ fn chip_carries_colour_label_and_title() {
     let project = fixtures::load(&fixture.root);
     let mut eval = evaluate(&project, &[]);
     eval.summaries.remove(fixtures::ID1);
-    let chips = key_chips(&project, &eval, Scope::Product, &PageContext::default());
+    let chips = key_chips(
+        &project,
+        &eval,
+        "demo",
+        Scope::Product,
+        &PageContext::default(),
+    );
     assert_eq!(
         (
             &chips[0].doc.id,
@@ -115,38 +129,46 @@ fn chip_carries_colour_label_and_title() {
             chips[0].colour
         ),
         (
-            &"product/section_01".to_string(),
+            &"demo/product/section_01".to_string(),
             &"Section 01".to_string(),
-            &"doc/product/section_01.md".to_string(),
-            &"product/section_01".to_string(),
+            &"doc/product/demo/section_01.md".to_string(),
+            &"demo/product/section_01".to_string(),
             &"01".to_string(),
             1
         )
     );
     assert_eq!(chips[0].out_of_date, None);
-    assert_eq!(colour_of(&chips, "doc/product/section_02.md"), Some(2));
+    assert_eq!(colour_of(&chips, "doc/product/demo/section_02.md"), Some(2));
     assert_eq!(colour_of(&chips, "doc/missing.md"), None);
 }
 
 #[test]
 fn a_plan_whose_page_key_is_too_long_has_no_chip_and_no_link() {
     let long = "a".repeat(129);
-    let long_file = format!("doc/plans/PLAN-{long}.md");
+    let long_file = format!("doc/plans/demo/PLAN-{long}.md");
     let fixture = fixtures::fixture(&[
         (
             fixtures::META,
             &fixtures::metaplan(&["PLAN-a.md", &format!("PLAN-{long}.md")]),
         ),
-        ("doc/plans/PLAN-a.md", "# A\n"),
+        ("doc/plans/demo/PLAN-a.md", "# A\n"),
         (&long_file, "# Long\n"),
     ]);
     let project = fixtures::load(&fixture.root);
     let eval = evaluate(&project, &[]);
-    assert!(eval.scope.engineering.contains(&format!("plans/{long}")));
-    let chips = key_chips(&project, &eval, Scope::Engineering, &PageContext::default());
+    assert!(crate::planning::summary::store::scope(&project, "demo")
+        .engineering
+        .contains(&format!("plans/{long}")));
+    let chips = key_chips(
+        &project,
+        &eval,
+        "demo",
+        Scope::Engineering,
+        &PageContext::default(),
+    );
     let ids: Vec<_> = chips.iter().map(|chip| chip.doc.id.as_str()).collect();
     assert_eq!(ids, ["plans/a"]);
     assert!(doc_link(&project, Path::new(&long_file)).is_none());
-    let short = doc_link(&project, Path::new("doc/plans/PLAN-a.md")).expect("a link");
-    assert_eq!(short.page, "engineering/a");
+    let short = doc_link(&project, Path::new("doc/plans/demo/PLAN-a.md")).expect("a link");
+    assert_eq!(short.page, "demo/engineering/a");
 }

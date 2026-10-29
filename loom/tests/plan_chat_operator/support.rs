@@ -23,7 +23,7 @@ use tempfile::TempDir;
 use tungstenite::client::IntoClientRequest;
 use tungstenite::{Message, WebSocket};
 
-pub const TARGET: &str = "doc/product/section_01.md";
+pub const TARGET: &str = "doc/product/demo/section_01.md";
 pub const SOURCE: &str = "# Notes\n\nCreate, edit and delete plain-text notes stored locally.\n";
 pub type Socket = WebSocket<TcpStream>;
 
@@ -119,15 +119,15 @@ impl Drop for ServerGuard {
 
 pub fn fixture() -> Result<TempDir> {
     let repo = tempfile::tempdir()?;
-    fs::create_dir_all(repo.path().join("doc/product"))?;
-    fs::create_dir_all(repo.path().join("doc/plans"))?;
+    fs::create_dir_all(repo.path().join("doc/product/demo"))?;
+    fs::create_dir_all(repo.path().join("doc/plans/demo"))?;
     for (path, text) in [
-        ("doc/product/index.md", "# Pocket notes\n\nA local plain-text notebook for one person.\n\n\
+        ("doc/product/demo/index.md", "# Pocket notes\n\nA local plain-text notebook for one person.\n\n\
          ## Specification sections\n\n| # | Section |\n| --- | --- |\n| 01 | Notes |\n| 02 | Search |\n"),
         (TARGET, SOURCE),
-        ("doc/product/section_02.md", "# Search\n\nFind local notes by a case-insensitive substring.\n"),
-        ("doc/plans/index.md", "# Metaplan\n\n## 1. Notes (`PLAN-notes.md`)\n\nImplement section 01.\n"),
-        ("doc/plans/PLAN-notes.md", "# Notes\n\n## Goal\n\nImplement local note storage and editing from section 01.\n\n\
+        ("doc/product/demo/section_02.md", "# Search\n\nFind local notes by a case-insensitive substring.\n"),
+        ("doc/plans/demo/index.md", "# Metaplan\n\n## 1. Notes (`PLAN-notes.md`)\n\nImplement section 01.\n"),
+        ("doc/plans/demo/PLAN-notes.md", "# Notes\n\n## Goal\n\nImplement local note storage and editing from section 01.\n\n\
          ## Stages\n\n### storage\n\nStore each note in a local plain-text file.\n"),
     ] {
         fs::write(repo.path().join(path), text)?;

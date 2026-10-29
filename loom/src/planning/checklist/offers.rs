@@ -1,46 +1,60 @@
 //! Offers: what the app proposes next, their stable ids and targets, and which one is primary.
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 
-use super::{CurrentStep, Facts, Step, VISION};
+use super::{CurrentStep, Facts, Step};
+use crate::planning::discover::DocTree;
+use crate::planning::kinds::{plans_dir, product_dir, vision_path, DocKind};
 
 /// One action the app proposes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Offer {
     /// Write the product vision.
-    StartVision,
+    StartVision {
+        /// The owning feature.
+        feature: String,
+    },
     /// Make the vision's `Specification sections` table readable.
-    FixVisionTable,
+    FixVisionTable {
+        /// The owning feature.
+        feature: String,
+    },
     /// Write a section the vision lists.
     WriteSection {
+        /// The owning feature.
+        feature: String,
         /// The section number.
         number: u32,
     },
     /// List a section file in the vision's table.
     AddSectionToVision {
+        /// The owning feature.
+        feature: String,
         /// The section number.
         number: u32,
     },
     /// Write the first metaplan.
-    StartMetaplan,
+    StartMetaplan {
+        /// The owning feature.
+        feature: String,
+    },
     /// Write a plan a metaplan names.
     WritePlan {
+        /// The owning feature.
+        feature: String,
         /// The metaplan naming it.
         metaplan: PathBuf,
         /// The plan's slug.
         slug: String,
     },
-    /// Name an unlisted plan in a metaplan.
-    AddPlanToMetaplan {
-        /// The plan's slug.
-        slug: String,
-    },
     /// Pressure-test a written plan.
     PressureTest {
+        /// The owning feature.
+        feature: String,
         /// The plan's slug.
         slug: String,
     },
@@ -50,73 +64,136 @@ pub enum Offer {
     RefineSpec,
     /// Start a new metaplan round.
     NewMetaplanRound,
+    /// Draft every missing section in one authoring session.
+    DraftAllSections {
+        /// The owning feature.
+        feature: String,
+    },
+    /// Draft every missing metaplan plan in one authoring session.
+    DraftAllPlans {
+        /// The owning feature.
+        feature: String,
+    },
+    /// Move a misplaced top-level document into a feature.
+    MoveIntoFeature {
+        /// The repository-relative document path.
+        path: PathBuf,
+    },
 }
 
 impl Offer {
     /// The stable id: the kebab-case kind, then `:<nn>` (two digits) for a section offer or
-    /// `:<slug>` for a plan offer (`write-section:05`, `pressure-test:alpha`).
+    /// `:<slug>` for a plan offer, or `:<path>` for a move offer.
     pub fn id(&self) -> String {
         match self {
-            Offer::WriteSection { number } | Offer::AddSectionToVision { number } => {
+            Offer::WriteSection { number, .. } | Offer::AddSectionToVision { number, .. } => {
                 format!("{}:{number:02}", self.kind())
             }
-            Offer::WritePlan { slug, .. }
-            | Offer::AddPlanToMetaplan { slug }
-            | Offer::PressureTest { slug } => format!("{}:{slug}", self.kind()),
+            Offer::WritePlan { slug, .. } | Offer::PressureTest { slug, .. } => {
+                format!("{}:{slug}", self.kind())
+            }
+            Offer::MoveIntoFeature { path } => format!("{}:{}", self.kind(), path.display()),
             _ => self.kind().to_string(),
         }
     }
 
-    /// The document the offer opens: the section file for a section offer, the plan file for
-    /// `WritePlan` and `PressureTest` (`doc/plans/PLAN-<slug>.md`, the only path a written or
-    /// unwritten plan has), the vision for `FixVisionTable`, else `None`. `AddPlanToMetaplan`
-    /// edits a metaplan the user picks, so it has no target.
+    /// The feature's section, plan or vision document, or the document being moved.
+    /// Offers that start a session without a single document target return `None`.
     pub fn target(&self) -> Option<PathBuf> {
         match self {
-            Offer::WriteSection { number } | Offer::AddSectionToVision { number } => {
-                Some(section_path(*number))
+            Offer::WriteSection { feature, number }
+            | Offer::AddSectionToVision { feature, number } => {
+                Some(product_dir(feature).join(format!("section_{number:02}.md")))
             }
-            Offer::WritePlan { slug, .. } | Offer::PressureTest { slug } => Some(plan_path(slug)),
-            Offer::FixVisionTable => Some(PathBuf::from(VISION)),
+            Offer::WritePlan { feature, slug, .. } | Offer::PressureTest { feature, slug } => {
+                Some(plans_dir(Some(feature)).join(format!("PLAN-{slug}.md")))
+            }
+            Offer::FixVisionTable { feature } => Some(vision_path(feature)),
+            Offer::MoveIntoFeature { path } => Some(path.clone()),
             _ => None,
         }
     }
 
     fn kind(&self) -> &'static str {
         match self {
-            Offer::StartVision => "start-vision",
-            Offer::FixVisionTable => "fix-vision-table",
+            Offer::StartVision { .. } => "start-vision",
+            Offer::FixVisionTable { .. } => "fix-vision-table",
             Offer::WriteSection { .. } => "write-section",
             Offer::AddSectionToVision { .. } => "add-section-to-vision",
-            Offer::StartMetaplan => "start-metaplan",
+            Offer::StartMetaplan { .. } => "start-metaplan",
             Offer::WritePlan { .. } => "write-plan",
-            Offer::AddPlanToMetaplan { .. } => "add-plan-to-metaplan",
             Offer::PressureTest { .. } => "pressure-test",
             Offer::StartRun => "start-run",
             Offer::RefineSpec => "refine-spec",
             Offer::NewMetaplanRound => "new-metaplan-round",
+            Offer::DraftAllSections { .. } => "draft-all-sections",
+            Offer::DraftAllPlans { .. } => "draft-all-plans",
+            Offer::MoveIntoFeature { .. } => "move-into-feature",
+        }
+    }
+
+    /// The owning feature, when the offer is scoped to one.
+    pub fn feature(&self) -> Option<&str> {
+        match self {
+            Offer::StartVision { feature }
+            | Offer::FixVisionTable { feature }
+            | Offer::WriteSection { feature, .. }
+            | Offer::AddSectionToVision { feature, .. }
+            | Offer::StartMetaplan { feature }
+            | Offer::WritePlan { feature, .. }
+            | Offer::PressureTest { feature, .. }
+            | Offer::DraftAllSections { feature }
+            | Offer::DraftAllPlans { feature } => Some(feature),
+            _ => None,
+        }
+    }
+
+    /// The human-readable action shown by planning clients and authoring sessions.
+    pub fn label(&self) -> String {
+        match self {
+            Offer::StartVision { .. } => "Start a vision discussion".into(),
+            Offer::FixVisionTable { .. } => "Fix the vision's section table".into(),
+            Offer::WriteSection { number, .. } => format!("Write section {number:02}"),
+            Offer::AddSectionToVision { number, .. } => {
+                format!("Add section {number:02} to the vision's table")
+            }
+            Offer::StartMetaplan { .. } => "Start a metaplan from the product spec".into(),
+            Offer::WritePlan { slug, .. } => format!("Write plan {slug}"),
+            Offer::PressureTest { slug, .. } => format!("Pressure-test {slug}"),
+            Offer::StartRun => "Start a run".into(),
+            Offer::RefineSpec => "Refine the spec in light of what was built".into(),
+            Offer::NewMetaplanRound => "Start a new metaplan round".into(),
+            Offer::DraftAllSections { .. } => "Draft all missing sections with a team".into(),
+            Offer::DraftAllPlans { .. } => "Draft all missing plans with a team".into(),
+            Offer::MoveIntoFeature { path } => {
+                format!("Move {} into a feature", path.to_string_lossy())
+            }
         }
     }
 }
 
 /// An object with `id`, `kind`, `target` and the variant's fields (`number`, `slug`,
-/// `metaplan`).
+/// `metaplan`, `feature`, `path`).
 impl Serialize for Offer {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("id", &self.id())?;
         map.serialize_entry("kind", self.kind())?;
+        if let Some(feature) = self.feature() {
+            map.serialize_entry("feature", feature)?;
+        }
         match self {
-            Offer::WriteSection { number } | Offer::AddSectionToVision { number } => {
+            Offer::WriteSection { number, .. } | Offer::AddSectionToVision { number, .. } => {
                 map.serialize_entry("number", number)?;
             }
-            Offer::WritePlan { metaplan, slug } => {
+            Offer::WritePlan { metaplan, slug, .. } => {
                 map.serialize_entry("metaplan", metaplan)?;
                 map.serialize_entry("slug", slug)?;
             }
-            Offer::AddPlanToMetaplan { slug } | Offer::PressureTest { slug } => {
+            Offer::PressureTest { slug, .. } => {
                 map.serialize_entry("slug", slug)?;
             }
+            Offer::MoveIntoFeature { path } => map.serialize_entry("path", path)?,
             _ => {}
         }
         map.serialize_entry("target", &self.target())?;
@@ -124,14 +201,26 @@ impl Serialize for Offer {
     }
 }
 
-/// `doc/product/section_<nn>.md`.
-pub(super) fn section_path(number: u32) -> PathBuf {
-    PathBuf::from(format!("doc/product/section_{number:02}.md"))
-}
-
-/// `doc/plans/PLAN-<slug>.md`.
-pub(super) fn plan_path(slug: &str) -> PathBuf {
-    Path::new("doc/plans").join(format!("PLAN-{slug}.md"))
+/// Offers to move top-level visions, product sections and metaplans, sorted by path.
+pub fn move_offers(tree: &DocTree) -> Vec<Offer> {
+    let mut paths: Vec<_> = tree
+        .docs
+        .iter()
+        .filter(|doc| {
+            matches!(
+                &doc.kind,
+                DocKind::Vision { feature: None }
+                    | DocKind::ProductSection { feature: None, .. }
+                    | DocKind::Metaplan { feature: None }
+            )
+        })
+        .map(|doc| doc.path.clone())
+        .collect();
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|path| Offer::MoveIntoFeature { path })
+        .collect()
 }
 
 /// The primary offer and the secondaries, each offer once (by id).
@@ -161,45 +250,67 @@ pub(super) fn choose(current: &CurrentStep, facts: &Facts) -> (Option<Offer>, Ve
 /// without a vision, step 4 without a metaplan) always sits behind an earlier gap that has one.
 fn gap_offers(facts: &Facts) -> Vec<Offer> {
     let mut offers = Vec::new();
+    let feature = facts.feature;
     if !facts.vision {
-        offers.push(Offer::StartVision);
+        offers.push(Offer::StartVision {
+            feature: feature.into(),
+        });
     } else if facts.rows.is_none() {
-        offers.push(Offer::FixVisionTable);
+        offers.push(Offer::FixVisionTable {
+            feature: feature.into(),
+        });
     }
-    let sections = facts.missing_sections.iter();
-    offers.extend(sections.map(|&number| Offer::WriteSection { number }));
+    for (index, &number) in facts.missing_sections.iter().enumerate() {
+        offers.push(Offer::WriteSection {
+            feature: feature.into(),
+            number,
+        });
+        if index == 0 && facts.missing_sections.len() >= 2 {
+            offers.push(Offer::DraftAllSections {
+                feature: feature.into(),
+            });
+        }
+    }
     if !facts.has_metaplan() {
-        offers.push(Offer::StartMetaplan);
+        offers.push(Offer::StartMetaplan {
+            feature: feature.into(),
+        });
     }
-    offers.extend(
-        facts
-            .missing_plans
-            .iter()
-            .map(|&(metaplan, slug)| Offer::WritePlan {
-                metaplan: metaplan.to_path_buf(),
-                slug: slug.to_string(),
-            }),
-    );
+    for (index, &(metaplan, slug)) in facts.missing_plans.iter().enumerate() {
+        offers.push(Offer::WritePlan {
+            feature: feature.into(),
+            metaplan: metaplan.to_path_buf(),
+            slug: slug.to_string(),
+        });
+        if index == 0 && facts.missing_plans.len() >= 2 {
+            offers.push(Offer::DraftAllPlans {
+                feature: feature.into(),
+            });
+        }
+    }
     offers
 }
 
 /// `PressureTest` for every untested written plan, in reading order.
 fn pressure_tests(facts: &Facts) -> Vec<Offer> {
     let slugs = facts.untested.iter().map(|plan| plan.slug.clone());
-    slugs.map(|slug| Offer::PressureTest { slug }).collect()
+    slugs
+        .map(|slug| Offer::PressureTest {
+            feature: facts.feature.into(),
+            slug,
+        })
+        .collect()
 }
 
-/// What every state also offers: the pressure tests, unlisted sections when a vision exists
-/// and unlisted plans when a metaplan exists.
+/// What every state also offers: pressure tests and unlisted sections when a vision exists.
 fn extras(facts: &Facts) -> Vec<Offer> {
     let mut offers = pressure_tests(facts);
     if facts.vision {
         let numbers = facts.unlisted_sections.iter().map(|&(number, _)| number);
-        offers.extend(numbers.map(|number| Offer::AddSectionToVision { number }));
-    }
-    if facts.has_metaplan() {
-        let slugs = facts.unlisted_plans.iter().map(|plan| plan.slug.clone());
-        offers.extend(slugs.map(|slug| Offer::AddPlanToMetaplan { slug }));
+        offers.extend(numbers.map(|number| Offer::AddSectionToVision {
+            feature: facts.feature.into(),
+            number,
+        }));
     }
     offers
 }

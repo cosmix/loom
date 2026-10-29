@@ -1,7 +1,7 @@
 //! The Claude steps of a run: each `/pressure` and `/address` step as a pressure session,
 //! waited for through the bridge's events.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::RecvTimeoutError;
 use std::sync::Arc;
@@ -21,6 +21,8 @@ use crate::plan_session::bridge::{
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::Origin;
 use crate::planning::guidance::{render_session_guidance, PressureCommand, SessionGuidanceKind};
+use crate::planning::project::Project;
+use crate::planning::slug::plan_slug;
 use crate::pressure::{completion_instruction, MarkerHome, PressureResult, StepVerdict};
 use crate::process::run_bounded_output;
 
@@ -187,6 +189,8 @@ impl RunEnv {
         let (model, effort) = (step.model.to_owned(), step.effort.to_owned());
         let (ctx, models) = (Arc::clone(&self.ctx), self.models.clone());
         Box::new(move |dir: &SessionDir| {
+            let project = ctx.project().clone();
+            let feature = plan_feature(&project, Path::new(&plan_rel));
             let brief = completion_instruction(&dir.marker(), MarkerHome::PlanSession);
             let kind = SessionGuidanceKind::Pressure {
                 command,
@@ -195,8 +199,8 @@ impl RunEnv {
                 model,
                 effort,
             };
-            let project = ctx.project().clone();
-            let guidance = render_session_guidance(&kind, &project, ctx.runtime(), dir, &models)?;
+            let guidance =
+                render_session_guidance(&kind, &project, ctx.runtime(), dir, &models, feature)?;
             Ok(LaunchGuidance {
                 opening_on_argv: true,
                 ..LaunchGuidance::from(guidance)
@@ -311,6 +315,11 @@ impl RunEnv {
     }
 }
 
+fn plan_feature<'a>(project: &'a Project, path: &Path) -> Option<&'a str> {
+    let slug = plan_slug(path.file_name()?.to_str()?)?;
+    project.tree.plan(&slug)?.feature.as_deref()
+}
+
 fn state_of(waited: &Waited) -> StepState {
     match waited {
         Waited::Marker => StepState::Done,
@@ -327,5 +336,36 @@ fn no_codex(verdict: StepVerdict) -> PressureResult {
     PressureResult {
         verdict,
         codex_model_used: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plan_feature;
+    use crate::planning::project::Project;
+    use std::path::Path;
+
+    #[test]
+    fn plan_feature_uses_the_tree_for_feature_and_standalone_plans() {
+        let temp = tempfile::tempdir().unwrap();
+        for path in [
+            "doc/plans/demo/PLAN-a.md",
+            "doc/plans/demo/archive/DONE-PLAN-b.md",
+            "doc/plans/PLAN-c.md",
+        ] {
+            let path = temp.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "# Plan\nImplements: none\n").unwrap();
+        }
+        let project = Project::load(temp.path()).unwrap();
+
+        for (path, expected) in [
+            ("doc/plans/demo/PLAN-a.md", Some("demo")),
+            ("doc/plans/demo/archive/DONE-PLAN-b.md", Some("demo")),
+            ("doc/plans/PLAN-c.md", None),
+            ("doc/plans/demo/PLAN-missing.md", None),
+        ] {
+            assert_eq!(plan_feature(&project, Path::new(path)), expected, "{path}");
+        }
     }
 }

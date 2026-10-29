@@ -16,6 +16,7 @@ use crate::plan_server::ids::BrowserId;
 use crate::plan_server::request::{ApiRequest, ApiResponse};
 use crate::plan_server::wire::files::{LockView, SaveResult, ValidationView};
 use crate::planning::discover::read_doc;
+use crate::planning::kinds::{feature_dir_name, is_feature_name};
 use crate::planning::paths::{check_relpath_syntax, symlink_component};
 use crate::planning::sections::normalized_hash;
 
@@ -118,6 +119,9 @@ fn check_authoring(ctx: &PlanContext, browser: &BrowserId) -> Result<(), SaveRef
 /// Discovered (else `NotFound`), editable (else `NotEditable` with the lock notice) and not
 /// reached through a symlink discovery accepted.
 fn check_editable(ctx: &PlanContext, rel: &Path) -> Result<(), SaveRefusal> {
+    if feature_dir_name(rel).is_some_and(|name| !is_feature_name(name)) {
+        return Err(SaveRefusal::Path("the feature name is invalid".to_owned()));
+    }
     let project = ctx.project();
     let doc = project.tree.get(rel).ok_or(SaveRefusal::NotFound)?;
     if !editable(&project, rel) {

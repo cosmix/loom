@@ -26,7 +26,7 @@ fn sealed_product() -> Fixture {
     let cited = [(ID1, "Alpha holds."), (ID2, "Alpha holds.")];
     seal_overview(
         &fx.root,
-        "product",
+        PRODUCT,
         &cited,
         &[(VISION, "specification-sections")],
     );
@@ -167,11 +167,11 @@ fn missing_rows_absent_invalid_and_conflicted() {
     let rel = store::summary_path(ID1).to_string_lossy().into_owned();
     for broken in [
         format!("{text}<<<<<<< ours\n=======\n>>>>>>> theirs\n"),
-        format!("{text}\n- a list [x](../../../product/section_01.md#a)\n"),
+        format!("{text}\n- a list [x](../../../../product/demo/section_01.md#a)\n"),
         text.replace("kind: document", "kind: overview"),
         text.replace(
-            "of: doc/product/section_01.md",
-            "of: doc/product/section_02.md",
+            "of: doc/product/demo/section_01.md",
+            "of: doc/product/demo/section_02.md",
         ),
     ] {
         put(&fx.root, &rel, &broken);
@@ -184,10 +184,10 @@ fn missing_rows_absent_invalid_and_conflicted() {
 #[test]
 fn overview_current_then_stale_when_member_sentence_reworded() {
     let fx = sealed_product();
-    assert_eq!(state_of(&fx.root, "product"), SummaryState::Current);
+    assert_eq!(state_of(&fx.root, PRODUCT), SummaryState::Current);
     seal_document(&fx.root, ID1, &[("Alpha holds firmly.", "a")]);
     let eval = evaluate(&load(&fx.root), &[]);
-    let product = &eval.summaries["product"];
+    let product = &eval.summaries[PRODUCT];
     assert_eq!(product.state, SummaryState::Stale);
     assert_eq!(
         product.sentences[0].state,
@@ -203,7 +203,7 @@ fn overview_sentence_stale_when_member_sentence_stale() {
     put(&fx.root, S1, &section(1, "Alpha edited.", "Beta."));
     let eval = evaluate(&load(&fx.root), &[]);
     assert_eq!(eval.summaries[ID1].state, SummaryState::Stale);
-    let product = &eval.summaries["product"];
+    let product = &eval.summaries[PRODUCT];
     assert_eq!(product.sentences[0].state, SentenceState::Stale);
     assert_eq!(product.state, SummaryState::Stale);
 }
@@ -217,7 +217,7 @@ fn overview_sentence_stale_when_raw_span_changes() {
         &vision(&[1, 2]).replace("| S1 |", "| First |"),
     );
     let eval = evaluate(&load(&fx.root), &[]);
-    let product = &eval.summaries["product"];
+    let product = &eval.summaries[PRODUCT];
     let last = product.sentences.last().unwrap();
     assert_eq!(
         (last.text.as_str(), last.state),
@@ -233,9 +233,9 @@ fn overview_sentence_stale_when_raw_source_is_not_one_of_its_sources() {
     let cited = [(ID1, "Alpha holds."), (ID2, "Alpha holds.")];
     // The recorded hash of the section span matches, so only the sources check can reject it.
     let raw = [(VISION, "specification-sections"), (S1, "a")];
-    seal_overview(&fx.root, "product", &cited, &raw);
+    seal_overview(&fx.root, PRODUCT, &cited, &raw);
     let eval = evaluate(&load(&fx.root), &[]);
-    let states: Vec<_> = sentence_states(&eval, "product")
+    let states: Vec<_> = sentence_states(&eval, PRODUCT)
         .into_iter()
         .map(|(_, state)| state)
         .collect();
@@ -251,7 +251,7 @@ fn overview_sentence_stale_when_cited_summary_is_not_a_member_in_scope() {
         (S1, &section(1, "Alpha.", "Beta.")),
         (S2, &section(2, "Alpha.", "Beta.")),
         (META, &metaplan(&["PLAN-x.md"])),
-        ("doc/plans/PLAN-x.md", plan),
+        ("doc/plans/demo/PLAN-x.md", plan),
     ]);
     seal_document(&fx.root, ID1, &[("Alpha holds.", "a")]);
     seal_document(&fx.root, ID2, &[("Alpha holds.", "a")]);
@@ -263,13 +263,13 @@ fn overview_sentence_stale_when_cited_summary_is_not_a_member_in_scope() {
     ];
     seal_overview(
         &fx.root,
-        "product",
+        PRODUCT,
         &cited,
         &[(VISION, "specification-sections")],
     );
     let eval = evaluate(&load(&fx.root), &[]);
     assert_eq!(eval.summaries["plans/x"].state, SummaryState::Current);
-    let states = sentence_states(&eval, "product");
+    let states = sentence_states(&eval, PRODUCT);
     let member = |i: usize| states[i].1;
     assert_eq!(member(0), SentenceState::Current);
     assert_eq!(member(1), SentenceState::Current);
@@ -278,7 +278,7 @@ fn overview_sentence_stale_when_cited_summary_is_not_a_member_in_scope() {
         SentenceState::Stale,
         "plans/x is an engineering member"
     );
-    assert_eq!(eval.summaries["product"].state, SummaryState::Stale);
+    assert_eq!(eval.summaries[PRODUCT].state, SummaryState::Stale);
 }
 
 #[test]
@@ -290,27 +290,27 @@ fn overview_incomplete_when_member_changes_is_added_or_removed() {
         &[("Alpha holds.", "a"), ("Beta holds.", "b")],
     );
     assert_eq!(
-        state_of(&fx.root, "product"),
+        state_of(&fx.root, PRODUCT),
         SummaryState::Incomplete,
         "member changed"
     );
     let fx = sealed_product();
     fs::remove_file(fx.root.join(store::summary_path(ID2))).unwrap();
-    let product = &evaluate(&load(&fx.root), &[]).summaries["product"];
+    let product = &evaluate(&load(&fx.root), &[]).summaries[PRODUCT];
     assert_eq!(product.state, SummaryState::Stale, "a cited member removed");
     let fx = two_sections();
     seal_document(&fx.root, ID1, &[("Alpha holds.", "a")]);
     let cited = [(ID1, "Alpha holds.")];
     seal_overview(
         &fx.root,
-        "product",
+        PRODUCT,
         &cited,
         &[(VISION, "specification-sections")],
     );
-    assert_eq!(state_of(&fx.root, "product"), SummaryState::Current);
+    assert_eq!(state_of(&fx.root, PRODUCT), SummaryState::Current);
     seal_document(&fx.root, ID2, &[("Alpha holds.", "a")]);
     assert_eq!(
-        state_of(&fx.root, "product"),
+        state_of(&fx.root, PRODUCT),
         SummaryState::Incomplete,
         "member added"
     );
@@ -321,17 +321,19 @@ fn renamed_plan_with_equal_hash_is_current_before_rewrite() {
     let plan = "# Plan: X\n\nDoes x.\n";
     let fx = fixture(&[
         (META, &metaplan(&["PLAN-x.md"])),
-        ("doc/plans/PLAN-x.md", plan),
+        ("doc/plans/demo/PLAN-x.md", plan),
     ]);
     seal_document(&fx.root, "plans/x", &[("X does x.", "plan-x")]);
-    let archived = fx.root.join("doc/plans/archive/DONE-PLAN-x.md");
+    let archived = fx.root.join("doc/plans/demo/archive/DONE-PLAN-x.md");
     fs::create_dir_all(archived.parent().unwrap()).unwrap();
-    fs::rename(fx.root.join("doc/plans/PLAN-x.md"), &archived).unwrap();
+    fs::rename(fx.root.join("doc/plans/demo/PLAN-x.md"), &archived).unwrap();
     let eval = evaluate(&load(&fx.root), &[]);
     let x = &eval.summaries["plans/x"];
     assert_eq!(
         x.source.as_deref(),
-        Some(std::path::Path::new("doc/plans/archive/DONE-PLAN-x.md"))
+        Some(std::path::Path::new(
+            "doc/plans/demo/archive/DONE-PLAN-x.md"
+        ))
     );
     assert_eq!(x.state, SummaryState::Current);
 }
@@ -349,5 +351,8 @@ fn store_files_without_an_expected_id_are_orphans() {
     put(&fx.root, "doc/loom/summaries/notes.md", "not an id\n");
     let eval = evaluate(&load(&fx.root), &[]);
     assert_eq!(eval.orphans, vec!["plans/gone".to_string()]);
-    assert_eq!(eval.scope.product, vec![ID1.to_string(), ID2.to_string()]);
+    assert_eq!(
+        store::scope(&load(&fx.root), "demo").product,
+        vec![ID1.to_string(), ID2.to_string()]
+    );
 }

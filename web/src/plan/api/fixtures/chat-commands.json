@@ -19,6 +19,14 @@
     ]
   },
   {
+    "command": "start",
+    "client_id": null,
+    "offer": "write-section:01",
+    "feature": "demo",
+    "text": null,
+    "attachments": []
+  },
+  {
     "command": "send",
     "client_id": "e5122181-609e-44fd-9c24-85a8576b4fe5",
     "text": "Please clarify the queue behavior.",

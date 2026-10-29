@@ -7,28 +7,63 @@ use anyhow::{Context, Result};
 use super::opening;
 use super::start::AuthoringStart;
 use crate::planning::checklist::ProjectState;
+use crate::planning::kinds::{plans_dir, product_dir, vision_path};
 use crate::planning::project::Project;
 use crate::planning::slug::PlanState;
 
-pub(super) fn common_brief(start: &AuthoringStart, project: &Project) -> Result<String> {
+/// Render the authoring brief with facts from the requested feature only.
+pub(super) fn common_brief(
+    start: &AuthoringStart,
+    project: &Project,
+    feature: Option<&str>,
+) -> Result<String> {
+    let feature = start.feature(feature)?;
     Ok(format!(
         "{}\n\n## Starting point\n\n{}\n{}",
         include_str!("text/common_brief.md"),
-        starting_point(start, project)?,
-        project_state(&project.checklist.state),
+        starting_point(start, project, feature)?,
+        session_state(project, feature),
     ))
 }
 
+fn session_state(project: &Project, feature: Option<&str>) -> String {
+    let Some(name) = feature else {
+        return "No feature selected; no feature checklist applies.\n".into();
+    };
+    let mut text = format!(
+        "Feature: {name}.\nVision: {}.\nSections: {}/section_NN.md.\n\
+         Metaplan: {}/index.md.\nPlans: {}/PLAN-<slug>.md.\nBriefs: {}/briefs/<slug>/.\n",
+        vision_path(name).display(),
+        product_dir(name).display(),
+        plans_dir(Some(name)).display(),
+        plans_dir(Some(name)).display(),
+        plans_dir(Some(name)).display(),
+    );
+    if let Some(feature) = project.feature(name) {
+        text.push_str(&opening::feature_checklist(project, name));
+        text.push('\n');
+        text.push_str(&project_state(&feature.checklist.state));
+    } else {
+        text.push_str("Feature documents and checklist: absent.\n");
+    }
+    text
+}
+
+/// The common instructions for summary-only sessions.
 pub(super) fn summary_brief() -> &'static str {
     include_str!("text/summary_brief.md")
 }
 
-fn starting_point(start: &AuthoringStart, project: &Project) -> Result<String> {
+fn starting_point(
+    start: &AuthoringStart,
+    project: &Project,
+    feature: Option<&str>,
+) -> Result<String> {
     // Message starts carry paths only; their target is the user's verbatim text.
     if matches!(start, AuthoringStart::Message { .. }) {
         return Ok("Step: any, Refine.\nSkill: loom-plan:refine.\n".into());
     }
-    let opening = opening::opening_message(start, project)?;
+    let opening = opening::opening_message(start, project, feature)?;
     let mut lines = opening.lines();
     let label = lines
         .next()

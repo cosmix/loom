@@ -44,12 +44,16 @@ fn root() -> TempDir {
 #[test]
 fn only_written_plan_files_are_validated() {
     assert!(is_plan_file(Path::new("doc/plans/PLAN-x.md")));
+    assert!(is_plan_file(Path::new("doc/plans/demo/PLAN-x.md")));
     for other in [
         "doc/plans/DONE-PLAN-x.md",
         "doc/plans/IN_PROGRESS-PLAN-x.md",
         "doc/plans/archive/PLAN-x.md",
         "doc/plans/briefs/x/PLAN-y.md",
         "doc/plans/PLAN-x.txt",
+        "doc/plans/Bad_Name/PLAN-x.md",
+        "doc/plans/demo/archive/PLAN-x.md",
+        "doc/plans/demo/briefs/x/PLAN-y.md",
         "doc/product/section_01.md",
     ] {
         assert!(!is_plan_file(Path::new(other)), "{other}");
@@ -290,5 +294,31 @@ fn a_failed_input_discovery_leaves_every_brief_watched() {
         !mentions_shared_brief(&cache),
         "fixing the brief revalidates the plan: {:?}",
         cache.view(Path::new(PLAN))
+    );
+}
+
+#[test]
+fn feature_plan_validation_watches_its_own_brief_bundle() {
+    let rel = Path::new("doc/plans/demo/PLAN-x.md");
+    let brief = Path::new("doc/plans/demo/briefs/x/common.md");
+    let dir = write_files(&[
+        (rel.to_str().unwrap(), &plan(".", "true", "")),
+        (brief.to_str().unwrap(), "# Common\n"),
+    ]);
+    let ctx = context(&dir);
+    let texts = ctx.extensions().get::<TextStore>().unwrap();
+    let cache = ValidationCache::default();
+    cache.revalidate(&ctx, &texts, &BTreeSet::new());
+    let inputs = cache.error_counts();
+    assert!(inputs.contains_key(rel));
+    // Input discovery reads every brief in the plan's conventional bundle.
+    std::fs::write(dir.path().join(brief), [0xff, 0xfe, b'\n']).unwrap();
+    cache.revalidate(&ctx, &texts, &touched(&[brief.to_str().unwrap()]));
+    let view = cache.view(rel).unwrap();
+    assert!(
+        view.errors
+            .iter()
+            .any(|error| error.message.contains("demo/briefs/x/common.md")),
+        "{view:?}"
     );
 }

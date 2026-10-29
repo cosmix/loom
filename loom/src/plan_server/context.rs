@@ -14,7 +14,7 @@ use super::ids::{BrowserId, ConnCtx, ConnId, PublicId};
 use super::prereq::ReadOnly;
 use super::presence::Presence;
 use super::shutdown::Shutdown;
-use super::wire::checklist::ChecklistView;
+use super::wire::checklist::ProjectChecklistView;
 use super::wire::message::{Hello, PlanMessage};
 use super::wire::server::{ServerInfo, You};
 use super::ws::PlanHub;
@@ -301,12 +301,14 @@ impl PlanContext {
     }
 
     fn hello(&self, conn: &ConnCtx) -> Hello {
-        let checklist = ChecklistView::from(&self.project().checklist);
+        let planning = ProjectChecklistView::from(&*self.project());
         let server = self.server_info(&conn.browser, &conn.public_id);
         Hello {
             you: server.you.clone(),
             server,
-            checklist,
+            checklists: planning.checklists,
+            standalone: planning.standalone,
+            moves: planning.moves,
             presence: self.presence.list(&self.authoring),
             authoring: self.authoring.view(&self.presence),
         }

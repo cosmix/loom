@@ -17,7 +17,7 @@ use crate::plan_server::wire::review::{
 };
 use crate::planning::watch::{Batch, OwnWrites};
 
-const SECTION: &str = "doc/product/section_01.md";
+const SECTION: &str = "doc/product/demo/section_01.md";
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -36,8 +36,8 @@ impl Fixture {
         early: impl Fn(&Arc<PlanContext>, &AuthoringEvent) + Send + Sync + 'static,
     ) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("doc/product")).unwrap();
-        std::fs::write(dir.path().join("doc/product/index.md"), "# Demo\n").unwrap();
+        std::fs::create_dir_all(dir.path().join("doc/product/demo")).unwrap();
+        std::fs::write(dir.path().join("doc/product/demo/index.md"), "# Demo\n").unwrap();
         std::fs::write(dir.path().join(SECTION), "# Goals\n\n## Open questions\n").unwrap();
         let bind = BindInfo::new("127.0.0.1:7272".parse().unwrap(), &"ab".repeat(32));
         let ctx = Arc::new(
@@ -192,7 +192,7 @@ fn open_questions_broadcast_once_after_a_batch() {
     assert_eq!(first.frames(), expected);
     assert_eq!(second.frames(), expected);
 
-    f.edit_batch("doc/product/index.md", "# Demo\n\nUpdated overview.\n");
+    f.edit_batch("doc/product/demo/index.md", "# Demo\n\nUpdated overview.\n");
 
     assert!(first.frames().is_empty());
     assert!(second.frames().is_empty());

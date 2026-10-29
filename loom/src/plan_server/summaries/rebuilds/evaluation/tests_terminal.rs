@@ -8,7 +8,6 @@ use super::super::Rebuilds;
 use crate::planning::summary::claims::Claim;
 use crate::planning::summary::engine::EngineUpdate;
 use crate::planning::summary::evaluate::{Evaluation, SummaryEval, SummaryState};
-use crate::planning::summary::store::Scope;
 
 const MEMBER: &str = "plans/alpha";
 const REMOVED: &str = "plans/removed";
@@ -38,7 +37,7 @@ fn update(rows: &[Row]) -> EngineUpdate {
     EngineUpdate {
         evaluation: Evaluation {
             summaries: rows.iter().map(eval).collect::<BTreeMap<_, _>>(),
-            scope: Scope::default(),
+            scopes: BTreeMap::new(),
             orphans: Vec::new(),
         },
         rewritten: Vec::new(),

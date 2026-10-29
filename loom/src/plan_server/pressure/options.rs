@@ -14,9 +14,10 @@ use crate::plan_server::wire::pressure::{
     disabled_reason, PressureConfigBlock, PressureOptions, PressureSlots, PressureStart,
 };
 use crate::planning::guidance::StartBlocks;
+use crate::planning::kinds::plans_dir;
 use crate::planning::project::Project;
 use crate::planning::runtime::{server_runtime_paths, RuntimePaths};
-use crate::planning::slug::PlanState;
+use crate::planning::slug::{PlanEntry, PlanState};
 use crate::pressure::models::resolve_for;
 
 /// Install once in `PlanContext::extensions`; the driver sets this from acceptance
@@ -24,6 +25,7 @@ use crate::pressure::models::resolve_for;
 #[derive(Default)]
 pub struct PressureRunning(pub AtomicBool);
 
+/// Pressure availability and defaults for the requesting browser.
 pub fn options(ctx: &PlanContext, browser: &BrowserId) -> PressureOptions {
     options_with_prerequisites(
         ctx,
@@ -119,26 +121,50 @@ fn default_slots(root: &Path) -> PressureSlots {
 }
 
 fn written_plans(project: &Project) -> Vec<String> {
-    let listed = project.metaplans.iter().flat_map(|(_, entries)| {
-        entries
-            .iter()
-            .filter_map(|entry| project.tree.plans.get(entry.slug.as_deref()?))
+    let features = project.features.iter().flat_map(|feature| {
+        let listed = feature.metaplans.iter().flat_map(move |(_, entries)| {
+            entries.iter().filter_map(move |entry| {
+                project
+                    .tree
+                    .plan(entry.slug.as_deref()?)
+                    .filter(|plan| plan.feature.as_deref() == Some(feature.name.as_str()))
+            })
+        });
+        listed.chain(by_filename(project.tree.plans.values().filter(
+            move |plan| plan.feature.as_deref() == Some(feature.name.as_str()),
+        )))
     });
+    let standalone = by_filename(
+        project
+            .standalone
+            .iter()
+            .filter_map(|slug| project.tree.plan(slug)),
+    );
     let mut seen = BTreeSet::new();
-    // Written winners all have the same PLAN- prefix, so slug order is filename order.
-    listed
-        .chain(project.tree.plans.values())
+    features
+        .chain(standalone)
         .filter(|plan| plan.state == PlanState::Written)
-        .filter(|plan| plan.path.parent() == Some(Path::new("doc/plans")))
+        .filter(|plan| plan.path.parent() == Some(plans_dir(plan.feature.as_deref()).as_path()))
         .filter(|plan| {
             project
                 .docs
                 .get(&plan.path)
                 .is_some_and(|doc| doc.lock.is_none())
         })
-        .filter(|plan| seen.insert(plan.path.clone()))
+        .filter(|plan| seen.insert(plan.slug.clone()))
         .map(|plan| plan.path.to_string_lossy().into_owned())
         .collect()
+}
+
+fn by_filename<'a>(plans: impl Iterator<Item = &'a PlanEntry>) -> Vec<&'a PlanEntry> {
+    let mut plans: Vec<_> = plans.collect();
+    plans.sort_by(|a, b| {
+        a.path
+            .file_name()
+            .cmp(&b.path.file_name())
+            .then(a.path.cmp(&b.path))
+    });
+    plans
 }
 
 /// Return a stable route error code. Host prerequisites and authoring belong to
@@ -182,3 +208,49 @@ fn validate_config(runtime: &RuntimePaths) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod feature_tests {
+    use super::*;
+
+    #[test]
+    fn pressure_lists_feature_and_standalone_plans_with_scoped_metaplan_order() {
+        let root = tempfile::tempdir().unwrap();
+        for (relative, contents) in [
+            (
+                "doc/plans/beta/index.md",
+                "# Beta\n\n## First `PLAN-b.md`\n",
+            ),
+            (
+                "doc/plans/alpha/index.md",
+                "# Alpha\n\n## Foreign `PLAN-b.md`\n\n## First `PLAN-z.md`\n\n## Standalone `PLAN-00-loose.md`\n",
+            ),
+            ("doc/plans/alpha/PLAN-z.md", "# Z\n"),
+            ("doc/plans/alpha/PLAN-a.md", "# A\n"),
+            ("doc/plans/beta/PLAN-b.md", "# B\n"),
+            ("doc/plans/beta/PLAN-0-beta.md", "# Unlisted beta\n"),
+            ("doc/plans/PLAN-00-loose.md", "# Later standalone\n"),
+            ("doc/plans/PLAN-00-loose-extra.md", "# First standalone\n"),
+            ("doc/plans/alpha/IN_PROGRESS-PLAN-running.md", "# Running\n"),
+            ("doc/plans/alpha/PLAN-running.md", "# Stray\n"),
+            ("doc/plans/alpha/archive/PLAN-archived.md", "# Archived\n"),
+        ] {
+            let path = root.path().join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, contents).unwrap();
+        }
+        let project = Project::load(root.path()).unwrap();
+
+        assert_eq!(
+            written_plans(&project),
+            [
+                "doc/plans/alpha/PLAN-z.md",
+                "doc/plans/alpha/PLAN-a.md",
+                "doc/plans/beta/PLAN-b.md",
+                "doc/plans/beta/PLAN-0-beta.md",
+                "doc/plans/PLAN-00-loose-extra.md",
+                "doc/plans/PLAN-00-loose.md",
+            ]
+        );
+    }
+}

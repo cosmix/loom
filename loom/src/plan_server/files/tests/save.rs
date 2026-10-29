@@ -284,3 +284,69 @@ fn a_turn_begun_right_after_a_save_does_not_report_the_save() {
     assert!(changes.is_empty(), "{changes:?}");
     server.stop().unwrap();
 }
+
+#[test]
+fn a_new_feature_section_can_be_saved_after_discovery() {
+    if skip("a_new_feature_section_can_be_saved_after_discovery") {
+        return;
+    }
+    let (dir, server) = served(
+        &[("doc/product/demo/section_01.md", "# Draft\n")],
+        writable(),
+    );
+    let result = save(
+        &server,
+        "product/demo/section_01.md",
+        "# Written\n",
+        "# Draft\n",
+    );
+    assert_eq!(
+        result,
+        Ok(SaveOutcome::Saved {
+            hash: normalized_hash("# Written\n"),
+            validation: None,
+        })
+    );
+    assert_eq!(read(&dir, "doc/product/demo/section_01.md"), "# Written\n");
+    server.stop().unwrap();
+}
+
+#[test]
+fn bad_feature_names_are_refused_even_for_discovered_files() {
+    if skip("bad_feature_names_are_refused_even_for_discovered_files") {
+        return;
+    }
+    let paths = [
+        "doc/product/Bad_Name/section_01.md",
+        "doc/plans/Bad_Name/PLAN-demo.md",
+    ];
+    let files: Vec<_> = paths.iter().map(|path| (*path, "# Draft\n")).collect();
+    let (dir, server) = served(&files, writable());
+    for path in paths {
+        let result = save(
+            &server,
+            path.strip_prefix("doc/").unwrap(),
+            "# Written\n",
+            "# Draft\n",
+        );
+        assert!(matches!(result, Err(SaveRefusal::Path(_))), "{result:?}");
+        assert_eq!(read(&dir, path), "# Draft\n");
+    }
+    server.stop().unwrap();
+}
+
+#[test]
+fn a_feature_plan_save_runs_the_same_validation_as_a_standalone_plan() {
+    if skip("a_feature_plan_save_runs_the_same_validation_as_a_standalone_plan") {
+        return;
+    }
+    let (dir, server) = served(&[("doc/plans/demo/PLAN-demo.md", "# Draft\n")], writable());
+    let invalid = plan(".", "true", SELF_DEPENDENCY);
+    let result = save(&server, "plans/demo/PLAN-demo.md", &invalid, "# Draft\n");
+    assert!(
+        matches!(result, Ok(SaveOutcome::Invalid { .. })),
+        "{result:?}"
+    );
+    assert_eq!(read(&dir, "doc/plans/demo/PLAN-demo.md"), "# Draft\n");
+    server.stop().unwrap();
+}

@@ -82,26 +82,129 @@ fn read_doc_follows_an_allowed_link_and_refuses_escapes() {
 
 #[test]
 fn by_id_resolves_a_plan_to_its_winning_copy() {
+    for home in ["doc/plans", "doc/plans/feature"] {
+        let dir = tempfile::tempdir().unwrap();
+        for name in [
+            "IN_PROGRESS-PLAN-foo.md",
+            "PLAN-foo.md",
+            "archive/DONE-PLAN-foo.md",
+        ] {
+            put(dir.path(), &format!("{home}/{name}"), "# T\n");
+        }
+        let tree = discover(dir.path()).unwrap();
+        let winner = Path::new(home).join("archive/DONE-PLAN-foo.md");
+        assert_eq!(tree.plan("foo").unwrap().path, winner);
+        let found = tree.by_id("plan/foo").unwrap();
+        assert_eq!(found.path, winner);
+        assert_eq!(found.id, DocId("plan/foo".into()));
+        assert!(tree.by_id("plan/bar").is_none());
+    }
+}
+
+#[test]
+fn by_id_resolves_feature_scoped_product_ids() {
     let dir = tempfile::tempdir().unwrap();
     for rel in [
-        "doc/plans/IN_PROGRESS-PLAN-foo.md",
-        "doc/plans/PLAN-foo.md",
-        "doc/plans/archive/DONE-PLAN-foo.md",
+        "doc/product/alpha/index.md",
+        "doc/product/alpha/section_01.md",
+        "doc/product/beta/index.md",
+        "doc/product/beta/section_01.md",
+    ] {
+        put(dir.path(), rel, "# T\n");
+    }
+
+    let tree = discover(dir.path()).unwrap();
+
+    for (id, path) in [
+        ("product/alpha/index", "doc/product/alpha/index.md"),
+        (
+            "product/alpha/section_01",
+            "doc/product/alpha/section_01.md",
+        ),
+        ("product/beta/index", "doc/product/beta/index.md"),
+        ("product/beta/section_01", "doc/product/beta/section_01.md"),
+    ] {
+        let found = tree.by_id(id).unwrap();
+        assert_eq!(found.path, Path::new(path));
+        assert_eq!(found.id.0, id);
+    }
+    assert!(tree.by_id("product/missing/index").is_none());
+    assert!(tree.by_id("product/alpha/section_02").is_none());
+}
+
+#[test]
+fn feature_names_include_only_valid_names_carried_by_documents() {
+    let dir = tempfile::tempdir().unwrap();
+    for rel in [
+        "doc/product/alpha/index.md",
+        "doc/plans/alpha/index.md",
+        "doc/plans/only-plans/PLAN-engine.md",
+        "doc/product/only-product/section_01.md",
+        "doc/product/notes-only/thoughts.md",
+        "doc/plans/meta-only/index.md",
+        "doc/product/Bad_Name/index.md",
+        "doc/plans/Bad_Name/PLAN-bad.md",
+        "doc/product/unclassified/nested/file.md", // Nested product notes carry a feature name.
+        "doc/plans/PLAN-standalone.md",
         "doc/product/index.md",
     ] {
         put(dir.path(), rel, "# T\n");
     }
+    fs::create_dir_all(dir.path().join("doc/product/empty")).unwrap();
+
     let tree = discover(dir.path()).unwrap();
-    let winner = Path::new("doc/plans/archive/DONE-PLAN-foo.md");
-    assert_eq!(tree.plan("foo").unwrap().path, winner);
-    let found = tree.by_id("plan/foo").unwrap();
-    assert_eq!(found.path, winner);
-    assert_eq!(found.id, DocId("plan/foo".into()));
+
     assert_eq!(
-        tree.by_id("product/index").unwrap().path,
-        Path::new("doc/product/index.md")
+        tree.feature_names().into_iter().collect::<Vec<_>>(),
+        [
+            "alpha",
+            "meta-only",
+            "notes-only",
+            "only-plans",
+            "only-product",
+            "unclassified"
+        ]
     );
-    assert!(tree.by_id("plan/bar").is_none());
+}
+
+#[test]
+fn feature_docs_select_members_in_path_order() {
+    let dir = tempfile::tempdir().unwrap();
+    for rel in [
+        "doc/product/alpha/section_02.md",
+        "doc/product/beta/index.md",
+        "doc/product/alpha/notes.md",
+        "doc/plans/alpha/index.md",
+        "doc/plans/alpha/briefs/foo/context.md",
+        "doc/product/alpha/index.md",
+        "doc/plans/alpha/archive/DONE-PLAN-foo.md",
+        "doc/plans/PLAN-standalone.md",
+        "doc/product/alpha/section_01.md",
+        "doc/plans/alpha/PLAN-foo.md",
+        "doc/plans/alpha/misc.txt",
+    ] {
+        put(dir.path(), rel, "# T\n");
+    }
+
+    let tree = discover(dir.path()).unwrap();
+    let paths: Vec<_> = tree
+        .feature_docs("alpha")
+        .map(|doc| doc.path.as_path())
+        .collect();
+
+    assert_eq!(
+        paths,
+        [
+            Path::new("doc/plans/alpha/PLAN-foo.md"),
+            Path::new("doc/plans/alpha/archive/DONE-PLAN-foo.md"),
+            Path::new("doc/plans/alpha/index.md"),
+            Path::new("doc/product/alpha/index.md"),
+            Path::new("doc/product/alpha/notes.md"),
+            Path::new("doc/product/alpha/section_01.md"),
+            Path::new("doc/product/alpha/section_02.md"),
+        ]
+    );
+    assert_eq!(tree.feature_docs("missing").count(), 0);
 }
 
 #[test]

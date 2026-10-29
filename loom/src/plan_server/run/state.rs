@@ -105,7 +105,7 @@ fn backends(env: &EnvView) -> Vec<Backend> {
     result
 }
 
-/// Metaplan heading order first, followed by unlisted written plans by filename.
+/// Features by name, each in metaplan then filename order; standalone plans last.
 pub(crate) fn written_plans(root: &Path) -> Vec<PlanChoice> {
     match Project::load(root) {
         Ok(project) => project_plans(&project),
@@ -118,26 +118,46 @@ pub(crate) fn written_plans(root: &Path) -> Vec<PlanChoice> {
 
 fn project_plans(project: &Project) -> Vec<PlanChoice> {
     let mut plans = Vec::new();
-    let mut listed = BTreeSet::new();
-    for (_, entries) in &project.metaplans {
-        for entry in entries {
-            let Some(plan) = entry
-                .slug
-                .as_ref()
-                .and_then(|slug| project.tree.plans.get(slug))
-            else {
-                continue;
-            };
-            if plan.state == PlanState::Written && listed.insert(plan.slug.clone()) {
-                plans.push(choice(plan, true));
+    let mut seen = BTreeSet::new();
+    for feature in &project.features {
+        for (_, entries) in &feature.metaplans {
+            for entry in entries {
+                let Some(plan) = entry
+                    .slug
+                    .as_deref()
+                    .and_then(|slug| project.tree.plan(slug))
+                else {
+                    continue;
+                };
+                if plan.feature.as_deref() == Some(feature.name.as_str())
+                    && plan.state == PlanState::Written
+                    && seen.insert(plan.slug.clone())
+                {
+                    plans.push(choice(plan, true));
+                }
             }
         }
+        append_unlisted(project, Some(&feature.name), &mut seen, &mut plans);
     }
+    append_unlisted(project, None, &mut seen, &mut plans);
+    plans
+}
+
+fn append_unlisted(
+    project: &Project,
+    feature: Option<&str>,
+    seen: &mut BTreeSet<String>,
+    plans: &mut Vec<PlanChoice>,
+) {
     let mut unlisted: Vec<_> = project
         .tree
         .plans
         .values()
-        .filter(|plan| plan.state == PlanState::Written && !listed.contains(&plan.slug))
+        .filter(|plan| {
+            plan.feature.as_deref() == feature
+                && plan.state == PlanState::Written
+                && !seen.contains(&plan.slug)
+        })
         .collect();
     unlisted.sort_by(|a, b| {
         a.path
@@ -145,8 +165,10 @@ fn project_plans(project: &Project) -> Vec<PlanChoice> {
             .cmp(&b.path.file_name())
             .then(a.path.cmp(&b.path))
     });
-    plans.extend(unlisted.into_iter().map(|plan| choice(plan, false)));
-    plans
+    for plan in unlisted {
+        seen.insert(plan.slug.clone());
+        plans.push(choice(plan, false));
+    }
 }
 
 fn choice(plan: &PlanEntry, listed: bool) -> PlanChoice {
@@ -170,3 +192,53 @@ pub(super) fn get_state(req: &ApiRequest<'_>) -> ApiResponse {
 pub(super) mod orphaned;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod feature_tests {
+    use super::*;
+
+    #[test]
+    fn features_follow_name_order_with_own_plans_then_standalone_plans() {
+        let root = tempfile::tempdir().unwrap();
+        for (relative, contents) in [
+            (
+                "doc/plans/beta/index.md",
+                "# Beta\n\n## First `PLAN-b.md`\n\n## Foreign `PLAN-z.md`\n",
+            ),
+            (
+                "doc/plans/alpha/index.md",
+                "# Alpha\n\n## Foreign `PLAN-b.md`\n\n## First `PLAN-z.md`\n\n## Standalone `PLAN-00-loose.md`\n",
+            ),
+            ("doc/plans/alpha/PLAN-z.md", "# Z\n"),
+            ("doc/plans/alpha/PLAN-a.md", "# A\n"),
+            ("doc/plans/beta/PLAN-b.md", "# B\n"),
+            ("doc/plans/beta/PLAN-0-beta.md", "# Unlisted beta\n"),
+            ("doc/plans/PLAN-00-loose.md", "# Later standalone\n"),
+            ("doc/plans/PLAN-00-loose-extra.md", "# First standalone\n"),
+            ("doc/plans/alpha/IN_PROGRESS-PLAN-running.md", "# Running\n"),
+            ("doc/plans/alpha/archive/PLAN-archived.md", "# Archived\n"),
+        ] {
+            let path = root.path().join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, contents).unwrap();
+        }
+        let project = Project::load(root.path()).unwrap();
+
+        let plans = project_plans(&project);
+        let choices: Vec<_> = plans
+            .iter()
+            .map(|plan| (plan.path.as_str(), plan.listed))
+            .collect();
+        assert_eq!(
+            choices,
+            [
+                ("doc/plans/alpha/PLAN-z.md", true),
+                ("doc/plans/alpha/PLAN-a.md", false),
+                ("doc/plans/beta/PLAN-b.md", true),
+                ("doc/plans/beta/PLAN-0-beta.md", false),
+                ("doc/plans/PLAN-00-loose-extra.md", false),
+                ("doc/plans/PLAN-00-loose.md", false),
+            ]
+        );
+    }
+}

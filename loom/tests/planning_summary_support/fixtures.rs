@@ -12,9 +12,9 @@ use tempfile::TempDir;
 
 use super::*;
 
-pub const ID: &str = "product/section_01";
-pub const PLAN_Y: &str = "doc/plans/PLAN-y.md";
-pub const DRAFT_X: &str = "# X\n\nX does x. [§](../../../plans/PLAN-x.md#plan-x)\n";
+pub const ID: &str = "demo/product/section_01";
+pub const PLAN_Y: &str = "doc/plans/demo/PLAN-y.md";
+pub const DRAFT_X: &str = "# X\n\nX does x. [§](../../../plans/demo/PLAN-x.md#plan-x)\n";
 pub const CLAIM_S1: &str =
     r#"{"summary":"plans/x","session":"s1","pid":1,"created_at":"2026-10-27T00:00:00Z"}"#;
 pub const UUID: &str = "0b8f6c2e-4d1a-4e8b-9c3f-2a7d5e6f1b90";
@@ -35,9 +35,20 @@ pub fn sections_project(numbers: &[u32]) -> (TempDir, PathBuf, PathBuf) {
     project_of(&files)
 }
 
-/// A tree holding only `doc/plans/PLAN-x.md`.
+/// A feature metaplan naming `doc/plans/demo/PLAN-x.md`.
 pub fn plan_x() -> (TempDir, PathBuf, PathBuf) {
-    project(&[(PLAN_X, "# Plan: X\n\nDoes x.\n")])
+    project(&[
+        (META, &metaplan(&["PLAN-x.md"])),
+        (PLAN_X, "# Plan: X\n\nDoes x.\n"),
+    ])
+}
+
+/// [`plan_x`] in a repository the CLI can locate.
+pub fn git_plan_x() -> (TempDir, PathBuf, PathBuf) {
+    git_project(&[
+        (META, &metaplan(&["PLAN-x.md"])),
+        (PLAN_X, "# Plan: X\n\nDoes x.\n"),
+    ])
 }
 
 /// [`project`] over `files` with `plans/x` sealed citing the plan's title section.
@@ -61,9 +72,9 @@ pub fn parsed(id: &str, text: &str) -> SummaryFile {
 /// A document summary of section 01 whose body holds the single sentence line `line`.
 pub fn summary_with(line: &str) -> SummaryFile {
     let zero = format!("sha256:{}", "0".repeat(64));
-    let a = format!("  \"doc/product/section_01.md#a\": \"{zero}\"\n");
-    let b = format!("  \"doc/product/section_01.md#b\": \"{zero}\"\n");
-    let head = format!("kind: document\nof: doc/product/section_01.md\nfile: \"{zero}\"\n");
+    let a = format!("  \"doc/product/demo/section_01.md#a\": \"{zero}\"\n");
+    let b = format!("  \"doc/product/demo/section_01.md#b\": \"{zero}\"\n");
+    let head = format!("kind: document\nof: doc/product/demo/section_01.md\nfile: \"{zero}\"\n");
     parsed(
         ID,
         &format!("---\n{head}cites:\n{a}{b}---\n\n# S1\n\n{line}\n"),

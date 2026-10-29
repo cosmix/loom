@@ -8,8 +8,8 @@ use crate::planning::summary::evaluate::fixtures::*;
 use crate::planning::summary::evaluate::SentenceState;
 use crate::planning::watch::Watcher;
 
-const PLAN_X: &str = "doc/plans/PLAN-x.md";
-const ARCHIVED_X: &str = "doc/plans/archive/DONE-PLAN-x.md";
+const PLAN_X: &str = "doc/plans/demo/PLAN-x.md";
+const ARCHIVED_X: &str = "doc/plans/demo/archive/DONE-PLAN-x.md";
 
 fn engine(fx: &Fixture, own: OwnWrites) -> SummaryEngine {
     SummaryEngine::new(fx.root.clone(), fx.paths.clone(), own)
@@ -38,7 +38,7 @@ fn sealed_then_archived() -> (Fixture, OwnWrites, Watcher) {
     let own = OwnWrites::default();
     let mut watcher = Watcher::new(fx.root.clone(), own.clone());
     poll_batch(&mut watcher);
-    fs::create_dir_all(fx.root.join("doc/plans/archive")).unwrap();
+    fs::create_dir_all(fx.root.join("doc/plans/demo/archive")).unwrap();
     fs::rename(fx.root.join(PLAN_X), fx.root.join(ARCHIVED_X)).unwrap();
     (fx, own, watcher)
 }
@@ -67,11 +67,11 @@ fn rewrites_plan_renamed_into_archive() {
     let title_key = format!("{ARCHIVED_X}#plan-x");
     assert_eq!(keys, vec![ARCHIVED_X, title_key.as_str()]);
     assert!(
-        text.contains("X does x. [§](../../../plans/archive/DONE-PLAN-x.md#plan-x)"),
+        text.contains("X does x. [§](../../../plans/demo/archive/DONE-PLAN-x.md#plan-x)"),
         "{text}"
     );
     assert!(
-        text.contains("X has detail. [§](../../../plans/archive/DONE-PLAN-x.md)\n"),
+        text.contains("X has detail. [§](../../../plans/demo/archive/DONE-PLAN-x.md)\n"),
         "{text}"
     );
     let delivered = poll_batch(&mut watcher);
@@ -97,7 +97,7 @@ fn renamed_source_with_new_content_is_not_rewritten() {
     fs::remove_file(fx.root.join(PLAN_X)).unwrap();
     put(
         &fx.root,
-        "doc/plans/IN_PROGRESS-PLAN-x.md",
+        "doc/plans/demo/IN_PROGRESS-PLAN-x.md",
         "# Plan: X\n\nDoes x, edited.\n",
     );
     let update = engine(&fx, OwnWrites::default()).on_batch(&load(&fx.root), &Batch::default());
@@ -138,12 +138,12 @@ fn deleted_source_deletes_its_summary_and_stales_the_overview_citing_it() {
         (PLAN_X, "# Plan: X\n\nDoes x.\n"),
     ]);
     seal_document(&fx.root, "plans/x", &[("X does x.", "plan-x")]);
-    seal_overview(&fx.root, "engineering", &[("plans/x", "X does x.")], &[]);
+    seal_overview(&fx.root, ENGINEERING, &[("plans/x", "X does x.")], &[]);
     let mut engine = engine(&fx, OwnWrites::default());
     let before = engine
         .on_batch(&load(&fx.root), &Batch::default())
         .expect("first batch");
-    let overview = &before.evaluation.summaries["engineering"];
+    let overview = &before.evaluation.summaries[ENGINEERING];
     assert_eq!(overview.state, SummaryState::Current);
     fs::remove_file(fx.root.join(PLAN_X)).unwrap();
     let update = engine
@@ -151,10 +151,10 @@ fn deleted_source_deletes_its_summary_and_stales_the_overview_citing_it() {
         .expect("batch after the delete");
     assert_eq!(update.deleted, vec!["plans/x".to_string()]);
     assert!(!fx.root.join(store::summary_path("plans/x")).exists());
-    let overview = &update.evaluation.summaries["engineering"];
+    let overview = &update.evaluation.summaries[ENGINEERING];
     assert_eq!(overview.state, SummaryState::Stale);
     assert_eq!(overview.sentences[0].state, SentenceState::Stale);
-    assert_eq!(update.invalidated, vec!["engineering".to_string()]);
+    assert_eq!(update.invalidated, vec![ENGINEERING.to_string()]);
 }
 
 #[test]
@@ -171,7 +171,7 @@ fn invalidated_lists_only_newly_out_of_date_ids() {
     let first = batch(&fx.root);
     assert_eq!(
         first.invalidated,
-        vec!["product".to_string()],
+        vec![PRODUCT.to_string()],
         "the missing overview"
     );
     put(&fx.root, S1, &section(1, "Alpha edited.", "Beta."));
@@ -185,4 +185,60 @@ fn invalidated_lists_only_newly_out_of_date_ids() {
         "an incomplete summary; ID1 still stale"
     );
     assert_eq!(third.evaluation.summaries[ID1].state, SummaryState::Stale);
+}
+
+#[test]
+fn expected_work_includes_both_features_and_the_standalone_shelf() {
+    let fx = two_features();
+    let expected = [
+        ID1,
+        "other/product/section_01",
+        ENGINEERING,
+        PRODUCT,
+        "overview/other/engineering",
+        "overview/other/product",
+        "plans/solo",
+        "plans/x",
+        "plans/y",
+    ];
+    let mut engine = engine(&fx, OwnWrites::default());
+
+    let first = engine
+        .on_batch(&load(&fx.root), &Batch::default())
+        .expect("batch");
+
+    let ids: Vec<_> = first
+        .evaluation
+        .summaries
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(ids, expected);
+    assert_eq!(first.invalidated, expected);
+    assert_eq!(first.evaluation.scopes.len(), 2);
+    let again = engine
+        .on_batch(&load(&fx.root), &Batch::default())
+        .expect("again");
+    assert!(again.invalidated.is_empty());
+}
+
+#[test]
+fn removing_a_feature_deletes_its_nested_summaries_only() {
+    let fx = two_features();
+    let other = "other/product/section_01";
+    let overview = "overview/other/product";
+    seal_document(&fx.root, ID1, &[("Alpha holds.", "a")]);
+    seal_document(&fx.root, other, &[("Other holds.", "a")]);
+    seal_overview(&fx.root, overview, &[(other, "Other holds.")], &[]);
+    fs::remove_dir_all(fx.root.join("doc/product/other")).unwrap();
+    fs::remove_dir_all(fx.root.join("doc/plans/other")).unwrap();
+
+    let update = engine(&fx, OwnWrites::default())
+        .on_batch(&load(&fx.root), &Batch::default())
+        .expect("batch");
+
+    assert_eq!(update.deleted, [other, overview]);
+    assert!(fx.root.join(store::summary_path(ID1)).is_file());
+    assert!(!fx.root.join(store::summary_path(other)).exists());
+    assert!(!fx.root.join(store::summary_path(overview)).exists());
 }

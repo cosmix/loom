@@ -149,12 +149,12 @@ fn brief_prints_note_and_marks() {
         at.abs_diff(stale[0]) <= 1,
         "the note is not beside its sentence:\n{out}"
     );
-    let draft = p.drafts.join("product/section_01.md");
+    let draft = p.drafts.join("demo/product/section_01.md");
     assert!(
         out.contains(&draft.display().to_string()),
         "no draft path:\n{out}"
     );
-    let command = "loom plan summary seal product/section_01";
+    let command = "loom plan summary seal demo/product/section_01";
     assert!(out.contains(command), "no seal command:\n{out}");
 }
 
@@ -162,7 +162,7 @@ fn brief_prints_note_and_marks() {
 fn reseal_produces_no_diff() {
     let (_t, root, home) = project(&[(S1, &section(1, "Alpha.", "Beta."))]);
     let (a, b) = (doc_link(1, "a"), doc_link(1, "b"));
-    let preamble = "../../../product/section_01.md";
+    let preamble = "../../../../product/demo/section_01.md";
     let draft =
         format!("# S1\n\nAlpha holds. [§]({b}) [and]({a})\n\nIntro holds. [§]({preamble})\n");
     let mut files = Vec::new();
@@ -203,7 +203,7 @@ fn summary_id_rejects_traversal() {
         "plans/",
         "plans/a/b",
         "/product",
-        "product/section_1x",
+        "demo/product/section_1x",
     ];
     for id in ids {
         let err = seal_id(&root, &home, id, true).expect_err(id);
@@ -246,7 +246,8 @@ fn plan_summary_keys_resolve() {
 #[serial]
 fn plan_keys_beside_run_identity() {
     let tmp = TempDir::new().unwrap();
-    let run = "[plan]\nsource_path = \"doc/plans/PLAN-a.md\"\nplan_id = \"a\"\nplan_name = \"A\"\n";
+    let run =
+        "[plan]\nsource_path = \"doc/plans/demo/PLAN-a.md\"\nplan_id = \"a\"\nplan_name = \"A\"\n";
     let config = format!("{run}base_branch = \"main\"\n\n[planning]\noverview_model = \"opus\"\n");
     put(tmp.path(), ".loom/work/config.toml", config);
     let empty = TempDir::new().unwrap();
@@ -257,7 +258,7 @@ fn plan_keys_beside_run_identity() {
 
 #[test]
 fn seal_refuses_foreign_claim() {
-    let (_t, root, home) = git_project(&[(PLAN_X, "# Plan: X\n\nDoes x.\n")]);
+    let (_t, root, home) = git_plan_x();
     let summary = root.join(summary_rel("plans/x"));
     let seal = |force: bool, envs: &[(&str, &str)]| {
         let args: &[&str] = if force {
@@ -303,7 +304,7 @@ fn summary_cli_uses_session_state() {
     let (t, root, home) = git_project(&[(S1, &section(1, "Alpha.", "Beta."))]);
     let elsewhere = t.path().join("elsewhere");
     let state = elsewhere.join(project_key(&root).unwrap());
-    let draft = state.join("drafts/product/section_01.md");
+    let draft = state.join("drafts/demo/product/section_01.md");
     fs::create_dir_all(draft.parent().unwrap()).unwrap();
     chmod(&state, 0o700);
     let body = doc_draft(1, &[("Alpha holds.", "a")]);
@@ -346,7 +347,7 @@ fn summary_cli_status_json() {
     assert_eq!(v["schema"], 1);
     let summaries = v["summaries"].as_array().expect("summaries array");
     let ids: Vec<&str> = summaries.iter().filter_map(|s| s["id"].as_str()).collect();
-    assert_eq!(ids, [ID, "product"]);
+    assert_eq!(ids, [ID, PRODUCT]);
     for s in summaries {
         assert_keys(
             s,

@@ -1,6 +1,8 @@
 //! The abandon sequence on fixture repositories with a fake `loom` executable.
 
 mod branches;
+mod features;
+mod plan;
 mod retire;
 mod route;
 
