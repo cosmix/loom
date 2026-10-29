@@ -1,5 +1,7 @@
 use super::*;
-use std::fs;
+use crate::pressure::codex_run::{spawn_codex_with_fallback, CodexOutcome};
+use crate::pressure::{completion_instruction, MarkerHome};
+use std::{fs, path::PathBuf};
 use tempfile::TempDir;
 
 fn canonical(dir: &TempDir) -> PathBuf {
@@ -82,36 +84,6 @@ fn test_codex_report_path_is_sibling() {
 }
 
 #[test]
-fn test_plan_steps_order_and_count() {
-    let report = PathBuf::from("/repo/doc/plans/codex-PLAN-foo.md");
-    let steps = plan_steps(2, "doc/plans/PLAN-foo.md", &report);
-    // 3 steps per round (delete, parallel pressure, address) + 1 final delete.
-    assert_eq!(steps.len(), 2 * 3 + 1);
-    assert_eq!(steps[0], Step::DeleteReport(report.clone()));
-    assert_eq!(
-        steps[1],
-        Step::Pressure {
-            claude: "/pressure doc/plans/PLAN-foo.md".into(),
-            codex: "$pressure doc/plans/PLAN-foo.md".into(),
-        }
-    );
-    assert_eq!(
-        steps[2],
-        Step::Address("/address doc/plans/PLAN-foo.md".into())
-    );
-    // Per-round delete must precede that round's parallel pressure step.
-    assert_eq!(steps[3], Step::DeleteReport(report.clone()));
-    assert_eq!(*steps.last().unwrap(), Step::DeleteReport(report));
-}
-
-#[test]
-fn test_plan_steps_single_round() {
-    let report = PathBuf::from("/r/codex-P.md");
-    let steps = plan_steps(1, "P.md", &report);
-    assert_eq!(steps.len(), 4);
-}
-
-#[test]
 fn test_claude_marker_path_is_inside_repo_not_temp_dir() {
     let repo = Path::new("/repo");
     let marker = claude_marker_path(repo);
@@ -154,9 +126,8 @@ fn test_render_dry_run_shows_real_argv() {
         &default_models(),
     );
     assert!(out.contains("Dry run: 1 round"));
-    // The preview must show the REAL argv so it matches what spawns.
+    assert!(out.ends_with("  5. write the ## Pressure tests record in doc/plans/PLAN-foo.md\n"));
     assert!(out.contains("--permission-mode auto --model opus --effort xhigh"));
-    // The auto-close instruction is injected via --append-system-prompt.
     assert!(out.contains("--append-system-prompt"));
     assert!(out.contains("/pressure doc/plans/PLAN-foo.md"));
     assert!(out.contains(
@@ -170,8 +141,6 @@ fn test_render_dry_run_shows_real_argv() {
     assert!(out.contains("[parallel]"));
     assert!(out.contains("loom-pressure-codex-1.log"));
     assert!(out.contains(".loom/work/pressure/claude-1.done"));
-    // The resolved model+effort selection is surfaced in the header, with the
-    // codex model's in-family fallback chain.
     assert!(out.contains(
         "Models:                  claude=opus/xhigh  codex=gpt-6.1-sol (fallback: gpt-6-sol)/xhigh  address=opus/high"
     ));
@@ -206,13 +175,9 @@ fn test_render_dry_run_shows_a_non_default_model_selection_per_step() {
     assert!(out.contains(
         "Models:                  claude=fable/low  codex=gpt-6-astra/medium  address=sonnet/max"
     ));
-    // /pressure step: claude model = fable, codex model = gpt-6-astra, each
-    // with its own resolved effort.
     assert!(out.contains("--permission-mode auto --model fable --effort low"));
     assert!(out.contains("-m gpt-6-astra"));
     assert!(out.contains("-c model_reasoning_effort=medium"));
-    // /address step's model+effort are independent of /pressure's — sonnet/max,
-    // not fable/low.
     assert!(out.contains("--model sonnet --effort max --append-system-prompt"));
 }
 
@@ -220,7 +185,6 @@ fn test_render_dry_run_shows_a_non_default_model_selection_per_step() {
 fn test_claude_args_shape() {
     let marker = PathBuf::from("/repo/.loom/work/pressure/claude-1.done");
     let args = claude_args("/pressure doc/plans/PLAN-foo.md", &marker, "opus", "xhigh");
-    // Interactive (no -p). Auto permission mode.
     assert!(!args.iter().any(|a| a == "-p" || a == "--print"));
     assert_eq!(args[0], "--permission-mode");
     assert_eq!(args[1], "auto");
@@ -252,12 +216,9 @@ echo "ERROR: The '$model' model is not supported when using Codex with a ChatGPT
 exit 1
 "#;
 
-/// Run the codex runner over `candidates` against [`FAKE_CODEX`]. codex's
-/// first argument is `exec`, so `/bin/sh` reads the script from a file named
-/// `exec` in the repo dir (its cwd): nothing freshly written is exec'd, which
-/// sidesteps ETXTBSY, and every attempt exits at once, so no process outlives
-/// the test.
-fn run_fake_codex(candidates: &[&str]) -> fallback::CodexOutcome {
+/// `/bin/sh` reads `exec` in the repo dir, avoiding ETXTBSY; each attempt exits
+/// immediately, and `join` waits for the runner before its temp dir is removed.
+fn run_fake_codex(candidates: &[&str]) -> CodexOutcome {
     let repo = TempDir::new().unwrap();
     fs::write(repo.path().join("exec"), FAKE_CODEX).unwrap();
     let log = repo.path().join("codex.log");
@@ -270,7 +231,7 @@ fn run_fake_codex(candidates: &[&str]) -> fallback::CodexOutcome {
         "xhigh",
     )
     .unwrap();
-    wait_codex(run, &log).unwrap()
+    run.join().unwrap()
 }
 
 #[test]
@@ -337,4 +298,57 @@ fn test_codex_args_shape() {
     assert!(args.contains(&"gpt-6-sol".to_string()));
     assert!(args.contains(&"model_reasoning_effort=high".to_string()));
     assert_eq!(args.last().unwrap(), "$pressure doc/plans/PLAN-foo.md");
+}
+
+#[test]
+fn test_outcome_lines_recorded() {
+    let outcome = PipelineOutcome::Recorded {
+        line: "record line".into(),
+    };
+    assert_eq!(
+        outcome_lines(&outcome, "doc/plans/PLAN-foo.md"),
+        [
+            "✓ Pressure test complete.",
+            "✓ recorded in doc/plans/PLAN-foo.md: record line",
+        ]
+    );
+}
+
+#[test]
+fn test_outcome_lines_record_skipped() {
+    let outcome = PipelineOutcome::RecordSkipped {
+        line: "record line".into(),
+        why: "plan moved".into(),
+    };
+    assert_eq!(
+        outcome_lines(&outcome, "doc/plans/PLAN-foo.md"),
+        ["! doc/plans/PLAN-foo.md is no longer at the path the run started with; not recorded: record line"]
+    );
+}
+
+#[test]
+fn test_completion_instruction_workspace_preserves_original_text() {
+    let marker = Path::new("/repo/.loom/work/pressure/claude-1.done");
+    let expected = format!(
+        "AUTONOMOUS RUN: this Claude session was launched by `loom pressure`; no human will end it for you. \
+         When the task is FULLY complete and the plan file is fully updated (after every subagent has finished), \
+         your FINAL action MUST be to run exactly this shell command and nothing after it: touch {}. \
+         Do not run it earlier. That path is inside the repo's gitignored `.loom/work/` because the agent sandbox \
+         mounts /tmp read-only; creating this one marker is the sanctioned exception to the rule against \
+         writing under `.loom/work/` directly. Once that file exists the driver closes this session.",
+        marker.display()
+    );
+    assert_eq!(
+        completion_instruction(marker, MarkerHome::Workspace),
+        expected
+    );
+}
+
+#[test]
+fn test_outcome_lines_stopped_is_silent() {
+    let outcome = PipelineOutcome::Stopped {
+        step: "round 1 /pressure".into(),
+        reason: "interrupted".into(),
+    };
+    assert!(outcome_lines(&outcome, "doc/plans/PLAN-foo.md").is_empty());
 }
