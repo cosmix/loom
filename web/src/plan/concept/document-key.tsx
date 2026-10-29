@@ -25,6 +25,11 @@ function chipDescription(chip: KeyChip, implementsView: ImplementsView | null): 
   return lines.filter((line) => line !== null).join(". ");
 }
 
+export function chipTitle(title: string): string {
+  // Spaces around the dash are required, so "3-D rendering" keeps its title.
+  return title.replace(/^\s*\d+\s+[—–-]\s+/, "");
+}
+
 function ChipLink({
   chip,
   description,
@@ -47,7 +52,7 @@ function ChipLink({
         style={{ background: `var(--doc-${chip.colour})` }}
       />
       <span className="font-mono text-xs">{chip.label}</span>
-      <span>{chip.doc.title}</span>
+      <span>{chipTitle(chip.doc.title)}</span>
     </Link>
   );
   if (!description) return link;

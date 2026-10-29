@@ -1,24 +1,24 @@
 /*
  * Concept mode reading column (section 05, "Visual design"). Reading text is prose, so it sets
- * larger than the dashboard chrome: Inter 16px (1rem, so the reader's default size applies) on
- * a 1.6 line height. The column width is in ch, so browser zoom to 200% reflows without
+ * in the selected reading face (Source Serif 4 by default), size and line-height tokens.
+ * The column width is in ch, so browser zoom to 200% reflows without
  * horizontal scrolling; a long token wraps rather than widening it. The route wrapper owns the
  * page gutter (16px below lg), so the column adds none and its text lines up with the key and
- * the header. Rules are written for narrow screens first; min-width: 64rem is Tailwind's lg.
+ * the header. Headings and chrome retain Inter; code and paths retain the mono face.
  */
 .concept-column {
   position: relative;
   max-width: 70ch;
   margin-inline: auto;
-  font-family: var(--font-sans);
-  font-size: 1rem;
-  line-height: 1.6;
+  font-family: var(--font-reading);
+  font-size: var(--reading-size);
+  line-height: var(--reading-line);
   overflow-wrap: anywhere;
   outline: none;
 }
 
 .concept-heading {
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   line-height: 1.25;
   margin-block: 1.5em 0.5em;
   font-weight: 600;
@@ -53,12 +53,45 @@
 }
 
 /* A plain sentence has nothing to open, so it takes no hover tint. */
-.concept-sentence:not(.concept-sentence-plain):hover {
-  background: var(--muted);
+.concept-sentence:not(.concept-sentence-plain):is(:hover, :focus-visible) {
+  background: color-mix(in oklch, var(--sentence-colour) 14%, transparent);
+  text-decoration: underline 2px;
+  text-decoration-color: var(--sentence-colour);
+  text-underline-offset: 0.18em;
+}
+
+.concept-sentence code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
 }
 
 .concept-sentence-plain {
   cursor: default;
+}
+
+.concept-sentence-chevron {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-inline-start: 0.15em;
+  vertical-align: -0.1em;
+  opacity: 0;
+  color: var(--sentence-colour);
+  transition: opacity 120ms;
+}
+
+.concept-sentence-wrap:has(
+    .concept-sentence:not(.concept-sentence-plain):is(:hover, :focus-visible)
+  )
+  .concept-mark {
+  transform: scale(1.35);
+}
+
+.concept-sentence-wrap:has(
+    .concept-sentence:not(.concept-sentence-plain):is(:hover, :focus-visible)
+  )
+  .concept-sentence-chevron {
+  opacity: 1;
 }
 
 .concept-marks {
@@ -77,6 +110,7 @@
   border: 1px solid transparent;
   border-radius: 2px;
   cursor: pointer;
+  transition: transform 120ms;
 }
 
 .concept-mark:focus-visible {
@@ -91,48 +125,111 @@
 }
 
 .concept-no-source {
+  font-family: var(--font-sans);
   margin-inline-start: 0.35em;
   color: var(--muted-foreground);
   font-size: 0.75em;
 }
 
-/* Opened text sits on a faint --muted wash so the reader sees what has been opened. */
-.concept-run {
-  background: color-mix(in oklch, var(--muted) 55%, transparent);
+/* Each run paints its own document colour, including nested runs. */
+.concept-run,
+.concept-passages {
+  background: color-mix(in oklch, var(--run-colour) 10%, transparent);
   border-radius: 3px;
+}
+
+.concept-run {
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* Only this run's own caps deepen it; nested caps leave the outer wash alone. */
+.concept-run:has(> .concept-run-cap:is(:hover, :focus-visible)),
+.concept-passages:has(> .concept-run-edge > .concept-run-cap:is(:hover, :focus-visible)) {
+  background: color-mix(in oklch, var(--run-colour) 22%, transparent);
+  outline: 1px solid color-mix(in oklch, var(--run-colour) 55%, transparent);
+}
+
+.concept-run-cap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3em;
+  height: 1.3em;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--run-colour);
+  color: var(--background);
+  vertical-align: -0.2em;
+  cursor: pointer;
+  transition: transform 120ms;
+}
+
+.concept-run-cap[data-side="start"] {
+  margin-inline-end: 0.3em;
+}
+
+.concept-run-cap[data-side="end"] {
+  margin-inline-start: 0.3em;
+}
+
+.concept-run-cap-icon {
+  width: 0.78em;
+  height: 0.78em;
+}
+
+.concept-run-cap:is(:hover, :focus-visible) {
+  transform: scale(1.12);
+}
+
+.concept-run-cap:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .concept-passages {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
   margin-block: 8px;
-  background: color-mix(in oklch, var(--muted) 55%, transparent);
-  border-radius: 3px;
-  padding: 4px;
+  padding: 6px 10px;
+}
+
+.concept-run-edge {
+  display: flex;
+}
+
+.concept-run-edge[data-side="start"] {
+  justify-content: flex-start;
+}
+
+.concept-run-edge[data-side="end"] {
+  justify-content: flex-end;
 }
 
 .concept-passage {
-  background: var(--card);
-  color: var(--card-foreground);
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
-  padding: 8px 14px;
+  padding-block: 4px;
   overflow-x: auto;
 }
 
-.concept-passage-head {
-  display: block;
-  margin-bottom: 4px;
+.concept-passage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  margin-bottom: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--card);
   color: var(--muted-foreground);
+  font-family: var(--font-sans);
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.5;
   font-weight: 500;
+  text-decoration: none;
 }
 
-.concept-passage-head:hover {
+.concept-passage-chip:hover {
   color: var(--foreground);
-  text-decoration: underline;
+  border-color: var(--foreground);
 }
 
 .concept-passage-path {
@@ -140,12 +237,14 @@
 }
 
 .concept-muted {
+  font-family: var(--font-sans);
   color: var(--muted-foreground);
   font-size: 13px;
 }
 
 .concept-note {
   display: block;
+  font-family: var(--font-sans);
   margin-block: 4px;
   color: var(--muted-foreground);
   font-size: 13px;
@@ -154,70 +253,6 @@
 
 .concept-note a {
   text-decoration: underline;
-}
-
-/*
- * The fold handle sits in the gutter left of the column, shown on hover or focus within. The
- * button is the hit area and is transparent; ::before draws the thin muted bracket. The box is
- * --fold-gutter wide at depth 0 and shares that width with deeper runs (gutter / (depth + 1),
- * all ending at the text edge, the innermost on top), so it never reaches into the text, whose
- * click target starts at the column edge. Below lg the gutter is the wrapper's 16px; from lg it
- * is the wrapper's 24px, which also keeps the nested handle inside the page when the dock is
- * open. A run's height gives the target its second dimension.
- */
-.concept-fold-handle {
-  --fold-gutter: 16px;
-  --fold-width: calc(var(--fold-gutter) / (var(--depth, 0) + 1));
-  position: absolute;
-  z-index: calc(1 + var(--depth, 0));
-  left: calc(-1 * var(--fold-width));
-  width: var(--fold-width);
-  padding: 0;
-  border: 0;
-  background: transparent;
-  opacity: 0;
-  cursor: pointer;
-  transition: opacity 120ms;
-}
-
-.concept-fold-handle::before {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: 2px;
-  box-sizing: border-box;
-  width: 5px;
-  border: 1.5px solid var(--muted-foreground);
-  border-right: 0;
-  border-radius: 4px 0 0 4px;
-}
-
-.concept-run:hover .concept-fold-handle,
-.concept-run:focus-within .concept-fold-handle,
-.concept-passages:hover .concept-fold-handle,
-.concept-passages:focus-within .concept-fold-handle,
-.concept-fold-handle:hover,
-.concept-fold-handle:focus-visible {
-  opacity: 1;
-}
-
-/* Without hover there is nothing to reveal the bracket, so a touch screen always shows it. */
-@media (hover: none) {
-  .concept-fold-handle {
-    opacity: 1;
-  }
-}
-
-/* Inset: the ring stays inside the gutter instead of being clipped at the viewport edge. */
-.concept-fold-handle:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: -2px;
-}
-
-@media (min-width: 64rem) {
-  .concept-fold-handle {
-    --fold-gutter: 24px;
-  }
 }
 
 .concept-plan-glyph {
@@ -266,7 +301,9 @@
     background: color-mix(in oklch, var(--primary) 30%, transparent);
   }
 
-  .concept-fold-handle {
+  .concept-mark,
+  .concept-sentence-chevron,
+  .concept-run-cap {
     transition: none;
   }
 }
