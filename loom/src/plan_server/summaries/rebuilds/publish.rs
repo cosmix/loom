@@ -10,6 +10,7 @@ use crate::plan_server::summaries::scheduler::StopReason;
 use crate::plan_server::summaries::scheduler::{RebuildReason, Scheduler, SchedulerEvent};
 use crate::plan_server::wire::concept::ConceptChanged;
 use crate::plan_server::wire::message::PlanMessage;
+use crate::plan_server::wire::summaries::SummaryPanel;
 use crate::planning::summary::store::Scope;
 
 /// Per id: its out-of-date reason and the running rebuild's `(done, total)` its pages show.
@@ -43,13 +44,23 @@ impl Snapshot {
 impl Rebuilds {
     /// Broadcast the question messages, concept mode's `concept_changed` for every id whose
     /// reason or progress changed since `before`, and the panel; print the terminal lines.
+    ///
+    /// Another call may close or prune the question between this call's scheduler step and
+    /// its broadcast. So an asked question is sent as the state holds it now, or not at all
+    /// once closed, and everything is sent under `panel_sent`: a call that read the state
+    /// earlier also sends earlier, so a stale question never follows its closing message.
     pub(super) fn publish(&self, before: &Snapshot, events: &[SchedulerEvent]) {
+        let mut sent = lock(&self.panel_sent);
         let (after, scope, mut asked) = {
             let state = self.lock();
+            let open = state.scheduler.panel_state().question;
             let asked: Vec<_> = events
                 .iter()
                 .filter_map(|event| match event {
-                    SchedulerEvent::Asked(open) => Some(state.pending(&open.ids)),
+                    SchedulerEvent::Asked(event) => {
+                        let current = open.clone().filter(|open| open.id == event.id);
+                        Some(current.map(|open| (state.pending(&open.ids), open)))
+                    }
                     _ => None,
                 })
                 .collect();
@@ -63,9 +74,11 @@ impl Rebuilds {
         for event in events {
             announce(event);
             match event {
-                SchedulerEvent::Asked(open) => {
-                    let question = self.summary_question(open, &asked.next().unwrap_or_default());
-                    (self.broadcast)(&PlanMessage::SummaryQuestion(question));
+                SchedulerEvent::Asked(_) => {
+                    if let Some((pending, open)) = asked.next().flatten() {
+                        let question = self.summary_question(&open, &pending);
+                        (self.broadcast)(&PlanMessage::SummaryQuestion(question));
+                    }
                 }
                 SchedulerEvent::QuestionClosed { id } => {
                     let id = id.clone();
@@ -80,7 +93,7 @@ impl Rebuilds {
             }
         }
         self.concept_changed(&before.marks, &after.marks, &scope);
-        self.publish_panel();
+        self.send_panel(&mut sent);
     }
 
     fn concept_changed(&self, before: &Marks, after: &Marks, scope: &Scope) {
@@ -106,6 +119,11 @@ impl Rebuilds {
         // panel built later is never sent earlier. Nothing that holds the state or log lock
         // takes `panel_sent`, so building the panel under it cannot invert the lock order.
         let mut sent = lock(&self.panel_sent);
+        self.send_panel(&mut sent);
+    }
+
+    /// Broadcast the panel unless it equals `sent`, the panel last sent (held locked).
+    fn send_panel(&self, sent: &mut Option<SummaryPanel>) {
         let panel = self.panel();
         if sent.as_ref() == Some(&panel) {
             return;

@@ -2,17 +2,15 @@
 //! the last failed seal of a session.
 
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 use serde_json::Value;
 
 use crate::context::untrusted::inline_safe;
 use crate::planning::summary::store::validate_id;
+use crate::tokens::tail::{self, Line};
 
-/// Longest transcript line read: the token tracker's bound (`tokens::tail::MAX_LINE_BYTES`).
-const MAX_LINE_BYTES: usize = 32 * 1024 * 1024;
 /// Longest seal error kept, in characters.
 const MAX_ERROR_CHARS: usize = 200;
 /// What makes a command more than one plain `loom` call (a newline starts a second command).
@@ -145,31 +143,20 @@ fn result_text(content: &Value) -> String {
     texts.join("\n")
 }
 
-/// Call `f` with every JSON record of the transcript; longer lines and unparsable ones are
-/// skipped, and reading stops at the first I/O error.
+/// Call `f` with every JSON record of the transcript. The read is the token tracker's:
+/// no-follow and non-blocking, so a symlink or FIFO in the transcript's place is not opened.
+/// Unfinished, over-long and unparsable lines are skipped, and reading stops at the first I/O
+/// error.
 fn for_each_record(path: &Path, mut f: impl FnMut(&Value)) {
-    let Ok(file) = File::open(path) else {
+    let Some(stat) = tail::stat(path) else {
         return;
     };
-    let mut reader = BufReader::new(file);
-    let mut line = Vec::new();
-    loop {
-        line.clear();
-        let limit = MAX_LINE_BYTES as u64 + 1;
-        let Ok(count) = reader.by_ref().take(limit).read_until(b'\n', &mut line) else {
-            return;
-        };
-        if count == 0 {
-            return;
-        }
-        if line.len() > MAX_LINE_BYTES {
-            if !line.ends_with(b"\n") && reader.skip_until(b'\n').is_err() {
-                return;
+    let stop = AtomicBool::new(false);
+    let _ = tail::read_lines(path, &mut 0, stat.len, &stop, |line| {
+        if let Line::Text(text) = line {
+            if let Ok(record) = serde_json::from_str::<Value>(text) {
+                f(&record);
             }
-            continue;
         }
-        if let Ok(record) = serde_json::from_slice::<Value>(&line) {
-            f(&record);
-        }
-    }
+    });
 }

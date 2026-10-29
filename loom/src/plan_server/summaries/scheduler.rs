@@ -211,6 +211,8 @@ pub struct Scheduler {
     queue: Vec<Queued>,
     declined: BTreeSet<String>,
     failed: BTreeMap<String, String>,
+    /// Ids a normal end left claimed but unsealed and requeued; a second such end fails them.
+    unsealed: BTreeSet<String>,
     question: Option<QuestionView>,
     running: Option<Running>,
     suspensions: BTreeMap<u64, SuspendReason>,
@@ -231,6 +233,7 @@ impl Scheduler {
             queue: Vec::new(),
             declined: BTreeSet::new(),
             failed: BTreeMap::new(),
+            unsealed: BTreeSet::new(),
             question: None,
             running: None,
             suspensions: BTreeMap::new(),
@@ -350,10 +353,7 @@ impl Scheduler {
 
     /// A rebuild button: undecline the ids, queue them first and start without asking.
     pub fn press(&mut self, ids: &[String], now: Instant, spawner: &dyn SessionSpawner) {
-        for id in ids {
-            self.declined.remove(id);
-            self.failed.remove(id);
-        }
+        self.forget(ids);
         self.promote(ids, Via::Button);
         self.try_start(now, spawner);
     }

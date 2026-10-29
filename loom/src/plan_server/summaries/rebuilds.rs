@@ -19,6 +19,8 @@ mod tests;
 mod tests_alive;
 #[cfg(test)]
 mod tests_bridge;
+#[cfg(test)]
+mod tests_ordering;
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
@@ -33,7 +35,7 @@ use crate::plan_server::context::PlanContext;
 use crate::plan_server::lifecycle;
 use crate::plan_server::wire::message::PlanMessage;
 use crate::plan_server::wire::summaries::SummaryPanel;
-use crate::plan_session::bridge::Bridge;
+use crate::plan_session::bridge::{Bridge, EndOutcome};
 use crate::planning::runtime::RuntimePaths;
 use crate::planning::summary::cost::{self, CostLine};
 use crate::planning::summary::evaluate::Evaluation;
@@ -85,6 +87,8 @@ struct State {
     tick_claims: Option<Vec<String>>,
     /// The running session the last tick found missing from the bridge or ended there.
     tick_gone: Option<String>,
+    /// Summary session ends that arrived while a start was settling, kept for that start.
+    ended_early: Vec<(String, EndOutcome)>,
 }
 
 impl State {
@@ -173,7 +177,8 @@ impl Rebuilds {
             runtime,
             bridge: None,
         };
-        let mut rebuilds = Rebuilds::build(Arc::new(RealSpawner::new(ctx)), read_only, broadcast);
+        let config = SchedulerConfig::standard(read_only);
+        let mut rebuilds = Rebuilds::build(Arc::new(RealSpawner::new(ctx)), config, broadcast);
         rebuilds.attribution = Some(Mutex::new(attribution));
         rebuilds.log = Mutex::new(log);
         rebuilds.env = Some(env);
@@ -186,20 +191,24 @@ impl Rebuilds {
         read_only: Option<String>,
         broadcast: Broadcast,
     ) -> Arc<Rebuilds> {
-        Arc::new(Rebuilds::build(spawner, read_only, broadcast))
+        let config = SchedulerConfig::standard(read_only);
+        Arc::new(Rebuilds::build(spawner, config, broadcast))
     }
 
-    /// [`Rebuilds::new_for_test`] with a runtime directory (so the claims tick reads claim
-    /// files) and optionally a bridge for the tick's liveness check; no context, so no sizes.
+    /// [`Rebuilds::new_for_test`] with the scheduler's `config`, a runtime directory (so the
+    /// claims tick reads claim files), optionally a bridge for the tick's liveness check and
+    /// attribution over that directory; no context, so no sizes.
     #[cfg(test)]
     fn new_for_test_in(
         spawner: Arc<dyn SessionSpawner>,
-        read_only: Option<String>,
+        config: SchedulerConfig,
         broadcast: Broadcast,
         runtime: RuntimePaths,
         bridge: Option<Arc<Bridge>>,
+        attribution: Option<Attribution>,
     ) -> Arc<Rebuilds> {
-        let mut rebuilds = Rebuilds::build(spawner, read_only, broadcast);
+        let mut rebuilds = Rebuilds::build(spawner, config, broadcast);
+        rebuilds.attribution = attribution.map(Mutex::new);
         rebuilds.env = Some(Env {
             ctx: Weak::new(),
             runtime,
@@ -210,11 +219,11 @@ impl Rebuilds {
 
     fn build(
         spawner: Arc<dyn SessionSpawner>,
-        read_only: Option<String>,
+        config: SchedulerConfig,
         broadcast: Broadcast,
     ) -> Rebuilds {
         let state = State {
-            scheduler: Scheduler::new(SchedulerConfig::standard(read_only)),
+            scheduler: Scheduler::new(config),
             events: Vec::new(),
             latest: None,
             sizes: BTreeMap::new(),
@@ -224,6 +233,7 @@ impl Rebuilds {
             started_at: None,
             tick_claims: None,
             tick_gone: None,
+            ended_early: Vec::new(),
         };
         Rebuilds {
             inner: Mutex::new(state),
@@ -260,8 +270,24 @@ impl Rebuilds {
         });
     }
 
-    /// Run `op` under the state lock against a [`Recorder`], then carry out and publish.
+    /// Run `op` under the state lock against a [`Recorder`], then carry out and publish; then
+    /// end a started session whose end arrived before its start settled.
     fn run<R>(&self, op: impl FnOnce(&mut State, &dyn SessionSpawner, Instant) -> R) -> R {
+        let (result, mut early) = self.run_once(op);
+        while let Some((session, outcome)) = early {
+            let end = |state: &mut State, spawner: &dyn SessionSpawner, now| {
+                state.summary_ended(&session, &outcome, now, spawner);
+            };
+            early = self.run_once(end).1;
+        }
+        result
+    }
+
+    /// One [`Rebuilds::run`] step; returns the early end of the session it started, if any.
+    fn run_once<R>(
+        &self,
+        op: impl FnOnce(&mut State, &dyn SessionSpawner, Instant) -> R,
+    ) -> (R, Option<(String, EndOutcome)>) {
         let recorder = Recorder::default();
         let now = Instant::now();
         let (result, before, mut events) = {
@@ -272,13 +298,19 @@ impl Rebuilds {
             events.extend(state.scheduler.take_events());
             (result, before, events)
         };
-        self.carry_out(recorder, &mut events);
+        let early = self.carry_out(recorder, &mut events);
         self.publish(&before, &events);
-        result
+        (result, early)
     }
 
-    /// Make the stops and the start the scheduler asked for, then settle the start.
-    fn carry_out(&self, recorder: Recorder, events: &mut Vec<SchedulerEvent>) {
+    /// Make the stops and the start the scheduler asked for, then settle the start. Returns
+    /// the started session's end when it arrived before the start settled (a launch that
+    /// failed at once): the caller applies it after publishing the start.
+    fn carry_out(
+        &self,
+        recorder: Recorder,
+        events: &mut Vec<SchedulerEvent>,
+    ) -> Option<(String, EndOutcome)> {
         let stops = recorder
             .stops
             .into_inner()
@@ -290,18 +322,20 @@ impl Rebuilds {
             .start
             .into_inner()
             .unwrap_or_else(PoisonError::into_inner);
-        let Some(ids) = start else {
-            return;
-        };
+        let ids = start?;
         let result = self.spawner.start_summary(&ids);
-        let (started, triggers) = {
+        let (started, triggers, early) = {
             let mut state = self.lock();
             let started = state.scheduler.resolve_start(PENDING, result);
+            let ended = std::mem::take(&mut state.ended_early);
+            let early = ended
+                .into_iter()
+                .find(|(id, _)| Some(id) == started.as_ref());
             if started.is_some() {
                 state.begin_session();
             }
             events.extend(state.scheduler.take_events());
-            (started, state.scheduler.running_triggers())
+            (started, state.scheduler.running_triggers(), early)
         };
         events.retain_mut(|event| match event {
             SchedulerEvent::Started { session, .. } if *session == PENDING => match &started {
@@ -313,9 +347,11 @@ impl Rebuilds {
             },
             _ => true,
         });
-        if let Some(session) = &started {
+        // A session that already ended was cleared from attribution by its end.
+        if let (Some(session), None) = (&started, &early) {
             self.attribute(|attribution| attribution.summary_started(session, triggers));
         }
+        early
     }
 
     /// Fold costs into the log; broadcast a turn's rows and the panel.

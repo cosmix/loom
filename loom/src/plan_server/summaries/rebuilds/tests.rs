@@ -6,6 +6,8 @@ use std::sync::OnceLock;
 
 use super::*;
 use crate::plan_server::summaries::scheduler::{AnswerRefused, AnswerRight, SuspendReason};
+use crate::plan_session::bridge::{BridgeEvent, EndOutcome};
+use crate::plan_session::kind::SessionKind;
 use crate::planning::summary::claims::Claim;
 use crate::planning::summary::cost::estimate::EstimateBasis;
 use crate::planning::summary::cost::Trigger;
@@ -26,6 +28,8 @@ pub(super) struct Probe {
     fail: Mutex<Option<String>>,
     /// The session id the next start answers instead of `s<n>`.
     next_id: Mutex<Option<String>>,
+    /// An end the next start delivers for its own session before it returns.
+    end_first: Mutex<Option<(Arc<Bridge>, EndOutcome)>>,
 }
 
 impl Probe {
@@ -43,6 +47,12 @@ impl Probe {
     pub(super) fn answer_next_start(&self, id: &str) {
         *self.next_id.lock().unwrap() = Some(id.to_owned());
     }
+
+    /// The next start's session ends with `outcome`, delivered through `bridge`'s event before
+    /// the start returns, as a launch that fails at once does.
+    pub(super) fn end_next_start_first(&self, bridge: &Arc<Bridge>, outcome: EndOutcome) {
+        *self.end_first.lock().unwrap() = Some((Arc::clone(bridge), outcome));
+    }
 }
 
 impl SessionSpawner for Probe {
@@ -51,10 +61,19 @@ impl SessionSpawner for Probe {
         if let Some(why) = self.fail.lock().unwrap().clone() {
             anyhow::bail!(why);
         }
-        let mut starts = self.starts.lock().unwrap();
-        starts.push(ids.to_vec());
-        let own = format!("s{}", starts.len());
-        Ok(self.next_id.lock().unwrap().take().unwrap_or(own))
+        let own = {
+            let mut starts = self.starts.lock().unwrap();
+            starts.push(ids.to_vec());
+            format!("s{}", starts.len())
+        };
+        let session = self.next_id.lock().unwrap().take().unwrap_or(own);
+        let end_first = self.end_first.lock().unwrap().take();
+        let rebuilds = self.rebuilds.get().and_then(Weak::upgrade);
+        if let (Some((bridge, outcome)), Some(rebuilds)) = (end_first, rebuilds) {
+            let (id, kind) = (session.clone(), SessionKind::Summary);
+            rebuilds.on_bridge_event(&bridge, &BridgeEvent::Ended { id, kind, outcome });
+        }
+        Ok(session)
     }
 
     fn stop(&self, session: &str, release_claims: bool) {
@@ -64,9 +83,9 @@ impl SessionSpawner for Probe {
     }
 }
 
-type Sent = Arc<Mutex<Vec<PlanMessage>>>;
+pub(super) type Sent = Arc<Mutex<Vec<PlanMessage>>>;
 
-fn facade() -> (Arc<Probe>, Arc<Rebuilds>, Sent) {
+pub(super) fn facade() -> (Arc<Probe>, Arc<Rebuilds>, Sent) {
     let probe = Arc::new(Probe::default());
     let sent: Sent = Arc::default();
     let sink = Arc::clone(&sent);
@@ -77,7 +96,7 @@ fn facade() -> (Arc<Probe>, Arc<Rebuilds>, Sent) {
     (probe, rebuilds, sent)
 }
 
-fn file(title: &str) -> SummaryFile {
+pub(super) fn file(title: &str) -> SummaryFile {
     let front = FrontMatter {
         kind: SummaryKind::Document,
         of: "doc/plans/x.md".into(),

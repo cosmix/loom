@@ -1,5 +1,5 @@
 //! The facade over a bridge that runs sessions: turn routing by the session's kind, the seal
-//! error a stall reports and a session the bridge lists as failed.
+//! error a stall reports, a session the bridge lists as failed and the cost of an ended one.
 //!
 //! A host that spawns nothing stands in for tmux; the bridge's driver thread launches the
 //! sessions, so these tests wait (bounded) for what the driver does.
@@ -10,15 +10,17 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use super::tests_bridge::{pressure, turn_ended, Rig, ID};
+use super::tests_bridge::{ended_with, pressure, turn_ended, Rig, ID};
 use super::*;
-use crate::plan_server::summaries::scheduler::{Scheduler, SchedulerConfig};
+use crate::plan_server::summaries::scheduler::SchedulerConfig;
 use crate::plan_server::wire::summaries::FailedSummary;
 use crate::plan_session::bridge::host::{LaunchSpec, SessionHost, Spawned};
-use crate::plan_session::bridge::{BridgeEvent, LaunchGuidance, StartRequest};
+use crate::plan_session::bridge::{BridgeEvent, EndOutcome, LaunchGuidance, StartRequest};
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::SessionState;
 use crate::plan_session::spool::append_event;
+use crate::planning::summary::claims::list_claims;
+use crate::planning::summary::cost::Trigger;
 use crate::process::{IdentityStatus, ProcessIdentity};
 
 /// Launches nothing: a spawn succeeds, or fails when told to; every process stays alive.
@@ -74,8 +76,13 @@ struct Live {
 
 impl Live {
     fn new() -> Live {
+        Live::build(SchedulerConfig::standard(None), false)
+    }
+
+    /// A live rig whose scheduler runs on `config`, with attribution when `attributed`.
+    fn build(config: SchedulerConfig, attributed: bool) -> Live {
         let host = Arc::new(QuietHost::default());
-        let rig = Rig::with_host(host.clone(), true);
+        let rig = Rig::build(host.clone(), true, config, attributed);
         rig.bridge.recover();
         let stop = Arc::new(AtomicBool::new(false));
         let driver = Some(rig.bridge.run(stop.clone()));
@@ -178,15 +185,14 @@ fn failed_seal_records() -> Vec<Value> {
 
 #[test]
 fn a_stall_fails_the_ids_with_the_seal_error_read_from_the_transcript() {
-    let live = Live::new();
-    let id = live.start(SessionKind::Summary);
-    live.give_transcript(&id, &failed_seal_records());
     // A zero timeout makes the first tick a stall; the production timeout is ten minutes.
     let config = SchedulerConfig {
         no_seal_timeout: Duration::ZERO,
         ..SchedulerConfig::standard(None)
     };
-    live.rig.rebuilds.lock().scheduler = Scheduler::new(config);
+    let live = Live::build(config, false);
+    let id = live.start(SessionKind::Summary);
+    live.give_transcript(&id, &failed_seal_records());
     live.rig.probe.answer_next_start(&id);
     live.rig.report_missing();
     live.rig.rebuilds.tick();
@@ -251,4 +257,43 @@ fn a_session_the_bridge_runs_is_never_ended_by_the_tick() {
             .session,
         id
     );
+}
+
+/// One assistant record that used `output` output tokens.
+fn usage_records(output: u64) -> Vec<Value> {
+    let usage = json!({"input_tokens": 10, "cache_creation_input_tokens": 200,
+        "cache_read_input_tokens": 3000, "output_tokens": output});
+    let message = json!({"id": "msg-1", "model": "claude-opus-4-1", "role": "assistant",
+        "content": [{"type": "text", "text": "sealed"}], "usage": usage});
+    vec![
+        json!({"type": "assistant", "uuid": "u-1", "requestId": "req-1",
+        "timestamp": "2026-10-29T10:00:01.000Z", "message": message}),
+    ]
+}
+
+/// The facade's attribution wiring: a summary session's end clears the claims it holds and
+/// logs its own transcript's cost, which the panel shows and broadcasts.
+#[test]
+fn a_summary_session_end_clears_its_claims_and_costs_its_transcript() {
+    let live = Live::build(SchedulerConfig::standard(None), true);
+    let id = live.start(SessionKind::Summary);
+    live.give_transcript(&id, &usage_records(40));
+    live.rig.probe.answer_next_start(&id);
+    live.rig.report_missing();
+    live.rig.claim(&id);
+    let claims = list_claims(&live.rig.paths).expect("claims");
+    assert_eq!(claims.len(), 1, "the session holds a claim");
+    live.rig
+        .event(ended_with(&id, SessionKind::Summary, EndOutcome::Closed));
+    let claims = list_claims(&live.rig.paths).expect("claims");
+    assert!(claims.is_empty(), "the end cleared its claims: {claims:?}");
+    let panel = live.rig.rebuilds.panel();
+    let last = panel.last.expect("the session's cost line");
+    assert_eq!(last.summaries, vec![ID.to_owned()]);
+    assert_eq!(last.trigger, Trigger::Background);
+    assert_eq!(last.tokens.output, Some(40));
+    assert_eq!(panel.week.output, Some(40));
+    let costed = |message: &PlanMessage| matches!(message, PlanMessage::SummaryPanel(panel) if panel.last.is_some());
+    let sent = live.rig.sent.lock().unwrap();
+    assert!(sent.iter().any(costed), "the costed panel was broadcast");
 }

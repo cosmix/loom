@@ -3,10 +3,10 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use super::{evaluation, Attributed, Rebuilds};
+use super::{evaluation, Attributed, Rebuilds, State, PENDING};
 use crate::plan_server::lifecycle::{line, safe};
 use crate::plan_server::summaries::attribution::last_seal_error;
-use crate::plan_server::summaries::scheduler::SuspendReason;
+use crate::plan_server::summaries::scheduler::{SessionSpawner, SuspendReason};
 use crate::plan_session::bridge::{Bridge, BridgeEvent, EndOutcome};
 use crate::plan_session::kind::SessionKind;
 use crate::plan_session::model::SessionState;
@@ -139,9 +139,8 @@ impl Rebuilds {
             None => {}
         }
         match kind {
-            SessionKind::Summary => self.run(|state, spawner, now| match outcome {
-                EndOutcome::Failed(why) => state.scheduler.session_failed(id, why, now, spawner),
-                _ => state.scheduler.session_ended(id, now, spawner),
+            SessionKind::Summary => self.run(|state, spawner, now| {
+                state.summary_ended(id, outcome, now, spawner);
             }),
             SessionKind::Authoring => self.chat_idle(id),
             SessionKind::Pressure { .. } => self.run(|state, spawner, now| {
@@ -154,7 +153,8 @@ impl Rebuilds {
     }
 
     /// Every 5 s: the running session's claims (the watcher does not walk the runtime
-    /// directory), its seal error when a stall is due, the stall itself, and the panel.
+    /// directory), its seal error when a stall is due, the stall itself, and the panel (the
+    /// stall's `run` publishes it whatever changed, so the quota stays current).
     pub(crate) fn tick(&self) {
         self.watch_claims();
         self.read_seal_error();
@@ -163,7 +163,6 @@ impl Rebuilds {
             state.events.extend(events);
         });
         self.check_alive();
-        self.publish_panel();
     }
 
     /// Apply a claims listing only when two in a row agree: a seal deletes its claim before
@@ -298,6 +297,28 @@ impl Rebuilds {
     /// The first Ctrl-C: drop the queue and the question; plan 7's drain ends a running session.
     pub(crate) fn server_stopping(&self) {
         self.run(|state, _, _| state.scheduler.server_stopping());
+    }
+}
+
+impl State {
+    /// A summary session ended. While a start settles, the running session is the pending
+    /// placeholder, so an end of the session being started (a launch that failed at once) would
+    /// match nothing: it is kept for the start to apply once it knows its session id.
+    pub(super) fn summary_ended(
+        &mut self,
+        id: &str,
+        outcome: &EndOutcome,
+        now: Instant,
+        spawner: &dyn SessionSpawner,
+    ) {
+        if self.scheduler.running_session() == Some(PENDING) {
+            self.ended_early.push((id.to_owned(), outcome.clone()));
+            return;
+        }
+        match outcome {
+            EndOutcome::Failed(why) => self.scheduler.session_failed(id, why, now, spawner),
+            _ => self.scheduler.session_ended(id, now, spawner),
+        }
     }
 }
 
