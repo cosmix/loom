@@ -5,7 +5,7 @@ import { useId } from "react";
 
 import type { StageFlow, TokenFlow, TokenUsage } from "@/api/schema";
 import { TokenModels } from "@/components/token-models";
-import { compactTokens, fresh, lastValues, maxOf } from "@/lib/tokens";
+import { compactTokens, costShares, fresh, lastValues, maxOf } from "@/lib/tokens";
 import { snapshotAtom } from "@/state/atoms";
 
 /// The chart's plot height in pixels; its width follows the container.
@@ -267,19 +267,19 @@ function StageLegend({ stages, colors }: { stages: StageFlow[]; colors: Map<stri
 
 function Mix({ flow }: { flow: TokenFlow }) {
   const rate = flow.plan.rate;
-  const sum = MIX.reduce((total, { key }) => total + rate[key], 0);
+  const shares = costShares(rate);
   return (
     <div className="flex flex-col gap-2">
+      {/* Segments are sized by price share, not token count: cache reads are ~99%
+          of the tokens but ~0.1x the price, and by count they hide the rest. */}
       <div
         role="img"
-        aria-label="token mix per minute"
+        aria-label="token mix per minute, weighted by cost"
+        title="Segment width is each kind's share of cost (cache read 0.1x, input 1x, cache write 1.25x, output 5x), not of token count."
         className="flex h-2 overflow-hidden rounded-full bg-muted"
       >
         {MIX.map(({ key, color }) => (
-          <span
-            key={key}
-            style={{ width: `${sum === 0 ? 0 : (rate[key] / sum) * 100}%`, background: color }}
-          />
+          <span key={key} style={{ width: `${shares[key] * 100}%`, background: color }} />
         ))}
       </div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
