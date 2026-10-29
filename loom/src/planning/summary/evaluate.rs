@@ -148,8 +148,7 @@ pub fn evaluate(project: &Project, claims: &[Claim]) -> Evaluation {
     let mut summaries = BTreeMap::new();
     for id in documents.into_iter().chain(overviews) {
         let claim = claims.iter().find(|c| &c.summary == id).cloned();
-        let scope = Scope::of(project, id).unwrap_or_default();
-        let eval = evaluate_one(project, &scope, &summaries, id, claim);
+        let eval = evaluate_one(project, &summaries, id, claim);
         summaries.insert(id.clone(), eval);
     }
     let orphans = orphans_among(project, &expected);
@@ -198,7 +197,6 @@ pub fn sentences_of(file: &SummaryFile) -> impl Iterator<Item = &Sentence> {
 
 fn evaluate_one(
     project: &Project,
-    scope: &Scope,
     done: &BTreeMap<String, SummaryEval>,
     id: &str,
     claim: Option<Claim>,
@@ -220,7 +218,7 @@ fn evaluate_one(
             return eval;
         }
     };
-    let ctx = cite::Context::new(project, scope, done, id, &file, source.as_deref());
+    let ctx = cite::Context::new(project, done, id, &file, source.as_deref());
     eval.sentences = sentences_of(&file)
         .map(|s| sentence_eval(s, &ctx))
         .collect();

@@ -77,7 +77,8 @@ pub enum PlanCommands {
 pub enum SummaryCommands {
     /// Validate the draft of a summary and write it into the store
     Seal {
-        /// Summary id, for example `product/section_01` or `plans/my-plan`
+        /// Summary id, for example `planner-ui/product/section_01`.
+        /// Shapes: `overview/<feature>/product`, `<feature>/product/section_NN` or `plans/<slug>`.
         id: String,
 
         /// Seal a summary another session or a terminal claimed; only applies from a terminal,

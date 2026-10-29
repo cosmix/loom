@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{ChecklistItem, Facts, ItemStatus, Offer, Step};
-use crate::planning::kinds::{plans_dir, product_dir, vision_path};
+use crate::planning::kinds::{plan_path, section_path, vision_path};
 use crate::planning::vision::VisionRow;
 
 impl Facts<'_> {
@@ -92,7 +92,7 @@ impl Facts<'_> {
             feature: self.feature.to_string(),
             number,
         });
-        let path = product_dir(self.feature).join(format!("section_{number:02}.md"));
+        let path = section_path(self.feature, number);
         item(
             Step::ProductSpec,
             status,
@@ -155,7 +155,7 @@ impl Facts<'_> {
                     metaplan: metaplan.to_path_buf(),
                     slug: slug.to_string(),
                 };
-                let path = Some(plans_dir(Some(self.feature)).join(format!("PLAN-{slug}.md")));
+                let path = Some(plan_path(Some(self.feature), slug));
                 item(Step::Plans, ItemStatus::Gap, path, label, Some(offer))
             }
         }
