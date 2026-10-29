@@ -5,7 +5,7 @@ aliases:
 ---
 # Plan Server
 >
-> Review, chat
+> Chat
 
 >
 

@@ -128,3 +128,23 @@ exists, or pin the interface inline in the brief so codex does not wait for it.
 **Prevention:** `cd` to the worktree root in the same Bash call that precedes a forwarder spawn, and give every brief path as an absolute path inside the worktree. A codex unit that reads a stylesheet in a vitest test uses an `@/...css?raw` import (`web/src/plan/editor/theme.test.ts:3`); `readFileSync(new URL(..., import.meta.url))` fails under jsdom with "URL must be of scheme file".
 
 **Fix:** the units were re-forwarded from the worktree root.
+
+## A Move Brief That Did Not Name the Production Functions Turned One Into a Test Helper
+
+**What happened:** a Codex unit moved the pressure models module into `loom/src/pressure/`. It made the production function `resolve_rounds` `#[cfg(test)]` and re-implemented the precedence chain inline in `execute`, so the rounds tests covered a test-only copy. Separately, units imported `current_branch` through the private `git::branch::operations` module, `PlanMessage` through `plan_server::wire`, and `WorkDir` through `crate::fs`, none of which re-export them.
+
+**Why:** the brief said "move the tests with the code" without listing every function the caller still uses; units followed the module a brief or a neighbour named instead of the public facade.
+
+**Prevention:** a move brief lists every function the call sites use and requires them to stay non-test; the reviewer diffs the moved file against HEAD. Import through the facade the compiler or an existing caller uses (`crate::git::current_branch`, `crate::plan_server::PlanMessage`, `crate::fs::work_dir::WorkDir`).
+
+**Fix:** `resolve_rounds` is a plain `pub fn` in `pressure/models.rs` and `execute` calls it.
+
+## Replacing a Placeholder With Delete-and-Add Patches Wasted Codex Calls
+
+**What happened:** ten Codex units in one plan had `apply_patch` rejected before it wrote anything, because each replaced a stub file with a delete and an add for the same path.
+
+**Why:** the patch tool forbids two operations on one target; the stage's file-ownership step created placeholder files the units then had to replace.
+
+**Prevention:** brief "replace the placeholder with one Update File hunk" (and `Add File` only for new paths), or do not create placeholders. A rejected patch changes nothing, so the cost is a wasted call, not a wrong tree.
+
+**Fix:** one `Update File` per placeholder.

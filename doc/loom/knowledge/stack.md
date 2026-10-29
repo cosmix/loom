@@ -62,17 +62,7 @@
 - `sccache` — optional; when installed, loom exports `RUSTC_WRAPPER` into every session and acceptance run so dependency compiles are shared across worktrees (`orchestrator/terminal/native/build_cache.rs`).
 - `claude` CLI — likewise required by `loom pressure` (resolved by `find_claude_path`).
 
-- `tmux` — **optional** runtime dependency, required only when the terminal backend is set to `tmux`
-  (`[terminal] backend = "tmux"` in `.loom/work/config.toml`, or `loom run --backend tmux`). No new Rust
-  crates were needed for the backend: it shells out to the `tmux` binary and reuses `which` (PATH
-  probe), `libc` (`getuid()` for the `tmux-<uid>` socket dir) and `sha2` (the per-repo overview viewer
-  socket name), all already in `loom/Cargo.toml`. Availability is probed with `which::which("tmux")` at
-  `loom init` (advisory warning only), at `loom run` startup (refuses to start when the effective
-  backend is tmux and tmux is not on PATH), and again per spawn (a configured-tmux spawn with no tmux
-  on PATH, or a tmux spawn failure, returns `Err` and blocks the stage — see
-  [Terminal Backends](architecture/terminal-backends.md) § Tmux Unavailable or Failing; no lane switch
-  ever happens). Version note: the overview's nested-attach and layout behaviour was verified against
-  tmux 3.7b.
+- `tmux` — required unless `terminal.backend = "native"` is set in the project or user config: `SessionBackendKind` defaults to `Tmux` (`loom/src/models/session/types.rs`), and `loom run` refuses to start when the effective backend is tmux and `tmux` is not on PATH (`TMUX_MISSING_MESSAGE`, `commands/run/mod.rs`). `loom init` only prints an advisory warning. A configured-tmux spawn with no tmux on PATH, or a tmux spawn failure, returns `Err` and blocks the stage (see [Terminal Backends](architecture/terminal-backends.md) § Tmux Unavailable or Failing); the lane never switches silently. No Rust crates were added for the backend: it shells out to `tmux` and reuses `which`, `libc` (`getuid()` for the `tmux-<uid>` socket directory) and `sha2` (the per-repo overview viewer socket name). The overview's nested-attach and layout behaviour was verified against tmux 3.7b.
 
 ## Hook Runtime Dependencies (jq, rg, fd)
 

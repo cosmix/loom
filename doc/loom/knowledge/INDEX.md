@@ -13,8 +13,8 @@
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 188 |
-| [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 125 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 249 |
+| [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 115 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 248 |
 
 ## Tier 2 — Topics
 
@@ -34,27 +34,29 @@
 | [context-retrieval-state](architecture/context-retrieval-state.md) | Layers | 193 |
 | [contract-collection](architecture/contract-collection.md) | Scaffold | 70 |
 | [contract-phase](architecture/contract-phase.md) | Freeze | 226 |
-| [core-abstractions](architecture/core-abstractions.md) | Graph, Stage | 135 |
+| [core-abstractions](architecture/core-abstractions.md) | Graph | 135 |
 | [daemon-launch](architecture/daemon-launch.md) |  | 65 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) |  | 151 |
-| [directory-structure](architecture/directory-structure.md) | Module tree | 50 |
+| [directory-structure](architecture/directory-structure.md) | Tree | 50 |
 | [execution-containment](architecture/execution-containment.md) |  | 394 |
 | [hook-system](architecture/hook-system.md) | Hooks | 307 |
-| [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Digest phase | 83 |
+| [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Digest | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
 | [memory-spool](architecture/memory-spool.md) | Relay | 197 |
 | [merge-checkout-state](architecture/merge-checkout-state.md) | FF | 28 |
 | [merge-flow](architecture/merge-flow.md) | Merge | 134 |
-| [orchestrator-loop](architecture/orchestrator-loop.md) | Tick order | 79 |
+| [orchestrator-loop](architecture/orchestrator-loop.md) | Ticks | 79 |
 | [owned-waits](architecture/owned-waits.md) | Waits | 70 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 257 |
-| [plan-server](architecture/plan-server.md) | Review, chat | 241 |
-| [planning-document-model](architecture/planning-document-model.md) | Doc model | 173 |
+| [plan-server](architecture/plan-server.md) | Chat | 241 |
+| [planning-document-model](architecture/planning-document-model.md) | Docs | 173 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 35 |
 | [planning-session-bridge](architecture/planning-session-bridge.md) | Bridge | 191 |
-| [planning-session-sandbox](architecture/planning-session-sandbox.md) | Plan sandbox | 135 |
+| [planning-session-sandbox](architecture/planning-session-sandbox.md) | Sandbox | 135 |
+| [pressure](architecture/pressure.md) | Pipeline | 42 |
 | [quota-poller](architecture/quota-poller.md) | Polling | 35 |
 | [remote-control](architecture/remote-control.md) | Capability | 81 |
+| [run-handoff](architecture/run-handoff.md) | Run lane | 52 |
 | [security-and-isolation](architecture/security-and-isolation.md) | Isolation | 188 |
 | [signal-generation](architecture/signal-generation.md) | Signals | 241 |
 | [skill-catalog](architecture/skill-catalog.md) |  | 155 |
@@ -64,22 +66,22 @@
 | [source-graph-resolution](architecture/source-graph-resolution.md) | Bindings | 123 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 76 |
 | [status-data-model](architecture/status-data-model.md) | Fields | 239 |
-| [summary-store](architecture/summary-store.md) | Store, seal, claims, rebuild scheduler, cost | 257 |
+| [summary-store](architecture/summary-store.md) | Store | 257 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 280 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 57 |
-| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger | 376 |
+| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 376 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Host jobs | 240 |
-| [web-dashboard](architecture/web-dashboard.md) | status --web | 110 |
+| [web-dashboard](architecture/web-dashboard.md) | Web | 110 |
 | [web-terminal](architecture/web-terminal.md) | Terminals | 181 |
 
 ### entry-points
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI dispatch | 191 |
+| [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI | 192 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) | Retrieval | 80 |
 | [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Fs, git | 133 |
 | [hooks](entry-points/hooks.md) | Scripts | 150 |
@@ -95,7 +97,7 @@
 | [hook-content-stripping](patterns/hook-content-stripping.md) | Text | 163 |
 | [merge-and-recovery](patterns/merge-and-recovery.md) | Merge flow | 111 |
 | [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Poll loop | 117 |
-| [remote-control](patterns/remote-control.md) | RC detection | 51 |
+| [remote-control](patterns/remote-control.md) | RC | 51 |
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) |  | 140 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) | Channels | 191 |
 | [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) |  | 202 |
@@ -122,12 +124,12 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 230 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 156 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Briefs, bugs | 375 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Briefs | 383 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift | 353 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 177 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 102 |
-| [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Briefs | 130 |
+| [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Briefs | 150 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 206 |
 | [completion-runtime](mistakes/completion-runtime.md) | Churn | 72 |
@@ -144,16 +146,16 @@
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | CLI rules | 206 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
-| [live-state-pollution](mistakes/live-state-pollution.md) |  | 123 |
+| [live-state-pollution](mistakes/live-state-pollution.md) |  | 133 |
 | [maintainability-baseline](mistakes/maintainability-baseline.md) |  | 10 |
-| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay leaks | 37 |
+| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay | 37 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | Cleanup | 171 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Git ops | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) |  | 15 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Incidents | 343 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merged flag | 347 |
-| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 322 |
-| [plan-server-delivery](mistakes/plan-server-delivery.md) |  | 294 |
+| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
+| [plan-server-delivery](mistakes/plan-server-delivery.md) |  | 302 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | Renames | 319 |
@@ -172,9 +174,9 @@
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) |  | 75 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
 | [subagent-briefing](mistakes/subagent-briefing.md) | Briefs | 386 |
-| [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Watch traps | 387 |
+| [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Watch | 387 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation | 391 |
-| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests | 340 |
+| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests | 350 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) | Fixtures | 145 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 398 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Vacuous | 392 |
@@ -187,7 +189,7 @@
 | [web-dashboard](mistakes/web-dashboard.md) | UI | 17 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Races | 278 |
 | [web-terminal](mistakes/web-terminal.md) | Bridge | 135 |
-| [writer-reader-address](mistakes/writer-reader-address.md) | Ignored keys | 105 |
+| [writer-reader-address](mistakes/writer-reader-address.md) | Keys | 105 |
 
 ### concerns
 
@@ -198,21 +200,22 @@
 | [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Hook debt | 265 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 49 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 63 |
+| [handoff-followups](concerns/handoff-followups.md) | Backlog | 57 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) |  | 49 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 103 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge edges | 125 |
-| [plan-chat-followups](concerns/plan-chat-followups.md) | Chat backlog | 40 |
+| [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 40 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 143 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 42 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 185 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 210 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 156 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 384 |
-| [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 79 |
+| [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 85 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Backlog | 329 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 17 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 349 |
-| [typed-config-values](concerns/typed-config-values.md) | Config gaps | 27 |
+| [typed-config-values](concerns/typed-config-values.md) | Gaps | 27 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) |  | 173 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Latent | 102 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 159 |

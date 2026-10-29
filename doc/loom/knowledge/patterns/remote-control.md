@@ -1,6 +1,6 @@
 # Remote Control
 
-> RC detection
+> RC
 
 ## Remote Control Capability/Preflight/Resolve Pattern
 

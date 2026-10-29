@@ -134,7 +134,7 @@ Also covers `load_stage_definition_from_plan` — the centralized plan lookup.
 
 ## `loom pressure` Command (Plan Pressure-Testing Driver)
 
-→ [Remote Control Module § loom pressure Command](architecture/remote-control.md)
+`loom pressure` and the planning app's pressure run share one pipeline, `loom::pressure::run_pipeline`, with a `PressureDriver` per surface (terminal, app). The record rules, drivers, stop and recovery rules: [Pressure](architecture/pressure.md). The terminal command's own design: [Remote Control Module § loom pressure Command](architecture/remote-control.md). The execution handoff lane (start, commit, abandon, dashboard child, run strip): [Run Handoff](architecture/run-handoff.md).
 
 ## Tiered Knowledge Base (`fs/knowledge/`, `commands/knowledge/`)
 

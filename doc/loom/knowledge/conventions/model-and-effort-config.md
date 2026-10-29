@@ -64,7 +64,7 @@ predicate is decided. `subagent_ceiling_tokens` and `model_window_tokens` have n
 ## Resolution Code
 
 Stage sessions resolve through `crate::fs::work_dir::resolve_stage_model_effort`; the three
-`loom pressure` slots resolve through `commands::pressure`'s own resolver; the user-tier lookup
+`loom pressure` slots resolve through `pressure::models::resolve_for` (`PressureModels::resolve`); the user-tier lookup
 for both goes through `crate::user_config`.
 
 ## Plan Doctrine
@@ -92,8 +92,8 @@ same-family newer versions ascending, then same-family older versions descending
 A run counts as unavailable only on a non-zero exit whose log has one codex error line (it
 starts with `ERROR`) naming the model id and, case-insensitively, `model is not supported`,
 `model not found`, `model_not_found` or `does not exist` (`unavailable_line` in
-`commands/pressure/fallback.rs`). The `ERROR` prefix is required because the log also carries
-codex's tool output and prose: a review that prints plan text or `fallback.rs` itself quotes
+`pressure/codex_run.rs`). The `ERROR` prefix is required because the log also carries
+codex's tool output and prose: a review that prints plan text or `codex_run.rs` itself quotes
 these phrases next to model ids, and an unrelated failure would otherwise rerun the whole review
 on the next model. The 404 form arrives as
 `ERROR: unexpected status 404 Not Found: Model not found <id>`. Codex also prints a
@@ -101,7 +101,7 @@ non-fatal `Model metadata for <id> not found` warning; it matches none of those 
 triggers a retry. The first attempt spawns on the caller's thread, so a spawn failure errors
 before Claude starts; the runner thread then retries silently while the Claude TUI owns the
 terminal, carrying each failed attempt's matched error line into a note because every attempt
-recreates the log. `run_pressure_step` prints the notes after Claude ends and names the model
+recreates the log. The terminal driver prints the notes after Claude ends and names the model
 that wrote the review. When the family is exhausted it prints the models tried, and the last
 status flows into `should_stop`, which prints the codex log tail.
 
