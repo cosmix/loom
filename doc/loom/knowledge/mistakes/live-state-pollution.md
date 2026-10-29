@@ -121,3 +121,13 @@ The environment check initially tried to decode the entire combined stdout/stder
 **What happened:** route tests that call `concept::install()` run plan 4's `SummaryEngine` against the real `~/.loom/plan/<key>` runtime directory, because `PlanContext::new` has no runtime override. A test that makes the engine write (a rename rewrite, an orphan delete) or needs unreadable claims would write to the operator's runtime state.
 
 **Prevention:** such a test calls `engine::install_with(ctx, fixture.paths.clone())` with a fixture runtime directory.
+
+## Editing While `loom check` Ran, and a Backgrounded Check That Never Relayed
+
+**What happened:** an integration-verify main agent requested `loom check`, then spawned fix engineers before it finished. The host job reads the live worktree, so vitest hit `pressure-dialog.tsx` mid-edit (`ReferenceError: visibleControls is not defined`) and the `web/dist` diff compared a half-edited tree. In the same stage a `loom check` run with `run_in_background` printed `LOOM_RELAY_V1` to a file the relay hook never reads: the request stayed pending, and a later foreground rerun answered `refused ... never reached the daemon`.
+
+**Why:** the gate was treated as a snapshot; it is a read of the live tree. The relay hook only sees a foreground command's stdout.
+
+**Prevention:** in a stage whose host check reads the worktree, edit nothing and spawn no writers while a `loom check` runs. Run every relayed `loom` command in its own foreground Bash call with unfiltered stdout; `loom check` returns `pending` immediately, so poll it between other work.
+
+**Fix:** wait for the result, then fix.

@@ -292,3 +292,11 @@ containing `git commit`, even in a scratch fixture repo, so prove a no-diff rese
 **Prevention:** a downstream stage that must record a measurement names the producing stage's acceptance command, and that command runs in the producer's sandbox. A distiller greps `loom memory show --all` for the exact tag before writing a measured fact, and records "not measured" with the deferral when the tag is absent; it never writes a figure it did not read.
 
 **Fix:** `architecture/summary-store.md` (Cost Ledger and Estimates) states that no cost is measured.
+
+## Web Test Traps in the Run and Pressure Dialogs
+
+**What happened:** several web tests failed on first run: a deferred built with `Promise.withResolvers` (not in the web ES2023 library target); a role query for background content after reopening a modal (Radix hides it from accessibility queries while the modal is open); `getByText` across an `Untrusted` child span (Testing Library matches direct text nodes); a fixture of `waiting_for_input` where `StageStatus` serde requires `waiting-for-input`; a handwritten abbreviated Stage YAML without required fields. A patch written against a file's expected text also missed because the edit hook had reformatted it.
+
+**Why:** each copied a helper or shape without checking the local contract.
+
+**Prevention:** use an ES2023 deferred; assert a hidden background element by text absence; query the authoring text node and assert the container's `textContent`; build stage fixtures with `Stage::default()` and `serialize_stage_to_markdown`; re-read a file the edit hook may have reformatted before patching it. Web contract tests are one top-level `it()` with the full name (see [run-handoff](../architecture/run-handoff.md)).

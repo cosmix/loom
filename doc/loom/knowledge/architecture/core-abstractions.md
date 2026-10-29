@@ -1,6 +1,6 @@
 # Core Abstractions
 
-> Graph, Stage
+> Graph
 
 ## Core Abstractions
 

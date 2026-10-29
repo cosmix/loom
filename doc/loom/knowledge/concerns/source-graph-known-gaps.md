@@ -77,3 +77,9 @@ which changes `excluded` for every consumer (enumeration, census, evaluator).
   is the stage's diff since its merge base, so unchanged `web/` files are not picked. A JS package without `node_modules`
   gives a note, not a failure (see [verification-v2-gates](../architecture/verification-v2-gates.md)). The graph-side root
   cause, the `EXCLUDED_ROOTS` first-segment gap above, is unchanged.
+
+## Reachable Checks From `main` Cannot Pass Through the Loom Library Crate
+
+A `reachable` goal-backward entry with `from: main` for a symbol of the `loom` library crate fails with every acceptance criterion green. `src/main.rs` imports the library as `loom::cli::{dispatch, Cli}`, and the resolver's package-name rule never applies inside a crate-root directory (`context/resolve/paths/rust.rs`), so every `loom::` path from `main.rs` is external. `dispatch(..)` also has nine callable namesakes over `MAX_CANDIDATES = 8`, so not even a candidate edge exists; `append_record` from `main` passes only through 0.20 candidate edges into `build.rs#main`. A module-qualified call (`plan::serve::execute`) binds only when written `crate::commands::plan::serve::execute`. A file that declares `pub mod X;` and defines `pub fn X()` makes every qualified call `module::X()` ambiguous (`plan_server/mod.rs` `run`, `plan_server/run/mod.rs`, `pressure/mod.rs`), and a tuple-struct constructor `T(x)` in the file holding `impl .. for T` is a same-file candidate pair that never binds, so `AppDriver` is reachable only by call-style construction. `loom map --impact` default kinds omit `contains` and `imports`, which `REACHABLE_KINDS` also omits.
+
+Choose a `from:` inside the library (a route handler or `cli::dispatch`'s callee) for such symbols, and dispute the criterion when the only honest origin is `main`. Closure registration of route handlers was tried and had no effect.

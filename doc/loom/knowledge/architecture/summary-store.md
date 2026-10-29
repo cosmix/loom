@@ -1,6 +1,6 @@
 # Summary Store
 >
-> Store, seal, claims, rebuild scheduler, cost
+> Store
 
 >
 

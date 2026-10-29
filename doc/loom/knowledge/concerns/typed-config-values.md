@@ -1,6 +1,6 @@
 # Typed Config Values: Known Gaps
 
-> Config gaps
+> Gaps
 > read-path seam. See [Typed Config Values](../architecture/config-value-types.md) for the
 > architecture.
 

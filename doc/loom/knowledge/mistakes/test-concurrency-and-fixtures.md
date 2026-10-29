@@ -338,3 +338,13 @@ expects to expire stays short. Reproduce a timing failure by looping the test un
 **What happened:** concept-web tests that asserted `scrollIntoView` or focus right after `findBy*` failed under load. A React passive effect that follows a fetch-driven render (`DefaultLane`) flushes in a separate scheduler `setImmediate`, never in the commit's own macrotask (`react-dom-client.development.js:18232` sets `needsPaint`; `scheduler.development.js:166` yields on it). RTL's `findBy*` and `waitFor` resolve on the commit's `MutationObserver` microtask and drain with `setTimeout(0)` (`pure.js:92`), which fires before that `setImmediate` under load.
 
 **Prevention:** wrap any assertion on a passive-effect side effect in `waitFor`, as `web/src/plan/files/file-mode.test.tsx:213` does.
+
+## A Fake `codex` First on the Process-Wide `PATH` Answers Every Concurrent Test
+
+**What happened:** `codex_is_recorded_again_after_a_fallback_and_shows_the_model_that_ran` failed under `--all-targets` with empty Codex model strings. The pressure fixture puts a fake `codex` first on the process `PATH`; unrelated concurrent lib tests start planning servers whose summaries quota poller runs `codex app-server` through `find_codex_path`, and each call appended an empty-model line to the fake's `bin/pids`. In the same plan a test binary spawning `CARGO_BIN_EXE_loom` failed `binary_spawn_guard` for a missing `SANCTIONED_SPAWNERS` entry, and a Rust raw string `r#"..."#` holding a fake shell script closed early at `echo "# Review"`.
+
+**Why:** a fake binary on a shared `PATH` is run by every test in the process, and the raw-string delimiter ended at the first quote-hash.
+
+**Prevention:** a fake that sits on `PATH` ignores argv it was not written for (the fake `codex` exits 1 unless `argv[1] == exec`). Every test binary that spawns the loom binary gets a `SANCTIONED_SPAWNERS` entry and a `LOOM_*` scrub. A raw string holding shell or Markdown uses `r##"..."##` when the body can contain `"#`.
+
+**Fix:** the fake exits unrecorded for other argv; the entry and the scrub were added.

@@ -1,6 +1,6 @@
 # Directory Structure
 
-> Module tree
+> Tree
 
 ## Directory Structure
 
