@@ -1,5 +1,11 @@
 # Loom blockages
 
+## Plan 09: contract fixture formatting
+
+- Symptom: chat-server contract freeze was refused because the oxfmt acceptance check failed on review-restore.json, review-compare.json and review-suggestion.json.
+- Recovery: Loom automatically filed freeze-refusal dispute 1 and started adjudication session session-c9c72418-1793218269. Dispute 1 received a verdict, the judge closed, and Loom restarted the contract session. A fresh freeze request was queued and chat-server returned to Executing without operator bypass or edits to orchestration state.
+- Outcome: resolved. chat-server, chat-web, integration-verify and knowledge-distill all completed and merged without further intervention. The integration-verify session ended at about 359k context and wrote three handoff files in two minutes (handoff-001 to 003, all from session-fcb69c68). One successor session resumed from them, so this was a single handoff and not a loop.
+
 ## Plan 08: dynamic guidance dispatch and source-graph reachability
 
 - Effective blocker: an invalid or unsupported `reachable` assertion blocks stage completion, and integration-verify rechecks completed predecessors' assertions, so it blocks downstream integration completion too. Accepting the limitation in retry context does not waive the automated gate. Installed Loom cannot amend or dispute this field, leaving no targeted CLI recovery for the bad check; in this run the user explicitly skipped verification to advance. Future Loom work should provide audited correction/dispute support for `reachable` so a bad assertion does not require a broad verification waiver.
