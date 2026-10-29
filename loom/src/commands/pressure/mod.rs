@@ -29,65 +29,24 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::claude::find_claude_path;
 use crate::cli::types_pressure::PressureArgs;
 use crate::codex::find_codex_path;
-use crate::fs::work_dir::{read_pressure_config, PressureConfig};
 use crate::user_config::UserConfig;
 
-mod fallback;
-mod models;
 mod paths;
 mod spawn;
+mod terminal;
 
-use fallback::{codex_model_label, spawn_codex_with_fallback, wait_codex};
-use models::PressureModels;
-use paths::{
-    claude_marker_path, codex_log_path, codex_report_path, resolve_plan_path, resolve_repo_root,
-};
-use spawn::{
-    claude_args, claude_should_stop, codex_args, run_claude_foreground, should_stop,
-    AGENT_TEAMS_ENV,
-};
-
-/// One step in the pressure pipeline.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum Step {
-    /// Delete the codex report file if it exists.
-    DeleteReport(PathBuf),
-    /// Run the two independent pressure-tests concurrently: Claude `/pressure`
-    /// in the foreground and Codex `$pressure` in the background.
-    Pressure {
-        /// Full positional slash invocation, e.g. `/pressure doc/plans/PLAN-foo.md`.
-        claude: String,
-        /// Full positional skill invocation, e.g. `$pressure doc/plans/PLAN-foo.md`.
-        codex: String,
-    },
-    /// Run Claude `/address` in the foreground to fold the review into the plan.
-    Address(String),
-}
-
-/// Build the ordered list of steps for `rounds` rounds.
-///
-/// Each round: delete the report (so a failed Codex write can't leave
-/// `/address` reading the previous round's report) → run Claude `/pressure` and
-/// Codex `$pressure` concurrently → Claude `/address`. After all rounds, one
-/// final report deletion as cleanup.
-pub(super) fn plan_steps(rounds: u32, invocation: &str, report: &Path) -> Vec<Step> {
-    let mut steps = Vec::new();
-    for _ in 0..rounds {
-        steps.push(Step::DeleteReport(report.to_path_buf()));
-        steps.push(Step::Pressure {
-            claude: format!("/pressure {invocation}"),
-            codex: format!("$pressure {invocation}"),
-        });
-        steps.push(Step::Address(format!("/address {invocation}")));
-    }
-    steps.push(Step::DeleteReport(report.to_path_buf()));
-    steps
-}
+use crate::pressure::codex_run::{codex_args, codex_model_label};
+use crate::pressure::models::{project_pressure_config, resolve_rounds, PressureModels};
+use crate::pressure::paths::{codex_report_path, resolve_plan_path, ResolvedPlan};
+use crate::pressure::{plan_steps, PipelineInput, PipelineOutcome, Step, RECORD_STEP_LABEL};
+use paths::{claude_marker_path, codex_log_path, resolve_repo_root};
+use spawn::{claude_args, AGENT_TEAMS_ENV};
+use terminal::TerminalDriver;
 
 /// Render the exact commands `--dry-run` would execute.
 ///
@@ -118,12 +77,14 @@ fn render_dry_run(
         models.address,
         models.address_effort
     );
-    for (n, step) in plan_steps(rounds, invocation, report)
-        .into_iter()
-        .enumerate()
-    {
+    let steps = plan_steps(rounds, invocation, report);
+    let record_step = steps.len() + 1;
+    for (n, step) in steps.into_iter().enumerate() {
         render_dry_run_step(&mut out, n + 1, step, repo_root, marker, models);
     }
+    out.push_str(&format!(
+        "  {record_step}. {RECORD_STEP_LABEL} in {invocation}\n"
+    ));
     out
 }
 
@@ -164,19 +125,6 @@ fn render_dry_run_step(
     }
 }
 
-/// Everything a pipeline step needs to run, built once in [`execute`] and
-/// passed by reference so the per-step helpers below take a single argument
-/// each instead of accumulating a long parameter list as the pipeline grows.
-struct StepContext<'a> {
-    claude_path: &'a Path,
-    codex_path: &'a Path,
-    repo_root: &'a Path,
-    marker: &'a Path,
-    codex_log: &'a Path,
-    report: &'a Path,
-    models: &'a PressureModels,
-}
-
 /// Print the pressure run's header: round count and target, then the
 /// per-role model selection. Split out of [`execute`] purely to keep that
 /// function under the maintainability line limit.
@@ -199,138 +147,70 @@ fn print_run_header(rounds: u32, invocation: &str, models: &PressureModels) {
     );
 }
 
-/// Run the concurrent Claude/Codex pressure-test step: Codex reviews the plan
-/// independently in the background (quiet, captured to a log) while Claude
-/// pressure-tests in the foreground (interactive).
-/// Codex falls back within its model family when the account cannot use the
-/// requested model; the fallbacks taken are printed once Claude has exited.
-/// Returns whether the pipeline should stop. Split out of [`execute`]'s
-/// `Step::Pressure` arm purely to keep that function under the
-/// maintainability line limit.
-fn run_pressure_step(ctx: &StepContext, claude: &str, codex: &str) -> Result<bool> {
-    let candidates = crate::codex::codex_model_candidates(&ctx.models.codex)
-        .into_iter()
-        .map(String::from)
-        .collect();
-    let codex_run = spawn_codex_with_fallback(
-        ctx.codex_path,
-        ctx.repo_root,
-        codex,
-        ctx.codex_log,
-        candidates,
-        &ctx.models.codex_effort,
-    )?;
-    println!(
-        "{} codex review started in background (log: {})",
-        "→".cyan().bold(),
-        ctx.codex_log.display()
-    );
-    let claude_outcome = run_claude_foreground(
-        ctx.claude_path,
-        ctx.repo_root,
-        claude,
-        ctx.marker,
-        &ctx.models.claude,
-        &ctx.models.claude_effort,
-    )?;
-    let claude_stop = claude_should_stop(claude_outcome);
-    let outcome = wait_codex(codex_run, ctx.codex_log)?;
-    outcome.print_fallbacks();
-    let codex_stop = should_stop("codex", outcome.status, Some(ctx.codex_log));
-    if outcome.status.success() {
-        report_codex_review(ctx.report, &outcome.model_used);
-    }
-    Ok(claude_stop || codex_stop)
-}
-
-/// After a clean codex exit, say whether `model` left its review at `report`
-/// — naming the model, since a fallback may have run a different one than
-/// the header shows. Split out of [`run_pressure_step`] purely to keep that
-/// function under the maintainability line limit.
-fn report_codex_review(report: &Path, model: &str) {
-    if report.is_file() {
-        println!(
-            "{} codex review ({model}) written → {}",
-            "✓".green().bold(),
-            report.display()
-        );
-    } else {
-        println!(
-            "{} codex ({model}) exited cleanly but wrote no review at {} — /address will run without it",
-            "!".yellow().bold(),
-            report.display()
-        );
+/// Plain terminal outcome lines; the printer colours only their markers.
+fn outcome_lines(outcome: &PipelineOutcome, plan: &str) -> Vec<String> {
+    match outcome {
+        PipelineOutcome::Recorded { line } => vec![
+            "✓ Pressure test complete.".to_string(),
+            format!("✓ recorded in {plan}: {line}"),
+        ],
+        PipelineOutcome::RecordSkipped { line, .. } => vec![format!(
+            "! {plan} is no longer at the path the run started with; not recorded: {line}"
+        )],
+        PipelineOutcome::Stopped { .. } => Vec::new(),
     }
 }
 
-/// Print the run header and execute every step of the pipeline in order,
-/// stopping early when a step signals to. Split out of [`execute`] purely to
-/// keep that function under the maintainability line limit.
-fn run_pipeline(ctx: &StepContext, rounds: u32, invocation: &str, report: &Path) -> Result<()> {
-    crate::utils::print_logo_header("Pressure Test");
-    print_run_header(rounds, invocation, ctx.models);
-
-    for step in plan_steps(rounds, invocation, report) {
-        let stop = match step {
-            Step::DeleteReport(path) => {
-                crate::claude::remove_if_exists(&path)?;
-                false
-            }
-            Step::Pressure { claude, codex } => run_pressure_step(ctx, &claude, &codex)?,
-            Step::Address(slash) => {
-                let outcome = run_claude_foreground(
-                    ctx.claude_path,
-                    ctx.repo_root,
-                    &slash,
-                    ctx.marker,
-                    &ctx.models.address,
-                    &ctx.models.address_effort,
-                )?;
-                claude_should_stop(outcome)
-            }
+fn print_outcome(outcome: &PipelineOutcome, plan: &str) {
+    let lines = outcome_lines(outcome, plan);
+    if !lines.is_empty() {
+        println!();
+    }
+    for line in lines {
+        let (marker, text) = line.split_once(' ').unwrap_or(("", &line));
+        let marker = if marker == "!" {
+            marker.yellow().bold()
+        } else {
+            marker.green().bold()
         };
-        if stop {
-            return Ok(());
-        }
+        println!("{marker} {text}");
     }
-
-    println!("\n{} Pressure test complete.", "✓".green().bold());
-    Ok(())
 }
 
-/// The project tier for this run: `.loom/work/config.toml`'s `[pressure]`
-/// section when the repo has a workspace, else nothing set. A repo that never
-/// ran `loom init` has no workspace, and `loom pressure` still works there -
-/// so an absent workspace is "no project tier", not an error.
-fn project_pressure_config(repo_root: &Path) -> PressureConfig {
-    crate::fs::work_dir::WorkDir::new(repo_root)
-        .ok()
-        .map(|work_dir| read_pressure_config(work_dir.root()))
-        .unwrap_or_default()
+fn run_terminal_pipeline(
+    driver: &mut TerminalDriver<'_>,
+    rounds: u32,
+    resolved: &ResolvedPlan,
+) -> Result<()> {
+    crate::utils::print_logo_header("Pressure Test");
+    print_run_header(rounds, &resolved.invocation, driver.models);
+    let input = PipelineInput {
+        rounds,
+        invocation: &resolved.invocation,
+        report: driver.report,
+        plan_path: &resolved.fs_path,
+        claude_model: &driver.models.claude,
+        today: chrono::Local::now().date_naive(),
+    };
+    let outcome = crate::pressure::run_pipeline(driver, &input)?;
+    print_outcome(&outcome, &resolved.invocation);
+    Ok(())
 }
 
 /// Execute the pressure pipeline.
 pub fn execute(args: PressureArgs) -> Result<()> {
-    let PressureArgs {
-        plan,
-        rounds,
-        dry_run,
-        models: flags,
-    } = args;
-
     let repo_root = resolve_repo_root()?;
     let repo_root = repo_root.canonicalize().unwrap_or(repo_root);
     let project = project_pressure_config(&repo_root);
     let user = UserConfig::load();
-    let models = PressureModels::resolve(flags, &project, &user);
-    let rounds = models::resolve_rounds(rounds, &project, &user);
-
-    let resolved = resolve_plan_path(&plan, &repo_root)?;
+    let models = PressureModels::resolve(args.models, &project, &user);
+    let rounds = resolve_rounds(args.rounds, &project, &user);
+    let resolved = resolve_plan_path(&args.plan, &repo_root)?;
     let report = codex_report_path(&resolved.fs_path);
     let marker = claude_marker_path(&repo_root);
     let codex_log = codex_log_path();
 
-    if dry_run {
+    if args.dry_run {
         print!(
             "{}",
             render_dry_run(
@@ -345,10 +225,9 @@ pub fn execute(args: PressureArgs) -> Result<()> {
         );
         return Ok(());
     }
-
     let claude_path = find_claude_path()?;
     let codex_path = find_codex_path()?;
-    let ctx = StepContext {
+    let mut driver = TerminalDriver {
         claude_path: &claude_path,
         codex_path: &codex_path,
         repo_root: &repo_root,
@@ -357,7 +236,7 @@ pub fn execute(args: PressureArgs) -> Result<()> {
         report: &report,
         models: &models,
     };
-    run_pipeline(&ctx, rounds, &resolved.invocation, &report)
+    run_terminal_pipeline(&mut driver, rounds, &resolved)
 }
 
 #[cfg(test)]

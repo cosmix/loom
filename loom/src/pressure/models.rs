@@ -7,14 +7,16 @@
 //! [`crate::user_config::UserConfig`]'s other resolved getters follow, just
 //! spread across six getters and a fourth (project) tier instead of one.
 
+use std::path::Path;
+
 use crate::cli::types_pressure::PressureModelFlags;
-use crate::fs::work_dir::PressureConfig;
+use crate::fs::work_dir::{read_pressure_config, PressureConfig, WorkDir};
 use crate::user_config::UserConfig;
 
 /// The six model/effort slots one pressure run spawns with, each resolved
 /// flag > project `[pressure]` > user `[pressure]` > built-in default.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct PressureModels {
+pub struct PressureModels {
     /// Claude model for the `/pressure` step.
     pub claude: String,
     /// Claude reasoning effort for the `/pressure` step.
@@ -41,7 +43,7 @@ impl PressureModels {
     /// read here) so tests can exercise precedence against constructed
     /// configs without touching the filesystem — `PressureConfig::default()`
     /// and `UserConfig::default()` give all-defaults.
-    pub(super) fn resolve(
+    pub fn resolve(
         flags: PressureModelFlags,
         project: &PressureConfig,
         user: &UserConfig,
@@ -81,13 +83,25 @@ impl PressureModels {
     }
 }
 
+/// Resolve model slots using the project and user configuration for `root`.
+pub fn resolve_for(root: &Path, flags: PressureModelFlags) -> PressureModels {
+    PressureModels::resolve(flags, &project_pressure_config(root), &UserConfig::load())
+}
+
+/// The project tier for a run: `.loom/work/config.toml`'s `[pressure]`
+/// section when `root` has a workspace, else nothing set. A repo that never
+/// ran `loom init` has no workspace, and `loom pressure` still works there -
+/// so an absent workspace is "no project tier", not an error.
+pub fn project_pressure_config(root: &Path) -> PressureConfig {
+    WorkDir::new(root)
+        .ok()
+        .map(|work_dir| read_pressure_config(work_dir.root()))
+        .unwrap_or_default()
+}
+
 /// Rounds one pressure run executes: `--rounds`, else project
 /// `[pressure] rounds`, else user `[pressure] rounds`, else the built-in.
-pub(super) fn resolve_rounds(
-    flag: Option<u32>,
-    project: &PressureConfig,
-    user: &UserConfig,
-) -> u32 {
+pub fn resolve_rounds(flag: Option<u32>, project: &PressureConfig, user: &UserConfig) -> u32 {
     flag.or_else(|| project.rounds())
         .unwrap_or_else(|| user.pressure_rounds())
 }

@@ -1,12 +1,11 @@
-//! Argv construction, the background codex spawn and exit handling for the
-//! pressure pipeline. Waiting on codex, with in-family model fallback, lives
-//! in `super::fallback`. The foreground Claude driver itself lives in
+//! Claude argv construction and terminal exit handling for the pressure
+//! pipeline. The foreground Claude driver itself lives in
 //! `crate::claude::session`, shared with `loom knowledge bootstrap`.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use colored::Colorize;
 use std::path::Path;
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::ExitStatus;
 
 use crate::claude::{classify_exit, ClaudeOutcome, ExitAction};
 
@@ -15,25 +14,10 @@ pub(super) use crate::claude::AGENT_TEAMS_ENV;
 /// Bytes of the codex log tailed to the terminal when codex fails.
 pub(super) const TAIL_BYTES: usize = 2000;
 
-/// Single-line instruction appended to Claude's system prompt so an interactive
-/// (subscription-billed) session can be closed by the driver: the agent creates
-/// `marker` as its final action, which the driver watches for.
-pub(super) fn completion_instruction(marker: &Path) -> String {
-    format!(
-        "AUTONOMOUS RUN: this Claude session was launched by `loom pressure`; no human will end it for you. \
-         When the task is FULLY complete and the plan file is fully updated (after every subagent has finished), \
-         your FINAL action MUST be to run exactly this shell command and nothing after it: touch {}. \
-         Do not run it earlier. That path is inside the repo's gitignored `.loom/work/` because the agent sandbox \
-         mounts /tmp read-only; creating this one marker is the sanctioned exception to the rule against \
-         writing under `.loom/work/` directly. Once that file exists the driver closes this session.",
-        marker.display()
-    )
-}
-
 /// argv (after the binary) for a Claude spawn. `slash` is the full positional
 /// slash invocation; `marker` is injected into the appended system prompt so
 /// the agent can signal completion; `model` and `effort` are the resolved
-/// [`super::models::PressureModels`] slots for this step — the same
+/// [`crate::pressure::models::PressureModels`] slots for this step — the same
 /// `--model`/`--effort` pair the daemon's own Claude launcher uses.
 pub(super) fn claude_args(slash: &str, marker: &Path, model: &str, effort: &str) -> Vec<String> {
     vec![
@@ -44,28 +28,8 @@ pub(super) fn claude_args(slash: &str, marker: &Path, model: &str, effort: &str)
         "--effort".to_string(),
         effort.to_string(),
         "--append-system-prompt".to_string(),
-        completion_instruction(marker),
+        crate::pressure::completion_instruction(marker, crate::pressure::MarkerHome::Workspace),
         slash.to_string(),
-    ]
-}
-
-/// argv (after the binary) for a Codex spawn. `skill` is the full positional
-/// skill invocation, e.g. `$pressure doc/plans/PLAN-foo.md`; `model` and
-/// `effort` are the resolved [`super::models::PressureModels`] slots for this
-/// step. Codex has no dedicated effort flag, so `effort` travels as a `-c`
-/// override instead.
-pub(super) fn codex_args(repo_root: &Path, skill: &str, model: &str, effort: &str) -> Vec<String> {
-    vec![
-        "exec".to_string(),
-        "--sandbox".to_string(),
-        "workspace-write".to_string(),
-        "-m".to_string(),
-        model.to_string(),
-        "-c".to_string(),
-        format!("model_reasoning_effort={effort}"),
-        "-C".to_string(),
-        repo_root.display().to_string(),
-        skill.to_string(),
     ]
 }
 
@@ -94,41 +58,15 @@ pub(super) fn run_claude_foreground(
     crate::claude::run_foreground(claude_path, repo_root, &args, marker)
 }
 
-/// Spawn `codex exec` in the background with its (noisy) output captured to
-/// `log_path`, so it runs concurrently with the foreground Claude session
-/// without flooding the terminal. Each call re-creates `log_path`, so a
-/// fallback attempt's log never mixes with the one before it.
-pub(super) fn spawn_codex_background(
-    codex_path: &Path,
-    repo_root: &Path,
-    skill: &str,
-    log_path: &Path,
-    model: &str,
-    effort: &str,
-) -> Result<Child> {
-    let log = std::fs::File::create(log_path)
-        .with_context(|| format!("failed to create codex log {}", log_path.display()))?;
-    let log_err = log
-        .try_clone()
-        .context("failed to clone codex log handle")?;
-    let mut cmd = Command::new(codex_path);
-    cmd.args(codex_args(repo_root, skill, model, effort));
-    cmd.current_dir(repo_root);
-    cmd.stdin(Stdio::null());
-    cmd.stdout(Stdio::from(log));
-    cmd.stderr(Stdio::from(log_err));
-    cmd.spawn().context("failed to spawn codex")
-}
-
-/// React to a finished child. Returns `true` when the pipeline should stop.
+/// React to a finished child, returning the stop message without decoration.
 ///
 /// On abort the child label and exit code (or signal) are printed, so a
 /// headless failure — e.g. a codex usage error exiting with clap's code 2 — is
 /// surfaced rather than silently mistaken for a clean Ctrl+C interrupt. When a
 /// `log` is provided (codex), its tail is printed on any non-clean exit.
-pub(super) fn should_stop(label: &str, status: ExitStatus, log: Option<&Path>) -> bool {
+pub(super) fn should_stop(label: &str, status: ExitStatus, log: Option<&Path>) -> Option<String> {
     match classify_exit(status) {
-        ExitAction::Continue => false,
+        ExitAction::Continue => None,
         ExitAction::Warn => {
             println!(
                 "{} {label} exited with code {} — continuing",
@@ -138,32 +76,75 @@ pub(super) fn should_stop(label: &str, status: ExitStatus, log: Option<&Path>) -
             if let Some(p) = log {
                 print_log_tail(p, TAIL_BYTES);
             }
-            false
+            None
         }
         ExitAction::Abort => {
-            match status.code() {
-                Some(code) => println!(
-                    "\n{} {label} exited with code {code} — stopping pressure run.",
-                    "─".dimmed()
-                ),
-                None => println!(
-                    "\n{} {label} was terminated by a signal — stopping pressure run.",
-                    "─".dimmed()
-                ),
-            }
+            let reason = match status.code() {
+                Some(code) => format!("{label} exited with code {code} — stopping pressure run."),
+                None => format!("{label} was terminated by a signal — stopping pressure run."),
+            };
+            println!("\n{} {reason}", "─".dimmed());
             if let Some(p) = log {
                 print_log_tail(p, TAIL_BYTES);
             }
-            true
+            Some(reason)
         }
     }
 }
 
-/// Map a foreground Claude outcome to a stop decision. A driver-initiated
+/// Map a foreground Claude outcome to a stop message. A driver-initiated
 /// completion is always success; a self-exit is classified normally.
-pub(super) fn claude_should_stop(outcome: ClaudeOutcome) -> bool {
+pub(super) fn claude_should_stop(outcome: ClaudeOutcome) -> Option<String> {
     match outcome {
-        ClaudeOutcome::Completed => false,
+        ClaudeOutcome::Completed => None,
         ClaudeOutcome::Exited(status) => should_stop("claude", status, None),
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::process::ExitStatusExt;
+
+    #[test]
+    fn clean_and_warning_exits_continue_without_a_stop_reason() {
+        for code in [0, 1, 42] {
+            let status = ExitStatus::from_raw(code << 8);
+            assert_eq!(should_stop("codex", status, None), None);
+            assert_eq!(claude_should_stop(ClaudeOutcome::Exited(status)), None);
+        }
+        assert_eq!(claude_should_stop(ClaudeOutcome::Completed), None);
+    }
+
+    #[test]
+    fn abort_exit_codes_return_the_printed_reason_for_each_agent() {
+        for code in [2, 130] {
+            let status = ExitStatus::from_raw(code << 8);
+            assert_eq!(
+                should_stop("codex", status, None),
+                Some(format!(
+                    "codex exited with code {code} — stopping pressure run."
+                ))
+            );
+            assert_eq!(
+                claude_should_stop(ClaudeOutcome::Exited(status)),
+                Some(format!(
+                    "claude exited with code {code} — stopping pressure run."
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn signal_exit_returns_the_printed_signal_reason() {
+        let status = ExitStatus::from_raw(15);
+        assert_eq!(
+            should_stop("codex", status, None),
+            Some("codex was terminated by a signal — stopping pressure run.".to_string())
+        );
+        assert_eq!(
+            claude_should_stop(ClaudeOutcome::Exited(status)),
+            Some("claude was terminated by a signal — stopping pressure run.".to_string())
+        );
     }
 }

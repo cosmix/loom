@@ -19,3 +19,4 @@ mod repair_tests;
 mod tests;
 
 pub use execute::execute;
+pub use plan_setup::preflight_plan;
