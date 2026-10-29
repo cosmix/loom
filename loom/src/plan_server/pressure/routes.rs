@@ -3,9 +3,9 @@
 
 use serde_json::json;
 
-use super::driver::{accept, StartRefused};
+use super::driver::{accept, announce_options_changed, StartRefused};
 use super::install::PressureRuns;
-use super::options::{options, validate_start};
+use super::options::{config_block, options, validate_start};
 use super::view::StopCause;
 use crate::plan_server::authoring::Refusal;
 use crate::plan_server::context::PlanContext;
@@ -42,7 +42,9 @@ pub fn all() -> Vec<RouteSpec> {
             method: Method::Post,
             path: "/api/pressure/confirm-config",
             body: BodyKind::None,
-            role: Role::Holder,
+            // Authoring lives in memory: after a restart nobody holds it, and a persisted block
+            // must still be confirmable by the browser that takes it.
+            role: Role::HolderOrTake,
             handler: confirm_route,
         },
     ]
@@ -52,21 +54,12 @@ pub fn all() -> Vec<RouteSpec> {
 fn options_route(req: &ApiRequest<'_>) -> ApiResponse {
     let mut offered = options(req.ctx, req.browser);
     if offered.available {
-        if let Some(reason) = block_reason(req.ctx) {
+        if let Some(block) = &offered.config_block {
             offered.available = false;
-            offered.disabled_reason = Some(reason);
+            offered.disabled_reason = Some(block.reason.clone());
         }
     }
     ApiResponse::json(200, &offered)
-}
-
-/// The persisted block's reason; an unreadable block fails closed.
-fn block_reason(ctx: &PlanContext) -> Option<String> {
-    match StartBlocks::current(ctx.runtime()) {
-        Ok(None) => None,
-        Ok(Some(block)) => Some(block.reason),
-        Err(error) => Some(format!("start blocked: config-block unreadable: {error:#}")),
-    }
 }
 
 fn start_route(req: &ApiRequest<'_>) -> ApiResponse {
@@ -103,7 +96,7 @@ fn invalid(ctx: &PlanContext, code: &str) -> ApiResponse {
         "invalid_model" => refuse(400, code, "A model or effort is not in its list."),
         "invalid_rounds" => refuse(400, code, "Rounds must be between 1 and 10."),
         "config_blocked" => {
-            let reason = block_reason(ctx);
+            let reason = config_block(ctx.runtime()).map(|block| block.reason);
             let reason = reason.unwrap_or_else(|| "Codex changed session configuration".into());
             refuse(
                 409,
@@ -153,7 +146,10 @@ fn stop_route(req: &ApiRequest<'_>) -> ApiResponse {
     }
 }
 
-/// The holder checked the files Codex changed: launches may start again.
+/// The holder (or the browser that took authoring while it was free) checked the files Codex
+/// changed: launches may start again. Every tab hears it
+/// as an options-changed frame, its cue to fetch the options (no block) anew. The frame does
+/// not depend on a run view, which a restarted server does not have.
 fn confirm_route(req: &ApiRequest<'_>) -> ApiResponse {
     let runtime = req.ctx.runtime();
     if matches!(StartBlocks::current(runtime), Ok(None)) {
@@ -163,10 +159,11 @@ fn confirm_route(req: &ApiRequest<'_>) -> ApiResponse {
             "No configuration change waits for confirmation.",
         );
     }
-    match StartBlocks::clear(runtime) {
-        Ok(()) => ApiResponse::json(200, &json!({ "cleared": true })),
-        Err(error) => ApiResponse::error(500, "internal", &format!("{error:#}")),
+    if let Err(error) = StartBlocks::clear(runtime) {
+        return ApiResponse::error(500, "internal", &format!("{error:#}"));
     }
+    announce_options_changed(req.ctx);
+    ApiResponse::json(200, &json!({ "cleared": true }))
 }
 
 fn runs(ctx: &PlanContext) -> Result<std::sync::Arc<PressureRuns>, ApiResponse> {

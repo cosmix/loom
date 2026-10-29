@@ -230,15 +230,20 @@ fn entry_kind(listing: &Dir, entry: &Entry) -> Result<EntryKind> {
         None => {
             let stat = fstatat(listing, entry.file_name(), AtFlags::AT_SYMLINK_NOFOLLOW)
                 .with_context(|| format!("cannot inspect {:?}", entry.file_name()))?;
-            match stat.st_mode & libc::S_IFMT {
-                libc::S_IFDIR => EntryKind::Directory,
-                libc::S_IFREG => EntryKind::File,
-                libc::S_IFLNK => EntryKind::Symlink,
-                _ => EntryKind::Special,
-            }
+            kind_of_mode(stat.st_mode)
         }
     };
     Ok(kind)
+}
+
+/// The kind a no-follow `st_mode` describes: a symlink is a `Symlink`, never its target.
+pub(crate) fn kind_of_mode(mode: libc::mode_t) -> EntryKind {
+    match mode & libc::S_IFMT {
+        libc::S_IFDIR => EntryKind::Directory,
+        libc::S_IFREG => EntryKind::File,
+        libc::S_IFLNK => EntryKind::Symlink,
+        _ => EntryKind::Special,
+    }
 }
 
 #[cfg(test)]
