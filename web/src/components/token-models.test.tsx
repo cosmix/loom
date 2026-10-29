@@ -1,11 +1,12 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import fixture from "@/api/fixtures/snapshot.json";
 import { snapshotSchema } from "@/api/schema";
 import { TokenFlowPanel } from "@/components/token-flow-panel";
+import { resetModelColors } from "@/lib/model-color";
 import { applySnapshot } from "@/state/apply";
 
 function renderPanel(mutate?: (raw: typeof fixture) => void) {
@@ -20,6 +21,7 @@ function renderPanel(mutate?: (raw: typeof fixture) => void) {
   );
 }
 
+beforeEach(resetModelColors);
 afterEach(cleanup);
 
 describe("TokenModels", () => {

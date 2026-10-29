@@ -1,10 +1,10 @@
 import type { TokenFlow } from "@/api/schema";
 import { ModelHistoryChart } from "@/components/model-history-chart";
-import { modelColor } from "@/lib/model-color";
+import { stickyModelColors } from "@/lib/model-color";
 import { compactTokens, modelGroups, modelRates, modelShares, wholePercents } from "@/lib/tokens";
 
 function modelColors(shares: ReturnType<typeof modelShares>): Map<string, string> {
-  return new Map(shares.map(({ model }) => [model, modelColor(model)]));
+  return stickyModelColors(shares.map(({ model }) => model));
 }
 
 /// Radius of a circle whose circumference is 100, so a dash length is a percentage.
