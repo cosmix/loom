@@ -11,7 +11,7 @@ use serde_json::Value;
 use super::commands::{Out, Step};
 use super::host::LaunchSpec;
 use super::registry::SessionRecord;
-use super::{BridgeEvent, EndMode, EndOutcome, RecoveryReport};
+use super::{team::TeamTracker, BridgeEvent, EndMode, EndOutcome, RecoveryReport};
 use crate::plan_session::attachments::Attachment;
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::{
@@ -211,6 +211,7 @@ pub(super) struct Session {
     pub(super) shown: Shown,
     pub(super) transcript: Option<PathBuf>,
     pub(super) token_paths: Vec<PathBuf>,
+    pub(super) team: Option<TeamTracker>,
     pub(super) next_identity: Instant,
     pub(super) flow: Flow,
 }
@@ -238,6 +239,7 @@ impl Session {
             },
             transcript: None,
             token_paths: Vec::new(),
+            team: None,
             next_identity: Instant::now(),
             flow: Flow::default(),
             record,

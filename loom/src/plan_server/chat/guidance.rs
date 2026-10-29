@@ -84,6 +84,9 @@ impl GuidanceProvider for ChecklistGuidance {
 
 /// Whether the checklist offers `offer` now.
 fn offered(ctx: &PlanContext, offer: &str, selected: Option<&str>) -> bool {
+    if matches!(offer, "kickoff" | "kickoff-small") {
+        return true;
+    }
     let project = ctx.project();
     project
         .moves

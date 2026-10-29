@@ -4,6 +4,7 @@ pub mod chat;
 pub mod checklist;
 pub mod concept;
 pub mod files;
+pub mod kickoff;
 pub mod message;
 pub mod paths;
 pub mod presence;
@@ -12,6 +13,7 @@ pub mod review;
 pub mod run;
 pub mod server;
 pub mod summaries;
+pub mod team;
 
 #[cfg(test)]
 mod files_tests;

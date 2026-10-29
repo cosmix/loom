@@ -86,10 +86,34 @@ impl Bridge {
                 session.emit(deltas, step);
             });
         }
+        for (agent, name, lines) in &batch.teammates {
+            self.step(id, |session, config, step| {
+                session.ingest_teammate(agent, name, lines, config, step);
+            });
+        }
     }
 }
 
 impl Session {
+    fn ingest_teammate(
+        &mut self,
+        agent: &str,
+        name: &str,
+        lines: &[String],
+        config: &BridgeConfig,
+        step: &mut Step,
+    ) {
+        let tracker = self
+            .team
+            .get_or_insert_with(|| super::team::TeamTracker::new(config.project_root.clone()));
+        if tracker.ingest(agent, name, lines) {
+            step.event(BridgeEvent::Team {
+                id: self.id.clone(),
+                teammates: tracker.statuses(),
+            });
+        }
+    }
+
     /// One spool event; an event already applied (a replayed spool) changes nothing.
     pub(super) fn apply_event(
         &mut self,

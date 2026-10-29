@@ -77,7 +77,11 @@ fn starting_point(
     let target = lines
         .next()
         .context("authoring opening is missing its target")?;
-    let mut block = format!("Step: {step}\nTarget: {target}\n");
+    let kickoff = matches!(start, AuthoringStart::Kickoff { .. });
+    let mut block = format!("Step: {step}\n");
+    if !kickoff {
+        block.push_str(&format!("Target: {target}\n"));
+    }
     if !matches!(start, AuthoringStart::NoStep) {
         let skill = lines
             .next()
@@ -86,6 +90,9 @@ fn starting_point(
             .map(|(skill, _)| skill)
             .context("authoring opening is missing its skill")?;
         block.push_str(&format!("Skill: {skill}.\n"));
+    }
+    if kickoff {
+        block.push_str(&format!("{target}\n"));
     }
     Ok(block)
 }

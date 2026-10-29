@@ -81,6 +81,11 @@ impl SessionDir {
         self.0.join("guard.json")
     }
 
+    /// Return the session scope file path.
+    pub fn scope(&self) -> PathBuf {
+        self.0.join(super::scope::SCOPE_FILE)
+    }
+
     /// Return the session record path.
     pub fn record(&self) -> PathBuf {
         self.0.join("session.json")
@@ -235,6 +240,10 @@ mod tests {
     #[test]
     fn guard() {
         assert_eq!(session().guard(), session().path().join("guard.json"));
+    }
+    #[test]
+    fn scope() {
+        assert_eq!(session().scope(), session().path().join("scope.json"));
     }
     #[test]
     fn record() {

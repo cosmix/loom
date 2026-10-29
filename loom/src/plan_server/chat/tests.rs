@@ -24,7 +24,7 @@ use crate::plan_session::bridge::{Bridge, BridgeEvent, EndCause, EndMode, EndOut
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::SessionState;
 use crate::plan_session::spool::append_event;
-use crate::planning::runtime::{create_runtime_dir, runtime_paths_under};
+use crate::planning::runtime::create_runtime_dir;
 use crate::planning::watch::OwnWrites;
 use crate::process::{IdentityStatus, ProcessIdentity};
 
@@ -104,8 +104,6 @@ impl Fixture {
         std::fs::create_dir_all(root.join("doc/product")).unwrap();
         std::fs::write(root.join("doc/product/index.md"), "# Demo\n").unwrap();
         std::fs::create_dir_all(tmp.path().join("transcripts")).unwrap();
-        let runtime = runtime_paths_under(&tmp.path().join("loom-home"), &root).unwrap();
-        create_runtime_dir(&runtime).unwrap();
         let (message, fix) = ("tmux is missing".into(), "install tmux".into());
         let problem = MissingPrereq {
             what: PrereqKind::Tmux,
@@ -117,6 +115,8 @@ impl Fixture {
         let bind = BindInfo::new(local, &"ab".repeat(32));
         let ctx = PlanContext::new(root.clone(), read_only, bind, OwnWrites::default());
         let (ctx, host) = (Arc::new(ctx.unwrap()), Arc::new(FakeHost::default()));
+        let runtime = ctx.runtime().clone();
+        create_runtime_dir(&runtime).unwrap();
         install_with(&ctx, host.clone(), move |config| {
             config.runtime = runtime;
             config.home = root.join("home");
@@ -155,7 +155,6 @@ impl Fixture {
         thread::spawn(move || rx.iter().for_each(|f| keep.lock().unwrap().push(parse(&f))));
         Tab { conn, opened, log }
     }
-
     /// Dispatch `cmd` from `tab` and return its `result` frame.
     pub(super) fn command(&self, tab: &Tab, cmd: ChatCommand) -> Value {
         let before = tab.frames().len();
@@ -165,21 +164,18 @@ impl Fixture {
             after.find(|frame| frame["frame"] == "result")
         })
     }
-
     /// Start a New chat from `tab` and wait for its launch.
     pub(super) fn start(&self, tab: &Tab) -> LaunchSpec {
         assert_eq!(self.command(tab, start()), ok_result(), "start refused");
         let id = wait_for("the chat", || self.bridge.chat_session_id());
         self.launched(&id)
     }
-
     pub(super) fn launched(&self, id: &str) -> LaunchSpec {
         wait_for("the spawn", || {
             let specs = self.host.specs.lock().unwrap();
             specs.iter().find(|spec| spec.id == id).cloned()
         })
     }
-
     /// Start a New chat and run its opening turn to Idle.
     pub(super) fn idle_chat(&self, tab: &Tab) -> LaunchSpec {
         let s = self.start(tab);
@@ -192,7 +188,6 @@ impl Fixture {
         self.wait_state(&s, SessionState::Idle);
         s
     }
-
     /// Append one hook event the way the hook does.
     pub(super) fn spool(&self, s: &LaunchSpec, event: &str, extra: Value) {
         let transcript = self.tmp.path().join(format!("transcripts/{}.jsonl", s.id));
@@ -207,18 +202,15 @@ impl Fixture {
         append_event(s.dir.path(), event, &payload).unwrap();
         thread::sleep(Duration::from_millis(3));
     }
-
     pub(super) fn state(&self, s: &LaunchSpec) -> Option<SessionState> {
         let mut sessions = self.bridge.sessions().into_iter();
         sessions
             .find(|(id, ..)| *id == s.id)
             .map(|(.., state)| state)
     }
-
     pub(super) fn wait_state(&self, s: &LaunchSpec, state: SessionState) {
         wait_until(&format!("state {state:?}"), || self.state(s) == Some(state));
     }
-
     pub(super) fn ended(&self, id: &str) -> Vec<EndOutcome> {
         let events = self.events.lock().unwrap();
         let ended = events.iter().filter_map(|event| match event {
@@ -246,6 +238,13 @@ impl Fixture {
         self.ctx.authoring().connection_closed(holder, now);
         let later = now + GRACE + Duration::from_secs(1);
         self.ctx.authoring().tick(later);
+    }
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        self.bridge.abort();
+        let _ = std::fs::remove_dir_all(&self.ctx.runtime().dir);
     }
 }
 
