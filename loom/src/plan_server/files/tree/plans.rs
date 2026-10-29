@@ -1,6 +1,7 @@
 //! Feature metaplans, their listed plans, and standalone plans.
 
 use super::*;
+use crate::planning::kinds::plan_path;
 use crate::planning::metaplan::MetaplanEntry;
 
 impl Builder<'_> {
@@ -57,6 +58,11 @@ impl Builder<'_> {
             return self.plan(&plan);
         }
         let mut gap = entry(None, &row.heading, EntryKind::MetaplanEntry, false);
+        gap.target = row.slug.as_ref().map(|slug| {
+            plan_path(Some(feature), slug)
+                .to_string_lossy()
+                .into_owned()
+        });
         gap.feature = Some(feature.to_owned());
         gap.gap = true;
         gap

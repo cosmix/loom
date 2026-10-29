@@ -138,7 +138,8 @@ pub struct TurnSectionsFile {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ImplementedByResponse {
-    pub sections: BTreeMap<u32, Vec<PlanLink>>,
+    /// Keys are feature-qualified document ids such as `product/demo/section_02`.
+    pub sections: BTreeMap<String, Vec<PlanLink>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

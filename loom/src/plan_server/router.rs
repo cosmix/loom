@@ -18,7 +18,7 @@ use crate::web_server::http::{self, RequestHead};
 use crate::web_server::limits::{Lane, Slot};
 use crate::web_server::{ConnInfo, Router};
 
-/// The page every path outside `/api/`, `/assets/` and `/ws` serves.
+/// The page every path outside `/api/`, `/assets/`, `/fonts/` and `/ws` serves.
 const APP_PAGE: &str = "plan.html";
 const NOT_EMBEDDED: &str = "planning assets are not embedded; build web/dist and rebuild loom";
 const PLAIN: &str = "text/plain; charset=utf-8";
@@ -118,7 +118,7 @@ impl PlanRouter {
         true
     }
 
-    /// The embedded app: `/assets/<key>`, or the app page for every other path.
+    /// Embedded `/assets/` and `/fonts/` paths (404 if missing), or the app page otherwise.
     fn serve_static(&self, stream: &mut TcpStream, head: &RequestHead, conn: &ConnInfo<'_>) {
         if !matches!(head.method.as_str(), "GET" | "HEAD") {
             let response = ApiResponse::text(405, PLAIN, "GET required");
@@ -127,17 +127,18 @@ impl PlanRouter {
         if head.path == "/" && self.bootstrap(stream, head, conn) {
             return;
         }
-        let (status, mime, body) = if head.path.starts_with("/assets/") {
-            match assets::lookup(&head.path) {
-                Some((body, mime)) => (200, mime, body),
-                None => (404, PLAIN, b"not found".as_slice()),
-            }
-        } else {
-            match assets::page(APP_PAGE) {
-                Some(body) => (200, "text/html; charset=utf-8", body),
-                None => (503, PLAIN, NOT_EMBEDDED.as_bytes()),
-            }
-        };
+        let (status, mime, body) =
+            if head.path.starts_with("/assets/") || head.path.starts_with("/fonts/") {
+                match assets::lookup(&head.path) {
+                    Some((body, mime)) => (200, mime, body),
+                    None => (404, PLAIN, b"not found".as_slice()),
+                }
+            } else {
+                match assets::page(APP_PAGE) {
+                    Some(body) => (200, "text/html; charset=utf-8", body),
+                    None => (503, PLAIN, NOT_EMBEDDED.as_bytes()),
+                }
+            };
         request::write_response(stream, head, status, mime, body, None);
     }
 

@@ -20,6 +20,8 @@ pub struct TreeEntry {
     /// Whether a top-level vision, section or metaplan needs a feature home.
     pub misplaced: bool,
     pub path: Option<String>,
+    /// For a gap, the repository-relative path of the missing document; null otherwise.
+    pub target: Option<String>,
     pub title: String,
     pub file_name: Option<String>,
     pub kind: EntryKind,

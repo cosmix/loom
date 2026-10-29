@@ -126,6 +126,7 @@ fn entry(path: Option<&Path>, title: &str, kind: EntryKind, locked: bool) -> Tre
     let doc_kind = path.map(classify);
     TreeEntry {
         path: path.map(|p| p.to_string_lossy().into_owned()),
+        target: None,
         title: title.to_owned(),
         file_name: path
             .and_then(|p| p.file_name())

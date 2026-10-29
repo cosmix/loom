@@ -7,6 +7,9 @@ use crate::planning::checklist::{Checklist, CurrentStep, Offer, Step, StepMark};
 use crate::planning::project::Project;
 use crate::planning::slug::PlanState;
 
+#[path = "checklist_pitch.rs"]
+mod pitch;
+
 /// All feature checklists, standalone plans and misplaced-document offers in a snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -39,6 +42,8 @@ pub struct StandalonePlanView {
 pub struct ChecklistView {
     /// The feature directory name.
     pub feature: String,
+    /// The vision's first paragraph as plain text, absent without a vision.
+    pub pitch: Option<String>,
     /// The earliest gap, or the ready state.
     pub current: CurrentView,
     /// Marks of the seven planning steps.
@@ -223,7 +228,11 @@ impl From<&Project> for ProjectChecklistView {
         let mut checklists: Vec<_> = project
             .features
             .iter()
-            .map(|feature| ChecklistView::from(&feature.checklist))
+            .map(|feature| {
+                let mut view = ChecklistView::from(&feature.checklist);
+                view.pitch = pitch::feature_pitch(project, &feature.name);
+                view
+            })
             .collect();
         checklists.sort_by(|a, b| a.feature.cmp(&b.feature));
         let standalone = project
@@ -262,6 +271,7 @@ impl From<&Checklist> for ChecklistView {
         };
         Self {
             feature: checklist.feature.clone(),
+            pitch: None,
             current,
             steps: checklist
                 .steps
