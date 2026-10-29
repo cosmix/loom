@@ -4,12 +4,12 @@ of: overview/optim-token/engineering
 cites:
   "doc/plans/optim-token/index.md#plan-map": "sha256:c37687dbce10fe2504d3e8e49842a970f4845073429cb4f6131c7d12487664e5"
 members:
-  "plans/01-doctrine-truth-and-plan-guards": "sha256:db6c41f61eb5a83812cf68663cd3d6e62c59b54de563ad4c17ea487ed534e724"
-  "plans/02-delivery-truth": "sha256:0ff5cbe2f22300238c8890556379a67281af9719e7d718faed20ada5b4b2858b"
-  "plans/03-usage-evidence": "sha256:a0fae804e2c9872c67632dac3cc3af52fe0fbd5793c0f3960cc9fdbdd990fee4"
-  "plans/04-dependency-findings": "sha256:7b08ff2c8a21f7065cddfb324f703a2e2a01b046af9cb9e9c20a93141376908f"
-  "plans/05-guidance-and-gate-output": "sha256:b8e4ad07b960a092caf61a6620f40f013bdd275ed3d4fdfdb5e418f2babd5a55"
-  "plans/06-sandbox-route-closure": "sha256:b9a2646b7ae6be66b4cfcf7430d29d13e7df8da966eb6f47a462a1850f0728f6"
+  "plans/01-doctrine-truth-and-plan-guards": "sha256:4883703f55b8615db358dbf82a02241f597441ce9fc330c84e67c2ea47e38239"
+  "plans/02-delivery-truth": "sha256:c6483a664a088d4ce1281a2670dc7b5ade436f09d6241bad3fccaf67bf97e45d"
+  "plans/03-usage-evidence": "sha256:43fa8102b58a4f03a9600e5b4a053edfb9920a2ec27a7b318fb7dd650c13bff6"
+  "plans/04-dependency-findings": "sha256:e8dca4ac2dbcfadd63f931d664d04f15cc1033a2d047caa3c934d7f0f2d7f961"
+  "plans/05-guidance-and-gate-output": "sha256:1346ce0c412b49addfdd69920ea6734f6962eeefd622bf5302a64531cee65e3d"
+  "plans/06-sandbox-route-closure": "sha256:c865a546e46147c9d50bc6a03fa2f0576f3aae787e842d831ae35e0af64d0376"
 ---
 
 # Token Optimisation Engineering Overview
@@ -20,14 +20,14 @@ The token optimisation programme orders six plans that make loom's signals, acco
 
 ## Token optimisation
 
-Doctrine truth corrects the signal, hooks and skills and adds guards for the bootstrap warning, stage model allowlist and archive failures. [01-doctrine](../../plans/01-doctrine-truth-and-plan-guards.md#s-c8fa8623) [01-doctrine](../../plans/01-doctrine-truth-and-plan-guards.md#s-e82028dd)
+Doctrine truth corrects the signal, hooks and skills and adds guards for the bootstrap warning, stage model allowlist and archive failures. [01-doctrine](../../plans/01-doctrine-truth-and-plan-guards.md#s-068f9ddf) [01-doctrine](../../plans/01-doctrine-truth-and-plan-guards.md#s-682bed9f) [01-doctrine](../../plans/01-doctrine-truth-and-plan-guards.md#s-e8d99f19) [01-doctrine](../../plans/01-doctrine-truth-and-plan-guards.md#s-183d1dd7)
 
-Delivery truth removes the read-receipt path and records a worker-brief delivery whenever the spawn guard issues a brief. [02-delivery](../../plans/02-delivery-truth.md#s-36213ed9) [02-delivery](../../plans/02-delivery-truth.md#s-a03b9c9f)
+Delivery truth removes the read-receipt path and records a worker-brief delivery whenever the spawn guard issues a brief. [02-delivery](../../plans/02-delivery-truth.md#s-3416b984) [02-delivery](../../plans/02-delivery-truth.md#s-fc67d2e8)
 
-Usage evidence fixes what `loom usage` reports and adds a signal replay harness that spends no provider tokens. [03-usage](../../plans/03-usage-evidence.md#s-56586398) [03-usage](../../plans/03-usage-evidence.md#s-96189c25)
+Usage evidence fixes what `loom usage` reports and adds a signal replay harness that spends no provider tokens. [03-usage](../../plans/03-usage-evidence.md#s-a18f6e71) [03-usage](../../plans/03-usage-evidence.md#s-cfef112b)
 
-Dependency findings let a successor stage see what its dependency changed, capped at a small byte budget. [04-findings](../../plans/04-dependency-findings.md#s-1fd3ff49) [04-findings](../../plans/04-dependency-findings.md#s-da13675b)
+Dependency findings let a successor stage see what its dependency changed, capped at a small byte budget. [04-findings](../../plans/04-dependency-findings.md#s-960e56e8) [04-findings](../../plans/04-dependency-findings.md#s-b59f82f7)
 
-Guidance and gate output shortens the template and orchestration skill and changes bytes only, with no new command or hook. [05-guidance](../../plans/05-guidance-and-gate-output.md#s-12327293) [05-guidance](../../plans/05-guidance-and-gate-output.md#s-4457a301)
+Guidance and gate output shortens the template and orchestration skill and changes bytes only, with no new command or hook. [05-guidance](../../plans/05-guidance-and-gate-output.md#s-0df7e231) [05-guidance](../../plans/05-guidance-and-gate-output.md#s-dd8f7ac8)
 
-Sandbox route closure denies four routes by which a stage agent's Bash could escape the bubblewrap capsule. [06-sandbox](../../plans/06-sandbox-route-closure.md#s-40a752b8) [06-sandbox](../../plans/06-sandbox-route-closure.md#s-34d998dd)
+Sandbox route closure denies four routes by which a stage agent's Bash could escape the bubblewrap capsule. [06-sandbox](../../plans/06-sandbox-route-closure.md#s-af1897e4) [06-sandbox](../../plans/06-sandbox-route-closure.md#s-f56062b2)
