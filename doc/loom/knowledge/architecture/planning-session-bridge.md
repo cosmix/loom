@@ -189,3 +189,30 @@ open diagnosis is post-merge work.
 ## Rebuilding Ids on a Turn
 
 `Bridge::set_rebuilding` (`bridge/rebuilding.rs`) stores a turn's rebuilt summary ids through `transcript::Mapper::set_summaries_rebuilding(turn_id, ids)` and publishes the returned `TurnUpdated` deltas. The mapper owns the `turns` field, so a delta alone would show the ids once and lose them on the next snapshot or `TurnUpdated` for that turn. Attribution calls it as the turn's summaries are named (`name_on_turn`).
+
+## Planner Kickoff, Draft-All Teams and the Feature Web Model
+
+Authoring sessions that start a feature or draft many documents at once, the session scope that confines them, and how the browser models features. The document side (features, ids, offers) is in [planning-document-model.md](planning-document-model.md).
+
+### Session scope
+
+Kickoff and draft-all runs keep `SessionKind::Authoring`; the limit on what they may write is a per-session `scope.json` in the session directory (`plan_session/scope.rs`: `SCOPE_FILE`, `SessionScope::{Open, Kickoff, Team}`, `load`, `write`). The chat guidance closure writes it before launch; the sandbox builder and the PreToolUse guard (`plan_session/guard/mod.rs`, which re-reads it on every authoring doc write) read it. The file lives under the runtime root, which a session can neither read nor write (only drafts, claims and the lock are writable).
+
+A new `SessionKind` variant or new fields on `StartRequest`, `LaunchSpec`, `SandboxInputs` and `GuardPolicy` would have broken every exhaustive match and about 25 struct literals outside the stage; a session-dir file needs neither and keeps `kind == Authoring` checks correct.
+
+- **Kickoff.** `SessionScope::Kickoff { existing, grant }` allows no write until the holder confirms one grant: a size (`feature` or `plan`) and a name (`is_feature_name`). `arm_kickoff` refuses an invalid name, a target that exists in the scope's `existing` list or in a fresh snapshot of the project (`scope_snapshot.rs`), a live session already on it, and a second confirmation. The grant allows exactly the target document and, for a plan, paths inside its brief bundle. The holder's `confirm` runs in `plan_server/chat/kickoff_cmd.rs` (holder-only, refused read-only, serialised by `ChatState::starting`).
+- **Team.** `SessionScope::team(documents, bundles)` allows only the listed documents (1 to 64, plain relative paths, no duplicates) and paths inside the listed brief bundles, and turns peer tools on (`peer_tools`). The documents come from `planning::guidance::team::draft_run` for the offers `draft-all-sections` and `draft-all-plans` (`MAX_TEAMMATES` 5 caps the teammates; the offer needs a feature). `chat/team.rs::extra_env` sets the agent-teams environment variable for those two offers only.
+- **Known limit.** The scope binds file tools through the PreToolUse guard. A Bash redirect under `doc/` that the holder approves is bounded by layer 1 (the locked set built at spawn, which cannot follow a mid-session grant), not by the scope.
+
+### State on the wire
+
+- Kickoff state is parsed in the chat layer from the last fenced `loom-kickoff` block in an assistant text item (`chat/kickoff.rs::parse_shape`: body at most 16 KiB, strings 500 characters, lists 40 items) and sent as `PlanMessage::Kickoff`.
+- Teammate transcripts are split out of subagent ingestion in `Feed::read_agents` (agent meta `taskKind` `in_process_teammate`); their lines feed token usage and a `TeamTracker` (`plan_session/bridge/team.rs`), surfaced as `BridgeEvent::Team` and `PlanMessage::DraftTeam`. `ChatDelta` and `ChatSnapshot` are unchanged, so the web schemas gained two message arms only.
+- The server has no file-move route: `Offer::MoveIntoFeature` answers `StartError::FileMove`, so the home shelf's "Move into a feature" is built as a chat start whose opening carries the move instructions.
+
+### Browser model
+
+- `projectAtom` holds `{ checklists, standalone, moves }` from the server's `hello` and `checklist` messages (`web/src/plan/api/socket.ts`); `checklistAtom` stays a writable derived atom (the active feature's checklist, else the sole feature's) so single-checklist consumers and tests keep one seam.
+- Routes: `/` home (feature cards, standalone shelf), `/f/:feature` the feature's step list and draft-team panel, `/new` the kickoff landing; concept routes are in [plan-server.md](plan-server.md#browser-routes-page-state-and-view-state).
+- Set-only server atoms (`kickoffAtom`, `draftTeamAtom`, `treeAtom`) are never cleared by the server. A consumer scopes them by session id or feature and knows who fills them (`useFileSocket` fills `treeAtom`); a component that reads one unscoped shows another session's state.
+- The Settings reading face and size are per-project preferences through `projectPref` (`plan/chat/prefs.ts`, exported for reuse); see [the reading face](../conventions/web-dashboard-typography.md#planner-reading-face).

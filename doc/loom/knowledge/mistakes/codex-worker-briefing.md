@@ -101,6 +101,8 @@ exists, or pin the interface inline in the brief so codex does not wait for it.
 
 **Prevention:** when the signal's Sandbox section says "No network access", route terra-tier units to sonnet and luna-tier units to haiku from the start; a codex unit then costs a brief and a boot and returns nothing.
 
+**Later observation (2026-10-29):** in the planner-ui-redesign integration-verify stage (also no network) the codex lane worked through the direct backend: forwards ended `LOOM-FORWARD-END outcome succeeded` and their edits landed, with denied `vnkt.org:443` and `developers.openai.com:443` connections logged by Codex's own connectors, harmless. The harness persists the wrapper's roughly 64 KB stdout and the forwarder sees only 2 KB, so it never sees the `LOOM-CODEX-EVIDENCE` trailer. Try one forward before routing a whole stage away from the lane, and verify every unit by `git diff` of its owned files, not by the forwarder's report.
+
 ## A Brief Wrote a Command Argument Inside an Inline Code Span (2026-10-20)
 
 **What happened:** the bookends unit brief wrote the distill message as the word stage glued to a code span holding `{}`, and the codex unit dropped the space before the span. The sibling brief that set the placeholder `{distill_id}` apart by a space came out right.

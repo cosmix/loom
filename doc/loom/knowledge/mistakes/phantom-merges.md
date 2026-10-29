@@ -1,6 +1,6 @@
 # Phantom Merges
 
-> Merged flag
+> Phantoms
 
 ## Phantom Merges: merged=true Without Verification
 

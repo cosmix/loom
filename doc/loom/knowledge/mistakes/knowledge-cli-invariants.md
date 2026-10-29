@@ -1,6 +1,6 @@
 # Knowledge Cli Invariants
 
-> CLI rules
+> Rules
 
 ## A CLI Handler Is Rarely the Only Caller of the Constructor It Guards (2026-07-28)
 
