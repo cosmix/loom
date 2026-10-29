@@ -199,7 +199,7 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         session_type: facts.session_type,
         incoherence: facts.incoherence,
         execution_models: execution_models_for_stage(work_dir, &stage.id),
-        dispute_count: stage.dispute_count,
+        dispute_count: crate::models::stage::dispute_budgets::filed_total(stage),
         judge_heartbeat_secs: facts.heartbeat.judge_heartbeat_secs,
         session_backend: facts.session.map(|s| s.backend),
         outgoing_session_exit_reason: facts.completion_view.0,

@@ -57,7 +57,7 @@ const HINT = {
   retries: "Automatic retries so far, of the stage's limit.",
   acceptance:
     "The number in front of each criterion is its index for loom stage amend --index, counted from 0.",
-  disputes: "Acceptance criteria the stage's agent disputed. A judge session settles them.",
+  disputes: "Disputes the stage has filed, of every kind. A judge session settles each.",
   judge: "Time since the adjudication judge for this stage last reported in.",
   merged:
     "Whether the stage's branch has been merged into the merge point. Assumed: an operator completed the stage with --force-unsafe --assume-merged, so loom did not perform the merge itself.",

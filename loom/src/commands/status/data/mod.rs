@@ -199,7 +199,8 @@ pub struct StageSummary {
     /// subagent spawns.
     #[serde(default)]
     pub execution_models: Vec<String>,
-    /// Disputes filed against this stage's acceptance criteria.
+    /// Disputes the stage has filed, of every kind (`dispute_budgets::filed_total`):
+    /// while it adjudicates, the one-based number of its latest dispute.
     #[serde(default)]
     pub dispute_count: u32,
     /// Age in seconds of the adjudication session's heartbeat for this stage.

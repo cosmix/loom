@@ -66,6 +66,23 @@ pub fn filed(stage: &Stage, kind: &DisputeKind) -> u32 {
     }
 }
 
+/// Disputes of every kind the stage has filed. Each filing spends exactly one
+/// counter, so while the stage adjudicates this is the one-based number of
+/// its latest dispute; `dispute_count` alone counts criterion disputes
+/// only and stays 0 for a plan v2 stage's other kinds.
+pub fn filed_total(stage: &Stage) -> u32 {
+    [
+        stage.dispute_count,
+        stage.tally.finding_disputes,
+        stage.tally.contract_disputes,
+        stage.tally.integrity_disputes,
+        stage.tally.impact_disputes,
+        stage.tally.freeze_refusal_disputes,
+    ]
+    .into_iter()
+    .fold(0, u32::saturating_add)
+}
+
 /// True when the stage has filed [`MAX_DISPUTES_PER_KIND`] disputes of
 /// `kind`'s kind.
 pub fn exhausted(stage: &Stage, kind: &DisputeKind) -> bool {
