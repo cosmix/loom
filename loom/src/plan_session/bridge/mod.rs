@@ -13,6 +13,7 @@ mod driver;
 mod ending;
 mod flow;
 pub mod host;
+mod rebuilding;
 mod recovery;
 pub mod registry;
 mod requests;
@@ -35,6 +36,8 @@ mod tests_lifecycle;
 mod tests_permission;
 #[cfg(test)]
 mod tests_queue;
+#[cfg(test)]
+mod tests_rebuilding;
 #[cfg(test)]
 mod tests_recovery;
 
