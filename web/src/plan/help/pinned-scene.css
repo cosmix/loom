@@ -20,7 +20,7 @@
 .planner-help-scene .planner-help-scene__label,
 .planner-help-scene .planner-help-scene__hint {
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .planner-help-scene .planner-help-scene__header h3 {
@@ -79,8 +79,9 @@
   border-radius: 50%;
   background: var(--primary);
   color: var(--primary-foreground);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
