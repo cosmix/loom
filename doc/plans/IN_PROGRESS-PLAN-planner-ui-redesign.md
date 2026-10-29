@@ -1090,7 +1090,7 @@ loom:
     - >-
       test -f doc/plans/planner-ui/index.md && test -f doc/plans/optim-token/index.md
       && ! grep -nE
-      'doc/product/(index|section_[0-9]+)\.md|doc/plans/(optim-token-metaplan|metaplan-planner-ui)\.md|doc/plans/briefs/feat-planner-|doc/plans/PLAN-feat-planner-' doc/plans/PLAN-*.md doc/plans/planner-ui/index.md doc/plans/optim-token/index.md && ! grep -rnE 'doc/product/section_[0-9]+\.md|doc/plans/(optim-token-metaplan|metaplan-planner-ui)\.md|doc/plans/briefs/feat-planner-' doc/loom/knowledge --exclude-dir=mistakes --exclude=mistakes.md
+      'doc/product/(index|section_[0-9]+)\.md|doc/plans/(optim-token-metaplan|metaplan-planner-ui)\.md|doc/plan[s]/briefs/feat-planner-|doc/plans/PLAN-feat-planner-' doc/plans/PLAN-*.md doc/plans/planner-ui/index.md doc/plans/optim-token/index.md && ! grep -rnE 'doc/product/section_[0-9]+\.md|doc/plans/(optim-token-metaplan|metaplan-planner-ui)\.md|doc/plan[s]/briefs/feat-planner-' doc/loom/knowledge --exclude-dir=mistakes --exclude=mistakes.md
     setup: []
     files:
     - .gitignore
