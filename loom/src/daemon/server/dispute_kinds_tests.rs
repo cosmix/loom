@@ -242,9 +242,8 @@ fn an_id_that_does_not_exist_is_refused_before_anything_is_written() {
     assert_eq!(stage.status, StageStatus::Executing);
 }
 
-#[test]
-fn a_frozen_contract_can_be_disputed() {
-    let (_tmp, work_dir) = setup(2);
+/// Freeze [`STAGE`]'s contract [`CONTRACT_ID`], and return a dispute of it.
+fn freeze_contract(work_dir: &Path) -> DisputeKind {
     let record = FreezeRecord {
         version: crate::verify::contracts::store::FREEZE_RECORD_VERSION,
         stage_id: STAGE.to_string(),
@@ -254,10 +253,16 @@ fn a_frozen_contract_can_be_disputed() {
         files: Vec::new(),
         contracts: red_reports().iter().map(FrozenContract::from).collect(),
     };
-    write_freeze(&work_dir, &record, &[]).unwrap();
-    let contract = DisputeKind::Contract {
+    write_freeze(work_dir, &record, &[]).unwrap();
+    DisputeKind::Contract {
         contract_id: CONTRACT_ID.to_string(),
-    };
+    }
+}
+
+#[test]
+fn a_frozen_contract_can_be_disputed() {
+    let (_tmp, work_dir) = setup(2);
+    let contract = freeze_contract(&work_dir);
 
     let id = created(file(&work_dir, contract));
 
@@ -267,6 +272,39 @@ fn a_frozen_contract_can_be_disputed() {
     );
     let stage = load_stage(STAGE, &work_dir).unwrap();
     assert_eq!(stage.tally.contract_disputes, 1);
+}
+
+/// The status summary numbers the dispute under adjudication by every kind
+/// the stage filed. A plan v2 stage never spends the criterion-only
+/// `dispute_count`, so a summary that read it showed "dispute 0" on every
+/// cycle.
+#[test]
+fn the_status_summary_numbers_each_dispute_cycle_across_kinds() {
+    let (tmp, work_dir) = setup(2);
+    record_open_finding(&work_dir);
+    let contract = freeze_contract(&work_dir);
+    let summary_count = || {
+        let data =
+            crate::commands::status::data::collect_status_data(&WorkDir::new(tmp.path()).unwrap())
+                .unwrap();
+        let summary = data.stages.into_iter().find(|s| s.id == STAGE).unwrap();
+        (summary.status, summary.dispute_count)
+    };
+    let adjudicating = StageStatus::NeedsAdjudication;
+
+    created(file(&work_dir, findings(Vec::new())));
+    assert_eq!(summary_count(), (adjudicating.clone(), 1));
+    for (expected, kind) in [(2, contract), (3, findings(Vec::new()))] {
+        // The verdict requeues the stage; its next session disputes again.
+        update_stage(STAGE, &work_dir, |s| {
+            s.try_transition(StageStatus::Queued)?;
+            s.try_transition(StageStatus::Executing)
+        })
+        .unwrap();
+        created(file(&work_dir, kind));
+        assert_eq!(summary_count(), (adjudicating.clone(), expected));
+    }
+    assert_eq!(load_stage(STAGE, &work_dir).unwrap().dispute_count, 0);
 }
 
 #[test]
