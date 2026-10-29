@@ -1,0 +1,329 @@
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
+
+import { snapshotAtom } from "@/plan/chat/model";
+import { panelCollapsedAtom } from "@/plan/chat/prefs";
+import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
+import { harness, installStartChatLifecycle, session } from "@/plan/chat/start-chat-test-kit";
+import type { StarterDocument } from "@/plan/new/document-starter";
+import { EmptyKickoff } from "@/plan/new/empty-kickoff";
+import { kickoffSessionAtom } from "@/plan/new/kickoff-state";
+import { authoringAtom, serverInfoAtom } from "@/plan/state/atoms";
+
+const { document } = vi.hoisted(() => ({
+  document: {
+    label: "My notes",
+    attachment: {
+      kind: "source",
+      path: "kickoff/notes.md",
+      anchor: "",
+      lines: null,
+      stage: null,
+      summary_sentence: null,
+      rests_on: [],
+      quote: "A place to collect project ideas.",
+      selected_hash: null,
+    },
+  } satisfies StarterDocument,
+}));
+
+// Document selection has its own tests; this boundary delivers its picked passage to the screen.
+vi.mock("./document-starter", () => ({
+  DocumentStarter: ({ onPick }: { onPick: (document: StarterDocument) => void }) => (
+    <button type="button" onClick={() => onPick(document)}>
+      Start from a document
+    </button>
+  ),
+}));
+
+installStartChatLifecycle();
+
+function mount(small = false, current: typeof session | null = null) {
+  const h = harness(current);
+  return { ...h, ...h.mount(<EmptyKickoff small={small} />) };
+}
+
+function composer() {
+  return screen.getByRole("textbox", { name: "What do you want to build?" }) as HTMLTextAreaElement;
+}
+
+function submitButton() {
+  return screen.getByRole("button", { name: "Start the conversation" });
+}
+
+function enterText(text = "Build a project notebook") {
+  fireEvent.change(composer(), { target: { value: text } });
+}
+
+function showSession(h: ReturnType<typeof harness>, current = session) {
+  act(() => h.store.set(snapshotAtom, { session: current, turns: [], queue: [], previous: null }));
+}
+
+it("renders the invitation and all conversation starters", () => {
+  mount();
+
+  expect(screen.getByRole("heading", { name: "What do you want to build?" })).toBeTruthy();
+  expect(screen.getByRole("img")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "A new feature" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "A small fix or improvement" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Grow my standalone plans into a feature" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Start from a document" })).toBeTruthy();
+  expect(screen.getByText("Nothing is written until you say so.")).toBeTruthy();
+});
+
+it.each([
+  ["A new feature", "I want to build a new feature: "],
+  ["A small fix or improvement", "I want to fix or improve: "],
+  [
+    "Grow my standalone plans into a feature",
+    "I have standalone plans that belong together and want to grow them into a feature.",
+  ],
+])("fills the composer from %s", (label, text) => {
+  mount();
+
+  fireEvent.click(screen.getByRole("button", { name: label }));
+
+  expect(composer().value).toBe(text);
+  expect(window.document.activeElement).toBe(composer());
+});
+
+it("starts kickoff with the draft and selected document and waits for the session snapshot", async () => {
+  const h = mount();
+  h.store.set(panelCollapsedAtom, true);
+  enterText();
+  fireEvent.click(screen.getByRole("button", { name: "Start from a document" }));
+  expect(screen.getByRole("listitem").textContent).toContain("Attached: My notes");
+
+  fireEvent.click(submitButton());
+
+  expect(h.send).toHaveBeenCalledWith({
+    type: "chat",
+    command: "start",
+    client_id: expect.any(String),
+    offer: "kickoff",
+    text: "Build a project notebook",
+    attachments: [document.attachment],
+  });
+  h.result();
+  await act(async () => {});
+  expect(h.store.get(kickoffSessionAtom)).toBeNull();
+  showSession(h);
+  await waitFor(() => expect(h.store.get(kickoffSessionAtom)).toBe(session.id));
+  expect(h.store.get(panelCollapsedAtom)).toBe(true);
+  expect(h.store.get(chatSheetOpenAtom)).toBe(false);
+});
+
+it("captures a snapshot that arrived before the start acknowledgement", async () => {
+  const h = mount();
+  enterText();
+  fireEvent.click(submitButton());
+  showSession(h);
+  expect(h.store.get(kickoffSessionAtom)).toBeNull();
+
+  h.result();
+
+  await waitFor(() => expect(h.store.get(kickoffSessionAtom)).toBe(session.id));
+});
+
+it("uses the small kickoff offer after choosing the small starter", () => {
+  const h = mount();
+  fireEvent.click(screen.getByRole("button", { name: "A small fix or improvement" }));
+
+  fireEvent.click(submitButton());
+
+  expect(h.send).toHaveBeenCalledWith(
+    expect.objectContaining({ offer: "kickoff-small", text: "I want to fix or improve: " }),
+  );
+});
+
+it("uses the small kickoff offer when opened for standalone work", () => {
+  const h = mount(true);
+  enterText();
+
+  fireEvent.click(submitButton());
+
+  expect(h.send).toHaveBeenCalledWith(expect.objectContaining({ offer: "kickoff-small" }));
+});
+
+it("switches back to feature kickoff when choosing the feature starter", () => {
+  const h = mount(true);
+  fireEvent.click(screen.getByRole("button", { name: "A new feature" }));
+
+  fireEvent.click(submitButton());
+
+  expect(h.send).toHaveBeenCalledWith(expect.objectContaining({ offer: "kickoff" }));
+});
+
+it("allows an attachment to start without draft text", () => {
+  const h = mount();
+  fireEvent.click(screen.getByRole("button", { name: "Start from a document" }));
+
+  fireEvent.click(submitButton());
+
+  expect(h.send).toHaveBeenCalledWith(
+    expect.objectContaining({ text: "", attachments: [document.attachment] }),
+  );
+});
+
+it("removes an attached document before sending", () => {
+  const h = mount();
+  fireEvent.click(screen.getByRole("button", { name: "Start from a document" }));
+  fireEvent.click(within(screen.getByRole("listitem")).getByRole("button", { name: "Remove" }));
+
+  fireEvent.click(submitButton());
+
+  expect(screen.queryByRole("list", { name: "Attached documents" })).toBeNull();
+  expect(submitButton().getAttribute("aria-disabled")).toBe("true");
+  expect(h.send).not.toHaveBeenCalled();
+});
+
+it.each(["", "  \n  "])("blocks an empty kickoff draft %j", (text) => {
+  const h = mount();
+  enterText(text);
+
+  fireEvent.click(submitButton());
+  fireEvent.keyDown(composer(), { key: "Enter" });
+
+  expect(submitButton().getAttribute("aria-disabled")).toBe("true");
+  expect(screen.getByText("Describe what you want to build or attach a document")).toBeTruthy();
+  expect(h.send).not.toHaveBeenCalled();
+});
+
+it("sends on Enter while leaving Shift Enter and composition to the textarea", () => {
+  const h = mount();
+  enterText();
+
+  expect(fireEvent.keyDown(composer(), { key: "Enter", shiftKey: true })).toBe(true);
+  expect(fireEvent.keyDown(composer(), { key: "Enter", isComposing: true })).toBe(true);
+  expect(h.send).not.toHaveBeenCalled();
+  expect(fireEvent.keyDown(composer(), { key: "Enter" })).toBe(false);
+
+  expect(h.send).toHaveBeenCalledOnce();
+});
+
+it("shows the read-only reason and blocks a populated draft", () => {
+  const h = mount();
+  enterText();
+  const server = h.store.get(serverInfoAtom);
+  if (!server) throw new Error("Expected the server fixture");
+  act(() => {
+    h.store.set(authoringAtom, { holder: null });
+    h.store.set(serverInfoAtom, {
+      ...server,
+      read_only: [{ what: "tmux", message: "tmux is unavailable\u202e", fix: "Install tmux" }],
+    });
+  });
+
+  fireEvent.click(submitButton());
+  fireEvent.keyDown(composer(), { key: "Enter" });
+
+  expect(submitButton().getAttribute("aria-disabled")).toBe("true");
+  expect(composer().disabled).toBe(true);
+  expect(
+    screen.getByText("loom plan is in read-only mode: tmux is unavailable⟨U+202E⟩"),
+  ).toBeTruthy();
+  expect(h.send).not.toHaveBeenCalled();
+});
+
+it("asks before replacing an active chat and waits for it to end", async () => {
+  const current = { ...session, state: "idle" as const };
+  const h = mount(false, current);
+  enterText();
+
+  fireEvent.click(submitButton());
+
+  expect(window.confirm).toHaveBeenCalledOnce();
+  expect(h.send).toHaveBeenCalledWith(expect.objectContaining({ command: "end" }));
+  h.result();
+  await act(async () => {});
+  expect(h.send).toHaveBeenCalledTimes(1);
+  showSession(h, { ...current, state: "ended" });
+  await waitFor(() => expect(h.send).toHaveBeenCalledTimes(2));
+  expect(h.send.mock.calls[1][0]).toMatchObject({ command: "start", offer: "kickoff" });
+  h.result(1);
+  await act(async () => {});
+  expect(h.store.get(kickoffSessionAtom)).toBeNull();
+  showSession(h, { ...session, id: "new-kickoff" });
+  await waitFor(() => expect(h.store.get(kickoffSessionAtom)).toBe("new-kickoff"));
+});
+
+it("keeps the active chat when end confirmation is declined", () => {
+  const h = mount(false, session);
+  vi.mocked(window.confirm).mockReturnValue(false);
+  enterText();
+
+  fireEvent.click(submitButton());
+
+  expect(h.send).not.toHaveBeenCalled();
+  expect(h.store.get(kickoffSessionAtom)).toBeNull();
+});
+
+it("preserves the draft and renders a start failure safely", async () => {
+  const h = mount();
+  enterText();
+  fireEvent.click(submitButton());
+
+  h.result(0, "Cannot start\u202e");
+
+  expect((await screen.findByRole("status")).textContent).toBe("Cannot start⟨U+202E⟩");
+  expect(composer().value).toBe("Build a project notebook");
+  expect(h.store.get(kickoffSessionAtom)).toBeNull();
+  expect(submitButton().getAttribute("aria-disabled")).toBeNull();
+});
+
+it("blocks duplicate starts while waiting for a session", async () => {
+  const h = mount();
+  enterText();
+  fireEvent.click(submitButton());
+  h.result();
+  await act(async () => {});
+
+  fireEvent.click(submitButton());
+  fireEvent.keyDown(composer(), { key: "Enter" });
+
+  expect(h.send).toHaveBeenCalledOnce();
+});
+
+it("gives up quietly after five seconds and releases its session subscription", async () => {
+  vi.useFakeTimers();
+  const h = mount();
+  h.store.set(kickoffSessionAtom, "previous-kickoff");
+  enterText();
+  fireEvent.click(submitButton());
+  h.result();
+  await act(async () => {});
+
+  await act(async () => {
+    vi.advanceTimersByTime(5000);
+  });
+  showSession(h);
+
+  expect(h.store.get(kickoffSessionAtom)).toBeNull();
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(submitButton().getAttribute("aria-disabled")).toBeNull();
+});
+
+it("releases the session subscription on unmount", async () => {
+  const h = mount();
+  enterText();
+  fireEvent.click(submitButton());
+  h.result();
+  await act(async () => {});
+
+  h.unmount();
+  showSession(h);
+
+  expect(h.store.get(kickoffSessionAtom)).toBeNull();
+});
+
+it("keeps the draft in memory only", () => {
+  const h = mount();
+  enterText();
+  h.unmount();
+
+  mount();
+
+  expect(composer().value).toBe("");
+});

@@ -8,9 +8,9 @@ import { StepTracker } from "@/plan/header/step-tracker";
 afterEach(cleanup);
 
 const checklist = checklistViewSchema.parse({
-  ...checklistFixture,
+  ...checklistFixture.checklists[0]!,
   steps: [
-    ...checklistFixture.steps,
+    ...checklistFixture.checklists[0]!.steps,
     { number: 3, name: "Metaplan", mark: "active" },
     { number: 4, name: "Plans", mark: "optional" },
     { number: 5, name: "Plan review", mark: "optional" },
