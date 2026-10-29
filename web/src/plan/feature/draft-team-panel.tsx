@@ -9,7 +9,12 @@ import { sessionAtom } from "@/plan/chat/model";
 import { isActiveSession } from "@/plan/chat/offer-flow";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { docRel, toAddress } from "@/plan/files/address";
-import { authorBlockReasonAtom, canAuthorAtom, draftTeamAtom } from "@/plan/state/atoms";
+import {
+  authorBlockReasonAtom,
+  canAuthorAtom,
+  draftTeamAtom,
+  featuresAtom,
+} from "@/plan/state/atoms";
 import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { DocMark } from "@/plan/ui/doc-mark";
@@ -127,13 +132,24 @@ function TeamSummary({ team }: { team: DraftTeamView }) {
 export function DraftTeamPanel({ feature }: { feature: string }) {
   const team = useAtomValue(draftTeamAtom);
   const session = useAtomValue(sessionAtom);
+  const features = useAtomValue(featuresAtom);
   if (team === null) return null;
   const activeSession = isActiveSession(session) && team.session === session.id;
-  const inFeature = team.documents.some(
-    (path) =>
-      path.startsWith(`doc/product/${feature}/`) || path.startsWith(`doc/plans/${feature}/`),
+  const offeredBy = features.filter((checklist) =>
+    [checklist.primary, ...checklist.secondary, ...checklist.items.map((item) => item.offer)].some(
+      (offer) => session?.offer != null && offer?.id === session.offer,
+    ),
   );
-  if (!activeSession || (team.documents.length > 0 && !inFeature)) return null;
+  // Offer IDs can be shared across features; an ambiguous offer cannot identify the owner.
+  const inFeature =
+    team.documents.length > 0
+      ? team.documents.some(
+          (path) =>
+            path.startsWith(`doc/product/${feature}/`) || path.startsWith(`doc/plans/${feature}/`),
+        )
+      : offeredBy.length === 1 && offeredBy[0]?.feature === feature;
+  if (!activeSession || !inFeature) return null;
+  // PaceChoice and checklist gaps own draft offers; this panel reports the running team.
   return (
     <section aria-label="Draft team" className="space-y-4 border-t border-border py-6 font-sans">
       <h2 className="text-lg font-semibold">Drafting with a team</h2>

@@ -30,13 +30,16 @@ function stubFetch(input: RequestInfo | URL): Promise<Response> {
   const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   const url = new URL(raw, "http://localhost");
   const pages: Record<string, unknown> = {
-    "/api/concept/product": overviewFixture,
-    "/api/concept/product/section_01": summaryFixture,
-    "/api/concept/product/section_02": { ...summaryFixture, key: "product/section_02" },
+    "/api/concept/overview/demo/product": overviewFixture,
+    "/api/concept/demo/product/section_01": summaryFixture,
+    "/api/concept/demo/product/section_02": { ...summaryFixture, key: "demo/product/section_02" },
   };
   if (pages[url.pathname]) return Promise.resolve(json(pages[url.pathname]));
-  if (url.pathname === "/api/doc" && url.searchParams.get("path") === "product/section_01.md") {
-    const doc = { ...structuredClone(filesDocFixture), path: "doc/product/section_01.md" };
+  if (
+    url.pathname === "/api/doc" &&
+    url.searchParams.get("path") === "product/demo/section_01.md"
+  ) {
+    const doc = { ...structuredClone(filesDocFixture), path: "doc/product/demo/section_01.md" };
     return Promise.resolve(json({ ...doc, title: "Planning", text: TEXT, sections: SECTIONS }));
   }
   return Promise.resolve(json({ error: "not_found", message: "not found" }, 404));
@@ -55,7 +58,7 @@ afterEach(() => {
 it("expansion chain from overview to passage to file mode", async () => {
   const store = createStore();
   initClient(store);
-  const router = createMemoryRouter(routes, { initialEntries: ["/product"] });
+  const router = createMemoryRouter(routes, { initialEntries: ["/f/demo/product"] });
   render(
     <Provider store={store}>
       <RouterProvider router={router} />
@@ -70,6 +73,8 @@ it("expansion chain from overview to passage to file mode", async () => {
   const header = await within(column).findByRole("link", { name: /section_01\.md.*Intent/ });
   expect(await within(column).findByText("intent", { selector: "strong" })).toBeTruthy();
   fireEvent.click(header);
-  await waitFor(() => expect(router.state.location.pathname).toBe("/files/product/section_01.md"));
+  await waitFor(() =>
+    expect(router.state.location.pathname).toBe("/files/product/demo/section_01.md"),
+  );
   expect(router.state.location.hash).toBe("#intent");
 });

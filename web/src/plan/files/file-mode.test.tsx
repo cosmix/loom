@@ -1,24 +1,13 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { createStore } from "jotai";
-import { Provider } from "jotai/react";
-import { MemoryRouter, useLocation, type InitialEntry } from "react-router";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import docFixture from "@/plan/api/fixtures/files-doc.json";
 import planFixture from "@/plan/api/fixtures/files-doc-plan.json";
 import treeFixture from "@/plan/api/fixtures/files-tree.json";
-import { checklistViewSchema } from "@/plan/api/schema";
-import {
-  docViewSchema,
-  fileTreeSchema,
-  type DocView,
-  type FileTree,
-} from "@/plan/api/schema-files";
-import { fetchDoc, fetchTree } from "@/plan/files/api";
+import { docViewSchema, type DocView, type FileTree } from "@/plan/api/schema-files";
 import { docChangedAtom, treeAtom } from "@/plan/files/atoms";
-import { FileMode } from "@/plan/files/file-mode";
-import { checklistAtom } from "@/plan/state/atoms";
+
+import { fetchDoc, renderMode, scrolled, setWide, tree } from "./file-mode-kit";
 
 vi.mock("@/plan/files/api", () => ({
   fetchDoc: vi.fn(),
@@ -30,60 +19,19 @@ vi.mock("@/plan/files/plan/plan-view", () => ({
   PlanView: ({ doc }: { doc: DocView }) => <div data-testid="plan-view">{doc.plan?.slug}</div>,
 }));
 
-const scrolled = vi.fn();
 const DOC_PATH = "doc/product/demo/section_01.md";
 const doc = (patch: Partial<DocView> = {}): DocView =>
   docViewSchema.parse({ ...structuredClone(docFixture), ...patch });
 const planDoc = (): DocView =>
   docViewSchema.parse({ ...structuredClone(planFixture), path: treeFixture.plans[0]!.path });
-const tree = (): FileTree => fileTreeSchema.parse(structuredClone(treeFixture));
 const ok = (value: DocView) => ({ ok: true as const, value });
 const failure = (status: number) => ({ ok: false as const, status, error: "e", message: "boom" });
-
-function setWide(wide: boolean) {
-  Object.defineProperty(window, "matchMedia", {
-    configurable: true,
-    value: (query: string) => ({
-      matches: wide,
-      media: query,
-      addEventListener() {},
-      removeEventListener() {},
-    }),
-  });
-}
-
-function Where() {
-  const { pathname, search } = useLocation();
-  return <output data-testid="where">{pathname + search}</output>;
-}
-
-function renderMode(entry: InitialEntry, fileTree: FileTree = tree(), store = createStore()) {
-  store.set(treeAtom, fileTree);
-  render(
-    <Provider store={store}>
-      <MemoryRouter initialEntries={[entry]}>
-        <FileMode />
-        <Where />
-      </MemoryRouter>
-    </Provider>,
-  );
-  return store;
-}
 
 function renamedTree(): FileTree {
   const moved = tree();
   moved.plans[0] = { ...moved.plans[0], path: "doc/plans/IN_PROGRESS-PLAN-file-mode.md" };
   return moved;
 }
-
-beforeEach(() => {
-  setWide(true);
-  scrolled.mockReset();
-  Element.prototype.scrollIntoView = scrolled;
-  vi.mocked(fetchTree).mockReset();
-  vi.mocked(fetchDoc).mockReset();
-});
-afterEach(cleanup);
 
 describe("file mode layout", () => {
   it("shows the tree and a hint when no document is chosen", () => {
@@ -101,20 +49,6 @@ describe("file mode layout", () => {
     expect(screen.getByRole("dialog", { name: "Documents" })).toBeTruthy();
     fireEvent.keyDown(screen.getByRole("dialog", { name: "Documents" }), { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Documents" })).toBeNull();
-  });
-
-  it("opening a gap shows its checklist item and the offer", () => {
-    const store = createStore();
-    const checklist = checklistViewSchema.parse(structuredClone(checklistFixture.checklists[0]));
-    const item = { ...checklist.items[1], text: "Section 2" };
-    store.set(checklistAtom, { ...checklist, items: [item] });
-    renderMode("/files?gap=Section%202", tree(), store);
-    expect(screen.getByRole("heading", { name: "Section 2" })).toBeTruthy();
-    expect(screen.getByRole("navigation", { name: "Breadcrumb" }).textContent).toBe(
-      "PlannerSection 2",
-    );
-    expect(screen.getByText("This document is missing.")).toBeTruthy();
-    expect(screen.getByText(item.offer?.label ?? "")).toBeTruthy();
   });
 });
 

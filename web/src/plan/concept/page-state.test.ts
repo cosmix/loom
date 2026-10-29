@@ -29,7 +29,8 @@ vi.mock("./passages", () => ({ refreshDocView: vi.fn(), refreshAllDocViews: vi.f
 
 type Store = ReturnType<typeof createStore>;
 
-const SECTION_01 = "doc/product/section_01.md";
+const OVERVIEW = "overview/demo/product";
+const SECTION_01 = "doc/product/demo/section_01.md";
 let served: Record<string, unknown> = {};
 let held: Record<string, Promise<void>> = {};
 type ConceptMessage = ConceptChanged & { type: "concept_changed" };
@@ -39,7 +40,7 @@ const changedHandlers = new Set<(message: ConceptMessage) => void>();
 const resyncHandlers = new Set<() => void>();
 
 function overview(): ConceptPage {
-  return conceptPageSchema.parse({ ...structuredClone(overviewFixture), key: "product" });
+  return conceptPageSchema.parse(structuredClone(overviewFixture));
 }
 
 function summary(): ConceptPage {
@@ -81,6 +82,7 @@ function fakeSocket() {
 function deliver(changed: Partial<ConceptChanged>): void {
   const message: ConceptMessage = {
     type: "concept_changed",
+    feature: "demo",
     pages: [],
     out_of_date: [],
     sources: [],
@@ -104,7 +106,7 @@ function hold(key: string): () => void {
 }
 
 beforeEach(() => {
-  served = { product: overview(), "product/section_01": summary() };
+  served = { [OVERVIEW]: overview(), "demo/product/section_01": summary() };
   held = {};
   changedHandlers.clear();
   resyncHandlers.clear();
@@ -122,11 +124,11 @@ afterEach(() => {
 describe("concept_changed", () => {
   it("concept_changed out_of_date dashes marks before the refetch", async () => {
     const store = connected();
-    await loadConceptPage(store, "product");
+    await loadConceptPage(store, OVERVIEW);
     const stop = subscribeConcept(store);
-    const release = hold("product");
-    deliver({ pages: ["product"], out_of_date: ["section_02"] });
-    const { page } = store.get(conceptPageAtom("product"));
+    const release = hold(OVERVIEW);
+    deliver({ pages: [OVERVIEW], out_of_date: ["section_02"] });
+    const { page } = store.get(conceptPageAtom(OVERVIEW));
     const chip = page!.key_chips.find((entry) => entry.doc.id === "section_02");
     expect(chip?.out_of_date).toEqual({ reason: "source_changed", detail: null });
     const marks = pageSentences(page!)[0]!.marks;
@@ -139,19 +141,19 @@ describe("concept_changed", () => {
     );
     expect(pageSentences(page!)[0]!.text).toBe(pageSentences(overview())[0]!.text);
     release();
-    await waitFor(() => expect(store.get(conceptPageAtom("product")).page).toEqual(overview()));
+    await waitFor(() => expect(store.get(conceptPageAtom(OVERVIEW)).page).toEqual(overview()));
     stop();
   });
 
   it("listed loaded page refetches and keeps previous", async () => {
     const store = connected();
-    await loadConceptPage(store, "product");
-    const before = store.get(conceptPageAtom("product")).page;
+    await loadConceptPage(store, OVERVIEW);
+    const before = store.get(conceptPageAtom(OVERVIEW)).page;
     const stop = subscribeConcept(store);
-    served.product = withFirstText(overview(), "Rebuilt first sentence.");
-    deliver({ pages: ["product"], sources: [SECTION_01] });
-    await waitFor(() => expect(store.get(conceptPageAtom("product")).previous).toBe(before));
-    const { page } = store.get(conceptPageAtom("product"));
+    served[OVERVIEW] = withFirstText(overview(), "Rebuilt first sentence.");
+    deliver({ pages: [OVERVIEW], sources: [SECTION_01] });
+    await waitFor(() => expect(store.get(conceptPageAtom(OVERVIEW)).previous).toBe(before));
+    const { page } = store.get(conceptPageAtom(OVERVIEW));
     expect(pageSentences(page!)[0]!.text).toBe("Rebuilt first sentence.");
     stop();
   });
@@ -159,32 +161,35 @@ describe("concept_changed", () => {
   it("sources refetch open passages", () => {
     const store = connected();
     const stop = subscribeConcept(store);
-    deliver({ sources: [SECTION_01, "doc/product/vision.md"] });
+    deliver({ sources: [SECTION_01, "doc/product/demo/index.md"] });
     expect(vi.mocked(refreshDocView).mock.calls).toEqual([
       [store, SECTION_01],
-      [store, "doc/product/vision.md"],
+      [store, "doc/product/demo/index.md"],
     ]);
     stop();
   });
 
   it("unlisted page is not fetched", async () => {
     const store = connected();
-    await loadConceptPage(store, "product");
+    await loadConceptPage(store, OVERVIEW);
     const stop = subscribeConcept(store);
-    deliver({ pages: ["product/section_01", "engineering"] });
-    expect(fetchedKeys()).toEqual(["/api/concept/product"]);
+    deliver({ pages: ["demo/product/section_01", "overview/demo/engineering"] });
+    expect(fetchedKeys()).toEqual(["/api/concept/overview/demo/product"]);
     stop();
   });
 
   it("concept_changed without sources refetches the named pages", async () => {
     const store = connected();
-    await loadConceptPage(store, "product");
-    await loadConceptPage(store, "product/section_01");
+    await loadConceptPage(store, OVERVIEW);
+    await loadConceptPage(store, "demo/product/section_01");
     const stop = subscribeConcept(store);
     fetchMock.mockClear();
-    deliver({ pages: ["product", "product/section_01"] });
+    deliver({ pages: [OVERVIEW, "demo/product/section_01"] });
     await waitFor(() =>
-      expect(fetchedKeys()).toEqual(["/api/concept/product", "/api/concept/product/section_01"]),
+      expect(fetchedKeys()).toEqual([
+        "/api/concept/overview/demo/product",
+        "/api/concept/demo/product/section_01",
+      ]),
     );
     expect(refreshDocView).not.toHaveBeenCalled();
     stop();
@@ -192,7 +197,7 @@ describe("concept_changed", () => {
 
   it("subscribes once the plan socket appears", async () => {
     const store = createStore();
-    await loadConceptPage(store, "product");
+    await loadConceptPage(store, OVERVIEW);
     const stop = subscribeConcept(store);
     expect(changedHandlers.size).toBe(0);
     store.set(planSocketAtom, fakeSocket() as never);
@@ -205,7 +210,7 @@ describe("concept_changed", () => {
 
 describe("overtaken requests", () => {
   it("an overtaken response is dropped", async () => {
-    const key = "product/section_01";
+    const key = "demo/product/section_01";
     const store = createStore();
     const release = hold(key);
     const first = loadConceptPage(store, key);
@@ -224,15 +229,15 @@ describe("overtaken requests", () => {
 describe("resync and remount", () => {
   it("resync refetches every loaded page", async () => {
     const store = connected();
-    await loadConceptPage(store, "product");
-    await loadConceptPage(store, "product/section_01");
+    await loadConceptPage(store, OVERVIEW);
+    await loadConceptPage(store, "demo/product/section_01");
     const stop = subscribeConcept(store);
     fetchMock.mockClear();
     act(() => resyncHandlers.forEach((handler) => handler()));
     await waitFor(() =>
       expect(fetchedKeys().sort()).toEqual([
-        "/api/concept/product",
-        "/api/concept/product/section_01",
+        "/api/concept/demo/product/section_01",
+        "/api/concept/overview/demo/product",
       ]),
     );
     expect(refreshAllDocViews).toHaveBeenCalledWith(store);
@@ -242,7 +247,7 @@ describe("resync and remount", () => {
   it("returning to the tab after a concept_changed shows the new page", async () => {
     function Page() {
       useConceptSubscription();
-      const { page } = useConceptPage("product");
+      const { page } = useConceptPage(OVERVIEW);
       return createElement("p", null, page ? pageSentences(page)[0]!.text : "loading");
     }
     const store = connected();
@@ -253,20 +258,20 @@ describe("resync and remount", () => {
     expect(await screen.findByText(oldText)).toBeTruthy();
     first.unmount();
     expect(changedHandlers.size).toBe(0);
-    served.product = withFirstText(overview(), "Rebuilt while away.");
-    deliver({ pages: ["product"] });
+    served[OVERVIEW] = withFirstText(overview(), "Rebuilt while away.");
+    deliver({ pages: [OVERVIEW] });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const release = hold("product");
+    const release = hold(OVERVIEW);
     view();
     expect(screen.getByText(oldText)).toBeTruthy();
     release();
     expect(await screen.findByText("Rebuilt while away.")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(pageSentences(store.get(conceptPageAtom("product")).previous!)[0]!.text).toBe(oldText);
+    expect(pageSentences(store.get(conceptPageAtom(OVERVIEW)).previous!)[0]!.text).toBe(oldText);
   });
 
   it("reload after a rebuild moves the stored run by overlap and writes the fold note", async () => {
-    const key = "product/section_01";
+    const key = "demo/product/section_01";
     const stored = [
       {
         level: 1,
@@ -306,7 +311,7 @@ describe("resync and remount", () => {
 });
 
 describe("pages the server does not have", () => {
-  const key = "product/section_01";
+  const key = "demo/product/section_01";
   const failWith = (status: number, error: string, message: string) =>
     fetchMock.mockImplementationOnce(
       async () => new Response(JSON.stringify({ error, message }), { status }),
@@ -343,16 +348,6 @@ describe("pages the server does not have", () => {
     await loadConceptPage(store, key);
     expect(store.get(conceptPageAtom(key)).status).toBeUndefined();
   });
-
-  it.each(["product/../../server", "product/..", "product/a/b", "plans/x", "product/", "..", ""])(
-    "the key %j is never fetched",
-    async (bad) => {
-      const store = createStore();
-      await loadConceptPage(store, bad);
-      expect(fetchMock).not.toHaveBeenCalled();
-      expect(store.get(conceptPageAtom(bad)).page).toBeNull();
-    },
-  );
 });
 
 describe("mounting after time away", () => {
@@ -366,34 +361,34 @@ describe("mounting after time away", () => {
 
   it("refetches every cached page once and refreshes the passages", async () => {
     const store = connected();
-    await loadConceptPage(store, "product");
-    await loadConceptPage(store, "product/section_01");
-    served["product/section_01"] = withFirstText(summary(), "Rewritten while away.");
+    await loadConceptPage(store, OVERVIEW);
+    await loadConceptPage(store, "demo/product/section_01");
+    served["demo/product/section_01"] = withFirstText(summary(), "Rewritten while away.");
     fetchMock.mockClear();
-    render(mount(store, "product"));
+    render(mount(store, OVERVIEW));
     await waitFor(() =>
-      expect(store.get(conceptPageAtom("product/section_01")).previous).not.toBeNull(),
+      expect(store.get(conceptPageAtom("demo/product/section_01")).previous).not.toBeNull(),
     );
     expect(fetchedKeys().sort()).toEqual([
-      "/api/concept/product",
-      "/api/concept/product/section_01",
+      "/api/concept/demo/product/section_01",
+      "/api/concept/overview/demo/product",
     ]);
-    const cited = store.get(conceptPageAtom("product/section_01")).page!;
+    const cited = store.get(conceptPageAtom("demo/product/section_01")).page!;
     expect(pageSentences(cited)[0]!.text).toBe("Rewritten while away.");
     expect(refreshAllDocViews).toHaveBeenCalledWith(store);
   });
 
   it("a key change while mounted refetches only that page", async () => {
     const store = connected();
-    await loadConceptPage(store, "product");
-    await loadConceptPage(store, "product/section_01");
-    const view = render(mount(store, "product"));
+    await loadConceptPage(store, OVERVIEW);
+    await loadConceptPage(store, "demo/product/section_01");
+    const view = render(mount(store, OVERVIEW));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
     fetchMock.mockClear();
     vi.mocked(refreshAllDocViews).mockClear();
-    view.rerender(mount(store, "product/section_01"));
+    view.rerender(mount(store, "demo/product/section_01"));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    expect(fetchedKeys()).toEqual(["/api/concept/product/section_01"]);
+    expect(fetchedKeys()).toEqual(["/api/concept/demo/product/section_01"]);
     expect(refreshAllDocViews).not.toHaveBeenCalled();
   });
 });

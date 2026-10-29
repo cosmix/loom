@@ -17,6 +17,10 @@ vision's Decisions ("Bridge", "Sessions start cold") fix the frame.
 | Refinement    | Subagents the authoring session spawns to rebuild summaries      | Inside the authoring session | The authoring session                 |
 | Pressure      | A Claude step of a pressure run (section 11)                     | One run per project, one step at a time | The server's pressure driver; the holder answers its prompts |
 
+Every authoring session also carries a scope: Open, Kickoff or Team. Kickoff and draft-all
+keep the Authoring kind. The scope lives in `scope.json` in the session's runtime directory;
+the sandbox can neither read nor write it.
+
 A refinement subagent is no separate session. The authoring session spawns them in two waves
 (section 04: one `loom-plan:summary` agent per document summary, then one `loom-plan:overview`
 agent) through Claude Code's own subagent tool, so the bridge sees them as tool activity and
@@ -45,6 +49,7 @@ files live in the section 02 runtime directory:
 ```text
 ~/.loom/plan/<project-key>/sessions/<session-id>/
   session.json    registry record: kind, tmux socket, process identity, transcript path, state
+  scope.json      authoring scope: Open, Kickoff or Team; inaccessible to the sandbox
   launch.sh       the launch script tmux runs (mode 0700)
   settings.json   hook registrations and permission rules (mode 0600)
   brief.md        the appended system prompt (section 09)
@@ -117,6 +122,29 @@ After `spawn_in_tmux` returns, the server reads the pane's process id
 (`display-message -p '#{pane_pid}'`), records its `ProcessIdentity` with start time in
 `session.json`, and only then reports the session started. A spawn that fails after the tmux
 server may exist tears it down before reporting the error (`mistakes/tmux-backend.md`).
+
+### Kickoff
+
+A kickoff starts from `/new` with an optional first message and attachments, and no target
+file. The authoring session emits a fenced `loom-kickoff` block with the taking-shape state:
+size, name, problem, decisions, open questions and sections, with entries marked `settled`,
+`wording` or `open`. The server parses the block and sends a `kickoff` message to the browser.
+
+Only the holder may use "Confirm name". It arms a one-time grant to create exactly one target
+that did not exist at session start: `doc/product/<name>/index.md` for a feature, or
+`doc/plans/PLAN-<slug>.md` plus its `doc/plans/briefs/<slug>/` bundle for a standalone plan.
+Names follow the feature-name rule, with at most 64 characters. A second confirmation is
+refused. The session keeps Kickoff scope for the rest of its life: file-tool writes stay within
+the granted target and, for a standalone plan, its brief bundle. `loom knowledge` and
+`loom plan summary` commands other than read-only `status` still ask the holder (section 12).
+
+### Draft-all team
+
+A draft-all team is one authoring session leading up to five in-process teammates, launched
+with `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` added to the launch environment. It writes only
+the missing documents its run was started for and their brief bundles. The bridge reads
+teammate transcripts for tokens and each teammate's assigned documents, and sends them as
+`draft_team` messages. No teammate message is rendered in the chat.
 
 ## Naming
 
@@ -404,9 +432,16 @@ parses each user record's `<loom-attachments>` block back into the structured fi
 sentence id, `rests-on` source anchors, quoted text, `changed-since-selected`, `locked`), so a
 reload rebuilds the chips from the transcript alone.
 
+The server also sends these messages:
+
+| Message      | What it carries                                                                  |
+| ------------ | -------------------------------------------------------------------------------- |
+| `kickoff`    | Taking-shape state parsed from the session's fenced `loom-kickoff` block           |
+| `draft_team` | Teammate tokens and assigned documents read from transcripts; no teammate chat    |
+
 Only the holding browser's connection may send the commands the bridge accepts: start a chat,
 send a message, withdraw a queued message, answer a permission request, interrupt, end the
-chat. The server rejects them from any other connection, except that while nobody holds
+chat, confirm a kickoff name. The server rejects them from any other connection, except that while nobody holds
 authoring any browser may start a chat or send a message, and takes authoring by doing so
 (section 02).
 

@@ -13,11 +13,13 @@ import {
 import { useNavigate } from "react-router";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { pageHref } from "@/plan/api/page-key";
 import type { Block, ConceptPage, SourceAnchor } from "@/plan/api/schema-concept";
 import type { AttachmentDraft } from "@/plan/attachments/types";
 import { treeAtom } from "@/plan/files/atoms";
 import { docPathsOf } from "@/plan/files/tree";
 import { normalizeTitle } from "@/plan/markdown/render";
+import { sourceMarksAtom } from "@/plan/settings/preferences";
 import type { Store } from "@/state/store";
 
 import { Announcer, type Arrival } from "./announce";
@@ -148,7 +150,7 @@ function useContextValue(
   const navigate = useNavigate();
   const notes = useAtomValue(notesAtom(pageKey));
   const docPaths = useDocPaths(page);
-  const openPage = useCallback((target: string) => void navigate(`/${target}`), [navigate]);
+  const openPage = useCallback((target: string) => void navigate(pageHref(target)), [navigate]);
   const openAddress = useCallback((address: string) => void navigate(address), [navigate]);
   const { open, flashing, cited } = model;
   const { openSentence, foldRun } = model.actions;
@@ -195,18 +197,23 @@ type Props = {
   onAttach?: (draft: AttachmentDraft) => void;
 };
 
-/**
- * The reading column of concept mode: a document with one tab stop and a roving focus over the
- * page's sentences, the runs opened under them and their passages (section 05). Open runs are
- * view state of this browser tab; a page replacement carries them forward by the source
- * sections they rest on.
- */
-export function ReadingColumn({ pageKey, page, dropTitle = false, onAttach }: Props): JSX.Element {
-  const store = useStore();
-  const columnRef = useRef<HTMLDivElement>(null);
-  const model = useColumnModel(store, columnRef, pageKey, page);
-  const context = useContextValue(pageKey, page, model);
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) =>
+function columnKeyHandler(
+  pageKey: string,
+  page: ConceptPage,
+  store: Store,
+  model: ColumnModel,
+  openAddress: (address: string) => void,
+  onAttach: Props["onAttach"],
+) {
+  return (event: KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    const modified = event.ctrlKey || event.metaKey || event.altKey;
+    if (!modified && event.key === "Escape" && target.matches("button.concept-run-cap")) {
+      event.preventDefault();
+      if (event.shiftKey) store.set(openRunsAtom(pageKey), []);
+      else target.click();
+      return;
+    }
     handleColumnKey(event, model.roving.current, {
       page,
       pageKey,
@@ -218,9 +225,24 @@ export function ReadingColumn({ pageKey, page, dropTitle = false, onAttach }: Pr
       move: model.roving.move,
       openSentence: model.actions.openSentence,
       foldRun: model.actions.foldRun,
-      openAddress: context.openAddress,
+      openAddress,
       onAttach,
     });
+  };
+}
+
+/**
+ * The reading column has tabbable fold caps and a roving focus over its sentences, runs and
+ * passages. Open runs are browser-tab view state; a page replacement carries them forward by
+ * the source sections they rest on.
+ */
+export function ReadingColumn({ pageKey, page, dropTitle = false, onAttach }: Props): JSX.Element {
+  const store = useStore();
+  const sourceMarks = useAtomValue(sourceMarksAtom);
+  const columnRef = useRef<HTMLDivElement>(null);
+  const model = useColumnModel(store, columnRef, pageKey, page);
+  const context = useContextValue(pageKey, page, model);
+  const onKeyDown = columnKeyHandler(pageKey, page, store, model, context.openAddress, onAttach);
 
   return (
     <TooltipProvider>
@@ -229,9 +251,10 @@ export function ReadingColumn({ pageKey, page, dropTitle = false, onAttach }: Pr
           ref={columnRef}
           role="document"
           aria-label="Reading column"
-          // One tab stop: the column itself steps aside while focus roves inside it.
+          // The column steps aside while focus roves; fold caps keep their own Tab stops.
           tabIndex={model.roving.inside ? -1 : 0}
           className="concept-column"
+          data-source-marks={sourceMarks ? undefined : "off"}
           onKeyDown={onKeyDown}
           onFocus={model.roving.onFocus}
           onBlur={model.roving.onBlur}

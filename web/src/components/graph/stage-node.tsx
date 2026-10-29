@@ -11,14 +11,8 @@ import { NodeTokens } from "@/components/graph/node-tokens";
 import { StateBadge, toneClass } from "@/components/state-badge";
 import { TerminalGlyph } from "@/components/terminal/terminal-glyph";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import {
-  activityText,
-  hazardTone,
-  isContractPhase,
-  mergeText,
-  stateMeta,
-  timeText,
-} from "@/lib/format";
+import { hazardTone, mergeText, stateMeta, timeText } from "@/lib/format";
+import { activityText, isContractPhase } from "@/lib/format-activity";
 import { hasFooter, NODE_WIDTH, nodeHeight } from "@/lib/graph";
 
 export interface StageNodeData extends Record<string, unknown> {

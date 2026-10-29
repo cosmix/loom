@@ -2,14 +2,8 @@ import dagre from "@dagrejs/dagre";
 
 import type { StageStatus, StageSummary } from "@/api/schema";
 import { routeEdges, type Point } from "@/lib/edge-routing";
-import {
-  activityText,
-  contextUsage,
-  mergeText,
-  stateMeta,
-  timeText,
-  type Tone,
-} from "@/lib/format";
+import { contextUsage, mergeText, stateMeta, timeText, type Tone } from "@/lib/format";
+import { activityText } from "@/lib/format-activity";
 
 /// Card geometry shared by the layout and the node component so the two
 /// never disagree: dagre lays out the size the card will actually render at.

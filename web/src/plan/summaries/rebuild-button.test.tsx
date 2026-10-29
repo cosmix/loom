@@ -17,7 +17,7 @@ const ADA = { public_id: "0123456789abcdef", name: "Ada" };
 const DANA = { public_id: "bbbbbbbbbbbbbbbb", name: "Dana" };
 const fetchMock = vi.fn<typeof fetch>();
 
-function show(who: Who = "holder", ids = ["product"]) {
+function show(who: Who = "holder", ids = ["overview/demo/product"]) {
   const store = createStore();
   initClient(store);
   store.set(youAtom, ADA);
@@ -62,7 +62,7 @@ afterEach(() => {
 });
 
 it("posts the requested ids for the holder", async () => {
-  show("holder", ["product", "product/section_01"]);
+  show("holder", ["overview/demo/product", "demo/product/section_01"]);
   const button = screen.getByRole("button", { name: "Rebuild" });
   expect(button.getAttribute("aria-disabled")).not.toBe("true");
   await act(async () => {
@@ -75,7 +75,7 @@ it("posts the requested ids for the holder", async () => {
     expect.objectContaining({
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: ["product", "product/section_01"] }),
+      body: JSON.stringify({ ids: ["overview/demo/product", "demo/product/section_01"] }),
     }),
   );
   expect(screen.queryByRole("alert")).toBeNull();

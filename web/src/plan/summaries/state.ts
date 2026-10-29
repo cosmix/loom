@@ -10,7 +10,13 @@ import {
   type SummaryQuestion,
 } from "@/plan/api/schema-summaries";
 import type { connectPlanSocket } from "@/plan/api/socket";
-import { planSocketAtom } from "@/plan/state/atoms";
+import { autoRebuildAtom } from "@/plan/settings/preferences";
+import {
+  connectionEpochAtom,
+  isHolderAtom,
+  planSocketAtom,
+  serverInfoAtom,
+} from "@/plan/state/atoms";
 import type { Store } from "@/state/store";
 
 export type PanelLoad =
@@ -152,6 +158,20 @@ export function useSummaryActions(): SummaryActions {
     answer: (question, rebuild) => postPanel(store, "/api/summaries/answer", { question, rebuild }),
     release: (ids) => postPanel(store, "/api/summaries/release", { ids }),
   };
+}
+
+export function useAutoRebuildSync(): void {
+  const store = useStore();
+  const enabled = useAtomValue(autoRebuildAtom);
+  const isHolder = useAtomValue(isHolderAtom);
+  const readOnly = useAtomValue(serverInfoAtom)?.read_only.length !== 0;
+  // Later hellos bump the epoch even when holder and preference are unchanged.
+  const epoch = useAtomValue(connectionEpochAtom);
+
+  useEffect(() => {
+    if (!isHolder || readOnly) return;
+    void postPanel(store, "/api/summaries/auto", { enabled });
+  }, [store, enabled, isHolder, readOnly, epoch]);
 }
 
 export function useTurnTokens(

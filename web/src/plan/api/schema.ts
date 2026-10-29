@@ -122,6 +122,7 @@ export const itemViewSchema = z.strictObject({
 });
 export const checklistViewSchema = z.strictObject({
   feature: z.string(),
+  pitch: z.string().nullable(),
   current: currentViewSchema,
   steps: z.array(stepViewSchema),
   primary: offerViewSchema.nullable(),

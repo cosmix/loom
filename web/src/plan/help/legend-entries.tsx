@@ -1,4 +1,3 @@
-import type { LucideIcon } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 
 import type { Mark, OutOfDate } from "@/plan/api/schema-concept";
@@ -18,13 +17,14 @@ import {
   DOC_KIND_GLYPHS,
   OTHER_GLYPHS,
   PLAN_STATE_GLYPHS,
+  STEP_MARK_GLYPHS,
   SUMMARY_STATE_GLYPHS,
   type DocKind,
   type PlanState,
   type SummaryState,
 } from "@/plan/ui/glyphs";
 
-/** `wide` entries need a tile wider than the 32px square, because their glyph is a word. */
+/** `wide` entries need more than the 32px square for a word or multiple marks. */
 export type LegendEntry = { name: string; meaning: string; glyph: ReactNode; wide?: boolean };
 type Definition = { name: string; meaning: string };
 
@@ -87,7 +87,10 @@ function StepBar({ mark }: { mark: StepView["mark"] }) {
   );
 }
 
-const iconGlyph = (Glyph: LucideIcon): ReactNode => <Glyph className="size-4" />;
+function otherGlyph(kind: keyof typeof OTHER_GLYPHS): ReactNode {
+  const Glyph = OTHER_GLYPHS[kind];
+  return <Glyph data-other-glyph={kind} className="size-4" />;
+}
 
 export const READING: readonly LegendEntry[] = [
   {
@@ -121,13 +124,33 @@ export const READING: readonly LegendEntry[] = [
   {
     name: "Read-only",
     meaning: "Appears beside the note explaining why a document is locked against editing.",
-    glyph: iconGlyph(OTHER_GLYPHS.readOnly),
+    glyph: otherGlyph("readOnly"),
   },
   {
     name: "Pressure-test status",
     meaning:
       "Marks a plan's pressure-test status: not tested, being tested, or the date of the last test.",
-    glyph: iconGlyph(OTHER_GLYPHS.pressureTested),
+    glyph: otherGlyph("pressureTested"),
+  },
+  {
+    name: "Open questions",
+    meaning: "Identifies questions that still need an answer.",
+    glyph: otherGlyph("openQuestions"),
+  },
+  {
+    name: "Feature switcher",
+    meaning: "Opens feature navigation to choose another feature or return home.",
+    glyph: otherGlyph("switcher"),
+  },
+  {
+    name: "Settings",
+    meaning: "Opens the planner's reading and appearance preferences.",
+    glyph: otherGlyph("settings"),
+  },
+  {
+    name: "Help",
+    meaning: "Opens the planner's guides, legend and keyboard shortcuts.",
+    glyph: otherGlyph("help"),
   },
 ];
 
@@ -159,26 +182,29 @@ const SUMMARY_STATES: Record<SummaryState, Definition> = {
   },
 };
 
-const STEP_BARS: readonly (Definition & { mark: StepView["mark"] })[] = [
+const STEP_MARKS: readonly (Definition & { mark: StepView["mark"] })[] = [
   {
     mark: "done",
     name: "Done step",
-    meaning: "A filled bar with a check means the step is complete.",
+    meaning: "A circled check means the step is complete; its progress bar is filled with a check.",
   },
   {
     mark: "gap",
     name: "Step with gaps",
-    meaning: "A dashed bar with an exclamation mark means the step has gaps to close.",
+    meaning:
+      "A warning triangle means the step has gaps to close; its progress bar is dashed with an exclamation mark.",
   },
   {
     mark: "active",
     name: "Active step",
-    meaning: "A double-bordered bar with a dot means the step is in progress.",
+    meaning:
+      "A circled dot means the step is in progress; its progress bar has a double border and a dot.",
   },
   {
     mark: "optional",
     name: "Optional step",
-    meaning: "A dotted bar with a dash means the step can be skipped.",
+    meaning:
+      "A dash means the step can be skipped; its progress bar has a dotted border and a dash.",
   },
 ];
 
@@ -195,15 +221,29 @@ export const STATES: readonly LegendEntry[] = [
     const Glyph = SUMMARY_STATE_GLYPHS[state];
     return { ...SUMMARY_STATES[state], glyph: <Glyph className="size-4" /> };
   }),
-  ...STEP_BARS.map(({ mark, name, meaning }) => ({
-    name,
-    meaning,
-    glyph: <StepBar mark={mark} />,
-  })),
+  ...STEP_MARKS.map(({ mark, name, meaning }) => {
+    const Glyph = STEP_MARK_GLYPHS[mark];
+    return {
+      name,
+      meaning,
+      glyph: (
+        <span className="inline-flex items-center gap-2">
+          <Glyph data-step-mark={mark} className="size-4" />
+          <StepBar mark={mark} />
+        </span>
+      ),
+      wide: true,
+    };
+  }),
   {
     name: "Step rail check",
     meaning: "In the step rail, a check replaces a step's own glyph once the step is done.",
-    glyph: <OTHER_GLYPHS.stepDone className="size-4 text-(--tone-completed)" />,
+    glyph: (
+      <OTHER_GLYPHS.stepDone
+        data-other-glyph="stepDone"
+        className="size-4 text-(--tone-completed)"
+      />
+    ),
   },
 ];
 

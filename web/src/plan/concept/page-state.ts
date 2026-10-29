@@ -2,9 +2,9 @@ import { useEffect, useRef } from "react";
 import { atom, useAtomValue, useStore, type PrimitiveAtom } from "jotai";
 
 import { apiGet } from "@/plan/api/client";
+import { isConceptPageKey, overviewKey, parsePageKey } from "@/plan/api/page-key";
 import {
   conceptPageSchema,
-  isConceptPageKey,
   type ConceptChanged,
   type ConceptPage,
   type OutOfDate,
@@ -36,7 +36,7 @@ const pageAtoms = new Map<string, PrimitiveAtom<ConceptPageState>>();
 const NO_PAGE = atom<ConceptPageState>(EMPTY);
 const tickets = new WeakMap<Store, Map<string, number>>();
 
-/** Page keys: `product`, `engineering`, `product/<stem>`, `engineering/<slug>`. */
+/** Page keys: `overview/<feature>/<scope>`, `<feature>/<scope>/<doc>`, `plans/<doc>`. */
 export function conceptPageAtom(key: string): PrimitiveAtom<ConceptPageState> {
   let pageAtom = pageAtoms.get(key);
   if (!pageAtom) {
@@ -193,22 +193,25 @@ function dashOutOfDate(store: Store, summaries: string[]): void {
   }
 }
 
-/** The overview keys; every page key of a scope is the overview's key or starts with `<key>/`. */
-const SCOPES = ["product", "engineering"];
-
 /**
- * The pages a delta refetches: the loaded pages it names, plus every loaded page of a scope
- * whose overview it names. The server names the overview whenever a member's summary state or
- * the key row changes, and every page of the scope embeds that key row, so a sibling the
- * delta does not name is stale too. Each page then shows its own fresh response, ordered by
+ * The pages a delta refetches: the loaded pages it names, plus every loaded page of a feature
+ * and scope whose overview it names. The server names the overview when a member's summary
+ * state or the key row changes. Every page of that feature and scope embeds that key row,
+ * so a sibling the delta does not name is stale too. Each page shows its own fresh response, ordered by
  * its own ticket; no state is copied from one page to another (copying across keys has no
  * order, so an older response could overwrite a newer dash).
  */
 function pagesToRefetch(store: Store, named: string[]): string[] {
   const loaded = loadedKeys(store);
-  const scopes = SCOPES.filter((scope) => named.includes(scope));
-  const inScope = (key: string) =>
-    scopes.some((scope) => key === scope || key.startsWith(`${scope}/`));
+  const overviews = new Set(named.filter((key) => parsePageKey(key)?.kind === "overview"));
+  const inScope = (key: string) => {
+    const parts = parsePageKey(key);
+    return (
+      parts !== null &&
+      parts.kind !== "standalone" &&
+      overviews.has(overviewKey(parts.feature, parts.scope))
+    );
+  };
   return [...named.filter((key) => loaded.includes(key)), ...loaded.filter(inScope)];
 }
 

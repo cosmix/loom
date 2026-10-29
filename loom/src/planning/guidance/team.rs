@@ -2,9 +2,10 @@
 
 use std::path::PathBuf;
 
-use super::opening::{plan_bundle, plan_path, section_path};
+use super::opening::plan_bundle;
 use super::{AuthoringStart, StartError};
 use crate::planning::checklist::Offer;
+use crate::planning::kinds::{plan_path, section_path};
 use crate::planning::project::Project;
 
 /// The maximum number of in-process drafting teammates.
@@ -52,7 +53,7 @@ pub fn draft_run(project: &Project, offer_id: &str, feature: &str) -> Result<Dra
                 documents.push(section_path(feature, *number));
             }
             Offer::WritePlan { slug, .. } if plans => {
-                documents.push(plan_path(feature, slug));
+                documents.push(plan_path(Some(feature), slug));
                 bundles.push(plan_bundle(feature, slug));
             }
             _ => {}

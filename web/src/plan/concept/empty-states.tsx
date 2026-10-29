@@ -5,6 +5,7 @@ import { Link } from "react-router";
 
 import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 import { EmptyState } from "@/aurora-ui/feedback/EmptyState";
+import { featureOfKey, overviewKey, pageHref, parsePageKey } from "@/plan/api/page-key";
 import type { ConceptPage, DocLink, EmptyState as EmptyData } from "@/plan/api/schema-concept";
 import { Button } from "@/components/ui/button";
 import { toAddress } from "@/plan/files/address";
@@ -60,7 +61,8 @@ function copyFor(page: ConceptPage, empty: EmptyData): Copy {
 /** Sections and plans list to their summary pages; never-built documents open in file mode. */
 function DocList({ kind, docs }: { kind: EmptyData["kind"]; docs: DocLink[] }) {
   if (docs.length === 0) return null;
-  const href = (doc: DocLink) => (kind === "never_built" ? toAddress(doc.path) : `/${doc.page}`);
+  const href = (doc: DocLink) =>
+    kind === "never_built" ? toAddress(doc.path) : pageHref(doc.page);
   return (
     <ul
       aria-label="Documents"
@@ -104,9 +106,12 @@ export function EmptyStates({ page, empty }: { page: ConceptPage; empty: EmptyDa
 
 /** The source document behind a summary page key, or null for an overview. */
 function sourceOf(pageKey: string): string | null {
-  const [scope, name] = pageKey.split("/");
-  if (!name) return null;
-  return scope === "product" ? `doc/product/${name}.md` : `doc/plans/PLAN-${name}.md`;
+  const key = parsePageKey(pageKey);
+  if (key === null || key.kind === "overview") return null;
+  if (key.kind === "standalone") return `doc/plans/PLAN-${key.doc}.md`;
+  return key.scope === "product"
+    ? `doc/product/${key.feature}/${key.doc}.md`
+    : `doc/plans/${key.feature}/PLAN-${key.doc}.md`;
 }
 
 /** Null until the document lookup answers. */
@@ -129,6 +134,7 @@ function useDocExists(path: string | null): boolean | null {
 export function ConceptNotFound({ pageKey }: { pageKey: string }) {
   const source = sourceOf(pageKey);
   const exists = useDocExists(source);
+  const feature = featureOfKey(pageKey);
   const name = pageKey.split("/").pop() ?? pageKey;
   if (source !== null && exists === null) return <LoadState state="loading" />;
   if (source !== null && exists) {
@@ -147,14 +153,20 @@ export function ConceptNotFound({ pageKey }: { pageKey: string }) {
   return (
     <div className="flex flex-col gap-3">
       <LoadState state="not_found" title="No such document" message={`${name} does not exist.`} />
-      <nav aria-label="Overviews" className="flex justify-center gap-4 text-[13px]">
-        <Link to="/product" className="underline">
-          Product overview
+      {feature !== null ? (
+        <nav aria-label="Overviews" className="flex justify-center gap-4 text-[13px]">
+          <Link to={pageHref(overviewKey(feature, "product"))} className="underline">
+            Product overview
+          </Link>
+          <Link to={pageHref(overviewKey(feature, "engineering"))} className="underline">
+            Engineering overview
+          </Link>
+        </nav>
+      ) : (
+        <Link to="/" className="text-center underline">
+          Planner
         </Link>
-        <Link to="/engineering" className="underline">
-          Engineering overview
-        </Link>
-      </nav>
+      )}
     </div>
   );
 }

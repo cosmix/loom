@@ -65,6 +65,7 @@ way loom embeds its other assets (`loom/src/assets/install.rs:51`, `install_all`
 plugin/
   .claude-plugin/plugin.json      name "loom-plan"
   skills/brainstorming/SKILL.md   the discussion procedure (below)
+  skills/kickoff/SKILL.md
   skills/vision/SKILL.md
   skills/section/SKILL.md
   skills/metaplan/SKILL.md
@@ -131,14 +132,14 @@ The **starting-point block** is generated per session:
 ## Starting point
 
 Step: 2, Product spec.
-Target: doc/product/section_05.md, listed in the vision as "05 | Concept mode | The two overviews, …".
+Target: doc/product/<feature>/section_05.md, listed in the vision as "05 | Concept mode | The two overviews, …".
 Skill: loom-plan:section.
 
 Project state at launch (it may change; re-read the files before relying on it):
 - Vision: present, 12 sections listed, 4 written (01, 02, 03, 04).
 - Metaplans: none.
 - Plans: 6 unlisted (`PLAN-…`), 2 running, 31 done.
-- Locked plan files: doc/plans/IN_PROGRESS-PLAN-foo.md, doc/plans/IN_PROGRESS-PLAN-bar.md.
+- Locked plan files: doc/plans/<feature>/IN_PROGRESS-PLAN-foo.md, doc/plans/<feature>/IN_PROGRESS-PLAN-bar.md.
 ```
 
 The state lines come from the project checklist of section 01 at the moment of launch. They save
@@ -158,9 +159,30 @@ brainstorming procedure (one question at a time, choices where the answer space 
 three approaches with trade-offs and a recommendation before a direction settles) with loom's
 changes listed above under "The plugin". The step skill that loaded it names the target document.
 
+### `loom-plan:kickoff`: starting new work
+
+Starts without a target file. The skill asks what the user wants to build and settles the size:
+a feature with a vision, product sections, a metaplan and plans, or one standalone plan with no
+product spec or metaplan. It asks before writing and proposes the size, a name and, for a feature,
+sections with clear topic ownership in the proposal block the app renders.
+
+After each turn that changes the state, the skill ends its reply with a `loom-kickoff` fenced
+block containing the current size, name, problem, settled decisions, open questions and proposed
+sections. Each section is settled, being worded or open. The proposal uses `proposal: true`;
+the app offers Use this, Rename, Change sections and Make it standalone for a feature, or
+Use this, Rename and Make it a feature for a plan. The skill keeps the taking-shape block current.
+
+Nothing is written under `doc/` until the user confirms the size and name and the app sends the
+exact creation grant; conversational agreement alone grants no writes. For a feature, the skill
+loads `loom-plan:vision` to write `doc/product/<feature>/index.md` and continues on that target.
+For a standalone plan, it loads `loom-plan:plan` to write `doc/plans/PLAN-<slug>.md` with
+`Implements: none` and briefs under `doc/plans/briefs/<slug>/`. The granted target must be new;
+the skill keeps that write scope even when the loaded skill ordinarily allows related edits.
+
 ### `loom-plan:vision`: the vision discussion
 
-Target: `doc/product/index.md`. The skill runs its discussion through `loom-plan:brainstorming`:
+Target: `doc/product/<feature>/index.md`. The feature name comes from the opening message and
+also names `doc/plans/<feature>/`. The skill runs its discussion through `loom-plan:brainstorming`:
 ask about the problem, the users and the goals one question at a time, offering choices where the
 answer space is small; propose two or three approaches with their trade-offs and a recommendation
 before settling a direction; write the vision as the discussion settles each part, never at the
@@ -182,8 +204,9 @@ to the vision" (section 01): both are edits to the table.
 
 ### `loom-plan:section`: one product section
 
-Target: `doc/product/section_<nn>.md`. Before writing, the session reads the vision and every
-section already written, which bind it; it reads `doc/loom/knowledge/INDEX.md` and pulls only the
+Target: `doc/product/<feature>/section_<nn>.md`, with a two-digit section number. Before writing,
+the session reads the feature's vision and every section already written, which bind it;
+it reads `doc/loom/knowledge/INDEX.md` and pulls only the
 topics the section touches; it reads the source code a rule rests on. Then it discusses the
 section's open decisions with the user through `loom-plan:brainstorming`, one at a time, and
 writes as each settles.
@@ -203,16 +226,21 @@ The section it produces:
 These are the conventions the sections of this specification follow; the skill makes them the
 default for every project. (My call.)
 
+Guided mode drafts one section with the user. A draft-all opening names every missing section
+and the teammate count; the skill uses the shared team procedure under `loom-plan:plan` below,
+with `loom plan check` for the lead's consistency pass. Each teammate follows the section
+conventions above and leaves unresolved choices under `## Open questions`.
+
 ### `loom-plan:metaplan`: a metaplan or a new round
 
-Target: `doc/plans/index.md` for a project's first metaplan; for a later round,
-`doc/plans/metaplan-<nn>.md` with the next free two-digit number (section 01 accepts any
-`doc/plans/*metaplan*.md`, and the returning author adds a round and leaves finished metaplans
+Target: `doc/plans/<feature>/index.md` for a feature's first metaplan; for a later round,
+`doc/plans/<feature>/metaplan-<nn>.md` with the next free two-digit number (section 01 accepts any
+`doc/plans/<feature>/*metaplan*.md`, and the returning author adds a round and leaves finished metaplans
 as they are). (My call: a number orders rounds in a directory listing.)
 
 The procedure is the same `loom-plan:brainstorming` discussion, over how to cut the product into
 plans: what each plan delivers, which product sections it implements, the order, and what each
-needs from another. The session reads the product spec, the existing metaplans, and every plan in any state,
+needs from another. The session reads the feature's product spec, existing metaplans and every plan in any state,
 so a new round never repeats work that is written, running or done.
 
 The metaplan it produces:
@@ -229,24 +257,48 @@ It also handles "add this unlisted plan to a metaplan".
 
 ### `loom-plan:plan`: one loom plan
 
-Target: `doc/plans/PLAN-<slug>.md`, the slug the metaplan entry names. The skill states the app
-conventions and then loads loom's own plan-writing skill, `loom-plan-writer`, which owns every
-part of plan authoring. The app conventions:
+Target: `doc/plans/<feature>/PLAN-<slug>.md`, the slug the metaplan entry names. A standalone
+plan targets `doc/plans/PLAN-<slug>.md` with `Implements: none` and has no metaplan.
+The skill states the app conventions and then loads loom's own plan-writing skill,
+`loom-plan-writer`, which owns every part of plan authoring. The app conventions:
 
 - the plan's title and, directly under it, the `Implements:` line (section 03), its sections taken
   from the metaplan entry and confirmed with the user; `Implements: none` for a plan that
-  implements no product section;
+  implements no product section; section identifiers resolve inside `doc/product/<feature>/`;
 - the metaplan entry's description is the plan's scope; a change of scope goes back into the
   entry in the same turn;
-- briefs under `doc/plans/briefs/<slug>/`, referred to by full path;
+- feature briefs under `doc/plans/<feature>/briefs/<slug>/`, standalone briefs under
+  `doc/plans/briefs/<slug>/`, referred to by full path;
 - `loom plan verify <plan>` after writing, with every error fixed before the turn ends.
 
 Several missing plans can be written in one chat. The session may hand each plan to its own
 subagent with the metaplan entry, the conventions above, and the decisions the chat made; it
-reviews each plan when the subagent returns. Agent teams are not used in authoring: section 07's
-launch environment does not enable them, and the bridge renders subagent transcripts but never
-teammates'. Pressure sessions do run a team (section 11); there the bridge reads teammate
-transcripts for token counts only. (My call.)
+reviews each plan when the subagent returns. A draft-all opening instead uses the section and
+plan skills' team mode: one authoring session leads one team of at most five teammates, fewer
+when fewer documents are missing. Other authoring sessions use guided mode.
+
+The shared team procedure:
+
+- The lead reads the vision or metaplan, the product sections the plans implement and the settled
+  decisions. It writes a short shared brief in the permitted runtime drafts directory: terms,
+  decisions, which document owns each topic and the cross-references to expect.
+- The lead assigns each teammate its documents and the brief, with exactly one owner per file.
+  Plan teammates load `loom-plan-writer` and own their plans' brief bundles too.
+- Teammates coordinate through `SendMessage` while drafting, agreeing on terms, settling overlaps
+  and identifying which document owns a topic. They leave unresolved choices explicit.
+- Each teammate writes only its assigned files. The run's missing documents and plan brief
+  bundles are its complete write scope under `doc/`, including turn-end duties. Needed changes
+  to the vision, metaplan, summaries or other files outside that scope are reported to the user.
+- After every teammate finishes, the lead makes one consistency pass: terms, cross-references,
+  duplicated or missing topics, `Implements:` lines and agreement between briefs and plans.
+  It runs `loom plan check` for sections or `loom plan verify <plan>` for each plan, and corrects
+  only files within the run's scope.
+- The lead hands back a review queue ordered by open-question count, highest first, with a note
+  per document on what the pass changed, including when no changes were needed, and anything
+  unresolved. It starts no second team. Stopping the team leaves written documents in place.
+
+The draft-all launch enables in-process teammates; the bridge reads their transcripts for tokens
+and document assignments and does not render their messages (sections 07 and 12). (My call.)
 
 `loom-plan-writer` itself gains the `Implements:` line in its skeleton and its plan template
 (`skills/loom-plan-writer/SKILL.md`, `references/plan-template.md`), so plans written outside the
@@ -286,23 +338,26 @@ why the session exists:
 
 ```text
 loom plan: step 4, Plans.
-Write doc/plans/PLAN-delivery-truth.md for the entry "1. Delivery truth" in doc/plans/index.md.
+Write doc/plans/<feature>/PLAN-delivery-truth.md for the entry "1. Delivery truth" in doc/plans/<feature>/index.md.
 Load the skill loom-plan:plan, then begin by telling me what you read and what you plan to ask.
 ```
 
-| Offer (section 01)                         | Step | Target                                   | Skill                |
-| ------------------------------------------ | ---- | ---------------------------------------- | -------------------- |
-| Start a vision discussion                  | 1    | `doc/product/index.md`                   | `loom-plan:vision`   |
-| Fix the vision's section list              | 1    | the `Specification sections` table       | `loom-plan:vision`   |
-| Add an unlisted section to the vision      | 2    | the table, with the section's number     | `loom-plan:vision`   |
-| Write a missing section                    | 2    | `section_<nn>.md`, with the table row    | `loom-plan:section`  |
-| Start a metaplan                           | 3    | `doc/plans/index.md`                     | `loom-plan:metaplan` |
-| Write a missing plan                       | 4    | `PLAN-<slug>.md`, with the entry heading | `loom-plan:plan`     |
-| Add an unlisted plan to a metaplan         | 4    | the metaplan, with the plan's file name  | `loom-plan:metaplan` |
-| Refine a document or a passage             | any  | the document, with any attached passage  | `loom-plan:refine`   |
-| Review what was built                      | done | the done plans and their run reviews     | `loom-plan:retro`    |
-| Start a new metaplan round                 | done | `doc/plans/metaplan-<nn>.md`             | `loom-plan:metaplan` |
-| Change the knowledge base                  | any  | the knowledge file, if one was open      | `loom-plan:knowledge` |
+| Offer (section 01)                     | Step | Target                                                   | Skill                 |
+| -------------------------------------- | ---- | -------------------------------------------------------- | --------------------- |
+| Start new work (feature or standalone) | new  | none until size and name are confirmed                   | `loom-plan:kickoff`   |
+| Start a vision discussion              | 1    | `doc/product/<feature>/index.md`                         | `loom-plan:vision`    |
+| Fix the vision's section list          | 1    | the `Specification sections` table                       | `loom-plan:vision`    |
+| Add an unlisted section to the vision  | 2    | the table, with the section's number                     | `loom-plan:vision`    |
+| Write a missing section                | 2    | `doc/product/<feature>/section_<nn>.md`, with its row    | `loom-plan:section`   |
+| Draft all missing sections             | 2    | the missing sections in the feature                      | `loom-plan:section`   |
+| Start a metaplan                       | 3    | `doc/plans/<feature>/index.md`                           | `loom-plan:metaplan`  |
+| Write a missing plan                   | 4    | `doc/plans/<feature>/PLAN-<slug>.md`, with its entry     | `loom-plan:plan`      |
+| Draft all missing plans                | 4    | the missing plans and their brief bundles in the feature | `loom-plan:plan`      |
+| Add an unlisted plan to a metaplan     | 4    | the metaplan, with the plan's file name                  | `loom-plan:metaplan`  |
+| Refine a document or a passage         | any  | the document, with any attached passage                  | `loom-plan:refine`    |
+| Review what was built                  | done | the done plans and their run reviews                     | `loom-plan:retro`     |
+| Start a new metaplan round             | done | `doc/plans/<feature>/metaplan-<nn>.md`                   | `loom-plan:metaplan`  |
+| Change the knowledge base              | any  | the knowledge file, if one was open                      | `loom-plan:knowledge` |
 
 A chat the user starts with no offer (an empty chat box) gets the common brief with
 `Step: none chosen` and an opening message that asks the user what they want to work on.
@@ -336,7 +391,7 @@ section 12 enforces them.
 - **Documents only.** Writes go under `doc/`. Code, configuration, and the project's `CLAUDE.md`
   are out of scope for a planning session.
 - **Locked plans.** Files with the `IN_PROGRESS-`, `DONE-` or `RETIRED-` prefix, and everything
-  under `doc/plans/archive/`, are read-only (vision, Decisions, "Locked plans"). So is a locked
+  under `doc/plans/<feature>/archive/` or `doc/plans/archive/`, are read-only (vision, Decisions, "Locked plans"). So is a locked
   plan's brief bundle: stages that start later in a run read the briefs committed at that time,
   so an edit would run half the plan on one version and half on another. (My call.) Asked to
   change any of these, the session says why it cannot and offers what can be done: a correction
@@ -377,7 +432,7 @@ subagent per document summary, then the overviews itself. Its opening message li
 
 ```text
 loom plan: rebuild summaries.
-Rebuild: product/section_03, plans/delivery-truth, product, engineering.
+Rebuild: planner-ui/product/section_03, plans/delivery-truth, overview/planner-ui/product, overview/planner-ui/engineering.
 Load the skill loom-plan:summaries.
 ```
 

@@ -1,8 +1,9 @@
 //! Abandoning an unfinished run (section 11, "Abandoning an unfinished run").
 //!
 //! The sequence stops the daemon, runs `loom clean --all`, confirms on disk that the run is
-//! gone, then renames `doc/plans/IN_PROGRESS-PLAN-<slug>.md` to
-//! `doc/plans/archive/RETIRED-PLAN-<slug>.md` through the no-follow primitives. An abandon
+//! gone, then renames `<plan home>/IN_PROGRESS-PLAN-<slug>.md` to
+//! `<plan home>/archive/RETIRED-PLAN-<slug>.md` through the no-follow primitives. The plan home
+//! is `doc/plans/` for a standalone plan and `doc/plans/<feature>/` for a feature plan. An abandon
 //! marker in the server's runtime directory records that an abandon began here, so a server
 //! that stopped between `loom clean` and the rename can offer "Finish abandoning".
 

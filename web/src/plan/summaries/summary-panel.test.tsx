@@ -51,9 +51,9 @@ it("lists the running rebuild's progress and ids", () => {
   const running = within(screen.getByRole("region", { name: "Running rebuild" }));
   expect(running.getByText("Rebuilding 1 of 3")).toBeTruthy();
   expect(running.getAllByRole("listitem").map((item) => item.textContent)).toEqual([
-    "product/section_01",
-    "product/section_02",
-    "product",
+    "demo/product/section_01",
+    "demo/product/section_02",
+    "overview/demo/product",
   ]);
 });
 
@@ -61,21 +61,21 @@ it("lists queued ids", () => {
   show();
 
   const queue = within(screen.getByRole("region", { name: "Queue" }));
-  expect(queue.getByRole("listitem").textContent).toBe("product/section_03");
+  expect(queue.getByRole("listitem").textContent).toBe("demo/product/section_03");
 });
 
 it("pairs each failed id with its error", () => {
   show({
     failed: [
-      { id: "product/section_04", error: "Summary failed to seal" },
-      { id: "product/section_05", error: "Session stopped" },
+      { id: "demo/product/section_04", error: "Summary failed to seal" },
+      { id: "demo/product/section_05", error: "Session stopped" },
     ],
   });
 
   const failed = within(screen.getByRole("region", { name: "Failed rebuilds" }));
   expect(failed.getAllByRole("listitem").map((item) => item.textContent)).toEqual([
-    "product/section_04Summary failed to seal",
-    "product/section_05Session stopped",
+    "demo/product/section_04Summary failed to seal",
+    "demo/product/section_05Session stopped",
   ]);
 });
 
@@ -165,7 +165,7 @@ it("posts only the selected terminal claim to the release endpoint", async () =>
     .fn<typeof fetch>()
     .mockResolvedValue(new Response(JSON.stringify(panelFixture), { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);
-  const { store } = show({ terminal_claims: ["plans/loom-rebuilds", "product"] });
+  const { store } = show({ terminal_claims: ["plans/loom-rebuilds", "overview/demo/product"] });
   const claims = within(screen.getByRole("region", { name: "Terminal claims" }));
   const selected = claims.getByText("plans/loom-rebuilds").closest("li");
   if (!selected) throw new Error("Missing terminal claim row");

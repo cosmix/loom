@@ -11,7 +11,7 @@ import { ReadingColumn } from "@/plan/files/reading-column";
 import { Tree } from "@/plan/files/tree";
 import { DrawerOpener, TreeDrawer, TreeDrawerRoot, useTreeDrawer } from "@/plan/files/tree-drawer";
 import { OfferButton } from "@/plan/offers/offer-button";
-import { checklistAtom } from "@/plan/state/atoms";
+import { featuresAtom } from "@/plan/state/atoms";
 import { DocHeading } from "@/plan/ui/doc-heading";
 import { LoadState } from "@/plan/ui/load-state";
 
@@ -19,10 +19,19 @@ import { LoadState } from "@/plan/ui/load-state";
 const WIDE = "(min-width: 900px)";
 
 /** A missing document: the checklist item that asks for it, with its offer. */
-function GapView({ title }: { title: string }): JSX.Element {
-  const checklist = useAtomValue(checklistAtom);
-  const needle = title.toLowerCase();
-  const item = checklist?.items.find((candidate) => candidate.text.toLowerCase().includes(needle));
+function GapView({
+  title,
+  feature,
+  target,
+}: {
+  title: string;
+  feature: string | null;
+  target: string | null;
+}): JSX.Element {
+  const features = useAtomValue(featuresAtom);
+  const item = features
+    .find((checklist) => checklist.feature === feature)
+    ?.items.find((candidate) => target !== null && candidate.path === target);
   return (
     <div className="flex flex-col gap-3">
       <DocHeading breadcrumb={[{ label: "Planner" }, { label: title }]} kind={null} title={title} />
@@ -43,12 +52,13 @@ function GapView({ title }: { title: string }): JSX.Element {
 }
 
 /** No document open: the drawer control on narrow screens, then the gap view or a hint. */
-function NoDocument({ gap, opener }: { gap: string | null; opener?: JSX.Element }) {
+function NoDocument({ search, opener }: { search: URLSearchParams; opener?: JSX.Element }) {
+  const gap = search.get("gap");
   return (
     <>
       {opener}
       {gap ? (
-        <GapView title={gap} />
+        <GapView title={gap} feature={search.get("feature")} target={search.get("target")} />
       ) : (
         <p className="p-6 text-[13px] text-muted-foreground">Choose a document from the tree.</p>
       )}
@@ -66,7 +76,7 @@ export function FileMode(): JSX.Element {
   const drawer = useTreeDrawer();
   const address = parseAddress(location);
   const hasPath = location.pathname.startsWith("/files/") && location.pathname.length > 7;
-  const gap = new URLSearchParams(location.search).get("gap");
+  const search = new URLSearchParams(location.search);
   const opener = wide ? undefined : <DrawerOpener />;
 
   const tab = tree ? (
@@ -101,7 +111,7 @@ export function FileMode(): JSX.Element {
               opener={opener}
             />
           ) : (
-            <NoDocument gap={gap} opener={opener} />
+            <NoDocument search={search} opener={opener} />
           )}
         </div>
       </div>

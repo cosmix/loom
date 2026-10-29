@@ -13,7 +13,8 @@ import { TerminalGlyph } from "@/components/terminal/terminal-glyph";
 import { Badge } from "@/components/ui/badge";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { activityText, mergeText, modelsOf, stateMeta, timeText } from "@/lib/format";
+import { mergeText, modelsOf, stateMeta, timeText } from "@/lib/format";
+import { activityText } from "@/lib/format-activity";
 import { compactTokens, fresh, lastValues, stageFlow } from "@/lib/tokens";
 import { snapshotAtom } from "@/state/atoms";
 

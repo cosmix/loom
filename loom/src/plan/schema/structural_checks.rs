@@ -64,10 +64,18 @@ pub(crate) fn extract_brief_paths(text: &str) -> Vec<String> {
 pub(crate) fn extract_prefixed_paths(text: &str, prefix: &str) -> Vec<String> {
     let mut paths = Vec::new();
 
-    // A word joined by `|` without spaces is a regex alternation or a shell pipe, as in a
-    // `grep -E 'a|doc/plans/briefs/old-'` criterion: its parts are patterns, not references.
-    // Markdown table cells keep spaces around their pipes, so they still count.
-    let words = text.split_whitespace().filter(|word| !word.contains('|'));
+    // Skip patterns in `|`-joined words, but keep Markdown link targets inside them.
+    // Words without `|` retain the usual token extraction rules.
+    let words = text.split_whitespace().flat_map(|word| {
+        if word.contains('|') {
+            word.split("](")
+                .skip(1)
+                .filter_map(|link| link.split_once(')').map(|(target, _)| target))
+                .collect::<Vec<_>>()
+        } else {
+            vec![word]
+        }
+    });
     for token in words.flat_map(|word| word.split(['(', ')', '[', ']', '"', '\'', ',', ';'])) {
         let trimmed = token.trim_matches(|c: char| matches!(c, '.' | ',' | ':' | '`'));
         if let Some(idx) = trimmed.find(prefix) {
@@ -286,6 +294,18 @@ mod tests {
             "! grep -nE 'doc/x\\.md|doc/plans/briefs/feat-planner-|doc/plans/PLAN-' doc/plans \
                     | doc/plans/briefs/v2/a.md | b |";
         assert_eq!(extract_brief_paths(text), vec!["doc/plans/briefs/v2/a.md"]);
+    }
+
+    #[test]
+    fn links_in_compact_table_rows_are_references() {
+        assert_eq!(
+            extract_brief_paths("|worker|[brief](doc/plans/briefs/shared/nested.md#details)|"),
+            vec!["doc/plans/briefs/shared/nested.md"]
+        );
+        assert_eq!(
+            extract_brief_paths("|[a](doc/plans/briefs/x/a.md)|[b](doc/plans/briefs/x/b.md)|"),
+            vec!["doc/plans/briefs/x/a.md", "doc/plans/briefs/x/b.md"]
+        );
     }
 
     #[test]

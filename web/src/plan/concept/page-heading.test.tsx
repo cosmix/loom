@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
+import { featureOfKey } from "@/plan/api/page-key";
 import { conceptPageSchema, type ConceptPage, type OutOfDate } from "@/plan/api/schema-concept";
 
 import { PageHeading } from "./page-heading";
@@ -23,6 +24,7 @@ function pageWith(overrides: Partial<ConceptPage> = {}): ConceptPage {
     ...structuredClone(summaryFixture),
     state: null,
     implemented_by: [],
+    feature: featureOfKey(overrides.key ?? summaryFixture.key),
     ...overrides,
   });
 }
@@ -84,7 +86,7 @@ it("warns for a stale state without an out-of-date reason", () => {
 
 it.each([
   ["written", "pencil-line", null],
-  ["running", "play", "This plan is running. `loom run` works from the committed copy."],
+  ["running", "play", "This plan is running. loom run works from the committed copy."],
   ["done", "circle-check-big", "This plan is done. Record changes in a new plan."],
   ["retired", "archive", "This plan is done. Record changes in a new plan."],
 ] as const)("renders the %s plan state and its lock notice", (plan_state, glyph, notice) => {
@@ -119,8 +121,8 @@ it("links implemented sections and keeps unresolved section names unlinked", () 
           doc: {
             id: "section_01",
             title: "Planning",
-            path: "doc/product/section_01.md",
-            page: "product/section_01",
+            path: "doc/product/demo/section_01.md",
+            page: "demo/product/section_01",
           },
         },
         { number: 99, name: "section_99", doc: null },
@@ -130,7 +132,7 @@ it("links implemented sections and keeps unresolved section names unlinked", () 
 
   expect(screen.getByText("Implements:")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Planning" }).getAttribute("href")).toBe(
-    "/product/section_01",
+    "/f/demo/product/section_01",
   );
   const unresolved = screen.getByText("section_99");
   expect(unresolved.closest(".rounded-full")).not.toBeNull();
@@ -147,18 +149,18 @@ it("links implementing plans with their human-readable states", () => {
 
   expect(screen.getByText("Implemented by:")).toBeTruthy();
   const link = screen.getByRole("link", { name: "Concept mode (in progress)" });
-  expect(link.getAttribute("href")).toBe("/engineering/feat-planner.05");
+  expect(link.getAttribute("href")).toBe("/f/demo/engineering/feat-planner.05");
   expect(link.getAttribute("title")).toBe("Concept mode");
   expect(screen.getByRole("link", { name: "Second plan (done)" }).getAttribute("href")).toBe(
-    "/engineering/plan-two",
+    "/f/demo/engineering/plan-two",
   );
 });
 
 it.each([
-  ["product/section_01", "Product", "/product"],
-  ["product", "Product", "/product"],
-  ["engineering/my-plan", "Plans", "/engineering"],
-  ["engineering", "Plans", "/engineering"],
+  ["demo/product/section_01", "Product", "/f/demo/product"],
+  ["overview/demo/product", "Product", "/f/demo/product"],
+  ["demo/engineering/my-plan", "Plans", "/f/demo/engineering"],
+  ["overview/demo/engineering", "Plans", "/f/demo/engineering"],
 ] as const)("renders the group breadcrumb for %s", (key, label, to) => {
   show({ key });
 
@@ -190,25 +192,36 @@ it("disables the source view when there is no source path", () => {
 });
 
 it.each([
-  [1, "telescope"],
-  [2, "book-open"],
-  [3, "sticky-note"],
-  [4, "map"],
-  [5, "list-checks"],
-  [6, "file-text"],
-  [7, "library"],
-  [8, "file-search"],
-] as const)("maps colour %s to the corresponding document mark", (colour, glyph) => {
-  const { container } = show({ colour });
+  ["overview/demo/product", "telescope"],
+  ["overview/demo/engineering", "map"],
+  ["demo/product/section_03", "book-open"],
+  ["demo/engineering/my-plan", "list-checks"],
+  ["plans/my-plan", "list-checks"],
+] as const)("takes the document kind from %s regardless of tint", (key, glyph) => {
+  for (const colour of [1, 3]) {
+    const { container, unmount } = show({ key, colour });
 
-  expect(container.querySelector(`svg.lucide-${glyph}`)).not.toBeNull();
+    expect(container.querySelector(`svg.lucide-${glyph}`)).not.toBeNull();
+    unmount();
+  }
 });
 
-it.each([null, 0, 255])("omits the document mark for unmatched colour %s", (colour) => {
-  show({ colour });
+it("keeps standalone plan breadcrumbs unlinked", () => {
+  show({ key: "plans/my-plan", feature: null });
 
-  const title = screen.getByRole("heading", { level: 1, name: "Planning" });
-  expect(title.previousElementSibling).toBeNull();
+  const nav = screen.getByRole("navigation", { name: "Breadcrumb" });
+  expect(within(nav).getByText("Plans").closest("a")).toBeNull();
+});
+
+it("links a standalone implementing plan", () => {
+  show({
+    feature: null,
+    implemented_by: [{ slug: "my-plan", title: "My plan", state: "written" }],
+  });
+
+  expect(screen.getByRole("link", { name: "My plan (written)" }).getAttribute("href")).toBe(
+    "/plans/my-plan",
+  );
 });
 
 it.each([
@@ -222,10 +235,10 @@ it.each([
 });
 
 it("mounts PageHeaderExtras inside the heading with the same page", () => {
-  show({ key: "engineering/my-plan" });
+  show({ key: "demo/engineering/my-plan" });
 
   const extras = screen.getByRole("group", { name: "Header extras" });
-  expect(extras.textContent).toBe("engineering/my-plan");
+  expect(extras.textContent).toBe("demo/engineering/my-plan");
   expect(extras.closest("header")).not.toBeNull();
 });
 

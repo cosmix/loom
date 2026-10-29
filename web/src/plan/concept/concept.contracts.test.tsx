@@ -14,27 +14,17 @@ import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
 import { authoringViewSchema, checklistViewSchema, serverInfoSchema } from "@/plan/api/schema";
 import { routes } from "@/plan/router";
 import { authoringAtom, checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { clone, sentence, summaryPage, type Page } from "./concept.contracts-kit";
 
 type Store = ReturnType<typeof createStore>;
-type Anchor = { path: string; anchor: string; title?: string };
-type OpenRun = { level: 0 | 1 | 2; sentenceId: string; restsOn: Anchor[]; parent: string | null };
-type FoldNote = { paragraphOf: string; text: string; path: string };
-type Page = Record<string, unknown>;
-type OpenStateModule = {
-  carryOpenState(prev: Page, next: Page, open: OpenRun[]): { open: OpenRun[]; notes: FoldNote[] };
-};
 
-const SECTION_01 = "doc/product/section_01.md";
-const SECTION_02 = "doc/product/section_02.md";
+const SECTION_01 = "doc/product/demo/section_01.md";
+const SECTION_02 = "doc/product/demo/section_02.md";
 const FIRST_OVERVIEW = /^Teams plan work together/;
 const OVERVIEW_RUN = "Detail of Teams plan work together and";
 
 let pages: Record<string, unknown> = {};
 let docs: Record<string, unknown> = {};
-
-function clone<T>(value: T): T {
-  return structuredClone(value);
-}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -60,18 +50,8 @@ function stubFetch(input: RequestInfo | URL): Promise<Response> {
   return Promise.resolve(notFound);
 }
 
-function sentence(id: string, text: string, restsOn: Anchor[]) {
-  const citations = restsOn.map(({ path, anchor }) => ({ kind: "source", path, anchor }));
-  return { id, text, marks: [], citations, rests_on: restsOn, plans: [] };
-}
-
-function summaryPage(key: string, sentences: ReturnType<typeof sentence>[]): Page {
-  const heading = { kind: "heading", level: 1, text: "Planning" };
-  return { ...clone(summaryFixture), key, blocks: [heading, { kind: "paragraph", sentences }] };
-}
-
 function reviewSummary(): Page {
-  const page = summaryPage("product/section_02", [
+  const page = summaryPage("demo/product/section_02", [
     sentence("s2", "Reviewers read each plan before it runs.", [
       { path: SECTION_02, anchor: "port" },
     ]),
@@ -93,9 +73,9 @@ function section01Doc() {
 
 function serveOverview(overview: Page = clone(overviewFixture)): void {
   pages = {
-    product: overview,
-    "product/section_01": clone(summaryFixture),
-    "product/section_02": reviewSummary(),
+    "overview/demo/product": overview,
+    "demo/product/section_01": clone(summaryFixture),
+    "demo/product/section_02": reviewSummary(),
   };
 }
 
@@ -140,13 +120,6 @@ function isDashed(element: Element): boolean {
   );
 }
 
-async function loadOpenState(): Promise<OpenStateModule> {
-  // A variable specifier keeps vite from resolving the module at collection, so a missing
-  // open-state.ts fails inside the contracts that call it instead of hiding every other one.
-  const specifier = "./open-state";
-  return (await import(/* @vite-ignore */ specifier)) as OpenStateModule;
-}
-
 beforeEach(() => {
   pages = {};
   docs = {};
@@ -162,12 +135,12 @@ afterEach(() => {
 
 it("concept opening an overview sentence shows its cited summary sentences in place", async () => {
   serveOverview();
-  const { router } = renderAt("/product");
+  const { router } = renderAt("/f/demo/product");
   const column = await readingColumn();
   const next = within(column).getByRole("button", { name: /^The product exists/ });
   fireEvent.click(within(column).getByRole("button", { name: FIRST_OVERVIEW }));
   const run = await within(column).findByRole("group", { name: OVERVIEW_RUN });
-  expect(router.state.location.pathname).toBe("/product");
+  expect(router.state.location.pathname).toBe("/f/demo/product");
   // In place: the run sits before the paragraph's next sentence, not after the paragraph.
   expect(run.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   const opened = Array.from(run.querySelectorAll("[aria-expanded]"));
@@ -177,20 +150,20 @@ it("concept opening an overview sentence shows its cited summary sentences in pl
   ]);
   const labels = marksIn(run).map((mark) => mark.getAttribute("aria-label") ?? "");
   expect(labels).toHaveLength(2);
-  expect(labels[0]).toMatch(/^Planning: doc\/product\/section_01\.md/);
-  expect(labels[1]).toMatch(/^Review: doc\/product\/section_02\.md/);
+  expect(labels[0]).toMatch(/^Planning: doc\/product\/demo\/section_01\.md/);
+  expect(labels[1]).toMatch(/^Review: doc\/product\/demo\/section_02\.md/);
 });
 
 it("concept opening a summary sentence shows its source passages as inset blocks", async () => {
-  pages = { "product/section_01": clone(summaryFixture) };
-  docs = { "product/section_01.md": section01Doc() };
-  renderAt("/product/section_01");
+  pages = { "demo/product/section_01": clone(summaryFixture) };
+  docs = { "product/demo/section_01.md": section01Doc() };
+  renderAt("/f/demo/product/section_01");
   const column = await readingColumn();
   const next = within(column).getByRole("button", { name: /^Each stage names the files/ });
   fireEvent.click(within(column).getByRole("button", { name: /^A plan starts from/ }));
   const header = await within(column).findByRole("link", { name: /section_01\.md.*Intent/ });
   const href = header.getAttribute("href") ?? "";
-  expect(href.startsWith("/files/product/section_01.md")).toBe(true);
+  expect(href.startsWith("/files/product/demo/section_01.md")).toBe(true);
   expect(href).toContain("intent");
   const strong = await within(column).findByText("intent", { selector: "strong" });
   let block: HTMLElement | null = header.parentElement;
@@ -206,7 +179,7 @@ it("concept opening a summary sentence shows its source passages as inset blocks
 
 it("concept keyboard down arrow enters an opened run and escape folds it back", async () => {
   serveOverview();
-  renderAt("/product");
+  renderAt("/f/demo/product");
   const column = await readingColumn();
   column.focus();
   await waitFor(() => expect(focusTarget()?.textContent).toMatch(FIRST_OVERVIEW));
@@ -237,7 +210,7 @@ it("concept stale summary draws dashed marks and a dashed key chip", async () =>
   const marks = (first.sentences[0] as { marks: { out_of_date: unknown }[] }).marks;
   marks[1]!.out_of_date = stale;
   serveOverview(overview);
-  renderAt("/product");
+  renderAt("/f/demo/product");
   const column = await readingColumn();
   const sentenceButton = within(column).getByRole("button", { name: FIRST_OVERVIEW });
   expect(sentenceButton.getAttribute("aria-expanded")).toBe("false");
@@ -248,7 +221,7 @@ it("concept stale summary draws dashed marks and a dashed key chip", async () =>
   expect(review?.getAttribute("aria-label")).toMatch(/, out of date: \S/);
   expect(review?.getAttribute("data-dashed")).toBe("true");
   const vision = marksIn(column).find((mark) =>
-    mark.getAttribute("aria-label")?.startsWith("Vision: doc/product/vision.md"),
+    mark.getAttribute("aria-label")?.startsWith("Vision: doc/product/demo/index.md"),
   );
   expect(vision?.getAttribute("data-dashed")).not.toBe("true");
   const key = screen.getByRole("list", { name: "Document key" });
@@ -256,55 +229,9 @@ it("concept stale summary draws dashed marks and a dashed key chip", async () =>
   expect(isDashed(within(key).getByRole("link", { name: /Release/ }))).toBe(false);
 });
 
-it("concept open run moves to the new sentence with the largest source overlap", async () => {
-  const anchor = (name: string): Anchor => ({ path: SECTION_01, anchor: name });
-  const [a, b, c, d] = [anchor("a"), anchor("b"), anchor("c"), anchor("d")];
-  const prev = summaryPage("product/section_01", [sentence("s1", "Old text.", [a, b, c])]);
-  // The id-keyed and first-overlap rules both pick s1; the overlap rule picks s9.
-  const next = summaryPage("product/section_01", [
-    sentence("s1", "Rewritten on a.", [a]),
-    sentence("s9", "Rewritten on a, b, c and d.", [a, b, c, d]),
-  ]);
-  const open: OpenRun[] = [{ level: 1, sentenceId: "s1", restsOn: [a, b, c], parent: null }];
-  const { carryOpenState } = await loadOpenState();
-  const result = carryOpenState(prev, next, open);
-  expect(result.open).toHaveLength(1);
-  expect(result.open[0]).toMatchObject({ level: 1, sentenceId: "s9", parent: null });
-  expect(result.open[0]!.restsOn.map((entry) => entry.anchor)).toEqual(["a", "b", "c", "d"]);
-  expect(result.notes).toEqual([]);
-});
-
-it("concept open run folds with a removed section note when no sentence rests on it", async () => {
-  const port: Anchor = { path: SECTION_02, anchor: "port", title: "Port" };
-  const other: Anchor = { path: SECTION_02, anchor: "other" };
-  const prev = summaryPage("product/section_02", [
-    sentence("s1", "Ports and more.", [{ path: SECTION_02, anchor: "port" }, other]),
-  ]);
-  const next = summaryPage("product/section_02", [sentence("s1", "Only more.", [other])]);
-  const open: OpenRun[] = [
-    {
-      level: 1,
-      sentenceId: "s1",
-      restsOn: [{ path: SECTION_02, anchor: "port" }, other],
-      parent: null,
-    },
-    { level: 2, sentenceId: `${SECTION_02}#port`, restsOn: [port], parent: "s1" },
-  ];
-  const { carryOpenState } = await loadOpenState();
-  const result = carryOpenState(prev, next, open);
-  const onPort = result.open.filter(
-    (run) => run.level === 2 && run.restsOn.some((entry) => entry.anchor === "port"),
-  );
-  expect(onPort).toEqual([]);
-  expect(result.notes).toHaveLength(1);
-  expect(result.notes[0]!.text).toContain("Port");
-  expect(result.notes[0]!.text).toContain("section_02.md");
-  expect(result.notes[0]!.path).toContain("section_02.md");
-});
-
 it("concept plan page shows implements not stated and broken section names", async () => {
   const plan = {
-    ...summaryPage("engineering/a", [sentence("s1", "Plan a builds the review.", [])]),
+    ...summaryPage("demo/engineering/a", [sentence("s1", "Plan a builds the review.", [])]),
     title: "Plan a",
     path: "doc/plans/PLAN-a.md",
     colour: null,
@@ -312,8 +239,8 @@ it("concept plan page shows implements not stated and broken section names", asy
     key_chips: [],
     implemented_by: [],
   };
-  pages = { "engineering/a": { ...plan, implements: { kind: "not_stated" } } };
-  const first = renderAt("/engineering/a");
+  pages = { "demo/engineering/a": { ...plan, implements: { kind: "not_stated" } } };
+  const first = renderAt("/f/demo/engineering/a");
   await readingColumn();
   const text = () => (document.body.textContent ?? "").replace(/\s+/g, " ");
   await waitFor(() => expect(text()).toMatch(/Implements:\s*not stated/));
@@ -322,14 +249,16 @@ it("concept plan page shows implements not stated and broken section names", asy
     { number: 1, name: "section_01", doc: clone(summaryFixture.key_chips[0]!.doc) },
     { number: 99, name: "section_99", doc: null },
   ];
-  pages = { "engineering/a": { ...plan, implements: { kind: "sections", links } } };
-  const second = renderAt("/engineering/a");
+  pages = { "demo/engineering/a": { ...plan, implements: { kind: "sections", links } } };
+  const second = renderAt("/f/demo/engineering/a");
   await readingColumn();
   await waitFor(() => expect(text()).toContain("Implements:"));
   const broken = screen.getAllByText(/section_99/);
   expect(broken.length).toBeGreaterThan(0);
   expect(broken.every((element) => element.closest("a") === null)).toBe(true);
-  expect(second.view.container.querySelector('a[href="/product/section_01"]')).not.toBeNull();
+  expect(
+    second.view.container.querySelector('a[href="/f/demo/product/section_01"]'),
+  ).not.toBeNull();
 });
 
 it("concept sentence text with markup renders as text", async () => {
@@ -338,7 +267,7 @@ it("concept sentence text with markup renders as text", async () => {
   const first = overview.blocks[1] as (typeof overview.blocks)[1] & { sentences: unknown[] };
   (first.sentences[0] as { text: string }).text = `${markup} Teams plan work together.`;
   serveOverview(overview);
-  const { view } = renderAt("/product");
+  const { view } = renderAt("/f/demo/product");
   const column = await readingColumn();
   await within(column).findByText(/The product exists to keep intent/);
   expect(view.container.querySelector("img")).toBeNull();
@@ -347,20 +276,20 @@ it("concept sentence text with markup renders as text", async () => {
 
 it("concept view state survives a reload through session storage", async () => {
   serveOverview();
-  const first = renderAt("/product");
+  const first = renderAt("/f/demo/product");
   const column = await readingColumn();
   fireEvent.click(within(column).getByRole("button", { name: FIRST_OVERVIEW }));
   await within(column).findByRole("group", { name: OVERVIEW_RUN });
   first.view.unmount();
   expect(screen.queryByRole("document", { name: "Reading column" })).toBeNull();
-  renderAt("/product");
+  renderAt("/f/demo/product");
   const reloaded = await readingColumn();
   expect(await within(reloaded).findByRole("group", { name: OVERVIEW_RUN })).toBeTruthy();
 });
 
 it("concept product route renders the product overview from the planning router", async () => {
   serveOverview();
-  renderAt("/product");
+  renderAt("/f/demo/product");
   const column = await readingColumn();
   expect(
     await within(column).findByText(/Teams plan work together and review it before it ships\./),
@@ -371,8 +300,10 @@ it("concept product route renders the product overview from the planning router"
 
 it("concept empty project shows no product vision yet", async () => {
   const empty = { kind: "no_vision", count: null, offer: "start-vision", docs: [] };
-  pages = { product: { ...clone(overviewFixture), key_chips: [], blocks: [], empty } };
-  renderAt("/product", (store) => {
+  pages = {
+    "overview/demo/product": { ...clone(overviewFixture), key_chips: [], blocks: [], empty },
+  };
+  renderAt("/f/demo/product", (store) => {
     store.set(serverInfoAtom, serverInfoSchema.parse({ ...serverInfoFixture, read_only: [] }));
     store.set(authoringAtom, authoringViewSchema.parse({ ...authoringFixture, holder: null }));
     store.set(

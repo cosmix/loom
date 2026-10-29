@@ -1,11 +1,12 @@
 import { fireEvent, waitFor, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 
-import { cite, mark, pageOf, S1, sent, src } from "./reading-column-fixtures";
+import { cite, pageOf, S1, sent, src } from "./reading-column-fixtures";
 import {
   active,
   button,
   installColumnTestHooks,
+  mark,
   loadPage,
   mount,
   pages,
@@ -20,15 +21,17 @@ const PLANNING = [mark("section_01", "Planning", 1)];
 
 /** Overview sentences a and b both cite x of section_01; x is opened to its passage under both. */
 async function sharedCitation() {
-  const overview = pageOf("product", [
+  const overview = pageOf("overview/demo/product", [
     sent("a", "First overview.", [cite("section_01", "x")], PLANNING),
     sent("b", "Second overview.", [cite("section_01", "x")], PLANNING),
     sent("c", "Closing line."),
   ]);
-  const detail = pageOf("product/section_01", [sent("x", "Detail opens.", [src(S1, "intro")])]);
-  pages["product/section_01"] = detail;
-  const view = mount("product", overview);
-  loadPage(view.store, "product/section_01", detail);
+  const detail = pageOf("demo/product/section_01", [
+    sent("x", "Detail opens.", [src(S1, "intro")]),
+  ]);
+  pages["demo/product/section_01"] = detail;
+  const view = mount("overview/demo/product", overview);
+  loadPage(view.store, "demo/product/section_01", detail);
   const { column } = view;
   fireEvent.click(button(column, /^First overview/));
   const first = await within(column).findByRole("group", { name: /^Detail of First/ });
@@ -68,15 +71,17 @@ it("Escape on a passage under the second citer folds that citer's run only", asy
 });
 
 async function siblingRuns() {
-  const overview = pageOf("product", [
+  const overview = pageOf("overview/demo/product", [
     sent("a", "First overview.", [cite("section_01", "x")], PLANNING),
     sent("b", "Second overview.", [cite("section_01", "x")], PLANNING),
     sent("c", "Closed sentence.", [src(S1, "intro")]),
   ]);
-  const detail = pageOf("product/section_01", [sent("x", "Detail opens.", [src(S1, "intro")])]);
-  pages["product/section_01"] = detail;
-  const view = mount("product", overview);
-  loadPage(view.store, "product/section_01", detail);
+  const detail = pageOf("demo/product/section_01", [
+    sent("x", "Detail opens.", [src(S1, "intro")]),
+  ]);
+  pages["demo/product/section_01"] = detail;
+  const view = mount("overview/demo/product", overview);
+  loadPage(view.store, "demo/product/section_01", detail);
   const { column } = view;
   fireEvent.click(button(column, /^First overview/));
   const first = await within(column).findByRole("group", { name: /^Detail of First/ });
@@ -85,7 +90,7 @@ async function siblingRuns() {
   const closed = button(column, /^Closed sentence/);
   closed.focus();
   await waitFor(() => expect(active()).toBe(closed));
-  expect(view.store.get(openRunsAtom("product"))).toHaveLength(2);
+  expect(view.store.get(openRunsAtom("overview/demo/product"))).toHaveLength(2);
   return { ...view, first, second, closed };
 }
 
@@ -94,7 +99,7 @@ it("Escape outside any run folds the most recently opened run", async () => {
   expect(press("Escape")).toBe(false);
   await waitFor(() => expect(column.contains(second)).toBe(false));
   expect(column.contains(first)).toBe(true);
-  expect(store.get(openRunsAtom("product"))).toHaveLength(1);
+  expect(store.get(openRunsAtom("overview/demo/product"))).toHaveLength(1);
   await waitFor(() => expect(active().textContent).toMatch(/^Second overview/));
 });
 
@@ -105,7 +110,7 @@ it("Shift+Escape folds every open run", async () => {
     expect(column.contains(first)).toBe(false);
     expect(column.contains(second)).toBe(false);
   });
-  expect(store.get(openRunsAtom("product"))).toEqual([]);
+  expect(store.get(openRunsAtom("overview/demo/product"))).toEqual([]);
 });
 
 it("ArrowLeft outside any run folds nothing", async () => {
@@ -113,7 +118,7 @@ it("ArrowLeft outside any run folds nothing", async () => {
   expect(press("ArrowLeft")).toBe(true);
   expect(column.contains(first)).toBe(true);
   expect(column.contains(second)).toBe(true);
-  expect(store.get(openRunsAtom("product"))).toHaveLength(2);
+  expect(store.get(openRunsAtom("overview/demo/product"))).toHaveLength(2);
   expect(active()).toBe(closed);
 });
 
@@ -124,20 +129,23 @@ it("a rebuild renaming the open sentence keeps focus on its cited sentence", asy
   ];
   const cites = [cite("section_01", "x1"), cite("section_01", "x2")];
   const overview = (id: string) => ({ ...sent(id, "Overview opens.", cites, PLANNING), rests_on });
-  const detail = pageOf("product/section_01", [
+  const detail = pageOf("demo/product/section_01", [
     sent("x1", "First detail.", [src(S1, "intro")]),
     sent("x2", "Second detail.", [src(S1, "detail")]),
   ]);
-  pages["product/section_01"] = detail;
+  pages["demo/product/section_01"] = detail;
   const rest = sent("r", "Rest here.");
-  const { column, store } = mount("product", pageOf("product", [overview("o"), rest]));
-  loadPage(store, "product/section_01", detail);
+  const { column, store } = mount(
+    "overview/demo/product",
+    pageOf("overview/demo/product", [overview("o"), rest]),
+  );
+  loadPage(store, "demo/product/section_01", detail);
   fireEvent.click(button(column, /^Overview opens/));
   await within(column).findByRole("button", { name: /^First detail/ });
   press("ArrowDown");
   await waitFor(() => expect(active().textContent).toMatch(/^First detail/));
   // Same sources, new id: the first commit shows o2 closed, the carry reopens it.
-  replace(store, "product", pageOf("product", [overview("o2"), rest]));
+  replace(store, "overview/demo/product", pageOf("overview/demo/product", [overview("o2"), rest]));
   await waitFor(() => expect(active().textContent).toMatch(/^First detail/));
   expect(active().closest('[role="group"]')).not.toBeNull();
 });

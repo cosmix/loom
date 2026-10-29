@@ -7,6 +7,7 @@ use std::path::Path;
 use super::plan_view::OUT_OF_ORDER_PRESSURE;
 use crate::plan_server::files::texts::TextStore;
 use crate::plan_server::files::tree::build_tree;
+use crate::plan_server::wire::checklist::{ChecklistView, OfferKind};
 use crate::plan_server::wire::files::EntryKind;
 use crate::planning::project::Project;
 
@@ -102,6 +103,65 @@ fn groups_documents_and_preserves_listed_order_and_gaps() {
         .iter()
         .any(|e| e.title == "orphan" && e.children[0].title == "Orphan"));
     assert!(tree.other.iter().any(|e| e.title == "misc.md"));
+}
+
+#[test]
+fn section_gap_target_matches_its_checklist_item_path() {
+    let temp = tempfile::tempdir().unwrap();
+    write_fixture(temp.path());
+    let project = Project::load(temp.path()).unwrap();
+    let texts = TextStore::load(temp.path(), &project).unwrap();
+    let checklist = ChecklistView::from(&project.feature("demo").unwrap().checklist);
+
+    let tree = build_tree(&project, &texts, &HashMap::new());
+    let gap = &tree.product[0].children[2];
+    let item = checklist
+        .items
+        .iter()
+        .find(|item| {
+            item.offer.as_ref().is_some_and(|offer| {
+                offer.kind == OfferKind::WriteSection && offer.number == Some(1)
+            })
+        })
+        .unwrap();
+
+    assert!(gap.gap);
+    assert_eq!(
+        gap.target.as_deref(),
+        Some("doc/product/demo/section_01.md")
+    );
+    assert_eq!(gap.target, item.path);
+    assert_eq!(tree.product[0].target, None);
+    assert_eq!(tree.product[0].children[0].target, None);
+}
+
+#[test]
+fn metaplan_gap_target_matches_its_checklist_item_path() {
+    let temp = tempfile::tempdir().unwrap();
+    write_fixture(temp.path());
+    let project = Project::load(temp.path()).unwrap();
+    let texts = TextStore::load(temp.path(), &project).unwrap();
+    let checklist = ChecklistView::from(&project.feature("demo").unwrap().checklist);
+
+    let tree = build_tree(&project, &texts, &HashMap::new());
+    let gap = &tree.plans[0].children[0].children[1];
+    let item = checklist
+        .items
+        .iter()
+        .find(|item| {
+            item.offer.as_ref().is_some_and(|offer| {
+                offer.kind == OfferKind::WritePlan && offer.slug.as_deref() == Some("missing")
+            })
+        })
+        .unwrap();
+
+    assert!(gap.gap);
+    assert_eq!(
+        gap.target.as_deref(),
+        Some("doc/plans/demo/PLAN-missing.md")
+    );
+    assert_eq!(gap.target, item.path);
+    assert_eq!(tree.plans[0].children[0].children[0].target, None);
 }
 
 #[test]

@@ -65,7 +65,7 @@ describe("FeatureRoute", () => {
     expect(store.get(activeFeatureAtom)).toBe("demo");
   });
 
-  it("renders the feature title, current step, next offers, steps and gaps", () => {
+  it("renders the feature title, current step and step list", () => {
     renderRoute();
 
     expect(screen.getByRole("heading", { level: 1, name: "demo" })).toBeTruthy();
@@ -77,13 +77,60 @@ describe("FeatureRoute", () => {
       "Product spec",
     ]);
     expect(steps.getAllByRole("listitem", { current: "step" })).toHaveLength(1);
-    const next = within(screen.getByRole("region", { name: "Next" }));
-    expect(next.getByText("Write section 05")).toBeTruthy();
-    expect(next.getByText("Start a metaplan from the product spec")).toBeTruthy();
-    const gaps = within(screen.getByRole("region", { name: "Gaps" }));
-    expect(gaps.getByText("section 05: Example")).toBeTruthy();
-    expect(gaps.getByText("doc/product/demo/section_05.md")).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Draft team" })).toBeNull();
+  });
+
+  it("renders each gap's offer once on its own row, grouped by step", () => {
+    renderRoute("/f/demo", {
+      ...project,
+      checklists: [
+        {
+          ...checklist,
+          steps: [...checklist.steps, { number: 3, name: "Metaplan", mark: "gap" }],
+          items: [
+            ...checklist.items,
+            {
+              step: 3,
+              text: "no metaplan",
+              path: null,
+              offer: checklist.secondary[0] ?? null,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(screen.queryByRole("region", { name: "Next" })).toBeNull();
+    const gaps = within(screen.getByRole("region", { name: "Gaps" }));
+    const product = within(gaps.getByRole("region", { name: "Step 2 · Product spec" }));
+    const sectionRow = within(product.getByRole("listitem"));
+    expect(sectionRow.getByText("section 05: Example")).toBeTruthy();
+    expect(sectionRow.getByText("doc/product/demo/section_05.md")).toBeTruthy();
+    expect(sectionRow.getByText("Write section 05")).toBeTruthy();
+    const metaplan = within(gaps.getByRole("region", { name: "Step 3 · Metaplan" }));
+    const metaplanRow = within(metaplan.getByRole("listitem"));
+    expect(metaplanRow.getByText("no metaplan")).toBeTruthy();
+    expect(metaplanRow.getByText("Start a metaplan from the product spec")).toBeTruthy();
+    expect(screen.getAllByText("Write section 05")).toHaveLength(1);
+    expect(screen.getAllByText("Start a metaplan from the product spec")).toHaveLength(1);
+  });
+
+  it("leaves a primary offer without a gap row to the header card", () => {
+    renderRoute("/f/demo", {
+      ...project,
+      checklists: [
+        {
+          ...checklist,
+          current: { kind: "ready" },
+          primary: { id: "start-run", kind: "start_run", label: "Start run", target: null },
+          secondary: [],
+          items: [],
+        },
+      ],
+    });
+
+    expect(screen.queryByText("Start run")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Next" })).toBeNull();
   });
 
   it("uses the requested feature and synchronizes the active checklist after render", async () => {

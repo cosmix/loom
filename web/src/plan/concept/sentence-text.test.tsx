@@ -26,6 +26,17 @@ describe("SentenceText", () => {
     expect(container.textContent).toBe("An important path change");
   });
 
+  it("renders inline code in a numbered title while keeping the literal prefix", () => {
+    const { container } = render(
+      <SentenceText text="3. File mode (`PLAN-feat-planner-03-file-mode.md`)" />,
+    );
+
+    expect(container.querySelector("code")?.textContent).toBe("PLAN-feat-planner-03-file-mode.md");
+    expect(container.textContent).toBe("3. File mode (PLAN-feat-planner-03-file-mode.md)");
+    expect(container.textContent).not.toContain("`");
+    expect(container.querySelector("ol, li, a")).toBeNull();
+  });
+
   it.each([
     "Read [the *guide*](https://example.com).",
     "Read [the *guide*][guide].\n\n[guide]: https://example.com",

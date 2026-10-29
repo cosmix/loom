@@ -2,18 +2,18 @@
 
 Status: agreed vision (2026-10-26). Each section listed under
 [Specification sections](#specification-sections) becomes its own
-`doc/product/section_xx.md`.
+`doc/product/<feature>/section_NN.md`.
 
 ## Problem
 
 Planning a loom project happens in Claude Code today, in a sequence the user drives by hand:
 
-1. Brainstorm a product vision (`doc/product/index.md`) that names the sections the product
+1. Brainstorm a product vision (`doc/product/<feature>/index.md`) that names the sections the product
    spec needs.
-2. Write each product section under `doc/product/`.
-3. Brainstorm a metaplan (`doc/plans/index.md` or `doc/plans/metaplan.md`): one entry per loom
-   plan, three or four paragraphs each.
-4. Author the loom plans, usually with an agent team.
+2. Write each product section under `doc/product/<feature>/`.
+3. Brainstorm a metaplan (`doc/plans/<feature>/index.md` or
+   `doc/plans/<feature>/metaplan-NN.md`): one entry per loom plan, three or four paragraphs each.
+4. Author the loom plans under `doc/plans/<feature>/`, usually with an agent team.
 5. Pressure-test the first plans with `loom pressure`.
 6. Review the plans as a human.
 7. Start implementation with `loom run`.
@@ -21,7 +21,7 @@ Planning a loom project happens in Claude Code today, in a sequence the user dri
 Two things go wrong. The user has to know this sequence, the skills behind each step, and the
 file conventions, and drive all of it from a terminal. And by step 6 the output is too large to
 review: a vision, a dozen product sections, a metaplan, several plans, and a tree of briefs under
-`doc/plans/briefs/`. A PM or engineer asked to approve that either skims it or gives up. The
+`doc/plans/<feature>/briefs/`. A PM or engineer asked to approve that either skims it or gives up. The
 review step, the one where a human is supposed to catch a wrong direction before agents spend
 days building it, is the step the current tooling serves worst.
 
@@ -37,14 +37,14 @@ The app does two jobs.
 owns those Claude Code sessions in tmux on the backend, relays the session's output to the chat
 panel as structured messages, and delivers the user's messages back into the session. The
 sessions run with skills and guidance that make them produce documents in loom's conventions for
-whichever step the project is at: vision, product sections, metaplan, plans, pressure review.
+whichever step the feature is at: vision, product sections, metaplan, plans, pressure review.
 
 **Reviewing.** The user explores everything that planning produced, in two modes:
 
 - **File mode.** Browse and read any document: product spec, metaplan, loom plans, briefs, and
   the knowledge base under `doc/loom/knowledge/`.
-- **Concept mode.** Start from a short overview of the product (built from the vision and its
-  sections) or of the engineering decisions (built from the metaplan and its plans). Opening a
+- **Concept mode.** Start from a short overview of a feature's product (built from its vision and
+  sections) or of its engineering decisions (built from its metaplans and plans). Opening a
   sentence replaces it in place with the more detailed sentences it summarizes, set in the same
   type and flowing in the same paragraph, so the document grows where the reader is looking;
   opening one of those replaces it with the source passage it came from. Any opened passage
@@ -58,10 +58,25 @@ edits the documents in `doc/`.
 
 ## The screen
 
-The chosen layout (option A of the review mockups) has three regions:
+The project home (`/`) lists features, each with a title, a pitch from its vision, a seven-cell
+progress strip and document counts. Standalone plans share a shelf with "New standalone plan"
+and "Move into a feature…"; they have no seven-step checklist or per-plan workflow offers.
+An invitation card offers "Start a conversation" at `/new`: the kickoff settles whether the
+work needs a feature or a standalone plan before writing anything. A repository with exactly
+one feature opens on `/f/<name>`.
 
-- **Header**: the seven workflow steps as a numbered tracker with the current step marked, and
-  tabs for the product overview, the engineering overview, and file mode.
+The layout has a shared shell and two working regions:
+
+- **Header**: Loom's logo, then the eyebrow "Planning · feature" above a feature switcher.
+  On the right: the activity pill; a segmented view switch with icons for Home, Product,
+  Engineering and Files; presence; Share; ThemeToggle; Settings; Help. Product and Engineering
+  open `/f/<feature>/product[/<doc>]` and `/f/<feature>/engineering[/<plan>]`; file mode uses
+  `/files/...`, with the file's feature named in the header breadcrumb.
+- **Step rail**, on feature screens only: seven counter cells, each with a glyph, count and
+  label. Done cells show a check in the ok tone; the current step has a tint and accent
+  underline. Beside the rail, one next-step card carries a document mark, a sentence and one
+  primary button. The feature screen (`/f/<feature>`) groups the remaining gaps by step in its
+  checklist. The project home shows the header row only.
 - **Reading column**, centred, at most about 70 characters wide: the overview or document being
   read, expanding in place as described above. Each overview sentence carries small colour marks,
   one per document it draws on, in that document's colour; a mark drawn dashed means that
@@ -70,23 +85,27 @@ The chosen layout (option A of the review mockups) has three regions:
   reading column attaches it to the next message. Each turn lists the files it changed with a
   link to the diff, and names the summaries being rebuilt.
 
-The visual design (type, colour, components) follows the dashboard's conventions
-(`doc/loom/knowledge/conventions/web-dashboard-typography.md` and the existing `web/` components),
-not the mockups' palette.
+Inter sets the chrome and every title, including document headings and ordinary chat.
+Source Serif 4 sets the reading body: concept prose, rendered Markdown paragraphs, lists and
+tables, quoted chat passages and feature pitches. Settings also offers Literata and Piazzolla;
+all three reading faces cover Greek. Reading size is 17, 19 (default) or 21px, with line height
+1.6 and a measure of 68–70 characters. Code, paths and ids use Commit Mono Cosmix. The visual
+design shares the dashboard's components and colour conventions.
 
 ### What the first screen shows
 
-The app works out the project's step from what exists under `doc/` on every start; it stores no
-step of its own. It suggests the next step and never forces one:
+The app works out each feature's step from its directories under `doc/` on every start; it
+stores no step of its own. It suggests the next step and never forces one:
 
-| What exists under `doc/`                   | Step | First screen and suggestion                                           |
-| ------------------------------------------ | ---- | --------------------------------------------------------------------- |
-| Nothing                                    | 1    | An empty state offering to start a vision discussion                  |
-| A vision whose listed sections are missing | 2    | The vision; offers to write the next missing section                  |
+| What exists for the feature                | Step | Screen and suggestion                                               |
+| ------------------------------------------ | ---- | ------------------------------------------------------------------- |
+| No features in the repository              | —    | Home's invitation to start a kickoff conversation                    |
+| Feature documents without a vision         | 1    | The feature checklist; offers to write its vision                    |
+| A vision whose listed sections are missing | 2    | The vision; offers to write the next missing section                 |
 | A finished spec, no metaplan               | 3    | The product overview; notes there is no metaplan, offers to start one |
-| Metaplan entries without a plan file       | 4    | Both overviews; offers to write the missing plans                     |
-| Plans not yet pressure-tested              | 5    | Both overviews; offers to pressure-test them                          |
-| Everything present                         | 6, 7 | Both overviews for review and refinement; offers to start a run       |
+| Metaplan entries without a plan file        | 4    | Both overviews; offers to write the missing plans                    |
+| Plans not yet pressure-tested              | 5    | Both overviews; offers to pressure-test them                         |
+| Everything present                         | 6, 7 | Both overviews for review and refinement; offers to start a run      |
 
 Accepting a suggestion opens a new session briefed for that step. Refining is available at every
 step, including after everything exists. How "finished", "pressure-tested" and "listed sections"
@@ -110,7 +129,7 @@ are detected from the files is for section 01 to settle.
    the user carry on from there: refine a section, add a plan, revisit a decision after
    implementation.
 5. **Loom drives the workflow; the user drives the content.** The app knows the seven steps,
-   shows where the project stands, and offers the next one. What the documents say comes from
+   shows where each feature stands, and offers the next one. What the documents say comes from
    the user's conversation with the session.
 6. **Reuse what loom already has.** `loom plan` runs its own server process on its own port, built
    from the same parts as `loom status --web`: the hand-rolled HTTP/WebSocket server, the embedded
@@ -170,7 +189,7 @@ These would make the product a failure even if every feature worked:
 
 ## Specification sections
 
-Each becomes `doc/product/section_xx.md`. Order is a first proposal for discussion.
+Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal for discussion.
 
 | #   | Section                          | Covers                                                                                                                                                                             |
 | --- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -189,6 +208,29 @@ Each becomes `doc/product/section_xx.md`. Order is a first proposal for discussi
 
 ## Decisions
 
+- **Features (01, 03; D1–D4).** A feature is the name shared by `doc/product/<feature>/` and
+  `doc/plans/<feature>/`; either directory alone is enough. Membership comes from location.
+  Anything with a product spec, a metaplan or several related plans belongs in a feature.
+  The top level of `doc/plans/` holds standalone plans and their supporting files. A top-level
+  vision, product section or metaplan raises `needs-feature`, with an offer to move it into a
+  feature. Loom manages only `.loom/work` and `.worktrees` in a target project's ignores;
+  this repository's ignore rules cover feature-directory plans too.
+- **Kickoff (07, 08, 09, 12; D11).** Every new piece of work starts with a conversation at
+  `/new`, with a "Taking shape" panel for its size, name, decisions, questions and proposed
+  sections. The session starts with no write under `doc/`. After the user confirms size and
+  name and asks to write, a one-time creation grant allows exactly one target that did not
+  exist at session start: `doc/product/<name>/index.md` for a feature, or
+  `doc/plans/PLAN-<slug>.md` plus its brief bundle for a standalone plan. The plan uses the
+  `plan` step skill and `Implements: none`. The session keeps Kickoff scope: file-tool writes
+  stay within the target and a standalone plan's brief bundle; `loom knowledge` and `loom plan summary`
+  commands other than read-only `status` still ask the holder. Writing a vision opens `/f/<name>`.
+- **Draft all (09; D10).** One authoring session leads an agent team of up to five to draft all
+  sections or plans. The drafters coordinate so the documents stay consistent.
+- **Reading face (05, 06, 08; D7).** Source Serif 4 is the default body face; Settings offers
+  Literata and Piazzolla. Inter sets chrome and every title; Commit Mono Cosmix sets code,
+  paths and ids. The kickoff composer and transcript use the reading face.
+- **Themes (D6).** Theme choice stays per app: the planner on port 7272 and the dashboard on
+  7373 and up each remember their theme in the browser, with no shared server preference store.
 - **Bridge (07).** Sessions run as interactive Claude Code in tmux, as loom stages do. The app reads
   the session's transcript JSONL under `~/.claude/projects/` for messages and tool activity, and
   delivers input into the tmux pane. States the transcript does not carry (a permission prompt,
@@ -196,11 +238,13 @@ Each becomes `doc/product/section_xx.md`. Order is a first proposal for discussi
   (principle 7).
 - **Summary storage (04).** Summaries are committed, together with a manifest of the content hashes
   each summary was built from, so a fresh clone opens in concept mode without regeneration. Both
-  live under `doc/loom/summaries/`, beside the committed knowledge base. (`.loom` is gitignored at
+  live under `doc/loom/summaries/<feature>/`, beside the committed knowledge base; plan summaries
+  stay keyed by their repository-wide unique slug. (`.loom` is gitignored at
   any depth, so a store there would need a negation rule in every repository.)
 - **Summary levels (04, 05).** Two summary levels above the raw text:
-  - _Overviews_: one for the product, built from `doc/product/index.md` and its sections; one for
-    the engineering decisions, built from the metaplan and its plans.
+  - _Overviews_: two per feature: one for the product, built from
+    `doc/product/<feature>/index.md` and its sections; one for the engineering decisions, built
+    from its metaplans and plans.
   - _Document summaries_: one per product section and one per plan.
 
   An overview sentence links to the document summaries it draws on (one or several); a document
@@ -217,9 +261,9 @@ Each becomes `doc/product/section_xx.md`. Order is a first proposal for discussi
   passages are keyed to the source section they came from, so they stay open across a rebuild;
   one whose section was deleted folds back to its parent sentence with a note.
 - **Sessions start cold (07, 09).** A new `loom plan` invocation never resumes an earlier
-  conversation; it starts a fresh session against the current documents. Every session therefore
-  ends by writing what the conversation settled into the documents: decisions into the section
-  they affect, unresolved points as open questions in that same document. Nothing a later session
+  conversation; it starts a fresh session against the current documents. Once a session has a
+  document target, it ends by writing what the conversation settled into the documents: decisions
+  into the section they affect, unresolved points as open questions in that same document. Nothing a later session
   needs may live only in a transcript. The final write happens when the browser closes (after a
   grace period, so a reload or a sleeping laptop does not end the session) and when `loom plan`
   is stopped, which waits for every session to finish writing before it exits; a second Ctrl-C
@@ -236,7 +280,9 @@ Each becomes `doc/product/section_xx.md`. Order is a first proposal for discussi
   side. The summary store takes one writer at a time behind a lock. Each summary is its own file
   with its own manifest entry, so a git merge of two people's rebuilds conflicts only on the same
   summary, and any conflicted summary is resolved by regenerating it.
-- **Spec location (03).** `doc/product/`.
+- **Spec location (03).** `doc/product/<feature>/`, with sections at
+  `doc/product/<feature>/section_NN.md`. Metaplans and feature plans live in
+  `doc/plans/<feature>/`; standalone plans live at the top of `doc/plans/`.
 - **Approval (10).** Not recorded. Step 6 is the user reading; starting execution is their act.
 - **Server (02).** Its own process, default port 7272, well clear of the dashboard's 7373 and up.
 - **Command (02).** Bare `loom plan` starts the app; the existing `loom plan` subcommand
@@ -244,7 +290,9 @@ Each becomes `doc/product/section_xx.md`. Order is a first proposal for discussi
   (no display, for example over SSH on a VM), in which case it prints the URL.
 - **Rebuild budget (04).** Rebuilds after changes made outside the app run automatically up to a
   threshold of 5 summaries; above it the app shows how many summaries are stale and asks before
-  starting the rebuild sessions.
+  starting the rebuild sessions. Turning off Settings' "Rebuild summaries automatically" in the
+  holder's browser sends `POST /api/summaries/auto` and sets the threshold to 0, so every batch
+  asks first.
 - **One authoring session per project (07, 08).** At most one session can edit a project's
   documents at a time. A project has one `loom plan` server; a second `loom plan` refuses to
   start and prints the running server's URL. Several people can open that URL. While nobody
@@ -253,7 +301,8 @@ Each becomes `doc/product/section_xx.md`. Order is a first proposal for discussi
   note to the holder (section 10), but cannot chat or save.
   Summary sessions run alongside the authoring session.
 - **Locked plans (01, 06, 11).** Plan files with the `IN_PROGRESS-`, `DONE-` or `RETIRED-`
-  prefix, everything under `doc/plans/archive/`, run reviews (`REVIEW-*.md`), and the brief
+  prefix, everything under `doc/plans/<feature>/archive/` or `doc/plans/archive/`,
+  run reviews (`REVIEW-*.md`), and the brief
   bundles of locked plans are read-only in the app, in the editor and to sessions, with a notice
   saying why.
 - **Product-to-plan links (03, 05, 09).** Each plan names the product sections it implements in a

@@ -4,6 +4,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { MemoryRouter, useLocation } from "react-router";
 
 import chatJson from "@/plan/api/fixtures/chat-snapshot.json";
+import checklist from "@/plan/api/fixtures/checklist.json";
+import { projectChecklistViewSchema } from "@/plan/api/schema";
 import { chatSnapshotSchema, type Attachment, type Item, type Turn } from "@/plan/api/schema-chat";
 import {
   addAttachmentAtom,
@@ -11,9 +13,8 @@ import {
   type AttachmentDraft,
 } from "@/plan/attachments";
 import { attachmentsFromSelection } from "@/plan/concept/selection";
-import { treeAtom } from "@/plan/files/atoms";
 import { hashesAtom } from "@/plan/review/live";
-import { serverInfoAtom } from "@/plan/state/atoms";
+import { projectAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { PendingChips, SentChips, chipLabel } from "./chips";
 import { draftAtom } from "./drafts";
 import { snapshotAtom } from "./model";
@@ -39,10 +40,10 @@ function source(path = "doc/product/section_02.md"): AttachmentDraft {
     hash: "selected",
   };
 }
-function summary(): AttachmentDraft {
+function summary(): Extract<AttachmentDraft, { kind: "summary" }> {
   return {
     kind: "summary",
-    summary: "product/section_02",
+    summary: "demo/product/section_01",
     sentence: "sentence-1",
     text: "The summary passage",
     restsOn: [],
@@ -73,10 +74,10 @@ function Location() {
     </output>
   );
 }
-function mount(store: Store, children = <PendingChips />) {
+function mount(store: Store, children = <PendingChips />, pathname = "/files") {
   return render(
     <Provider store={store}>
-      <MemoryRouter initialEntries={["/files"]}>
+      <MemoryRouter initialEntries={[pathname]}>
         {children}
         <Location />
       </MemoryRouter>
@@ -114,9 +115,21 @@ it("labels per origin", () => {
     "PLAN-foo.md › stage build",
   );
   expect(chipLabel({ ...a, kind: "summary" })).toBe("Summary · section_02");
-  expect(chipLabel({ ...a, kind: "summary", path: "doc/loom/summaries/product.md" })).toBe(
-    "Product overview",
-  );
+  expect(
+    chipLabel({ ...a, kind: "summary", path: "doc/loom/summaries/overview/demo/product.md" }),
+  ).toBe("Product overview");
+});
+
+it.each([
+  ["overview/demo/engineering", "Engineering overview"],
+  ["plans/product", "Summary · product"],
+  ["plans/engineering", "Summary · engineering"],
+  ["demo/engineering/product", "Summary · product"],
+  ["demo/engineering/engineering", "Summary · engineering"],
+])("labels summary %s by its page kind", (id, label) => {
+  expect(
+    chipLabel({ ...baseAttachment, kind: "summary", path: `doc/loom/summaries/${id}.md` }),
+  ).toBe(label);
 });
 
 it("hover full text, click opens, x removes", () => {
@@ -137,6 +150,32 @@ it("hover full text, click opens, x removes", () => {
   expect(store.get(draftAtom).attachments).toEqual([]);
 });
 
+it.each(["pending", "sent"] as const)(
+  "uses the reading face only for the %s attachment's quoted text",
+  (origin) => {
+    const store = setup();
+    const quote = source().text;
+    if (origin === "pending") {
+      mount(store);
+      add(store);
+    } else {
+      sent(store, [{ ...baseAttachment, quote }], { ...baseTurn, open: true });
+    }
+    const tray = screen.getByLabelText(
+      origin === "pending" ? "Pending attachments" : "Sent attachments",
+    );
+    fireEvent.focus(within(tray).getAllByRole("button")[0]);
+    const preview = screen.getByRole("tooltip");
+    expect(preview.classList.contains("chat-passage")).toBe(true);
+    expect(screen.getByText(quote).closest(".chat-passage")).toBe(preview);
+    expect(preview.parentElement?.closest(".chat-passage")).toBeNull();
+    expect(tray.closest(".chat-passage")).toBeNull();
+    for (const button of within(tray).getAllByRole("button")) {
+      expect(button.closest(".chat-passage")).toBeNull();
+    }
+  },
+);
+
 it("changed since selection", () => {
   const store = setup();
   mount(store);
@@ -146,47 +185,44 @@ it("changed since selection", () => {
   expect(screen.getByText("△ changed")).toBeTruthy();
 });
 
-it("lock glyph for locked and knowledge docs", () => {
+it.each([
+  ["demo/product/section_01", "/f/demo/product/section_01#sentence-1", "section_01"],
+  ["plans/x", "/f/demo/engineering/x#sentence-1", "x"],
+  ["plans/y", "/plans/y#sentence-1", "y"],
+])("chips from file and concept modes accumulate and open %s", (id, href, label) => {
   const store = setup();
-  store.set(treeAtom, {
-    product: [],
-    plans: [
-      {
-        feature: null,
-        misplaced: false,
-        path: "doc/plans/PLAN-foo.md",
-        title: "Plan",
-        file_name: "PLAN-foo.md",
-        kind: "plan",
-        state: "running",
-        locked: true,
-        gap: false,
-        pressure_date: null,
-        errors: 0,
-        blurb: null,
-        children: [],
-      },
-    ],
-    knowledge: [],
-    other: [],
-    archive: [],
-  });
+  store.set(
+    projectAtom,
+    projectChecklistViewSchema.parse({
+      checklists: [
+        {
+          ...checklist.checklists[0],
+          items: [
+            { step: 4, text: "Plan x", path: "doc/plans/IN_PROGRESS-PLAN-x.md", offer: null },
+          ],
+        },
+      ],
+      standalone: [
+        { slug: "y", path: "doc/plans/PLAN-y.md", state: "written", title: "Standalone" },
+      ],
+      moves: [],
+    }),
+  );
   mount(store);
-  add(store, source("doc/plans/PLAN-foo.md"));
-  add(store, source("doc/loom/knowledge/topic.md"));
   add(store);
-  expect(screen.getAllByRole("img", { name: "Locked document" })).toHaveLength(2);
+  add(store, { ...summary(), summary: id });
+  expect(screen.getByRole("button", { name: "section_02.md › Port" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: `Summary · ${label}` }));
+  expect(screen.getByLabelText("Location").textContent).toBe(href);
+  expect(store.get(draftAtom).attachments).toHaveLength(2);
 });
 
-it("chips from file and concept modes accumulate", () => {
+it("an invalid summary chip is plain text", () => {
   const store = setup();
   mount(store);
-  add(store);
-  add(store, summary());
-  expect(screen.getByRole("button", { name: "section_02.md › Port" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Summary · section_02" }));
-  expect(screen.getByLabelText("Location").textContent).toBe("/product/section_02#sentence-1");
-  expect(store.get(draftAtom).attachments).toHaveLength(2);
+  add(store, { ...summary(), summary: "product/section_01" });
+  expect(screen.getByText("Summary · section_01")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Summary · section_01" })).toBeNull();
 });
 
 it("adding a chip sends nothing", () => {
@@ -223,18 +259,6 @@ it("spanning selection adds one chip per part", () => {
     "Second part",
   ]);
   selection.removeAllRanges();
-});
-
-it("sent chips from model attachments", () => {
-  const store = setup();
-  sent(store, [{ ...baseAttachment, locked: "knowledge", changed_since_selected: true }], {
-    ...baseTurn,
-    open: true,
-  });
-  expect(screen.getByRole("button", { name: chipLabel(baseAttachment) })).toBeTruthy();
-  expect(screen.getByRole("img", { name: "Locked document" })).toBeTruthy();
-  expect(screen.getByText("△ changed")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: /remove/i })).toBeNull();
 });
 
 it("sent chip changed in this turn links to diff at heading", async () => {

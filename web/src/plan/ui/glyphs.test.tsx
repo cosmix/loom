@@ -1,4 +1,5 @@
 import { cleanup, render } from "@testing-library/react";
+import { CircleCheck, CircleDot, Minus, TriangleAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -8,6 +9,7 @@ import {
   PLAN_STATE_GLYPHS,
   STEP_DOC_KIND,
   STEP_GLYPHS,
+  STEP_MARK_GLYPHS,
   SUMMARY_STATE_GLYPHS,
   VIEW_GLYPHS,
 } from "@/plan/ui/glyphs";
@@ -31,6 +33,11 @@ const glyphRecords = [
     keys: ["current", "rebuilding", "stale"],
   },
   {
+    name: "step marks",
+    glyphs: STEP_MARK_GLYPHS,
+    keys: ["done", "active", "gap", "optional"],
+  },
+  {
     name: "views",
     glyphs: VIEW_GLYPHS,
     keys: ["home", "product", "engineering", "files"],
@@ -46,7 +53,6 @@ const glyphRecords = [
       "switcher",
       "settings",
       "help",
-      "next",
     ],
   },
 ];
@@ -98,5 +104,30 @@ describe("planner glyphs", () => {
     const glyphs = Object.values(DOC_KIND_GLYPHS);
 
     expect(new Set(glyphs).size).toBe(glyphs.length);
+  });
+});
+
+describe("step mark glyphs", () => {
+  it("uses a circled check, circled dot, warning triangle and dash for step marks", () => {
+    expect(STEP_MARK_GLYPHS).toEqual({
+      done: CircleCheck,
+      active: CircleDot,
+      gap: TriangleAlert,
+      optional: Minus,
+    });
+    expect(STEP_MARK_GLYPHS.done).toBe(OTHER_GLYPHS.stepDone);
+  });
+
+  it("keeps unfinished step marks distinct from document, plan and summary concepts", () => {
+    const reserved = [
+      ...Object.values(DOC_KIND_GLYPHS),
+      ...Object.values(PLAN_STATE_GLYPHS),
+      ...Object.values(SUMMARY_STATE_GLYPHS),
+    ];
+
+    for (const mark of ["active", "gap", "optional"] as const) {
+      expect(reserved).not.toContain(STEP_MARK_GLYPHS[mark]);
+    }
+    expect(new Set(Object.values(STEP_MARK_GLYPHS)).size).toBe(4);
   });
 });

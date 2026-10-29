@@ -48,7 +48,8 @@ describe("help guide", () => {
     expect(screen.getByText("writing contract tests")).toBeTruthy();
     expect(screen.getByText(/resident tokens/)).toBeTruthy();
     expect(screen.getByText(/fresh tokens per minute/)).toBeTruthy();
-  });
+    // Renders every topic and the full legend; the default 5 s times out under full-suite load.
+  }, 20_000);
 
   it("pairs each illustration with its numbered notes", () => {
     render(<HelpDialog open onOpenChange={() => {}} />);

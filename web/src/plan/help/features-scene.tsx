@@ -1,7 +1,6 @@
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { useState } from "react";
-import { MemoryRouter } from "react-router";
 
 import { authoringViewSchema, projectChecklistViewSchema } from "@/plan/api/schema";
 import { fileTreeSchema } from "@/plan/api/schema-files";
@@ -9,6 +8,7 @@ import { kickoffViewSchema } from "@/plan/api/schema-kickoff";
 import { treeAtom } from "@/plan/files/atoms";
 import type { PlannerHelpScene } from "@/plan/help/pinned-scene";
 import { SAMPLE_SERVER, SAMPLE_STEPS } from "@/plan/help/sample";
+import { SceneRouter } from "@/plan/help/scene-router";
 import { FeatureCards } from "@/plan/home/feature-card";
 import { StandaloneShelf } from "@/plan/home/standalone-shelf";
 import { TakingShape } from "@/plan/new/taking-shape";
@@ -18,6 +18,7 @@ const SAMPLE_PROJECT = projectChecklistViewSchema.parse({
   checklists: [
     {
       feature: "atlas",
+      pitch: "Plan field trips, track who signed up and keep every itinerary in one place.",
       current: { kind: "step", number: 3 },
       steps: SAMPLE_STEPS,
       primary: null,
@@ -44,6 +45,7 @@ const SAMPLE_TREE = fileTreeSchema.parse({
       feature: "atlas",
       misplaced: false,
       path: "doc/product/atlas/index.md",
+      target: null,
       title: "Atlas",
       file_name: "index.md",
       kind: "vision",
@@ -94,14 +96,14 @@ export function FeaturesHomeScene() {
   // renders the exported cards and shelf. Revisit when home.tsx exports the invitation.
   return (
     <Provider store={store}>
-      <MemoryRouter initialEntries={["/"]}>
+      <SceneRouter initialEntries={["/"]}>
         <div data-loom-plan inert>
           <div className="mx-auto w-full max-w-5xl space-y-8 px-4 py-8 sm:px-6">
             <FeatureCards />
             <StandaloneShelf />
           </div>
         </div>
-      </MemoryRouter>
+      </SceneRouter>
     </Provider>
   );
 }

@@ -1,4 +1,5 @@
 import { cleanup, render, within } from "@testing-library/react";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { CHAT_SCENES } from "./chat-scene";
@@ -82,12 +83,41 @@ it("renders the sample project and all seven steps without throwing", () => {
   expect(
     within(container).getByRole("button", { name: "Switch feature, current: atlas", hidden: true }),
   ).toBeDefined();
+  expect(
+    within(container).getByTitle("The product spec for atlas is ready for its first metaplan."),
+  ).toBeDefined();
   const steps = within(container).getByRole("list", { name: "Steps", hidden: true });
   expect(within(steps).getAllByRole("listitem", { hidden: true })).toHaveLength(7);
   expect(
     within(steps).getByRole("listitem", { current: "step", hidden: true }).textContent,
   ).toContain("Metaplan");
 });
+
+it.each(["/", "/files", "/f/other/product"])(
+  "keeps the sample feature progress when help opens from %s",
+  (pathname) => {
+    const router = createMemoryRouter([{ path: "*", element: <GettingAroundScene /> }], {
+      initialEntries: [`${pathname}?help=open#topic`],
+    });
+    const { container } = render(<RouterProvider router={router} />);
+
+    expect(router.state.errors).toBeNull();
+    expect(
+      within(container).getByRole("button", {
+        name: "Switch feature, current: atlas",
+        hidden: true,
+      }),
+    ).toBeDefined();
+    const steps = within(container).getByRole("list", { name: "Steps", hidden: true });
+    expect(within(steps).getAllByRole("listitem", { hidden: true })).toHaveLength(7);
+    expect(
+      within(container).getByTitle("The product spec for atlas is ready for its first metaplan."),
+    ).toBeDefined();
+    expect(router.state.location).toMatchObject({ pathname, search: "?help=open", hash: "#topic" });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(globalThis.WebSocket).not.toHaveBeenCalled();
+  },
+);
 
 it("matches every pin selector inside its rendered production scene", () => {
   for (const topic of PLANNER_HELP_TOPICS) {
@@ -150,6 +180,7 @@ it("pins the step rail in the wide header and its popover button in the narrow o
   const popover = narrow.container.querySelectorAll(button!);
   expect(popover).toHaveLength(1);
   expect(popover[0]!.textContent).toContain("Step 3 of 7");
+  expect(popover[0]!.querySelector("span.sr-only")).toBeNull();
 });
 
 it("keeps the scene inert without HTTP requests or a live socket", () => {

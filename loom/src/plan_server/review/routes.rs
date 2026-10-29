@@ -12,7 +12,7 @@ use crate::plan_server::routes::{BodyKind, Method, Role, RouteSpec};
 use crate::plan_server::wire::paths::to_doc_rel;
 use crate::plan_server::wire::review::{
     AtCommitResponse, BuiltNoteWire, BuiltResponse, ChangedDocWire, CompareResponse, DocChange,
-    HashesResponse, OpenQuestionsMessage, RefResponse,
+    HashesResponse, ImplementedByResponse, OpenQuestionsMessage, RefResponse,
 };
 use crate::planning::paths::{check_relpath_syntax, symlink_component};
 
@@ -253,7 +253,7 @@ fn implemented_by(req: &ApiRequest<'_>) -> ApiResponse {
             sections.insert(id, section_plans(&project, &feature.name, number));
         }
     }
-    ApiResponse::json(200, &serde_json::json!({ "sections": sections }))
+    ApiResponse::json(200, &ImplementedByResponse { sections })
 }
 
 fn parameter<'a>(query: &'a QueryParams, name: &str) -> Result<&'a str, ApiResponse> {

@@ -23,6 +23,7 @@ use crate::fs::safe_read::EntryKind;
 use crate::orchestrator::terminal::native::session_settings::contents::{
     SESSION_TOOL_DENIES, WORKFLOW_TOOL,
 };
+use crate::plan_session::scope::SessionScope;
 use crate::planning::paths::LockReason;
 use crate::planning::slug::plan_slug;
 
@@ -32,14 +33,18 @@ pub(super) const ASK_USER_QUESTION: &str = "AskUserQuestion";
 const PEER_TOOLS: [&str; 2] = ["SendMessage", "ListAgents"];
 const WEB_SEARCH: &str = "WebSearch";
 const WEB_FETCH: &str = "WebFetch";
+/// Open and Team authoring sessions rebuild summaries after drafting documents.
 const SUMMARY_BASH: &str = "Bash(loom plan summary *)";
-const AUTHORING_BASH: [&str; 5] = [
-    "Bash(loom knowledge *)",
-    SUMMARY_BASH,
+/// Kickoff sessions may inspect summary status while summary writers need holder approval.
+const SUMMARY_STATUS_BASH: &str = "Bash(loom plan summary status*)";
+/// Read-only authoring commands stay allowed in every scope.
+const AUTHORING_READ_ONLY_BASH: [&str; 3] = [
     "Bash(loom plan verify *)",
     "Bash(loom plan check*)",
     "Bash(loom map *)",
 ];
+/// Open authoring permits both writers; Team and Kickoff need approval for knowledge writes.
+const AUTHORING_DOC_WRITER_BASH: [&str; 2] = ["Bash(loom knowledge *)", SUMMARY_BASH];
 /// Directories under `doc/` the authoring per-directory allow skips: `loom` is never allowed,
 /// `product` and `plans` have their own rules.
 const NOT_PER_DIR: [&str; 3] = ["loom", "product", "plans"];
@@ -93,7 +98,12 @@ fn authoring(build: &Build<'_>) -> Result<Rules> {
         allow.push(path_rule("Edit", &doc.join(file), ""));
     }
     allow.extend(runtime_rules(build));
-    allow.extend(AUTHORING_BASH.map(String::from));
+    match build.scope {
+        SessionScope::Open => allow.extend(AUTHORING_DOC_WRITER_BASH.map(String::from)),
+        SessionScope::Team { .. } => allow.push(SUMMARY_BASH.to_owned()),
+        SessionScope::Kickoff(_) => allow.push(SUMMARY_STATUS_BASH.to_owned()),
+    }
+    allow.extend(AUTHORING_READ_ONLY_BASH.map(String::from));
     allow.push(WEB_SEARCH.to_owned());
     let mut deny = base_denies(!build.scope.peer_tools());
     deny.extend(locked_denies(build)?);
@@ -126,7 +136,12 @@ fn pressure(build: &Build<'_>, plan: &Path, bundle: &Path) -> Result<Rules> {
         // Exactly the command `commands/pressure/spawn.rs::completion_instruction` asks for.
         format!("Bash(touch {})", marker.display()),
     ];
-    allow.extend(AUTHORING_BASH.map(String::from));
+    allow.extend(
+        AUTHORING_DOC_WRITER_BASH
+            .into_iter()
+            .chain(AUTHORING_READ_ONLY_BASH)
+            .map(String::from),
+    );
     allow.push(WEB_SEARCH.to_owned());
     Ok((allow, vec![WEB_FETCH.to_owned()], base_denies(false)))
 }

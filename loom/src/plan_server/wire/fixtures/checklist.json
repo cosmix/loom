@@ -1,4 +1,6 @@
 {
+  "feature": "demo",
+  "pitch": "Turn product ideas into clear specifications and executable plans your team can follow.",
   "current": {
     "kind": "step",
     "number": 2
@@ -52,6 +54,5 @@
         "number": 5
       }
     }
-  ],
-  "feature": "demo"
+  ]
 }

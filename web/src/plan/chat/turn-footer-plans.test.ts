@@ -8,6 +8,7 @@ function entry(path: string | null, children: TreeEntry[] = []): TreeEntry {
     feature: null,
     misplaced: false,
     path,
+    target: null,
     title: path ?? "folder",
     file_name: path?.split("/").at(-1) ?? null,
     kind: "plan",

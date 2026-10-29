@@ -9,6 +9,8 @@ it.each([
   ["2-plans", true],
   ["feature--", true],
   ["plans-", true],
+  ["a".repeat(64), true],
+  ["a".repeat(65), false],
   ["", false],
   ["-feature", false],
   ["Feature", false],

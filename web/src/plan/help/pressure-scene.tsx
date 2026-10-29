@@ -1,7 +1,6 @@
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { useState } from "react";
-import { MemoryRouter } from "react-router";
 
 import { sessionViewSchema } from "@/plan/api/schema-chat";
 import { pressureRunSchema } from "@/plan/api/schema-pressure";
@@ -10,6 +9,7 @@ import { pressureRunAtom } from "@/plan/chat/pressure/use-pressure";
 import { RunHeader } from "@/plan/chat/run-header";
 import type { PlannerHelpScene } from "@/plan/help/pinned-scene";
 import { SAMPLE_HOLDER, SAMPLE_SERVER } from "@/plan/help/sample";
+import { SceneRouter } from "@/plan/help/scene-router";
 import { authoringAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
 
 const PLAN = "doc/plans/PLAN-atlas.md";
@@ -113,11 +113,11 @@ export function PressureHeaderScene() {
   const [store] = useState(runningStore);
   return (
     <Provider store={store}>
-      <MemoryRouter>
+      <SceneRouter>
         <div data-loom-plan inert className="max-w-[680px]">
           <RunHeader session={SESSION} />
         </div>
-      </MemoryRouter>
+      </SceneRouter>
     </Provider>
   );
 }
@@ -126,11 +126,11 @@ export function PressureRunScene() {
   const [store] = useState(recordedStore);
   return (
     <Provider store={store}>
-      <MemoryRouter>
+      <SceneRouter>
         <div data-loom-plan inert className="max-w-[680px]">
           <RunHeader session={SESSION} />
         </div>
-      </MemoryRouter>
+      </SceneRouter>
     </Provider>
   );
 }

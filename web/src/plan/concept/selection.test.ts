@@ -8,7 +8,8 @@ import {
 } from "./selection";
 
 const page: ConceptPage = {
-  key: "product/section_05",
+  feature: "demo",
+  key: "demo/product/section_05",
   title: "Concept",
   path: "doc/product/section_05.md",
   file_hash: "summary-hash",
@@ -45,7 +46,7 @@ const own =
     ? (page.blocks[0] as { sentences: Sentence[] }).sentences[0]!
     : (undefined as never);
 const resolveOwn: SentenceResolver = (summary, id) =>
-  summary === "product/section_05" && id === own.id
+  summary === "demo/product/section_05" && id === own.id
     ? { sentence: own, hash: page.file_hash }
     : undefined;
 
@@ -67,11 +68,11 @@ afterEach(() => {
 describe("concept selection provenance", () => {
   it("captures a summary sentence and its sources", () => {
     document.body.innerHTML =
-      '<span data-summary="product/section_05" data-sentence-id="s1">Summary words</span>';
+      '<span data-summary="demo/product/section_05" data-sentence-id="s1">Summary words</span>';
     const text = document.querySelector("span")!.firstChild!;
     expect(attachmentFromSelection(select(text, 0, text, 7), resolveOwn)).toEqual({
       kind: "summary",
-      summary: "product/section_05",
+      summary: "demo/product/section_05",
       sentence: "s1",
       text: "Summary",
       restsOn: [{ path: "doc/product/source.md", anchor: "details" }],
@@ -96,16 +97,16 @@ describe("concept selection provenance", () => {
 
   it("selection inside an opened cited run uses the cited summary", () => {
     document.body.innerHTML =
-      '<span data-summary="product/section_02" data-sentence-id="c9">Cited words</span>';
+      '<span data-summary="demo/product/section_02" data-sentence-id="c9">Cited words</span>';
     const text = document.querySelector("span")!.firstChild!;
     const cited = { ...own, id: "c9", rests_on: [{ path: "doc/b.md", anchor: "x" }] };
     const resolve: SentenceResolver = (summary, id) =>
-      summary === "product/section_02" && id === "c9"
+      summary === "demo/product/section_02" && id === "c9"
         ? { sentence: cited, hash: "cited-hash" }
         : undefined;
     expect(attachmentFromSelection(select(text, 0, text, 5), resolve)).toEqual({
       kind: "summary",
-      summary: "product/section_02",
+      summary: "demo/product/section_02",
       sentence: "c9",
       text: "Cited",
       restsOn: [{ path: "doc/b.md", anchor: "x" }],
@@ -115,11 +116,11 @@ describe("concept selection provenance", () => {
 
   it("colliding sentence ids resolve by summary", () => {
     document.body.innerHTML =
-      '<span data-summary="product/section_02" data-sentence-id="s1">Other words</span>';
+      '<span data-summary="demo/product/section_02" data-sentence-id="s1">Other words</span>';
     const text = document.querySelector("span")!.firstChild!;
     const other = { ...own, rests_on: [{ path: "doc/other.md", anchor: "y" }] };
     const resolve: SentenceResolver = (summary) =>
-      summary === "product/section_02"
+      summary === "demo/product/section_02"
         ? { sentence: other, hash: "other-hash" }
         : { sentence: own, hash: "summary-hash" };
     const draft = attachmentFromSelection(select(text, 0, text, 5), resolve);
@@ -128,7 +129,7 @@ describe("concept selection provenance", () => {
 
   it("drops the draft when the summary does not resolve", () => {
     document.body.innerHTML =
-      '<span data-summary="product/section_09" data-sentence-id="s1">Gone words</span>';
+      '<span data-summary="demo/product/section_09" data-sentence-id="s1">Gone words</span>';
     const text = document.querySelector("span")!.firstChild!;
     expect(attachmentFromSelection(select(text, 0, text, 4), () => undefined)).toBeNull();
   });
@@ -136,9 +137,9 @@ describe("concept selection provenance", () => {
 
 describe("selection spanning several parts", () => {
   const sentenceHtml = (id: string, text: string) =>
-    `<span data-summary="product/section_05" data-sentence-id="${id}">${text}</span>`;
+    `<span data-summary="demo/product/section_05" data-sentence-id="${id}">${text}</span>`;
   const resolveAny: SentenceResolver = (summary, id) =>
-    summary === "product/section_05" && id !== "gone"
+    summary === "demo/product/section_05" && id !== "gone"
       ? {
           sentence: { ...own, id, rests_on: [{ path: `doc/product/${id}.md`, anchor: id }] },
           hash: "summary-hash",

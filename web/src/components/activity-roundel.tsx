@@ -2,7 +2,7 @@ import { useAtomValue } from "jotai/react";
 
 import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 import type { StageSummary } from "@/api/schema";
-import { sessionIsWorking } from "@/lib/format";
+import { sessionIsWorking } from "@/lib/format-activity";
 import { snapshotAtom } from "@/state/atoms";
 
 /// The header's disc: the whole run's activity. It turns while any session

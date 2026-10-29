@@ -2,9 +2,9 @@
   "id": "rebuild-q1",
   "count": 6,
   "ids": [
-    "product/section_01",
-    "product/section_02",
-    "product/section_03",
+    "demo/product/section_01",
+    "demo/product/section_02",
+    "demo/product/section_03",
     "plans/loom-core",
     "plans/loom-planner-ui",
     "plans/loom-rebuilds"

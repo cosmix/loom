@@ -7,7 +7,8 @@ import { addAttachmentAtom, MAX_ATTACHMENT_BYTES, type AttachmentDraft } from "@
 import { fetchDoc, fetchTree } from "@/plan/files/api";
 import { treeAtom } from "@/plan/files/atoms";
 import { getImplementedBy, type ImplementedByResponse } from "@/plan/review/api";
-import { connectionEpochAtom, isHolderAtom } from "@/plan/state/atoms";
+import { connectionEpochAtom, featuresAtom, isHolderAtom } from "@/plan/state/atoms";
+import { pageHref, pageKeyOfSummaryId } from "@/plan/api/page-key";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { LoadState } from "@/plan/ui/load-state";
 import { draftAtom } from "./drafts";
@@ -22,7 +23,7 @@ export type ImplementedBy = {
   retry: () => void;
 };
 
-export const sectionFile = /^doc\/product\/section_\d+\.md$/;
+export const sectionFile = /^doc\/product\/([a-z0-9-]+)\/section_(\d+)\.md$/;
 
 /**
  * One `implemented-by` request per turn footer, shared by every changed section file. A reload on
@@ -55,6 +56,14 @@ function isPlanFile(path: string | null, slug: string): path is string {
   const name = path?.split("/").at(-1);
   if (!name || name.startsWith("REVIEW-")) return false;
   return name === `PLAN-${slug}.md` || name.endsWith(`-PLAN-${slug}.md`);
+}
+
+export function usePlanFeature(): (slug: string) => string | null {
+  const features = useAtomValue(featuresAtom);
+  return (slug) =>
+    features.find((feature) =>
+      feature.items.some((item) => isPlanFile(item.path, slug) || item.offer?.slug === slug),
+    )?.feature ?? null;
 }
 
 export function planPath(entries: TreeEntry[], slug: string): string | undefined {
@@ -154,6 +163,7 @@ function FillPlans({ path, plans, followUp }: { path: string; plans: Plan[]; fol
 }
 
 function PlanGroup({ path, state, plans }: { path: string; state: string; plans: Plan[] }) {
+  const planFeature = usePlanFeature();
   const followUp = state === "running" || state === "done";
   return (
     <div role="group" aria-label={`${visibleControls(state)} plans`}>
@@ -166,13 +176,21 @@ function PlanGroup({ path, state, plans }: { path: string; state: string; plans:
             : ""}
       </p>
       <ul>
-        {plans.map((plan) => (
-          <li key={plan.slug}>
-            <Link className="underline" to={`/engineering/${encodeURIComponent(plan.slug)}`}>
-              <Untrusted text={plan.title} />
-            </Link>
-          </li>
-        ))}
+        {plans.map((plan) => {
+          const key = pageKeyOfSummaryId(`plans/${plan.slug}`, planFeature);
+          const title = <Untrusted text={plan.title} />;
+          return (
+            <li key={plan.slug}>
+              {key === null ? (
+                title
+              ) : (
+                <Link className="underline" to={pageHref(key)}>
+                  {title}
+                </Link>
+              )}
+            </li>
+          );
+        })}
       </ul>
       {(state === "written" || followUp) && (
         <FillPlans path={path} plans={plans} followUp={followUp} />
@@ -183,8 +201,11 @@ function PlanGroup({ path, state, plans }: { path: string; state: string; plans:
 
 export function ImplementingPlans({ path, loaded }: { path: string; loaded: ImplementedBy }) {
   const { sections, error, retry } = loaded;
-  const number = path.match(/section_(\d+)\.md$/)?.[1];
-  const plans = number ? (sections?.[String(Number(number))] ?? []) : [];
+  const section = path.match(sectionFile);
+  const id = section
+    ? `product/${section[1]}/section_${String(Number(section[2])).padStart(2, "0")}`
+    : null;
+  const plans = id ? (sections?.[id] ?? []) : [];
   if (error)
     return (
       <LoadState

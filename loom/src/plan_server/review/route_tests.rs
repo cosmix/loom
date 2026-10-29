@@ -16,6 +16,7 @@ use crate::plan_server::start_with_routes;
 use crate::plan_server::tests::support::{
     self, bootstrap, cookie_pair, get, json_body, post_json, skip, status,
 };
+use crate::plan_server::wire::review::ImplementedByResponse;
 use crate::plan_server::RunningServer;
 
 const MISSING_COMMIT: &str = "1111111111111111111111111111111111111111";
@@ -351,30 +352,12 @@ fn implementing_plans_are_keyed_by_feature_section_doc_id() -> Result<()> {
     let cookie = bootstrap(&server);
     let response = get(&server, "/api/implemented-by", &cookie);
     assert_eq!(status(&response), 200, "{response}");
-    let body = json_body(&response);
-    assert_eq!(body["sections"].as_object().unwrap().len(), 2);
-    assert_eq!(
-        body["sections"]["product/demo/section_01"][0]["slug"],
-        "demo"
-    );
-    assert_eq!(
-        body["sections"]["product/other/section_01"][0]["slug"],
-        "other"
-    );
-    assert_eq!(
-        body["sections"]["product/demo/section_01"]
-            .as_array()
-            .unwrap()
-            .len(),
-        1
-    );
-    assert_eq!(
-        body["sections"]["product/other/section_01"]
-            .as_array()
-            .unwrap()
-            .len(),
-        1
-    );
+    let body: ImplementedByResponse = serde_json::from_value(json_body(&response))?;
+    assert_eq!(body.sections.len(), 2);
+    assert_eq!(body.sections["product/demo/section_01"][0].slug, "demo");
+    assert_eq!(body.sections["product/other/section_01"][0].slug, "other");
+    assert_eq!(body.sections["product/demo/section_01"].len(), 1);
+    assert_eq!(body.sections["product/other/section_01"].len(), 1);
     server.stop()?;
     Ok(())
 }

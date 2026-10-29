@@ -22,36 +22,46 @@ command validates them and computes every hash, so no agent ever writes a hash.
 
 ```text
 doc/loom/summaries/
-  product.md                  product overview
-  engineering.md              engineering overview
-  product/section_01.md       one per product section, named after the section file
-  plans/<slug>.md             one per plan, named by the plan's slug
+  overview/<f>/product.md          one product overview per feature with a vision
+  overview/<f>/engineering.md      one engineering overview per feature with a metaplan
+  <f>/product/section_01.md         one per feature's product section, named after the section file
+  plans/<slug>.md                  one per eligible plan, named by the plan's slug
 ```
 
-A summary's **id** is its path under `doc/loom/summaries/` without `.md`: `product`,
-`product/section_01`, `plans/delivery-truth`.
+A summary's **id** is its path under `doc/loom/summaries/` without `.md`:
+`overview/<f>/product`, `overview/<f>/engineering`, `<f>/product/section_<nn>`, or `plans/<slug>`.
+Here `<f>` is a feature name (section 03), and `<nn>` has at least two digits. `plans` and
+`overview` are reserved feature names, so plan and overview ids cannot collide with a feature's
+section ids. For example: `overview/planner-ui/product`, `planner-ui/product/section_01`,
+`plans/delivery-truth`.
 
 Which documents get a summary:
 
-| Source                                                              | Summary               |
-| ------------------------------------------------------------------- | --------------------- |
-| `doc/product/section_<nn>.md`, listed or unlisted (section 01)      | `product/section_<nn>` |
-| A plan in `doc/plans/` in any state (`PLAN-`, `IN_PROGRESS-`, `DONE-`) | `plans/<slug>`        |
-| A plan under `doc/plans/archive/` that a metaplan names             | `plans/<slug>`        |
-| A plan under `doc/plans/archive/` that no metaplan names            | none                  |
-| The vision, metaplans, briefs, knowledge                            | none                  |
+| Source                                                                                          | Summary                    |
+| ----------------------------------------------------------------------------------------------- | -------------------------- |
+| `doc/product/<f>/section_<nn>.md`, listed or unlisted (section 01)                              | `<f>/product/section_<nn>` |
+| A plan directly in its feature home, `doc/plans/<f>/`, in any lifecycle state                   | `plans/<slug>`             |
+| A plan directly in the standalone home, `doc/plans/`, in any lifecycle state                    | `plans/<slug>`             |
+| A plan in `doc/plans/<f>/archive/` named by a metaplan of feature `<f>`                         | `plans/<slug>`             |
+| An archived plan no metaplan of its feature names, including every plan in `doc/plans/archive/` | none                       |
+| Visions, metaplans, briefs, knowledge                                                           | none                       |
 
-Plan summaries are keyed by slug, so the `IN_PROGRESS-` and `DONE-` renames and a move into
-`archive/` keep the same summary. Archived plans that no metaplan names are left out because an
-older project can hold dozens of them (this repository has 89) and summarizing them would cost
-more than any reader gains; they stay readable in file mode. The vision and the
-metaplans have no document summary of their own: the overviews cite them directly (below).
+Plan summaries are keyed by slug, unique repository-wide, so lifecycle renames and moves between
+homes keep the same id; a move into an archive keeps the summary only while the plan is eligible.
+Archived plans that no metaplan of their feature names are left out because an older project
+can hold dozens of them and summarizing them would cost more than any reader gains; they stay
+readable in file mode. Standalone plans have no metaplan, so their archived plans get no summary.
+Visions and metaplans have no document summary of their own: their feature's overviews cite them
+directly (below).
 
-**Overview scope.** The product overview covers the vision and the product sections its table
-lists (section 01); the engineering overview covers the metaplans and the plans a metaplan
-names. An unlisted section, or a plan no metaplan names, is outside overview scope: it still gets
-its document summary, and section 05 lists it under the overview instead of in it. An overview's
-members are the document summaries in its scope.
+**Overview scope.** Each feature has its own scope. Its product overview covers its vision and
+the product sections that vision's table lists (section 01); its engineering overview covers
+its metaplans and the plans in that feature that those metaplans name. The product overview is
+expected only when the feature has a vision; the engineering overview only when it has a
+metaplan, even if either has no members. An unlisted section, or an eligible plan no metaplan of
+its feature names, is outside that feature's overview scope: it still gets its document summary,
+and section 05 lists it under the overview instead of in it. An overview's members are the
+document summaries in its scope. Standalone plans belong to no feature's overview scope.
 
 Each summary is its own file with its own manifest entry, so a git merge of two people's
 rebuilds conflicts only when both rebuilt the same summary (vision, Decisions). There is no
@@ -60,43 +70,43 @@ one file and turn unrelated rebuilds into merge conflicts.)
 
 ## The summary file
 
-A document summary, `doc/loom/summaries/product/section_01.md`:
+A document summary, `doc/loom/summaries/planner-ui/product/section_01.md`:
 
 ```markdown
 ---
 kind: document
-of: doc/product/section_01.md
+of: doc/product/planner-ui/section_01.md
 file: sha256:9c1f…
 cites:
-  doc/product/section_01.md#the-model-in-one-paragraph: sha256:4a7e…
-  doc/product/section_01.md#detection-rules: sha256:e210…
-  doc/product/section_01.md#pressure-tests: sha256:07bd…
+  doc/product/planner-ui/section_01.md#the-model-in-one-paragraph: sha256:4a7e…
+  doc/product/planner-ui/section_01.md#detection-rules: sha256:e210…
+  doc/product/planner-ui/section_01.md#pressure-tests: sha256:07bd…
 ---
 
 # 01 — Workflow Model and Project State
 
-The app keeps no workflow state and recomputes a checklist of expected documents from `doc/` on every change. [§](../../../product/section_01.md#the-model-in-one-paragraph)
-The current step is the earliest step with a gap, and no gap blocks later work. [§](../../../product/section_01.md#the-model-in-one-paragraph)
-A plan counts as pressure-tested once the `loom pressure` driver has appended a dated line to its `## Pressure tests` section. [§](../../../product/section_01.md#pressure-tests)
+The app keeps no workflow state and recomputes each feature's checklist from its documents on every change. [§](../../../../product/planner-ui/section_01.md#the-model-in-one-paragraph)
+The feature's current step is the earliest step with a gap, and no gap blocks later work. [§](../../../../product/planner-ui/section_01.md#the-model-in-one-paragraph)
+A plan counts as pressure-tested once the `loom pressure` driver has appended a dated line to its `## Pressure tests` section. [§](../../../../product/planner-ui/section_01.md#pressure-tests)
 ```
 
-The product overview, `doc/loom/summaries/product.md`:
+The feature's product overview, `doc/loom/summaries/overview/planner-ui/product.md`:
 
 ```markdown
 ---
 kind: overview
-of: product
+of: overview/planner-ui/product
 members:
-  product/section_01: sha256:51c0…
-  product/section_02: sha256:d93a…
+  planner-ui/product/section_01: sha256:51c0…
+  planner-ui/product/section_02: sha256:d93a…
 cites:
-  doc/product/index.md#vision: sha256:aa04…
+  doc/product/planner-ui/index.md#vision: sha256:aa04…
 ---
 
 # Product overview
 
-`loom plan` is a browser app that takes a project from an empty `doc/` to approved loom plans. [vision](../../product/index.md#vision)
-It derives the workflow step from the files alone and never blocks an out-of-order project. [01](product/section_01.md#s-3fa9c2d1) [01](product/section_01.md#s-77e0b412)
+`loom plan` is a browser app that takes a feature from a vision to approved loom plans. [vision](../../../../product/planner-ui/index.md#vision)
+It derives the feature's workflow step from the files alone and never blocks out-of-order work. [01](../../planner-ui/product/section_01.md#s-3fa9c2d1) [01](../../planner-ui/product/section_01.md#s-77e0b412)
 ```
 
 Rules for the body, enforced when the summary is sealed (below):
@@ -111,7 +121,7 @@ Rules for the body, enforced when the summary is sealed (below):
   anchors section 03 defines. A link with no fragment cites the text before the first heading.
 - **An overview cites document-summary sentences and raw passages.** It links a document
   summary's sentence by the sentence's id as fragment (`#s-3fa9c2d1`), and links heading
-  sections of the vision (product overview) or of the metaplans (engineering overview) directly,
+  sections of its feature's vision (product overview) or metaplans (engineering overview) directly,
   since those documents have no summary. Every document in the overview's scope must be cited by
   at least one overview sentence, so no section or plan drops out of the overview silently.
 - **Length.** A document summary holds at most 15 sentences, an overview at most 30. (My call:
@@ -124,13 +134,13 @@ text, a rebuild that keeps a sentence word for word keeps the overview links int
 
 ### The front matter
 
-| Key       | In         | Value                                                                                       |
-| --------- | ---------- | ------------------------------------------------------------------------------------------- |
-| `kind`    | both       | `document` or `overview`                                                                    |
-| `of`      | both       | the source file's path (document), or `product` / `engineering` (overview)                  |
-| `file`    | document   | hash of the whole source file                                                               |
-| `cites`   | both       | `path#anchor` to the hash of that span, for every raw passage the body links                |
-| `members` | overview   | summary id to the hash of its ordered sentence ids, for every document summary in its scope |
+| Key       | In       | Value                                                                                                           |
+| --------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `kind`    | both     | `document` or `overview`                                                                                        |
+| `of`      | both     | the source file's path (document), or `overview/<f>/product` / `overview/<f>/engineering` (overview)            |
+| `file`    | document | hash of the whole source file                                                                                   |
+| `cites`   | both     | `path#anchor` to the hash of that span, for every raw passage the body links                                    |
+| `members` | overview | summary id to the hash of its ordered sentence ids, for every document summary in that feature's overview scope |
 
 `members` hashes the ordered list of sentence ids, so rewriting a link or the front
 matter of a document summary does not make the overview out of date. Front matter carries no
@@ -183,11 +193,12 @@ that left conflict markers, counts as missing and is regenerated, which resolves
 (vision, Concurrent writes). A hand edit that passes validation is kept and judged by its hashes
 like any other.
 
-When a source file disappears and another appears with the same file hash (a plan's
-`IN_PROGRESS-` or `DONE-` rename, a move into `archive/`), the engine rewrites the paths in the
-affected front matter and links itself, with no agent and no rebuild. When a source is deleted,
+When an eligible source file disappears and another appears with the same file hash (a plan's
+lifecycle rename, a move into its feature's archive while a metaplan there names it), the engine
+rewrites the paths in the affected front matter and links itself, with no agent and no rebuild.
+When a source is deleted,
 its document summary is deleted and the overview sentences that cite it turn stale. A new section
-or plan gets a missing summary, which queues it.
+or plan eligible for a summary gets a missing summary, which queues it.
 
 ## The watcher
 
@@ -286,7 +297,9 @@ starting a background rebuild of the same summaries.)
 
 **Background.** After each watcher batch the engine collects the summaries the batch made stale,
 incomplete, or missing. Up to 5, it starts a rebuild at once; above 5 it asks first (vision,
-Rebuild budget). One background summary session runs per project at a time, as an interactive
+Rebuild budget). Turning off Settings' "Rebuild summaries automatically" in the holder's browser
+sends `POST /api/summaries/auto` and sets that limit to 0, so every batch asks first.
+One background summary session runs per project at a time, as an interactive
 Claude Code session in tmux started through the session bridge (section 07), never `claude -p`.
 It works its batch leaves first: one subagent per document summary, each running `brief` and
 `seal` for its document, then the overviews itself. Summaries invalidated while it runs form the
@@ -320,8 +333,8 @@ it, can answer. (My call.) Declining leaves the summaries marked out of date wit
 action on each; the next batch counts only the summaries it newly invalidates, so one declined
 pull does not turn every later edit into a question.
 
-A first `loom plan` on a project with no summaries (twelve sections and eight plans mean 22
-summaries) asks the same question.
+A first `loom plan` on a project with no summaries (one feature with a vision, a metaplan,
+twelve sections and eight eligible plans means 22 summaries) asks the same question.
 
 ## Cost
 
