@@ -4,7 +4,7 @@
 
 The bridge owns Claude Code sessions for `loom plan`: it starts each in its own tmux server, reads the
 hook spool and the transcript, runs the state machine, delivers chat input, answers permission
-requests and ends or recovers sessions. Contract: `doc/product/section_07.md`. Code:
+requests and ends or recovers sessions. Contract: `doc/product/planner-ui/section_07.md`. Code:
 `loom/src/plan_session/` (bridge, state, spool, transcript, input, attachments, launch) and
 `loom/src/plan_server/chat/` (dispatch, guidance, the hub wiring).
 
