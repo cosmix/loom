@@ -8,6 +8,8 @@ import type { DiffTexts } from "@/plan/api/schema-files";
 import { openDiff } from "@/plan/diff/open-diff";
 import { docRel } from "@/plan/files/address";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
+import { DocMark } from "@/plan/ui/doc-mark";
+import type { DocKind } from "@/plan/ui/glyphs";
 import { TurnFooterExtras } from "./footer-extras";
 import { lineCounts } from "./line-diff";
 import { RestoreAll, RestoreButton } from "./restore";
@@ -18,6 +20,18 @@ import { Untrusted, visibleControls } from "./visible-controls";
 
 type File = Turn["changed_files"][number];
 const displayStyle = { unicodeBidi: "plaintext", direction: "ltr" } as const;
+
+function changedDocKind(path: string): DocKind | null {
+  if (sectionFile.test(path)) return "section";
+  if (/^doc\/product\/(?:[a-z0-9-]+\/)?index\.md$/.test(path)) return "vision";
+  if (path.startsWith("doc/loom/knowledge/")) return "knowledge";
+  if (/^doc\/plans\/(?:[a-z0-9-]+\/)?briefs\/.+/.test(path)) return "brief";
+  const name = path.match(/^doc\/plans\/(?:[a-z0-9-]+\/)?(?:archive\/)?([^/]+)$/)?.[1];
+  if (name && /^(?:(?:IN_PROGRESS|DONE|RETIRED)-)?PLAN-.+\.md$/.test(name)) return "plan";
+  if (/^doc\/plans\/(?:[a-z0-9-]+\/)?(?:index|[^/]*metaplan[^/]*)\.md$/.test(path))
+    return "metaplan";
+  return null;
+}
 
 function changeLabel(file: File, texts?: DiffTexts): string {
   if (file.before_hash === null || texts?.before === null) return "new";
@@ -54,11 +68,13 @@ function RowActions({ file, row, rows, turn, sessionId }: RowProps) {
 function ChangedRow(props: RowProps) {
   const { file, row } = props;
   const inside = file.path.startsWith("doc/");
+  const kind = changedDocKind(file.path);
   // Line counting walks both whole documents: redo it only when the fetched texts change.
   const label = useMemo(() => changeLabel(file, row?.texts), [file, row?.texts]);
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <span className="font-mono">
+      <span className="inline-flex items-center gap-2 font-mono" data-doc-kind={kind ?? undefined}>
+        {kind !== null && <DocMark kind={kind} />}
         <Untrusted text={docRel(file.path)} />
       </span>
       <span>{label}</span>

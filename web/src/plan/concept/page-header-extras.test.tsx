@@ -49,9 +49,9 @@ afterEach(() => {
 });
 
 it.each([
-  ["engineering/my-plan", ["plans/my-plan"]],
-  ["product/section_01", ["product/section_01"]],
-  ["product", ["product"]],
+  ["demo/engineering/my-plan", ["plans/my-plan"]],
+  ["demo/product/section_01", ["demo/product/section_01"]],
+  ["overview/demo/product", ["overview/demo/product"]],
 ])("rebuilds the summary behind page %s", async (key, ids) => {
   show(key);
   await act(async () => {

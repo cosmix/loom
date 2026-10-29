@@ -10,6 +10,7 @@ afterEach(cleanup);
 
 const checklist = checklistViewSchema.parse({
   feature: "demo",
+  pitch: null,
   current: { kind: "step", number: 2 },
   steps: [
     { number: 1, name: "Vision", mark: "done" },
@@ -46,19 +47,21 @@ it("renders Conversation followed by every server step in an ordered list", () =
 });
 
 it.each([
-  ["Conversation", "done", "lucide-circle-check"],
-  ["Vision", "done", "lucide-circle-check"],
-  ["Product spec", "has gaps", "lucide-triangle-alert"],
-  ["Metaplan", "in progress", "lucide-circle-dot"],
-  ["Plans", "optional", "lucide-circle-dashed"],
-] as const)("conveys the %s mark by shape and visible text", (name, label, glyphClass) => {
+  ["Conversation", "done", "done"],
+  ["Vision", "done", "done"],
+  ["Product spec", "has gaps", "gap"],
+  ["Metaplan", "in progress", "active"],
+  ["Plans", "optional", "optional"],
+] as const)("conveys the %s mark by shape and visible text", (name, label, stepMark) => {
   renderList(checklist);
   const row = screen.getByRole("heading", { name }).closest("li");
   if (!row) throw new Error("Step heading needs a list row");
 
   const mark = within(row).getByText(label);
   expect(mark.closest(".sr-only, .hidden, [hidden], [aria-hidden='true']")).toBeNull();
-  expect(row.querySelector(`.${glyphClass}`)?.getAttribute("aria-hidden")).toBe("true");
+  expect(row.querySelector(`[data-step-mark="${stepMark}"]`)?.getAttribute("aria-hidden")).toBe(
+    "true",
+  );
 });
 
 it("marks only the current server step with aria-current", () => {

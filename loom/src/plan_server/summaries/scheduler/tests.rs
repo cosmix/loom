@@ -108,6 +108,49 @@ fn the_limit_counts_the_whole_queue() {
 }
 
 #[test]
+fn disabled_auto_asks_before_a_single_summary() {
+    let (mut s, stub, now) = setup();
+    let one = ids(&["a"]);
+    s.set_auto(false);
+
+    let asked = question_of(&s.on_update(&one, &one, now, &stub)).expect("asks");
+
+    assert_eq!(asked.ids, one);
+    assert!(stub.starts().is_empty());
+}
+
+#[test]
+fn disabling_auto_holds_an_already_queued_small_batch() {
+    let (mut s, stub, now) = setup();
+    let one = ids(&["a"]);
+    let token = s.suspend(SuspendReason::PressureRun);
+    s.on_update(&one, &one, now, &stub);
+
+    s.set_auto(false);
+    s.resume(token, &one, now, &stub);
+
+    assert_eq!(s.panel_state().question.expect("asks").ids, one);
+    assert!(stub.starts().is_empty());
+}
+
+#[test]
+fn reenabled_auto_starts_the_next_batch_of_five() {
+    let (mut s, stub, now) = setup();
+    let one = ids(&["a"]);
+    s.set_auto(false);
+    let asked = question_of(&s.on_update(&one, &one, now, &stub)).expect("asks");
+    s.answer(&asked.id, false, AnswerRight::Holder, now, &stub)
+        .expect("declines");
+    let five = names(5);
+
+    s.set_auto(true);
+    s.on_update(&five, &five, now, &stub);
+
+    assert_eq!(stub.starts(), vec![five]);
+    assert!(s.panel_state().question.is_none());
+}
+
+#[test]
 fn yes_starts_the_asked_ids_and_the_rest_waits() {
     let (mut s, stub, now) = setup();
     let six = names(6);

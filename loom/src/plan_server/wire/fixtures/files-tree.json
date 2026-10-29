@@ -4,6 +4,7 @@
       "feature": "demo",
       "misplaced": false,
       "path": null,
+      "target": null,
       "title": "demo",
       "file_name": null,
       "kind": "feature",
@@ -16,6 +17,7 @@
       "children": [
         {
           "path": "doc/product/demo/index.md",
+          "target": null,
           "title": "Vision",
           "file_name": "index.md",
           "kind": "vision",
@@ -31,6 +33,7 @@
         },
         {
           "path": null,
+          "target": "doc/product/demo/section_02.md",
           "title": "Section 2",
           "file_name": null,
           "kind": "section",
@@ -50,6 +53,7 @@
   "plans": [
     {
       "path": "doc/plans/PLAN-file-mode.md",
+      "target": null,
       "title": "File mode",
       "file_name": "PLAN-file-mode.md",
       "kind": "plan",
@@ -67,6 +71,7 @@
   "knowledge": [
     {
       "path": null,
+      "target": null,
       "title": "Architecture",
       "file_name": null,
       "kind": "knowledge_folder",
@@ -79,6 +84,7 @@
       "children": [
         {
           "path": "doc/loom/knowledge/architecture/overview.md",
+          "target": null,
           "title": "Overview",
           "file_name": "overview.md",
           "kind": "knowledge",
@@ -100,6 +106,7 @@
   "other": [
     {
       "path": "doc/notes.md",
+      "target": null,
       "title": "Notes",
       "file_name": "notes.md",
       "kind": "other",
@@ -117,6 +124,7 @@
   "archive": [
     {
       "path": null,
+      "target": null,
       "title": "Orphan briefs",
       "file_name": null,
       "kind": "brief_folder",
@@ -129,6 +137,7 @@
       "children": [
         {
           "path": "doc/plans/archive/briefs/old.md",
+          "target": null,
           "title": "Old brief",
           "file_name": "old.md",
           "kind": "brief",

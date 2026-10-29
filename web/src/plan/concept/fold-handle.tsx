@@ -18,11 +18,17 @@ export function FoldCap({
       <TooltipTrigger asChild>
         <button
           type="button"
-          tabIndex={-1}
+          tabIndex={0}
           aria-label="Fold"
           aria-describedby={runId}
           className="concept-run-cap"
           data-side={side}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            event.stopPropagation();
+            onFold();
+          }}
           onClick={(event) => {
             event.stopPropagation();
             onFold();

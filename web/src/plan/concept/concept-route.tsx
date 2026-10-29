@@ -3,13 +3,24 @@ import { useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 
 import { isTyping } from "@/lib/is-typing";
-import { isConceptPageKey, type ConceptPage } from "@/plan/api/schema-concept";
+import {
+  featureOfKey,
+  isOverviewKey,
+  overviewKey,
+  pageHref,
+  pageKeyOfPath,
+  parsePageKey,
+  scopeOfKey,
+  type ConceptScope,
+} from "@/plan/api/page-key";
+import type { ConceptPage } from "@/plan/api/schema-concept";
 import { AddToChat, addAttachmentAtom, useSelectionAttachment } from "@/plan/attachments";
-import { canAuthorAtom } from "@/plan/state/atoms";
+import { activeFeatureAtom, canAuthorAtom } from "@/plan/state/atoms";
 import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
 
 import { summaryIdOfKey } from "./column-context";
+import { foldedWith } from "./column-model";
 import { DocumentKey } from "./document-key";
 import { ConceptNotFound, EmptyStates } from "./empty-states";
 import { pageSentences } from "./open-state";
@@ -21,7 +32,6 @@ import {
   pageKeyOfSummary,
   useConceptPage,
   useConceptSubscription,
-  type ConceptPageState,
 } from "./page-state";
 import { ReadingColumn } from "./reading-column";
 import {
@@ -30,32 +40,11 @@ import {
   overLimit,
   type SentenceResolver,
 } from "./selection";
+import { openRunsAtom } from "./view-state";
 
 /** The second key of `g p` / `g e` must follow the first within this long. */
 const GO_KEY_WINDOW_MS = 1000;
-const GO_TARGETS: Record<string, string> = { p: "/product", e: "/engineering" };
-
-function segmentsOf(pathname: string): string[] {
-  return pathname
-    .split("/")
-    .filter(Boolean)
-    .map((part) => {
-      try {
-        return decodeURIComponent(part);
-      } catch {
-        return part;
-      }
-    });
-}
-
-/**
- * The page key of a concept URL: `product`, `engineering`, `product/<stem>`, `engineering/<slug>`.
- * Decoding can yield anything (`..%2F..%2Fserver` becomes `../../server`); `isConceptPageKey`
- * decides whether the result is a page.
- */
-function pageKeyOf(pathname: string): string {
-  return segmentsOf(pathname).join("/");
-}
+const GO_TARGETS: Record<string, ConceptScope> = { p: "product", e: "engineering" };
 
 /** The last path part as written in the URL: still encoded, so it holds no `/`. */
 function rawNameOf(pathname: string): string {
@@ -68,14 +57,17 @@ function rawNameOf(pathname: string): string {
  * does not read it.
  */
 export function conceptPageLabel(pathname: string): string | null {
-  const [scope, name, ...rest] = segmentsOf(pathname);
-  if ((scope !== "product" && scope !== "engineering") || rest.length > 0) return null;
-  if (name === undefined) return scope === "product" ? "Product overview" : "Engineering overview";
-  return `${name} summary`;
+  const key = pageKeyOfPath(pathname);
+  const parts = key === null ? null : parsePageKey(key);
+  if (parts === null) return null;
+  if (parts.kind === "overview") {
+    return parts.scope === "product" ? "Product overview" : "Engineering overview";
+  }
+  return `${parts.doc} summary`;
 }
 
 /** `g p` and `g e` go to the overviews; ignored while typing. */
-function useGoKeys(): void {
+function useGoKeys(feature: string | null): void {
   const navigate = useNavigate();
   const pressedAt = useRef<number | null>(null);
   useEffect(() => {
@@ -86,23 +78,59 @@ function useGoKeys(): void {
       const target = GO_TARGETS[event.key];
       pressedAt.current = null;
       if (event.key === "g") pressedAt.current = event.timeStamp;
-      else if (armed && target) navigate(target);
+      else if (armed && target && feature) navigate(pageHref(overviewKey(feature, target)));
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navigate]);
+  }, [navigate, feature]);
+}
+
+/** Outside the column, Escape folds the last run without moving focus out of the header. */
+function useEscapeKeys(pageKey: string): void {
+  const store = useStore();
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key !== "Escape" ||
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        isTyping(event.target)
+      ) {
+        return;
+      }
+      if (document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"]'))
+        return;
+      // The column owns Escape around its focused run, including events from its controls.
+      const target = event.target instanceof Element ? event.target : null;
+      if (
+        target?.closest(".concept-column") ||
+        document.activeElement?.closest(".concept-column")
+      ) {
+        return;
+      }
+      const open = store.get(openRunsAtom(pageKey));
+      const last = open[open.length - 1];
+      if (!last) return;
+      event.preventDefault();
+      store.set(openRunsAtom(pageKey), event.shiftKey ? [] : foldedWith(open, last));
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [store, pageKey]);
 }
 
 function Unlisted({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
-  if (page.unlisted.length === 0 || pageKey.includes("/")) return null;
-  const heading = pageKey === "engineering" ? "Unlisted plans" : "Unlisted sections";
+  if (page.unlisted.length === 0 || !isOverviewKey(pageKey)) return null;
+  const heading = scopeOfKey(pageKey) === "engineering" ? "Unlisted plans" : "Unlisted sections";
   return (
     <section aria-label={heading} className="pt-8">
       <h2 className="eyebrow pb-2">{heading}</h2>
       <ul className="flex flex-col gap-1 text-[13px]">
         {page.unlisted.map((doc) => (
           <li key={doc.id}>
-            <Link to={`/${doc.page}`} className="underline">
+            <Link to={pageHref(doc.page)} className="underline">
               {doc.title}
             </Link>
           </li>
@@ -173,7 +201,7 @@ function Column({
 
 function LoadedPage({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   const { pathname } = useLocation();
-  const summary = pageKey.includes("/");
+  const summary = !isOverviewKey(pageKey);
   return (
     <>
       {summary ? (
@@ -193,19 +221,17 @@ function LoadedPage({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
 }
 
 /** What the route shows for a page key and its load state. */
-function RouteBody({
-  pageKey,
-  rawName,
-  state,
-}: {
-  pageKey: string;
-  rawName: string;
-  state: ConceptPageState;
-}) {
+function RouteBody({ pageKey }: { pageKey: string }) {
+  useConceptSubscription();
+  const feature = featureOfKey(pageKey);
+  useGoKeys(feature);
+  useEscapeKeys(pageKey);
+  const setFeature = useSetAtom(activeFeatureAtom);
+  useEffect(() => {
+    if (feature !== null) setFeature(feature);
+  }, [feature, setFeature]);
+  const state = useConceptPage(pageKey);
   const store = useStore();
-  // An address that is no page key is never fetched; `rawName` keeps the not-found lookup
-  // from deriving a source path out of it.
-  if (!isConceptPageKey(pageKey)) return <ConceptNotFound pageKey={rawName} />;
   if (state.page) return <LoadedPage page={state.page} pageKey={pageKey} />;
   if (state.error === null) return <LoadState state="loading" />;
   if (isMissing(state)) return <ConceptNotFound pageKey={pageKey} />;
@@ -221,14 +247,15 @@ function RouteBody({
 
 /** The Product and Engineering tabs and their document summary pages. */
 export function ConceptRoute() {
-  useConceptSubscription();
-  useGoKeys();
   const { pathname } = useLocation();
-  const key = pageKeyOf(pathname);
-  const state = useConceptPage(key);
+  const key = pageKeyOfPath(pathname);
   return (
     <div className="mx-auto w-full max-w-[70ch] px-4 py-6 lg:px-6">
-      <RouteBody pageKey={key} rawName={rawNameOf(pathname)} state={state} />
+      {key === null ? (
+        <ConceptNotFound pageKey={rawNameOf(pathname)} />
+      ) : (
+        <RouteBody pageKey={key} />
+      )}
     </div>
   );
 }

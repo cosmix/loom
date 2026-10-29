@@ -12,15 +12,16 @@ export const routes: RouteObject[] = [
   {
     path: "/",
     element: <PlanShell />,
-    errorElement: <RouteError />,
+    errorElement: <RouteError appName="planner" />,
     children: [
       { index: true, element: <HomeRoute /> },
       { path: "f/:feature", element: <FeatureRoute /> },
       { path: "new", element: <KickoffRoute /> },
       ...["product", "engineering"].flatMap((tab) => [
-        { path: tab, element: <ConceptRoute /> },
-        { path: `${tab}/:doc`, element: <ConceptRoute /> },
+        { path: `f/:feature/${tab}`, element: <ConceptRoute /> },
+        { path: `f/:feature/${tab}/:doc`, element: <ConceptRoute /> },
       ]),
+      { path: "plans/:doc", element: <ConceptRoute /> },
       ...PLAN_TAB_ROUTES,
     ],
   },

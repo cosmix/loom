@@ -26,6 +26,7 @@ vi.mock("@/plan/chat/panel", () => ({
 const session = sessionViewSchema.parse({ ...snapshotFixture.session, state: "idle" });
 const feature: ChecklistView = {
   feature: "planner-search",
+  pitch: null,
   current: { kind: "step", number: 1 },
   steps: [],
   primary: null,

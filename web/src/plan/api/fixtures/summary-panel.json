@@ -1,18 +1,18 @@
 {
   "running": {
     "session": "3f1c0a52-7d1e-4c52-9a5b-0e8d2f6a4b17",
-    "ids": ["product/section_01", "product/section_02", "product"],
+    "ids": ["demo/product/section_01", "demo/product/section_02", "overview/demo/product"],
     "done": 1,
     "total": 3,
     "started_at": "2026-10-29T08:10:00Z"
   },
-  "queue": ["product/section_03"],
+  "queue": ["demo/product/section_03"],
   "failed": [{ "id": "plans/loom-planner-ui", "error": "no seal in 10 minutes" }],
   "question": null,
   "last": {
     "time": "2026-10-29T08:11:30Z",
     "trigger": "background",
-    "summaries": ["product/section_01"],
+    "summaries": ["demo/product/section_01"],
     "level": "document",
     "model": "claude-sonnet-4-5",
     "source_bytes": 12480,

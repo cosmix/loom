@@ -85,11 +85,7 @@ function LoadedHome() {
   const empty = features.length === 0 && standalone.length === 0;
   const [destination] = useState(() => {
     const [feature] = features;
-    return location.key === "default" &&
-      !autoOpened &&
-      features.length === 1 &&
-      standalone.length === 0 &&
-      feature
+    return location.key === "default" && !autoOpened && features.length === 1 && feature
       ? `/f/${encodeURIComponent(feature.feature)}`
       : null;
   });

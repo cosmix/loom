@@ -180,7 +180,11 @@ it("panel shows running rebuild, last cost, totals and quota", async () => {
   const { container } = show(<SummaryPanel panel={panelWith({})} nowSecs={NOW_SECS} />);
   const all = text(container);
   expect(all).toMatch(/Rebuilding \d of 3/);
-  for (const id of ["product/section_01", "product/section_02", "product/section_03"]) {
+  for (const id of [
+    "demo/product/section_01",
+    "demo/product/section_02",
+    "demo/product/section_03",
+  ]) {
     expect(all).toContain(id);
   }
   expect(all).toContain("no seal in 10 minutes");
@@ -260,7 +264,7 @@ it("panel shows the read-only reason instead of controls", async () => {
   expect(live, "an enabled rebuild control on a read-only panel").toEqual([]);
   cleanup();
 
-  show(<RebuildButton ids={["product"]} />, storeFor("read_only"));
+  show(<RebuildButton ids={["overview/demo/product"]} />, storeFor("read_only"));
   for (const button of screen.queryAllByRole("button", { name: /rebuild/i })) {
     expect(blocked(button), "a rebuild button a read-only browser can press").toBe(true);
     fireEvent.click(button);
@@ -268,11 +272,11 @@ it("panel shows the read-only reason instead of controls", async () => {
   expect(calls("/api/summaries/rebuild", "POST")).toEqual([]);
   cleanup();
 
-  show(<RebuildButton ids={["product"]} />, storeFor("holder"));
+  show(<RebuildButton ids={["overview/demo/product"]} />, storeFor("holder"));
   fireEvent.click(screen.getByRole("button", { name: /rebuild/i }));
   await waitFor(() => expect(calls("/api/summaries/rebuild", "POST")).toHaveLength(1));
   const [, init] = calls("/api/summaries/rebuild", "POST")[0];
-  expect(JSON.parse(String(init?.body))).toEqual({ ids: ["product"] });
+  expect(JSON.parse(String(init?.body))).toEqual({ ids: ["overview/demo/product"] });
 });
 
 it("approval notice shows the stale count and an approve button only for the author", async () => {

@@ -76,6 +76,16 @@ impl Rebuilds {
         });
     }
 
+    /// Change the automatic budget and re-evaluate the pending queue immediately.
+    pub fn set_auto(&self, enabled: bool) {
+        self.run(|state, spawner, now| {
+            state.scheduler.set_auto(enabled);
+            let out_of_date = state.out_of_date();
+            let events = state.scheduler.on_update(&[], &out_of_date, now, spawner);
+            state.events.extend(events);
+        });
+    }
+
     /// Queue `ids`: a Button starts them without asking; another trigger counts them as a batch.
     pub fn enqueue(&self, ids: Vec<String>, trigger: Trigger) {
         self.run(|state, spawner, now| match trigger {

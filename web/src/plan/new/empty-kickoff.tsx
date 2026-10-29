@@ -32,7 +32,12 @@ const STARTERS = [
   },
 ];
 
-function waitForKickoffSession(store: Store, previousId: string | null, signal: AbortSignal) {
+function waitForKickoffSession(
+  store: Store,
+  previousId: string | null,
+  signal: AbortSignal,
+  onTimeout: () => void,
+) {
   return new Promise<void>((resolve) => {
     const cleanups: Array<() => void> = [];
     let finished = false;
@@ -52,10 +57,12 @@ function waitForKickoffSession(store: Store, previousId: string | null, signal: 
       }
     };
     cleanups.push(store.sub(sessionAtom, check));
-    const timeout = setTimeout(finish, 5000);
+    // A slow snapshot can still arrive after the UI offers a retry.
+    const timeout = setTimeout(onTimeout, 5000);
     cleanups.push(() => clearTimeout(timeout));
-    signal.addEventListener("abort", finish, { once: true });
-    cleanups.push(() => signal.removeEventListener("abort", finish));
+    const abort = () => finish();
+    signal.addEventListener("abort", abort, { once: true });
+    cleanups.push(() => signal.removeEventListener("abort", abort));
     check();
   });
 }
@@ -66,6 +73,7 @@ async function beginKickoff(
   text: string,
   documents: PickedDocument[],
   signal: AbortSignal,
+  onTimeout: () => void,
 ) {
   const current = store.get(sessionAtom);
   if (isActiveSession(current))
@@ -81,28 +89,40 @@ async function beginKickoff(
     text,
     documents.map((document) => document.attachment),
   );
-  if (!signal.aborted) await waitForKickoffSession(store, current?.id ?? null, signal);
+  if (!signal.aborted) await waitForKickoffSession(store, current?.id ?? null, signal, onTimeout);
 }
 
 function useKickoffStart() {
   const store = useStore();
   const request = useRef<AbortController | null>(null);
+  const sessionWait = useRef<AbortController | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => () => request.current?.abort(), []);
+  useEffect(() => () => sessionWait.current?.abort(), []);
   const start = async (small: boolean, text: string, documents: PickedDocument[]) => {
     if (request.current || !store.get(canAuthorAtom) || (!text.trim() && !documents.length)) return;
-    if (isActiveSession(store.get(sessionAtom)) && !confirmEndFirst()) return;
+    const current = store.get(sessionAtom);
+    if (isActiveSession(current)) {
+      if (current.id === store.get(kickoffSessionAtom) || !confirmEndFirst()) return;
+    }
+    sessionWait.current?.abort();
     const controller = new AbortController();
     request.current = controller;
+    sessionWait.current = controller;
     setPending(true);
     setError(null);
     try {
-      await beginKickoff(store, small, text, documents, controller.signal);
+      await beginKickoff(store, small, text, documents, controller.signal, () => {
+        if (controller.signal.aborted) return;
+        request.current = null;
+        setPending(false);
+        setError("The conversation did not start. Please try again.");
+      });
+      if (!controller.signal.aborted) setError(null);
     } catch (cause) {
       if (!controller.signal.aborted) setError(startError(store, cause));
     } finally {
-      request.current = null;
+      if (request.current === controller) request.current = null;
       if (!controller.signal.aborted) setPending(false);
     }
   };
@@ -232,7 +252,7 @@ export function EmptyKickoff({ small = false }: { small?: boolean }) {
       <KickoffAttachments draft={draft} disabled={disabled} />
       <div className="w-full">
         <DisabledReason reason={reason} onClick={submit}>
-          Start the conversation
+          {error ? "Try again" : "Start the conversation"}
         </DisabledReason>
         {!canAuthor && blockReason && (
           <p className="mt-1 text-xs text-muted-foreground">

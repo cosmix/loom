@@ -1,11 +1,11 @@
 import {
   Archive,
-  ArrowRight,
   BookOpen,
   ChevronsUpDown,
   CircleCheck,
   CircleCheckBig,
   CircleDashed,
+  CircleDot,
   CircleHelp,
   Cog,
   FileSearch,
@@ -19,6 +19,7 @@ import {
   Lock,
   Map as MapIcon,
   MessageCircleQuestion,
+  Minus,
   Package,
   PencilLine,
   Play,
@@ -27,8 +28,11 @@ import {
   SlidersHorizontal,
   StickyNote,
   Telescope,
+  TriangleAlert,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+
+import type { MarkView } from "@/plan/api/schema";
 
 export type DocKind =
   | "vision"
@@ -88,6 +92,14 @@ export const SUMMARY_STATE_GLYPHS: Record<SummaryState, LucideIcon> = {
   stale: CircleDashed,
 };
 
+// Only done has a shared status glyph in the rail; other rail cells show the step's glyph.
+export const STEP_MARK_GLYPHS: Record<MarkView, LucideIcon> = {
+  done: CircleCheck,
+  active: CircleDot,
+  gap: TriangleAlert,
+  optional: Minus,
+};
+
 export const VIEW_GLYPHS: Record<ViewId, LucideIcon> = {
   home: House,
   product: Package,
@@ -103,14 +115,12 @@ export const OTHER_GLYPHS: {
   switcher: LucideIcon;
   settings: LucideIcon;
   help: LucideIcon;
-  next: LucideIcon;
 } = {
   readOnly: Lock,
   pressureTested: FlaskConical,
   openQuestions: MessageCircleQuestion,
-  stepDone: CircleCheck,
+  stepDone: STEP_MARK_GLYPHS.done,
   switcher: ChevronsUpDown,
   settings: SlidersHorizontal,
   help: CircleHelp,
-  next: ArrowRight,
 };

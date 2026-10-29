@@ -33,7 +33,6 @@ impl<'a> Context<'a> {
     /// `done` holds the evaluations of the document summaries an overview may cite.
     pub(super) fn new(
         project: &'a Project,
-        _scope: &Scope,
         done: &'a BTreeMap<String, SummaryEval>,
         id: &str,
         file: &'a SummaryFile,
@@ -178,9 +177,8 @@ mod tests {
             .cites
             .insert(cite_key(Path::new(other), "a"), hash);
         let project = load(&f.root);
-        let scope = Scope::default();
         let done = BTreeMap::new();
-        let ctx = Context::new(&project, &scope, &done, ID1, &file, Some(Path::new(S1)));
+        let ctx = Context::new(&project, &done, ID1, &file, Some(Path::new(S1)));
         for (path, expected) in [
             (S1, true),
             ("product/demo/section_01", true),
@@ -236,16 +234,8 @@ mod tests {
         ]);
         let file = seal_document(&f.root, "plans/x", &[("X holds.", "plan-x")]);
         let project = load(&f.root);
-        let scope = Scope::default();
         let done = BTreeMap::new();
-        let ctx = Context::new(
-            &project,
-            &scope,
-            &done,
-            "plans/x",
-            &file,
-            Some(Path::new(current)),
-        );
+        let ctx = Context::new(&project, &done, "plans/x", &file, Some(Path::new(current)));
         let citation = LinkTarget::Source {
             path: "doc/plans/demo/PLAN-x.md".into(),
             anchor: "plan-x".into(),

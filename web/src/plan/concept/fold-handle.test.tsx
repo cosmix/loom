@@ -18,7 +18,7 @@ describe("FoldCap", () => {
     const cap = screen.getByRole("button", { name: "Fold" });
     expect(cap.getAttribute("data-side")).toBe(side);
     expect(cap.getAttribute("aria-describedby")).toBe("run-1");
-    expect(cap.getAttribute("tabindex")).toBe("-1");
+    expect(cap.getAttribute("tabindex")).toBe("0");
   });
 
   it.each(["start", "end"] as const)("clicking the %s cap folds once without bubbling", (side) => {

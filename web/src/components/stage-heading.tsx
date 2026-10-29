@@ -5,7 +5,8 @@ import type { StageSummary } from "@/api/schema";
 import { ActivityRoundel } from "@/components/activity-roundel";
 import { StageSummaryText } from "@/components/stage-detail";
 import { StateBadge, toneClass } from "@/components/state-badge";
-import { activityText, mergeText, timeText } from "@/lib/format";
+import { mergeText, timeText } from "@/lib/format";
+import { activityText } from "@/lib/format-activity";
 import { compactTokens, fresh, stageFlow } from "@/lib/tokens";
 import { snapshotAtom } from "@/state/atoms";
 

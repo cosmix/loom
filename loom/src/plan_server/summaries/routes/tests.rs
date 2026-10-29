@@ -24,6 +24,7 @@ use crate::planning::summary::evaluate::{Evaluation, SummaryEval, SummaryState};
 
 pub(super) const PANEL: &str = "/api/summaries/panel";
 pub(super) const REBUILD: &str = "/api/summaries/rebuild";
+const AUTO: &str = "/api/summaries/auto";
 const RELEASE: &str = "/api/summaries/release";
 const ANSWER: &str = "/api/summaries/answer";
 
@@ -163,6 +164,11 @@ fn mutations_refuse_an_observer_and_keep_the_question_open() {
     let fixture = fixtures::two_sections();
     let (server, rebuilds, spawner) = serve(&fixture, None);
     let holder = bootstrap(&server);
+    refused(
+        &post_json(&server, AUTO, &holder, r#"{"enabled":false}"#),
+        403,
+        "not_allowed",
+    );
     take(&server, &holder);
     let observer = bootstrap(&server);
     let question = ask(&rebuilds);
@@ -170,6 +176,7 @@ fn mutations_refuse_an_observer_and_keep_the_question_open() {
     let held = server.ctx.authoring().holder();
     let actions = [
         (REBUILD, json!({"ids": [ID1]})),
+        (AUTO, json!({"enabled": false})),
         (RELEASE, json!({"ids": [ID1]})),
         (ANSWER, json!({"question": question, "rebuild": true})),
     ];
@@ -197,6 +204,7 @@ fn read_only_refuses_all_mutations_and_keeps_the_panel_readable() {
     let before = snapshot(&rebuilds);
     for (path, body) in [
         (REBUILD, json!({"ids": [ID1]})),
+        (AUTO, json!({"enabled": false})),
         (RELEASE, json!({"ids": [ID1]})),
         (ANSWER, json!({"question": "absent", "rebuild": false})),
     ] {
@@ -279,9 +287,20 @@ fn malformed_bodies_are_refused_without_mutation() {
     let fixture = fixtures::two_sections();
     let (server, rebuilds, _) = serve(&fixture, None);
     let cookies = bootstrap(&server);
+    take(&server, &cookies);
     let before = snapshot(&rebuilds);
-    for path in [REBUILD, RELEASE, ANSWER] {
-        for body in ["{", "{}"] {
+    for path in [REBUILD, RELEASE, ANSWER, AUTO] {
+        let bodies: &[&str] = if path == AUTO {
+            &[
+                "{",
+                "{}",
+                r#"{"enabled":"false"}"#,
+                r#"{"enabled":false,"extra":0}"#,
+            ]
+        } else {
+            &["{", "{}"]
+        };
+        for body in bodies {
             refused(
                 &post_json(&server, path, &cookies, body),
                 400,
@@ -321,15 +340,27 @@ fn rebuild_accepts_64_ids_as_a_button_without_taking_authoring() {
 }
 
 #[test]
-fn holder_can_rebuild_without_changing_authoring() {
-    if skip("holder_can_rebuild_without_changing_authoring") {
+fn holder_can_toggle_auto_and_rebuild_without_changing_authoring() {
+    if skip("holder_can_toggle_auto_and_rebuild_without_changing_authoring") {
         return;
     }
     let fixture = fixtures::two_sections();
-    let (server, _, spawner) = serve(&fixture, None);
+    let (server, rebuilds, spawner) = serve(&fixture, None);
     let cookies = bootstrap(&server);
     take(&server, &cookies);
     let held = server.ctx.authoring().holder();
+    let response = post_json(&server, AUTO, &cookies, r#"{"enabled":false}"#);
+    assert_eq!(status(&response), 200, "{}", safe(&response));
+    assert_eq!(json_body(&response), snapshot(&rebuilds));
+    rebuilds.enqueue(vec![ID1.to_owned()], Trigger::Background);
+    let question = rebuilds.panel().question.expect("one id asks");
+    assert_eq!(question.ids, vec![ID1]);
+    assert!(spawner.0.lock().unwrap().is_empty());
+    let body = json!({"question": question.id, "rebuild": false}).to_string();
+    assert_eq!(status(&post_json(&server, ANSWER, &cookies, &body)), 200);
+    let response = post_json(&server, AUTO, &cookies, r#"{"enabled":true}"#);
+    assert_eq!(status(&response), 200, "{}", safe(&response));
+    assert_eq!(json_body(&response), snapshot(&rebuilds));
     let body = json!({"ids": [ID1]}).to_string();
     let response = post_json(&server, REBUILD, &cookies, &body);
     assert_eq!(status(&response), 202, "{}", safe(&response));

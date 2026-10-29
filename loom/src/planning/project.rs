@@ -167,7 +167,7 @@ impl Project {
     }
 
     /// The cached text of a readable Markdown document.
-    pub(super) fn text(&self, rel: &Path) -> Option<&str> {
+    pub(crate) fn text(&self, rel: &Path) -> Option<&str> {
         self.sources.get(rel)?.as_deref().ok()
     }
 }

@@ -15,6 +15,7 @@ const project: ProjectChecklistView = {
   checklists: [
     {
       feature: "search",
+      pitch: null,
       current: { kind: "ready" },
       steps: [],
       primary: null,

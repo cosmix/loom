@@ -53,7 +53,7 @@ describe("tree", () => {
     const gap = screen.getByText("Section 2").closest("li") as HTMLElement;
     expect(within(gap).getByText("missing")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Section 2" }).getAttribute("href")).toBe(
-      "/files?gap=Section%202",
+      "/files?gap=Section%202&feature=demo&target=doc%2Fproduct%2Fdemo%2Fsection_02.md",
     );
   });
 

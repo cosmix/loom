@@ -64,7 +64,7 @@ export function PaceChoice({ checklist, step }: { checklist: ChecklistView; step
       <PaceOption
         title="Guided"
         description={`One session drafts the ${next} with you and stops; the next is offered once you have read it.`}
-        offer={guided}
+        offer={{ ...guided, label: `Start guided writing: ${guided.label}` }}
       />
       <PaceOption
         title="Draft all, with a team"

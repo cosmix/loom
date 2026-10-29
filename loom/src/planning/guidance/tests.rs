@@ -109,7 +109,7 @@ fn knowledge_skill_preserves_every_distill_routing_line() {
 
 #[test]
 fn common_brief_quotes_product_writing_conventions_verbatim() {
-    let conventions = product_lines("section_03.md", 243, 251);
+    let conventions = product_lines("section_03.md", 282, 290);
     assert!(
         common_brief().contains(&conventions),
         "section 03 conventions drifted"
@@ -118,7 +118,7 @@ fn common_brief_quotes_product_writing_conventions_verbatim() {
 
 #[test]
 fn closing_message_matches_product_spec_with_continuation_indent() {
-    assert_eq!(CLOSING_MESSAGE, product_lines("section_09.md", 320, 325));
+    assert_eq!(CLOSING_MESSAGE, product_lines("section_09.md", 375, 380));
 }
 
 #[test]

@@ -1,33 +1,48 @@
 import { useAtomValue } from "jotai/react";
-import {
-  ArchiveIcon,
-  CheckIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  FileTextIcon,
-  LockIcon,
-  PlayIcon,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import type { Nodes } from "mdast";
+import { fromMarkdown } from "mdast-util-from-markdown";
 import { useEffect, useState, type JSX } from "react";
 import { Link } from "react-router";
 
 import { cn } from "cn";
-import type { PlanStateView, TreeEntry } from "@/plan/api/schema-files";
+import type { TreeEntry } from "@/plan/api/schema-files";
+import { visibleControls } from "@/plan/chat/visible-controls";
+import { SentenceText } from "@/plan/concept/sentence-text";
 import { toAddress } from "@/plan/files/address";
 import { openDocAtom, validationAtom } from "@/plan/files/atoms";
 import { Outline } from "@/plan/files/outline";
 import { TreeEntryExtras } from "@/plan/files/tree-entry-extras";
+import { DocMark } from "@/plan/ui/doc-mark";
+import { OTHER_GLYPHS, PLAN_STATE_GLYPHS } from "@/plan/ui/glyphs";
 
-const STATES: Record<PlanStateView, { icon: LucideIcon; tone: string }> = {
-  written: { icon: FileTextIcon, tone: "text-muted-foreground" },
-  running: { icon: PlayIcon, tone: "text-(--tone-executing)" },
-  done: { icon: CheckIcon, tone: "text-(--tone-completed)" },
-  retired: { icon: ArchiveIcon, tone: "text-(--tone-dimmed)" },
-};
+const ReadOnly = OTHER_GLYPHS.readOnly;
 
-export function gapAddress(title: string): string {
-  return `/files?gap=${encodeURIComponent(title)}`;
+function EntryMark({ kind }: Pick<TreeEntry, "kind">): JSX.Element | null {
+  switch (kind) {
+    case "vision":
+    case "section":
+    case "note":
+    case "metaplan":
+    case "plan":
+    case "brief":
+    case "knowledge":
+    case "review":
+      return <DocMark kind={kind} />;
+    default:
+      return null;
+  }
+}
+
+export function gapAddress(
+  title: string,
+  feature: string | null = null,
+  target: string | null = null,
+): string {
+  let address = `/files?gap=${encodeURIComponent(title)}`;
+  if (feature !== null) address += `&feature=${encodeURIComponent(feature)}`;
+  if (target !== null) address += `&target=${encodeURIComponent(target)}`;
+  return address;
 }
 
 export function containsPath(entry: TreeEntry, path: string | null): boolean {
@@ -38,12 +53,19 @@ export function containsPath(entry: TreeEntry, path: string | null): boolean {
 function PlanMeta({ entry }: { entry: TreeEntry }): JSX.Element | null {
   const validation = useAtomValue(validationAtom);
   if (entry.kind !== "plan" || entry.state === null) return null;
-  const { icon: Icon, tone } = STATES[entry.state];
+  const Icon = PLAN_STATE_GLYPHS[entry.state];
   const live = entry.path ? validation[entry.path] : undefined;
   const errors = live ? live.errors.length : entry.errors;
   return (
     <span className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-      <span className={cn("flex items-center gap-1", tone)}>
+      <span
+        className={cn(
+          "flex items-center gap-1",
+          entry.state === "running" && "text-(--tone-executing)",
+          entry.state === "done" && "text-(--tone-completed)",
+          entry.state === "retired" && "text-(--tone-dimmed)",
+        )}
+      >
         <Icon className="size-3" aria-hidden="true" />
         {entry.state}
       </span>
@@ -57,16 +79,39 @@ function PlanMeta({ entry }: { entry: TreeEntry }): JSX.Element | null {
   );
 }
 
+export function plainTitle(text: string): string {
+  const textOf = (node: Nodes): string => {
+    if (node.type === "definition") return "";
+    if (node.type === "break") return " ";
+    if ("children" in node) return node.children.map(textOf).join("");
+    if ("value" in node) return node.value;
+    if ("alt" in node) return node.alt ?? "";
+    return "";
+  };
+  return fromMarkdown(text).children.map(textOf).join(" ");
+}
+
 function Title({ entry, current }: { entry: TreeEntry; current: boolean }): JSX.Element {
-  const className = cn("min-w-0 truncate text-[13px] font-medium", current && "text-foreground");
+  const className = cn(
+    "min-w-0 max-w-full truncate text-[13px] font-medium",
+    current && "text-foreground",
+  );
+  const title = (
+    <span style={{ unicodeBidi: "isolate", direction: "ltr" }}>
+      <SentenceText text={visibleControls(entry.title)} />
+    </span>
+  );
   if (entry.gap) {
     return (
-      <Link to={gapAddress(entry.title)} className={cn(className, "text-muted-foreground")}>
-        {entry.title}
+      <Link
+        to={gapAddress(entry.title, entry.feature, entry.target)}
+        className={cn(className, "text-muted-foreground")}
+      >
+        {title}
       </Link>
     );
   }
-  if (entry.path === null) return <span className={className}>{entry.title}</span>;
+  if (entry.path === null) return <span className={className}>{title}</span>;
   return (
     <Link
       to={toAddress(entry.path)}
@@ -74,12 +119,25 @@ function Title({ entry, current }: { entry: TreeEntry; current: boolean }): JSX.
       aria-current={current ? "page" : undefined}
       className={className}
     >
-      {entry.title}
+      {title}
     </Link>
   );
 }
 
 type Props = { entry: TreeEntry; forceOpen: boolean };
+
+function EntryLabel({ entry, current }: { entry: TreeEntry; current: boolean }): JSX.Element {
+  return (
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5">
+      <Title entry={entry} current={current} />
+      {entry.gap && <span className="text-xs text-muted-foreground">missing</span>}
+      {entry.locked && (
+        <ReadOnly className="size-3 shrink-0 text-muted-foreground" aria-label="Locked" />
+      )}
+      <TreeEntryExtras entry={entry} />
+    </div>
+  );
+}
 
 /** One tree row with its metadata, brief bundles or topics nested beneath. */
 export function TreeEntryRow({ entry, forceOpen }: Props): JSX.Element {
@@ -93,15 +151,14 @@ export function TreeEntryRow({ entry, forceOpen }: Props): JSX.Element {
   const shown = expandable && (expanded || forceOpen);
   const Chevron = shown ? ChevronDownIcon : ChevronRightIcon;
   const current = open !== null && entry.path === open.path;
-
   return (
     <li className={cn(entry.gap && "opacity-70")}>
-      <div className="flex items-center gap-1 px-2 py-1">
+      <div className="flex items-start gap-1 px-2 py-1">
         {expandable ? (
           <button
             type="button"
             aria-expanded={shown}
-            aria-label={`${shown ? "Collapse" : "Expand"} ${entry.title}`}
+            aria-label={`${shown ? "Collapse" : "Expand"} ${visibleControls(plainTitle(entry.title))}`}
             className="shrink-0 text-muted-foreground"
             onClick={() => setExpanded(!shown)}
           >
@@ -110,12 +167,8 @@ export function TreeEntryRow({ entry, forceOpen }: Props): JSX.Element {
         ) : (
           <span className="w-3.5 shrink-0" aria-hidden="true" />
         )}
-        <Title entry={entry} current={current} />
-        {entry.gap && <span className="text-xs text-muted-foreground">missing</span>}
-        {entry.locked && (
-          <LockIcon className="size-3 shrink-0 text-muted-foreground" aria-label="Locked" />
-        )}
-        <TreeEntryExtras entry={entry} />
+        <EntryMark kind={entry.kind} />
+        <EntryLabel entry={entry} current={current} />
       </div>
       <div className="flex flex-col gap-0.5 pr-2 pl-7">
         <PlanMeta entry={entry} />

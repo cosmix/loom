@@ -1,5 +1,6 @@
 import type { Attention, StageStatus } from "@/api/schema";
-import { failureLabel, formatElapsed, hazardTone } from "@/lib/format";
+import { formatElapsed, hazardTone } from "@/lib/format";
+import { failureLabel } from "@/lib/format-activity";
 
 /// The state each attention label stands for (`panels.rs` `entry_status`).
 /// Computed here because no formatter exposes it.

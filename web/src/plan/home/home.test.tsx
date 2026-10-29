@@ -30,6 +30,7 @@ afterEach(() => {
 function feature(name: string): ChecklistView {
   return {
     feature: name,
+    pitch: null,
     current: { kind: "step", number: 1 },
     steps: [{ number: 1, name: "Vision", mark: "gap" }],
     primary: null,
@@ -216,16 +217,32 @@ it("renders the invitation followed by feature cards and the standalone shelf", 
   expect(screen.queryByText("No features yet.")).toBeNull();
 });
 
-it("keeps Home visible when a lone feature shares the repository with a standalone plan", () => {
+it("one feature and a standalone plan opens the feature", async () => {
   const { router } = mount({
     checklists: [feature("search")],
     standalone: [standalone],
     moves: [],
   });
 
-  expect(screen.getByRole("heading", { name: "Start something new" })).toBeTruthy();
-  expect(screen.getByRole("region", { name: "Standalone plans" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "Feature screen" })).toBeTruthy();
+  expect(router.state.location.pathname).toBe("/f/search");
+  expect(router.state.historyAction).toBe("REPLACE");
+});
+
+it("navigating back to Home does not redirect", async () => {
+  const { router } = mount({
+    checklists: [feature("search")],
+    standalone: [standalone],
+    moves: [],
+  });
+  await screen.findByRole("heading", { name: "Feature screen" });
+
+  fireEvent.click(screen.getByRole("link", { name: "Home" }));
+
+  expect(await screen.findByRole("heading", { name: "Start something new" })).toBeTruthy();
   expect(router.state.location.pathname).toBe("/");
+  expect(screen.getByRole("link", { name: "search" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Standalone plans" })).toBeTruthy();
 });
 
 it("does not auto-open when later project updates leave only one feature", () => {

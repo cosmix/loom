@@ -13,7 +13,7 @@ section 10's.
 
 ## The model in one paragraph
 
-The chat panel docks on the right of every page (vision, "The screen"). It shows one
+The chat panel docks on the right of every page except `/new` (vision, "The screen"). It shows one
 conversation, the project's authoring session (section 07), as a list of turns; each turn is the
 user's message, then the session's reply rendered one transcript block at a time, then a footer
 with what the turn changed and cost. A state line at the top of the panel always says what the
@@ -54,11 +54,22 @@ browser.
 - **Surface.** The panel sits on `--card` with a `--hairline` left border, beside the reading
   column on `--background`. No coloured spine marks anything in it
   (`conventions/web-dashboard-typography.md`, "Stage thread chips").
+- **Header.** The title is "Chat", with Collapse in the dock and Close in the sheet. A live
+  chat adds **New chat**; an ended or failed chat offers it in the composer area. The menu
+  appears when the browser can end the chat. Below the state line, a chat's session line names
+  the authoring browser, the watcher count and the running token total; another browser sees
+  "Read-only · Dana is authoring". An away holder shows when authoring frees. With no chat,
+  there is no session line; the checklist's offer belongs below "No chat".
+
+On `/new`, an active kickoff conversation puts the transcript and composer in the main column,
+with **Taking shape** in place of the chat dock. The transcript uses the selected reading face;
+Taking shape uses Inter and lists the size, name, problem, settled decisions, open questions and,
+for a feature, proposed sections. On narrow screens the panel follows the transcript.
 
 ## Message rendering
 
 Each item in section 07's model renders as follows. Type is Inter at 14px with a 1.5 line height
-for message text, between the dashboard's 12-13px chrome and concept mode's 16px reading text;
+for message text, between the dashboard's 12-13px chrome and concept mode's 17, 19 (default) or 21px reading text;
 state words, tool rows, and footers use the 12-13px chrome size. Monospace only for paths,
 commands, and identifiers (`conventions/web-dashboard-typography.md`). (My call.)
 
@@ -149,16 +160,28 @@ description.
 The state line at the top of the panel names the state in words, with a glyph; colour is never
 the only signal. The states are section 07's.
 
-| State      | State line                                                                            | Composer (authoring browser)                     |
-| ---------- | ------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| none       | "No chat" and the primary offer from section 01, plus "New chat"                      | Enabled; sending starts a chat                   |
-| Starting   | `BusyRoundel` turning, "Starting session", the session's name and model               | Enabled; messages queue                          |
-| Idle       | Roundel at rest, "Waiting for you"                                                    | Enabled; Send delivers                           |
-| Working    | Roundel turning, "Working · 41s", the newest tool row's summary, "2 subagents" if any | Enabled; Send queues; Stop shown                 |
-| Permission | `--tone-warning` glyph, "Needs a decision: Bash"; the card is pinned (below)          | Enabled; Send queues; Stop shown                 |
-| Ending     | Roundel turning, "Writing final notes into the documents"; the 10-minute bound        | Disabled, with the reason                        |
-| Ended      | Muted stamp, "Chat ended · 3m ago"                                                    | Replaced by "New chat" and the primary offer     |
-| Failed     | `HazardPanel` (`web/src/aurora-ui/feedback/HazardPanel.tsx:116`) in its error tone    | Replaced by "New chat"                           |
+| State      | State line                                                                            | Composer (authoring browser)                 |
+| ---------- | ------------------------------------------------------------------------------------- | -------------------------------------------- |
+| none       | "No chat"; the primary offer and "New chat" occupy separate rows below it             | Enabled; sending starts a chat               |
+| Starting   | `BusyRoundel` turning, "Starting session", the session's name and model               | Enabled; messages queue                      |
+| Idle       | Roundel at rest, "Waiting for you"                                                    | Enabled; Send delivers                       |
+| Working    | Roundel turning, "Working · 41s", the newest tool row's summary, "2 subagents" if any | Enabled; Send queues; Stop shown             |
+| Permission | `--tone-warning` glyph, "Needs a decision: Bash"; the card is pinned (below)          | Enabled; Send queues; Stop shown             |
+| Ending     | Roundel turning, "Writing final notes into the documents"; the 10-minute bound        | Disabled, with the reason                    |
+| Ended      | Muted stamp, "Chat ended · 3m ago"                                                    | Replaced by "New chat" and the primary offer |
+| Failed     | `HazardPanel` (`web/src/aurora-ui/feedback/HazardPanel.tsx:116`) in its error tone    | Replaced by "New chat"                       |
+
+**Empty state.** "No chat" stands beside its resting glyph. The primary offer from section 01,
+when available, and **New chat** each get a full row beneath it, so an offer's title is distinct
+from the state label. The composer stays available to the authoring browser; sending its text
+and attachments starts a chat.
+
+**Header glyphs.** The collapsed rail and the sheet-opening button use `ChatGlyph`: a turning
+`LoaderCircle` for Starting, a writing `PenLine` for Working and Ending, and a ringing `BellRing`
+in `--tone-warning` while permission is needed. Pending permissions take priority over the
+session's state. Idle and no chat use a resting roundel; Failed shows `!`, Ended `✓`. The session
+line uses the drafting glyph for Starting, Working and Ending, and a breathing status LED for
+"Waiting for you". These activity glyphs freeze under `prefers-reduced-motion`.
 
 The roundel and the stamp reuse the dashboard's patterns: `WorkRoundel` and `ActivityRoundel`
 (`web/src/components/activity-roundel.tsx:11`, `:37`) for the turning disc, the terminal well's
@@ -266,14 +289,17 @@ want.)
 ## Attachments
 
 Selecting text in the reading column and choosing "Add to chat" (sections 05, 06), or pressing
-`a` on a focused sentence (section 05), adds an attachment chip above the composer. The chip
-shows where the passage came from and its first words:
+`a` on a focused sentence (section 05), adds an attachment chip above the composer. **Discuss**
+in a document header attaches the whole document, opens the panel or sheet and focuses the
+composer. Its quote previews the first 2,000 characters of the document. Sending starts a chat
+if none runs. The chip labels the document and any passage, line range or stage:
 
-| Origin                      | Chip label                                    |
-| --------------------------- | --------------------------------------------- |
-| Source text, rendered view  | `section_02.md › Port`                        |
-| Source text, editor or diff | `section_02.md › Port · lines 54–60`          |
-| A plan's Stages panel       | `PLAN-foo.md › stage integration-verify`      |
+| Origin                      | Chip label                                     |
+| --------------------------- | ---------------------------------------------- |
+| Document header, Discuss    | `section_02.md`                                |
+| Source text, rendered view  | `section_02.md › Port`                         |
+| Source text, editor or diff | `section_02.md › Port · lines 54–60`           |
+| A plan's Stages panel       | `PLAN-foo.md › stage integration-verify`       |
 | A summary sentence          | `Summary · section_02` (or `Product overview`) |
 
 - Hovering or focusing a chip shows the selected text in full. Clicking it opens the passage in
@@ -299,17 +325,17 @@ Each turn ends with a footer under its last item.
 ```text
 41s · 2.8k tokens
 Changed 3 files
-  product/section_02.md            +12 −4    Diff
+  product/planner-ui/section_02.md +12 −4    Diff
   plans/PLAN-plan-server.md        +3 −1     Diff
-  product/section_09.md            new       Diff
+  product/planner-ui/section_09.md new       Diff
 Rebuilt summaries
   section_02                       3.1k tokens
   Product overview                 6.4k tokens
 ```
 
-**Changed files.** One row per file in section 07's `changed_files`: the path relative to `doc/`
-in monospace, `+a −b` line counts or "new" / "deleted", and a **Diff** link that opens file mode's
-"What a turn changed" diff for that file and turn (section 06, "Diffs"). While the turn runs the
+**Changed files.** One file row per entry in section 07's `changed_files`: the path relative to
+`doc/` as monospace text, `+a −b` line counts or "new" / "deleted", and a **Diff** link that opens
+file mode's "What a turn changed" diff for that file and turn (section 06, "Diffs"). While the turn runs the
 list builds as edit results arrive, headed "Changing" instead of "Changed", and the Diff links
 are disabled with the tooltip "Available when the turn ends", since section 06 builds the turn
 diff at the turn's end. A file the turn changed through `Bash` instead of an edit tool

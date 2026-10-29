@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { connectionEpochAtom } from "@/plan/state/atoms";
 import { ImplementingPlans, useImplementedBy } from "./turn-footer-plans";
 
-const SECTION = "doc/product/section_02.md";
+const SECTION = "doc/product/demo/section_02.md";
 
 afterEach(() => {
   cleanup();
@@ -15,21 +15,23 @@ afterEach(() => {
 
 function reply(title: string) {
   return new Response(
-    JSON.stringify({ sections: { "2": [{ slug: "feat-ports", title, state: "written" }] } }),
+    JSON.stringify({
+      sections: { "product/demo/section_02": [{ slug: "feat-ports", title, state: "written" }] },
+    }),
   );
 }
 
-function Footer() {
+function Footer({ path }: { path: string }) {
   const loaded = useImplementedBy(true);
-  return <ImplementingPlans path={SECTION} loaded={loaded} />;
+  return <ImplementingPlans path={path} loaded={loaded} />;
 }
 
-function mount() {
+function mount(path = SECTION) {
   const store = createStore();
   render(
     <Provider store={store}>
       <MemoryRouter>
-        <Footer />
+        <Footer path={path} />
       </MemoryRouter>
     </Provider>,
   );
@@ -46,6 +48,16 @@ it("the first load shows one line of status, not a skeleton block", () => {
   expect(status.textContent).toBe("Loading implementing plans…");
   expect(status.children).toHaveLength(0);
 });
+
+it.each(["doc/product/demo/section_2.md", "doc/product/demo/section_002.md"])(
+  "%s looks up the server's two-digit section id",
+  async (path) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(reply("Ports plan"));
+    mount(path);
+
+    expect(await screen.findByText("Ports plan")).toBeTruthy();
+  },
+);
 
 it("a reconnect keeps the plans on show while they reload", async () => {
   const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(reply("Ports plan"));

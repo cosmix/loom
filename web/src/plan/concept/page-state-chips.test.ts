@@ -2,6 +2,7 @@ import { createStore } from "jotai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
+import { parsePageKey } from "@/plan/api/page-key";
 import {
   conceptPageSchema,
   type ConceptChanged,
@@ -24,7 +25,9 @@ let gate: Promise<void> | null = null;
 
 /** A page of one scope: the fixture's three-chip key row with exactly `dashed` ids out of date. */
 function pageOf(key: string, dashed: string[]): ConceptPage {
-  const page = conceptPageSchema.parse({ ...structuredClone(overviewFixture), key });
+  const parts = parsePageKey(key);
+  const feature = parts === null || parts.kind === "standalone" ? null : parts.feature;
+  const page = conceptPageSchema.parse({ ...structuredClone(overviewFixture), feature, key });
   const key_chips = page.key_chips.map((chip) => ({
     ...chip,
     out_of_date: dashed.includes(chip.doc.id) ? { ...SOURCE_CHANGED } : null,
@@ -52,7 +55,13 @@ function replaced(store: Store, key: string): boolean {
 }
 
 async function deliver(store: Store, changed: Partial<ConceptChanged>): Promise<void> {
-  applyConceptChanged(store, { pages: [], out_of_date: [], sources: [], ...changed });
+  applyConceptChanged(store, {
+    feature: "demo",
+    pages: [],
+    out_of_date: [],
+    sources: [],
+    ...changed,
+  });
   await vi.waitFor(() => expect(requests.length).toBeGreaterThan(0));
 }
 
@@ -78,102 +87,165 @@ afterEach(() => {
 describe("a delta that names an overview refetches the loaded pages of its scope", () => {
   it("refetches a sibling summary page the delta does not name", async () => {
     const store = loaded([
-      pageOf("product", ["section_01"]),
-      pageOf("product/section_01", ["section_01"]),
-      pageOf("product/section_02", ["section_01"]),
+      pageOf("overview/demo/product", ["section_01"]),
+      pageOf("demo/product/section_01", ["section_01"]),
+      pageOf("demo/product/section_02", ["section_01"]),
     ]);
-    served.product = pageOf("product", []);
-    served["product/section_01"] = pageOf("product/section_01", []);
-    served["product/section_02"] = pageOf("product/section_02", []);
+    served["overview/demo/product"] = pageOf("overview/demo/product", []);
+    served["demo/product/section_01"] = pageOf("demo/product/section_01", []);
+    served["demo/product/section_02"] = pageOf("demo/product/section_02", []);
 
-    await deliver(store, { pages: ["product"] });
-    await vi.waitFor(() => expect(replaced(store, "product/section_02")).toBe(true));
+    await deliver(store, { pages: ["overview/demo/product"] });
+    await vi.waitFor(() => expect(replaced(store, "demo/product/section_02")).toBe(true));
 
-    expect(chipState(store, "product/section_02", "section_01")).toBeNull();
-    expect(chipState(store, "product/section_01", "section_01")).toBeNull();
-    expect(chipState(store, "product", "section_01")).toBeNull();
+    expect(chipState(store, "demo/product/section_02", "section_01")).toBeNull();
+    expect(chipState(store, "demo/product/section_01", "section_01")).toBeNull();
+    expect(chipState(store, "overview/demo/product", "section_01")).toBeNull();
   });
 
   it("does not refetch a loaded page of the other scope", async () => {
-    const other = pageOf("engineering/plan_a", ["section_01"]);
-    const store = loaded([pageOf("product", []), other]);
-    const before = store.get(conceptPageAtom("engineering/plan_a"));
-    served.product = pageOf("product", ["section_01"]);
-    served["engineering/plan_a"] = pageOf("engineering/plan_a", []);
+    const other = pageOf("demo/engineering/plan_a", ["section_01"]);
+    const store = loaded([pageOf("overview/demo/product", []), other]);
+    const before = store.get(conceptPageAtom("demo/engineering/plan_a"));
+    served["overview/demo/product"] = pageOf("overview/demo/product", ["section_01"]);
+    served["demo/engineering/plan_a"] = pageOf("demo/engineering/plan_a", []);
 
-    await deliver(store, { pages: ["product"] });
-    await vi.waitFor(() => expect(replaced(store, "product")).toBe(true));
+    await deliver(store, { pages: ["overview/demo/product"] });
+    await vi.waitFor(() => expect(replaced(store, "overview/demo/product")).toBe(true));
 
-    expect(requests).toEqual(["product"]);
-    expect(store.get(conceptPageAtom("engineering/plan_a"))).toBe(before);
+    expect(requests).toEqual(["overview/demo/product"]);
+    expect(store.get(conceptPageAtom("demo/engineering/plan_a"))).toBe(before);
+  });
+
+  it.each(["overview/other/product", "other/product/section_01"])(
+    "does not refetch another feature page %s",
+    async (key) => {
+      const other = pageOf(key, []);
+      const store = loaded([pageOf("overview/demo/product", []), other]);
+      const before = store.get(conceptPageAtom(key));
+      served["overview/demo/product"] = pageOf("overview/demo/product", []);
+      served[key] = pageOf(key, []);
+
+      await deliver(store, { pages: ["overview/demo/product"] });
+      await vi.waitFor(() => expect(replaced(store, "overview/demo/product")).toBe(true));
+
+      expect(requests).toEqual(["overview/demo/product"]);
+      expect(store.get(conceptPageAtom(key))).toBe(before);
+    },
+  );
+
+  it("refetches engineering siblings without refetching standalone plans", async () => {
+    const keys = ["overview/demo/engineering", "demo/engineering/plan_a", "plans/standalone"];
+    const store = loaded(keys.map((key) => pageOf(key, [])));
+    const standalone = store.get(conceptPageAtom("plans/standalone"));
+    for (const key of keys) served[key] = pageOf(key, []);
+
+    await deliver(store, { pages: ["overview/demo/engineering"] });
+    await vi.waitFor(() => expect(replaced(store, "demo/engineering/plan_a")).toBe(true));
+
+    expect([...requests].sort()).toEqual(["demo/engineering/plan_a", "overview/demo/engineering"]);
+    expect(store.get(conceptPageAtom("plans/standalone"))).toBe(standalone);
+  });
+
+  it("refetches a named standalone plan with no feature", async () => {
+    const store = loaded([pageOf("plans/standalone", []), pageOf("overview/demo/engineering", [])]);
+    served["plans/standalone"] = pageOf("plans/standalone", []);
+
+    await deliver(store, { feature: null, pages: ["plans/standalone", "plans/unloaded"] });
+    await vi.waitFor(() => expect(replaced(store, "plans/standalone")).toBe(true));
+
+    expect(requests).toEqual(["plans/standalone"]);
   });
 
   it("fetches no page twice when the delta also names a sibling", async () => {
     const store = loaded([
-      pageOf("product", []),
-      pageOf("product/section_01", []),
-      pageOf("product/section_02", []),
+      pageOf("overview/demo/product", []),
+      pageOf("demo/product/section_01", []),
+      pageOf("demo/product/section_02", []),
     ]);
-    for (const key of ["product", "product/section_01", "product/section_02"]) {
+    for (const key of [
+      "overview/demo/product",
+      "demo/product/section_01",
+      "demo/product/section_02",
+    ]) {
       served[key] = pageOf(key, []);
     }
 
-    await deliver(store, { pages: ["product", "product/section_01", "product/section_02"] });
-    await vi.waitFor(() => expect(replaced(store, "product/section_02")).toBe(true));
+    await deliver(store, {
+      pages: ["overview/demo/product", "demo/product/section_01", "demo/product/section_02"],
+    });
+    await vi.waitFor(() => expect(replaced(store, "demo/product/section_02")).toBe(true));
 
-    expect([...requests].sort()).toEqual(["product", "product/section_01", "product/section_02"]);
+    expect([...requests].sort()).toEqual([
+      "demo/product/section_01",
+      "demo/product/section_02",
+      "overview/demo/product",
+    ]);
   });
 
   it("never fetches a page of the scope that is not loaded", async () => {
-    const store = loaded([pageOf("product", [])]);
-    served.product = pageOf("product", []);
-    served["product/section_02"] = pageOf("product/section_02", []);
+    const store = loaded([pageOf("overview/demo/product", [])]);
+    served["overview/demo/product"] = pageOf("overview/demo/product", []);
+    served["demo/product/section_02"] = pageOf("demo/product/section_02", []);
 
-    await deliver(store, { pages: ["product"] });
-    await vi.waitFor(() => expect(replaced(store, "product")).toBe(true));
+    await deliver(store, { pages: ["overview/demo/product"] });
+    await vi.waitFor(() => expect(replaced(store, "overview/demo/product")).toBe(true));
 
-    expect(requests).toEqual(["product"]);
+    expect(requests).toEqual(["overview/demo/product"]);
   });
 
   it("leaves the siblings alone when the delta names only a summary page", async () => {
     const store = loaded([
-      pageOf("product", []),
-      pageOf("product/section_01", []),
-      pageOf("product/section_02", []),
+      pageOf("overview/demo/product", []),
+      pageOf("demo/product/section_01", []),
+      pageOf("demo/product/section_02", []),
     ]);
-    served["product/section_01"] = pageOf("product/section_01", []);
+    served["demo/product/section_01"] = pageOf("demo/product/section_01", []);
 
-    await deliver(store, { pages: ["product/section_01"] });
-    await vi.waitFor(() => expect(replaced(store, "product/section_01")).toBe(true));
+    await deliver(store, { pages: ["demo/product/section_01"] });
+    await vi.waitFor(() => expect(replaced(store, "demo/product/section_01")).toBe(true));
 
-    expect(requests).toEqual(["product/section_01"]);
+    expect(requests).toEqual(["demo/product/section_01"]);
   });
 });
 
 describe("responses are ordered per page, never across pages", () => {
   it("ends with the later dash on every page when an older response arrives last", async () => {
     const store = loaded([
-      pageOf("product", []),
-      pageOf("product/section_01", []),
-      pageOf("product/section_02", []),
+      pageOf("overview/demo/product", []),
+      pageOf("demo/product/section_01", []),
+      pageOf("demo/product/section_02", []),
     ]);
     // Delta 1: section_01 was rebuilt. Its page is served before section_02 goes stale.
     let open = () => {};
     gate = new Promise<void>((resolve) => {
       open = () => resolve();
     });
-    served["product/section_01"] = pageOf("product/section_01", []);
-    const first = loadConceptPages(store, ["product/section_01"]);
-    await vi.waitFor(() => expect(requests).toEqual(["product/section_01"]));
+    served["demo/product/section_01"] = pageOf("demo/product/section_01", []);
+    const first = loadConceptPages(store, ["demo/product/section_01"]);
+    await vi.waitFor(() => expect(requests).toEqual(["demo/product/section_01"]));
     gate = null;
 
     // Delta 2: section_02 went stale and the overview is named.
-    for (const key of ["product", "product/section_01", "product/section_02"]) {
+    for (const key of [
+      "overview/demo/product",
+      "demo/product/section_01",
+      "demo/product/section_02",
+    ]) {
       served[key] = pageOf(key, ["section_02"]);
     }
-    applyConceptChanged(store, { pages: ["product"], out_of_date: ["section_02"], sources: [] });
+    applyConceptChanged(store, {
+      feature: "demo",
+      pages: ["overview/demo/product"],
+      out_of_date: ["section_02"],
+      sources: [],
+    });
     await vi.waitFor(() => {
-      for (const key of ["product", "product/section_01", "product/section_02"]) {
+      for (const key of [
+        "overview/demo/product",
+        "demo/product/section_01",
+        "demo/product/section_02",
+      ]) {
         expect(replaced(store, key)).toBe(true);
       }
     });
@@ -181,7 +253,11 @@ describe("responses are ordered per page, never across pages", () => {
     open();
     await first;
 
-    for (const key of ["product", "product/section_01", "product/section_02"]) {
+    for (const key of [
+      "overview/demo/product",
+      "demo/product/section_01",
+      "demo/product/section_02",
+    ]) {
       expect(chipState(store, key, "section_02")).toEqual(SOURCE_CHANGED);
     }
   });

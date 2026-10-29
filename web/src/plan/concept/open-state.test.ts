@@ -15,7 +15,7 @@ function sentence(id: string, anchors: SourceAnchorRef[], cites: string[] = []):
   const sources = bare(anchors).map((anchor) => ({ kind: "source" as const, ...anchor }));
   const sentences = cites.map((cited) => ({
     kind: "sentence" as const,
-    summary: "product/section_01",
+    summary: "demo/product/section_01",
     id: cited,
   }));
   return {
@@ -226,18 +226,22 @@ describe("carryOpenState", () => {
 });
 
 describe("stored runs after a rebuild", () => {
-  it("syntheticPrevious holds one sentence per stored run on its stored anchors", () => {
-    const stored = [run("s1", [at("a", "Alpha")]), passage(at("a"), "s1")];
-    const synthetic = syntheticPrevious(stored);
-    expect(conceptPageSchema.safeParse(synthetic).success).toBe(true);
-    const sentences = synthetic.blocks.flatMap((block) =>
-      block.kind === "paragraph" ? block.sentences : [],
-    );
-    expect(sentences.map((entry) => [entry.id, entry.rests_on])).toEqual([
-      ["s1", [{ path: FILE, anchor: "a" }]],
-      [`${FILE}#a`, [{ path: FILE, anchor: "a" }]],
-    ]);
-  });
+  it.each(["demo", null])(
+    "syntheticPrevious preserves feature %s and stored anchors",
+    (feature) => {
+      const stored = [run("s1", [at("a", "Alpha")]), passage(at("a"), "s1")];
+      const synthetic = syntheticPrevious(stored, feature);
+      expect(conceptPageSchema.safeParse(synthetic).success).toBe(true);
+      expect(synthetic.feature).toBe(feature);
+      const sentences = synthetic.blocks.flatMap((block) =>
+        block.kind === "paragraph" ? block.sentences : [],
+      );
+      expect(sentences.map((entry) => [entry.id, entry.rests_on])).toEqual([
+        ["s1", [{ path: FILE, anchor: "a" }]],
+        [`${FILE}#a`, [{ path: FILE, anchor: "a" }]],
+      ]);
+    },
+  );
 
   it("carryStoredRuns leaves runs whose sentences are still on the page", () => {
     const current = page([sentence("s1", [at("a")])]);

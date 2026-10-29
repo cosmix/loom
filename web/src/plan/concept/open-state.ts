@@ -344,13 +344,14 @@ export function carryOpenState(
 }
 
 /** A page holding one sentence per stored run, resting on the run's stored anchors. */
-export function syntheticPrevious(stored: OpenRun[]): ConceptPage {
+export function syntheticPrevious(stored: OpenRun[], feature: ConceptPage["feature"]): ConceptPage {
   const sentences: Sentence[] = stored.map((run) => {
     const restsOn = run.restsOn.map(({ path, anchor }) => ({ path, anchor }));
     const citations = restsOn.map((at) => ({ kind: "source" as const, ...at }));
     return { id: run.sentenceId, text: "", marks: [], citations, rests_on: restsOn, plans: [] };
   });
   return {
+    feature,
     key: "",
     title: "",
     path: null,
@@ -384,5 +385,7 @@ export function carryStoredRuns(
   const stale = stored.some(
     (run) => run.parent === null && run.level < 2 && !ids.has(run.sentenceId),
   );
-  return stale ? carryOpenState(syntheticPrevious(stored), page, stored, cited) : null;
+  return stale
+    ? carryOpenState(syntheticPrevious(stored, page.feature), page, stored, cited)
+    : null;
 }

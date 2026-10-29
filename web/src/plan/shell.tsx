@@ -12,10 +12,12 @@ import { PlannerHelpDialog } from "@/plan/help/help-dialog";
 import { readingFaceAtom, readingSizeAtom } from "@/plan/settings/preferences";
 import { SettingsDialog } from "@/plan/settings/settings-dialog";
 import { unauthorizedAtom } from "@/plan/state/atoms";
+import { useAutoRebuildSync } from "@/plan/summaries/state";
 import { Unauthorized } from "@/plan/unauthorized";
 
 /** Header, banners, routed page and dock; a 401 replaces all of it with the sign-in notice. */
 export function PlanShell() {
+  useAutoRebuildSync();
   const unauthorized = useAtomValue(unauthorizedAtom);
   const face = useAtomValue(readingFaceAtom);
   const size = useAtomValue(readingSizeAtom);
