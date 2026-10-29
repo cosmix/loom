@@ -668,11 +668,13 @@ loom:
       summary: >-
         Teaches the planning model, the plan server and the planning skills that a repository
         holds several features, each a pair of directories under doc/product and doc/plans.
+      implementers: ["claude", "codex"]
       stage_type: standard
       working_dir: loom
       dependencies: []
       description: |
-        Implements Design section 1 and the pace offer of section 8 of doc/plans/PLAN-planner-ui-redesign.md. Read that plan's Design and "Stage feature-model" sections first; they list every file and the decisions (D1, D2, D4, D10) this stage assumes.
+        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/feature-model.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+        Implements Design section 1 and the pace offer of section 8 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. Read that plan's Design and "Stage feature-model" sections first; they list every file and the decisions (D1, D2, D4, D10) this stage assumes.
         PATHS: working_dir is loom/; YAML paths are package-relative (../ outside the crate).
         KNOWLEDGE: architecture/planning-document-model.md (Module Map; Kinds, Ids and Slugs; Project View and Checklist), architecture/summary-store.md, architecture/planning-guidance.md.
         ORDER: (1) kinds, slug and discover with their tests, as a foundation worker; (2) checklist, offers, problems, implements, summary store ids, plan_lifecycle retired path, in parallel; (3) plan_server payloads, the /api/features route, guidance opening and plan-plugin skills, plan check output and its JSON fixture.
@@ -716,11 +718,13 @@ loom:
         Adds Source Serif 4 and the reading-face options, the glyph set, DocMarks, animated
         activity glyphs and the doodle, and rebuilds the planner header on the dashboard's grid
         with Loom's logo, the activity pill, theme toggle, settings and the help frame.
+      implementers: ["claude", "codex"]
       stage_type: standard
       working_dir: web
       dependencies: []
       description: |
-        Implements Design sections 3, 4, 5, 9, 11, the doodle of section 8 and the frame of section 10 of doc/plans/PLAN-planner-ui-redesign.md. Read that plan's Design sections and "Stage design-foundation" first; the artifact linked under Draft status shows the target. The fonts (D7) are settled.
+        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/design-foundation.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+        Implements Design sections 3, 4, 5, 9, 11, the doodle of section 8 and the frame of section 10 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. Read that plan's Design sections and "Stage design-foundation" first; the artifact linked under Draft status shows the target. The fonts (D7) are settled.
         PATHS: working_dir is web/; brief paths are repo-relative.
         KNOWLEDGE: conventions/web-dashboard-typography.md (theme tokens; chrome uses the body face; TerminalMark; Help uses operational illustrations; Help illustrations use real components), conventions/plan-web.md (CodeMirror lazy boundary; bundle rules), architecture/web-dashboard.md.
         FONT: bun add @fontsource-variable/source-serif-4 @fontsource-variable/literata @fontsource-variable/piazzolla; import them from src/plan/main.tsx only; add a bundle rule so index.html never contains them. Code stays Commit Mono Cosmix through --font-mono (src/fonts.css).
@@ -784,11 +788,13 @@ loom:
       summary: >-
         Sets documents in the reading face, makes sentence hover clear, and replaces the gutter
         bracket with fold buttons on each opened run plus Esc and Shift+Esc.
+      implementers: ["claude", "codex"]
       stage_type: standard
       working_dir: web
       dependencies: ["design-foundation"]
       description: |
-        Implements Design section 6 and the reading-face half of section 4 of doc/plans/PLAN-planner-ui-redesign.md (ink wash and inline caps, both settled with the user; the cap sizes, tints and tooltip are specified there).
+        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/reading-experience.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+        Implements Design section 6 and the reading-face half of section 4 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md (ink wash and inline caps, both settled with the user; the cap sizes, tints and tooltip are specified there).
         PATHS: working_dir is web/.
         KNOWLEDGE: conventions/plan-web.md (Markdown renderer rules; Concept Mode Test Rules, including that the fold control's accessible name stays exactly Fold).
         RULES: inline Markdown in summary sentences goes through src/plan/markdown/inline.tsx, never dangerouslySetInnerHTML; colours only from CSS variables; reduced motion turns transitions off; the tests that pinned the gutter handle change in the same commit.
@@ -835,11 +841,13 @@ loom:
         Lets new work start as a conversation that gains exactly one target (a feature's vision or
         a standalone plan) when the user confirms the size and name, and lets "Draft all" run one
         authoring session leading an agent team of up to five.
+      implementers: ["claude", "codex"]
       stage_type: standard
       working_dir: loom
       dependencies: ["feature-model"]
       description: |
-        Implements "Stage kickoff-session" and Design section 8 of doc/plans/PLAN-planner-ui-redesign.md. Decisions assumed: D10, D11.
+        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/kickoff-session.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+        Implements "Stage kickoff-session" and Design section 8 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. Decisions assumed: D10, D11.
         PATHS: working_dir is loom/; YAML paths are package-relative (../ outside the crate).
         KNOWLEDGE: architecture/planning-session-bridge.md, architecture/planning-session-sandbox.md, architecture/planning-guidance.md, doc/product/section_12.md (write rules are literal paths; the tool table), doc/product/section_11.md "How the server runs it" (the agent-team launch pressure sessions use).
         RULES: until the size and name are confirmed the kickoff writes nothing under doc/; the grant covers one target that did not exist when the session started (doc/product/<name>/index.md for a feature, doc/plans/PLAN-<slug>.md and its brief bundle for a standalone plan); a confirmed name that already exists is refused; the planning hook, not the prompt, enforces it.
@@ -874,11 +882,13 @@ loom:
         Adds the home screen with the invitation card, feature cards and standalone plans, the
         feature switcher and routes, the kickoff conversation with its taking-shape panel,
         and the spec pace choice.
+      implementers: ["claude", "codex"]
       stage_type: standard
       working_dir: web
       dependencies: ["kickoff-session", "design-foundation"]
       description: |
-        Implements Design sections 2 and 8 of doc/plans/PLAN-planner-ui-redesign.md. Decisions assumed: D1, D10 (and the settled layout and D11).
+        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/feature-ui.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+        Implements Design sections 2 and 8 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. Decisions assumed: D1, D10 (and the settled layout and D11).
         PATHS: working_dir is web/.
         KNOWLEDGE: conventions/plan-web.md (Chat Panel and Review UI Rules; New PlanMessage Variants Need Both Schema Arms), architecture/plan-server.md.
         RULES: every server string through Untrusted; every storage key through storageKey; read-only browsers see the screens but no write controls (DisabledReason); the kickoff transcript is set in the reading face and the taking-shape panel in Inter.
@@ -914,11 +924,13 @@ loom:
       summary: >-
         Gives every document one header grid and restyles the pressure-test dialog, run strip and
         run panel on the new shell, with the animated glyphs.
+      implementers: ["claude", "codex"]
       stage_type: standard
       working_dir: web
       dependencies: ["feature-ui"]
       description: |
-        Implements Design sections 7 and 12 of doc/plans/PLAN-planner-ui-redesign.md. The header is settled with the user and revisited once testing starts.
+        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/document-ui.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+        Implements Design sections 7 and 12 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. The header is settled with the user and revisited once testing starts.
         PATHS: working_dir is web/.
         KNOWLEDGE: conventions/plan-web.md (Chat Panel and Review UI Rules), doc/product/section_11.md "Pressure testing from the app".
         RULES: the document header replaces doc-header.tsx, plan-header.tsx and page-header.tsx, and the replaced files are deleted; the pressure restyle changes presentation only, never the run's behaviour or messages.
@@ -964,11 +976,13 @@ loom:
       summary: >-
         Fills the planner's help with scenes built from the real components: reading summaries,
         features and the kickoff, chat and sessions, pressure tests and runs, and the full legend.
+      implementers: ["claude", "codex"]
       stage_type: standard
       working_dir: web
       dependencies: ["document-ui", "reading-experience"]
       description: |
-        Implements Design section 10 of doc/plans/PLAN-planner-ui-redesign.md. Decision assumed: D12.
+        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/help.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+        Implements Design section 10 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. Decision assumed: D12.
         PATHS: working_dir is web/.
         KNOWLEDGE: conventions/web-dashboard-typography.md (Help uses operational illustrations; Help illustrations use real components; Help content), mistakes/web-dashboard-server.md (Help illustrations must match production UI).
         RULES: every scene renders production components in an isolated Jotai store with sample state, never redrawn lookalikes; one sentence per pin; facts with no control go in Good to know; type at least 13px; the Legend topic is complete; preview the rendered dialog at 390px and 1280px before committing.
@@ -991,11 +1005,13 @@ loom:
       summary: >-
         Moves the planner spec and plans into the planner-ui feature and the token metaplan
         into optim-token, and rewrites references to the old paths in unlocked files.
+      implementers: ["claude", "codex"]
       stage_type: standard
       working_dir: "."
       dependencies: ["kickoff-session"]
       description: |
-        Implements "Stage migrate-repo-docs" of doc/plans/PLAN-planner-ui-redesign.md, decision D3. Runs only after IN_PROGRESS-PLAN-feat-planner-11-execution-handoff.md is done.
+        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/migrate-repo-docs.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+        Implements "Stage migrate-repo-docs" of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md, decision D3. Runs only after IN_PROGRESS-PLAN-feat-planner-11-execution-handoff.md is done.
         Use git mv for every tracked move. Rewrite doc/product/index.md and doc/product/section_NN.md references in loom/src comments, doc/loom/knowledge and unlocked plans; leave locked plans (IN_PROGRESS-, DONE-, RETIRED-, archive/) and their briefs unchanged. Print the mv commands for gitignored DONE- plans for the operator.
         Use parallel subagents and skills to maximize performance.
         MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
@@ -1015,11 +1031,14 @@ loom:
       summary: >-
         Runs the full suite, reviews the redesign in a real browser in every theme, and proves
         features, the shell and the reading interactions are wired into the planning app.
+      implementers: ["claude", "codex"]
       stage_type: integration-verify
+      model: opus
       working_dir: loom
       dependencies: ["help", "migrate-repo-docs"]
       description: |
-        Final verification of doc/plans/PLAN-planner-ui-redesign.md. Verify FUNCTIONAL INTEGRATION, not just tests passing. NEVER Claude Code auto-memory.
+        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/integration-verify.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+        Final verification of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. User override: Opus owns verification and code review; Sol/high workers only implement fixes. Verify FUNCTIONAL INTEGRATION, not just tests passing. NEVER Claude Code auto-memory.
         CONTEXT: read the plan, loom memory show --all, doc/loom/knowledge/INDEX.md and only the relevant sections.
         BUILD & TEST (zero tolerance): loom check integration-verify once.
         CODE REVIEW: parallel loom-code-reviewer subagents: (1) the planning model's feature rules against the updated doc/product sections 01 and 03 (classifier, ids, loose plans, retired path, duplicate slugs); (2) web security (Untrusted, inline Markdown path, no dangerouslySetInnerHTML); (3) layout and accessibility in a real browser: home, feature screen, product overview with a run opened two levels deep, a plan in file mode, the new-feature flow, at 390px and 1280px in Ledger, Aubergine, Pacific and Graphite (no sideways scroll, focus order, the fold buttons and Esc reachable by keyboard, hover visible in every theme). Fix every finding through an engineer agent or dispute it; never defer one.
