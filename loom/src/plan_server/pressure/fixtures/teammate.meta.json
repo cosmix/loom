@@ -1,0 +1,1 @@
+{"agentType":"reviewer","description":"Review the plan","name":"reviewer","spawnDepth":0,"requestShape":"background","requestNonInteractive":true,"model":"opus","taskKind":"in_process_teammate","teamName":"session-3f9a7c21","color":"blue","planModeRequired":false,"spawnedAgentType":"general-purpose","permissionMode":"default"}
