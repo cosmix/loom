@@ -168,6 +168,37 @@ it.each([false, undefined])("preserves a chip button's pressed=%s state", (press
   );
 });
 
+it("includes the missing-target explanation in a plain chip's readable text", () => {
+  renderHeading({
+    chips: [
+      { key: "missing", label: "Implements §3", title: "not found", description: "not found" },
+    ],
+  });
+
+  const chip = screen.getByTitle("not found");
+  expect(chip.textContent).toBe("Implements §3 (not found)");
+  expect(chip.querySelector(".sr-only")?.textContent).toBe("(not found)");
+  expect(chip.closest("a, button")).toBeNull();
+});
+
+it.each(["link", "button"] as const)(
+  "includes chip descriptions in the %s accessible name",
+  (role) => {
+    renderHeading({
+      chips: [
+        {
+          key: "section",
+          label: "Implements §3",
+          description: "not found",
+          ...(role === "link" ? { to: "/product/3" } : { onClick: vi.fn() }),
+        },
+      ],
+    });
+
+    expect(screen.getByRole(role, { name: "Implements §3 (not found)" })).toBeTruthy();
+  },
+);
+
 it("copies the original path and announces success for 1.5 seconds", async () => {
   vi.useFakeTimers();
   const writeText = stubClipboard();

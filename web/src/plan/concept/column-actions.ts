@@ -1,5 +1,6 @@
 import { useCallback, useRef, type MutableRefObject } from "react";
 
+import { isOverviewKey } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
 import type { Store } from "@/state/store";
 
@@ -37,7 +38,7 @@ export function useColumnActions(
       const current = store.get(openRunsAtom(pageKey));
       const key = sentenceKey(site.parent, site.sentence.id);
       if (!runAt(current, site)) {
-        const run = runFor(site, !pageKey.includes("/"));
+        const run = runFor(site, isOverviewKey(pageKey));
         store.set(openRunsAtom(pageKey), [...current, run]);
         clearNotes(site.parent ?? site.sentence.id);
         pendingOpen.current = key;

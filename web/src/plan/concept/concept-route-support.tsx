@@ -62,7 +62,7 @@ export function makeStubFetch(read: () => ServerState, fetched: string[]) {
 export function planPage(extra: Page): Page {
   return {
     ...clone(summaryFixture),
-    key: "engineering/a",
+    key: "demo/engineering/a",
     title: "Plan a",
     path: "doc/plans/PLAN-a.md",
     colour: null,

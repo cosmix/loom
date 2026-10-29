@@ -5,8 +5,8 @@ import { type JSX, useMemo } from "react";
 import { renderSummaryInlines } from "@/plan/markdown/inline";
 
 /**
- * A paragraph contributes its inline nodes; any other block (list, quote, heading, code) keeps
- * its source text, markers included, so the screen shows what `sentence.text` says. GFM is not
+ * A paragraph contributes its inline nodes; a single numbered paragraph also keeps its literal
+ * prefix. Other blocks keep their source text, markers included. GFM is not
  * enabled: summaries use code spans, emphasis and strong only. A link reference definition
  * draws nothing in rendered Markdown, so it draws nothing here.
  */
@@ -17,8 +17,20 @@ function summaryInlines(text: string): PhrasingContent[] {
     const start = block.position?.start.offset;
     const end = block.position?.end.offset;
     const source = start === undefined || end === undefined ? "" : text.slice(start, end);
-    const children: PhrasingContent[] =
-      block.type === "paragraph" ? block.children : source ? [{ type: "text", value: source }] : [];
+    const item = block.type === "list" && block.ordered ? block.children[0] : undefined;
+    const paragraph = item?.children[0];
+    const numbered =
+      block.type === "list" &&
+      block.children.length === 1 &&
+      item?.children.length === 1 &&
+      paragraph?.type === "paragraph" &&
+      /^\d+\. /.test(source);
+    const prefixEnd = numbered ? paragraph.position?.start.offset : undefined;
+    let children: PhrasingContent[] = source ? [{ type: "text", value: source }] : [];
+    if (block.type === "paragraph") children = block.children;
+    else if (numbered && start !== undefined && prefixEnd !== undefined) {
+      children = [{ type: "text", value: text.slice(start, prefixEnd) }, ...paragraph.children];
+    }
     if (children.length === 0) continue;
     if (nodes.length > 0) nodes.push({ type: "text", value: " " });
     nodes.push(...children);

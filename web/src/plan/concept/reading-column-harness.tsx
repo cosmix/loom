@@ -5,12 +5,13 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, vi } from "vitest";
 
 import { initClient } from "@/plan/api/client";
-import type { ConceptPage, Sentence } from "@/plan/api/schema-concept";
+import { pageHref } from "@/plan/api/page-key";
+import type { ConceptPage, Mark, Sentence } from "@/plan/api/schema-concept";
 import type { AttachmentDraft } from "@/plan/attachments/types";
 
 import { conceptPageAtom } from "./page-state";
 import { ReadingColumn } from "./reading-column";
-import { cite, docOf, mark, pageOf, S1, S2, sent, src } from "./reading-column-fixtures";
+import { cite, docOf, pageOf, S1, S2, sent, src } from "./reading-column-fixtures";
 
 /**
  * Mounting and driving the reading column in tests. `/api/doc` serves `docs`; the cited
@@ -19,6 +20,20 @@ import { cite, docOf, mark, pageOf, S1, S2, sent, src } from "./reading-column-f
  */
 export const docs: Record<string, unknown> = {};
 export const pages: Record<string, ConceptPage> = {};
+
+/** Server-shaped document links for the column's synthetic pages. */
+export const docLink = (stem: string, title: string) => ({
+  id: stem,
+  title,
+  path: `doc/product/${stem}.md`,
+  page: `demo/product/${stem}`,
+});
+export const mark = (
+  stem: string,
+  title: string,
+  colour: number,
+  out: Mark["out_of_date"] = null,
+): Mark => ({ doc: docLink(stem, title), colour, out_of_date: out });
 
 const CONCEPT = "/api/concept/";
 
@@ -54,9 +69,10 @@ export function mount(pageKey: string, page: ConceptPage, onAttach?: (d: Attachm
   const store = createStore();
   initClient(store);
   store.set(conceptPageAtom(pageKey), { page, previous: null, error: null });
-  const router = createMemoryRouter([
-    { path: "*", element: <Harness pageKey={pageKey} onAttach={onAttach} /> },
-  ]);
+  const router = createMemoryRouter(
+    [{ path: "*", element: <Harness pageKey={pageKey} onAttach={onAttach} /> }],
+    { initialEntries: [pageHref(pageKey)] },
+  );
   render(
     <Provider store={store}>
       <RouterProvider router={router} />
@@ -67,7 +83,7 @@ export function mount(pageKey: string, page: ConceptPage, onAttach?: (d: Attachm
 
 /** Mounts the column on a product overview made of one paragraph of `sentences`. */
 export const mountProduct = (sentences: Sentence[], extra: Record<string, unknown> = {}) =>
-  mount("product", pageOf("product", sentences, extra));
+  mount("overview/demo/product", pageOf("overview/demo/product", sentences, extra));
 
 export function replace(store: ReturnType<typeof createStore>, key: string, next: ConceptPage) {
   act(() => {
@@ -82,11 +98,13 @@ export function nested(extraOverview: Partial<Sentence> = {}) {
     ...sent("o", "Overview opens.", [cite("section_01", "x")], [mark("section_01", "Planning", 1)]),
     ...extraOverview,
   };
-  const overview = pageOf("product", [o]);
-  const detail = pageOf("product/section_01", [sent("x", "Detail opens.", [src(S1, "intro")])]);
-  pages["product/section_01"] = detail;
-  const view = mount("product", overview);
-  loadPage(view.store, "product/section_01", detail);
+  const overview = pageOf("overview/demo/product", [o]);
+  const detail = pageOf("demo/product/section_01", [
+    sent("x", "Detail opens.", [src(S1, "intro")]),
+  ]);
+  pages["demo/product/section_01"] = detail;
+  const view = mount("overview/demo/product", overview);
+  loadPage(view.store, "demo/product/section_01", detail);
   return { ...view, overview, detail };
 }
 

@@ -1,23 +1,22 @@
-import { CircleCheck, CircleDashed, CircleDot, TriangleAlert } from "lucide-react";
-
 import type { ChecklistView, MarkView, StepView } from "@/plan/api/schema";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { PaceChoice } from "@/plan/feature/pace";
 import { isCurrentStep, readyLabel } from "@/plan/header/step-tracker";
+import { STEP_MARK_GLYPHS } from "@/plan/ui/glyphs";
 
-const MARKS = {
-  done: { Glyph: CircleCheck, label: "done" },
-  gap: { Glyph: TriangleAlert, label: "has gaps" },
-  active: { Glyph: CircleDot, label: "in progress" },
-  optional: { Glyph: CircleDashed, label: "optional" },
+const MARK_LABELS: Record<MarkView, string> = {
+  done: "done",
+  gap: "has gaps",
+  active: "in progress",
+  optional: "optional",
 };
 
 function StepMark({ mark }: { mark: MarkView }) {
-  const { Glyph, label } = MARKS[mark];
+  const Glyph = STEP_MARK_GLYPHS[mark];
   return (
     <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-      <Glyph className="size-4 shrink-0" aria-hidden="true" />
-      <span>{label}</span>
+      <Glyph data-step-mark={mark} className="size-4 shrink-0" aria-hidden="true" />
+      <span>{MARK_LABELS[mark]}</span>
     </span>
   );
 }

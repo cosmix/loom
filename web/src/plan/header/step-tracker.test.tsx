@@ -111,6 +111,17 @@ describe("StepTracker ready states", () => {
 });
 
 describe("StepTracker narrow layout and loading", () => {
+  it("shows the current step label as visible text beside the chevron", () => {
+    render(
+      <StepTracker checklist={{ ...checklist, current: { kind: "step", number: 4 } }} narrow />,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Step 4 of 7 · Plans" });
+    const label = within(trigger).getByText("Step 4 of 7 · Plans");
+    expect(label.closest(".sr-only, .hidden, [hidden], [aria-hidden='true']")).toBeNull();
+    expect(label.nextElementSibling?.tagName.toLowerCase()).toBe("svg");
+  });
+
   it("collapses to a summary button whose popover lists the steps when narrow", () => {
     render(<StepTracker checklist={checklist} narrow />);
     expect(screen.queryByRole("list")).toBeNull();
@@ -118,6 +129,11 @@ describe("StepTracker narrow layout and loading", () => {
     // shrink-0 on Button's base class would stop the inner truncate from ever applying.
     expect(trigger.classList.contains("shrink")).toBe(true);
     expect(trigger.classList.contains("shrink-0")).toBe(false);
+    expect(trigger.classList.contains("max-w-full")).toBe(true);
+    const label = within(trigger).getByText("Step 2 of 7 · Product spec");
+    expect(label.classList.contains("min-w-0")).toBe(true);
+    expect(label.classList.contains("truncate")).toBe(true);
+    expect(label.closest(".sr-only, .hidden, [hidden], [aria-hidden='true']")).toBeNull();
     fireEvent.click(trigger);
     const dialog = screen.getByRole("dialog", { name: "Steps" });
     // The portal needs its own planner scope for the rail's CSS.

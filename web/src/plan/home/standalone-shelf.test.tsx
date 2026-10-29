@@ -160,4 +160,28 @@ describe("StandaloneShelf", () => {
 
     expect(screen.getByRole("link", { name: "Fix⟨U+202E⟩search fix-search written" })).toBeTruthy();
   });
+
+  it("renders inline title markup while preserving visible controls and text isolation", () => {
+    mount({
+      ...project,
+      standalone: [
+        {
+          ...project.standalone[0],
+          title: "Rename `hooks/` to `loom-hooks/` with *care* and **tests**\u202E",
+        },
+      ],
+    });
+
+    const link = screen.getByRole("link", {
+      name: "Rename hooks/ to loom-hooks/ with care and tests⟨U+202E⟩ fix-search written",
+    });
+    const code = within(link).getByText("hooks/");
+    expect(code.tagName).toBe("CODE");
+    expect(within(link).getByText("loom-hooks/").tagName).toBe("CODE");
+    expect(within(link).getByText("care").tagName).toBe("EM");
+    expect(within(link).getByText("tests").tagName).toBe("STRONG");
+    expect(code.parentElement?.style.unicodeBidi).toBe("isolate");
+    expect(code.parentElement?.style.direction).toBe("ltr");
+    expect(link.textContent).not.toContain("`");
+  });
 });

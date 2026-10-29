@@ -1,17 +1,19 @@
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { useState } from "react";
-import { MemoryRouter } from "react-router";
+import { Route, Routes } from "react-router";
 
 import { checklistViewSchema } from "@/plan/api/schema";
 import { sessionViewSchema } from "@/plan/api/schema-chat";
 import { snapshotAtom } from "@/plan/chat/model";
 import { PlanHeader } from "@/plan/header/header";
 import { ignoreAction, SAMPLE_SERVER, SAMPLE_STEPS } from "@/plan/help/sample";
+import { SceneRouter } from "@/plan/help/scene-router";
 import { checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 const SAMPLE_CHECKLIST = checklistViewSchema.parse({
   feature: "atlas",
+  pitch: null,
   current: { kind: "step", number: 3 },
   steps: SAMPLE_STEPS,
   primary: {
@@ -55,11 +57,19 @@ export function GettingAroundScene() {
 
   return (
     <Provider store={store}>
-      <MemoryRouter initialEntries={["/files"]}>
-        <div data-loom-plan inert>
-          <PlanHeader sample onOpenSettings={ignoreAction} onOpenHelp={ignoreAction} />
-        </div>
-      </MemoryRouter>
+      <SceneRouter initialEntries={["/f/atlas"]}>
+        {/* Keep the illustrated feature visible on any app route without nesting a router. */}
+        <Routes location="/f/atlas">
+          <Route
+            path="*"
+            element={
+              <div data-loom-plan inert>
+                <PlanHeader sample onOpenSettings={ignoreAction} onOpenHelp={ignoreAction} />
+              </div>
+            }
+          />
+        </Routes>
+      </SceneRouter>
     </Provider>
   );
 }

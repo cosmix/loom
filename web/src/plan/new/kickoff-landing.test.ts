@@ -15,6 +15,7 @@ import { kickoffAtom, projectAtom } from "@/plan/state/atoms";
 
 const feature: ChecklistView = {
   feature: "planner-search",
+  pitch: null,
   current: { kind: "step", number: 1 },
   steps: [],
   primary: null,

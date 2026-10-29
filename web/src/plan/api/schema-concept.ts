@@ -1,4 +1,5 @@
 import { z } from "@/api/zod";
+import { isConceptPageKey, isPageDoc } from "@/plan/api/page-key";
 
 import { planStateViewSchema } from "./schema-files";
 
@@ -25,26 +26,8 @@ export const EMPTY_OFFERS = ["start-vision", "start-metaplan"] as const;
 const u8 = z.number().int().min(0).max(255);
 const u32 = z.number().int().min(0).max(4294967295);
 
-const PAGE_NAME = /^[A-Za-z0-9._-]{1,128}$/;
-
-function isPageName(name: string): boolean {
-  return PAGE_NAME.test(name) && name !== "." && name !== "..";
-}
-
-/**
- * Whether `key` is a concept page key: `product`, `engineering`, or `<scope>/<name>`. Mirrors
- * the server's `PageKey::parse` (loom/src/plan_server/concept/page.rs), so a key that passes
- * names no path outside `/api/concept/`.
- */
-export function isConceptPageKey(key: string): boolean {
-  const [scope, name, ...rest] = key.split("/");
-  if (scope !== "product" && scope !== "engineering") return false;
-  if (name === undefined) return true;
-  return rest.length === 0 && isPageName(name);
-}
-
 const pageKeySchema = z.string().refine(isConceptPageKey, "not a concept page key");
-const pageNameSchema = z.string().refine(isPageName, "not a page name");
+const pageNameSchema = z.string().refine(isPageDoc, "not a page name");
 
 export const summaryStateViewSchema = z.enum(SUMMARY_STATES);
 export const outOfDateReasonSchema = z.enum(OUT_OF_DATE_REASONS);
@@ -114,6 +97,7 @@ export const emptyStateSchema = z.strictObject({
 });
 export const progressSchema = z.strictObject({ done: u32, total: u32 });
 export const conceptPageSchema = z.strictObject({
+  feature: z.string().nullable(),
   key: z.string(),
   title: z.string(),
   path: z.string().nullable(),
@@ -132,6 +116,7 @@ export const conceptPageSchema = z.strictObject({
   estimate: z.string().nullable(),
 });
 export const conceptChangedSchema = z.strictObject({
+  feature: z.string().nullable(),
   pages: z.array(z.string()),
   out_of_date: z.array(z.string()),
   sources: z.array(z.string()),

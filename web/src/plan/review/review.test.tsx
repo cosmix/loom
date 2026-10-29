@@ -9,6 +9,7 @@ import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import docFixture from "@/plan/api/fixtures/files-doc.json";
 import treeFixture from "@/plan/api/fixtures/files-tree.json";
 import serverFixture from "@/plan/api/fixtures/server-info.json";
+import { featureOfKey } from "@/plan/api/page-key";
 import { serverInfoSchema } from "@/plan/api/schema";
 import { conceptPageSchema } from "@/plan/api/schema-concept";
 import { treeEntrySchema } from "@/plan/api/schema-files";
@@ -34,7 +35,7 @@ vi.mock("@/plan/diff/diff-view", () => ({
 }));
 
 const page = conceptPageSchema.parse(summaryFixture);
-const path = "doc/product/section_01.md";
+const path = page.path!;
 const chip = page.key_chips[0]!;
 const entry = treeEntrySchema.parse({
   ...treeFixture.product[0]!.children[0],
@@ -44,7 +45,7 @@ const entry = treeEntrySchema.parse({
 const server = serverInfoSchema.parse(serverFixture);
 const checkpoint: Checkpoint = { commit: "c1", hashes: { [path]: "old" } };
 const current = { head: "c2", docs: { [path]: "new" } };
-const builtUrl = "/api/built?section=product%2Fsection_01.md";
+const builtUrl = "/api/built?section=product%2Fdemo%2Fsection_01.md";
 const changedAfter = {
   kind: "changed_after",
   slug: "feat-review",
@@ -74,7 +75,7 @@ beforeEach(() => {
       path,
       text: "Before the build",
     },
-    "/api/doc?path=product%2Fsection_01.md": {
+    "/api/doc?path=product%2Fdemo%2Fsection_01.md": {
       ...docFixture,
       path,
       text: "Current section",
@@ -214,22 +215,26 @@ it("count on summary header and tree entry", async () => {
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(builtUrl, expect.anything()));
 });
 
-it("count links to open-questions anchor", () => {
+it("count links to open-questions anchor with a decorative legend glyph", () => {
   mount(
     <>
       <PageHeading page={page} />
-      <TreeEntryExtras entry={{ ...entry, path: "product/section_01.md" }} />
+      <TreeEntryExtras entry={{ ...entry, path: "product/demo/section_01.md" }} />
     </>,
   );
   for (const link of screen.getAllByRole("link", { name: "Open questions · 3" })) {
-    expect(link.getAttribute("href")).toBe("/files/product/section_01.md#open-questions");
+    expect(link.getAttribute("href")).toBe("/files/product/demo/section_01.md#open-questions");
+    const glyph = link.querySelector('[data-other-glyph="openQuestions"]');
+    expect(glyph).not.toBeNull();
+    expect(glyph?.getAttribute("aria-hidden")).toBe("true");
+    expect(link.firstElementChild).toBe(glyph);
   }
 });
 
 it("dots on key chip and tree entry", () => {
   const { store } = mount(
     <>
-      <KeyChipExtras chip={{ ...chip, doc: { ...chip.doc, path: "product/section_01.md" } }} />
+      <KeyChipExtras chip={{ ...chip, doc: { ...chip.doc, path: "product/demo/section_01.md" } }} />
       <ul>
         <TreeEntryRow entry={entry} forceOpen={false} />
       </ul>
@@ -247,7 +252,7 @@ it("marker links diff from base commit", async () => {
   replies[builtUrl] = { notes: [changedAfter] };
   const { store } = mount(<PageHeading page={page} />);
   const marker = await screen.findByRole("link", { name: "Changed after feat-review was built" });
-  expect(marker.getAttribute("href")).toBe("/files/product/section_01.md?base_commit=base");
+  expect(marker.getAttribute("href")).toBe("/files/product/demo/section_01.md?base_commit=base");
   fireEvent.click(marker);
   expect((await screen.findByRole("group", { name: "Loaded diff" })).textContent).toBe(
     JSON.stringify({ before: "Before the build", after: "Current section" }),
@@ -257,7 +262,7 @@ it("marker links diff from base commit", async () => {
     expect.anything(),
   );
   expect(fetchMock).toHaveBeenCalledWith(
-    "/api/doc?path=product%2Fsection_01.md",
+    "/api/doc?path=product%2Fdemo%2Fsection_01.md",
     expect.anything(),
   );
   expect(store.get(checkpointAtom)).toEqual(checkpoint);
@@ -337,13 +342,15 @@ it("resync refetches the compare list", async () => {
   expect(listeners.size).toBe(0);
 });
 
-it.each(["product", "product/vision", "engineering/feat-review"])(
-  "does not request build markers for %s",
-  (key) => {
-    mount(<PageHeading page={{ ...page, key }} />);
-    expect(fetchMock).not.toHaveBeenCalled();
-  },
-);
+it.each([
+  "overview/demo/product",
+  "overview/demo/engineering",
+  "demo/engineering/feat-review",
+  "plans/feat-review",
+])("does not request build markers for %s", (key) => {
+  mount(<PageHeading page={{ ...page, key, feature: featureOfKey(key) }} />);
+  expect(fetchMock).not.toHaveBeenCalled();
+});
 
 it("pathless summaries and folders have no review indicators", () => {
   const { view } = mount(

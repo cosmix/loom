@@ -12,7 +12,8 @@ const sentence = (id: string, citations: Sentence["citations"] = []): Sentence =
   plans: [],
 });
 const page = (sentences: Sentence[]): ConceptPage => ({
-  key: "product",
+  feature: "demo",
+  key: "overview/demo/product",
   title: "Product",
   path: null,
   file_hash: null,

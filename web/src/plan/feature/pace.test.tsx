@@ -32,6 +32,7 @@ function makeChecklist(count: number, kind: GuidedKind = "write_section", featur
   const items = Array.from({ length: count }, (_, index) => documentItem(kind, index, feature));
   return checklistViewSchema.parse({
     feature,
+    pitch: null,
     current: { kind: "step", number: kind === "write_section" ? 2 : 4 },
     steps: [
       { number: 2, name: "Product spec", mark: "gap" },
@@ -232,10 +233,12 @@ it.each(["write_section", "write_plan"] as const)(
     const { guided, team } = fixtureOffers(checklist);
     renderChoice(checklist);
 
-    fireEvent.click(screen.getByRole("button", { name: guided.label }));
+    const guidedLabel = `Start guided writing: ${guided.label}`;
+    expect(screen.queryByRole("button", { name: guided.label })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: guidedLabel }));
     fireEvent.click(screen.getByRole("button", { name: team.label }));
 
-    expect(handlers[kind]).toHaveBeenCalledWith(guided);
+    expect(handlers[kind]).toHaveBeenCalledWith({ ...guided, label: guidedLabel });
     expect(
       handlers[kind === "write_section" ? "draft_all_sections" : "draft_all_plans"],
     ).toHaveBeenCalledWith(team);
@@ -270,7 +273,9 @@ it("uses the incoming feature checklist before the active checklist catches up",
   fireEvent.click(screen.getByRole("button", { name: team.label }));
 
   expect(handlers.draft_all_sections).toHaveBeenCalledWith(team);
-  expect(screen.getByRole("button", { name: guided.label })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: `Start guided writing: ${guided.label}` }),
+  ).toBeTruthy();
 });
 
 it("keeps both pace actions disabled with an explanation for a read-only browser", () => {
@@ -281,7 +286,7 @@ it("keeps both pace actions disabled with an explanation for a read-only browser
   expect(screen.getByRole("heading", { name: "Guided" })).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Draft all, with a team" })).toBeTruthy();
   const guidedButton = screen.getByRole("button", {
-    name: guided.label,
+    name: `Start guided writing: ${guided.label}`,
     description: HOLDER_REASON,
   });
   const teamButton = screen.getByRole("button", {

@@ -1,20 +1,21 @@
 import { describe, expect, it } from "vitest";
 import overview from "@/plan/api/fixtures/concept-overview.json";
 import summary from "@/plan/api/fixtures/concept-summary.json";
+import { isConceptPageKey } from "@/plan/api/page-key";
+import { socketMessageSchema } from "./schema";
 import {
   conceptChangedSchema,
   conceptMessageSchemas,
   conceptPageSchema,
   docLinkSchema,
   emptyStateSchema,
-  isConceptPageKey,
   outOfDateSchema,
   planLinkSchema,
 } from "./schema-concept";
 
 describe("concept wire schemas", () => {
   it.each([overview, summary])("parses a concept fixture and rejects extra fields", (fixture) => {
-    expect(conceptPageSchema.safeParse(fixture).success).toBe(true);
+    expect(conceptPageSchema.parse(fixture)).toEqual(fixture);
     expect(conceptPageSchema.safeParse({ ...fixture, extra: true }).success).toBe(false);
     expect(conceptPageSchema.safeParse({ ...fixture, file_hash: null }).success).toBe(true);
   });
@@ -47,17 +48,52 @@ describe("concept wire schemas", () => {
     expect(
       emptyStateSchema.safeParse({ kind: "building", count: -1, offer: null, docs: [] }).success,
     ).toBe(false);
-    const changed = { pages: ["overview"], out_of_date: [], sources: ["doc/product/vision.md"] };
+    const changed = {
+      feature: "demo",
+      pages: ["overview/demo/product", "demo/product/section_01"],
+      out_of_date: [],
+      sources: ["doc/product/demo/index.md"],
+    };
     expect(conceptChangedSchema.safeParse(changed).success).toBe(true);
     expect(
       conceptMessageSchemas[0].safeParse({ type: "concept_changed", ...changed }).success,
     ).toBe(true);
     expect(conceptMessageSchemas[0].safeParse({ type: "unknown", ...changed }).success).toBe(false);
   });
+
+  it("parses a standalone page with no feature", () => {
+    const page = { ...summary, feature: null, key: "plans/standalone" };
+    expect(conceptPageSchema.parse(page)).toEqual(page);
+  });
+
+  it.each([
+    ["demo", "overview/demo/product"],
+    [null, "plans/standalone"],
+  ])("parses a socket delta for feature %j", (feature, key) => {
+    const changed = { feature, pages: [key], out_of_date: [], sources: [] };
+    const message = { type: "concept_changed", ...changed };
+    expect(conceptChangedSchema.parse(changed)).toEqual(changed);
+    expect(socketMessageSchema.parse(message)).toEqual(message);
+    expect(socketMessageSchema.safeParse({ ...message, extra: true }).success).toBe(false);
+  });
+
+  it.each([undefined, 42])("rejects a missing or invalid feature %j", (feature) => {
+    expect(conceptPageSchema.safeParse({ ...summary, feature }).success).toBe(false);
+    const changed = { feature, pages: [], out_of_date: [], sources: [] };
+    expect(conceptChangedSchema.safeParse(changed).success).toBe(false);
+    expect(socketMessageSchema.safeParse({ type: "concept_changed", ...changed }).success).toBe(
+      false,
+    );
+  });
 });
 
 describe("strings the page code uses as keys", () => {
-  const docLink = { id: "a", title: "A", path: "doc/product/a.md", page: "product/a" };
+  const docLink = {
+    id: "a",
+    title: "A",
+    path: "doc/product/demo/a.md",
+    page: "demo/product/a",
+  };
 
   it.each(["written", "running", "done", "retired"])("parses plan state %s", (plan_state) => {
     expect(conceptPageSchema.safeParse({ ...summary, plan_state }).success).toBe(true);
@@ -82,25 +118,32 @@ describe("strings the page code uses as keys", () => {
     ).toBe(false);
   });
 
-  it.each(["product", "engineering", "product/section_01", "engineering/feat-x.v2"])(
-    "accepts the page key %s",
-    (key) => {
-      expect(isConceptPageKey(key)).toBe(true);
-      expect(docLinkSchema.safeParse({ ...docLink, page: key }).success).toBe(true);
-    },
-  );
+  it.each([
+    "overview/demo/product",
+    "overview/demo/engineering",
+    "demo/product/section_01",
+    "demo/engineering/feat-x.v2",
+    "plans/x",
+  ])("accepts the page key %s", (key) => {
+    expect(isConceptPageKey(key)).toBe(true);
+    expect(docLinkSchema.safeParse({ ...docLink, page: key }).success).toBe(true);
+  });
 
   it.each([
     "",
-    "plans/x",
-    "product/",
-    "product/.",
-    "product/..",
-    "product/../../server",
-    "product/a/b",
-    "product/a b",
-    "product/a%2Fb",
-    `product/${"a".repeat(129)}`,
+    "product",
+    "engineering",
+    "product/x",
+    "engineering/x",
+    "demo/product/",
+    "demo/product/.",
+    "demo/product/..",
+    "demo/product/../../server",
+    "demo/product/a/b",
+    "demo/product/a b",
+    "demo/product/a%2Fb",
+    "plans/..",
+    `demo/product/${"a".repeat(129)}`,
   ])("rejects the page key %j", (key) => {
     expect(isConceptPageKey(key)).toBe(false);
     expect(docLinkSchema.safeParse({ ...docLink, page: key }).success).toBe(false);

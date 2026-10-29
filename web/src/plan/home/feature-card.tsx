@@ -3,17 +3,13 @@ import { useId } from "react";
 import { Link } from "react-router";
 
 import type { ChecklistView } from "@/plan/api/schema";
-import { Untrusted } from "@/plan/chat/visible-controls";
-import { treeAtom } from "@/plan/files/atoms";
-import { treeDocs } from "@/plan/files/tree";
+import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
+import { SentenceText } from "@/plan/concept/sentence-text";
 import { ProgressStrip } from "@/plan/home/progress-strip";
 import { featuresAtom } from "@/plan/state/atoms";
 
 export function FeatureCard({ checklist }: { checklist: ChecklistView }) {
-  const tree = useAtomValue(treeAtom);
   const headingId = useId();
-  const visionPath = `doc/product/${checklist.feature}/index.md`;
-  const pitch = tree ? treeDocs(tree).find((entry) => entry.path === visionPath)?.blurb : null;
   const done = checklist.steps.filter((step) => step.mark === "done").length;
   const total = checklist.steps.length;
   const gaps = checklist.items.length;
@@ -27,9 +23,11 @@ export function FeatureCard({ checklist }: { checklist: ChecklistView }) {
       <h2 id={headingId} className="font-display text-2xl leading-tight font-semibold break-words">
         <Untrusted text={checklist.feature} />
       </h2>
-      {pitch && (
-        <p className="text-sm leading-relaxed break-words text-muted-foreground">
-          <Untrusted text={pitch} />
+      {checklist.pitch && (
+        <p className="feature-pitch break-words text-muted-foreground">
+          <span style={{ unicodeBidi: "isolate", direction: "ltr" }}>
+            <SentenceText text={visibleControls(checklist.pitch)} />
+          </span>
         </p>
       )}
       <div className="mt-auto space-y-3">

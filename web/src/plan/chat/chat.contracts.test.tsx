@@ -130,7 +130,7 @@ async function mount(path: string, viewer = false): Promise<Store> {
 
 // Mounts, then seeds one turn holding a user message and `items` (no turn when `items` is empty).
 async function start(state: string | null, items: Obj[] = [], options: StartOptions = {}) {
-  const store = await mount(options.path ?? "/product", options.viewer);
+  const store = await mount(options.path ?? "/f/demo/product", options.viewer);
   const open = state === "working" || state === "permission";
   const user = item("user", { text: "Go on", attachments: [], origin: null });
   const turn = { ...structuredClone(snapshotFixture.turns[0]), id: "t1", open, changed_files: [] };
@@ -175,7 +175,7 @@ async function pinnedCard(chat: HTMLElement): Promise<HTMLElement> {
 beforeEach(() => {
   localStorage.clear();
   nextId = 0;
-  replies = { "/api/tree": treeFixture, "/api/concept/product": overviewFixture };
+  replies = { "/api/tree": treeFixture, "/api/concept/overview/demo/product": overviewFixture };
   replies["/api/hashes"] = { head: "c1", docs: {} };
   fetchMock = vi.fn<typeof fetch>(answer);
   vi.stubGlobal("fetch", fetchMock);
@@ -350,7 +350,7 @@ it("chat restore all asks first and lists the files", async () => {
 });
 
 it("chat panel is mounted on concept and file pages", async () => {
-  expect((await start(null, [], { path: "/product" })).chat).toBeTruthy();
+  expect((await start(null, [], { path: "/f/demo/product" })).chat).toBeTruthy();
   expect((await start(null, [], { path: FILE_PAGE })).chat).toBeTruthy();
 });
 
@@ -360,7 +360,7 @@ it("chat changed since you looked lists documents whose hash differs from the ch
   localStorage.setItem("loom-plan:example-1234:checkpoint", checkpoint);
   const docs = { ...hashes, "doc/product/beta.md": "h-beta-2", "doc/product/gamma.md": "h-gamma" };
   replies["/api/hashes"] = { head: "c2", docs };
-  await mount("/product");
+  await mount("/f/demo/product");
   seed(snapshot(null, []));
   const control = await screen.findByRole("button", { name: /Changed since you looked/ });
   await waitFor(() => expect(text(control)).toMatch(/\b2\b/));

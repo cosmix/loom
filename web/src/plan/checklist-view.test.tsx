@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import authoringFixture from "@/plan/api/fixtures/authoring.json";
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import { authoringViewSchema, checklistViewSchema, type OfferView } from "@/plan/api/schema";
-import { ChecklistGaps, NextOffers } from "@/plan/checklist-view";
+import { ChecklistGaps, Item, NextOffers } from "@/plan/checklist-view";
 import { registerOfferAction } from "@/plan/offers/actions";
 import { OfferButton } from "@/plan/offers/offer-button";
 import { authoringAtom } from "@/plan/state/atoms";
@@ -23,6 +23,30 @@ function renderWith(ui: React.ReactNode, setup?: (store: ReturnType<typeof creat
 }
 
 describe("ChecklistGaps", () => {
+  it("renders inline gap formatting with isolated, visible untrusted text and no links", () => {
+    const { container } = render(
+      <ul>
+        <Item
+          item={{
+            step: 2,
+            text: "section 02: `loom plan` command and **server** *setup* [guide](https://example.com)\u202E",
+            path: null,
+            offer: null,
+          }}
+        />
+      </ul>,
+    );
+    const code = container.querySelector("code");
+    expect(code?.textContent).toBe("loom plan");
+    expect(container.textContent).not.toContain("`");
+    expect(container.querySelector("strong")?.textContent).toBe("server");
+    expect(container.querySelector("em")?.textContent).toBe("setup");
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.textContent).toContain("guide⟨U+202E⟩");
+    expect(code?.parentElement?.style.unicodeBidi).toBe("isolate");
+    expect(code?.parentElement?.style.direction).toBe("ltr");
+  });
+
   it("renders the gap text, paths and offers", () => {
     renderWith(<ChecklistGaps checklist={checklist} />);
     expect(screen.getByRole("region", { name: "Gaps" })).toBeTruthy();

@@ -39,6 +39,7 @@ type TreeEntry = {
   feature: string | null;
   misplaced: boolean;
   path: string | null;
+  target: string | null;
   title: string;
   file_name: string | null;
   kind: z.infer<typeof entryKindSchema>;
@@ -54,6 +55,7 @@ export const treeEntrySchema: z.ZodType<TreeEntry> = z.strictObject({
   feature: z.string().nullable(),
   misplaced: z.boolean(),
   path: z.string().nullable(),
+  target: z.string().nullable(),
   title: z.string(),
   file_name: z.string().nullable(),
   kind: entryKindSchema,

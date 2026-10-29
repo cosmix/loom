@@ -4,7 +4,8 @@ import { useAtomValue } from "jotai/react";
 import type { StageSummary } from "@/api/schema";
 import { useOpenStage } from "@/components/stage-modal";
 import { toneClass } from "@/components/state-badge";
-import { isContractPhase, stateMeta, type Tone } from "@/lib/format";
+import { stateMeta, type Tone } from "@/lib/format";
+import { isContractPhase } from "@/lib/format-activity";
 import { STAGE_STATES } from "@/lib/states";
 import { orderedStagesAtom } from "@/state/atoms";
 

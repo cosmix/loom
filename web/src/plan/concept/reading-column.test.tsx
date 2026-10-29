@@ -5,26 +5,16 @@ import { expect, it, vi } from "vitest";
 import { Announcer } from "./announce";
 import { refreshDocView } from "./passages";
 import { PlanGlyph } from "./plan-glyph";
-import {
-  cite,
-  docLink,
-  docOf,
-  mark,
-  pageOf,
-  rect,
-  S1,
-  S2,
-  sent,
-  src,
-  TEXT,
-} from "./reading-column-fixtures";
+import { cite, docOf, pageOf, rect, S1, S2, sent, src, TEXT } from "./reading-column-fixtures";
 import {
   active,
   button,
+  docLink,
   docs,
   flashed,
   group,
   installColumnTestHooks,
+  mark,
   mount,
   mountProduct,
   nested,
@@ -82,11 +72,16 @@ it("click ending a selection does not open", () => {
   expect(button(column, /^Selected text/).getAttribute("aria-expanded")).toBe("false");
 });
 
-it("mark click navigates", () => {
+it.each([
+  ["demo/product/section_02", "/f/demo/product/section_02"],
+  ["demo/engineering/feat-x", "/f/demo/engineering/feat-x"],
+  ["plans/feat-x", "/plans/feat-x"],
+])("mark click navigates from key %s to %s", (page, pathname) => {
   const marks = [mark("section_02", "Review", 2)];
+  marks[0]!.doc.page = page;
   const { column, router } = mountProduct([sent("a", "Marked.", [src(S2, "intro")], marks)]);
   fireEvent.click(column.querySelector(".concept-mark")!);
-  expect(router.state.location.pathname).toBe("/product/section_02");
+  expect(router.state.location.pathname).toBe(pathname);
 });
 
 it("passage header link carries the line range", async () => {
@@ -215,7 +210,7 @@ it("f and d navigation targets", async () => {
   column.focus();
   await waitFor(() => expect(active().textContent).toMatch(/^Targets/));
   press("d");
-  expect(router.state.location.pathname).toBe("/product/section_02");
+  expect(router.state.location.pathname).toBe("/f/demo/product/section_02");
   press("f");
   expect(router.state.location.pathname).toBe("/files/product/section_02.md");
   expect(router.state.location.hash).toBe("#intro");
@@ -234,14 +229,22 @@ it("keys ignored while an input has focus", async () => {
 
 it("no flash on unchanged sentences", () => {
   const { column, store } = mountProduct(pair());
-  replace(store, "product", pageOf("product", [pair()[0]!, sent("c", "Brand new.")]));
+  replace(
+    store,
+    "overview/demo/product",
+    pageOf("overview/demo/product", [pair()[0]!, sent("c", "Brand new.")]),
+  );
   expect(flashed(column, "Stays put.")).toBe(false);
 });
 
 it("new sentence flashes", () => {
   vi.useFakeTimers();
   const { column, store } = mountProduct(pair());
-  replace(store, "product", pageOf("product", [pair()[0]!, sent("c", "Brand new.")]));
+  replace(
+    store,
+    "overview/demo/product",
+    pageOf("overview/demo/product", [pair()[0]!, sent("c", "Brand new.")]),
+  );
   expect(flashed(column, "Brand new.")).toBe(true);
   act(() => void vi.advanceTimersByTime(1500));
   expect(flashed(column, "Brand new.")).toBe(false);
@@ -267,7 +270,11 @@ it("reduced motion", () => {
     removeEventListener() {},
   }));
   const { column, store } = mountProduct(pair());
-  replace(store, "product", pageOf("product", [pair()[0]!, sent("c", "Brand new.")]));
+  replace(
+    store,
+    "overview/demo/product",
+    pageOf("overview/demo/product", [pair()[0]!, sent("c", "Brand new.")]),
+  );
   act(() => void vi.advanceTimersByTime(1500));
   expect(flashed(column, "Brand new.")).toBe(true);
   act(() => void vi.advanceTimersByTime(1600));
@@ -284,14 +291,18 @@ it("anchors on the focused sentence across a replacement", async () => {
   column.focus();
   await waitFor(() => expect(active().textContent).toBe("Stays put."));
   top = 160;
-  replace(store, "product", pageOf("product", pair(), { title: "Changed" }));
+  replace(
+    store,
+    "overview/demo/product",
+    pageOf("overview/demo/product", pair(), { title: "Changed" }),
+  );
   expect(scrollBy).toHaveBeenCalledWith(0, 60);
 });
 
 it("note links to file mode", () => {
   const { column, store } = mountProduct(pair());
   act(() => {
-    store.set(notesAtom("product"), [
+    store.set(notesAtom("overview/demo/product"), [
       { paragraphOf: "a", text: "Section Intro was removed from section_02.md", path: S2 },
     ]);
   });
@@ -320,7 +331,7 @@ it("plan glyph popover links", async () => {
   );
   fireEvent.click(screen.getByRole("button", { name: /Plans implementing/ }));
   const link = await screen.findByRole("link", { name: "Feature X" });
-  expect(link.getAttribute("href")).toBe("/engineering/feat-x");
+  expect(link.getAttribute("href")).toBe("/plans/feat-x");
 });
 
 it("a relative link in a passage opens file mode", async () => {
@@ -335,8 +346,10 @@ it("a relative link in a passage opens file mode", async () => {
     },
   ];
   const { column } = mount(
-    "product",
-    pageOf("product", [sent("a", "Linked one.", [src(S2, "intro")])], { key_chips: chips }),
+    "overview/demo/product",
+    pageOf("overview/demo/product", [sent("a", "Linked one.", [src(S2, "intro")])], {
+      key_chips: chips,
+    }),
   );
   fireEvent.click(button(column, /^Linked one/));
   await waitFor(() =>
@@ -365,7 +378,7 @@ it("Fold all moves focus to the outer sentence", async () => {
   await within(column).findByRole("button", { name: /^Detail opens/ });
   press("ArrowDown");
   await waitFor(() => expect(active().textContent).toMatch(/^Detail opens/));
-  act(() => store.set(openRunsAtom("product"), []));
+  act(() => store.set(openRunsAtom("overview/demo/product"), []));
   await waitFor(() => expect(active().textContent).toMatch(/^Overview opens/));
   expect(column.contains(active())).toBe(true);
 });
@@ -381,7 +394,7 @@ it("a rebuild that folds the focused run moves focus to the restored sentence", 
     ...sent("o", "Overview opens.", [cite("section_01", "x")], [mark("section_01", "Planning", 1)]),
     ...rests("other"),
   };
-  replace(store, "product", pageOf("product", [rewritten]));
+  replace(store, "overview/demo/product", pageOf("overview/demo/product", [rewritten]));
   await waitFor(() => expect(active().textContent).toMatch(/^Overview opens/));
   expect(within(column).getByRole("note")).toBeTruthy();
 });

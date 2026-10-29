@@ -2,7 +2,9 @@ import { useAtomValue, useStore } from "jotai/react";
 import { useState, type JSX } from "react";
 import { Link, useSearchParams } from "react-router";
 
+import { useNow } from "@/components/hooks/use-now";
 import { Button } from "@/components/ui/button";
+import { overviewKey, pageHref, summaryKey } from "@/plan/api/page-key";
 import type { DocView, EntryKind, PlanView, ValidationView } from "@/plan/api/schema-files";
 import { addAttachmentAtom } from "@/plan/attachments";
 import { focusComposerAtom } from "@/plan/chat/composer-hooks";
@@ -15,6 +17,7 @@ import { DocHeading, type HeadingChip, type HeadingCrumb } from "@/plan/ui/doc-h
 import { OTHER_GLYPHS, PLAN_STATE_GLYPHS, type DocKind } from "@/plan/ui/glyphs";
 
 import { toAddress } from "./address";
+import { LockNotice } from "./lock-notice";
 import { PlanActionsExtras } from "./plan/plan-actions-extras";
 import { ValidationList, warningCount } from "./plan/validation-list";
 
@@ -62,6 +65,34 @@ function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
 }
 
+function summaryTarget(doc: DocView): string | null {
+  if (doc.kind === "plan") {
+    return doc.plan === null
+      ? null
+      : pageHref(summaryKey(doc.feature, "engineering", doc.plan.slug));
+  }
+  if (doc.feature === null) return null;
+  if (doc.kind === "vision" || doc.kind === "metaplan") {
+    return pageHref(overviewKey(doc.feature, doc.kind === "vision" ? "product" : "engineering"));
+  }
+  if (doc.kind !== "section") return null;
+  const stem = doc.path
+    .split("/")
+    .pop()
+    ?.replace(/\.[^.]+$/, "");
+  return stem ? pageHref(summaryKey(doc.feature, "product", stem)) : null;
+}
+
+function relativeTime(stamp: string, now: number): string {
+  const seconds = Math.floor((now - Date.parse(stamp)) / 1000);
+  if (!Number.isFinite(seconds)) return "unknown";
+  const age = Math.max(0, seconds);
+  if (age < 60) return `${age} s ago`;
+  if (age < 3600) return `${Math.floor(age / 60)} min ago`;
+  if (age < 86400) return `${Math.floor(age / 3600)} h ago`;
+  return `${Math.floor(age / 86400)} d ago`;
+}
+
 function validationText(validation: ValidationView): string {
   const warnings = plural(warningCount(validation), "warning");
   return validation.errors.length === 0
@@ -83,6 +114,7 @@ function pressureText(date: string | null, active: boolean): string {
 
 function planChips(
   plan: PlanView,
+  now: number,
   active: boolean,
   open: boolean,
   toggle: () => void,
@@ -95,7 +127,9 @@ function planChips(
     ...plan.implements.map((link) => ({
       key: `implements:${link.number}`,
       label: `Implements §${link.number}`,
-      ...(link.path === null ? { title: "not found" } : { to: toAddress(link.path) }),
+      ...(link.path === null
+        ? { title: "not found", description: "not found" }
+        : { to: toAddress(link.path) }),
     })),
     { key: "pressure", label: pressureText(plan.pressure_date, active), icon: <PressureGlyph /> },
   ];
@@ -109,7 +143,11 @@ function planChips(
     });
   }
   if (plan.last_change !== null) {
-    chips.push({ key: "changed", label: `Changed ${plan.last_change}` });
+    chips.push({
+      key: "changed",
+      label: `Changed ${relativeTime(plan.last_change, now)}`,
+      title: plan.last_change,
+    });
   }
   return chips;
 }
@@ -157,6 +195,7 @@ function HeadingActions({
 }
 
 export function FileDocHeading({ doc }: { doc: DocView }): JSX.Element {
+  const now = useNow(60_000);
   const run = usePressureRun();
   const pressureActive = doc.plan !== null && run?.plan === doc.path && run.ended === null;
   const [validationPath, setValidationPath] = useState<string | null>(null);
@@ -164,7 +203,7 @@ export function FileDocHeading({ doc }: { doc: DocView }): JSX.Element {
   const chips =
     doc.plan === null
       ? []
-      : planChips(doc.plan, pressureActive, validationOpen, () =>
+      : planChips(doc.plan, now, pressureActive, validationOpen, () =>
           setValidationPath((path) => (path === doc.path ? null : doc.path)),
         );
   return (
@@ -176,15 +215,15 @@ export function FileDocHeading({ doc }: { doc: DocView }): JSX.Element {
         title={doc.title}
         path={doc.path}
         changes={{ to: openDiff("head", doc.path) }}
-        lock={doc.lock?.notice ?? null}
         views={{
           current: "source",
           sourceTo: toAddress(doc.path),
-          summaryTo: doc.plan === null ? null : `/engineering/${encodeURIComponent(doc.plan.slug)}`,
+          summaryTo: summaryTarget(doc),
         }}
         actions={<HeadingActions doc={doc} pressureActive={pressureActive} />}
         chips={chips}
       >
+        {doc.lock && <LockNotice notice={doc.lock.notice} />}
         {validationOpen && doc.plan?.validation && (
           <ValidationList validation={doc.plan.validation} />
         )}
