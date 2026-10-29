@@ -1,0 +1,37 @@
+{
+  "plan": "doc/plans/PLAN-example.md",
+  "rounds": 2,
+  "round": 2,
+  "step": "codex",
+  "started_ms": 1000,
+  "tokens_total": 175,
+  "steps": [
+    {
+      "round": 2,
+      "kind": "claude_pressure",
+      "session_id": "session-1",
+      "model": "sonnet",
+      "effort": "high",
+      "state": "done",
+      "started_ms": 1000,
+      "ended_ms": 2000,
+      "tokens": { "input": 100, "cache_write": 25, "cache_read": 30, "output": 20 },
+      "codex": null,
+      "edits": ["doc/plans/PLAN-example.md"]
+    },
+    {
+      "round": 2,
+      "kind": "codex",
+      "session_id": null,
+      "model": "gpt-6.1-terra",
+      "effort": "high",
+      "state": "running",
+      "started_ms": 2000,
+      "ended_ms": null,
+      "tokens": null,
+      "codex": { "model": "gpt-6.1-terra", "state": "running", "report_path": null, "log_tail": null },
+      "edits": []
+    }
+  ],
+  "ended": null
+}

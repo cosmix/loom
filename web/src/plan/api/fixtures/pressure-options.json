@@ -1,0 +1,19 @@
+{
+  "available": true,
+  "disabled_reason": null,
+  "plans": ["doc/plans/PLAN-example.md"],
+  "defaults": {
+    "rounds": 2,
+    "claude_model": "sonnet",
+    "claude_effort": "high",
+    "codex_model": "gpt-6.1-terra",
+    "codex_effort": "high",
+    "address_model": "sonnet",
+    "address_effort": "high"
+  },
+  "claude_models": ["sonnet", "opus"],
+  "claude_efforts": ["medium", "high"],
+  "codex_models": ["gpt-6.1-terra"],
+  "codex_efforts": ["medium", "high"],
+  "running": false
+}
