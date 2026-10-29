@@ -1,7 +1,7 @@
 ---
 kind: document
 of: doc/plans/PLAN-autonomous-recovery.md
-file: sha256:2b3860353ea8fd6dadc9594625df08a3a40527452521cd0fe64827357403ce56
+file: sha256:d064f4e980bb775d10b230aa1840cc161b5f68de04b5219e7f896934f066c04f
 cites:
   "doc/plans/PLAN-autonomous-recovery.md#decisions": "sha256:8441c3a50077349e20a8af7425b8a3a364d46b1c48c1a9b1f872f5a07a7b0653"
   "doc/plans/PLAN-autonomous-recovery.md#g2-the-block-guard-and-genuine-human-needs": "sha256:6a59dbbfdd990c70c37e27cc22206740bc13968ad1e055763bf0616f1c7d2678"
@@ -10,8 +10,8 @@ cites:
   "doc/plans/PLAN-autonomous-recovery.md#goals": "sha256:655f1d79e81bfbd37d620dd1f34d652e51ba9206fc8cd973cd2890c62987e8d1"
   "doc/plans/PLAN-autonomous-recovery.md#open-decisions": "sha256:1238cb02dff68558cd497c584a76381eef01254b29ad58048f54afb605188d7f"
   "doc/plans/PLAN-autonomous-recovery.md#overview": "sha256:fdd86937c27b74e4d7e96e00045d634a3f7932c303a50de28073c71fac180b4a"
-  "doc/plans/PLAN-autonomous-recovery.md#residual-risks": "sha256:34162d29e0f23a0512fa30fee17ba772165f6d1ac83b59a2a47270ad4aaa4427"
-  "doc/plans/PLAN-autonomous-recovery.md#run-order-and-sibling-plans": "sha256:4c5ca57151f272fb84c98e912a8fa00ddc03bf25cfc489c269a59a664a81ce6e"
+  "doc/plans/PLAN-autonomous-recovery.md#residual-risks": "sha256:f85c6bf391479ae6f97edee30472ef39ed2b4baf9412f3773c8b5952106311a9"
+  "doc/plans/PLAN-autonomous-recovery.md#run-order-and-sibling-plans": "sha256:0b3ac057787f808e4e5443a2de0f39ce74c2afacc0ef401d3d264255c9245730"
 ---
 
 # Autonomous recovery plan
@@ -48,8 +48,8 @@ Resolved-merge verification moves into a host job, and every scheduler-thread wa
 
 ## Open items
 
-The plan runs after feat-planner plans 08-11 and the live-test-lane plan have merged, where plan 08 is merged, plan 09 is executing and plans 10 and 11 are queued, and it changes no web or planning-server file. [run order](../../../plans/PLAN-autonomous-recovery.md#run-order-and-sibling-plans)
+The plan runs after the feat-planner plans 08-11 and the live-test-lane plan have merged, and it changes no web or planning-server file. [run order](../../../plans/PLAN-autonomous-recovery.md#run-order-and-sibling-plans)
 
 The open decisions include lanes not yet confirmed with the user and a failing `before_stage` check that still blocks for a person. [open decisions](../../../plans/PLAN-autonomous-recovery.md#open-decisions)
 
-Residual risks include heuristic tool discovery, a successor that dies after taking the lock, and waivers that persist for the stage's life. [residual risks](../../../plans/PLAN-autonomous-recovery.md#residual-risks)
+Residual risks include heuristic tool discovery, a successor that dies after its `WAITING_BYTE`, and waivers that persist for the stage's life. [residual risks](../../../plans/PLAN-autonomous-recovery.md#residual-risks)

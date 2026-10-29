@@ -635,6 +635,7 @@ Settled with the user:
 ```yaml
 loom:
   version: 1
+  auto_merge: null
   sandbox:
     enabled: true
     auto_allow: true
@@ -642,19 +643,19 @@ loom:
     excluded_commands: []
     filesystem:
       deny_read:
-        - ~/.ssh/**
-        - ~/.aws/**
-        - ~/.config/gcloud/**
-        - ~/.gnupg/**
+      - ~/.ssh/**
+      - ~/.aws/**
+      - ~/.config/gcloud/**
+      - ~/.gnupg/**
       deny_write:
-        - ../../**
+      - ../../**
       allow_write: []
     network:
       allowed_domains:
-        - crates.io
-        - index.crates.io
-        - static.crates.io
-        - registry.npmjs.org
+      - crates.io
+      - index.crates.io
+      - static.crates.io
+      - registry.npmjs.org
       additional_domains: []
       allow_local_binding: false
       allow_unix_sockets: []
@@ -663,417 +664,529 @@ loom:
       enable_weaker_nested: false
     command_confinement: confined
   stages:
-    - id: feature-model
-      name: Features in the planning model and server
-      summary: >-
-        Teaches the planning model, the plan server and the planning skills that a repository
-        holds several features, each a pair of directories under doc/product and doc/plans.
-      implementers: ["claude", "codex"]
-      stage_type: standard
-      working_dir: loom
-      dependencies: []
-      description: |
-        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/feature-model.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
-        Implements Design section 1 and the pace offer of section 8 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. Read that plan's Design and "Stage feature-model" sections first; they list every file and the decisions (D1, D2, D4, D10) this stage assumes.
-        PATHS: working_dir is loom/; YAML paths are package-relative (../ outside the crate).
-        KNOWLEDGE: architecture/planning-document-model.md (Module Map; Kinds, Ids and Slugs; Project View and Checklist), architecture/summary-store.md, architecture/planning-guidance.md.
-        ORDER: (1) kinds, slug and discover with their tests, as a foundation worker; (2) checklist, offers, problems, implements, summary store ids, plan_lifecycle retired path, in parallel; (3) plan_server payloads, the /api/features route, guidance opening and plan-plugin skills, plan check output and its JSON fixture.
-        RULES: the top level of doc/plans/ holds standalone plans only; a top-level vision, section or metaplan is a needs-feature problem, never a fallback feature; plan ids stay plan/<slug> and slugs stay unique repository-wide (a duplicate slug across features is a problem, never a silent winner). No backwards-compatibility shims: this repository's own docs move in migrate-repo-docs.
-        Use parallel subagents and skills to maximize performance.
-        MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
-      acceptance:
-        - cargo build
-        - cargo clippy --all-targets -- -D warnings
-        - cargo fmt --check
-        - "cargo test --lib planning::"
-        - "cargo test --lib plan_server::"
-        - cargo test --test planning_documents_contracts --test planning_checklist_contracts --test planning_check_cli_contracts
-      wiring:
-        - source: src/plan_server/wire/checklist.rs
-          pattern: "feature"
-          description: checklist payload carries its feature
-        - source: src/planning/checklist/offers.rs
-          pattern: "MoveIntoFeature"
-          description: a top-level vision, section or metaplan is offered a move into a feature
-        - source: src/planning/checklist/offers.rs
-          pattern: "DraftAllSections"
-          description: the spec step offers draft-all
-        - source: src/planning/checklist/offers.rs
-          pattern: "DraftAllPlans"
-          description: the plans step offers draft-all
-      files:
-        - loom/src/planning/**
-        - loom/src/plan_server/**
-        - loom/src/commands/plan/**
-        - loom/src/fs/plan_lifecycle.rs
-        - loom/src/fs/plan_lifecycle/**
-        - loom/src/fs/plan_lifecycle_tests.rs
-        - loom/tests/planning_*.rs
-        - loom/tests/fixtures/planning/**
-        - plan-plugin/skills/**
-
-    - id: design-foundation
-      name: Design foundation and app shell
-      summary: >-
-        Adds Source Serif 4 and the reading-face options, the glyph set, DocMarks, animated
-        activity glyphs and the doodle, and rebuilds the planner header on the dashboard's grid
-        with Loom's logo, the activity pill, theme toggle, settings and the help frame.
-      implementers: ["claude", "codex"]
-      stage_type: standard
-      working_dir: web
-      dependencies: []
-      description: |
-        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/design-foundation.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
-        Implements Design sections 3, 4, 5, 9, 11, the doodle of section 8 and the frame of section 10 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. Read that plan's Design sections and "Stage design-foundation" first; the artifact linked under Draft status shows the target. The fonts (D7) are settled.
-        PATHS: working_dir is web/; brief paths are repo-relative.
-        KNOWLEDGE: conventions/web-dashboard-typography.md (theme tokens; chrome uses the body face; TerminalMark; Help uses operational illustrations; Help illustrations use real components), conventions/plan-web.md (CodeMirror lazy boundary; bundle rules), architecture/web-dashboard.md.
-        FONT: bun add @fontsource-variable/source-serif-4 @fontsource-variable/literata @fontsource-variable/piazzolla; import them from src/plan/main.tsx only; add a bundle rule so index.html never contains them. Code stays Commit Mono Cosmix through --font-mono (src/fonts.css).
-        REUSE: Logo (src/components/logo.tsx), ThemeToggle (src/aurora-ui/theme/ThemeToggle.tsx), ThemePicker (src/components/theme-picker.tsx, which gains a swatch prop; the dashboard keeps its stage-graph swatch), the help dialog and pinned scenes (src/components/help-dialog.tsx, help-scene.tsx), the ViewSwitch idiom (src/components/view-switch.tsx), Button. Nothing from components/graph/stage-graph or the terminal (plan.html bundle rules).
-        MOTION: every activity glyph is CSS animation only, and prefers-reduced-motion stops all of them; the doodle is fully drawn at rest.
-        AFTER THE WORKERS: node_modules/.bin/oxfmt; bun run build once so node scripts/bundle-check.mjs has a manifest; inspect the header, settings and help at 390px and 1280px in all four themes before the gate.
-        Use parallel subagents and skills to maximize performance.
-        MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
-      acceptance:
-        - bun run typecheck
-        - bun run lint
-        - bun run format:check
-        - node_modules/.bin/vitest run src/plan/header src/plan/ui src/plan/settings src/plan/help src/components/theme-picker.test.tsx
-      wiring:
-        - source: src/plan/header/header.tsx
-          pattern: "ThemeToggle"
-          description: the planner header mounts the theme toggle
-        - source: src/plan/settings/settings-dialog.tsx
-          pattern: "PlannerThemeSwatch"
-          description: the planner's theme picker draws planner thumbnails
-        - source: src/plan/main.tsx
-          pattern: "@fontsource-variable/"
-          description: the reading face is loaded by the planner entry only
-        - source: src/plan/plan.css
-          pattern: "--font-reading"
-          description: the reading-face token exists
-      before_stage:
-        - command: test ! -e src/plan/ui/glyphs.tsx
-          description: the glyph module does not exist yet
-      after_stage:
-        - command: test -s src/plan/ui/glyphs.tsx
-          description: one glyph module serves every icon in the planner
-      artifacts:
-        - src/plan/ui/glyphs.tsx
-        - src/plan/ui/doc-mark.tsx
-        - src/plan/ui/activity-glyphs.tsx
-        - src/plan/ui/doodle.tsx
-        - src/plan/header/next-step.tsx
-        - src/plan/header/activity.tsx
-        - src/plan/settings/settings-dialog.tsx
-        - src/plan/settings/planner-swatch.tsx
-        - src/plan/help/help-dialog.tsx
-      files:
-        - web/package.json
-        - web/bun.lock
-        - web/scripts/bundle-rules.json
-        - web/src/plan/main.tsx
-        - web/src/plan/plan.css
-        - web/src/plan/header/**
-        - web/src/plan/header-extras.tsx
-        - web/src/plan/ui/**
-        - web/src/plan/settings/**
-        - web/src/plan/help/**
-        - web/src/components/theme-picker.tsx
-        - web/src/components/theme-picker.test.tsx
-        - web/src/plan/checklist-view.tsx
-        - web/src/plan/shell.tsx
-
-    - id: reading-experience
-      name: Reading face, hover and fold
-      summary: >-
-        Sets documents in the reading face, makes sentence hover clear, and replaces the gutter
-        bracket with fold buttons on each opened run plus Esc and Shift+Esc.
-      implementers: ["claude", "codex"]
-      stage_type: standard
-      working_dir: web
-      dependencies: ["design-foundation"]
-      description: |
-        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/reading-experience.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
-        Implements Design section 6 and the reading-face half of section 4 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md (ink wash and inline caps, both settled with the user; the cap sizes, tints and tooltip are specified there).
-        PATHS: working_dir is web/.
-        KNOWLEDGE: conventions/plan-web.md (Markdown renderer rules; Concept Mode Test Rules, including that the fold control's accessible name stays exactly Fold).
-        RULES: inline Markdown in summary sentences goes through src/plan/markdown/inline.tsx, never dangerouslySetInnerHTML; colours only from CSS variables; reduced motion turns transitions off; the tests that pinned the gutter handle change in the same commit.
-        Use parallel subagents and skills to maximize performance.
-        MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
-      acceptance:
-        - bun run typecheck
-        - bun run lint
-        - bun run format:check
-        - node_modules/.bin/vitest run src/plan/concept src/plan/markdown src/plan/files
-      wiring:
-        - source: src/plan/concept/concept.css
-          pattern: "--font-reading"
-          description: concept prose uses the reading face
-        - source: src/plan/markdown/markdown.css
-          pattern: "--font-reading"
-          description: file-mode Markdown uses the reading face
-        - source: src/plan/concept/column-keys.ts
-          pattern: "shiftKey"
-          description: Shift+Esc folds every open run
-      files:
-        - web/src/plan/concept/concept.css
-        - web/src/plan/concept/concept.contracts.test.tsx
-        - web/src/plan/concept/column-keys.ts
-        - web/src/plan/concept/document-key.tsx
-        - web/src/plan/concept/fold-handle.tsx
-        - web/src/plan/concept/fold-handle.test.tsx
-        - web/src/plan/concept/fold-note.tsx
-        - web/src/plan/concept/paragraph.tsx
-        - web/src/plan/concept/passage.tsx
-        - web/src/plan/concept/run.tsx
-        - web/src/plan/concept/sentence.tsx
-        - web/src/plan/concept/sentence-text.tsx
-        - web/src/plan/concept/sentence-text.test.tsx
-        - web/src/plan/concept/reading-column*.tsx
-        - web/src/plan/concept/reading-column*.ts
-        - web/src/plan/markdown/markdown.css
-        - web/src/plan/markdown/inline.tsx
-        - web/src/plan/files/reading-column.tsx
-
-    - id: kickoff-session
-      name: Kickoff conversation and draft-all teams on the server
-      summary: >-
-        Lets new work start as a conversation that gains exactly one target (a feature's vision or
-        a standalone plan) when the user confirms the size and name, and lets "Draft all" run one
-        authoring session leading an agent team of up to five.
-      implementers: ["claude", "codex"]
-      stage_type: standard
-      working_dir: loom
-      dependencies: ["feature-model"]
-      description: |
-        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/kickoff-session.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
-        Implements "Stage kickoff-session" and Design section 8 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. Decisions assumed: D10, D11.
-        PATHS: working_dir is loom/; YAML paths are package-relative (../ outside the crate).
-        KNOWLEDGE: architecture/planning-session-bridge.md, architecture/planning-session-sandbox.md, architecture/planning-guidance.md, doc/product/section_12.md (write rules are literal paths; the tool table), doc/product/section_11.md "How the server runs it" (the agent-team launch pressure sessions use).
-        RULES: until the size and name are confirmed the kickoff writes nothing under doc/; the grant covers one target that did not exist when the session started (doc/product/<name>/index.md for a feature, doc/plans/PLAN-<slug>.md and its brief bundle for a standalone plan); a confirmed name that already exists is refused; the planning hook, not the prompt, enforces it.
-        TEAM RULES: only a draft-all session launches with agent teams enabled and keeps SendMessage and ListAgents; teammates stay in-process; the hook allows writes only to the documents the run was started for; the bridge reads teammate transcripts for tokens and current document and renders none of their messages; at most five teammates.
-        Use parallel subagents and skills to maximize performance.
-        MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
-      acceptance:
-        - cargo build
-        - cargo clippy --all-targets -- -D warnings
-        - cargo fmt --check
-        - "cargo test --lib plan_session::"
-        - "cargo test --lib plan_server::chat::"
-        - "cargo test --lib planning::guidance::"
-      wiring:
-        - source: src/plan_server/chat/mod.rs
-          pattern: "kickoff"
-          description: the chat routes start kickoff sessions
-        - source: src/plan_server/chat/mod.rs
-          pattern: "draft_team"
-          description: the chat routes start draft-all team sessions
-      files:
-        - loom/src/plan_session/**
-        - loom/src/plan_server/chat/**
-        - loom/src/planning/guidance/**
-        - plan-plugin/skills/kickoff/**
-        - plan-plugin/skills/section/**
-        - plan-plugin/skills/plan/**
-
-    - id: feature-ui
-      name: Features home and the kickoff conversation
-      summary: >-
-        Adds the home screen with the invitation card, feature cards and standalone plans, the
-        feature switcher and routes, the kickoff conversation with its taking-shape panel,
-        and the spec pace choice.
-      implementers: ["claude", "codex"]
-      stage_type: standard
-      working_dir: web
-      dependencies: ["kickoff-session", "design-foundation"]
-      description: |
-        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/feature-ui.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
-        Implements Design sections 2 and 8 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. Decisions assumed: D1, D10 (and the settled layout and D11).
-        PATHS: working_dir is web/.
-        KNOWLEDGE: conventions/plan-web.md (Chat Panel and Review UI Rules; New PlanMessage Variants Need Both Schema Arms), architecture/plan-server.md.
-        RULES: every server string through Untrusted; every storage key through storageKey; read-only browsers see the screens but no write controls (DisabledReason); the kickoff transcript is set in the reading face and the taking-shape panel in Inter.
-        Use parallel subagents and skills to maximize performance.
-        MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
-      acceptance:
-        - bun run typecheck
-        - bun run lint
-        - bun run format:check
-        - node_modules/.bin/vitest run src/plan/home src/plan/feature src/plan/new src/plan/api
-      wiring:
-        - source: src/plan/router.tsx
-          pattern: "FeatureRoute"
-          description: feature routes are mounted
-        - source: src/plan/router.tsx
-          pattern: "KickoffRoute"
-          description: the kickoff conversation is mounted
-        - source: src/plan/home/home.tsx
-          pattern: "Doodle"
-          description: the invitation card renders the doodle
-      files:
-        - web/src/plan/router.tsx
-        - web/src/plan/home/**
-        - web/src/plan/feature/**
-        - web/src/plan/new/**
-        - web/src/plan/api/**
-        - web/src/plan/state/**
-        - web/src/plan/offers/**
-        - web/src/plan/header/feature-switcher.tsx
-
-    - id: document-ui
-      name: Document header and pressure-test presentation
-      summary: >-
-        Gives every document one header grid and restyles the pressure-test dialog, run strip and
-        run panel on the new shell, with the animated glyphs.
-      implementers: ["claude", "codex"]
-      stage_type: standard
-      working_dir: web
-      dependencies: ["feature-ui"]
-      description: |
-        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/document-ui.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
-        Implements Design sections 7 and 12 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. The header is settled with the user and revisited once testing starts.
-        PATHS: working_dir is web/.
-        KNOWLEDGE: conventions/plan-web.md (Chat Panel and Review UI Rules), doc/product/section_11.md "Pressure testing from the app".
-        RULES: the document header replaces doc-header.tsx, plan-header.tsx and page-header.tsx, and the replaced files are deleted; the pressure restyle changes presentation only, never the run's behaviour or messages.
-        Use parallel subagents and skills to maximize performance.
-        MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
-      acceptance:
-        - bun run typecheck
-        - bun run lint
-        - bun run format:check
-        - node_modules/.bin/vitest run src/plan/ui src/plan/files src/plan/concept src/plan/chat src/plan/run
-      before_stage:
-        - command: test ! -e src/plan/ui/doc-heading.tsx
-          description: the shared document header does not exist yet
-      after_stage:
-        - command: test ! -e src/plan/files/plan/plan-header.tsx
-          description: the plan header was folded into doc-heading.tsx and deleted
-      wiring:
-        - source: src/plan/files/file-mode.tsx
-          pattern: "DocHeading"
-          description: file mode renders the shared document header
-        - source: src/plan/chat/pressure/pressure-dialog.tsx
-          pattern: "RoundDiagram"
-          description: the pressure dialog draws one round with its model pickers
-      artifacts:
-        - src/plan/ui/doc-heading.tsx
-      files:
-        - web/src/plan/ui/doc-heading.tsx
-        - web/src/plan/ui/doc-heading.test.tsx
-        - web/src/plan/files/doc-header.tsx
-        - web/src/plan/files/file-mode.tsx
-        - web/src/plan/files/plan/**
-        - web/src/plan/files/tree*.tsx
-        - web/src/plan/concept/page-header*.tsx
-        - web/src/plan/markdown/render.tsx
-        - web/src/plan/markdown/markdown-render.test.tsx
-        - web/src/plan/chat/pressure/**
-        - web/src/plan/run/**
-        - web/src/plan/chat/panel.tsx
-        - web/src/plan/chat/run-header.tsx
-
-    - id: help
-      name: Planner help topics
-      summary: >-
-        Fills the planner's help with scenes built from the real components: reading summaries,
-        features and the kickoff, chat and sessions, pressure tests and runs, and the full legend.
-      implementers: ["claude", "codex"]
-      stage_type: standard
-      working_dir: web
-      dependencies: ["document-ui", "reading-experience"]
-      description: |
-        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/help.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
-        Implements Design section 10 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. Decision assumed: D12.
-        PATHS: working_dir is web/.
-        KNOWLEDGE: conventions/web-dashboard-typography.md (Help uses operational illustrations; Help illustrations use real components; Help content), mistakes/web-dashboard-server.md (Help illustrations must match production UI).
-        RULES: every scene renders production components in an isolated Jotai store with sample state, never redrawn lookalikes; one sentence per pin; facts with no control go in Good to know; type at least 13px; the Legend topic is complete; preview the rendered dialog at 390px and 1280px before committing.
-        Use parallel subagents and skills to maximize performance.
-        MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
-      acceptance:
-        - bun run typecheck
-        - bun run lint
-        - bun run format:check
-        - node_modules/.bin/vitest run src/plan/help
-      wiring:
-        - source: src/plan/help/topics.ts
-          pattern: "pressure"
-          description: the help registry lists the pressure topic
-      files:
-        - web/src/plan/help/**
-
-    - id: migrate-repo-docs
-      name: Move this repository's planning docs into features
-      summary: >-
-        Moves the planner spec and plans into the planner-ui feature and the token metaplan
-        into optim-token, and rewrites references to the old paths in unlocked files.
-      implementers: ["claude", "codex"]
-      stage_type: standard
-      working_dir: "."
-      dependencies: ["kickoff-session"]
-      description: |
-        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/migrate-repo-docs.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
-        Implements "Stage migrate-repo-docs" of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md, decision D3. Runs only after IN_PROGRESS-PLAN-feat-planner-11-execution-handoff.md is done.
-        Use git mv for every tracked move. Rewrite doc/product/index.md and doc/product/section_NN.md references in loom/src comments, doc/loom/knowledge and unlocked plans; leave locked plans (IN_PROGRESS-, DONE-, RETIRED-, archive/) and their briefs unchanged. Print the mv commands for gitignored DONE- plans for the operator.
-        Use parallel subagents and skills to maximize performance.
-        MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
-      acceptance:
-        - test -f doc/product/planner-ui/index.md
-        - test ! -e doc/product/index.md
-        - loom plan check --json
-      files:
-        - .gitignore
-        - doc/product/**
-        - doc/plans/**
-        - doc/loom/summaries/**
-        - loom/src/**
-
-    - id: integration-verify
-      name: Integration Verification
-      summary: >-
-        Runs the full suite, reviews the redesign in a real browser in every theme, and proves
-        features, the shell and the reading interactions are wired into the planning app.
-      implementers: ["claude", "codex"]
-      stage_type: integration-verify
-      model: opus
-      working_dir: loom
-      dependencies: ["help", "migrate-repo-docs"]
-      description: |
-        EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/integration-verify.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
-        Final verification of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. User override: Opus owns verification and code review; Sol/high workers only implement fixes. Verify FUNCTIONAL INTEGRATION, not just tests passing. NEVER Claude Code auto-memory.
-        CONTEXT: read the plan, loom memory show --all, doc/loom/knowledge/INDEX.md and only the relevant sections.
-        BUILD & TEST (zero tolerance): loom check integration-verify once.
-        CODE REVIEW: parallel loom-code-reviewer subagents: (1) the planning model's feature rules against the updated doc/product sections 01 and 03 (classifier, ids, loose plans, retired path, duplicate slugs); (2) web security (Untrusted, inline Markdown path, no dangerouslySetInnerHTML); (3) layout and accessibility in a real browser: home, feature screen, product overview with a run opened two levels deep, a plan in file mode, the new-feature flow, at 390px and 1280px in Ledger, Aubergine, Pacific and Graphite (no sideways scroll, focus order, the fold buttons and Esc reachable by keyboard, hover visible in every theme). Fix every finding through an engineer agent or dispute it; never defer one.
-        WEB FIXES: a review fix in web/src rebuilds web/dist after the final review round and commits it last as chore(web).
-        Record discoveries to loom memory, including stale knowledge: loom memory note "stale-knowledge: ...".
-      acceptance:
-        - command: "cargo test --all-targets --no-fail-fast"
-          timeout_secs: 3600
-        - cargo clippy --all-targets -- -D warnings
-        - cargo fmt --check
-        - cargo build
-        - cd ../web && node_modules/.bin/tsc -b --noEmit && node_modules/.bin/oxlint --deny-warnings && node_modules/.bin/oxfmt --check && node_modules/.bin/vitest run
-        - cd ../web && node scripts/bundle-check.mjs
-        - 'cd ../web && d=$(mktemp -d "${TMPDIR:-/tmp}/dist.XXXXXX") && node_modules/.bin/vite build --outDir "$d" --emptyOutDir --logLevel error && diff -r "$d" dist'
-        - cd ../web && git diff --quiet -- dist
-
-    - id: knowledge-distill
-      name: Knowledge Distillation
-      summary: Records features, the planner shell, the reading face and the fold rules in the knowledge base.
-      stage_type: knowledge-distill
-      working_dir: "."
-      dependencies: ["integration-verify"]
-      description: |
-        Curate all stage memories into permanent knowledge. NEVER Claude Code auto-memory. SINGLE-AGENT: do NOT spawn subagents.
-        START with loom memory pending --group; read the plan and the knowledge sections it touches (architecture/planning-document-model.md, architecture/plan-server.md, conventions/plan-web.md, conventions/web-dashboard-typography.md).
-        CORRECTIONS FIRST: apply every stale-knowledge memory with loom knowledge replace-section. Claims that VISION_PATH is the only vision, that plans live only in doc/plans or doc/plans/archive, that the fold control is a gutter bracket, and that headings and reading text both use Inter are now stale.
-        TIER ROUTING: about 40 lines or fewer inline in the tier-1 file; larger via loom knowledge update <category>/<slug> with a 2-4 line tier-1 summary and link.
-        RECEIPTS: every taken memory gets loom memory resolve right after the write; finish with loom memory pending --strict.
-        INDEX BUDGET: doc/loom/knowledge/INDEX.md stays at most 15,000 bytes; shorten blurbs, never delete topics.
-      acceptance:
-        - loom knowledge check --strict --baseline doc/loom/knowledge/check-baseline.txt
-        - loom memory pending --strict
-        - 'test "$(wc -c < doc/loom/knowledge/INDEX.md)" -le 15000'
-      files:
-        - doc/loom/knowledge/**
+  - id: feature-model
+    name: Features in the planning model and server
+    description: |
+      EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/feature-model.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+      Implements Design section 1 and the pace offer of section 8 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. Read that plan's Design and "Stage feature-model" sections first; they list every file and the decisions (D1, D2, D4, D10) this stage assumes.
+      PATHS: working_dir is loom/; YAML paths are package-relative (../ outside the crate).
+      KNOWLEDGE: architecture/planning-document-model.md (Module Map; Kinds, Ids and Slugs; Project View and Checklist), architecture/summary-store.md, architecture/planning-guidance.md.
+      ORDER: (1) kinds, slug and discover with their tests, as a foundation worker; (2) checklist, offers, problems, implements, summary store ids, plan_lifecycle retired path, in parallel; (3) plan_server payloads, the /api/features route, guidance opening and plan-plugin skills, plan check output and its JSON fixture.
+      RULES: the top level of doc/plans/ holds standalone plans only; a top-level vision, section or metaplan is a needs-feature problem, never a fallback feature; plan ids stay plan/<slug> and slugs stay unique repository-wide (a duplicate slug across features is a problem, never a silent winner). No backwards-compatibility shims: this repository's own docs move in migrate-repo-docs.
+      Use parallel subagents and skills to maximize performance.
+      MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
+    summary: >-
+      Teaches the planning model, the plan server and the planning skills that a
+      repository holds several features, each a pair of directories under doc/product and
+      doc/plans.
+    dependencies: []
+    parallel_group: null
+    acceptance:
+    - cargo build
+    - cargo clippy --all-targets -- -D warnings
+    - cargo fmt --check
+    - "cargo test --lib planning::"
+    - "cargo test --lib plan_server::"
+    - >-
+      cargo test --test planning_documents_contracts --test
+      planning_checklist_contracts --test planning_check_cli_contracts
+    setup: []
+    files:
+    - loom/src/planning/**
+    - loom/src/plan_server/**
+    - loom/src/commands/plan/**
+    - loom/src/fs/plan_lifecycle.rs
+    - loom/src/fs/plan_lifecycle/**
+    - loom/src/fs/plan_lifecycle_tests.rs
+    - loom/tests/planning_*.rs
+    - loom/tests/fixtures/planning/**
+    - plan-plugin/skills/**
+    auto_merge: null
+    working_dir: loom
+    stage_type: standard
+    artifacts: []
+    wiring:
+    - source: src/plan_server/wire/checklist.rs
+      pattern: feature
+      description: checklist payload carries its feature
+    - source: src/planning/checklist/offers.rs
+      pattern: MoveIntoFeature
+      description: a top-level vision, section or metaplan is offered a move into a feature
+    - source: src/planning/checklist/offers.rs
+      pattern: DraftAllSections
+      description: the spec step offers draft-all
+    - source: src/planning/checklist/offers.rs
+      pattern: DraftAllPlans
+      description: the plans step offers draft-all
+    context_ceiling_tokens: null
+    sandbox: {}
+    ultracode: false
+    implementers:
+    - claude
+    - codex
+  - id: design-foundation
+    name: Design foundation and app shell
+    description: |
+      EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/design-foundation.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+      Implements Design sections 3, 4, 5, 9, 11, the doodle of section 8 and the frame of section 10 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. Read that plan's Design sections and "Stage design-foundation" first; the artifact linked under Draft status shows the target. The fonts (D7) are settled.
+      PATHS: working_dir is web/; brief paths are repo-relative.
+      KNOWLEDGE: conventions/web-dashboard-typography.md (theme tokens; chrome uses the body face; TerminalMark; Help uses operational illustrations; Help illustrations use real components), conventions/plan-web.md (CodeMirror lazy boundary; bundle rules), architecture/web-dashboard.md.
+      FONT: bun add @fontsource-variable/source-serif-4 @fontsource-variable/literata @fontsource-variable/piazzolla; import them from src/plan/main.tsx only; add a bundle rule so index.html never contains them. Code stays Commit Mono Cosmix through --font-mono (src/fonts.css).
+      REUSE: Logo (src/components/logo.tsx), ThemeToggle (src/aurora-ui/theme/ThemeToggle.tsx), ThemePicker (src/components/theme-picker.tsx, which gains a swatch prop; the dashboard keeps its stage-graph swatch), the help dialog and pinned scenes (src/components/help-dialog.tsx, help-scene.tsx), the ViewSwitch idiom (src/components/view-switch.tsx), Button. Nothing from components/graph/stage-graph or the terminal (plan.html bundle rules).
+      MOTION: every activity glyph is CSS animation only, and prefers-reduced-motion stops all of them; the doodle is fully drawn at rest.
+      AFTER THE WORKERS: node_modules/.bin/oxfmt; bun run build once so node scripts/bundle-check.mjs has a manifest; inspect the header, settings and help at 390px and 1280px in all four themes before the gate.
+      Use parallel subagents and skills to maximize performance.
+      MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
+    summary: >-
+      Adds Source Serif 4 and the reading-face options, the glyph set, DocMarks,
+      animated activity glyphs and the doodle, and rebuilds the planner header on the
+      dashboard's grid with Loom's logo, the activity pill, theme toggle, settings and the
+      help frame.
+    dependencies: []
+    parallel_group: null
+    acceptance:
+    - bun run typecheck
+    - bun run lint
+    - bun run format:check
+    - >-
+      node_modules/.bin/vitest run src/plan/header src/plan/ui src/plan/settings
+      src/plan/help src/components/theme-picker.test.tsx
+    setup: []
+    files:
+    - web/package.json
+    - web/bun.lock
+    - web/scripts/bundle-rules.json
+    - web/src/plan/main.tsx
+    - web/src/plan/plan.css
+    - web/src/plan/header/**
+    - web/src/plan/header-extras.tsx
+    - web/src/plan/ui/**
+    - web/src/plan/settings/**
+    - web/src/plan/help/**
+    - web/src/components/theme-picker.tsx
+    - web/src/components/theme-picker.test.tsx
+    - web/src/plan/checklist-view.tsx
+    - web/src/plan/shell.tsx
+    auto_merge: null
+    working_dir: web
+    stage_type: standard
+    artifacts:
+    - src/plan/ui/glyphs.tsx
+    - src/plan/ui/doc-mark.tsx
+    - src/plan/ui/activity-glyphs.tsx
+    - src/plan/ui/doodle.tsx
+    - src/plan/header/next-step.tsx
+    - src/plan/header/activity.tsx
+    - src/plan/settings/settings-dialog.tsx
+    - src/plan/settings/planner-swatch.tsx
+    - src/plan/help/help-dialog.tsx
+    wiring:
+    - source: src/plan/header/header.tsx
+      pattern: ThemeToggle
+      description: the planner header mounts the theme toggle
+    - source: src/plan/settings/settings-dialog.tsx
+      pattern: PlannerThemeSwatch
+      description: the planner's theme picker draws planner thumbnails
+    - source: src/plan/main.tsx
+      pattern: "@fontsource-variable/"
+      description: the reading face is loaded by the planner entry only
+    - source: src/plan/plan.css
+      pattern: --font-reading
+      description: the reading-face token exists
+    before_stage:
+    - command: test ! -e src/plan/ui/glyphs.tsx
+      description: the glyph module does not exist yet
+    after_stage:
+    - command: test -s src/plan/ui/glyphs.tsx
+      description: one glyph module serves every icon in the planner
+    context_ceiling_tokens: null
+    sandbox: {}
+    ultracode: false
+    implementers:
+    - claude
+    - codex
+  - id: reading-experience
+    name: Reading face, hover and fold
+    description: |
+      EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/reading-experience.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+      Implements Design section 6 and the reading-face half of section 4 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md (ink wash and inline caps, both settled with the user; the cap sizes, tints and tooltip are specified there).
+      PATHS: working_dir is web/.
+      KNOWLEDGE: conventions/plan-web.md (Markdown renderer rules; Concept Mode Test Rules, including that the fold control's accessible name stays exactly Fold).
+      RULES: inline Markdown in summary sentences goes through src/plan/markdown/inline.tsx, never dangerouslySetInnerHTML; colours only from CSS variables; reduced motion turns transitions off; the tests that pinned the gutter handle change in the same commit.
+      Use parallel subagents and skills to maximize performance.
+      MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
+    summary: >-
+      Sets documents in the reading face, makes sentence hover clear, and replaces
+      the gutter bracket with fold buttons on each opened run plus Esc and Shift+Esc.
+    dependencies:
+    - design-foundation
+    parallel_group: null
+    acceptance:
+    - bun run typecheck
+    - bun run lint
+    - bun run format:check
+    - node_modules/.bin/vitest run src/plan/concept src/plan/markdown src/plan/files
+    setup: []
+    files:
+    - web/src/plan/concept/concept.css
+    - web/src/plan/concept/concept.contracts.test.tsx
+    - web/src/plan/concept/column-keys.ts
+    - web/src/plan/concept/document-key.tsx
+    - web/src/plan/concept/fold-handle.tsx
+    - web/src/plan/concept/fold-handle.test.tsx
+    - web/src/plan/concept/fold-note.tsx
+    - web/src/plan/concept/paragraph.tsx
+    - web/src/plan/concept/passage.tsx
+    - web/src/plan/concept/run.tsx
+    - web/src/plan/concept/sentence.tsx
+    - web/src/plan/concept/sentence-text.tsx
+    - web/src/plan/concept/sentence-text.test.tsx
+    - web/src/plan/concept/reading-column*.tsx
+    - web/src/plan/concept/reading-column*.ts
+    - web/src/plan/markdown/markdown.css
+    - web/src/plan/markdown/inline.tsx
+    - web/src/plan/files/reading-column.tsx
+    auto_merge: null
+    working_dir: web
+    stage_type: standard
+    artifacts: []
+    wiring:
+    - source: src/plan/concept/concept.css
+      pattern: --font-reading
+      description: concept prose uses the reading face
+    - source: src/plan/markdown/markdown.css
+      pattern: --font-reading
+      description: file-mode Markdown uses the reading face
+    - source: src/plan/concept/column-keys.ts
+      pattern: shiftKey
+      description: Shift+Esc folds every open run
+    context_ceiling_tokens: null
+    sandbox: {}
+    ultracode: false
+    implementers:
+    - claude
+    - codex
+  - id: kickoff-session
+    name: Kickoff conversation and draft-all teams on the server
+    description: |
+      EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/kickoff-session.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+      Implements "Stage kickoff-session" and Design section 8 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. Decisions assumed: D10, D11.
+      PATHS: working_dir is loom/; YAML paths are package-relative (../ outside the crate).
+      KNOWLEDGE: architecture/planning-session-bridge.md, architecture/planning-session-sandbox.md, architecture/planning-guidance.md, doc/product/section_12.md (write rules are literal paths; the tool table), doc/product/section_11.md "How the server runs it" (the agent-team launch pressure sessions use).
+      RULES: until the size and name are confirmed the kickoff writes nothing under doc/; the grant covers one target that did not exist when the session started (doc/product/<name>/index.md for a feature, doc/plans/PLAN-<slug>.md and its brief bundle for a standalone plan); a confirmed name that already exists is refused; the planning hook, not the prompt, enforces it.
+      TEAM RULES: only a draft-all session launches with agent teams enabled and keeps SendMessage and ListAgents; teammates stay in-process; the hook allows writes only to the documents the run was started for; the bridge reads teammate transcripts for tokens and current document and renders none of their messages; at most five teammates.
+      Use parallel subagents and skills to maximize performance.
+      MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
+    summary: >-
+      Lets new work start as a conversation that gains exactly one target (a
+      feature's vision or a standalone plan) when the user confirms the size and name, and lets
+      "Draft all" run one authoring session leading an agent team of up to five.
+    dependencies:
+    - feature-model
+    parallel_group: null
+    acceptance:
+    - cargo build
+    - cargo clippy --all-targets -- -D warnings
+    - cargo fmt --check
+    - "cargo test --lib plan_session::"
+    - "cargo test --lib plan_server::chat::"
+    - "cargo test --lib planning::guidance::"
+    setup: []
+    files:
+    - loom/src/plan_session/**
+    - loom/src/plan_server/chat/**
+    - loom/src/planning/guidance/**
+    - plan-plugin/skills/kickoff/**
+    - plan-plugin/skills/section/**
+    - plan-plugin/skills/plan/**
+    auto_merge: null
+    working_dir: loom
+    stage_type: standard
+    artifacts: []
+    wiring:
+    - source: src/plan_server/chat/mod.rs
+      pattern: kickoff
+      description: the chat routes start kickoff sessions
+    - source: src/plan_server/chat/mod.rs
+      pattern: draft_team
+      description: the chat routes start draft-all team sessions
+    context_ceiling_tokens: null
+    sandbox: {}
+    ultracode: false
+    implementers:
+    - claude
+    - codex
+  - id: feature-ui
+    name: Features home and the kickoff conversation
+    description: |
+      EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/feature-ui.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+      Implements Design sections 2 and 8 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. Decisions assumed: D1, D10 (and the settled layout and D11).
+      PATHS: working_dir is web/.
+      KNOWLEDGE: conventions/plan-web.md (Chat Panel and Review UI Rules; New PlanMessage Variants Need Both Schema Arms), architecture/plan-server.md.
+      RULES: every server string through Untrusted; every storage key through storageKey; read-only browsers see the screens but no write controls (DisabledReason); the kickoff transcript is set in the reading face and the taking-shape panel in Inter.
+      Use parallel subagents and skills to maximize performance.
+      MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
+    summary: >-
+      Adds the home screen with the invitation card, feature cards and standalone
+      plans, the feature switcher and routes, the kickoff conversation with its
+      taking-shape panel, and the spec pace choice.
+    dependencies:
+    - kickoff-session
+    - design-foundation
+    parallel_group: null
+    acceptance:
+    - bun run typecheck
+    - bun run lint
+    - bun run format:check
+    - >-
+      node_modules/.bin/vitest run src/plan/home src/plan/feature src/plan/new
+      src/plan/api
+    setup: []
+    files:
+    - web/src/plan/router.tsx
+    - web/src/plan/home/**
+    - web/src/plan/feature/**
+    - web/src/plan/new/**
+    - web/src/plan/api/**
+    - web/src/plan/state/**
+    - web/src/plan/offers/**
+    - web/src/plan/header/feature-switcher.tsx
+    auto_merge: null
+    working_dir: web
+    stage_type: standard
+    artifacts: []
+    wiring:
+    - source: src/plan/router.tsx
+      pattern: FeatureRoute
+      description: feature routes are mounted
+    - source: src/plan/router.tsx
+      pattern: KickoffRoute
+      description: the kickoff conversation is mounted
+    - source: src/plan/home/home.tsx
+      pattern: Doodle
+      description: the invitation card renders the doodle
+    context_ceiling_tokens: null
+    sandbox: {}
+    ultracode: false
+    implementers:
+    - claude
+    - codex
+  - id: document-ui
+    name: Document header and pressure-test presentation
+    description: |
+      EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/document-ui.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+      Implements Design sections 7 and 12 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. The header is settled with the user and revisited once testing starts.
+      PATHS: working_dir is web/.
+      KNOWLEDGE: conventions/plan-web.md (Chat Panel and Review UI Rules), doc/product/section_11.md "Pressure testing from the app".
+      RULES: the document header replaces doc-header.tsx, plan-header.tsx and page-header.tsx, and the replaced files are deleted; the pressure restyle changes presentation only, never the run's behaviour or messages.
+      Use parallel subagents and skills to maximize performance.
+      MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
+    summary: >-
+      Gives every document one header grid and restyles the pressure-test dialog, run
+      strip and run panel on the new shell, with the animated glyphs.
+    dependencies:
+    - feature-ui
+    parallel_group: null
+    acceptance:
+    - bun run typecheck
+    - bun run lint
+    - bun run format:check
+    - >-
+      node_modules/.bin/vitest run src/plan/ui src/plan/files src/plan/concept
+      src/plan/chat src/plan/run
+    setup: []
+    files:
+    - web/src/plan/ui/doc-heading.tsx
+    - web/src/plan/ui/doc-heading.test.tsx
+    - web/src/plan/files/doc-header.tsx
+    - web/src/plan/files/file-mode.tsx
+    - web/src/plan/files/plan/**
+    - web/src/plan/files/tree*.tsx
+    - web/src/plan/concept/page-header*.tsx
+    - web/src/plan/markdown/render.tsx
+    - web/src/plan/markdown/markdown-render.test.tsx
+    - web/src/plan/chat/pressure/**
+    - web/src/plan/run/**
+    - web/src/plan/chat/panel.tsx
+    - web/src/plan/chat/run-header.tsx
+    auto_merge: null
+    working_dir: web
+    stage_type: standard
+    artifacts:
+    - src/plan/ui/doc-heading.tsx
+    wiring:
+    - source: src/plan/files/file-mode.tsx
+      pattern: DocHeading
+      description: file mode renders the shared document header
+    - source: src/plan/chat/pressure/pressure-dialog.tsx
+      pattern: RoundDiagram
+      description: the pressure dialog draws one round with its model pickers
+    before_stage:
+    - command: test ! -e src/plan/ui/doc-heading.tsx
+      description: the shared document header does not exist yet
+    after_stage:
+    - command: test ! -e src/plan/files/plan/plan-header.tsx
+      description: the plan header was folded into doc-heading.tsx and deleted
+    context_ceiling_tokens: null
+    sandbox: {}
+    ultracode: false
+    implementers:
+    - claude
+    - codex
+  - id: help
+    name: Planner help topics
+    description: |
+      EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/help.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+      Implements Design section 10 of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. Decision assumed: D12.
+      PATHS: working_dir is web/.
+      KNOWLEDGE: conventions/web-dashboard-typography.md (Help uses operational illustrations; Help illustrations use real components; Help content), mistakes/web-dashboard-server.md (Help illustrations must match production UI).
+      RULES: every scene renders production components in an isolated Jotai store with sample state, never redrawn lookalikes; one sentence per pin; facts with no control go in Good to know; type at least 13px; the Legend topic is complete; preview the rendered dialog at 390px and 1280px before committing.
+      Use parallel subagents and skills to maximize performance.
+      MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
+    summary: "Fills the planner's help with scenes built from the real components: reading summaries, features and the kickoff, chat and sessions, pressure tests and runs, and the full legend."
+    dependencies:
+    - document-ui
+    - reading-experience
+    parallel_group: null
+    acceptance:
+    - bun run typecheck
+    - bun run lint
+    - bun run format:check
+    - node_modules/.bin/vitest run src/plan/help
+    setup: []
+    files:
+    - web/src/plan/help/**
+    auto_merge: null
+    working_dir: web
+    stage_type: standard
+    artifacts: []
+    wiring:
+    - source: src/plan/help/topics.ts
+      pattern: pressure
+      description: the help registry lists the pressure topic
+    context_ceiling_tokens: null
+    sandbox: {}
+    ultracode: false
+    implementers:
+    - claude
+    - codex
+  - id: migrate-repo-docs
+    name: Move this repository's planning docs into features
+    description: |
+      EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/migrate-repo-docs.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+      Implements "Stage migrate-repo-docs" of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md, decision D3. Runs only after IN_PROGRESS-PLAN-feat-planner-11-execution-handoff.md is done.
+      Use git mv for every tracked move. Rewrite doc/product/index.md and doc/product/section_NN.md references in loom/src comments, doc/loom/knowledge and unlocked plans; leave locked plans (IN_PROGRESS-, DONE-, RETIRED-, archive/) and their briefs unchanged. Print the mv commands for gitignored DONE- plans for the operator.
+      Use parallel subagents and skills to maximize performance.
+      MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
+    summary: >-
+      Moves the planner spec and plans into the planner-ui feature and the token
+      metaplan into optim-token, and rewrites references to the old paths in unlocked files.
+    dependencies:
+    - kickoff-session
+    parallel_group: null
+    acceptance:
+    - test -f doc/product/planner-ui/index.md
+    - test ! -e doc/product/index.md
+    - >-
+      test -f doc/plans/planner-ui/index.md && test -f doc/plans/optim-token/index.md
+      && ! grep -nE
+      'doc/product/(index|section_[0-9]+)\.md|doc/plans/(optim-token-metaplan|metaplan-planner-ui)\.md|doc/plans/briefs/feat-planner-|doc/plans/PLAN-feat-planner-' doc/plans/PLAN-*.md doc/plans/planner-ui/index.md doc/plans/optim-token/index.md && ! grep -rnE 'doc/product/section_[0-9]+\.md|doc/plans/(optim-token-metaplan|metaplan-planner-ui)\.md|doc/plans/briefs/feat-planner-' doc/loom/knowledge --exclude-dir=mistakes --exclude=mistakes.md
+    setup: []
+    files:
+    - .gitignore
+    - doc/product/**
+    - doc/plans/**
+    - doc/loom/summaries/**
+    - loom/src/**
+    auto_merge: null
+    working_dir: '.'
+    stage_type: standard
+    artifacts: []
+    wiring: []
+    context_ceiling_tokens: null
+    sandbox: {}
+    ultracode: false
+    implementers:
+    - claude
+    - codex
+  - id: integration-verify
+    name: Integration Verification
+    description: |
+      EXECUTORS: user-selected gpt-6.1-sol/high for implementation and review fixes. Read doc/plans/briefs/planner-ui-redesign/common.md and doc/plans/briefs/planner-ui-redesign/integration-verify.md before dispatch; resolve both to absolute worktree paths. Use loom-codex-forwarder with --model gpt-6.1-sol --effort high, a stable unit id and Bash timeout 600000 ms. Keep orchestrator and reviewer models unchanged.
+      Final verification of doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md. User override: Opus owns verification and code review; Sol/high workers only implement fixes. Verify FUNCTIONAL INTEGRATION, not just tests passing. NEVER Claude Code auto-memory.
+      CONTEXT: read the plan, loom memory show --all, doc/loom/knowledge/INDEX.md and only the relevant sections.
+      BUILD & TEST (zero tolerance): loom check integration-verify once.
+      CODE REVIEW: parallel loom-code-reviewer subagents: (1) the planning model's feature rules against the updated doc/product sections 01 and 03 (classifier, ids, loose plans, retired path, duplicate slugs); (2) web security (Untrusted, inline Markdown path, no dangerouslySetInnerHTML); (3) layout and accessibility in a real browser: home, feature screen, product overview with a run opened two levels deep, a plan in file mode, the new-feature flow, at 390px and 1280px in Ledger, Aubergine, Pacific and Graphite (no sideways scroll, focus order, the fold buttons and Esc reachable by keyboard, hover visible in every theme). Fix every finding through an engineer agent or dispute it; never defer one.
+      WEB FIXES: a review fix in web/src rebuilds web/dist after the final review round and commits it last as chore(web).
+      Record discoveries to loom memory, including stale knowledge: loom memory note "stale-knowledge: ...".
+    summary: >-
+      Runs the full suite, reviews the redesign in a real browser in every theme, and
+      proves features, the shell and the reading interactions are wired into the
+      planning app.
+    dependencies:
+    - help
+    - migrate-repo-docs
+    parallel_group: null
+    acceptance:
+    - command: cargo test --all-targets --no-fail-fast
+      timeout_secs: 3600
+    - cargo clippy --all-targets -- -D warnings
+    - cargo fmt --check
+    - cargo build
+    - >-
+      cd ../web && node_modules/.bin/tsc -b --noEmit && node_modules/.bin/oxlint
+      --deny-warnings && node_modules/.bin/oxfmt --check && node_modules/.bin/vitest run
+    - cd ../web && node scripts/bundle-check.mjs
+    - >-
+      cd ../web && d=$(mktemp -d "${TMPDIR:-/tmp}/dist.XXXXXX") &&
+      node_modules/.bin/vite build --outDir "$d" --emptyOutDir --logLevel error && diff -r "$d" dist
+    - cd ../web && git diff --quiet -- dist
+    setup: []
+    files: []
+    auto_merge: null
+    working_dir: loom
+    stage_type: integration-verify
+    artifacts: []
+    wiring: []
+    context_ceiling_tokens: null
+    sandbox: {}
+    model: opus
+    ultracode: false
+    implementers:
+    - claude
+    - codex
+  - id: knowledge-distill
+    name: Knowledge Distillation
+    description: |
+      Curate all stage memories into permanent knowledge. NEVER Claude Code auto-memory. SINGLE-AGENT: do NOT spawn subagents.
+      START with loom memory pending --group; read the plan and the knowledge sections it touches (architecture/planning-document-model.md, architecture/plan-server.md, conventions/plan-web.md, conventions/web-dashboard-typography.md).
+      CORRECTIONS FIRST: apply every stale-knowledge memory with loom knowledge replace-section. Claims that VISION_PATH is the only vision, that plans live only in doc/plans or doc/plans/archive, that the fold control is a gutter bracket, and that headings and reading text both use Inter are now stale.
+      TIER ROUTING: about 40 lines or fewer inline in the tier-1 file; larger via loom knowledge update <category>/<slug> with a 2-4 line tier-1 summary and link.
+      RECEIPTS: every taken memory gets loom memory resolve right after the write; finish with loom memory pending --strict.
+      INDEX BUDGET: doc/loom/knowledge/INDEX.md stays at most 15,000 bytes; shorten blurbs, never delete topics.
+    summary: >-
+      Records features, the planner shell, the reading face and the fold rules in the
+      knowledge base.
+    dependencies:
+    - integration-verify
+    parallel_group: null
+    acceptance:
+    - loom knowledge check --strict --baseline doc/loom/knowledge/check-baseline.txt
+    - loom memory pending --strict
+    - test "$(wc -c < doc/loom/knowledge/INDEX.md)" -le 15000
+    setup: []
+    files:
+    - doc/loom/knowledge/**
+    auto_merge: null
+    working_dir: '.'
+    stage_type: knowledge-distill
+    artifacts: []
+    wiring: []
+    context_ceiling_tokens: null
+    sandbox: {}
+    ultracode: false
+    implementers:
+    - claude
 ```
 
 <!-- END loom METADATA -->
