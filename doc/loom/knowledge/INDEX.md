@@ -49,7 +49,7 @@
 | [owned-waits](architecture/owned-waits.md) | Waits | 70 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 257 |
 | [plan-server](architecture/plan-server.md) | Chat | 241 |
-| [planning-document-model](architecture/planning-document-model.md) | Docs | 173 |
+| [planning-document-model](architecture/planning-document-model.md) | Docs | 177 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 35 |
 | [planning-session-bridge](architecture/planning-session-bridge.md) | Bridge | 191 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) | Sandbox | 135 |
@@ -155,6 +155,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Incidents | 343 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merged flag | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
+| [plan-authoring](mistakes/plan-authoring.md) | Plan structure gaps that shipped stale artifacts | 10 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) |  | 302 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
