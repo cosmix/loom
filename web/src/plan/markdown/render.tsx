@@ -1,4 +1,4 @@
-import type { List, ListItem, RootContent } from "mdast";
+import type { List, ListItem, PhrasingContent, RootContent } from "mdast";
 import { Fragment, type JSX, type ReactNode } from "react";
 
 import { CodeBlock } from "@/plan/markdown/code-block";
@@ -12,6 +12,14 @@ function headingAnchor(line: number | undefined, context: RenderContext): string
   return context.headingAnchor(line);
 }
 
+/**
+ * A suppressed title still leaves its server anchor behind, so links and scroll
+ * restore to it find an (empty, zero-size) target.
+ */
+function SuppressedAnchor({ anchor }: { anchor: string | null }): JSX.Element | null {
+  return anchor === null ? null : <span id={anchor} />;
+}
+
 function ListItemView(props: {
   item: ListItem;
   tight: boolean;
@@ -22,7 +30,7 @@ function ListItemView(props: {
   return (
     <li className={task ? "md-task" : undefined}>
       {task && <input type="checkbox" checked={item.checked === true} disabled readOnly />}
-      {renderBlocks(item.children, context, tight)}
+      {renderBlockNodes(item.children, context, tight)}
     </li>
   );
 }
@@ -59,7 +67,7 @@ function renderBlock(node: RootContent, context: RenderContext, tight: boolean):
     case "thematicBreak":
       return <hr />;
     case "blockquote":
-      return <blockquote>{renderBlocks(node.children, context)}</blockquote>;
+      return <blockquote>{renderBlockNodes(node.children, context)}</blockquote>;
     case "list":
       return <ListView node={node} context={context} />;
     case "listItem":
@@ -76,7 +84,7 @@ function renderBlock(node: RootContent, context: RenderContext, tight: boolean):
       return (
         <div className="md-footnote">
           <span className="md-footnote-label">[{node.label ?? node.identifier}]</span>
-          {renderBlocks(node.children, context)}
+          {renderBlockNodes(node.children, context)}
         </div>
       );
     case "definition":
@@ -89,13 +97,52 @@ function renderBlock(node: RootContent, context: RenderContext, tight: boolean):
   }
 }
 
+function renderBlockNodes(
+  nodes: readonly RootContent[],
+  context: RenderContext,
+  tight = false,
+  suppressedIndex = -1,
+): ReactNode[] {
+  return nodes.map((node, index) => (
+    <Fragment key={index}>
+      {index === suppressedIndex ? (
+        <SuppressedAnchor anchor={headingAnchor(node.position?.start.line, context)} />
+      ) : (
+        renderBlock(node, context, tight)
+      )}
+    </Fragment>
+  ));
+}
+
+function headingText(nodes: readonly PhrasingContent[]): string {
+  return nodes
+    .map((node) => {
+      if (node.type === "text" || node.type === "inlineCode") return node.value;
+      if ("children" in node) return headingText(node.children);
+      if (node.type === "break") return " ";
+      if (node.type === "image" || node.type === "imageReference") return node.alt ?? "";
+      return "";
+    })
+    .join("");
+}
+
+export function normalizeTitle(title: string): string {
+  return title.trim().replace(/\s+/g, " ");
+}
+
 /** Renders mdast nodes to React elements; `tight` drops the <p> of a tight list's paragraphs. */
 export function renderBlocks(
   nodes: readonly RootContent[],
   context: RenderContext,
   tight = false,
 ): ReactNode[] {
-  return nodes.map((node, index) => (
-    <Fragment key={index}>{renderBlock(node, context, tight)}</Fragment>
-  ));
+  const title = normalizeTitle(context.suppressTitle ?? "");
+  const firstH1 = nodes.findIndex((node) => node.type === "heading" && node.depth === 1);
+  const heading = nodes[firstH1];
+  const suppressedIndex =
+    title && heading?.type === "heading" && normalizeTitle(headingText(heading.children)) === title
+      ? firstH1
+      : -1;
+  // Nested blocks bypass this entry point so their headings always remain visible.
+  return renderBlockNodes(nodes, context, tight, suppressedIndex);
 }

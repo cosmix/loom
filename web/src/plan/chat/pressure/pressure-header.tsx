@@ -1,4 +1,5 @@
 import { useAtomValue, useStore } from "jotai";
+import { X } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 
@@ -6,16 +7,23 @@ import { useNow } from "@/components/hooks/use-now";
 import { formatElapsed } from "@/lib/format";
 import { compactTokens } from "@/lib/tokens";
 import type { ChatSnapshot, SessionView } from "@/plan/api/schema-chat";
-import type { PressureRunView, PressureStepView } from "@/plan/api/schema-pressure";
+import type {
+  PressureRunView,
+  PressureStepKind,
+  PressureStepView,
+} from "@/plan/api/schema-pressure";
 import { openDiff } from "@/plan/diff/open-diff";
 import { toAddress } from "@/plan/files/address";
 import { authorBlockReasonAtom, isHolderAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { ActionError } from "@/plan/ui/action-error";
+import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
+import { OTHER_GLYPHS } from "@/plan/ui/glyphs";
 import { snapshotAtom } from "../model";
-import { Untrusted, visibleControls } from "../visible-controls";
+import { Untrusted } from "../visible-controls";
 import { CodexStatusItem } from "./codex-status";
-import { endLine, stepLabel } from "./steps";
+import { PressureDone } from "./pressure-done";
+import { endLine, runEndMs, stepLabel } from "./steps";
 import { pressureRunWaitingAtom, stopPressure, usePressureRun } from "./use-pressure";
 
 const STOP_CONFIRM =
@@ -30,10 +38,9 @@ function LiveElapsed({ run }: { run: PressureRunView }) {
   return <Elapsed startMs={run.started_ms} untilMs={now} />;
 }
 
-// The wire end has no timestamp. Use the final step's end, or the moment the end arrived.
 function EndedElapsed({ run }: { run: PressureRunView }) {
   const [arrived] = useState(Date.now);
-  return <Elapsed startMs={run.started_ms} untilMs={run.steps.at(-1)?.ended_ms ?? arrived} />;
+  return <Elapsed startMs={run.started_ms} untilMs={runEndMs(run, arrived)} />;
 }
 
 function RunElapsed({ run }: { run: PressureRunView }) {
@@ -56,26 +63,38 @@ function editAddress(snapshot: ChatSnapshot, step: PressureStepView, path: strin
     : toAddress(path);
 }
 
+function StepGlyph({ step }: { step: PressureStepView }) {
+  if (step.state === "running") {
+    const kind =
+      step.kind === "codex" ? "codex" : step.kind === "claude_pressure" ? "pressure" : "drafting";
+    return <ActivityGlyph kind={kind} className="text-sm" />;
+  }
+  const Glyph = step.state === "done" ? OTHER_GLYPHS.stepDone : X;
+  return <Glyph className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />;
+}
+
 function StepFooter({ step }: { step: PressureStepView }) {
   const snapshot = useAtomValue(snapshotAtom);
   const tokens = step.tokens;
   return (
     <div
-      className="space-y-1"
+      className="min-w-0 space-y-2 rounded-md border border-border/70 bg-background/60 p-3"
       role="group"
       aria-label={`Round ${step.round} ${stepLabel(step.kind)}`}
     >
       {step.kind === "codex" && step.codex && (
         <CodexStatusItem status={step.codex} startedMs={step.started_ms} />
       )}
-      <p>
+      <p className="flex items-center gap-2">
+        <StepGlyph step={step} />
         {stepLabel(step.kind)} · round {step.round}
+        <span className="sr-only">{step.state}</span>
       </p>
       {step.edits.map((path) => {
         const address = editAddress(snapshot, step, path);
         return (
-          <div key={path} className="flex flex-wrap gap-x-2">
-            <Link className="font-mono underline" to={toAddress(path)}>
+          <div key={path} className="flex flex-wrap gap-x-2 break-words">
+            <Link className="min-w-0 break-words font-mono underline" to={toAddress(path)}>
               <Untrusted text={path} />
             </Link>
             {address !== toAddress(path) && (
@@ -94,6 +113,44 @@ function StepFooter({ step }: { step: PressureStepView }) {
           tokens
         </p>
       )}
+    </div>
+  );
+}
+
+function RoundRow({ round, steps }: { round: number; steps: PressureStepView[] }) {
+  const reviewers: PressureStepKind[] = ["codex", "claude_pressure"];
+  return (
+    <div data-pressure-round={round} className="space-y-2">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-2">
+        {reviewers.flatMap((kind) =>
+          steps
+            .filter((step) => step.kind === kind)
+            .map((step) => <StepFooter key={`${round}/${step.kind}`} step={step} />),
+        )}
+      </div>
+      {steps
+        .filter((step) => step.kind === "claude_address")
+        .map((step) => (
+          <StepFooter key={`${round}/${step.kind}`} step={step} />
+        ))}
+    </div>
+  );
+}
+
+function StepTimeline({ steps }: { steps: PressureStepView[] }) {
+  const rounds = new Map<number, PressureStepView[]>();
+  for (const step of steps) {
+    const round = rounds.get(step.round) ?? [];
+    round.push(step);
+    rounds.set(step.round, round);
+  }
+  return (
+    <div className="space-y-3">
+      {[...rounds]
+        .sort(([left], [right]) => left - right)
+        .map(([round, items]) => (
+          <RoundRow key={round} round={round} steps={items} />
+        ))}
     </div>
   );
 }
@@ -156,21 +213,21 @@ export function PressureHeader({ session }: { session: SessionView }) {
   const run = usePressureRun();
   const waiting = useAtomValue(pressureRunWaitingAtom);
   if (!run) return null;
-  const fileName = visibleControls(run.plan.split("/").at(-1) ?? run.plan);
+  const fileName = run.plan.split("/").at(-1) ?? run.plan;
   return (
     <div className="space-y-2 px-3 text-xs text-muted-foreground" data-session-id={session.id}>
-      <div className="chat-run-header flex flex-wrap gap-x-1">
-        <span>
-          Pressure test · {fileName} · round {run.round} of {run.rounds} · {stepLabel(run.step)}
-        </span>
+      <div className="chat-run-header flex flex-wrap items-center gap-x-1">
+        <ActivityGlyph kind="pressure" paused={run.ended !== null} className="mr-1 text-sm" />
+        <Untrusted
+          text={`Pressure test · ${fileName} · round ${run.round} of ${run.rounds} · ${stepLabel(run.step)}`}
+        />
         <span>·</span>
         <RunElapsed key={run.started_ms} run={run} />
         <span>· {compactTokens(run.tokens_total)} tokens</span>
       </div>
       {waiting && <p role="status">reconnected; waiting for the run's next update</p>}
-      {run.steps.map((step) => (
-        <StepFooter key={`${step.round}/${step.kind}`} step={step} />
-      ))}
+      <StepTimeline steps={run.steps} />
+      <PressureDone run={run} />
       <RunControls key={run.started_ms} run={run} />
     </div>
   );

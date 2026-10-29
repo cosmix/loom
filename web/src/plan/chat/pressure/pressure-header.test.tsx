@@ -254,7 +254,8 @@ it("ticks elapsed time each second and freezes it when the run ends", () => {
     }),
   );
   act(() => vi.advanceTimersByTime(2000));
-  expect(screen.getByText("4s")).toBeTruthy();
+  // The header and the recorded summary both freeze at the arrival time and agree.
+  expect(screen.getAllByText("4s")).toHaveLength(2);
 });
 
 it("ignores a second Stop click while the stop request is pending and after it was accepted", async () => {

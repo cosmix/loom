@@ -184,15 +184,15 @@ describe("overviews and the document key", () => {
   });
 });
 describe("summary page header", () => {
-  it("header shows title, path, colour, state and Open in file mode", async () => {
+  it("header shows title, path, colour, state and source view", async () => {
     serveOverview();
     renderAt("/product/section_01");
     const title = await screen.findByRole("heading", { level: 1, name: "Planning" });
     const header = title.closest("header") as HTMLElement;
     expect(within(header).getByText("doc/product/section_01.md")).toBeTruthy();
-    expect(header.querySelector("[data-colour='1']")).not.toBeNull();
+    expect((title.previousElementSibling as HTMLElement).style.color).toBe("var(--doc-1)");
     expect(within(header).getByText("Out of date: the source changed")).toBeTruthy();
-    const link = within(header).getByRole("link", { name: "Open in file mode" });
+    const link = within(header).getByRole("link", { name: "Source" });
     expect(link.getAttribute("href")).toBe("/files/product/section_01.md");
     expect(extras.header).toHaveBeenCalled();
   });
@@ -200,7 +200,7 @@ describe("summary page header", () => {
     pages = { "engineering/a": planPage({ last_pressure: "2026-10-20" }) };
     renderAt("/engineering/a");
     await screen.findByRole("heading", { level: 1, name: "Plan a" });
-    expect(text()).toContain("Plan state: written");
+    expect(screen.getByTitle("Plan state: written").textContent).toBe("written");
     expect(text()).toContain("2026-10-20");
   });
   it("locked notice on a done plan", async () => {
@@ -222,9 +222,9 @@ describe("summary page header", () => {
     renderAt("/product/section_01");
     await screen.findByRole("heading", { level: 1, name: "Planning" });
     expect(text()).toContain("Implemented by:");
-    expect(screen.getByRole("link", { name: "Concept mode" }).getAttribute("href")).toBe(
-      "/engineering/feat-planner-05-concept-mode",
-    );
+    expect(
+      screen.getByRole("link", { name: "Concept mode (in progress)" }).getAttribute("href"),
+    ).toBe("/engineering/feat-planner-05-concept-mode");
     expect(text()).toContain("(in progress)");
   });
 });

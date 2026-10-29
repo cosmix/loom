@@ -64,3 +64,86 @@ it("renders nothing without a plan", () => {
   const { container } = renderStrip({ plan: null });
   expect(container.innerHTML).toBe("");
 });
+
+it.each([
+  { compact: false, running: true, paused: null, dimmed: false },
+  { compact: false, running: false, paused: "true", dimmed: false },
+  { compact: true, running: true, paused: null, dimmed: false },
+  { compact: true, running: false, paused: "true", dimmed: true },
+])(
+  "renders the running glyph with daemon running=$running and compact=$compact",
+  ({ compact, running, paused, dimmed }) => {
+    const { container } = renderStrip({ daemon_running: running }, compact);
+
+    const glyph = container.querySelector("[data-kind]");
+    expect(glyph?.getAttribute("data-kind")).toBe("running");
+    expect(glyph?.getAttribute("data-paused")).toBe(paused);
+    expect(glyph?.getAttribute("aria-hidden")).toBe("true");
+    expect(glyph?.classList.contains("opacity-50")).toBe(dimmed);
+    if (compact) {
+      expect(screen.getByRole("button").contains(glyph)).toBe(true);
+    }
+  },
+);
+
+it.each([
+  { compact: false, merged: 0, width: "0%" },
+  { compact: false, merged: 1, width: "25%" },
+  { compact: false, merged: 4, width: "100%" },
+  { compact: true, merged: 0, width: "0%" },
+  { compact: true, merged: 1, width: "25%" },
+  { compact: true, merged: 4, width: "100%" },
+])("shows merged progress of $merged/4 with compact=$compact", ({ compact, merged, width }) => {
+  renderStrip({ merged, total: 4 }, compact);
+
+  const progress = screen.getByRole("progressbar", { name: "Merged stages" });
+  expect(progress.getAttribute("aria-valuenow")).toBe(String(merged));
+  expect(progress.getAttribute("aria-valuemin")).toBe("0");
+  expect(progress.getAttribute("aria-valuemax")).toBe("4");
+  expect(progress.querySelector<HTMLElement>("div")?.style.width).toBe(width);
+});
+
+it.each([false, true])("omits progress for an empty run with compact=%s", (compact) => {
+  renderStrip({ merged: 0, total: 0 }, compact);
+
+  expect(screen.queryByRole("progressbar")).toBeNull();
+});
+
+it.each([false, true])("emphasizes attention in the permission tone with compact=%s", (compact) => {
+  renderStrip({ attention: 2 }, compact);
+  if (compact) {
+    const trigger = screen.getByRole("button", {
+      name: "Run status: daemon running, 2 need attention",
+    });
+    expect(screen.getByText("2").classList.contains("text-(--tone-warning)")).toBe(true);
+    fireEvent.click(trigger);
+  }
+
+  const attention = screen.getByText("2 need attention");
+  const emphasis = attention.closest('[class*="tone-warning"]');
+  expect(emphasis?.textContent).toBe("2 need attention");
+  expect(emphasis?.classList.contains("font-medium")).toBe(true);
+});
+
+it.each([false, true])("keeps zero attention quiet with compact=%s", (compact) => {
+  const { container } = renderStrip({ attention: 0 }, compact);
+
+  expect(container.querySelector('[class*="tone-warning"]')).toBeNull();
+});
+
+it.each([false, true])("preserves the compact button name with daemon running=%s", (running) => {
+  renderStrip({ daemon_running: running, attention: 2 }, true);
+
+  const name = running
+    ? "Run status: daemon running, 2 need attention"
+    : "Run status: daemon stopped, 2 need attention";
+  expect(screen.getByRole("button", { name }).textContent).toBe("2");
+});
+
+it("keeps an untrusted plan name escaped when attention is emphasized", () => {
+  renderStrip({ plan: "doc/plans/PLAN-‮exe.md", attention: 2 });
+
+  expect(screen.getByText(/PLAN-⟨U\+202E⟩exe\.md · daemon running/)).toBeTruthy();
+  expect(screen.getByText("2 need attention")).toBeTruthy();
+  expect(document.body.textContent).not.toContain("‮");
+});

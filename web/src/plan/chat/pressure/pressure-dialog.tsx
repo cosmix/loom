@@ -2,14 +2,7 @@ import { useAtomValue, useStore } from "jotai";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import type { PressureOptions, PressureSlots } from "@/plan/api/schema-pressure";
 import { sessionAtom } from "@/plan/chat/model";
 import { isActiveSession } from "@/plan/chat/offer-flow";
@@ -20,6 +13,13 @@ import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
 
 import { visibleControls } from "../visible-controls";
+import {
+  PressureConsequences,
+  PressureHero,
+  PressurePlanCard,
+  PressureRounds,
+} from "./pressure-dialog-parts";
+import { RoundDiagram } from "./round-diagram";
 import {
   refreshPressureOptions,
   startPressure,
@@ -64,14 +64,8 @@ export function PressureDialog() {
         if (!open) close();
       }}
     >
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Pressure-test a plan</DialogTitle>
-          <DialogDescription>
-            This takes a while, edits the plan, and writes planning-omissions.md at the repository
-            root.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
+        <PressureHero />
         {options?.ok && refreshed ? (
           <PressureForm
             key={dialog.plan}
@@ -93,15 +87,13 @@ export function PressureDialog() {
   );
 }
 
-function PressureForm({
-  options,
-  initialPlan,
-  close,
-}: {
+interface PressureFormProps {
   options: PressureOptions;
   initialPlan: string | null;
   close: () => void;
-}) {
+}
+
+function PressureForm({ options, initialPlan, close }: PressureFormProps) {
   const form = useRef<HTMLFormElement>(null);
   const session = useAtomValue(sessionAtom);
   const { plan, setPlan, slots, setSlots } = usePressureFields(options, initialPlan);
@@ -109,33 +101,52 @@ function PressureForm({
   const { submit, pending, error } = usePressureStart(plan, slots, reason, close);
 
   return (
-    <form ref={form} onSubmit={submit} className="space-y-4">
-      {isActiveSession(session) && session.kind === "authoring" && (
-        <p>The open chat ends first, with its closing write.</p>
-      )}
-      <fieldset disabled={pending} className="space-y-4">
-        <PlanFields
-          options={options}
-          plan={plan}
-          setPlan={setPlan}
-          slots={slots}
-          setSlots={setSlots}
-        />
-        <ModelRows options={options} slots={slots} setSlots={setSlots} />
+    <form ref={form} onSubmit={submit} className="space-y-5">
+      <fieldset disabled={pending} className="min-w-0 space-y-5">
+        <PressurePlanCard plan={plan} plans={options.plans} setPlan={setPlan} />
+        <section aria-label="What happens" className="space-y-3">
+          <h3 className="text-sm font-semibold">What happens</h3>
+          <PressureRounds
+            rounds={slots.rounds}
+            setRounds={(rounds) => setSlots({ ...slots, rounds })}
+          />
+          <ModelRows options={options} slots={slots} setSlots={setSlots} />
+          <p className="text-xs text-muted-foreground">The record line is written at the end.</p>
+        </section>
       </fieldset>
+      <PressureConsequences
+        rounds={slots.rounds}
+        endsChat={isActiveSession(session) && session.kind === "authoring"}
+      />
       {error !== null && <ActionError message={error} />}
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={close}>
-          Cancel
-        </Button>
-        <DisabledReason
-          reason={reason ?? (pending ? "Starting pressure test…" : null)}
-          onClick={() => form.current?.requestSubmit()}
-        >
-          Start
-        </DisabledReason>
-      </DialogFooter>
+      <PressureFooter
+        reason={reason ?? (pending ? "Starting pressure test…" : null)}
+        close={close}
+        onStart={() => form.current?.requestSubmit()}
+      />
     </form>
+  );
+}
+
+function PressureFooter({
+  reason,
+  close,
+  onStart,
+}: {
+  reason: string | null;
+  close: () => void;
+  onStart: () => void;
+}) {
+  return (
+    <DialogFooter className="flex-col sm:items-center">
+      <p className="mr-auto text-xs text-muted-foreground">Holds authoring until it finishes.</p>
+      <Button type="button" variant="outline" onClick={close}>
+        Cancel
+      </Button>
+      <DisabledReason reason={reason} onClick={onStart}>
+        Start pressure test
+      </DisabledReason>
+    </DialogFooter>
   );
 }
 
@@ -168,42 +179,6 @@ function usePressureStart(
     else setError(result.message);
   }
   return { submit, pending, error };
-}
-
-function PlanFields({
-  options,
-  plan,
-  setPlan,
-  slots,
-  setSlots,
-}: {
-  options: PressureOptions;
-  plan: string;
-  setPlan: (plan: string) => void;
-  slots: PressureSlots;
-  setSlots: (slots: PressureSlots) => void;
-}) {
-  const roundsId = useId();
-  return (
-    <div className="grid gap-3 sm:grid-cols-[1fr_5rem]">
-      <OptionSelect label="Plan" value={plan} values={options.plans} onChange={setPlan} />
-      <div className="space-y-1">
-        <label htmlFor={roundsId}>Rounds</label>
-        <input
-          id={roundsId}
-          className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
-          name="rounds"
-          type="number"
-          min={1}
-          max={10}
-          step={1}
-          required
-          value={Number.isNaN(slots.rounds) ? "" : slots.rounds}
-          onChange={(event) => setSlots({ ...slots, rounds: event.currentTarget.valueAsNumber })}
-        />
-      </div>
-    </div>
-  );
 }
 
 function modelRows(options: PressureOptions) {
@@ -241,28 +216,32 @@ function ModelRows({
   slots: PressureSlots;
   setSlots: (slots: PressureSlots) => void;
 }) {
+  const [review, secondReview, address] = modelRows(options).map((row) => (
+    <fieldset key={row.model} className="grid min-w-0 grid-cols-2 gap-3">
+      <legend className="mb-1 text-sm font-medium">{row.label}</legend>
+      <OptionSelect
+        label={`${row.label} model`}
+        name={row.model}
+        value={slots[row.model]}
+        values={row.models}
+        onChange={(value) => setSlots({ ...slots, [row.model]: value })}
+      />
+      <OptionSelect
+        label={`${row.label} effort`}
+        name={row.effort}
+        value={slots[row.effort]}
+        values={row.efforts}
+        onChange={(value) => setSlots({ ...slots, [row.effort]: value })}
+      />
+    </fieldset>
+  ));
   return (
-    <div className="space-y-3">
-      {modelRows(options).map((row) => (
-        <fieldset key={row.model} className="grid grid-cols-2 gap-3">
-          <legend className="mb-1 font-medium">{row.label}</legend>
-          <OptionSelect
-            label={`${row.label} model`}
-            name={row.model}
-            value={slots[row.model]}
-            values={row.models}
-            onChange={(value) => setSlots({ ...slots, [row.model]: value })}
-          />
-          <OptionSelect
-            label={`${row.label} effort`}
-            name={row.effort}
-            value={slots[row.effort]}
-            values={row.efforts}
-            onChange={(value) => setSlots({ ...slots, [row.effort]: value })}
-          />
-        </fieldset>
-      ))}
-    </div>
+    <RoundDiagram
+      rounds={slots.rounds}
+      review={review}
+      secondReview={secondReview}
+      address={address}
+    />
   );
 }
 

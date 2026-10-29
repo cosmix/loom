@@ -24,11 +24,14 @@ export function CopyButton({
   text,
   label,
   icon: Icon,
+  onCopied,
   onFailed,
 }: {
   text: string;
   label: string;
   icon: LucideIcon;
+  /** For a caller that announces success in its own live region. */
+  onCopied?: () => void;
   onFailed?: () => void;
 }): JSX.Element {
   const [state, setState] = useState<CopyState>("idle");
@@ -43,6 +46,7 @@ export function CopyButton({
     try {
       await navigator.clipboard.writeText(text);
       setState("copied");
+      onCopied?.();
     } catch {
       setState("failed");
       onFailed?.();

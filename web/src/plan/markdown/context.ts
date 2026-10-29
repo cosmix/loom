@@ -13,6 +13,8 @@ export type RenderContext = {
   headingAnchor: (excerptLine: number) => string | null;
   /** False for embedded excerpts and chat text: no element ids, no copy control. */
   headingIds: boolean;
+  /** Hide the first top-level H1 when its plain text matches this document title. */
+  suppressTitle?: string | null;
   /** Whole-term search highlights, or null when nothing is marked. */
   marks: RegExp | null;
   /** Link reference definitions by normalised identifier. */
