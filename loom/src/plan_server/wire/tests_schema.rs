@@ -123,6 +123,10 @@ fn assert_exhaustive(message: &PlanMessage) {
         | PlanMessage::DocChanged(_)
         | PlanMessage::Validation(_)
         | PlanMessage::ConceptChanged(_)
+        | PlanMessage::SummaryPanel(_)
+        | PlanMessage::SummaryQuestion(_)
+        | PlanMessage::SummaryQuestionClosed { .. }
+        | PlanMessage::SummaryTurnCost(_)
         | PlanMessage::Chat(_)
         | PlanMessage::Review(_) => {}
     }

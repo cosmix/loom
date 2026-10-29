@@ -3,6 +3,7 @@
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::request::{ApiRequest, ApiResponse};
 use crate::plan_server::routes::{BodyKind, Method, Role, RouteSpec};
+use crate::plan_server::summaries::rebuilds::Rebuilds;
 
 use super::engine::ConceptState;
 use super::page::{load_page, PageContext, PageKey};
@@ -19,8 +20,7 @@ pub fn routes() -> Vec<RouteSpec> {
     }]
 }
 
-/// What a page depends on beyond the project: the first read-only problem, if any.
-// Plan 10 adds fields; the struct update keeps this literal compiling.
+/// Server state a concept page needs: read-only problems and summary rebuilds.
 #[allow(clippy::needless_update)]
 pub(crate) fn page_context(ctx: &PlanContext) -> PageContext {
     PageContext {
@@ -29,6 +29,7 @@ pub(crate) fn page_context(ctx: &PlanContext) -> PageContext {
             .problems()
             .first()
             .map(|problem| problem.message.clone()),
+        rebuilds: ctx.extensions().get::<Rebuilds>(),
         ..Default::default()
     }
 }

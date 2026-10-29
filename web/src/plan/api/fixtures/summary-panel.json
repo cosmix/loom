@@ -1,0 +1,62 @@
+{
+  "running": {
+    "session": "3f1c0a52-7d1e-4c52-9a5b-0e8d2f6a4b17",
+    "ids": ["product/section_01", "product/section_02", "product"],
+    "done": 1,
+    "total": 3,
+    "started_at": "2026-10-29T08:10:00Z"
+  },
+  "queue": ["product/section_03"],
+  "failed": [
+    { "id": "plans/loom-planner-ui", "error": "no seal in 10 minutes" }
+  ],
+  "question": null,
+  "last": {
+    "time": "2026-10-29T08:11:30Z",
+    "trigger": "background",
+    "summaries": ["product/section_01"],
+    "level": "document",
+    "model": "claude-sonnet-4-5",
+    "source_bytes": 12480,
+    "tokens": {
+      "fresh_input": 1840,
+      "cache_read": 9200,
+      "output": 760
+    }
+  },
+  "today": {
+    "fresh_input": 12400,
+    "cache_write": 3200,
+    "cache_read": 68000,
+    "output": 4800
+  },
+  "week": {
+    "fresh_input": 74600,
+    "cache_write": 18200,
+    "cache_read": 412000,
+    "output": 29600
+  },
+  "quota": {
+    "claude": {
+      "observed_at": 1793261400,
+      "windows": [
+        { "kind": "five-hour", "used_percent": 48.0, "resets_at": 1793269380 },
+        { "kind": "seven-day", "used_percent": 31.0, "resets_at": 1793614200 }
+      ],
+      "plan": "max",
+      "error": "Quota refresh timed out; showing cached usage"
+    },
+    "codex": {
+      "observed_at": 1793261160,
+      "windows": [
+        { "kind": "five-hour", "used_percent": 22.0, "resets_at": 1793268000 },
+        { "kind": "seven-day", "used_percent": 63.0, "resets_at": 1793466600 }
+      ],
+      "plan": "pro",
+      "error": "Quota refresh timed out; showing cached usage"
+    }
+  },
+  "read_only": null,
+  "terminal_claims": ["plans/loom-rebuilds"],
+  "start_error": null
+}
