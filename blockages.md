@@ -12,6 +12,7 @@
   - `src/plan_server/pressure/driver.rs` contains `AppDriver(env)`
 
   All three are present on the stage branch. Then run `loom stage retry app-handoff` with context, keeping normal verification.
+- Outcome: resolved. After the user reinstalled Loom (`1.3.2-dev.266+dce47005`), the operator ran `loom stage amend` 5 times, recorded in plan versions 1 to 5: two `reachable` deletions and three `wiring` insertions. The amended plan was committed (`86974cea`), because `loom run` refuses to start with an uncommitted plan file. app-handoff was retried with context. It filed its integrity dispute, the judge ruled, and the stage completed and merged under normal verification. handoff-web had one contract-freeze refusal that was adjudicated automatically. integration-verify disputed one `wiring_tests` grep that named the wrong file (`backend.rs` builds the "tmux, built-in default" label with `format!`). All five stages merged, with no `--no-verify` and no forced completion.
 
 ## Plan 09: contract fixture formatting
 
