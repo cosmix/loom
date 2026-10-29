@@ -64,9 +64,11 @@ pub(crate) fn extract_brief_paths(text: &str) -> Vec<String> {
 pub(crate) fn extract_prefixed_paths(text: &str, prefix: &str) -> Vec<String> {
     let mut paths = Vec::new();
 
-    for token in text.split(|c: char| {
-        c.is_whitespace() || matches!(c, '(' | ')' | '[' | ']' | '"' | '\'' | ',' | ';' | '|')
-    }) {
+    // A word joined by `|` without spaces is a regex alternation or a shell pipe, as in a
+    // `grep -E 'a|doc/plans/briefs/old-'` criterion: its parts are patterns, not references.
+    // Markdown table cells keep spaces around their pipes, so they still count.
+    let words = text.split_whitespace().filter(|word| !word.contains('|'));
+    for token in words.flat_map(|word| word.split(['(', ')', '[', ']', '"', '\'', ',', ';'])) {
         let trimmed = token.trim_matches(|c: char| matches!(c, '.' | ',' | ':' | '`'));
         if let Some(idx) = trimmed.find(prefix) {
             // A backtick closes a code span, so markdown after it (`dir/`.** in
@@ -276,6 +278,14 @@ mod tests {
             extract_brief_paths(text),
             vec!["doc/plans/briefs/v2/NOTES.md"]
         );
+    }
+
+    #[test]
+    fn regex_alternatives_are_not_references() {
+        let text =
+            "! grep -nE 'doc/x\\.md|doc/plans/briefs/feat-planner-|doc/plans/PLAN-' doc/plans \
+                    | doc/plans/briefs/v2/a.md | b |";
+        assert_eq!(extract_brief_paths(text), vec!["doc/plans/briefs/v2/a.md"]);
     }
 
     #[test]
