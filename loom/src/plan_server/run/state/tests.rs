@@ -14,6 +14,9 @@ use crate::plan_server::wire::run::{RunOffer as O, WorkspaceState as W};
 use crate::planning::watch::OwnWrites;
 use crate::web_server::http::RequestHead;
 
+#[path = "tests_workspace.rs"]
+mod workspace_gaps;
+
 fn repo() -> TempDir {
     let dir = tempfile::tempdir().unwrap();
     git(dir.path(), &["init", "-q", "--initial-branch=main"]);

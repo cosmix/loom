@@ -17,6 +17,10 @@ export const pressureSlotsSchema = z.strictObject({
   address_model: z.string(),
   address_effort: z.string(),
 });
+export const configBlockSchema = z.strictObject({
+  reason: z.string(),
+  changed: z.array(z.string()),
+});
 export const pressureOptionsSchema = z.strictObject({
   available: z.boolean(),
   disabled_reason: z.string().nullable(),
@@ -27,6 +31,7 @@ export const pressureOptionsSchema = z.strictObject({
   codex_models: z.array(z.string()),
   codex_efforts: z.array(z.string()),
   running: z.boolean(),
+  config_block: configBlockSchema.nullable(),
 });
 export const codexStatusSchema = z.strictObject({
   model: z.string(),
@@ -72,6 +77,7 @@ export const pressureRunSchema = z.strictObject({
 });
 export const pressureMessageSchemas = [
   z.strictObject({ type: z.literal("pressure_run"), ...pressureRunSchema.shape }),
+  z.strictObject({ type: z.literal("pressure_options_changed") }),
 ] as const;
 
 export type PressureStepKind = z.infer<typeof pressureStepKindSchema>;
@@ -79,6 +85,7 @@ export type StepState = z.infer<typeof stepStateSchema>;
 export type CodexState = z.infer<typeof codexStateSchema>;
 export type RunEndKind = z.infer<typeof runEndKindSchema>;
 export type PressureSlots = z.infer<typeof pressureSlotsSchema>;
+export type ConfigBlock = z.infer<typeof configBlockSchema>;
 export type PressureOptions = z.infer<typeof pressureOptionsSchema>;
 export type CodexStatus = z.infer<typeof codexStatusSchema>;
 export type TokenTotals = z.infer<typeof tokenTotalsSchema>;

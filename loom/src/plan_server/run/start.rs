@@ -7,6 +7,8 @@ use std::sync::{Arc, Weak};
 use std::thread;
 
 use super::child::{self, JobGuard};
+use super::state::orphaned::relative_work_dir;
+use crate::fs::work_dir::WorkDir;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::request::{ApiRequest, ApiResponse};
 use crate::plan_server::shutdown::ShutdownHook;
@@ -52,6 +54,21 @@ fn admit(state: &RunStateView, request: &RunStartRequest) -> Result<Steps, &'sta
     }
 }
 
+const TRACKED_CHANGES: &str = "commit or stash tracked changes outside doc/ before starting";
+
+/// Why a start is blocked: the plan-less workspace's own entry names its remedy (`loom clean
+/// --all`), which the advice about tracked changes would hide.
+pub(super) fn blocked_message<'a>(root: &Path, state: &'a RunStateView) -> &'a str {
+    let run_state = WorkDir::new(root)
+        .ok()
+        .map(|work_dir| relative_work_dir(root, &work_dir));
+    state
+        .blocking_changes
+        .iter()
+        .find(|change| run_state.as_deref() == Some(change.path.as_str()))
+        .map_or(TRACKED_CHANGES, |change| change.status.as_str())
+}
+
 pub(super) fn post_start(req: &ApiRequest<'_>) -> ApiResponse {
     match accept_start(req) {
         Ok(()) => ApiResponse::json(202, &serde_json::json!({ "accepted": true })),
@@ -72,7 +89,7 @@ fn accept_start(req: &ApiRequest<'_>) -> Result<(), ApiResponse> {
         .map_err(|error| ApiResponse::error(500, "internal", &error.to_string()))?;
     let steps = admit(&state, &request).map_err(|code| {
         let message = match code {
-            "blocked" => "commit or stash tracked changes outside doc/ before starting",
+            "blocked" => blocked_message(req.ctx.root(), &state),
             "not_written" => "the selected plan is not a written plan",
             "running" => "a plan is already running",
             "stopped" => "a stopped run holds the workspace: resume it or abandon it",
@@ -208,3 +225,5 @@ fn run_step(
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_refusal;

@@ -3,22 +3,30 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{mpsc, Arc};
+use std::thread;
+use std::time::Duration;
 
+use serde_json::Value;
 use serial_test::serial;
 
 use super::fake::{Call, Script};
-use super::{call_on, start_body, wait_until, Fixture, PLAN, REPORT};
-use crate::plan_server::pressure::codex::CONFIG_CHANGED;
+use super::{call_on, start_body, wait_for, wait_until, Fixture, PLAN, REPORT};
+use crate::plan_server::context::PlanContext;
+use crate::plan_server::ids::BrowserId;
+use crate::plan_server::pressure::codex::{CONFIG_CHANGED, NOT_EXITED};
 use crate::plan_server::pressure::driver::TEAMMATE_PANES;
+use crate::plan_server::pressure::install::PressureRuns;
 use crate::plan_server::pressure::recover::interrupted_runs;
 use crate::plan_server::pressure::teammates::teammate_transcripts;
-use crate::plan_server::wire::pressure::RunEndKind;
+use crate::plan_server::wire::pressure::{PressureStepKind, RunEndKind};
 use crate::plan_session::bridge::{
     EndCause, EndMode, RecoveredSession, RecoveryReport, Transcripts,
 };
 use crate::plan_session::kind::SessionKind;
 use crate::plan_session::model::TokenCounts;
 use crate::plan_session::transcript::Mapper;
+use crate::process::is_process_alive;
 
 const TEAMMATE: &str = include_str!("../fixtures/teammate.jsonl");
 const TEAMMATE_META: &str = include_str!("../fixtures/teammate.meta.json");
@@ -137,9 +145,146 @@ fn a_codex_configuration_edit_blocks_launches_until_confirmed() {
         Some(reason.as_str()),
         "{options}"
     );
+    let viewer = BrowserId::mint().unwrap();
+    let frames = frames_on(&restarted, &viewer);
+    let runs = restarted.extensions().get::<PressureRuns>().unwrap();
+    assert!(
+        runs.last_view().is_none(),
+        "a restarted server has a run view"
+    );
     let (status, body) = call_on(&restarted, "/api/pressure/confirm-config", &f.holder, None);
     assert_eq!(status, 200, "{body}");
     assert!(!block.exists(), "the block outlived the confirmation");
+    frames_until_cue(&frames);
+    let (_, options) = call_on(&restarted, "/api/pressure/options", &viewer, None);
+    assert!(options["config_block"].is_null(), "{options}");
+}
+
+/// The frames sent to a new tab of `browser` on `ctx`, parsed, in order.
+pub(super) fn frames_on(ctx: &Arc<PlanContext>, browser: &BrowserId) -> mpsc::Receiver<Value> {
+    let conn = ctx.conn_ctx(browser.clone());
+    let incoming = ctx.hub().register(&conn);
+    let (sender, frames) = mpsc::channel();
+    thread::spawn(move || {
+        for frame in incoming {
+            let frame: Value = serde_json::from_str(&frame).unwrap();
+            if sender.send(frame).is_err() {
+                break;
+            }
+        }
+    });
+    frames
+}
+
+/// Every frame up to and including the next `pressure_options_changed`.
+pub(super) fn frames_until_cue(frames: &mpsc::Receiver<Value>) -> Vec<Value> {
+    let mut seen = Vec::new();
+    loop {
+        let frame = frames
+            .recv_timeout(Duration::from_secs(30))
+            .unwrap_or_else(|_| panic!("no pressure_options_changed frame; saw {seen:?}"));
+        let cue = frame["type"] == "pressure_options_changed";
+        seen.push(frame);
+        if cue {
+            return seen;
+        }
+    }
+}
+
+#[test]
+#[serial]
+fn a_run_ending_tells_every_tab_to_fetch_the_options_once_the_slot_is_free() {
+    let f = Fixture::new();
+    f.codex("report", "");
+    let viewer = BrowserId::mint().unwrap();
+    let frames = frames_on(&f.ctx, &viewer);
+    f.start(1);
+    let seen = frames_until_cue(&frames);
+    // What a browser does on the cue: fetch the options at once.
+    let (_, options) = f.call("/api/pressure/options", &viewer, None);
+    assert_eq!(options["running"], false, "{options}");
+    let ended = |frame: &Value| frame["type"] == "pressure_run" && !frame["ended"].is_null();
+    assert!(
+        seen.iter().any(ended),
+        "the cue came before the ended view: {seen:?}"
+    );
+    f.finished();
+}
+
+/// SIGKILLs a fake Codex that ignores TERM when dropped, so a failed assertion cannot leak it.
+struct KillOnDrop(u32);
+
+impl Drop for KillOnDrop {
+    fn drop(&mut self) {
+        let pid = nix::unistd::Pid::from_raw(self.0 as i32);
+        let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGKILL);
+    }
+}
+
+/// The stopped run left Codex running: the block is persisted and every start refuses on it.
+fn assert_not_exited_blocks(f: &Fixture, viewer: &BrowserId, codex_pid: u32) {
+    assert!(
+        is_process_alive(codex_pid),
+        "Codex exited despite ignoring TERM"
+    );
+    let block = f.ctx.runtime().dir.join("config-block.json");
+    assert!(block.is_file(), "no config-block.json");
+    let (_, options) = f.call("/api/pressure/options", viewer, None);
+    let block = serde_json::json!({ "reason": NOT_EXITED, "changed": [] });
+    assert_eq!(options["config_block"], block, "{options}");
+    let (status, body) = f.call("/api/pressure/start", &f.holder, Some(start_body(PLAN, 1)));
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (409, Some("config_blocked"))
+    );
+}
+
+#[test]
+#[serial]
+fn a_codex_still_running_after_its_grace_blocks_launches_until_confirmed() {
+    let f = Fixture::new();
+    f.codex("stubborn", "15");
+    f.fake.script(vec![Script::Hold]);
+    f.start(1);
+    let codex = wait_for("Codex recorded", || f.fake.children("s-1").first().copied());
+    let _kill = KillOnDrop(codex.pid);
+    let (status, _) = f.call("/api/pressure/stop", &f.holder, None);
+    assert_eq!(status, 202);
+    assert_eq!(f.ended().kind, RunEndKind::Stopped);
+    let viewer = BrowserId::mint().unwrap();
+    assert_not_exited_blocks(&f, &viewer, codex.pid);
+    let frames = frames_on(&f.ctx, &viewer);
+    let (status, body) = f.call("/api/pressure/confirm-config", &f.holder, None);
+    assert_eq!(status, 200, "{body}");
+    let seen = frames_until_cue(&frames);
+    assert!(
+        seen.iter().all(|frame| frame["type"] != "pressure_run"),
+        "the run view was sent again: {seen:?}"
+    );
+    let (_, options) = f.call("/api/pressure/options", &viewer, None);
+    assert!(options["config_block"].is_null(), "{options}");
+}
+
+/// The finish path: the Claude half ends with its marker while Codex, ignoring TERM, outlives
+/// the grace after Stop.
+#[test]
+#[serial]
+fn a_codex_outliving_its_grace_after_the_marker_blocks_launches() {
+    let f = Fixture::new();
+    f.codex("stubborn", "15");
+    f.start(1);
+    let codex = wait_for("Codex recorded", || f.fake.children("s-1").first().copied());
+    let _kill = KillOnDrop(codex.pid);
+    let runs = f.runs();
+    wait_until("Codex running alone after the marker", || {
+        let view = runs.last_view();
+        view.is_some_and(|view| view.step == PressureStepKind::Codex)
+    });
+    let (status, _) = f.call("/api/pressure/stop", &f.holder, None);
+    assert_eq!(status, 202);
+    assert_eq!(f.ended().kind, RunEndKind::Stopped);
+    let viewer = BrowserId::mint().unwrap();
+    assert_not_exited_blocks(&f, &viewer, codex.pid);
 }
 
 fn pressure_session(plan: &str) -> RecoveredSession {

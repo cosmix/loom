@@ -105,3 +105,11 @@ it("removes the elapsed clock and busy indicator when the review finishes", () =
   expect(screen.queryByRole("status")).toBeNull();
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("shows control characters in the log tail as visible markers", () => {
+  const { container } = render(
+    <CodexStatusItem status={{ ...status, state: "failed", log_tail: "rm ‮fdp.sh" }} />,
+  );
+
+  expect(container.querySelector("pre code")?.textContent).toBe("rm ⟨U+202E⟩fdp.sh");
+});

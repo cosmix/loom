@@ -1,7 +1,8 @@
 import { useAtomValue, useStore } from "jotai";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router";
 
+import { useNow } from "@/components/hooks/use-now";
 import { formatElapsed } from "@/lib/format";
 import { compactTokens } from "@/lib/tokens";
 import type { ChatSnapshot, SessionView } from "@/plan/api/schema-chat";
@@ -9,31 +10,34 @@ import type { PressureRunView, PressureStepView } from "@/plan/api/schema-pressu
 import { openDiff } from "@/plan/diff/open-diff";
 import { toAddress } from "@/plan/files/address";
 import { authorBlockReasonAtom, isHolderAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { ActionError } from "@/plan/ui/action-error";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { snapshotAtom } from "../model";
+import { Untrusted, visibleControls } from "../visible-controls";
 import { CodexStatusItem } from "./codex-status";
 import { endLine, stepLabel } from "./steps";
-import {
-  confirmConfig,
-  pressureRunWaitingAtom,
-  stopPressure,
-  usePressureRun,
-} from "./use-pressure";
+import { pressureRunWaitingAtom, stopPressure, usePressureRun } from "./use-pressure";
 
 const STOP_CONFIRM =
   "Stop the pressure test? The plan keeps the edits made so far, and no record is written.";
 
+function Elapsed({ startMs, untilMs }: { startMs: number; untilMs: number }) {
+  return <span>{formatElapsed(Math.max(0, Math.floor((untilMs - startMs) / 1000)))}</span>;
+}
+
+function LiveElapsed({ run }: { run: PressureRunView }) {
+  const now = useNow();
+  return <Elapsed startMs={run.started_ms} untilMs={now} />;
+}
+
+// The wire end has no timestamp. Use the final step's end, or the moment the end arrived.
+function EndedElapsed({ run }: { run: PressureRunView }) {
+  const [arrived] = useState(Date.now);
+  return <Elapsed startMs={run.started_ms} untilMs={run.steps.at(-1)?.ended_ms ?? arrived} />;
+}
+
 function RunElapsed({ run }: { run: PressureRunView }) {
-  const [now, setNow] = useState(Date.now);
-  const running = run.ended === null;
-  useEffect(() => {
-    if (!running) return;
-    const interval = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(interval);
-  }, [running]);
-  // The wire end has no timestamp. Use the final step's end, or freeze the last tick.
-  const until = running ? now : (run.steps.at(-1)?.ended_ms ?? now);
-  return <span>{formatElapsed(Math.max(0, Math.floor((until - run.started_ms) / 1000)))}</span>;
+  return run.ended === null ? <LiveElapsed run={run} /> : <EndedElapsed run={run} />;
 }
 
 function editAddress(snapshot: ChatSnapshot, step: PressureStepView, path: string): string {
@@ -56,7 +60,11 @@ function StepFooter({ step }: { step: PressureStepView }) {
   const snapshot = useAtomValue(snapshotAtom);
   const tokens = step.tokens;
   return (
-    <div className="space-y-1" aria-label={`Round ${step.round} ${stepLabel(step.kind)}`}>
+    <div
+      className="space-y-1"
+      role="group"
+      aria-label={`Round ${step.round} ${stepLabel(step.kind)}`}
+    >
       {step.kind === "codex" && step.codex && (
         <CodexStatusItem status={step.codex} startedMs={step.started_ms} />
       )}
@@ -68,7 +76,7 @@ function StepFooter({ step }: { step: PressureStepView }) {
         return (
           <div key={path} className="flex flex-wrap gap-x-2">
             <Link className="font-mono underline" to={toAddress(path)}>
-              {path}
+              <Untrusted text={path} />
             </Link>
             {address !== toAddress(path) && (
               <Link className="underline" to={address}>
@@ -90,38 +98,56 @@ function StepFooter({ step }: { step: PressureStepView }) {
   );
 }
 
-function RunControls({ run }: { run: PressureRunView }) {
+function useStopRun() {
   const store = useStore();
   const holder = useAtomValue(isHolderAtom);
   const reason = useAtomValue(authorBlockReasonAtom);
   const server = useAtomValue(serverInfoAtom);
+  const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const configChanged = run.ended?.reason?.startsWith("Codex changed session configuration");
   const writable = holder && server?.read_only.length === 0;
-  async function act(confirm: boolean) {
-    if (!store.get(isHolderAtom) || store.get(authorBlockReasonAtom) !== null) return;
+  async function stop() {
+    if (stopping || !store.get(isHolderAtom) || store.get(authorBlockReasonAtom) !== null) return;
     if (store.get(serverInfoAtom)?.read_only.length !== 0) return;
-    if (confirm && !window.confirm(STOP_CONFIRM)) return;
+    if (!window.confirm(STOP_CONFIRM)) return;
     setError(null);
-    const result = await (confirm ? stopPressure() : confirmConfig());
-    if (!result.ok) setError(result.message);
+    setStopping(true);
+    const result = await stopPressure();
+    // A stop the server took stays pending until the run's end frame replaces this control.
+    if (result.ok) return;
+    setStopping(false);
+    setError(result.message);
   }
+  return { writable, reason, stopping, error, stop };
+}
+
+function RunControls({ run }: { run: PressureRunView }) {
+  const { writable, reason, stopping, error, stop } = useStopRun();
+  const configChanged = run.ended?.reason?.startsWith("Codex changed session configuration");
   return (
     <>
-      {run.ended && <p>{endLine(run.ended)}</p>}
-      {configChanged && <p className="whitespace-pre-wrap">{run.ended?.reason}</p>}
-      {writable && (!run.ended || configChanged) && (
+      {run.ended && (
+        <p>
+          <Untrusted text={endLine(run.ended)} />
+        </p>
+      )}
+      {configChanged && (
+        <p className="whitespace-pre-wrap">
+          <Untrusted text={run.ended?.reason ?? ""} />
+        </p>
+      )}
+      {writable && !run.ended && (
         <DisabledReason
-          reason={reason}
+          reason={stopping ? "Stopping…" : reason}
           onClick={() => {
-            void act(run.ended === null);
+            void stop();
           }}
           size="sm"
         >
-          {run.ended ? "I have checked these files" : "Stop"}
+          Stop
         </DisabledReason>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && <ActionError message={error} />}
     </>
   );
 }
@@ -130,7 +156,7 @@ export function PressureHeader({ session }: { session: SessionView }) {
   const run = usePressureRun();
   const waiting = useAtomValue(pressureRunWaitingAtom);
   if (!run) return null;
-  const fileName = run.plan.split("/").at(-1) ?? run.plan;
+  const fileName = visibleControls(run.plan.split("/").at(-1) ?? run.plan);
   return (
     <div className="space-y-2 px-3 text-xs text-muted-foreground" data-session-id={session.id}>
       <div className="chat-run-header flex flex-wrap gap-x-1">

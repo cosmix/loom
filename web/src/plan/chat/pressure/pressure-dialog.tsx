@@ -14,12 +14,18 @@ import type { PressureOptions, PressureSlots } from "@/plan/api/schema-pressure"
 import { sessionAtom } from "@/plan/chat/model";
 import { isActiveSession } from "@/plan/chat/offer-flow";
 import { pressureDialogAtom } from "@/plan/offers/actions-pressure";
-import { authorBlockReasonAtom } from "@/plan/state/atoms";
+import { ActionError } from "@/plan/ui/action-error";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
 
-import { refreshPressureOptions, startPressure, usePressureOptions } from "./use-pressure";
+import { visibleControls } from "../visible-controls";
+import {
+  refreshPressureOptions,
+  startPressure,
+  useStartReason,
+  usePressureOptions,
+} from "./use-pressure";
 
 // Options are otherwise fetched only at install and resync, so a plan written since then
 // would be missing; refetch on every open. The form reads its initial plan once, so it
@@ -97,15 +103,9 @@ function PressureForm({
   close: () => void;
 }) {
   const form = useRef<HTMLFormElement>(null);
-  const [plan, setPlan] = useState(
-    initialPlan !== null && options.plans.includes(initialPlan)
-      ? initialPlan
-      : (options.plans[0] ?? ""),
-  );
-  const [slots, setSlots] = useState<PressureSlots>(options.defaults);
-  const authorReason = useAtomValue(authorBlockReasonAtom);
   const session = useAtomValue(sessionAtom);
-  const reason = authorReason ?? (options.available ? null : options.disabled_reason);
+  const { plan, setPlan, slots, setSlots } = usePressureFields(options, initialPlan);
+  const reason = useStartReason(options);
   const { submit, pending, error } = usePressureStart(plan, slots, reason, close);
 
   return (
@@ -123,11 +123,7 @@ function PressureForm({
         />
         <ModelRows options={options} slots={slots} setSlots={setSlots} />
       </fieldset>
-      {error !== null && (
-        <p role="alert" className="text-destructive">
-          {error}
-        </p>
-      )}
+      {error !== null && <ActionError message={error} />}
       <DialogFooter>
         <Button type="button" variant="outline" onClick={close}>
           Cancel
@@ -141,6 +137,16 @@ function PressureForm({
       </DialogFooter>
     </form>
   );
+}
+
+function usePressureFields(options: PressureOptions, initialPlan: string | null) {
+  const [plan, setPlan] = useState(
+    initialPlan !== null && options.plans.includes(initialPlan)
+      ? initialPlan
+      : (options.plans[0] ?? ""),
+  );
+  const [slots, setSlots] = useState<PressureSlots>(options.defaults);
+  return { plan, setPlan, slots, setSlots };
 }
 
 function usePressureStart(
@@ -200,16 +206,8 @@ function PlanFields({
   );
 }
 
-function ModelRows({
-  options,
-  slots,
-  setSlots,
-}: {
-  options: PressureOptions;
-  slots: PressureSlots;
-  setSlots: (slots: PressureSlots) => void;
-}) {
-  const rows = [
+function modelRows(options: PressureOptions) {
+  return [
     {
       label: "/pressure",
       model: "claude_model",
@@ -232,9 +230,20 @@ function ModelRows({
       efforts: options.claude_efforts,
     },
   ] as const;
+}
+
+function ModelRows({
+  options,
+  slots,
+  setSlots,
+}: {
+  options: PressureOptions;
+  slots: PressureSlots;
+  setSlots: (slots: PressureSlots) => void;
+}) {
   return (
     <div className="space-y-3">
-      {rows.map((row) => (
+      {modelRows(options).map((row) => (
         <fieldset key={row.model} className="grid grid-cols-2 gap-3">
           <legend className="mb-1 font-medium">{row.label}</legend>
           <OptionSelect
@@ -284,7 +293,7 @@ function OptionSelect({
       >
         {values.map((option) => (
           <option key={option} value={option}>
-            {option}
+            {visibleControls(option)}
           </option>
         ))}
       </select>

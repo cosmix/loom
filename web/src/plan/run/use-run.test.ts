@@ -226,6 +226,70 @@ describe("run requests", () => {
   });
 });
 
+describe("dashboard request", () => {
+  it("posts an empty body: the route's gate refuses any byte with 413", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => response({ url: "http://127.0.0.1:8080/" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchDashboard(createStore());
+
+    const init = fetchMock.mock.calls[0]![1]!;
+    expect(init.body).toBe("");
+    expect(new Headers(init.headers).get("Content-Type")).toMatch(/^text\/plain/);
+  });
+});
+
+describe("overlapping state fetches", () => {
+  function deferred() {
+    let resolve!: (value: Response) => void;
+    const promise = new Promise<Response>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  it("applies only the latest request's response, whatever the arrival order", async () => {
+    const older = { ...initialState(), workspace: "absent", offer: "start" } as const;
+    const newer = { ...initialState(), workspace: "running", offer: "none_running" } as const;
+    const first = deferred();
+    const second = deferred();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise),
+    );
+    const store = createStore();
+
+    const olderFetch = fetchRunState(store);
+    const newerFetch = fetchRunState(store);
+    second.resolve(response(newer));
+    await newerFetch;
+    first.resolve(response(older));
+    const stale = await olderFetch;
+
+    expect(stale).toMatchObject({ ok: true });
+    expect(store.get(runStateAtom)).toEqual(newer);
+  });
+
+  it("drops a response that a run_state frame overtook", async () => {
+    const pending = deferred();
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockReturnValueOnce(pending.promise));
+    const store = createStore();
+    const socket = socketHarness(store);
+    const dispose = installRunSubscription(store);
+    const frame = { ...initialState(), workspace: "running", offer: "none_running" } as const;
+
+    const request = fetchRunState(store);
+    socket.receive({ type: "run_state", ...frame });
+    pending.resolve(response({ ...initialState(), workspace: "absent", offer: "start" }));
+    await request;
+
+    expect(store.get(runStateAtom)).toEqual(frame);
+    dispose();
+  });
+});
+
 describe("run state refresh after actions", () => {
   const fresh = () => ({ ...initialState(), workspace: "running", offer: "none_running" });
   const route = (accepted: unknown, status = 200) =>

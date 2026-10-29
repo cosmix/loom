@@ -106,9 +106,9 @@ fn record_offset(text: &str) -> Option<usize> {
         starts.push(position);
         position += line.len();
     }
-    let marker = lines
-        .iter()
-        .rposition(|line| line.starts_with(END_METADATA))?;
+    // A fenced example of the marker is not the marker either.
+    let marker = (0..lines.len())
+        .rposition(|index| !fenced[index] && lines[index].starts_with(END_METADATA))?;
     let mut insertion = None;
     for (index, line) in lines.iter().enumerate().skip(marker + 1) {
         let is_heading = !fenced[index];

@@ -276,3 +276,69 @@ fn spaces_and_glob_characters_are_literal() {
         assert_eq!(repo.git(&["ls-files", "--", "doc/ab.md"]), "");
     }
 }
+
+fn head_files(repo: &Repo) -> String {
+    repo.git(&["ls-tree", "-r", "--name-only", "HEAD"])
+}
+
+#[test]
+#[serial_test::serial]
+fn commits_a_staged_rename_listing_its_source_and_destination() {
+    let repo = Repo::new();
+    repo.git(&["mv", "doc/a.md", "doc/b.md"]);
+    let (current, _) = super::super::changes::split_changes(repo.0.path()).unwrap();
+    let listed: Vec<_> = current.iter().map(|change| change.path.as_str()).collect();
+    assert_eq!(listed, ["doc/b.md", "doc/a.md"]);
+
+    assert_eq!(repo.commit(&listed, "move a to b").unwrap(), 0);
+
+    assert_eq!(head_files(&repo), "doc/b.md\nsrc.txt\n");
+    assert_eq!(repo.git(&["status", "--porcelain"]), "");
+}
+
+#[test]
+#[serial_test::serial]
+fn commits_a_staged_deletion() {
+    let repo = Repo::new();
+    repo.git(&["rm", "-q", "doc/a.md"]);
+
+    assert_eq!(repo.commit(&["doc/a.md"], "drop a").unwrap(), 0);
+
+    assert_eq!(head_files(&repo), "src.txt\n");
+    assert_eq!(repo.git(&["status", "--porcelain"]), "");
+}
+
+#[test]
+#[serial_test::serial]
+fn commits_an_unstaged_deletion() {
+    let repo = Repo::new();
+    fs::remove_file(repo.0.path().join("doc/a.md")).unwrap();
+
+    assert_eq!(repo.commit(&["doc/a.md"], "drop a").unwrap(), 0);
+
+    assert_eq!(head_files(&repo), "src.txt\n");
+    assert_eq!(repo.git(&["status", "--porcelain"]), "");
+}
+
+#[test]
+#[serial_test::serial]
+fn commits_deletions_beside_edits_and_keeps_unrelated_staging() {
+    let repo = Repo::new();
+    repo.put("doc/c.md", "original\n");
+    repo.git(&["add", "--", "doc/c.md"]);
+    repo.git(&["commit", "-q", "-m", "add c"]);
+    repo.git(&["rm", "-q", "doc/a.md"]);
+    repo.put("doc/c.md", "changed\n");
+    repo.put("doc/new.md", "new\n");
+    repo.put("src.txt", "changed\n");
+    repo.git(&["add", "--", "src.txt"]);
+
+    let paths = ["doc/a.md", "doc/c.md", "doc/new.md"];
+
+    assert_eq!(repo.commit(&paths, "docs").unwrap(), 0);
+
+    assert_eq!(head_files(&repo), "doc/c.md\ndoc/new.md\nsrc.txt\n");
+    assert_eq!(repo.git(&["show", "HEAD:doc/c.md"]), "changed\n");
+    assert_eq!(repo.git(&["show", "HEAD:src.txt"]), "original\n");
+    assert_eq!(repo.git(&["diff", "--cached", "--name-only"]), "src.txt\n");
+}

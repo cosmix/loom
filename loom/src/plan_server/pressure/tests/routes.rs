@@ -1,17 +1,25 @@
 //! The routes: each disabled reason of the options and their order, the start refusals, and
-//! the Stop and confirm refusals.
+//! the Stop and confirm refusals, and who may confirm a configuration block.
 
 use std::path::PathBuf;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use serial_test::serial;
 
+use super::duties::{frames_on, frames_until_cue};
 use super::fake::Script;
-use super::{start_body, Fixture, PLAN};
+use super::{call_on, start_body, Fixture, PLAN};
 use crate::plan_server::authoring::Take;
+use crate::plan_server::context::PlanContext;
+use crate::plan_server::gate::{access_cookie_name, admit, browser_cookie_name};
 use crate::plan_server::ids::BrowserId;
+use crate::plan_server::pressure::routes::all;
 use crate::plan_server::wire::pressure::disabled_reason;
+use crate::plan_session::bridge::RecoveryReport;
 use crate::planning::guidance::StartBlocks;
+use crate::web_server::access::AccessPolicy;
+use crate::web_server::auth::Auth;
+use crate::web_server::http::parse_head;
 
 fn options(f: &Fixture, browser: &BrowserId) -> Value {
     let (status, body) = f.call("/api/pressure/options", browser, None);
@@ -150,6 +158,21 @@ fn options_report_a_configuration_block_with_its_reason() {
     assert_eq!(reason(&f, &f.holder).as_deref(), Some(why));
 }
 
+#[test]
+#[serial]
+fn options_give_every_browser_the_configuration_block() {
+    let f = Fixture::new();
+    assert!(options(&f, &f.holder)["config_block"].is_null());
+    let why = "Codex changed session configuration: .mcp.json";
+    StartBlocks::block(f.ctx.runtime(), why, &[".mcp.json".into()]).unwrap();
+    let viewer = other_holder(&f);
+    for browser in [&f.holder, &viewer] {
+        let body = options(&f, browser);
+        let block = serde_json::json!({ "reason": why, "changed": [".mcp.json"] });
+        assert_eq!(body["config_block"], block, "{body}");
+    }
+}
+
 fn refused(f: &Fixture, body: Value) -> (u16, String) {
     let (status, answer) = f.call("/api/pressure/start", &f.holder, Some(body));
     (
@@ -212,4 +235,80 @@ fn stop_without_a_run_and_confirm_without_a_block_are_refused() {
     assert_eq!((status, body["error"].as_str()), (409, Some("no_run")));
     let (status, body) = f.call("/api/pressure/confirm-config", &f.holder, None);
     assert_eq!((status, body["error"].as_str()), (409, Some("no_block")));
+}
+
+const CONFIRM: &str = "/api/pressure/confirm-config";
+
+/// Confirm as `browser`'s request does: through the gate's role check, then the handler.
+fn confirm_through_the_gate(ctx: &PlanContext, browser: &BrowserId) -> (u16, Value) {
+    let route = all()
+        .into_iter()
+        .find(|route| route.path == CONFIRM)
+        .unwrap();
+    let local = ctx.bind().local;
+    let (token, port) = ("cd".repeat(32), local.port());
+    let cookies = format!(
+        "{}={token}; {}={}",
+        access_cookie_name(port),
+        browser_cookie_name(port),
+        browser.as_str()
+    );
+    let raw = format!(
+        "POST {CONFIRM} HTTP/1.1\r\nHost: {local}\r\nOrigin: http://{local}\r\n\
+         Cookie: {cookies}\r\n\r\n"
+    );
+    let head = parse_head(raw.as_bytes()).unwrap().unwrap();
+    let policy = AccessPolicy::new(local, Some(Auth::new(token, access_cookie_name(port))));
+    match admit(&head, local, &policy, ctx, Some(&route)) {
+        Ok(_) => call_on(ctx, CONFIRM, browser, None),
+        Err(denied) => (denied.status, json!({ "error": denied.code })),
+    }
+}
+
+fn block(ctx: &PlanContext) {
+    let why = "Codex changed session configuration: .mcp.json";
+    StartBlocks::block(ctx.runtime(), why, &[".mcp.json".into()]).unwrap();
+}
+
+fn blocked(ctx: &PlanContext) -> bool {
+    StartBlocks::current(ctx.runtime()).unwrap().is_some()
+}
+
+#[test]
+#[serial]
+fn a_browser_confirms_a_persisted_block_on_a_restarted_server_nobody_holds() {
+    let f = Fixture::new();
+    block(&f.ctx);
+    let restarted = f.restart(RecoveryReport::default());
+    let viewer = BrowserId::mint().unwrap();
+    let frames = frames_on(&restarted, &viewer);
+    let browser = BrowserId::mint().unwrap();
+    let (status, body) = confirm_through_the_gate(&restarted, &browser);
+    assert_eq!(status, 200, "{body}");
+    assert!(!blocked(&restarted), "the block outlived the confirmation");
+    frames_until_cue(&frames);
+}
+
+#[test]
+#[serial]
+fn confirm_is_refused_while_another_browser_holds_authoring() {
+    let f = Fixture::new();
+    block(&f.ctx);
+    let other = other_holder(&f);
+    let (status, body) = confirm_through_the_gate(&f.ctx, &f.holder);
+    assert_eq!((status, body["error"].as_str()), (403, Some("not_holder")));
+    assert!(blocked(&f.ctx), "a non-holder cleared the block");
+    let (status, body) = confirm_through_the_gate(&f.ctx, &other);
+    assert_eq!(status, 200, "{body}");
+    assert!(!blocked(&f.ctx), "the holder's confirmation left the block");
+}
+
+#[test]
+#[serial]
+fn confirm_is_refused_in_read_only_mode() {
+    let f = Fixture::read_only();
+    block(&f.ctx);
+    let (status, body) = confirm_through_the_gate(&f.ctx, &f.holder);
+    assert_eq!((status, body["error"].as_str()), (403, Some("read_only")));
+    assert!(blocked(&f.ctx), "read-only mode cleared the block");
 }

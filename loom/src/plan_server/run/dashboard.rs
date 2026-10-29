@@ -19,9 +19,9 @@ use crate::plan_server::request::{ApiRequest, ApiResponse};
 use crate::plan_server::shutdown::ShutdownHook;
 
 pub use super::dashboard_parse::parse_dashboard_startup;
+use super::dashboard_parse::STARTUP_LINES;
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
-const STARTUP_LINES: usize = 20;
 const MAX_LINE_BYTES: u64 = 16 * 1024;
 // Extensions has get/insert rather than get-or-insert; serialize installation.
 static INSTALL: Mutex<()> = Mutex::new(());
@@ -40,6 +40,13 @@ struct DashboardState {
 struct DashboardChild {
     process: Child,
     url: String,
+}
+
+impl DashboardChild {
+    /// False once the process has exited: its URL then points at nothing.
+    fn alive(&mut self) -> bool {
+        matches!(self.process.try_wait(), Ok(None))
+    }
 }
 
 impl Drop for DashboardChild {
@@ -66,9 +73,14 @@ impl Dashboard {
         if state.stopping || ctx.is_stopping() {
             return Err(io::Error::other("planning server is stopping"));
         }
-        if let Some(child) = &state.child {
-            return Ok(child.url.clone());
+        if let Some(child) = state.child.as_mut() {
+            if child.alive() {
+                return Ok(child.url.clone());
+            }
+            tracing::warn!("the dashboard child exited; starting another");
         }
+        // Dropping a dead child also kills any descendants left in its process group.
+        state.child = None;
         let config = crate::fs::work_dir::read_terminal_config(&ctx.root().join(".loom/work"))
             .map_err(io::Error::other)?;
         let child = start_dashboard(
@@ -102,17 +114,21 @@ pub(crate) fn install_dashboard(ctx: &PlanContext) {
 /// The child-reported URL, including its token; callers must redact broadcasts.
 pub(crate) fn current_url(ctx: &PlanContext) -> Option<String> {
     let dashboard = ctx.extensions().get::<Dashboard>()?;
-    let state = dashboard
+    let mut state = dashboard
         .state
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
-    state.child.as_ref().map(|child| child.url.clone())
+    let child = state.child.as_mut()?;
+    child.alive().then(|| child.url.clone())
 }
 
 pub(super) fn post_dashboard(req: &ApiRequest<'_>) -> ApiResponse {
     match std::env::current_exe() {
         Ok(loom_bin) => post_dashboard_with_bin(req, &loom_bin, STARTUP_TIMEOUT),
-        Err(_) => unavailable(),
+        Err(error) => {
+            tracing::warn!("the dashboard could not be started: no loom executable: {error}");
+            unavailable()
+        }
     }
 }
 
@@ -130,7 +146,10 @@ fn post_dashboard_with_bin(
             let env = EnvView::current();
             dashboard_response(req, &url, env.ssh_connection || env.ssh_tty)
         }
-        Err(_) => unavailable(),
+        Err(error) => {
+            tracing::warn!("the dashboard could not be started: {error}");
+            unavailable()
+        }
     }
 }
 
@@ -205,6 +224,7 @@ fn startup_url(
     receiver: &mpsc::Receiver<io::Result<String>>,
     deadline: Instant,
 ) -> io::Result<String> {
+    let mut lines = Vec::with_capacity(STARTUP_LINES);
     for _ in 0..STARTUP_LINES {
         let remaining = deadline
             .checked_duration_since(Instant::now())
@@ -214,7 +234,10 @@ fn startup_url(
         let line = receiver
             .recv_timeout(remaining)
             .map_err(|_| io::Error::other("dashboard startup unavailable"))??;
-        if let Some(url) = parse_dashboard_startup(&[line.as_str()]) {
+        lines.push(line);
+        // A concrete remote bind's URL line is only recognised after its header line.
+        let seen: Vec<&str> = lines.iter().map(String::as_str).collect();
+        if let Some(url) = parse_dashboard_startup(&seen) {
             return Ok(url);
         }
     }

@@ -142,6 +142,15 @@ fn placement_ignores_pressure_heading_inside_fence_after_marker() {
 }
 
 #[test]
+fn placement_ignores_end_marker_inside_fence() {
+    let example = format!("```md\n{END}## Pressure tests\n```\n");
+    assert_placement(
+        &format!("\n## Pressure tests\n\n- first\n\n## Notes\n\n{example}"),
+        &format!("\n## Pressure tests\n\n- first\n- new review\n\n## Notes\n\n{example}"),
+    );
+}
+
+#[test]
 fn placement_section_end_ignores_heading_inside_fence() {
     assert_placement(
         "\n## Pressure tests\n\n- first\n```md\n# Example\n## Other\n```\n\n## Notes\nEnd.\n",

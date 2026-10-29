@@ -358,7 +358,7 @@ Loom is under active development. Signed binaries are published for Linux x86_64
 | `jq`                       | every loom hook parses the Claude Code hook payload with it       | yes; `install.sh` and `loom run` refuse to proceed without it, `loom repair` reports it |
 | `minisign`                 | verifies downloaded release binaries before execution             | required for release downloads; install with `brew install minisign` or `sudo apt install minisign` |
 | `rg` (ripgrep) and `fd`    | the installed CLAUDE.md steers agents to these over `grep`/`find` | recommended; `install.sh` and `loom run` warn when missing                              |
-| `tmux`                     | the tmux terminal backend                                         | optional                                                                                |
+| `tmux`                     | the tmux terminal backend                                         | required unless `terminal.backend = "native"`                                           |
 | `sccache`                  | shared dependency compiles across stage worktrees                 | optional                                                                                |
 | `codex` CLI                | the codex implementer lane and `loom pressure`                    | optional                                                                                |
 

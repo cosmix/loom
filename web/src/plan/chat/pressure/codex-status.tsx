@@ -5,6 +5,7 @@ import { useNow } from "@/components/hooks/use-now";
 import { formatElapsed } from "@/lib/format";
 import type { CodexStatus } from "@/plan/api/schema-pressure";
 import { toAddress } from "@/plan/files/address";
+import { Untrusted } from "../visible-controls";
 
 function RunningCodex({ startedMs }: { startedMs?: number }) {
   const now = useNow();
@@ -42,7 +43,9 @@ export function CodexStatusItem({
       </div>
       {status.state === "failed" && status.log_tail !== null && (
         <pre className="whitespace-pre-wrap break-words font-mono text-xs">
-          <code>{status.log_tail}</code>
+          <code>
+            <Untrusted text={status.log_tail} />
+          </code>
         </pre>
       )}
     </div>

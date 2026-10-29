@@ -3,7 +3,6 @@
 //! a run start. Ignored by default; each one skips when a tool is missing, and fails instead
 //! under `LOOM_TEST_REQUIRE_SANDBOX_FREE=1`.
 
-use std::process::Command;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -158,14 +157,10 @@ fn operator_commit_and_start_run() {
         );
         std::thread::sleep(Duration::from_secs(1));
     }
-    let _ = child.kill();
-    let _ = child.wait();
+    child.stop();
     let loom = |args: &[&str]| {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_loom"));
-        command
-            .args(args)
-            .current_dir(&scratch.root)
-            .env("LOOM_CLEAN_YES", "1");
+        let mut command = scratch.loom();
+        command.args(args).env("LOOM_CLEAN_YES", "1");
         command.status().unwrap()
     };
     let _ = loom(&["stop"]);

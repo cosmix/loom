@@ -4,7 +4,13 @@ const u32 = z.number().int().min(0).max(4294967295);
 const i32 = z.number().int().min(-2147483648).max(2147483647);
 
 export const workspaceStateSchema = z.enum(["absent", "initialized", "running", "stopped", "done"]);
-export const runOfferSchema = z.enum(["start", "start_initialized", "none_running", "resume", "start_next"]);
+export const runOfferSchema = z.enum([
+  "start",
+  "start_initialized",
+  "none_running",
+  "resume",
+  "start_next",
+]);
 export const backendSchema = z.enum(["tmux", "native"]);
 export const runJobSchema = z.enum(["commit", "start", "abandon", "finish_abandon", "dashboard"]);
 export const outputStreamSchema = z.enum(["stdout", "stderr"]);
@@ -40,13 +46,18 @@ export const runStateSchema = z.strictObject({
   dashboard_url: z.string().nullable(),
   busy: runJobSchema.nullable(),
 });
-export const commitRequestSchema = z.strictObject({ paths: z.array(z.string()), message: z.string() });
+export const commitRequestSchema = z.strictObject({
+  paths: z.array(z.string()),
+  message: z.string(),
+});
 export const runStartRequestSchema = z.strictObject({
   plan: z.string(),
   backend: backendSchema,
   clean: z.boolean(),
 });
-export const abandonRequestSchema = z.strictObject({ confirmed_unmerged: z.array(unmergedBranchSchema) });
+export const abandonRequestSchema = z.strictObject({
+  confirmed_unmerged: z.array(unmergedBranchSchema),
+});
 export const runOutputSchema = z.strictObject({
   job: runJobSchema,
   step: z.string(),

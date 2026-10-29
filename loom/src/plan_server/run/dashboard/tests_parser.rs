@@ -1,7 +1,10 @@
 //! Startup-line parsing and stdout draining for the dashboard child.
 
 use super::super::*;
-use super::{STARTUP, URL};
+use super::{fake, STARTUP, URL};
+use crate::commands::status::web::startup_lines;
+use std::fs;
+use tempfile::TempDir;
 
 #[test]
 fn parser_matches_exact_startup_strings() {
@@ -73,4 +76,54 @@ fn stdout_keeps_draining_after_startup() {
     finished.recv_timeout(Duration::from_secs(3)).unwrap();
     producer.join().unwrap();
     reader.join().unwrap();
+}
+
+fn remote_lines() -> Vec<String> {
+    startup_lines(
+        "192.168.1.5:7373".parse().unwrap(),
+        true,
+        true,
+        Some("abc123"),
+        &[],
+    )
+}
+
+const REMOTE_URL: &str = "http://192.168.1.5:7373/?token=abc123";
+
+#[test]
+fn startup_url_reads_a_concrete_remote_bind_across_lines() {
+    let (sender, receiver) = mpsc::sync_channel(STARTUP_LINES);
+    for line in remote_lines() {
+        sender.send(Ok(format!("{line}\n"))).unwrap();
+    }
+
+    assert_eq!(
+        startup_url(&receiver, Instant::now() + Duration::from_secs(3)).unwrap(),
+        REMOTE_URL
+    );
+}
+
+#[test]
+fn child_bound_to_one_remote_address_yields_its_bootstrap_url() {
+    let temp = TempDir::new().unwrap();
+    let printed: String = remote_lines()
+        .iter()
+        .map(|line| format!("printf '%s\\n' '{line}'\n"))
+        .collect();
+    let bin = fake(temp.path(), &format!("{printed}exec sleep 60"));
+
+    let child = start_dashboard(
+        temp.path(),
+        &bin,
+        "192.168.1.5".parse().unwrap(),
+        true,
+        Duration::from_secs(3),
+    )
+    .unwrap();
+
+    assert_eq!(child.url, REMOTE_URL);
+    assert_eq!(
+        fs::read_to_string(temp.path().join("args")).unwrap(),
+        "status --web --host 192.168.1.5 --terminals\n"
+    );
 }

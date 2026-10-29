@@ -22,7 +22,10 @@ describe("run wire schemas", () => {
     expect(
       runStateSchema.safeParse({
         ...runState,
-        abandon: { ...runState.abandon, unmerged_branches: [{ branch: "topic", ahead: 1, extra: true }] },
+        abandon: {
+          ...runState.abandon,
+          unmerged_branches: [{ branch: "topic", ahead: 1, extra: true }],
+        },
       }).success,
     ).toBe(false);
   });
