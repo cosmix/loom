@@ -17,7 +17,7 @@ import { KeyChipExtras } from "@/plan/concept/key-chip-extras";
 import { PageHeader } from "@/plan/concept/page-header";
 import { TreeEntryRow } from "@/plan/files/tree-entry";
 import { TreeEntryExtras } from "@/plan/files/tree-entry-extras";
-import { PLAN_HELP_KEYS } from "@/plan/help-keys";
+import { PLANNER_SHORTCUT_GROUPS } from "@/plan/help/shortcuts";
 import { planSocketAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 import type { BuiltResponse } from "./api";
@@ -278,15 +278,15 @@ it("running note", async () => {
 });
 
 it("help keys hold the Chat group", () => {
-  expect(PLAN_HELP_KEYS.filter(({ title }) => title === "Chat")).toHaveLength(1);
-  expect(PLAN_HELP_KEYS.find(({ title }) => title === "Chat")?.rows).toContainEqual([
+  expect(PLANNER_SHORTCUT_GROUPS.filter(({ title }) => title === "Chat")).toHaveLength(1);
+  expect(PLANNER_SHORTCUT_GROUPS.find(({ title }) => title === "Chat")?.rows).toContainEqual([
     "c",
     "Focus the chat composer",
   ]);
 });
 
 it("help keys hold c, y and n", () => {
-  expect(PLAN_HELP_KEYS.find(({ title }) => title === "Chat")?.rows).toEqual([
+  expect(PLANNER_SHORTCUT_GROUPS.find(({ title }) => title === "Chat")?.rows).toEqual([
     ["c", "Focus the chat composer"],
     ["y", "Allow the pinned permission request"],
     ["n", "Deny it, with a note"],
