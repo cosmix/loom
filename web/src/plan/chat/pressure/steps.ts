@@ -27,6 +27,11 @@ export function codexRunsAlone(run: PressureRunView | null): boolean {
   return run !== null && run.ended === null && run.step === "codex";
 }
 
+// The wire end has no timestamp: use the last step that ended, else the moment the end arrived.
+export function runEndMs(run: PressureRunView, arrivedMs: number): number {
+  return run.steps.findLast((step) => step.ended_ms !== null)?.ended_ms ?? arrivedMs;
+}
+
 export function endLine(end: PressureEnd): string {
   switch (end.kind) {
     case "recorded":

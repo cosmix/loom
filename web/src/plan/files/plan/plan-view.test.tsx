@@ -5,15 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import planFixture from "@/plan/api/fixtures/files-doc-plan.json";
 import { docViewSchema, type DocView } from "@/plan/api/schema-files";
+import { FileDocHeading } from "@/plan/files/doc-heading-view";
 import { PlanView } from "@/plan/files/plan/plan-view";
-
-vi.mock("@/plan/markdown", () => ({
-  Markdown: (props: { source: string; lineOffset?: number }) => (
-    <div data-testid="markdown" data-offset={props.lineOffset ?? 0}>
-      {props.source}
-    </div>
-  ),
-}));
 
 const TEXT = [
   "# Plan",
@@ -31,13 +24,22 @@ const TEXT = [
 
 function makeDoc(patch: Partial<NonNullable<DocView["plan"]>> = {}, text = TEXT): DocView {
   const base = docViewSchema.parse(planFixture);
-  return { ...base, text, plan: { ...base.plan!, metadata_line: 4, ...patch } };
+  return {
+    ...base,
+    text,
+    sections: [
+      { level: 1, title: "Plan", anchor: "plan", start_line: 1, end_line: 3 },
+      { level: 2, title: "Pressure tests", anchor: "pressure-tests", start_line: 9, end_line: 11 },
+    ],
+    plan: { ...base.plan!, metadata_line: 4, ...patch },
+  };
 }
 
 function renderPlan(doc: DocView): void {
   render(
     <Provider store={createStore()}>
       <MemoryRouter>
+        <FileDocHeading doc={doc} />
         <PlanView doc={doc} />
       </MemoryRouter>
     </Provider>,
@@ -52,19 +54,28 @@ afterEach(cleanup);
 describe("PlanView", () => {
   it("splits prose and record around the metadata block with the record's line offset", () => {
     renderPlan(makeDoc());
-    const parts = screen.getAllByTestId("markdown");
+    const parts = document.querySelectorAll("article .md");
     expect(parts).toHaveLength(2);
     expect(parts[0]!.textContent).toContain("Intro.");
     expect(parts[0]!.textContent).not.toContain("METADATA");
-    expect(parts[0]!.getAttribute("data-offset")).toBe("0");
-    expect(parts[1]!.textContent).toContain("## Pressure tests");
-    expect(parts[1]!.getAttribute("data-offset")).toBe("8");
+    expect(parts[0]!.querySelector("h1")?.id).toBe("plan");
+    expect(parts[1]!.textContent).toContain("Pressure tests");
+    expect(parts[1]!.querySelector("h2")?.id).toBe("pressure-tests");
   });
 
   it("renders no record part when the plan has none", () => {
     const text = TEXT.split("\n").slice(0, 8).join("\n") + "\n";
     renderPlan(makeDoc({}, text));
-    expect(screen.getAllByTestId("markdown")).toHaveLength(1);
+    expect(document.querySelectorAll("article .md")).toHaveLength(1);
+  });
+
+  it("keeps the plan title in the shared heading and suppresses its matching prose H1", () => {
+    renderPlan(makeDoc({}, TEXT.replace("# Plan", "# File mode")));
+    expect(screen.getAllByRole("heading", { level: 1, name: "File mode" })).toHaveLength(1);
+    expect(screen.getByText("Written")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: /Pressure tests/ }).id).toBe(
+      "pressure-tests",
+    );
   });
 
   it("shows one line when the metadata block is missing", () => {
@@ -110,18 +121,28 @@ describe("PlanView", () => {
 
   it("shows the pressure date beside the last change", () => {
     renderPlan(makeDoc());
-    expect(screen.getByText("Pressure tested 2026-10-17")).toBeTruthy();
-    expect(screen.getByText("Last change 2026-10-18")).toBeTruthy();
+    expect(screen.getByText("Pressure-tested 2026-10-17")).toBeTruthy();
+    expect(screen.getByText("Changed 2026-10-18")).toBeTruthy();
   });
 
   it("links a stage error to its row and strikes through a missing Implements target", () => {
     renderPlan(makeDoc());
-    fireEvent.click(screen.getByRole("button", { name: "1 error, 1 warning" }));
+    const toggle = screen.getByRole("button", { name: "1 error, 1 warning" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
     const link = screen.getByRole("link", { name: "build" });
     expect(link.getAttribute("href")).toBe("#stage:build");
     expect(screen.getByText("Stage needs files", { exact: false })).toBeTruthy();
-    const missing = screen.getByText("Section 7");
-    expect(missing.tagName).toBe("S");
-    expect(screen.getByRole("link", { name: "Section 6" })).toBeTruthy();
+    const missing = screen.getByText("Implements §7");
+    expect(missing.closest("[title]")?.getAttribute("title")).toBe("not found");
+    expect(missing.closest("a")).toBeNull();
+    expect(missing.closest("[class*='line-through']")?.className).toContain(
+      "[&_[title='not_found']]:line-through",
+    );
+    expect(screen.getByRole("link", { name: "Implements §6" })).toBeTruthy();
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByTestId("validation-list")).toBeNull();
   });
 });

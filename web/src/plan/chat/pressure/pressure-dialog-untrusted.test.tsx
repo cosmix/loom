@@ -82,7 +82,7 @@ it("shows control characters in a plan path and the options reason as visible ma
   stubFetch({ options: () => jsonReply(unavailable) });
   await mount(holderStore(unavailable));
 
-  const select = screen.getByRole("combobox", { name: "Plan" }) as HTMLSelectElement;
+  const select = screen.getByRole("combobox", { name: "Change plan" }) as HTMLSelectElement;
   expect(within(select).getAllByRole("option")[0]!.textContent).toBe(
     "doc/plans/PLAN-⟨U+202E⟩evil.md",
   );
@@ -97,7 +97,7 @@ it("shows control characters in a start refusal as visible markers", async () =>
   });
   await mount();
 
-  fireEvent.click(screen.getByRole("button", { name: "Start" }));
+  fireEvent.click(screen.getByRole("button", { name: "Start pressure test" }));
 
   expect((await screen.findByRole("alert")).textContent).toBe(
     "Starts are blocked: AGENTS.md⟨U+202E⟩.md",

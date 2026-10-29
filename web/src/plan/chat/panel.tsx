@@ -2,15 +2,14 @@ import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
 import { Dialog } from "radix-ui";
 import { useEffect, useRef, type JSX, type KeyboardEvent, type PointerEvent } from "react";
 
-import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 import { useMediaQuery } from "@/lib/use-media-query";
-import type { SessionView } from "@/plan/api/schema-chat";
 import { pendingAttachmentsAtom } from "@/plan/attachments";
 import { useReviewLive } from "@/plan/review/live";
 import { registerSendToAuthor } from "@/plan/review/send-to-author";
 import { AnnouncerRegions, ChatAnnouncer } from "./announcer";
 import { useAttention } from "./attention";
 import { BriefDialogHost } from "./brief-dialog";
+import { ChatGlyph, STATE_NAME } from "./chat-state-glyph";
 import { ComposerArea } from "./composer";
 import { ConnectionBanner, useConnectionDim } from "./connection-banner";
 import { EndChatMenuItem, useCanEndChat } from "./end-chat";
@@ -34,17 +33,6 @@ import "./chat.css";
 export { chatSheetOpenAtom } from "./sheet-state";
 
 const DESKTOP = "(min-width: 1024px)";
-
-const STATE_NAME: Record<SessionView["state"], string> = {
-  starting: "Starting session",
-  idle: "Waiting for you",
-  working: "Working",
-  permission: "Needs a decision",
-  ending: "Writing final notes",
-  ended: "Chat ended",
-  failed: "Chat failed",
-};
-const BUSY_STATES: ReadonlySet<SessionView["state"]> = new Set(["starting", "working", "ending"]);
 
 /**
  * Mounts once beside the routed page so offers, Send to author, live review, the announcements
@@ -91,33 +79,6 @@ function OfferError() {
         Dismiss
       </button>
     </p>
-  );
-}
-
-function ChatGlyph() {
-  const session = useAtomValue(shownSessionAtom);
-  const permissions = useAtomValue(pendingPermissionsAtom);
-  const state = session?.state;
-  const label = state ? STATE_NAME[state] : "No chat";
-  if (permissions.length)
-    return (
-      <span role="img" aria-label={STATE_NAME.permission} className="text-(--tone-warning)">
-        !
-      </span>
-    );
-  if (state === "failed" || state === "ended")
-    return (
-      <span role="img" aria-label={label}>
-        {state === "failed" ? "!" : "✓"}
-      </span>
-    );
-  return (
-    <BusyRoundel
-      busy={state !== undefined && BUSY_STATES.has(state)}
-      busyLabel={label}
-      idleLabel={label}
-      size={14}
-    />
   );
 }
 
@@ -288,7 +249,16 @@ function PanelBody({ sheet }: { sheet: boolean }) {
           {sheet ? "Close" : "Collapse"}
         </button>
       </header>
-      <StateLine />
+      {/* StateRow's first two children are the glyph and label; offers follow as siblings. */}
+      <div
+        className={
+          shown
+            ? undefined
+            : "[&_.chat-state-line_[aria-live=off]>.flex]:grid [&_.chat-state-line_[aria-live=off]>.flex]:grid-cols-[auto_1fr] [&_.chat-state-line_[aria-live=off]>.flex]:gap-y-3 [&_.chat-state-line_[aria-live=off]>.flex>:nth-child(n+3)]:col-span-2"
+        }
+      >
+        <StateLine />
+      </div>
       <OfferError />
       {session && <RunHeader session={session} />}
       <ConnectionBanner />

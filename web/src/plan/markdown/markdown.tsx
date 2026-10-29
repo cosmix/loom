@@ -33,6 +33,8 @@ export type MarkdownProps = {
   lineOffset?: number;
   /** When false, headings carry no id and no copy control. Default true. */
   headingIds?: boolean;
+  /** Hide the first top-level H1 when its plain text matches this document title. */
+  suppressTitle?: string | null;
 };
 
 export function parseMarkdown(source: string): Root {
@@ -54,6 +56,7 @@ export function Markdown({
   anchorsOf,
   lineOffset = 0,
   headingIds = true,
+  suppressTitle,
 }: MarkdownProps): JSX.Element {
   const root = useMemo(() => parseMarkdown(source), [source]);
   const definitions = useMemo(() => collectDefinitions(root), [root]);
@@ -69,6 +72,7 @@ export function Markdown({
     anchorsOf,
     headingAnchor,
     headingIds,
+    suppressTitle,
     marks: marked,
     definitions,
   };

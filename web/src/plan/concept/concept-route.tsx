@@ -13,7 +13,7 @@ import { summaryIdOfKey } from "./column-context";
 import { DocumentKey } from "./document-key";
 import { ConceptNotFound, EmptyStates } from "./empty-states";
 import { pageSentences } from "./open-state";
-import { PageHeader } from "./page-header";
+import { PageHeading } from "./page-heading";
 import {
   conceptPageAtom,
   isMissing,
@@ -129,7 +129,15 @@ function sentenceResolver(store: Store, page: ConceptPage, pageKey: string): Sen
  * note and no Add button, so nothing is added and the reader is told why. Otherwise it adds
  * the first part and `addRest` the others.
  */
-function Column({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
+function Column({
+  page,
+  pageKey,
+  dropTitle,
+}: {
+  page: ConceptPage;
+  pageKey: string;
+  dropTitle: boolean;
+}) {
   const canAuthor = useAtomValue(canAuthorAtom);
   const add = useSetAtom(addAttachmentAtom);
   const columnRef = useRef<HTMLDivElement>(null);
@@ -153,6 +161,7 @@ function Column({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
         key={pageKey}
         pageKey={pageKey}
         page={page}
+        dropTitle={dropTitle}
         onAttach={canAuthor ? (draft) => add(draft) : undefined}
       />
       {selection.draft && selection.rect && (
@@ -168,7 +177,7 @@ function LoadedPage({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   return (
     <>
       {summary ? (
-        <PageHeader page={page} />
+        <PageHeading page={page} />
       ) : (
         <p className="eyebrow pb-3">{conceptPageLabel(pathname)}</p>
       )}
@@ -176,7 +185,7 @@ function LoadedPage({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
       {page.empty ? (
         <EmptyStates page={page} empty={page.empty} />
       ) : (
-        <Column page={page} pageKey={pageKey} />
+        <Column page={page} pageKey={pageKey} dropTitle={summary} />
       )}
       <Unlisted page={page} pageKey={pageKey} />
     </>
