@@ -1,6 +1,14 @@
 import { expect, it } from "vitest";
 
-import { modelColor } from "@/lib/model-color";
+import {
+  assignSwatches,
+  distance,
+  modelColor,
+  preferredSwatch,
+  resetModelColors,
+  spread,
+  stickyModelColors,
+} from "@/lib/model-color";
 
 it("modelColor gives the same color for the same name on every call", () => {
   expect(modelColor("claude-opus-5-5")).toBe(modelColor("claude-opus-5-5"));
@@ -21,4 +29,54 @@ it("modelColor keeps the hue inside 0 to 359", () => {
     expect(hue).toBeGreaterThanOrEqual(0);
     expect(hue).toBeLessThan(360);
   }
+});
+
+const FAMILY = ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
+
+it("assignSwatches keeps every pair of a model family at least the minimum distance apart", () => {
+  const swatches = [...assignSwatches(FAMILY, new Map()).values()];
+  for (let i = 0; i < swatches.length; i++) {
+    for (let j = i + 1; j < swatches.length; j++) {
+      expect(distance(swatches[i]!, swatches[j]!)).toBeGreaterThanOrEqual(45);
+    }
+  }
+});
+
+it("assignSwatches nudges a model off a swatch it would otherwise sit on", () => {
+  const taken = new Map([["other", preferredSwatch("claude-opus-5-5")]]);
+  const assigned = assignSwatches(["other", "claude-opus-5-5"], taken).get("claude-opus-5-5")!;
+  expect(distance(assigned, taken.get("other")!)).toBeGreaterThanOrEqual(45);
+});
+
+it("assignSwatches never recolors a model that already has a swatch", () => {
+  const first = assignSwatches(FAMILY.slice(0, 2), new Map());
+  const later = assignSwatches(FAMILY, first);
+  for (const model of FAMILY.slice(0, 2)) expect(later.get(model)).toEqual(first.get(model));
+});
+
+it("assignSwatches is independent of the order models arrive in", () => {
+  const forward = assignSwatches(FAMILY, new Map());
+  const reversed = assignSwatches([...FAMILY].reverse(), new Map());
+  for (const model of FAMILY) expect(reversed.get(model)).toEqual(forward.get(model));
+});
+
+it("spread never ends up closer to a neighbour than the preferred swatch was when the palette is full", () => {
+  const crowded = [0.6, 0.72, 0.84].flatMap((lightness) =>
+    Array.from({ length: 24 }, (_, index) => ({ hue: index * 15, lightness })),
+  );
+  const preferred = { hue: 7, lightness: 0.72 };
+  const gap = (swatch: typeof preferred) =>
+    Math.min(...crowded.map((other) => distance(swatch, other)));
+  expect(gap(spread(preferred, crowded))).toBeGreaterThanOrEqual(gap(preferred));
+});
+
+it("stickyModelColors keeps a color across calls and survives a reload from storage", () => {
+  resetModelColors();
+  const first = stickyModelColors(["claude-opus-5-5"]).get("claude-opus-5-5");
+  stickyModelColors(["claude-opus-5-5", "claude-haiku-5-5"]);
+  expect(stickyModelColors(["claude-opus-5-5"]).get("claude-opus-5-5")).toBe(first);
+  const stored = localStorage.getItem("loom.model-colors");
+  resetModelColors();
+  localStorage.setItem("loom.model-colors", stored!);
+  expect(stickyModelColors(["claude-opus-5-5"]).get("claude-opus-5-5")).toBe(first);
 });
