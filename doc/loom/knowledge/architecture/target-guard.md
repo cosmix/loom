@@ -1,6 +1,6 @@
 # Target Guard
 
-> Accepted tip
+> Tip
 
 ## Target Guard
 

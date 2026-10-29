@@ -175,3 +175,7 @@ A failing test binary stops cargo before it runs the rest, which can hide a `tes
 ## Planning Sandbox Delivery
 
 A read-denied directory is a writable private tmpfs under srt, a skipped real-sandbox test leaves the sandbox unproven, `Edit(doc/*)` covers `doc/loom`, and an `.ignore` file does not make an ancestor search safe. → [Planning Sandbox Delivery](mistakes/planning-sandbox-delivery.md)
+
+## Plan Chat Delivery
+
+Review handlers briefed without lock, guard and subscriber order; codex and fixer units that passed their own checks and failed the full gate, the reviewers or the 400/50-line limits; web logic slips (turn ids repeat across sessions, hunk-relative diff parsing, both authoring refusals). → [Plan Server Delivery](mistakes/plan-server-delivery.md#review-loop-handlers-were-briefed-without-lock-guard-and-subscriber-facts-2026-10-29)

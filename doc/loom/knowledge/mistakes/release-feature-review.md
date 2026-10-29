@@ -1,6 +1,6 @@
 # Release Feature Review
 
-> Release gaps
+> Gaps
 
 ## Release feature reviews should reconcile capabilities across the full range
 

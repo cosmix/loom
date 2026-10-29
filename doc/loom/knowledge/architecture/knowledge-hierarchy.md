@@ -9,7 +9,7 @@ verified: fffbcda55b1c83af0e06059063cab7bf93c6de67
 
 # Knowledge Hierarchy
 
-> Knowledge fs
+> KB fs
 
 ## Module Layout (`fs/knowledge/`)
 

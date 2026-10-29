@@ -1,6 +1,6 @@
 # Automatic Knowledge Source Graph Followups
 >
-> Smoke gaps
+> Gaps
 
 >
 
