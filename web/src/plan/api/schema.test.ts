@@ -5,7 +5,11 @@ import clientReading from "@/plan/api/fixtures/client-reading.json";
 import clientSetName from "@/plan/api/fixtures/client-set-name.json";
 import hello from "@/plan/api/fixtures/hello.json";
 import presence from "@/plan/api/fixtures/presence.json";
+import pressureRun from "@/plan/api/fixtures/pressure-run.json";
 import refused from "@/plan/api/fixtures/refused.json";
+import runOutput from "@/plan/api/fixtures/run-output.json";
+import runState from "@/plan/api/fixtures/run-state.json";
+import runStrip from "@/plan/api/fixtures/run-strip.json";
 import serverInfo from "@/plan/api/fixtures/server-info.json";
 import share from "@/plan/api/fixtures/share.json";
 import {
@@ -21,6 +25,7 @@ import {
   refusedSchema,
   serverInfoSchema,
   shareLinkSchema,
+  socketMessageSchema,
 } from "./schema";
 
 describe("planning wire schemas", () => {
@@ -68,6 +73,16 @@ describe("planning wire schemas", () => {
     ];
     for (const message of messages) expect(planMessageSchema.safeParse(message).success).toBe(true);
     expect(clientMessageSchema.safeParse({ type: "reading", path: null }).success).toBe(true);
+  });
+
+  it("parses each app-handoff frame with its type tag", () => {
+    const frames = [
+      { type: "pressure_run", ...pressureRun },
+      { type: "run_state", ...runState },
+      { type: "run_output", ...runOutput },
+      { type: "run_strip", ...runStrip },
+    ];
+    for (const frame of frames) expect(socketMessageSchema.safeParse(frame).success).toBe(true);
   });
 
   it("rejects numbers outside Rust integer ranges", () => {

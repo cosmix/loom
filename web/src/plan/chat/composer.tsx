@@ -32,6 +32,8 @@ import {
 import { CONTROLS } from "./model-identity";
 import { NewChatOffers } from "./new-chat-offers";
 import { PermissionCard } from "./permission-card";
+import { codexRunsAlone } from "./pressure/steps";
+import { pressureRunAtom } from "./pressure/use-pressure";
 import { QueueStrip } from "./queue-strip";
 import { shownSessionAtom } from "./shown-session";
 import { StopControl } from "./stop-control";
@@ -91,8 +93,10 @@ function useBlockReasons(pending: boolean) {
   const authorReason = useAtomValue(authorBlockReasonAtom);
   const connection = useAtomValue(connectionAtom);
   const attachments = useDeliveredAttachments();
+  const codexAlone = codexRunsAlone(useAtomValue(pressureRunAtom));
   const blocked =
-    composerBlock(session, { stopping, readOnly: !!server?.read_only.length }) ?? authorReason;
+    composerBlock(session, { stopping, readOnly: !!server?.read_only.length, codexAlone }) ??
+    authorReason;
   const reason =
     blocked ??
     (connection.phase !== "open" ? "Not connected; the message is kept" : null) ??
@@ -238,6 +242,7 @@ export function ComposerArea() {
   const authoring = useAtomValue(authoringAtom);
   const server = useAtomValue(serverInfoAtom);
   const state = useAtomValue(shownSessionAtom)?.state;
+  const session = useAtomValue(sessionAtom);
   const permissions = useAtomValue(pendingPermissionsAtom);
   const viewer = !!server?.read_only.length || (!canAuthor && !!authoring?.holder);
   const concluded = state === "ended" || state === "failed";
@@ -261,7 +266,7 @@ export function ComposerArea() {
       ) : (
         <ComposerInput />
       )}
-      {!server?.read_only.length && <StopControl />}
+      {!server?.read_only.length && session?.kind !== "pressure" && <StopControl />}
     </div>
   );
 }
