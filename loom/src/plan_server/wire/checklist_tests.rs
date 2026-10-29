@@ -10,6 +10,65 @@ fn put(root: &Path, relative: &str, contents: &str) {
     std::fs::write(path, contents).unwrap();
 }
 
+fn pitch_of(text: &str) -> Option<String> {
+    let temp = tempfile::tempdir().unwrap();
+    put(temp.path(), "doc/product/demo/index.md", text);
+    let project = Project::load(temp.path()).unwrap();
+    ProjectChecklistView::from(&project)
+        .checklists
+        .remove(0)
+        .pitch
+}
+
+#[test]
+fn pitch_joins_only_the_first_paragraph_after_the_title_and_keeps_inline_markdown() {
+    let pitch = pitch_of(
+        "Preamble is ignored.\n\n# Vision\n\nBuild **clear** plans with `loom`\nfor _every_ team.\n\nA later paragraph.\n",
+    );
+
+    assert_eq!(
+        pitch.as_deref(),
+        Some("Build **clear** plans with `loom` for _every_ team.")
+    );
+}
+
+#[test]
+fn pitch_skips_headings_lists_tables_fences_and_blockquotes() {
+    let pitch = pitch_of(concat!(
+        "# Vision\n\n## Overview\n\n- An unordered item\nits continuation\n\n",
+        "* Another item\n\n+ Another item\n\n1. An ordered item\n\n2) Another item\n\n",
+        "| Name | Value |\n| --- | --- |\n| Demo | Yes |\n\n",
+        "Name | Value\n--- | ---\nDemo | Yes\n\n",
+        "```rust\nignored code\n\nstill code\n```\n\n~~~\nmore code\n~~~\n\n",
+        "> A quote\nits continuation\n\n    indented code\n\n",
+        "A subheading\n---\n\nThe feature keeps planning work easy to follow.\n",
+    ));
+
+    assert_eq!(
+        pitch.as_deref(),
+        Some("The feature keeps planning work easy to follow.")
+    );
+}
+
+#[test]
+fn pitch_caps_at_280_characters_including_the_ellipsis_without_splitting_unicode() {
+    let exact = pitch_of(&format!("# Vision\n\n{}\n", "é".repeat(280))).unwrap();
+    assert_eq!(exact, "é".repeat(280));
+    let cut = pitch_of(&format!("# Vision\n\n{}\n", "é".repeat(281))).unwrap();
+    assert_eq!(cut.chars().count(), 280);
+    assert_eq!(cut, format!("{}…", "é".repeat(279)));
+}
+
+#[test]
+fn pitch_is_absent_without_a_heading_or_a_prose_paragraph() {
+    assert_eq!(pitch_of("No level-one heading.\n"), None);
+    assert_eq!(pitch_of("# Vision\n\n- A list only\n"), None);
+    assert_eq!(
+        pitch_of("# Vision\n\n```\nUnclosed code\n\nMore code\n"),
+        None
+    );
+}
+
 fn assert_offer(offer: Offer, expected: Value) {
     let view = offer_view(&offer);
     assert_eq!(serde_json::to_value(&view).unwrap(), expected);
@@ -227,6 +286,9 @@ fn project_snapshot_groups_features_and_uses_winning_standalone_paths_and_titles
         .map(|view| view.feature.as_str())
         .collect();
     assert_eq!(names, ["alpha", "zeta"]);
+    // Alpha has only a metaplan; Zeta's vision has no paragraph.
+    assert_eq!(snapshot.checklists[0].pitch, None);
+    assert_eq!(snapshot.checklists[1].pitch, None);
     assert_eq!(
         serde_json::to_value(snapshot.standalone).unwrap(),
         json!([

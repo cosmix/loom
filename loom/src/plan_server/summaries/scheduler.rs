@@ -6,6 +6,7 @@
 //! [`Scheduler::on_update`] and [`Scheduler::tick`] return it drained, the other calls leave it
 //! for [`Scheduler::take_events`].
 
+mod config;
 mod queue;
 mod session;
 #[cfg(test)]
@@ -15,34 +16,9 @@ mod tests_session;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-/// Summaries rebuilt without asking.
-pub const AUTO_LIMIT: usize = 5;
-/// How long a summary session may go without a seal before it is stopped.
-pub const NO_SEAL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
-
-/// The scheduler's fixed inputs.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SchedulerConfig {
-    /// Why the server is read-only; `Some` starts and asks nothing.
-    pub read_only: Option<String>,
-    /// Queued summaries started without asking.
-    pub limit: usize,
-    /// Time without a seal after which a session is stopped.
-    pub no_seal_timeout: Duration,
-}
-
-impl SchedulerConfig {
-    /// The planning server's rules: [`AUTO_LIMIT`] and [`NO_SEAL_TIMEOUT`].
-    pub fn standard(read_only: Option<String>) -> Self {
-        SchedulerConfig {
-            read_only,
-            limit: AUTO_LIMIT,
-            no_seal_timeout: NO_SEAL_TIMEOUT,
-        }
-    }
-}
+pub use config::{SchedulerConfig, AUTO_LIMIT, NO_SEAL_TIMEOUT};
 
 /// Starts and stops summary sessions for the scheduler.
 pub trait SessionSpawner: Send + Sync {

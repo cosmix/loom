@@ -156,9 +156,7 @@ fn no_feature_renders_a_general_chat_without_a_feature_checklist() {
     );
 }
 
-#[test]
-#[serial_test::serial]
-fn draft_all_and_file_move_preserve_the_typed_refusal_messages() {
+fn draft_all_fixture() -> Fixture {
     let fixture = Fixture::with_files(&[
         (
             "doc/product/demo/index.md",
@@ -176,19 +174,41 @@ fn draft_all_and_file_move_preserve_the_typed_refusal_messages() {
         ),
         ("doc/product/index.md", "# Needs a feature\n"),
     ]);
+    let root = fixture.ctx.root();
+    std::fs::remove_file(root.join("doc/product/demo/section_01.md")).unwrap();
+    *fixture.ctx.project_mut() = Project::load(root).unwrap();
+    fixture
+}
 
-    for (id, message) in [
-        ("draft-all-plans", "draft-all-plans is not available yet"),
-        (
-            "draft-all-sections",
-            "draft-all-sections is not available yet",
-        ),
-        (
-            "move-into-feature:doc/product/index.md",
-            "move-into-feature:doc/product/index.md is a file move, not a session",
-        ),
-    ] {
-        let error = fixture.render(Some(id), None).unwrap_err();
-        assert_eq!(error.to_string(), message);
-    }
+#[test]
+#[serial_test::serial]
+fn draft_all_renders_a_team_opening_and_file_move_keeps_its_refusal() {
+    let fixture = draft_all_fixture();
+    let plans = fixture.render(Some("draft-all-plans"), None).unwrap();
+    assert!(plans
+        .opening_message
+        .contains("doc/plans/demo/PLAN-delivery.md"));
+    assert!(plans
+        .opening_message
+        .contains("doc/plans/demo/PLAN-more.md"));
+    assert!(plans.opening_message.contains("team mode"));
+    let fixture = draft_all_fixture();
+    let sections = fixture.render(Some("draft-all-sections"), None).unwrap();
+    assert!(sections
+        .opening_message
+        .contains("doc/product/demo/section_01.md"));
+    assert!(sections
+        .opening_message
+        .contains("doc/product/demo/section_02.md"));
+    assert!(sections
+        .opening_message
+        .contains("doc/product/demo/section_03.md"));
+    assert!(sections.opening_message.contains("team mode"));
+
+    let id = "move-into-feature:doc/product/index.md";
+    let error = fixture.render(Some(id), None).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "move-into-feature:doc/product/index.md is a file move, not a session"
+    );
 }

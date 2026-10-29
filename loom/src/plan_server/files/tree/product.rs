@@ -1,6 +1,7 @@
 //! Product visions, section order and gaps within each feature.
 
 use super::*;
+use crate::planning::kinds::section_path;
 
 impl Builder<'_> {
     /// Group feature product documents and retain misplaced top-level documents.
@@ -44,6 +45,11 @@ impl Builder<'_> {
                     }
                 } else {
                     let mut gap = entry(None, &row.name, EntryKind::Section, false);
+                    gap.target = Some(
+                        section_path(&feature.name, row.number)
+                            .to_string_lossy()
+                            .into_owned(),
+                    );
                     gap.feature = Some(feature.name.clone());
                     gap.gap = true;
                     result.push(gap);

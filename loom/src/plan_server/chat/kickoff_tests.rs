@@ -149,11 +149,25 @@ fn every_string_is_capped_in_characters() {
     });
     let shape = parse_shape(&block(&body.to_string())).unwrap();
 
-    assert_eq!(shape.name, Some("a".repeat(500)));
+    assert_eq!(shape.name, None);
     assert_eq!(shape.problem, "界".repeat(500));
     assert_eq!(shape.decisions, vec!["界".repeat(500)]);
     assert_eq!(shape.questions, vec!["界".repeat(500)]);
     assert_eq!(shape.sections[0].title, "界".repeat(500));
+}
+
+#[test]
+fn feature_names_are_limited_to_sixty_four_characters() {
+    let body = json!({"name": "a".repeat(64)});
+
+    assert_eq!(
+        parse_shape(&block(&body.to_string())).unwrap().name,
+        Some("a".repeat(64))
+    );
+
+    let body = json!({"name": "a".repeat(65)});
+
+    assert_eq!(parse_shape(&block(&body.to_string())).unwrap().name, None);
 }
 
 #[test]

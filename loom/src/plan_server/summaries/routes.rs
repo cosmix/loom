@@ -28,7 +28,13 @@ struct Answer {
     rebuild: bool,
 }
 
-/// Summary panel reads and rebuild, terminal-claim release and approval actions.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Auto {
+    enabled: bool,
+}
+
+/// Summary panel reads, automatic budget, rebuild, terminal-claim release and approval actions.
 pub fn routes() -> Vec<RouteSpec> {
     vec![
         RouteSpec {
@@ -44,6 +50,13 @@ pub fn routes() -> Vec<RouteSpec> {
             body: BodyKind::Json,
             role: Role::Viewer,
             handler: rebuild,
+        },
+        RouteSpec {
+            method: Method::Post,
+            path: "/api/summaries/auto",
+            body: BodyKind::Json,
+            role: Role::Viewer,
+            handler: auto,
         },
         RouteSpec {
             method: Method::Post,
@@ -144,6 +157,26 @@ fn rebuild(req: &ApiRequest<'_>) -> ApiResponse {
     };
     rebuilds.enqueue(ids, Trigger::Button);
     ApiResponse::json(202, &rebuilds.panel())
+}
+
+fn auto(req: &ApiRequest<'_>) -> ApiResponse {
+    let (rebuilds, right) = match writable(req) {
+        Ok(allowed) => allowed,
+        Err(response) => return response,
+    };
+    if right != AnswerRight::Holder {
+        return ApiResponse::error(
+            403,
+            "not_allowed",
+            "only the authoring holder changes this setting",
+        );
+    }
+    let body: Auto = match req.json() {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    rebuilds.set_auto(body.enabled);
+    ApiResponse::json(200, &rebuilds.panel())
 }
 
 fn release(req: &ApiRequest<'_>) -> ApiResponse {
