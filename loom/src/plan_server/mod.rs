@@ -28,6 +28,7 @@ pub mod search;
 pub mod server_info;
 pub mod shutdown;
 pub mod startup;
+pub mod summaries;
 pub mod watch;
 pub mod wire;
 pub mod ws;

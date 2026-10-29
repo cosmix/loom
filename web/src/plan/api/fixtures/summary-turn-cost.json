@@ -1,0 +1,9 @@
+{
+  "session": "7b2e9d14-3a6c-4f08-8e51-c4d0a9b36f25",
+  "turn": "turn-004",
+  "rows": [
+    { "id": "product/section_01", "tokens": 11800 },
+    { "id": "product/section_02" },
+    { "id": "product", "tokens": 2400 }
+  ]
+}
