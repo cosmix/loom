@@ -9,7 +9,8 @@ const kinds: OfferKind[] = [
   "add_section_to_vision",
   "start_metaplan",
   "write_plan",
-  "add_plan_to_metaplan",
+  "draft_all_sections",
+  "draft_all_plans",
   "refine_spec",
   "new_metaplan_round",
   "fix_vision_table",
@@ -46,8 +47,32 @@ describe("authoring offer handlers", () => {
     try {
       expect(offerAction("pressure_test")).toBeUndefined();
       expect(offerAction("start_run")).toBeUndefined();
+      expect(offerAction("move_into_feature")).toBeUndefined();
     } finally {
       unregister();
     }
   });
+
+  it.each(["draft_all_sections", "write_section"] as const)(
+    "includes the selected feature for %s",
+    (kind) => {
+      const send = vi.fn();
+      const unregister = registerAuthoringOffers(send);
+      const offer: OfferView = {
+        id: `id:${kind}`,
+        kind,
+        label: kind,
+        target: null,
+        feature: "demo",
+      };
+
+      try {
+        runOffer(offer);
+
+        expect(send).toHaveBeenCalledExactlyOnceWith({ offer: offer.id, feature: "demo" });
+      } finally {
+        unregister();
+      }
+    },
+  );
 });

@@ -8,6 +8,7 @@ import { PlanHeader } from "@/plan/header/header";
 import { checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 const SAMPLE_CHECKLIST = checklistViewSchema.parse({
+  feature: "atlas",
   current: { kind: "step", number: 3 },
   steps: [
     { number: 1, name: "Vision", mark: "done" },

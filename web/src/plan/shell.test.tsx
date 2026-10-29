@@ -59,7 +59,7 @@ function renderShell(outlet = <p>outlet content</p>) {
 
 beforeEach(() => {
   store = createStore();
-  store.set(checklistAtom, checklistViewSchema.parse(checklistFixture));
+  store.set(checklistAtom, checklistViewSchema.parse(checklistFixture.checklists[0]));
 });
 
 afterEach(() => {
@@ -143,7 +143,11 @@ describe("PlanShell", () => {
   });
 
   it("renders the dock as nothing", () => {
-    const { container } = render(<Dock />);
+    const { container } = render(
+      <MemoryRouter>
+        <Dock />
+      </MemoryRouter>,
+    );
     expect(container.innerHTML).toBe("");
   });
 

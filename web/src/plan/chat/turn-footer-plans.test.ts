@@ -5,6 +5,8 @@ import { planPath } from "./turn-footer-plans";
 
 function entry(path: string | null, children: TreeEntry[] = []): TreeEntry {
   return {
+    feature: null,
+    misplaced: false,
     path,
     title: path ?? "folder",
     file_name: path?.split("/").at(-1) ?? null,

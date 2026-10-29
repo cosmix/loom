@@ -1,0 +1,23 @@
+{
+  "type": "draft_team",
+  "session": "team-1",
+  "documents": ["doc/product/planner-ui/section_01.md", "doc/product/planner-ui/section_02.md"],
+  "teammates": [
+    {
+      "agent_id": "agent-1",
+      "name": "writer-one",
+      "documents": ["doc/product/planner-ui/section_01.md"],
+      "current": "doc/product/planner-ui/section_01.md",
+      "state": "working",
+      "tokens": { "input": 10, "cache_write": 20, "cache_read": 30, "output": 40 }
+    },
+    {
+      "agent_id": "agent-2",
+      "name": "writer-two",
+      "documents": ["doc/product/planner-ui/section_02.md"],
+      "current": null,
+      "state": "idle",
+      "tokens": { "input": 0, "cache_write": 0, "cache_read": 0, "output": 0 }
+    }
+  ]
+}

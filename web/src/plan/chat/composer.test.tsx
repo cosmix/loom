@@ -88,10 +88,11 @@ it("ending disables with reason", () => {
 });
 function offerPrimary(store: ReturnType<typeof setup>["store"]) {
   const primary = {
-    ...checklistViewSchema.parse(helloFixture.checklist).primary!,
+    ...checklistViewSchema.parse(helloFixture.checklists[0]).primary!,
     label: "Write section 05",
   };
   store.set(checklistAtom, {
+    feature: "demo",
     current: { kind: "ready" },
     steps: [],
     primary,

@@ -22,6 +22,8 @@ import {
 } from "./suggestion-cards-test-kit";
 
 const document: DocView = {
+  feature: null,
+  misplaced: false,
   path: suggestion.passage.path,
   title: "Ports",
   text: "## Port\nOld port text.\n\n## Other\nOther text.",

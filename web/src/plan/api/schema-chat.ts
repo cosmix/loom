@@ -1,4 +1,5 @@
 import { z } from "@/api/zod";
+import { kickoffSizeSchema } from "./schema-kickoff";
 
 const u32 = z.number().int().min(0).max(4294967295);
 const u64 = z.number().int().min(0);
@@ -244,6 +245,12 @@ export const chatCommandSchema = z.discriminatedUnion("command", [
     ...clientId,
     text: z.string(),
     attachments: z.array(attachmentInputSchema),
+  }),
+  z.strictObject({
+    command: z.literal("confirm_kickoff"),
+    ...clientId,
+    size: kickoffSizeSchema,
+    name: z.string(),
   }),
   z.strictObject({ command: z.literal("withdraw"), ...clientId, queue_id: z.string() }),
   z.strictObject({

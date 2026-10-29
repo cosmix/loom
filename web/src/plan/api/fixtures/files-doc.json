@@ -1,5 +1,5 @@
 {
-  "path": "doc/product/section_01.md",
+  "path": "doc/product/demo/section_01.md",
   "title": "Product",
   "text": "# Product\n\n## Purpose\nText\n",
   "hash": "sha256:abc",
@@ -18,5 +18,7 @@
   "plan": null,
   "too_large": false,
   "truncated": false,
-  "size": 27
+  "size": 27,
+  "feature": "demo",
+  "misplaced": false
 }
