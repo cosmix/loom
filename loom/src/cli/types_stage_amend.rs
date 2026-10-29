@@ -21,6 +21,8 @@ pub enum AmendField {
     Contracts,
     /// Mutate the `harness` array.
     Harness,
+    /// Mutate the `reachable` array.
+    Reachable,
 }
 
 /// What to do at `--index` within the field targeted by `loom stage amend`.
@@ -46,6 +48,7 @@ impl AmendField {
             AmendField::WiringTests => AmendmentField::WiringTests,
             AmendField::Contracts => AmendmentField::Contracts,
             AmendField::Harness => AmendmentField::Harness,
+            AmendField::Reachable => AmendmentField::Reachable,
         }
     }
 }

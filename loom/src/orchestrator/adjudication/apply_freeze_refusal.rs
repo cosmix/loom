@@ -137,6 +137,7 @@ fn amendment_line(entry: &FreezePatch) -> String {
         AmendmentField::Acceptance => "acceptance",
         AmendmentField::Wiring => "wiring",
         AmendmentField::WiringTests => "wiring-tests",
+        AmendmentField::Reachable => "reachable",
     };
     let (verb, value) = match &entry.patch {
         AmendmentPatch::Replace { value, .. } => ("replaced", Some(value)),
