@@ -378,7 +378,7 @@ it("concept empty project shows no product vision yet", async () => {
     store.set(
       checklistAtom,
       checklistViewSchema.parse({
-        ...checklistFixture,
+        ...checklistFixture.checklists[0]!,
         secondary: [
           {
             id: "start-vision",

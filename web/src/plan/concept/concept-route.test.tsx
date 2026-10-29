@@ -53,7 +53,6 @@ function serveOverview(overview: Page = clone(overviewFixture)): void {
     "product/section_02": { ...clone(summaryFixture), key: "product/section_02", title: "Review" },
   };
 }
-
 beforeEach(() => {
   pages = {};
   docs = {};
@@ -65,12 +64,10 @@ beforeEach(() => {
   window.sessionStorage.clear();
   vi.stubGlobal("fetch", vi.fn(makeStubFetch(() => ({ pages, docs, failing }), fetched)));
 });
-
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-
 describe("overviews and the document key", () => {
   it("engineering tab renders and keeps runs", async () => {
     serveOverview();
@@ -79,7 +76,6 @@ describe("overviews and the document key", () => {
     expect(window.sessionStorage.getItem("loom-plan:concept:engineering")).toContain("s1");
     expect(screen.getByText("Engineering overview")).toBeTruthy();
   });
-
   it("unlisted list links to summary pages", async () => {
     const overview = { ...clone(overviewFixture), unlisted: [doc("a", "Alpha", "engineering/a")] };
     serveOverview(overview);
@@ -89,7 +85,6 @@ describe("overviews and the document key", () => {
       "/engineering/a",
     );
   });
-
   it("chip shows colour, label and title", async () => {
     serveOverview();
     renderAt("/product");
@@ -99,7 +94,6 @@ describe("overviews and the document key", () => {
     const square = link.querySelector("span[aria-hidden]") as HTMLElement;
     expect(square.style.background).toContain("--doc-2");
   });
-
   it("chip click navigates to summary page", async () => {
     serveOverview();
     const { router } = renderAt("/product");
@@ -107,7 +101,6 @@ describe("overviews and the document key", () => {
     fireEvent.click(within(keyList()).getByRole("link", { name: /Review/ }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/product/section_02"));
   });
-
   it("plan chip tooltip lists Implements", async () => {
     const overview = clone(overviewFixture);
     overview.key_chips[0]!.doc = doc("a", "Plan a", "engineering/a");
@@ -125,14 +118,12 @@ describe("overviews and the document key", () => {
     const chip = within(keyList()).getByRole("link", { name: /Plan a/ });
     expect(descriptionOf(chip)).toContain("Implements: Planning");
   });
-
   it("no plan in muted text", async () => {
     serveOverview();
     renderAt("/product");
     await readingColumn();
     expect(within(keyList()).getByText("no plan").className).toContain("text-muted-foreground");
   });
-
   it("Fold all folds every run", async () => {
     serveOverview();
     renderAt("/product");
@@ -142,7 +133,6 @@ describe("overviews and the document key", () => {
       expect(within(column).queryByRole("group", { name: OVERVIEW_RUN })).toBeNull(),
     );
   });
-
   it("opening a run changes no URL and sends no request", async () => {
     serveOverview();
     const { router } = renderAt("/product");
@@ -160,7 +150,6 @@ describe("overviews and the document key", () => {
     expect(router.state.location.pathname).toBe("/product");
     expect(fetched).toHaveLength(before);
   });
-
   it("tab switching keeps open runs", async () => {
     serveOverview();
     renderAt("/product");
@@ -172,7 +161,6 @@ describe("overviews and the document key", () => {
     const column = await readingColumn();
     expect(await within(column).findByRole("group", { name: OVERVIEW_RUN })).toBeTruthy();
   });
-
   it("navigating to a cached page remounts the column without notes", async () => {
     serveOverview();
     const { router } = renderAt("/product");
@@ -184,7 +172,6 @@ describe("overviews and the document key", () => {
     expect(overview.isConnected).toBe(false);
     expect(screen.queryAllByRole("note")).toHaveLength(0);
   });
-
   it("back returns to previous page", async () => {
     serveOverview();
     const { router } = renderAt("/product");
@@ -196,7 +183,6 @@ describe("overviews and the document key", () => {
     expect(await readingColumn()).toBeTruthy();
   });
 });
-
 describe("summary page header", () => {
   it("header shows title, path, colour, state and Open in file mode", async () => {
     serveOverview();
@@ -210,7 +196,6 @@ describe("summary page header", () => {
     expect(link.getAttribute("href")).toBe("/files/product/section_01.md");
     expect(extras.header).toHaveBeenCalled();
   });
-
   it("plan header shows state and pressure date", async () => {
     pages = { "engineering/a": planPage({ last_pressure: "2026-10-20" }) };
     renderAt("/engineering/a");
@@ -218,14 +203,12 @@ describe("summary page header", () => {
     expect(text()).toContain("Plan state: written");
     expect(text()).toContain("2026-10-20");
   });
-
   it("locked notice on a done plan", async () => {
     pages = { "engineering/a": planPage({ plan_state: "done" }) };
     renderAt("/engineering/a");
     const note = await screen.findByRole("note");
     expect(note.textContent).toContain("This plan is done. Record changes in a new plan.");
   });
-
   it("locked notice on a running plan", async () => {
     pages = { "engineering/a": planPage({ plan_state: "running" }) };
     renderAt("/engineering/a");
@@ -234,7 +217,6 @@ describe("summary page header", () => {
       "This plan is running. `loom run` works from the committed copy.",
     );
   });
-
   it("Implemented by with states", async () => {
     serveOverview();
     renderAt("/product/section_01");
@@ -246,7 +228,6 @@ describe("summary page header", () => {
     expect(text()).toContain("(in progress)");
   });
 });
-
 describe("keys", () => {
   it("a adds an attachment while canAuthor", async () => {
     serveOverview();
@@ -257,7 +238,6 @@ describe("keys", () => {
     fireEvent.keyDown(column, { key: "a" });
     await waitFor(() => expect(store.get(pendingAttachmentsAtom)).toHaveLength(1));
   });
-
   it("a does nothing while another browser holds authoring", async () => {
     serveOverview();
     const { store } = renderAt("/product");
@@ -266,7 +246,6 @@ describe("keys", () => {
     fireEvent.keyDown(column, { key: "a" });
     expect(store.get(pendingAttachmentsAtom)).toHaveLength(0);
   });
-
   it("g p and g e", async () => {
     serveOverview();
     const { router } = renderAt("/product");
@@ -278,19 +257,17 @@ describe("keys", () => {
     fireEvent.keyDown(document.body, { key: "p" });
     await waitFor(() => expect(router.state.location.pathname).toBe("/product"));
   });
-
   it("help shortcuts hold the reading group with eleven rows", () => {
     const group = PLANNER_SHORTCUT_GROUPS.find((entry) => entry.title === "While reading");
     expect(group?.rows).toHaveLength(11);
   });
 });
-
 /** The offers plan 1 sends in the checklist; `EmptyOffer` looks its offer up there. */
 function withOffers(store: Store): void {
   store.set(
     checklistAtom,
     checklistViewSchema.parse({
-      ...checklistFixture,
+      ...checklistFixture.checklists[0]!,
       secondary: [
         {
           id: "start-vision",
@@ -308,7 +285,6 @@ function withOffers(store: Store): void {
     }),
   );
 }
-
 const authorWithOffers = (store: Store): void => {
   canAuthor(store);
   withOffers(store);
@@ -321,7 +297,6 @@ describe("empty and partial states", () => {
     blocks: [],
     empty: { kind, count: null, offer: null, docs: [], ...extra },
   });
-
   it("sections without vision list", async () => {
     const docsList = [doc("b", "Beta", "product/b"), doc("c", "Gamma", "product/c")];
     pages = { product: empty("sections_no_vision", { docs: docsList }) };
@@ -333,14 +308,12 @@ describe("empty and partial states", () => {
         .map((link) => link.textContent),
     ).toEqual(["Beta", "Gamma"]);
   });
-
   it("No metaplan yet", async () => {
     pages = { engineering: empty("no_metaplan", { offer: "start-metaplan" }) };
     renderAt("/engineering", authorWithOffers);
     expect(await screen.findByText("No metaplan yet")).toBeTruthy();
     expect(screen.getByRole("button", { name: /metaplan/ })).toBeTruthy();
   });
-
   it("plans without metaplan list and offer", async () => {
     pages = {
       engineering: empty("plans_no_metaplan", {
@@ -353,7 +326,6 @@ describe("empty and partial states", () => {
     expect(within(list).getByRole("link", { name: "Alpha" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /metaplan/ })).toBeTruthy();
   });
-
   it("never built state", async () => {
     const files = [doc("section_01", "Planning", "product/section_01")];
     pages = { product: empty("never_built", { count: 3, docs: files }) };
@@ -364,14 +336,12 @@ describe("empty and partial states", () => {
       "/files/product/section_01.md",
     );
   });
-
   it("building state with key chips", async () => {
     pages = { product: { ...empty("building"), key_chips: clone(overviewFixture.key_chips) } };
     renderAt("/product");
     expect((await screen.findAllByText("Building summaries")).length).toBeGreaterThan(0);
     expect(within(keyList()).getAllByRole("link")).toHaveLength(overviewFixture.key_chips.length);
   });
-
   it("read-only browser sees no offer button", async () => {
     pages = { product: empty("no_vision", { offer: "start-vision" }) };
     renderAt("/product", withOffers);
@@ -379,7 +349,6 @@ describe("empty and partial states", () => {
     expect(screen.getByText("Start the product vision")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Start the product vision/ })).toBeNull();
   });
-
   it("offer button is enabled and undescribed for the holder", async () => {
     pages = { product: empty("no_vision", { offer: "start-vision" }) };
     renderAt("/product", authorWithOffers);

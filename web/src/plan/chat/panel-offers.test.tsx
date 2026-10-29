@@ -34,7 +34,7 @@ vi.mock("./model", async (original) => ({
   useChatSocket: vi.fn(),
 }));
 
-const offerView = offerViewSchema.parse(hello.checklist.primary);
+const offerView = offerViewSchema.parse(hello.checklists[0]!.primary);
 const running = { ...chatSnapshotSchema.parse(fixture).session!, state: "idle" as const };
 const CONFIRM =
   "End the current chat first? It will write its open questions into the documents before it stops.";
@@ -53,7 +53,7 @@ function media(desktop: boolean) {
   }));
 }
 
-function mount(session = running as typeof running | null) {
+function mount(session = running as typeof running | null, selectedOffer = offerView) {
   const store = createStore();
   store.set(serverInfoAtom, { ...hello.server, project_key: `offers-${++serial}`, read_only: [] });
   store.set(youAtom, hello.you);
@@ -69,7 +69,7 @@ function mount(session = running as typeof running | null) {
   // The offer mounts after the shell's registration effect, as it does in the app.
   render(
     <Provider store={store}>
-      <OfferButton offer={offerView} />
+      <OfferButton offer={selectedOffer} />
     </Provider>,
   );
   return store;
@@ -140,7 +140,25 @@ it("an offer with a chat running asks, ends it, waits, then starts", async () =>
     }),
   );
   await act(async () => {});
-  expect(startChat).toHaveBeenCalledWith(store, offerView.id);
+  expect(startChat).toHaveBeenCalledWith(
+    store,
+    offerView.id,
+    undefined,
+    undefined,
+    offerView.feature,
+  );
+});
+
+it.each([
+  ["draft_all_sections", "draft-all-sections"],
+  ["write_section", "write-section:02"],
+] as const)("the panel forwards the feature for %s", async (kind, id) => {
+  media(true);
+  const store = mount(null, { ...offerView, kind, id, feature: "demo" });
+
+  await clickOffer();
+
+  expect(startChat).toHaveBeenCalledExactlyOnceWith(store, id, undefined, undefined, "demo");
 });
 
 it("declining the end-first question changes nothing", async () => {

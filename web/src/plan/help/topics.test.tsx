@@ -61,7 +61,9 @@ it("gives every topic an intro and description and every scene note non-empty te
 it("renders the sample project and all seven steps without throwing", () => {
   const { container } = render(<GettingAroundScene />);
 
-  expect(within(container).getByRole("heading", { name: "Atlas", hidden: true })).toBeDefined();
+  expect(
+    within(container).getByRole("button", { name: "Switch feature, current: atlas", hidden: true }),
+  ).toBeDefined();
   const steps = within(container).getByRole("list", { name: "Steps", hidden: true });
   expect(within(steps).getAllByRole("listitem", { hidden: true })).toHaveLength(7);
   expect(

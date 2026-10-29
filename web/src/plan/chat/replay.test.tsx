@@ -37,7 +37,9 @@ type Store = ReturnType<typeof createStore>;
 
 const matchMedia = window.matchMedia;
 const recordedSnapshot = chatSnapshotSchema.parse(snapshotFixture);
-const recordedSend = chatCommandSchema.parse(commandsFixture[1]);
+const recordedSend = chatCommandSchema.parse(
+  commandsFixture.find((command) => command.command === "send"),
+);
 const passageInput = attachmentInputSchema.parse(commandsFixture[0]?.attachments?.[0]);
 const passage: AttachmentDraft = {
   kind: "source",

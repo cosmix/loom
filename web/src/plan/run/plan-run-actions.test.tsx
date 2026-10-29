@@ -237,7 +237,7 @@ it("dispatches the real checklist offers for a done plan", () => {
     target: path,
   };
   store.set(checklistAtom, {
-    ...checklistViewSchema.parse(fixture),
+    ...checklistViewSchema.parse(fixture.checklists[0]),
     primary: review,
     secondary: [round],
   });

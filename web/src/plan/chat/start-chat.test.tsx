@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 
 import brief from "@/plan/api/fixtures/session-brief.json";
 import { EmptyOffer } from "@/plan/concept/empty-offer";
+import { OfferButton } from "@/plan/offers/offer-button";
 import { authoringAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { BriefDialog, BriefDialogHost } from "./brief-dialog";
 import { sendMessage, startChat } from "./commands";
@@ -26,7 +27,11 @@ installStartChatLifecycle();
 
 it("offer start", async () => {
   const h = harness();
-  disposers.push(registerAuthoringOffers((message) => startChat(h.store, message.offer)));
+  disposers.push(
+    registerAuthoringOffers(({ offer, feature }) =>
+      startChat(h.store, offer, undefined, undefined, feature),
+    ),
+  );
   h.mount(<EmptyOffer offer={offer.id} />);
   fireEvent.click(screen.getByRole("button", { name: offer.label }));
   expect(h.send).toHaveBeenCalledWith(
@@ -38,6 +43,35 @@ it("offer start", async () => {
       attachments: [],
     }),
   );
+  h.result();
+  await act(async () => {});
+});
+
+it.each([
+  ["draft_all_sections", "draft-all-sections", { feature: "demo" }],
+  ["write_section", "write-section:02", { feature: "demo" }],
+  ["draft_all_sections", "draft-all-sections", {}],
+  ["write_section", "write-section:02", {}],
+] as const)("%s offer %s sends feature scope %j to the socket", async (kind, id, scope) => {
+  const h = harness();
+  const starter = createOfferStarter(h.store);
+  disposers.push(
+    registerAuthoringOffers(({ offer, feature }) => starter.start(offer, feature)),
+    starter.dispose,
+  );
+  h.mount(<OfferButton offer={{ ...offer, kind, id, ...scope }} />);
+
+  fireEvent.click(screen.getByRole("button", { name: offer.label }));
+
+  expect(h.send).toHaveBeenCalledExactlyOnceWith({
+    type: "chat",
+    command: "start",
+    client_id: expect.any(String),
+    offer: id,
+    text: null,
+    attachments: [],
+    ...scope,
+  });
   h.result();
   await act(async () => {});
 });
@@ -147,7 +181,7 @@ it("end current chat first", async () => {
   const h = harness(current);
   const starter = createOfferStarter(h.store);
   disposers.push(
-    registerAuthoringOffers((message) => starter.start(message.offer)),
+    registerAuthoringOffers(({ offer, feature }) => starter.start(offer, feature)),
     starter.dispose,
   );
   h.mount(<EmptyOffer offer={offer.id} />);
@@ -304,7 +338,11 @@ it.each(["viewer", "read-only"])("empty offers are text for %s", (mode) => {
 it("empty offers allow taking free authoring", async () => {
   const h = harness();
   h.store.set(authoringAtom, { holder: null });
-  disposers.push(registerAuthoringOffers((message) => startChat(h.store, message.offer)));
+  disposers.push(
+    registerAuthoringOffers(({ offer, feature }) =>
+      startChat(h.store, offer, undefined, undefined, feature),
+    ),
+  );
   h.mount(<EmptyOffer offer={offer.id} />);
   fireEvent.click(screen.getByRole("button", { name: offer.label }));
   expect(h.send).toHaveBeenCalledWith(

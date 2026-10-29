@@ -80,7 +80,7 @@ export function startError(store: Store, error: unknown): string {
  * opens in the layout in use so the message is never hidden. One start runs at a time.
  */
 export function createOfferStarter(store: Store): {
-  start: (offer: string) => Promise<void>;
+  start: (offer: string, feature?: string) => Promise<void>;
   dispose: () => void;
 } {
   let request: AbortController | null = null;
@@ -88,7 +88,7 @@ export function createOfferStarter(store: Store): {
     if (window.matchMedia(DESKTOP).matches) store.set(panelCollapsedAtom, false);
     else store.set(chatSheetOpenAtom, true);
   };
-  const start = async (offer: string): Promise<void> => {
+  const start = async (offer: string, feature?: string): Promise<void> => {
     if (request) return;
     const running = store.get(sessionAtom);
     if (isActiveSession(running) && !confirmEndFirst()) return;
@@ -98,7 +98,7 @@ export function createOfferStarter(store: Store): {
       if (isActiveSession(running))
         await endCurrentChat(store, running, controller.signal, "choose the offer");
       if (controller.signal.aborted) return;
-      await startChat(store, offer);
+      await startChat(store, offer, undefined, undefined, feature);
       // Disposed while the start was in flight: the panel is gone, so write and reveal nothing.
       if (controller.signal.aborted) return;
       store.set(offerErrorAtom, null);

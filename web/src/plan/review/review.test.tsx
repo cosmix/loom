@@ -36,7 +36,11 @@ vi.mock("@/plan/diff/diff-view", () => ({
 const page = conceptPageSchema.parse(summaryFixture);
 const path = "doc/product/section_01.md";
 const chip = page.key_chips[0]!;
-const entry = treeEntrySchema.parse({ ...treeFixture.product[0], path, kind: "section" });
+const entry = treeEntrySchema.parse({
+  ...treeFixture.product[0]!.children[0],
+  path,
+  kind: "section",
+});
 const server = serverInfoSchema.parse(serverFixture);
 const checkpoint: Checkpoint = { commit: "c1", hashes: { [path]: "old" } };
 const current = { head: "c2", docs: { [path]: "new" } };

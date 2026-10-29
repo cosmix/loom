@@ -165,8 +165,15 @@ export function startChat(
   offer: string | null = null,
   text: string | null = null,
   attachments: AttachmentInput[] = [],
+  feature?: string,
 ): Promise<CommandResult> {
-  return sendChatCommand(store, { command: "start", offer, text, attachments });
+  return sendChatCommand(store, {
+    command: "start",
+    offer,
+    text,
+    attachments,
+    ...(feature !== undefined ? { feature } : {}),
+  });
 }
 
 export function sendMessage(store: Store, text: string, attachments: AttachmentInput[] = []) {
