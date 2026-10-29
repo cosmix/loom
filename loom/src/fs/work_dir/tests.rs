@@ -9,7 +9,7 @@ mod git_marker_bound;
 /// [`crate::user_config::redirect_user_config`]. Does not touch `$HOME` — the
 /// redirect is a per-thread seam inside `user_config`, not an env var, so
 /// this needs no directory layout beyond "a file somewhere in `temp`".
-fn write_user_config(temp: &TempDir, body: &str) -> PathBuf {
+pub(super) fn write_user_config(temp: &TempDir, body: &str) -> PathBuf {
     let path = temp.path().join("user-config.toml");
     fs::write(&path, body).unwrap();
     path
@@ -236,7 +236,7 @@ fn test_workdir_new_legacy_hint_naming_work_dir_resolves_to_itself() {
 
 use crate::{models::session::TerminalConfig, plan::schema::SandboxConfig};
 
-fn init_work(temp: &TempDir) -> PathBuf {
+pub(super) fn init_work(temp: &TempDir) -> PathBuf {
     let work = temp.path().join(".loom").join("work");
     fs::create_dir_all(&work).unwrap();
     work

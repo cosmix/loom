@@ -82,7 +82,7 @@ pub struct Scratch {
     pub root: PathBuf,
     previous_home: Option<OsString>,
     _repo: TempDir,
-    _home: TempDir,
+    home: TempDir,
 }
 
 impl Scratch {
@@ -106,8 +106,27 @@ impl Scratch {
             root,
             previous_home,
             _repo: repo,
-            _home: home,
+            home,
         }
+    }
+
+    /// A `loom` child in the repository. The sanctioned-spawner scrub: every inherited `LOOM_*`
+    /// variable is removed (a real session's identity must not reach the child), then
+    /// `LOOM_HOME` is set to this scratch's, so the child never reads the operator's `~/.loom`.
+    /// `GIT_DIR` and `GIT_WORK_TREE` are removed too, as they would redirect its git calls.
+    pub fn loom(&self) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_loom"));
+        for (key, _) in std::env::vars_os() {
+            if key.to_string_lossy().starts_with("LOOM_") {
+                command.env_remove(key);
+            }
+        }
+        command
+            .current_dir(&self.root)
+            .env("LOOM_HOME", self.home.path())
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE");
+        command
     }
 
     pub fn records(&self) -> usize {
@@ -247,18 +266,37 @@ pub fn pressure_panes(server: &RunningServer, bridge: &Bridge) -> Vec<usize> {
     panes.collect()
 }
 
+/// A `loom plan` child, killed and reaped on drop so a failed assertion cannot leave it running.
+pub struct PlanChild(Child);
+
+impl PlanChild {
+    /// Kill and reap the child; harmless once it has exited.
+    pub fn stop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+impl Drop for PlanChild {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 /// `loom plan` as a child, so the run routes start the real `loom` (their `current_exe`).
-pub fn spawn_loom_plan(scratch: &Scratch) -> (Child, Browser) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_loom"))
-        .args(["plan", "--no-open", "--port", "0"])
-        .current_dir(&scratch.root)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
+pub fn spawn_loom_plan(scratch: &Scratch) -> (PlanChild, Browser) {
+    let mut child = PlanChild(
+        scratch
+            .loom()
+            .args(["plan", "--no-open", "--port", "0"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     let (sender, lines) = mpsc::channel();
-    let stdout = child.stdout.take().unwrap();
+    let stdout = child.0.stdout.take().unwrap();
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
             let _ = sender.send(line);
