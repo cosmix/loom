@@ -72,11 +72,6 @@
   color: var(--muted-foreground);
 }
 
-.planner-help .planner-help-search:focus-within {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
 .planner-help .planner-help-search input:focus-visible {
   outline: none;
 }
@@ -144,23 +139,24 @@
   color: var(--background);
 }
 
-.planner-help .planner-help-topic-copy {
+.planner-help .planner-help-topic-copy,
+.planner-help .planner-help-pager button > span {
   display: grid;
   min-width: 0;
   gap: 4px;
 }
 
-.planner-help .planner-help-topic-copy strong {
+.planner-help .planner-help-topic-copy strong,
+.planner-help .planner-help-pager strong {
   font-size: 13px;
   font-weight: 600;
 }
 
 .planner-help .planner-help-topic-copy > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--muted-foreground);
-  font-size: 11px;
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .planner-help .planner-help-detail {
@@ -208,7 +204,7 @@
 .planner-help .planner-help-position {
   margin-bottom: 6px;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -285,22 +281,11 @@
   background: var(--muted);
 }
 
-.planner-help .planner-help-pager button > span {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-
 .planner-help .planner-help-pager small,
 .planner-help .planner-help-pager button > span > span {
   color: var(--muted-foreground);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.planner-help .planner-help-pager strong {
   font-size: 13px;
-  font-weight: 600;
+  line-height: 1.4;
 }
 
 .planner-help .planner-help-pager .planner-help-pager-next {
@@ -315,7 +300,12 @@
   gap: 7px;
   margin-top: 20px;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: 13px;
+}
+
+/* The shared Kbd sets text-xs (12px); the help dialog keeps all text at 13px or more. */
+.planner-help kbd {
+  font-size: 13px;
 }
 
 .planner-help .planner-help-back,
@@ -342,7 +332,8 @@
   margin-top: 12px;
   background: var(--muted);
 }
-.planner-help button:focus-visible {
+.planner-help button:focus-visible,
+.planner-help .planner-help-search:focus-within {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }

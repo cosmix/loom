@@ -15,10 +15,11 @@ import { PlannerLegend } from "./legend";
 const READING_NAMES = [
   "Source mark",
   "Dashed mark",
+  "No source",
   "Fold cap",
+  "Plan link",
   "Read-only",
-  "Pressure-tested",
-  "Open questions",
+  "Pressure-test status",
 ] as const;
 
 const DOCUMENT_NAMES: Record<DocKind, string> = {
@@ -45,7 +46,38 @@ const SUMMARY_NAMES: Record<SummaryState, string> = {
   stale: "Stale",
 };
 
+const STEP_NAMES = [
+  "Done step",
+  "Step with gaps",
+  "Active step",
+  "Optional step",
+  "Step rail check",
+] as const;
+
+const STATE_NAMES = [
+  ...Object.values(DOCUMENT_NAMES),
+  ...Object.values(PLAN_NAMES),
+  ...Object.values(SUMMARY_NAMES),
+  ...STEP_NAMES,
+];
+
 afterEach(cleanup);
+
+/** The name of a legend term: its text without the aria-hidden glyph tile. */
+function termName(term: HTMLElement): string {
+  const clone = term.cloneNode(true) as HTMLElement;
+  for (const tile of clone.querySelectorAll('[aria-hidden="true"]')) tile.remove();
+  return clone.textContent ?? "";
+}
+
+function tileOf(group: HTMLElement, name: string): HTMLElement {
+  const term = within(group)
+    .getAllByRole("term")
+    .find((candidate) => termName(candidate) === name);
+  const tile = term?.querySelector<HTMLElement>('[aria-hidden="true"]');
+  if (!tile) throw new Error(`no legend tile for ${name}`);
+  return tile;
+}
 
 it("groups its definitions under the three headings", () => {
   render(<PlannerLegend />);
@@ -60,44 +92,111 @@ it("groups its definitions under the three headings", () => {
   }
 });
 
-it("names every reading mark, document kind, state and activity exactly once", () => {
+it("lists each group's entries in order, once, with a meaning", () => {
   render(<PlannerLegend />);
 
-  const expectedNames = [
-    ...READING_NAMES,
-    ...Object.values(DOCUMENT_NAMES),
-    ...Object.values(PLAN_NAMES),
-    ...Object.values(SUMMARY_NAMES),
-    ...ACTIVITY_KINDS.map((kind) => ACTIVITY_LABELS[kind]),
+  const groups: [string, readonly string[]][] = [
+    ["Reading", READING_NAMES],
+    ["States", STATE_NAMES],
+    ["In progress", ACTIVITY_KINDS.map((kind) => ACTIVITY_LABELS[kind])],
   ];
-  const names = screen.getAllByRole("term").map((term) => term.textContent);
+  for (const [title, names] of groups) {
+    const group = screen.getByRole("region", { name: title });
+    expect(within(group).getAllByRole("term").map(termName)).toEqual(names);
+    const meanings = within(group).getAllByRole("definition");
+    expect(meanings).toHaveLength(names.length);
+    for (const meaning of meanings) {
+      expect(meaning.textContent?.trim().length).toBeGreaterThan(0);
+    }
+  }
 
-  expect(names).toEqual(expectedNames);
-  expect(new Set(names).size).toBe(names.length);
-  expect(names).toHaveLength(
-    READING_NAMES.length +
-      Object.keys(DOC_KIND_GLYPHS).length +
+  const all = screen.getAllByRole("term").map(termName);
+  expect(new Set(all).size).toBe(all.length);
+  expect(STATE_NAMES).toHaveLength(
+    Object.keys(DOC_KIND_GLYPHS).length +
       Object.keys(PLAN_STATE_GLYPHS).length +
       Object.keys(SUMMARY_STATE_GLYPHS).length +
-      ACTIVITY_KINDS.length,
+      STEP_NAMES.length,
   );
-  for (const name of expectedNames) {
-    expect(screen.getAllByText(name, { exact: true })).toHaveLength(1);
-  }
-  expect(screen.getAllByRole("definition")).toHaveLength(names.length);
-  for (const definition of screen.getAllByRole("definition")) {
-    expect(definition.textContent?.trim().length).toBeGreaterThan(0);
+});
+
+it("draws the reading marks with the reading column's own components", () => {
+  render(<PlannerLegend />);
+  const reading = screen.getByRole("region", { name: "Reading" });
+
+  const source = tileOf(reading, "Source mark");
+  expect(source.querySelectorAll(".concept-mark")).toHaveLength(1);
+  expect(source.querySelector(".concept-mark[data-dashed]")).toBeNull();
+
+  const dashed = tileOf(reading, "Dashed mark");
+  expect(dashed.querySelectorAll('.concept-mark[data-dashed="true"]')).toHaveLength(1);
+
+  expect(tileOf(reading, "No source").querySelector(".concept-no-source")?.textContent).toBe(
+    "no source",
+  );
+
+  const cap = tileOf(reading, "Fold cap");
+  expect(cap.querySelectorAll("button.concept-run-cap[aria-label='Fold']")).toHaveLength(1);
+
+  expect(
+    tileOf(reading, "Plan link").querySelectorAll(
+      'button.concept-plan-glyph[aria-label="Plans implementing this section"]',
+    ),
+  ).toHaveLength(1);
+
+  for (const name of ["Read-only", "Pressure-test status"]) {
+    expect(tileOf(reading, name).querySelector("svg")).not.toBeNull();
   }
 });
 
-it("uses each production activity glyph with its shared label and meaning", () => {
+it("draws step marks with the progress strip and the rail check glyph", () => {
   render(<PlannerLegend />);
+  const states = screen.getByRole("region", { name: "States" });
+
+  const bars: [string, string][] = [
+    ["Done step", "✓"],
+    ["Step with gaps", "!"],
+    ["Active step", "●"],
+    ["Optional step", "−"],
+  ];
+  for (const [name, glyph] of bars) {
+    const strip = tileOf(states, name).querySelector('ol[aria-label="Progress"]');
+    expect(strip?.querySelectorAll("li")).toHaveLength(1);
+    expect(strip?.textContent).toContain(glyph);
+  }
+  expect(tileOf(states, "Step rail check").querySelector("svg.lucide-circle-check")).not.toBeNull();
+});
+
+it("uses each production document, state and activity glyph", () => {
+  render(<PlannerLegend />);
+  const states = screen.getByRole("region", { name: "States" });
+  for (const name of [
+    ...Object.values(DOCUMENT_NAMES),
+    ...Object.values(PLAN_NAMES),
+    ...Object.values(SUMMARY_NAMES),
+  ]) {
+    expect(tileOf(states, name).querySelector("svg")).not.toBeNull();
+  }
 
   const group = screen.getByRole("region", { name: "In progress" });
   expect(within(group).getAllByRole("term")).toHaveLength(ACTIVITY_KINDS.length);
   for (const kind of ACTIVITY_KINDS) {
-    const term = within(group).getByText(ACTIVITY_LABELS[kind], { exact: true });
-    expect(term.querySelectorAll(`.activity-glyph[data-kind="${kind}"]`)).toHaveLength(1);
-    expect(term.parentElement?.querySelector("dd")?.textContent).toBeTruthy();
+    const tile = tileOf(group, ACTIVITY_LABELS[kind]);
+    expect(tile.querySelectorAll(`.activity-glyph[data-kind="${kind}"]`)).toHaveLength(1);
+  }
+});
+
+it("sets no legend text below 13px", () => {
+  const { container } = render(<PlannerLegend />);
+
+  expect(container.innerHTML).not.toMatch(/text-\[1[0-2]px\]/);
+  for (const meaning of screen.getAllByRole("definition")) {
+    expect(meaning.className).toContain("text-[13px]");
+  }
+  // The progress strip is production markup at text-xs; the legend overrides it at 13px.
+  const small = [...container.querySelectorAll(".text-xs")];
+  expect(small).toHaveLength(4);
+  for (const element of small) {
+    expect(element.closest('[class*="[&_li]:text-[13px]!"]')).not.toBeNull();
   }
 });
