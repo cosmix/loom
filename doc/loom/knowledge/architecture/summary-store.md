@@ -7,13 +7,15 @@
 ## Store Layout and Ids
 
 Summaries of the planning documents live in `doc/loom/summaries/` (`store::STORE_DIR`), one Markdown file per id, all
-under `loom/src/planning/summary/`. `store::validate_id` accepts only `product`, `engineering` (the two overviews,
-`store::is_overview`), `product/section_<2+ digits>` and `plans/<slug>` (first byte alphanumeric, rest `[A-Za-z0-9._-]`,
-no `..`); the file is `<id>.md`. `summary_id_for` makes an id for a product section, or for a plan that is the winning
-copy of its slug and either sits directly in `doc/plans/` or is named by a metaplan entry. `expected_ids` is every such
-document plus `product` (when the vision exists) and `engineering` (when any metaplan exists). `Scope` lists the overview
-members in source order (`product`: the vision's rows; `engineering`: the metaplans' entries) and the eligible documents
-outside both. `validate_id`'s slug rule is stricter than `planning::slug::plan_slug`, so a plan whose slug holds a space silently gets no summary. `summary_path` returns an empty path for an invalid id; every caller
+under `loom/src/planning/summary/`. `store::validate_id` accepts only `overview/<feature>/product` and `overview/<feature>/engineering` (the overviews,
+`store::is_overview`), `<feature>/product/section_<2+ digits>` and `plans/<slug>` (first byte alphanumeric, rest
+`[A-Za-z0-9._-]`, no `..`); a feature name follows `kinds::is_feature_name`; the file is `<id>.md`. `summary_id_for` makes an id for a
+product section of a feature, or for a plan that is the winning copy of its slug and either sits directly in its home
+(`plans_dir(feature)`: `doc/plans/<feature>/`, or `doc/plans/` for a standalone plan) or is named by one of its
+feature's metaplan entries. `expected_ids` is every such document plus `overview/<f>/product` (when the feature's vision
+exists) and `overview/<f>/engineering` (when it has a metaplan). `Scope` is per feature (`Scope::of(project, overview_id)`):
+it lists the overview members in source order (`product`: the vision's rows; `engineering`: the metaplans' entries whose
+plan belongs to the feature) and the feature's eligible documents outside both. `validate_id`'s slug rule is stricter than `planning::slug::plan_slug`, so a plan whose slug holds a space silently gets no summary. `summary_path` returns an empty path for an invalid id; every caller
 validates first.
 
 The runtime directory (`planning-document-model.md`, Runtime Directory) holds the store's session state outside the
@@ -188,6 +190,7 @@ Source: `plan_server/summaries/scheduler.rs`, `scheduler/queue.rs`, `scheduler/s
   such ids it opens one question (`q<n>`) naming the whole queue and starts nothing until it is answered. A first
   evaluation counts like any other, so a repository with more than five missing summaries asks first. Yes promotes the ids
   as approved and starts them with no second check; a Button press never asks.
+- **Auto-rebuild switch.** `POST /api/summaries/auto {enabled}` (`summaries/routes.rs`; holder-only, refused in read-only mode) sets the scheduler's start-without-asking limit to `AUTO_LIMIT` or 0; with it off every background batch opens the question first. The Settings toggle "Rebuild summaries automatically" is a per-browser preference (`web/src/plan/summaries/state.ts`) that the holder's browser posts after `hello` and on every change, because a browser-only preference cannot change a server-side rebuild.
 - **Newly invalidated counting.** `on_update` queues only the `invalidated` ids (newly out of date in this batch), minus
   the declined, the running session's pending ids and the queued ones, and first drops every id no longer out of date from
   the queue, declined, failed, unsealed and question sets. A question that loses ids is re-sent with the rest and closes

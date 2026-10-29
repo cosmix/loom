@@ -10,7 +10,7 @@
 - **One link path.** Every link, autolink and image target goes through `resolveLink(fromPath, href)` (`files/address.ts`) and renders through `SafeLink`; nothing else builds an `href`. The allowlist is `http:`, `https:` and `mailto:` to an external host (`external`), a `#anchor`, or a path that stays inside `doc/` after decoding and resolving `..` (`doc`); a target that leaves `doc/` is `outside` and anything else, `javascript:` and `data:` included, is `text`.
 - **Images are links.** An `image` node never becomes an `<img>`: the app loads nothing a document points at. It renders its alt text (or URL) as a `SafeLink`, or as plain text inside a link.
 - **Entity-sensitive cases live in test strings.** `oxfmt` rewrites character references in `fixtures/*.md`, so those adversarial inputs stay inline in the test file ([why](../mistakes/plan-server-delivery.md#web-test-tooling-hid-or-created-defects-in-file-mode-2026-10-27)).
-- The reading column is capped at 76ch and tables scroll in their own region; open accessibility and layout gaps are in [the file-mode follow-ups](../architecture/plan-server.md#file-mode-follow-ups).
+- The reading column and `.md` prose are capped at 70ch (`concept.css`, `markdown/markdown.css`) and tables scroll in their own region; open accessibility and layout gaps are in [the file-mode follow-ups](../architecture/plan-server.md#file-mode-follow-ups).
 
 ## CodeMirror lazy boundary
 
@@ -29,7 +29,7 @@ The editor, merge view and diff views use CodeMirror 6 (`@codemirror/{state,view
 - The contract fetch stub answers `/api/doc` by the doc-relative path (leading `doc/` stripped), so a `docRel` path or a repo-relative `?path=` both work; marks are found by any `aria-label` matching `<title>: doc/...md`; a dashed chip accepts `data-dashed` on the link, an ancestor or a descendant; the empty-state offer is an `aria-disabled` (not `disabled`) button described by exactly "Available once chat is built" while `canAuthor` is true.
 - Test files named `.ts` cannot hold JSX (the oxc transform fails); use `createElement`. `bun run typecheck` is blocked for subagents by the subagent verify guard, so the orchestrator runs it.
 - A test reads CSS through an `@/...css?raw` import, never `readFileSync(new URL(..., import.meta.url))`. An assertion on a passive-effect side effect (`scrollIntoView`, focus) after `findBy*` goes inside `waitFor` ([the race](../mistakes/test-concurrency-and-fixtures.md#an-assertion-on-a-passive-effect-right-after-findby-is-a-race-2026-10-28)).
-- `FoldHandle`'s accessible name stays exactly `Fold`: `reading-column.test.tsx` queries it by that name, so a per-run name breaks it; handles are told apart with `aria-describedby` on the run's labelled group.
+- `FoldCap`'s accessible name stays exactly `Fold` on both caps of a run (`web/src/plan/concept/fold-handle.tsx`): a run has two (`data-side` start and end), so tests query `getAllByRole("button", { name: "Fold" })`, and a per-run name breaks them; the caps are told apart with `aria-describedby` on the run's labelled group.
 - The reading-column harness (`reading-column-harness.tsx`) serves placed pages (`pages` and `loadPage`), so a column test that places a cited summary page in the store survives `useCitedPages` prefetching it; a 404 stub would drop the placed page (`failedState`) and the run would read "Loading".
 - To shrink a test file over 400 lines, move non-assertion setup into helpers; moving whole tests into a new file raises a test-integrity event ([the event](../mistakes/plan-server-delivery.md#moving-tests-into-a-new-file-raises-a-test-integrity-event-2026-10-28)).
 
@@ -42,6 +42,8 @@ The editor, merge view and diff views use CodeMirror 6 (`@codemirror/{state,view
 - **Dialogs and focus.** Radix `DialogContent`'s `onCloseAutoFocus` still runs the default trigger focus under a parent-conditional unmount (`open && <Dialog open>`), from the `FocusScope` cleanup through `setTimeout(0)`; tests `waitFor` the active element. Focus handoff after "New chat" reads `document.activeElement` in a `useLayoutEffect` cleanup of the unmounting child.
 - **Test files.** Tests stay under 400 lines; a new test for a file near the limit goes to a sibling (shared harnesses live in `test-kit` files such as `panel-test-kit.tsx`). When a plan replaces a placeholder, update the tests that pinned the placeholder (`concept.contracts`, `concept-route` pinned the disabled "Available once chat is built" offer) in the same change.
 - **Gate.** Once subagents have run, the main agent's own full vitest and lint are blocked by the stage guard; run `loom check`.
+- **Announcers inside page content use `role="status"`.** `aria-hidden`'s `hideOthers`, which every Radix modal runs, keeps every `[aria-live]` element (even `aria-live="off"`) and all its ancestors exposed, so an `aria-live` span inside the page behind a dialog leaves the page reachable to a screen reader.
+- **The pressure dialog states no minute figures.** Its estimated-time line says the time grows with the rounds: no data source for durations exists in the pressure options or the run payload, and an invented figure would mislead.
 
 ## New PlanMessage Variants Need Both Schema Arms
 

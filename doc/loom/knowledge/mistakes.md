@@ -1,6 +1,6 @@
 # Mistakes & Lessons Learned
 
-> Mistakes and lessons
+> Lessons learned
 >
 > **Format:** Describe what went wrong, why, and how to avoid it next time.
 >
@@ -186,3 +186,7 @@ Review handlers briefed without lock, guard and subscriber order; codex and fixe
 **Why:** loom is developed with loom, so this repository's doc/, .gitignore and plan habits are easy to mistake for what loom does in every project. Loom is a product used to build other projects.
 **Prevention:** Before stating what loom does in a project, find the code that does it. In target projects loom only manages the .loom/work and .worktrees ignore entries (loom/src/commands/repair/workspace.rs); everything else in a project's .gitignore is the project's choice, and planner features must work whatever the project ignores.
 **Fix:** PLAN-planner-ui-redesign.md moves the DONE-/REVIEW- pattern change to this repository's migration stage only.
+
+## Planner UI Redesign Delivery
+
+A path-convention move that left hardcoded homes in the crate, jsdom tests green over a broken browser (stale fixtures, nested routers, unserved fonts), an unowned "spec changes before running" table, subset gates that hid four failures until integration-verify, briefs missing facts only the code held, and orchestration slips. → [Moving a Path Convention Left Hardcoded Homes](mistakes/plan-server-delivery.md#moving-a-path-convention-left-hardcoded-homes-in-the-crate-2026-10-29) and the entries after it

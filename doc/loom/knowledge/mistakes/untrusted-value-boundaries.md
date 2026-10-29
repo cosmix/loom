@@ -1,6 +1,6 @@
 # Untrusted Value Boundaries
 >
-> Boundaries
+> Trust
 
 >
 

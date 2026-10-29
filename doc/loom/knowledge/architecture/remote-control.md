@@ -1,6 +1,6 @@
 # Remote Control
 
-> Capability
+> Remote
 
 ## Remote Control Module (loom/src/remote_control.rs)
 

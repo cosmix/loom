@@ -1,6 +1,6 @@
 # Session Identity Env
 
-> LOOM_* env
+> Env
 
 ## An OS-Resource Name Is Not an Identifier (2026-08-10)
 

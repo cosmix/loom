@@ -300,3 +300,60 @@ containing `git commit`, even in a scratch fixture repo, so prove a no-diff rese
 **Why:** each copied a helper or shape without checking the local contract.
 
 **Prevention:** use an ES2023 deferred; assert a hidden background element by text absence; query the authoring text node and assert the container's `textContent`; build stage fixtures with `Stage::default()` and `serialize_stage_to_markdown`; re-read a file the edit hook may have reformatted before patching it. Web contract tests are one top-level `it()` with the full name (see [run-handoff](../architecture/run-handoff.md)).
+
+# Planner UI Redesign Delivery
+>
+> Planner redesign delivery slips
+
+Mistakes from the plan that moved the planner to features, kickoff, draft-all teams, a serif reading face and a redesigned shell (2026-10-29).
+
+## Moving a Path Convention Left Hardcoded Homes in the Crate (2026-10-29)
+
+**What happened:** feature-model moved plan homes from `doc/plans/` to `doc/plans/<feature>/`. Review round 1 found four leftovers: feature offers could not start sessions (the chat wire had no feature), the plan-session sandbox and kind hardcoded the standalone home so feature plans lacked deny-writes and could not be pressure-tested, the xref lifecycle-spelling map handled only `doc/plans`, and a metaplan entry naming a plan in another home produced a `WritePlan` offer that created a duplicate slug. `plan/inputs.rs` hardcoded `doc/plans/briefs/<slug>`, so briefs of a feature plan were not found by `loom plan verify`. migrate-repo-docs then moved brief bundles and broke `loom/tests/planning_guidance_contracts.rs`, which reads a brief path from outside the stage's declared files; its search for runtime readers of the moved docs used the pattern `doc/product/(index|section_` and missed `loom/src/planning/guidance/tests.rs`, which joins `../doc/product` and the file name in separate calls.
+
+**Why:** each stage grepped its declared files, and a path convention is spelled in many places, some split across `.join` calls.
+
+**Prevention:** when a path convention moves, `rg` the whole repository, tests included, for every spelling of the old one: `doc/plans/briefs`, `doc/plans/archive`, `doc/plans`, the bare directory (`"../doc/product"`, `doc/product")`) and `CARGO_MANIFEST_DIR` joins. Derive homes from `slug::plan_home` and never spell them.
+
+**Fix:** `bundle_dir` takes `plan_home(plan).join("briefs").join(slug)`; the sandbox, kind and xref paths use the same helper.
+
+## Green jsdom Tests Hid a Broken Browser (2026-10-29)
+
+**What happened:** the integration-verify browser pass found three defects no stage's tests caught: opening Help crashed the planner ("You cannot render a `<Router>` inside another `<Router>`") because help scenes wrapped themselves in `MemoryRouter` inside the app router; concept mode was unreachable because web routes and keys were `/product` and `/engineering` while the server parses only `overview/<f>/<scope>`, `<f>/<scope>/<doc>` and `plans/<doc>` and the strict web schemas lacked the server's `feature` field; and `/fonts/commit-mono-cosmix/*.woff2` answered the app page because `router.rs` served only `/assets/`.
+
+**Why:** the web concept fixtures were stale copies of the Rust wire fixtures (hello, checklist and file fixtures had the same drift earlier), so vitest stayed green against a wire the server no longer sent. Stage workers cannot run the app, and an installed `loom plan` serves its own embedded bundle, not the worktree build, so no stage could look.
+
+**Prevention:** a web stage that changes routes or wire keys copies `loom/src/plan_server/wire/fixtures/*` over the web fixtures in the same change and gets a real-browser smoke criterion. A scene that mounts real planner components renders them without a nested router (`useInRouterContext`).
+
+**Procedure that works in a no-network stage sandbox:** serve a shallow scratch clone of `doc/` (`git clone --depth 1 file://$PWD`, sparse `doc/`, `git checkout --detach` so `loom plan` does not refuse a `loom/<stage>` branch) with `LOOM_HOME=$TMPDIR/loomhome` and the worktree's `loom/target/debug/loom plan --port N --no-open`, then drive a headless Chromium (`playwright-core` from the offline bun cache, the browser revision its `browsers.json` pins) in the same Bash call, since loopback is per call. Open the token URL from line 2 of the server log first. The server is read-only (no Claude login), so no session can start.
+
+## A Plan's "Spec Changes Before Running" Table Had No Owner (2026-10-29)
+
+**What happened:** the plan listed spec rows to change before running; no stage owned them and no criterion checked them. integration-verify found no `doc/product/planner-ui` section mentioning features, standalone plans, `needs-feature` or draft-all, and section 04 (summary ids) missing from the table. It applied the table itself through one codex unit per section, each told to confirm every fact in code first.
+
+**Prevention:** a plan whose spec changes precede running gets a stage, or a `loom plan check` rule, that owns them, with one `rg` criterion per row. Tests that quote spec sections by line range (`planning/guidance/tests.rs` quotes section 03 and section 09) move with the edits.
+
+## Stage Criteria Ran Subsets, So Four Tests Failed at integration-verify (2026-10-29)
+
+**What happened:** the full `cargo test` at integration-verify failed four tests no stage had run: `extract_prefixed_paths` dropped every word containing `|`, so a link in a compact table row stopped being a reference; a guidance test still expected "draft-all-* is not available yet"; `SKILLS` in `planning_guidance_contracts.rs` lacked the kickoff skill; `summary_scope_table` excluded `plans/unlisted` while section 04 gives every plan in its home a summary. Fix units then crossed two limits that only `loom/tests/maintainability.rs` checks, and only in the full run: `summaries/scheduler.rs` reached 401 lines after `cargo fmt`, and `summary_scope_table` 52 lines. `the_gate_reads_the_snapshot_not_the_plan` fails only inside the stage sandbox and passes in the host gate.
+
+**Prevention:** briefs state the 50-line function limit and name the current length of any file near 400 lines (the gate counts test functions too); run the maintainability test locally before the gate; a brief for removing a symbol includes an `rg` for it under `loom/tests`.
+
+## Worker Briefs Omitted Facts Only the Code Held (2026-10-29)
+
+**What happened:** codex and sonnet units followed their briefs and still shipped defects the build or a reviewer caught.
+
+- A brief pinned a join key without reading both producers: gap views matched a file-mode gap to its checklist item by exact title, but tree gap titles are bare vision row names while item text is `section NN: <name>`, so every gap view went empty; the worker's tests overwrote the item text to equal the title and hid it. Join on the document path (`ItemView.path`), never on display text.
+- Kickoff and feature components read set-only atoms (`kickoffAtom`, `draftTeamAtom`, `treeAtom`) without scoping them to the session or loading the source. Brief every consumer of such an atom with its scoping key and who fills it.
+- Help scenes rendered a hand-copied `RunStripSample` and a fake `RoundDiagram` start scene and left out `InvitationCard` and `RunStrip`, which were unexported or fetch on mount (`DashboardButton` POSTs `/api/run/dashboard`). A brief that says "render production components" names the exports and the fetch-on-mount traps and tells the worker to omit and report, never to substitute a lookalike. `PlanHeader` takes `sample` to skip `HeaderExtras`, which fetches `/api/run/state` and `/api/summaries/panel`.
+- Unit tests selected `svg[viewBox=...]` and `.lucide-*`: jsdom does not match camel-case `viewBox` in selectors, and `ActivityGlyph` wraps the svg in a span. Assert through `getAttribute` and `data-kind`.
+- After `delta_message` moved to `chat/team.rs` it was still called from `mod.rs`; `tests/planning_guidance_contracts/features.rs` asserted the removed `StartError::NotAvailableYet`; the scope loader accepted extra keys on the `Open` unit variant (serde `deny_unknown_fields` does not cover tagged unit variants).
+
+## Orchestration Slips in the Planner Plan (2026-10-29)
+
+**What happened:**
+
+- A `loom-software-engineer` ran `git rm --cached` on a deleted file despite the no-git preamble, treating it as the deletion step. Briefs for deleting a file say to use shell `rm` only, and the main agent checks `git status` for staged entries before committing.
+- `loom check` was run redirected into a file in the background, and the relay refused the ticket. Loom commands run in the foreground, unredirected; wait with `loom request status <id> --wait 90` as its own Bash call.
+- A forward ended `succeeded` while its owned file had no diff (its last message was mid-investigation), and two forwards were moved to the background after 180 s because the forwarder's Bash call lacked the 600000 ms timeout. `git diff` every owned file after a `succeeded` forward; a doc unit's brief says the run must write, and caps the reading it needs.
+- A `--worker claude:<id> --worker codex:<unit>` watch over the same units is refused; bind forwarder units with `--worker codex:<unit>` alone, and only after the forwarder's Bash call has started.
