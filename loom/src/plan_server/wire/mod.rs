@@ -7,7 +7,9 @@ pub mod files;
 pub mod message;
 pub mod paths;
 pub mod presence;
+pub mod pressure;
 pub mod review;
+pub mod run;
 pub mod server;
 pub mod summaries;
 
@@ -22,7 +24,11 @@ mod tests_chat;
 #[cfg(test)]
 mod tests_concept;
 #[cfg(test)]
+mod tests_pressure;
+#[cfg(test)]
 mod tests_review;
+#[cfg(test)]
+mod tests_run;
 #[cfg(test)]
 mod tests_schema;
 #[cfg(test)]

@@ -179,8 +179,26 @@ fn pressure_whole_json_snapshot() {
         "Workflow",
         "AskUserQuestion"
     ]);
+    expected["teammateMode"] = json!("in-process");
 
     assert_eq!(f.build(&kinds()[2], &[]).unwrap(), expected);
+}
+
+#[test]
+fn only_the_pressure_settings_keep_teammates_in_process() {
+    let f = Fixture::new();
+    for kind in [SessionKind::Authoring, SessionKind::Summary] {
+        let settings = f.build(&kind, &[]).unwrap();
+        assert_eq!(settings.get("teammateMode"), None, "{kind:?}");
+        assert_eq!(
+            settings["permissions"].get("teammateMode"),
+            None,
+            "{kind:?}"
+        );
+    }
+    let pressure = f.build(&kinds()[2], &[]).unwrap();
+    assert_eq!(pressure["teammateMode"], json!("in-process"));
+    assert_eq!(pressure["permissions"].get("teammateMode"), None);
 }
 
 macro_rules! tool_denies_test {

@@ -2,7 +2,7 @@
 //!
 //! [`start`] binds, takes the `doc/` watcher's baseline, builds the [`context::PlanContext`],
 //! runs every route module's `install`, then starts the watcher, the 1 s tick and the accept
-//! loop. [`run`] is the command: project root, runtime directory, lock, [`start`], startup
+//! loop. [`run()`] is the command: project root, runtime directory, lock, [`start`], startup
 //! lines, browser, signals.
 
 pub mod authoring;
@@ -19,11 +19,13 @@ pub mod lifecycle;
 pub mod lock;
 pub mod prereq;
 pub mod presence;
+pub mod pressure;
 pub mod request;
 pub mod review;
 pub mod root;
 pub mod router;
 pub mod routes;
+pub mod run;
 pub mod search;
 pub mod server_info;
 pub mod shutdown;

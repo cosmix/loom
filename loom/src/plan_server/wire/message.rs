@@ -6,6 +6,8 @@ use super::checklist::ChecklistView;
 use super::concept::ConceptChanged;
 use super::files::{DocChanged, FileTree, ValidationChanged};
 use super::presence::{AuthoringView, PresenceList};
+use super::pressure::PressureRunView;
+use super::run::{RunOutput, RunStateView, RunStrip};
 use super::server::{Refused, ServerInfo, You};
 use super::summaries::{SummaryPanel, SummaryQuestion, SummaryTurnCost};
 
@@ -55,6 +57,14 @@ pub enum PlanMessage {
     Chat(Box<crate::plan_server::wire::chat::ChatFrame>),
     /// A review suggestion, status, open-question count or refusal.
     Review(crate::plan_server::wire::review::ReviewMessage),
+    /// Current pressure run progress.
+    PressureRun(PressureRunView),
+    /// Current execution handoff state.
+    RunState(RunStateView),
+    /// Output from an execution handoff job.
+    RunOutput(RunOutput),
+    /// Execution progress displayed across browsers.
+    RunStrip(RunStrip),
 }
 
 impl PlanMessage {
