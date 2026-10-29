@@ -5,11 +5,13 @@ use serde::{Deserialize, Serialize};
 use super::checklist::{ChecklistView, OfferView, ProjectChecklistView, StandalonePlanView};
 use super::concept::ConceptChanged;
 use super::files::{DocChanged, FileTree, ValidationChanged};
+use super::kickoff::KickoffView;
 use super::presence::{AuthoringView, PresenceList};
 use super::pressure::PressureRunView;
 use super::run::{RunOutput, RunStateView, RunStrip};
 use super::server::{Refused, ServerInfo, You};
 use super::summaries::{SummaryPanel, SummaryQuestion, SummaryTurnCost};
+use super::team::DraftTeamView;
 
 /// Initial planning snapshot for one connected browser.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,11 +63,15 @@ pub enum PlanMessage {
     /// Approval requested before a large summary rebuild.
     SummaryQuestion(SummaryQuestion),
     /// A summary rebuild approval question was closed.
-    SummaryQuestionClosed { id: String },
+    SummaryQuestionClosed {
+        id: String,
+    },
     /// Summary rebuild costs attributed to an authoring turn.
     SummaryTurnCost(SummaryTurnCost),
     /// A chat snapshot, delta, command result or returned queue.
     Chat(Box<crate::plan_server::wire::chat::ChatFrame>),
+    Kickoff(Box<KickoffView>),
+    DraftTeam(Box<DraftTeamView>),
     /// A review suggestion, status, open-question count or refusal.
     Review(crate::plan_server::wire::review::ReviewMessage),
     /// Current pressure run progress.
@@ -255,6 +261,61 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<ClientMessage>(command).unwrap(),
             ClientMessage::Chat(ChatCommand::Interrupt { client_id: None })
+        );
+    }
+
+    #[test]
+    fn kickoff_message_round_trips_with_its_tag() {
+        use super::super::kickoff::KickoffShape;
+        use crate::plan_session::scope::KickoffSize;
+
+        let message = PlanMessage::Kickoff(Box::new(KickoffView {
+            session: "kickoff-1".into(),
+            shape: KickoffShape {
+                size: Some(KickoffSize::Feature),
+                name: Some("demo".into()),
+                ..Default::default()
+            },
+            target: Some("doc/product/demo/index.md".into()),
+        }));
+        let expected = json!({
+            "type": "kickoff", "session": "kickoff-1",
+            "shape": {"size": "feature", "name": "demo", "proposal": false, "problem": "",
+                "decisions": [], "questions": [], "sections": []},
+            "target": "doc/product/demo/index.md"
+        });
+
+        assert_eq!(serde_json::to_value(&message).unwrap(), expected);
+        assert_eq!(
+            serde_json::from_str::<Value>(&message.to_frame()).unwrap(),
+            expected
+        );
+        assert_eq!(
+            serde_json::from_value::<PlanMessage>(expected).unwrap(),
+            message
+        );
+    }
+
+    #[test]
+    fn draft_team_message_round_trips_with_its_tag() {
+        let message = PlanMessage::DraftTeam(Box::new(DraftTeamView {
+            session: "team-1".into(),
+            documents: vec!["doc/product/demo/section_01.md".into()],
+            teammates: vec![],
+        }));
+        let expected = json!({
+            "type": "draft_team", "session": "team-1",
+            "documents": ["doc/product/demo/section_01.md"], "teammates": []
+        });
+
+        assert_eq!(serde_json::to_value(&message).unwrap(), expected);
+        assert_eq!(
+            serde_json::from_str::<Value>(&message.to_frame()).unwrap(),
+            expected
+        );
+        assert_eq!(
+            serde_json::from_value::<PlanMessage>(expected).unwrap(),
+            message
         );
     }
 

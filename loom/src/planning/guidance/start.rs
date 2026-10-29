@@ -13,6 +13,11 @@ pub use error::StartError;
 /// The action that starts an authoring session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthoringStart {
+    /// Shape new work before confirming its size and name.
+    Kickoff {
+        /// Whether to begin with a standalone plan in mind.
+        small: bool,
+    },
     /// A feature checklist action.
     Offer(Offer),
     /// Refine a loaded document or an attached passage from it.
@@ -37,12 +42,9 @@ pub enum AuthoringStart {
 }
 
 impl AuthoringStart {
-    /// Convert an offer, refusing team drafts, file moves and separate execution flows.
+    /// Convert an offer, refusing file moves and separate execution flows.
     pub fn from_offer(offer: &Offer) -> Result<AuthoringStart, StartError> {
         match offer {
-            Offer::DraftAllSections { .. } | Offer::DraftAllPlans { .. } => {
-                Err(StartError::NotAvailableYet(offer.id()))
-            }
             Offer::MoveIntoFeature { .. } => Err(StartError::FileMove(offer.id())),
             Offer::PressureTest { .. } | Offer::StartRun => {
                 Err(StartError::NotAuthoring(offer.id()))
@@ -59,6 +61,11 @@ impl AuthoringStart {
         feature: Option<&str>,
     ) -> Result<AuthoringStart, StartError> {
         validate_feature(feature)?;
+        match id {
+            "kickoff" => return Ok(Self::Kickoff { small: false }),
+            "kickoff-small" => return Ok(Self::Kickoff { small: true }),
+            _ => {}
+        }
         let checklist = feature.and_then(|name| project.feature(name));
         let offers = checklist.into_iter().flat_map(|feature| {
             feature
@@ -79,6 +86,9 @@ impl AuthoringStart {
         requested: Option<&'a str>,
     ) -> Result<Option<&'a str>, StartError> {
         validate_feature(requested)?;
+        if matches!(self, Self::Kickoff { .. }) {
+            return Ok(None);
+        }
         if let Self::Offer(offer) = self {
             Self::from_offer(offer)?;
             let selected = requested.ok_or(StartError::FeatureRequired)?;
@@ -92,6 +102,8 @@ impl AuthoringStart {
     /// The action label displayed on the opening message.
     pub fn label(&self) -> String {
         match self {
+            Self::Kickoff { small: false } => "New work".into(),
+            Self::Kickoff { small: true } => "New standalone plan".into(),
             Self::Offer(offer) => offer.label(),
             Self::Refine { target, .. } => format!("Refine {}", target.display()),
             Self::Knowledge {
@@ -176,7 +188,9 @@ pub fn step_class(start: &AuthoringStart) -> StepClass {
                 StepClass::Spec
             }
         }
-        AuthoringStart::Knowledge { .. } | AuthoringStart::NoStep => StepClass::Spec,
+        AuthoringStart::Kickoff { .. }
+        | AuthoringStart::Knowledge { .. }
+        | AuthoringStart::NoStep => StepClass::Spec,
     }
 }
 

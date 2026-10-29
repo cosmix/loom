@@ -25,17 +25,40 @@ fn offer_id_lookup_uses_selected_primary_and_secondary() {
 }
 
 #[test]
-fn lookup_preserves_unavailable_offer_errors() {
+fn lookup_accepts_draft_all_offers() {
     let (_temp, mut project) = fixture();
-    let offer = Offer::DraftAllSections {
-        feature: "f".into(),
-    };
-    project.features[0].checklist.primary = Some(offer.clone());
+    for offer in [
+        Offer::DraftAllSections {
+            feature: "f".into(),
+        },
+        Offer::DraftAllPlans {
+            feature: "f".into(),
+        },
+    ] {
+        project.features[0].checklist.primary = Some(offer.clone());
 
-    assert_eq!(
-        AuthoringStart::from_offer_id(&offer.id(), &project, Some("f")),
-        Err(StartError::NotAvailableYet(offer.id()))
-    );
+        assert_eq!(
+            AuthoringStart::from_offer_id(&offer.id(), &project, Some("f")),
+            Ok(AuthoringStart::Offer(offer))
+        );
+    }
+}
+
+#[test]
+fn kickoff_ids_need_no_feature_or_documents() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir(temp.path().join("doc")).unwrap();
+    let project = Project::load(temp.path()).unwrap();
+    for (id, small, label) in [
+        ("kickoff", false, "New work"),
+        ("kickoff-small", true, "New standalone plan"),
+    ] {
+        let start = AuthoringStart::from_offer_id(id, &project, None).unwrap();
+        assert_eq!(start, AuthoringStart::Kickoff { small });
+        assert_eq!(start.label(), label);
+        assert_eq!(start.feature(None), Ok(None));
+        assert_eq!(start.feature(Some("f")), Ok(None));
+    }
 }
 
 #[test]

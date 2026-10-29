@@ -14,11 +14,13 @@ pub mod models;
 pub mod opening;
 mod plugin;
 pub mod start;
+pub mod team;
 
 pub use blocks::{ConfigBlock, StartBlocks};
 pub use models::{GuidanceModels, ModelEffort};
 pub use opening::opening_message;
 pub use start::{step_class, AuthoringStart, StartError, StepClass};
+pub use team::{draft_run, DraftRun, MAX_TEAMMATES};
 
 /// The pressure plugin command that starts the session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -4,7 +4,7 @@
 //! rules. It only ever denies or stays silent: an `allow` answer from a PreToolUse hook skips
 //! Claude Code's permission rules, voiding layer 2 and the holder's prompt. Every failure is a
 //! deny, and a write decision scans the locked set afresh, so a plan locked mid-session is
-//! refused at once.
+//! refused at once. Authoring doc writes also read the session scope afresh to honour grants.
 
 mod paths;
 mod search;
@@ -19,6 +19,8 @@ mod tests_features;
 mod tests_reads;
 #[cfg(test)]
 mod tests_reads_fixture;
+#[cfg(test)]
+mod tests_scope;
 
 use std::io::Read;
 use std::os::unix::fs::MetadataExt;
@@ -30,9 +32,10 @@ use serde_json::{json, Value};
 
 use self::paths::{inside, normalize, ReadRules};
 use crate::fs::safe_read::read_to_string_bounded;
-use crate::plan_session::kind::SessionKind;
+use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::sandbox::filesystem::OMISSIONS;
 use crate::plan_session::sandbox::PRE_TOOL_USE;
+use crate::plan_session::scope;
 use crate::plan_session::spool::try_read_payload;
 use crate::planning::paths::{classify_write, symlink_component, DocArea, LockReason, LockedSet};
 use crate::planning::runtime::DRAFTS_DIR;
@@ -46,7 +49,7 @@ const GUARD_FILE: &str = "guard.json";
 const MAX_POLICY_BYTES: usize = 64 * 1024;
 const DOC: &str = "doc";
 
-/// The guard's only input besides the payload and the live tree, written beside
+/// The sandbox's fixed guard policy, written beside
 /// `settings.json` by `sandbox::write_session_sandbox`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -236,7 +239,7 @@ fn outside(path: &Path) -> String {
 }
 
 /// A write under `<root>/doc/`: symlink and file-type checks, then `classify_write` over a
-/// fresh scan of the locked set, then the kind's rule.
+/// fresh scan of the locked set, then the kind's rule (including the live authoring scope).
 fn check_doc_write(policy: &GuardPolicy, rel: &Path) -> Result<(), String> {
     let root = &policy.project_root;
     confined_file(root, rel)?;
@@ -249,7 +252,11 @@ fn check_doc_write(policy: &GuardPolicy, rel: &Path) -> Result<(), String> {
         }
         DocArea::OutsideDoc => Err(outside(rel)),
         DocArea::Doc => match &policy.kind {
-            SessionKind::Authoring => Ok(()),
+            SessionKind::Authoring => {
+                let scope = scope::load(&SessionDir::new(policy.session_dir.clone()))
+                    .map_err(|error| format!("cannot read the session scope: {error:#}"))?;
+                scope.allows_write(rel)
+            }
             SessionKind::Summary => Err("a summary session writes only runtime drafts".into()),
             SessionKind::Pressure { plan } => {
                 let bundle = policy.kind.pressure_bundle().ok_or_else(|| {

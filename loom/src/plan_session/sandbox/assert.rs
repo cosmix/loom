@@ -20,8 +20,9 @@ const NETWORK_ESCAPES: [&str; 4] = [
 
 /// Refuse `settings` unless every planning invariant holds: the permission mode and bypass
 /// lock, the sandbox switches, no network escape, no `Write(` rule and no `Read(` deny, every
-/// tool deny of the kind plus `AskUserQuestion`, no background worktree isolation, and the
-/// guard's `PreToolUse` hook.
+/// required tool deny plus `AskUserQuestion`, no background worktree isolation, and the guard's
+/// `PreToolUse` hook. Peer-tool denies are optional for pressure sessions (inferred from their
+/// `Bash(touch <marker>)` allow) and sessions with `teammateMode` set to `"in-process"`.
 pub fn assert_planning_settings(settings: &Value) -> Result<()> {
     let expected = [
         ("/permissions/defaultMode", json!("default")),
@@ -54,9 +55,9 @@ pub fn assert_planning_settings(settings: &Value) -> Result<()> {
     check_guard_hook(settings)
 }
 
-/// No `Write(` rule anywhere, no `Read(` deny, and every required deny present. The peer tools
-/// are required unless the settings are a pressure session's, the only kind that allows
-/// `Bash(touch <marker>)`.
+/// No `Write(` rule anywhere, no `Read(` deny, and every required deny present. Peer-tool
+/// denies are required unless a `Bash(touch <marker>)` allow identifies a pressure session or
+/// `teammateMode` is `"in-process"`.
 fn check_rules(settings: &Value) -> Result<()> {
     let allow = strings(settings, "/permissions/allow")?;
     let ask = strings(settings, "/permissions/ask")?;
@@ -71,7 +72,9 @@ fn check_rules(settings: &Value) -> Result<()> {
         bail!("planning settings: /permissions/deny holds the read deny {rule}");
     }
     let pressure = allow.iter().any(|rule| rule.starts_with("Bash(touch "));
-    let required = tool_denies(!pressure)
+    let peer_tools =
+        pressure || settings.get("teammateMode").and_then(Value::as_str) == Some("in-process");
+    let required = tool_denies(!peer_tools)
         .into_iter()
         .chain([ASK_USER_QUESTION]);
     for tool in required {

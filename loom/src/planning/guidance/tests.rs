@@ -86,7 +86,7 @@ fn every_skill_has_matching_name_and_description_in_frontmatter() {
             "{path} is missing a frontmatter description"
         );
     }
-    assert_eq!(count, 9, "all nine planning skills must be checked");
+    assert_eq!(count, 10, "all ten planning skills must be checked");
 }
 
 #[test]
@@ -242,4 +242,5 @@ fn both_summary_agents_publish_through_seal() {
 }
 
 mod blocks;
+mod drafting;
 mod starting;

@@ -34,6 +34,7 @@ impl Rebuilds {
             BridgeEvent::Ended { id, kind, outcome } => {
                 self.session_gone(bridge, id, kind, outcome)
             }
+            BridgeEvent::Team { .. } => {}
         }
     }
 

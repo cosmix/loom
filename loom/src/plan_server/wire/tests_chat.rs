@@ -224,6 +224,7 @@ fn chat_command_variants_in_fixtures() {
         match command {
             ChatCommand::Start { .. }
             | ChatCommand::Send { .. }
+            | ChatCommand::ConfirmKickoff { .. }
             | ChatCommand::Withdraw { .. }
             | ChatCommand::Permission { .. }
             | ChatCommand::Interrupt { .. }
