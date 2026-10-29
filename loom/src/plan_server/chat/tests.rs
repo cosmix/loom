@@ -24,7 +24,7 @@ use crate::plan_session::bridge::{Bridge, BridgeEvent, EndCause, EndMode, EndOut
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::SessionState;
 use crate::plan_session::spool::append_event;
-use crate::planning::runtime::create_runtime_dir;
+use crate::planning::runtime::{create_runtime_dir, runtime_paths_under};
 use crate::planning::watch::OwnWrites;
 use crate::process::{IdentityStatus, ProcessIdentity};
 
@@ -113,10 +113,11 @@ impl Fixture {
         let read_only = ReadOnly::from_problems(read_only.then_some(problem).into_iter().collect());
         let local = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7272);
         let bind = BindInfo::new(local, &"ab".repeat(32));
-        let ctx = PlanContext::new(root.clone(), read_only, bind, OwnWrites::default());
-        let (ctx, host) = (Arc::new(ctx.unwrap()), Arc::new(FakeHost::default()));
-        let runtime = ctx.runtime().clone();
+        let runtime = runtime_paths_under(&tmp.path().join("loom-home"), &root).unwrap();
         create_runtime_dir(&runtime).unwrap();
+        let ctx = PlanContext::new(root.clone(), read_only, bind, OwnWrites::default());
+        let ctx = ctx.unwrap().with_runtime(runtime.clone());
+        let (ctx, host) = (Arc::new(ctx), Arc::new(FakeHost::default()));
         install_with(&ctx, host.clone(), move |config| {
             config.runtime = runtime;
             config.home = root.join("home");
