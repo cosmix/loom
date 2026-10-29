@@ -22,6 +22,14 @@ impl Fixture {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("doc/product")).unwrap();
         std::fs::write(dir.path().join("doc/product/index.md"), "# Demo\n").unwrap();
+        std::fs::write(
+            dir.path().join("doc/product/section_01.md"),
+            "# Section 1\n",
+        )
+        .unwrap();
+        // On disk, but discovery skips dot-names, so no suggestion may name it.
+        std::fs::create_dir_all(dir.path().join("doc/.hidden")).unwrap();
+        std::fs::write(dir.path().join("doc/.hidden/x.md"), "# Hidden\n").unwrap();
         let bind = BindInfo::new("127.0.0.1:7272".parse().unwrap(), &"ab".repeat(32));
         let ctx = PlanContext::new(
             dir.path().to_path_buf(),
@@ -123,19 +131,21 @@ fn suggest_from_the_holder_refused() {
 }
 
 #[test]
-fn status_delivered_to_the_sender() {
+fn status_delivered_to_the_sender_and_every_holder_tab() {
     for (action, expected) in [
         (SuggestionActionWire::Attach, "attached"),
         (SuggestionActionWire::Dismiss, "dismissed"),
     ] {
         let f = Fixture::new();
         let holder = f.connect("Dana");
+        let holder_sibling = f.tab(&holder.conn.browser);
         let sender = f.connect("Sam");
         let sibling = f.tab(&sender.conn.browser);
         let observer = f.connect("Alex");
         f.take(&holder);
         dispatch(&f.ctx, &sender.conn, suggest());
         assert_eq!(holder.frames().len(), 1, "the holder gets the suggestion");
+        assert_eq!(holder_sibling.frames().len(), 1, "every holder tab gets it");
         let sent = sender.frames();
         assert_eq!(sibling.frames(), sent);
         let id = sent[0]["id"].as_str().unwrap().to_owned();
@@ -154,7 +164,13 @@ fn status_delivered_to_the_sender() {
             })]
         );
         assert_eq!(sibling.frames(), frames);
-        assert!(holder.frames().is_empty());
+        // The holder's web side removes the card only on this status.
+        assert_eq!(holder.frames(), frames, "the answering tab gets the status");
+        assert_eq!(
+            holder_sibling.frames(),
+            frames,
+            "sibling holder tabs drop the card"
+        );
         assert!(observer.frames().is_empty());
         assert_no_cookies(&frames, &[&holder, &sender, &observer]);
         assert!(f.state().senders.lock().unwrap().is_empty());
@@ -339,4 +355,35 @@ fn missing_holder_and_unknown_suggestion_have_refusal_text() {
             "type": "review", "kind": "refused", "reason": "Unknown suggestion"
         })]
     );
+}
+
+#[test]
+fn suggestion_for_an_undiscovered_path_is_refused_without_a_slot() {
+    for path in ["doc/.hidden/x.md", "doc/product/missing.md"] {
+        let f = Fixture::new();
+        let holder = f.connect("Dana");
+        let sender = f.connect("Sam");
+        f.take(&holder);
+        let mut bad = passage();
+        bad.path = path.into();
+
+        dispatch(
+            &f.ctx,
+            &sender.conn,
+            ReviewCommand::Suggest {
+                passage: bad,
+                note: "Please review".into(),
+            },
+        );
+
+        let reason = format!("Invalid suggestion path: {path} is not a discovered document");
+        assert_eq!(
+            sender.frames(),
+            vec![json!({ "type": "review", "kind": "refused", "reason": reason })],
+            "{path}"
+        );
+        assert!(holder.frames().is_empty(), "{path}");
+        assert_eq!(f.state().suggestions.lock().unwrap().pending(), 0);
+        assert!(f.state().senders.lock().unwrap().is_empty());
+    }
 }

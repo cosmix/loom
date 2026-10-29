@@ -1,6 +1,6 @@
 //! HTTP routes of the review loop.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::git::runner::run_git;
@@ -17,8 +17,8 @@ use crate::planning::paths::{check_relpath_syntax, symlink_component};
 
 use super::built::{built_from, built_inputs, BuiltNote};
 use super::compare::{
-    changed_since, commit_exists, is_commit_id, resolve_ref, text_at, ChangedDoc, ChangedDocChange,
-    RefError,
+    changed_since, commit_exists, discoverable, is_commit_id, resolve_ref, text_at, BlobTooLarge,
+    ChangedDoc, ChangedDocChange, RefError,
 };
 use super::questions::open_question_counts;
 
@@ -144,21 +144,11 @@ fn changed_doc_wire(doc: ChangedDoc) -> ChangedDocWire {
 }
 
 fn at_commit(req: &ApiRequest<'_>) -> ApiResponse {
-    let commit = match commit_parameter(&req.query) {
-        Ok(commit) => commit,
+    let (commit, path, doc_rel) = match at_commit_query(req) {
+        Ok(query) => query,
         Err(error) => return error,
-    };
-    let path = match parameter(&req.query, "path") {
-        Ok(path) => path,
-        Err(error) => return error,
-    };
-    let Some(doc_rel) = to_doc_rel(path) else {
-        return ApiResponse::error(400, "bad_path", "the path must be a repository document");
     };
     let root = req.ctx.root();
-    if let Err(error) = validate_doc_path(root, doc_rel) {
-        return error;
-    }
     if !commit_exists(root, commit) {
         return ApiResponse::error(400, "bad_commit", "the commit is unavailable");
     }
@@ -170,8 +160,31 @@ fn at_commit(req: &ApiRequest<'_>) -> ApiResponse {
                 text,
             },
         ),
+        Err(error) if error.is::<BlobTooLarge>() => {
+            ApiResponse::error(413, "too_large", "the committed document is over 1 MiB")
+        }
         Err(_) => ApiResponse::error(500, "internal", "the committed document could not be read"),
     }
+}
+
+/// The commit, the requested path and that path relative to `doc/`, after the request-path
+/// checks: syntax and symlinks (400), then discovery's name rules (404, as `/api/doc` answers
+/// for a document discovery does not list). The path need not exist now: compare lists
+/// documents removed since the commit, and the web reads their committed text here.
+fn at_commit_query<'a>(
+    req: &'a ApiRequest<'_>,
+) -> Result<(&'a str, &'a str, &'a str), ApiResponse> {
+    let commit = commit_parameter(&req.query)?;
+    let path = parameter(&req.query, "path")?;
+    let doc_rel = to_doc_rel(path).ok_or_else(|| {
+        ApiResponse::error(400, "bad_path", "the path must be a repository document")
+    })?;
+    let rel = validate_doc_path(req.ctx.root(), doc_rel)?;
+    if !discoverable(&rel) {
+        let message = format!("{} is not a discovered document", rel.display());
+        return Err(ApiResponse::error(404, "not_found", &message));
+    }
+    Ok((commit, path, doc_rel))
 }
 
 fn built(req: &ApiRequest<'_>) -> ApiResponse {
@@ -251,11 +264,13 @@ fn commit_parameter(query: &QueryParams) -> Result<&str, ApiResponse> {
     Ok(commit)
 }
 
-fn validate_doc_path(root: &Path, raw: &str) -> Result<(), ApiResponse> {
+/// The repository-relative path of `raw` (relative to `doc/`) when its syntax is valid and no
+/// component is a symlink.
+fn validate_doc_path(root: &Path, raw: &str) -> Result<PathBuf, ApiResponse> {
     let rel = check_relpath_syntax(raw)
         .map_err(|_| ApiResponse::error(400, "bad_path", "the document path is invalid"))?;
     match symlink_component(root, &rel) {
-        Ok(None) => Ok(()),
+        Ok(None) => Ok(rel),
         Ok(Some(_)) => Err(ApiResponse::error(
             400,
             "bad_path",

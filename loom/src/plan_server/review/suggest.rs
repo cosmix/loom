@@ -1,5 +1,7 @@
 //! Suggestion box: passages sent to the authoring holder.
 
+use std::path::PathBuf;
+
 use crate::plan_server::wire::paths::to_doc_rel;
 use crate::plan_server::wire::review::{ReviewMessage, SuggestionStatus};
 use crate::planning::paths::check_relpath_syntax;
@@ -144,11 +146,12 @@ impl SuggestionBox {
     }
 }
 
-fn validate_path(path: &str) -> Result<(), SuggestRefusal> {
+/// The repository-relative path of a passage path (`doc/...`) whose syntax is valid. Whether
+/// discovery lists it is the caller's check: the box has no project tree.
+pub(crate) fn validate_path(path: &str) -> Result<PathBuf, SuggestRefusal> {
     let relative = to_doc_rel(path)
         .ok_or_else(|| SuggestRefusal::BadPath("path must start with doc/".to_owned()))?;
-    check_relpath_syntax(relative).map_err(|error| SuggestRefusal::BadPath(error.to_string()))?;
-    Ok(())
+    check_relpath_syntax(relative).map_err(|error| SuggestRefusal::BadPath(error.to_string()))
 }
 
 fn review_message(message: ReviewMessage) -> Value {
