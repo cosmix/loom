@@ -1,7 +1,7 @@
 ---
 kind: document
 of: doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md
-file: sha256:3b1ce8864049dbb0755debcefc5df52eef09bd1bca6ae86ce1f97f21caa5395d
+file: sha256:47cd84e8db8e38782f6c8393786b3e87c732ca0649d7cc265f7376b051e71478
 cites:
   "doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md#1-features-the-document-model": "sha256:a8d38e06802cd2c4a995ecd969fd3084054dd6d0de5760885f8bf24a7172b444"
   "doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md#2-screens-and-navigation": "sha256:3ebaa79bdc54fbf6fdadab8bb2243bd0bd50871e438498fd0df3778913a3cfa1"
@@ -12,7 +12,7 @@ cites:
   "doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md#goals": "sha256:14ecaa5696522c0263fe3ec917400e4610342e19eded8bcdb8e74e2320e06ba8"
   "doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md#open-decisions": "sha256:04b0e86f81f7c81a7e1f236defdbae97e28e4bb280bb498e6e384d071c48c47f"
   "doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md#problem": "sha256:7d03ddd3504bd4aa195682f8c99b012d7afac1ea30640726bc9b29c3d8d32d21"
-  "doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md#spec-changes-before-running": "sha256:63ef5109b4da1f86cb1c265c1b729763a624d7f466c2ab8670cdfa6dbcdd40b1"
+  "doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md#spec-changes-before-running": "sha256:d1d549fe158a85adc3bf8821be573c40397031ddcb40a10273cdd45a4c050685"
   "doc/plans/IN_PROGRESS-PLAN-planner-ui-redesign.md#stages": "sha256:0d9039081fb5e99610e8452889d2a07efd1be6a61d3d6a9496e4e3bbac28ca0c"
 ---
 
@@ -50,6 +50,6 @@ The stages run feature-model with design-foundation first, then kickoff-session 
 
 ## Open decisions
 
-Every open decision was settled with the user, but the product spec files must be updated before the plan runs. [Open decisions](../../../plans/IN_PROGRESS-PLAN-planner-ui-redesign.md#open-decisions) [Spec changes](../../../plans/IN_PROGRESS-PLAN-planner-ui-redesign.md#spec-changes-before-running)
+No open decision remains, since every decision was settled with the user, but the product spec files must be updated before the plan runs. [Open decisions](../../../plans/IN_PROGRESS-PLAN-planner-ui-redesign.md#open-decisions) [Spec changes](../../../plans/IN_PROGRESS-PLAN-planner-ui-redesign.md#spec-changes-before-running)
 
 Before the plan is initialised, its metadata must be promoted to version 2 and plan 11 must finish first. [Draft status](../../../plans/IN_PROGRESS-PLAN-planner-ui-redesign.md#draft-status)
