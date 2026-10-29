@@ -3,6 +3,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ComponentType,
   type CSSProperties,
   type JSX,
   type ReactNode,
@@ -15,6 +16,13 @@ import "./pinned-scene.css";
 export interface SceneNote {
   target: string | readonly string[];
   text: string;
+}
+
+export interface PlannerHelpScene {
+  title: string;
+  Scene: ComponentType;
+  notes: readonly SceneNote[];
+  scale?: number;
 }
 
 interface PinnedSceneProps {
