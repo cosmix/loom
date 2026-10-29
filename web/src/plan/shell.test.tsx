@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -8,13 +8,37 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import { checklistViewSchema } from "@/plan/api/schema";
 import { Dock } from "@/plan/dock";
+import { readingFaceAtom, readingSizeAtom } from "@/plan/settings/preferences";
 import { PlanShell } from "@/plan/shell";
 import { checklistAtom, connectionAtom, unauthorizedAtom } from "@/plan/state/atoms";
 
-vi.mock("@/plan/header-extras", () => ({
-  HeaderExtras: ({ compact }: { compact: boolean }) => (
-    <span data-testid="extras" data-compact={String(compact)} />
+vi.mock("@/plan/header/header", () => ({
+  PlanHeader: ({
+    onOpenSettings,
+    onOpenHelp,
+  }: {
+    onOpenSettings: () => void;
+    onOpenHelp: () => void;
+  }) => (
+    <>
+      <button type="button" onClick={onOpenSettings}>
+        Settings
+      </button>
+      <button type="button" onClick={onOpenHelp}>
+        Help
+      </button>
+    </>
   ),
+}));
+
+vi.mock("@/plan/help/help-dialog", () => ({
+  PlannerHelpDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="help-dialog" /> : null,
+}));
+
+vi.mock("@/plan/settings/settings-dialog", () => ({
+  SettingsDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="settings-dialog" /> : null,
 }));
 
 let store: ReturnType<typeof createStore>;
@@ -30,18 +54,6 @@ function renderShell(outlet = <p>outlet content</p>) {
         </Routes>
       </MemoryRouter>
     </Provider>,
-  );
-}
-
-function setWide(wide: boolean) {
-  vi.spyOn(window, "matchMedia").mockImplementation(
-    (query) =>
-      ({
-        matches: wide,
-        media: query,
-        addEventListener() {},
-        removeEventListener() {},
-      }) as unknown as MediaQueryList,
   );
 }
 
@@ -65,39 +77,69 @@ describe("PlanShell", () => {
     expect(text).toContain("Open the link loom plan printed.");
     expect(text).toContain("Running loom plan again in this project prints it.");
     expect(screen.queryByText("outlet content")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Help" })).toBeNull();
+    fireEvent.keyDown(window, { key: "?" });
+    expect(screen.queryByTestId("help-dialog")).toBeNull();
+    expect(screen.queryByTestId("settings-dialog")).toBeNull();
   });
 
   it("toggles help with the question mark key", () => {
-    setWide(true);
     renderShell();
-    expect(screen.queryByText("Open or close Help")).toBeNull();
+    expect(screen.queryByTestId("help-dialog")).toBeNull();
     fireEvent.keyDown(window, { key: "?" });
-    expect(screen.getByText("Open or close Help")).toBeTruthy();
+    expect(screen.getByTestId("help-dialog")).toBeTruthy();
     fireEvent.keyDown(window, { key: "?" });
-    expect(screen.queryByText("Open or close Help")).toBeNull();
+    expect(screen.queryByTestId("help-dialog")).toBeNull();
   });
 
-  it("returns focus to the previously focused control when help closes", async () => {
-    setWide(true);
-    renderShell(<button type="button">outlet button</button>);
-    const origin = screen.getByRole("button", { name: "outlet button" });
-    origin.focus();
-    fireEvent.keyDown(origin, { key: "?" });
-    const dialog = screen.getByRole("dialog", { name: "Help" });
-    // Wide enough for the 220px key column, so "Open or close Help" does not wrap.
-    expect(dialog.className).toContain("sm:max-w-xl");
-    expect(dialog.className).not.toContain("sm:max-w-sm");
-    expect(document.activeElement).not.toBe(origin);
-    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    await waitFor(() => expect(document.activeElement).toBe(origin));
+  it("opens help from the header", () => {
+    renderShell();
+    expect(screen.queryByTestId("help-dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Help" }));
+    expect(screen.getByTestId("help-dialog")).toBeTruthy();
+    expect(screen.queryByTestId("settings-dialog")).toBeNull();
+  });
+
+  it("opens settings from the header", () => {
+    renderShell();
+    expect(screen.queryByTestId("settings-dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.getByTestId("settings-dialog")).toBeTruthy();
+    expect(screen.queryByTestId("help-dialog")).toBeNull();
   });
 
   it("ignores the question mark key while typing", () => {
-    setWide(true);
     renderShell(<input aria-label="field" />);
     fireEvent.keyDown(screen.getByLabelText("field"), { key: "?" });
-    expect(screen.queryByText("Open or close Help")).toBeNull();
+    expect(screen.queryByTestId("help-dialog")).toBeNull();
+  });
+
+  it.each(["altKey", "ctrlKey", "metaKey"])("ignores question mark with %s", (modifier) => {
+    renderShell();
+    fireEvent.keyDown(window, { key: "?", [modifier]: true });
+    expect(screen.queryByTestId("help-dialog")).toBeNull();
+  });
+
+  it("sets the default reading attributes on the planner root", () => {
+    const { container } = renderShell();
+    const root = container.querySelector("[data-loom-plan]");
+    expect(root?.getAttribute("data-reading-face")).toBe("source-serif");
+    expect(root?.getAttribute("data-reading-size")).toBe("19");
+  });
+
+  it("updates the reading face attribute when the preference changes", () => {
+    const { container } = renderShell();
+    const root = container.querySelector("[data-loom-plan]");
+    act(() => store.set(readingFaceAtom, "literata"));
+    expect(root?.getAttribute("data-reading-face")).toBe("literata");
+  });
+
+  it("updates the reading size attribute when the preference changes", () => {
+    const { container } = renderShell();
+    const root = container.querySelector("[data-loom-plan]");
+    act(() => store.set(readingSizeAtom, 21));
+    expect(root?.getAttribute("data-reading-size")).toBe("21");
   });
 
   it("renders the dock as nothing", () => {
@@ -106,7 +148,6 @@ describe("PlanShell", () => {
   });
 
   it("mounts a tooltip inside the shell", () => {
-    setWide(true);
     renderShell(
       <Tooltip>
         <TooltipTrigger>hover me</TooltipTrigger>
@@ -114,25 +155,5 @@ describe("PlanShell", () => {
       </Tooltip>,
     );
     expect(screen.getByText("hover me")).toBeTruthy();
-  });
-
-  it("collapses the tracker and moves presence and share into the overflow menu when narrow", () => {
-    setWide(false);
-    renderShell();
-    expect(screen.getByText("Step 2 of 2 · Product spec")).toBeTruthy();
-    expect(screen.getByTestId("extras").getAttribute("data-compact")).toBe("true");
-    expect(screen.queryByRole("button", { name: /^share/i })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "More" }));
-    const menu = screen.getByRole("dialog", { name: "More" });
-    expect(within(menu).getByRole("button", { name: /^share/i })).toBeTruthy();
-    expect(within(menu).getByRole("button", { name: /people here/i })).toBeTruthy();
-  });
-
-  it("shows presence and share in the header when wide", () => {
-    setWide(true);
-    renderShell();
-    expect(screen.getByTestId("extras").getAttribute("data-compact")).toBe("false");
-    expect(screen.getByRole("button", { name: /^share/i })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "More" })).toBeNull();
   });
 });

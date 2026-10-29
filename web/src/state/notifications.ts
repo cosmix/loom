@@ -1,4 +1,6 @@
+import { useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
+import { useEffect, useState } from "react";
 
 import type { Snapshot } from "@/api/schema";
 import { notifiableEvents, RUN_FINISHED_KEY } from "@/lib/notify";
@@ -33,6 +35,55 @@ export async function requestNotificationPermission(): Promise<NotificationSuppo
     return support;
   }
   return window.Notification.requestPermission();
+}
+
+export function notificationStatus(support: NotificationSupport, on: boolean): string {
+  switch (support) {
+    case "unsupported":
+      return "this browser has no notification support";
+    case "insecure":
+      return "notifications need localhost or HTTPS; this page is plain HTTP on a LAN address";
+    case "denied":
+      return "the browser has blocked notifications for this page";
+    case "granted":
+      return on ? "on" : "off";
+    case "default":
+      return "the browser will ask when you turn this on";
+  }
+}
+
+export function useNotificationToggle(): {
+  on: boolean;
+  disabled: boolean;
+  support: NotificationSupport;
+  toggle: () => Promise<void>;
+} {
+  const [enabled, setEnabled] = useAtom(notificationsEnabledAtom);
+  const [support, setSupport] = useState<NotificationSupport>(() => notificationSupport());
+  const on = enabled === true && support === "granted";
+  const disabled = support === "unsupported" || support === "insecure" || support === "denied";
+
+  useEffect(() => {
+    if (enabled && support !== "granted") setEnabled(false);
+  }, [enabled, support, setEnabled]);
+
+  async function toggle(): Promise<void> {
+    if (on) {
+      setEnabled(false);
+      return;
+    }
+
+    if (support === "default") {
+      const result = await requestNotificationPermission();
+      setSupport(result);
+      setEnabled(result === "granted");
+      return;
+    }
+
+    if (support === "granted") setEnabled(true);
+  }
+
+  return { on, disabled, support, toggle };
 }
 
 export function deliverNotifications(

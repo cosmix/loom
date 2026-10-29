@@ -16,7 +16,7 @@ type Update<Value> = Value | ((previous: Value) => Value);
  * project key, so the value lives in memory only rather than under a key shared by every project
  * on the origin.
  */
-function projectPref<Value>(name: string, fallback: Value, schema: z.ZodType<Value>) {
+export function projectPref<Value>(name: string, fallback: Value, schema: z.ZodType<Value>) {
   const storage = validatedStorage(schema);
   const keyed = new Map<string, ReturnType<typeof atomWithStorage<Value>>>();
   const unkeyed = atom(fallback);

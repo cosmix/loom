@@ -1,13 +1,41 @@
 /* Planning-specific layout only; colours and type come from the shared tokens. */
 
-[data-loom-plan] .plan-header {
-  min-width: 0;
-  overflow: hidden;
+/*
+ * Reading face: body text of rendered documents and concept prose. Chrome and titles stay in
+ * `--font-sans` (Inter); code, paths and ids stay in `--font-mono` (Commit Mono Cosmix).
+ * Settings picks the face and size through `data-reading-face` / `data-reading-size` on the
+ * shell root; Source Serif 4 at 19px is the default.
+ */
+[data-loom-plan] {
+  --font-reading: "Source Serif 4 Variable", "Source Serif 4", Georgia, serif;
+  --reading-size: 19px;
+  --reading-line: 1.6;
 }
 
-[data-loom-plan] .plan-steps {
-  display: flex;
+[data-loom-plan][data-reading-face="literata"] {
+  --font-reading: "Literata Variable", Literata, Georgia, serif;
+}
+
+[data-loom-plan][data-reading-face="piazzolla"] {
+  --font-reading: "Piazzolla Variable", Piazzolla, Georgia, serif;
+}
+
+[data-loom-plan][data-reading-size="17"] {
+  --reading-size: 17px;
+}
+
+[data-loom-plan][data-reading-size="21"] {
+  --reading-size: 21px;
+}
+
+[data-loom-plan] .plan-header {
   min-width: 0;
-  gap: 0.25rem;
-  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="dialog-overlay"],
+  [data-slot="dialog-content"],
+  [data-slot="popover-content"] {
+    animation: none !important;
+  }
 }
