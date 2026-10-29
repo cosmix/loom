@@ -2,7 +2,7 @@
 //!
 //! The fixtures are byte copies of the plan's captures; `capture.py`, kept
 //! beside the originals under
-//! `doc/plans/token-optim/briefs/dependency-findings/dependency-findings/fixtures/`,
+//! `doc/plans/optim-token/briefs/dependency-findings/dependency-findings/fixtures/`,
 //! defines every field. Only the fields the harness reads are typed here.
 
 use std::path::{Path, PathBuf};
