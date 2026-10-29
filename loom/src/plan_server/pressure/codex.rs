@@ -27,10 +27,10 @@ use crate::process::{process_start_time, ProcessIdentity};
 const TAIL_BYTES: u64 = 2000;
 /// How often a finishing Codex is looked at.
 const POLL: Duration = Duration::from_millis(100);
-/// How long a terminated Codex may take to exit before the run stops waiting for it.
-const EXIT_GRACE: Duration = Duration::from_secs(10);
 /// The start of the reason a configuration change ends a run with (the panel keys on it).
 pub(super) const CONFIG_CHANGED: &str = "Codex changed session configuration";
+/// The block a Codex still running after its exit grace leaves: it can write after any snapshot.
+pub(super) const NOT_EXITED: &str = "Codex did not exit; session configuration cannot be checked";
 
 /// A running Codex `$pressure` and what the run knows about it.
 pub(super) struct CodexHalf {
@@ -182,7 +182,7 @@ impl CodexHalf {
     /// What it changed in the configuration until then still blocks later launches.
     pub(super) fn abandon(mut self, env: &RunEnv) {
         self.terminate();
-        let deadline = Instant::now() + EXIT_GRACE;
+        let deadline = Instant::now() + env.runs.tools.codex_exit_grace;
         while self.running() && Instant::now() < deadline {
             thread::sleep(POLL);
             self.poll(env);
@@ -203,7 +203,7 @@ impl CodexHalf {
         self.run.as_ref().is_some_and(|run| !run.is_finished())
     }
 
-    /// Wait for the last attempt; a stop terminates it and waits at most [`EXIT_GRACE`].
+    /// Wait for the last attempt; a stop terminates it and waits at most the exit grace.
     fn wait(&mut self, env: &RunEnv) -> Option<anyhow::Result<CodexOutcome>> {
         if self.running() {
             env.publish(|view| view.codex_alone());
@@ -212,7 +212,7 @@ impl CodexHalf {
         while self.running() {
             if env.stopping() {
                 let since = *stopped_at.get_or_insert_with(Instant::now);
-                if since.elapsed() >= EXIT_GRACE {
+                if since.elapsed() >= env.runs.tools.codex_exit_grace {
                     return None;
                 }
                 self.terminate();
@@ -249,8 +249,13 @@ impl CodexHalf {
         env.publish(|view| view.finish_codex(self.round, StepState::Stopped, status));
     }
 
-    /// A changed configuration blocks every later launch until the holder confirms it.
+    /// A changed configuration blocks every later launch until the holder confirms it, and so
+    /// does a Codex still running (not exited in the grace, or left alone as unverifiable).
     fn configuration_changed(&self, env: &RunEnv) -> Option<String> {
+        if self.running() {
+            line(&format!("pressure run: {NOT_EXITED}"));
+            return block(env, NOT_EXITED.to_owned(), &[]);
+        }
         let (reason, changed) = match snapshot(env.ctx.root()) {
             Ok(after) => {
                 let changed = changed(&self.before, &after);
@@ -264,14 +269,19 @@ impl CodexHalf {
                 (why, Vec::new())
             }
         };
-        if let Err(error) = StartBlocks::block(env.ctx.runtime(), &reason, &changed) {
-            line(&format!(
-                "pressure run: the configuration block was not saved: {}",
-                safe(&format!("{error:#}"))
-            ));
-        }
-        Some(reason)
+        block(env, reason, &changed)
     }
+}
+
+/// Persist the block every later launch refuses on; the reason stops the run either way.
+fn block(env: &RunEnv, reason: String, changed: &[String]) -> Option<String> {
+    if let Err(error) = StartBlocks::block(env.ctx.runtime(), &reason, changed) {
+        line(&format!(
+            "pressure run: the configuration block was not saved: {}",
+            safe(&format!("{error:#}"))
+        ));
+    }
+    Some(reason)
 }
 
 /// The run's Codex report: where Codex writes it and the repo-relative path the panel links.

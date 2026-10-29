@@ -116,7 +116,13 @@ impl RunEnv {
         match waited {
             Waited::Marker => {
                 self.release_marker_session();
-                StepVerdict::Continue
+                // A Stop pressed after the marker still writes no record: the pipeline's next
+                // act after the last `/address` is the record.
+                if self.stopping() {
+                    self.stop_verdict(&step.label)
+                } else {
+                    StepVerdict::Continue
+                }
             }
             other => self.failed_verdict(&step.label, other),
         }

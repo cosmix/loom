@@ -33,6 +33,8 @@ pub(crate) struct Tools {
     pub(crate) pane_check: Duration,
     /// How long the open chat's closing write may take: plan 7's 600 s bound and its slack.
     pub(crate) chat_close: Duration,
+    /// How long a terminated Codex may take to exit before the run stops waiting for it.
+    pub(crate) codex_exit_grace: Duration,
 }
 
 impl Tools {
@@ -41,6 +43,7 @@ impl Tools {
             tmux: PathBuf::from("tmux"),
             pane_check: Duration::from_secs(5),
             chat_close: Duration::from_secs(605),
+            codex_exit_grace: Duration::from_secs(10),
         }
     }
 }

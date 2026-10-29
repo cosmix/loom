@@ -11,7 +11,7 @@ use crate::models::stage::ALLOWED_REASONING_EFFORTS;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::ids::BrowserId;
 use crate::plan_server::wire::pressure::{
-    disabled_reason, PressureOptions, PressureSlots, PressureStart,
+    disabled_reason, PressureConfigBlock, PressureOptions, PressureSlots, PressureStart,
 };
 use crate::planning::guidance::StartBlocks;
 use crate::planning::project::Project;
@@ -64,6 +64,22 @@ fn options_with_prerequisites(
         codex_models: strings(CODEX_MODELS),
         codex_efforts: strings(CODEX_EFFORTS),
         running,
+        config_block: config_block(ctx.runtime()),
+    }
+}
+
+/// The persisted block every planning launch waits on; an unreadable block fails closed.
+pub fn config_block(runtime: &RuntimePaths) -> Option<PressureConfigBlock> {
+    match StartBlocks::current(runtime) {
+        Ok(None) => None,
+        Ok(Some(block)) => Some(PressureConfigBlock {
+            reason: block.reason,
+            changed: block.changed,
+        }),
+        Err(error) => Some(PressureConfigBlock {
+            reason: format!("start blocked: config-block unreadable: {error:#}"),
+            changed: Vec::new(),
+        }),
     }
 }
 

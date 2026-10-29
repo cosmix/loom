@@ -39,7 +39,7 @@ fn run_and_pressure_routes_have_the_required_roles() {
         (Get, "/api/pressure/options", Viewer),
         (Post, "/api/pressure/start", HolderOrTake),
         (Post, "/api/pressure/stop", Holder),
-        (Post, "/api/pressure/confirm-config", Holder),
+        (Post, "/api/pressure/confirm-config", HolderOrTake),
     ];
     let routes = all_routes();
 

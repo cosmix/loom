@@ -43,46 +43,14 @@ const PLAN_TEXT: &str = "# Plan A\n\nBody.\n\n<!-- END loom METADATA -->\n";
 
 /// The fake `codex exec`: records `<pid> <model>` per attempt, then acts on the files beside
 /// it: `unavailable-<model>` (an account error, exit 1), `report` (write the review), `config`
-/// (edit `.claude/settings.local.json`), `sleep` (seconds, TERM-aware), `exit` (the code).
-const FAKE_CODEX: &str = r##"#!/bin/sh
-d=$(dirname "$0")
-model=$5
-root=$9
-plan=${10#\$pressure }
-echo "$$ $model" >> "$d/pids"
-echo "codex fake run with $model"
-if [ -f "$d/unavailable-$model" ]; then
-  sleep 0.3
-  echo "ERROR: model not found: $model"
-  exit 1
-fi
-if [ -f "$d/report" ]; then
-  echo "# Review" > "$root/$(dirname "$plan")/codex-$(basename "$plan")"
-fi
-if [ -f "$d/config" ]; then
-  mkdir -p "$root/.claude"
-  echo '{}' > "$root/.claude/settings.local.json"
-fi
-if [ -f "$d/sleep" ]; then
-  trap 'kill $child 2>/dev/null; exit 143' TERM
-  sleep "$(cat "$d/sleep")" &
-  child=$!
-  wait $child
-fi
-echo "codex fake done"
-exit "$(cat "$d/exit" 2>/dev/null || echo 0)"
-"##;
+/// (edit `.claude/settings.local.json`), `stubborn` (seconds, ignoring TERM), `sleep` (seconds,
+/// TERM-aware), `exit` (the code). Any other invocation exits at once unrecorded: `PATH` is
+/// process-wide, so the quota poller of a concurrently running test's planning server runs
+/// this `codex app-server` too.
+const FAKE_CODEX: &str = include_str!("fixtures/codex.sh");
 
 /// The fake `tmux list-panes`: as many panes as `panes` says (one by default).
-const FAKE_TMUX: &str = r#"#!/bin/sh
-d=$(dirname "$0")
-n=$(cat "$d/panes" 2>/dev/null || echo 1)
-i=0
-while [ "$i" -lt "$n" ]; do
-  echo "plan-pressure:0.$i: [80x24] %$i"
-  i=$((i + 1))
-done
-"#;
+const FAKE_TMUX: &str = include_str!("fixtures/tmux.sh");
 
 /// Sets environment variables until dropped, then restores them.
 pub(super) struct EnvGuard(Vec<(&'static str, Option<OsString>)>);
@@ -311,6 +279,7 @@ fn tools_at(dir: &Path) -> Tools {
         tmux: dir.join("tmux"),
         pane_check: Duration::from_millis(150),
         chat_close: Duration::from_secs(5),
+        codex_exit_grace: Duration::from_secs(2),
     }
 }
 

@@ -130,6 +130,7 @@ fn assert_exhaustive(message: &PlanMessage) {
         | PlanMessage::Chat(_)
         | PlanMessage::Review(_)
         | PlanMessage::PressureRun(_)
+        | PlanMessage::PressureOptionsChanged
         | PlanMessage::RunState(_)
         | PlanMessage::RunOutput(_)
         | PlanMessage::RunStrip(_) => {}
@@ -167,6 +168,7 @@ fn all_plan_messages() -> Vec<PlanMessage> {
         PlanMessage::Authoring(AuthoringView { holder: None }),
         PlanMessage::Checklist(checklist),
         PlanMessage::ServerStopping,
+        PlanMessage::PressureOptionsChanged,
         PlanMessage::Refused(Refused {
             command: String::new(),
             reason: String::new(),

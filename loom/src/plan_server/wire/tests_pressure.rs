@@ -4,8 +4,8 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 
 use super::pressure::{
-    CodexState, PressureOptions, PressureRunView, PressureStart, PressureStepKind, RunEndKind,
-    StepState,
+    CodexState, PressureConfigBlock, PressureOptions, PressureRunView, PressureStart,
+    PressureStepKind, RunEndKind, StepState,
 };
 
 const OPTIONS: &str = include_str!("../../../../web/src/plan/api/fixtures/pressure-options.json");
@@ -27,6 +27,31 @@ fn pressure_options_fixture_matches_serde_output() {
 fn pressure_options_fixture_deserializes() {
     let options: PressureOptions = serde_json::from_str(OPTIONS).unwrap();
     assert!(options.defaults.rounds > 0);
+}
+
+#[test]
+fn pressure_options_config_block_is_null_or_its_reason_and_files() {
+    let mut options: PressureOptions = serde_json::from_str(OPTIONS).unwrap();
+    assert_eq!(
+        serde_json::to_value(&options).unwrap()["config_block"],
+        Value::Null
+    );
+    options.config_block = Some(PressureConfigBlock {
+        reason: "Codex changed session configuration: .mcp.json".into(),
+        changed: vec![".mcp.json".into()],
+    });
+    let value = serde_json::to_value(&options).unwrap();
+    assert_eq!(
+        value["config_block"],
+        serde_json::json!({
+            "reason": "Codex changed session configuration: .mcp.json",
+            "changed": [".mcp.json"],
+        })
+    );
+    assert_eq!(
+        serde_json::from_value::<PressureOptions>(value).unwrap(),
+        options
+    );
 }
 
 #[test]

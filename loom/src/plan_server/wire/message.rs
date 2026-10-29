@@ -59,6 +59,9 @@ pub enum PlanMessage {
     Review(crate::plan_server::wire::review::ReviewMessage),
     /// Current pressure run progress.
     PressureRun(PressureRunView),
+    /// The pressure options changed (a run ended, or a Codex configuration block was
+    /// confirmed): browsers fetch them again.
+    PressureOptionsChanged,
     /// Current execution handoff state.
     RunState(RunStateView),
     /// Output from an execution handoff job.
@@ -138,6 +141,10 @@ mod tests {
             (
                 PlanMessage::ServerStopping,
                 json!({"type": "server_stopping"}),
+            ),
+            (
+                PlanMessage::PressureOptionsChanged,
+                json!({"type": "pressure_options_changed"}),
             ),
             (
                 PlanMessage::SummaryQuestionClosed {
