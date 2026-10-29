@@ -3,7 +3,7 @@
 
 # Orchestrator Loop
 
-> Tick order
+> Ticks
 
 ## Orchestrator Main-Loop Tick Sequence (Exact Call Order)
 

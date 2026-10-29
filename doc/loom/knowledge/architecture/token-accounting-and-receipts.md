@@ -44,7 +44,7 @@ verified: c8c167bb2dbba1c5ec65b7b9c61130873a249da2
 
 # Token Accounting And Receipts
 
-> Usage ledger
+> Ledger
 
 ## Scope and Evidence
 

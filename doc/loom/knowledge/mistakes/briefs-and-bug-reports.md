@@ -1,6 +1,6 @@
 # Briefs And Bug Reports
 
-> Briefs, bugs
+> Briefs
 
 ## A Bug Report From a Loom Stage Is About Loom the Product, Not About a Project on This Machine (2026-09-18)
 
@@ -373,3 +373,11 @@ sibling's files.
 **Prevention**: When a Claude session drives loom from a prompt written for codex, it still follows CLAUDE.md (commit conventions, no attribution, knowledge routing, tool rules) unless the user restates the exclusion for Claude.
 
 **Fix**: Follow CLAUDE.md for the rest of the takeover.
+
+## A Plan Premise Was Already True in the Base Tree
+
+**What happened:** a pressure-pipeline stage froze a contract `builtin-backend-default-is-tmux` that expected `Native` at freeze, and four tasks (T1 to T4) to make tmux the default. `SessionBackendKind` already defaulted to `Tmux` (`types.rs`), with the tests, README lines and fixtures; only a README and skill sentence audit remained.
+
+**Why:** the plan was written from an earlier reading of the default backend.
+
+**Prevention:** before freezing a "change the default" contract, read the `#[default]` and its tests at the stage base; a contract that is already green at freeze proves nothing.

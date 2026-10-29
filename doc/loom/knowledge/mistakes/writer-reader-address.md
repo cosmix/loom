@@ -3,7 +3,7 @@
 
 # Writer/Reader Address
 
-> Ignored keys
+> Keys
 
 ## A Fallback That Writes Under a Key No Reader Consults
 
