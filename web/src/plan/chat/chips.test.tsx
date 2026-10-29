@@ -152,6 +152,8 @@ it("lock glyph for locked and knowledge docs", () => {
     product: [],
     plans: [
       {
+        feature: null,
+        misplaced: false,
         path: "doc/plans/PLAN-foo.md",
         title: "Plan",
         file_name: "PLAN-foo.md",

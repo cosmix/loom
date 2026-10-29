@@ -1,0 +1,73 @@
+[data-loom-plan] .kickoff-empty {
+  display: flex;
+  width: 100%;
+  max-width: 44rem;
+  min-width: 0;
+  margin-inline: auto;
+  padding: 2rem 1.5rem 3rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+[data-loom-plan] .kickoff-empty .loom-doodle {
+  width: 20rem;
+}
+
+[data-loom-plan] .kickoff-composer,
+[data-loom-plan] .kickoff-starters,
+[data-loom-plan] .kickoff-starters > button {
+  font-family: var(--font-reading);
+  font-size: var(--reading-size);
+  line-height: var(--reading-line);
+}
+
+[data-loom-plan] .kickoff-composer {
+  display: block;
+  width: 100%;
+  min-height: 10rem;
+  padding: 1.25rem;
+  resize: vertical;
+  border: 1px solid var(--input);
+  border-radius: 0.75rem;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+[data-loom-plan] .kickoff-composer:focus-visible,
+[data-loom-plan] .kickoff-starter:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+[data-loom-plan] .kickoff-starter {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0;
+  color: var(--muted-foreground);
+  text-align: left;
+}
+
+[data-loom-plan] .kickoff-starter:enabled:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+[data-loom-plan] .kickoff-composer:disabled,
+[data-loom-plan] .kickoff-starters:disabled {
+  opacity: 0.5;
+}
+
+[data-loom-plan] .kickoff-transcript [role="log"],
+[data-loom-plan] .kickoff-transcript [class~="group/message"] {
+  font-family: var(--font-reading);
+  font-size: var(--reading-size);
+  line-height: var(--reading-line);
+}
+
+/* Message Markdown carries its own compact text utilities inside the shared transcript. */
+[data-loom-plan] .kickoff-transcript [role="log"] .md {
+  --text-sm: var(--reading-size);
+  --leading-normal: var(--reading-line);
+}

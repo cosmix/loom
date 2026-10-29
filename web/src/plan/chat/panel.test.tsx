@@ -69,7 +69,7 @@ vi.mock("@/plan/review/changed-since", () => ({
 }));
 
 type Store = ReturnType<typeof createStore>;
-const offerView = offerViewSchema.parse(hello.checklist.primary);
+const offerView = offerViewSchema.parse(hello.checklists[0]!.primary);
 const draft: AttachmentDraft = {
   kind: "source",
   path: "doc/product/section_10.md",
@@ -255,7 +255,13 @@ it("below lg with the sheet closed, an OfferButton is a button", async () => {
     </Provider>,
   );
   fireEvent.click(screen.getByRole("button", { name: "Write section 05" }));
-  expect(startChat).toHaveBeenCalledWith(store, "write-section:05");
+  expect(startChat).toHaveBeenCalledWith(
+    store,
+    "write-section:05",
+    undefined,
+    undefined,
+    offerView.feature,
+  );
   await act(async () => {});
   expect(store.get(chatSheetOpenAtom)).toBe(true);
   offer.unmount();

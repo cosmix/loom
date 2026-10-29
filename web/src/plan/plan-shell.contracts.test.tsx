@@ -17,7 +17,6 @@ import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
 import shareFixture from "@/plan/api/fixtures/share.json";
 import {
   authoringViewSchema,
-  checklistViewSchema,
   clientMessageSchema,
   planMessageSchema,
   presenceListSchema,
@@ -277,7 +276,7 @@ describe("plan shell contracts", () => {
       { name: "server-info", schema: serverInfoSchema, fixture: serverInfoFixture },
       { name: "presence", schema: presenceListSchema, fixture: presenceFixture },
       { name: "authoring", schema: authoringViewSchema, fixture: authoringFixture },
-      { name: "checklist", schema: checklistViewSchema, fixture: checklistFixture },
+      { name: "checklist", schema: planMessageSchema, fixture: checklistFixture },
       { name: "share", schema: shareLinkSchema, fixture: shareFixture },
       { name: "refused", schema: refusedSchema, fixture: refusedFixture },
       { name: "client-set-name", schema: clientMessageSchema, fixture: clientSetNameFixture },

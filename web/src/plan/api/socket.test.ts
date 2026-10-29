@@ -1,14 +1,26 @@
 import { createStore } from "jotai/vanilla";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import draftTeamFixture from "@/plan/api/fixtures/draft-team.json";
 import hello from "@/plan/api/fixtures/hello.json";
+import kickoffFixture from "@/plan/api/fixtures/kickoff.json";
 import server from "@/plan/api/fixtures/server-info.json";
+import {
+  draftTeamViewSchema,
+  kickoffViewSchema,
+  type DraftTeamView,
+  type KickoffView,
+} from "@/plan/api/schema-kickoff";
 import { connectPlanSocket } from "@/plan/api/socket";
 import {
+  activeFeatureAtom,
   checklistAtom,
   connectionAtom,
   connectionEpochAtom,
+  draftTeamAtom,
+  kickoffAtom,
   presenceAtom,
+  projectAtom,
   unauthorizedAtom,
 } from "@/plan/state/atoms";
 
@@ -138,14 +150,27 @@ describe("plan socket", () => {
 
   it("dispatches valid frames, sends only while open, and resyncs after atom updates", async () => {
     const store = createStore();
+    store.set(activeFeatureAtom, hello.checklists[0].feature);
     const handle = connectPlanSocket(store, deps);
     const presence = vi.fn();
-    const changed = { ...hello, checklist: { ...hello.checklist, current: { kind: "ready" } } };
-    expect(changed.checklist.current).not.toEqual(hello.checklist.current);
+    const changed = {
+      ...hello,
+      checklists: hello.checklists.map((checklist) => ({
+        ...checklist,
+        current: { kind: "ready" },
+      })),
+    };
+    const changedProject = {
+      checklists: changed.checklists,
+      standalone: changed.standalone,
+      moves: changed.moves,
+    };
+    expect(changed.checklists[0].current).not.toEqual(hello.checklists[0].current);
     // Records what the callback sees instead of asserting inside it, so a
     // failure names the stale value rather than surfacing as a thrown frame.
     const resync = vi.fn(() => ({
       checklist: store.get(checklistAtom),
+      project: store.get(projectAtom),
       epoch: store.get(connectionEpochAtom),
     }));
     const unsubscribe = handle.subscribe("presence", presence);
@@ -158,7 +183,12 @@ describe("plan socket", () => {
     latest().receive(hello);
     expect(resync).not.toHaveBeenCalled();
     expect(store.get(connectionEpochAtom)).toBe(0);
-    expect(store.get(checklistAtom)).toEqual(hello.checklist);
+    expect(store.get(checklistAtom)).toEqual(hello.checklists[0]);
+    expect(store.get(projectAtom)).toEqual({
+      checklists: hello.checklists,
+      standalone: hello.standalone,
+      moves: hello.moves,
+    });
     latest().receive({ type: "presence", entries: [] });
     expect(presence).toHaveBeenCalledTimes(1);
     expect(store.get(presenceAtom)).toEqual({ entries: [] });
@@ -172,11 +202,115 @@ describe("plan socket", () => {
     latest().open();
     latest().receive(changed);
     expect(resync).toHaveBeenCalledOnce();
-    expect(resync).toHaveReturnedWith({ checklist: changed.checklist, epoch: 1 });
+    expect(resync).toHaveReturnedWith({
+      checklist: changed.checklists[0],
+      project: changedProject,
+      epoch: 1,
+    });
+    expect(store.get(activeFeatureAtom)).toBe(hello.checklists[0].feature);
     unsubscribe();
     stopResync();
     latest().receive({ type: "presence", entries: [] });
     expect(presence).toHaveBeenCalledTimes(1);
+    handle.dispose();
+  });
+
+  it("clears stale kickoff and draft team views before resyncing on a second hello", async () => {
+    const store = createStore();
+    const handle = connectPlanSocket(store, deps);
+    await flush();
+    latest().open();
+    latest().receive(hello);
+    const { type: _kickoffType, ...kickoff } = kickoffFixture;
+    const { type: _teamType, ...draftTeam } = draftTeamFixture;
+    store.set(kickoffAtom, kickoffViewSchema.parse(kickoff));
+    store.set(draftTeamAtom, draftTeamViewSchema.parse(draftTeam));
+    const resync = vi.fn(() => ({
+      kickoff: store.get(kickoffAtom),
+      draftTeam: store.get(draftTeamAtom),
+    }));
+    handle.onResync(resync);
+    latest().close();
+    await vi.advanceTimersByTimeAsync(1000);
+    latest().open();
+
+    latest().receive(hello);
+
+    expect(store.get(kickoffAtom)).toBeNull();
+    expect(store.get(draftTeamAtom)).toBeNull();
+    expect(resync).toHaveReturnedWith({ kickoff: null, draftTeam: null });
+    handle.dispose();
+  });
+
+  it("replaces the project from checklist frames without changing the active feature", async () => {
+    const store = createStore();
+    const selected = { ...hello.checklists[0], feature: "selected" };
+    store.set(activeFeatureAtom, selected.feature);
+    const handle = connectPlanSocket(store, deps);
+    await flush();
+    latest().open();
+    latest().receive(hello);
+    const project = {
+      checklists: [hello.checklists[0], selected],
+      standalone: [
+        { slug: "solo", path: "doc/plans/PLAN-solo.md", state: "written", title: "Solo" },
+      ],
+      moves: [{ id: "move", kind: "move_into_feature", label: "Move plan", target: null }],
+    };
+    latest().receive({ type: "checklist", ...project });
+    expect(store.get(projectAtom)).toEqual(project);
+    expect(store.get(checklistAtom)).toEqual(selected);
+    expect(store.get(activeFeatureAtom)).toBe(selected.feature);
+    latest().receive({ type: "checklist", checklists: [], standalone: [], moves: [] });
+    expect(store.get(projectAtom)).toEqual({ checklists: [], standalone: [], moves: [] });
+    expect(store.get(checklistAtom)).toBeNull();
+    expect(store.get(activeFeatureAtom)).toBe(selected.feature);
+    handle.dispose();
+  });
+
+  it("stores kickoff frames without the type tag before notifying subscribers", async () => {
+    const store = createStore();
+    const handle = connectPlanSocket(store, deps);
+    const received = vi.fn(() => store.get(kickoffAtom));
+    handle.subscribe("kickoff", received);
+    const kickoff: KickoffView = {
+      session: "kickoff-1",
+      shape: {
+        size: "feature",
+        name: "demo",
+        proposal: false,
+        problem: "",
+        decisions: [],
+        questions: [],
+        sections: [],
+      },
+      target: "doc/product/demo/index.md",
+    };
+    await flush();
+    latest().open();
+    latest().receive({ type: "kickoff", ...kickoff });
+    expect(store.get(kickoffAtom)).toEqual(kickoff);
+    expect(received).toHaveReturnedWith(kickoff);
+    latest().receive({ type: "kickoff", ...kickoff, target: null });
+    expect(store.get(kickoffAtom)).toEqual({ ...kickoff, target: null });
+    handle.dispose();
+  });
+
+  it("stores draft team frames without the type tag before notifying subscribers", async () => {
+    const store = createStore();
+    const handle = connectPlanSocket(store, deps);
+    const received = vi.fn(() => store.get(draftTeamAtom));
+    handle.subscribe("draft_team", received);
+    const draftTeam: DraftTeamView = {
+      session: "team-1",
+      documents: ["doc/product/demo/section_01.md"],
+      teammates: [],
+    };
+    await flush();
+    latest().open();
+    latest().receive({ type: "draft_team", ...draftTeam });
+    expect(store.get(draftTeamAtom)).toEqual(draftTeam);
+    expect(received).toHaveReturnedWith(draftTeam);
     handle.dispose();
   });
 

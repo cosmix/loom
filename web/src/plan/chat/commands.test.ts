@@ -222,6 +222,26 @@ it("start permits an offer without text or attachments", async () => {
   const { store, send, result } = harness();
   const pending = startChat(store, "offer");
   expect(send.mock.calls[0][0]).toMatchObject({ offer: "offer", text: null, attachments: [] });
+  expect(send.mock.calls[0][0]).not.toHaveProperty("feature");
+  result(0);
+  await pending;
+});
+
+it("start includes the feature alongside the existing positional fields", async () => {
+  const { store, send, result } = harness();
+  const attachments = [toAttachmentInput(source)];
+
+  const pending = startChat(store, "write-section:02", "Start here", attachments, "demo");
+
+  expect(send).toHaveBeenCalledWith({
+    type: "chat",
+    command: "start",
+    client_id: expect.any(String),
+    offer: "write-section:02",
+    feature: "demo",
+    text: "Start here",
+    attachments,
+  });
   result(0);
   await pending;
 });

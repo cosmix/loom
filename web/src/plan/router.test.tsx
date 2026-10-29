@@ -4,9 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { routes } from "@/plan/router";
 
-vi.mock("@/plan/checklist-view", () => ({
-  ChecklistView: () => <div>Checklist page</div>,
-}));
+vi.mock("@/plan/home/home", () => ({ HomeRoute: () => <div>Home page</div> }));
+vi.mock("@/plan/feature/feature-route", () => ({ FeatureRoute: () => <div>Feature page</div> }));
+vi.mock("@/plan/new/kickoff-route", () => ({ KickoffRoute: () => <div>Kickoff page</div> }));
 
 // vi.mock factories are hoisted above the JSX runtime import, so the element is built from an
 // awaited React import instead of JSX.
@@ -42,16 +42,26 @@ function renderRoute(path: string) {
 }
 
 describe("plan routes", () => {
-  it("renders the checklist inside the shell at the index", () => {
+  it("renders home inside the shell at the index", () => {
     const shell = renderRoute("/");
     expect(shell).not.toBeNull();
-    expect(within(shell!).getByText("Checklist page")).toBeTruthy();
+    expect(within(shell!).getByText("Home page")).toBeTruthy();
+  });
+
+  it("renders the feature screen at /f/:feature", () => {
+    const shell = renderRoute("/f/demo");
+    expect(within(shell!).getByText("Feature page")).toBeTruthy();
+  });
+
+  it("renders the kickoff conversation at /new", () => {
+    const shell = renderRoute("/new");
+    expect(within(shell!).getByText("Kickoff page")).toBeTruthy();
   });
 
   it("renders a registered tab route inside the shell", () => {
     const shell = renderRoute("/files/doc/example.md");
     expect(shell).not.toBeNull();
     expect(within(shell!).getByText("Files page")).toBeTruthy();
-    expect(screen.queryByText("Checklist page")).toBeNull();
+    expect(screen.queryByText("Home page")).toBeNull();
   });
 });

@@ -10,7 +10,7 @@ import { registerOfferAction } from "@/plan/offers/actions";
 
 afterEach(cleanup);
 
-const checklist = checklistViewSchema.parse(checklistFixture);
+const checklist = checklistViewSchema.parse(checklistFixture.checklists[0]);
 const primary = checklist.primary!;
 const secondary = checklist.secondary[0]!;
 

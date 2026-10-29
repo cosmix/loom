@@ -43,7 +43,7 @@ export function harness(current: SessionView | null = null) {
       frees_at: null,
     },
   });
-  store.set(checklistAtom, { ...hello.checklist, primary: offer });
+  store.set(checklistAtom, { ...hello.checklists[0], primary: offer });
   store.set(connectionAtom, { phase: "open", everOpen: true, lastMessageAt: null });
   store.set(snapshotAtom, { session: current, turns: [], queue: [], previous: null });
   const listeners = new Map<string, Set<(message: unknown) => void>>();

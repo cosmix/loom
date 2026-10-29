@@ -1,24 +1,21 @@
-import { useAtomValue } from "jotai/react";
+import { useId } from "react";
 
 import type { ChecklistView as Checklist, ItemView } from "@/plan/api/schema";
-import { isCurrentStep, readyLabel } from "@/plan/header/step-tracker";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { OfferButton } from "@/plan/offers/offer-button";
-import { checklistAtom } from "@/plan/state/atoms";
-import { LoadState } from "@/plan/ui/load-state";
 
-function heading(checklist: Checklist): string {
-  const ready = readyLabel(checklist.current);
-  if (ready) return ready;
-  const step = checklist.steps.find((candidate) => isCurrentStep(checklist.current, candidate));
-  return step ? `Step ${step.number} of ${checklist.steps.length}: ${step.name}` : "Planning";
-}
-
-function Item({ item }: { item: ItemView }) {
+export function Item({ item }: { item: ItemView }) {
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-[13px]">
       <span className="text-muted-foreground">Step {item.step}</span>
-      <span className="font-medium">{item.text}</span>
-      {item.path && <code className="font-mono text-xs text-muted-foreground">{item.path}</code>}
+      <span className="font-medium">
+        <Untrusted text={item.text} />
+      </span>
+      {item.path && (
+        <code className="font-mono text-xs text-muted-foreground">
+          <Untrusted text={item.path} />
+        </code>
+      )}
       {item.offer && (
         <div className="ml-auto">
           <OfferButton offer={item.offer} />
@@ -28,7 +25,8 @@ function Item({ item }: { item: ItemView }) {
   );
 }
 
-function Gaps({ checklist }: { checklist: Checklist }) {
+export function ChecklistGaps({ checklist }: { checklist: Checklist }) {
+  const id = useId();
   return (
     <section aria-label="Gaps" className="space-y-6">
       {checklist.steps.map((step) => {
@@ -36,8 +34,10 @@ function Gaps({ checklist }: { checklist: Checklist }) {
         if (items.length === 0) return null;
         const label = `Step ${step.number} · ${step.name}`;
         return (
-          <section key={step.number} aria-label={label}>
-            <h2 className="font-display text-lg">{label}</h2>
+          <section key={step.number} aria-labelledby={`${id}-step-${step.number}`}>
+            <h2 id={`${id}-step-${step.number}`} className="font-display text-lg">
+              <Untrusted text={label} />
+            </h2>
             <ul className="divide-y divide-hairline">
               {items.map((item, index) => (
                 <Item key={`${item.step}:${index}:${item.text}`} item={item} />
@@ -50,28 +50,14 @@ function Gaps({ checklist }: { checklist: Checklist }) {
   );
 }
 
-/** The app's first screen: where the plan stands, what to do next, and the gaps. */
-export function ChecklistView() {
-  const checklist = useAtomValue(checklistAtom);
-  if (checklist === null) {
-    return (
-      <div className="p-6">
-        <LoadState state="loading" title="Loading the checklist" />
-      </div>
-    );
-  }
+export function NextOffers({ checklist }: { checklist: Checklist }) {
+  if (!checklist.primary && checklist.secondary.length === 0) return null;
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
-      <h1 className="font-display text-2xl">{heading(checklist)}</h1>
-      {(checklist.primary || checklist.secondary.length > 0) && (
-        <section aria-label="Next" className="flex flex-wrap items-start gap-3">
-          {checklist.primary && <OfferButton offer={checklist.primary} />}
-          {checklist.secondary.map((offer) => (
-            <OfferButton key={offer.id} offer={offer} />
-          ))}
-        </section>
-      )}
-      {checklist.items.length > 0 && <Gaps checklist={checklist} />}
-    </div>
+    <section aria-label="Next" className="flex flex-wrap items-start gap-3">
+      {checklist.primary && <OfferButton offer={checklist.primary} />}
+      {checklist.secondary.map((offer) => (
+        <OfferButton key={offer.id} offer={offer} />
+      ))}
+    </section>
   );
 }

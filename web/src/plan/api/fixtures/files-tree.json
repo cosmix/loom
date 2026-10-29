@@ -1,30 +1,50 @@
 {
   "product": [
     {
-      "path": "doc/product/vision.md",
-      "title": "Vision",
-      "file_name": "vision.md",
-      "kind": "vision",
+      "feature": "demo",
+      "misplaced": false,
+      "path": null,
+      "title": "demo",
+      "file_name": null,
+      "kind": "feature",
       "state": null,
       "locked": false,
       "gap": false,
       "pressure_date": null,
       "errors": 0,
       "blurb": null,
-      "children": []
-    },
-    {
-      "path": null,
-      "title": "Section 2",
-      "file_name": null,
-      "kind": "section",
-      "state": null,
-      "locked": false,
-      "gap": true,
-      "pressure_date": null,
-      "errors": 0,
-      "blurb": null,
-      "children": []
+      "children": [
+        {
+          "path": "doc/product/demo/index.md",
+          "title": "Vision",
+          "file_name": "index.md",
+          "kind": "vision",
+          "state": null,
+          "locked": false,
+          "gap": false,
+          "pressure_date": null,
+          "errors": 0,
+          "blurb": null,
+          "children": [],
+          "feature": "demo",
+          "misplaced": false
+        },
+        {
+          "path": null,
+          "title": "Section 2",
+          "file_name": null,
+          "kind": "section",
+          "state": null,
+          "locked": false,
+          "gap": true,
+          "pressure_date": null,
+          "errors": 0,
+          "blurb": null,
+          "children": [],
+          "feature": "demo",
+          "misplaced": false
+        }
+      ]
     }
   ],
   "plans": [
@@ -39,7 +59,9 @@
       "pressure_date": "2026-10-17",
       "errors": 1,
       "blurb": null,
-      "children": []
+      "children": [],
+      "feature": null,
+      "misplaced": false
     }
   ],
   "knowledge": [
@@ -66,9 +88,13 @@
           "pressure_date": null,
           "errors": 0,
           "blurb": "System overview",
-          "children": []
+          "children": [],
+          "feature": null,
+          "misplaced": false
         }
-      ]
+      ],
+      "feature": null,
+      "misplaced": false
     }
   ],
   "other": [
@@ -83,7 +109,9 @@
       "pressure_date": null,
       "errors": 0,
       "blurb": null,
-      "children": []
+      "children": [],
+      "feature": null,
+      "misplaced": false
     }
   ],
   "archive": [
@@ -110,9 +138,13 @@
           "pressure_date": null,
           "errors": 0,
           "blurb": null,
-          "children": []
+          "children": [],
+          "feature": null,
+          "misplaced": false
         }
-      ]
+      ],
+      "feature": null,
+      "misplaced": false
     }
   ]
 }

@@ -7,10 +7,12 @@ import {
 } from "@/plan/api/schema";
 import {
   authoringAtom,
-  checklistAtom,
   connectionAtom,
   connectionEpochAtom,
+  draftTeamAtom,
+  kickoffAtom,
   presenceAtom,
+  projectAtom,
   serverInfoAtom,
   stoppingAtom,
   unauthorizedAtom,
@@ -119,10 +121,16 @@ class PlanSocketConnection {
   private applyHello(message: HelloMessage): void {
     this.store.set(youAtom, message.you);
     this.store.set(serverInfoAtom, message.server);
-    this.store.set(checklistAtom, message.checklist);
+    this.store.set(projectAtom, {
+      checklists: message.checklists,
+      standalone: message.standalone,
+      moves: message.moves,
+    });
     this.store.set(presenceAtom, message.presence);
     this.store.set(authoringAtom, message.authoring);
     this.store.set(stoppingAtom, message.server.stopping);
+    this.store.set(kickoffAtom, null);
+    this.store.set(draftTeamAtom, null);
     this.attempts = 0;
     // Atoms first, then the epoch, then the resync callbacks: a callback that
     // refetches must see the new snapshot and the bumped epoch.
@@ -145,8 +153,18 @@ class PlanSocketConnection {
         this.store.set(authoringAtom, { holder: message.holder });
         break;
       case "checklist": {
-        const { type: _type, ...checklist } = message;
-        this.store.set(checklistAtom, checklist);
+        const { type: _type, ...project } = message;
+        this.store.set(projectAtom, project);
+        break;
+      }
+      case "kickoff": {
+        const { type: _type, ...kickoff } = message;
+        this.store.set(kickoffAtom, kickoff);
+        break;
+      }
+      case "draft_team": {
+        const { type: _type, ...draftTeam } = message;
+        this.store.set(draftTeamAtom, draftTeam);
         break;
       }
       case "server_stopping":

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { HeaderExtras } from "@/plan/header-extras";
 import { ActivityPill } from "@/plan/header/activity";
+import { FeatureSwitcher } from "@/plan/header/feature-switcher";
 import { useResendStoredName } from "@/plan/header/name-prompt";
 import { NextStepCard } from "@/plan/header/next-step";
 import { Overflow } from "@/plan/header/overflow";
@@ -14,7 +15,7 @@ import { Presence } from "@/plan/header/presence";
 import { Share } from "@/plan/header/share";
 import { StepTracker } from "@/plan/header/step-tracker";
 import { Tabs } from "@/plan/header/tabs";
-import { checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { checklistAtom } from "@/plan/state/atoms";
 import { OTHER_GLYPHS } from "@/plan/ui/glyphs";
 
 import "./header.css";
@@ -25,22 +26,6 @@ const SettingsIcon = OTHER_GLYPHS.settings;
 const HelpIcon = OTHER_GLYPHS.help;
 
 type HeaderActions = { onOpenSettings: () => void; onOpenHelp: () => void };
-
-function FeatureSwitcherSlot() {
-  const serverInfo = useAtomValue(serverInfoAtom);
-  const project = serverInfo?.project ?? "Project";
-  // feature-ui replaces this slot with the feature popover.
-  return (
-    <div className="flex min-w-0 items-center gap-1">
-      <h1
-        className="truncate font-display text-xl leading-tight font-semibold tracking-tight"
-        title={project}
-      >
-        {project}
-      </h1>
-    </div>
-  );
-}
 
 function HeaderControls({
   narrow,
@@ -95,7 +80,7 @@ export function PlanHeader({
           </Link>
           <div className="min-w-0">
             <p className="eyebrow text-[10px]">Planning</p>
-            <FeatureSwitcherSlot />
+            <FeatureSwitcher />
           </div>
           <HeaderControls
             narrow={narrow}
