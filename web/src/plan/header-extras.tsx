@@ -7,9 +7,8 @@ import { RunStrip } from "@/plan/run/run-strip";
 import { SummaryStatus } from "@/plan/summaries/summary-status";
 
 /**
- * Header slot for controls later plans add (plans 9, 10 and 11 each add one
- * line rendering their control). `compact` is true below the `lg` breakpoint:
- * a control then renders its compact form, glyph plus count.
+ * Header controls use their compact form below the `lg` breakpoint. SummaryStatus
+ * always stays compact to retain the rebuild popover alongside the activity pill.
  */
 export function HeaderExtras({ compact }: { compact: boolean }): JSX.Element {
   return (
@@ -17,7 +16,7 @@ export function HeaderExtras({ compact }: { compact: boolean }): JSX.Element {
       <HandoffMounts />
       <RunStrip compact={compact} />
       <ChangedSinceControl compact={compact} />
-      <SummaryStatus compact={compact} />
+      <SummaryStatus compact />
       {compact ? <ChatSheetButton /> : null}
     </>
   );

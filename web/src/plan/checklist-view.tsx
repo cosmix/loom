@@ -1,7 +1,7 @@
 import { useAtomValue } from "jotai/react";
 
 import type { ChecklistView as Checklist, ItemView } from "@/plan/api/schema";
-import { StepList, isCurrentStep, readyLabel } from "@/plan/header/step-tracker";
+import { isCurrentStep, readyLabel } from "@/plan/header/step-tracker";
 import { OfferButton } from "@/plan/offers/offer-button";
 import { checklistAtom } from "@/plan/state/atoms";
 import { LoadState } from "@/plan/ui/load-state";
@@ -28,6 +28,28 @@ function Item({ item }: { item: ItemView }) {
   );
 }
 
+function Gaps({ checklist }: { checklist: Checklist }) {
+  return (
+    <section aria-label="Gaps" className="space-y-6">
+      {checklist.steps.map((step) => {
+        const items = checklist.items.filter((item) => item.step === step.number);
+        if (items.length === 0) return null;
+        const label = `Step ${step.number} · ${step.name}`;
+        return (
+          <section key={step.number} aria-label={label}>
+            <h2 className="font-display text-lg">{label}</h2>
+            <ul className="divide-y divide-hairline">
+              {items.map((item, index) => (
+                <Item key={`${item.step}:${index}:${item.text}`} item={item} />
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </section>
+  );
+}
+
 /** The app's first screen: where the plan stands, what to do next, and the gaps. */
 export function ChecklistView() {
   const checklist = useAtomValue(checklistAtom);
@@ -41,7 +63,6 @@ export function ChecklistView() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
       <h1 className="font-display text-2xl">{heading(checklist)}</h1>
-      <StepList checklist={checklist} className="flex flex-wrap gap-1" />
       {(checklist.primary || checklist.secondary.length > 0) && (
         <section aria-label="Next" className="flex flex-wrap items-start gap-3">
           {checklist.primary && <OfferButton offer={checklist.primary} />}
@@ -50,15 +71,7 @@ export function ChecklistView() {
           ))}
         </section>
       )}
-      {checklist.items.length > 0 && (
-        <section aria-label="Gaps">
-          <ul className="divide-y divide-hairline">
-            {checklist.items.map((item, index) => (
-              <Item key={`${item.step}:${index}:${item.text}`} item={item} />
-            ))}
-          </ul>
-        </section>
-      )}
+      {checklist.items.length > 0 && <Gaps checklist={checklist} />}
     </div>
   );
 }

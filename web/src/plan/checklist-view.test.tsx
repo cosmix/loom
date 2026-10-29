@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -26,10 +26,42 @@ describe("ChecklistView", () => {
   it("renders the current step, the primary offer and the gaps", () => {
     renderWith(<ChecklistView />, (store) => store.set(checklistAtom, checklist));
     expect(screen.getByRole("heading", { name: "Step 2 of 2: Product spec" })).toBeTruthy();
-    expect(screen.getByRole("listitem", { current: "step" }).textContent).toContain("Product spec");
+    expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Next" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Gaps" })).toBeTruthy();
     expect(screen.getAllByText("Write section 05").length).toBeGreaterThan(0);
     expect(screen.getByText("section 05: Example")).toBeTruthy();
     expect(screen.getByText("doc/product/section_05.md")).toBeTruthy();
+  });
+
+  it("groups gaps under their steps in step order and skips steps without items", () => {
+    renderWith(<ChecklistView />, (store) =>
+      store.set(checklistAtom, {
+        ...checklist,
+        steps: [...checklist.steps, { number: 3, name: "Engineering spec", mark: "gap" }],
+        items: [
+          checklist.items[1]!,
+          checklist.items[0]!,
+          { step: 1, text: "Confirm the vision", path: null, offer: null },
+        ],
+      }),
+    );
+    const gaps = within(screen.getByRole("region", { name: "Gaps" }));
+    expect(gaps.getAllByRole("heading", { level: 2 }).map((node) => node.textContent)).toEqual([
+      "Step 1 · Vision",
+      "Step 2 · Product spec",
+    ]);
+    const vision = within(gaps.getByRole("region", { name: "Step 1 · Vision" }));
+    expect(vision.getAllByRole("listitem").map((node) => node.textContent)).toEqual([
+      expect.stringContaining("product vision"),
+      expect.stringContaining("Confirm the vision"),
+    ]);
+    expect(vision.queryByText("section 05: Example")).toBeNull();
+    const product = within(gaps.getByRole("region", { name: "Step 2 · Product spec" }));
+    expect(product.getAllByRole("listitem")).toHaveLength(1);
+    expect(product.getByText("section 05: Example")).toBeTruthy();
+    expect(product.getByText("doc/product/section_05.md")).toBeTruthy();
+    expect(product.queryByText("product vision")).toBeNull();
   });
 
   it("never nests an offer button inside an inline span", () => {

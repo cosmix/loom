@@ -4,6 +4,9 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router";
 
+import "@fontsource-variable/literata";
+import "@fontsource-variable/piazzolla";
+import "@fontsource-variable/source-serif-4";
 import "@/index.css";
 import "@/plan/plan.css";
 import { ThemeProvider } from "@/aurora-ui/theme/ThemeProvider";
