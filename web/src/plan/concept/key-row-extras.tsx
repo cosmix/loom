@@ -1,6 +1,7 @@
 import type { ConceptPage } from "@/plan/api/schema-concept";
+import { PendingApprovalNotice } from "@/plan/summaries/approval-notice";
 
-/** Plan 10 adds the above-budget notice to the key row here; props stay exactly `{ page }`. */
+/** Hosts the above-budget approval notice in the key row; props stay exactly `{ page }`. */
 export function KeyRowExtras(_props: { page: ConceptPage }) {
-  return null;
+  return <PendingApprovalNotice />;
 }

@@ -2,6 +2,7 @@ import type { JSX } from "react";
 
 import { ChatSheetButton } from "@/plan/chat/panel";
 import { ChangedSinceControl } from "@/plan/review/changed-since";
+import { SummaryStatus } from "@/plan/summaries/summary-status";
 
 /**
  * Header slot for controls later plans add (plans 9, 10 and 11 each add one
@@ -12,6 +13,7 @@ export function HeaderExtras({ compact }: { compact: boolean }): JSX.Element {
   return (
     <>
       <ChangedSinceControl compact={compact} />
+      <SummaryStatus compact={compact} />
       {compact ? <ChatSheetButton /> : null}
     </>
   );
