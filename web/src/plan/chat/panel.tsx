@@ -1,6 +1,6 @@
 import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
 import { Dialog } from "radix-ui";
-import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useRef, type JSX, type KeyboardEvent, type PointerEvent } from "react";
 
 import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 import { useMediaQuery } from "@/lib/use-media-query";
@@ -8,7 +8,9 @@ import type { SessionView } from "@/plan/api/schema-chat";
 import { pendingAttachmentsAtom } from "@/plan/attachments";
 import { useReviewLive } from "@/plan/review/live";
 import { registerSendToAuthor } from "@/plan/review/send-to-author";
+import { AnnouncerRegions, ChatAnnouncer } from "./announcer";
 import { useAttention } from "./attention";
+import { BriefDialogHost } from "./brief-dialog";
 import { ComposerArea } from "./composer";
 import { ConnectionBanner, useConnectionDim } from "./connection-banner";
 import { EndChatMenuItem, useCanEndChat } from "./end-chat";
@@ -19,8 +21,10 @@ import { registerAuthoringOffers } from "./offer-handlers";
 import { panelCollapsedAtom, panelWidthAtom } from "./prefs";
 import { RunHeader } from "./run-header";
 import { chatSheetOpenAtom } from "./sheet-state";
+import { shownSessionAtom } from "./shown-session";
 import { NewChatButton } from "./start-chat";
 import { StateLine } from "./state-line";
+import { useQueueRefill } from "./stop-control";
 import { useComposerShortcut } from "./composer-hooks";
 import { useSuggestionFeed } from "./suggestion-cards";
 import { Transcript } from "./transcript";
@@ -42,11 +46,17 @@ const STATE_NAME: Record<SessionView["state"], string> = {
 };
 const BUSY_STATES: ReadonlySet<SessionView["state"]> = new Set(["starting", "working", "ending"]);
 
-/** Mounts once beside the routed page so offers, Send to author and live review work at every width. */
-export function ChatRegistrations(): null {
+/**
+ * Mounts once beside the routed page so offers, Send to author, live review, the announcements
+ * and the Brief dialog work at every width, with the panel collapsed or the sheet closed.
+ */
+export function ChatRegistrations(): JSX.Element {
   const store = useStore();
+  const desktop = useMediaQuery(DESKTOP);
+  const sheetOpen = useAtomValue(chatSheetOpenAtom);
   useReviewLive();
   useSuggestionFeed();
+  useQueueRefill();
   useComposerShortcut();
   useEffect(() => {
     const starter = createOfferStarter(store);
@@ -58,7 +68,12 @@ export function ChatRegistrations(): null {
       starter.dispose();
     };
   }, [store]);
-  return null;
+  return (
+    <>
+      <ChatAnnouncer inSheet={!desktop && sheetOpen} />
+      <BriefDialogHost />
+    </>
+  );
 }
 
 /** A refused offer start, shown inside the panel's landmark until dismissed. */
@@ -78,7 +93,7 @@ function OfferError() {
 }
 
 function ChatGlyph() {
-  const session = useAtomValue(sessionAtom);
+  const session = useAtomValue(shownSessionAtom);
   const permissions = useAtomValue(pendingPermissionsAtom);
   const state = session?.state;
   const label = state ? STATE_NAME[state] : "No chat";
@@ -116,7 +131,7 @@ function PermissionBadge() {
 
 /** An aria-label replaces a button's contents, so the state and counts are spelled into the name. */
 function useChatButtonName(verb: string, attachments = 0): string {
-  const session = useAtomValue(sessionAtom);
+  const session = useAtomValue(shownSessionAtom);
   const decisions = useAtomValue(pendingPermissionsAtom).length;
   const parts = [verb];
   if (decisions > 0) parts.push(`${decisions} decision${decisions === 1 ? "" : "s"} waiting`);
@@ -213,6 +228,8 @@ function useResizeDrag(width: number, setWidth: (width: number) => void) {
 function ResizeHandle() {
   const [width, setWidth] = useAtom(panelWidthAtom);
   const handlers = useResizeDrag(width, setWidth);
+  // A drag stores fractional rem; the announced value is a whole number.
+  const rem = Math.round(width);
   return (
     <div
       role="separator"
@@ -221,8 +238,8 @@ function ResizeHandle() {
       tabIndex={0}
       aria-valuemin={20}
       aria-valuemax={40}
-      aria-valuenow={width}
-      aria-valuetext={`${width} rem`}
+      aria-valuenow={rem}
+      aria-valuetext={`${rem} rem`}
       className="chat-resize-handle"
       style={{ touchAction: "none" }}
       {...handlers}
@@ -246,14 +263,20 @@ function ChatMenu() {
 
 function PanelBody({ sheet }: { sheet: boolean }) {
   const session = useAtomValue(sessionAtom);
+  const shown = useAtomValue(shownSessionAtom);
+  // A failed or ended chat carries New chat in the composer, so the header would repeat it.
+  const live = shown !== null && shown.state !== "failed" && shown.state !== "ended";
   const setCollapsed = useSetAtom(panelCollapsedAtom);
   const setOpen = useSetAtom(chatSheetOpenAtom);
   const dim = useConnectionDim();
   return (
     <>
       <header className="flex items-center gap-2 p-3 text-[13px]">
-        <h2 className="mr-auto font-medium">Chat</h2>
-        {session && <NewChatButton />}
+        {/* The focus fallback for dialogs whose opener has left the page (see BriefDialog). */}
+        <h2 className="mr-auto font-medium" tabIndex={-1} data-chat-heading>
+          Chat
+        </h2>
+        {live && <NewChatButton />}
         <ChatMenu />
         <button
           type="button"
@@ -267,7 +290,7 @@ function PanelBody({ sheet }: { sheet: boolean }) {
       <OfferError />
       {session && <RunHeader session={session} />}
       <ConnectionBanner />
-      <div className={`flex min-h-0 flex-1 flex-col${dim ? " chat-dim" : ""}`}>
+      <div className="flex min-h-0 flex-1 flex-col">
         {dim && <p className="px-3 text-[12px] text-muted-foreground">{dim}</p>}
         <Transcript />
       </div>
@@ -297,6 +320,8 @@ function ChatSheet() {
             <Dialog.Title className="sr-only">Chat</Dialog.Title>
             <PanelBody sheet />
           </aside>
+          {/* The modal hides the page's regions from assistive tech; see ChatAnnouncer. */}
+          <AnnouncerRegions />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

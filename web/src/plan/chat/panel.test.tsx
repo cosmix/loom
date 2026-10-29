@@ -1,7 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider, createStore } from "jotai";
-import type { ReactNode } from "react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import fixture from "@/plan/api/fixtures/chat-snapshot.json";
 import hello from "@/plan/api/fixtures/hello.json";
@@ -16,18 +15,19 @@ import {
 import { HeaderExtras } from "@/plan/header-extras";
 import { offerAction } from "@/plan/offers/actions";
 import { OfferButton } from "@/plan/offers/offer-button";
-import {
-  authoringAtom,
-  connectionAtom,
-  serverInfoAtom,
-  stoppingAtom,
-  youAtom,
-} from "@/plan/state/atoms";
+import { connectionAtom, serverInfoAtom, stoppingAtom, youAtom } from "@/plan/state/atoms";
 import { useReviewLive } from "@/plan/review/live";
 import { startChat } from "./commands";
 import { useCanEndChat } from "./end-chat";
 import { snapshotAtom, useChatSocket } from "./model";
-import { ChatPanel, ChatRegistrations, ChatSheetButton } from "./panel";
+import {
+  installPanelLifecycle,
+  media,
+  mount,
+  permissionSnapshot,
+  pointerSetup,
+  storeFor,
+} from "./panel-test-kit";
 import { useSuggestionFeed } from "./suggestion-cards";
 import chatCss from "./chat.css?raw";
 import { panelCollapsedAtom, panelWidthAtom } from "./prefs";
@@ -70,7 +70,6 @@ vi.mock("@/plan/review/changed-since", () => ({
 
 type Store = ReturnType<typeof createStore>;
 const offerView = offerViewSchema.parse(hello.checklist.primary);
-let serial = 0;
 const draft: AttachmentDraft = {
   kind: "source",
   path: "doc/product/section_10.md",
@@ -82,75 +81,7 @@ const draft: AttachmentDraft = {
 };
 const rect = { top: 10, left: 10, right: 60, bottom: 30, width: 50, height: 20 } as DOMRect;
 
-function media(desktop: boolean) {
-  vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
-    matches: query === "(min-width: 1024px)" ? desktop : false,
-    media: query,
-    onchange: null,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    dispatchEvent: () => true,
-  }));
-}
-
-function storeFor() {
-  const store = createStore();
-  store.set(serverInfoAtom, { ...hello.server, project_key: `panel-${++serial}`, read_only: [] });
-  store.set(youAtom, hello.you);
-  store.set(authoringAtom, { holder: { ...hello.you, away_since: null, frees_at: null } });
-  store.set(connectionAtom, { phase: "open", everOpen: true, lastMessageAt: Date.now() });
-  return store;
-}
-
-function mount(store = storeFor(), extra?: ReactNode) {
-  const view = render(
-    <Provider store={store}>
-      <ChatRegistrations />
-      <ChatSheetButton />
-      <ChatPanel />
-      {extra}
-    </Provider>,
-  );
-  return { store, ...view };
-}
-
-function permissionSnapshot(count = 1) {
-  const snapshot = chatSnapshotSchema.parse(fixture);
-  const permission = snapshot.turns
-    .flatMap((turn) => turn.items)
-    .find((item) => item.type === "permission");
-  if (!permission) throw new Error("Fixture needs a permission");
-  snapshot.turns[0].items = Array.from({ length: count }, (_, index) => ({
-    ...permission,
-    id: `permission-${index}`,
-    request_id: `request-${index}`,
-    tool: index === 0 ? "Bash" : "Edit",
-    status: "pending" as const,
-  }));
-  return snapshot;
-}
-
-beforeEach(() => {
-  media(true);
-  vi.clearAllMocks();
-});
-
-afterEach(() => {
-  cleanup();
-  localStorage.clear();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
-
-function pointerSetup() {
-  class TestPointerEvent extends MouseEvent {
-    pointerId = 1;
-  }
-  vi.stubGlobal("PointerEvent", TestPointerEvent);
-  document.documentElement.style.fontSize = "16px";
-}
+installPanelLifecycle();
 
 it("drag clamps to 20 and 40rem and persists", () => {
   pointerSetup();
@@ -274,16 +205,16 @@ it("stopping", () => {
   expect(screen.getByText("loom plan is stopping. The session is writing its notes.")).toBeTruthy();
 });
 
-it("dims transcript with last update", () => {
+it("a stale transcript is marked by its Last update line, with no dimming class", () => {
   const { store } = mount();
   disconnect(store);
-  expect(screen.getByRole("log").parentElement?.classList.contains("chat-dim")).toBe(true);
+  const wrapper = screen.getByRole("log").parentElement!;
   expect(screen.getByText(/Last update 30s ago/)).toBeTruthy();
+  expect(wrapper.className).not.toContain("dim");
   act(() =>
     store.set(connectionAtom, { phase: "open", everOpen: true, lastMessageAt: Date.now() }),
   );
   expect(screen.queryByText(/Last update/)).toBeNull();
-  expect(screen.getByRole("log").parentElement?.classList.contains("chat-dim")).toBe(false);
 });
 
 it("two pending permissions name both tools and count 2", () => {

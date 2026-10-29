@@ -56,7 +56,8 @@ pub fn parse_generated(review: &str) -> Option<DateTime<Utc>> {
 #[derive(Debug)]
 pub(crate) struct BuiltInputs {
     root: PathBuf,
-    /// The section path relative to `doc/`; empty when there are no plans.
+    /// The repository-relative section path (`doc/...`, as `check_relpath_syntax` returns it);
+    /// empty when there are no plans.
     rel: String,
     plans: Vec<PlanInput>,
 }

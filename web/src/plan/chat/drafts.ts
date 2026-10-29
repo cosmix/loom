@@ -36,6 +36,20 @@ const draftSchema = z.strictObject({
 });
 const emptyDraft: Draft = { text: "", attachments: [] };
 
+export const MAX_ATTACHMENTS = 10;
+export const ATTACHMENT_LIMIT_NOTE = `At most ${MAX_ATTACHMENTS} attachments per message`;
+
+/** The saved attachments, then each pending one that is not already saved (compared by content). */
+export function mergeAttachments(
+  saved: AttachmentDraft[],
+  pending: AttachmentDraft[],
+): AttachmentDraft[] {
+  return [
+    ...saved,
+    ...pending.filter((item) => !saved.some((s) => JSON.stringify(s) === JSON.stringify(item))),
+  ];
+}
+
 const draftStorage = validatedStorage(draftSchema);
 const drafts = new Map<string, ReturnType<typeof atomWithStorage<Draft>>>();
 

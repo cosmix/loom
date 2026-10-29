@@ -24,7 +24,11 @@ export type ImplementedBy = {
 
 export const sectionFile = /^doc\/product\/section_\d+\.md$/;
 
-/** One `implemented-by` request per turn footer, shared by every changed section file. */
+/**
+ * One `implemented-by` request per turn footer, shared by every changed section file. A reload on
+ * reconnect or retry keeps the last `sections` on show: resetting them would swap the plans for a
+ * placeholder and move the transcript under the reader.
+ */
 export function useImplementedBy(enabled: boolean): ImplementedBy {
   const [sections, setSections] = useState<ImplementedBy["sections"]>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +38,6 @@ export function useImplementedBy(enabled: boolean): ImplementedBy {
     if (!enabled) return;
     let active = true;
     setError(null);
-    setSections(null);
     void getImplementedBy().then((result) => {
       if (!active) return;
       if (result.ok) setSections(result.value.sections);
@@ -47,10 +50,16 @@ export function useImplementedBy(enabled: boolean): ImplementedBy {
   return { sections, error, retry: () => setAttempt((value) => value + 1) };
 }
 
-function planPath(entries: TreeEntry[], slug: string): string | undefined {
+/** A run review (`REVIEW-…-PLAN-<slug>.md`) shares the plan's suffix but is not the plan. */
+function isPlanFile(path: string | null, slug: string): path is string {
+  const name = path?.split("/").at(-1);
+  if (!name || name.startsWith("REVIEW-")) return false;
+  return name === `PLAN-${slug}.md` || name.endsWith(`-PLAN-${slug}.md`);
+}
+
+export function planPath(entries: TreeEntry[], slug: string): string | undefined {
   for (const entry of entries) {
-    if (entry.path?.endsWith(`/PLAN-${slug}.md`) || entry.path?.endsWith(`-PLAN-${slug}.md`))
-      return entry.path;
+    if (isPlanFile(entry.path, slug)) return entry.path;
     const nested = planPath(entry.children, slug);
     if (nested) return nested;
   }
@@ -184,7 +193,12 @@ export function ImplementingPlans({ path, loaded }: { path: string; loaded: Impl
         action={{ label: "Retry", onClick: retry }}
       />
     );
-  if (!sections) return <LoadState state="loading" title="Loading implementing plans" />;
+  if (!sections)
+    return (
+      <p role="status" className="ml-3 text-[13px] text-muted-foreground">
+        Loading implementing plans…
+      </p>
+    );
   return (
     <div className="ml-3 space-y-2">
       {[...new Set(plans.map((plan) => plan.state))].map((state) => (

@@ -116,7 +116,9 @@ pub(crate) struct WalkEntry {
     pub via_symlink: bool,
 }
 
-fn is_editor_temporary(name: &str) -> bool {
+/// A file or directory name the walk skips: dot-names and editor temporaries. Request paths
+/// that read outside discovery (git reads at a commit) apply it to every component.
+pub(crate) fn is_editor_temporary(name: &str) -> bool {
     name.starts_with('.') || name.ends_with('~') || name.ends_with(".swp")
 }
 

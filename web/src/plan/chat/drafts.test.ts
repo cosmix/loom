@@ -5,7 +5,7 @@ import helloJson from "@/plan/api/fixtures/hello.json";
 import { planMessageSchema } from "@/plan/api/schema";
 import type { AttachmentDraft } from "@/plan/attachments/types";
 import { serverInfoAtom } from "@/plan/state/atoms";
-import { draftAtom } from "./drafts";
+import { draftAtom, mergeAttachments } from "./drafts";
 import { storageFullAtom, storageKey } from "./storage";
 
 const hello = planMessageSchema.parse(helloJson);
@@ -171,4 +171,12 @@ it("drops invalid drafts delivered by storage events", () => {
   );
 
   expect(store.get(draftAtom)).toEqual(emptyDraft);
+});
+
+it("merging keeps the saved attachments, then only the pending ones not already saved", () => {
+  const copy = JSON.parse(JSON.stringify(attachments[0])) as AttachmentDraft;
+  const extra: AttachmentDraft = { ...attachments[0], text: "Another passage" };
+
+  expect(mergeAttachments(attachments, [copy, extra])).toEqual([...attachments, extra]);
+  expect(mergeAttachments([], [extra])).toEqual([extra]);
 });

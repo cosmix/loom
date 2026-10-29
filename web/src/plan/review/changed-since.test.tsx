@@ -1,17 +1,27 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { Provider, createStore } from "jotai";
-import { MemoryRouter } from "react-router";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
 
-import docFixture from "@/plan/api/fixtures/files-doc.json";
-import serverFixture from "@/plan/api/fixtures/server-info.json";
-import { serverInfoSchema } from "@/plan/api/schema";
 import { storageKey } from "@/plan/chat/storage";
 import { openDiff } from "@/plan/diff/open-diff";
-import { planSocketAtom, serverInfoAtom } from "@/plan/state/atoms";
-import { ChangedSinceControl } from "./changed-since";
-import { checkpointAtom, type Checkpoint } from "./checkpoint";
-import { hashesAtom, useReviewLive } from "./live";
+import { serverInfoAtom } from "@/plan/state/atoms";
+import { checkpointAtom } from "./checkpoint";
+import {
+  A,
+  ADDED,
+  GONE,
+  REF,
+  SAME,
+  checkpoint,
+  compareRef,
+  current,
+  failures,
+  fetchMock,
+  installChangedSinceLifecycle,
+  mount,
+  openList,
+  replies,
+  server,
+} from "./changed-since-test-kit";
 
 vi.mock("@/plan/diff/diff-view", () => ({
   DiffView: ({ before, after }: { before: string | null; after: string | null }) => (
@@ -21,112 +31,7 @@ vi.mock("@/plan/diff/diff-view", () => ({
   ),
 }));
 
-const A = "doc/product/a.md";
-const ADDED = "doc/product/added.md";
-const GONE = "doc/product/gone.md";
-const SAME = "doc/product/same.md";
-const REF = "doc/product/ref-only.md";
-const checkpoint: Checkpoint = {
-  commit: "c1",
-  hashes: { [A]: "old", [GONE]: "gone", [SAME]: "same" },
-};
-const current = { head: "c2", docs: { [A]: "new", [ADDED]: "added", [SAME]: "same" } };
-const server = serverInfoSchema.parse(serverFixture);
-let replies: Record<string, unknown>;
-let failures: Record<string, { status: number; message: string }>;
-let fetchMock: ReturnType<typeof vi.fn>;
-let project = 0;
-
-beforeEach(() => {
-  localStorage.clear();
-  failures = {};
-  replies = {
-    "/api/hashes": current,
-    "/api/open-questions": { counts: {} },
-    "/api/compare?commit=c1": { commit: "c1", available: true, docs: [] },
-    "/api/ref?name=main": { commit: "base" },
-    "/api/compare?commit=base": {
-      commit: "base",
-      available: true,
-      docs: [{ path: REF, change: "changed" }],
-    },
-  };
-  fetchMock = vi.fn(async (input: string) => {
-    const url = new URL(input, "http://localhost");
-    const failed = failures[input];
-    if (failed)
-      return new Response(JSON.stringify({ error: "refused", message: failed.message }), {
-        status: failed.status,
-      });
-    let body = replies[input];
-    if (url.pathname === "/api/at-commit") {
-      body = { path: url.searchParams.get("path"), text: "committed text" };
-    }
-    if (url.pathname === "/api/doc") {
-      const path = `doc/${url.searchParams.get("path")}`;
-      if (path === GONE) return new Response("{}", { status: 404 });
-      body = { ...docFixture, path, text: "current text", hash: "new" };
-    }
-    return new Response(JSON.stringify(body ?? {}));
-  });
-  vi.stubGlobal("fetch", fetchMock);
-});
-
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-  localStorage.clear();
-});
-
-function Live() {
-  useReviewLive();
-  return null;
-}
-
-function mount(
-  options: { checkpoint?: Checkpoint | null; compact?: boolean; live?: boolean } = {},
-) {
-  const store = createStore();
-  const projectKey = `changed-since-${++project}`;
-  store.set(serverInfoAtom, { ...server, project_key: projectKey });
-  if (options.checkpoint !== null) store.set(checkpointAtom, options.checkpoint ?? checkpoint);
-  if (!options.live) store.set(hashesAtom, current);
-  const listeners = new Set<() => void>();
-  const socket = {
-    send: vi.fn(() => true),
-    subscribe: vi.fn(() => () => {}),
-    dispose: vi.fn(),
-    onResync: (handler: () => void) => {
-      listeners.add(handler);
-      return () => {
-        listeners.delete(handler);
-      };
-    },
-  };
-  store.set(planSocketAtom, socket);
-  const view = render(
-    <Provider store={store}>
-      <MemoryRouter>
-        {options.live && <Live />}
-        <ChangedSinceControl compact={options.compact ?? false} />
-      </MemoryRouter>
-    </Provider>,
-  );
-  return { store, projectKey, listeners, view };
-}
-
-async function openList() {
-  fireEvent.click(await screen.findByRole("button", { name: /Changed since you looked/ }));
-  await screen.findByRole("button", { name: `Show diff for ${A}` });
-  return screen.getByRole("list", { name: "Changed documents" });
-}
-
-async function compareRef() {
-  fireEvent.change(screen.getByLabelText("Compare with ref"), { target: { value: "main" } });
-  fireEvent.click(screen.getByRole("button", { name: "Compare" }));
-  return screen.findByText(REF);
-}
-
+installChangedSinceLifecycle();
 it("lists added, changed and removed documents, never unchanged ones", async () => {
   mount();
   const list = await openList();
@@ -273,16 +178,6 @@ it("first-visit checkpoint set silently", async () => {
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-it("mark all seen", async () => {
-  const { store } = mount();
-  await openList();
-
-  fireEvent.click(screen.getByRole("button", { name: "Mark all seen" }));
-
-  expect(store.get(checkpointAtom)).toEqual({ commit: "c2", hashes: current.docs });
-  expect(await screen.findByText("No changed documents")).toBeTruthy();
-});
-
 it("resolveRef refusal shown", async () => {
   failures["/api/ref?name=main"] = { status: 404, message: "The ref does not name a known commit" };
   mount();
@@ -325,4 +220,31 @@ it("a failed diff leaves the document unseen", async () => {
 
   expect(await screen.findByText("Cannot read old text")).toBeTruthy();
   expect(store.get(checkpointAtom)).toEqual(checkpoint);
+});
+
+it("closing the dialog returns focus to the control that opened it", async () => {
+  mount();
+  const opener = await screen.findByRole("button", { name: /Changed since you looked/ });
+  fireEvent.click(opener);
+  await screen.findByRole("button", { name: `Show diff for ${A}` });
+
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(opener));
+});
+
+it("closing after mark all seen puts focus on the page main, not the body", async () => {
+  const main = document.createElement("main");
+  document.body.append(main);
+  mount();
+  await openList();
+  fireEvent.click(screen.getByRole("button", { name: "Mark all seen" }));
+  await screen.findByText("No changed documents");
+
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(main));
+  main.remove();
 });

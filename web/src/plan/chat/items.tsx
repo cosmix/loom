@@ -17,7 +17,6 @@ import { openDocAtom, treeAtom } from "@/plan/files/atoms";
 import { docPathsOf } from "@/plan/files/tree";
 import { CopyButton } from "@/plan/markdown/copy-button";
 import { Markdown, parseMarkdown } from "@/plan/markdown/markdown";
-import { LoadState } from "@/plan/ui/load-state";
 
 type ItemOf<T extends Item["type"]> = Extract<Item, { type: T }>;
 type Destination = Extract<Nodes, { type: "link" | "image" | "definition" }>;
@@ -103,15 +102,10 @@ function OpeningLabel({ turn }: { turn: Turn }): JSX.Element {
       ? snapshot.previous.session
       : snapshot.session;
   const brief = useSessionBrief(session?.id ?? null);
-  if (!session) return <Untrusted text="Opening message" />;
-  if (brief.status === "ready") return <Untrusted text={brief.brief.label} />;
-  const failed = brief.status !== "loading";
-  return (
-    <LoadState
-      state={failed ? "error" : "loading"}
-      title={failed ? "Opening message label unavailable" : "Loading opening message label"}
-    />
-  );
+  if (session && brief.status === "ready") return <Untrusted text={brief.brief.label} />;
+  // Inline text, never a block: this sits in a message header, and a placeholder taller than the
+  // line would push the whole transcript around each time a label loads.
+  return <Untrusted text="Opening message" />;
 }
 
 function DeliveryState({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JSX.Element | null {
@@ -133,7 +127,7 @@ function UserItem({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JSX.Ele
   const collapsed = item.origin !== null && !expanded;
   const shown = collapsed ? (item.text.split(/\r\n?|\n/, 1)[0] ?? "") : item.text;
   return (
-    <div className="group/message ml-auto max-w-[85%] space-y-1 font-sans text-sm leading-normal">
+    <div className="group/message ml-auto w-fit max-w-[85%] space-y-1 font-sans text-sm leading-normal">
       <div className="space-y-2 rounded-lg bg-muted px-3 py-2">
         {item.origin !== null && (
           <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -200,11 +194,13 @@ function TextItem({ item, turn }: { item: ItemOf<"text">; turn: Turn }): JSX.Ele
 }
 
 function ThinkingItem({ item }: { item: ItemOf<"thinking"> }): JSX.Element {
-  // Transcript merges consecutive markers before passing the item here.
-  const duration = item.duration_ms ?? 0;
+  // Transcript merges consecutive markers before passing the item here. A marker without a
+  // duration says only that the model thought: "0s" would claim a measurement nobody made.
   return (
     <p className="text-xs text-muted-foreground">
-      Thought for {Number((duration / 1000).toFixed(1))}s
+      {item.duration_ms === null
+        ? "Thought"
+        : `Thought for ${Number((item.duration_ms / 1000).toFixed(1))}s`}
     </p>
   );
 }

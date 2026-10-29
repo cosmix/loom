@@ -1,5 +1,5 @@
 import { getDefaultStore, useAtomValue, useStore } from "jotai";
-import { useId } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef } from "react";
 
 import type { Attachment } from "@/plan/api/schema-chat";
 import {
@@ -14,6 +14,7 @@ import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { PendingChips } from "./chips";
 import { composerBlock } from "./composer-gate";
 import {
+  focusComposerAtom,
   useClearFocusRequest,
   useComposerBox,
   useDeliveredAttachments,
@@ -29,8 +30,10 @@ import {
   sessionAtom,
 } from "./model";
 import { CONTROLS } from "./model-identity";
+import { NewChatOffers } from "./new-chat-offers";
 import { PermissionCard } from "./permission-card";
 import { QueueStrip } from "./queue-strip";
+import { shownSessionAtom } from "./shown-session";
 import { StopControl } from "./stop-control";
 import { storageFullAtom } from "./storage";
 import { SuggestionCards } from "./suggestion-cards";
@@ -183,14 +186,63 @@ function UnconfirmedSends({
   );
 }
 
+/**
+ * Section 08, Session states: Ended offers "New chat" and the primary offer, Failed "New chat".
+ * Starting the next chat swaps this view for the composer, and the button that held focus leaves
+ * with it; `onLeave` reports whether focus was inside so the text box can take it.
+ */
+function ConcludedChat({
+  ended,
+  onLeave,
+}: {
+  ended: boolean;
+  onLeave: (hadFocus: boolean) => void;
+}) {
+  const area = useRef<HTMLDivElement>(null);
+  // A layout cleanup runs before React detaches the button, so focus can still be read here.
+  useLayoutEffect(() => {
+    const node = area.current;
+    return () => onLeave(!!node?.contains(document.activeElement));
+  }, [onLeave]);
+  return (
+    <div ref={area} className="flex flex-wrap items-center gap-2">
+      <NewChatOffers offer={ended} />
+    </div>
+  );
+}
+
+type View = "read-only" | "concluded" | "composer";
+
+/**
+ * Moves focus into the text box that replaces the concluded view when focus was on that view's
+ * button. The request is the one the `c` shortcut makes; the composer takes it as it mounts.
+ * Returns the `onLeave` callback for ConcludedChat.
+ */
+function useFocusHandoff(view: View): (hadFocus: boolean) => void {
+  const store = useStore();
+  const owed = useRef(false);
+  const onLeave = useCallback((hadFocus: boolean) => {
+    owed.current = hadFocus;
+  }, []);
+  useEffect(() => {
+    const due = owed.current;
+    owed.current = false;
+    if (due && view === "composer") store.set(focusComposerAtom, true);
+  }, [view, store]);
+  return onLeave;
+}
+
 export function ComposerArea() {
   useClearFocusRequest();
   const canAuthor = useAtomValue(canAuthorAtom);
   const authoring = useAtomValue(authoringAtom);
   const server = useAtomValue(serverInfoAtom);
-  const session = useAtomValue(sessionAtom);
+  const state = useAtomValue(shownSessionAtom)?.state;
   const permissions = useAtomValue(pendingPermissionsAtom);
   const viewer = !!server?.read_only.length || (!canAuthor && !!authoring?.holder);
+  const concluded = state === "ended" || state === "failed";
+  const view: View = viewer ? "read-only" : concluded ? "concluded" : "composer";
+  const onLeave = useFocusHandoff(view);
   return (
     <div className="flex min-h-0 shrink-0 flex-col gap-2 border-t border-border p-3 font-sans">
       <div className="max-h-[33vh] min-h-0 overflow-y-auto space-y-2">
@@ -202,10 +254,10 @@ export function ComposerArea() {
         )}
         <SuggestionCards />
       </div>
-      {viewer ? (
+      {view === "read-only" ? (
         <ReadOnlyLine />
-      ) : session?.state === "ended" ? (
-        <p className="text-xs text-muted-foreground">Chat ended. Start a new chat to continue.</p>
+      ) : view === "concluded" ? (
+        <ConcludedChat ended={state === "ended"} onLeave={onLeave} />
       ) : (
         <ComposerInput />
       )}

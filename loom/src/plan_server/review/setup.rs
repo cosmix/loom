@@ -1,14 +1,16 @@
 //! Setup: shared state, holder-change drops, reconnect replay and open-question broadcasts.
 
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
 
 use crate::plan_server::authoring::AuthoringEvent;
 use crate::plan_server::context::PlanContext;
+use crate::plan_server::ids::BrowserId;
 use crate::plan_server::wire::message::PlanMessage;
 use crate::plan_server::wire::review::ReviewMessage;
 
 use super::questions::open_question_counts;
-use super::state::ReviewState;
+use super::state::{lock, ReviewState};
+use super::suggest::Delivery;
 
 pub(super) fn install(ctx: &Arc<PlanContext>) {
     let state = Arc::new(ReviewState {
@@ -34,19 +36,38 @@ fn follow_authoring(ctx: &Arc<PlanContext>, state: Arc<ReviewState>) {
             return;
         };
         let deliveries = lock(&state.suggestions).drop_for_holder_change();
+        // The authoring state changes before subscribers run, so `suggest` can have sent a card
+        // to the new holder in between. Read the holder after the drain, which waited for any
+        // such `suggest` to release the box.
+        let holder = ctx.authoring().holder_browser();
         for delivery in deliveries {
-            let Some(id) = delivery.message["id"].as_str() else {
-                continue;
-            };
-            let browser = lock(&state.senders).remove(id);
-            let Some(browser) = browser else {
-                continue;
-            };
-            if let Ok(message) = serde_json::from_value::<PlanMessage>(delivery.message) {
-                ctx.hub().send_to_browser(&browser, &message);
-            }
+            send_dropped(&ctx, &state, holder.as_ref(), delivery);
         }
     }));
+}
+
+/// Tell the sender a suggestion was dropped, and the current holder too so it removes a card it
+/// may already hold; a holder that never had the card ignores the status. Each browser gets it
+/// once. The frame carries the suggestion id only, never a cookie value.
+fn send_dropped(
+    ctx: &PlanContext,
+    state: &ReviewState,
+    holder: Option<&BrowserId>,
+    delivery: Delivery,
+) {
+    let Some(id) = delivery.message["id"].as_str() else {
+        return;
+    };
+    let sender = lock(&state.senders).remove(id);
+    let Ok(message) = serde_json::from_value::<PlanMessage>(delivery.message) else {
+        return;
+    };
+    if let Some(sender) = &sender {
+        ctx.hub().send_to_browser(sender, &message);
+    }
+    if let Some(holder) = holder.filter(|holder| sender.as_ref() != Some(*holder)) {
+        ctx.hub().send_to_browser(holder, &message);
+    }
 }
 
 fn replay_pending(ctx: &Arc<PlanContext>, state: Arc<ReviewState>) {
@@ -81,8 +102,4 @@ fn follow_counts(ctx: &Arc<PlanContext>, state: Arc<ReviewState>) {
                 counts,
             }));
     }));
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
