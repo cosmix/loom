@@ -7,6 +7,7 @@ use super::concept::ConceptChanged;
 use super::files::{DocChanged, FileTree, ValidationChanged};
 use super::presence::{AuthoringView, PresenceList};
 use super::server::{Refused, ServerInfo, You};
+use super::summaries::{SummaryPanel, SummaryQuestion, SummaryTurnCost};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -42,6 +43,14 @@ pub enum PlanMessage {
     Validation(ValidationChanged),
     /// Concept pages or their sources changed.
     ConceptChanged(ConceptChanged),
+    /// Current summary rebuild progress, costs and quota.
+    SummaryPanel(Box<SummaryPanel>),
+    /// Approval requested before a large summary rebuild.
+    SummaryQuestion(SummaryQuestion),
+    /// A summary rebuild approval question was closed.
+    SummaryQuestionClosed { id: String },
+    /// Summary rebuild costs attributed to an authoring turn.
+    SummaryTurnCost(SummaryTurnCost),
     /// A chat snapshot, delta, command result or returned queue.
     Chat(Box<crate::plan_server::wire::chat::ChatFrame>),
     /// A review suggestion, status, open-question count or refusal.
@@ -121,6 +130,12 @@ mod tests {
                 json!({"type": "server_stopping"}),
             ),
             (
+                PlanMessage::SummaryQuestionClosed {
+                    id: "rebuild-q1".into(),
+                },
+                json!({"type": "summary_question_closed", "id": "rebuild-q1"}),
+            ),
+            (
                 PlanMessage::Refused(Refused {
                     command: "save".into(),
                     reason: "read only".into(),
@@ -145,6 +160,34 @@ mod tests {
                 .unwrap(),
             reading
         );
+    }
+
+    #[test]
+    fn summary_message_fixtures_round_trip_with_their_tags() {
+        let cases = [
+            (
+                "summary_panel",
+                include_str!("../../../../web/src/plan/api/fixtures/summary-panel.json"),
+            ),
+            (
+                "summary_question",
+                include_str!("../../../../web/src/plan/api/fixtures/summary-question.json"),
+            ),
+            (
+                "summary_turn_cost",
+                include_str!("../../../../web/src/plan/api/fixtures/summary-turn-cost.json"),
+            ),
+        ];
+        for (tag, fixture) in cases {
+            let mut expected: Value = serde_json::from_str(fixture).unwrap();
+            expected["type"] = json!(tag);
+            let message: PlanMessage = serde_json::from_value(expected.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&message).unwrap(), expected);
+            assert_eq!(
+                serde_json::from_str::<Value>(&message.to_frame()).unwrap(),
+                expected
+            );
+        }
     }
 
     #[test]

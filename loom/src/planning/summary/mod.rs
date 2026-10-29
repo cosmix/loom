@@ -3,6 +3,7 @@
 pub mod brief;
 pub mod claims;
 pub mod config;
+pub mod cost;
 pub mod engine;
 pub mod evaluate;
 pub mod format;
