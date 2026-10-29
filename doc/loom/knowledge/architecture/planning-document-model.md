@@ -40,11 +40,13 @@ product section; anything else under `doc/product/<feature>/` a product note; `d
 `*metaplan*.md` there a metaplan; a `PLAN-` file in `doc/plans/<feature>/` or its `archive/` a feature plan;
 `doc/plans/<feature>/briefs/<slug>/<file>` a brief. A `PLAN-` file in `doc/plans/` or `doc/plans/archive/` is a
 standalone plan with briefs under `doc/plans/briefs/<slug>/`. A vision, section or metaplan at the top level
-(`doc/product/index.md`, `doc/plans/index.md`, `doc/plans/*metaplan*.md`) raises `needs-feature`. `REVIEW-<plan file>` beside a plan is a run
+(an `index.md` directly under `doc/product` or `doc/plans`, or a `*metaplan*.md` directly under `doc/plans`) raises `needs-feature`. `REVIEW-<plan file>` beside a plan is a run
 review; `doc/loom/knowledge/` is knowledge; the rest other.
 
 `doc_id` is `product/<feature>/index`, `product/<feature>/section_NN`, `plan/<slug>` (the state is not part of the id,
 so an id survives `loom run` renaming the file), else the path without `doc/`.
+
+`DocKind` carries the owning feature (`Option<String>`; `None` for a top-level or standalone document). `slug::plan_feature` and `slug::plan_home` name a plan's feature and its home directory (`doc/plans/<feature>/` or `doc/plans/`, with a trailing `archive` removed); `PlanEntry.feature` is the winning copy's feature and `PlanEntry.conflicts` the copies in other homes. Any code that builds a brief-bundle or archive path takes the home from `plan_home` and never spells `doc/plans/briefs` or `doc/plans/archive` ([why](../mistakes/plan-server-delivery.md#moving-a-path-convention-left-hardcoded-homes-in-the-crate-2026-10-29)).
 
 `plan_slug` strips at most one of `IN_PROGRESS-`, `DONE-`, `RETIRED-` (constants in `fs::plan_lifecycle`, imported, never
 copied) and then requires `PLAN-` and a nonempty remainder. `plan_state`: `RETIRED-` is `Retired`; the archive
@@ -159,11 +161,12 @@ gap, `Ready`, or `ReadyAllDone`. Rules the contracts pin:
   numbered entry heading without a plan file is a `metaplan-entry-without-plan` problem unless it says `no plan file`;
   an unnumbered level-2 heading is prose. Entries without a plan file are left out of step marks, items and
   `WritePlan` offers.
-- Pressure-tested status never makes step 5 a gap (`ItemStatus::Untested`); `Offer::AddPlanToMetaplan` has no target.
+- Pressure-tested status never makes step 5 a gap (`ItemStatus::Untested`); offers exist per feature: `StartVision`, `FixVisionTable`, `WriteSection`, `AddSectionToVision`, `StartMetaplan`, `WritePlan`, `PressureTest`, `DraftAllSections`, `DraftAllPlans`, and `MoveIntoFeature` for a misplaced top-level document (`checklist/offers.rs`).
 
-Problem codes (`problems.rs`): `broken-reference`, `broken-brief-reference`, `doc-missing`, `implements-broken`,
-`implements-duplicate`, `implements-missing`, `metaplan-entry-without-plan`, `missing-title`, `stray-plan-copy`,
-`unlisted-section`, `vision-table-unreadable`. A locked document reports none; a stray copy is reported wherever it is.
+Problem codes (`problems.rs`): `bad-feature-name`, `broken-reference`, `broken-brief-reference`, `doc-missing`, `duplicate-plan-slug`,
+`implements-broken`, `implements-duplicate`, `implements-missing`, `metaplan-entry-foreign-plan`,
+`metaplan-entry-without-plan`, `missing-title`, `needs-feature`, `stray-plan-copy`, `unlisted-section`,
+`vision-table-unreadable`. A locked document reports none; a stray copy is reported wherever it is.
 Cross-reference extraction masks fenced code (`fence_mask`).
 
 ## `loom plan check`

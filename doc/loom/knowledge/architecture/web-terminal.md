@@ -1,6 +1,6 @@
 # Web Terminal
 
-> Terminals
+> Web TTY
 
 ## Enablement and the port-scoped cookie token
 

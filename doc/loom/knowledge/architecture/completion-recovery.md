@@ -1,6 +1,6 @@
 # Completion Recovery
 
-> Attestation
+> Attest
 
 ## A Restart-Sync Brief Must Enumerate Every Post-Build Graph State, Not Catch-All the Rest
 
