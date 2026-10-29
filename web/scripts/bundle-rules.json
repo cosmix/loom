@@ -4,9 +4,15 @@
       "src/plan/**",
       "node_modules/@codemirror/**",
       "node_modules/@lezer/**",
+      "node_modules/@fontsource-variable/source-serif-4/**",
+      "node_modules/@fontsource-variable/literata/**",
+      "node_modules/@fontsource-variable/piazzolla/**",
       "src/plan/editor/codemirror.ts"
     ],
     "forbidText": [
+      "Source Serif 4 Variable",
+      "Literata Variable",
+      "Piazzolla Variable",
       "data-loom-plan",
       "loom-plan-name",
       "/api/share",

@@ -1,0 +1,170 @@
+@layer components {
+  .activity-glyph {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 1em;
+    height: 1em;
+    vertical-align: middle;
+  }
+
+  .activity-glyph > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .activity-glyph[data-kind="summaries"] > .activity-glyph__motion {
+    animation: activity-glyph-summaries 1.2s linear infinite;
+  }
+
+  .activity-glyph .activity-glyph__needle {
+    transform-box: view-box;
+    transform-origin: 12px 15px;
+    animation: activity-glyph-pressure 1.8s ease-in-out infinite;
+  }
+
+  .activity-glyph .activity-glyph__beam {
+    animation: activity-glyph-codex 1.6s ease-in-out infinite;
+  }
+
+  .activity-glyph[data-kind="drafting"] > .activity-glyph__motion {
+    animation: activity-glyph-drafting 1.6s ease-in-out infinite;
+  }
+
+  .activity-glyph .activity-glyph__pulse {
+    position: absolute;
+    inset: 0.1em;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    opacity: 0.45;
+    pointer-events: none;
+    animation: activity-glyph-running 1.6s ease-out infinite;
+  }
+
+  .activity-glyph[data-kind="starting"] > .activity-glyph__motion {
+    animation: activity-glyph-starting 1s linear infinite;
+  }
+
+  .activity-glyph[data-kind="waiting"] {
+    color: var(--tone-warning);
+  }
+
+  .activity-glyph .activity-glyph__led {
+    width: 0.5em;
+    height: 0.5em;
+    border-radius: 50%;
+    background: currentColor;
+    animation: activity-glyph-waiting 2s ease-in-out infinite;
+  }
+
+  .activity-glyph[data-kind="permission"] > .activity-glyph__motion {
+    transform-origin: 50% 20%;
+    animation: activity-glyph-permission 2.4s ease-in-out infinite;
+  }
+
+  .activity-glyph[data-paused="true"],
+  .activity-glyph[data-paused="true"] * {
+    /* Override the more specific per-kind animation shorthands. */
+    animation-play-state: paused !important;
+  }
+}
+
+@keyframes activity-glyph-summaries {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes activity-glyph-pressure {
+  0%,
+  100% {
+    transform: rotate(-55deg);
+  }
+  50% {
+    transform: rotate(55deg);
+  }
+}
+
+@keyframes activity-glyph-codex {
+  0%,
+  100% {
+    transform: translateX(-5px);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes activity-glyph-drafting {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(0.08em, -0.06em);
+  }
+  50% {
+    transform: translate(-0.06em, 0.06em);
+  }
+  75% {
+    transform: translate(0.06em, 0.03em);
+  }
+}
+
+@keyframes activity-glyph-running {
+  from {
+    transform: scale(0.7);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+@keyframes activity-glyph-starting {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes activity-glyph-waiting {
+  0%,
+  100% {
+    transform: scale(0.85);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+@keyframes activity-glyph-permission {
+  0%,
+  30%,
+  100% {
+    transform: rotate(0deg);
+  }
+  5%,
+  15% {
+    transform: rotate(12deg);
+  }
+  10%,
+  20% {
+    transform: rotate(-12deg);
+  }
+  25% {
+    transform: rotate(6deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-glyph,
+  .activity-glyph * {
+    animation: none;
+  }
+}
