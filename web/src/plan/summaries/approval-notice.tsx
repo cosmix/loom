@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import type { SummaryQuestion } from "@/plan/api/schema-summaries";
 import { canAuthorAtom } from "@/plan/state/atoms";
@@ -42,16 +42,22 @@ export function PendingApprovalNotice() {
   const question = useAtomValue(summaryQuestionAtom);
   const canAnswer = useAtomValue(canAuthorAtom);
   const { answer } = useSummaryActions();
+  const pending = useRef(false);
   const [failure, setFailure] = useState<{ questionId: string; message: string } | null>(null);
 
   if (!question) return null;
 
   const onAnswer = (rebuild: boolean) => {
-    if (!canAnswer) return;
+    if (!canAnswer || pending.current) return;
+    pending.current = true;
     setFailure(null);
-    void answer(question.id, rebuild).then((message) => {
-      setFailure(message === null ? null : { questionId: question.id, message });
-    });
+    void answer(question.id, rebuild)
+      .then((message) => {
+        setFailure(message === null ? null : { questionId: question.id, message });
+      })
+      .finally(() => {
+        pending.current = false;
+      });
   };
 
   return (

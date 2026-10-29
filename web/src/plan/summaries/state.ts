@@ -1,6 +1,7 @@
 import { useAtomValue, useStore } from "jotai/react";
 import { atom, type Atom, type PrimitiveAtom } from "jotai/vanilla";
-import { useCallback, useEffect, useRef } from "react";
+import { selectAtom } from "jotai/vanilla/utils";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { apiGet, apiPost } from "@/plan/api/client";
 import {
@@ -25,6 +26,10 @@ export const summaryPanelAtom: Atom<SummaryPanel | null> = atom((get) => {
 export const summaryQuestionAtom: Atom<SummaryQuestion | null> = atom(
   (get) => get(summaryPanelAtom)?.question ?? null,
 );
+// Filled only from live `summary_turn_cost` frames and never pruned. Deliberate limit: it holds
+// rows only for turns rebuilt while this tab was open, so after a reload rows show no figure, and
+// it grows for the life of the tab. Revisit when the server can replay per-turn costs on connect
+// (seed this map from that), or when a long-lived tab makes the growth matter.
 export const turnCostsAtom: PrimitiveAtom<ReadonlyMap<string, number | null>> = atom<
   ReadonlyMap<string, number | null>
 >(new Map());
@@ -35,7 +40,8 @@ export function turnCostKey(session: string, turn: string, id: string): string {
 
 // Counts socket pushes that write the panel. An HTTP response (seed GET, action POST) that started
 // before a push is older than it, so it must not overwrite what the push set. Only deltas are
-// compared, so one counter serves every store.
+// compared, so a single module-level counter is enough as long as one live feed runs per page; two
+// feeds writing different stores would count each other's pushes and drop fresh HTTP responses.
 let panelPushes = 0;
 
 /** Whether an HTTP panel that started at `pushesAtStart` is older than a push already shown. */
@@ -61,6 +67,9 @@ function subscribeSummaryFeed(
       );
     }),
     socket.subscribe("summary_question_closed", ({ id }) => {
+      // Counted even when `id` matches no open question. Harmless: the server follows every question
+      // message with a panel publish (loom/src/plan_server/summaries/rebuilds/publish.rs:83), which
+      // supersedes the HTTP response anyway.
       ++panelPushes;
       store.set(panelLoadAtom, (load) =>
         load.status === "ready" && load.panel.question?.id === id
@@ -150,5 +159,8 @@ export function useTurnTokens(
   turn: string,
   id: string,
 ): number | null | undefined {
-  return useAtomValue(turnCostsAtom).get(turnCostKey(session, turn, id));
+  const key = turnCostKey(session, turn, id);
+  // Selecting one entry keeps a row from re-rendering when another turn's cost arrives.
+  const costAtom = useMemo(() => selectAtom(turnCostsAtom, (costs) => costs.get(key)), [key]);
+  return useAtomValue(costAtom);
 }

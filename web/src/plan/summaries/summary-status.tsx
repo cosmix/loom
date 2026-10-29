@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useNow } from "@/components/hooks/use-now";
 import { Button } from "@/components/ui/button";
-import type { SummaryPanel as Panel } from "@/plan/api/schema-summaries";
+import type { SummaryPanel as Panel, SummaryQuestion } from "@/plan/api/schema-summaries";
 import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
 import { canAuthorAtom } from "@/plan/state/atoms";
 import { LoadState } from "@/plan/ui/load-state";
@@ -54,21 +54,35 @@ function StatusTrigger({ compact, load }: { compact: boolean; load: PanelLoad })
   );
 }
 
-function QuestionAnswer({ question }: { question: NonNullable<Panel["question"]> }) {
+function QuestionAnswer({ question }: { question: SummaryQuestion }) {
   const canAnswer = useAtomValue(canAuthorAtom);
   const { answer } = useSummaryActions();
+  const pending = useRef(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function handleAnswer(rebuild: boolean) {
+    if (pending.current) return;
+    pending.current = true;
+    setError(null);
+    try {
+      setError(await answer(question.id, rebuild));
+    } finally {
+      pending.current = false;
+    }
+  }
+
   return (
     <>
       <RebuildQuestion
         question={question}
         canAnswer={canAnswer}
-        onAnswer={(rebuild) => {
-          setError(null);
-          void answer(question.id, rebuild).then(setError);
-        }}
+        onAnswer={(rebuild) => void handleAnswer(rebuild)}
       />
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
     </>
   );
 }
@@ -87,35 +101,69 @@ function StatusContent({ load, reload }: { load: PanelLoad; reload: () => void }
   }
   return (
     <>
-      <SummaryPanel panel={load.panel} nowSecs={nowSecs} />
+      {/* The question comes first so its answer buttons stay above the fold on a phone. */}
       {load.panel.question && (
         <QuestionAnswer key={load.panel.question.id} question={load.panel.question} />
       )}
+      <SummaryPanel panel={load.panel} nowSecs={nowSecs} />
     </>
   );
+}
+
+/**
+ * Open state for the popover. An arriving question opens it without taking focus and without
+ * pulling focus to the trigger when it closes; an open the user starts behaves like any popover.
+ */
+function useQuestionPopover(question: SummaryQuestion | null) {
+  const [open, setOpen] = useState(false);
+  const lastAnnouncedId = useRef<string | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const autoOpened = useRef(false);
+  const closedFromOutside = useRef(false);
+
+  useEffect(() => {
+    if (!question || question.id === lastAnnouncedId.current) return;
+    lastAnnouncedId.current = question.id;
+    autoOpened.current = true;
+    setOpen(true);
+  }, [question]);
+
+  return {
+    open,
+    contentRef,
+    onOpenChange(next: boolean) {
+      // Radix focuses the trigger on close, which would pull focus out of the composer when
+      // Escape is pressed there; remember where focus was before the close moves anything.
+      closedFromOutside.current =
+        !next && autoOpened.current && !contentRef.current?.contains(document.activeElement);
+      autoOpened.current = false;
+      setOpen(next);
+    },
+    onOpenAutoFocus(event: Event) {
+      if (autoOpened.current) event.preventDefault();
+    },
+    onCloseAutoFocus(event: Event) {
+      if (closedFromOutside.current) event.preventDefault();
+    },
+  };
 }
 
 export function SummaryStatus({ compact = false }: { compact?: boolean }) {
   const { load, reload } = useSummaryFeed();
   const question = useAtomValue(summaryQuestionAtom);
-  const [open, setOpen] = useState(false);
-  const lastAnnouncedId = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!question || question.id === lastAnnouncedId.current) return;
-    lastAnnouncedId.current = question.id;
-    setOpen(true);
-  }, [question]);
+  const popover = useQuestionPopover(question);
 
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={popover.open} onOpenChange={popover.onOpenChange}>
         <StatusTrigger compact={compact} load={load} />
         <PopoverContent
+          ref={popover.contentRef}
           aria-label="Summary rebuilds"
           collisionPadding={16}
-          className="max-h-[80vh] w-[calc(100vw-2rem)] min-w-0 overflow-x-hidden overflow-y-auto [overflow-wrap:anywhere] lg:w-96"
-          onOpenAutoFocus={(event) => event.preventDefault()}
+          className="max-h-[80vh] w-[calc(100vw-2rem)] min-w-0 overflow-x-hidden overflow-y-auto [overflow-wrap:anywhere] sm:w-96"
+          onOpenAutoFocus={popover.onOpenAutoFocus}
+          onCloseAutoFocus={popover.onCloseAutoFocus}
         >
           <StatusContent load={load} reload={reload} />
         </PopoverContent>
