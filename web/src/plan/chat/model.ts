@@ -123,6 +123,7 @@ export function registerPending(
   return new Promise((resolve, reject) => commands.set(clientId, { resolve, reject, send, known }));
 }
 
+/** Marks a command whose result the server may follow with `queue_returned` (interrupt, end). */
 export function markInterruptPending(store: Store, clientId: string): void {
   let interrupts = pendingInterrupts.get(store);
   if (!interrupts) pendingInterrupts.set(store, (interrupts = new Set()));

@@ -12,6 +12,7 @@ import { authoringAtom, canAuthorAtom, planSocketAtom } from "@/plan/state/atoms
 import type { Store } from "@/state/store";
 
 import type { ReviewMessage, SuggestedPassage } from "./api";
+import { returnFocusTo, selectionFocusTarget } from "./focus-return";
 
 type Target = { public_id: string; name: string };
 type Status = Extract<ReviewMessage, { kind: "suggestion_status" }>;
@@ -153,10 +154,13 @@ function awayHolder(status: Status | null, holder: HolderView | null | undefined
 function SendDialog({
   draft,
   target,
+  returnFocus,
   onClose,
 }: {
   draft: AttachmentDraft;
   target: Target;
+  /** Where focus goes on close: the opener unmounts once focus enters the dialog. */
+  returnFocus: HTMLElement | null;
   onClose: () => void;
 }) {
   const holder = useAtomValue(authoringAtom)?.holder;
@@ -171,7 +175,13 @@ function SendDialog({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="motion-reduce:animate-none">
+      <DialogContent
+        className="motion-reduce:animate-none"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          returnFocusTo(returnFocus);
+        }}
+      >
         <DialogTitle>Send to author</DialogTitle>
         <DialogDescription>
           Passage:{" "}
@@ -226,12 +236,14 @@ export function registerSendToAuthor(): () => void {
       root = createRoot(host);
     }
     const dialogRoot = root;
+    const returnFocus = selectionFocusTarget();
     dialogRoot.render(
       <Provider store={store}>
         <SendDialog
           key={++sequence}
           draft={draft}
           target={target}
+          returnFocus={returnFocus}
           onClose={() => dialogRoot.render(null)}
         />
       </Provider>,

@@ -13,18 +13,18 @@ use crate::planning::project::Project;
 
 const SECTION: &str = "doc/product/section_02.md";
 const SECTION_ARG: &str = "product/section_02.md";
-const BEFORE: &str = "1999-06-01T10:00:00Z";
+pub(super) const BEFORE: &str = "1999-06-01T10:00:00Z";
 const BUILT: &str = "2000-01-01 00:00 UTC";
 const LATER_BUILT: &str = "2000-01-02 00:00 UTC";
 const AFTER: &str = "2000-01-03T10:00:00Z";
 
 /// A repository under `<tmp>/repo` isolated from user and system git config.
-struct Repo {
+pub(super) struct Repo {
     _temp: TempDir,
-    root: PathBuf,
+    pub(super) root: PathBuf,
 }
 
-fn git(root: &Path, args: &[&str], date: Option<&str>) -> String {
+pub(super) fn git(root: &Path, args: &[&str], date: Option<&str>) -> String {
     let mut cmd = Command::new("git");
     cmd.args(args)
         .current_dir(root)
@@ -46,34 +46,39 @@ fn git(root: &Path, args: &[&str], date: Option<&str>) -> String {
         .to_owned()
 }
 
-fn repo() -> Repo {
+pub(super) fn repo() -> Repo {
     let temp = TempDir::new().expect("create scratch directory");
     let root = temp.path().join("repo");
     fs::create_dir_all(&root).expect("create repo dir");
-    git(&root, &["init", "-q", "-b", "main"], None);
-    git(&root, &["config", "user.name", "Review Fixture"], None);
-    git(
-        &root,
-        &["config", "user.email", "fixture@example.invalid"],
-        None,
-    );
-    git(&root, &["config", "commit.gpgsign", "false"], None);
+    init(&root);
     Repo { _temp: temp, root }
 }
 
-fn put(root: &Path, rel: &str, content: &str) {
+/// A repository at `root` on branch `main` with a fixture identity and no signing.
+pub(super) fn init(root: &Path) {
+    git(root, &["init", "-q", "-b", "main"], None);
+    git(root, &["config", "user.name", "Review Fixture"], None);
+    git(
+        root,
+        &["config", "user.email", "fixture@example.invalid"],
+        None,
+    );
+    git(root, &["config", "commit.gpgsign", "false"], None);
+}
+
+pub(super) fn put(root: &Path, rel: &str, content: &str) {
     let path = root.join(rel);
     fs::create_dir_all(path.parent().expect("fixture path has a parent")).expect("mkdir");
     fs::write(path, content).expect("write fixture file");
 }
 
-fn commit(root: &Path, date: &str) -> String {
+pub(super) fn commit(root: &Path, date: &str) -> String {
     git(root, &["add", "-A"], None);
     git(root, &["commit", "-q", "-m", "fixture"], Some(date));
     git(root, &["rev-parse", "HEAD"], None)
 }
 
-fn doc(path: &str, change: ChangedDocChange) -> ChangedDoc {
+pub(super) fn doc(path: &str, change: ChangedDocChange) -> ChangedDoc {
     ChangedDoc {
         path: path.to_owned(),
         change,

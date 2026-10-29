@@ -199,7 +199,7 @@ describe("ToolRow format controls", () => {
     fireEvent.click(screen.getByRole("button"));
 
     const input = screen.getByText(/doc\/⟨U\+202E⟩secret.md/);
-    expect(input.style.unicodeBidi).toBe("plaintext");
+    expect(input.style.unicodeBidi).toBe("isolate");
     expect(input.style.direction).toBe("ltr");
     expect(container.textContent).not.toContain("\u202e");
   });

@@ -1,25 +1,10 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { Provider } from "jotai";
-import { createStore } from "jotai/vanilla";
-import type { ReactNode } from "react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
 
 import brief from "@/plan/api/fixtures/session-brief.json";
-import helloFixture from "@/plan/api/fixtures/hello.json";
-import snapshotFixture from "@/plan/api/fixtures/chat-snapshot.json";
-import { planMessageSchema, type OfferView } from "@/plan/api/schema";
-import { sessionViewSchema, type SessionView } from "@/plan/api/schema-chat";
-import type { connectPlanSocket } from "@/plan/api/socket";
 import { EmptyOffer } from "@/plan/concept/empty-offer";
-import {
-  authoringAtom,
-  checklistAtom,
-  connectionAtom,
-  planSocketAtom,
-  serverInfoAtom,
-  youAtom,
-} from "@/plan/state/atoms";
-import { BriefDialog } from "./brief-dialog";
+import { authoringAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { BriefDialog, BriefDialogHost } from "./brief-dialog";
 import { sendMessage, startChat } from "./commands";
 import { EndChatMenuItem } from "./end-chat";
 import { snapshotAtom } from "./model";
@@ -28,78 +13,16 @@ import { registerAuthoringOffers } from "./offer-handlers";
 import { panelCollapsedAtom } from "./prefs";
 import { SessionDivider } from "./session-divider";
 import { chatSheetOpenAtom } from "./sheet-state";
+import {
+  disposers,
+  harness,
+  installStartChatLifecycle,
+  offer,
+  session,
+} from "./start-chat-test-kit";
 import { NewChatButton, StartingBrief } from "./start-chat";
 
-const session = sessionViewSchema.parse({ ...snapshotFixture.session, state: "starting" });
-const offer: OfferView = {
-  id: "start-vision",
-  kind: "start_vision",
-  label: "Start the product vision",
-  target: null,
-};
-const disposers: Array<() => void> = [];
-
-function harness(current: SessionView | null = null) {
-  const store = createStore();
-  const hello = planMessageSchema.parse(helloFixture);
-  if (hello.type !== "hello") throw new Error("Expected the hello fixture");
-  store.set(serverInfoAtom, { ...hello.server, read_only: [] });
-  store.set(youAtom, hello.you);
-  store.set(authoringAtom, {
-    holder: {
-      public_id: hello.you.public_id,
-      name: hello.you.name,
-      away_since: null,
-      frees_at: null,
-    },
-  });
-  store.set(checklistAtom, { ...hello.checklist, primary: offer });
-  store.set(connectionAtom, { phase: "open", everOpen: true, lastMessageAt: null });
-  store.set(snapshotAtom, { session: current, turns: [], queue: [], previous: null });
-  const listeners = new Map<string, Set<(message: unknown) => void>>();
-  const send = vi.fn((_message: unknown) => true);
-  const socket = {
-    send,
-    subscribe(type: string, handler: (message: unknown) => void) {
-      const handlers = listeners.get(type) ?? new Set();
-      listeners.set(type, handlers);
-      handlers.add(handler);
-      return () => {
-        handlers.delete(handler);
-      };
-    },
-  };
-  store.set(planSocketAtom, socket as unknown as ReturnType<typeof connectPlanSocket>);
-  const result = (index = 0, error: string | null = null) => {
-    const { client_id } = send.mock.calls[index][0] as { client_id: string };
-    act(() =>
-      listeners
-        .get("chat")
-        ?.forEach((handler) =>
-          handler({ type: "chat", frame: "result", client_id, ok: error === null, error }),
-        ),
-    );
-  };
-  const mount = (node: ReactNode) => render(<Provider store={store}>{node}</Provider>);
-  return { store, send, result, mount };
-}
-
-beforeEach(() => {
-  localStorage.clear();
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockImplementation(async () => new Response(JSON.stringify(brief))),
-  );
-  vi.spyOn(window, "confirm").mockReturnValue(true);
-});
-
-afterEach(() => {
-  cleanup();
-  disposers.splice(0).forEach((dispose) => dispose());
-  vi.useRealTimers();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
+installStartChatLifecycle();
 
 it("offer start", async () => {
   const h = harness();
@@ -154,7 +77,12 @@ it("first message start", async () => {
 it("starting shows the brief view and leaves the panel as it is", async () => {
   const h = harness(session);
   h.store.set(panelCollapsedAtom, true);
-  h.mount(<StartingBrief session={session} />);
+  h.mount(
+    <>
+      <StartingBrief session={session} />
+      <BriefDialogHost />
+    </>,
+  );
   expect(await screen.findByText(brief.display_name)).toBeTruthy();
   expect(screen.getByText(brief.model)).toBeTruthy();
   expect(screen.getByText(brief.effort)).toBeTruthy();
@@ -307,6 +235,7 @@ it("viewer has no end chat, brief opens", async () => {
     <>
       <EndChatMenuItem />
       <StartingBrief session={session} />
+      <BriefDialogHost />
     </>,
   );
   expect(screen.queryByRole("button", { name: "End chat" })).toBeNull();

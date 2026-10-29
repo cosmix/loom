@@ -198,8 +198,12 @@ it("two pending permissions name both tools and count 2", () => {
     turn([permission("Edit")], { id: "newer", started_at: "2026-10-28T09:59:30Z" }),
     turn([permission("Bash")], { id: "older", started_at: since }),
   ]);
-  h.show();
-  expect(screen.getAllByRole("status")[0].textContent).toBe("Needs 2 decisions: Bash, Edit");
+  const { container } = h.show();
+  expect(container.textContent).toContain("Needs 2 decisions: Bash, Edit");
+  // ChatAnnouncer says it assertively, once; the polite region here would be a second announcement.
+  expect(screen.getAllByRole("status")[0].textContent).toBe("");
+  const words = screen.getByText("Needs 2 decisions: Bash, Edit");
+  expect(words.closest("[aria-hidden='true']")).toBeNull();
 });
 
 it("failed spawn text", () => {
@@ -256,11 +260,66 @@ it("announces state changes only, never elapsed time or tool summaries", () => {
   h.setTurns([turn([tool("Second tool")])]);
   expect(container.textContent).toContain("Second tool");
   expect(status.textContent).toBe("Working");
+  h.setSession(session({ state: "ending" }));
+  expect(status.textContent).toBe(
+    "Writing final notes into the documents · This can take up to 10 minutes.",
+  );
+  // Permission, ended and failed are ChatAnnouncer's, which stays mounted with the panel closed.
   h.setSession(session({ state: "permission" }));
-  expect(status.textContent).toBe("Needs a decision");
+  expect(status.textContent).toBe("");
   h.setSession(session({ state: "ended" }));
   act(() => vi.advanceTimersByTime(20_000));
-  expect(status.textContent).toBe("Chat ended");
+  expect(status.textContent).toBe("");
+  h.setSession(session({ state: "failed", failure: { kind: "died", message: "gone" } }));
+  expect(status.textContent).toBe("");
+});
+
+it("no chat hides its duplicated words but keeps the buttons reachable", () => {
+  const { container } = harness(null).show();
+  const hidden = [...container.querySelectorAll("[aria-hidden='true']")].filter(
+    (node) => node.textContent === "No chat",
+  );
+  expect(hidden).toHaveLength(1);
+  expect(screen.getAllByRole("status")[0].textContent).toBe("No chat");
+  expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
+});
+
+const concluded = (fields: Partial<SessionView>) => ({
+  session: null,
+  turns: [],
+  queue: [],
+  previous: { session: session(fields), turns: [] },
+});
+
+it("a browser that connects after a chat failed shows the failure, not No chat", () => {
+  const h = harness(null);
+  h.store.set(
+    snapshotAtom,
+    concluded({ state: "failed", failure: { kind: "died", message: "Process exited" } }),
+  );
+  const { container } = h.show();
+  expect(container.textContent).not.toContain("No chat");
+  expect(container.textContent).toContain("The session stopped unexpectedly");
+  expect(screen.getByText("Process exited")).toBeTruthy();
+  expect(container.textContent).toContain(`Last activity ${since} (41s ago)`);
+  expect(container.querySelector(".hazard-error")).toBeTruthy();
+});
+
+it("a browser that connects after a chat ended shows the Ended line, not No chat", () => {
+  const h = harness(null);
+  h.store.set(snapshotAtom, concluded({ state: "ended" }));
+  const { container } = h.show();
+  expect(container.textContent).not.toContain("No chat");
+  // Exposed to browse mode and no status region of its own: ChatAnnouncer does the announcing.
+  const line = screen.getByText("Chat ended · 41s ago");
+  expect(line.closest("[aria-hidden='true'], [role='status']")).toBeNull();
+});
+
+it("a previous chat that was not concluded does not stand in for the current state", () => {
+  const h = harness(null);
+  h.store.set(snapshotAtom, concluded({ state: "idle" }));
+  const { container } = h.show();
+  expect(container.textContent).toContain("No chat");
 });
 
 it("hides only the duplicated state words, so the working detail stays reachable", () => {

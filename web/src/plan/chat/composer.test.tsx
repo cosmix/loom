@@ -1,9 +1,12 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
-import { authoringAtom, stoppingAtom } from "@/plan/state/atoms";
+import helloFixture from "@/plan/api/fixtures/hello.json";
+import { checklistViewSchema } from "@/plan/api/schema";
+import { registerOfferAction } from "@/plan/offers/actions";
+import { authoringAtom, checklistAtom, stoppingAtom } from "@/plan/state/atoms";
 import { ComposerArea } from "./composer";
-import { unconfirmedSendsAtom } from "./model";
+import { snapshotAtom, unconfirmedSendsAtom } from "./model";
 import { StopControl } from "./stop-control";
 import {
   box,
@@ -83,11 +86,60 @@ it("ending disables with reason", () => {
   expect(send().getAttribute("aria-disabled")).toBe("true");
   expect(screen.getByText("the chat is closing")).toBeTruthy();
 });
-it("ended replaces composer", () => {
+function offerPrimary(store: ReturnType<typeof setup>["store"]) {
+  const primary = {
+    ...checklistViewSchema.parse(helloFixture.checklist).primary!,
+    label: "Write section 05",
+  };
+  store.set(checklistAtom, {
+    current: { kind: "ready" },
+    steps: [],
+    primary,
+    secondary: [],
+    items: [],
+  });
+  return registerOfferAction(primary.kind, vi.fn());
+}
+it("ended replaces the composer with New chat and the primary offer", () => {
   const h = setup("ended");
+  const unregister = offerPrimary(h.store);
   mount(h.store);
   expect(screen.queryByRole("textbox")).toBeNull();
-  expect(screen.getByText(/Chat ended/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+  expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Write section 05" })).toBeTruthy();
+  unregister();
+});
+it("failed replaces the composer with New chat alone", () => {
+  const h = setup("failed");
+  const unregister = offerPrimary(h.store);
+  mount(h.store);
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+  expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Write section 05" })).toBeNull();
+  unregister();
+});
+it.each(["failed", "ended"] as const)(
+  "a browser that connects after the chat %s gets New chat, not a live composer",
+  (state) => {
+    const h = setup(state);
+    // The bridge moved the concluded chat to `previous`; a late browser receives no current one.
+    h.store.set(snapshotAtom, (s) => ({
+      ...s,
+      session: null,
+      previous: { session: { ...s.session!, state }, turns: [] },
+    }));
+    mount(h.store);
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
+  },
+);
+it("a viewer of an ended chat still sees the read-only line", () => {
+  const { store } = setup("ended", true);
+  mount(store);
+  expect(screen.getByText(/is authoring/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
 });
 it("stopping disables", () => {
   const h = setup();
@@ -244,4 +296,29 @@ it("stop confirm prop asks first", () => {
   confirm.mockReturnValue(true);
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   expect(h.sent[0].command).toBe("interrupt");
+});
+const starting = (store: ReturnType<typeof setup>["store"]) =>
+  act(() =>
+    store.set(snapshotAtom, (s) => ({ ...s, session: { ...s.session!, state: "starting" } })),
+  );
+
+it.each(["ended", "failed"] as const)(
+  "focus on New chat of a %s chat moves to the text box that replaces it",
+  (state) => {
+    const h = setup(state);
+    mount(h.store);
+    const newChat = screen.getByRole("button", { name: "New chat" });
+    newChat.focus();
+    expect(document.activeElement).toBe(newChat);
+    starting(h.store);
+    expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
+    expect(document.activeElement).toBe(box());
+  },
+);
+it("a chat that starts elsewhere leaves focus alone when it was not on New chat", () => {
+  const h = setup("ended");
+  mount(h.store);
+  starting(h.store);
+  expect(box()).toBeTruthy();
+  expect(document.activeElement).toBe(document.body);
 });

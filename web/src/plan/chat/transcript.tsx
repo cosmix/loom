@@ -80,17 +80,20 @@ function FoldedTools({
   );
 }
 
-/** Consecutive thinking markers become one marker whose duration is their sum. */
+/**
+ * Consecutive thinking markers become one marker whose duration is their sum. A marker without a
+ * duration makes the sum unknown ("Thought"): counting it as 0s would understate the time.
+ */
 function mergeThinking(items: Item[]): Item[] {
   const merged: Item[] = [];
   for (const item of items) {
     const last = merged[merged.length - 1];
     if (item.type === "thinking" && last?.type === "thinking") {
-      const known = last.duration_ms !== null || item.duration_ms !== null;
-      merged[merged.length - 1] = {
-        ...last,
-        duration_ms: known ? (last.duration_ms ?? 0) + (item.duration_ms ?? 0) : null,
-      };
+      const total =
+        last.duration_ms !== null && item.duration_ms !== null
+          ? last.duration_ms + item.duration_ms
+          : null;
+      merged[merged.length - 1] = { ...last, duration_ms: total };
     } else merged.push(item);
   }
   return merged;

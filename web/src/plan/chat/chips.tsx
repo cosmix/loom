@@ -13,12 +13,11 @@ import { hashesAtom } from "@/plan/review/live";
 import { connectionEpochAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { LoadState } from "@/plan/ui/load-state";
 import { toAttachmentInput } from "./commands";
-import { draftAtom } from "./drafts";
+import { ATTACHMENT_LIMIT_NOTE, draftAtom, MAX_ATTACHMENTS, mergeAttachments } from "./drafts";
 import { snapshotAtom } from "./model";
+import { summaryLink } from "./turn-footer-rebuilt";
 import { Untrusted, visibleControls } from "./visible-controls";
 
-const LIMIT = 10;
-const LIMIT_NOTE = "At most 10 attachments per message";
 type LabelInput = Pick<
   Attachment,
   "path" | "anchor" | "lines" | "stage" | "summary_sentence" | "kind"
@@ -48,20 +47,19 @@ function usePendingDraft(): string | null {
     const sync = (attachments: AttachmentDraft[]) => {
       if (updating) return;
       updating = true;
-      if (attachments.length > LIMIT) setNote(LIMIT_NOTE);
-      const kept = attachments.length > LIMIT ? attachments.slice(0, LIMIT) : attachments;
+      if (attachments.length > MAX_ATTACHMENTS) setNote(ATTACHMENT_LIMIT_NOTE);
+      const kept =
+        attachments.length > MAX_ATTACHMENTS ? attachments.slice(0, MAX_ATTACHMENTS) : attachments;
       store.set(pendingAttachmentsAtom, kept);
       if (store.get(draftAtom).attachments !== kept) {
         store.set(draftAtom, (draft) => ({ ...draft, attachments: kept }));
       }
       updating = false;
     };
-    const saved = store.get(draftAtom).attachments;
-    const pending = store.get(pendingAttachmentsAtom);
-    const merged = [
-      ...saved,
-      ...pending.filter((a) => !saved.some((b) => JSON.stringify(a) === JSON.stringify(b))),
-    ];
+    const merged = mergeAttachments(
+      store.get(draftAtom).attachments,
+      store.get(pendingAttachmentsAtom),
+    );
     const offPending = store.sub(pendingAttachmentsAtom, () =>
       sync(store.get(pendingAttachmentsAtom)),
     );
@@ -81,16 +79,15 @@ function lockedPath(path: string, entries: TreeEntry[]): boolean {
   );
 }
 
-function summaryAddress(path: string, anchor: string | null): string {
-  const stem = docRel(path)
+/** The summary id a `doc/loom/summaries/<id>.md` path names. */
+export function summaryIdOf(path: string): string {
+  return docRel(path)
     .replace(/^loom\/summaries\//, "")
     .replace(/\.md$/, "");
-  const page = stem.startsWith("plans/")
-    ? `engineering/${stem.slice(6)}`
-    : stem === "product" || stem === "engineering" || stem.startsWith("product/")
-      ? stem
-      : `product/${stem}`;
-  return `/${page.split("/").map(encodeURIComponent).join("/")}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
+}
+
+function summaryAddress(path: string, anchor: string | null): string {
+  return summaryLink(summaryIdOf(path), anchor);
 }
 
 function useOpenChip() {
@@ -315,7 +312,11 @@ export function SentChips({ item, turn }: { item: Extract<Item, { type: "user" }
           </Chip>
         );
       })}
-      {!turn.open && !result && <LoadState state="loading" message="Checking attached passages…" />}
+      {!turn.open && !result && (
+        <p role="status" className="text-muted-foreground">
+          Checking attached passages…
+        </p>
+      )}
       {result?.error && (
         <>
           <LoadState state="error" />

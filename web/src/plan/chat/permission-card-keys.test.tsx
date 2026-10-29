@@ -81,12 +81,15 @@ it.each<[Permission["status"], Permission["deny_reason"], string | null, string]
 ])("outcome lines: %s %s", (status, deny_reason, note, expected) => {
   harness().show(permission({ status, deny_reason, note }));
 
-  expect(card().textContent).toBe(expected);
-  expect(within(card()).queryAllByRole("button")).toEqual([]);
-  expect(card().querySelector("pre")).toBeNull();
+  // An answered row is history: a group, so landmark navigation lists only live decisions.
+  const row = screen.getByRole("group", { name: "Permission: Bash" });
+  expect(screen.queryByRole("region", { name: "Permission: Bash" })).toBeNull();
+  expect(row.textContent).toBe(expected);
+  expect(within(row).queryAllByRole("button")).toEqual([]);
+  expect(row.querySelector("pre")).toBeNull();
 });
 
-it("assertive announcement and focus rule", () => {
+it("focus rule: the card announces nothing itself and never steals typing focus", () => {
   const h = harness();
   function Panel({ show }: { show: boolean }) {
     return (
@@ -114,10 +117,9 @@ it("assertive announcement and focus rule", () => {
   expect(document.activeElement).toBe(composer);
   fireEvent.keyDown(composer, { key: "y" });
   expect(h.send).not.toHaveBeenCalled();
-  expect(document.querySelectorAll('[aria-live="assertive"]')).toHaveLength(1);
-  expect(pinned.querySelector('[aria-live="assertive"]')?.textContent).toBe(
-    "Needs a decision: Bash",
-  );
+  // The assertive announcement lives in ChatAnnouncer, which stays mounted with the panel closed.
+  expect(document.querySelectorAll("[aria-live]")).toHaveLength(0);
+  expect(pinned.querySelector("[aria-live]")).toBeNull();
   screen.getByRole("button", { name: "Outside" }).focus();
   view.rerender(<Panel show />);
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Outside" }));

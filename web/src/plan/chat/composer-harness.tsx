@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createStore, getDefaultStore, Provider } from "jotai";
+import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, vi } from "vitest";
 
@@ -18,6 +19,7 @@ import { ComposerArea } from "./composer";
 import { useComposerShortcut } from "./composer-hooks";
 import { installChatSubscription, snapshotAtom } from "./model";
 import { storageFullAtom } from "./storage";
+import { useQueueRefill } from "./stop-control";
 
 type Store = ReturnType<typeof createStore>;
 export const initial = chatSnapshotSchema.parse(fixture);
@@ -97,10 +99,17 @@ export function ShortcutHost(): null {
   useComposerShortcut();
   return null;
 }
+/** Runs the queue refill beside the composer, as ChatRegistrations does in the page. */
+function QueueRefill({ children }: { children: ReactNode }) {
+  useQueueRefill();
+  return <>{children}</>;
+}
 export function mount(store: Store, child = <ComposerArea />) {
   return render(
     <Provider store={store}>
-      <MemoryRouter>{child}</MemoryRouter>
+      <MemoryRouter>
+        <QueueRefill>{child}</QueueRefill>
+      </MemoryRouter>
     </Provider>,
   );
 }

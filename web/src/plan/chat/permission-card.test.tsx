@@ -161,7 +161,7 @@ it("command, path, diff and json show visible controls", () => {
     permission({ input: '{"command":"ls doc/\u202efile\u200b"}' }),
   );
   expect(container.textContent).toContain("ls doc/⟨U+202E⟩file⟨U+200B⟩");
-  expect(screen.getByText(/ls doc/).style.unicodeBidi).toBe("plaintext");
+  expect(screen.getByText(/ls doc/).style.unicodeBidi).toBe("isolate");
   expect(screen.getByText(/ls doc/).style.direction).toBe("ltr");
   expect(container.textContent).not.toMatch(/\p{Cf}/u);
   unmount();

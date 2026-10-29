@@ -264,6 +264,20 @@ it("interrupt intent permits queue_returned after its result", async () => {
   dispose();
 });
 
+it("end permits queue_returned after its result, once", async () => {
+  const { store, receive, result } = harness();
+  const dispose = installChatSubscription(store);
+  const pending = endChat(store);
+
+  result(0);
+  receive("chat", { frame: "queue_returned", texts: ["Unsent while ending"] });
+  receive("chat", { frame: "queue_returned", texts: ["Unsolicited"] });
+
+  await pending;
+  expect(store.get(queueReturnedAtom)).toEqual(["Unsent while ending"]);
+  dispose();
+});
+
 it("suggest resolves on sent status and preserves the review wire shape", async () => {
   const { store, send, receive } = harness();
   const pending = suggest(store, passage, "Review this");

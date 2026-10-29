@@ -150,24 +150,27 @@ function TimeLeft({ expiresAt }: { expiresAt: string }): JSX.Element {
   return <p className="text-xs text-muted-foreground">{remaining}</p>;
 }
 
-function usePermissionNotice(item: Permission, inline: boolean) {
+/**
+ * Moves focus to the pinned card once per request, only from a control inside the panel. The
+ * assertive announcement is ChatAnnouncer's: this card is unmounted while the panel is collapsed
+ * or the sheet is closed, and the request must still be heard then.
+ */
+function usePinnedFocus(item: Permission, inline: boolean) {
   const card = useRef<HTMLDivElement>(null);
-  const announced = useRef<string | null>(null);
-  const [notice, setNotice] = useState("");
+  const focused = useRef<string | null>(null);
   useEffect(() => {
-    if (inline || announced.current === item.request_id) return;
-    announced.current = item.request_id;
-    setNotice(`Needs a decision: ${item.tool}`);
+    if (inline || focused.current === item.request_id) return;
+    focused.current = item.request_id;
     const panel = card.current?.closest(
       'aside[aria-label="Chat"], [role="complementary"][aria-label="Chat"]',
     );
     // Never steal focus from a field the holder is typing in: the card answers on a bare
     // "y" or "n", so those keystrokes must keep landing in the composer. The assertive
-    // announcement above still tells the holder a decision is waiting.
+    // announcement still tells the holder a decision is waiting.
     const active = document.activeElement;
     if (panel?.contains(active) && !isEditable(active)) card.current?.focus();
-  }, [inline, item.request_id, item.tool]);
-  return { card, notice };
+  }, [inline, item.request_id]);
+  return card;
 }
 
 function useAnswer(item: Permission) {
@@ -329,7 +332,7 @@ function PendingPermission({ item, inline = false }: Props): JSX.Element {
   const pending = useAtomValue(pendingPermissionsAtom);
   const [denyOpen, setDenyOpen] = useState(false);
   const { answer, busy, error } = useAnswer(item);
-  const { card, notice } = usePermissionNotice(item, inline);
+  const card = usePinnedFocus(item, inline);
   const onKeyDown = usePermissionKeys(item, inline, busy, answer, setDenyOpen);
   return (
     <div
@@ -340,11 +343,6 @@ function PendingPermission({ item, inline = false }: Props): JSX.Element {
       onKeyDown={onKeyDown}
       className="min-w-0 space-y-2 rounded border p-3 text-sm leading-relaxed focus-visible:outline-2 focus-visible:outline-ring"
     >
-      {!inline && (
-        <div className="sr-only" aria-live="assertive" aria-atomic="true">
-          <Untrusted text={notice} />
-        </div>
-      )}
       {!inline && pending.length > 1 && (
         <p className="text-xs font-medium">1 of {pending.length} decisions</p>
       )}
@@ -368,8 +366,9 @@ export function PermissionCard({ item, inline = false }: Props): JSX.Element {
   if (item.status === "pending")
     return <PendingPermission key={item.request_id} item={item} inline={inline} />;
   return (
+    // A group, not a region: an answered row is history and would only crowd landmark navigation.
     <div
-      role="region"
+      role="group"
       aria-label={`Permission: ${visibleControls(item.tool)}`}
       className="text-xs leading-relaxed text-muted-foreground"
     >

@@ -8,14 +8,12 @@ import { draftAtom } from "./drafts";
 import { queueReturnedAtom, sessionAtom } from "./model";
 import { Untrusted } from "./visible-controls";
 
-export function StopControl({ confirm }: { confirm?: string }) {
+/**
+ * Moves the texts the server returns after Stop or End chat into the draft. It is mounted with the
+ * chat registrations, so it runs while the composer is replaced by the concluded-chat view.
+ */
+export function useQueueRefill(): void {
   const store = useStore();
-  const session = useAtomValue(sessionAtom);
-  const isHolder = useAtomValue(isHolderAtom);
-  const reason = useAtomValue(authorBlockReasonAtom);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-
   useEffect(() => {
     const refill = () => {
       const texts = store.get(queueReturnedAtom);
@@ -30,6 +28,15 @@ export function StopControl({ confirm }: { confirm?: string }) {
     refill();
     return unsubscribe;
   }, [store]);
+}
+
+export function StopControl({ confirm }: { confirm?: string }) {
+  const store = useStore();
+  const session = useAtomValue(sessionAtom);
+  const isHolder = useAtomValue(isHolderAtom);
+  const reason = useAtomValue(authorBlockReasonAtom);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
 
   if (!isHolder || (session?.state !== "working" && session?.state !== "permission")) return null;
   const stop = () => {

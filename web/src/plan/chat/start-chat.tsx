@@ -1,4 +1,4 @@
-import { useAtomValue, useStore } from "jotai";
+import { useAtomValue, useSetAtom, useStore } from "jotai";
 import { useEffect, useRef, useState } from "react";
 
 import type { SessionView } from "@/plan/api/schema-chat";
@@ -6,7 +6,7 @@ import { authorBlockReasonAtom, canAuthorAtom, serverInfoAtom } from "@/plan/sta
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
-import { BriefDialog } from "./brief-dialog";
+import { briefOpenAtom } from "./brief-dialog";
 import { startChat } from "./commands";
 import { sessionAtom } from "./model";
 import { confirmEndFirst, endCurrentChat, isActiveSession, startError } from "./offer-flow";
@@ -78,11 +78,14 @@ export function NewChatButton() {
   );
 }
 
-/** The Starting row: name, model and effort from the brief, and a link to read the brief itself. */
+/**
+ * The Starting row: name, model and effort from the brief, and a link to read the brief itself.
+ * The dialog is rendered by `BriefDialogHost`, which outlives this row.
+ */
 export function StartingBrief({ session }: { session: SessionView }) {
   const starting = session.state === "starting";
   const state = useSessionBrief(starting ? session.id : null);
-  const [open, setOpen] = useState(false);
+  const openBrief = useSetAtom(briefOpenAtom);
   if (!starting) return null;
   const brief = state.status === "ready" ? state.brief : null;
   return (
@@ -97,7 +100,11 @@ export function StartingBrief({ session }: { session: SessionView }) {
           </>
         )}
       </p>
-      {state.status === "loading" && <LoadState state="loading" title="Loading brief" />}
+      {state.status === "loading" && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Loading brief…
+        </p>
+      )}
       {state.status === "unavailable" && <LoadState state="error" title="Brief not available" />}
       {state.status === "error" && (
         <LoadState
@@ -106,10 +113,9 @@ export function StartingBrief({ session }: { session: SessionView }) {
           message={visibleControls(state.message)}
         />
       )}
-      <button type="button" className="underline" onClick={() => setOpen(true)}>
+      <button type="button" className="underline" onClick={() => openBrief(session.id)}>
         Brief
       </button>
-      {open && <BriefDialog sessionId={session.id} state={state} onClose={() => setOpen(false)} />}
     </div>
   );
 }

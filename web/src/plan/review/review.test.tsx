@@ -164,7 +164,10 @@ it("mark all seen", async () => {
   const { store, projectKey } = mount();
   await openList();
   fireEvent.click(screen.getByRole("button", { name: "Mark all seen" }));
-  expect(store.get(checkpointAtom)).toEqual({ commit: "c2", hashes: current.docs });
+  // The checkpoint is cut from a fresh `/api/hashes` reply, so it lands after the request.
+  await waitFor(() =>
+    expect(store.get(checkpointAtom)).toEqual({ commit: "c2", hashes: current.docs }),
+  );
   expect(JSON.parse(localStorage.getItem(storageKey(projectKey, "checkpoint"))!)).toEqual({
     commit: "c2",
     hashes: current.docs,
