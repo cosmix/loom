@@ -38,6 +38,13 @@ impl SessionSpawner for RealSpawner {
     /// (`LOOM_PLAN_STATE` can move it).
     fn start_summary(&self, ids: &[String]) -> anyhow::Result<String> {
         let (ctx, bridge) = self.parts()?;
+        // The bridge's drain final-writes the sessions it ends, so a session started after the
+        // first stop signal would be cut short; the panel shows this message as the start error.
+        if ctx.is_stopping() {
+            return Err(anyhow!(
+                "loom plan is stopping; no new summary session starts"
+            ));
+        }
         let project = ctx.project().clone();
         let runtime = ctx.runtime().clone();
         let root = ctx.root().to_path_buf();
