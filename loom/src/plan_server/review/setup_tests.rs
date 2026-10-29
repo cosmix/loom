@@ -1,16 +1,20 @@
 //! Tests for the review setup hooks: reconnect replay and open-question broadcasts.
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::SystemTime;
 
 use super::commands::dispatch;
-use crate::plan_server::authoring::Take;
+use super::state::ReviewState;
+use crate::plan_server::authoring::{AuthoringEvent, FreeReason, Take};
 use crate::plan_server::context::{BindInfo, PlanContext};
 use crate::plan_server::ids::{BrowserId, ConnCtx};
 use crate::plan_server::prereq::ReadOnly;
 use crate::plan_server::wire::message::PlanMessage;
-use crate::plan_server::wire::review::{ReviewCommand, ReviewMessage, SuggestedPassageWire};
+use crate::plan_server::wire::review::{
+    ReviewCommand, ReviewMessage, SuggestedPassageWire, SuggestionStatus,
+};
 use crate::planning::watch::{Batch, OwnWrites};
 
 const SECTION: &str = "doc/product/section_01.md";
@@ -22,6 +26,15 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        Self::with_early_subscriber(|_, _| {})
+    }
+
+    /// A fixture whose `early` authoring subscriber runs before review's own, as
+    /// `broadcast_people` does in production: the authoring state has already changed when it
+    /// runs, and review's holder-change drop follows it.
+    fn with_early_subscriber(
+        early: impl Fn(&Arc<PlanContext>, &AuthoringEvent) + Send + Sync + 'static,
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("doc/product")).unwrap();
         std::fs::write(dir.path().join("doc/product/index.md"), "# Demo\n").unwrap();
@@ -36,6 +49,12 @@ impl Fixture {
             )
             .unwrap(),
         );
+        let weak = Arc::downgrade(&ctx);
+        ctx.authoring().subscribe(Box::new(move |event| {
+            if let Some(ctx) = weak.upgrade() {
+                early(&ctx, event);
+            }
+        }));
         super::setup::install(&ctx);
         Self { _dir: dir, ctx }
     }
@@ -73,11 +92,27 @@ struct Tab {
 }
 
 impl Tab {
+    fn raw(&self) -> Vec<String> {
+        self.rx.try_iter().map(|frame| (*frame).clone()).collect()
+    }
+
     fn frames(&self) -> Vec<PlanMessage> {
-        self.rx
-            .try_iter()
-            .map(|frame| serde_json::from_str(&frame).unwrap())
-            .collect()
+        parse(&self.raw())
+    }
+}
+
+fn parse(raw: &[String]) -> Vec<PlanMessage> {
+    raw.iter()
+        .map(|frame| serde_json::from_str(frame).unwrap())
+        .collect()
+}
+
+/// No frame holds a browser's cookie value; frames route by cookie but carry public ids only.
+fn assert_no_cookies(raw: &[String], tabs: &[&Tab]) {
+    for frame in raw {
+        for tab in tabs {
+            assert!(!frame.contains(tab.conn.browser.as_str()), "{frame}");
+        }
     }
 }
 
@@ -161,4 +196,121 @@ fn open_questions_broadcast_once_after_a_batch() {
 
     assert!(first.frames().is_empty());
     assert!(second.frames().is_empty());
+}
+
+fn suggest_command() -> ReviewCommand {
+    ReviewCommand::Suggest {
+        passage: passage(),
+        note: "Please review".into(),
+    }
+}
+
+fn dropped(id: &str) -> PlanMessage {
+    PlanMessage::Review(ReviewMessage::SuggestionStatus {
+        id: id.into(),
+        status: SuggestionStatus::Dropped {
+            reason: "Authoring holder changed.".into(),
+        },
+    })
+}
+
+fn assert_holder_sees_card_then_drop(to_holder: Vec<String>) {
+    assert_eq!(
+        parse(&to_holder),
+        vec![
+            PlanMessage::Review(ReviewMessage::Suggestion {
+                id: "sg-1".into(),
+                from: "Sam".into(),
+                passage: passage(),
+                note: "Please review".into(),
+            }),
+            dropped("sg-1"),
+        ],
+        "the new holder removes the card it was sent"
+    );
+}
+
+fn assert_sender_sees_sent_then_dropped(to_sender: Vec<String>) {
+    assert_eq!(
+        parse(&to_sender),
+        vec![
+            PlanMessage::Review(ReviewMessage::SuggestionStatus {
+                id: "sg-1".into(),
+                status: SuggestionStatus::Sent {
+                    holder: "Alex".into(),
+                    away: false,
+                },
+            }),
+            dropped("sg-1"),
+        ],
+        "the sender is told once"
+    );
+}
+
+#[test]
+fn new_holder_drops_a_card_sent_while_authoring_changed_hands() {
+    let sender_browser = BrowserId::mint().unwrap();
+    let armed = Arc::new(AtomicBool::new(false));
+    let f = {
+        let (sender, armed) = (sender_browser.clone(), Arc::clone(&armed));
+        Fixture::with_early_subscriber(move |ctx, event| {
+            // The holder is already the new browser when this suggestion arrives, so the card
+            // reaches it before review's drop runs.
+            if matches!(event, AuthoringEvent::Taken { .. }) && armed.load(Ordering::SeqCst) {
+                dispatch(ctx, &ctx.conn_ctx(sender.clone()), suggest_command());
+            }
+        })
+    };
+    f.ctx.presence().set_name(&sender_browser, "Sam");
+    let sender = f.tab(&sender_browser);
+    let holder = f.connect("Alex");
+    let bystander = f.connect("Dana");
+    armed.store(true, Ordering::SeqCst);
+
+    f.ctx
+        .require_authoring(&holder.conn.browser, Take::TakeIfFree)
+        .unwrap();
+
+    let (to_holder, to_sender, to_bystander) = (holder.raw(), sender.raw(), bystander.raw());
+    for raw in [&to_holder, &to_sender, &to_bystander] {
+        assert_no_cookies(raw, &[&holder, &sender, &bystander]);
+    }
+    assert_holder_sees_card_then_drop(to_holder);
+    assert_sender_sees_sent_then_dropped(to_sender);
+    assert!(to_bystander.is_empty());
+    let state = f.ctx.extensions().get::<ReviewState>().unwrap();
+    assert_eq!(state.suggestions.lock().unwrap().pending(), 0);
+    assert!(state.senders.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_sender_who_becomes_the_holder_is_told_once() {
+    let sender_browser = BrowserId::mint().unwrap();
+    let armed = Arc::new(AtomicBool::new(false));
+    let f = {
+        let (sender, armed) = (sender_browser.clone(), Arc::clone(&armed));
+        Fixture::with_early_subscriber(move |ctx, event| {
+            // The sender takes the freed authoring before review's drop for the release runs.
+            if matches!(event, AuthoringEvent::Freed { .. }) && armed.swap(false, Ordering::SeqCst)
+            {
+                ctx.require_authoring(&sender, Take::TakeIfFree).unwrap();
+            }
+        })
+    };
+    f.ctx.presence().set_name(&sender_browser, "Sam");
+    let sender = f.tab(&sender_browser);
+    let holder = f.connect("Dana");
+    f.ctx
+        .require_authoring(&holder.conn.browser, Take::TakeIfFree)
+        .unwrap();
+    dispatch(&f.ctx, &sender.conn, suggest_command());
+    sender.frames();
+    armed.store(true, Ordering::SeqCst);
+
+    f.ctx.authoring().release(FreeReason::Released("test"));
+
+    assert!(f.ctx.authoring().is_holder(&sender_browser));
+    let to_sender = sender.raw();
+    assert_no_cookies(&to_sender, &[&holder, &sender]);
+    assert_eq!(parse(&to_sender), vec![dropped("sg-1")]);
 }

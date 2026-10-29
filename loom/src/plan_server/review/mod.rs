@@ -16,6 +16,8 @@ mod turn_routes;
 pub use routes::{install, routes};
 
 #[cfg(test)]
+mod at_commit_tests;
+#[cfg(test)]
 mod command_tests;
 #[cfg(test)]
 mod git_tests;
