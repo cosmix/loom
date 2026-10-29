@@ -1,0 +1,8 @@
+{
+  "job": "start",
+  "step": "loom init",
+  "stream": "stdout",
+  "line": "Workspace initialized",
+  "exit_code": null,
+  "done": false
+}

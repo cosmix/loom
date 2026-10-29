@@ -1,0 +1,8 @@
+{
+  "plan": "doc/plans/PLAN-example.md",
+  "daemon_running": true,
+  "merged": 1,
+  "total": 3,
+  "attention": 0,
+  "dashboard_url": "http://127.0.0.1:8080/"
+}

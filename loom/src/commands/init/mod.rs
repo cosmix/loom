@@ -20,3 +20,4 @@ mod tests;
 
 pub use execute::execute;
 pub use plan_setup::preflight_plan;
+pub(crate) use work_state::holds_orchestration_state;
