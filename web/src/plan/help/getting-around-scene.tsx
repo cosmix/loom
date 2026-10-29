@@ -3,22 +3,17 @@ import { Provider } from "jotai/react";
 import { useState } from "react";
 import { MemoryRouter } from "react-router";
 
-import { checklistViewSchema, serverInfoSchema } from "@/plan/api/schema";
+import { checklistViewSchema } from "@/plan/api/schema";
+import { sessionViewSchema } from "@/plan/api/schema-chat";
+import { snapshotAtom } from "@/plan/chat/model";
 import { PlanHeader } from "@/plan/header/header";
+import { ignoreAction, SAMPLE_SERVER, SAMPLE_STEPS } from "@/plan/help/sample";
 import { checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 const SAMPLE_CHECKLIST = checklistViewSchema.parse({
   feature: "atlas",
   current: { kind: "step", number: 3 },
-  steps: [
-    { number: 1, name: "Vision", mark: "done" },
-    { number: 2, name: "Product spec", mark: "gap" },
-    { number: 3, name: "Metaplan", mark: "active" },
-    { number: 4, name: "Plans", mark: "optional" },
-    { number: 5, name: "Plan review", mark: "optional" },
-    { number: 6, name: "Run review", mark: "optional" },
-    { number: 7, name: "Execute", mark: "optional" },
-  ],
+  steps: SAMPLE_STEPS,
   primary: {
     id: "start-metaplan",
     kind: "start_metaplan",
@@ -29,23 +24,32 @@ const SAMPLE_CHECKLIST = checklistViewSchema.parse({
   items: [],
 });
 
-const SAMPLE_SERVER = serverInfoSchema.parse({
-  project: "Atlas",
-  project_key: "atlas-help",
-  port: 7272,
-  remote: false,
-  read_only: [],
-  stopping: false,
-  you: { public_id: "atlas-help-reader", name: "Alex" },
+// An idle planner chat is the one activity that needs only atoms: the pill reads "Waiting for you".
+const SAMPLE_SESSION = sessionViewSchema.parse({
+  id: "header-help",
+  kind: "planner",
+  state: "idle",
+  name: "Atlas planning",
+  model: "Claude",
+  socket: "header-help.sock",
+  holder: null,
+  away_until: null,
+  queued: 0,
+  started_at: "2026-10-29T10:00:00Z",
+  state_since: "2026-10-29T10:00:00Z",
+  working_since: null,
+  subagents_running: 0,
+  last_activity: null,
+  failure: null,
+  offer: null,
 });
-
-function ignoreAction(): void {}
 
 export function GettingAroundScene() {
   const [store] = useState(() => {
     const sample = createStore();
     sample.set(checklistAtom, SAMPLE_CHECKLIST);
     sample.set(serverInfoAtom, SAMPLE_SERVER);
+    sample.set(snapshotAtom, { session: SAMPLE_SESSION, turns: [], queue: [], previous: null });
     return sample;
   });
 
