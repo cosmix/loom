@@ -128,7 +128,11 @@ fn assert_exhaustive(message: &PlanMessage) {
         | PlanMessage::SummaryQuestionClosed { .. }
         | PlanMessage::SummaryTurnCost(_)
         | PlanMessage::Chat(_)
-        | PlanMessage::Review(_) => {}
+        | PlanMessage::Review(_)
+        | PlanMessage::PressureRun(_)
+        | PlanMessage::RunState(_)
+        | PlanMessage::RunOutput(_)
+        | PlanMessage::RunStrip(_) => {}
     }
 }
 
