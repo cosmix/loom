@@ -1,14 +1,21 @@
 /* The reading column's Markdown. Colours come from the shared tokens; Tailwind's
  * preflight has reset margins, list markers and heading sizes, so they are set here. */
 
-/* Reading text is 16px against 12-13px chrome, held to a line length that reads well on a wide
- * screen. Tables and code blocks scroll inside their own box instead of widening the column. */
+/* Document prose follows Settings' reading face and size (19px by default), held to 70ch.
+ * Chat inherits its face. Tables and code blocks scroll instead of widening the column. */
 .md {
   min-width: 0;
-  max-width: min(100%, 76ch);
+  max-width: min(100%, 70ch);
   font-size: 1rem;
   line-height: 1.65;
   overflow-wrap: break-word;
+}
+
+[data-doc-container] .md,
+.concept-passage .md {
+  font-family: var(--font-reading);
+  font-size: var(--reading-size);
+  line-height: var(--reading-line);
 }
 
 .md > * + *,
@@ -24,6 +31,7 @@
 .md h4,
 .md h5,
 .md h6 {
+  font-family: var(--font-sans);
   font-weight: 600;
   line-height: 1.3;
   scroll-margin-top: 1rem;
@@ -53,6 +61,7 @@
 }
 
 .md-heading {
+  font-family: var(--font-sans);
   display: flex;
   align-items: center;
   gap: 0.25rem;
@@ -136,6 +145,7 @@
 
 .md :not(pre) > code,
 .md a > code {
+  font-family: var(--font-mono);
   font-size: 0.875em;
   padding: 0.05em 0.3em;
   border-radius: 4px;
@@ -149,21 +159,27 @@
 }
 
 .md-code {
+  font-family: var(--font-mono);
   border: 1px solid var(--hairline);
   border-radius: 6px;
   background: var(--muted);
   min-width: 0;
 }
 .md-code-bar {
+  font-family: var(--font-sans);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0.125rem 0.25rem 0 0.75rem;
 }
 .md-code-lang {
+  font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 500;
   color: var(--muted-foreground);
+}
+.md pre {
+  font-family: var(--font-mono);
 }
 .md-code pre {
   margin: 0;
@@ -182,7 +198,7 @@
 .md-table {
   min-width: 100%;
   border-collapse: collapse;
-  font-size: 0.875rem;
+  font-size: 0.9em;
   overflow-wrap: normal;
 }
 .md-table thead tr {
@@ -198,6 +214,7 @@
   vertical-align: top;
 }
 .md-table th {
+  font-family: var(--font-sans);
   font-weight: 500;
 }
 .md-table .md-align-center {

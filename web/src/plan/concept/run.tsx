@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai";
-import { Fragment, useRef, type JSX } from "react";
+import { Fragment, type CSSProperties, type JSX } from "react";
 import { Link } from "react-router";
 
 import type { Sentence } from "@/plan/api/schema-concept";
@@ -14,8 +14,8 @@ import {
   useColumn,
   type SentenceSite,
 } from "./column-context";
-import { FoldHandle } from "./fold-handle";
-import { citedMarks, pageMark } from "./marks";
+import { FoldCap } from "./fold-handle";
+import { citedMarks, docColour, pageMark } from "./marks";
 import { conceptPageAtom, isMissing, pageKeyOfSummary, type ConceptPageState } from "./page-state";
 import { PassageBlock } from "./passage";
 import { ClosedSentence } from "./sentence";
@@ -39,6 +39,11 @@ function groupLabel(site: SentenceSite): string {
   return `Detail of ${firstWords(site.sentence.text)}`;
 }
 
+export function runColour(site: SentenceSite, summary: string): string {
+  const mark = site.marks.find((mark) => mark.doc.id === summary) ?? site.marks[0];
+  return docColour(mark?.colour ?? 0);
+}
+
 /**
  * An opened level 0 sentence: the cited level 1 sentences, in citation order, in the same
  * paragraph and the same type, on the faint wash. A cited sentence opened to passages breaks
@@ -46,19 +51,23 @@ function groupLabel(site: SentenceSite): string {
  */
 function InlineRun({ site, run }: { site: SentenceSite; run: OpenRun }): JSX.Element {
   const column = useColumn();
-  const ref = useRef<HTMLSpanElement>(null);
   const { sentence, parent } = site;
   const citations = sentenceCitations(sentence);
+  const id = runDomId(parent, sentence.id);
+  const onFold = () => column.foldRun(run);
   return (
     <span
-      ref={ref}
-      id={runDomId(parent, sentence.id)}
+      id={id}
       role="group"
       aria-label={groupLabel(site)}
       className="concept-run"
+      style={
+        { "--run-colour": runColour(site, citations[0]?.summary ?? site.summary) } as CSSProperties
+      }
       tabIndex={-1}
       data-focus={sentenceKey(parent, sentence.id)}
     >
+      <FoldCap runId={id} side="start" onFold={onFold} />
       {citations.map((citation, index) => (
         // One sentence may cite the same member sentence twice; the index keeps keys unique.
         <Fragment key={`${index}|${citation.summary}|${citation.id}`}>
@@ -70,7 +79,7 @@ function InlineRun({ site, run }: { site: SentenceSite; run: OpenRun }): JSX.Ele
           />
         </Fragment>
       ))}
-      <FoldHandle target={ref} depth={parent === null ? 0 : 1} onFold={() => column.foldRun(run)} />
+      <FoldCap runId={id} side="end" onFold={onFold} />
     </span>
   );
 }
@@ -153,19 +162,23 @@ function CitedSentence({
  */
 function PassageRun({ site, run }: { site: SentenceSite; run: OpenRun }): JSX.Element {
   const column = useColumn();
-  const ref = useRef<HTMLDivElement>(null);
   const { sentence, parent } = site;
   const anchors = passageAnchors(sentence);
+  const id = runDomId(parent, sentence.id);
+  const onFold = () => column.foldRun(run);
   return (
     <div
-      ref={ref}
-      id={runDomId(parent, sentence.id)}
+      id={id}
       role="group"
       aria-label={groupLabel(site)}
       className="concept-passages"
+      style={{ "--run-colour": runColour(site, site.summary) } as CSSProperties}
       tabIndex={-1}
       data-focus={sentenceKey(parent, sentence.id)}
     >
+      <div className="concept-run-edge" data-side="start">
+        <FoldCap runId={id} side="start" onFold={onFold} />
+      </div>
       {anchors.length === 0 && <p className="concept-muted">No source sections.</p>}
       {anchors.map((anchor) => (
         <PassageBlock
@@ -175,7 +188,9 @@ function PassageRun({ site, run }: { site: SentenceSite; run: OpenRun }): JSX.El
           anchor={anchor}
         />
       ))}
-      <FoldHandle target={ref} depth={parent === null ? 0 : 1} onFold={() => column.foldRun(run)} />
+      <div className="concept-run-edge" data-side="end">
+        <FoldCap runId={id} side="end" onFold={onFold} />
+      </div>
     </div>
   );
 }

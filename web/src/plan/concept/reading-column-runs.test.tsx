@@ -169,7 +169,7 @@ it("a file's shown document goes with its last passage", async () => {
   await within(column).findByText("Alpha text");
   const intro = { path: S2, anchor: "intro" };
   await waitFor(() => expect(sectionInShownDoc(store, intro)).toBe(true));
-  fireEvent.click(button(column, "Fold"));
+  fireEvent.click(within(column).getAllByRole("button", { name: "Fold" })[0]!);
   await waitFor(() => expect(sectionInShownDoc(store, intro)).toBeUndefined());
 });
 

@@ -1,90 +1,58 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
-import { useRef } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { FoldHandle } from "./fold-handle";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
-type Watcher = { fire: () => void; observed: Element[]; disconnected: boolean };
+import { FoldCap } from "./fold-handle";
 
-let watchers: Watcher[] = [];
-const runTop = 10;
-let runBottom = 30;
+afterEach(cleanup);
 
-class RecordingObserver {
-  private readonly watcher: Watcher;
-  constructor(callback: ResizeObserverCallback) {
-    this.watcher = { fire: () => callback([], this), observed: [], disconnected: false };
-    watchers.push(this.watcher);
-  }
-  observe(element: Element) {
-    this.watcher.observed.push(element);
-  }
-  unobserve() {}
-  disconnect() {
-    this.watcher.disconnected = true;
-  }
-}
-
-/** The observer the mounted handle currently holds; earlier ones were disconnected. */
-const live = () => watchers.filter((watcher) => !watcher.disconnected);
-
-function Harness() {
-  const ref = useRef<HTMLSpanElement>(null);
-  return (
-    <p className="concept-paragraph">
-      <span ref={ref} id="run-1">
-        opened text
-      </span>
-      <FoldHandle target={ref} depth={0} onFold={() => {}} />
-    </p>
-  );
-}
-
-beforeEach(() => {
-  watchers = [];
-  runBottom = 30;
-  vi.stubGlobal("ResizeObserver", RecordingObserver);
-  vi.spyOn(Element.prototype, "getClientRects").mockImplementation(
-    () => [{ top: runTop, bottom: runBottom }] as unknown as DOMRectList,
-  );
-  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
-    () => ({ top: 0 }) as DOMRect,
-  );
-});
-
-afterEach(() => {
-  cleanup();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
-
-describe("FoldHandle", () => {
-  it("spans the run's lines inside its paragraph", () => {
-    render(<Harness />);
-    const handle = screen.getByRole("button", { name: "Fold" });
-    expect(handle.style.top).toBe("10px");
-    expect(handle.style.height).toBe("20px");
-  });
-
-  it("observes the paragraph as well as the inline run", () => {
-    const { container } = render(<Harness />);
-    const observer = live();
-    expect(observer).toHaveLength(1);
-    expect(observer[0]!.observed).toContain(container.querySelector("#run-1"));
-    expect(observer[0]!.observed).toContain(container.querySelector(".concept-paragraph"));
-  });
-
-  it("re-measures when the paragraph resizes, so a loaded nested passage lengthens it", () => {
-    render(<Harness />);
-    runBottom = 70;
-    act(() => live()[0]!.fire());
-    expect(screen.getByRole("button", { name: "Fold" }).style.height).toBe("60px");
-  });
-
-  it("is described by the run it folds", () => {
-    render(<Harness />);
-    expect(screen.getByRole("button", { name: "Fold" }).getAttribute("aria-describedby")).toBe(
-      "run-1",
+describe("FoldCap", () => {
+  it.each(["start", "end"] as const)("renders the %s cap described by its run", (side) => {
+    render(
+      <TooltipProvider>
+        <FoldCap runId="run-1" side={side} onFold={() => {}} />
+      </TooltipProvider>,
     );
+
+    const cap = screen.getByRole("button", { name: "Fold" });
+    expect(cap.getAttribute("data-side")).toBe(side);
+    expect(cap.getAttribute("aria-describedby")).toBe("run-1");
+    expect(cap.getAttribute("tabindex")).toBe("-1");
   });
+
+  it.each(["start", "end"] as const)("clicking the %s cap folds once without bubbling", (side) => {
+    const onFold = vi.fn();
+    const onParentClick = vi.fn();
+    render(
+      <TooltipProvider>
+        <div onClick={onParentClick}>
+          <FoldCap runId="run-1" side={side} onFold={onFold} />
+        </div>
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Fold" }));
+
+    expect(onFold).toHaveBeenCalledTimes(1);
+    expect(onParentClick).not.toHaveBeenCalled();
+  });
+
+  it.each(["start", "end"] as const)(
+    "focusing the %s cap shows the fold shortcut",
+    async (side) => {
+      render(
+        <TooltipProvider>
+          <FoldCap runId="run-1" side={side} onFold={() => {}} />
+        </TooltipProvider>,
+      );
+      const cap = screen.getByRole("button", { name: "Fold" });
+
+      fireEvent.focus(cap);
+
+      expect((await screen.findByRole("tooltip")).textContent).toBe("Fold · Esc");
+      expect(screen.getByRole("button", { name: "Fold" })).toBe(cap);
+      expect(cap.getAttribute("aria-describedby")).toBe("run-1");
+    },
+  );
 });
