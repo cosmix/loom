@@ -1246,7 +1246,7 @@ loom init <plan> --backend tmux   # skips the interactive backend prompt
 loom run --backend tmux           # persists the choice to [terminal]
 ```
 
-`loom init` prompts for a backend when run interactively; with no TTY it inherits `~/.loom/config.toml`, then the built-in default, `tmux`.
+`loom init` prompts for a backend when run interactively; with no TTY it inherits `~/.loom/config.toml`, then the built-in default, `tmux`. The built-in default is tmux; set `terminal.backend = "native"` to keep native terminal windows.
 Changing the backend while the daemon is running is refused with a hint — `loom stop` first, then
 re-run with `--backend`. Selecting a backend takes effect on the next spawn.
 
