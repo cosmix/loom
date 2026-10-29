@@ -1,0 +1,39 @@
+/* The dashboard counter-cell form, scoped to planner chrome and its portalled popover. */
+[data-loom-plan] .plan-step-rail {
+  display: flex;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  width: max-content;
+}
+
+[data-loom-plan] .plan-step-cell {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 6px 14px;
+}
+
+[data-loom-plan] .plan-step-cell + .plan-step-cell {
+  border-inline-start: 1px solid var(--hairline);
+}
+
+[data-loom-plan] .plan-step-name {
+  font-family: var(--font-sans), Inter, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+[data-loom-plan] .plan-step-rail-vertical {
+  flex-direction: column;
+  width: 100%;
+}
+
+[data-loom-plan] .plan-step-rail-vertical .plan-step-cell + .plan-step-cell {
+  border-inline-start: 0;
+  border-block-start: 1px solid var(--hairline);
+}

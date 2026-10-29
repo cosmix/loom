@@ -8,7 +8,7 @@ import filesDocFixture from "@/plan/api/fixtures/files-doc.json";
 import { checklistViewSchema } from "@/plan/api/schema";
 import { conceptPageSchema } from "@/plan/api/schema-concept";
 import { pendingAttachmentsAtom } from "@/plan/attachments";
-import { PLAN_HELP_KEYS } from "@/plan/help-keys";
+import { PLANNER_SHORTCUT_GROUPS } from "@/plan/help/shortcuts";
 import { checklistAtom } from "@/plan/state/atoms";
 
 import { conceptPageLabel } from "./concept-route";
@@ -165,7 +165,7 @@ describe("overviews and the document key", () => {
     serveOverview();
     renderAt("/product");
     await openFirstRun();
-    const tabs = screen.getByRole("navigation", { name: "Planning tabs" });
+    const tabs = screen.getByRole("navigation", { name: "Views" });
     fireEvent.click(within(tabs).getByRole("link", { name: "Engineering" }));
     await screen.findByText("Engineering overview");
     fireEvent.click(within(tabs).getByRole("link", { name: "Product" }));
@@ -279,8 +279,8 @@ describe("keys", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/product"));
   });
 
-  it("PLAN_HELP_KEYS holds the Concept mode group with nine rows", () => {
-    const group = PLAN_HELP_KEYS.find((entry) => entry.title === "Concept mode");
+  it("help shortcuts hold the reading group with nine rows", () => {
+    const group = PLANNER_SHORTCUT_GROUPS.find((entry) => entry.title === "While reading");
     expect(group?.rows).toHaveLength(9);
   });
 });

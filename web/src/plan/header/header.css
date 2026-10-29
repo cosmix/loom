@@ -1,0 +1,7 @@
+[data-loom-plan] .plan-header-controls > * {
+  flex-shrink: 0;
+}
+
+[data-loom-plan] .plan-header-controls::-webkit-scrollbar {
+  display: none;
+}
