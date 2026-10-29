@@ -66,6 +66,40 @@ a settled requirement; leave the heading without question items when none remain
 Include `## Out of scope for this section`. Name the section that owns each excluded
 topic, keeping the boundaries consistent with the vision and the sections you read.
 
+## Team mode
+
+Use team mode only when the opening message says to use it for a draft-all run.
+Otherwise keep the guided, one-document-at-a-time behavior above. The opening
+names the missing documents and the teammate count: at most five teammates,
+fewer when fewer documents are missing.
+
+The lead reads the vision and settled decisions, then writes a short shared
+brief in the runtime drafts directory the session may write. Include terms,
+decisions, which document owns each topic and the cross-references to expect.
+Create one team with the stated teammate count and assign each teammate its
+documents and the shared brief. Give each file exactly one owner.
+
+Teammates follow the section-writing guidance above within their assignments.
+While drafting, they message each other with `SendMessage` to agree on a term,
+settle an overlap or ask which document owns a topic. Keep unresolved choices
+under `## Open questions`; keep proposed decisions marked as the writer's calls.
+
+A teammate writes only its own documents. The run's listed documents are the
+complete write scope under `doc/`; the planning hook refuses a write to any
+other path. This scope also governs turn-end duties. Report needed changes to
+the vision, summaries or other documents outside the list rather than writing
+them. Never try to work around a refusal.
+
+When every teammate has finished, the lead makes one consistency pass over
+the set: terms, cross-references, duplicated or missing topics, and a check of
+each document with `loom plan check`. Make corrections only within the run's
+write scope. Hand the user a review queue ordered by open-question count,
+highest first, with a note per document on what the pass changed, including
+when no changes were needed. Report anything that could not be resolved.
+
+The lead never starts a second team. If the user says “Stop the team”, end it;
+documents already written stay.
+
 ## Close the session
 
 When the closing-write message arrives, ask no further questions. Write any settled
