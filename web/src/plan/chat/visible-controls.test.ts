@@ -56,7 +56,20 @@ describe("Untrusted", () => {
     expect(span.textContent).toBe("<b>⟨U+202E⟩path</b>");
     expect(span.textContent).not.toContain(rlo);
     expect(span.childElementCount).toBe(0);
-    expect(span.style.unicodeBidi).toBe("plaintext");
+    expect(span.style.unicodeBidi).toBe("isolate");
+    expect(span.style.direction).toBe("ltr");
+  });
+
+  it("keeps a command that starts with an RTL letter in its executed order", () => {
+    // `plaintext` ignores `direction` and lays such a paragraph out right-to-left, so the
+    // displayed segment order would differ from the order the shell runs.
+    const { container } = render(
+      createElement(Untrusted, { text: "'\u05e9'; rm -rf doc/product; '\u05e9'; git status" }),
+    );
+    const span = container.querySelector("span")!;
+
+    expect(span.style.unicodeBidi).toBe("isolate");
+    expect(span.style.unicodeBidi).not.toBe("plaintext");
     expect(span.style.direction).toBe("ltr");
   });
 });

@@ -31,4 +31,17 @@ describe("Tabs", () => {
     expect(screen.getByRole("link", { name: "Files" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("link", { name: "Product" }).getAttribute("aria-current")).toBeNull();
   });
+
+  it("shrinks and scrolls instead of pushing the header controls out of a narrow screen", () => {
+    const element = () => <p />;
+    render(
+      <MemoryRouter>
+        <Tabs tabs={[{ id: "files", label: "Files", path: "/files", element }]} />
+      </MemoryRouter>,
+    );
+    const nav = screen.getByRole("navigation", { name: "Planning tabs" });
+    expect(nav.className).toContain("min-w-0");
+    expect(nav.className).toContain("overflow-x-auto");
+    expect(screen.getByRole("link", { name: "Files" }).className).toContain("shrink-0");
+  });
 });

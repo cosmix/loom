@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -12,12 +12,14 @@ import { connectionEpochAtom } from "@/plan/state/atoms";
 import { LoadState } from "@/plan/ui/load-state";
 
 import { getAtCommit, getBuilt, type BuiltResponse } from "./api";
+import { returnFocusTo } from "./focus-return";
 import { hashesAtom } from "./live";
 
 const LIMITS =
   "Running loom run again on a done plan regenerates its review and moves the build date later. A done plan without a review shows no marker.";
 type BuiltNote = BuiltResponse["notes"][number];
 type Comparison = { before: string | null; after: string | null };
+type Loaded = { section: string; result: ApiResult<BuiltResponse> };
 
 function BuiltDiff({ section, commit }: { section: string; commit: string }) {
   const [load, setLoad] = useState<ApiResult<Comparison> | null>(null);
@@ -56,11 +58,14 @@ function BuildDialog({
   label,
   section,
   commit,
+  link,
   onClose,
 }: {
   label: string;
   section: string;
   commit: string;
+  /** The marker link that opened the dialog; focus returns to it on close. */
+  link: RefObject<HTMLAnchorElement | null>;
   onClose: () => void;
 }) {
   return (
@@ -70,7 +75,13 @@ function BuildDialog({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="flex max-h-[90vh] flex-col overflow-auto sm:max-w-5xl motion-reduce:animate-none">
+      <DialogContent
+        className="flex max-h-[90vh] flex-col overflow-auto sm:max-w-5xl motion-reduce:animate-none"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          returnFocusTo(link.current);
+        }}
+      >
         <DialogTitle>
           <Untrusted text={label} />
         </DialogTitle>
@@ -88,11 +99,13 @@ function MarkerLink({
   label,
   section,
   commit,
+  link,
   onOpen,
 }: {
   label: string;
   section: string;
   commit: string | null;
+  link: RefObject<HTMLAnchorElement | null>;
   onOpen: () => void;
 }) {
   return (
@@ -104,6 +117,7 @@ function MarkerLink({
           </span>
         ) : (
           <a
+            ref={link}
             href={`${toAddress(section)}?base_commit=${encodeURIComponent(commit)}`}
             className="text-[13px] underline"
             title={LIMITS}
@@ -123,6 +137,7 @@ function MarkerLink({
 
 function MarkerNote({ note, section }: { note: BuiltNote; section: string }) {
   const [open, setOpen] = useState(false);
+  const link = useRef<HTMLAnchorElement>(null);
   if (note.kind === "running") {
     return (
       <p role="note" className="text-[13px]">
@@ -137,12 +152,19 @@ function MarkerNote({ note, section }: { note: BuiltNote; section: string }) {
   const commit = note.base_commit;
   return (
     <>
-      <MarkerLink label={label} section={section} commit={commit} onOpen={() => setOpen(true)} />
+      <MarkerLink
+        label={label}
+        section={section}
+        commit={commit}
+        link={link}
+        onOpen={() => setOpen(true)}
+      />
       {open && commit !== null && (
         <BuildDialog
           label={label}
           section={section}
           commit={commit}
+          link={link}
           onClose={() => setOpen(false)}
         />
       )}
@@ -153,26 +175,39 @@ function MarkerNote({ note, section }: { note: BuiltNote; section: string }) {
 export function BuiltMarker({ section }: { section: string }) {
   const epoch = useAtomValue(connectionEpochAtom);
   const hashes = useAtomValue(hashesAtom);
-  const [load, setLoad] = useState<ApiResult<BuiltResponse> | null>(null);
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [attempt, setAttempt] = useState(0);
+  // A refetch (every hashes change, a reconnect) keeps the last result of this section on show:
+  // resetting it would flash a placeholder and move the page header under the reader.
   useEffect(() => {
     let active = true;
-    setLoad(null);
     void getBuilt(section).then((result) => {
-      if (active) setLoad(result);
+      if (active) setLoaded({ section, result });
     });
     return () => {
       active = false;
     };
   }, [section, epoch, hashes, attempt]);
-  if (!load) return <LoadState state="loading" title="Loading build markers" />;
+  const load = loaded?.section === section ? loaded.result : null;
+  if (!load)
+    return (
+      <p role="status" className="text-[13px] text-muted-foreground">
+        Loading build markers…
+      </p>
+    );
   if (!load.ok)
     return (
       <LoadState
         state="error"
         title="Build markers did not load"
         message={visibleControls(load.message)}
-        action={{ label: "Retry", onClick: () => setAttempt((n) => n + 1) }}
+        action={{
+          label: "Retry",
+          onClick: () => {
+            setLoaded(null);
+            setAttempt((n) => n + 1);
+          },
+        }}
       />
     );
   if (load.value.notes.length === 0) return null;

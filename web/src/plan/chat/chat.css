@@ -70,10 +70,6 @@
   margin-block-start: 4px;
 }
 
-.chat-dim {
-  opacity: 0.65;
-}
-
 .chat-last-update {
   padding: 4px 12px;
   color: var(--muted-foreground);

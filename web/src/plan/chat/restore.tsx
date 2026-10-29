@@ -296,10 +296,19 @@ function Feedback({ action }: { action: Action }) {
 
 function RestoreAllDialog({ action, paths }: { action: Action; paths: string[] }) {
   const [confirm, setConfirm] = useState(false);
+  // The trigger stays focusable while a restore runs (`aria-disabled`, opening refused): confirming
+  // starts the restore at once, and Radix hands focus back to the trigger as the dialog closes. A
+  // `disabled` button cannot take it, and focus would fall to the page body.
   return (
-    <Dialog open={confirm} onOpenChange={setConfirm}>
+    <Dialog open={confirm} onOpenChange={(open) => setConfirm(open && !action.pending)}>
       <DialogTrigger asChild>
-        <Button type="button" variant="ghost" size="sm" disabled={action.pending}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+          aria-disabled={action.pending || undefined}
+        >
           Restore all
         </Button>
       </DialogTrigger>

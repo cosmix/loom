@@ -297,6 +297,27 @@ it("restore all asks first and lists repo-relative paths", async () => {
   );
 });
 
+it("restore all keeps focus on its button after confirming, and stays closed while restoring", async () => {
+  // The restore request never answers, so the action stays pending after the dialog closes.
+  fetchMock.mockImplementation((input, init) =>
+    String(input).includes("/api/restore") ? new Promise<Response>(() => {}) : answer(input, init),
+  );
+  mount(setup(), <RestoreAll sessionId={baseSession.id} turn={turn} paths={[path, second]} />);
+  const trigger = await screen.findByRole("button", { name: "Restore all" });
+  trigger.focus();
+  fireEvent.click(trigger);
+  const dialog = await screen.findByRole("dialog", { name: "Restore all files?" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Restore files" }));
+
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  // `aria-disabled`, not `disabled`: a disabled button cannot take the focus Radix hands back.
+  expect(trigger.getAttribute("aria-disabled")).toBe("true");
+  expect(trigger.hasAttribute("disabled")).toBe(false);
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+  fireEvent.click(trigger);
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
 it("restore all cancel sends nothing", async () => {
   mount(setup(), <RestoreAll sessionId={baseSession.id} turn={turn} paths={[path, second]} />);
   fireEvent.click(await screen.findByRole("button", { name: "Restore all" }));

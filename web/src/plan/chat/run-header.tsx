@@ -25,7 +25,7 @@ export function RunHeader({ session }: { session: SessionView }) {
   const awayUntil = holder ? holder.frees_at : session.away_until;
   // Plan 11 adds a pressure-session branch on session.kind here.
   return (
-    <div className="chat-run-header flex flex-wrap gap-x-1 text-xs text-muted-foreground">
+    <div className="chat-run-header flex flex-wrap gap-x-1 px-3 text-xs text-muted-foreground">
       {awayUntil ? (
         <span>
           <Untrusted text={name} /> is away · authoring frees at{" "}

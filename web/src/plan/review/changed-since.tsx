@@ -1,8 +1,14 @@
 import { atom, useAtomValue, useStore } from "jotai";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { DiffView } from "@/plan/diff/diff-view";
 import { fetchDoc } from "@/plan/files/api";
@@ -12,7 +18,8 @@ import { LoadState } from "@/plan/ui/load-state";
 import { getAtCommit, getCompare, type CompareResponse } from "./api";
 import { changedSince, checkpointAtom, markSeen, type Checkpoint } from "./checkpoint";
 import { ChangeRows, Limits, RefForm, type Change, type Comparison } from "./changed-since-parts";
-import { hashesAtom } from "./live";
+import { focusReadingRegion } from "./focus-return";
+import { hashesAtom, loadHashes } from "./live";
 
 type Selection = { path: string; commit: string; checkpoint: Checkpoint | null };
 type CompareLoad = { value?: CompareResponse; error?: string; loading: boolean };
@@ -130,16 +137,52 @@ function SelectedDiff({ selection }: { selection: Selection }) {
   );
 }
 
+type MarkState = { pending: boolean; error: string | null };
+type MarkAll = MarkState & { markAll: () => void };
+
+/**
+ * Stores what the server holds when the button is pressed. `hashesAtom` reloads on load, reconnect
+ * and `doc_changed`, and a commit sends none of them, so its `head` can predate the commit HEAD
+ * points to now; the checkpoint must hold that commit. The load goes through the serial queue of
+ * `loadHashes`, which also replaces `hashesAtom` with the response the checkpoint is cut from; a
+ * `doc_changed` reload that starts meanwhile queues behind it, so an older response never lands
+ * after a newer one.
+ */
+function useMarkAllSeen(): MarkAll {
+  const store = useStore();
+  const [state, setState] = useState<MarkState>({ pending: false, error: null });
+  const mounted = useRef(true);
+  const busy = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const markAll = () => {
+    if (busy.current) return;
+    busy.current = true;
+    setState({ pending: true, error: null });
+    void loadHashes(store).then((result) => {
+      busy.current = false;
+      if (!mounted.current) return;
+      if (result.ok) {
+        store.set(checkpointAtom, { commit: result.value.head, hashes: { ...result.value.docs } });
+      }
+      setState({ pending: false, error: result.ok ? null : result.message });
+    });
+  };
+  return { ...state, markAll };
+}
+
 function CompareControls({
   comparison,
-  canMarkAll,
+  mark,
   onRef,
-  onMarkAll,
 }: {
   comparison: Comparison | null;
-  canMarkAll: boolean;
+  mark: MarkAll;
   onRef: (value: Comparison | null) => void;
-  onMarkAll: () => void;
 }) {
   return (
     <>
@@ -150,9 +193,24 @@ function CompareControls({
         </p>
       )}
       {!comparison && (
-        <Button size="sm" variant="outline" disabled={!canMarkAll} onClick={onMarkAll}>
-          Mark all seen
+        // `aria-disabled`, not `disabled`: the button holds focus inside the modal while it loads, and
+        // a disabled button drops it to the page body. `markAll` ignores presses while pending.
+        <Button
+          size="sm"
+          variant="outline"
+          className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+          aria-disabled={mark.pending || undefined}
+          onClick={mark.markAll}
+        >
+          {mark.pending ? "Marking all seen…" : "Mark all seen"}
         </Button>
+      )}
+      {mark.error && (
+        <LoadState
+          state="error"
+          title="Could not mark all seen"
+          message={visibleControls(mark.error)}
+        />
       )}
     </>
   );
@@ -185,9 +243,8 @@ function CompareStatus({
 }
 
 function ComparisonList({ changes }: { changes: Change[] }) {
-  const store = useStore();
   const checkpoint = useAtomValue(checkpointAtom);
-  const current = useAtomValue(hashesAtom);
+  const mark = useMarkAllSeen();
   const [ref, setRef] = useState<Comparison | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const commit = ref ? ref.commit : (checkpoint?.commit ?? null);
@@ -200,14 +257,10 @@ function ComparisonList({ changes }: { changes: Change[] }) {
     <>
       <CompareControls
         comparison={ref}
-        canMarkAll={!!current}
+        mark={mark}
         onRef={(value) => {
           setRef(value);
           setSelection(null);
-        }}
-        onMarkAll={() => {
-          if (!current) return;
-          store.set(checkpointAtom, { commit: current.head, hashes: { ...current.docs } });
         }}
       />
       <CompareStatus compare={compare} unavailable={unavailable} />
@@ -229,26 +282,37 @@ function ComparisonList({ changes }: { changes: Change[] }) {
 
 function ChangedSinceWidget({ compact, changes }: { compact: boolean; changes: Change[] }) {
   const [open, setOpen] = useState(false);
+  const opener = useRef<HTMLButtonElement>(null);
   if (!changes.length && !open) return null;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {changes.length > 0 && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setOpen(true)}
-          aria-label={`Changed since you looked · ${changes.length}`}
-        >
-          {compact ? (
-            <>
-              <span aria-hidden="true">●</span> {changes.length}
-            </>
-          ) : (
-            <>Changed since you looked · {changes.length}</>
-          )}
-        </Button>
+        <DialogTrigger asChild>
+          <Button
+            ref={opener}
+            variant="ghost"
+            size="sm"
+            aria-label={`Changed since you looked · ${changes.length}`}
+          >
+            {compact ? (
+              <>
+                <span aria-hidden="true">●</span> {changes.length}
+              </>
+            ) : (
+              <>Changed since you looked · {changes.length}</>
+            )}
+          </Button>
+        </DialogTrigger>
       )}
-      <DialogContent className="max-h-[85vh] overflow-y-auto text-[13px] motion-reduce:animate-none sm:max-w-3xl">
+      <DialogContent
+        className="max-h-[85vh] overflow-y-auto text-[13px] motion-reduce:animate-none sm:max-w-3xl"
+        onCloseAutoFocus={(event) => {
+          // "Mark all seen" removes the opener; Radix would leave focus on the page body.
+          if (opener.current?.isConnected) return;
+          event.preventDefault();
+          focusReadingRegion();
+        }}
+      >
         <DialogTitle>Changed since you looked</DialogTitle>
         <DialogDescription>
           Review documents against your checkpoint or a git ref.

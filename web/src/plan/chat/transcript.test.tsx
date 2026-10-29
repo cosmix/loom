@@ -45,6 +45,19 @@ it("thinking markers merge", () => {
   expect(within(log).getByText(/Thought for 5s/)).toBeTruthy();
 });
 
+it.each<[string, Array<number | null>]>([
+  ["a later", [2000, null]],
+  ["an earlier", [null, 3000]],
+  ["a middle", [2000, null, 3000]],
+])("%s thinking marker without a duration leaves the merged duration unknown", (_, durations) => {
+  const markers = durations.map((duration_ms, index) =>
+    item("thinking", { id: `think${index}`, duration_ms }),
+  );
+  const { log } = mount([...markers, item("text", { markdown: "Done" })]);
+  expect(within(log).queryByText(/Thought for/)).toBeNull();
+  expect(within(log).getByText("Thought")).toBeTruthy();
+});
+
 it("api_error notice toned blocked", () => {
   const { log } = mount([item("notice", { kind: "api_error", text: "API unavailable" })]);
   expect(

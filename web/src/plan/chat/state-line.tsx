@@ -4,14 +4,14 @@ import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 import { HazardPanel } from "@/aurora-ui/feedback/HazardPanel";
 import { WorkRoundel } from "@/components/activity-roundel";
 import { useNow } from "@/components/hooks/use-now";
-import { Stamp } from "@/components/terminal/terminal-notice";
 import { formatElapsed } from "@/lib/format";
 import type { ServerInfo } from "@/plan/api/schema";
 import type { Item, SessionView, Turn } from "@/plan/api/schema-chat";
-import { OfferButton } from "@/plan/offers/offer-button";
-import { checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
-import { pendingPermissionsAtom, sessionAtom, turnsAtom } from "./model";
-import { NewChatButton, StartingBrief } from "./start-chat";
+import { serverInfoAtom } from "@/plan/state/atoms";
+import { pendingPermissionsAtom, turnsAtom } from "./model";
+import { NewChatOffers } from "./new-chat-offers";
+import { shownSessionAtom } from "./shown-session";
+import { StartingBrief } from "./start-chat";
 import { Untrusted } from "./visible-controls";
 
 type Permission = Extract<Item, { type: "permission" }>;
@@ -37,8 +37,9 @@ function workingDetail(session: SessionView, turns: Turn[], now: number): string
 }
 
 /**
- * What the polite live region announces: the state and its stable facts only. Clocks and tool
- * summaries stay out, or the region would re-announce every few seconds for the whole turn.
+ * The words on the row, and what the polite live region announces: the state and its stable
+ * facts only. Clocks and tool summaries stay out, or the region would re-announce every few
+ * seconds for the whole turn.
  */
 function stateWords(session: SessionView | null, pending: Permission[]): string {
   if (!session) return "No chat";
@@ -56,12 +57,20 @@ function stateWords(session: SessionView | null, pending: Permission[]): string 
     case "ending":
       return "Writing final notes into the documents · This can take up to 10 minutes.";
     case "ended":
-      return "Chat ended";
     case "failed":
-      return session.failure?.kind === "spawn"
-        ? "The session could not start"
-        : "The session stopped unexpectedly";
+      // The Ended line and the Failure panel carry these on screen; ChatAnnouncer says them aloud.
+      return "";
   }
+}
+
+/**
+ * States whose announcement belongs to ChatAnnouncer, which stays mounted when the panel does
+ * not (a collapsed rail, a closed sheet). The polite region here leaves them out, so each is
+ * announced once, and the permission words on the row are not hidden behind a duplicate.
+ */
+function announcedElsewhere(session: SessionView | null): boolean {
+  const state = session?.state;
+  return state === "permission" || state === "ended" || state === "failed";
 }
 
 function StateGlyph({ state }: { state: SessionView["state"] | undefined }) {
@@ -146,7 +155,6 @@ function StateRow(props: {
   hideWords: boolean;
 }) {
   const { session, text, detail, hideWords } = props;
-  const checklist = useAtomValue(checklistAtom);
   return (
     <div className="flex flex-wrap items-center gap-2">
       <StateGlyph state={session?.state} />
@@ -160,12 +168,7 @@ function StateRow(props: {
           {detail && <Untrusted text={detail} />}
         </span>
       )}
-      {!session && (
-        <>
-          {checklist?.primary && <OfferButton offer={checklist.primary} />}
-          <NewChatButton />
-        </>
-      )}
+      {!session && <NewChatOffers />}
     </div>
   );
 }
@@ -182,47 +185,36 @@ function StateBody(props: {
   if (problems.length > 0) return <ReadOnlyHazard problems={problems} />;
   if (session?.state === "failed") return <Failure session={session} now={now} />;
   if (session?.state === "ended") {
-    // The Stamp is a ticking status region of its own; the announcement above says "Chat ended".
-    return (
-      <div aria-hidden="true">
-        <Stamp
-          since={Date.parse(session.state_since)}
-          word="Chat ended"
-          action={null}
-          retry={() => {}}
-        />
-      </div>
-    );
+    // Plain text, exposed to browse mode but not a live region: ChatAnnouncer says it aloud once.
+    const ago = age(session.state_since, now);
+    return <p className="text-muted-foreground">{`Chat ended · ${ago} ago`}</p>;
   }
   return <StateRow session={session} text={text} detail={detail} hideWords={hideWords} />;
 }
 
 export function StateLine() {
-  const session = useAtomValue(sessionAtom);
+  const session = useAtomValue(shownSessionAtom);
   const turns = useAtomValue(turnsAtom);
   const pending = useAtomValue(pendingPermissionsAtom);
   const problems = useAtomValue(serverInfoAtom)?.read_only ?? [];
   const now = useNow();
-  const words = problems.length
+  const readOnly = problems.length > 0;
+  const words = readOnly
     ? `Read-only · ${problems.map((p) => `${p.message}. ${p.fix}`).join(" · ")}`
     : stateWords(session, pending);
   const detail =
-    session?.state === "working" && problems.length === 0
+    session?.state === "working" && !readOnly
       ? ` · ${workingDetail(session, turns, now).join(" · ")}`
       : "";
-  // The sr-only region above already announces the words, so on a text-only row only the words
-  // are hidden from browse mode; rows holding buttons or links (no session, starting, failed,
-  // ended) stay exposed.
-  const textOnly =
-    problems.length === 0 &&
-    session !== null &&
-    session.state !== "starting" &&
-    session.state !== "failed" &&
-    session.state !== "ended";
+  // The sr-only region announces the words, so the visible copy is hidden from browse mode on the
+  // rows that hold only those words (and buttons beside them); read-only and Starting rows carry
+  // more than the announcement and stay exposed.
+  const elsewhere = !readOnly && announcedElsewhere(session);
+  const hideWords = !readOnly && !elsewhere && session?.state !== "starting";
   return (
-    <div className="chat-state-line text-[13px] font-medium">
+    <div className="chat-state-line px-3 text-[13px] font-medium">
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-        <Untrusted text={words} />
+        <Untrusted text={elsewhere ? "" : words} />
       </div>
       <div aria-live="off">
         <StateBody
@@ -230,7 +222,7 @@ export function StateLine() {
           problems={problems}
           text={words}
           detail={detail}
-          hideWords={textOnly}
+          hideWords={hideWords}
           now={now}
         />
       </div>
