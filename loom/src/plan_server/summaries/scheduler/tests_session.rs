@@ -2,8 +2,12 @@
 
 use std::time::Duration;
 
-use super::tests::{ids, question_of, setup};
+use super::session::ENDED_UNSEALED;
+use super::tests::{ids, question_of, setup, Stub};
 use super::*;
+
+/// A step that clears an id's unsealed mark and names the session the next start gets.
+type ClearMark<'a> = dyn Fn(&mut Scheduler, &Stub, Instant) -> &'static str + 'a;
 
 fn minutes(at: Instant, minutes: u64) -> Instant {
     at + Duration::from_secs(minutes * 60)
@@ -179,4 +183,86 @@ fn the_server_stopping_closes_an_open_question() {
     s.server_stopping();
     let closed = SchedulerEvent::QuestionClosed { id: asked.id };
     assert_eq!(s.take_events(), vec![closed]);
+}
+
+/// `session` held `claimed` (it worked on them), then ended normally without sealing them.
+fn end_unsealed(s: &mut Scheduler, stub: &Stub, session: &str, claimed: &[String], now: Instant) {
+    s.claims_changed(session, claimed, now, stub);
+    s.session_ended(session, now, stub);
+}
+
+#[test]
+fn a_summary_left_claimed_and_unsealed_by_two_ends_fails_instead_of_rebuilding_again() {
+    let (mut s, stub, t0) = setup();
+    let a = ids(&["a"]);
+    s.on_update(&a, &a, t0, &stub);
+    end_unsealed(&mut s, &stub, "s1", &a, t0);
+    assert_eq!(
+        stub.starts(),
+        vec![a.clone(), a.clone()],
+        "the first end requeues"
+    );
+    s.take_events();
+    end_unsealed(&mut s, &stub, "s2", &a, minutes(t0, 1));
+    assert_eq!(stub.starts().len(), 2, "the second end does not");
+    let failed = SchedulerEvent::Failed {
+        ids: a.clone(),
+        error: ENDED_UNSEALED.into(),
+    };
+    assert!(s.take_events().contains(&failed));
+    let view = s.panel_state();
+    assert_eq!(view.failed, vec![(a[0].clone(), ENDED_UNSEALED.to_owned())]);
+    assert!(view.queue.is_empty() && view.running.is_none());
+}
+
+#[test]
+fn an_end_before_the_session_claimed_a_summary_does_not_count() {
+    let (mut s, stub, now) = setup();
+    let a = ids(&["a"]);
+    s.on_update(&a, &a, now, &stub);
+    s.session_ended("s1", now, &stub);
+    end_unsealed(&mut s, &stub, "s2", &a, now);
+    s.session_ended("s3", now, &stub);
+    assert_eq!(
+        stub.starts().len(),
+        4,
+        "s4 runs: one claimed unsealed end so far"
+    );
+    end_unsealed(&mut s, &stub, "s4", &a, now);
+    assert_eq!(
+        stub.starts().len(),
+        4,
+        "the second claimed unsealed end fails it"
+    );
+    assert_eq!(s.panel_state().failed.len(), 1);
+}
+
+#[test]
+fn a_seal_a_button_or_a_current_summary_clears_the_unsealed_mark() {
+    let a = ids(&["a"]);
+    let seal = |s: &mut Scheduler, stub: &Stub, now: Instant| {
+        s.seal_seen("plans/a", now);
+        s.session_ended("s2", now, stub);
+        s.on_update(&a, &a, now, stub);
+        "s3"
+    };
+    let press = |s: &mut Scheduler, stub: &Stub, now: Instant| {
+        s.press(&a, now, stub);
+        "s2"
+    };
+    let current = |s: &mut Scheduler, stub: &Stub, now: Instant| {
+        s.on_update(&[], &[], now, stub);
+        "s2"
+    };
+    let clears: [&ClearMark<'_>; 3] = [&seal, &press, &current];
+    for (case, clear) in clears.into_iter().enumerate() {
+        let (mut s, stub, now) = setup();
+        s.on_update(&a, &a, now, &stub);
+        end_unsealed(&mut s, &stub, "s1", &a, now);
+        let session = clear(&mut s, &stub, now);
+        let started = stub.starts().len();
+        end_unsealed(&mut s, &stub, session, &a, now);
+        assert_eq!(stub.starts().len(), started + 1, "case {case}: requeued");
+        assert!(s.panel_state().failed.is_empty(), "case {case}");
+    }
 }
