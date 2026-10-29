@@ -11,8 +11,8 @@ anchors, discovery); where this section names a kind or a parent, it uses 03's r
 ## The model in one paragraph
 
 File mode is a reader first. The left pane is a tree of every document under `doc/` that
-section 03 discovers, grouped by kind; the reading column renders the selected file. Anyone
-connected can read, search, follow links, and open diffs. The browser holding authoring can also
+section 03 discovers, grouped by kind and feature; the reading column renders the selected
+file. Anyone connected can read, search, follow links, and open diffs. The browser holding authoring can also
 open the file in a CodeMirror editor and save it; the server writes the file only if it is still
 the version that was opened, validates plan files before writing, and from then on treats the
 save like any other change to the file (section 04). File mode never shows anything outside
@@ -26,17 +26,42 @@ from the top of the reading column. Every document has an address, `/files/<path
 reloads, links pasted into chat, and the presence list (section 02) all name a place in a
 document. (My call.)
 
+**One document header** serves file mode and summary pages: `web/src/plan/ui/doc-heading.tsx`,
+used by `web/src/plan/files/doc-heading-view.tsx` and `web/src/plan/concept/page-heading.tsx`.
+In file mode it has, in order:
+
+- A breadcrumb naming the feature, kind and document: feature › kind › document, after
+  "Planner". A standalone document has no feature crumb.
+- A title row in a three-column grid: DocMark, title, actions. The actions are **Summary | Source**,
+  **Edit** when editing is allowed, and **Discuss** for the authoring browser. Summary | Source
+  switches between the same document's summary page and file mode; Summary is disabled when
+  no summary page is available. Discuss opens chat with the document attached and focuses the
+  composer.
+- One wrapping row of state chips, where applicable: state, Implements links, pressure-test
+  state, validation, and last change. The validation chip expands the errors and warnings.
+- The document's path with a copy button and the **Uncommitted changes** mark linking to its diff.
+- The lock notice when locked, below the path.
+
 ## The navigation tree
 
-The tree has four groups, in this order. Every entry shows the document's title (its first `#`
-heading, else its file name); the file name shows on hover.
+The tree has five groups, in this order; empty groups are hidden. Product, Plans and Archive
+group their documents by feature name, alphabetically. Documents without a feature follow
+the feature groups. Every document entry shows its title (its first `#` heading, else its file
+name); the file name shows on hover.
 
-| Group     | Contents, in order                                                                                       |
-| --------- | -------------------------------------------------------------------------------------------------------- |
-| Product   | The vision; its listed sections in the vision's table order; unlisted sections by file name              |
-| Plans     | Each metaplan, its entries in heading order; then unlisted plans; then Archive                           |
-| Knowledge | `INDEX.md`; the tier-1 files; one folder per tier-2 category                                             |
-| Other     | Any other Markdown under `doc/` that section 03 discovers, by path                                       |
+| Group     | Contents, in order                                                                                                                  |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Product   | Per feature: its vision; listed sections in the vision's table order; unlisted sections; then misplaced top-level product documents |
+| Plans     | Per feature: metaplans with entries in heading order, then unlisted active plans; then misplaced metaplans and the standalone shelf |
+| Knowledge | `INDEX.md`; the tier-1 files; one folder per tier-2 category                                                                        |
+| Other     | Other Markdown under `doc/` that section 03 discovers, grouped by feature where applicable, then by path                            |
+| Archive   | Per feature, then standalone: done and retired plans no metaplan names, other archived files, and orphan brief bundles              |
+
+A feature is the name shared by `doc/product/<feature>/` and `doc/plans/<feature>/`; either
+directory alone is enough. Each feature's Product and Plans groups use only its own vision,
+sections and metaplans. The standalone shelf holds active plans whose home is `doc/plans/`,
+with no feature or checklist. A top-level product document or metaplan remains reachable with
+the `needs-feature` problem section 03 defines.
 
 **Gaps show in place.** A section the vision lists but whose file is missing, and a metaplan
 entry whose plan file does not exist, appear dimmed at their position with the word "missing".
@@ -44,20 +69,23 @@ Opening one shows the checklist line for that gap and, to the authoring browser,
 (section 01). (My call: the tree then doubles as the project checklist in document order.)
 
 **Plan entries** carry the plan's state from section 01 as a glyph and a word: written,
-running (`IN_PROGRESS-`), done (`DONE-` or under `doc/plans/archive/`), or retired
-(`doc/plans/archive/RETIRED-`). A pressure-tested plan also shows the date of its last
+running (`IN_PROGRESS-`), done (`DONE-` or under its home's `archive/`), or retired
+(`RETIRED-` under its home's `archive/`). A plan's home is `doc/plans/<feature>/` or, for a
+standalone plan, `doc/plans/`. A pressure-tested plan also shows the date of its last
 `## Pressure tests` line. A plan that fails validation shows an error count (see "Plan
 validation"). Running, done and retired plans show a lock glyph.
 
 **Briefs sit under their plan.** A plan entry expands to its brief bundle, laid out as it is on
 disk: `common.md` first, then one folder per stage directory, each holding that stage's brief
-files by name. In this repository a bundle is `doc/plans/briefs/<slug>/`, for example
-`briefs/token-flow/` under `DONE-PLAN-token-flow.md`; section 03 owns the rule that ties a
-bundle to its plan. A bundle whose plan is not found is listed under Archive as an orphan
-bundle, so no brief is unreachable.
+files by name. A bundle is `<plan home>/briefs/<slug>/`: `doc/plans/<feature>/briefs/<slug>/`
+for a feature plan and `doc/plans/briefs/<slug>/` for a standalone plan. Section 03 owns the
+rule that ties a bundle to its plan. A bundle whose plan is not found is listed under Archive
+in its feature group or among standalone entries as an orphan bundle, so no brief is unreachable.
 
-**Archive** is collapsed by default and holds done plans no metaplan names, other files under
-`doc/plans/archive/` (such as `REVIEW-PLAN-*.md`), and orphan brief bundles.
+**Archive** is collapsed by default. Within each feature group, then among standalone entries,
+it holds done and retired plans no metaplan names, other files under the plan home's
+`archive/` (such as `REVIEW-PLAN-*.md`), and orphan brief bundles. A done or retired plan named
+by its feature's metaplan stays under that metaplan in Plans.
 
 **Knowledge** follows the hierarchy described in `architecture/knowledge-hierarchy.md`:
 `INDEX.md` first, then the seven tier-1 files, then the tier-2 categories (architecture,
@@ -88,7 +116,10 @@ the raw text anyway for the editor and diffs.)
   `<!-- loom METADATA -->` markers); any other HTML shows as escaped text. Documents are written
   by sessions and arrive by `git pull`; the reading column must not run what they contain.
 - **Headings** get the anchors section 03 defines. Hovering a heading shows a link control that
-  copies the heading's address.
+  copies the heading's address. The body suppresses the document's first H1 when its text
+  equals the header title, comparing rendered text with whitespace trimmed and collapsed
+  (`web/src/plan/markdown/render.tsx`). Its anchor remains a link and scroll target; a
+  different first H1 and later H1s remain visible. The editor shows the full source.
 - **Tables** render in the dashboard's ledger style (`--ledger-rule`, `--ledger-head-rule` in
   `web/src/index.css`). A table wider than the reading column scrolls sideways inside its own
   box; the page never scrolls sideways.
@@ -114,11 +145,11 @@ A plan file has three parts: prose, the metadata block between `<!-- loom METADA
 `loom/src/plan/parser/extraction.rs:53`), and, after the end marker, the `## Pressure tests`
 record (section 01). The plan view renders them as:
 
-1. **A plan header** above the prose: the state word, the lock notice if locked (below), the
-   `Implements:` line as links to the product sections it names (section 03), the last pressure
-   test's date beside the file's last change date (section 01), and the validation result as a
-   count of errors and warnings that expands into the list.
-2. **The prose**, rendered as Markdown.
+1. **The shared document header** above the prose ("Layout and addresses"). Its wrapping chip
+   row shows the plan state, Implements links to its feature's product sections (section 03),
+   pressure-test state, validation counts, and last change (section 01), where available.
+   Pressure-test state says "Not pressure-tested", "Being pressure-tested", or the last test's date.
+2. **The prose**, rendered as Markdown with a matching first H1 suppressed.
 3. **A Stages panel** in place of the metadata block: the stage graph drawn with the dashboard's
    graph layout (`web/src/lib/graph.ts`, React Flow and dagre) without live state, then one
    row per stage with its id, name, type, summary, and dependencies. A row expands to show the
@@ -148,7 +179,7 @@ when all of these hold:
 
 - it is a Markdown file under `doc/product/` or `doc/plans/`, or under the Other group;
 - it is not a running, done or retired plan: no `IN_PROGRESS-`, `DONE-` or `RETIRED-` prefix,
-  not under `doc/plans/archive/`;
+  not under its plan home's `archive/`;
 - it is not a brief of a running, done or retired plan (My call: `loom run` reads briefs from the
   committed tree, so an edit during a run reaches no stage and misleads a later reader about what
   the stages were told);
@@ -163,7 +194,8 @@ direct edit would skip both. Knowledge is changed from chat, where the session u
 The vision says the knowledge base is browsed in file mode. Section 12 owns which
 paths sessions may write; this list governs the editor only.
 
-**Locked files** show a notice at the top of the view saying why, and no Edit control:
+**Locked files** show a notice below the path in the shared document header saying why, and
+no Edit control:
 
 - running plan: "This plan is running. `loom run` works from the committed copy.";
 - done plan or archive: "This plan is done. Record changes in a new plan.";
@@ -224,9 +256,9 @@ serialises (errors; structural, knowledge, sandbox, and baseline warnings; notes
 with `execute` becoming a caller of it.
 
 **When it runs.** On every save of a plan file, against the proposed text, before writing; and
-whenever the watcher reports a change to a plan file, so the plan header and the tree show the
-current result for edits made anywhere. It runs on `PLAN-*.md` files only; locked plans are not
-re-validated.
+whenever the watcher reports a change to a plan file, so the shared header's validation chip
+and the tree show the current result for edits made anywhere. It runs on `PLAN-*.md` files
+only; locked plans are not re-validated.
 
 **What blocks.** Errors block the save, with a "Save with errors" confirmation that writes
 anyway; warnings never block, and `--strict` is not applied. The files are the truth and any
@@ -245,8 +277,8 @@ known:
   and no line; the editor marks the stage's `- id:` line;
 - any other item is listed without a mark.
 
-In the rendered view, the plan header shows the same list, each stage-specific item linking to
-that stage's row in the Stages panel.
+In the rendered view, the shared header's validation chip expands the same list, each
+stage-specific item linking to that stage's row in the Stages panel.
 
 ## Diffs
 
@@ -254,11 +286,11 @@ A diff in file mode shows source text, never rendered Markdown, in `@codemirror/
 side by side on wide screens, inline (unified) below 900px. Diffs are read-only and every
 browser can open them. Three kinds exist:
 
-| Diff                | Before                                    | After               | Opened from                          |
-| ------------------- | ----------------------------------------- | ------------------- | ------------------------------------ |
-| What a turn changed | the file when the turn started            | the file at its end | the turn's file list (section 08)    |
-| Changed while open  | the version the reader had on screen      | the current file    | the "changed" note on the document   |
-| Uncommitted         | `HEAD`'s version (`git show HEAD:<path>`) | the current file    | a control in every document's header |
+| Diff                | Before                                    | After               | Opened from                                                |
+| ------------------- | ----------------------------------------- | ------------------- | ---------------------------------------------------------- |
+| What a turn changed | the file when the turn started            | the file at its end | the turn's file list (section 08)                          |
+| Changed while open  | the version the reader had on screen      | the current file    | the "changed" note on the document                         |
+| Uncommitted         | `HEAD`'s version (`git show HEAD:<path>`) | the current file    | the Uncommitted changes mark beside the path in the header |
 
 **Turn diffs.** The server keeps the text of every file in file mode in memory (it reads them
 to hash them anyway, section 04). When a turn starts (section 07 defines turn boundaries), it

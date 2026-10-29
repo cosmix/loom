@@ -24,37 +24,42 @@ dashboard. Plans that finish bring the project to the returning author's offers.
 
 Pressure testing is optional (section 01, "The seven steps"). The app offers it:
 
-- in the checklist, for the first plan with no pressure-test record (section 01, "What the app
-  offers"), beside the offer to start a run;
-- on every written plan's view, in file mode and concept mode, including unlisted plans and
-  plans already tested.
+- in the checklist, for the first plan with no pressure-test record (section 01, "What the app offers"), beside the offer to start a run;
+- on every written plan's view, in file mode and concept mode, including unlisted plans and plans already tested.
 
-It is offered only for plans in the written state, `doc/plans/PLAN-<slug>.md`. Running, done and
-retired plans are locked (vision, Decisions, "Locked plans"). One pressure run at a time per
-project.
+It is offered only for plans in the written state, `<plan home>/PLAN-<slug>.md`. The plan home is `doc/plans/<feature>/`
+for a feature, or `doc/plans/` for a standalone plan; its brief bundle is `<plan home>/briefs/<slug>/`.
+Running, done and retired plans are locked (vision, Decisions, "Locked plans"). One pressure run at a time per project.
 
 The offer is disabled, with the reason, when:
 
-- the `codex` CLI is missing (`find_codex_path`, `loom/src/codex.rs`) or Codex's `pressure` skill
-  is not installed under `$CODEX_HOME/skills/pressure/` (default `~/.codex`): `loom pressure`
-  needs both lanes, and the app does the same (`loom/src/commands/pressure/mod.rs:349`). (My
-  call: a Claude-only test is a different, weaker test, and the record would have to say so.)
+- the `codex` CLI is missing (`find_codex_path`, `loom/src/codex.rs`) or Codex's `pressure` skill is not installed under
+  `$CODEX_HOME/skills/pressure/` (default `~/.codex`): `loom pressure` needs both lanes, and the app does the same
+  (`loom/src/commands/pressure/mod.rs:349`). (My call: a Claude-only test is a different, weaker test, and the record would have to say so.)
 - the server is in read-only mode (section 02, "Missing prerequisites");
 - the browser does not hold authoring, or another browser does (section 02).
 
 ### The dialog
 
-Starting a pressure test opens a dialog with the plan, the number of rounds (default 2, as
-`loom pressure --rounds`), and the three models (`/pressure`, Codex, `/address`), each set to the
-value `[pressure]` configuration resolves (`loom/src/commands/pressure/models.rs:44`) and
-changeable for this run from the same vocabularies the CLI flags accept. The dialog says the run
-takes a while, edits the plan, and writes `planning-omissions.md` at the repository root, as the
-terminal run does. (My call: the CLI exposes these as flags, so the app exposes them per run.)
+Starting a pressure test opens a dialog with a hero row: an animated gauge in a tinted badge, "Pressure-test a plan",
+and "Two reviewers read the plan at once, then an editor addresses both."
+The plan card carries its DocMark, title, file name, state chips, and "Change" to choose another plan.
 
-A pressure run edits the plan, so it takes the project's authoring slot (vision, Decisions, "One
-authoring session per project") and holds it until the run ends; a step's session ending does
-not release it. With an authoring chat open, the dialog says the chat ends first
-with its closing write (section 09), and starting does that. (My call.)
+"What happens" starts with the rounds control: 1/2/3 quick picks and a number field, default 2, as `loom pressure --rounds`.
+Below it, a dashed "Each round, N times" frame draws one round: Review (Claude `/pressure`) and Second review
+(Codex `$pressure`, marked "background") both connect to Address (Claude `/address`). Each node carries its model and
+effort pickers, set to the values `[pressure]` configuration resolves (`loom/src/commands/pressure/models.rs:44`) and
+changeable for this run from the same vocabularies the CLI flags accept. A note below the frame says "The record line is
+written at the end." (My call: the CLI exposes these as flags, so the app exposes them per run.)
+
+The consequences sit in two columns: estimated time grows with the chosen rounds, with no minute figure; the run edits
+the plan and its briefs; it writes `planning-omissions.md` at the repository root; and, when an authoring chat is open,
+it ends that chat first with its closing write (section 09), in the warning tone. The footer says "Holds authoring until
+it finishes", followed by "Cancel" and "Start pressure test".
+
+A pressure run edits the plan, so it takes the project's authoring slot (vision, Decisions, "One authoring session per
+project") and holds it until the run ends; a step's session ending does not release it. With an authoring chat open,
+starting ends the chat first with its closing write (section 09). (My call.)
 
 ### How the server runs it
 
@@ -65,12 +70,12 @@ the model resolution, the report path and the record writer move out of `command
 a module both drivers use; each driver keeps only its way of running a Claude step. (My call:
 one pipeline, so the app and the terminal cannot drift.)
 
-| Step               | Terminal driver (unchanged)                       | App driver                                                       |
-| ------------------ | ------------------------------------------------- | ---------------------------------------------------------------- |
-| Claude `/pressure` | foreground `claude` on the user's terminal        | a **pressure session** through the session bridge (section 07)  |
-| Codex `$pressure`  | `codex exec` in the background, output to a log   | the same process, the same log, under the session directory      |
-| Claude `/address`  | foreground `claude`                               | a second pressure session                                        |
-| Completion         | a marker file the agent creates, then SIGTERM     | the same marker, under the session directory; then teardown      |
+| Step               | Terminal driver (unchanged)                     | App driver                                                     |
+| ------------------ | ----------------------------------------------- | -------------------------------------------------------------- |
+| Claude `/pressure` | foreground `claude` on the user's terminal      | a **pressure session** through the session bridge (section 07) |
+| Codex `$pressure`  | `codex exec` in the background, output to a log | the same process, the same log, under the session directory    |
+| Claude `/address`  | foreground `claude`                             | a second pressure session                                      |
+| Completion         | a marker file the agent creates, then SIGTERM   | the same marker, under the session directory; then teardown    |
 
 A **pressure session** is the fourth session kind in section 07's table. It starts as section
 07 describes, with these differences:
@@ -106,27 +111,32 @@ user's Codex login; principle 7 forbids headless Claude, and no Claude session h
 
 ### What the chat shows
 
-A pressure run occupies the chat panel the way an authoring session does, under a run header
-naming the plan, the round, and the step:
+A pressure run has a strip under the app header: the animated gauge, plan, round, step, progress, and elapsed time.
+The plan's header carries "Being pressure-tested" and locks Edit. The gauge's needle sweeps while the run is active;
+glyph motion stops when work ends and freezes with `prefers-reduced-motion`.
 
-- each Claude step is a run of turns rendered like any session's (section 08), with its tool
-  activity and its permission requests;
-- the Codex step is one status item: the model actually running (after any fallback,
-  `loom/src/commands/pressure/fallback.rs:54`), the elapsed time, and on finish either "review
-  written" with a link to the `codex-<plan file>` report or "no review", with the log's tail on a
-  failure;
+The run occupies the chat panel the way an authoring session does. Its run header names the plan, round and step, with
+elapsed time, tokens and "Stop". The step timeline groups each round's Codex and Claude `/pressure` side by side,
+then Claude `/address`; the record line follows the last round:
+
+- each Claude step is a run of turns rendered like any session's (section 08), with its tool activity and its permission requests;
+- the Codex step is one status item, with an animated scan frame and travelling beam while it reviews: the model actually
+  running (after any fallback, `loom/src/commands/pressure/fallback.rs:54`), the elapsed time, and on finish either
+  "Review written" with a link to the `codex-<plan file>` report or "No review", with the log's tail on a failure, labelled "Codex failed";
 - each step lists the plan edits it made with their diffs (section 07's changed-file list);
-- token counts per Claude step come from the transcripts, as for any session, and include the
-  step's teammates: the bridge reads each teammate's transcript for its token counts only and
-  renders none of its messages; Codex tokens are not shown.
+- token counts per Claude step come from the transcripts, as for any session, and include the step's teammates: the bridge
+  reads each teammate's transcript for its token counts only and renders none of its messages; Codex tokens are not shown.
 
-The input box stays open to the browser holding authoring: the terminal driver lets the user type
-into the foreground session, and so does the app. The stop button stops the whole run (below).
-Read-only browsers watch the same chat.
+The input box stays open to the browser holding authoring: the terminal driver lets the user type into the foreground
+session, and so does the app. The stop button stops the whole run (below). Read-only browsers watch the same chat.
 
-The Codex report (`codex-PLAN-<slug>.md`, `loom/src/commands/pressure/paths.rs:98`) sits in
-`doc/plans/` while the run lasts, so file mode lists it under other documents; the run deletes it
-at the end, as the terminal does.
+On recorded completion, a "Summary of this pressure test" card shows rounds, duration and tokens, every edited file with
+its diff, "Review the changes", and "Test the next plan". The latter opens the dialog for another eligible plan, or is
+disabled with the reason when none remains. The plan header shows "Pressure-tested today" for a record dated today;
+the record follows the placement rules below.
+
+The Codex report (`codex-PLAN-<slug>.md`, `codex_report_path`, `loom/src/pressure/paths.rs:77`) sits beside the plan in its
+plan home while the run lasts, so file mode lists it under other documents; the run deletes it at the end, as the terminal does.
 
 ### Stopping, failure, and server stops
 
@@ -193,7 +203,7 @@ would have written and writes nothing. The terminal driver prints the line it wr
 lists the record step.
 
 **Validation.** Plan parsing reads only the metadata block (`loom/src/plan/parser/extraction.rs:75`)
-and brief-path scanning finds no `doc/plans/briefs/` token in a record line, so a recorded plan
+and brief-path scanning finds no `<plan home>/briefs/` path in a record line, so a recorded plan
 parses as before. The change carries a test that runs `loom plan verify` and `loom init`'s plan
 preflight on a plan with a `## Pressure tests` section after the end marker.
 
@@ -209,12 +219,12 @@ record is the driver's.
 anything, so the user sees every problem at once, and shows the commands' own output when they
 still refuse.
 
-| Requirement                                                            | Where loom checks                                              |
-| ---------------------------------------------------------------------- | -------------------------------------------------------------- |
-| No initialized workspace holding a run, unless `--clean` is given      | `loom/src/commands/init/execute.rs:126`                        |
-| No modified or staged tracked files (untracked files are allowed)      | `check_for_uncommitted_changes`, `loom/src/commands/run/checks.rs:217`; `loom/src/git/branch/status.rs:23` |
-| The plan and every brief it reads committed                            | `require_committed_plan`, `loom/src/commands/run/plan_inputs.rs:17` |
-| The current branch is the plan's base branch                           | same function                                                  |
+| Requirement                                                                                                     | Where loom checks                                                                                                               |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| No initialized workspace holding a run, unless `--clean` is given                                               | `loom/src/commands/init/execute.rs:126`                                                                                         |
+| No modified or staged tracked files (untracked files are allowed)                                               | `check_for_uncommitted_changes`, `loom/src/commands/run/checks.rs:217`; `loom/src/git/branch/status.rs:23`                      |
+| The plan and every brief it reads committed                                                                     | `require_committed_plan`, `loom/src/commands/run/plan_inputs.rs:17`                                                             |
+| The current branch is the plan's base branch                                                                    | same function                                                                                                                   |
 | `jq`, Claude Code logged in, git 2.40 or later, the sandbox prerequisites, signing when `commit.gpgsign` is set | `prepare_repo_for_run` (`loom/src/commands/run/checks.rs:16`) and `run_startup_preflights` (`loom/src/commands/run/mod.rs:148`) |
 
 Nothing requires a daemon to be running: `loom run` starts it (`execute_background`,
@@ -226,13 +236,13 @@ itself (`mark_plan_in_progress`, `loom/src/commands/run/plan_inputs.rs:56`).
 
 The run offer depends on what `.loom/work` holds:
 
-| `.loom/work`                                                    | Offer                                                         |
-| --------------------------------------------------------------- | ------------------------------------------------------------- |
-| absent                                                          | Start a run: `loom init <plan>`, then `loom run`              |
-| initialized, its plan still `PLAN-` (init ran, run did not)     | Start the run for that plan: `loom run`; or another plan, with `--clean` |
-| its plan `IN_PROGRESS-`, daemon running                         | No run offer; the plan is running; open the dashboard         |
-| its plan `IN_PROGRESS-`, daemon stopped                         | Resume: `loom run`; open the dashboard                        |
-| its plan `DONE-`                                                | Start the next plan: `loom init <plan> --clean`, then `loom run` |
+| `.loom/work`                                                | Offer                                                                    |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------ |
+| absent                                                      | Start a run: `loom init <plan>`, then `loom run`                         |
+| initialized, its plan still `PLAN-` (init ran, run did not) | Start the run for that plan: `loom run`; or another plan, with `--clean` |
+| its plan `IN_PROGRESS-`, daemon running                     | No run offer; the plan is running; open the dashboard                    |
+| its plan `IN_PROGRESS-`, daemon stopped                     | Resume: `loom run`; open the dashboard                                   |
+| its plan `DONE-`                                            | Start the next plan: `loom init <plan> --clean`, then `loom run`         |
 
 The app reads the active plan with the function the daemon uses (`get_plan_source_path`,
 `loom/src/fs/plan_lifecycle.rs`) and the daemon's liveness with `DaemonServer::is_running`.
@@ -247,7 +257,7 @@ is `IN_PROGRESS-`, running or stopped. Only the browser holding authoring may us
 read-only mode.
 
 **First confirmation.** A dialog names what is lost: the plan file moves to
-`doc/plans/archive/RETIRED-PLAN-<slug>.md` and closes its metaplan entry; the daemon stops; every
+`<plan home>/archive/RETIRED-PLAN-<slug>.md` and closes its metaplan entry; the daemon stops; every
 running stage session is killed; `.loom/work` (stage state, memory journals, the run's records)
 is deleted; every stage worktree under `.worktrees/` and its `loom/*` branch is removed. It lists
 the stages merged so far, whose work stays on the base branch, and the stages that are not. The
@@ -272,9 +282,11 @@ nothing; the dialog says the user can merge or push those branches first and com
    branch. `loom clean` also refuses while the target branch holds a move loom did not accept
    (`refuse_unreviewed_move`, `loom/src/commands/clean/mod.rs:99-101`); the dialog shows that
    refusal and stops.
-3. The rename: the server moves `doc/plans/IN_PROGRESS-PLAN-<slug>.md` to
-   `doc/plans/archive/RETIRED-PLAN-<slug>.md` with a file rename, and commits nothing. The rename
-   shows under "Uncommitted changes" in the next run dialog, and the user commits it there.
+3. The rename: the server moves `<plan home>/IN_PROGRESS-PLAN-<slug>.md` to
+   `<plan home>/archive/RETIRED-PLAN-<slug>.md` in the same feature or standalone home, with a file
+   rename, and commits nothing (`RunningPlan::source` and `RunningPlan::retired`,
+   `loom/src/plan_server/run/abandon/plan.rs`). The rename shows under "Uncommitted changes" in the
+   next run dialog, and the user commits it there.
 
 `loom clean` exits 0 when it declines to delete (`loom/src/commands/clean/mod.rs:60-64`), so the
 server renames the plan only after confirming `.loom/work` and the run's worktrees are gone; if
@@ -361,9 +373,11 @@ The planning app does not monitor stages; the dashboard does (vision, Non-goals)
 - **Plan states from file names** (section 01, "Plans"): written, running, done, retired, in the
   checklist, in file mode, and in the engineering overview. The tracker marks step 7 active while
   any plan is `IN_PROGRESS-`.
-- **A run strip** in the header, while `.loom/work` exists: the active plan, whether the daemon
+- **A run strip** in the header, while `.loom/work` exists: a Play glyph with an outgoing pulse
+  while the daemon runs, the active plan, whether the daemon
   runs, the count of stages merged out of the total, and the count needing attention, with the
-  dashboard link. The server reads it every 5 seconds with the code the dashboard's file-poll lane
+  dashboard link. A thin progress bar shows merged stages; attention uses the warning tone. In a
+  narrow header the strip is a button with details in a popover. The server reads it every 5 seconds with the code the dashboard's file-poll lane
   uses (`data::collect_status_data`, `render::attention_entries`;
   `doc/loom/knowledge/architecture/web-dashboard.md`, "Server"). (My call: one line tells a
   planner whether to look at the dashboard, without rebuilding it.)

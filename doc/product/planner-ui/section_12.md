@@ -184,22 +184,55 @@ own drafts and claims in the runtime directory. It may not read:
 
 ### What a session may write
 
-| Path                                                          | Authoring                     | Summary          |
-| ------------------------------------------------------------- | ----------------------------- | ---------------- |
-| `doc/`, outside the rows below                                | file tools and commands       | no               |
-| locked set: `IN_PROGRESS-`, `DONE-`, `RETIRED-` plans, `doc/plans/archive/`, run reviews `doc/plans/REVIEW-*.md`, and the briefs of a locked plan | no | no |
-| `doc/loom/knowledge/`                                         | only through `loom knowledge` | no               |
-| `doc/loom/summaries/`                                         | only through `loom plan summary seal` | only through `seal` |
-| `~/.loom/plan/<key>/drafts/`                                  | yes                           | yes              |
-| `~/.loom/plan/<key>/claims/`, `summaries.lock`                | only through `loom plan summary` | only through `loom plan summary` |
-| `~/.loom/plan/<key>/` elsewhere (`lock`, `sessions/`)         | no                            | no               |
-| Anything else in the repository: code, `.git`, `.claude`, `.loom`, root files | no    | no               |
-| The per-user temporary directory Claude Code grants           | yes                           | yes              |
+`<home>` is `doc/plans/<feature>` for a feature's plans and `doc/plans` for standalone plans.
+The locked set covers both, including each home's archive, run reviews and locked brief bundles.
+
+| Path                                                                                                                                        | Authoring                             | Summary                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | -------------------------------- |
+| `doc/`, outside the rows below                                                                                                              | file tools per scope; commands        | no                               |
+| locked set: `IN_PROGRESS-`, `DONE-`, `RETIRED-` plans, `<home>/archive/`, run reviews `<home>/REVIEW-*.md`, and the briefs of a locked plan | no                                    | no                               |
+| `doc/loom/knowledge/`                                                                                                                       | only through `loom knowledge`         | no                               |
+| `doc/loom/summaries/`                                                                                                                       | only through `loom plan summary seal` | only through `seal`              |
+| `~/.loom/plan/<key>/drafts/`                                                                                                                | yes                                   | yes                              |
+| `~/.loom/plan/<key>/claims/`, `summaries.lock`                                                                                              | only through `loom plan summary`      | only through `loom plan summary` |
+| `~/.loom/plan/<key>/` elsewhere (`lock`, `sessions/`)                                                                                       | no                                    | no                               |
+| Anything else in the repository: code, `.git`, `.claude`, `.loom`, root files                                                               | no                                    | no                               |
+| The per-user temporary directory Claude Code grants                                                                                         | yes                                   | yes                              |
 
 Briefs of a locked plan follow section 06's reasoning: `loom run` reads briefs from the
 committed tree. Code is not writable at all: planning changes documents, and code changes go
 through `loom run`. (My call: a planning session that edits code produces changes no stage
 reviewed and no plan records.)
+
+Authoring sessions have one of three scopes (`plan_session/scope.rs`):
+
+- **Open** uses the authoring column above and pre-allows `loom knowledge *` and
+  `loom plan summary *` in Bash.
+- **Kickoff** starts without a target and permits no file-tool write under `doc/` until the
+  holder confirms the size and name through the app. The one-time creation grant then permits
+  exactly one target: `doc/product/<name>/index.md` for a feature, or
+  `doc/plans/PLAN-<slug>.md` plus paths inside `doc/plans/briefs/<slug>/` for a standalone plan.
+  The name or slug follows section 03's feature-name rule: `[a-z0-9][a-z0-9-]*`, at most
+  64 characters, excluding `archive`, `briefs`, `plans` and `overview`. Confirmation checks
+  both the directory snapshot taken at session start and a fresh scan, case-insensitively;
+  the target must exist in neither. Symlinked `doc/`, `doc/product`, `doc/plans` and brief
+  bundles are refused. An existing feature directory, plan or bundle cannot be reused, even
+  if removed during the session. Only one confirmation is accepted. The session continues
+  writing its vision or plan within this grant; loading another skill does not widen it.
+  Bash pre-allows only read-only `loom plan summary status*` among the `doc/loom/` commands;
+  `loom knowledge *` and other `loom plan summary` commands ask the holder.
+- **Team**, used by draft-all, permits file-tool writes only to the missing documents the run
+  starts for and paths inside their plan brief bundles. Written sections and other documents
+  outside that set remain unwritable. The lead and its in-process teammates share the scope
+  (section 09). Bash pre-allows `loom plan summary *` for turn-end summaries of the documents
+  it drafted; `loom knowledge *` asks the holder.
+
+The server stores the scope and grant in `sessions/<id>/scope.json` in the runtime session
+directory. That file is outside the sandbox's writable set and the planning guard denies
+file-tool writes to it; the session cannot arm or widen its own grant. The guard reloads the
+scope for every document write (`plan_session/guard/mod.rs`). These scopes constrain file
+tools. A holder-approved Bash command is bounded by the sandbox's locked set and other OS
+write denies, not by the scope; Kickoff and Team do not narrow the OS write set.
 
 Hook commands are outside this table. Claude Code runs them in its own process, outside the
 Bash sandbox, so `loom plan hook` writes the session's spool in `sessions/<id>/` (section 07)
@@ -215,8 +248,8 @@ row of the table is enforced where the write can come from.
 **1. The OS sandbox (Bash and its children).** Claude Code always lets a sandboxed command
 write the working directory, so the settings take that back: at spawn the server lists the
 project root and writes a `denyWrite` entry for every top-level entry except `doc`, `.git`
-included. It adds the locked plan files, the run reviews in `doc/plans/`, and `doc/plans/archive/` as
-they exist at spawn, and
+included. It adds the locked plan files, the run reviews in each plan home, each home's
+`archive/`, and the briefs of locked plans as they exist at spawn, and
 grants `allowWrite` on `drafts/`, `claims/` and `summaries.lock`, which the server creates
 before the first session starts. `doc/loom/knowledge/` and `doc/loom/summaries/` stay
 OS-writable because `loom knowledge` and `loom plan summary seal` run as Bash subprocesses
@@ -241,8 +274,9 @@ bind file writes; `Write(...)` rules are inert (`mistakes/sandbox-write-rules-in
   there can never pass silently. `Edit` rule paths match with gitignore semantics, where a
   pattern matching a directory covers everything beneath it, so no wildcard over `doc/`'s
   entries is written: `doc/*` would match `doc/loom`. A top-level file created later prompts.
-- `deny`: `Edit` on each locked plan file, on `doc/plans/REVIEW-*.md`, and on
-  `doc/plans/archive/**`. Deny rules on
+- `deny`: `Edit` on each locked plan file, on `<home>/REVIEW-*.md`, on
+  `<home>/archive/**`, and on each locked plan's brief bundle, in the standalone home and
+  every existing feature home. Deny rules on
   `doc/loom/knowledge/` or `doc/loom/summaries/` are impossible: an `Edit` deny also becomes
   an OS write deny and would block the two CLIs. No `Read(...)` deny is written anywhere,
   for the reason stage settings never write one
@@ -253,7 +287,8 @@ bind file writes; `Write(...)` rules are inert (`mistakes/sandbox-write-rules-in
 10-second timeout. It reads the session's kind from its record and decides each call
 against the current tree:
 
-- a write is allowed only inside the write table's file-tool rows for the session's kind;
+- a write is allowed only inside the write table's file-tool rows for the session's kind
+  and, for authoring, its live Open, Kickoff or Team scope;
 - the locked-plan test is by name (prefix, a `REVIEW-` run review, `archive/`, a brief of a
   locked plan per section 03's brief-to-plan rule), so a plan locked while the session runs is locked to it at once,
   before the next session refreshes layers 1 and 2;
@@ -269,13 +304,15 @@ deny with the reason. The same path predicate backs the server's save route (bel
 the editor and the sessions cannot disagree on what a locked plan is.
 
 Layer 3 is the precise one; layers 1 and 2 hold if the hook times out, which Claude Code
-treats as a non-blocking error.
+treats as a non-blocking error. The Kickoff and Team file-tool scope restrictions depend on
+layer 3; the other layers retain the broader authoring write set.
 
 ### Commands
 
 Sandboxed Bash does not run unprompted: `autoAllowBashIfSandboxed` is `false` (stages run with
 it `true`). A command runs without a prompt when it is in Claude Code's built-in read-only set
-(`ls`, `cat`, `grep`, read-only `git`, and the rest) or matches an allow rule:
+(`ls`, `cat`, `grep`, read-only `git`, and the rest) or matches an allow rule. Open authoring
+sessions have these rules:
 
 ```text
 Bash(loom knowledge *)
@@ -284,6 +321,14 @@ Bash(loom plan verify *)
 Bash(loom plan check*)
 Bash(loom map *)
 ```
+
+Every authoring scope keeps `loom plan verify`, `loom plan check` and `loom map` pre-allowed.
+Team also pre-allows `Bash(loom plan summary *)` for turn-end summaries of the documents it
+drafted; `Bash(loom knowledge *)` asks the holder. Kickoff pre-allows only the read-only
+`Bash(loom plan summary status*)` among these `doc/loom/` commands; `loom knowledge *` and
+other `loom plan summary` commands ask the holder through section 07's permission flow
+(`AUTHORING_READ_ONLY_BASH`, `AUTHORING_DOC_WRITER_BASH` in `sandbox/permissions.rs`). An
+approval does not make Bash subject to the file-tool scope above.
 
 Every other command goes through the permission flow of section 07 and reaches the authoring
 holder's browser. A planning session needs very few commands beyond reading and loom's own
@@ -327,15 +372,19 @@ A session must never answer its own permission request. The channels and what cl
 
 ### Modes per kind
 
-| Setting                       | Authoring                    | Summary                                  |
-| ----------------------------- | ---------------------------- | ---------------------------------------- |
-| `--permission-mode`           | `default` (Manual)           | `default` (Manual)                       |
-| Unlisted command or tool      | asks the holder (section 07) | denied at once and logged (section 07)   |
-| File-tool writes              | `doc/` per the table, drafts | drafts only                              |
-| Allowed commands              | the five above               | `loom plan summary *` only               |
-| `WebSearch`, `WebFetch`       | see above                    | denied                                   |
-| `AskUserQuestion`             | denied (section 07)          | denied                                   |
-| `SendMessage`, `ListAgents`   | denied                       | denied                                   |
+| Setting                  | Authoring                                 | Summary                                | Pressure                         |
+| ------------------------ | ----------------------------------------- | -------------------------------------- | -------------------------------- |
+| `--permission-mode`      | `default` (Manual)                        | `default` (Manual)                     | `default` (Manual)               |
+| Unlisted command or tool | asks the holder (section 07)              | denied at once and logged (section 07) | asks the holder                  |
+| File-tool writes         | `doc/` per the table and scope, drafts    | drafts only                            | per Pressure sessions below      |
+| Allowed commands         | 5 Open; 4 Team; 4 Kickoff (summary status) | `loom plan summary *` only             | five above and completion marker |
+| `WebSearch`, `WebFetch`  | see above                                 | denied                                 | see above                        |
+| `AskUserQuestion`        | denied (section 07)                       | denied                                 | denied                           |
+| `SendMessage`            | allowed for draft-all Team only           | denied                                 | allowed                          |
+| `ListAgents`             | allowed for draft-all Team only           | denied                                 | allowed                          |
+
+`SendMessage` and `ListAgents` are allowed for draft-all Team and pressure sessions only;
+every other session denies them (`PEER_TOOLS`, `base_denies` in `sandbox/permissions.rs`).
 
 Summary sessions run in Manual mode so that anything outside their rules reaches the
 `PermissionRequest` hook, which denies it and logs the request. A logged request means the
@@ -347,11 +396,12 @@ and hooks; they write drafts and run `seal` like a summary session.
 
 ### The settings file
 
-An authoring session's `settings.json`, with `<root>` the project root and `<rt>` its runtime
+An Open authoring session's `settings.json`, with `<root>` the project root and `<rt>` its runtime
 directory, both absolute (hook registrations omitted). An entry holding `…` or `<each other
 dir>` stands for the list the server enumerates at spawn: one `denyWrite` entry per top-level
 entry but `doc`, and one `Edit` allow per directory under `doc/` other than `loom`, `product`
-and `plans`.
+and `plans`. `<home>` stands for each plan home above; its locked entries and bundle rules
+are enumerated too.
 
 ```json
 {
@@ -363,8 +413,8 @@ and `plans`.
     "network": { "strictAllowlist": true },
     "filesystem": {
       "denyWrite": ["<root>/.git", "<root>/loom", "<root>/README.md", "…every top-level entry but doc",
-                    "<root>/doc/plans/IN_PROGRESS-PLAN-x.md", "<root>/doc/plans/REVIEW-PLAN-x.md",
-                    "<root>/doc/plans/archive"],
+                    "<root>/<home>/IN_PROGRESS-PLAN-x.md", "<root>/<home>/REVIEW-PLAN-x.md",
+                    "<root>/<home>/archive", "<root>/<home>/briefs/x"],
       "allowWrite": ["<rt>/drafts", "<rt>/claims", "<rt>/summaries.lock"],
       "denyRead": ["~/.ssh", "…mandatory_deny_read", "~/.loom/plan", "…token_deny_paths"],
       "allowRead": ["<rt>/drafts", "<rt>/claims", "<rt>/summaries.lock"]
@@ -378,12 +428,18 @@ and `plans`.
               "Edit(//<rt>/drafts/**)", "Read(//<rt>/drafts/**)", "Read(//<rt>/claims/**)",
               "Bash(loom knowledge *)", "Bash(loom plan summary *)", "Bash(loom plan verify *)",
               "Bash(loom plan check*)", "Bash(loom map *)", "WebSearch"],
-    "deny": ["AskUserQuestion", "Edit(//<root>/doc/plans/IN_PROGRESS-PLAN-x.md)",
-             "Edit(//<root>/doc/plans/REVIEW-*.md)", "Edit(//<root>/doc/plans/archive/**)"]
+    "deny": ["…base denies: stage tool denies and Workflow", "AskUserQuestion", "SendMessage", "ListAgents",
+             "Edit(//<root>/<home>/IN_PROGRESS-PLAN-x.md)",
+             "Edit(//<root>/<home>/REVIEW-*.md)", "Edit(//<root>/<home>/archive/**)",
+             "Edit(//<root>/<home>/briefs/x/**)"]
   },
   "worktree": { "bgIsolation": "none" }
 }
 ```
+
+Kickoff and Team omit the two `doc/loom/` writer command grants; Team also omits the
+`SendMessage` and `ListAgents` denies. Their document scope lives in `scope.json` and the
+guard, not in narrower `Edit` rules.
 
 `worktree.bgIsolation: "none"` is set for the reason stage settings set it
 (`sandbox/settings.rs:298-307`): Claude Code would otherwise push the refinement subagents into
@@ -414,7 +470,7 @@ orchestration-state reads, and plan-authored `sandbox:` config, which planning h
 | Where                         | a worktree (knowledge stages: the checkout)    | the checkout, on the user's branch                        |
 | Write set                     | the worktree, minus control surfaces           | `doc/` and three runtime grants; the rest of the root denied |
 | Permission mode               | `auto`                                         | `default` (Manual)                                        |
-| Sandboxed Bash                | runs unprompted                                | read-only and five loom commands unprompted; the rest asks |
+| Sandboxed Bash                | runs unprompted                                | read-only and scope's loom commands; the rest asks          |
 | Network                       | the plan's allowed domains                     | none                                                      |
 | File-tool path guards         | `worktree-file-guard.sh`, `credential-guard.sh` | `loom plan hook PreToolUse`, in Rust, sharing the server's predicate |
 | Package caches                | writable                                       | not granted                                               |
@@ -429,17 +485,19 @@ The guard scripts key on `LOOM_STAGE_ID` and friends, which a planning session n
 A pressure session (section 11) reviews and edits one written plan. It gets its own settings
 file from the same builder, with the authoring column's rules except the write set:
 
-| Path                                                                          | Pressure session                                      |
-| ----------------------------------------------------------------------------- | ----------------------------------------------------- |
-| the plan under test, `doc/plans/PLAN-<slug>.md`, and its brief bundle `doc/plans/briefs/<slug>/` | file tools and commands               |
-| `planning-omissions.md` at the repository root                                | file tools and commands                               |
-| `<session dir>/done/`, holding the completion marker                          | commands only (`touch <marker>`)                      |
-| every other path under `doc/`, locked plans and their brief bundles included  | no                                                    |
-| everything else in the repository and the runtime directory                   | no, as for authoring                                  |
+| Path                                                                                 | Pressure session                 |
+| ------------------------------------------------------------------------------------ | -------------------------------- |
+| the plan under test, `<home>/PLAN-<slug>.md`, and its brief bundle `<home>/briefs/<slug>/` | file tools and commands          |
+| `planning-omissions.md` at the repository root                                         | file tools and commands          |
+| `<session dir>/done/`, holding the completion marker                                   | commands only (`touch <marker>`) |
+| every other path under `doc/`, locked plans and their brief bundles included            | no                               |
+| everything else in the repository and the runtime directory                           | no, as for authoring             |
 
 In layer 1 the server leaves `planning-omissions.md` out of the top-level `denyWrite` list,
-denies every `doc/` entry except `doc/plans`, and inside `doc/plans` denies every entry except
-the plan under test and its bundle, all as literal existing paths. It creates
+denies every `doc/` entry except `doc/plans`, and follows the path to the plan's home:
+for a feature it keeps only that feature directory under `doc/plans`; inside the home it
+keeps only the plan under test and `briefs/`, and inside `briefs/` only that plan's bundle.
+Every other existing entry on that path is denied by its literal path. It creates
 `<session dir>/done/` before launch and grants `allowWrite` on that directory only, so the
 marker is the one write into the runtime directory; `sessions/` stays denied otherwise. In layer
 2 the `allow` rules are `Edit` on the plan file, `Edit` on the bundle's `**`, `Edit` on

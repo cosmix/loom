@@ -21,9 +21,15 @@ means two files can never disagree about a relationship.)
 ## Discovery
 
 The server walks `doc/` on disk at start and on every change the file watcher reports (section
-04). It reads files git ignores as well: this repository ignores `doc/plans/DONE-*` and
-`doc/plans/REVIEW-*` (`.gitignore:68-69`), and both kinds matter to a returning author. File
-mode marks an ignored file "not committed" so nobody mistakes it for shared content. A clone may
+04), including feature directories under `doc/product/` and `doc/plans/` and standalone plans
+at the top of `doc/plans/`. A feature's membership comes from its directory name, shared across
+the two trees; either directory alone is enough for a feature. No document has to declare its
+feature.
+
+It reads files git ignores as well: this repository ignores `doc/plans/DONE-*`,
+`doc/plans/REVIEW-*` and their feature-directory equivalents, and both kinds matter to a
+returning author. File mode marks an ignored file "not committed" so nobody mistakes it for
+shared content. A clone may
 lack these plans, and a user may have deleted them; a missing plan file may be deleted or never
 committed, and the app does not try to tell which.
 
@@ -34,17 +40,31 @@ directories are always skipped (section 12, "Symlinks under `doc/`").
 
 ## Document kinds
 
-| Kind            | Path                                                                  | Parent                                      |
-| --------------- | --------------------------------------------------------------------- | ------------------------------------------- |
-| Vision          | `doc/product/index.md`                                                | none (root of the product tree)             |
-| Product section | `doc/product/section_<nn>.md`                                         | the vision, through its sections table      |
-| Product note    | any other file under `doc/product/`                                   | the vision, as an attachment                |
-| Metaplan        | `doc/plans/index.md`, `doc/plans/*metaplan*.md`                       | none (root of the engineering tree)         |
-| Plan            | `PLAN-<slug>.md` and its lifecycle spellings (below)                  | each metaplan whose entry names the slug    |
-| Brief           | any file under `doc/plans/briefs/<slug>/`, and briefs a plan names    | the plan with that slug                     |
-| Run review      | `REVIEW-<plan file stem>.md` in `doc/plans/` or `doc/plans/archive/`  | the plan with that slug                     |
-| Knowledge       | any file under `doc/loom/knowledge/`                                  | the knowledge index (see below)             |
-| Other           | anything else under `doc/`                                            | none                                        |
+| Kind            | Path                                                                                           | Parent                                            |
+| --------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Standalone plan | `doc/plans/PLAN-<slug>.md` and its lifecycle spellings, including `doc/plans/archive/`         | none                                              |
+| Brief           | any file under `doc/plans/briefs/<slug>/`, and briefs a standalone plan names                  | the plan with that slug                           |
+| Run review      | `REVIEW-<plan file stem>.md` in `doc/plans/` or `doc/plans/archive/`                           | the plan with that slug                           |
+| Vision          | `doc/product/<f>/index.md`                                                                     | none (root of the feature's product tree)         |
+| Product section | `doc/product/<f>/section_<nn>.md`                                                              | the feature's vision, through its sections table  |
+| Product note    | any other file under `doc/product/<f>/`                                                        | the feature's vision, as an attachment            |
+| Metaplan        | `doc/plans/<f>/index.md`, `doc/plans/<f>/*metaplan*.md`                                        | none (root of the feature's engineering tree)     |
+| Feature plan    | `doc/plans/<f>/PLAN-<slug>.md` and its lifecycle spellings, including `doc/plans/<f>/archive/` | each metaplan in the feature whose entry names it |
+| Brief           | any file under `doc/plans/<f>/briefs/<slug>/`, and briefs a feature plan names                 | the plan with that slug                           |
+| Run review      | `REVIEW-<plan file stem>.md` in `doc/plans/<f>/` or `doc/plans/<f>/archive/`                   | the plan with that slug                           |
+| Knowledge       | any file under `doc/loom/knowledge/`                                                           | the knowledge index (see below)                   |
+| Other           | anything else under `doc/`                                                                     | none                                              |
+
+Here `<f>` is a feature name: `[a-z0-9][a-z0-9-]*`, at most 64 characters. `archive`, `briefs`,
+`plans` and `overview` are reserved feature names. At the first directory under `doc/plans/`,
+`archive` and `briefs` name the standalone archive and brief bundles instead of features.
+Documents under an invalid feature name are `other`, with a `bad-feature-name` problem on the
+directory. Plans and run reviews live directly in their home or its `archive/`; files nested
+deeper under an archive are `other`. Brief bundles may contain nested directories.
+
+A vision at `doc/product/index.md`, a section directly under `doc/product/`, or a metaplan
+directly under `doc/plans/` keeps its kind but raises `needs-feature`: it belongs in a feature
+directory. The top of `doc/plans/` holds standalone plans, their archive, briefs and run reviews.
 
 The title of a Markdown document is its first level-1 heading, else its file name. Product
 notes and other documents appear in file mode only; neither has a summary nor a checklist line.
@@ -52,8 +72,9 @@ notes and other documents appear in file mode only; neither has a summary nor a 
 ### Product sections
 
 Section 01's rules stand: the vision's `Specification sections` table lists sections by number,
-row `07` expects `section_07.md`, and a section file the table does not list is an unlisted
-section. The number is the section's identity; its title comes from its own first heading, and
+row `07` expects `section_07.md` in that feature's product directory, and a section file the
+feature's table does not list is an unlisted section. The number identifies a section within
+its feature; its title comes from its own first heading, and
 when that differs from the table's name the app shows both in file mode so the user can fix
 whichever is wrong. (My call.)
 
@@ -64,26 +85,35 @@ it, since the table already declares the parent.
 ### Plans and their lifecycle
 
 A plan's identity is its **slug**: the file stem with `IN_PROGRESS-`, `DONE-`, `RETIRED-` and
-`PLAN-` stripped. `loom run` finds a plan's brief bundle by stripping `IN_PROGRESS-`, `DONE-` and
-`PLAN-` only (`loom/src/plan/inputs.rs:140-142`); that lookup gains `RETIRED-` as part of this
-work, so the app and `loom run` agree on every plan's slug. Every spelling below is the same
-plan:
+`PLAN-` stripped. Slugs are unique repository-wide, across features and standalone plans.
+A plan's **home** is `doc/plans/` for a standalone plan or `doc/plans/<f>/` for a feature plan;
+an archived plan keeps the same home. The app and `loom run` use the same slug and home to find
+its brief bundle. Every spelling below with one slug identifies the same plan:
 
-| File                                                       | State   |
-| ---------------------------------------------------------- | ------- |
-| `doc/plans/PLAN-<slug>.md`                                 | written |
-| `doc/plans/IN_PROGRESS-PLAN-<slug>.md`                     | running |
-| `doc/plans/DONE-PLAN-<slug>.md`, `doc/plans/archive/DONE-PLAN-<slug>.md` | done    |
-| `doc/plans/archive/RETIRED-PLAN-<slug>.md`                 | retired |
+| File                                                                             | State   |
+| -------------------------------------------------------------------------------- | ------- |
+| `doc/plans/PLAN-<slug>.md`                                                       | written |
+| `doc/plans/IN_PROGRESS-PLAN-<slug>.md`                                           | running |
+| `doc/plans/DONE-PLAN-<slug>.md`, `doc/plans/archive/DONE-PLAN-<slug>.md`         | done    |
+| `doc/plans/archive/RETIRED-PLAN-<slug>.md`                                       | retired |
+| `doc/plans/<f>/PLAN-<slug>.md`                                                   | written |
+| `doc/plans/<f>/IN_PROGRESS-PLAN-<slug>.md`                                       | running |
+| `doc/plans/<f>/DONE-PLAN-<slug>.md`, `doc/plans/<f>/archive/DONE-PLAN-<slug>.md` | done    |
+| `doc/plans/<f>/archive/RETIRED-PLAN-<slug>.md`                                   | retired |
 
-The first three rows are section 01's. `RETIRED-` is a convention the archive already uses
-(`doc/plans/archive/RETIRED-PLAN-secure-distilled-loom-v2.md`) for an abandoned plan: one
-retired before it ran, or one whose unfinished run was abandoned (section 11, "Abandoning an
-unfinished run"), which moves `doc/plans/IN_PROGRESS-PLAN-<slug>.md` to this path. A retired plan closes its metaplan entry, since retiring was a decision, and the checklist
-shows it as retired instead of done. Retired plans are read-only, like running and done ones.
+`RETIRED-` identifies an abandoned plan: one retired before it runs, or one whose unfinished
+run is abandoned (section 11, "Abandoning an unfinished run"). Abandoning moves the running
+plan into its own home's `archive/RETIRED-PLAN-<slug>.md`. A retired plan closes its metaplan
+entry, since retiring is a decision, and the checklist shows it as retired instead of done.
+Retired plans are read-only, like running and done ones; each home's archive is read-only too.
+Discovery also recognises `RETIRED-PLAN-<slug>.md` directly in the home. In an archive, any
+other recognised plan spelling is done, even without `DONE-`.
 
 If two files carry one slug, the most advanced state wins (retired, then done, then running,
-then written) and file mode flags the others as stray copies. Everything that refers to a plan
+then written); equal states are settled by the lexicographically first path. A losing copy
+in the winning plan's home, including its archive, raises `stray-plan-copy`. A losing copy in
+another feature's home or between a feature and the standalone shelf raises
+`duplicate-plan-slug`. Everything that refers to a plan
 (metaplan entries, cross-references, summary citations) resolves through the slug, so a link
 written as `PLAN-foo.md` keeps working after `loom run` renames the file.
 
@@ -93,25 +123,27 @@ A metaplan entry is a level-2 heading that names a plan file in backticks (secti
 lifecycle spelling in the backticks resolves by slug, so a metaplan written after a plan ran can
 name `DONE-PLAN-foo.md`. The entry's heading section, from the heading to the next level-2
 heading, is the plan's description in that metaplan; the plan's view links to it. A plan named
-by two metaplans has both as parents.
+by two metaplans in its feature has both as parents. An entry naming a plan from another
+feature or the standalone shelf raises `metaplan-entry-foreign-plan`.
 
 ### Briefs
 
 A plan's briefs are the files `loom run` treats as its inputs, found the way
 `collect_inputs` finds them (`loom/src/plan/inputs.rs:89`):
 
-1. the conventional bundle, `doc/plans/briefs/<slug>/`, every file under it;
-2. every `doc/plans/briefs/...` path token in the plan, read by `extract_brief_paths`
-   (`loom/src/plan/schema/structural_checks.rs:41`);
+1. the conventional bundle, `<plan home>/briefs/<slug>/`, every file under it:
+   `doc/plans/<f>/briefs/<slug>/` for a feature plan, `doc/plans/briefs/<slug>/` for a standalone plan;
+2. every `doc/plans/<f>/briefs/...` or `doc/plans/briefs/...` path token in the plan, read by
+   `extract_brief_paths` (`loom/src/plan/schema/structural_checks.rs`);
 3. the same tokens in every brief already found, recursively.
 
 The app calls the same code, so the brief list it shows is the list `loom run` checks. A brief
 reference that does not resolve shows as a broken reference on the plan.
 
-Inside a bundle, the layout loom plans already use is read as structure:
+Inside a bundle, the layout is read as structure (`<plan home>` has the meaning above):
 
 ```text
-doc/plans/briefs/<slug>/
+<plan home>/briefs/<slug>/
   common.md            plan-wide brief, read by every worker
   <stage-id>/          one directory per stage, named by the stage's id
     common.md          stage-wide brief
@@ -166,13 +198,17 @@ Rules:
 - The line starts with `Implements:` at the start of a line, outside fenced code. The first such
   line in the plan counts; a second is flagged as a duplicate.
 - Each value is a section token `section_<nn>`, separated by commas. A link
-  (`[section_07](../product/section_07.md)`) or a file name (`section_07.md`) is read as the
+  (`[section_07](../../product/<f>/section_07.md)`) or a file name (`section_07.md`) is read as the
   same token, so an author can make the line clickable on GitHub.
+- `Implements: section_07` resolves against the plan's own feature's vision table and
+  `doc/product/<f>/section_07.md`. A link's target does not select another feature.
 - `Implements: none` states that the plan implements no product section (tooling, cleanup).
-  A plan with no line at all is "unmapped". Concept mode (section 05) shows unmapped plans
+  A standalone plan writes `Implements: none`; section tokens on it raise `implements-broken`.
+  A plan with no line at all is "unmapped"; an unmapped feature plan raises `implements-missing`.
+  Concept mode (section 05) shows unmapped plans
   apart from plans that declared `none`, because the first is a gap in the record and the
   second is a decision. (My call.)
-- A token naming a section the vision does not list is a broken reference, shown on the plan.
+- A token naming a section the feature's vision does not list is a broken reference, shown on the plan.
 - Links are at section granularity. A plan that implements part of a section names the whole
   section; which part is for its prose to say. (My call: a heading-level link would break on
   every rename of a product heading.)
@@ -180,18 +216,18 @@ Rules:
 The plan-writing skill adds the line (section 09). The line sits in prose, so plan validation,
 which reads only the metadata block (`loom/src/plan/parser/extraction.rs:75`), is unaffected.
 Metaplans carry no `Implements:` lines; the link is the plan's, and section 05 builds the
-links between the two overviews from these lines only (vision, Decisions).
+links between each feature's two overviews from these lines only (vision, Decisions).
 
 ## Cross-references
 
 The app recognises three forms of reference in any Markdown document, and resolves each to a
 document and, when given, a heading section:
 
-| Form                    | Example                                                  |
-| ----------------------- | -------------------------------------------------------- |
-| Relative Markdown link  | `[detection rules](section_01.md#detection-rules)`       |
-| Repository path token   | `` `doc/plans/briefs/loom-ui-mods/loom-ui/common.md` `` |
-| Plan file name          | `` `PLAN-02-delivery-truth.md` ``                        |
+| Form                   | Example                                                 |
+| ---------------------- | ------------------------------------------------------- |
+| Relative Markdown link | `[detection rules](section_01.md#detection-rules)`      |
+| Repository path token  | `` `doc/plans/briefs/loom-ui-mods/loom-ui/common.md` `` |
+| Plan file name         | `` `PLAN-02-delivery-truth.md` ``                       |
 
 Plan file names resolve by slug from anywhere in `doc/`. Path tokens follow the scan
 `extract_brief_paths` uses, widened to any `doc/` path; placeholders such as
@@ -221,9 +257,12 @@ the document's id plus the anchor. (My call: these are the anchors GitHub and mo
 already render, so a cross-reference a session writes works outside the app too.)
 
 **Document id.** The id is stable across renames that do not change what the document is: the
-vision is `product/index`, a section is `product/section_<nn>`, a plan is `plan/<slug>`, every
-other document is its path under `doc/`. A plan's citations survive `PLAN-` to `IN_PROGRESS-`
-to `DONE-` to `archive/`.
+vision is `product/<f>/index`, a section is `product/<f>/section_<nn>`, a plan is `plan/<slug>`
+whether it belongs to a feature or is standalone, and every other document is its path under
+`doc/`. A plan's citations survive `PLAN-` to `IN_PROGRESS-` to `DONE-` or `RETIRED-`, moves into
+`archive/`, and moves between homes. Changing a product document's feature changes its id.
+Misplaced top-level visions and sections retain `product/index` and `product/section_<nn>`
+while carrying `needs-feature`.
 
 **Document paths on the wire.** On the wire every document path is repository-relative
 (`doc/...`); only request parameters naming a document and the browser's `/files/<path>`
