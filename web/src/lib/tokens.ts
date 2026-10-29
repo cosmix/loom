@@ -76,6 +76,36 @@ export function cacheHitPercent(u: TokenUsage): number | null {
   return denominator === 0 ? null : (u.cache_read / denominator) * 100;
 }
 
+/// Price of one token of each kind, relative to an uncached input token
+/// (cache read 0.1x, cache write 1.25x, output 5x). The weights are the usual
+/// ratios across models, so the shares stay meaningful without a price table.
+export const COST_WEIGHT: Readonly<Record<keyof TokenUsage, number>> = {
+  input: 1,
+  cache_write: 1.25,
+  output: 5,
+  cache_read: 0.1,
+};
+
+/// Each kind's share (0 to 1) of the usage's relative cost. Raw token counts put
+/// cache reads at 99% of every bar; weighting by price shows where the spend goes.
+/// All zeros when the usage carries no cost.
+export function costShares(u: TokenUsage): Record<keyof TokenUsage, number> {
+  const cost = {
+    input: u.input * COST_WEIGHT.input,
+    cache_write: u.cache_write * COST_WEIGHT.cache_write,
+    output: u.output * COST_WEIGHT.output,
+    cache_read: u.cache_read * COST_WEIGHT.cache_read,
+  };
+  const total = cost.input + cost.cache_write + cost.output + cost.cache_read;
+  if (total === 0) return { input: 0, cache_write: 0, output: 0, cache_read: 0 };
+  return {
+    input: cost.input / total,
+    cache_write: cost.cache_write / total,
+    output: cost.output / total,
+    cache_read: cost.cache_read / total,
+  };
+}
+
 export function stageFlow(flow: TokenFlow | undefined, stageId: string): StageFlow | undefined {
   return flow?.stages.find((stage) => stage.stage_id === stageId);
 }

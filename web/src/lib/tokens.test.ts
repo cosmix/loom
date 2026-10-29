@@ -5,6 +5,7 @@ import {
   agentLabel,
   cacheHitPercent,
   carryForward,
+  costShares,
   codexPairs,
   compactTokens,
   cumulativeSeries,
@@ -96,6 +97,24 @@ it.each([
   [2239999, "2.23M"],
 ])("compactTokens truncates %i to %s", (value, expected) => {
   expect(compactTokens(value)).toBe(expected);
+});
+
+it("costShares weights by price so cache reads no longer dwarf the other kinds", () => {
+  const shares = costShares(usage(10, 1000, 100_000, 500));
+  // cost: input 10, write 1250, output 2500, read 10000; reads are 98% of tokens but 73% of cost
+  expect(shares.cache_read).toBeCloseTo(10000 / 13760, 6);
+  expect(shares.output).toBeCloseTo(2500 / 13760, 6);
+  expect(shares.cache_write).toBeCloseTo(1250 / 13760, 6);
+  expect(shares.input + shares.cache_write + shares.output + shares.cache_read).toBeCloseTo(1, 9);
+});
+
+it("costShares is all zeros for empty usage", () => {
+  expect(costShares(usage(0, 0, 0, 0))).toEqual({
+    input: 0,
+    cache_write: 0,
+    output: 0,
+    cache_read: 0,
+  });
 });
 
 it("cacheHitPercent gives the pinned plan percentage", () => {
