@@ -116,7 +116,7 @@ async function mount(): Promise<Store> {
   });
   disposers.push(handle.dispose);
   store.set(planSocketAtom, handle);
-  const router = createMemoryRouter(routes, { initialEntries: ["/product"] });
+  const router = createMemoryRouter(routes, { initialEntries: ["/f/demo/product"] });
   disposers.push(() => router.dispose());
   render(
     <Provider store={store}>
@@ -222,7 +222,7 @@ beforeEach(() => {
   replies = {
     "/api/server": hello().server,
     "/api/tree": treeFixture,
-    "/api/concept/product": overviewFixture,
+    "/api/concept/overview/demo/product": overviewFixture,
     "/api/hashes": { head: "c1", docs: {} },
     "/api/diff/turn": { path: "doc/plans/bridge.md", before: "Draft\n", after: "Ready\n" },
     "/api/restore": { files: [{ path: "doc/plans/bridge.md", result: "restored" }] },

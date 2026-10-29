@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react";
 
+import { parsePageKey } from "@/plan/api/page-key";
 import type { ConceptPage, Mark, Sentence, SourceAnchor } from "@/plan/api/schema-concept";
 
 import { anchorKey, type CitedLookup } from "./open-state";
@@ -28,7 +29,7 @@ export type ColumnContextValue = {
   docPaths: ReadonlySet<string>;
   openSentence: (site: SentenceSite) => void;
   foldRun: (run: OpenRun) => void;
-  /** Opens a concept page (`product/section_01`). */
+  /** Opens a concept page (`demo/product/section_01`). */
   openPage: (page: string) => void;
   /** Opens a file-mode address. */
   openAddress: (address: string) => void;
@@ -98,9 +99,14 @@ export function runAt(open: OpenRun[], site: SentenceSite): OpenRun | undefined 
   );
 }
 
-/** The summary id behind a page key: `engineering/<slug>` pages hold the `plans/<slug>` summary. */
+/** Engineering summary pages and standalone plans share the `plans/<slug>` summary id. */
 export function summaryIdOfKey(pageKey: string): string {
-  return pageKey.startsWith("engineering/")
-    ? `plans/${pageKey.slice("engineering/".length)}`
-    : pageKey;
+  const parts = parsePageKey(pageKey);
+  if (
+    parts?.kind === "standalone" ||
+    (parts?.kind === "summary" && parts.scope === "engineering")
+  ) {
+    return `plans/${parts.doc}`;
+  }
+  return pageKey;
 }

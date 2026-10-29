@@ -94,8 +94,8 @@ export function StepTracker({
     return (
       <Popover>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="sm" className="min-w-0 shrink text-xs">
-            <span className="truncate">{summary(checklist)}</span>
+          <Button variant="ghost" size="sm" className="min-w-0 max-w-full shrink text-xs">
+            <span className="min-w-0 truncate">{summary(checklist)}</span>
             <ChevronDownIcon aria-hidden="true" />
           </Button>
         </PopoverTrigger>

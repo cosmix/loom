@@ -2,7 +2,8 @@
  * preflight has reset margins, list markers and heading sizes, so they are set here. */
 
 /* Document prose follows Settings' reading face and size (19px by default), held to 70ch.
- * Chat inherits its face. Tables and code blocks scroll instead of widening the column. */
+ * Chat prose inherits its face; attachment quotes use the reading face. Tables and code
+ * blocks scroll instead of widening the column. */
 .md {
   min-width: 0;
   max-width: min(100%, 70ch);
@@ -12,7 +13,9 @@
 }
 
 [data-doc-container] .md,
-.concept-passage .md {
+.concept-passage .md,
+.feature-pitch,
+.chat-passage {
   font-family: var(--font-reading);
   font-size: var(--reading-size);
   line-height: var(--reading-line);

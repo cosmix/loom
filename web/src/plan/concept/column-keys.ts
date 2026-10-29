@@ -1,6 +1,7 @@
 import type { KeyboardEvent } from "react";
 
 import { isTyping } from "@/lib/is-typing";
+import { pageHref } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
 import type { AttachmentDraft } from "@/plan/attachments/types";
 import { toAddress } from "@/plan/files/address";
@@ -105,7 +106,7 @@ function openFirstDocument(env: KeyEnv, target: ColumnTarget, element: HTMLEleme
     return;
   }
   const page = firstDocumentPage(env, target);
-  if (page) env.openAddress(`/${page}`);
+  if (page) env.openAddress(pageHref(page));
 }
 
 /** The `a` key: summary arm for a sentence, source arm (from the DocView) for a passage. */

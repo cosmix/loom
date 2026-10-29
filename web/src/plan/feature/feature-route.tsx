@@ -4,7 +4,7 @@ import { Link, useParams } from "react-router";
 
 import type { ChecklistView } from "@/plan/api/schema";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { ChecklistGaps, NextOffers } from "@/plan/checklist-view";
+import { ChecklistGaps } from "@/plan/checklist-view";
 import { DraftTeamPanel } from "@/plan/feature/draft-team-panel";
 import { StepList } from "@/plan/feature/step-list";
 import { isCurrentStep, readyLabel } from "@/plan/header/step-tracker";
@@ -66,7 +66,6 @@ export function FeatureRoute() {
       <p className="text-sm text-muted-foreground">
         <Untrusted text={heading(checklist)} />
       </p>
-      <NextOffers checklist={checklist} />
       <StepList checklist={checklist} />
       <DraftTeamPanel feature={checklist.feature} />
       {checklist.items.length > 0 && <ChecklistGaps checklist={checklist} />}

@@ -6,8 +6,6 @@ import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { ChecklistView } from "@/plan/api/schema";
-import type { FileTree, TreeEntry } from "@/plan/api/schema-files";
-import { treeAtom } from "@/plan/files/atoms";
 import { FeatureCard, FeatureCards } from "@/plan/home/feature-card";
 import { projectAtom } from "@/plan/state/atoms";
 
@@ -16,6 +14,7 @@ afterEach(cleanup);
 function checklist(feature = "demo"): ChecklistView {
   return {
     feature,
+    pitch: null,
     current: { kind: "step", number: 3 },
     steps: [
       { number: 1, name: "Vision", mark: "done" },
@@ -35,47 +34,8 @@ function checklist(feature = "demo"): ChecklistView {
   };
 }
 
-function entry(overrides: Partial<TreeEntry> = {}): TreeEntry {
-  return {
-    feature: "demo",
-    misplaced: false,
-    path: null,
-    title: "demo",
-    file_name: null,
-    kind: "feature",
-    state: null,
-    locked: false,
-    gap: false,
-    pressure_date: null,
-    errors: 0,
-    blurb: null,
-    children: [],
-    ...overrides,
-  };
-}
-
-function visionTree(blurb: string | null): FileTree {
-  return {
-    product: [
-      entry({ path: "doc/product/other/index.md", blurb: "Another feature's pitch" }),
-      entry({
-        blurb: "The folder's blurb",
-        children: [entry({ kind: "vision", path: "doc/product/demo/index.md", blurb })],
-      }),
-    ],
-    plans: [],
-    knowledge: [],
-    other: [],
-    archive: [],
-  };
-}
-
-function renderHome(
-  ui: ReactNode,
-  { tree = null, features = [] }: { tree?: FileTree | null; features?: ChecklistView[] } = {},
-) {
+function renderHome(ui: ReactNode, { features = [] }: { features?: ChecklistView[] } = {}) {
   const store = createStore();
-  store.set(treeAtom, tree);
   store.set(projectAtom, { checklists: features, standalone: [], moves: [] });
   return render(
     <Provider store={store}>
@@ -121,48 +81,42 @@ describe("FeatureCard", () => {
     expect(screen.getByText("0 gaps")).toBeTruthy();
   });
 
-  it("shows the pitch from the nested vision matching the feature path", () => {
-    renderHome(<FeatureCard checklist={checklist()} />, {
-      tree: visionTree("Make planning easier to follow."),
-    });
+  it("shows the checklist pitch in the reading face, keeping chrome separate", () => {
+    renderHome(
+      <FeatureCard checklist={{ ...checklist(), pitch: "Make planning easier to follow." }} />,
+    );
 
-    expect(screen.getByText("Make planning easier to follow.")).toBeTruthy();
-    expect(screen.queryByText("Another feature's pitch")).toBeNull();
-    expect(screen.queryByText("The folder's blurb")).toBeNull();
+    const pitch = screen.getByText("Make planning easier to follow.").closest("p");
+    expect(pitch?.classList.contains("feature-pitch")).toBe(true);
+    expect(pitch?.parentElement?.closest(".feature-pitch")).toBeNull();
+    expect(screen.getByRole("heading", { name: "demo" }).closest(".feature-pitch")).toBeNull();
+    expect(screen.getByRole("list", { name: "Progress" }).closest(".feature-pitch")).toBeNull();
+    expect(screen.getByText("2 of 7 steps done").closest(".feature-pitch")).toBeNull();
+    expect(screen.getByText("2 gaps").closest(".feature-pitch")).toBeNull();
   });
 
-  it.each([null, ""])("omits the pitch when the vision blurb is %s", (blurb) => {
-    const { container } = renderHome(<FeatureCard checklist={checklist()} />, {
-      tree: visionTree(blurb),
-    });
+  it("renders inline Markdown in the checklist pitch", () => {
+    renderHome(
+      <FeatureCard checklist={{ ...checklist(), pitch: "Build **clear** plans with `loom`." }} />,
+    );
 
-    expect(container.querySelector("p")).toBeNull();
+    const pitch = screen.getByText("clear").closest("p");
+    expect(pitch?.querySelector("strong")?.textContent).toBe("clear");
+    expect(pitch?.querySelector("code")?.textContent).toBe("loom");
+    expect(pitch?.textContent).toBe("Build clear plans with loom.");
+    expect(pitch?.classList.contains("feature-pitch")).toBe(true);
   });
 
-  it("omits the pitch when the feature vision is absent", () => {
-    const { container } = renderHome(<FeatureCard checklist={checklist("missing")} />, {
-      tree: visionTree("Another vision's pitch"),
-    });
-
-    expect(container.querySelector("p")).toBeNull();
-    expect(screen.queryByText("Another vision's pitch")).toBeNull();
-  });
-
-  it("omits the pitch before the files tree loads", () => {
-    const { container } = renderHome(<FeatureCard checklist={checklist()} />);
+  it.each([null, ""])("omits the paragraph when the checklist pitch is %s", (pitch) => {
+    const { container } = renderHome(<FeatureCard checklist={{ ...checklist(), pitch }} />);
 
     expect(container.querySelector("p")).toBeNull();
   });
 
   it("escapes control characters in feature names and vision pitches", () => {
-    renderHome(<FeatureCard checklist={checklist("demo\u202E")} />, {
-      tree: {
-        ...visionTree(null),
-        product: [
-          entry({ path: "doc/product/demo\u202E/index.md", blurb: "Build\u2066 with care." }),
-        ],
-      },
-    });
+    renderHome(
+      <FeatureCard checklist={{ ...checklist("demo\u202E"), pitch: "Build\u2066 with care." }} />,
+    );
 
     expect(screen.getByRole("heading", { name: "demo⟨U+202E⟩" })).toBeTruthy();
     expect(screen.getByText("Build⟨U+2066⟩ with care.")).toBeTruthy();

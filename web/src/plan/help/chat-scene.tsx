@@ -1,7 +1,6 @@
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { useState } from "react";
-import { MemoryRouter } from "react-router";
 
 import type { Attachment, Item, SessionView, Turn } from "@/plan/api/schema-chat";
 import type { AttachmentDraft } from "@/plan/attachments";
@@ -13,6 +12,7 @@ import { StateLine } from "@/plan/chat/state-line";
 import { Transcript } from "@/plan/chat/transcript";
 import type { PlannerHelpScene } from "@/plan/help/pinned-scene";
 import { SAMPLE_HOLDER, SAMPLE_SERVER } from "@/plan/help/sample";
+import { SceneRouter } from "@/plan/help/scene-router";
 import { authoringAtom, connectionAtom, youAtom } from "@/plan/state/atoms";
 
 const STARTED_AT = "2026-10-29T10:00:00Z";
@@ -153,11 +153,11 @@ export function ChatComposerScene() {
   });
   return (
     <Provider store={store}>
-      <MemoryRouter>
+      <SceneRouter>
         <div data-loom-plan inert>
           <ComposerArea />
         </div>
-      </MemoryRouter>
+      </SceneRouter>
     </Provider>
   );
 }
@@ -170,12 +170,12 @@ export function ChatConversationScene() {
   });
   return (
     <Provider store={store}>
-      <MemoryRouter>
+      <SceneRouter>
         <div data-loom-plan inert className="space-y-3">
           <StateLine />
           <Transcript />
         </div>
-      </MemoryRouter>
+      </SceneRouter>
     </Provider>
   );
 }

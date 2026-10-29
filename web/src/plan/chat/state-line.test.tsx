@@ -1,121 +1,27 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
-import { Provider } from "jotai/react";
-import { createStore } from "jotai/vanilla";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { act, cleanup, screen } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
 
 import helloFixture from "@/plan/api/fixtures/hello.json";
-import snapshotFixture from "@/plan/api/fixtures/chat-snapshot.json";
-import { checklistViewSchema, serverInfoSchema } from "@/plan/api/schema";
-import { chatSnapshotSchema, type Item, type SessionView, type Turn } from "@/plan/api/schema-chat";
+import { checklistViewSchema } from "@/plan/api/schema";
+import type { SessionView } from "@/plan/api/schema-chat";
 import { registerOfferAction } from "@/plan/offers/actions";
-import {
-  authoringAtom,
-  checklistAtom,
-  presenceAtom,
-  serverInfoAtom,
-  youAtom,
-} from "@/plan/state/atoms";
+import { checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { snapshotAtom } from "./model";
-import { RunHeader } from "./run-header";
-import { StateLine } from "./state-line";
+import {
+  base,
+  harness,
+  now,
+  permission,
+  server,
+  session,
+  setupStateLineTests,
+  since,
+  stops,
+  tool,
+  turn,
+} from "./state-line-kit";
 
-const snapshot = chatSnapshotSchema.parse(snapshotFixture);
-const base = snapshot.session!;
-const now = new Date("2026-10-28T10:00:00Z");
-const since = "2026-10-28T09:59:19Z";
-const server = { ...serverInfoSchema.parse(helloFixture.server), read_only: [] };
-const stops: Array<() => void> = [];
-
-function session(fields: Partial<SessionView> = {}): SessionView {
-  return {
-    ...base,
-    state: "idle",
-    state_since: since,
-    working_since: since,
-    subagents_running: 0,
-    last_activity: since,
-    ...fields,
-  };
-}
-
-function turn(items: Item[] = [], fields: Partial<Turn> = {}): Turn {
-  return {
-    ...snapshot.turns[0],
-    id: "current",
-    open: true,
-    started_at: since,
-    items,
-    tokens: { input: 1000, cache_write: 200, cache_read: 999999, output: 300 },
-    ...fields,
-  };
-}
-
-function permission(tool: string, id = tool): Extract<Item, { type: "permission" }> {
-  return {
-    type: "permission",
-    id,
-    request_id: id,
-    tool,
-    input: "{}",
-    status: "pending",
-    deny_reason: null,
-    note: null,
-    expires_at: "2026-10-28T11:00:00Z",
-  };
-}
-
-function tool(summary: string): Extract<Item, { type: "tool" }> {
-  const sample = snapshot.turns[0].items.find((item) => item.type === "tool");
-  if (!sample || sample.type !== "tool") throw new Error("Missing tool fixture");
-  return { ...sample, summary };
-}
-
-function harness(current: SessionView | null = session(), turns = [turn()]) {
-  const store = createStore();
-  store.set(serverInfoAtom, server);
-  store.set(youAtom, { public_id: "holder", name: "Dana" });
-  store.set(authoringAtom, {
-    holder: { public_id: "holder", name: "Dana", away_since: null, frees_at: null },
-  });
-  store.set(snapshotAtom, { session: current, turns, queue: [], previous: null });
-  function setSession(next: SessionView | null) {
-    act(() => store.set(snapshotAtom, { ...store.get(snapshotAtom), session: next }));
-  }
-  function setTurns(next: Turn[]) {
-    act(() => store.set(snapshotAtom, { ...store.get(snapshotAtom), turns: next }));
-  }
-  function show() {
-    return render(
-      <Provider store={store}>
-        <StateLine />
-      </Provider>,
-    );
-  }
-  function header(value = current!) {
-    return render(
-      <Provider store={store}>
-        <RunHeader session={value} />
-      </Provider>,
-    );
-  }
-  return { store, setSession, setTurns, show, header };
-}
-
-beforeEach(() => {
-  vi.useFakeTimers();
-  vi.setSystemTime(now);
-  // The Starting row loads the session brief; it never answers here.
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(() => new Promise<Response>(() => {})),
-  );
-});
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-  stops.splice(0).forEach((stop) => stop());
-  vi.useRealTimers();
-});
+setupStateLineTests();
 
 it("every state row", () => {
   const cases: Array<[SessionView["state"] | null, string]> = [
@@ -153,6 +59,7 @@ it("none offers the checklist primary offer and New chat", () => {
   };
   const checklist = {
     feature: "demo",
+    pitch: null,
     current: { kind: "ready" as const },
     steps: [],
     primary,
@@ -339,55 +246,6 @@ it("hides only the duplicated state words, so the working detail stays reachable
     (node) => node.textContent,
   );
   expect(idleHidden).toContain("Waiting for you");
-});
-
-it("session total and time left when quota known", () => {
-  const h = harness(session(), [turn(), turn([], { id: "second" })]);
-  h.header();
-  expect(screen.getByText("· 3.0k tokens")).toBeTruthy();
-  // The session wire model has no quota reading; omit time left until it supplies one.
-  expect(screen.queryByText(/time left|minutes left|lasts to reset/i)).toBeNull();
-  h.setTurns([turn()]);
-  expect(screen.getByText("· 1.5k tokens")).toBeTruthy();
-});
-
-it("away line and return", () => {
-  const h = harness(session({ away_until: "2026-10-28T10:10:00Z" }));
-  h.store.set(authoringAtom, {
-    holder: {
-      public_id: "holder",
-      name: "Dana",
-      away_since: since,
-      frees_at: "2026-10-28T10:10:00Z",
-    },
-  });
-  const { container } = h.header();
-  expect(container.textContent).toContain("Dana is away · authoring frees at");
-  expect(container.querySelector(".chat-run-header")?.textContent).toMatch(/\d{2}:\d{2}/);
-  act(() =>
-    h.store.set(authoringAtom, {
-      holder: { public_id: "holder", name: "Dana", away_since: null, frees_at: null },
-    }),
-  );
-  expect(container.textContent).toContain("Dana authoring");
-  expect(container.textContent).not.toContain("is away");
-});
-
-it("holder and watcher count with names", () => {
-  const h = harness();
-  h.store.set(presenceAtom, {
-    entries: [
-      { public_id: "holder", name: "Dana", holder: true, away: false, reading: null, tabs: 2 },
-      { public_id: "viewer1", name: "Alex", holder: false, away: false, reading: null, tabs: 3 },
-      { public_id: "viewer2", name: "Sam", holder: false, away: false, reading: null, tabs: 1 },
-    ],
-  });
-  const { container } = h.header();
-  expect(container.textContent).toContain("Dana authoring");
-  expect(screen.getByText("2 watching")).toBeTruthy();
-  expect(screen.getByTitle("Alex, Sam").getAttribute("aria-label")).toBe("2 watching: Alex, Sam");
-  act(() => h.store.set(youAtom, { public_id: "viewer1", name: "Alex" }));
-  expect(container.textContent).toContain("Read-only · Dana is authoring");
 });
 
 it("session strings expose controls as visible text", () => {

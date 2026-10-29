@@ -3,18 +3,30 @@ import { useEffect, useId, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 
 import type { Attachment, Item, Turn } from "@/plan/api/schema-chat";
+import {
+  docKindOfPageKey,
+  pageKeyOfPath,
+  pageKeyOfSummaryId,
+  parsePageKey,
+} from "@/plan/api/page-key";
 import type { TreeEntry } from "@/plan/api/schema-files";
 import { pendingAttachmentsAtom, type AttachmentDraft } from "@/plan/attachments";
+import { docColour } from "@/plan/concept/marks";
+import { conceptPageAtom } from "@/plan/concept/page-state";
 import { openDiff } from "@/plan/diff/open-diff";
 import { docRel, toAddress } from "@/plan/files/address";
-import { treeAtom } from "@/plan/files/atoms";
+import { openDocAtom, treeAtom } from "@/plan/files/atoms";
+import { treeDocs } from "@/plan/files/tree";
 import { getTurnSections, type TurnSectionsResponse } from "@/plan/review/api";
 import { hashesAtom } from "@/plan/review/live";
 import { connectionEpochAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { LoadState } from "@/plan/ui/load-state";
+import { DocMark } from "@/plan/ui/doc-mark";
+import { DOC_KIND_GLYPHS, OTHER_GLYPHS } from "@/plan/ui/glyphs";
 import { toAttachmentInput } from "./commands";
 import { ATTACHMENT_LIMIT_NOTE, draftAtom, MAX_ATTACHMENTS, mergeAttachments } from "./drafts";
 import { snapshotAtom } from "./model";
+import { usePlanFeature } from "./turn-footer-plans";
 import { summaryLink } from "./turn-footer-rebuilt";
 import { Untrusted, visibleControls } from "./visible-controls";
 
@@ -23,12 +35,16 @@ type LabelInput = Pick<
   "path" | "anchor" | "lines" | "stage" | "summary_sentence" | "kind"
 >;
 
+const ReadOnlyGlyph = OTHER_GLYPHS.readOnly;
+
 export function chipLabel(a: LabelInput): string {
   const file = docRel(a.path).split("/").pop() ?? a.path;
   if (a.kind === "summary") {
+    const page = parsePageKey(summaryIdOf(a.path));
+    if (page?.kind === "overview") {
+      return page.scope === "product" ? "Product overview" : "Engineering overview";
+    }
     const stem = file.replace(/\.md$/, "");
-    if (stem === "product") return "Product overview";
-    if (stem === "engineering") return "Engineering overview";
     return `Summary · ${stem}`;
   }
   const passage = a.stage ? ` › stage ${a.stage}` : a.anchor ? ` › ${a.anchor}` : "";
@@ -86,17 +102,59 @@ export function summaryIdOf(path: string): string {
     .replace(/\.md$/, "");
 }
 
-function summaryAddress(path: string, anchor: string | null): string {
-  return summaryLink(summaryIdOf(path), anchor);
-}
-
 function useOpenChip() {
   const navigate = useNavigate();
   const location = useLocation();
-  return (a: LabelInput) => {
-    if (a.kind === "summary") return navigate(summaryAddress(a.path, a.summary_sentence));
-    navigate(toAddress(a.path, a.anchor), { state: { returnTo: location.pathname } });
+  const planFeature = usePlanFeature();
+  return (a: LabelInput): (() => void) | null => {
+    if (a.kind === "summary") {
+      const href = summaryLink(summaryIdOf(a.path), planFeature, a.summary_sentence);
+      return href === null
+        ? null
+        : () => {
+            void navigate(href);
+          };
+    }
+    return () => {
+      void navigate(toAddress(a.path, a.anchor), { state: { returnTo: location.pathname } });
+    };
   };
+}
+
+function ChipMark({ attachment }: { attachment: LabelInput }) {
+  const tree = useAtomValue(treeAtom);
+  const openDoc = useAtomValue(openDocAtom)?.doc;
+  const planFeature = usePlanFeature();
+  const location = useLocation();
+  const id = attachment.kind === "summary" ? summaryIdOf(attachment.path) : "";
+  const key = pageKeyOfSummaryId(id, planFeature);
+  const page = useAtomValue(conceptPageAtom(pageKeyOfPath(location.pathname) ?? "")).page;
+  const summary = useAtomValue(conceptPageAtom(key ?? "")).page;
+  const entry =
+    (tree ? treeDocs(tree).find((entry) => entry.path === attachment.path) : null) ??
+    (openDoc?.path === attachment.path ? openDoc : null);
+  const kind = entry?.kind ?? (key === null ? null : docKindOfPageKey(key));
+  const chip = page?.key_chips.find(
+    ({ doc }) => doc.path === attachment.path || (key !== null && doc.page === key),
+  );
+  const colour =
+    chip?.colour ?? summary?.colour ?? (page?.path === attachment.path ? page.colour : null);
+  if (kind === null || !Object.hasOwn(DOC_KIND_GLYPHS, kind)) return null;
+  const docKind = kind as keyof typeof DOC_KIND_GLYPHS;
+  return colour == null ? (
+    <DocMark kind={docKind} />
+  ) : (
+    <span
+      aria-hidden="true"
+      className="inline-flex rounded"
+      style={{
+        color: docColour(colour),
+        backgroundColor: `color-mix(in oklch, ${docColour(colour)} 14%, transparent)`,
+      }}
+    >
+      <DocMark kind={docKind} className="!text-inherit !bg-inherit" />
+    </span>
+  );
 }
 
 function ChipTrailing({
@@ -112,7 +170,7 @@ function ChipTrailing({
     <>
       {locked && (
         <span role="img" aria-label="Locked document">
-          🔒
+          <ReadOnlyGlyph aria-hidden="true" className="size-3" />
         </span>
       )}
       {onRemove && (
@@ -129,49 +187,50 @@ function ChipTooltip({ id, quote }: { id: string; quote: string }) {
     <div
       id={id}
       role="tooltip"
-      className="fixed z-50 max-h-64 max-w-sm overflow-auto whitespace-pre-wrap rounded border bg-popover p-3 text-sm shadow-(--dialog-shadow)"
+      className="chat-passage fixed z-50 max-h-64 max-w-sm overflow-auto whitespace-pre-wrap rounded border bg-popover p-3 shadow-(--dialog-shadow)"
     >
       <Untrusted text={quote} />
     </div>
   );
 }
 
-function Chip({
-  attachment,
-  quote,
-  changed,
-  locked,
-  onOpen,
-  onRemove,
-  children,
-}: {
+type ChipProps = {
   attachment: LabelInput;
   quote: string;
   changed: boolean;
   locked: boolean;
-  onOpen: () => void;
+  onOpen: (() => void) | null;
   onRemove?: () => void;
   children?: ReactNode;
-}) {
+};
+
+function Chip({ attachment, quote, changed, locked, onOpen, onRemove, children }: ChipProps) {
   const label = visibleControls(chipLabel(attachment));
   const [preview, setPreview] = useState(false);
   const previewId = useId();
   return (
     <div className="relative min-w-0 rounded border border-border px-2 py-1 text-xs">
       <div className="flex min-w-0 items-center gap-1">
-        <button
-          type="button"
-          className="min-w-0 flex-1 truncate text-left"
-          aria-label={label}
-          aria-describedby={preview ? previewId : undefined}
-          onClick={onOpen}
-          onMouseEnter={() => setPreview(true)}
-          onMouseLeave={() => setPreview(false)}
-          onFocus={() => setPreview(true)}
-          onBlur={() => setPreview(false)}
-        >
-          <Untrusted text={chipLabel(attachment)} />
-        </button>
+        <ChipMark attachment={attachment} />
+        {onOpen === null ? (
+          <span>
+            <Untrusted text={chipLabel(attachment)} />
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="min-w-0 flex-1 truncate text-left"
+            aria-label={label}
+            aria-describedby={preview ? previewId : undefined}
+            onClick={onOpen}
+            onMouseEnter={() => setPreview(true)}
+            onMouseLeave={() => setPreview(false)}
+            onFocus={() => setPreview(true)}
+            onBlur={() => setPreview(false)}
+          >
+            <Untrusted text={chipLabel(attachment)} />
+          </button>
+        )}
         <ChipTrailing label={label} locked={locked} onRemove={onRemove} />
       </div>
       {changed && <span className="text-(--tone-warning)">△ changed</span>}
@@ -220,7 +279,7 @@ export function PendingChips() {
               quote={draft.text}
               locked={locked}
               changed={draft.hash !== null && hash !== undefined && draft.hash !== hash}
-              onOpen={() => open(a)}
+              onOpen={open(a)}
               onRemove={() =>
                 store.set(pendingAttachmentsAtom, (all) => all.filter((_, at) => at !== index))
               }
@@ -299,7 +358,7 @@ export function SentChips({ item, turn }: { item: Extract<Item, { type: "user" }
             quote={a.quote}
             changed={a.changed_since_selected}
             locked={a.locked !== null}
-            onOpen={() => open(a)}
+            onOpen={open(a)}
           >
             {result?.files &&
               (changed ? (

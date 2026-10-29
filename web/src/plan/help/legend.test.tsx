@@ -1,10 +1,13 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, expect, it } from "vitest";
 
 import { ACTIVITY_KINDS, ACTIVITY_LABELS } from "../ui/activity-glyphs";
 import {
   DOC_KIND_GLYPHS,
+  OTHER_GLYPHS,
   PLAN_STATE_GLYPHS,
+  STEP_MARK_GLYPHS,
   SUMMARY_STATE_GLYPHS,
   type DocKind,
   type PlanState,
@@ -20,6 +23,10 @@ const READING_NAMES = [
   "Plan link",
   "Read-only",
   "Pressure-test status",
+  "Open questions",
+  "Feature switcher",
+  "Settings",
+  "Help",
 ] as const;
 
 const DOCUMENT_NAMES: Record<DocKind, string> = {
@@ -80,7 +87,7 @@ function tileOf(group: HTMLElement, name: string): HTMLElement {
 }
 
 it("groups its definitions under the three headings", () => {
-  render(<PlannerLegend />);
+  render(<PlannerLegend />, { wrapper: MemoryRouter });
 
   expect(screen.getAllByRole("heading").map((heading) => heading.textContent)).toEqual([
     "Reading",
@@ -93,7 +100,7 @@ it("groups its definitions under the three headings", () => {
 });
 
 it("lists each group's entries in order, once, with a meaning", () => {
-  render(<PlannerLegend />);
+  render(<PlannerLegend />, { wrapper: MemoryRouter });
 
   const groups: [string, readonly string[]][] = [
     ["Reading", READING_NAMES],
@@ -121,7 +128,7 @@ it("lists each group's entries in order, once, with a meaning", () => {
 });
 
 it("draws the reading marks with the reading column's own components", () => {
-  render(<PlannerLegend />);
+  render(<PlannerLegend />, { wrapper: MemoryRouter });
   const reading = screen.getByRole("region", { name: "Reading" });
 
   const source = tileOf(reading, "Source mark");
@@ -149,26 +156,44 @@ it("draws the reading marks with the reading column's own components", () => {
   }
 });
 
-it("draws step marks with the progress strip and the rail check glyph", () => {
-  render(<PlannerLegend />);
+it("draws step-list glyphs alongside the progress strip and documents the rail check", () => {
+  render(<PlannerLegend />, { wrapper: MemoryRouter });
   const states = screen.getByRole("region", { name: "States" });
 
-  const bars: [string, string][] = [
-    ["Done step", "✓"],
-    ["Step with gaps", "!"],
-    ["Active step", "●"],
-    ["Optional step", "−"],
-  ];
-  for (const [name, glyph] of bars) {
-    const strip = tileOf(states, name).querySelector('ol[aria-label="Progress"]');
+  const bars = [
+    ["Done step", "✓", "done"],
+    ["Step with gaps", "!", "gap"],
+    ["Active step", "●", "active"],
+    ["Optional step", "−", "optional"],
+  ] as const;
+  for (const [name, glyph, mark] of bars) {
+    const tile = tileOf(states, name);
+    expect(tile.querySelector(`[data-step-mark="${mark}"]`)).not.toBeNull();
+    const strip = tile.querySelector('ol[aria-label="Progress"]');
     expect(strip?.querySelectorAll("li")).toHaveLength(1);
     expect(strip?.textContent).toContain(glyph);
   }
-  expect(tileOf(states, "Step rail check").querySelector("svg.lucide-circle-check")).not.toBeNull();
+  expect(
+    tileOf(states, "Step rail check").querySelector('[data-other-glyph="stepDone"]'),
+  ).not.toBeNull();
+});
+
+it("documents every other-concept and step-mark glyph exactly once", () => {
+  const { container } = render(<PlannerLegend />, { wrapper: MemoryRouter });
+
+  const groups = [
+    ["data-other-glyph", OTHER_GLYPHS],
+    ["data-step-mark", STEP_MARK_GLYPHS],
+  ] as const;
+  for (const [attribute, glyphs] of groups) {
+    for (const key of Object.keys(glyphs)) {
+      expect(container.querySelectorAll(`[${attribute}="${key}"]`)).toHaveLength(1);
+    }
+  }
 });
 
 it("uses each production document, state and activity glyph", () => {
-  render(<PlannerLegend />);
+  render(<PlannerLegend />, { wrapper: MemoryRouter });
   const states = screen.getByRole("region", { name: "States" });
   for (const name of [
     ...Object.values(DOCUMENT_NAMES),
@@ -187,7 +212,7 @@ it("uses each production document, state and activity glyph", () => {
 });
 
 it("sets no legend text below 13px", () => {
-  const { container } = render(<PlannerLegend />);
+  const { container } = render(<PlannerLegend />, { wrapper: MemoryRouter });
 
   expect(container.innerHTML).not.toMatch(/text-\[1[0-2]px\]/);
   for (const meaning of screen.getAllByRole("definition")) {

@@ -3,7 +3,8 @@ import { cn } from "cn";
 import type { StageStatus, StageSummary } from "@/api/schema";
 import type { Focus } from "@/components/graph/context";
 import { StateGlyph, toneClass } from "@/components/state-badge";
-import { isContractPhase, stateMeta } from "@/lib/format";
+import { stateMeta } from "@/lib/format";
+import { isContractPhase } from "@/lib/format-activity";
 import { LEGEND } from "@/lib/states";
 
 /// One chip per state present in the plan, with its count. Hovering a chip

@@ -1,15 +1,17 @@
 import type { JSX } from "react";
 
+import {
+  docKindOfPageKey,
+  overviewKey,
+  pageHref,
+  scopeOfKey,
+  summaryKey,
+} from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
 import { toAddress } from "@/plan/files/address";
+import { LockNotice } from "@/plan/files/lock-notice";
 import { DocHeading, type HeadingChip, type HeadingCrumb } from "@/plan/ui/doc-heading";
-import { DOC_KIND_COLOUR } from "@/plan/ui/doc-mark";
-import {
-  OTHER_GLYPHS,
-  PLAN_STATE_GLYPHS,
-  SUMMARY_STATE_GLYPHS,
-  type DocKind,
-} from "@/plan/ui/glyphs";
+import { OTHER_GLYPHS, PLAN_STATE_GLYPHS, SUMMARY_STATE_GLYPHS } from "@/plan/ui/glyphs";
 
 import { PageHeaderExtras } from "./page-header-extras";
 import { planStateText, summaryStatus } from "./summary-text";
@@ -22,9 +24,13 @@ const LOCKED_NOTICES: Partial<Record<NonNullable<ConceptPage["plan_state"]>, str
 
 function breadcrumb(page: ConceptPage): HeadingCrumb[] {
   const crumbs: HeadingCrumb[] = [{ label: "Planner" }];
-  const scope = page.key.split("/")[0];
-  if (scope === "product") crumbs.push({ label: "Product", to: "/product" });
-  if (scope === "engineering") crumbs.push({ label: "Plans", to: "/engineering" });
+  const scope = scopeOfKey(page.key);
+  if (scope !== null) {
+    crumbs.push({
+      label: scope === "product" ? "Product" : "Plans",
+      ...(page.feature === null ? {} : { to: pageHref(overviewKey(page.feature, scope)) }),
+    });
+  }
   crumbs.push({ label: page.title });
   return crumbs;
 }
@@ -40,7 +46,7 @@ function implementsChips(page: ConceptPage): HeadingChip[] {
     ...view.links.map((link) => ({
       key: `implements:${link.name}`,
       label: link.doc?.title ?? link.name,
-      ...(link.doc ? { to: `/${link.doc.page}` } : {}),
+      ...(link.doc ? { to: pageHref(link.doc.page) } : {}),
     })),
   ];
 }
@@ -53,7 +59,7 @@ function implementedByChips(page: ConceptPage): HeadingChip[] {
       key: `implemented-by:${plan.slug}`,
       label: `${plan.title} (${planStateText(plan.state)})`,
       title: plan.title,
-      to: `/engineering/${encodeURIComponent(plan.slug)}`,
+      to: pageHref(summaryKey(page.feature, "engineering", plan.slug)),
     })),
   ];
 }
@@ -97,16 +103,13 @@ function headingChips(page: ConceptPage, rebuilding: boolean): HeadingChip[] {
 
 /** Summary metadata and navigation adapted to the shared document heading. */
 export function PageHeading({ page }: { page: ConceptPage }): JSX.Element {
-  const kind =
-    (Object.keys(DOC_KIND_COLOUR) as DocKind[]).find(
-      (candidate) => DOC_KIND_COLOUR[candidate] === page.colour,
-    ) ?? null;
   const rebuilding =
     page.state?.state === "rebuilding" || page.state?.out_of_date?.reason === "rebuilding";
+  const notice = page.plan_state === null ? null : LOCKED_NOTICES[page.plan_state];
   return (
     <DocHeading
       breadcrumb={breadcrumb(page)}
-      kind={kind}
+      kind={docKindOfPageKey(page.key)}
       title={page.title}
       rebuilding={rebuilding}
       path={page.path}
@@ -117,8 +120,8 @@ export function PageHeading({ page }: { page: ConceptPage }): JSX.Element {
         sourceTo: page.path ? toAddress(page.path) : null,
       }}
       chips={headingChips(page, rebuilding)}
-      lock={page.plan_state === null ? null : (LOCKED_NOTICES[page.plan_state] ?? null)}
     >
+      {notice && <LockNotice notice={notice} />}
       <PageHeaderExtras page={page} />
     </DocHeading>
   );

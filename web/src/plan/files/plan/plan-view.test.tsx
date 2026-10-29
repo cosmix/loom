@@ -49,7 +49,10 @@ function renderPlan(doc: DocView): void {
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("PlanView", () => {
   it("splits prose and record around the metadata block with the record's line offset", () => {
@@ -120,9 +123,17 @@ describe("PlanView", () => {
   });
 
   it("shows the pressure date beside the last change", () => {
-    renderPlan(makeDoc());
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-20T12:00:00Z"));
+    const doc = makeDoc();
+    renderPlan(doc);
     expect(screen.getByText("Pressure-tested 2026-10-17")).toBeTruthy();
-    expect(screen.getByText("Changed 2026-10-18")).toBeTruthy();
+    const changed = screen.getByText("Changed 2 d ago");
+    expect(changed).toBeTruthy();
+    expect(
+      changed.closest("time")?.getAttribute("datetime") ??
+        changed.closest("[title]")?.getAttribute("title"),
+    ).toBe(doc.plan!.last_change);
   });
 
   it("links a stage error to its row and strikes through a missing Implements target", () => {

@@ -6,9 +6,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import snapshot from "@/plan/api/fixtures/chat-snapshot.json";
 import treeFixture from "@/plan/api/fixtures/files-tree.json";
 import docFixture from "@/plan/api/fixtures/files-doc.json";
+import checklist from "@/plan/api/fixtures/checklist.json";
+import { projectChecklistViewSchema } from "@/plan/api/schema";
 import { chatSnapshotSchema, type Turn } from "@/plan/api/schema-chat";
 import { pendingAttachmentsAtom } from "@/plan/attachments";
-import { authoringAtom, youAtom } from "@/plan/state/atoms";
+import { authoringAtom, projectAtom, youAtom } from "@/plan/state/atoms";
 import { draftAtom } from "./drafts";
 import { TurnFooter } from "./turn-footer";
 
@@ -27,7 +29,7 @@ vi.mock("./restore", () => ({
   },
 }));
 
-const path = "doc/product/section_02.md";
+const path = "doc/product/demo/section_02.md";
 const plans = [
   { slug: "draft", title: "Draft plan", state: "written" },
   { slug: "active", title: "Active plan", state: "running" },
@@ -59,6 +61,17 @@ function turn(overrides: Partial<Turn> = {}): Turn {
 
 function mount(value = turn(), holder = true) {
   const store = createStore();
+  const project = projectChecklistViewSchema.parse({
+    checklists: [
+      {
+        ...checklist.checklists[0],
+        items: [{ step: 4, text: "Draft plan", path: "doc/plans/PLAN-draft.md", offer: null }],
+      },
+    ],
+    standalone: [{ slug: "y", path: "doc/plans/PLAN-y.md", state: "written", title: "Standalone" }],
+    moves: [],
+  });
+  store.set(projectAtom, project);
   const you = { public_id: "ada", name: "Ada" };
   store.set(youAtom, you);
   store.set(authoringAtom, {
@@ -81,7 +94,8 @@ async function respond(input: RequestInfo | URL): Promise<Response> {
   const target = url.searchParams.get("path") ?? "";
   if (failures[url.pathname])
     return Response.json({ error: "refused", message: failures[url.pathname] }, { status: 503 });
-  if (url.pathname === "/api/implemented-by") return Response.json({ sections: { "2": plans } });
+  if (url.pathname === "/api/implemented-by")
+    return Response.json({ sections: { "product/demo/section_02": plans } });
   if (url.pathname === "/api/diff/turn")
     return Response.json({
       path: `doc/${target}`,
@@ -132,7 +146,7 @@ it("duration and token tooltip", () => {
 it("rows and diff link", async () => {
   mount();
   expect(screen.getByText("Changed 1 files")).toBeTruthy();
-  expect(screen.getByText("product/section_02.md")).toBeTruthy();
+  expect(screen.getByText("product/demo/section_02.md")).toBeTruthy();
   expect(await screen.findByText("+1 −1")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Diff" }).getAttribute("href")).toContain("?diff=turn");
   expect(restoreButton).toHaveBeenCalledWith(
@@ -144,12 +158,12 @@ it("footer diff link carries the session/turn key and a doc-relative path", asyn
   mount();
   const href = screen.getByRole("link", { name: "Diff" }).getAttribute("href")!;
   const url = new URL(href, "http://localhost");
-  expect(url.pathname).toBe("/files/product/section_02.md");
+  expect(url.pathname).toBe("/files/product/demo/section_02.md");
   expect(url.searchParams.get("turn")).toBe("session one/t2");
   await waitFor(() =>
     expect(
       requests.some((request) =>
-        request.includes("turn=session%20one%2Ft2&path=product%2Fsection_02.md"),
+        request.includes("turn=session%20one%2Ft2&path=product%2Fdemo%2Fsection_02.md"),
       ),
     ).toBe(true),
   );
@@ -170,11 +184,16 @@ it("by_tool false note", async () => {
   await screen.findByText("+1 −1");
 });
 
-it("plans under a changed section grouped by state", async () => {
+it("plans under a changed feature section grouped by state", async () => {
   mount();
   const written = await screen.findByRole("group", { name: "written plans" });
   expect(written.textContent).toContain("may need updating");
-  expect(within(written).getByRole("link", { name: "Draft plan" })).toBeTruthy();
+  expect(within(written).getByRole("link", { name: "Draft plan" }).getAttribute("href")).toBe(
+    "/f/demo/engineering/draft",
+  );
+  expect(screen.getByRole("link", { name: "Active plan" }).getAttribute("href")).toBe(
+    "/plans/active",
+  );
   for (const state of ["running", "done"]) {
     const group = screen.getByRole("group", { name: `${state} plans` });
     expect(group.textContent).toContain("built from earlier text");
@@ -192,20 +211,25 @@ it("rebuilt rows states", () => {
   const value = turn({
     changed_files: [],
     open: true,
-    summaries_rebuilding: ["product/section_02", "plans/draft"],
+    summaries_rebuilding: ["demo/product/section_01", "plans/draft", "plans/y"],
   });
   const { container, rerender } = mount(value);
-  expect(screen.getAllByText("Rebuilding")).toHaveLength(2);
-  expect(container.querySelectorAll('[data-busy="true"]')).toHaveLength(2);
-  expect(screen.getByRole("link", { name: "plans/draft" }).getAttribute("href")).toBe(
-    "/engineering/draft",
+  expect(screen.getAllByText("Rebuilding")).toHaveLength(3);
+  expect(container.querySelectorAll('[data-kind="summaries"]')).toHaveLength(3);
+  expect(screen.getByRole("link", { name: "demo/product/section_01" }).getAttribute("href")).toBe(
+    "/f/demo/product/section_01",
   );
+  expect(screen.getByRole("link", { name: "plans/draft" }).getAttribute("href")).toBe(
+    "/f/demo/engineering/draft",
+  );
+  expect(screen.getByRole("link", { name: "plans/y" }).getAttribute("href")).toBe("/plans/y");
   rerender(
     <MemoryRouter>
       <TurnFooter turn={{ ...value, open: false }} sessionId="session one" />
     </MemoryRouter>,
   );
-  expect(screen.getAllByText("left for the background rebuild")).toHaveLength(2);
+  expect(screen.getAllByText("left for the background rebuild")).toHaveLength(3);
+  expect(container.querySelector('[data-kind="summaries"]')).toBeNull();
 });
 
 it("check these plans fills composer and attaches section and plans", async () => {
@@ -320,8 +344,8 @@ it("restore all receives only modified files after diffs resolve", async () => {
   expect(screen.getByText("new")).toBeTruthy();
 });
 
-it("fetches each document's texts and the implementing plans once per turn", async () => {
-  const sections = ["doc/product/section_02.md", "doc/product/section_03.md"];
+it("fetches plans once per turn and scopes them to the changed feature section", async () => {
+  const sections = [path, "doc/product/other/section_02.md"];
   mount(
     turn({
       changed_files: sections.map((name) => ({ path: name, before_hash: "h", by_tool: true })),
@@ -329,6 +353,8 @@ it("fetches each document's texts and the implementing plans once per turn", asy
   );
   await screen.findAllByText("+1 −1");
   await screen.findAllByRole("group", { name: "written plans" });
+  const other = screen.getByText("product/other/section_02.md").closest("li")!;
+  expect(within(other).queryByRole("group")).toBeNull();
   const count = (pathname: string) => requests.filter((r) => r.startsWith(pathname)).length;
   expect(count("/api/implemented-by")).toBe(1);
   expect(count("/api/diff/turn")).toBe(2);
@@ -337,8 +363,31 @@ it("fetches each document's texts and the implementing plans once per turn", asy
   );
 });
 
-it("a summary id cannot form a protocol-relative link", () => {
+it("unroutable summary ids render as plain text", () => {
   mount(turn({ changed_files: [], summaries_rebuilding: ["//evil.example/page", "/../x"] }));
-  const hrefs = screen.getAllByRole("link").map((link) => link.getAttribute("href"));
-  expect(hrefs).toEqual(["/evil.example/page", "/x"]);
+  expect(screen.getByText("//evil.example/page")).toBeTruthy();
+  expect(screen.getByText("/../x")).toBeTruthy();
+  expect(screen.queryByRole("link")).toBeNull();
+});
+
+it.each([
+  [path, "section"],
+  ["doc/product/demo/index.md", "vision"],
+  ["doc/plans/demo/index.md", "metaplan"],
+  ["doc/plans/demo/metaplan-02.md", "metaplan"],
+  ["doc/plans/demo/PLAN-draft.md", "plan"],
+  ["doc/plans/demo/PLAN-metaplan.md", "plan"],
+  ["doc/plans/archive/DONE-PLAN-built.md", "plan"],
+  ["doc/plans/demo/briefs/draft/common.md", "brief"],
+  ["doc/loom/knowledge/patterns/chat.md", "knowledge"],
+  ["doc/notes.md", null],
+  ["doc/plans/demo/REVIEW-run-PLAN-draft.md", null],
+  ["web/src/index.md", null],
+] as const)("changed file %s has document mark %s", async (name, kind) => {
+  mount(turn({ changed_files: [{ path: name, before_hash: "h", by_tool: true }] }));
+  const row = screen.getByText(name.replace(/^doc\//, "")).closest("li")!;
+  const mark = row.querySelector("[data-doc-kind]");
+  expect(mark?.getAttribute("data-doc-kind") ?? null).toBe(kind);
+  if (kind !== null) expect(mark?.querySelector("svg")).toBeTruthy();
+  if (name.startsWith("doc/")) await screen.findByText("+1 −1");
 });

@@ -5,8 +5,8 @@ import { loadable } from "jotai/utils";
 import { INTERNAL_getBuildingBlocksRev3 } from "jotai/vanilla/internals";
 import { useState } from "react";
 import type { JSX } from "react";
-import { MemoryRouter } from "react-router";
 
+import { pageHref, summaryKey } from "@/plan/api/page-key";
 import type { ConceptPage, Mark, Sentence } from "@/plan/api/schema-concept";
 import type { DocView } from "@/plan/api/schema-files";
 import { conceptPageAtom } from "@/plan/concept/page-state";
@@ -15,24 +15,25 @@ import { ReadingColumn } from "@/plan/concept/reading-column";
 import type { OpenRun } from "@/plan/concept/types";
 import { openRunsAtom } from "@/plan/concept/view-state";
 import type { PlannerHelpScene } from "@/plan/help/pinned-scene";
+import { SceneRouter } from "@/plan/help/scene-router";
 
 const SOURCE = { path: "doc/product/map-view.md", anchor: "saved-places" };
 const CURRENT_MARK: Mark = {
   doc: {
-    id: "product/map-view",
+    id: summaryKey("help", "product", "map-view"),
     title: "Map view",
     path: SOURCE.path,
-    page: "product/map-view",
+    page: summaryKey("help", "product", "map-view"),
   },
   colour: 1,
   out_of_date: null,
 };
 const OUTDATED_MARK: Mark = {
   doc: {
-    id: "product/offline-access",
+    id: summaryKey("help", "product", "offline-access"),
     title: "Offline access",
     path: "doc/product/offline-access.md",
-    page: "product/offline-access",
+    page: summaryKey("help", "product", "offline-access"),
   },
   colour: 2,
   out_of_date: { reason: "source_changed", detail: null },
@@ -79,6 +80,7 @@ const SOURCE_DOC: DocView = {
 
 function samplePage(key: string, sentence: Sentence): ConceptPage {
   return {
+    feature: "help",
     key,
     title: "Map view",
     path: SOURCE.path,
@@ -98,8 +100,11 @@ function samplePage(key: string, sentence: Sentence): ConceptPage {
   };
 }
 
-const SENTENCE_PAGE = samplePage("product/help-reading-sentence", SUMMARY_SENTENCE);
-const FOLD_PAGE = samplePage("product/help-reading-fold", FOLD_SENTENCE);
+const SENTENCE_PAGE = samplePage(
+  summaryKey("help", "product", "reading-sentence"),
+  SUMMARY_SENTENCE,
+);
+const FOLD_PAGE = samplePage(summaryKey("help", "product", "reading-fold"), FOLD_SENTENCE);
 const OPEN_RUN: OpenRun = {
   level: 1,
   sentenceId: FOLD_SENTENCE.id,
@@ -140,11 +145,11 @@ function ReadingSample({
 }): JSX.Element {
   return (
     <Provider store={store}>
-      <MemoryRouter initialEntries={[`/${page.key}`]}>
+      <SceneRouter initialEntries={[pageHref(page.key)]}>
         <div data-loom-plan inert style={{ maxWidth: 640 }}>
           <ReadingColumn pageKey={page.key} page={page} />
         </div>
-      </MemoryRouter>
+      </SceneRouter>
     </Provider>
   );
 }

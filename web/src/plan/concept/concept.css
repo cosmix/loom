@@ -54,7 +54,7 @@
 
 /* A plain sentence has nothing to open, so it takes no hover tint. */
 .concept-sentence:not(.concept-sentence-plain):is(:hover, :focus-visible) {
-  background: color-mix(in oklch, var(--sentence-colour) 14%, transparent);
+  background: color-mix(in oklch, var(--sentence-colour) 20%, transparent);
   text-decoration: underline 2px;
   text-decoration-color: var(--sentence-colour);
   text-underline-offset: 0.18em;
@@ -97,6 +97,10 @@
 .concept-marks {
   white-space: nowrap;
   margin-inline-start: 0.2em;
+}
+
+.concept-column[data-source-marks="off"] .concept-sentence-wrap .concept-marks {
+  display: none;
 }
 
 .concept-mark {
@@ -145,6 +149,12 @@
 
 /* Only this run's own caps deepen it; nested caps leave the outer wash alone. */
 .concept-run:has(> .concept-run-cap:is(:hover, :focus-visible)),
+.concept-run:has(
+  > .concept-passages
+    > .concept-run-edge
+    > .concept-run-leading
+    > .concept-run-cap:is(:hover, :focus-visible)
+),
 .concept-passages:has(> .concept-run-edge > .concept-run-cap:is(:hover, :focus-visible)) {
   background: color-mix(in oklch, var(--run-colour) 22%, transparent);
   outline: 1px solid color-mix(in oklch, var(--run-colour) 55%, transparent);
@@ -193,8 +203,10 @@
   padding: 6px 10px;
 }
 
-.concept-run-edge {
+.concept-run-edge,
+.concept-run-edge > .concept-run-leading {
   display: flex;
+  align-items: center;
 }
 
 .concept-run-edge[data-side="start"] {

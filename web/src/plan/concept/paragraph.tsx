@@ -1,5 +1,6 @@
 import { Fragment, type JSX } from "react";
 
+import { isOverviewKey } from "@/plan/api/page-key";
 import type { Block, Sentence } from "@/plan/api/schema-concept";
 
 import { summaryIdOfKey, useColumn } from "./column-context";
@@ -16,7 +17,9 @@ function Paragraph({ sentences, first }: { sentences: Sentence[]; first: boolean
   const column = useColumn();
   const summary = summaryIdOfKey(column.pageKey);
   // A document summary page draws its own document's mark when its sentences carry none.
-  const own = column.pageKey.includes("/") ? pageMark(column.page, column.pageKey, summary) : null;
+  const own = !isOverviewKey(column.pageKey)
+    ? pageMark(column.page, column.pageKey, summary)
+    : null;
   const notesAfter = (id: string) => column.notes.filter((note) => note.paragraphOf === id);
   return (
     <div className="concept-paragraph">

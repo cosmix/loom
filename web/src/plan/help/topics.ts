@@ -51,11 +51,15 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
           },
           {
             // Below 1024px the header shows only the "Step n of 7" button, not the rail.
-            target: ['[aria-label="Steps"]', ".plan-header .mt-3 > div:first-child > button"],
+            target: [
+              '.plan-header ol[aria-label="Steps"]',
+              '.plan-header .mt-3 button[aria-haspopup="dialog"]',
+            ],
             text: "The step rail shows the current step and which steps are done, have gaps or are optional.",
           },
           {
-            target: '.plan-header div:has(> [title="Start a metaplan"])',
+            target:
+              '.plan-header div:has(> [title="The product spec for atlas is ready for its first metaplan."])',
             text: "The next-step card offers the next action for the current planning work.",
           },
           {

@@ -4,7 +4,8 @@ import { Link, useNavigate } from "react-router";
 
 import type { StandalonePlanView } from "@/plan/api/schema";
 import type { PlanStateView } from "@/plan/api/schema-files";
-import { Untrusted } from "@/plan/chat/visible-controls";
+import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
+import { SentenceText } from "@/plan/concept/sentence-text";
 import { toAddress } from "@/plan/files/address";
 import { MoveIntoFeatureDialog } from "@/plan/home/move-into-feature";
 import {
@@ -30,8 +31,8 @@ function PlanRow({ plan }: { plan: StandalonePlanView }) {
         className="flex flex-wrap items-center justify-between gap-2 rounded-sm py-3 focus-visible:outline-2 focus-visible:outline-ring"
       >
         <span className="min-w-0">
-          <span className="block font-medium">
-            <Untrusted text={plan.title} />
+          <span className="block font-medium" style={{ unicodeBidi: "isolate", direction: "ltr" }}>
+            <SentenceText text={visibleControls(plan.title)} />
           </span>{" "}
           <span className="block text-xs text-muted-foreground">
             <Untrusted text={plan.slug} />

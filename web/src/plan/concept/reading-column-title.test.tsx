@@ -36,7 +36,7 @@ function mountColumn(pageKey: string, page: ConceptPage, dropTitle: boolean) {
 }
 
 function mountSummary(title: string, blocks: unknown[]) {
-  const key = "product/section_01";
+  const key = "demo/product/section_01";
   return mountColumn(key, pageOf(key, [], { title, blocks }), true);
 }
 
@@ -85,8 +85,8 @@ it("keeps a matching heading that is not level 1 or not first", () => {
 
 it("keeps the leading level-1 title heading on an overview page", () => {
   const { column } = mountColumn(
-    "product",
-    pageOf("product", [], {
+    "overview/demo/product",
+    pageOf("overview/demo/product", [], {
       title: "Overview",
       blocks: [{ kind: "heading", level: 1, text: "Overview" }, body],
     }),

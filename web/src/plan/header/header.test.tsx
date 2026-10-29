@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "jotai/react";
 import { createStore } from "jotai/vanilla";
 import { MemoryRouter } from "react-router";
@@ -8,7 +8,9 @@ import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
 import { checklistViewSchema, serverInfoSchema } from "@/plan/api/schema";
 import { PlanHeader } from "@/plan/header/header";
-import { checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { activeFeatureAtom, checklistAtom, projectAtom, serverInfoAtom } from "@/plan/state/atoms";
+
+const NEXT_STEP = "Section 05 is the next product spec document to write.";
 
 vi.mock("@/plan/header-extras", () => ({
   HeaderExtras: () => <button type="button">Chat</button>,
@@ -56,7 +58,7 @@ function show(pathname = "/files", wide = true, project: string | null = "Exampl
       </MemoryRouter>
     </Provider>,
   );
-  return { ...result, onOpenSettings, onOpenHelp };
+  return { ...result, store, onOpenSettings, onOpenHelp };
 }
 
 it("links the Loom logo to the planner home", () => {
@@ -67,15 +69,15 @@ it("links the Loom logo to the planner home", () => {
   expect(link.querySelector("svg")).not.toBeNull();
 });
 
-it("shows the active feature under the Planning eyebrow", () => {
-  show();
+it("shows the route feature under the Planning eyebrow", () => {
+  show("/f/demo");
 
   expect(screen.getByText("Planning")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Switch feature, current: demo" })).toBeTruthy();
 });
 
-it("keeps the active feature name before the server info arrives", () => {
-  show("/files", true, null);
+it("keeps the route feature name before the server info arrives", () => {
+  show("/f/demo", true, null);
 
   expect(screen.getByRole("button", { name: "Switch feature, current: demo" })).toBeTruthy();
 });
@@ -104,27 +106,107 @@ it("opens help with its callback", () => {
   expect(onOpenSettings).not.toHaveBeenCalled();
 });
 
-it("shows the step rail and next-step card on the files view", () => {
-  show("/files");
+it.each(["/f/demo", "/f/demo/product", "/f/demo/engineering/planning"])(
+  "shows the step rail and next-step card on feature route %s",
+  (pathname) => {
+    show(pathname);
 
+    expect(screen.getByRole("list", { name: "Steps" })).toBeTruthy();
+    expect(screen.getByTitle(NEXT_STEP)).toBeTruthy();
+  },
+);
+
+it.each(["/", "/new", "/files", "/plans/standalone"])(
+  "omits feature progress on %s after a feature was selected",
+  (pathname) => {
+    const { store } = show(pathname);
+
+    expect(store.get(activeFeatureAtom)).toBe("demo");
+    expect(screen.getByRole("button", { name: "Example project, switch feature" })).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
+    expect(screen.queryByTitle(NEXT_STEP)).toBeNull();
+  },
+);
+
+it.each(["/f/other", "/f/other/product", "/f/other/engineering/planning"])(
+  "uses the route feature's checklist on %s while the active feature is stale",
+  (pathname) => {
+    const { store } = show(pathname);
+    const demo = checklistViewSchema.parse(checklistFixture.checklists[0]);
+    act(() => {
+      store.set(projectAtom, {
+        checklists: [
+          demo,
+          {
+            ...demo,
+            feature: "other",
+            steps: [{ number: 1, name: "Other vision", mark: "done" }],
+            current: { kind: "ready_all_done" },
+            primary: null,
+            items: [],
+          },
+        ],
+        standalone: [],
+        moves: [],
+      });
+    });
+
+    expect(store.get(activeFeatureAtom)).toBe("demo");
+    expect(screen.getByRole("button", { name: "Switch feature, current: other" })).toBeTruthy();
+    const rail = screen.getByRole("list", { name: "Steps" });
+    expect(within(rail).getByText("Other vision")).toBeTruthy();
+    expect(within(rail).queryByText("Product spec")).toBeNull();
+    expect(screen.getByTitle("All plans done")).toBeTruthy();
+    expect(screen.queryByTitle(NEXT_STEP)).toBeNull();
+  },
+);
+
+it("removes feature progress when navigating from a feature to Files", () => {
+  const { store } = show("/f/demo");
   expect(screen.getByRole("list", { name: "Steps" })).toBeTruthy();
-  expect(screen.getByTitle("Write section 05")).toBeTruthy();
-});
 
-it("omits the step rail and next-step card on the project home", () => {
-  show("/");
+  fireEvent.click(screen.getByRole("link", { name: "Files" }));
 
+  expect(store.get(activeFeatureAtom)).toBe("demo");
   expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
-  expect(screen.queryByTitle("Write section 05")).toBeNull();
+  expect(screen.queryByTitle(NEXT_STEP)).toBeNull();
 });
 
 it("collapses the step rail and uses the overflow control below 1024px", () => {
-  show("/files", false);
+  show("/f/demo", false);
 
   expect(screen.getByRole("button", { name: /Step 2 of 2 · Product spec/ })).toBeTruthy();
   expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
   expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
-  expect(screen.getByTitle("Write section 05")).toBeTruthy();
+  expect(screen.getByTitle(NEXT_STEP)).toBeTruthy();
+});
+
+it("wraps the controls across the full header width on phones", () => {
+  const { container } = show("/f/demo", false);
+  const controls = container.querySelector<HTMLDivElement>(".plan-header-controls")!;
+
+  expect(controls.classList.contains("flex-wrap")).toBe(true);
+  expect(controls.classList.contains("col-span-2")).toBe(true);
+  expect(controls.classList.contains("sm:col-span-1")).toBe(true);
+  expect(controls.classList.contains("overflow-x-auto")).toBe(false);
+  expect(controls.parentElement!.classList.contains("grid-cols-[auto_minmax(8rem,1fr)]")).toBe(
+    true,
+  );
+  expect(within(controls).getByRole("link", { name: "Files" })).toBeTruthy();
+  expect(within(controls).getByRole("button", { name: "More" })).toBeTruthy();
+  expect(within(controls).getByRole("button", { name: /^Switch to/ })).toBeTruthy();
+  expect(within(controls).getByRole("button", { name: "Settings" })).toBeTruthy();
+  expect(within(controls).getByRole("button", { name: "Help" })).toBeTruthy();
+});
+
+it("reserves space for the collapsed rail beside the next-step card", () => {
+  show("/f/demo", false);
+
+  const trigger = screen.getByRole("button", { name: "Step 2 of 2 · Product spec" });
+  const row = trigger.parentElement!.parentElement!;
+  expect(row.classList.contains("grid-cols-[auto_minmax(0,1fr)]")).toBe(true);
+  expect(row.classList.contains("lg:flex")).toBe(true);
+  expect(within(trigger).getByText("Step 2 of 2 · Product spec")).toBeTruthy();
 });
 
 it("omits the activity pill when idle", () => {

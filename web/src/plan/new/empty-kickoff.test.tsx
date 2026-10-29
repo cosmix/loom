@@ -48,7 +48,7 @@ function composer() {
 }
 
 function submitButton() {
-  return screen.getByRole("button", { name: "Start the conversation" });
+  return screen.getByRole("button", { name: /^(Start the conversation|Try again)$/ });
 }
 
 function enterText(text = "Build a project notebook") {
@@ -286,7 +286,7 @@ it("blocks duplicate starts while waiting for a session", async () => {
   expect(h.send).toHaveBeenCalledOnce();
 });
 
-it("gives up quietly after five seconds and releases its session subscription", async () => {
+it("shows a retryable error after five seconds without a session", async () => {
   vi.useFakeTimers();
   const h = mount();
   h.store.set(kickoffSessionAtom, "previous-kickoff");
@@ -296,21 +296,69 @@ it("gives up quietly after five seconds and releases its session subscription", 
   await act(async () => {});
 
   await act(async () => {
-    vi.advanceTimersByTime(5000);
+    vi.advanceTimersByTime(4999);
   });
-  showSession(h);
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(submitButton().getAttribute("aria-disabled")).toBe("true");
+
+  await act(async () => {
+    vi.advanceTimersByTime(1);
+  });
 
   expect(h.store.get(kickoffSessionAtom)).toBeNull();
+  expect(screen.getByRole("status").textContent).toBe(
+    "The conversation did not start. Please try again.",
+  );
+  const retry = screen.getByRole("button", { name: "Try again" });
+  expect(retry.getAttribute("aria-disabled")).toBeNull();
+  expect(composer().value).toBe("Build a project notebook");
+
+  fireEvent.click(retry);
+  expect(h.send).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole("status")).toBeNull();
-  expect(submitButton().getAttribute("aria-disabled")).toBeNull();
+  h.result(1);
+  showSession(h, { ...session, id: "retry-kickoff" });
+  await act(async () => {});
+  expect(h.store.get(kickoffSessionAtom)).toBe("retry-kickoff");
 });
 
-it("releases the session subscription on unmount", async () => {
+it("links a late session after timeout, clears the error and keeps it on retry", async () => {
+  vi.useFakeTimers();
   const h = mount();
   enterText();
   fireEvent.click(submitButton());
   h.result();
   await act(async () => {});
+  await act(async () => {
+    vi.advanceTimersByTime(5000);
+  });
+  const retry = screen.getByRole("button", { name: "Try again" });
+  expect(screen.getByRole("status").textContent).toBe(
+    "The conversation did not start. Please try again.",
+  );
+
+  showSession(h);
+  // A click can already be queued before the late snapshot updates the screen.
+  fireEvent.click(retry);
+  await act(async () => {});
+
+  expect(h.store.get(kickoffSessionAtom)).toBe(session.id);
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  expect(window.confirm).not.toHaveBeenCalled();
+  expect(h.send).toHaveBeenCalledOnce();
+});
+
+it.each([0, 5000])("releases the session subscription on unmount after %i ms", async (delay) => {
+  vi.useFakeTimers();
+  const h = mount();
+  enterText();
+  fireEvent.click(submitButton());
+  h.result();
+  await act(async () => {});
+  await act(async () => {
+    vi.advanceTimersByTime(delay);
+  });
 
   h.unmount();
   showSession(h);

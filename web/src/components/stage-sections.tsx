@@ -24,7 +24,8 @@ import {
   yesNo,
   type SectionSpec,
 } from "@/components/stage-detail";
-import { contextUsage, exitReasonLabel, formatStamp, sessionTypeLabel } from "@/lib/format";
+import { contextUsage, formatStamp } from "@/lib/format";
+import { exitReasonLabel, sessionTypeLabel } from "@/lib/format-activity";
 
 /// What each field means, in the words a person reading the ledger needs.
 const HINT = {

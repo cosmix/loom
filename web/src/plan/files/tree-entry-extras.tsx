@@ -11,7 +11,7 @@ export function TreeEntryExtras({ entry }: { entry: TreeEntry }): JSX.Element | 
   if (entryPath === null) return null;
   const changed = changes.some(({ path }) => path === repoRel(entryPath));
   return (
-    <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px]">
+    <span className="inline-flex flex-wrap items-center gap-1.5 text-xs [&_a]:text-xs [&_a]:whitespace-nowrap">
       {changed && (
         <span
           role="img"

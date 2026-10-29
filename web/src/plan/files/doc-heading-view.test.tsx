@@ -130,8 +130,11 @@ describe("FileDocHeading", () => {
       "/files/product/demo/section_06.md",
     );
     const missing = screen.getByText("Implements §7");
+    const chip = missing.closest("[title]");
     expect(missing.closest("a")).toBeNull();
-    expect(missing.closest("[title]")?.getAttribute("title")).toBe("not found");
+    expect(chip?.getAttribute("title")).toBe("not found");
+    expect(chip?.textContent).toBe("Implements §7 (not found)");
+    expect(chip?.querySelector(".sr-only")?.textContent).toBe("(not found)");
     expect(container.firstElementChild?.className).toContain(
       "[&_[title='not_found']]:line-through",
     );
@@ -243,24 +246,60 @@ describe("FileDocHeading", () => {
     expect(screen.getByRole("link", { name: "Edit" })).toBeTruthy();
   });
 
-  it("shows changed dates and the existing plan actions", () => {
-    mount();
+  it("shows relative change time with the exact timestamp and existing plan actions", () => {
+    vi.setSystemTime(new Date("2026-10-29T22:51:53Z"));
+    mount(makeDoc({}, { last_change: "2026-10-29T20:51:53Z" }));
 
-    expect(screen.getByText("Changed 2026-10-18")).toBeTruthy();
+    expect(screen.getByText("Changed 2 h ago").closest("[title]")?.getAttribute("title")).toBe(
+      "2026-10-29T20:51:53Z",
+    );
     expect(screen.getByRole("button", { name: "Pressure-test" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Start a run" })).toBeTruthy();
   });
 
   it("links a plan's Summary and marks its file Source as current", () => {
-    mount(makeDoc({}, { slug: "demo & space" }));
+    mount(makeDoc({ feature: "demo" }, { slug: "file-mode" }));
     const views = screen.getByRole("group", { name: "View" });
 
     expect(within(views).getByRole("link", { name: "Summary" }).getAttribute("href")).toBe(
-      "/engineering/demo%20%26%20space",
+      "/f/demo/engineering/file-mode",
     );
     const source = within(views).getByRole("link", { name: "Source" });
     expect(source.getAttribute("href")).toBe("/files/plans/demo/PLAN-file-mode.md");
     expect(source.getAttribute("aria-current")).toBe("page");
+  });
+
+  it.each<[EntryKind, string | null, string | null]>([
+    ["section", "demo", "/f/demo/product/section_03"],
+    ["vision", "demo", "/f/demo/product"],
+    ["metaplan", "demo", "/f/demo/engineering"],
+    ["plan", null, "/plans/file-mode"],
+    ["section", null, null],
+    ["vision", null, null],
+    ["metaplan", null, null],
+    ["note", "demo", null],
+  ])("links the Summary for kind=%s feature=%s", (kind, feature, target) => {
+    mount(
+      makeDoc(
+        {
+          kind,
+          feature,
+          path: "doc/product/demo/section_03.md",
+          ...(kind === "plan" ? {} : { plan: null }),
+        },
+        { slug: "file-mode" },
+      ),
+    );
+    const views = screen.getByRole("group", { name: "View" });
+
+    if (target === null) {
+      expect(within(views).queryByRole("link", { name: "Summary" })).toBeNull();
+      expect(within(views).getByText("Summary").getAttribute("aria-disabled")).toBe("true");
+    } else {
+      expect(within(views).getByRole("link", { name: "Summary" }).getAttribute("href")).toBe(
+        target,
+      );
+    }
   });
 
   it.each<[boolean, boolean, string, boolean]>([
@@ -282,11 +321,20 @@ describe("FileDocHeading", () => {
     mount(
       makeDoc({
         editable: false,
-        lock: { reason: "running", notice: "This plan is running.", plan: "file-mode" },
+        lock: {
+          reason: "running",
+          plan: "file-mode",
+          notice:
+            "This plan is **running**. `loom run` uses the *committed* copy. [Help](https://example.com)",
+        },
       }),
     );
 
-    expect(screen.getByRole("note").textContent).toBe("This plan is running.");
+    const note = screen.getByRole("note");
+    expect(note.querySelector("code")?.textContent).toBe("loom run");
+    expect(note.querySelector("strong")?.textContent).toBe("running");
+    expect(note.querySelector("em")?.textContent).toBe("committed");
+    expect(within(note).queryByRole("link")).toBeNull();
     expect(screen.queryByRole("link", { name: "Edit" })).toBeNull();
   });
 

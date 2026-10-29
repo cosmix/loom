@@ -22,6 +22,7 @@ export interface HeadingChip {
   icon?: ReactNode;
   tone?: HeadingTone;
   title?: string;
+  description?: string;
   to?: string;
   onClick?: () => void;
   pressed?: boolean;
@@ -126,12 +127,8 @@ function ViewSwitch({ views }: { views: HeadingViews }): JSX.Element {
   );
 }
 
-function Chip({ chip }: { chip: HeadingChip }): JSX.Element {
-  const className = cn(
-    "inline-flex min-h-6 max-w-full items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-xs",
-    CHIP_TONE[chip.tone ?? "neutral"],
-  );
-  const content = (
+function ChipContent({ chip }: { chip: HeadingChip }): JSX.Element {
+  return (
     <>
       {chip.icon && (
         <span aria-hidden="true" className="inline-flex shrink-0 [&_svg]:size-3">
@@ -140,9 +137,25 @@ function Chip({ chip }: { chip: HeadingChip }): JSX.Element {
       )}
       <span className="min-w-0 [overflow-wrap:anywhere]">
         <Untrusted text={chip.label} />
+        {chip.description && (
+          <>
+            {" "}
+            <span className="sr-only">
+              (<Untrusted text={chip.description} />)
+            </span>
+          </>
+        )}
       </span>
     </>
   );
+}
+
+function Chip({ chip }: { chip: HeadingChip }): JSX.Element {
+  const className = cn(
+    "inline-flex min-h-6 max-w-full items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-xs",
+    CHIP_TONE[chip.tone ?? "neutral"],
+  );
+  const content = <ChipContent chip={chip} />;
   if (chip.to !== undefined) {
     return (
       <Link to={chip.to} title={chip.title} className={cn(className, FOCUS, "hover:bg-muted")}>
