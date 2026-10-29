@@ -1,5 +1,18 @@
 # Loom blockages
 
+## Plan 11: app-handoff `reachable` entries from `main`
+
+- Symptom: app-handoff blocked itself (0/3 fix attempts) with every acceptance criterion green and committed. The goal-backward `reachable` entries `run_abandon` and `AppDriver` (both `from: main`) fail. The stage also still has to file `dispute-integrity` for the maintainability-baseline ratchet row (a tightening, 73 to 58). That is a supported path.
+- Diagnosis (stage memory 56a5b243, 7dbbe0bb; resolver at `loom/src/context/resolve/paths/rust.rs:145`): a `reachable` check `from: main` cannot pass through resolved edges for any loom lib-crate symbol. `src/main.rs` imports `loom::cli::{dispatch, Cli}`, and the package-name rule never applies inside a crate-root directory, so every `loom::` path from main is external. `dispatch` has 9 callable namesakes, over `MAX_CANDIDATES=8`. `dispatch_plan` to `plan::serve::execute` is also unbound. Plan 11's pressure-pipeline `append_record` entry passed only through 0.20 candidate edges reaching `build.rs#main`. This is the same structural limitation as plan 08.
+- Installed Loom `1.3.2-dev.262+de3a1227` still omits `reachable` from both `loom stage amend --field` and `loom stage dispute-criteria --field`, so there is no audited CLI correction. Retry context alone cannot clear it (plan 08: `reverify_reachable`).
+- Recovery, part 1 (`dce47005`): `loom stage amend --field reachable` now uses the same audited amendment path as `wiring`, with a plan-version snapshot, an audit row, rewrites of the plan and stage files, and catch-up. Dispute and freeze-refusal verdicts still cannot target `reachable`. Gate: fmt and clippy clean, amendment and maintainability tests pass. Full `cargo test --no-fail-fast` has one failure, `binary_spawn_guard`, which flags `tests/pressure_pipeline_contracts/support.rs`. That file was merged by plan 11's pressure-pipeline stage and is not part of this change; plan 11's integration-verify owns it.
+- Recovery, part 2 (pending the user's reinstall of Loom): delete app-handoff `reachable` entries 1 and 0. In their place, insert `wiring` entries for the registration links that the plan's existing wiring does not already cover:
+  - `src/plan_server/run/routes.rs` contains `super::abandon::routes()`
+  - `src/plan_server/run/abandon/route.rs` contains `run_abandon(`
+  - `src/plan_server/pressure/driver.rs` contains `AppDriver(env)`
+
+  All three are present on the stage branch. Then run `loom stage retry app-handoff` with context, keeping normal verification.
+
 ## Plan 09: contract fixture formatting
 
 - Symptom: chat-server contract freeze was refused because the oxfmt acceptance check failed on review-restore.json, review-compare.json and review-suggestion.json.
