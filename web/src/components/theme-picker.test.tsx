@@ -95,6 +95,45 @@ describe("ThemePicker", () => {
     }
   });
 
+  it("renders the custom swatch with each option palette instead of the stage graph", () => {
+    render(
+      <Provider store={createStore()}>
+        <ThemePicker
+          swatch={(palette) => (
+            <span data-testid="custom-swatch" data-background={palette.background}>
+              Custom swatch
+            </span>
+          )}
+        />
+      </Provider>,
+    );
+
+    expect(screen.getAllByText("Custom swatch")).toHaveLength(4);
+    for (const option of THEME_OPTIONS) {
+      const button = screen.getByRole("button", { name: `${option.label} theme` });
+      const swatch = button.querySelector("[data-testid='custom-swatch']");
+      expect(swatch?.getAttribute("data-background")).toBe(option.palette.background);
+      expect(button.querySelector("svg")).toBeNull();
+    }
+  });
+
+  it("selects the theme when a card has a custom swatch", () => {
+    const store = createStore();
+    store.set(themeAtom, "light");
+    render(
+      <Provider store={store}>
+        <ThemePicker swatch={() => <span>Custom swatch</span>} />
+      </Provider>,
+    );
+    const pacific = screen.getByRole("button", { name: "Pacific theme" });
+
+    fireEvent.click(pacific);
+
+    expect(store.get(themeAtom)).toBe("dark");
+    expect(store.get(darkVariantAtom)).toBe("blue");
+    expect(pacific.getAttribute("aria-pressed")).toBe("true");
+  });
+
   it("selects the Pacific dark variant", () => {
     const { store } = renderThemePicker();
 

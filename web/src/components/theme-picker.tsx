@@ -9,6 +9,8 @@ import {
   type LightVariant,
 } from "@/aurora-ui/shared/atoms/theme";
 
+export const SWATCH_SIZE = { width: 120, height: 76 } as const;
+
 export interface ThemePalette {
   background: string;
   card: string;
@@ -219,12 +221,12 @@ function SwatchStageCard({
   );
 }
 
-function ThemeSwatch({ palette }: { palette: ThemePalette }): ReactElement {
+function ThemeSwatch(palette: ThemePalette): ReactElement {
   return (
     <svg
-      viewBox="0 0 120 76"
-      width="120"
-      height="76"
+      viewBox={`0 0 ${SWATCH_SIZE.width} ${SWATCH_SIZE.height}`}
+      width={SWATCH_SIZE.width}
+      height={SWATCH_SIZE.height}
       aria-hidden="true"
       style={{ display: "block", borderRadius: "5px" }}
     >
@@ -239,7 +241,11 @@ function ThemeSwatch({ palette }: { palette: ThemePalette }): ReactElement {
   );
 }
 
-export function ThemePicker(): ReactElement {
+export function ThemePicker({
+  swatch = ThemeSwatch,
+}: {
+  swatch?: (palette: ThemePalette) => ReactElement;
+} = {}): ReactElement {
   const [scheme, setScheme] = useAtom(themeAtom);
   const [lightVariant, setLightVariant] = useAtom(lightVariantAtom);
   const [darkVariant, setDarkVariant] = useAtom(darkVariantAtom);
@@ -268,7 +274,7 @@ export function ThemePicker(): ReactElement {
               active ? "border-primary ring-2 ring-primary" : "border-border"
             }`}
           >
-            <ThemeSwatch palette={option.palette} />
+            {swatch(option.palette)}
             <span className="mt-1 text-[13px] font-medium leading-4">{option.label}</span>
             <span className="text-xs leading-4 text-muted-foreground">{option.caption}</span>
           </button>
