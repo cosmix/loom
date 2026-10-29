@@ -1,5 +1,6 @@
 use super::{parse_dashboard_startup, strip_token};
 use crate::commands::status::web::startup_lines;
+use std::net::IpAddr;
 
 #[test]
 fn parses_loopback_startup() {
@@ -216,4 +217,98 @@ fn stripping_url_without_query_preserves_it() {
     let url = "http://127.0.0.1:7373/dashboard/";
 
     assert_eq!(strip_token(url), url);
+}
+
+fn real_lines(bind: &str, remote: bool, addresses: &[&str]) -> Vec<String> {
+    let addresses: Vec<IpAddr> = addresses.iter().map(|ip| ip.parse().unwrap()).collect();
+    startup_lines(
+        bind.parse().unwrap(),
+        remote,
+        true,
+        Some("secret"),
+        &addresses,
+    )
+}
+
+fn parse(lines: &[String]) -> Option<String> {
+    let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+    parse_dashboard_startup(&lines)
+}
+
+#[test]
+fn parses_real_remote_startup_lines_for_one_concrete_address() {
+    let cases = [
+        ("192.168.1.5:7373", "http://192.168.1.5:7373/?token=secret"),
+        (
+            "[2001:db8::5]:8123",
+            "http://[2001:db8::5]:8123/?token=secret",
+        ),
+    ];
+    for (bind, expected) in cases {
+        let lines = real_lines(bind, true, &[]);
+        // This bind prints no `this machine` line: the bootstrap line is the only URL.
+        assert!(lines.iter().all(|line| !line.contains("this machine")));
+
+        assert_eq!(parse(&lines).as_deref(), Some(expected), "{bind}");
+    }
+}
+
+#[test]
+fn a_concrete_remote_bind_to_loopback_parses_too() {
+    let lines = real_lines("127.0.0.1:7373", true, &[]);
+
+    assert_eq!(
+        parse(&lines).as_deref(),
+        Some("http://127.0.0.1:7373/?token=secret")
+    );
+}
+
+#[test]
+fn a_wildcard_bind_without_a_loopback_line_has_no_url() {
+    let lines = real_lines("0.0.0.0:7373", true, &["192.168.1.5", "10.0.0.7"]);
+
+    assert_eq!(parse(&lines), None);
+}
+
+#[test]
+fn another_machine_line_needs_its_header_and_the_bound_address() {
+    let bootstrap = "  bootstrap from another machine at: http://192.168.1.5:7373/?token=secret";
+    let cases: [&[&str]; 3] = [
+        &[bootstrap],
+        &[
+            "loom dashboard listening on 192.168.1.6:7373 (remote access enabled)",
+            bootstrap,
+        ],
+        &[
+            "loom dashboard listening on not-an-address (remote access enabled)",
+            bootstrap,
+        ],
+    ];
+    for lines in cases {
+        assert_eq!(parse_dashboard_startup(lines), None, "{lines:?}");
+    }
+}
+
+#[test]
+fn this_machine_line_still_wins_over_a_concrete_bind_line() {
+    let lines = [
+        "loom dashboard listening on 192.168.1.5:7373 (remote access enabled)",
+        "  bootstrap from another machine at: http://192.168.1.5:7373/?token=remote",
+        "  bootstrap from this machine at: http://127.0.0.1:7373/?token=local",
+    ];
+
+    assert_eq!(
+        parse_dashboard_startup(&lines).as_deref(),
+        Some("http://127.0.0.1:7373/?token=local")
+    );
+}
+
+#[test]
+fn concrete_bind_url_redacts_to_a_tokenless_link() {
+    let lines = real_lines("192.168.1.5:7373", true, &[]);
+
+    assert_eq!(
+        strip_token(&parse(&lines).unwrap()),
+        "http://192.168.1.5:7373/"
+    );
 }

@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context};
+use anyhow::bail;
 
 use crate::commands::init::holds_orchestration_state;
 use crate::daemon::DaemonServer;
@@ -17,14 +17,18 @@ use crate::plan_server::wire::run::{Backend, PlanChoice, RunOffer, RunStateView,
 use crate::planning::project::Project;
 use crate::planning::slug::{PlanEntry, PlanState};
 
-/// Classify the workspace by its configured plan's filename and daemon liveness.
+/// Classify the workspace by its configured plan's filename and daemon liveness. A workspace that
+/// names no plan (init was interrupted, or only a config exists) has nothing to run or resume;
+/// it is offered as an initialized start that needs `--clean` (`state_view` withholds that
+/// when the workspace still holds run state).
 pub fn workspace_state(root: &Path) -> anyhow::Result<(WorkspaceState, RunOffer, Option<PathBuf>)> {
     let work_dir = WorkDir::new(root)?;
     if !work_dir.root().exists() || !holds_orchestration_state(work_dir.root()) {
         return Ok((WorkspaceState::Absent, RunOffer::Start, None));
     }
-    let source =
-        get_plan_source_path(&work_dir)?.context("the workspace does not name a source plan")?;
+    let Some(source) = get_plan_source_path(&work_dir)? else {
+        return Ok((WorkspaceState::Initialized, RunOffer::Start, None));
+    };
     let plan = source.strip_prefix(root).unwrap_or(&source).to_path_buf();
     let name = plan
         .file_name()
@@ -52,12 +56,21 @@ pub(crate) fn state_view(ctx: &PlanContext) -> anyhow::Result<RunStateView> {
     let (workspace, offer, plan) = workspace_state(root)?;
     let active_plan = plan.map(|path| path.to_string_lossy().into_owned());
     let plans = written_plans(root);
-    let preselected = if workspace == WorkspaceState::Initialized {
-        active_plan.clone()
+    let preselected = active_plan
+        .clone()
+        .filter(|_| workspace == WorkspaceState::Initialized)
+        .or_else(|| plans.first().map(|plan| plan.path.clone()));
+    let (doc_changes, mut blocking_changes) = super::changes::split_changes(root)?;
+    // An initialized workspace with no plan is wiped by the start, like a finished one, unless
+    // it still holds run state: that would be deleted without abandon's confirmations.
+    let nameless = workspace == WorkspaceState::Initialized && active_plan.is_none();
+    let kept_state = if nameless {
+        orphaned::blocker(root)?
     } else {
-        plans.first().map(|plan| plan.path.clone())
+        None
     };
-    let (doc_changes, blocking_changes) = super::changes::split_changes(root)?;
+    let clean_notice = workspace == WorkspaceState::Done || (nameless && kept_state.is_none());
+    blocking_changes.extend(kept_state);
     let abandon = matches!(workspace, WorkspaceState::Running | WorkspaceState::Stopped)
         .then(|| super::abandon::view(ctx))
         .flatten();
@@ -65,7 +78,7 @@ pub(crate) fn state_view(ctx: &PlanContext) -> anyhow::Result<RunStateView> {
         .then(|| super::abandon::stranded_plan(root, ctx.runtime()))
         .flatten();
     Ok(RunStateView {
-        clean_notice: workspace == WorkspaceState::Done,
+        clean_notice,
         workspace,
         active_plan,
         offer,
@@ -154,5 +167,6 @@ pub(super) fn get_state(req: &ApiRequest<'_>) -> ApiResponse {
     }
 }
 
+pub(super) mod orphaned;
 #[cfg(test)]
 mod tests;
