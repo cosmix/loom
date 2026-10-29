@@ -28,26 +28,32 @@ source.
 
 ## The two overviews
 
-The header carries three tabs (vision, "The screen"): **Product**, **Engineering**, **Files**.
-The first two are concept mode, at `/product` and `/engineering`; the third is section 06.
+Within a feature, **Product** and **Engineering** open concept mode at `/f/<feature>/product`
+and `/f/<feature>/engineering`. File mode is section 06.
 
-- **Product overview**: built from `doc/product/index.md` and its sections.
-- **Engineering overview**: built from the metaplans and their plans (section 01: a project can
-  hold several metaplans). Plans no metaplan names are left out of the overview and listed under
-  it as unlisted plans, each linking to its document summary. An overview summarises what the
-  metaplans set out to build; unlisted plans are still one click away.
+- **Product overview**: built from `doc/product/<feature>/index.md` and the sections it names.
+  Sections of that feature the vision does not name are listed under its overview as unlisted
+  sections, each linking to its document summary.
+- **Engineering overview**: built from the feature's metaplans and their plans (section 01: a
+  feature can hold several metaplans). Plans of that feature no metaplan names are listed under
+  its overview as unlisted plans, each linking to its document summary. An overview summarises
+  what the metaplans set out to build; unlisted plans are still one click away. Standalone plans
+  have their own summary pages and do not belong to a feature's overview.
 
 Each overview renders the headings and paragraphs section 04 produces, in the reading column,
 centred, at most `70ch` wide. Above the text sits the **document key**: one compact chip per
 document the overview draws on, in document order (the vision's table order, then the metaplan's
-heading order, per section 01), each chip showing the document's colour, its number or plan slug,
-and its short title. A chip opens that document's summary page. The key is also where the
-reader sees which summaries are out of date, without scanning the text.
+heading order, per section 01), each chip showing the document's colour, its number or plan slug
+in mono, then its short title without the leading `NN —`, so the number appears once. A chip
+opens that document's summary page. The key is also where the reader sees which summaries are
+out of date, without scanning the text.
 
 ### Document summary pages
 
-Every document summary is also readable on its own, at `/product/<doc>` (for example
-`/product/section_04`) and `/engineering/<plan-slug>`. The page header gives the title, the path
+Every document summary is also readable on its own: a section at
+`/f/<feature>/product/<section stem>` (for example `/f/planner-ui/product/section_04`), a feature
+plan at `/f/<feature>/engineering/<slug>`, and a standalone plan at `/plans/<slug>`.
+The page header gives the title, the path
 (monospace), the colour, whether the summary is up to date, an **Open in file mode** link, and
 the cross links below. Plan pages also show the plan's state (written, running, done, retired;
 section 01) and the date of its last pressure test, if any. Running, done and retired plans show
@@ -82,18 +88,24 @@ carries two marks; a level 1 sentence carries one, its own document's.
 ### What is clickable
 
 - **A sentence.** Clicking anywhere on a summary sentence opens it. Hover tints its background
-  with `--muted`; the cursor is a pointer. A click that ends a text selection does not open
-  anything (selection is for chat, below).
+  with an ink wash in its document's colour and a 2px underline in that colour; its marks scale
+  to 1.35 and a small `ChevronDown` fades in after them. Keyboard focus looks the same. The
+  cursor is a pointer. A click that ends a text selection does not open anything (selection is
+  for chat, below).
 - **A mark.** Clicking a mark opens that document's summary page.
 - **A key chip.** Opens that document's summary page.
-- **The passage header.** Each source passage starts with a muted line naming the file and
+- **The passage header.** Each source passage starts with a small chip naming the file and
   heading (`section_02.md › Port`), which opens file mode at that heading (section 06), with
   the passage's lines highlighted.
-- **A fold handle.** Described below.
+- **A fold cap.** Described below.
 
 Sentences that cite nothing are a defect (vision, principle 3) and are not clickable; section 04
 must not produce them. If one appears, it shows a muted "no source" mark instead of colour marks
 so the reviewer can see and report it. (My call.)
+
+Summary sentences render only inline Markdown code spans, emphasis and strong. Link labels
+remain text; links stay marks, so navigation remains with the citations. Sentences with nothing
+to open take no hover treatment.
 
 ### Opening
 
@@ -102,26 +114,29 @@ sentences it cites. They are set in the same type and flow as running text; each
 single mark, so a run that draws on two documents shows two colours in sequence. The order is
 the order the overview sentence cites them in (section 04's data).
 
-Opening a level 1 sentence replaces it with its source passages. A passage is block Markdown
-(lists, tables, code), so it cannot flow inside a paragraph: the paragraph breaks at the opened
-sentence, the passage renders as an inset block on the `--card` surface with a hairline border,
-and the paragraph's remaining text resumes after it. Several passages stack in citation order.
-Passages render with the same Markdown renderer file mode uses (section 06). No coloured left
-border or spine marks the inset; the operator has rejected those
-(`conventions/web-dashboard-typography.md`, "Stage thread chips").
+Opening a level 1 sentence replaces it with its source passages. Each passage flows with the
+opened run after its file-and-heading chip, which opens file mode at that heading. Several
+passages follow in citation order. Passages render with the same Markdown renderer file mode
+uses (section 06); lists, tables and code keep their Markdown layout. No card, coloured left
+border or spine marks the passage (`conventions/web-dashboard-typography.md`, "Stage thread
+chips").
 
-Opened level 1 text sits on a faint `--muted` wash so the reader can see what has been opened.
+Opened text sits on a 10% tint of its document's colour; a nested run uses its own document's
+colour, so the reader can see what has been opened.
 The page scrolls only when the opened text would push the opened point off screen; otherwise
 nothing moves above it.
 
 ### Folding back
 
-- **Fold handle.** Every opened run has a handle in the left margin of the reading column,
-  spanning the run's lines: a thin muted bracket shown on hover or when focus is inside the run.
-  Clicking it folds the run back to the sentence it replaced. Nested runs have nested handles.
-- **Keyboard.** `Escape` or `←` folds the innermost run containing the focused sentence and
-  moves focus to the restored sentence.
-- **Fold all.** A button beside the document key folds every run on the page.
+- **Fold caps.** Every opened run has an inline cap at both ends: a 1.3em disc in its document's
+  colour holding a 0.78em `ChevronLeft` at the start or `ChevronRight` at the end, at stroke 2.5.
+  Either cap folds the run back to the sentence it replaced. Both have the accessible name
+  "Fold" and tooltip "Fold · Esc". Hovering or focusing a cap grows it 12% and deepens its run
+  to a 22% tint with a hairline outline. Nested runs have their own caps; no gutter bracket
+  marks a run.
+- **Keyboard.** `Esc` folds the innermost run containing focus, or else the run opened last,
+  and moves focus to the restored sentence. `←` folds only the innermost run around focus.
+- **Fold all.** `Shift+Esc` or a button beside the document key folds every open run on the page.
 
 There is no "open all"; a reader who wants a whole document summary opens its page. (My call:
 opening everything rebuilds the full text in the overview's place, which concept mode exists to
@@ -131,15 +146,17 @@ avoid.)
 
 The reading column is one tab stop, with a roving focus over its sentences:
 
-| Key                 | Action                                                              |
-| ------------------- | ------------------------------------------------------------------- |
-| `↓` / `j`, `↑` / `k` | Next / previous sentence in reading order, entering opened runs    |
-| `Enter` / `→`       | Open the focused sentence                                           |
-| `Escape` / `←`      | Fold the innermost run around the focus                             |
-| `f`                 | Open file mode at the focused sentence's first source section       |
-| `d`                 | Open the summary page of the focused sentence's first document      |
-| `a`                 | Attach the focused sentence (or passage) to the next chat message   |
-| `g p` / `g e`       | Go to the product / engineering overview                            |
+| Key                 | Action                                                                    |
+| ------------------- | ------------------------------------------------------------------------- |
+| `↓` / `j`, `↑` / `k` | Next / previous sentence in reading order, entering opened runs            |
+| `Enter` / `→`       | Open the focused sentence                                                 |
+| `Esc`               | Fold the innermost run around focus, or else the run opened last            |
+| `←`                 | Fold the innermost run around focus                                        |
+| `Shift+Esc`         | Fold every open run                                                        |
+| `f`                 | Open file mode at the focused sentence's first source section               |
+| `d`                 | Open the summary page of the focused sentence's first document              |
+| `a`                 | Attach the focused sentence (or passage) to the next chat message           |
+| `g p` / `g e`       | Go to the current feature's product / engineering overview                  |
 
 `Tab` leaves the column for the chat panel. The keys join the help dialog the `?` shortcut opens
 (`web/src/routes/shell.tsx:26-31`), set with the existing `Kbd` component. Keys are ignored while
@@ -149,8 +166,12 @@ the user is typing in an input, as `shell.tsx` already does with `isTyping`.
 
 Which runs are open is view state of one browser tab: a jotai atom per page, mirrored to
 `sessionStorage` so a reload keeps it. It never reaches the server and is never shared with other
-viewers. (My call.) The URL carries only the page (`/product`, `/engineering/<plan-slug>`), so a
-copied link opens the page folded.
+viewers. (My call.) The URL carries only the page (for example `/f/planner-ui/product` or
+`/f/planner-ui/engineering/redesign`), so a copied link opens the page folded.
+
+Concept page keys are `overview/<f>/product`, `overview/<f>/engineering`, `<f>/product/<doc>`,
+`<f>/engineering/<slug>` and `plans/<slug>` (`loom/src/plan_server/concept/page_key.rs`). Here
+`<f>` is the feature name and `<doc>` the section stem; each page keeps its own view state.
 
 ## Rebuilds while reading
 
@@ -189,7 +210,7 @@ number of sentences updated, at most once every ten seconds. (My call.)
 
 ## Product to plan links
 
-Links between the two overviews come only from `Implements:` lines in plans (vision, Decisions,
+Links between each feature's two overviews come only from `Implements:` lines in plans (vision, Decisions,
 "Product-to-plan links"; the line format is section 03's). Concept mode never infers a link from
 text.
 
@@ -228,7 +249,8 @@ read-only browser has no chat input: it gets **Send to author** in place of Add 
 ## Empty and partial states
 
 Empty states use the dashboard's `EmptyState` (`web/src/aurora-ui/feedback/EmptyState.tsx:54`).
-Offers in them are section 01's; read-only browsers see the same text without the offer button.
+The states below apply to the selected feature. Offers in them are section 01's; read-only
+browsers see the same text without the offer button.
 
 | State                                                   | Product tab                                                                                        | Engineering tab                                                                                   |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -255,17 +277,18 @@ an authoring act, available only to the browser holding authoring.
 
 Concept mode follows the dashboard's conventions:
 
-- **Type.** Reading text in Inter at 16px with a 1.6 line height, larger than the dashboard's
-  12-13px chrome because it is prose to read. (My call.) Overview and summary headings in the
-  display face (`--font-display`, as `EmptyState` uses). Monospace only for paths, slugs and
-  heading anchors. The column label above the key uses the existing `eyebrow` utility
+- **Type.** Body text uses Source Serif 4 through `--font-reading`, with Literata and Piazzolla
+  available in Settings. Reading size is 17, 19 (default) or 21px, with a 1.6 line height,
+  because it is prose to read. (My call.) Inter sets every title, document heading and chrome
+  element. Commit Mono Cosmix sets code, paths, ids, slugs, heading anchors and key numbers.
+  The column label above the key uses the existing `eyebrow` utility
   (`web/src/index.css:125`); no new all-caps chips.
 - **Colour.** Surfaces from `tokens.css`, dark mode through the `.dark` class, document colours
   from the new `--doc-*` tokens, flash from `--primary`, focus ring from `--ring`.
 - **Components.** Tooltips, `Kbd`, `Skeleton`, `EmptyState`, `BusyRoundel` and the header's
   `ViewSwitch` (`web/src/components/view-switch.tsx`) for the tabs, reused from `web/`.
 - **Narrow screens.** Below the `lg` breakpoint the column takes the full width with a 16px
-  gutter, fold handles move inside the gutter, and marks keep their size. The chat panel's
+  gutter; fold caps stay inline and marks keep their size. The chat panel's
   narrow layout is section 08's.
 
 ## Accessibility
