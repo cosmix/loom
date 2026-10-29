@@ -199,9 +199,8 @@ fn overview_members_ignore_link_edits() {
     );
 }
 
-#[test]
-fn summary_scope_table() {
-    let (_t, root, _home) = project_of(&[
+fn summary_scope_project() -> (tempfile::TempDir, PathBuf, PathBuf) {
+    project_of(&[
         (VISION, vision(&[1])),
         (S1, section(1, "A.", "B.")),
         (S2, section(2, "A.", "B.")),
@@ -220,7 +219,12 @@ fn summary_scope_table() {
             "doc/plans/demo/archive/DONE-PLAN-d.md",
             "# Plan: D\n".into(),
         ),
-    ]);
+    ])
+}
+
+#[test]
+fn summary_scope_table() {
+    let (_t, root, _home) = summary_scope_project();
     let p = load(&root);
     let mut ids = store::expected_ids(&p);
     ids.sort();
@@ -232,6 +236,7 @@ fn summary_scope_table() {
         "plans/a",
         "plans/b",
         "plans/c",
+        "plans/unlisted",
     ];
     assert_eq!(ids, want);
     let scope = store::scope(&p, "demo");
@@ -239,14 +244,17 @@ fn summary_scope_table() {
     assert_eq!(scope.engineering, vec!["plans/a", "plans/b"]);
     let mut outside = scope.outside.clone();
     outside.sort();
-    assert_eq!(outside, vec!["demo/product/section_02"]);
+    assert_eq!(outside, vec!["demo/product/section_02", "plans/unlisted"]);
     let id_for = |name: &str| store::summary_id_for(&p, Path::new(name));
     assert_eq!(
         id_for("doc/plans/demo/archive/DONE-PLAN-b.md").as_deref(),
         Some("plans/b")
     );
     assert_eq!(id_for("doc/plans/demo/archive/DONE-PLAN-d.md"), None);
-    assert_eq!(id_for("doc/plans/demo/PLAN-unlisted.md"), None);
+    assert_eq!(
+        id_for("doc/plans/demo/PLAN-unlisted.md").as_deref(),
+        Some("plans/unlisted")
+    );
 }
 
 #[test]

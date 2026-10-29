@@ -73,11 +73,15 @@ impl DocKind {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct DocId(pub String);
 
-/// Accept `[a-z0-9][a-z0-9-]*`, excluding the reserved `archive` and `briefs` directory names
+/// Maximum feature name length, keeping `PLAN-<name>.md` well below 255-byte NAME_MAX.
+pub const MAX_FEATURE_NAME: usize = 64;
+
+/// Accept `[a-z0-9][a-z0-9-]*` up to 64 characters, excluding `archive` and `briefs`
 /// and `plans` and `overview`, which are the first segments of summary ids.
 pub fn is_feature_name(name: &str) -> bool {
     let mut bytes = name.bytes();
-    !matches!(name, "archive" | "briefs" | "plans" | "overview")
+    name.len() <= MAX_FEATURE_NAME
+        && !matches!(name, "archive" | "briefs" | "plans" | "overview")
         && bytes
             .next()
             .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
@@ -118,6 +122,16 @@ pub fn plans_dir(feature: Option<&str>) -> PathBuf {
 /// Return the repository-relative vision path for a feature.
 pub fn vision_path(feature: &str) -> PathBuf {
     product_dir(feature).join("index.md")
+}
+
+/// Return a feature's section path, padding the number to at least two digits.
+pub fn section_path(feature: &str, number: u32) -> PathBuf {
+    product_dir(feature).join(format!("section_{number:02}.md"))
+}
+
+/// Return the written plan path in its feature or standalone home.
+pub fn plan_path(feature: Option<&str>, slug: &str) -> PathBuf {
+    plans_dir(feature).join(format!("PLAN-{slug}.md"))
 }
 
 /// Classify a repository-relative document path without reading the file.

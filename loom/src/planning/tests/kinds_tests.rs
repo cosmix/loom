@@ -2,10 +2,40 @@
 
 use std::path::Path;
 
-use crate::planning::kinds::{classify, doc_id, DocKind};
+use crate::planning::kinds::{classify, doc_id, is_feature_name, plan_path, section_path, DocKind};
 use crate::planning::slug::PlanState;
 
 mod features;
+
+#[test]
+fn section_paths_pad_small_numbers_and_preserve_large_numbers() {
+    for (number, filename) in [
+        (0, "section_00.md"),
+        (7, "section_07.md"),
+        (42, "section_42.md"),
+        (123, "section_123.md"),
+        (u32::MAX, "section_4294967295.md"),
+    ] {
+        let expected = Path::new("doc/product/demo").join(filename);
+        assert_eq!(section_path("demo", number), expected);
+        assert_eq!(classify(&expected), section(Some("demo"), number));
+    }
+}
+
+#[test]
+fn plan_paths_use_feature_or_standalone_homes() {
+    for (feature, expected) in [
+        (Some("demo"), "doc/plans/demo/PLAN-map-view.md"),
+        (None, "doc/plans/PLAN-map-view.md"),
+    ] {
+        let path = plan_path(feature, "map-view");
+        assert_eq!(path, Path::new(expected));
+        assert_eq!(
+            classify(&path),
+            plan("map-view", PlanState::Written, feature)
+        );
+    }
+}
 
 fn check(rel: &str, kind: DocKind, id: &str) {
     assert_eq!(classify(Path::new(rel)), kind, "{rel}");
@@ -197,6 +227,12 @@ fn run_reviews_accept_all_four_plan_parents() {
     ] {
         check(path, DocKind::Other, &path[4..]);
     }
+}
+
+#[test]
+fn feature_name_length_is_capped_at_64_characters() {
+    assert!(is_feature_name(&"a".repeat(64)));
+    assert!(!is_feature_name(&"a".repeat(65)));
 }
 
 #[test]

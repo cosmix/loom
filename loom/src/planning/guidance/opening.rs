@@ -7,7 +7,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use super::start::AuthoringStart;
 use super::{draft_run, PressureCommand, MAX_TEAMMATES};
 use crate::planning::checklist::Offer;
-use crate::planning::kinds::{plans_dir, product_dir, vision_path};
+use crate::planning::kinds::{plan_path, plans_dir, product_dir, section_path, vision_path};
 use crate::planning::project::Project;
 
 /// Render the generated opening with optional feature context.
@@ -156,14 +156,6 @@ fn offer_target(offer: &Offer, project: &Project, feature: &str) -> Result<Strin
     })
 }
 
-pub(super) fn section_path(feature: &str, number: u32) -> PathBuf {
-    product_dir(feature).join(format!("section_{number:02}.md"))
-}
-
-pub(super) fn plan_path(feature: &str, slug: &str) -> PathBuf {
-    plans_dir(Some(feature)).join(format!("PLAN-{slug}.md"))
-}
-
 pub(super) fn plan_bundle(feature: &str, slug: &str) -> PathBuf {
     plans_dir(Some(feature)).join("briefs").join(slug)
 }
@@ -185,7 +177,7 @@ fn plan_target(
 ) -> Result<String> {
     Ok(format!(
         "Write {} for the entry \"{}\" in {}. Write its briefs under {}/.",
-        plan_path(feature, slug).display(),
+        plan_path(Some(feature), slug).display(),
         plan_heading(metaplan, slug, offer, project, feature)?,
         metaplan.display(),
         plan_bundle(feature, slug).display()

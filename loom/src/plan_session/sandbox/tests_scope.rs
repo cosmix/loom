@@ -1,4 +1,4 @@
-//! Scope-dependent peer-tool permissions of the planning sandbox builder.
+//! Scope-dependent permissions of the planning sandbox builder.
 
 use std::fs;
 use std::path::Path;
@@ -9,7 +9,9 @@ use serde_json::{json, Value};
 use super::tests_kinds::Fixture;
 use super::{assert_planning_settings, build_settings, SandboxInputs};
 use crate::plan_session::kind::{SessionDir, SessionKind};
-use crate::plan_session::scope::{self, KickoffScope, SessionScope, SCOPE_FILE};
+use crate::plan_session::scope::{
+    self, KickoffGrant, KickoffScope, KickoffSize, SessionScope, SCOPE_FILE,
+};
 use crate::planning::paths::LockedSet;
 
 fn session(f: &Fixture) -> Result<SessionDir> {
@@ -51,7 +53,7 @@ fn team_scope_keeps_peer_tools_in_process() -> Result<()> {
 }
 
 #[test]
-fn open_and_kickoff_scopes_keep_the_same_authoring_permissions() -> Result<()> {
+fn open_and_kickoff_scopes_keep_the_same_other_permissions() -> Result<()> {
     let f = Fixture::new();
     let dir = session(&f)?;
     let missing = build(&f, &dir)?;
@@ -75,10 +77,97 @@ fn open_and_kickoff_scopes_keep_the_same_authoring_permissions() -> Result<()> {
         assert_eq!(settings.get("teammateMode"), None);
         assert_planning_settings(settings)?;
     }
-    assert_eq!(
-        kickoff["permissions"]["allow"],
-        open["permissions"]["allow"]
-    );
+    let mut open_allow = open["permissions"]["allow"].as_array().unwrap().clone();
+    open_allow
+        .retain(|rule| rule != "Bash(loom knowledge *)" && rule != "Bash(loom plan summary *)");
+    let mut kickoff_allow = kickoff["permissions"]["allow"].as_array().unwrap().clone();
+    kickoff_allow.retain(|rule| rule != "Bash(loom plan summary status*)");
+    assert_eq!(kickoff_allow, open_allow);
+    Ok(())
+}
+
+#[test]
+fn open_authoring_allows_doc_loom_writers() -> Result<()> {
+    let f = Fixture::new();
+    let dir = session(&f)?;
+    scope::write(&dir, &SessionScope::Open)?;
+
+    let settings = build(&f, &dir)?;
+
+    let allow = settings["permissions"]["allow"].as_array().unwrap();
+    assert!(allow.contains(&json!("Bash(loom knowledge *)")));
+    assert!(allow.contains(&json!("Bash(loom plan summary *)")));
+    assert!(allow.contains(&json!("Bash(loom plan verify *)")));
+    assert!(allow.contains(&json!("Bash(loom plan check*)")));
+    assert!(allow.contains(&json!("Bash(loom map *)")));
+    Ok(())
+}
+
+#[test]
+fn unconfirmed_kickoff_authoring_prompts_for_doc_loom_writers() -> Result<()> {
+    let f = Fixture::new();
+    let dir = session(&f)?;
+    scope::write(
+        &dir,
+        &SessionScope::Kickoff(KickoffScope {
+            existing: Vec::new(),
+            grant: None,
+        }),
+    )?;
+
+    let settings = build(&f, &dir)?;
+
+    let allow = settings["permissions"]["allow"].as_array().unwrap();
+    assert!(!allow.contains(&json!("Bash(loom knowledge *)")));
+    assert!(!allow.contains(&json!("Bash(loom plan summary *)")));
+    assert!(allow.contains(&json!("Bash(loom plan summary status*)")));
+    assert!(allow.contains(&json!("Bash(loom plan verify *)")));
+    assert!(allow.contains(&json!("Bash(loom plan check*)")));
+    assert!(allow.contains(&json!("Bash(loom map *)")));
+    Ok(())
+}
+
+#[test]
+fn confirmed_kickoff_authoring_prompts_for_doc_loom_writers() -> Result<()> {
+    let f = Fixture::new();
+    let dir = session(&f)?;
+    scope::write(
+        &dir,
+        &SessionScope::Kickoff(KickoffScope {
+            existing: Vec::new(),
+            grant: Some(KickoffGrant {
+                size: KickoffSize::Feature,
+                name: "new-feature".to_owned(),
+            }),
+        }),
+    )?;
+
+    let settings = build(&f, &dir)?;
+
+    let allow = settings["permissions"]["allow"].as_array().unwrap();
+    assert!(!allow.contains(&json!("Bash(loom knowledge *)")));
+    assert!(!allow.contains(&json!("Bash(loom plan summary *)")));
+    assert!(allow.contains(&json!("Bash(loom plan summary status*)")));
+    assert!(allow.contains(&json!("Bash(loom plan verify *)")));
+    assert!(allow.contains(&json!("Bash(loom plan check*)")));
+    assert!(allow.contains(&json!("Bash(loom map *)")));
+    Ok(())
+}
+
+#[test]
+fn team_authoring_allows_summaries_and_prompts_for_knowledge_writes() -> Result<()> {
+    let f = Fixture::new();
+    let dir = session(&f)?;
+    scope::write(&dir, &team_scope()?)?;
+
+    let settings = build(&f, &dir)?;
+
+    let allow = settings["permissions"]["allow"].as_array().unwrap();
+    assert!(!allow.contains(&json!("Bash(loom knowledge *)")));
+    assert!(allow.contains(&json!("Bash(loom plan summary *)")));
+    assert!(allow.contains(&json!("Bash(loom plan verify *)")));
+    assert!(allow.contains(&json!("Bash(loom plan check*)")));
+    assert!(allow.contains(&json!("Bash(loom map *)")));
     Ok(())
 }
 
