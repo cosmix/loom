@@ -12,6 +12,7 @@ import {
   press,
   replace,
 } from "./reading-column-harness";
+import { openRunsAtom } from "./view-state";
 
 installColumnTestHooks();
 
@@ -64,6 +65,56 @@ it("Escape on a passage under the second citer folds that citer's run only", asy
   expect(first.querySelector("[data-passage]")).not.toBeNull();
   await waitFor(() => expect(active().textContent).toMatch(/^Detail opens/));
   expect(second.contains(active())).toBe(true);
+});
+
+async function siblingRuns() {
+  const overview = pageOf("product", [
+    sent("a", "First overview.", [cite("section_01", "x")], PLANNING),
+    sent("b", "Second overview.", [cite("section_01", "x")], PLANNING),
+    sent("c", "Closed sentence.", [src(S1, "intro")]),
+  ]);
+  const detail = pageOf("product/section_01", [sent("x", "Detail opens.", [src(S1, "intro")])]);
+  pages["product/section_01"] = detail;
+  const view = mount("product", overview);
+  loadPage(view.store, "product/section_01", detail);
+  const { column } = view;
+  fireEvent.click(button(column, /^First overview/));
+  const first = await within(column).findByRole("group", { name: /^Detail of First/ });
+  fireEvent.click(button(column, /^Second overview/));
+  const second = await within(column).findByRole("group", { name: /^Detail of Second/ });
+  const closed = button(column, /^Closed sentence/);
+  closed.focus();
+  await waitFor(() => expect(active()).toBe(closed));
+  expect(view.store.get(openRunsAtom("product"))).toHaveLength(2);
+  return { ...view, first, second, closed };
+}
+
+it("Escape outside any run folds the most recently opened run", async () => {
+  const { column, first, second, store } = await siblingRuns();
+  expect(press("Escape")).toBe(false);
+  await waitFor(() => expect(column.contains(second)).toBe(false));
+  expect(column.contains(first)).toBe(true);
+  expect(store.get(openRunsAtom("product"))).toHaveLength(1);
+  await waitFor(() => expect(active().textContent).toMatch(/^Second overview/));
+});
+
+it("Shift+Escape folds every open run", async () => {
+  const { column, first, second, store } = await siblingRuns();
+  expect(fireEvent.keyDown(active(), { key: "Escape", shiftKey: true })).toBe(false);
+  await waitFor(() => {
+    expect(column.contains(first)).toBe(false);
+    expect(column.contains(second)).toBe(false);
+  });
+  expect(store.get(openRunsAtom("product"))).toEqual([]);
+});
+
+it("ArrowLeft outside any run folds nothing", async () => {
+  const { column, first, second, closed, store } = await siblingRuns();
+  expect(press("ArrowLeft")).toBe(true);
+  expect(column.contains(first)).toBe(true);
+  expect(column.contains(second)).toBe(true);
+  expect(store.get(openRunsAtom("product"))).toHaveLength(2);
+  expect(active()).toBe(closed);
 });
 
 it("a rebuild renaming the open sentence keeps focus on its cited sentence", async () => {

@@ -279,9 +279,9 @@ describe("keys", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/product"));
   });
 
-  it("help shortcuts hold the reading group with nine rows", () => {
+  it("help shortcuts hold the reading group with eleven rows", () => {
     const group = PLANNER_SHORTCUT_GROUPS.find((entry) => entry.title === "While reading");
-    expect(group?.rows).toHaveLength(9);
+    expect(group?.rows).toHaveLength(11);
   });
 });
 
