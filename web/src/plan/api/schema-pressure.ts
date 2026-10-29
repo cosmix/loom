@@ -70,6 +70,9 @@ export const pressureRunSchema = z.strictObject({
   steps: z.array(pressureStepViewSchema),
   ended: pressureEndSchema.nullable(),
 });
+export const pressureMessageSchemas = [
+  z.strictObject({ type: z.literal("pressure_run"), ...pressureRunSchema.shape }),
+] as const;
 
 export type PressureStepKind = z.infer<typeof pressureStepKindSchema>;
 export type StepState = z.infer<typeof stepStateSchema>;

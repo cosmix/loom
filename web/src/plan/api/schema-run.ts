@@ -63,6 +63,11 @@ export const runStripSchema = z.strictObject({
   attention: u32,
   dashboard_url: z.string().nullable(),
 });
+export const runMessageSchemas = [
+  z.strictObject({ type: z.literal("run_state"), ...runStateSchema.shape }),
+  z.strictObject({ type: z.literal("run_output"), ...runOutputSchema.shape }),
+  z.strictObject({ type: z.literal("run_strip"), ...runStripSchema.shape }),
+] as const;
 
 export type WorkspaceState = z.infer<typeof workspaceStateSchema>;
 export type RunOffer = z.infer<typeof runOfferSchema>;
