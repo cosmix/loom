@@ -11,7 +11,7 @@ use std::path::Path;
 /// repo that was never `loom init`ed. Such a directory carries no plan state
 /// at all, so `loom init` should adopt it rather than permanently refuse to
 /// run.
-pub(super) fn holds_orchestration_state(work_dir_path: &Path) -> bool {
+pub(crate) fn holds_orchestration_state(work_dir_path: &Path) -> bool {
     if work_dir_path.join("config.toml").exists() {
         return true;
     }

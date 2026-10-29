@@ -59,6 +59,51 @@ pub(super) fn run_bare_clean(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The `loom/*` branches with commits the run's target branch lacks.
+pub(crate) struct UnmergedBranches {
+    /// The branch commits-ahead is measured against.
+    pub target_branch: String,
+    /// Each unmerged branch with its commits ahead of `target_branch`, in
+    /// `git branch --list` order.
+    pub branches: Vec<(String, usize)>,
+    /// Why `git branch --list` failed, when it did; `branches` is then empty although any
+    /// branch may hold unmerged work.
+    pub listing_error: Option<String>,
+}
+
+/// List the `loom/*` branches whose work would be lost by deleting them: the
+/// listing `loom clean` confirms before it deletes, also shown by the planning
+/// server before it abandons a run.
+pub(crate) fn unmerged_loom_branches(repo_root: &Path) -> UnmergedBranches {
+    // Resolve the merge target so commits-ahead is measured against the right base.
+    let work_dir = super::resolve_state_dir(repo_root);
+    let config_branch = crate::fs::work_dir::load_config(&work_dir)
+        .ok()
+        .flatten()
+        .and_then(|c| c.base_branch());
+    let target_branch = resolve_target_branch(&config_branch, repo_root);
+
+    let (listed, listing_error) = match list_loom_branches(repo_root) {
+        Ok(listed) => (listed, None),
+        Err(error) => (Vec::new(), Some(format!("{error:#}"))),
+    };
+    let branches = listed
+        .into_iter()
+        // Fail closed: a git error here counts as "has unmerged work" so we warn
+        // rather than silently delete.
+        .map(|branch| {
+            let ahead = commits_ahead_of(&branch, &target_branch, repo_root).unwrap_or(1);
+            (branch, ahead)
+        })
+        .filter(|(_, ahead)| *ahead > 0)
+        .collect();
+    UnmergedBranches {
+        target_branch,
+        branches,
+        listing_error,
+    }
+}
+
 /// Show any `loom/*` branches that carry unmerged commits and require the user
 /// to confirm before they are deleted.
 ///
@@ -69,25 +114,8 @@ pub(super) fn run_bare_clean(repo_root: &Path) -> Result<()> {
 /// Returns `Ok(false)` to abort (user declined, or non-interactive stdin with
 /// unmerged work and no `LOOM_CLEAN_YES`).
 pub(super) fn confirm_branch_deletion(repo_root: &Path) -> Result<bool> {
-    // Resolve the merge target so commits-ahead is measured against the right base.
-    let work_dir = super::resolve_state_dir(repo_root);
-    let config_branch = crate::fs::work_dir::load_config(&work_dir)
-        .ok()
-        .flatten()
-        .and_then(|c| c.base_branch());
-    let target_branch = resolve_target_branch(&config_branch, repo_root);
-
-    // Collect loom/* branches with unmerged commits (commits ahead of target).
-    let branches = list_loom_branches(repo_root).unwrap_or_default();
-    let mut unmerged: Vec<(String, usize)> = Vec::new();
-    for branch in &branches {
-        // Fail closed: a git error here counts as "has unmerged work" so we warn
-        // rather than silently delete.
-        let ahead = commits_ahead_of(branch, &target_branch, repo_root).unwrap_or(1);
-        if ahead > 0 {
-            unmerged.push((branch.clone(), ahead));
-        }
-    }
+    let listing = unmerged_loom_branches(repo_root);
+    let (target_branch, unmerged) = (listing.target_branch, listing.branches);
 
     if unmerged.is_empty() {
         // Nothing committed-but-unmerged would be lost.
