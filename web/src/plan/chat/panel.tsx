@@ -60,7 +60,9 @@ export function ChatRegistrations(): JSX.Element {
   useComposerShortcut();
   useEffect(() => {
     const starter = createOfferStarter(store);
-    const unregisterOffers = registerAuthoringOffers(({ offer }) => starter.start(offer));
+    const unregisterOffers = registerAuthoringOffers(({ offer, feature }) =>
+      starter.start(offer, feature),
+    );
     const unregisterSelection = registerSendToAuthor();
     return () => {
       unregisterSelection();

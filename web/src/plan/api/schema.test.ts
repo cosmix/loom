@@ -3,7 +3,9 @@ import authoring from "@/plan/api/fixtures/authoring.json";
 import checklist from "@/plan/api/fixtures/checklist.json";
 import clientReading from "@/plan/api/fixtures/client-reading.json";
 import clientSetName from "@/plan/api/fixtures/client-set-name.json";
+import draftTeam from "@/plan/api/fixtures/draft-team.json";
 import hello from "@/plan/api/fixtures/hello.json";
+import kickoff from "@/plan/api/fixtures/kickoff.json";
 import presence from "@/plan/api/fixtures/presence.json";
 import pressureRun from "@/plan/api/fixtures/pressure-run.json";
 import refused from "@/plan/api/fixtures/refused.json";
@@ -31,10 +33,12 @@ import {
 describe("planning wire schemas", () => {
   const fixtures = [
     ["authoring", authoringViewSchema, authoring],
-    ["checklist", checklistViewSchema, checklist],
+    ["checklist", planMessageSchema, checklist],
     ["client reading", clientMessageSchema, clientReading],
     ["client set name", clientMessageSchema, clientSetName],
     ["hello", planMessageSchema, hello],
+    ["kickoff", planMessageSchema, kickoff],
+    ["draft team", planMessageSchema, draftTeam],
     ["presence", presenceListSchema, presence],
     ["refused", refusedSchema, refused],
     ["server info", serverInfoSchema, serverInfo],
@@ -56,8 +60,8 @@ describe("planning wire schemas", () => {
     ).toBe(false);
     expect(
       checklistViewSchema.safeParse({
-        ...checklist,
-        current: { ...checklist.current, extra: true },
+        ...checklist.checklists[0]!,
+        current: { ...checklist.checklists[0]!.current, extra: true },
       }).success,
     ).toBe(false);
   });
@@ -66,8 +70,14 @@ describe("planning wire schemas", () => {
     const messages = [
       { type: "presence", ...presence },
       { type: "authoring", holder: null },
-      { type: "checklist", ...checklist, current: { kind: "ready" }, primary: null },
-      { type: "checklist", ...checklist, current: { kind: "ready_all_done" } },
+      {
+        ...checklist,
+        checklists: [{ ...checklist.checklists[0]!, current: { kind: "ready" }, primary: null }],
+      },
+      {
+        ...checklist,
+        checklists: [{ ...checklist.checklists[0]!, current: { kind: "ready_all_done" } }],
+      },
       { type: "server_stopping" },
       { type: "refused", ...refused },
     ];
@@ -81,6 +91,8 @@ describe("planning wire schemas", () => {
       { type: "run_state", ...runState },
       { type: "run_output", ...runOutput },
       { type: "run_strip", ...runStrip },
+      kickoff,
+      draftTeam,
     ];
     for (const frame of frames) expect(socketMessageSchema.safeParse(frame).success).toBe(true);
   });
@@ -91,8 +103,10 @@ describe("planning wire schemas", () => {
       presenceListSchema.safeParse({ entries: [{ ...presence.entries[0], tabs: -1 }] }).success,
     ).toBe(false);
     expect(
-      checklistViewSchema.safeParse({ ...checklist, current: { kind: "step", number: 256 } })
-        .success,
+      checklistViewSchema.safeParse({
+        ...checklist.checklists[0]!,
+        current: { kind: "step", number: 256 },
+      }).success,
     ).toBe(false);
   });
 });

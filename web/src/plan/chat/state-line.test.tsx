@@ -148,10 +148,11 @@ it("every state row", () => {
 it("none offers the checklist primary offer and New chat", () => {
   const h = harness(null);
   const primary = {
-    ...checklistViewSchema.parse(helloFixture.checklist).primary!,
+    ...checklistViewSchema.parse(helloFixture.checklists[0]).primary!,
     label: "Write section 05",
   };
   const checklist = {
+    feature: "demo",
     current: { kind: "ready" as const },
     steps: [],
     primary,

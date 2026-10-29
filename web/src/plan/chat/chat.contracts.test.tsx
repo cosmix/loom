@@ -15,6 +15,7 @@ import treeFixture from "@/plan/api/fixtures/files-tree.json";
 import helloFixture from "@/plan/api/fixtures/hello.json";
 import { connectPlanSocket } from "@/plan/api/socket";
 import { addAttachmentAtom, type AttachmentDraft } from "@/plan/attachments";
+import { docRel } from "@/plan/files/address";
 import { routes } from "@/plan/router";
 import { planSocketAtom } from "@/plan/state/atoms";
 
@@ -30,7 +31,7 @@ const DANA = { public_id: "bbbbbbbbbbbbbbbb", name: "Dana" };
 const READER = { public_id: "aaaaaaaaaaaaaaaa", name: "Reader" };
 const ITEMS: Obj[] = snapshotFixture.turns[0].items;
 const NARROW_MEDIA = window.matchMedia;
-const FILE_PAGE = "/files/product/section_01.md";
+const FILE_PAGE = `/files/${docRel(docFixture.path)}`;
 
 // Plan 2's socket test seam: connectPlanSocket with a WebSocket stand-in.
 class FakeSocket {

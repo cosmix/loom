@@ -6,14 +6,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import authoringFixture from "@/plan/api/fixtures/authoring.json";
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import { authoringViewSchema, checklistViewSchema, type OfferView } from "@/plan/api/schema";
-import { ChecklistView } from "@/plan/checklist-view";
+import { ChecklistGaps, NextOffers } from "@/plan/checklist-view";
 import { registerOfferAction } from "@/plan/offers/actions";
 import { OfferButton } from "@/plan/offers/offer-button";
-import { authoringAtom, checklistAtom } from "@/plan/state/atoms";
+import { authoringAtom } from "@/plan/state/atoms";
 
 afterEach(cleanup);
 
-const checklist = checklistViewSchema.parse(checklistFixture);
+const checklist = checklistViewSchema.parse(checklistFixture.checklists[0]);
 const offer: OfferView = checklist.primary!;
 
 function renderWith(ui: React.ReactNode, setup?: (store: ReturnType<typeof createStore>) => void) {
@@ -22,29 +22,28 @@ function renderWith(ui: React.ReactNode, setup?: (store: ReturnType<typeof creat
   return render(<Provider store={store}>{ui}</Provider>);
 }
 
-describe("ChecklistView", () => {
-  it("renders the current step, the primary offer and the gaps", () => {
-    renderWith(<ChecklistView />, (store) => store.set(checklistAtom, checklist));
-    expect(screen.getByRole("heading", { name: "Step 2 of 2: Product spec" })).toBeTruthy();
-    expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
-    expect(screen.getByRole("region", { name: "Next" })).toBeTruthy();
+describe("ChecklistGaps", () => {
+  it("renders the gap text, paths and offers", () => {
+    renderWith(<ChecklistGaps checklist={checklist} />);
     expect(screen.getByRole("region", { name: "Gaps" })).toBeTruthy();
     expect(screen.getAllByText("Write section 05").length).toBeGreaterThan(0);
     expect(screen.getByText("section 05: Example")).toBeTruthy();
-    expect(screen.getByText("doc/product/section_05.md")).toBeTruthy();
+    expect(screen.getByText("doc/product/demo/section_05.md")).toBeTruthy();
   });
 
   it("groups gaps under their steps in step order and skips steps without items", () => {
-    renderWith(<ChecklistView />, (store) =>
-      store.set(checklistAtom, {
-        ...checklist,
-        steps: [...checklist.steps, { number: 3, name: "Engineering spec", mark: "gap" }],
-        items: [
-          checklist.items[1]!,
-          checklist.items[0]!,
-          { step: 1, text: "Confirm the vision", path: null, offer: null },
-        ],
-      }),
+    renderWith(
+      <ChecklistGaps
+        checklist={{
+          ...checklist,
+          steps: [...checklist.steps, { number: 3, name: "Engineering spec", mark: "gap" }],
+          items: [
+            checklist.items[1]!,
+            checklist.items[0]!,
+            { step: 1, text: "Confirm the vision", path: null, offer: null },
+          ],
+        }}
+      />,
     );
     const gaps = within(screen.getByRole("region", { name: "Gaps" }));
     expect(gaps.getAllByRole("heading", { level: 2 }).map((node) => node.textContent)).toEqual([
@@ -60,14 +59,19 @@ describe("ChecklistView", () => {
     const product = within(gaps.getByRole("region", { name: "Step 2 · Product spec" }));
     expect(product.getAllByRole("listitem")).toHaveLength(1);
     expect(product.getByText("section 05: Example")).toBeTruthy();
-    expect(product.getByText("doc/product/section_05.md")).toBeTruthy();
+    expect(product.getByText("doc/product/demo/section_05.md")).toBeTruthy();
     expect(product.queryByText("product vision")).toBeNull();
   });
 
   it("never nests an offer button inside an inline span", () => {
     const unregister = registerOfferAction(offer.kind, vi.fn());
     try {
-      renderWith(<ChecklistView />, (store) => store.set(checklistAtom, checklist));
+      renderWith(
+        <>
+          <NextOffers checklist={checklist} />
+          <ChecklistGaps checklist={checklist} />
+        </>,
+      );
       const buttons = screen.getAllByRole("button", { name: offer.label });
       expect(buttons).toHaveLength(2);
       for (const button of buttons) expect(button.closest("span")).toBeNull();
@@ -76,17 +80,49 @@ describe("ChecklistView", () => {
     }
   });
 
-  it("shows the loading state before the first checklist", () => {
-    renderWith(<ChecklistView />);
-    expect(screen.getByRole("status", { name: "Loading the checklist" })).toBeTruthy();
+  it("makes control characters visible in server step names, gap text and paths", () => {
+    renderWith(
+      <ChecklistGaps
+        checklist={{
+          ...checklist,
+          steps: [{ number: 1, name: "Vis\u202Eion", mark: "gap" }],
+          items: [{ step: 1, text: "Re\u202Eview", path: "doc/vis\u202Eion.md", offer: null }],
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "Step 1 · Vis⟨U+202E⟩ion" })).toBeTruthy();
+    expect(screen.getByText("Re⟨U+202E⟩view")).toBeTruthy();
+    expect(screen.getByText("doc/vis⟨U+202E⟩ion.md")).toBeTruthy();
+  });
+});
+
+describe("NextOffers", () => {
+  it("renders the primary and secondary offers in order", () => {
+    renderWith(<NextOffers checklist={checklist} />);
+
+    const next = within(screen.getByRole("region", { name: "Next" }));
+    expect(next.getByText("Write section 05")).toBeTruthy();
+    expect(next.getByText("Start a metaplan from the product spec")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Next" }).textContent).toBe(
+      "Write section 05Start a metaplan from the product spec",
+    );
   });
 
-  it("names the ready state when no step is current", () => {
-    renderWith(<ChecklistView />, (store) =>
-      store.set(checklistAtom, { ...checklist, current: { kind: "ready" } }),
+  it("renders secondary offers without a primary offer", () => {
+    renderWith(<NextOffers checklist={{ ...checklist, primary: null }} />);
+
+    const next = within(screen.getByRole("region", { name: "Next" }));
+    expect(next.queryByText("Write section 05")).toBeNull();
+    expect(next.getByText("Start a metaplan from the product spec")).toBeTruthy();
+  });
+
+  it("renders nothing when there are no offers", () => {
+    const { container } = renderWith(
+      <NextOffers checklist={{ ...checklist, primary: null, secondary: [] }} />,
     );
-    expect(screen.getByRole("heading", { name: "Ready to run" })).toBeTruthy();
-    expect(screen.queryByRole("listitem", { current: "step" })).toBeNull();
+
+    expect(container.childElementCount).toBe(0);
   });
 });
 

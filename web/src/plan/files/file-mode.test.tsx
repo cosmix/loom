@@ -47,10 +47,11 @@ vi.mock("@/plan/files/plan/plan-view", () => ({
 }));
 
 const scrolled = vi.fn();
-const DOC_PATH = "doc/product/section_01.md";
+const DOC_PATH = "doc/product/demo/section_01.md";
 const doc = (patch: Partial<DocView> = {}): DocView =>
   docViewSchema.parse({ ...structuredClone(docFixture), ...patch });
-const planDoc = (): DocView => docViewSchema.parse(structuredClone(planFixture));
+const planDoc = (): DocView =>
+  docViewSchema.parse({ ...structuredClone(planFixture), path: treeFixture.plans[0]!.path });
 const tree = (): FileTree => fileTreeSchema.parse(structuredClone(treeFixture));
 const ok = (value: DocView) => ({ ok: true as const, value });
 const failure = (status: number) => ({ ok: false as const, status, error: "e", message: "boom" });
@@ -110,7 +111,7 @@ describe("file mode layout", () => {
   it("turns the tree into a drawer below 900px", () => {
     setWide(false);
     vi.mocked(fetchDoc).mockResolvedValue(ok(doc()));
-    renderMode(`/files/product/section_01.md`);
+    renderMode(`/files/product/demo/section_01.md`);
     expect(screen.queryByRole("navigation", { name: "Documents" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Documents" }));
     expect(screen.getByRole("dialog", { name: "Documents" })).toBeTruthy();
@@ -120,7 +121,7 @@ describe("file mode layout", () => {
 
   it("opening a gap shows its checklist item and the offer", () => {
     const store = createStore();
-    const checklist = checklistViewSchema.parse(structuredClone(checklistFixture));
+    const checklist = checklistViewSchema.parse(structuredClone(checklistFixture.checklists[0]));
     const item = { ...checklist.items[1], text: "Section 2" };
     store.set(checklistAtom, { ...checklist, items: [item] });
     renderMode("/files?gap=Section%202", tree(), store);
@@ -135,7 +136,7 @@ describe("reading column", () => {
     vi.mocked(fetchDoc).mockResolvedValue(
       ok(doc({ lock: { reason: "done", notice, plan: null } })),
     );
-    renderMode("/files/product/section_01.md#purpose");
+    renderMode("/files/product/demo/section_01.md#purpose");
     await screen.findByTestId("markdown");
     expect(fetchDoc).toHaveBeenCalledWith(DOC_PATH);
     expect(screen.getByText(notice)).toBeTruthy();
@@ -153,7 +154,7 @@ describe("reading column", () => {
 
   it("passes search marks from the location state to the renderer", async () => {
     vi.mocked(fetchDoc).mockResolvedValue(ok(doc()));
-    renderMode({ pathname: "/files/product/section_01.md", state: { marks: ["purpose"] } });
+    renderMode({ pathname: "/files/product/demo/section_01.md", state: { marks: ["purpose"] } });
     expect((await screen.findByTestId("markdown")).getAttribute("data-marks")).toBe("purpose");
   });
 
@@ -181,7 +182,7 @@ describe("reading column", () => {
 
   it("offers Retry after a failed fetch", async () => {
     vi.mocked(fetchDoc).mockResolvedValueOnce(failure(500)).mockResolvedValue(ok(doc()));
-    renderMode("/files/product/section_01.md");
+    renderMode("/files/product/demo/section_01.md");
     fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
     await screen.findByTestId("markdown");
   });
@@ -189,7 +190,7 @@ describe("reading column", () => {
   it("renders a truncated file as monospace text under the size notice", async () => {
     const big = doc({ truncated: true, too_large: true, size: 3 * 1048576, text: "# raw heading" });
     vi.mocked(fetchDoc).mockResolvedValue(ok(big));
-    renderMode("/files/product/section_01.md");
+    renderMode("/files/product/demo/section_01.md");
     await screen.findByText(/This file is 3.0 MiB; file mode shows the first 1 MiB/);
     expect(screen.queryByTestId("markdown")).toBeNull();
     expect(screen.getByText("# raw heading").tagName).toBe("PRE");
@@ -204,13 +205,13 @@ describe("reading column", () => {
     vi.mocked(fetchDoc)
       .mockResolvedValueOnce(ok(first))
       .mockResolvedValue(ok({ ...first, text: "new", hash: "h2" }));
-    const store = renderMode("/files/product/section_01.md");
+    const store = renderMode("/files/product/demo/section_01.md");
     await screen.findByText("old");
     scrolled.mockReset();
     act(() => store.set(docChangedAtom, { [DOC_PATH]: "h2" }));
     await screen.findByText("new");
     const link = screen.getByRole("link", { name: "changed just now" });
-    expect(link.getAttribute("href")).toBe("/files/product/section_01.md?diff=open");
+    expect(link.getAttribute("href")).toBe("/files/product/demo/section_01.md?diff=open");
     expect(fetchDoc).toHaveBeenCalledTimes(2);
     await waitFor(() =>
       expect(scrolled.mock.contexts.some((el) => (el as Element).id === "b")).toBe(true),
@@ -226,11 +227,11 @@ describe("tree drawer", () => {
 
   beforeEach(() => {
     setWide(false);
-    vi.mocked(fetchDoc).mockResolvedValue(ok(doc({ path: "doc/product/vision.md" })));
+    vi.mocked(fetchDoc).mockResolvedValue(ok(doc({ path: "doc/product/demo/index.md" })));
   });
 
   it("is a modal that takes focus, hides the page behind it and returns focus on Escape", async () => {
-    renderMode("/files/product/vision.md");
+    renderMode("/files/product/demo/index.md");
     await screen.findByTestId("markdown");
     const opener = screen.getByRole("button", { name: "Documents" });
     expect(opener.getAttribute("aria-expanded")).toBe("false");
@@ -246,7 +247,7 @@ describe("tree drawer", () => {
   });
 
   it("keeps Escape in the search box from closing it until the box is empty", async () => {
-    renderMode("/files/product/vision.md");
+    renderMode("/files/product/demo/index.md");
     await screen.findByTestId("markdown");
     const dialog = openDrawer();
     const box = within(dialog).getByRole("searchbox") as HTMLInputElement;
@@ -259,15 +260,15 @@ describe("tree drawer", () => {
   });
 
   it("closes on a hash change in the same document", async () => {
-    renderMode("/files/product/vision.md");
+    renderMode("/files/product/demo/index.md");
     await screen.findByTestId("markdown");
     fireEvent.click(within(openDrawer()).getByRole("link", { name: "Purpose" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.getByTestId("where").textContent).toBe("/files/product/vision.md");
+    expect(screen.getByTestId("where").textContent).toBe("/files/product/demo/index.md");
   });
 
   it("moves focus to the reading column after a document is chosen", async () => {
-    renderMode("/files/product/vision.md");
+    renderMode("/files/product/demo/index.md");
     await screen.findByTestId("markdown");
     fireEvent.click(within(openDrawer()).getByRole("link", { name: "Notes" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -286,7 +287,7 @@ describe("a changed document that cannot be refetched", () => {
       .mockResolvedValueOnce(ok(first()))
       .mockResolvedValueOnce(failure(500))
       .mockResolvedValue(ok({ ...first(), text: "new", hash: "h2" }));
-    const store = renderMode("/files/product/section_01.md");
+    const store = renderMode("/files/product/demo/section_01.md");
     await screen.findByText("old");
     act(() => store.set(docChangedAtom, { [DOC_PATH]: "h2" }));
     const notice = await screen.findByRole("alert");
@@ -303,7 +304,7 @@ describe("a changed document that cannot be refetched", () => {
       .mockResolvedValueOnce(ok(first()))
       .mockResolvedValueOnce(failure(500))
       .mockResolvedValue(ok({ ...first(), text: "newest", hash: "h3" }));
-    const store = renderMode("/files/product/section_01.md");
+    const store = renderMode("/files/product/demo/section_01.md");
     await screen.findByText("old");
     act(() => store.set(docChangedAtom, { [DOC_PATH]: "h2" }));
     await screen.findByRole("alert");
@@ -342,22 +343,22 @@ describe("tree drawer on a phone", () => {
 
   beforeEach(() => {
     setWide(false);
-    vi.mocked(fetchDoc).mockResolvedValue(ok(doc({ path: "doc/product/vision.md" })));
+    vi.mocked(fetchDoc).mockResolvedValue(ok(doc({ path: "doc/product/demo/index.md" })));
   });
 
   it("closes when the open document's own entry is tapped", async () => {
-    renderMode("/files/product/vision.md");
+    renderMode("/files/product/demo/index.md");
     await screen.findByTestId("markdown");
     const current = openDrawer().querySelector<HTMLElement>("a[aria-current='page']");
     expect(current).not.toBeNull();
     fireEvent.click(current!);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.getByTestId("where").textContent).toBe("/files/product/vision.md");
+    expect(screen.getByTestId("where").textContent).toBe("/files/product/demo/index.md");
   });
 
   it("does not come back open after the window was wide", async () => {
     const resize = resizableMedia(false);
-    renderMode("/files/product/vision.md");
+    renderMode("/files/product/demo/index.md");
     await screen.findByTestId("markdown");
     openDrawer();
     resize(true);
@@ -370,7 +371,7 @@ describe("tree drawer on a phone", () => {
   });
 
   it("focuses the sheet, not the search box, so no keyboard rises", async () => {
-    renderMode("/files/product/vision.md");
+    renderMode("/files/product/demo/index.md");
     await screen.findByTestId("markdown");
     const dialog = openDrawer();
     const box = within(dialog).getByRole("searchbox");

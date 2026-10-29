@@ -2,6 +2,7 @@ import { z } from "@/api/zod";
 import { chatMessageSchema, chatWireCommandSchema } from "./schema-chat";
 import { conceptMessageSchemas } from "./schema-concept";
 import { filesMessageSchemas, planStateViewSchema } from "./schema-files";
+import { kickoffMessageSchemas } from "./schema-kickoff";
 import { pressureMessageSchemas } from "./schema-pressure";
 import { runMessageSchemas } from "./schema-run";
 import { reviewWireCommandSchema, reviewWireMessageSchema } from "./schema-review";
@@ -46,6 +47,8 @@ export const PLAN_MESSAGE_TYPES = [
   "run_state",
   "run_output",
   "run_strip",
+  "kickoff",
+  "draft_team",
 ] as const;
 export const CLIENT_MESSAGE_TYPES = ["set_name", "reading"] as const;
 
@@ -155,6 +158,7 @@ export const planMessageSchema = z.discriminatedUnion("type", [
   ...summaryMessageSchemas,
   ...pressureMessageSchemas,
   ...runMessageSchemas,
+  ...kickoffMessageSchemas,
 ]);
 export const clientMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("set_name"), name: z.string() }),

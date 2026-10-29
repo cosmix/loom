@@ -1,5 +1,5 @@
 {
-  "path": "doc/plans/PLAN-file-mode.md",
+  "path": "doc/plans/demo/PLAN-file-mode.md",
   "title": "File mode",
   "text": "# Product\n\n## Purpose\nText\n",
   "hash": "sha256:abc",
@@ -21,7 +21,7 @@
     "implements": [
       {
         "number": 6,
-        "path": "doc/product/section_06.md"
+        "path": "doc/product/demo/section_06.md"
       },
       {
         "number": 7,
@@ -79,5 +79,7 @@
   },
   "too_large": false,
   "truncated": false,
-  "size": 27
+  "size": 27,
+  "feature": "demo",
+  "misplaced": false
 }

@@ -35,7 +35,7 @@ function show(pathname = "/files", wide = true, project: string | null = "Exampl
     dispatchEvent: () => false,
   }));
   const store = createStore();
-  store.set(checklistAtom, checklistViewSchema.parse(checklistFixture));
+  store.set(checklistAtom, checklistViewSchema.parse(checklistFixture.checklists[0]));
   store.set(
     serverInfoAtom,
     project === null
@@ -67,17 +67,17 @@ it("links the Loom logo to the planner home", () => {
   expect(link.querySelector("svg")).not.toBeNull();
 });
 
-it("shows the project name under the Planning eyebrow", () => {
+it("shows the active feature under the Planning eyebrow", () => {
   show();
 
   expect(screen.getByText("Planning")).toBeTruthy();
-  expect(screen.getByRole("heading", { name: "Example project" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Switch feature, current: demo" })).toBeTruthy();
 });
 
-it("uses Project before the server info arrives", () => {
+it("keeps the active feature name before the server info arrives", () => {
   show("/files", true, null);
 
-  expect(screen.getByRole("heading", { name: "Project" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Switch feature, current: demo" })).toBeTruthy();
 });
 
 it("includes the shared theme toggle", () => {

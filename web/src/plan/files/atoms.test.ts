@@ -5,6 +5,8 @@ import type { DocView } from "@/plan/api/schema-files";
 import { docChangedAtom, openDocAtom, openDocIsStaleAtom } from "@/plan/files/atoms";
 
 const doc: DocView = {
+  feature: null,
+  misplaced: false,
   path: "plans/example.md",
   title: "Example",
   text: "Example text",

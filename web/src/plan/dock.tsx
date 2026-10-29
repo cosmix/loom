@@ -1,4 +1,5 @@
 import type { JSX } from "react";
+import { useLocation } from "react-router";
 
 import { ChatPanel, ChatRegistrations } from "@/plan/chat/panel";
 
@@ -9,10 +10,12 @@ import { ChatPanel, ChatRegistrations } from "@/plan/chat/panel";
  * collapsed or the sheet is open or closed.
  */
 export function Dock(): JSX.Element {
+  const { pathname } = useLocation();
   return (
     <>
       <ChatRegistrations />
-      <ChatPanel />
+      {/* Kickoff owns the transcript and replaces the chat panel with Taking shape. */}
+      {pathname !== "/new" && <ChatPanel />}
     </>
   );
 }
