@@ -68,6 +68,7 @@ pub fn all_routes() -> Vec<RouteSpec> {
     routes.extend(super::concept::routes());
     routes.extend(super::guidance::routes());
     routes.extend(super::review::routes());
+    routes.extend(super::summaries::routes::routes());
     routes
 }
 
@@ -81,6 +82,8 @@ pub fn install_all(ctx: &Arc<PlanContext>) {
     super::search::install(ctx);
     super::concept::install(ctx);
     crate::plan_server::chat::install(ctx);
+    // After concept (its `ConceptState`) and chat (the session `Bridge`): both are read at install.
+    super::summaries::install(ctx);
     super::guidance::install(ctx);
     super::review::install(ctx);
 }

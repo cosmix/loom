@@ -1,11 +1,13 @@
 //! Concept pages: page keys, the page context, and loading a page from the evaluated project.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::plan_server::concept::body::{self, doc_link, Level};
 use crate::plan_server::concept::key::{colour_of, key_chips};
 use crate::plan_server::concept::links::{implemented_by, implements_view, plan_state_name};
 use crate::plan_server::concept::state::out_of_date_reason;
+use crate::plan_server::summaries::rebuilds::Rebuilds;
 use crate::plan_server::wire::concept::{
     ConceptPage, DocLink, EmptyKind, EmptyState, Progress, SummaryStateView, SummaryView,
 };
@@ -27,10 +29,21 @@ pub enum Scope {
 }
 
 /// Server state a page depends on beyond the project and its evaluation.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct PageContext {
     /// `Some(reason)` when `loom plan` runs read-only.
     pub read_only: Option<String>,
+    /// Scheduler reasons, running progress and cost estimates, when installed.
+    pub rebuilds: Option<Arc<Rebuilds>>,
+}
+
+impl std::fmt::Debug for PageContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PageContext")
+            .field("read_only", &self.read_only)
+            .field("rebuilds", &self.rebuilds.as_ref().map(|_| "Rebuilds"))
+            .finish()
+    }
 }
 
 /// The page a request addresses.
@@ -99,10 +112,15 @@ pub fn load_page(
     }
 }
 
-/// The in-progress count and time estimate of a rebuild; plan 10 fills both from its
-/// `PageContext` field.
-pub fn progress(_ctx: &PageContext) -> (Option<Progress>, Option<String>) {
-    (None, None)
+/// The running rebuild's progress and the estimated tokens to build missing summaries.
+pub fn progress(ctx: &PageContext) -> (Option<Progress>, Option<String>) {
+    let Some(rebuilds) = &ctx.rebuilds else {
+        return (None, None);
+    };
+    (
+        rebuilds.building().map(Progress::from),
+        rebuilds.estimate_text(),
+    )
 }
 
 fn blank(key: String, title: String, ctx: &PageContext) -> ConceptPage {
@@ -222,11 +240,11 @@ fn empty_state(project: &Project, eval: &Evaluation, scope: Scope) -> EmptyState
         ),
     };
     let prefix = id_prefix(scope);
-    let documents: Vec<_> = eval
+    let documents = eval
         .summaries
         .iter()
-        .filter(|(id, _)| id.starts_with(prefix))
-        .collect();
+        .filter(|(id, _)| id.starts_with(prefix));
+    let documents: Vec<_> = documents.collect();
     let mut empty = EmptyState {
         kind: EmptyKind::Building,
         count: None,

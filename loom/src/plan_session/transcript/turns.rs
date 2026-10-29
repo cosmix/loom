@@ -74,6 +74,17 @@ impl Mapper {
         }
     }
 
+    /// Store `ids` as the summaries turn `turn_id` rebuilt and return the `turn_updated` delta
+    /// carrying them. A later update of the turn, and every snapshot, keeps the ids. An unknown
+    /// turn id changes nothing and returns no delta.
+    pub fn set_summaries_rebuilding(&mut self, turn_id: &str, ids: Vec<String>) -> Vec<ChatDelta> {
+        let Some(index) = self.turns.iter().position(|turn| turn.id == turn_id) else {
+            return Vec::new();
+        };
+        self.turns[index].summaries_rebuilding = ids;
+        vec![self.turn_updated(index)]
+    }
+
     pub(super) fn turn_duration(&mut self, ms: u64, deltas: &mut Vec<ChatDelta>) {
         if let Some(turn) = self.current_or_last() {
             self.turns[turn].duration_ms = Some(ms);

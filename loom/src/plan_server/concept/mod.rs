@@ -10,6 +10,7 @@ pub mod page;
 pub mod routes;
 pub mod state;
 
+pub(crate) use delta::page_keys;
 pub use engine::{install, page_keys_for_summary, ConceptState};
 pub use page::{load_page, PageContext, PageKey, Scope};
 pub use routes::routes;
@@ -26,3 +27,5 @@ mod route_tests;
 mod state_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_rebuilds;

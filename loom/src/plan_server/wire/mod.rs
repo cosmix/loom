@@ -9,6 +9,7 @@ pub mod paths;
 pub mod presence;
 pub mod review;
 pub mod server;
+pub mod summaries;
 
 #[cfg(test)]
 mod files_tests;
@@ -24,3 +25,5 @@ mod tests_concept;
 mod tests_review;
 #[cfg(test)]
 mod tests_schema;
+#[cfg(test)]
+mod tests_summaries;
