@@ -1,4 +1,5 @@
 import { useAtomValue, useStore } from "jotai";
+import { FileUp, FolderInput, Lightbulb, Paperclip, SendHorizontal, Wrench } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { startChat } from "@/plan/chat/commands";
@@ -23,12 +24,23 @@ type PickedDocument = StarterDocument & { id: string };
 type KickoffDraft = ReturnType<typeof useKickoffDraft>;
 
 const STARTERS = [
-  { label: "A new feature", text: "I want to build a new feature: ", small: false },
-  { label: "A small fix or improvement", text: "I want to fix or improve: ", small: true },
   {
-    label: "Grow my standalone plans into a feature",
+    label: "A new feature for this project",
+    text: "I want to build a new feature: ",
+    small: false,
+    Icon: Lightbulb,
+  },
+  {
+    label: "A small fix or improvement",
+    text: "I want to fix or improve: ",
+    small: true,
+    Icon: Wrench,
+  },
+  {
+    label: "Grow standalone plans into a feature",
     text: "I have standalone plans that belong together and want to grow them into a feature.",
     small: false,
+    Icon: FolderInput,
   },
 ];
 
@@ -159,7 +171,7 @@ function KickoffComposer({
 }) {
   const id = useId();
   return (
-    <div className="w-full">
+    <>
       <label htmlFor={id} className="sr-only">
         What do you want to build?
       </label>
@@ -167,7 +179,7 @@ function KickoffComposer({
         id={id}
         ref={draft.composer}
         className="kickoff-composer"
-        rows={5}
+        rows={3}
         value={draft.text}
         disabled={disabled}
         onChange={(event) => draft.setText(event.target.value)}
@@ -177,19 +189,16 @@ function KickoffComposer({
           start();
         }}
       />
-    </div>
+    </>
   );
 }
 
 function KickoffAttachments({ draft, disabled }: { draft: KickoffDraft; disabled: boolean }) {
   if (!draft.documents.length) return null;
   return (
-    <ul aria-label="Attached documents" className="flex w-full flex-wrap gap-2 text-sm">
+    <ul aria-label="Attached documents" className="kickoff-attachments">
       {draft.documents.map((document) => (
-        <li
-          key={document.id}
-          className="flex min-w-0 items-center gap-3 rounded-md border border-border px-3 py-2"
-        >
+        <li key={document.id} className="kickoff-attachment">
           <span className="min-w-0 break-words">
             Attached: <Untrusted text={document.label} />
           </span>
@@ -209,7 +218,7 @@ function KickoffAttachments({ draft, disabled }: { draft: KickoffDraft; disabled
 
 function KickoffStarters({ draft, disabled }: { draft: KickoffDraft; disabled: boolean }) {
   return (
-    <fieldset disabled={disabled} className="kickoff-starters w-full space-y-2">
+    <fieldset disabled={disabled} className="kickoff-starters">
       <legend className="sr-only">Conversation starters</legend>
       {STARTERS.map((starter) => (
         <button
@@ -218,11 +227,59 @@ function KickoffStarters({ draft, disabled }: { draft: KickoffDraft; disabled: b
           className="kickoff-starter"
           onClick={() => draft.choose(starter)}
         >
+          <starter.Icon aria-hidden="true" />
           {starter.label}
         </button>
       ))}
-      <DocumentStarter onPick={draft.attach} />
+      <DocumentStarter onPick={draft.attach} className="kickoff-starter">
+        <FileUp aria-hidden="true" />
+        Start from a document I have
+      </DocumentStarter>
     </fieldset>
+  );
+}
+
+function KickoffCard({
+  draft,
+  disabled,
+  reason,
+  error,
+  submit,
+}: {
+  draft: KickoffDraft;
+  disabled: boolean;
+  reason: string | null;
+  error: string | null;
+  submit: () => void;
+}) {
+  return (
+    <div className="kickoff-card">
+      <KickoffComposer draft={draft} disabled={disabled} start={submit} />
+      <KickoffAttachments draft={draft} disabled={disabled} />
+      <div className="kickoff-actions">
+        <DocumentStarter
+          onPick={draft.attach}
+          variant="ghost"
+          className="kickoff-attach"
+          disabled={disabled}
+        >
+          <Paperclip aria-hidden="true" />
+          Attach notes or a document
+        </DocumentStarter>
+        <div className="kickoff-start">
+          <DisabledReason reason={reason} onClick={submit}>
+            <SendHorizontal aria-hidden="true" />
+            {error ? (
+              "Try again"
+            ) : (
+              <>
+                Start <span className="sr-only">the conversation</span>
+              </>
+            )}
+          </DisabledReason>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -245,30 +302,30 @@ export function EmptyKickoff({ small = false }: { small?: boolean }) {
   return (
     <section className="kickoff-empty" aria-label="Start something new">
       <LoomDoodle className="text-muted-foreground" />
-      <h1 className="text-center text-3xl font-semibold tracking-tight">
-        What do you want to build?
-      </h1>
-      <KickoffComposer draft={draft} disabled={disabled} start={submit} />
-      <KickoffAttachments draft={draft} disabled={disabled} />
-      <div className="w-full">
-        <DisabledReason reason={reason} onClick={submit}>
-          {error ? "Try again" : "Start the conversation"}
-        </DisabledReason>
-        {!canAuthor && blockReason && (
-          <p className="mt-1 text-xs text-muted-foreground">
-            <Untrusted text={blockReason} />
-          </p>
-        )}
-      </div>
+      <h1>What do you want to build?</h1>
+      <p className="kickoff-lead">
+        Describe it the way you would to a colleague: the problem, who has it, what you have in
+        mind. Loom asks questions, pushes back, and suggests a name and the sections a spec needs.
+      </p>
+      <KickoffCard
+        draft={draft}
+        disabled={disabled}
+        reason={reason}
+        error={error}
+        submit={submit}
+      />
+      {!canAuthor && blockReason && (
+        <p className="kickoff-note">
+          <Untrusted text={blockReason} />
+        </p>
+      )}
       {error && (
         <p role="status">
           <Untrusted text={error} />
         </p>
       )}
       <KickoffStarters draft={draft} disabled={disabled} />
-      <p className="text-center text-sm text-muted-foreground">
-        Nothing is written until you say so.
-      </p>
+      <p className="kickoff-note">Nothing is written until you say so.</p>
     </section>
   );
 }

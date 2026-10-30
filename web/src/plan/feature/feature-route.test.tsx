@@ -41,6 +41,10 @@ function renderRoute(
   return { store, router };
 }
 
+function eyebrow(): string | undefined {
+  return document.querySelector(".plan-eyebrow")?.textContent?.replace(/\s+/g, " ");
+}
+
 describe("FeatureRoute", () => {
   it("shows loading until the project arrives and then selects the feature", async () => {
     const { store } = renderRoute("/f/demo", null);
@@ -51,7 +55,7 @@ describe("FeatureRoute", () => {
 
     act(() => store.set(projectAtom, project));
 
-    expect(screen.getByRole("heading", { level: 1, name: "demo" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Write the product spec" })).toBeTruthy();
     await waitFor(() => expect(store.get(activeFeatureAtom)).toBe("demo"));
   });
 
@@ -61,26 +65,87 @@ describe("FeatureRoute", () => {
     expect(screen.getByText("No such feature")).toBeTruthy();
     expect(screen.getByText("missing⟨U+202E⟩feature")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Back to home" }).getAttribute("href")).toBe("/");
-    expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Steps" })).toBeNull();
     expect(store.get(activeFeatureAtom)).toBe("demo");
   });
 
-  it("renders the feature title, current step and step list", () => {
+  it("renders the feature title, current step and step navigation", () => {
     renderRoute();
 
-    expect(screen.getByRole("heading", { level: 1, name: "demo" })).toBeTruthy();
-    expect(screen.getByText("Step 2 of 2: Product spec")).toBeTruthy();
-    const steps = within(screen.getByRole("list", { name: "Steps" }));
-    expect(steps.getAllByRole("heading").map((node) => node.textContent)).toEqual([
+    expect(screen.getAllByRole("heading", { level: 1 }).map((node) => node.textContent)).toEqual([
+      "Write the product spec",
+    ]);
+    expect(eyebrow()).toBe("Demo · step 2 of 7");
+    const steps = within(screen.getByRole("navigation", { name: "Steps" }));
+    expect(steps.getAllByRole("link").map((node) => node.textContent?.split(",")[0])).toEqual([
       "Conversation",
       "Vision",
       "Product spec",
     ]);
-    expect(steps.getAllByRole("listitem", { current: "step" })).toHaveLength(1);
+    expect(steps.getAllByRole("link", { current: "step" })).toHaveLength(1);
     expect(screen.queryByRole("region", { name: "Draft team" })).toBeNull();
   });
 
-  it("renders each gap's offer once on its own row, grouped by step", () => {
+  it("selects the step from the query and falls back to the current step", () => {
+    renderRoute("/f/demo?step=1");
+    expect(screen.getByRole("heading", { level: 1, name: "Write the vision" })).toBeTruthy();
+    expect(eyebrow()).toBe("Demo · step 1 of 7");
+    cleanup();
+
+    renderRoute("/f/demo?step=9");
+    expect(screen.getByRole("heading", { level: 1, name: "Write the product spec" })).toBeTruthy();
+  });
+
+  it("lists the sections as a queue on the product spec step", () => {
+    renderRoute();
+
+    const queue = within(screen.getByRole("list", { name: "Section queue" }));
+    const row = within(queue.getByRole("listitem"));
+    expect(row.getByText("05")).toBeTruthy();
+    expect(row.getByText("Example")).toBeTruthy();
+    expect(row.getByText("Missing")).toBeTruthy();
+  });
+
+  it("shows the pace choice in the body of the selected step only", () => {
+    const guided = {
+      id: "write-section:05",
+      kind: "write_section" as const,
+      label: "Write section 05",
+      target: null,
+      feature: "demo",
+      number: 5,
+    };
+    const team = {
+      id: "team",
+      kind: "draft_all_sections" as const,
+      label: "Draft all",
+      target: null,
+      feature: "demo",
+    };
+    renderRoute("/f/demo", {
+      ...project,
+      checklists: [
+        {
+          ...checklist,
+          primary: guided,
+          secondary: [team],
+          items: [{ step: 2, text: "Missing section", path: null, offer: guided }],
+        },
+      ],
+    });
+
+    expect(screen.getAllByRole("heading", { name: "Guided, one section at a time" })).toHaveLength(
+      1,
+    );
+    cleanup();
+    renderRoute("/f/demo?step=3", {
+      ...project,
+      checklists: [{ ...checklist, primary: guided, secondary: [team], items: [] }],
+    });
+    expect(screen.queryByRole("heading", { name: "Guided, one section at a time" })).toBeNull();
+  });
+
+  it("puts a section's offer on its queue row and drops the repeated item list", () => {
     renderRoute("/f/demo", {
       ...project,
       checklists: [
@@ -104,18 +169,91 @@ describe("FeatureRoute", () => {
     });
 
     expect(screen.queryByRole("region", { name: "Next" })).toBeNull();
-    const gaps = within(screen.getByRole("region", { name: "Gaps" }));
-    const product = within(gaps.getByRole("region", { name: "Step 2 · Product spec" }));
-    const sectionRow = within(product.getByRole("listitem"));
-    expect(sectionRow.getByText("section 05: Example")).toBeTruthy();
-    expect(sectionRow.getByText("doc/product/demo/section_05.md")).toBeTruthy();
-    expect(sectionRow.getByText("Write section 05")).toBeTruthy();
-    const metaplan = within(gaps.getByRole("region", { name: "Step 3 · Metaplan" }));
-    const metaplanRow = within(metaplan.getByRole("listitem"));
+    expect(screen.queryByRole("heading", { level: 2 })).toBeNull();
+    expect(screen.queryByText(/^Step \d$/)).toBeNull();
+    expect(screen.queryByText("section 05: Example")).toBeNull();
+    expect(screen.queryByRole("list", { name: "Documents and gaps" })).toBeNull();
+    const row = within(
+      within(screen.getByRole("list", { name: "Section queue" })).getByRole("listitem"),
+    );
+    expect(row.getByText("Missing")).toBeTruthy();
+    expect(row.getByText("Write section 05")).toBeTruthy();
+    expect(screen.getAllByText("Write section 05")).toHaveLength(1);
+    expect(screen.queryByText("no metaplan")).toBeNull();
+  });
+
+  it("names plan queue rows by slug and puts each offer on its row", () => {
+    const offer = {
+      id: "write-plan:demo-01",
+      kind: "write_plan" as const,
+      label: "Write plan demo-01",
+      target: null,
+      feature: "demo",
+    };
+    renderRoute("/f/demo?step=4", {
+      ...project,
+      checklists: [
+        {
+          ...checklist,
+          items: [
+            {
+              step: 4,
+              text: "plan demo-01 named in doc/plans/demo/index.md is not written",
+              path: "doc/plans/demo/PLAN-demo-01.md",
+              offer,
+            },
+            {
+              step: 4,
+              text: "plan demo-02",
+              path: "doc/plans/demo/PLAN-demo-02.md",
+              offer: null,
+            },
+          ],
+        },
+      ],
+    });
+
+    const queue = within(screen.getByRole("list", { name: "Plan queue" }));
+    const [missing, written] = queue.getAllByRole("listitem").map((row) => within(row));
+    expect(missing!.getByText("demo-01")).toBeTruthy();
+    expect(missing!.getByText("Write plan demo-01")).toBeTruthy();
+    expect(written!.getByRole("link", { name: "demo-02" }).getAttribute("href")).toBe(
+      "/files/plans/demo/PLAN-demo-02.md",
+    );
+    expect(screen.queryByText(/is not written/)).toBeNull();
+    expect(screen.queryByRole("list", { name: "Documents and gaps" })).toBeNull();
+  });
+
+  it("renders the metaplan gap's offer once when that step is selected", () => {
+    renderRoute("/f/demo?step=3", {
+      ...project,
+      checklists: [
+        {
+          ...checklist,
+          steps: [
+            ...checklist.steps,
+            { number: 3, name: "Metaplan", mark: "gap", count: null, label: "Metaplan" },
+          ],
+          items: [
+            ...checklist.items,
+            {
+              step: 3,
+              text: "no metaplan",
+              path: null,
+              offer: checklist.secondary[0] ?? null,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(screen.queryByRole("heading", { level: 2 })).toBeNull();
+    const gaps = within(screen.getByRole("list", { name: "Documents and gaps" }));
+    const metaplanRow = within(gaps.getByRole("listitem"));
     expect(metaplanRow.getByText("no metaplan")).toBeTruthy();
     expect(metaplanRow.getByText("Start a metaplan from the product spec")).toBeTruthy();
-    expect(screen.getAllByText("Write section 05")).toHaveLength(1);
     expect(screen.getAllByText("Start a metaplan from the product spec")).toHaveLength(1);
+    expect(screen.queryByText("Write section 05")).toBeNull();
   });
 
   it("leaves a primary offer without a gap row to the header card", () => {
@@ -150,9 +288,9 @@ describe("FeatureRoute", () => {
     const value = { ...project, checklists: [other, checklist] };
     const { store } = renderRoute("/f/demo", value, "other");
 
-    expect(screen.getByRole("heading", { level: 1, name: "demo" })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Other step" })).toBeNull();
-    expect(screen.getByRole("region", { name: "Gaps" })).toBeTruthy();
+    expect(eyebrow()).toBe("Demo · step 2 of 7");
+    expect(screen.queryByRole("link", { name: /Other step/ })).toBeNull();
+    expect(screen.getByRole("list", { name: "Section queue" })).toBeTruthy();
     await waitFor(() => expect(store.get(activeFeatureAtom)).toBe("demo"));
     expect(store.get(checklistAtom)).toEqual(checklist);
   });
@@ -168,7 +306,7 @@ describe("FeatureRoute", () => {
       await router.navigate("/f/other");
     });
 
-    expect(screen.getByRole("heading", { level: 1, name: "other" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /^Conversation, done other$/ })).toBeTruthy();
     expect(store.get(activeFeatureAtom)).toBe("other");
     expect(screen.queryByRole("region", { name: "Gaps" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Next" })).toBeNull();
@@ -209,7 +347,7 @@ describe("FeatureRoute", () => {
       await router.navigate("/f/other");
     });
 
-    expect(screen.getByRole("heading", { level: 1, name: "other" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /^Conversation, done other$/ })).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Draft team" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Stop the team" })).toBeNull();
   });
@@ -223,9 +361,10 @@ describe("FeatureRoute", () => {
       checklists: [{ ...checklist, current: { kind } }],
     });
 
-    expect(screen.getByRole("heading", { level: 1, name: "demo" })).toBeTruthy();
-    expect(screen.getAllByText(label)).toHaveLength(2);
-    expect(screen.queryByRole("listitem", { current: "step" })).toBeNull();
+    expect(screen.getByRole("heading", { level: 1, name: "Run the plans" })).toBeTruthy();
+    expect(eyebrow()).toBe("Demo · step 7 of 7");
+    expect(screen.getAllByText(label)).toHaveLength(1);
+    expect(screen.queryByRole("link", { current: "step" })).toBeNull();
   });
 
   it.each(["a feature", "100% ready", "literal%20name", "de\u202Emo"])(
@@ -236,9 +375,10 @@ describe("FeatureRoute", () => {
         checklists: [{ ...checklist, feature }],
       });
 
-      expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
-        feature.replace("\u202E", "⟨U+202E⟩"),
-      );
+      expect(
+        within(screen.getByRole("navigation", { name: "Steps" })).getAllByRole("link")[0]
+          ?.textContent,
+      ).toBe(`Conversation, done ${feature.replace("\u202E", "⟨U+202E⟩")}`);
       expect(store.get(activeFeatureAtom)).toBe(feature);
     },
   );

@@ -1,4 +1,7 @@
+import { Footprints, Users, type LucideIcon } from "lucide-react";
+
 import type { ChecklistView, OfferView, StepView } from "@/plan/api/schema";
+import { plural } from "@/plan/feature/steps";
 import { OfferButton } from "@/plan/offers/offer-button";
 
 export function paceOffers(
@@ -27,22 +30,31 @@ export function paceOffers(
 }
 
 function PaceOption({
+  icon: Icon,
   title,
+  label,
   description,
   offer,
   cost,
 }: {
+  icon: LucideIcon;
   title: string;
+  label?: string;
   description: string;
   offer: OfferView;
   cost?: string;
 }) {
   return (
-    <section className="flex min-w-0 flex-col items-start gap-3">
-      <h3 className="font-medium text-foreground">{title}</h3>
-      <p className="text-sm text-muted-foreground">{description}</p>
-      {cost && <p className="text-sm text-muted-foreground">{cost}</p>}
-      <OfferButton offer={offer} />
+    <section className="plan-pace__card">
+      <h3 aria-label={label} className="plan-pace__title">
+        <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        {title}
+      </h3>
+      <p className="plan-pace__copy">{description}</p>
+      {cost && <p className="plan-pace__cost">{cost}</p>}
+      <div className="plan-pace__offer">
+        <OfferButton offer={offer} />
+      </div>
     </section>
   );
 }
@@ -57,19 +69,20 @@ export function PaceChoice({ checklist, step }: { checklist: ChecklistView; step
   if (missing === 0 || (guided.feature && guided.feature !== checklist.feature)) return null;
 
   const document = guided.kind === "write_section" ? "section" : "plan";
-  const next =
-    guided.kind === "write_section" ? "lowest-numbered missing section" : "first missing plan";
   return (
-    <div aria-label="Choose a pace" className="grid gap-6 py-4 sm:grid-cols-2">
+    <div role="group" aria-label="Choose a pace" className="plan-pace">
       <PaceOption
-        title="Guided"
-        description={`One session drafts the ${next} with you and stops; the next is offered once you have read it.`}
+        icon={Footprints}
+        title={`Guided, one ${document} at a time`}
+        description={`A session drafts one ${document} with you, stops, and offers the next once you've read it. Best when the vision is still moving.`}
         offer={{ ...guided, label: `Start guided writing: ${guided.label}` }}
       />
       <PaceOption
-        title="Draft all, with a team"
-        description={`One authoring session leads a team to draft every missing ${document}, then checks the set for consistency and hands you a review queue.`}
-        cost={`Up to ${Math.min(5, missing)} teammates, ${missing} documents, one run.`}
+        icon={Users}
+        title="Draft all with a team"
+        label="Draft all, with a team"
+        description={`A team of up to five drafts every missing ${document} at once. Teammates agree terms and boundaries as they write; the lead checks the set for consistency, then hands you a review queue.`}
+        cost={`Up to ${plural(Math.min(5, missing), "teammate")}, ${plural(missing, "document")}, one run.`}
         offer={team}
       />
     </div>

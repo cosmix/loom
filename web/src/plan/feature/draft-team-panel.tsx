@@ -1,13 +1,16 @@
 import { useAtomValue, useStore } from "jotai";
+import { Coins } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 
 import { compactTokens } from "@/lib/tokens";
-import type { DraftTeamView, TeammateStatus, TokenCounts } from "@/plan/api/schema-kickoff";
+import type { DraftTeamView, TeammateStatus } from "@/plan/api/schema-kickoff";
 import { endChat } from "@/plan/chat/commands";
 import { sessionAtom } from "@/plan/chat/model";
 import { isActiveSession } from "@/plan/chat/offer-flow";
 import { Untrusted } from "@/plan/chat/visible-controls";
+import { plural } from "@/plan/feature/steps";
+import { TeammateCard, totalTokens } from "@/plan/feature/team-card";
 import { docRel, toAddress } from "@/plan/files/address";
 import {
   authorBlockReasonAtom,
@@ -19,9 +22,7 @@ import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { DocMark } from "@/plan/ui/doc-mark";
 
-function totalTokens(tokens: TokenCounts): number {
-  return tokens.input + tokens.cache_write + tokens.cache_read + tokens.output;
-}
+import "./team.css";
 
 function documentState(path: string, teammate: TeammateStatus | undefined) {
   if (!teammate) return "Queued";
@@ -36,9 +37,9 @@ function DocumentRow({ path, teammates }: { path: string; teammates: TeammateSta
   const teammate = teammates.find((candidate) => candidate.documents.includes(path));
   const state = documentState(path, teammate);
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+    <li className="plan-team__doc">
       <DocMark kind={docRel(path).startsWith("plans/") ? "plan" : "section"} />
-      <Link to={toAddress(path)} className="min-w-0 break-all font-mono text-sm underline">
+      <Link to={toAddress(path)} className="min-w-0 break-all font-mono text-[13px] underline">
         <Untrusted text={path} />
       </Link>
       <span className="text-sm text-muted-foreground">
@@ -48,29 +49,6 @@ function DocumentRow({ path, teammates }: { path: string; teammates: TeammateSta
         {state === "Drafting" && <ActivityGlyph kind="drafting" />}
         {state}
       </span>
-    </li>
-  );
-}
-
-function TeammateRow({ teammate }: { teammate: TeammateStatus }) {
-  const { tokens } = teammate;
-  return (
-    <li className="space-y-1 py-2 text-sm">
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <strong className="font-medium">
-          <Untrusted text={teammate.name} />
-        </strong>
-        <span>{teammate.state === "working" ? "working" : "idle"}</span>
-        <span>{compactTokens(totalTokens(tokens))} tokens</span>
-      </p>
-      <p className="break-all text-muted-foreground">
-        Current document: {teammate.current ? <Untrusted text={teammate.current} /> : "None"}
-      </p>
-      <p className="text-muted-foreground">
-        {compactTokens(tokens.input)} in / {compactTokens(tokens.output)} out ·{" "}
-        {compactTokens(tokens.cache_write)} cache write · {compactTokens(tokens.cache_read)} cache
-        read
-      </p>
     </li>
   );
 }
@@ -119,13 +97,19 @@ function StopTeam({ sessionId }: { sessionId: string }) {
   );
 }
 
-function TeamSummary({ team }: { team: DraftTeamView }) {
+function TeamCost({ team }: { team: DraftTeamView }) {
   const tokens = team.teammates.reduce((sum, teammate) => sum + totalTokens(teammate.tokens), 0);
   return (
-    <p className="text-sm text-muted-foreground">
-      {team.teammates.length} teammates, {team.documents.length} documents · {compactTokens(tokens)}{" "}
-      tokens total
-    </p>
+    <div className="plan-team-cost">
+      <Coins className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <p>
+        {plural(team.teammates.length, "teammate")} · {plural(team.documents.length, "document")} ·{" "}
+        {compactTokens(tokens)} tokens so far
+      </p>
+      <div className="plan-team-cost__stop">
+        <StopTeam key={team.session} sessionId={team.session} />
+      </div>
+    </div>
   );
 }
 
@@ -151,21 +135,20 @@ export function DraftTeamPanel({ feature }: { feature: string }) {
   if (!activeSession || !inFeature) return null;
   // PaceChoice and checklist gaps own draft offers; this panel reports the running team.
   return (
-    <section aria-label="Draft team" className="space-y-4 border-t border-border py-6 font-sans">
-      <h2 className="text-lg font-semibold">Drafting with a team</h2>
-      <TeamSummary team={team} />
-      <ol aria-label="Document queue" className="divide-y divide-border">
+    <section aria-label="Draft team" className="plan-team">
+      <h2 className="plan-team__title">Drafting with a team</h2>
+      <TeamCost team={team} />
+      <ol aria-label="Document queue" className="plan-team__docs">
         {team.documents.map((path) => (
           <DocumentRow key={path} path={path} teammates={team.teammates} />
         ))}
       </ol>
-      <h3 className="text-sm font-semibold">Teammates</h3>
-      <ul aria-label="Teammates" className="divide-y divide-border">
+      <h3 className="plan-team__sub">Teammates</h3>
+      <ul aria-label="Teammates" className="plan-team__cards">
         {team.teammates.map((teammate) => (
-          <TeammateRow key={teammate.agent_id} teammate={teammate} />
+          <TeammateCard key={teammate.agent_id} teammate={teammate} />
         ))}
       </ul>
-      <StopTeam key={team.session} sessionId={team.session} />
     </section>
   );
 }
