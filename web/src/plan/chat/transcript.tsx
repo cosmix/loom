@@ -4,11 +4,13 @@ import { memo, useId, useLayoutEffect, useRef, useState, type JSX } from "react"
 import { compactTokens, fresh } from "@/lib/tokens";
 import type { EndedChat, Item, SessionView, Turn } from "@/plan/api/schema-chat";
 import { ItemView } from "./items";
-import { sessionAtom, snapshotAtom, turnsAtom } from "./model";
+import { pendingPermissionsAtom, sessionAtom, snapshotAtom, turnsAtom } from "./model";
+import { PermissionCard } from "./permission-card";
 import { SessionDivider } from "./session-divider";
 import { groupToolRows, type ToolGroup } from "./tool-group";
 import { TurnFooter } from "./turn-footer";
 import { Untrusted } from "./visible-controls";
+import "./chat-surface.css";
 
 type ToolItem = Extract<Item, { type: "tool" }>;
 type TurnProps = { turn: Turn; sessionId: string; number: number; collapsed: boolean };
@@ -102,9 +104,13 @@ function mergeThinking(items: Item[]): Item[] {
 function TurnItems({ turn }: { turn: Turn }): JSX.Element {
   const nested = nestedTools(turn);
   const nestedIds = new Set(nested.map((item) => item.id));
-  const items = mergeThinking(turn.items.filter((item) => !nestedIds.has(item.id)));
+  // A pending request is drawn once, at the end of the transcript (PendingDecision).
+  const shown = turn.items.filter(
+    (item) => !nestedIds.has(item.id) && !(item.type === "permission" && item.status === "pending"),
+  );
+  const items = mergeThinking(shown);
   return (
-    <div className="space-y-3">
+    <div className="chat-turn-items">
       {groupToolRows(items, !turn.open).map((row) =>
         "items" in row ? (
           <FoldedTools key={`tools-${row.items[0]?.id}`} group={row} turn={turn} nested={nested} />
@@ -132,7 +138,7 @@ const TranscriptTurn = memo(function TranscriptTurn({
   const contentId = useId();
   const shown = !collapsed || expanded;
   return (
-    <section className="min-w-0 space-y-3" aria-label={`Turn ${number}`}>
+    <section className="chat-turn" aria-label={`Turn ${number}`}>
       {collapsed && (
         <button
           type="button"
@@ -145,7 +151,12 @@ const TranscriptTurn = memo(function TranscriptTurn({
           {turnLabel(turn, number)}
         </button>
       )}
-      <div id={contentId} hidden={!shown} aria-live={collapsed ? "off" : undefined}>
+      <div
+        id={contentId}
+        hidden={!shown}
+        aria-live={collapsed ? "off" : undefined}
+        className={shown ? "chat-turn" : undefined}
+      >
         {shown && (
           <>
             <TurnItems turn={turn} />
@@ -158,6 +169,17 @@ const TranscriptTurn = memo(function TranscriptTurn({
     </section>
   );
 });
+
+/** The first pending request, with its "1 of N"; ChatAnnouncer is the one that says it aloud. */
+function PendingDecision(): JSX.Element | null {
+  const first = useAtomValue(pendingPermissionsAtom)[0];
+  if (!first) return null;
+  return (
+    <div aria-live="off">
+      <PermissionCard key={first.request_id} item={first} />
+    </div>
+  );
+}
 
 function useFollow(turns: Turn[], previous: unknown) {
   const scroller = useRef<HTMLDivElement>(null);
@@ -209,7 +231,7 @@ function TurnList({
   return (
     <>
       {previous && (
-        <div aria-live="off" className="space-y-5">
+        <div aria-live="off" className="chat-transcript-flow">
           {earlier.map((turn, index) => (
             <TranscriptTurn
               key={`${previous.session.id}/${turn.id}`}
@@ -251,11 +273,12 @@ export function Transcript(): JSX.Element {
         aria-relevant="additions"
         aria-atomic="false"
         tabIndex={0}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 font-sans text-sm leading-[1.5]"
+        className="chat-transcript min-h-0 flex-1 overflow-y-auto overscroll-contain font-sans text-[13px] leading-[1.5]"
         style={{ unicodeBidi: "plaintext", direction: "ltr", overflowAnchor: "none" }}
       >
-        <div ref={scroll.content} className="space-y-5">
+        <div ref={scroll.content} className="chat-transcript-flow">
           <TurnList turns={turns} session={session} previous={previous} />
+          <PendingDecision />
         </div>
       </div>
       {scroll.activity && (

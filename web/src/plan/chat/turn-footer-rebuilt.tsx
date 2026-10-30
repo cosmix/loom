@@ -19,9 +19,16 @@ export function summaryLink(
 
 export function RebuiltSummaries({ turn }: { turn: Turn }) {
   const planFeature = usePlanFeature();
-  if (!turn.summaries_rebuilding.length) return null;
+  const count = turn.summaries_rebuilding.length;
+  if (!count) return null;
   return (
-    <div>
+    <div className="space-y-1">
+      {turn.open && (
+        <p className="chat-rebuild-chip">
+          <ActivityGlyph kind="summaries" className="size-3" />
+          {count} {count === 1 ? "summary" : "summaries"} rebuilding
+        </p>
+      )}
       <p>Rebuilt summaries</p>
       <ul>
         {turn.summaries_rebuilding.map((id) => {
@@ -36,13 +43,7 @@ export function RebuiltSummaries({ turn }: { turn: Turn }) {
                   {title}
                 </Link>
               )}
-              {turn.open ? (
-                <>
-                  <ActivityGlyph kind="summaries" className="size-3" /> Rebuilding
-                </>
-              ) : (
-                "left for the background rebuild"
-              )}
+              {turn.open ? "Rebuilding" : "left for the background rebuild"}
               <RebuiltSummaryExtras id={id} turn={turn} />
             </li>
           );

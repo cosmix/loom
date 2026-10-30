@@ -9,8 +9,8 @@ import type { ServerInfo } from "@/plan/api/schema";
 import type { Item, SessionView, Turn } from "@/plan/api/schema-chat";
 import { serverInfoAtom } from "@/plan/state/atoms";
 import { pendingPermissionsAtom, turnsAtom } from "./model";
-import { NewChatOffers } from "./new-chat-offers";
-import { shownSessionAtom } from "./shown-session";
+import { PrimaryOffer } from "./new-chat-offers";
+import { panelSessionAtom } from "./session-home";
 import { StartingBrief } from "./start-chat";
 import { Untrusted } from "./visible-controls";
 
@@ -80,7 +80,7 @@ function StateGlyph({ state }: { state: SessionView["state"] | undefined }) {
     return (
       <span
         aria-hidden="true"
-        className="[&_.aurora-roundel]:animate-[aurora-roundel-spin_1.6s_linear_infinite] motion-reduce:[&_.aurora-roundel]:animate-none"
+        className="chat-state-glyph [&_.aurora-roundel]:animate-[aurora-roundel-spin_1.6s_linear_infinite] motion-reduce:[&_.aurora-roundel]:animate-none"
       >
         <WorkRoundel size={14} />
       </span>
@@ -93,9 +93,14 @@ function StateGlyph({ state }: { state: SessionView["state"] | undefined }) {
       </span>
     );
   }
+  // The roundel is the shared busy disc (fixed black and white quadrants): it belongs to
+  // starting and ending only. With no chat, or one waiting, the row shows the muted idle LED.
+  if (state === undefined || state === "idle") {
+    return <span aria-hidden="true" className="chat-led" />;
+  }
   return (
     <span aria-hidden="true">
-      <BusyRoundel size={14} busy={state === "starting" || state === "ending"} />
+      <BusyRoundel size={14} busy />
     </span>
   );
 }
@@ -162,13 +167,18 @@ function StateRow(props: {
         <StartingBrief session={session} />
       ) : (
         <span>
-          <span aria-hidden={hideWords || undefined}>
+          <span className="chat-state-words" aria-hidden={hideWords || undefined}>
             <Untrusted text={text} />
           </span>
-          {detail && <Untrusted text={detail} />}
+          {detail && (
+            <>
+              <span className="chat-state-sep"> · </span>
+              <Untrusted text={detail} />
+            </>
+          )}
         </span>
       )}
-      {!session && <NewChatOffers />}
+      {!session && <PrimaryOffer />}
     </div>
   );
 }
@@ -193,7 +203,7 @@ function StateBody(props: {
 }
 
 export function StateLine() {
-  const session = useAtomValue(shownSessionAtom);
+  const session = useAtomValue(panelSessionAtom);
   const turns = useAtomValue(turnsAtom);
   const pending = useAtomValue(pendingPermissionsAtom);
   const problems = useAtomValue(serverInfoAtom)?.read_only ?? [];
@@ -203,16 +213,18 @@ export function StateLine() {
     ? `Read-only · ${problems.map((p) => `${p.message}. ${p.fix}`).join(" · ")}`
     : stateWords(session, pending);
   const detail =
-    session?.state === "working" && !readOnly
-      ? ` · ${workingDetail(session, turns, now).join(" · ")}`
-      : "";
+    session?.state === "working" && !readOnly ? workingDetail(session, turns, now).join(" · ") : "";
   // The sr-only region announces the words, so the visible copy is hidden from browse mode on the
   // rows that hold only those words (and buttons beside them); read-only and Starting rows carry
   // more than the announcement and stay exposed.
   const elsewhere = !readOnly && announcedElsewhere(session);
   const hideWords = !readOnly && !elsewhere && session?.state !== "starting";
   return (
-    <div className="chat-state-line px-3 text-[13px] font-medium">
+    <div
+      className="chat-state-line text-[13px] font-medium"
+      data-kind={session?.kind}
+      data-state={readOnly ? "read-only" : (session?.state ?? "none")}
+    >
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         <Untrusted text={elsewhere ? "" : words} />
       </div>

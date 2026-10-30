@@ -67,10 +67,10 @@ export function harness(items = [permission()], viewer = false) {
       ),
     );
   }
-  function show(item = items[0], inline = false) {
+  function show(item = items[0]) {
     return render(
       <Provider store={store}>
-        <PermissionCard item={item} inline={inline} />
+        <PermissionCard item={item} />
       </Provider>,
     );
   }

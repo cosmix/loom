@@ -1,7 +1,10 @@
+import { useStore } from "jotai";
 import { useEffect, useState } from "react";
 
 import type { SessionBriefView } from "@/plan/api/schema-session-brief";
+import type { Store } from "@/state/store";
 import { getSessionBrief } from "./commands";
+import { sessionAtom } from "./model";
 
 export type BriefState =
   | { status: "loading" }
@@ -9,30 +12,41 @@ export type BriefState =
   | { status: "unavailable" }
   | { status: "error"; message: string };
 
-/** A session's brief is rendered shortly after it starts; 404 `unknown_session` means not yet. */
+const LOADING: BriefState = { status: "loading" };
 const MAX_ATTEMPTS = 30;
 const RETRY_MS = 1000;
 
-/** Loads a session's brief, retrying once a second while the server has not rendered it. */
+/**
+ * Whether a 404 may yet turn into a brief. The server remembers one only for an authoring chat, in
+ * memory: a pressure test never has one and a restart loses it, so for those the 404 is final.
+ */
+function mayStillRender(store: Store, id: string): boolean {
+  const session = store.get(sessionAtom);
+  return session?.id === id && session.kind === "authoring" && session.state === "starting";
+}
+
+/** Loads a session's brief, retrying once a second while an authoring chat is still starting. */
 export function useSessionBrief(sessionId: string | null): BriefState {
-  const [state, setState] = useState<BriefState>({ status: "loading" });
+  const store = useStore();
+  // Keyed by session, so a new session never paints with the previous one's brief.
+  const [loaded, setLoaded] = useState<{ id: string; state: BriefState } | null>(null);
   useEffect(() => {
     if (sessionId === null) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let attempts = 0;
-    setState({ status: "loading" });
     async function load(id: string) {
       attempts += 1;
       const result = await getSessionBrief(id);
       if (!active) return;
       if (result.ok) {
-        setState({ status: "ready", brief: result.value });
+        setLoaded({ id, state: { status: "ready", brief: result.value } });
       } else if (result.status === 404 && result.error === "unknown_session") {
-        if (attempts < MAX_ATTEMPTS) timer = setTimeout(() => void load(id), RETRY_MS);
-        else setState({ status: "unavailable" });
+        if (attempts < MAX_ATTEMPTS && mayStillRender(store, id))
+          timer = setTimeout(() => void load(id), RETRY_MS);
+        else setLoaded({ id, state: { status: "unavailable" } });
       } else {
-        setState({ status: "error", message: result.message });
+        setLoaded({ id, state: { status: "error", message: result.message } });
       }
     }
     void load(sessionId);
@@ -40,6 +54,6 @@ export function useSessionBrief(sessionId: string | null): BriefState {
       active = false;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [sessionId]);
-  return state;
+  }, [sessionId, store]);
+  return loaded?.id === sessionId ? loaded.state : LOADING;
 }

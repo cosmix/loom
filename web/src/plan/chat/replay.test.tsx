@@ -192,8 +192,8 @@ async function replayItems(store: Store, chat: HTMLElement): Promise<void> {
 
 async function restoreFile(chat: HTMLElement): Promise<void> {
   const footer = await within(chat).findByRole("group", { name: "Turn 1 changes" });
-  present(within(footer).getByText("plans/bridge.md", { exact: true }));
-  present(within(footer).getByText("Changed 1 files"));
+  present(within(footer).getByText("bridge.md", { exact: true }));
+  present(within(footer).getByText("Changed 1 file"));
   const diff = within(footer).getByRole("link", { name: "Diff" });
   const address = new URL(diff.getAttribute("href")!, "http://localhost");
   expect(address.pathname).toBe("/files/plans/bridge.md");

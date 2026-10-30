@@ -9,17 +9,24 @@ import type { Store } from "@/state/store";
 import { briefOpenAtom } from "./brief-dialog";
 import { startChat } from "./commands";
 import { sessionAtom } from "./model";
-import { confirmEndFirst, endCurrentChat, isActiveSession, startError } from "./offer-flow";
+import { offerErrorAtom } from "./offer-error";
+import { confirmEndFirst, elsewhereRefusal, endCurrentChat, startError } from "./offer-flow";
 import { panelCollapsedAtom } from "./prefs";
+import {
+  elsewhereSessionAtom,
+  isActiveSession,
+  startOwnerAtom,
+  type StartOwner,
+} from "./session-home";
 import { chatSheetOpenAtom } from "./sheet-state";
 import { useSessionBrief } from "./use-session-brief";
 import { Untrusted, visibleControls } from "./visible-controls";
 
-async function beginChat(store: Store, signal: AbortSignal): Promise<void> {
+async function beginChat(store: Store, owner: StartOwner, signal: AbortSignal): Promise<void> {
   const current = store.get(sessionAtom);
   if (isActiveSession(current)) await endCurrentChat(store, current, signal, "start a new chat");
   if (signal.aborted) return;
-  await startChat(store);
+  await startChat(store, null, null, [], owner.feature, owner.plan);
   store.set(panelCollapsedAtom, false);
   store.set(chatSheetOpenAtom, true);
 }
@@ -33,13 +40,20 @@ function useNewChat() {
   useEffect(() => () => request.current?.abort(), []);
   const start = async () => {
     if (request.current) return;
+    const elsewhere = store.get(elsewhereSessionAtom);
+    if (elsewhere) {
+      store.set(offerErrorAtom, elsewhereRefusal(elsewhere));
+      return;
+    }
     if (isActiveSession(store.get(sessionAtom)) && !confirmEndFirst()) return;
+    // Read at the click: ending the running chat can take minutes, and the user may navigate.
+    const owner = store.get(startOwnerAtom);
     const controller = new AbortController();
     request.current = controller;
     setPending(true);
     setError(null);
     try {
-      await beginChat(store, controller.signal);
+      await beginChat(store, owner, controller.signal);
     } catch (cause) {
       if (!controller.signal.aborted) setError(startError(store, cause));
     } finally {
@@ -57,7 +71,7 @@ export function NewChatButton() {
   const { start, pending, error } = useNewChat();
   if ((!canAuthor && !error) || (server?.read_only.length ?? 0) > 0) return null;
   return (
-    <div className="text-[13px]">
+    <div className="chat-new-chat text-[13px]">
       {canAuthor && (
         <DisabledReason
           reason={reason ?? (pending ? "Starting a new chat" : null)}
@@ -84,7 +98,9 @@ export function NewChatButton() {
  */
 export function StartingBrief({ session }: { session: SessionView }) {
   const starting = session.state === "starting";
-  const state = useSessionBrief(starting ? session.id : null);
+  // Only an authoring session has a brief; a pressure test's start must not read as a failure.
+  const hasBrief = session.kind === "authoring";
+  const state = useSessionBrief(starting && hasBrief ? session.id : null);
   const openBrief = useSetAtom(briefOpenAtom);
   if (!starting) return null;
   const brief = state.status === "ready" ? state.brief : null;
@@ -100,22 +116,28 @@ export function StartingBrief({ session }: { session: SessionView }) {
           </>
         )}
       </p>
-      {state.status === "loading" && (
-        <p role="status" className="text-xs text-muted-foreground">
-          Loading brief…
-        </p>
+      {hasBrief && (
+        <>
+          {state.status === "loading" && (
+            <p role="status" className="text-xs text-muted-foreground">
+              Loading brief…
+            </p>
+          )}
+          {state.status === "unavailable" && (
+            <LoadState state="error" title="Brief not available" />
+          )}
+          {state.status === "error" && (
+            <LoadState
+              state="error"
+              title="Brief not available"
+              message={visibleControls(state.message)}
+            />
+          )}
+          <button type="button" className="underline" onClick={() => openBrief(session.id)}>
+            Brief
+          </button>
+        </>
       )}
-      {state.status === "unavailable" && <LoadState state="error" title="Brief not available" />}
-      {state.status === "error" && (
-        <LoadState
-          state="error"
-          title="Brief not available"
-          message={visibleControls(state.message)}
-        />
-      )}
-      <button type="button" className="underline" onClick={() => openBrief(session.id)}>
-        Brief
-      </button>
     </div>
   );
 }

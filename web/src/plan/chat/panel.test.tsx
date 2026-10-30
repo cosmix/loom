@@ -107,10 +107,10 @@ it("separator arrow keys resize", () => {
   const { store } = mount();
   const separator = screen.getByRole("separator", { name: "Resize chat" });
   fireEvent.keyDown(separator, { key: "ArrowLeft" });
-  expect(store.get(panelWidthAtom)).toBe(27);
-  expect(separator.getAttribute("aria-valuenow")).toBe("27");
+  expect(store.get(panelWidthAtom)).toBe(22.25);
+  expect(separator.getAttribute("aria-valuenow")).toBe("22");
   fireEvent.keyDown(separator, { key: "ArrowRight" });
-  expect(store.get(panelWidthAtom)).toBe(26);
+  expect(store.get(panelWidthAtom)).toBe(21.25);
   act(() => store.set(panelWidthAtom, 40));
   fireEvent.keyDown(separator, { key: "ArrowLeft" });
   expect(store.get(panelWidthAtom)).toBe(40);
@@ -173,6 +173,10 @@ it("reduced motion stops the roundel", () => {
   expect(chatCss).toMatch(
     /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*\.aurora-roundel[\s\S]*animation:\s*none/,
   );
+});
+
+it("the panel's rows cannot grow past it, so the transcript never slides under the head", () => {
+  expect(chatCss).toMatch(/\.chat-panel \{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\) auto/);
 });
 
 function disconnect(store: Store) {
@@ -261,6 +265,7 @@ it("below lg with the sheet closed, an OfferButton is a button", async () => {
     undefined,
     undefined,
     offerView.feature,
+    undefined,
   );
   await act(async () => {});
   expect(store.get(chatSheetOpenAtom)).toBe(true);

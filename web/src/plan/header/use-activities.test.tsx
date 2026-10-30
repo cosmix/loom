@@ -57,6 +57,8 @@ function session(state: SessionView["state"]): SessionView {
     last_activity: null,
     failure: null,
     offer: null,
+    feature: null,
+    plan: null,
   };
 }
 

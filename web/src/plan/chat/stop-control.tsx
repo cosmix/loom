@@ -48,7 +48,7 @@ export function StopControl({ confirm }: { confirm?: string }) {
       .finally(() => setPending(false));
   };
   return (
-    <div>
+    <div className="chat-ghost-actions">
       <DisabledReason
         reason={reason ?? (pending ? "Stopping the current turn" : null)}
         onClick={stop}
