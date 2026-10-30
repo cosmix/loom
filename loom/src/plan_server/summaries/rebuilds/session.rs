@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use super::{evaluation, Attributed, Rebuilds, State, PENDING};
+use super::{evaluation, Attributed, Attribution, Rebuilds, State, PENDING};
 use crate::plan_server::lifecycle::{line, safe};
 use crate::plan_server::summaries::attribution::last_seal_error;
 use crate::plan_server::summaries::scheduler::{SessionSpawner, SuspendReason};
@@ -122,8 +122,35 @@ impl Rebuilds {
     /// the next session for its ids at once), then end it in the scheduler.
     fn session_gone(&self, bridge: &Bridge, id: &str, kind: &SessionKind, outcome: &EndOutcome) {
         let main = bridge.transcripts(id).and_then(|found| found.main);
+        self.clear_ended_session(id, |attribution| attribution.note_main_transcript(id, main));
+        match kind {
+            SessionKind::Summary => self.run(|state, spawner, now| {
+                state.summary_ended(id, outcome, now, spawner);
+            }),
+            SessionKind::Authoring => self.chat_idle(id),
+            SessionKind::Pressure { .. } => self.run(|state, spawner, now| {
+                if let Some(token) = state.pressure.remove(id) {
+                    let out_of_date = state.out_of_date();
+                    state.scheduler.resume(token, &out_of_date, now, spawner);
+                }
+            }),
+        }
+    }
+
+    /// A Codex summary job ended. It runs outside the session bridge and has no transcript, so
+    /// this is [`Rebuilds::session_gone`] for a Summary session without the transcript note.
+    pub(crate) fn codex_session_ended(&self, session: &str, outcome: &EndOutcome) {
+        self.clear_ended_session(session, |_| {});
+        self.run(|state, spawner, now| {
+            state.summary_ended(session, outcome, now, spawner);
+        });
+    }
+
+    /// Run `before` on attribution, then clear the claims of the ended session `id` and fold
+    /// its costs into the log.
+    fn clear_ended_session(&self, id: &str, before: impl FnOnce(&mut Attribution)) {
         let ended = self.attribute(|attribution| {
-            attribution.note_main_transcript(id, main);
+            before(attribution);
             attribution.on_session_ended(id)
         });
         match ended {
@@ -138,18 +165,6 @@ impl Rebuilds {
                 ));
             }
             None => {}
-        }
-        match kind {
-            SessionKind::Summary => self.run(|state, spawner, now| {
-                state.summary_ended(id, outcome, now, spawner);
-            }),
-            SessionKind::Authoring => self.chat_idle(id),
-            SessionKind::Pressure { .. } => self.run(|state, spawner, now| {
-                if let Some(token) = state.pressure.remove(id) {
-                    let out_of_date = state.out_of_date();
-                    state.scheduler.resume(token, &out_of_date, now, spawner);
-                }
-            }),
         }
     }
 
@@ -232,6 +247,11 @@ impl Rebuilds {
             self.gone_twice(None);
             return;
         };
+        // A job its spawner runs itself is not in the bridge; its watcher reports the end.
+        if self.spawner.runs_outside_bridge(&session) {
+            self.gone_twice(None);
+            return;
+        }
         let state = bridge
             .sessions()
             .into_iter()
@@ -295,9 +315,18 @@ impl Rebuilds {
         self.apply_evaluation(latest, &out_of_date, &out_of_date);
     }
 
-    /// The first Ctrl-C: drop the queue and the question; plan 7's drain ends a running session.
+    /// The first Ctrl-C: drop the queue and the question; plan 7's drain ends a running bridge
+    /// session. A job its spawner runs itself is unknown to the drain, and its own process
+    /// group never sees the terminal's Ctrl-C, so it is stopped here.
     pub(crate) fn server_stopping(&self) {
         self.run(|state, _, _| state.scheduler.server_stopping());
+        // The guard is gone before the spawner is called.
+        let running = self.lock().running_session();
+        if let Some(session) = running.filter(|session| self.spawner.runs_outside_bridge(session)) {
+            self.spawner.stop(&session, true);
+        }
+        // Also covers a job whose start has not settled yet, which `running_session` hides.
+        self.spawner.stop_all();
     }
 }
 

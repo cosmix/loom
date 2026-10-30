@@ -21,7 +21,10 @@ use crate::process::{IdentityStatus, ProcessIdentity};
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum Call {
     Spawn(String),
+    /// One paste together with its own Enter.
     Deliver(String, String),
+    /// One further Enter, pressed without a paste.
+    PressEnter(String),
     Interrupt(String),
     Teardown(String),
 }
@@ -133,6 +136,11 @@ impl SessionHost for FakeHost {
         self.log(Call::Deliver(socket.to_owned(), text.to_owned()));
         let failing = self.fail_deliver.load(Ordering::SeqCst);
         anyhow::ensure!(!failing, "scripted paste failure");
+        Ok(())
+    }
+
+    fn press_enter(&self, socket: &str, _target: &str) -> anyhow::Result<()> {
+        self.log(Call::PressEnter(socket.to_owned()));
         Ok(())
     }
 
