@@ -35,6 +35,30 @@ pub(crate) fn validate_session_file_id(session_id: &str) -> Result<()> {
 /// Load the exact persisted record for `session_id` under the session-file
 /// lock. This never prefix-matches because daemon event identity is complete.
 pub fn load_session_exact(work_dir: &Path, session_id: &str) -> Result<Option<Session>> {
+    load_exact_with(work_dir, session_id, locked_read)
+}
+
+/// Load the exact persisted record for `session_id` without taking the
+/// session-file lock.
+///
+/// For callers that may already hold the sessions-directory lock:
+/// `complete_stage` holds it exclusively across `update_stage`. `flock` locks
+/// taken through separate descriptors conflict even within one process, so
+/// [`load_session_exact`] from inside that section blocks forever. Session
+/// files are only ever replaced by rename (temp file + rename in the locking
+/// helpers) or removed, never rewritten in place, so an unlocked read sees one
+/// whole version of the file.
+pub fn load_session_exact_unlocked(work_dir: &Path, session_id: &str) -> Result<Option<Session>> {
+    load_exact_with(work_dir, session_id, |path| {
+        std::fs::read_to_string(path).map_err(anyhow::Error::from)
+    })
+}
+
+fn load_exact_with(
+    work_dir: &Path,
+    session_id: &str,
+    read: impl FnOnce(&Path) -> Result<String>,
+) -> Result<Option<Session>> {
     validate_session_file_id(session_id).context("Invalid session file id")?;
     let session_file = exact_session_path(work_dir, session_id);
     if !session_file
@@ -44,7 +68,7 @@ pub fn load_session_exact(work_dir: &Path, session_id: &str) -> Result<Option<Se
         return Ok(None);
     }
 
-    let content = locked_read(&session_file)
+    let content = read(&session_file)
         .with_context(|| format!("reading session file: {}", session_file.display()))?;
     let session: Session = parse_from_markdown(&content, "Session")
         .with_context(|| format!("parsing session file: {}", session_file.display()))?;
