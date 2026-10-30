@@ -829,14 +829,14 @@ loom:
     contracts:
     - id: permission-card-renders-once
       file: src/plan/chat/repair.contracts.test.tsx
-      test: chat repair permission card renders once
+      test: chat repair > permission card renders once
       scenario: >-
         seeds a session waiting on a Bash permission request and renders ChatPanel at
         desktop width
       rejects: a panel that renders the permission card both inside the transcript and below it
     - id: foreign-feature-session-not-shown
       file: src/plan/chat/repair.contracts.test.tsx
-      test: chat repair a session from another feature is not shown
+      test: chat repair > a session from another feature is not shown
       scenario: >-
         seeds a session started for feature alpha (title "Alpha") and renders ChatPanel
         at /f/beta/product
@@ -845,14 +845,14 @@ loom:
         a link reading "A session in Alpha needs you"
     - id: pressure-dialog-offers-quick-pick-rounds-only
       file: src/plan/chat/repair.contracts.test.tsx
-      test: chat repair pressure dialog offers quick pick rounds only
+      test: chat repair > pressure dialog offers quick pick rounds only
       scenario: opens PressureDialog for a written plan
       rejects: >-
         a dialog that still renders a spinbutton for rounds, or lacks the three round
         buttons 1, 2 and 3
     - id: pressure-plan-card-shows-plan-title
       file: src/plan/chat/repair.contracts.test.tsx
-      test: chat repair pressure plan card shows the plan title
+      test: chat repair > pressure plan card shows the plan title
       scenario: "opens PressureDialog for doc/plans/PLAN-adopt-ecc-best-practices.md whose title is \"Plan: Adopt Best Practices from Everything Claude Code\""
       rejects: a plan card that shows the slug-derived "adopt ecc best practices"
     harness:
