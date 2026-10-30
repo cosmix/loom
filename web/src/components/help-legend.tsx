@@ -19,6 +19,12 @@ const ACTIVITY: { word: string; tone: Tone; meaning: string }[] = [
     meaning:
       "a contract writer is writing the stage's failing contract tests before implementation starts; the card glows purple until it hands over",
   },
+  {
+    word: "contracts written, testing 9/11 · 6m12s",
+    tone: "contract",
+    meaning:
+      "the writer froze its contracts and loom is running them, 9 of 11 done so far; the writer is waiting, so its silence is expected (waiting to test while the run is queued)",
+  },
 ];
 
 /// Where `legend.rs` draws its "needs you" rule: after the seventh state.

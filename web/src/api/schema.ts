@@ -106,6 +106,13 @@ export const stageIssueSchema = z
 export const blockDetailSchema = z.object({
   failing_criteria: z.array(failingCriterionSchema),
 });
+// A contract writer blocked on its frozen contracts' host job; null or absent otherwise.
+export const contractTestingSchema = z.object({
+  done: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+  queued: z.boolean(),
+  running_secs: z.number().int().nullable(),
+});
 export const stageSummarySchema = z
   .object({
     id: z.string(),
@@ -153,6 +160,7 @@ export const stageSummarySchema = z
     acceptance: z.array(z.string()).optional(),
     terminal_history_session: z.string().optional(),
     block_detail: blockDetailSchema.optional(),
+    contract_testing: contractTestingSchema.nullish(),
     // Newest first by `ended_at`. The daemon always sends it; a fixture without it reads as empty.
     history: z.array(stageIssueSchema).default([]),
   })

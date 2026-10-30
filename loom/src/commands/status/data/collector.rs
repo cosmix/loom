@@ -5,7 +5,7 @@ use std::fs;
 use crate::commands::status::merge_status::build_merge_report;
 use crate::fs::work_dir::{load_config, resolve_context_ceiling_tokens, WorkDir};
 use crate::models::session::{Session, SessionType};
-use crate::models::stage::{Stage, StageStatus, StatusBucket};
+use crate::models::stage::{Stage, StageStatus, StageType, StatusBucket};
 use crate::orchestrator::coherence::executing_stage_incoherence;
 use crate::orchestrator::get_merge_point;
 use crate::plan::parser::extract_plan_name;
@@ -20,8 +20,8 @@ use super::sanitize::{flow_is_fresh, sanitize_stage_summary, sanitize_token_flow
 use super::stopped::{blocked_acceptance, blocked_close_reason, terminal_history_session};
 use super::timing::{elapsed_secs_live, execution_secs_live};
 use super::{
-    execution_models_for_stage, BlockDetail, CompletionBlockerSummary, MergeSummary,
-    ProgressSummary, SessionExitReason, StageSummary, StatusData,
+    execution_models_for_stage, BlockDetail, CompletionBlockerSummary, ContractTesting,
+    MergeSummary, ProgressSummary, SessionExitReason, StageSummary, StatusData,
 };
 
 #[cfg(test)]
@@ -160,7 +160,8 @@ fn resolved_model(stage: &Stage, work_dir: &WorkDir) -> String {
 
 /// Build a StageSummary from a Stage and optional associated Session.
 ///
-/// `rustfmt::skip` keeps the two live-time fields on one line, holding the
+/// `rustfmt::skip` keeps two pairs of fields that come from one value on one
+/// line each (the live timers, the completion view), holding the 47-field
 /// literal inside the function-length limit.
 #[rustfmt::skip]
 fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) -> StageSummary {
@@ -202,8 +203,7 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         dispute_count: crate::models::stage::dispute_budgets::filed_total(stage),
         judge_heartbeat_secs: facts.heartbeat.judge_heartbeat_secs,
         session_backend: facts.session.map(|s| s.backend),
-        outgoing_session_exit_reason: facts.completion_view.0,
-        completion_blocker: facts.completion_view.1,
+        outgoing_session_exit_reason: facts.completion_view.0, completion_blocker: facts.completion_view.1,
         merge_resolver_session: facts.merge_resolver_session,
         merge_resolver_attempts: facts.merge_resolver_attempts,
         close_reason: blocked_close_reason(stage),
@@ -211,7 +211,33 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         terminal_history_session: terminal_history_session(stage, sessions, work_dir),
         block_detail: block_detail(stage, sessions, work_dir),
         history: super::history::stage_history(stage, work_dir),
+        contract_testing: contract_testing_for(stage, facts.session_type, work_dir, now),
     }
+}
+
+/// The freeze-job state, read only for a stage in the contract phase (the
+/// mirror of `attention_model::is_contract_phase`) so no other stage pays for
+/// the file reads.
+fn contract_testing_for(
+    stage: &Stage,
+    session_type: Option<SessionType>,
+    work_dir: &WorkDir,
+    now: chrono::DateTime<Utc>,
+) -> Option<ContractTesting> {
+    let in_phase = stage.status == StageStatus::Executing
+        && stage.stage_type == StageType::Standard
+        && session_type == Some(SessionType::Contract);
+    in_phase
+        .then(|| {
+            super::contract_testing::contract_testing(
+                work_dir.root(),
+                &stage.id,
+                stage.session.as_deref(),
+                stage.contracts.len(),
+                now,
+            )
+        })
+        .flatten()
 }
 
 /// What a blocked stage's panel needs beyond its summary line.

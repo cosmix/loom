@@ -47,7 +47,21 @@ export function sessionIsWorking(stage: StageSummary): boolean {
   return stage.activity_status === "Working" || stage.activity_status === "Busy";
 }
 
+/// The sentence for a contract writer blocked on its frozen contracts' host
+/// job, `contracts written, testing 9/11 · 6m12s`; null when none applies. An
+/// orphaned or crashed writer is excluded so its silence never reads as healthy.
+export function contractTesting(stage: StageSummary): string | null {
+  const testing = stage.contract_testing;
+  if (!testing || !isContractPhase(stage)) return null;
+  if (stage.activity_status === "Orphaned" || stage.activity_status === "Error") return null;
+  if (testing.queued) return "contracts written, waiting to test";
+  const elapsed = testing.running_secs === null ? "" : ` · ${formatElapsed(testing.running_secs)}`;
+  return `contracts written, testing ${testing.done}/${testing.total}${elapsed}`;
+}
+
 function executingActivity(stage: StageSummary): { text: string; tone: Tone } {
+  const testing = contractTesting(stage);
+  if (testing !== null) return { text: testing, tone: "contract" };
   if (isContractPhase(stage)) {
     if (stage.activity_status === "Stale") {
       return stalenessText("contract writer idle", stage.staleness_secs, "warning");

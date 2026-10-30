@@ -1,7 +1,6 @@
 use super::*;
 use crate::commands::status::data::{
-    ActivityStatus, CompletionBlockerState, CompletionBlockerSummary, MergeSummary,
-    ProgressSummary, StageType,
+    CompletionBlockerState, CompletionBlockerSummary, MergeSummary, ProgressSummary, StageType,
 };
 use crate::models::session::SessionType;
 
@@ -9,50 +8,10 @@ fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSu
     StageSummary {
         id: id.to_string(),
         name: id.to_string(),
-        description: None,
-        summary: None,
         status,
-        stage_type: StageType::Standard,
         dependencies: deps.into_iter().map(String::from).collect(),
-        context_tokens: None,
-        elapsed_secs: None,
-        execution_secs: None,
-        base_branch: None,
-        base_merged_from: vec![],
-        failure_info: None,
-        activity_status: ActivityStatus::default(),
-        last_tool: None,
-        last_activity: None,
-        staleness_secs: None,
-        context_ceiling_tokens: None,
-        review_reason: None,
-        review_notes: None,
-        merged: false,
-        merge_assumed: false,
-        cleanup_warning: None,
-        merge_block: None,
-        stash_warning: None,
-        held: false,
-        retry_count: 0,
-        max_retries: None,
-        pid: None,
-        session_alive: false,
         model: "opus".to_string(),
-        session_type: None,
-        incoherence: None,
-        execution_models: vec![],
-        dispute_count: 0,
-        judge_heartbeat_secs: None,
-        session_backend: None,
-        outgoing_session_exit_reason: None,
-        completion_blocker: None,
-        merge_resolver_session: None,
-        merge_resolver_attempts: None,
-        close_reason: None,
-        acceptance: vec![],
-        terminal_history_session: None,
-        block_detail: Default::default(),
-        history: Vec::new(),
+        ..Default::default()
     }
 }
 

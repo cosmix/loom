@@ -60,6 +60,7 @@ macro_rules! stage {
             terminal_history_session: None,
             block_detail: Default::default(),
             history: Vec::new(),
+            contract_testing: None,
         }
     };
 }

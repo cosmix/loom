@@ -4,6 +4,7 @@ import type { ActivityStatus, FailureType, StageStatus, StageSummary } from "@/a
 import type { Tone } from "@/lib/format";
 import {
   activityText,
+  contractTesting,
   exitReasonLabel,
   failureLabel,
   isContractPhase,
@@ -92,6 +93,41 @@ describe("TUI formatter ports", () => {
         }),
       ),
     ).toEqual({ text, tone });
+  });
+
+  it.each<readonly [ActivityStatus, string | null]>([
+    ["Working", "contracts written, testing 9/11 · 6m12s"],
+    ["Quiet", "contracts written, testing 9/11 · 6m12s"],
+    ["Busy", "contracts written, testing 9/11 · 6m12s"],
+    ["Stale", "contracts written, testing 9/11 · 6m12s"],
+    ["Orphaned", null],
+    ["Error", null],
+  ])("puts contract testing ahead of a %s contract writer", (activity_status, text) => {
+    const testing = stage({
+      status: "executing",
+      session_type: "contract",
+      activity_status,
+      staleness_secs: 61,
+      contract_testing: { done: 9, total: 11, queued: false, running_secs: 372 },
+    });
+    expect(contractTesting(testing)).toBe(text);
+    if (text !== null) expect(activityText(testing)).toEqual({ text, tone: "contract" });
+    else expect(activityText(testing)?.text).not.toContain("testing");
+  });
+
+  it("words a queued run and ignores testing outside the contract phase", () => {
+    const queued = { done: 0, total: 11, queued: true, running_secs: null };
+    expect(
+      contractTesting(
+        stage({ status: "executing", session_type: "contract", contract_testing: queued }),
+      ),
+    ).toBe("contracts written, waiting to test");
+    expect(
+      contractTesting(
+        stage({ status: "executing", session_type: "stage", contract_testing: queued }),
+      ),
+    ).toBeNull();
+    expect(contractTesting(stage({ status: "executing", session_type: "contract" }))).toBeNull();
   });
 
   it.each<readonly [Partial<StageSummary>, boolean]>([

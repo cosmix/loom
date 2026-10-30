@@ -5,7 +5,7 @@ import type { StageSummary } from "@/api/schema";
 import { useOpenStage } from "@/components/stage-modal";
 import { toneClass } from "@/components/state-badge";
 import { stateMeta, type Tone } from "@/lib/format";
-import { isContractPhase } from "@/lib/format-activity";
+import { contractTesting, isContractPhase } from "@/lib/format-activity";
 import { STAGE_STATES } from "@/lib/states";
 import { orderedStagesAtom } from "@/state/atoms";
 
@@ -13,9 +13,9 @@ import { orderedStagesAtom } from "@/state/atoms";
 /// phase reads even though the wire status stays "executing".
 function segmentMeta(stage: StageSummary): { tone: Tone; label: string } {
   const label = STAGE_STATES[stage.status].label;
-  return isContractPhase(stage)
-    ? { tone: "contract", label: `${label} · contract phase` }
-    : { tone: stateMeta(stage.status).tone, label };
+  if (!isContractPhase(stage)) return { tone: stateMeta(stage.status).tone, label };
+  const phase = contractTesting(stage) === null ? "contract phase" : "testing contracts";
+  return { tone: "contract", label: `${label} · ${phase}` };
 }
 
 /// The plan as a warp: one segment per stage in dependency order, coloured

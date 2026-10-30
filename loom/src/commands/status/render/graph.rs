@@ -49,33 +49,8 @@ fn compute_stage_levels(stages: &[StageSummary]) -> HashMap<String, usize> {
 fn format_stage_annotations(stage: &StageSummary) -> String {
     let mut parts: Vec<String> = Vec::new();
 
-    // Resident context tokens (only when a session is active).
     if matches!(stage.status, StageStatus::Executing) {
-        if let (Some(tokens), Some(ceiling)) = (stage.context_tokens, stage.context_ceiling_tokens)
-        {
-            let ctx_str = format!("[{tokens}/{ceiling}]");
-            let color = match context_health(tokens, ceiling) {
-                ContextHealth::Green => Color::Green,
-                ContextHealth::Yellow => Color::Yellow,
-                ContextHealth::Red => Color::Red,
-            };
-            parts.push(format!("{}", ctx_str.color(color)));
-        }
-
-        if let Some(secs) = stage.elapsed_secs {
-            parts.push(format!("{}", format_elapsed(secs).dimmed()));
-        }
-
-        // Activity icon
-        let activity_icon = stage.activity_status.icon();
-        parts.push(activity_icon.to_string());
-
-        // Staleness warning
-        if stage.activity_status == ActivityStatus::Stale {
-            parts.push(format!("{}", "(stale)".yellow()));
-        }
-
-        push_session_annotations(stage, &mut parts);
+        push_executing_annotations(stage, &mut parts);
     }
 
     // Held indicator
@@ -83,18 +58,8 @@ fn format_stage_annotations(stage: &StageSummary) -> String {
         parts.push(format!("{}", "HELD".yellow()));
     }
 
-    // Failure info for blocked stages
     if stage.status == StageStatus::Blocked {
-        let max = stage.max_retries.unwrap_or(3);
-        let failure_label = stage
-            .failure_info
-            .as_ref()
-            .map(|i| failure_label(&i.failure_type))
-            .unwrap_or("error");
-        parts.push(format!(
-            "{}",
-            format!("{failure_label} ({}/{max})", stage.retry_count).red()
-        ));
+        push_blocked_annotation(stage, &mut parts);
     }
 
     // Review reason for NeedsHumanReview
@@ -104,15 +69,8 @@ fn format_stage_annotations(stage: &StageSummary) -> String {
         }
     }
 
-    // Merge status for completed stages
     if stage.status == StageStatus::Completed {
-        if stage.merged {
-            parts.push(format!("{}", stage.merge_label().green().dimmed()));
-        } else if !matches!(stage.stage_type, StageType::Knowledge) {
-            // Completed but not merged and not a knowledge stage — needs manual merge
-            parts.push(format!("{}", "unmerged".yellow()));
-        }
-        parts.extend(cleanup_annotation(stage));
+        push_completed_annotations(stage, &mut parts);
     }
 
     if parts.is_empty() {
@@ -121,6 +79,61 @@ fn format_stage_annotations(stage: &StageSummary) -> String {
         let sep = format!(" {} ", "·".dimmed());
         format!("  {}", parts.join(&sep))
     }
+}
+
+/// Context tokens, elapsed time, activity and session identity of an
+/// `Executing` stage.
+fn push_executing_annotations(stage: &StageSummary, parts: &mut Vec<String>) {
+    // Resident context tokens (only when a session is active).
+    if let (Some(tokens), Some(ceiling)) = (stage.context_tokens, stage.context_ceiling_tokens) {
+        let ctx_str = format!("[{tokens}/{ceiling}]");
+        let color = match context_health(tokens, ceiling) {
+            ContextHealth::Green => Color::Green,
+            ContextHealth::Yellow => Color::Yellow,
+            ContextHealth::Red => Color::Red,
+        };
+        parts.push(format!("{}", ctx_str.color(color)));
+    }
+
+    if let Some(secs) = stage.elapsed_secs {
+        parts.push(format!("{}", format_elapsed(secs).dimmed()));
+    }
+
+    // Activity icon and staleness warning. A writer waiting on its freeze
+    // job is silent by design, so neither applies to it.
+    if stage.contract_testing_text().is_none() {
+        parts.push(stage.activity_status.icon().to_string());
+        if stage.activity_status == ActivityStatus::Stale {
+            parts.push(format!("{}", "(stale)".yellow()));
+        }
+    }
+
+    push_session_annotations(stage, parts);
+}
+
+/// Failure info for a blocked stage.
+fn push_blocked_annotation(stage: &StageSummary, parts: &mut Vec<String>) {
+    let max = stage.max_retries.unwrap_or(3);
+    let failure_label = stage
+        .failure_info
+        .as_ref()
+        .map(|i| failure_label(&i.failure_type))
+        .unwrap_or("error");
+    parts.push(format!(
+        "{}",
+        format!("{failure_label} ({}/{max})", stage.retry_count).red()
+    ));
+}
+
+/// Merge status for a completed stage.
+fn push_completed_annotations(stage: &StageSummary, parts: &mut Vec<String>) {
+    if stage.merged {
+        parts.push(format!("{}", stage.merge_label().green().dimmed()));
+    } else if !matches!(stage.stage_type, StageType::Knowledge) {
+        // Completed but not merged and not a knowledge stage — needs manual merge
+        parts.push(format!("{}", "unmerged".yellow()));
+    }
+    parts.extend(cleanup_annotation(stage));
 }
 
 /// Session-identity annotations for an `Executing` stage: the PID (or
@@ -173,14 +186,17 @@ fn cleanup_annotation(stage: &StageSummary) -> Option<String> {
 const ROW_INDENT: &str = "   ";
 
 /// The `[model]` tag, plus a magenta `contracts` tag when the stage is in
-/// its contract-writing phase.
+/// its contract-writing phase. While the writer's frozen contracts run as a
+/// host job, the tag reads `contracts written, testing 9/11 · 6m12s` instead.
 fn stage_tags(stage: &StageSummary) -> String {
     let model_tag = format!(" {}", format!("[{}]", stage.model).dimmed());
-    if is_contract_phase(stage) {
-        format!("{model_tag} {}", "contracts".magenta().bold())
-    } else {
-        model_tag
+    if !is_contract_phase(stage) {
+        return model_tag;
     }
+    let tag = stage
+        .contract_testing_text()
+        .unwrap_or_else(|| "contracts".to_owned());
+    format!("{model_tag} {}", tag.magenta().bold())
 }
 
 /// Render execution graph with tree display
