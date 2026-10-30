@@ -1,15 +1,14 @@
-/* The proposal card shown above the shape rows. */
+/* The proposal block shown above the shape rows: hairlines above and below, no box, no tint. Its
+   "Use this" is the screen's primary until a target is settled (write-kickoff.tsx). */
 
 [data-loom-plan] .kickoff-proposal {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in oklch, var(--primary) 50%, var(--border));
-  border-radius: 10px;
-  background: color-mix(in oklch, var(--primary) 9%, var(--card));
-  font-size: 12.5px;
-  line-height: 1.5;
+  padding: var(--space-3) 0;
+  border-block: 1px solid var(--hairline);
+  font-size: var(--type-ui);
+  line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }
 
@@ -20,36 +19,23 @@
 [data-loom-plan] .kickoff-proposal__title {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 650;
+  gap: var(--space-1);
+  margin: 0;
 }
 
 [data-loom-plan] .kickoff-proposal__title svg {
   width: 14px;
   height: 14px;
-  color: var(--primary);
+  color: var(--muted-foreground);
 }
 
 [data-loom-plan] .kickoff-proposal__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
-/* DisabledReason offers only the primary button; the secondary actions restyle it as ghost. */
-[data-loom-plan] .kickoff-ghost button {
-  border-color: var(--border);
-  background: transparent;
-  color: var(--foreground);
-  font-weight: 500;
-}
-
-[data-loom-plan] .kickoff-ghost button:hover {
-  background: var(--muted);
-}
-
-[data-loom-plan] .kickoff-proposal button svg {
-  width: 13px;
-  height: 13px;
+[data-loom-plan] .kickoff-proposal__form {
+  display: grid;
+  gap: var(--space-2);
 }

@@ -1,12 +1,13 @@
 @layer components {
-  /* The header pill that opens the activity popover. */
+  /* The header control that opens the activity popover. It is a quiet button: status is the glyph
+     and the word, with no edge and no fill (ui/DESIGN.md, Status). */
   .activity-pill {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
     height: var(--control-height);
     padding: 0 10px;
-    border: 1px solid var(--border);
+    border: 1px solid transparent;
     border-radius: var(--corner-control);
     background: transparent;
     color: var(--foreground);
@@ -80,13 +81,13 @@
     gap: 10px;
     width: 100%;
     min-width: 0;
-    padding: 8px;
+    padding: var(--space-2);
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--corner-control);
     background: transparent;
     color: var(--foreground);
     font: inherit;
-    font-size: 12.5px;
+    font-size: var(--type-ui);
     text-align: left;
   }
 
@@ -111,7 +112,7 @@
 
   .activity-row__title {
     overflow: hidden;
-    font-size: 13px;
+    font-size: var(--type-ui);
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -133,7 +134,7 @@
   .activity-row__time {
     color: var(--muted-foreground);
     font-family: var(--font-mono, monospace);
-    font-size: 11.5px;
+    font-size: var(--type-fine);
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
@@ -146,9 +147,9 @@
 
   .activity-empty {
     margin: 0;
-    padding: 8px;
+    padding: var(--space-2);
     color: var(--muted-foreground);
-    font-size: 12.5px;
+    font-size: var(--type-ui);
   }
 
   /* The run, review and summary rows below the operations. */
@@ -166,8 +167,8 @@
   }
 
   .activity-foot__detail {
-    padding: 4px 8px 8px 44px;
-    font-size: 12.5px;
+    padding: var(--space-1) var(--space-2) var(--space-2) 44px;
+    font-size: var(--type-ui);
   }
 
   .activity-run {

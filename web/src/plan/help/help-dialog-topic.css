@@ -1,7 +1,8 @@
-/* A topic's article: hero, scenes, tips and the footer. Type stays at 13px or more. */
+/* A topic's article: hero, scenes, tips and the footer. Chrome type stays at 13px or more; the
+   eyebrow is the one smaller, uppercase line (ui/DESIGN.md). */
 .planner-help .planner-help-content {
   display: grid;
-  gap: 20px;
+  gap: var(--space-5);
 }
 
 .planner-help .planner-help-hero {
@@ -12,65 +13,41 @@
   row-gap: 14px;
 }
 
-.planner-help .planner-help-hero > .planner-help-badge {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
-}
-
 .planner-help .planner-help-hero .planner-help-badge svg {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
 }
 
 .planner-help .planner-help-position {
-  margin: 0 0 4px;
-  color: var(--muted-foreground);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  margin: 0 0 var(--space-1);
   font-variant-numeric: tabular-nums;
-}
-
-.planner-help .planner-help-hero h2 {
-  margin: 0;
-  font-size: 22px;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  font-weight: 650;
-  text-wrap: balance;
 }
 
 .planner-help .planner-help-intro {
   grid-column: 1 / -1;
-  max-width: 62ch;
+  max-width: 48ch;
   margin: 0;
-  font-family: var(--font-reading);
-  font-size: 17px;
-  line-height: var(--reading-line, 1.55);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
   color: var(--muted-foreground);
 }
 
+/* Tips are a note on the page: a hairline above, a glyph, a list. No box, no tint. */
 .planner-help .planner-help-tips {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
-  padding: 14px 16px;
-  border: 1px solid color-mix(in oklch, var(--primary) 30%, transparent);
-  border-radius: 14px;
-  background: color-mix(in oklch, var(--primary) 9%, transparent);
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--hairline);
 }
 
 .planner-help .planner-help-tips-tile {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  background: color-mix(in oklch, var(--primary) 22%, transparent);
-  color: var(--foreground);
+  width: 20px;
+  padding-top: 2px;
+  color: var(--muted-foreground);
 }
 
 .planner-help .planner-help-tips-tile svg {
@@ -79,34 +56,34 @@
 }
 
 .planner-help .planner-help-tips h3 {
-  margin: 4px 0 0;
-  font-size: 14px;
+  margin: 0;
+  font-size: var(--type-title);
   font-weight: 600;
 }
 
 .planner-help .planner-help-tips ul {
   display: grid;
-  gap: 8px;
-  margin: 10px 0 0;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
   padding: 0;
   list-style: none;
-  font-size: 13.5px;
-  line-height: 1.5;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
 }
 
 .planner-help .planner-help-tips li {
   position: relative;
-  padding-left: 16px;
+  padding-left: var(--space-4);
 }
 
 .planner-help .planner-help-tips li::before {
   position: absolute;
-  top: 0.55em;
+  top: 0.6em;
   left: 0;
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
-  background: var(--ring);
+  background: var(--muted-foreground);
   content: "";
 }
 
@@ -115,8 +92,8 @@
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 12px;
-  margin-top: 20px;
-  padding-top: 16px;
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
   border-top: 1px solid var(--hairline);
 }
 
@@ -125,29 +102,25 @@
   display: contents;
 }
 
-.planner-help .planner-help-pager button {
+/* A pager card is a row that opens a topic: no edge, a muted wash on hover. */
+.planner-help .planner-help-pager-card {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-3);
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: var(--card);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--corner-control);
   text-align: left;
   cursor: pointer;
-  transition:
-    border-color 140ms ease,
-    background-color 140ms ease;
+  transition: background-color 120ms;
 }
 
-.planner-help .planner-help-pager button:hover {
-  border-color: var(--ring);
+.planner-help .planner-help-pager-card:hover {
   background: var(--muted);
 }
 
 .planner-help .planner-help-pager small,
-.planner-help .planner-help-pager button > span > span {
+.planner-help .planner-help-pager-card > span > span {
   overflow: hidden;
   color: var(--muted-foreground);
   font-size: 13px;

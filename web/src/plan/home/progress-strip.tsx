@@ -12,8 +12,8 @@ function cellOf(step: StepView, current: number | null, running: boolean): Cell 
 }
 
 /**
- * Thin cells, one per step: done, the current step, a running Run step, or the rest. The
- * list text names every step and what it is for screen readers; the cells are colour only.
+ * One item per step: done, the current step, a running Run step, or the rest. The list is for
+ * screen readers; the card draws the counts as text (DESIGN.md allows no segmented progress bar).
  */
 export function ProgressStrip({
   steps,
@@ -25,14 +25,12 @@ export function ProgressStrip({
   running?: boolean;
 }) {
   return (
-    <ol aria-label="Progress" className="progress-cells">
+    <ol aria-label="Progress" className="sr-only">
       {steps.map((step) => {
         const cell = cellOf(step, current, running);
         return (
-          <li key={step.number} className="progress-cells__cell" data-cell={cell}>
-            <span className="sr-only">
-              <Untrusted text={`${step.name}: ${cell === "running" ? "running" : step.mark}`} />
-            </span>
+          <li key={step.number} data-cell={cell}>
+            <Untrusted text={`${step.name}: ${cell === "running" ? "running" : step.mark}`} />
           </li>
         );
       })}

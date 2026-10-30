@@ -117,6 +117,29 @@ describe("ThemePicker", () => {
     }
   });
 
+  it("marks every option button with the caller's class and adds none by default", () => {
+    const { unmount } = render(
+      <Provider store={createStore()}>
+        <ThemePicker optionClassName="caller-option" />
+      </Provider>,
+    );
+    const marked = screen
+      .getAllByRole("button")
+      .filter((b) => b.classList.contains("caller-option"));
+    expect(marked).toHaveLength(THEME_OPTIONS.length);
+    unmount();
+
+    render(
+      <Provider store={createStore()}>
+        <ThemePicker />
+      </Provider>,
+    );
+    for (const button of screen.getAllByRole("button")) {
+      expect(button.className).not.toContain("undefined");
+      expect(button.className.endsWith(" ")).toBe(false);
+    }
+  });
+
   it("selects the theme when a card has a custom swatch", () => {
     const store = createStore();
     store.set(themeAtom, "light");
