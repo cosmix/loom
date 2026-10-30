@@ -1,5 +1,7 @@
 # Loom Plan — Product Vision
 
+A browser app that takes a project from an empty `doc/` to reviewed loom plans without a terminal.
+
 Status: agreed vision (2026-10-26). Each section listed under
 [Specification sections](#specification-sections) becomes its own
 `doc/product/<feature>/section_NN.md`.

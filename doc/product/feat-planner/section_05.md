@@ -51,7 +51,7 @@ out of date, without scanning the text.
 ### Document summary pages
 
 Every document summary is also readable on its own: a section at
-`/f/<feature>/product/<section stem>` (for example `/f/planner-ui/product/section_04`), a feature
+`/f/<feature>/product/<section stem>` (for example `/f/feat-planner/product/section_04`), a feature
 plan at `/f/<feature>/engineering/<slug>`, and a standalone plan at `/plans/<slug>`.
 The page header gives the title, the path
 (monospace), the colour, whether the summary is up to date, an **Open in file mode** link, and
@@ -166,8 +166,8 @@ the user is typing in an input, as `shell.tsx` already does with `isTyping`.
 
 Which runs are open is view state of one browser tab: a jotai atom per page, mirrored to
 `sessionStorage` so a reload keeps it. It never reaches the server and is never shared with other
-viewers. (My call.) The URL carries only the page (for example `/f/planner-ui/product` or
-`/f/planner-ui/engineering/redesign`), so a copied link opens the page folded.
+viewers. (My call.) The URL carries only the page (for example `/f/feat-planner/product` or
+`/f/feat-planner/engineering/redesign`), so a copied link opens the page folded.
 
 Concept page keys are `overview/<f>/product`, `overview/<f>/engineering`, `<f>/product/<doc>`,
 `<f>/engineering/<slug>` and `plans/<slug>` (`loom/src/plan_server/concept/page_key.rs`). Here
