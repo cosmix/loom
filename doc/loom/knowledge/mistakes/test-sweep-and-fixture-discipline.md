@@ -1,6 +1,6 @@
 # Test Sweep And Fixture Discipline
 
-> Fixtures
+>
 
 ## A loader stall outlived a memory-only watchdog
 

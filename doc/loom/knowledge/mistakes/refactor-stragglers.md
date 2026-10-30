@@ -1,6 +1,6 @@
 # Refactor Stragglers
 
-> Renames
+>
 
 ## Source vs Installed: Editing Wrong File
 

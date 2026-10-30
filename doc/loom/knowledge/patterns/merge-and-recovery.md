@@ -3,7 +3,7 @@
 
 # Merge And Recovery
 
-> Merge flow
+>
 
 ## Progressive Merge Pattern
 

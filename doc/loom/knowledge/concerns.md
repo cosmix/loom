@@ -245,4 +245,4 @@ Open teardown, race, transcript-mapper, chat-wire and trust-entry items from the
 
 ## Plan Chat Follow-ups
 
-The chat plan left the live-session operator test unrun, a SHA-256 ref gap and git edge cases in the review server, reconnect, draft and layout-state defects in the chat model, accessibility notes, and a list of duplicated helpers and missing tests, each with its file. → [Plan Chat Follow-ups](concerns/plan-chat-followups.md)
+The chat plan left the live-session operator test unrun, a SHA-256 ref gap and git edge cases in the review server, reconnect, draft and layout-state defects in the chat model, accessibility notes, and a list of duplicated helpers and missing tests, each with its file. → [Plan Chat Follow-ups](concerns/plan-chat-followups.md) The planner UI repair left the Codex summary backend unrun live, raw server strings outside the Untrusted rule, duplicated helpers and unshot layout details. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md)
