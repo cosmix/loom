@@ -19,7 +19,7 @@ const MAX_STRING_BYTES: usize = 64 * 1024;
 pub(crate) const TRUNCATED: &str = "…[truncated]";
 
 /// Hook registrations installed beside the session guard.
-pub const SPOOL_EVENTS: [HookSpec; 10] = [
+pub const SPOOL_EVENTS: [HookSpec; 11] = [
     HookSpec {
         event: "SessionStart",
         matcher: None,
@@ -34,6 +34,11 @@ pub const SPOOL_EVENTS: [HookSpec; 10] = [
         event: "PermissionRequest",
         matcher: Some("*"),
         timeout_secs: Some(3600),
+    },
+    HookSpec {
+        event: "PermissionDenied",
+        matcher: None,
+        timeout_secs: None,
     },
     HookSpec {
         event: "Notification",

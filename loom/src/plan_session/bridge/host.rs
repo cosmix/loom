@@ -83,7 +83,7 @@ impl fmt::Display for TeardownFailed {
 impl std::error::Error for TeardownFailed {}
 
 /// `loom-plan-<first 12 hex digits of the id>`.
-pub(super) fn socket_name(id: &str) -> String {
+pub(crate) fn socket_name(id: &str) -> String {
     let hex: String = id.chars().filter(|c| *c != '-').take(12).collect();
     format!("loom-plan-{hex}")
 }

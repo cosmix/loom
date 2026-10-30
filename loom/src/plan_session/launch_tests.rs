@@ -57,15 +57,7 @@ fn fixture(display_name: &str, body: &str) -> Fixture {
     fs::create_dir_all(dir.answers()).unwrap();
     fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
     let claude = write_claude(&base, body);
-    let guidance = LaunchGuidance {
-        brief_path: dir.brief(),
-        plugin_dir: dir.plugin(),
-        opening_message: OPENING.to_owned(),
-        model: "opus".to_owned(),
-        effort: "medium".to_owned(),
-        display_name: display_name.to_owned(),
-        opening_on_argv: false,
-    };
+    let guidance = fixture_guidance(&dir, display_name);
     let hex: String = id.chars().filter(|c| *c != '-').take(12).collect();
     let spec = LaunchSpec {
         socket: format!("loom-plan-{hex}"),
@@ -89,6 +81,18 @@ fn fixture(display_name: &str, body: &str) -> Fixture {
         _temp: temp,
         base,
         spec,
+    }
+}
+
+fn fixture_guidance(dir: &SessionDir, display_name: &str) -> LaunchGuidance {
+    LaunchGuidance {
+        brief_path: dir.brief(),
+        plugin_dir: dir.plugin(),
+        opening_message: OPENING.to_owned(),
+        model: "opus".to_owned(),
+        effort: "medium".to_owned(),
+        display_name: display_name.to_owned(),
+        opening_on_argv: false,
     }
 }
 
@@ -119,7 +123,7 @@ fn expected_argv(spec: &LaunchSpec) -> Vec<String> {
         "--effort".to_owned(),
         "medium".to_owned(),
         "--permission-mode".to_owned(),
-        "default".to_owned(),
+        "auto".to_owned(),
         "--plugin-dir".to_owned(),
         path(&spec.dir.plugin()),
         "--strict-mcp-config".to_owned(),
@@ -127,6 +131,32 @@ fn expected_argv(spec: &LaunchSpec) -> Vec<String> {
         path(&spec.dir.brief()),
     ];
     Vec::from(words)
+}
+
+#[test]
+fn launch_script_starts_an_escaped_owner_watch_before_claude_for_every_kind() {
+    let mut f = fixture("loom plan: watch", RECORDING_CLAUDE);
+    f.spec.loom_bin = f.base.join("loom '$\nspace");
+    f.spec.dir = SessionDir::new(f.base.join("session '$\nspace"));
+    let watch = format!(
+        "\n{} plan hook OwnerWatch --session-dir {} </dev/null >/dev/null 2>&1 &\nexec env -i ",
+        shell_escape::escape(f.spec.loom_bin.to_string_lossy()),
+        shell_escape::escape(f.spec.dir.path().to_string_lossy())
+    );
+    let pressure = SessionKind::Pressure {
+        plan: "doc/plans/PLAN-x.md".into(),
+    };
+    for (kind, mode) in [
+        (SessionKind::Authoring, "auto"),
+        (pressure, "auto"),
+        (SessionKind::Summary, "default"),
+    ] {
+        f.spec.kind = kind;
+        let script = script::launch_script(&f.spec, &f.spec.dir.settings(), &[]);
+        assert!(script.contains(&watch), "{script}");
+        assert_eq!(script.matches("plan hook OwnerWatch").count(), 1);
+        assert!(script.contains(&format!("--permission-mode {mode} ")));
+    }
 }
 
 /// Run `launch.sh` with `sh` from `/` under a stage identity it must drop; returns claude's
