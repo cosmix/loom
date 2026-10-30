@@ -80,17 +80,23 @@ export function canAuthor(store: Store): void {
   store.set(authoringAtom, authoringViewSchema.parse({ ...authoringFixture, holder: null }));
 }
 
-/** Below this width the header moves Settings and the view tabs into its overflow menu. */
-export function stubWideHeader(): void {
+/**
+ * Below 1024px the header moves Settings and the view tabs into its overflow menu. At 1024px
+ * the desktop chat panel mounts and restores its draft from localStorage, so the store is
+ * cleared too, or attachments leak between tests.
+ */
+function stubWideLayout(): void {
   vi.stubGlobal("matchMedia", (query: string) => ({
     matches: query === "(min-width: 1024px)",
     media: query,
     addEventListener() {},
     removeEventListener() {},
   }));
+  window.localStorage.clear();
 }
 
 export function renderAt(path: string, setup?: (store: Store) => void) {
+  stubWideLayout();
   const store = createStore();
   initClient(store);
   setup?.(store);
