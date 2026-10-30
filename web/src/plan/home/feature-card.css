@@ -1,0 +1,168 @@
+/* One grid holds the lead card and the feature cards. Its container is queried, not the viewport:
+ * two 290px columns and the gap need 594px, and only then can the lead card span two. */
+.card-grid {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
+  gap: 14px;
+  min-width: 0;
+}
+
+.card-grid__lead {
+  min-width: 0;
+}
+
+.card-grid__lead > * {
+  height: 100%;
+}
+
+@container (min-width: 594px) {
+  .card-grid__lead {
+    grid-column: span 2;
+  }
+}
+
+.feature-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  height: 100%;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--card-foreground);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.feature-card:hover,
+.feature-card:focus-visible {
+  border-color: var(--primary);
+  box-shadow: var(--dialog-shadow);
+  transform: translateY(-1px);
+}
+
+.feature-card:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.feature-card__top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.feature-card__id {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.feature-card__title {
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.feature-card__path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+/* The reading face and colour come from `.feature-pitch`; the card sets its own size and clamp. */
+.feature-card .feature-card__pitch {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font-size: 15.5px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  overflow-wrap: break-word;
+}
+
+.feature-card__pitch code {
+  font-size: 0.8em;
+}
+
+.feature-card__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.feature-card__fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.feature-card__fact > svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.feature-mark {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--mark);
+  background: color-mix(in oklch, var(--mark) 16%, transparent);
+}
+
+.dark .feature-mark {
+  background: color-mix(in oklch, var(--mark) 20%, transparent);
+}
+
+.progress-cells {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.progress-cells__cell {
+  position: relative;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--muted);
+}
+
+.progress-cells__cell[data-cell="done"] {
+  background: var(--tone-completed);
+}
+
+.progress-cells__cell[data-cell="current"] {
+  background: var(--primary);
+}
+
+.progress-cells__cell[data-cell="running"] {
+  background: var(--tone-executing);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feature-card {
+    transition: none;
+  }
+
+  .feature-card:hover,
+  .feature-card:focus-visible {
+    transform: none;
+  }
+}

@@ -76,6 +76,69 @@ describe("StandaloneShelf", () => {
     expect(screen.getAllByRole("button")).toHaveLength(2);
   });
 
+  it("opens its chips from the first render when the host passes defaultOpen", () => {
+    const h = harness();
+    h.store.set(projectAtom, project);
+    h.mount(
+      <MemoryRouter>
+        <StandaloneShelf defaultOpen />
+      </MemoryRouter>,
+    );
+
+    const region = screen.getByRole("region", { name: "Standalone plans" });
+    expect(region.querySelector("details")?.open).toBe(true);
+  });
+
+  it("starts collapsed, counts the plans in its summary and keeps the actions there", () => {
+    mount();
+
+    const details = screen
+      .getByRole("region", { name: "Standalone plans" })
+      .querySelector("details") as HTMLDetailsElement;
+    const summary = details.querySelector(":scope > summary") as HTMLElement;
+    expect(details.open).toBe(false);
+    expect(summary.textContent).toContain("4 standalone plans");
+    expect(summary.textContent).toContain("bugfixes, performance work and small features");
+    expect(within(summary).getByRole("button", { name: "New standalone plan" })).toBeTruthy();
+    expect(within(summary).getByRole("button", { name: "Move into a feature…" })).toBeTruthy();
+    expect(within(summary).queryByRole("link")).toBeNull();
+  });
+
+  it("does not toggle the shelf when an action in the summary is clicked", () => {
+    mount();
+    const details = screen
+      .getByRole("region", { name: "Standalone plans" })
+      .querySelector("details") as HTMLDetailsElement;
+
+    const notCancelled = fireEvent.click(
+      screen.getByRole("button", { name: "Move into a feature…" }),
+    );
+
+    expect(notCancelled).toBe(false);
+    expect(details.open).toBe(false);
+  });
+
+  it("shows the first 24 plans and reveals the rest on request", () => {
+    const many = Array.from({ length: 30 }, (_, index) => ({
+      slug: `plan-${index + 1}`,
+      path: `doc/plans/PLAN-plan-${index + 1}.md`,
+      title: `Plan ${index + 1}`,
+      state: "written" as const,
+    }));
+    mount({ checklists: [], standalone: many, moves: [] });
+    const region = screen.getByRole("region", { name: "Standalone plans" });
+    const chips = () =>
+      within(region)
+        .queryAllByRole("link")
+        .filter((link) => link.getAttribute("href")?.startsWith("/files/plans/"));
+
+    expect(chips()).toHaveLength(24);
+    fireEvent.click(within(region).getByRole("button", { name: "+6 more" }));
+
+    expect(chips()).toHaveLength(30);
+    expect(within(region).queryByRole("button", { name: /more$/ })).toBeNull();
+  });
+
   it("opens kickoff with the small-work route state", () => {
     mount();
 

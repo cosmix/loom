@@ -1,14 +1,19 @@
 import { useAtomValue, useStore } from "jotai";
-import { useEffect, useId, useRef, useState } from "react";
+import { Check, ListPlus, Pencil, Sparkles, Wrench } from "lucide-react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 
 import type { KickoffShape, KickoffSize } from "@/plan/api/schema-kickoff";
 import { sendChatCommand, sendMessage } from "@/plan/chat/commands";
 import { Untrusted } from "@/plan/chat/visible-controls";
+import { plural } from "@/plan/feature/steps";
 import { FEATURE_NAME_HINT, isFeatureName } from "@/plan/new/feature-name";
 import { authorBlockReasonAtom, canAuthorAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 
+import "./proposal.css";
+
 type ProposedTarget = { size: KickoffSize; name: string };
+type ProposalContentProps = ProposedTarget & { sections: string[] };
 type ProposalActions = ReturnType<typeof useProposalActions>;
 type RenameFormProps = {
   name: string;
@@ -23,7 +28,7 @@ type RenameFieldProps = {
   valid: boolean;
 };
 
-function useProposalActions() {
+export function useProposalActions() {
   const store = useStore();
   const canAuthor = useAtomValue(canAuthorAtom);
   const blockReason = useAtomValue(authorBlockReasonAtom);
@@ -66,24 +71,40 @@ function useProposalActions() {
 export function Proposal({ shape }: { shape: KickoffShape }) {
   const { proposal, size, name } = shape;
   if (!proposal || size === null || name === null) return null;
-  return <ProposalContent size={size} name={name} />;
+  const sections = size === "feature" ? shape.sections.map((section) => section.title) : [];
+  return <ProposalContent size={size} name={name} sections={sections} />;
 }
 
-function ProposalContent({ size, name }: ProposedTarget) {
+function ProposalSummary({ name, sections }: { name: string; sections: string[] }) {
+  return (
+    <p>
+      Name{" "}
+      <span className="font-mono">
+        <Untrusted text={name} />
+      </span>
+      {sections.length > 0 && ` and ${plural(sections.length, "section")}: `}
+      {sections.map((title, index) => (
+        <Fragment key={`${index}:${title}`}>
+          {index > 0 && ", "}
+          <Untrusted text={title} />
+        </Fragment>
+      ))}
+      .
+    </p>
+  );
+}
+
+function ProposalContent({ size, name, sections }: ProposalContentProps) {
   const actions = useProposalActions();
   const [renaming, setRenaming] = useState(false);
   return (
-    <section
-      aria-label="Proposal"
-      className="min-w-0 space-y-3 rounded-lg border border-border bg-muted/30 p-4 font-sans text-sm text-foreground [overflow-wrap:anywhere]"
-    >
-      <p>
-        I suggest a {size === "feature" ? "feature" : "standalone plan"} called{" "}
-        <span className="font-mono">
-          <Untrusted text={name} />
-        </span>
-        .
+    // A div, not a section: the help scene counts the panel's `section` rows.
+    <div role="region" aria-label="Proposal" className="kickoff-proposal font-sans">
+      <p className="kickoff-proposal__title">
+        <Sparkles aria-hidden="true" />
+        Proposed: a {size === "feature" ? "feature" : "standalone plan"}
       </p>
+      <ProposalSummary name={name} sections={sections} />
       {renaming ? (
         <RenameForm
           key={`${size}:${name}`}
@@ -102,7 +123,7 @@ function ProposalContent({ size, name }: ProposedTarget) {
       )}
       <ProposalAlternatives size={size} actions={actions} />
       <ProposalFeedback actions={actions} />
-    </section>
+    </div>
   );
 }
 
@@ -130,13 +151,17 @@ function ProposalAcceptance({
   onRename,
 }: ProposedTarget & { actions: ProposalActions; onRename: () => void }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="kickoff-proposal__actions">
       <DisabledReason reason={actions.reason} onClick={() => actions.confirm(size, name)} size="sm">
+        <Check aria-hidden="true" />
         Use this
       </DisabledReason>
-      <DisabledReason reason={actions.reason} onClick={onRename} size="sm">
-        Rename
-      </DisabledReason>
+      <div className="kickoff-ghost">
+        <DisabledReason reason={actions.reason} onClick={onRename} size="sm">
+          <Pencil aria-hidden="true" />
+          Rename
+        </DisabledReason>
+      </div>
     </div>
   );
 }
@@ -144,13 +169,14 @@ function ProposalAcceptance({
 function ProposalAlternatives({ size, actions }: { size: KickoffSize; actions: ProposalActions }) {
   const feature = size === "feature";
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="kickoff-proposal__actions kickoff-ghost">
       {feature && (
         <DisabledReason
           reason={actions.reason}
           onClick={() => actions.message("I want to change the proposed sections.")}
           size="sm"
         >
+          <ListPlus aria-hidden="true" />
           Change sections
         </DisabledReason>
       )}
@@ -163,6 +189,7 @@ function ProposalAlternatives({ size, actions }: { size: KickoffSize; actions: P
         }
         size="sm"
       >
+        <Wrench aria-hidden="true" />
         {feature ? "Make it standalone" : "Make it a feature"}
       </DisabledReason>
     </div>

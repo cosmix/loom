@@ -1,8 +1,8 @@
 import { useAtomValue, useStore } from "jotai";
+import { MessageCircle } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { Link, Navigate, useLocation } from "react-router";
 
-import { Button } from "@/components/ui/button";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { useFileSocket } from "@/plan/files/api";
 import { FeatureCards } from "@/plan/home/feature-card";
@@ -18,6 +18,8 @@ import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { LoomDoodle } from "@/plan/ui/doodle";
 import { LoadState } from "@/plan/ui/load-state";
 
+import "./home.css";
+
 let autoOpened = false;
 
 export function resetHomeAutoOpen() {
@@ -30,14 +32,15 @@ function StartConversation() {
 
   if (canAuthor) {
     return (
-      <Button asChild>
-        <Link to="/new">Start a conversation</Link>
-      </Button>
+      <Link to="/new" className="invitation__cta">
+        <MessageCircle aria-hidden="true" className="size-4" />
+        Start a conversation
+      </Link>
     );
   }
 
   return (
-    <div className="space-y-1">
+    <div className="grid gap-1">
       <DisabledReason reason="Authoring is unavailable" onClick={() => {}}>
         Start a conversation
       </DisabledReason>
@@ -54,24 +57,24 @@ function InvitationCard({ empty }: { empty: boolean }) {
   const headingId = useId();
 
   return (
-    <section
-      aria-labelledby={headingId}
-      data-doodle-host
-      className="flex flex-col items-start gap-5 rounded-xl border border-hairline bg-card p-6 text-card-foreground sm:p-8"
-    >
-      <LoomDoodle className="text-muted-foreground" />
-      <h1 id={headingId} className="font-display text-3xl leading-tight font-semibold">
-        Start something new
-      </h1>
-      <div className="max-w-xl space-y-2 text-sm leading-relaxed text-muted-foreground">
-        {empty && <p className="font-medium text-foreground">No features yet.</p>}
-        <p>
-          Tell Loom what you want to build. It will help you decide whether it is a feature or a
-          single plan.
-        </p>
+    <section aria-labelledby={headingId} data-doodle-host className="invitation">
+      <div className="invitation__art">
+        <LoomDoodle />
       </div>
-      <StartConversation />
-      <p className="text-xs text-muted-foreground">Nothing is written until you say so.</p>
+      <div className="invitation__body">
+        <h2 id={headingId} className="invitation__title">
+          Start something new
+        </h2>
+        <div className="invitation__lead">
+          {empty && <p className="invitation__empty">No features yet.</p>}
+          <p>
+            Bring a rough idea. Loom talks it through with you, then shapes it into a feature with
+            its own spec, or a single plan.
+          </p>
+        </div>
+        <StartConversation />
+        <p className="invitation__note">Nothing is written until you say so.</p>
+      </div>
     </section>
   );
 }
@@ -97,15 +100,24 @@ function LoadedHome() {
 
   if (destination) return <Navigate to={destination} replace />;
 
+  const invitation = <InvitationCard empty={empty} />;
+
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-8 px-4 py-8 sm:px-6">
-      <InvitationCard empty={empty} />
+    <div className="home">
       {!empty && (
-        <>
-          <FeatureCards />
-          <StandaloneShelf />
-        </>
+        <div className="home__head">
+          <p className="home__eyebrow">doc/ in this repository</p>
+          <h2 className="home__title">Features</h2>
+        </div>
       )}
+      {features.length > 0 ? (
+        <FeatureCards lead={invitation} />
+      ) : (
+        <div className="card-grid">
+          <div className="card-grid__lead">{invitation}</div>
+        </div>
+      )}
+      {!empty && <StandaloneShelf />}
     </div>
   );
 }
