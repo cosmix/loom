@@ -1,7 +1,7 @@
 # `loom plan` Engineering Metaplan
 
 This metaplan cuts the `loom plan` product specification (`doc/product/feat-planner/index.md` and
-`doc/product/feat-planner/section_01.md` to `section_12.md`, agreed 2026-10-26) into eleven loom plans and
+`doc/product/feat-planner/section_01.md` to `section_12.md`, agreed 2026-10-26) into thirteen loom plans and
 orders them. It was written on 2026-10-26 on branch `feat-planner-ui` at `b0f91c00`. Every
 entry names the product sections it implements, what it delivers, what it needs from earlier
 plans, the files it owns, its traps, and its acceptance bar. File and line references come from
@@ -105,19 +105,24 @@ and `native/pid_tracking.rs` (452) are in the ledger; no plan here edits them.
 | 9 | `PLAN-feat-planner-09-chat.md`                   | 08, 10              | 3, 5, 7, 8   | authoring and review from the browser                 |
 | 10 | `PLAN-feat-planner-10-summary-rebuilds.md`      | 04 (rebuilds, cost) | 4, 7, 8, 9   | summaries kept current without a manual step          |
 | 11 | `PLAN-feat-planner-11-execution-handoff.md`     | 11, 01 (record)     | 2, 7, 9      | pressure tests and runs started from the app          |
+| 12 | `PLAN-feat-planner-12-ui-repair.md`             | 05, 06, 08          | 3, 5, 9      | every screen rebuilt to the agreed design             |
+| 13 | `PLAN-feat-planner-13-planner-redesign.md`      | 01, 05, 07, 08, 12  | 12           | a spine that opens real content and a contextual chat |
 
 ```text
 1 documents ─┬─> 2 server ──> 3 file mode ──┐
              ├─> 4 summary store ───────────┼─> 5 concept mode
              └─> 6 session sandbox ─> 7 bridge ─> 8 guidance ─> 9 chat ─┬─> 10 summary rebuilds
                                                                        └─> 11 execution handoff
+3, 5, 9 ──> 12 ui repair ──> 13 planner redesign
 ```
 
 One checkout runs one plan (`loom init` refuses while `.loom/work` holds state), so the plans
 run in the order of the table. The order puts a read-only reviewer's app first (plans 1 to 5):
 after plan 5 a reviewer can read a project whose summaries were sealed by hand, which proves the
 document model and the summary format before any session writes through them. Plans 6 to 9 add
-authoring; 10 and 11 close the loop with automatic rebuilds and execution.
+authoring; 10 and 11 close the loop with automatic rebuilds and execution. Plans 12 and 13 repair
+and then redesign the web app around reading and a contextual chat, once the first eleven plans
+are in use.
 
 Files more than one plan edits, and their order:
 
@@ -130,6 +135,7 @@ Files more than one plan edits, and their order:
 | 4, 8, 10       | `[plan]` keys in `loom/src/user_config/keys.rs`                        | 4 adds summary keys, 8 adds authoring keys |
 | 7, 9, 11       | the session model sent to the browser (section 07, "What the chat receives") | 7 first |
 | 2, 11          | `commands/status/web/` (moved by 2; `print_startup` pinned by 11)      | 2 first      |
+| 12, 13         | the planning app's shell, feature screen and chat panel under `web/src/plan/` | 12 first |
 
 ## 1. Document model and project checklist (`PLAN-feat-planner-01-documents.md`)
 
@@ -597,6 +603,49 @@ route tests for each workspace state and blocking condition; abandon tests on a 
 workspace with merged and unmerged branches, including the declined second confirmation; a test
 pinning `print_startup`'s first line. An operator-run pressure test from the app on a scratch
 plan writes one record line; the stage records it.
+
+## 12. UI repair (`PLAN-feat-planner-12-ui-repair.md`)
+
+Implements: section_04, section_05, section_06, section_08, section_11.
+
+This plan rebuilds the web app's screens to the agreed design after plans 1 to 11 shipped a UI
+that did not match its mockup. It adds the card payload (title, pitch, counts and step labels)
+and the screenshot script, moves summary generation to haiku at high effort with three new plan
+keys, fixes the opening message that needed a second press, and adds a Codex summary spawner. It
+then rebuilds the shell, the feature screens and the reading surfaces over disjoint web files, and
+covers the chat panel, the pressure dialog and help.
+
+It depends on plans 3, 5 and 9. Plan 13 depends on it.
+
+Risks: the gates checked structure, CSS values and copy, and none walked a user task
+(`doc/loom/knowledge/mistakes/planner-ui-repair.md`, "The Repair Passed Every Gate While the
+Feature Screen Stayed Unusable").
+
+Acceptance: the suites pass and a real-browser review in four themes reads each screen against
+the mockup.
+
+## 13. Planner redesign (`PLAN-feat-planner-13-planner-redesign.md`)
+
+Implements: section_01, section_05, section_07, section_08, section_12.
+
+This plan makes the feature screen a spine of documents that opens real content, so that concept
+mode is the default way to read and a finished feature opens on the product overview. The wire
+loses `ChecklistView.title` and the Review step, gains the plan rows, and carries short offer
+labels, so a feature is named by its slug everywhere and no screen draws one offer twice. The chat
+panel is redesigned, knows the viewed document, offers prompts for it and attaches it to the next
+message. Authoring and pressure sessions run in auto mode with a notice for each blocked action,
+every session gets an owner watch with a 15-minute grace, and the Rust tests stop starting real
+sessions or writing to the operator's home. The spec sections it implements are rewritten to match.
+
+It depends on plan 12 and on nothing else; nothing depends on it.
+
+Risks: plan 12 passed every gate while the screen stayed unusable, so this plan is accepted by a
+journey script that walks user tasks; the six-step wire changes fixtures and tests that pinned
+seven steps and titles; auto mode moves Kickoff's and Team's asks onto explicit ask rules.
+
+Acceptance: the journey script passes with no console error, the frozen contracts for auto mode,
+the owner watch, the six-step wire and test isolation pass, and the operator's feedback on the
+built result is taken in a follow-up round.
 
 ## Decisions
 

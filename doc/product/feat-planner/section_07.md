@@ -84,7 +84,8 @@ port search reuses, is `pub(super)`; widening their visibility is part of this w
 One tmux server per session, as for stages, so a wedged server takes down one session.
 
 `launch.sh` sets the environment and `exec`s Claude Code, so the pane's process is `claude`
-itself. The environment is loom's minimal agent environment
+itself. Before the `exec`, it starts the owner watch in the background (below, "Crashes and
+kills"). The environment is loom's minimal agent environment
 (`agent_session_environment_from`, `loom/src/process/environment.rs:143`) plus two variables,
 `LOOM_PLAN_STATE` (the runtime directory) and `LOOM_PLAN_SESSION` (the session id). It never
 sets `LOOM_STAGE_ID`, `LOOM_SESSION_ID`, or `LOOM_WORK_DIR`, so loom's global hooks treat a
@@ -110,7 +111,8 @@ The brief, the plugin and the opening message come from section 09, with section
 differences for pressure sessions; the model and effort from section 09's table (section 04 for
 the summary levels, the `[pressure]` keys for pressure steps); `--strict-mcp-config` from
 section 12; the permission mode and the write rules in
-`settings.json` from section 12. The launch line carries no prompt, because a command line is
+`settings.json` from section 12. The mode is `auto` for authoring and pressure sessions and
+`default` (Manual) for summary sessions; the same value is the `defaultMode` in `settings.json`. The launch line carries no prompt, because a command line is
 readable by every local user through `/proc/<pid>/cmdline` and an opening message can quote
 documents. Once the session's first `SessionStart` arrives, the server delivers the opening
 message as the session's first turn, through the same path as every chat message ("Delivering
@@ -176,6 +178,7 @@ and the hook payload's `session_id`, `transcript_path`, and the event-specific f
 | `SessionStart`      | Session is up; the transcript path; `source` tells startup from compaction |
 | `UserPromptSubmit`  | Confirms a delivered message; the session is working                       |
 | `PermissionRequest` | A permission decision is needed (below)                                    |
+| `PermissionDenied`  | Auto mode's classifier blocked a tool call; shown as a notice (below)      |
 | `Notification`      | `idle_prompt` backs up the idle state; other types are logged only         |
 | `Stop`              | The main agent's turn ended                                                |
 | `StopFailure`       | The main agent's turn ended on an API error; handled as `Stop`             |
@@ -190,6 +193,9 @@ call and fails closed.
 
 The server tails each session's spool. Hook commands never fail the session: an error writing
 the spool exits 0 with no output, except for `PermissionRequest`, which answers deny (below).
+`PermissionDenied` prints nothing, so Claude Code never retries the call. A hidden `OwnerWatch`
+argument of the same subcommand is no hook: Claude never calls it and it writes no spool line
+("Crashes and kills").
 Hook commands run in Claude Code's own process, outside the Bash tool's sandbox, so they write
 the session directory while the session's own tools cannot (section 12, "What a session may
 write").
@@ -313,12 +319,23 @@ dialog by keystrokes.
 There is no "always allow". Standing rules belong to section 12, which sets them per session
 kind.
 
+Authoring and pressure sessions run in auto mode, so a request reaches this flow only for a call
+that matches an `ask` rule in the session's settings (`WebFetch`, and the `loom knowledge` and
+`loom plan summary` commands that Kickoff and Team do not pre-allow; section 12). Everything else
+that no allow rule covers is decided by Claude Code's classifier. When the classifier blocks a
+call, Claude Code runs `loom plan hook PermissionDenied`, the spool carries the payload's
+`tool_name` and `reason`, and the chat shows a notice item, `Auto mode blocked Bash:
+[Irreversible Local Destruction]`. Without a reason the text is `Auto mode blocked Bash`, and
+without a tool name `Auto mode blocked an action`. The notice is text only, with no Allow or
+Deny: the session has already been told, and the holder can answer by messaging it.
+
 The hook is registered with a one-hour timeout. The answer is deny, with a message saying why,
 when the request is unanswered after one hour, the session ends, the server is stopping, or the
 hook cannot reach its directory, so a session never waits on a dialog in a pane nobody watches.
 The chat shows that reason on the permission item.
-Summary sessions have no one to ask: their requests are denied at once and logged, since a
-summary session needing a permission means its rules (section 12) are wrong.
+Summary sessions have no one to ask and no classifier: they run in `default` mode, and a request
+is denied at once and logged, since a summary session needing a permission means its rules
+(section 12) are wrong.
 
 ## Interrupt and end
 
@@ -389,6 +406,16 @@ only as a cache.
   reads missing evidence as "do not destroy" (`mistakes/tmux-backend.md`). (My call.) A
   pressure session gets no closing message: it is torn down at once, and the run is handled as
   section 11, "Stopping, failure, and server stops", describes.
+- **The server never returns.** Every session, summary sessions included, starts with an **owner
+  watch**: its launch script runs `loom plan hook OwnerWatch <session dir>` in the background,
+  outside Claude Code's sandbox. Every 15 seconds the watch reads the project's server lock
+  record and checks that the pid in it is alive. The read takes no lock, so the watch can never
+  make a starting server refuse. When no live owner has been seen for 15 minutes, the watch
+  tears the session's tmux server down; it does the same when the session's own process is gone
+  and no owner is alive, which clears the tmux server that `remain-on-exit` leaves behind. Each
+  sighting of a live owner restarts the 15 minutes, so a server restarted within them keeps the
+  session and recovers it as above. The watch ends when the session does. It delivers no closing
+  message: with no server nobody reads it, and sessions record decisions as they are made.
 
 ## What the chat receives
 

@@ -28,8 +28,24 @@ source.
 
 ## The two overviews
 
-Within a feature, **Product** and **Engineering** open concept mode at `/f/<feature>/product`
-and `/f/<feature>/engineering`. File mode is section 06.
+Concept mode is the default way to read anything that has a summary. A feature's spine
+(vision, "The screen") reaches it from its Product spec and Plans rows, and every row below them
+opens its page in concept mode with **Source** on the same page. A feature opens on one of
+these pages by section 01's landing rule. The routes:
+
+| Route                            | Renders                                                                                   | Spine row              |
+| -------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------- |
+| `/f/<feature>/vision`            | the vision's source                                                                       | Vision                 |
+| `/f/<feature>/product`           | the product overview, with the pace and section queue above it while sections are missing | Product spec, Overview |
+| `/f/<feature>/product/<doc>`     | a section's summary                                                                       | that section           |
+| `/f/<feature>/metaplan[/<file>]` | a metaplan's source                                                                       | Metaplan               |
+| `/f/<feature>/engineering`       | the engineering overview, with the pace and plan queue above it while plans are missing   | Plans, Overview        |
+| `/f/<feature>/engineering/<doc>` | a plan's summary                                                                          | that plan              |
+| `/f/<feature>/pressure`          | one row per plan with its pressure-test date (section 11)                                 | Pressure test          |
+| `/f/<feature>/run`               | run state and a finished feature's follow-up offers (section 11)                          | Run                    |
+
+The vision and the metaplans have no summaries (vision, "Summary levels"), so their routes read
+the source. File mode is section 06. Standalone plans keep `/plans/<slug>`.
 
 - **Product overview**: built from `doc/product/<feature>/index.md` and the sections it names.
   Sections of that feature the vision does not name are listed under its overview as unlisted
@@ -46,7 +62,8 @@ document the overview draws on, in document order (the vision's table order, the
 heading order, per section 01), each chip showing the document's colour, its number or plan slug
 in mono, then its short title without the leading `NN —`, so the number appears once. A chip
 opens that document's summary page. The key is also where the reader sees which summaries are
-out of date, without scanning the text.
+out of date, without scanning the text. The spine lists the same documents; the key stays as the
+reader's legend, the place that says which colour is which document.
 
 ### Document summary pages
 
@@ -221,7 +238,7 @@ text.
   in muted text, shown only once an engineering overview exists.
 - **Inside an overview**, a level 1 run from a product section ends its first sentence's marks
   with a small plan glyph when the section has implementing plans; the glyph's popover lists them
-  and each opens the plan's summary page on the Engineering tab. The engineering side does the
+  and each opens the plan's summary page under the engineering route. The engineering side does the
   same in reverse. (My call: the link appears where the reader has drilled into one document, so
   level 0 prose stays uncluttered.)
 - An `Implements:` line naming a section that does not exist shows on the plan page as a broken
@@ -229,7 +246,8 @@ text.
   never a checklist gap.
 - A plan with no `Implements:` line shows "Implements: not stated".
 
-Crossing tabs keeps each tab's open runs; the back button returns to the previous page.
+Crossing between the product and engineering pages keeps each page's open runs; the back button
+returns to the previous page.
 
 ## Selecting text for chat
 
@@ -252,7 +270,7 @@ Empty states use the dashboard's `EmptyState` (`web/src/aurora-ui/feedback/Empty
 The states below apply to the selected feature. Offers in them are section 01's; read-only
 browsers see the same text without the offer button.
 
-| State                                                   | Product tab                                                                                        | Engineering tab                                                                                   |
+| State                                                   | Product page                                                                                       | Engineering page                                                                                  |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | No vision, no sections                                  | "No product vision yet", offer to start one                                                        | as below                                                                                          |
 | Sections, no vision (section 01)                        | No overview; list of section summaries in file-name order                                          | as below                                                                                          |
