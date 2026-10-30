@@ -75,6 +75,7 @@ fn operator() -> Result<()> {
             client_id: Some("operator-start".into()),
             offer: None,
             feature: Some("demo".into()),
+            plan: None,
             text: Some(format!(
                 "Read the attached source. Immediately append the exact sentence \
             'Operator attachment verified.' as a new paragraph to {TARGET}, preserving its \

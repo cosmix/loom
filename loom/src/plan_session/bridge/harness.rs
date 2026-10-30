@@ -127,6 +127,8 @@ impl Harness {
             guidance,
             opening_origin,
             offer: None,
+            feature: None,
+            plan: None,
             extra_env,
         }
     }

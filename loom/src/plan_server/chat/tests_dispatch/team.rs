@@ -242,6 +242,8 @@ fn team_events_load_documents_from_persisted_scope_without_dispatch_start() {
             }),
             opening_origin: None,
             offer: None,
+            feature: None,
+            plan: None,
             extra_env: Vec::new(),
         })
         .unwrap();

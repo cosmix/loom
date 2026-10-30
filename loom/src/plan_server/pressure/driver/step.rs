@@ -159,6 +159,10 @@ impl RunEnv {
         if self.stopping() {
             return Err(self.stop_verdict(&step.label));
         }
+        let project = self.ctx.project().clone();
+        let invocation = Path::new(&self.plan.invocation);
+        let feature = plan_feature(&project, invocation).map(str::to_owned);
+        let plan = standalone_slug(invocation).filter(|_| feature.is_none());
         let request = StartRequest {
             kind: SessionKind::Pressure {
                 plan: PathBuf::from(&self.plan.invocation),
@@ -166,6 +170,8 @@ impl RunEnv {
             guidance: self.guidance(step),
             opening_origin: Some(Origin::Offer),
             offer: None,
+            feature,
+            plan,
             extra_env: vec![(AGENT_TEAMS_ENV.to_owned(), "1".to_owned())],
         };
         let started = self.runs.sessions.start_session(request);
@@ -320,6 +326,10 @@ fn plan_feature<'a>(project: &'a Project, path: &Path) -> Option<&'a str> {
     project.tree.plan(&slug)?.feature.as_deref()
 }
 
+fn standalone_slug(path: &Path) -> Option<String> {
+    plan_slug(path.file_name()?.to_str()?)
+}
+
 fn state_of(waited: &Waited) -> StepState {
     match waited {
         Waited::Marker => StepState::Done,
@@ -341,7 +351,7 @@ fn no_codex(verdict: StepVerdict) -> PressureResult {
 
 #[cfg(test)]
 mod tests {
-    use super::plan_feature;
+    use super::{plan_feature, standalone_slug};
     use crate::planning::project::Project;
     use std::path::Path;
 
@@ -366,6 +376,18 @@ mod tests {
             ("doc/plans/demo/PLAN-missing.md", None),
         ] {
             assert_eq!(plan_feature(&project, Path::new(path)), expected, "{path}");
+        }
+    }
+
+    #[test]
+    fn a_standalone_plan_is_named_by_its_slug() {
+        for (path, expected) in [
+            ("doc/plans/PLAN-solo.md", Some("solo")),
+            ("doc/plans/IN_PROGRESS-PLAN-solo.md", Some("solo")),
+            ("doc/plans/notes.md", None),
+        ] {
+            let slug = standalone_slug(Path::new(path));
+            assert_eq!(slug.as_deref(), expected, "{path}");
         }
     }
 }

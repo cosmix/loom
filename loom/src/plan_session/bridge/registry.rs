@@ -45,6 +45,11 @@ pub struct SessionRecord {
     pub start_time: Option<u64>,
     pub transcript_path: Option<PathBuf>,
     pub started_at: String,
+    /// The feature named at start or by a kickoff's confirmation, kept so a recovered session
+    /// stays with it.
+    pub feature: Option<String>,
+    /// The same for a standalone plan's slug.
+    pub plan: Option<String>,
     #[serde(default)]
     pub children: Vec<ChildRecord>,
 }

@@ -7,7 +7,7 @@
 use std::sync::Arc;
 use std::thread;
 
-use super::guidance::GuidanceSlot;
+use super::guidance::{validate_feature, validate_plan, GuidanceSlot};
 use super::lease::AuthoringLeases;
 use super::{kickoff_cmd, ChatState};
 use crate::plan_server::authoring::{FreeReason, Refusal, Take};
@@ -32,6 +32,12 @@ const CLOSING: &str = "the chat is closing";
 
 /// The queued texts to hand back to the connection, or the error it is shown.
 pub(super) type Outcome = Result<Vec<String>, String>;
+
+/// What a new chat belongs to: a feature, a standalone plan's slug, or the whole project.
+struct ChatOwner {
+    feature: Option<String>,
+    plan: Option<String>,
+}
 
 /// A checked message: what the session receives and its chips.
 pub(super) struct Message {
@@ -59,10 +65,14 @@ fn run(ctx: &Arc<PlanContext>, conn: &ConnCtx, cmd: ChatCommand) -> Outcome {
         ChatCommand::Start {
             offer,
             feature,
+            plan,
             text,
             attachments,
             ..
-        } => start(ctx, conn, offer, text, attachments, feature),
+        } => {
+            let owner = ChatOwner { feature, plan };
+            start(ctx, conn, offer, text, attachments, owner)
+        }
         ChatCommand::Send {
             text, attachments, ..
         } => send(ctx, conn, &text, attachments),
@@ -118,7 +128,7 @@ fn start(
     offer: Option<String>,
     text: Option<String>,
     inputs: Vec<AttachmentInput>,
-    feature: Option<String>,
+    owner: ChatOwner,
 ) -> Outcome {
     refuse_new_work(ctx)?;
     if ctx.read_only().is_read_only() {
@@ -132,7 +142,7 @@ fn start(
     let took = take_authoring(ctx, conn)?;
     // The offer is the guidance provider's to accept: plan 7's refuses one the checklist
     // does not offer now, plan 8's also knows its own start ids.
-    let started = launch(ctx, conn, &bridge, &state, offer, message, feature);
+    let started = launch(ctx, conn, &bridge, &state, offer, message, owner);
     if started.is_err() {
         give_back(ctx, conn, &bridge, took);
     }
@@ -161,12 +171,25 @@ fn send(
             sent.map(|_| Vec::new()).map_err(|error| error.to_string())
         }
         None => {
-            let started = launch(ctx, conn, &bridge, &state, None, Some(message), None);
+            let owner = retained_owner(ctx, &bridge);
+            let started = launch(ctx, conn, &bridge, &state, None, Some(message), owner);
             if started.is_err() {
                 give_back(ctx, conn, &bridge, took);
             }
             started
         }
+    }
+}
+
+/// A send's fallback start replaces a chat that ended just before it, so it stays where that chat
+/// was. A kickoff can name a feature it has not written yet: such an owner is dropped, since
+/// refusing the message over it would lose what the user typed.
+fn retained_owner(ctx: &PlanContext, bridge: &Bridge) -> ChatOwner {
+    let (feature, plan) = bridge.last_chat_owner();
+    let project = ctx.project();
+    ChatOwner {
+        feature: feature.filter(|name| validate_feature(&project, Some(name)).is_ok()),
+        plan: plan.filter(|name| validate_plan(&project, None, Some(name)).is_ok()),
     }
 }
 
@@ -178,7 +201,7 @@ fn launch(
     state: &Arc<ChatState>,
     offer: Option<String>,
     message: Option<Message>,
-    feature: Option<String>,
+    ChatOwner { feature, plan }: ChatOwner,
 ) -> Outcome {
     let Some(slot) = ctx.extensions().get::<GuidanceSlot>() else {
         return Err(UNAVAILABLE.to_owned());
@@ -193,8 +216,10 @@ fn launch(
     let first_message = message.map(|message| message.formatted);
     let (provider, guide_ctx, guide_offer) = (slot.get(), Arc::clone(ctx), offer.clone());
     let (starter, state) = (conn.public_id.clone(), Arc::clone(state));
+    let (session_feature, session_plan) = (feature.clone(), plan.clone());
     let guidance = Box::new(move |dir: &SessionDir| -> anyhow::Result<LaunchGuidance> {
         let (offer, first) = (guide_offer.as_deref(), first_message.as_deref());
+        validate_plan(&guide_ctx.project(), feature.as_deref(), plan.as_deref())?;
         let guidance = provider.authoring(&guide_ctx, dir, offer, first, feature.as_deref())?;
         super::team::prepare_scope(&guide_ctx, dir, offer, feature.as_deref())?;
         // Recorded before the bridge can launch (and fail) the session, so its `Ended`
@@ -209,6 +234,8 @@ fn launch(
         guidance,
         opening_origin,
         offer,
+        feature: session_feature,
+        plan: session_plan,
         extra_env,
     };
     let started = bridge.start_session(request);

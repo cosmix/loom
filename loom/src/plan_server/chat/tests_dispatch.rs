@@ -19,6 +19,7 @@ use crate::plan_session::model::{Item, Origin, SessionState};
 use crate::planning::project::Project;
 
 mod kickoff;
+mod owner;
 mod regressions;
 mod scopes;
 mod start;
@@ -179,7 +180,6 @@ fn observer_commands_are_refused_while_another_browser_holds_authoring() {
 fn a_slash_command_is_refused_with_the_input_refusal_text() {
     let f = fixture(false);
     let tab = f.connect(&browser());
-
     let result = f.command(&tab, send("\0  /help", Vec::new()));
 
     assert_eq!(result, refused(InputRefusal::SlashCommand));
@@ -293,6 +293,7 @@ fn start_with_a_current_offer_marks_the_opening_as_offer() {
         client_id: Some("c1".into()),
         offer: Some(offer.clone()),
         feature: Some("demo".into()),
+        plan: None,
         text: None,
         attachments: Vec::new(),
     };
@@ -305,6 +306,8 @@ fn start_with_a_current_offer_marks_the_opening_as_offer() {
         *guidance.calls.lock().unwrap(),
         vec![(Some(offer.clone()), None, Some("demo".into()))]
     );
+    let session = f.bridge.chat_snapshot(true).session.unwrap();
+    assert_eq!(session.feature.as_deref(), Some("demo"));
     assert!(matches!(
         item,
         Item::User {
@@ -329,6 +332,7 @@ fn a_typed_start_passes_the_formatted_first_message_and_has_no_origin() {
         client_id: Some("c1".into()),
         offer: None,
         feature: None,
+        plan: None,
         text: Some("\0Review\r\nthis".into()),
         attachments: vec![attachment("doc/product/demo/index.md")],
     };

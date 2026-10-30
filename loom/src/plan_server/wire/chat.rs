@@ -37,6 +37,8 @@ pub enum ChatCommand {
         offer: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         feature: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        plan: Option<String>,
         text: Option<String>,
         attachments: Vec<AttachmentInput>,
     },
