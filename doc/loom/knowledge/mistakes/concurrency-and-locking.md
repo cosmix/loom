@@ -45,3 +45,13 @@ match.
 (`verify/transitions/persistence.rs`).
 
 **Prevention:** change an existing stage record in a test with `update_stage(id, dir, |stage| { ...; Ok(()) })`.
+
+## A Session Read Inside `update_stage` Deadlocked the Daemon on Its Own flock (2026-10-30)
+
+**What happened:** commit `d3503aa2` made `record_status_change` (`loom/src/verify/transitions/persistence.rs`) look up the stage session's type with `load_session_exact`. The daemon froze at the first host-job completion after the install: `complete_stage` (`loom/src/host_verify/apply.rs`) holds the exclusive `sessions/` directory lock across `update_stage`, and `load_session_exact` → `locked_read` takes a shared lock on that same directory. The poll thread blocked forever right after writing the stage `completed` (the log shows `host job ended` with no `host job applied`, and `stage-events.jsonl` has no completed row). `loom status`, the web dashboard and the session's `loom stage complete` waiter hung behind the held lock until `killall loom`; the card-payload stage sat unmerged for 11 minutes.
+
+**Why:** `lock_parent_dir` (`loom/src/fs/locking.rs`) opens a new descriptor per call, and `flock` locks taken through separate open file descriptions conflict even inside one process, so a nested locked read of a directory the caller already holds exclusively never returns. The new `update_stage` tests call it with no caller-held lock. The one existing test that runs it under the sessions lock, `host_verify::tests_apply::a_passing_job_completes_the_stage_and_records_the_receipt`, hangs instead of failing, so only a full `cargo test` would have shown it, as a stuck run.
+
+**Prevention:** what `update_stage` runs while it holds the stages lock (the modify closure and `record_status_change`) takes no `locked_*` lock of its own: a caller may already hold that directory exclusively, and a stages→sessions order inverts `complete_stage`'s sessions→stages order. A change to what runs under a lock gets a test that holds the caller's lock and asserts the call returns within a timeout, so a deadlock fails the suite instead of hanging it.
+
+**Fix:** `record_status_change` reads the session type without the directory lock; session files are replaced by rename, so an unlocked read sees one whole version.
