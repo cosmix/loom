@@ -16,6 +16,7 @@ const doc: DocView = {
   lock: null,
   sections: [],
   plan: null,
+  last_change: null,
   too_large: false,
   truncated: false,
   size: 12,

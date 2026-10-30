@@ -76,6 +76,10 @@ fn plain_section_is_editable_and_paths_are_repo_relative() {
     assert_eq!(doc.kind, EntryKind::Section);
     assert_eq!(doc.text, text);
     assert_eq!(doc.hash, normalized_hash(text));
+    assert!(doc
+        .last_change
+        .as_deref()
+        .is_some_and(|stamp| stamp.ends_with('Z')));
     assert!(doc.editable && doc.lock.is_none() && !doc.too_large && !doc.truncated);
     let purpose = doc
         .sections
@@ -137,7 +141,7 @@ fn locked_documents_carry_the_verbatim_notices() {
     assert_eq!(lock.reason, LockKind::BriefOfLockedPlan);
     assert_eq!(
         lock.notice,
-        "The plan `run` is running. `loom run` works from the committed copy."
+        "The plan `run` is running. `loom run` works from the committed copy, so the app keeps it read-only."
     );
     assert_eq!(
         lock.plan.as_deref(),
