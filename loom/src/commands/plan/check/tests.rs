@@ -35,6 +35,24 @@ fn keys(value: &Value) -> Vec<&str> {
         .collect()
 }
 
+fn assert_feature_checklist(feature: &Value) {
+    let checklist = &feature["checklist"];
+    assert_eq!(
+        keys(checklist),
+        [
+            "current",
+            "feature",
+            "items",
+            "primary",
+            "secondary",
+            "state",
+            "steps"
+        ]
+    );
+    assert_eq!(checklist["feature"], feature["name"]);
+    assert_eq!(checklist["steps"].as_array().unwrap().len(), 6);
+}
+
 #[test]
 fn report_serializes_the_contract_keys() {
     let temp = tempfile::tempdir().unwrap();
@@ -58,21 +76,7 @@ fn report_serializes_the_contract_keys() {
     assert_eq!(value["features"][0]["name"], "alpha");
     assert_eq!(value["features"][1]["name"], "beta");
     for feature in value["features"].as_array().unwrap() {
-        let checklist = &feature["checklist"];
-        assert_eq!(
-            keys(checklist),
-            [
-                "current",
-                "feature",
-                "items",
-                "primary",
-                "secondary",
-                "state",
-                "steps"
-            ]
-        );
-        assert_eq!(checklist["feature"], feature["name"]);
-        assert_eq!(checklist["steps"].as_array().unwrap().len(), 7);
+        assert_feature_checklist(feature);
     }
     assert_eq!(
         value["standalone"],
@@ -128,7 +132,12 @@ fn human_output_groups_checklists_before_standalone_and_problems() {
     assert!(beta.starts_with("1 Vision: Gap\n"), "{output}");
     for group in [alpha, beta] {
         for want in [
-            "7 Run: Optional",
+            "1 Vision: Gap",
+            "2 Product spec: Gap",
+            "3 Metaplan: Gap",
+            "4 Plans: Gap",
+            "5 Pressure test: Optional",
+            "6 Run: Optional",
             "Current: Vision",
             "Primary: start-vision",
             "Secondary: start-metaplan",
@@ -138,6 +147,7 @@ fn human_output_groups_checklists_before_standalone_and_problems() {
                 "missing {want}: {group}"
             );
         }
+        assert!(!group.contains("Review"), "{group}");
         assert!(!group.contains("solo"), "{group}");
     }
     assert!(alpha.contains("Secondary: pressure-test:a\n"), "{output}");

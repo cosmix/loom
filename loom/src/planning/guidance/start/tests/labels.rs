@@ -7,20 +7,20 @@ fn vision_offer_labels_name_the_action_and_section() {
             Offer::StartVision {
                 feature: "f".into(),
             },
-            "Start a vision discussion",
+            "Start the vision",
         ),
         (
             Offer::FixVisionTable {
                 feature: "f".into(),
             },
-            "Fix the vision's section table",
+            "Fix the section table",
         ),
         (
             Offer::AddSectionToVision {
                 feature: "f".into(),
                 number: 5,
             },
-            "Add section 05 to the vision's table",
+            "Add section 05 to the vision",
         ),
         (
             Offer::WriteSection {
@@ -48,13 +48,10 @@ fn metaplan_and_review_offer_labels_name_the_action() {
             Offer::StartMetaplan {
                 feature: "f".into(),
             },
-            "Start a metaplan from the product spec",
+            "Start the metaplan",
         ),
-        (
-            Offer::RefineSpec,
-            "Refine the spec in light of what was built",
-        ),
-        (Offer::NewMetaplanRound, "Start a new metaplan round"),
+        (Offer::RefineSpec, "Compare spec with build"),
+        (Offer::NewMetaplanRound, "New metaplan round"),
     ] {
         assert_eq!(AuthoringStart::Offer(offer).label(), expected);
     }

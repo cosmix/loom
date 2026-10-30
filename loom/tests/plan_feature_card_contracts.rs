@@ -1,4 +1,4 @@
-//! Contracts for the feature card payload: title, pitch and step counts on `ChecklistView`.
+//! Contracts for the feature card payload: slug, pitch and step counts on `ChecklistView`.
 
 use loom::plan_server::wire::checklist::{ChecklistView, ProjectChecklistView};
 use loom::planning::project::Project;
@@ -31,29 +31,11 @@ fn card(root: &Path, feature: &str) -> ChecklistView {
 }
 
 #[test]
-fn title_strips_vision_suffix() {
-    let vision = "# Loom Plan — Product Vision\n\nA planner for loom.\n";
-    let temp = tree(&[("doc/product/demo/index.md", vision)]);
-    let view = card(temp.path(), "demo");
-    assert_eq!(view.title, "Loom Plan");
-    assert!(view.has_product);
-}
-
-#[test]
-fn title_falls_back_to_metaplan_heading() {
-    let meta = "# Token Optimization Metaplan\n\nThis metaplan orders six plans.\n";
-    let temp = tree(&[("doc/plans/tokens/index.md", meta)]);
-    assert!(!temp.path().join("doc/product").exists());
-    let view = card(temp.path(), "tokens");
-    assert_eq!(view.title, "Token Optimization");
-    assert!(!view.has_product);
-}
-
-#[test]
 fn pitch_skips_status_paragraph() {
     let vision = "# Demo\n\nStatus: agreed vision (2026-10-26).\n\nA browser app for plans.\n";
     let temp = tree(&[("doc/product/demo/index.md", vision)]);
     let view = card(temp.path(), "demo");
+    assert!(view.has_product);
     assert_eq!(view.pitch.as_deref(), Some("A browser app for plans."));
 }
 
@@ -61,7 +43,9 @@ fn pitch_skips_status_paragraph() {
 fn pitch_falls_back_to_metaplan() {
     let meta = "# Token Optimization Metaplan\n\nThis metaplan orders six plans.\n";
     let temp = tree(&[("doc/plans/tokens/index.md", meta)]);
+    assert!(!temp.path().join("doc/product").exists());
     let view = card(temp.path(), "tokens");
+    assert!(!view.has_product);
     assert_eq!(
         view.pitch.as_deref(),
         Some("This metaplan orders six plans.")
@@ -79,6 +63,12 @@ fn step_counts_follow_documents() {
         ("doc/product/demo/section_02.md", "# Beta\n\nBody.\n"),
     ]);
     let view = card(temp.path(), "demo");
+    assert_eq!(view.feature, "demo");
+    assert!(serde_json::to_value(&view).unwrap().get("title").is_none());
+    let steps: Vec<_> = view.steps.iter().map(|s| s.number).collect();
+    assert_eq!(steps, [1, 2, 3, 4, 5, 6]);
+    assert_eq!(view.steps[5].name, "Run");
+    assert_eq!(view.primary.as_ref().unwrap().label, "Write section 03");
     let step = view.steps.iter().find(|s| s.number == 2).unwrap();
     assert_eq!(step.count.as_deref(), Some("2/3"));
     assert_eq!(step.label, "Product spec");

@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use serde::{Serialize, Serializer};
 
 use crate::planning::discover::DocTree;
-use crate::planning::kinds::{vision_path, DocKind};
+use crate::planning::kinds::vision_path;
 use crate::planning::metaplan::MetaplanEntry;
 use crate::planning::pressure::PressureRecord;
 use crate::planning::slug::{PlanEntry, PlanState};
@@ -57,9 +57,7 @@ pub enum Step {
     Plans,
     /// 5: pressure tests of written plans.
     PressureTest,
-    /// 6: review (never recorded).
-    Review,
-    /// 7: running the plans.
+    /// 6: running the plans.
     Run,
 }
 
@@ -155,7 +153,7 @@ pub struct Checklist {
     pub feature: String,
     /// The current step.
     pub current: CurrentStep,
-    /// All seven steps in order with their marks (JSON `[{"step", "mark"}]`).
+    /// All six steps in order with their marks (JSON `[{"step", "mark"}]`).
     #[serde(serialize_with = "steps_json")]
     pub steps: Vec<(Step, StepMark)>,
     /// One item per expected, unlisted or untested document, in step order.
@@ -216,36 +214,6 @@ struct Facts<'a> {
     untested: Vec<&'a PlanEntry>,
 }
 
-/// Every metaplan entry naming a plan: `(metaplan, slug)`.
-fn metaplan_entries(parsed: &ParsedDocs) -> Vec<(&Path, &str)> {
-    parsed
-        .metaplans
-        .iter()
-        .flat_map(|(path, list)| {
-            list.iter()
-                .filter_map(move |e| Some((path.as_path(), e.slug.as_deref()?)))
-        })
-        .collect()
-}
-
-fn unlisted_sections<'a>(
-    tree: &'a DocTree,
-    feature: &str,
-    rows: Option<&[VisionRow]>,
-) -> Vec<(u32, &'a Path)> {
-    let listed: BTreeSet<u32> = rows.unwrap_or_default().iter().map(|r| r.number).collect();
-    tree.docs
-        .iter()
-        .filter(|doc| doc.kind.feature() == Some(feature))
-        .filter_map(|doc| match &doc.kind {
-            DocKind::ProductSection { number, .. } if !listed.contains(number) => {
-                Some((*number, doc.path.as_path()))
-            }
-            _ => None,
-        })
-        .collect()
-}
-
 impl<'a> Facts<'a> {
     fn new(tree: &'a DocTree, parsed: &'a ParsedDocs, feature: &'a str) -> Self {
         let vision = tree.get(&vision_path(feature)).is_some();
@@ -253,8 +221,8 @@ impl<'a> Facts<'a> {
         let written: BTreeSet<u32> = parsed.sections_written.iter().copied().collect();
         let numbers = rows.unwrap_or_default().iter().map(|row| row.number);
         let missing_sections = numbers.filter(|n| !written.contains(n)).collect();
-        let unlisted_sections = unlisted_sections(tree, feature, rows);
-        let entries = metaplan_entries(parsed);
+        let unlisted_sections = items::unlisted_sections(tree, feature, rows);
+        let entries = items::metaplan_entries(parsed);
         let mut named = BTreeSet::new();
         let firsts: Vec<_> = entries
             .iter()
@@ -322,7 +290,6 @@ impl<'a> Facts<'a> {
                 Step::PressureTest,
                 done_or(self.untested.is_empty(), StepMark::Optional),
             ),
-            (Step::Review, StepMark::Optional),
             (Step::Run, self.run_mark()),
         ]
     }

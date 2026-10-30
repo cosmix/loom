@@ -1,11 +1,37 @@
 //! Feature boundaries for checklist marks, items and starting-point facts.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 
-use super::tests::{checklist, load, metaplan, owned, plan, section, spec, vision};
+use tempfile::TempDir;
+
+use super::tests::{checklist, metaplan, owned, plan, section, spec, vision};
 use super::{CurrentStep, ItemStatus, Offer, Step, StepMark};
+use crate::planning::project::Project;
 use crate::planning::slug::PlanState;
+
+pub(super) fn put(root: &Path, rel: &str, text: &str) {
+    let path = root.join(rel);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+}
+
+pub(super) fn tree(files: &[(&str, String)]) -> TempDir {
+    let temp = TempDir::new().unwrap();
+    fs::create_dir_all(temp.path().join("doc")).unwrap();
+    for (rel, text) in files {
+        put(temp.path(), rel, text);
+    }
+    temp
+}
+
+pub(super) fn load(files: &[(String, String)]) -> (TempDir, Project) {
+    let pairs: Vec<(&str, String)> = files.iter().map(|(r, t)| (r.as_str(), t.clone())).collect();
+    let temp = tree(&pairs);
+    let project = Project::load(temp.path()).unwrap();
+    (temp, project)
+}
 
 #[test]
 fn run_is_optional_until_every_entry_is_finished() {
@@ -16,7 +42,7 @@ fn run_is_optional_until_every_entry_is_finished() {
     ];
     let (_temp, project) = load(&spec(files));
     assert_eq!(
-        checklist(&project).steps[6],
+        checklist(&project).steps[5],
         (Step::Run, StepMark::Optional)
     );
     assert_eq!(checklist(&project).current, CurrentStep::Ready);
@@ -146,7 +172,7 @@ fn foreign_finished_plans_satisfy_entries_and_report_the_wrong_home() {
 
     assert_eq!(c.current, CurrentStep::ReadyAllDone);
     assert_eq!(c.steps[3], (Step::Plans, StepMark::Done));
-    assert_eq!(c.steps[6], (Step::Run, StepMark::Done));
+    assert_eq!(c.steps[5], (Step::Run, StepMark::Done));
     assert!(c.state.plans_by_state.is_empty());
     let plans: Vec<_> = c
         .items

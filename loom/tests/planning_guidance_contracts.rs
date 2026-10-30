@@ -242,6 +242,20 @@ fn write_plan_opening_names_entry_heading() {
 }
 
 #[test]
+fn compare_spec_with_build_keeps_retro_guidance() {
+    let fx = Fixture::new();
+    let offer = Offer::RefineSpec;
+    assert_eq!(offer.label(), "Compare spec with build");
+    let start = AuthoringStart::Offer(offer);
+    let message = opening_message(&start, &fx.project, Some("f")).unwrap();
+    assert_eq!(
+        message.lines().next(),
+        Some("loom plan: done, Compare spec with build.")
+    );
+    assert!(message.contains("Load the skill loom-plan:retro"));
+}
+
+#[test]
 fn offer_id_lookup_rejects_unknown_ids() {
     let fx = Fixture::new();
     let primary = fx

@@ -1,31 +1,27 @@
-//! Feature-card facts and the seven planning-step counters.
+//! Feature-card facts and the six planning-step counters.
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
-use super::{ChecklistView, PlanCountsView, SectionView};
-use crate::fs::knowledge::index::title_case;
+use super::rows::document_rows;
+use super::{ChecklistView, MetaplanRowView, PlanCountsView, PlanRowView, SectionView};
 use crate::planning::checklist::{ItemStatus, ProjectState};
 use crate::planning::kinds::{section_path, vision_path};
 use crate::planning::project::{Feature, Project};
 use crate::planning::slug::PlanState;
 
-const VISION_SUFFIXES: &[&str] = &["Product Vision", "Vision"];
-const METAPLAN_SUFFIXES: &[&str] = &["Engineering Metaplan", "Metaplan"];
+#[derive(Default)]
+pub(super) struct CardFacts {
+    pub metaplans: Vec<MetaplanRowView>,
+    pub plan_rows: Vec<PlanRowView>,
+}
 
-pub(super) fn card_facts(project: &Project, feature: &str, view: &mut ChecklistView) {
+pub(super) fn card_facts(project: &Project, feature: &str, view: &mut ChecklistView) -> CardFacts {
     let Some(data) = project.feature(feature) else {
-        return;
+        return CardFacts::default();
     };
     let state = &data.checklist.state;
     let vision = vision_path(feature);
     view.has_product = project.docs.contains_key(&vision);
-    view.title = document_title(project, &vision, VISION_SUFFIXES)
-        .or_else(|| {
-            let (path, _) = data.metaplans.first()?;
-            document_title(project, path, METAPLAN_SUFFIXES)
-        })
-        .unwrap_or_else(|| title_case(feature));
     view.sections = sections(project, data);
 
     let listed: BTreeSet<_> = data
@@ -54,6 +50,11 @@ pub(super) fn card_facts(project: &Project, feature: &str, view: &mut ChecklistV
             .count(),
     );
     step_facts(state, existing, view);
+    let (metaplans, plan_rows) = document_rows(project, data);
+    CardFacts {
+        metaplans,
+        plan_rows,
+    }
 }
 
 fn sections(project: &Project, feature: &Feature) -> Vec<SectionView> {
@@ -105,38 +106,14 @@ fn step_facts(state: &ProjectState, existing: usize, view: &mut ChecklistView) {
             ),
             5 if view.untested > 0 => (Some(view.untested.to_string()), "Untested"),
             5 => (None, "Pressure test"),
-            6 => (None, "Review"),
-            7 if view.plans.running > 0 => (Some(view.plans.running.to_string()), "Running"),
-            7 if view.plans.done > 0 => (Some(view.plans.done.to_string()), "Done"),
-            7 => (None, "Run"),
+            6 if view.plans.running > 0 => (Some(view.plans.running.to_string()), "Running"),
+            6 if view.plans.done > 0 => (Some(view.plans.done.to_string()), "Done"),
+            6 => (None, "Run"),
             _ => continue,
         };
         step.count = count;
         step.label = label.into();
     }
-}
-
-fn document_title(project: &Project, path: &Path, suffixes: &[&str]) -> Option<String> {
-    let heading = project
-        .docs
-        .get(path)?
-        .sections
-        .headings
-        .iter()
-        .find(|heading| heading.level == 1)?;
-    strip_title(&heading.title, suffixes)
-}
-
-fn strip_title(title: &str, suffixes: &[&str]) -> Option<String> {
-    let plain = title.replace('`', "");
-    let title = plain.trim();
-    let title = suffixes
-        .iter()
-        .find_map(|suffix| title.strip_suffix(*suffix))
-        .map_or(title, |prefix| {
-            prefix.trim_end_matches(|ch: char| ch.is_whitespace() || matches!(ch, '—' | '-'))
-        });
-    (!title.is_empty()).then(|| title.to_owned())
 }
 
 fn wire_count(count: usize) -> u32 {
@@ -145,7 +122,6 @@ fn wire_count(count: usize) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{strip_title, METAPLAN_SUFFIXES, VISION_SUFFIXES};
     use crate::plan_server::wire::checklist::{ChecklistView, ProjectChecklistView, StepView};
     use crate::planning::project::Project;
     use std::fs;
@@ -177,22 +153,6 @@ mod tests {
             .iter()
             .find(|step| step.number == number)
             .unwrap()
-    }
-
-    #[test]
-    fn test_card_title_falls_back_to_capitalised_feature_slug() {
-        let temp = tree(&[(
-            "doc/product/token-optimization/index.md",
-            "# Product Vision\n",
-        )]);
-        let project = Project::load(temp.path()).unwrap();
-        let feature = project.feature("token-optimization").unwrap();
-
-        let initial = ChecklistView::from(&feature.checklist);
-        let enriched = card(temp.path(), "token-optimization");
-
-        assert_eq!(initial.title, "Token Optimization");
-        assert_eq!(enriched.title, "Token Optimization");
     }
 
     #[test]
@@ -279,14 +239,14 @@ mod tests {
     }
 
     #[test]
-    fn test_step_seven_running_takes_priority_over_done() {
+    fn test_step_six_running_takes_priority_over_done() {
         let temp = tree(&[
             ("doc/plans/demo/IN_PROGRESS-PLAN-a.md", "# Alpha\n"),
             ("doc/plans/demo/DONE-PLAN-b.md", "# Beta\n"),
         ]);
 
         let view = card(temp.path(), "demo");
-        let run = step(&view, 7);
+        let run = step(&view, 6);
 
         assert_eq!(
             (run.label.as_str(), run.count.as_deref()),
@@ -309,56 +269,5 @@ mod tests {
             (step(&view, 3).count.as_deref(), view.plans.listed),
             (Some("2"), 1)
         );
-    }
-
-    #[test]
-    fn test_strip_title_removes_vision_suffixes_and_separators() {
-        for title in [
-            "Loom Plan — Product Vision",
-            "Loom Plan - Product Vision",
-            "Loom Plan Product Vision",
-            "Loom Plan Vision",
-            "  `Loom Plan` — `Product Vision`  ",
-        ] {
-            assert_eq!(
-                strip_title(title, VISION_SUFFIXES).as_deref(),
-                Some("Loom Plan")
-            );
-        }
-    }
-
-    #[test]
-    fn test_strip_title_removes_metaplan_suffixes() {
-        for title in [
-            "Token Optimization Metaplan",
-            "Token Optimization Engineering Metaplan",
-            "Token Optimization — Engineering Metaplan",
-        ] {
-            assert_eq!(
-                strip_title(title, METAPLAN_SUFFIXES).as_deref(),
-                Some("Token Optimization")
-            );
-        }
-    }
-
-    #[test]
-    fn test_strip_title_empty_results_allow_fallback() {
-        for title in [
-            "",
-            "  ` `  ",
-            "Vision",
-            "Product Vision",
-            "— Product Vision",
-        ] {
-            assert_eq!(strip_title(title, VISION_SUFFIXES), None);
-        }
-        assert_eq!(strip_title("Engineering Metaplan", METAPLAN_SUFFIXES), None);
-    }
-
-    #[test]
-    fn test_strip_title_preserves_case_and_nontrailing_words() {
-        for title in ["Loom product vision", "Vision for Loom", "Loom-"] {
-            assert_eq!(strip_title(title, VISION_SUFFIXES).as_deref(), Some(title));
-        }
     }
 }

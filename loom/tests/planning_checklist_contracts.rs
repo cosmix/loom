@@ -110,7 +110,11 @@ fn problems(project: &Project, code: &str) -> Vec<(PathBuf, Option<usize>)> {
     found.map(|x| (x.path.clone(), x.line)).collect()
 }
 
-type Row = (Vec<(&'static str, String)>, CurrentStep, &'static str);
+type Row = (
+    Vec<(&'static str, String)>,
+    CurrentStep,
+    Option<&'static str>,
+);
 
 /// One fixture per row of section 01's offers table: files, current step, primary offer id.
 fn state_rows() -> Vec<Row> {
@@ -128,13 +132,17 @@ fn state_rows() -> Vec<Row> {
     // Discovery needs a named document to identify a feature without a vision.
     let no_vision = vec![("doc/product/demo/note.md", "# Note\n".into())];
     vec![
-        (no_vision, At(Step::Vision), "start-vision"),
-        (product, At(Step::ProductSpec), "write-section:01"),
-        (spec(vec![]), At(Step::Metaplan), "start-metaplan"),
-        (spec(vec![meta(), (pb, b)]), At(Step::Plans), "write-plan:a"),
-        (half, At(Step::PressureTest), "pressure-test:b"),
-        (tested, Ready, "start-run"),
-        (archived, ReadyAllDone, "refine-spec"),
+        (no_vision, At(Step::Vision), Some("start-vision")),
+        (product, At(Step::ProductSpec), Some("write-section:01")),
+        (spec(vec![]), At(Step::Metaplan), Some("start-metaplan")),
+        (
+            spec(vec![meta(), (pb, b)]),
+            At(Step::Plans),
+            Some("write-plan:a"),
+        ),
+        (half, At(Step::PressureTest), Some("pressure-test:b")),
+        (tested, Ready, Some("start-run")),
+        (archived, ReadyAllDone, None),
     ]
 }
 
@@ -145,8 +153,12 @@ fn checklist_state_rows() {
         let c = checklist(&root);
         assert_eq!(c.feature, "demo");
         assert_eq!(c.current, current, "row {}", i + 1);
-        assert_eq!(primary(&c).as_deref(), Some(want), "row {}", i + 1);
-        assert_eq!(mark(&c, Step::Review), Some(StepMark::Optional));
+        assert_eq!(primary(&c).as_deref(), want, "row {}", i + 1);
+        let steps: Vec<_> = c.steps.iter().map(|(s, _)| *s as u8).collect();
+        assert_eq!(steps, [1, 2, 3, 4, 5, 6]);
+        if current == CurrentStep::ReadyAllDone {
+            assert_eq!(secondary(&c), ["refine-spec", "new-metaplan-round"]);
+        }
         if i == 4 {
             assert!(secondary(&c).contains(&"start-run".to_string()), "{c:?}");
         }
