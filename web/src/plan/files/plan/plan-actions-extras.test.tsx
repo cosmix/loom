@@ -47,9 +47,9 @@ it("renders only the follow-up the server offers, and runs its handler", () => {
   try {
     mountDone(review);
 
-    expect(screen.queryByRole("button", { name: "Start a new metaplan round" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New metaplan round" })).toBeNull();
     expect(screen.queryByText("No offer is available")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Review what was built" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare spec with build" }));
     expect(handler).toHaveBeenCalledWith(review);
   } finally {
     unregister();
@@ -59,6 +59,6 @@ it("renders only the follow-up the server offers, and runs its handler", () => {
 it("renders both follow-ups when both are offered", () => {
   mountDone(offer("refine_spec", "Review demo"), offer("new_metaplan_round", "Round demo"));
 
-  expect(screen.getByRole("button", { name: "Review what was built" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Start a new metaplan round" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Compare spec with build" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "New metaplan round" })).toBeTruthy();
 });

@@ -127,7 +127,7 @@ const OFFER_TEXT: Record<OfferKind, OfferTextBuilder> = { ...DOCUMENT_TEXT, ...P
 
 /** A short imperative title over a one-line detail, per offer kind. */
 function offerText(offer: OfferView, checklist: ChecklistView): OfferText {
-  const owner = offer.feature ?? checklist.title;
+  const owner = offer.feature ?? checklist.feature;
   const section =
     offer.number === undefined ? (offer.target ?? owner) : String(offer.number).padStart(2, "0");
   return OFFER_TEXT[offer.kind]({ offer, checklist, owner, plan: planName(offer, owner), section });

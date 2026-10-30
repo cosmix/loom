@@ -182,13 +182,13 @@ describe("overviews and the document key", () => {
     expect(Array.from(hints.querySelectorAll("kbd"), (kbd) => kbd.textContent)).not.toContain("a");
     expect(hints.textContent).not.toContain("adds the sentence to chat");
   });
-  it("the overview eyebrow names the feature by its title", async () => {
+  it("the overview eyebrow names the feature by its slug", async () => {
     serveOverview();
     renderAt("/f/demo/engineering", (store) =>
       store.set(checklistAtom, checklistViewSchema.parse(checklistFixture.checklists[0]!)),
     );
     await readingColumn();
-    expect(screen.getByText("Demo · engineering overview")).toBeTruthy();
+    expect(screen.getByText("demo · engineering overview")).toBeTruthy();
   });
   it("opening a run changes no URL and sends no request", async () => {
     serveOverview();

@@ -136,14 +136,24 @@ export const planCountsViewSchema = z.strictObject({
   running: u32,
   done: u32,
 });
+export const metaplanRowViewSchema = z.strictObject({ path: z.string(), title: z.string() });
+export const planRowViewSchema = z.strictObject({
+  slug: z.string(),
+  path: z.string(),
+  title: z.string(),
+  state: z.string(),
+  pressure_date: z.string().nullable(),
+  listed: z.boolean(),
+});
 export const checklistViewSchema = z.strictObject({
   feature: z.string(),
   pitch: z.string().nullable(),
-  title: z.string(),
   has_product: z.boolean(),
   sections: z.array(sectionViewSchema),
   plans: planCountsViewSchema,
   untested: u32,
+  metaplans: z.array(metaplanRowViewSchema),
+  plan_rows: z.array(planRowViewSchema),
   current: currentViewSchema,
   steps: z.array(stepViewSchema),
   primary: offerViewSchema.nullable(),

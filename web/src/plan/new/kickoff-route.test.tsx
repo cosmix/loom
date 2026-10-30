@@ -27,11 +27,12 @@ const session = sessionViewSchema.parse({ ...snapshotFixture.session, state: "id
 const feature: ChecklistView = {
   feature: "planner-search",
   pitch: null,
-  title: "Planner Search",
   has_product: true,
   sections: [],
   plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
   untested: 0,
+  metaplans: [],
+  plan_rows: [],
   current: { kind: "step", number: 1 },
   steps: [],
   primary: null,

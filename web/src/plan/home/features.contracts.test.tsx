@@ -14,16 +14,15 @@ import * as shelf from "@/plan/home/standalone-shelf";
 
 afterEach(cleanup);
 
-it("features repair feature card shows the title instead of the slug", () => {
-  const card = checklist("planner-ui", { title: "Planner UI", sections: 12, plans: 11 });
+it("features repair feature card shows the slug", () => {
+  const card = checklist("planner-ui", { sections: 12, plans: 11 });
   const { container } = renderWithProject(
     <featureCard.FeatureCards />,
     project({ checklists: [card] }),
   );
 
   const list = screen.getByRole("list", { name: "Features" });
-  expect(within(list).getByRole("heading", { name: "Planner UI" })).toBeTruthy();
-  expect(within(list).queryByRole("heading", { name: "planner-ui" })).toBeNull();
+  expect(within(list).getByRole("heading", { name: "planner-ui" })).toBeTruthy();
   expect(elementsWithText(container, "12 sections").length).toBeGreaterThan(0);
 });
 
@@ -46,7 +45,7 @@ it("features repair standalone shelf starts collapsed with its count", () => {
 });
 
 it("features repair feature screen selects the step from the query", () => {
-  const demo = checklist("demo", { title: "Demo", sections: 3, plans: 2, current: 2 });
+  const demo = checklist("demo", { sections: 3, plans: 2, current: 2 });
   renderFeatureRoute("/f/demo?step=4", project({ checklists: [demo] }));
 
   const nav = screen.getByRole("navigation", { name: "Steps" });

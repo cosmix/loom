@@ -23,7 +23,7 @@ export function stepHref(feature: string, step: StepView): string {
 }
 
 /**
- * The glyph of one step: the circle-check once done, the running ring while step 7 executes,
+ * The glyph of one step: the circle-check once done, the running ring while the Run step executes,
  * else the step's own glyph (full-strength when it is the current step).
  */
 export function StepGlyph({
@@ -60,7 +60,7 @@ function StepListText({ step }: { step: StepView }) {
   );
 }
 
-/** The narrow rail: one summary button whose popover lists the seven steps as links. */
+/** The narrow rail: one summary button whose popover lists the steps as links. */
 export function RailPopover({
   checklist,
   summary,

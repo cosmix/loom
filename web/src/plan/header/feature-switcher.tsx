@@ -42,17 +42,15 @@ function isFilesRoute(pathname: string): boolean {
   return ["/files", "/plans"].some((root) => pathname === root || pathname.startsWith(`${root}/`));
 }
 
-/** What the app bar names: the route's feature (by title), the new-work draft, or the project. */
+/** What the app bar names: the route's feature (by slug), the new-work draft, or the project. */
 export function useIdentity(): Identity {
   const { pathname } = useLocation();
   const featureRoute = useMatch("/f/:feature/*");
-  const features = useAtomValue(featuresAtom);
   const serverInfo = useAtomValue(serverInfoAtom);
   const pageKey = pageKeyOfPath(pathname);
   const feature = (pageKey === null ? null : featureOfKey(pageKey)) ?? featureRoute?.params.feature;
   if (feature !== undefined) {
-    const title = features.find((candidate) => candidate.feature === feature)?.title;
-    return { feature, eyebrow: "Planning · feature", title: title || feature };
+    return { feature, eyebrow: "Planning · feature", title: feature };
   }
   if (pathname === "/new") {
     return { feature, eyebrow: "Planning · new feature", title: "Untitled" };
@@ -75,7 +73,7 @@ function FeatureLinks({
 
   return (
     <nav aria-label="Feature navigation" className="flex flex-col gap-1" onKeyDown={moveFocus}>
-      {features.map(({ feature, title }) => (
+      {features.map(({ feature }) => (
         <Link
           key={feature}
           to={`/f/${encodeURIComponent(feature)}`}
@@ -83,15 +81,10 @@ function FeatureLinks({
           className={LINK_CLASS}
           onClick={onSelect}
         >
-          <span className="truncate font-medium">
-            <Untrusted text={title || feature} />
+          <span className="truncate font-mono text-[13px] font-medium">
+            <Untrusted text={feature} />
           </span>
-          <span className="flex shrink-0 items-center gap-2">
-            <span className="font-mono text-xs text-muted-foreground">
-              <Untrusted text={feature} />
-            </span>
-            {feature === currentFeature && <Check className="size-4" aria-hidden="true" />}
-          </span>
+          {feature === currentFeature && <Check className="size-4 shrink-0" aria-hidden="true" />}
         </Link>
       ))}
       {features.length > 0 && <hr className="my-1 border-hairline" />}

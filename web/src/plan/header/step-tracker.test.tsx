@@ -25,14 +25,13 @@ function render(ui: ReactElement, store = createStore()) {
 const checklist = checklistViewSchema.parse({
   ...checklistFixture.checklists[0]!,
   steps: [
-    ...checklistFixture.checklists[0]!.steps.map((step) =>
+    ...checklistFixture.checklists[0]!.steps.slice(0, 2).map((step) =>
       step.number === 2 ? { ...step, count: "3/5" } : step,
     ),
     { number: 3, name: "Metaplan", mark: "active", count: null, label: "Metaplan" },
     { number: 4, name: "Plans", mark: "optional", count: null, label: "Plans" },
     { number: 5, name: "Plan review", mark: "optional", count: null, label: "Plan review" },
-    { number: 6, name: "Run review", mark: "optional", count: null, label: "Run review" },
-    { number: 7, name: "Execute", mark: "optional", count: null, label: "Execute" },
+    { number: 6, name: "Execute", mark: "optional", count: null, label: "Execute" },
   ],
 });
 
@@ -42,7 +41,7 @@ describe("StepTracker cells", () => {
     const list = screen.getByRole("list", { name: "Steps" });
     const items = within(list).getAllByRole("listitem");
     expect(list.tagName).toBe("OL");
-    expect(items).toHaveLength(7);
+    expect(items).toHaveLength(6);
     expect(items[0]!.getAttribute("aria-current")).toBeNull();
     expect(items[1]!.getAttribute("aria-current")).toBe("step");
     expect(screen.getAllByRole("listitem", { current: "step" })).toHaveLength(1);
@@ -58,8 +57,7 @@ describe("StepTracker cells", () => {
     [3, "Metaplan", "—"],
     [4, "Plans", "—"],
     [5, "Plan review", "—"],
-    [6, "Run review", "—"],
-    [7, "Execute", "—"],
+    [6, "Execute", "—"],
   ] as const)("shows step %i as its server count over its label %s", (_number, name, count) => {
     render(<StepTracker checklist={checklist} narrow={false} />);
 
@@ -74,7 +72,7 @@ describe("StepTracker cells", () => {
     render(<StepTracker checklist={checklist} narrow={false} />);
     const links = within(screen.getByRole("list", { name: "Steps" })).getAllByRole("link");
     expect(links.map((link) => link.getAttribute("href"))).toEqual(
-      [1, 2, 3, 4, 5, 6, 7].map((number) => `/f/${checklist.feature}?step=${number}`),
+      [1, 2, 3, 4, 5, 6].map((number) => `/f/${checklist.feature}?step=${number}`),
     );
   });
 });
@@ -86,7 +84,6 @@ describe("StepTracker glyphs", () => {
     ["Metaplan", "lucide-map", "text-muted-foreground"],
     ["Plans", "lucide-list-checks", "text-muted-foreground"],
     ["Plan review", "lucide-gauge", "text-muted-foreground"],
-    ["Run review", "lucide-scan-eye", "text-muted-foreground"],
     ["Execute", "lucide-play", "text-muted-foreground"],
   ])("renders %s with its glyph %s and tone %s", (name, glyphClass, tone) => {
     render(<StepTracker checklist={checklist} narrow={false} />);
@@ -97,7 +94,7 @@ describe("StepTracker glyphs", () => {
     expect(glyph.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("swaps step 7's glyph for the running ring while a plan runs", () => {
+  it("swaps the Run step's glyph for the running ring while a plan runs", () => {
     const store = createStore();
     store.set(runStripAtom, { ...runStripSchema.parse(runStripFixture), daemon_running: true });
     render(<StepTracker checklist={checklist} narrow={false} />, store);
@@ -111,7 +108,7 @@ describe("StepTracker glyphs", () => {
     expect(other.querySelector("[data-kind='running']")).toBeNull();
   });
 
-  it("keeps step 7's own glyph when no plan is running", () => {
+  it("keeps the Run step's own glyph when no plan is running", () => {
     const store = createStore();
     store.set(runStripAtom, { ...runStripSchema.parse(runStripFixture), daemon_running: false });
     render(<StepTracker checklist={checklist} narrow={false} />, store);
@@ -163,8 +160,8 @@ describe("StepTracker narrow layout and loading", () => {
       <StepTracker checklist={{ ...checklist, current: { kind: "step", number: 4 } }} narrow />,
     );
 
-    const trigger = screen.getByRole("button", { name: "Step 4 of 7 · Plans" });
-    const label = within(trigger).getByText("Step 4 of 7 · Plans");
+    const trigger = screen.getByRole("button", { name: "Step 4 of 6 · Plans" });
+    const label = within(trigger).getByText("Step 4 of 6 · Plans");
     expect(label.closest(".sr-only, .hidden, [hidden], [aria-hidden='true']")).toBeNull();
     expect(label.nextElementSibling?.tagName.toLowerCase()).toBe("svg");
   });
@@ -172,10 +169,10 @@ describe("StepTracker narrow layout and loading", () => {
   it("collapses to a summary button whose popover lists the steps when narrow", () => {
     render(<StepTracker checklist={checklist} narrow />);
     expect(screen.queryByRole("list")).toBeNull();
-    const trigger = screen.getByRole("button", { name: "Step 2 of 7 · Product spec" });
+    const trigger = screen.getByRole("button", { name: "Step 2 of 6 · Product spec" });
     // The summary keeps its full text (flex: none, nowrap in header.css); the next-step button yields.
     expect(trigger.classList.contains("plan-rail-summary")).toBe(true);
-    const label = within(trigger).getByText("Step 2 of 7 · Product spec");
+    const label = within(trigger).getByText("Step 2 of 6 · Product spec");
     expect(label.classList.contains("truncate")).toBe(false);
     expect(label.closest(".sr-only, .hidden, [hidden], [aria-hidden='true']")).toBeNull();
     fireEvent.click(trigger);
@@ -183,12 +180,12 @@ describe("StepTracker narrow layout and loading", () => {
     // The portal needs its own planner scope for the rail's CSS.
     expect(dialog.hasAttribute("data-loom-plan")).toBe(true);
     const list = within(dialog).getByRole("list", { name: "Steps" });
-    expect(within(list).getAllByRole("listitem")).toHaveLength(7);
+    expect(within(list).getAllByRole("listitem")).toHaveLength(6);
     expect(
       within(list)
         .getAllByRole("link")
         .map((link) => link.getAttribute("href")),
-    ).toEqual([1, 2, 3, 4, 5, 6, 7].map((number) => `/f/${checklist.feature}?step=${number}`));
+    ).toEqual([1, 2, 3, 4, 5, 6].map((number) => `/f/${checklist.feature}?step=${number}`));
     expect(within(list).getByRole("listitem", { current: "step" }).textContent).toContain(
       "Product spec",
     );
@@ -196,7 +193,7 @@ describe("StepTracker narrow layout and loading", () => {
 
   it("closes the popover when a step link is followed", () => {
     render(<StepTracker checklist={checklist} narrow />);
-    fireEvent.click(screen.getByRole("button", { name: "Step 2 of 7 · Product spec" }));
+    fireEvent.click(screen.getByRole("button", { name: "Step 2 of 6 · Product spec" }));
     fireEvent.click(within(screen.getByRole("dialog", { name: "Steps" })).getByText("Plans"));
     expect(screen.queryByRole("dialog", { name: "Steps" })).toBeNull();
   });

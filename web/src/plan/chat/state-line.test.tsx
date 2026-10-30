@@ -60,11 +60,12 @@ it("none offers the checklist primary offer; New chat is the panel head's", () =
   const checklist = {
     feature: "demo",
     pitch: null,
-    title: "Demo",
     has_product: true,
     sections: [],
     plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
     untested: 0,
+    metaplans: [],
+    plan_rows: [],
     current: { kind: "ready" as const },
     steps: [],
     primary,

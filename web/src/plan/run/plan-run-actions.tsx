@@ -69,8 +69,8 @@ export function findOffer(
 }
 
 const BUILT_OFFERS: readonly { kind: OfferKind; label: string }[] = [
-  { kind: "refine_spec", label: "Review what was built" },
-  { kind: "new_metaplan_round", label: "Start a new metaplan round" },
+  { kind: "refine_spec", label: "Compare spec with build" },
+  { kind: "new_metaplan_round", label: "New metaplan round" },
 ];
 
 /** A done plan's follow-ups: a button only for an offer the server makes, nothing otherwise. */

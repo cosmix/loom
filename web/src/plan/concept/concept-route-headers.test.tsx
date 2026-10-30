@@ -4,14 +4,11 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { initClient } from "@/plan/api/client";
-import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import { featureOfKey } from "@/plan/api/page-key";
-import { checklistViewSchema } from "@/plan/api/schema";
 import { conceptPageSchema, type ConceptPage } from "@/plan/api/schema-concept";
 import { authorStore, makeDoc } from "@/plan/files/doc-heading-kit";
-import { checklistAtom } from "@/plan/state/atoms";
 
 import { PageHeading } from "./page-heading";
 import {
@@ -75,8 +72,8 @@ describe("summary page header", () => {
     const header = title.closest("header") as HTMLElement;
     expect(within(header).queryByText("doc/product/demo/section_01.md")).toBeNull();
     const crumbs = within(header).getByRole("navigation", { name: "Breadcrumb" });
-    expect(within(crumbs).getAllByRole("listitem")[0]?.textContent).toBe("Demo");
-    expect(within(crumbs).getByRole("link", { name: "Demo" }).getAttribute("href")).toBe("/f/demo");
+    expect(within(crumbs).getAllByRole("listitem")[0]?.textContent).toBe("demo");
+    expect(within(crumbs).getByRole("link", { name: "demo" }).getAttribute("href")).toBe("/f/demo");
     expect((title.previousElementSibling as HTMLElement).style.color).toBe("var(--doc-2)");
     expect(within(header).getByText("Out of date: the source changed")).toBeTruthy();
     const link = within(header).getByRole("link", { name: "Source" });
@@ -248,20 +245,5 @@ describe("document key across pages", () => {
 
     await more(2);
     expect(document.activeElement).toBe(within(keyList()).getAllByRole("link")[0]);
-  });
-});
-
-describe("overview eyebrow", () => {
-  it("shows a format character in the feature title as its code point", async () => {
-    serveOverview();
-    const title = "Dem\u202Eo";
-    renderAt("/f/demo/engineering", (store) =>
-      store.set(
-        checklistAtom,
-        checklistViewSchema.parse({ ...checklistFixture.checklists[0]!, title }),
-      ),
-    );
-    await readingColumn();
-    expect(screen.getByText("Dem⟨U+202E⟩o · engineering overview")).toBeTruthy();
   });
 });

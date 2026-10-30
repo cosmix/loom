@@ -15,11 +15,12 @@ afterEach(() => {
 const checklist = checklistViewSchema.parse({
   feature: "demo",
   pitch: null,
-  title: "Demo",
   has_product: true,
   sections: [],
   plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
   untested: 0,
+  metaplans: [],
+  plan_rows: [],
   current: { kind: "step", number: 2 },
   steps: [
     { number: 1, name: "Vision", mark: "done", count: null, label: "Vision" },
@@ -27,7 +28,7 @@ const checklist = checklistViewSchema.parse({
     { number: 3, name: "Metaplan", mark: "active", count: null, label: "Metaplan" },
     { number: 4, name: "Plans", mark: "optional", count: null, label: "Plans" },
     {
-      number: 7,
+      number: 6,
       name: "Server-defined step",
       mark: "optional",
       count: null,
@@ -126,7 +127,7 @@ it.each([
   ["ready", "Ready to run"],
   ["ready_all_done", "All plans done"],
 ] as const)("shows the %s label without a current step", (kind, label) => {
-  renderList(checklistViewSchema.parse({ ...checklist, current: { kind } }), 7);
+  renderList(checklistViewSchema.parse({ ...checklist, current: { kind } }), 6);
 
   expect(screen.getByRole("link", { current: "step" }).textContent).toContain(
     "Server-defined step",
@@ -172,7 +173,7 @@ it.each([
         { number: 1, name: "Vision", mark: "done", count: null, label: "Vision" },
         { number: 2, name: "Product spec", mark: "gap", count: null, label: "Product spec" },
         { number: 5, name: "Pressure", mark: "gap", count: null, label: "Pressure" },
-        { number: 7, name: "Run", mark: "gap", count: null, label: "Run" },
+        { number: 6, name: "Run", mark: "gap", count: null, label: "Run" },
       ],
     }),
   );

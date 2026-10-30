@@ -19,11 +19,12 @@ const project: ProjectChecklistView = {
     {
       feature: "search",
       pitch: null,
-      title: "Search",
       has_product: true,
       sections: [],
       plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
       untested: 0,
+      metaplans: [],
+      plan_rows: [],
       current: { kind: "ready" },
       steps: [],
       primary: null,
@@ -254,7 +255,7 @@ describe("MoveIntoFeatureDialog", () => {
     expect(window.confirm).not.toHaveBeenCalled();
     expect(h.send).not.toHaveBeenCalled();
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "Finish the session in Search first.",
+      "Finish the session in search first.",
     );
   });
 

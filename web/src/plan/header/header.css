@@ -103,7 +103,7 @@
   gap: 8px;
 }
 
-/* "Step n of 7 · <label>" never shrinks; the next-step button takes the remaining width. */
+/* "Step n of 6 · <label>" never shrinks; the next-step button takes the remaining width. */
 .plan-rail-summary {
   flex: none;
   white-space: nowrap;

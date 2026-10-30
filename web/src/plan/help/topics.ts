@@ -50,7 +50,7 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
             text: "The Loom logo returns to the planner home, and the feature switcher shows the current feature and switches to another.",
           },
           {
-            // Below 1024px the header shows only the "Step n of 7" button, not the rail.
+            // Below 1024px the header shows only the "Step n of 6" button, not the rail.
             target: ['.plan-header ol[aria-label="Steps"]', ".plan-header .plan-rail-summary"],
             text: "The step rail counts the work in each step and links to it, and marks the current step.",
           },

@@ -15,8 +15,7 @@ const steps: StepView[] = [
   { number: 3, name: "Metaplan", mark: "gap", count: null, label: "Metaplan" },
   { number: 4, name: "Plans", mark: "active", count: null, label: "Plans" },
   { number: 5, name: "Pressure", mark: "optional", count: null, label: "Pressure" },
-  { number: 6, name: "Review", mark: "optional", count: null, label: "Review" },
-  { number: 7, name: "Run", mark: "optional", count: null, label: "Run" },
+  { number: 6, name: "Run", mark: "optional", count: null, label: "Run" },
 ];
 
 function renderStrip(value: StepView[], current: number | null = 4, running = false) {
@@ -36,14 +35,13 @@ describe("ProgressStrip", () => {
     const list = screen.getByRole("list", { name: "Progress" });
     const cells = within(list).getAllByRole("listitem");
     expect(list.tagName).toBe("OL");
-    expect(cells).toHaveLength(7);
+    expect(cells).toHaveLength(6);
     expect(cells.map((cell) => within(cell).getByText(/: /).textContent)).toEqual([
       "Vision: done",
       "Product spec: done",
       "Metaplan: gap",
       "Plans: active",
       "Pressure: optional",
-      "Review: optional",
       "Run: optional",
     ]);
   });
@@ -58,10 +56,9 @@ describe("ProgressStrip", () => {
       "idle",
       "current",
       "idle",
-      "idle",
       "running",
     ]);
-    expect(cells[6].textContent).toBe("Run: running");
+    expect(cells[5].textContent).toBe("Run: running");
   });
 
   it("marks no step current when none is, and keeps Run idle while nothing runs", () => {
@@ -71,7 +68,6 @@ describe("ProgressStrip", () => {
     expect(cells.map((cell) => cell.getAttribute("data-cell"))).toEqual([
       "done",
       "done",
-      "idle",
       "idle",
       "idle",
       "idle",
