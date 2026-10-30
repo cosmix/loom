@@ -11,7 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { toAddress } from "@/plan/files/address";
 import { fetchDoc } from "@/plan/files/api";
-import { plural } from "@/plan/files/heading-parts";
+import { useFeature } from "@/plan/feature/use-feature";
+import { plural } from "@/plan/ui/plural";
 import { LoadState } from "@/plan/ui/load-state";
 
 import { EmptyOffer } from "./empty-offer";
@@ -82,6 +83,10 @@ function DocList({ kind, docs }: { kind: EmptyData["kind"]; docs: DocLink[] }) {
 
 /** The page's empty or partial state, with section 05's text for its kind. */
 export function EmptyStates({ page, empty }: { page: ConceptPage; empty: EmptyData }) {
+  // The route's feature, as `NextAction` and `pageDrawsPrimary` read it: `checklistAtom` follows the
+  // active feature, which an effect sets, and the two disagree for a render. A standalone plan page
+  // has no route feature, no spine and so no suppression.
+  const primary = useFeature().checklist?.primary;
   const copy = copyFor(page, empty);
   // The server lists no documents for a never-built overview; its key chips are them.
   const keyDocs = empty.kind === "never_built" ? page.key_chips.map((chip) => chip.doc) : [];
@@ -90,7 +95,8 @@ export function EmptyStates({ page, empty }: { page: ConceptPage; empty: EmptyDa
   const offer = empty.offer ?? (empty.kind === "plans_no_metaplan" ? "start-metaplan" : null);
   let action: ReactNode = null;
   if (empty.kind === "building") action = <BusyRoundel busy busyLabel={copy.title} />;
-  else if (offer) action = <EmptyOffer offer={offer} />;
+  // The spine's next step owns the checklist's primary offer; a second button for it is a repeat.
+  else if (offer && offer !== primary?.id) action = <EmptyOffer offer={offer} />;
   return (
     <div className="px-4 py-6">
       <EmptyState

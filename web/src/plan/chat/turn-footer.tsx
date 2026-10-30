@@ -8,7 +8,7 @@ import type { Turn } from "@/plan/api/schema-chat";
 import type { DiffTexts } from "@/plan/api/schema-files";
 import { openDiff } from "@/plan/diff/open-diff";
 import { docRel } from "@/plan/files/address";
-import { plural } from "@/plan/files/heading-parts";
+import { plural } from "@/plan/ui/plural";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import type { DocKind } from "@/plan/ui/glyphs";
 import { TurnFooterExtras } from "./footer-extras";

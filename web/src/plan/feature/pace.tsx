@@ -1,8 +1,9 @@
 import { Footprints, Users, type LucideIcon } from "lucide-react";
 
 import type { ChecklistView, OfferView, StepView } from "@/plan/api/schema";
-import { plural } from "@/plan/feature/steps";
 import { OfferButton } from "@/plan/offers/offer-button";
+import type { ButtonLook } from "@/plan/ui/disabled-reason";
+import { plural } from "@/plan/ui/plural";
 
 export function paceOffers(
   checklist: ChecklistView,
@@ -36,6 +37,7 @@ function PaceOption({
   description,
   offer,
   cost,
+  look,
 }: {
   icon: LucideIcon;
   title: string;
@@ -43,6 +45,7 @@ function PaceOption({
   description: string;
   offer: OfferView;
   cost?: string;
+  look: ButtonLook;
 }) {
   return (
     <section className="plan-pace__card">
@@ -53,13 +56,17 @@ function PaceOption({
       <p className="plan-pace__copy">{description}</p>
       {cost && <p className="plan-pace__cost">{cost}</p>}
       <div className="plan-pace__offer">
-        <OfferButton offer={offer} />
+        <OfferButton offer={offer} look={look} />
       </div>
     </section>
   );
 }
 
-export function PaceChoice({ checklist, step }: { checklist: ChecklistView; step: StepView }) {
+/** The pace pair and the count of documents still missing, or null when the page has no choice to show. */
+export function paceChoice(
+  checklist: ChecklistView,
+  step: StepView,
+): { guided: OfferView; team: OfferView; missing: number } | null {
   const offers = paceOffers(checklist, step);
   if (!offers) return null;
   const { guided, team } = offers;
@@ -67,15 +74,26 @@ export function PaceChoice({ checklist, step }: { checklist: ChecklistView; step
     (item) => item.step === step.number && item.offer?.kind === guided.kind,
   ).length;
   if (missing === 0 || (guided.feature && guided.feature !== checklist.feature)) return null;
+  return { guided, team, missing };
+}
+
+export function PaceChoice({ checklist, step }: { checklist: ChecklistView; step: StepView }) {
+  const choice = paceChoice(checklist, step);
+  if (!choice) return null;
+  const { guided, team, missing } = choice;
 
   const document = guided.kind === "write_section" ? "section" : "plan";
+  // Only the card holding the checklist's primary is the screen's primary (DESIGN.md, Buttons).
+  const lookOf = (offer: OfferView): ButtonLook =>
+    offer.id === checklist.primary?.id ? "primary" : "secondary";
   return (
     <div role="group" aria-label="Choose a pace" className="plan-pace">
       <PaceOption
         icon={Footprints}
         title={`Guided, one ${document} at a time`}
         description={`A session drafts one ${document} with you, stops, and offers the next once you've read it. Best when the vision is still moving.`}
-        offer={{ ...guided, label: `Start guided writing: ${guided.label}` }}
+        offer={guided}
+        look={lookOf(guided)}
       />
       <PaceOption
         icon={Users}
@@ -84,6 +102,7 @@ export function PaceChoice({ checklist, step }: { checklist: ChecklistView; step
         description={`A team of up to five drafts every missing ${document} at once. Teammates agree terms and boundaries as they write; the lead checks the set for consistency, then hands you a review queue.`}
         cost={`Up to ${plural(Math.min(5, missing), "teammate")}, ${plural(missing, "document")}, one run.`}
         offer={team}
+        look={lookOf(team)}
       />
     </div>
   );

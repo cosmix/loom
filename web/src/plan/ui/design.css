@@ -1,0 +1,276 @@
+/*
+ * The planner's visual system: the scales and primitives DESIGN.md names. Colour comes from the
+ * theme tokens (index.css, aurora-ui tokens.css) and nothing here names a colour literal.
+ *
+ * Tokens sit on :root, not on [data-loom-plan], because popovers and dialogs portal out of the
+ * shell. The rules are unlayered on purpose: Tailwind's utilities live in a layer, so an unlayered
+ * rule wins over the classes a shared component such as Button carries. Every state selector is
+ * wrapped in :where() to keep the specificity at one class, so a component stylesheet that still
+ * restyles a button through its own `.x button` rule keeps winning until that stylesheet is
+ * redesigned (chat-surface.css, new/*.css).
+ */
+:root {
+  /* Spacing. Inside a control or between glyph and word: 1-2. Between rows: 2-3. Between a
+     title and its content: 3. Between sections: 5-6. Page gutter: 5 (4 on phones). */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --page-gutter: 24px;
+
+  /* Chrome type, Inter. Reading text keeps --reading-size (plan.css). */
+  --type-fine: 12px;
+  --type-ui: 13px;
+  --type-body: 14px;
+  --type-title: 15px;
+  --type-page: 20px;
+  --leading-ui: 1.35;
+  --leading-body: 1.5;
+
+  /* Shape. Controls are tighter than surfaces; a surface never nests another. */
+  --corner-control: 6px;
+  --corner-surface: 10px;
+  --control-height: 28px;
+  --control-height-sm: 24px;
+}
+
+@media (max-width: 480px) {
+  :root {
+    --page-gutter: 16px;
+  }
+}
+
+/* ── Type ─────────────────────────────────────────────────────────────────── */
+
+/* The page title: one per screen, under its eyebrow (the `eyebrow` utility in index.css). */
+.plan-page-title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--type-page);
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+/* A section title inside a page: space above it separates sections, not a rule or a box. */
+.plan-section-title {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--type-title);
+  font-weight: 600;
+  line-height: var(--leading-ui);
+  letter-spacing: -0.01em;
+}
+
+/* Fine print: a reason under a control, a count beside a row, a timestamp. */
+.plan-fine {
+  font-size: var(--type-fine);
+  font-weight: 400;
+  line-height: var(--leading-ui);
+  color: var(--muted-foreground);
+}
+
+/* The small uppercase line over a page title. The header sizes its own copy through
+   `.plan-identity` (header.css). */
+.plan-eyebrow {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* An empty state is one sentence, set where the content would start. */
+.plan-empty {
+  margin: 0;
+  max-width: 48ch;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  color: var(--muted-foreground);
+}
+
+/* ── Surfaces and hairlines ───────────────────────────────────────────────── */
+
+/* The one allowed box: a surface standing on the page ground. Nothing inside it draws a border. */
+.plan-surface {
+  border: 1px solid var(--hairline);
+  border-radius: var(--corner-surface);
+  background: var(--card);
+}
+
+/* A hairline between two blocks. A rule separates; it never encloses. */
+.plan-rule {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+/* Rows divided by hairlines, with no outer border: the list's edges are the page's. */
+.plan-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-list > li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 36px;
+  padding: var(--space-2) 0;
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+.plan-list > li + li {
+  border-top: 1px solid var(--hairline);
+}
+
+/* ── Status ───────────────────────────────────────────────────────────────── */
+
+/* Status is a glyph and a word, inline with the text it describes. The word keeps the text's
+   colour; only the glyph takes a tone, through the `tone-*` classes of index.css. */
+.plan-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--type-ui);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.plan-status > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+
+/* One scale for every button: 28px high, 13px/500, one line. `data-look` picks quiet (no edge,
+   muted until hovered), secondary (hairline edge) or primary (the accent fill, one per screen).
+   `data-size="sm"` (Button's own attribute) is the compact row variant. */
+.plan-button {
+  height: var(--control-height);
+  gap: var(--space-1);
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--corner-control);
+  background: transparent;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: none;
+  /* A button never wraps. Where its box is narrower than its label (a long plan slug in the
+     spine), the label text is cut with an ellipsis and the glyph stays; the text remains in the
+     DOM, so the accessible name is the full label. */
+  max-width: 100%;
+  min-width: 0;
+  transition:
+    background-color 120ms,
+    border-color 120ms,
+    color 120ms;
+}
+
+.plan-button > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.plan-button:where([data-size="sm"]) {
+  height: var(--control-height-sm);
+  padding: 0 var(--space-2);
+  font-size: var(--type-fine);
+}
+
+.plan-button:where([data-size="sm"]) svg {
+  width: 12px;
+  height: 12px;
+}
+
+.plan-button:where([data-look="quiet"]) {
+  color: var(--muted-foreground);
+}
+
+.plan-button:where([data-look="secondary"]) {
+  border-color: var(--border);
+}
+
+.plan-button:where([data-look="primary"]) {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.plan-button:where(:hover, [aria-expanded="true"]) {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.plan-button:where([data-look="primary"]:hover) {
+  background: color-mix(in oklch, var(--primary) 88%, var(--primary-foreground));
+  color: var(--primary-foreground);
+}
+
+.plan-button:where(:active) {
+  transform: translateY(1px);
+}
+
+.plan-button:where(:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.plan-button:where([data-look="secondary"]:focus-visible) {
+  border-color: var(--border);
+}
+
+/* A blocked control keeps its look, dims, and ignores hover; DisabledReason explains beneath. */
+.plan-button:where([aria-disabled="true"]) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.plan-button:where([aria-disabled="true"]:hover) {
+  background: transparent;
+  color: var(--foreground);
+}
+
+.plan-button:where([aria-disabled="true"][data-look="quiet"]:hover) {
+  color: var(--muted-foreground);
+}
+
+.plan-button:where([aria-disabled="true"][data-look="primary"]:hover) {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.plan-button:where([aria-disabled="true"]:active) {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-button {
+    transition: none;
+  }
+
+  .plan-button:where(:active) {
+    transform: none;
+  }
+}

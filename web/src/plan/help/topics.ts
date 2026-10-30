@@ -35,10 +35,11 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
   {
     id: "getting-around",
     label: "Getting around",
-    description: "Find your project, planning steps, views and settings.",
+    description: "Find your project, a feature's documents, views and settings.",
     Icon: CompassIcon,
     hue: 1,
-    intro: "The header shows your project, planning progress and navigation controls.",
+    intro:
+      "The header shows your project and navigation controls; beside a feature's pages, the spine shows its progress.",
     scenes: [
       {
         title: "The planner header",
@@ -50,14 +51,12 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
             text: "The Loom logo returns to the planner home, and the feature switcher shows the current feature and switches to another.",
           },
           {
-            // Below 1024px the header shows only the "Step n of 6" button, not the rail.
-            target: ['.plan-header ol[aria-label="Steps"]', ".plan-header .plan-rail-summary"],
-            text: "The step rail counts the work in each step and links to it, and marks the current step.",
+            target: 'nav[aria-label="Feature documents"]',
+            text: "The spine lists the feature's documents in workflow order, marks what is done, and opens each document or the page that holds it.",
           },
           {
-            // The wide card, or the compact button row below 1024px.
-            target: [".plan-next-step", ".plan-next-action-compact"],
-            text: "The next-step card offers the next action for the current planning work.",
+            target: ".plan-spine-next",
+            text: "The next step at the head of the spine offers the next action for the current planning work.",
           },
           {
             target: '[aria-label$="Waiting for you"]',
@@ -65,7 +64,7 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
           },
           {
             target: "nav.view-switch",
-            text: "Switch between the project home and the product, engineering and file views.",
+            text: "Switch between the project home and the file view.",
           },
           {
             target: ['[aria-label="Settings"]', '[aria-label="Help"]'],
@@ -75,7 +74,7 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
       },
     ],
     tips: [
-      "The step rail belongs to a feature and is hidden on the project home.",
+      "The spine belongs to a feature and is hidden on the project home.",
       'The activity pill lists a running plan, a pressure test, a Codex review or a summary rebuild, and a chat that is starting, drafting a document, needs permission or is waiting for you; a chat that is working does not appear, and the pill reads "Idle" when nothing applies.',
     ],
   },

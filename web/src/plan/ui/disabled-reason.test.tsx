@@ -69,11 +69,14 @@ describe("DisabledReason", () => {
     );
   });
 
-  it("gives the default button the primary measures and a sized button its own", () => {
+  it("draws the design-system button, secondary by default, primary only when asked", () => {
     render(
       <>
         <DisabledReason reason={null} onClick={vi.fn()}>
           Start
+        </DisabledReason>
+        <DisabledReason reason={null} look="primary" onClick={vi.fn()}>
+          Begin
         </DisabledReason>
         <DisabledReason reason={null} size="sm" onClick={vi.fn()}>
           Move
@@ -81,15 +84,14 @@ describe("DisabledReason", () => {
       </>,
     );
 
-    const primary = screen.getByRole("button", { name: "Start" }).classList;
-    for (const name of ["h-[30px]", "px-3", "rounded-[8px]", "text-[13px]", "font-semibold"]) {
-      expect(primary.contains(name)).toBe(true);
-    }
-    for (const name of ["h-8", "px-2.5", "rounded-lg", "text-sm", "font-medium"]) {
-      expect(primary.contains(name)).toBe(false);
-    }
-    const sized = screen.getByRole("button", { name: "Move" }).classList;
-    expect(sized.contains("h-7")).toBe(true);
-    expect(sized.contains("h-[30px]")).toBe(false);
+    const plain = screen.getByRole("button", { name: "Start" });
+    expect(plain.classList.contains("plan-button")).toBe(true);
+    expect(plain.getAttribute("data-look")).toBe("secondary");
+    expect(screen.getByRole("button", { name: "Begin" }).getAttribute("data-look")).toBe("primary");
+    const sized = screen.getByRole("button", { name: "Move" });
+    expect(sized.classList.contains("plan-button")).toBe(true);
+    expect(sized.classList.contains("h-7")).toBe(true);
+    expect(sized.getAttribute("data-look")).toBe("secondary");
+    expect(sized.getAttribute("data-size")).toBe("sm");
   });
 });

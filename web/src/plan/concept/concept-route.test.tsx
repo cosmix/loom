@@ -209,12 +209,15 @@ describe("overviews and the document key", () => {
   });
   it("tab switching keeps open runs", async () => {
     serveOverview();
-    renderAt("/f/demo/product");
+    const { router } = renderAt("/f/demo/product");
     await openFirstRun();
-    const tabs = screen.getByRole("navigation", { name: "Views" });
-    fireEvent.click(within(tabs).getByRole("link", { name: "Engineering" }));
+    // The header tabs are gone and no checklist is loaded here, so the spine has no rows: the
+    // switch between the two overviews goes through the router, as a spine link would.
+    await router.navigate("/f/demo/engineering");
     await screen.findByText("Engineering overview");
-    fireEvent.click(within(tabs).getByRole("link", { name: "Product" }));
+    await router.navigate("/f/demo/product");
+    // Wait for the engineering page to leave, or readingColumn() resolves with its stale column.
+    await waitFor(() => expect(screen.queryByText("Engineering overview")).toBeNull());
     const column = await readingColumn();
     expect(await within(column).findByRole("group", { name: OVERVIEW_RUN })).toBeTruthy();
   });

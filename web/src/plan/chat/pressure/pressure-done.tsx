@@ -7,7 +7,7 @@ import { compactTokens } from "@/lib/tokens";
 import type { PressureRunView } from "@/plan/api/schema-pressure";
 import { openDiff } from "@/plan/diff/open-diff";
 import { toAddress } from "@/plan/files/address";
-import { plural } from "@/plan/files/heading-parts";
+import { plural } from "@/plan/ui/plural";
 import { pressureDialogAtom } from "@/plan/offers/actions-pressure";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 

@@ -262,7 +262,7 @@ function KickoffCard({
           Attach notes or a document
         </DocumentStarter>
         <div className="kickoff-start">
-          <DisabledReason reason={reason} onClick={submit}>
+          <DisabledReason reason={reason} look="primary" onClick={submit}>
             <SendHorizontal aria-hidden="true" />
             {error ? (
               "Try again"

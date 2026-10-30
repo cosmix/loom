@@ -15,6 +15,7 @@ import {
   SUMMARY_STATE_GLYPHS,
   type PlanState,
 } from "@/plan/ui/glyphs";
+import { plural } from "@/plan/ui/plural";
 
 const OpenQuestionsIcon = OTHER_GLYPHS.openQuestions;
 const STATE_LABELS: Record<PlanState, string> = {
@@ -23,10 +24,6 @@ const STATE_LABELS: Record<PlanState, string> = {
   done: "Done",
   retired: "Retired",
 };
-
-export function plural(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? "" : "s"}`;
-}
 
 export function relativeTime(stamp: string, now: number): string {
   const seconds = Math.floor((now - Date.parse(stamp)) / 1000);
@@ -131,9 +128,14 @@ export function sectionNumberLabel(number: number): string {
   return `§${String(number).padStart(2, "0")}`;
 }
 
+/** The two-digit number a plan's slug carries ("feat-planner-13" gives "13"), or null. */
+export function slugNumber(slug: string): string | null {
+  return /(?:^|[^0-9])(\d{2})(?![0-9])/.exec(slug)?.[1] ?? null;
+}
+
 /** The number a plan goes by in "Built by 05 · 09": its two-digit part, else its title. */
 function planNumber(slug: string, title: string): string {
-  return /(?:^|[^0-9])(\d{2})(?![0-9])/.exec(slug)?.[1] ?? title;
+  return slugNumber(slug) ?? title;
 }
 
 /** "Built by 05 · 09": the plans that implement a summary's document, each linked to its page. */
