@@ -1,10 +1,7 @@
-import { FileTextIcon, HammerIcon, InboxIcon } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { useAtomValue } from "jotai";
 import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useParams } from "react-router";
 
-import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
-import { EmptyState } from "@/aurora-ui/feedback/EmptyState";
 import { featureOfKey, overviewKey, pageHref, parsePageKey } from "@/plan/api/page-key";
 import type { ConceptPage, DocLink, EmptyState as EmptyData } from "@/plan/api/schema-concept";
 import { Button } from "@/components/ui/button";
@@ -12,35 +9,34 @@ import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { toAddress } from "@/plan/files/address";
 import { fetchDoc } from "@/plan/files/api";
 import { useFeature } from "@/plan/feature/use-feature";
+import { checklistAtom } from "@/plan/state/atoms";
 import { plural } from "@/plan/ui/plural";
 import { LoadState } from "@/plan/ui/load-state";
 
+import "./concept-page.css";
 import { EmptyOffer } from "./empty-offer";
 
-type Copy = { icon: LucideIcon; title: string; description?: string };
+type Copy = { title: string; description?: string };
 
 function copyFor(page: ConceptPage, empty: EmptyData): Copy {
   const building = page.building;
   switch (empty.kind) {
     case "no_vision":
-      return { icon: InboxIcon, title: "No product vision yet" };
+      return { title: "No product vision yet" };
     case "sections_no_vision":
       return {
-        icon: FileTextIcon,
         title: "No product overview yet",
         description: "The sections below have no vision to tie them together.",
       };
     case "no_metaplan":
-      return { icon: InboxIcon, title: "No metaplan yet" };
+      return { title: "No metaplan yet" };
     case "plans_no_metaplan":
       return {
-        icon: FileTextIcon,
         title: "No engineering overview yet",
         description: "Plans exist, but no metaplan names them.",
       };
     case "never_built":
       return {
-        icon: FileTextIcon,
         title: "Summaries not built",
         description: `${plural(empty.count ?? 0, "document")} without a summary.${
           page.estimate ? ` ${visibleControls(page.estimate)}` : ""
@@ -48,7 +44,6 @@ function copyFor(page: ConceptPage, empty: EmptyData): Copy {
       };
     case "building":
       return {
-        icon: HammerIcon,
         title:
           building === null
             ? "Building summaries"
@@ -63,16 +58,13 @@ function DocList({ kind, docs }: { kind: EmptyData["kind"]; docs: DocLink[] }) {
   const href = (doc: DocLink) =>
     kind === "never_built" ? toAddress(doc.path) : pageHref(doc.page);
   return (
-    <ul
-      aria-label="Documents"
-      className="mx-auto flex max-w-[70ch] flex-col gap-1 pt-4 text-[13px]"
-    >
+    <ul aria-label="Documents" className="plan-list concept-empty-docs">
       {docs.map((doc) => (
         <li key={doc.id}>
-          <Link to={href(doc)} className="underline">
+          <Link to={href(doc)} className="no-underline hover:underline">
             <Untrusted text={doc.title} />
-          </Link>{" "}
-          <span className="font-mono text-xs text-muted-foreground">
+          </Link>
+          <span className="plan-fine font-mono">
             <Untrusted text={doc.path} />
           </span>
         </li>
@@ -81,12 +73,35 @@ function DocList({ kind, docs }: { kind: EmptyData["kind"]; docs: DocLink[] }) {
   );
 }
 
+/** `.plan-empty` text: the title in the foreground, its explanation on the line below. */
+function EmptyNote({ title, description }: Copy) {
+  return (
+    <p className="plan-empty">
+      <strong className="concept-empty-title">{title}</strong>
+      {description}
+    </p>
+  );
+}
+
+/**
+ * The checklist whose offers this screen may draw: the route feature's, so the offer comes from
+ * the feature on screen (`checklistAtom` follows the active feature, which an effect sets and
+ * which differs from the route's while several features exist). A standalone page has no route
+ * feature, so the active one is the only candidate there.
+ */
+function useScreenChecklist() {
+  const { feature } = useParams();
+  const routed = useFeature().checklist;
+  const active = useAtomValue(checklistAtom);
+  return feature === undefined ? active : routed;
+}
+
 /** The page's empty or partial state, with section 05's text for its kind. */
 export function EmptyStates({ page, empty }: { page: ConceptPage; empty: EmptyData }) {
-  // The route's feature, as `NextAction` and `pageDrawsPrimary` read it: `checklistAtom` follows the
-  // active feature, which an effect sets, and the two disagree for a render. A standalone plan page
-  // has no route feature, no spine and so no suppression.
+  // The route's feature, as `NextAction` and `pageDrawsPrimary` read it. A standalone plan page has
+  // no route feature, no spine and so no suppression.
   const primary = useFeature().checklist?.primary;
+  const checklist = useScreenChecklist();
   const copy = copyFor(page, empty);
   // The server lists no documents for a never-built overview; its key chips are them.
   const keyDocs = empty.kind === "never_built" ? page.key_chips.map((chip) => chip.doc) : [];
@@ -94,17 +109,14 @@ export function EmptyStates({ page, empty }: { page: ConceptPage; empty: EmptyDa
   // The server sends no offer with a plans-without-metaplan list; section 05 still offers one.
   const offer = empty.offer ?? (empty.kind === "plans_no_metaplan" ? "start-metaplan" : null);
   let action: ReactNode = null;
-  if (empty.kind === "building") action = <BusyRoundel busy busyLabel={copy.title} />;
   // The spine's next step owns the checklist's primary offer; a second button for it is a repeat.
-  else if (offer && offer !== primary?.id) action = <EmptyOffer offer={offer} />;
+  if (empty.kind !== "building" && offer && offer !== primary?.id) {
+    action = <EmptyOffer offer={offer} checklist={checklist ?? null} />;
+  }
   return (
-    <div className="px-4 py-6">
-      <EmptyState
-        icon={copy.icon}
-        title={copy.title}
-        description={copy.description}
-        action={action}
-      />
+    <div className="concept-empty" role={empty.kind === "building" ? "status" : undefined}>
+      <EmptyNote {...copy} />
+      {action}
       <DocList kind={empty.kind} docs={docs} />
     </div>
   );
@@ -145,35 +157,37 @@ export function ConceptNotFound({ pageKey }: { pageKey: string }) {
   if (source !== null && exists === null) return <LoadState state="loading" />;
   if (source !== null && exists) {
     return (
-      <EmptyState
-        icon={FileTextIcon}
-        title={`No summary for ${visibleControls(name)}`}
-        action={
-          <Button asChild>
-            <Link to={toAddress(source)}>Open in file mode</Link>
-          </Button>
-        }
-      />
+      <div className="concept-empty">
+        <EmptyNote title={`No summary for ${visibleControls(name)}`} />
+        <Button asChild data-look="secondary" className="plan-button">
+          <Link to={toAddress(source)}>Open in file mode</Link>
+        </Button>
+      </div>
     );
   }
   return (
-    <div className="flex flex-col gap-3">
-      <LoadState
-        state="not_found"
+    <div className="concept-empty">
+      <EmptyNote
         title="No such document"
-        message={`${visibleControls(name)} does not exist.`}
+        description={`${visibleControls(name)} does not exist.`}
       />
       {feature !== null ? (
-        <nav aria-label="Overviews" className="flex justify-center gap-4 text-[13px]">
-          <Link to={pageHref(overviewKey(feature, "product"))} className="underline">
+        <nav aria-label="Overviews" className="concept-empty-links">
+          <Link
+            to={pageHref(overviewKey(feature, "product"))}
+            className="no-underline hover:underline"
+          >
             Product overview
           </Link>
-          <Link to={pageHref(overviewKey(feature, "engineering"))} className="underline">
+          <Link
+            to={pageHref(overviewKey(feature, "engineering"))}
+            className="no-underline hover:underline"
+          >
             Engineering overview
           </Link>
         </nav>
       ) : (
-        <Link to="/" className="text-center underline">
+        <Link to="/" className="concept-empty-links no-underline hover:underline">
           Planner
         </Link>
       )}

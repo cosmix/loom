@@ -74,7 +74,7 @@ function Group({ label, entries, forceOpen, open }: GroupProps): JSX.Element {
       <button
         type="button"
         aria-expanded={shown}
-        className="flex w-full items-center gap-1 px-2 py-1.5 text-xs font-medium text-muted-foreground"
+        className="flex w-full items-center gap-1 px-2 py-2 text-[13px] font-semibold text-foreground"
         onClick={() => setExpanded(!shown)}
       >
         <Chevron className="size-3.5" aria-hidden="true" />

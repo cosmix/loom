@@ -24,7 +24,12 @@ import { elsewhereSessionAtom } from "@/plan/chat/session-home";
 import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
 import { openDiff } from "@/plan/diff/open-diff";
 import { canAuthorAtom } from "@/plan/state/atoms";
-import { DocHeading, IBTN, type HeadingChip, type HeadingCrumb } from "@/plan/ui/doc-heading";
+import {
+  DocHeading,
+  HEADING_BUTTON,
+  type HeadingChip,
+  type HeadingCrumb,
+} from "@/plan/ui/doc-heading";
 import type { DocKind } from "@/plan/ui/glyphs";
 import { plural } from "@/plan/ui/plural";
 import type { Store } from "@/state/store";
@@ -155,9 +160,7 @@ function EditAction({ doc, hidden }: { doc: DocView; hidden: boolean }): JSX.Ele
     return (
       <Button
         type="button"
-        variant="outline"
-        size="sm"
-        className={`${IBTN} cursor-not-allowed opacity-50 hover:bg-background`}
+        {...HEADING_BUTTON}
         aria-disabled="true"
         title={LOCK_TITLES[doc.lock.reason]}
       >
@@ -168,7 +171,7 @@ function EditAction({ doc, hidden }: { doc: DocView; hidden: boolean }): JSX.Ele
   }
   if (!doc.editable || !canAuthor || params.get("edit") === "1" || hidden) return null;
   return (
-    <Button asChild variant="outline" size="sm" className={IBTN}>
+    <Button asChild {...HEADING_BUTTON}>
       <Link to={`${toAddress(doc.path)}?edit=1`}>
         <Pencil aria-hidden="true" />
         Edit
@@ -210,7 +213,7 @@ export function usePressureActive(doc: DocView | null): boolean {
 /** A disabled stand-in while a summary page's source document loads, so the row keeps its width. */
 function PendingAction({ icon: Icon, label }: { icon: LucideIcon; label: string }): JSX.Element {
   return (
-    <Button type="button" variant="outline" size="sm" className={IBTN} disabled>
+    <Button type="button" {...HEADING_BUTTON} disabled>
       <Icon aria-hidden="true" />
       {label}
     </Button>
@@ -239,13 +242,7 @@ export function HeadingActions({
     <>
       <EditAction doc={doc} hidden={pressureActive} />
       {canAuthor && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className={IBTN}
-          onClick={() => discussDoc(store, doc)}
-        >
+        <Button type="button" {...HEADING_BUTTON} onClick={() => discussDoc(store, doc)}>
           <MessageSquarePlus aria-hidden="true" />
           Discuss
         </Button>

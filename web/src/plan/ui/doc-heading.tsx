@@ -6,6 +6,7 @@ import { Link } from "react-router";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { CopyButton, selectContents } from "@/plan/markdown/copy-button";
 
+import "./doc-heading.css";
 import { DocMark } from "./doc-mark";
 import type { DocKind } from "./glyphs";
 
@@ -62,7 +63,7 @@ export interface DocHeadingProps {
 }
 
 const FOCUS = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
-/** The `.m` status chip: fill by tone (go, warn, danger wash 18%); the icon alone carries the tone. */
+/** A fill by tone (go, warn, danger wash 18%) for a card's status chip. Heading chips take none. */
 export const CHIP_FILL: Record<HeadingTone, string> = {
   neutral: "bg-muted",
   ok: "bg-muted",
@@ -78,13 +79,21 @@ export const CHIP_ICON: Record<HeadingTone, string> = {
   accent: "text-(--tone-executing)",
 };
 
-/** The `.ibtn` icon button, laid over `Button variant="outline" size="sm"`. */
-export const IBTN =
-  "h-7 min-w-7 gap-1.5 rounded-[7px] px-2 text-[12.5px] [&_svg:not([class*='size-'])]:size-3.5";
+/**
+ * Props of a toolbar action in the heading (Source, Edit, Discuss, Open all): the quiet look in
+ * the row size, drawn by `.plan-button` in `design.css` (DESIGN.md, Buttons). Spread onto a
+ * `Button`; the stylesheet, not a wrapper, restyles it.
+ */
+export const HEADING_BUTTON = {
+  variant: "ghost",
+  size: "sm",
+  "data-look": "quiet",
+  className: "plan-button",
+} as const;
 
 function Breadcrumbs({ crumbs }: { crumbs: readonly HeadingCrumb[] }): JSX.Element {
   return (
-    <nav aria-label="Breadcrumb" className="text-[12.5px] text-muted-foreground">
+    <nav aria-label="Breadcrumb" className="plan-fine">
       <ol className="flex flex-wrap items-center gap-1.5">
         {crumbs.map((crumb, index) => {
           const current = index === crumbs.length - 1 ? "page" : undefined;
@@ -123,36 +132,32 @@ function Breadcrumbs({ crumbs }: { crumbs: readonly HeadingCrumb[] }): JSX.Eleme
   );
 }
 
-const VIEW_ITEM =
-  "inline-flex h-[26px] items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium";
-const VIEW_ON = "bg-[color-mix(in_oklch,var(--primary)_26%,transparent)] text-foreground";
+/** A view link is a quiet button in the row size; `doc-heading.css` marks the current one. */
+const VIEW_ITEM = "plan-button inline-flex items-center";
 
-/** The `.seg` segmented control: Summary and Source. */
+/** Summary and Source: two quiet actions side by side, the current one marked. */
 function ViewSwitch({ views }: { views: HeadingViews }): JSX.Element {
   return (
-    <div
-      role="group"
-      aria-label="View"
-      className="inline-flex gap-0.5 rounded-[9px] border border-hairline bg-card p-0.5"
-    >
+    <div role="group" aria-label="View" className="inline-flex gap-0.5">
       {(["summary", "source"] as const).map((view) => {
         const current = views.current === view;
         const to = view === "summary" ? views.summaryTo : views.sourceTo;
         const label = view === "summary" ? "Summary" : "Source";
         const Icon = view === "summary" ? Sparkles : FileText;
-        const className = cn(VIEW_ITEM, current ? VIEW_ON : "text-muted-foreground");
+        const look = { "data-look": "quiet", "data-size": "sm" } as const;
         const content = (
           <>
-            <Icon aria-hidden="true" className="size-3.5 shrink-0" />
+            <Icon aria-hidden="true" />
             {label}
           </>
         );
         return to === null ? (
           <span
             key={view}
+            {...look}
             aria-current={current ? "page" : undefined}
             aria-disabled={current ? undefined : true}
-            className={cn(className, !current && "opacity-50")}
+            className={VIEW_ITEM}
           >
             {content}
           </span>
@@ -160,8 +165,9 @@ function ViewSwitch({ views }: { views: HeadingViews }): JSX.Element {
           <Link
             key={view}
             to={to}
+            {...look}
             aria-current={current ? "page" : undefined}
-            className={cn(className, FOCUS, !current && "hover:bg-muted")}
+            className={VIEW_ITEM}
           >
             {content}
           </Link>
@@ -244,15 +250,18 @@ function ChipContent({ chip }: { chip: HeadingChip }): JSX.Element {
 
 function Chip({ chip }: { chip: HeadingChip }): JSX.Element {
   const tone = chip.tone ?? "neutral";
-  const className = cn(
-    "inline-flex min-h-6 max-w-full items-center gap-1.5 rounded-[6px] px-2 text-xs font-medium text-foreground",
-    CHIP_FILL[tone],
-  );
+  // Status is a toned glyph and a word in the text's colour: no fill, no pill (DESIGN.md, Status).
+  const className =
+    "inline-flex min-h-6 max-w-full items-center gap-1.5 text-[13px] text-foreground";
   const shared = { title: hoverTitle(chip.title), "data-chip": "", "data-tone": tone };
   const content = <ChipContent chip={chip} />;
   if (chip.to !== undefined) {
     return (
-      <Link to={chip.to} {...shared} className={cn(className, FOCUS, "hover:brightness-95")}>
+      <Link
+        to={chip.to}
+        {...shared}
+        className={cn(className, FOCUS, "rounded underline-offset-2 hover:underline")}
+      >
         {content}
       </Link>
     );
@@ -264,7 +273,7 @@ function Chip({ chip }: { chip: HeadingChip }): JSX.Element {
         onClick={chip.onClick}
         aria-pressed={chip.pressed}
         {...shared}
-        className={cn(className, FOCUS, "hover:brightness-95")}
+        className={cn(className, FOCUS, "rounded underline-offset-2 hover:underline")}
       >
         {content}
       </button>
@@ -298,7 +307,7 @@ function PathRow({
   const [message, setMessage] = useTransientMessage();
   const code = useRef<HTMLElement>(null);
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+    <div className="plan-fine flex flex-wrap items-center gap-x-2 gap-y-1">
       <div className="flex min-w-0 items-center gap-2">
         <FileIcon aria-hidden="true" className="size-3.5 shrink-0" />
         <code ref={code} className="min-w-0 font-mono break-all">
@@ -343,7 +352,7 @@ function TitleRow({ kind, title, rebuilding, views, actions }: DocHeadingProps):
     <div className="flex flex-wrap items-center gap-3">
       <div className="flex min-w-0 flex-[1_1_max-content] items-center gap-3">
         {kind !== null && <DocMark kind={kind} size="lg" rebuilding={rebuilding} />}
-        <h1 className="min-w-0 text-[22px] leading-[1.2] font-[650] tracking-[-0.02em] text-balance [overflow-wrap:anywhere]">
+        <h1 className="plan-page-title min-w-0 font-[650] text-balance [overflow-wrap:anywhere]">
           <Untrusted text={title} />
         </h1>
       </div>
@@ -358,11 +367,11 @@ function TitleRow({ kind, title, rebuilding, views, actions }: DocHeadingProps):
 export function DocHeading(props: DocHeadingProps): JSX.Element {
   const { breadcrumb, chips, path, changes, children } = props;
   return (
-    <header className="grid gap-2.5 border-b border-hairline bg-card px-[22px] pt-[18px] pb-3.5 font-sans">
+    <header className="grid gap-2.5 border-b border-hairline bg-background px-[22px] pt-[18px] pb-3.5 font-sans">
       <Breadcrumbs crumbs={breadcrumb} />
       <TitleRow {...props} />
       {chips && chips.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           {chips.map((chip) => (
             <Chip key={chip.key} chip={chip} />
           ))}

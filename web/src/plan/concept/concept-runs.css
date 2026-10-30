@@ -1,0 +1,210 @@
+/*
+ * An opened sentence (a "run") reads as text that grew in place: the same reading face, size and
+ * measure as the sentence it replaced, on the page ground, with no wash, box or shadow
+ * (doc/product/feat-planner/index.md, Vision; DESIGN.md, Surfaces). A quiet edge marks where it
+ * starts and stops and the fold caps sit in the text at both ends:
+ *   - an inline run (cited sentences) carries a hairline under its text;
+ *   - a block run (source passages) carries a hairline down its start edge, hung into the page
+ *     gutter so the text keeps the sentence's own left edge.
+ * The edge turns the document's hue (`--run-colour`) while a cap of that run is hovered or
+ * focused, which names the run the cap would fold. The hue is identity (which document), never a
+ * status, and `--primary` never appears here.
+ */
+
+.concept-run,
+.concept-passages {
+  --run-edge: var(--hairline);
+}
+
+.concept-run {
+  border-bottom: 1px solid var(--run-edge);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition: border-color 120ms;
+}
+
+/* Only this run's own caps recolour it; nested caps leave the outer edge alone. An inline run's
+   start cap is a direct child unless its first sentence opened to passages: then it waits in
+   that run's first passage (or its "No source sections." line) inside .concept-run-leading. */
+.concept-run:has(> .concept-run-cap:is(:hover, :focus-visible)),
+.concept-run:has(
+  > .concept-passages
+    > :is(.concept-passage, .concept-muted)
+    > .concept-run-leading
+    > .concept-run-cap:is(:hover, :focus-visible)
+),
+.concept-passages:has(
+  > :is(.concept-passage, .concept-muted) > .concept-run-cap:is(:hover, :focus-visible)
+) {
+  --run-edge: var(--run-colour);
+}
+
+.concept-passages {
+  margin-block: 0.5em;
+  margin-inline-start: -12px;
+  padding-inline-start: 11px;
+  border-inline-start: 1px solid var(--run-edge);
+  transition: border-color 120ms;
+}
+
+/* A passage block at the start leaves an empty inline fragment whose border would still draw a
+   stray line beside it. The end never matches: the end fold cap is the run's last child. */
+.concept-run:has(> .concept-passages:first-child) {
+  border-bottom-color: transparent;
+}
+
+/* The fold cap: a quiet chevron in the document's hue, in the text at each end of the run. */
+.concept-run-cap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3em;
+  height: 1.3em;
+  margin: 0 0.1em;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--run-colour);
+  vertical-align: -0.24em;
+  cursor: pointer;
+  transition: background-color 120ms;
+}
+
+.concept-run-cap-icon {
+  width: 0.78em;
+  height: 0.78em;
+}
+
+.concept-run-cap:is(:hover, :focus-visible) {
+  background: var(--muted);
+}
+
+.concept-run-cap:focus-visible,
+.concept-plan-glyph:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* No overflow-x here: tables and code scroll in their own wrappers, and an overflow box would
+   clip the start cap's focus ring at the left edge. */
+.concept-passage {
+  padding-block: 0.15em;
+}
+
+.concept-passage + .concept-passage {
+  margin-top: 0.6em;
+}
+
+/* The chip names the section, so the passage's own heading line (every passage starts with
+   it, passages.ts passageOf) is not drawn a second time. */
+.concept-passage .md > :is(h1, h2, h3, h4, h5, h6, .md-heading):first-child {
+  display: none;
+}
+
+.concept-passage .md > :is(h1, h2, h3, h4, h5, h6, .md-heading):first-child + * {
+  margin-top: 0;
+}
+
+/* The body flows on from the chip line: a one-paragraph passage reads inline after the chip,
+   and the last paragraph carries the end cap on its last line. Earlier paragraphs, lists,
+   tables and code stay block, so after one of those the end cap takes a trailing line. */
+.concept-passage .md,
+.concept-passage .md > p:last-child {
+  display: inline;
+}
+
+/* The last paragraph is inline, so the `.md > * + *` top margin no longer separates it from the
+   block before it; that block carries the gap instead. The hidden first heading is excluded: a
+   one-paragraph passage has nothing to separate. */
+.concept-passage
+  .md
+  > :has(+ p:last-child):not(:is(h1, h2, h3, h4, h5, h6, .md-heading):first-child) {
+  margin-bottom: 0.75em;
+}
+
+/* The chip is a link naming the passage's file and heading: fine print, no edge, no fill. */
+.concept-passage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  margin-inline-end: 0.45em;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-fine);
+  font-weight: 500;
+  line-height: 1.4;
+  vertical-align: middle;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color 120ms;
+}
+
+.concept-passage-chip > svg {
+  flex: none;
+  width: 1.1em;
+  height: 1.1em;
+}
+
+.concept-passage-chip:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+
+.concept-passage-chip:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.concept-passage-path {
+  font-family: var(--font-mono);
+}
+
+.concept-muted {
+  font-family: var(--font-sans);
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+}
+
+.concept-note {
+  display: block;
+  font-family: var(--font-sans);
+  margin-block: 4px;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  line-height: 1.4;
+}
+
+.concept-note a {
+  text-decoration: underline;
+}
+
+/* The plan glyph after a sentence: a bare icon button, no edge. */
+.concept-plan-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  margin-inline-start: 0.1em;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted-foreground);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.concept-plan-glyph:hover {
+  color: var(--foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .concept-run,
+  .concept-passages,
+  .concept-run-cap,
+  .concept-passage-chip {
+    transition: none;
+  }
+}

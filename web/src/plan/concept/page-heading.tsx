@@ -19,7 +19,12 @@ import {
 } from "@/plan/files/heading-parts";
 import { HeadingActions, usePressureActive } from "@/plan/files/doc-heading-view";
 import { LockNotice } from "@/plan/files/lock-notice";
-import { DocHeading, IBTN, type HeadingChip, type HeadingCrumb } from "@/plan/ui/doc-heading";
+import {
+  DocHeading,
+  HEADING_BUTTON,
+  type HeadingChip,
+  type HeadingCrumb,
+} from "@/plan/ui/doc-heading";
 
 import { useOpenAll } from "./open-all";
 import { useKeptDoc } from "./passage-doc";
@@ -105,7 +110,7 @@ function SourceActions({ path }: { path: string }): JSX.Element | null {
 function OpenAllButton(): JSX.Element {
   const openAll = useOpenAll();
   return (
-    <Button type="button" variant="outline" size="sm" className={IBTN} onClick={openAll}>
+    <Button type="button" {...HEADING_BUTTON} onClick={openAll}>
       <UnfoldVertical aria-hidden="true" />
       Open all
     </Button>

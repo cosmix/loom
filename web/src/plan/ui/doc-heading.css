@@ -1,0 +1,9 @@
+/*
+ * The document heading's own rules, over the shared scales of design.css. The current view (Summary
+ * or Source) takes the `--muted` wash a hovered quiet button takes; `--primary` stays off it
+ * (DESIGN.md, Colour). Unlayered, so it outranks the utilities a shared Button carries.
+ */
+.plan-button[aria-current="page"] {
+  background: var(--muted);
+  color: var(--foreground);
+}
