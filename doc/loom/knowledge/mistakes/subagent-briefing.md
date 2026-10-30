@@ -1,6 +1,6 @@
 # Subagent Briefing
 
-> Briefs
+>
 
 ## Never Hand Over a Proving Command You Have Not Run
 

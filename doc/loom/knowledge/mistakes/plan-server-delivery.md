@@ -1,4 +1,6 @@
 # Plan Server Delivery
+>
+> Delivery slips
 
 >
 
@@ -366,4 +368,4 @@ Mistakes from the plan that moved the planner to features, kickoff, draft-all te
 
 **Prevention:** a plan with a visual target commits the mockup into its brief bundle (`mockup.html` plus one PNG per screen, as `briefs/web-terminal/web-terminal/mockup.html` does). Every worker brief names those files. Each UI stage gets a real-browser screenshot criterion compared against the PNGs. Visual and layout work goes to a Claude lane, never codex.
 
-**Fix:** pending; see the screen-by-screen gap list against the mockup.
+**Fix:** the repair plan (`feat-planner-12-ui-repair`) transcribed the mockup into its brief bundle (`doc/plans/feat-planner/briefs/feat-planner-12-ui-repair/`: structure, CSS values and copy per screen, because stage sessions cannot open claude.ai), ran the visual stages on Claude lanes only, gave every web stage a real-browser step (`scripts/plan-screens.sh`, which takes `--themes=<ledger|aubergine|pacific|graphite>,...`) and rebuilt every screen; integration-verify shot nine routes at 1440 and 390 in four themes (72 screenshots, no sideways scroll at 390). The shots ran in read-only mode (the sandbox has no Claude login), so sessions, the pressure dialog, run and done views and help were checked by code and tests, not screenshots. The slips of that plan: [Planner UI Repair](planner-ui-repair.md).

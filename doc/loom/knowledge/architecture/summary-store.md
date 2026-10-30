@@ -1,6 +1,6 @@
 # Summary Store
 >
-> Store
+>
 
 >
 
@@ -258,3 +258,16 @@ Source: `plan_server/summaries/scheduler.rs`, `scheduler/queue.rs`, `scheduler/s
   and a real summary session cannot run in the stage sandbox. The scheduler, the facade over a fake bridge host, the
   routes on loopback and the web components are covered by tests; the first operator run should append its figures here
   with the date and the project's size.
+
+## Summary Backends: Claude and Codex
+
+`plan.summary_backend` (`claude` default, `codex`; keys in [model and effort config](../conventions/model-and-effort-config.md#plan-keys-and-defaults)) picks who builds summaries and overviews. `summaries::install` installs one `BackendSpawner` (`summaries/backend.rs`); it reads `SummaryModels::load(root).backend` per job and routes `start` to the Claude `RealSpawner` or to `CodexSummarySpawner` (`summaries/codex_spawner.rs`, with `codex_spawner/registry.rs` and `guard.rs`), and routes `stop` to whichever owns the session id. Codex ids carry the prefix `c0de-` (`SESSION_PREFIX`, `is_codex_session`); an issued id must also pass `planning/runtime.rs::check_state`'s hex-and-dash test, because every `loom plan summary` call inside the job validates it.
+
+- **A Codex job is not a bridge session.** The scheduler talks only to `SessionSpawner` and bridge `Ended` events, so the trait gained `runs_outside_bridge(session)` (default `false`; Codex answers `true` for live jobs, and `check_alive` skips them). `Rebuilds::with_spawner(ctx, spawner)` builds the rebuild state over a chosen spawner and `Rebuilds::codex_session_ended(id, outcome)` clears claims and attribution and calls `State::summary_ended`, like `session_gone`. `summary_ended` picks the Codex path by `is_codex_session(id)` because `ended_early` replays a job's early end through it, and a clean exit that beats the start settling must still reach `Scheduler::job_ended`.
+- **Command line.** `codex_summary_args` keeps `--sandbox workspace-write` (never `danger-full-access`) and grants only `<runtime>/drafts` and `<runtime>/claims` with `--add-dir`; the rest of the runtime directory (other sessions' permission answers, settings, launch scripts) stays read-only. The model and effort come from `plan.summary_codex_model` and `plan.summary_codex_effort`. The prompt runs a bare `loom plan summary ...`, so it relies on `loom` being first on the server's `PATH` (hooks use `spec.loom_bin` instead).
+- **Store lock under the grant.** The job's grants exclude `summaries.lock`, so `planning/summary/lock.rs::open_lock` opens it `O_RDONLY` and falls back from `EROFS`/`EACCES` on `O_RDWR`; `flock` works on a read-only descriptor. It would not serialise on an NFS home.
+- **Guard.** `guard.rs` snapshots `.claude` (the `config_guard` walk), `.codex` and the Codex instruction files at the project root at job start and fails the job's ids when any changed or became unreadable by exit. It compares start with exit only, so an edit by the user or the authoring session mid-job also fails the job.
+- **Shutdown.** The summaries drain waits up to 5 s for running jobs and SIGKILLs what remains; the server's abort hook SIGKILLs Codex groups itself, from a `stopped_groups` list kept in the registry after a job leaves it, because `Shutdown::abort_all` ends in `exit(130)` right after the aborts return and a sleeper thread would not survive it.
+- **Opening submission (Claude).** A summary opening that is typed but never submitted is fixed in the bridge, not here: [Delivery](planning-session-bridge.md#delivery).
+
+No live `codex exec` has run this backend: a stage sandbox has no network and refuses nested `bwrap`, so the sandbox-write, `check_parent` and `O_RDONLY` paths rest on tests and reasoning ([follow-ups](../concerns/planner-ui-repair-followups.md#codex-summary-backend)).

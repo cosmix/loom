@@ -11,7 +11,7 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 
 # Hook System
 
-> Hooks
+>
 
 ## Hook System Architecture (loom/src/hooks/)
 

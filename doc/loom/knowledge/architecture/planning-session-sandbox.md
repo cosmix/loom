@@ -1,6 +1,6 @@
 # Planning Session Sandbox
 
-> Sandbox
+>
 
 ## Overview (`loom::plan_session`)
 
@@ -9,7 +9,7 @@ settings this module writes. It is a builder beside `sandbox::settings`, never `
 which adds package-manager cache writes, orchestration-state reads and plan-authored config a planning
 session must not have; the stage builder is the first settings producer
 ([Execution Containment](execution-containment.md#claude-code-grants-a-linked-worktree-its-whole-git-common-directory)).
-The contract is `doc/product/planner-ui/section_12.md` ("Planning sessions"); the code is `loom/src/plan_session/`.
+The contract is `doc/product/feat-planner/section_12.md` ("Planning sessions"); the code is `loom/src/plan_session/`.
 
 | File | Owns |
 | --- | --- |

@@ -217,7 +217,7 @@ See [Code Style and Structure](conventions/code-style-and-structure.md).
 
 ## Web Dashboard Typography
 
-Controls, cues and status words in the dashboard use the body face in sentence case; monospace only for ids and code, uppercase only via `eyebrow`, `.stage-tag` and `.rank-caption`. See [Web Dashboard Typography](conventions/web-dashboard-typography.md). The planning app's Markdown renderer and CodeMirror rules are in [plan-web](conventions/plan-web.md).
+Controls, cues and status words in the dashboard use the body face in sentence case; monospace only for ids and code, uppercase only via `eyebrow`, `.stage-tag` and `.rank-caption`. See [Web Dashboard Typography](conventions/web-dashboard-typography.md). The planning app's Markdown renderer and CodeMirror rules, its visual-stage screenshot script and its UI test rules are in [plan-web](conventions/plan-web.md).
 
 ## Model and Effort Config
 

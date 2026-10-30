@@ -1,7 +1,7 @@
 # Web Dashboard Latent Issues
 
 >
-> Latent
+>
 > oversights. See [architecture/web-dashboard.md](../architecture/web-dashboard.md) for
 > context.
 

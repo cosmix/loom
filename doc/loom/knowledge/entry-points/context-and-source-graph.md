@@ -3,7 +3,7 @@
 
 # Context And Source Graph
 
-> Graph
+>
 
 ## Context Retrieval Subsystem
 
