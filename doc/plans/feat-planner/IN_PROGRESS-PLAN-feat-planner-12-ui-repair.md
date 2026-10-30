@@ -245,14 +245,6 @@ loom:
   stages:
   - id: card-payload
     name: Feature card payload, stale paths and the screenshot script
-    summary: >-
-      Gives every feature a title, a usable pitch, section and plan counts and a counter per
-      step, fixes the paths left by the planner-ui to feat-planner rename, and adds the
-      real-browser screenshot script the web stages use.
-    stage_type: standard
-    skills:
-    - loom-rust
-    - loom-typescript
     description: |
       Read doc/plans/feat-planner/briefs/feat-planner-12-ui-repair/common.md, then card-payload.md in the same directory, before dispatch.
       PATHS: working_dir is loom/; YAML and table paths are repository-relative.
@@ -271,16 +263,26 @@ loom:
       LEDGER: no file this stage edits may cross 400 lines; checklist.rs grows, so the new fields' construction lives in checklist_card.rs.
       Use parallel subagents and skills to maximize performance.
       MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
+    summary: >-
+      Gives every feature a title, a usable pitch, section and plan counts and a
+      counter per step, fixes the paths left by the planner-ui to feat-planner rename, and
+      adds the real-browser screenshot script the web stages use.
     dependencies: []
+    parallel_group: null
     acceptance:
     - cargo build
     - cargo clippy --all-targets -- -D warnings
     - cargo fmt --check
     - "cargo test --lib plan_server::"
-    - cargo test --test planning_guidance_contracts --test planning_checklist_contracts
-    - cd ../web && node_modules/.bin/tsc -b --noEmit && node_modules/.bin/oxlint --deny-warnings && node_modules/.bin/oxfmt --check
+    - >-
+      cargo test --test planning_guidance_contracts --test
+      planning_checklist_contracts
+    - >-
+      cd ../web && node_modules/.bin/tsc -b --noEmit && node_modules/.bin/oxlint
+      --deny-warnings && node_modules/.bin/oxfmt --check
     - cd ../web && node_modules/.bin/vitest run src/plan
     - bash -n ../scripts/plan-screens.sh
+    setup: []
     files:
     - loom/src/plan_server/wire/**
     - loom/src/plan_server/features.rs
@@ -297,61 +299,75 @@ loom:
     - scripts/plan-screens.sh
     - doc/product/feat-planner/**
     - doc/plans/feat-planner/index.md
+    auto_merge: null
     working_dir: loom
+    stage_type: standard
     artifacts:
     - src/plan_server/wire/checklist_card.rs
+    wiring:
+    - source: src/plan_server/wire/checklist.rs
+      pattern: card_facts(
+      description: the project checklist conversion fills the card facts
+      literal: true
     before_stage:
     - command: test ! -e src/plan_server/wire/checklist_card.rs
       description: the stage's new module does not exist yet
     after_stage:
     - command: test -s src/plan_server/wire/checklist_card.rs
       description: the card facts module exists
-    wiring:
-    - source: src/plan_server/wire/checklist.rs
-      pattern: card_facts(
-      literal: true
-      description: the project checklist conversion fills the card facts
+    context_ceiling_tokens: null
+    sandbox: {}
+    ultracode: false
+    implementers:
+    - codex
+    - claude
+    skills:
+    - loom-rust
+    - loom-typescript
     contracts:
     - id: title-strips-vision-suffix
       file: tests/plan_feature_card_contracts.rs
       test: title_strips_vision_suffix
-      scenario: writes doc/product/demo/index.md with "# Loom Plan — Product Vision" and a paragraph, loads the project and converts it
-      rejects: a title that is the slug "demo" or the raw heading "Loom Plan — Product Vision" instead of "Loom Plan"
+      scenario: >-
+        writes doc/product/demo/index.md with "# Loom Plan — Product Vision" and a
+        paragraph, loads the project and converts it
+      rejects: >-
+        a title that is the slug "demo" or the raw heading "Loom Plan — Product Vision"
+        instead of "Loom Plan"
     - id: title-falls-back-to-metaplan-heading
       file: tests/plan_feature_card_contracts.rs
       test: title_falls_back_to_metaplan_heading
-      scenario: writes only doc/plans/tokens/index.md whose H1 is "Token Optimization Metaplan" and no product directory
-      rejects: a title that ignores the metaplan and returns the slug "Tokens" or "tokens" instead of "Token Optimization"
+      scenario: >-
+        writes only doc/plans/tokens/index.md whose H1 is "Token Optimization Metaplan"
+        and no product directory
+      rejects: >-
+        a title that ignores the metaplan and returns the slug "Tokens" or "tokens"
+        instead of "Token Optimization"
     - id: pitch-skips-status-paragraph
       file: tests/plan_feature_card_contracts.rs
       test: pitch_skips_status_paragraph
-      scenario: 'a vision "# Demo\n\nStatus: agreed vision (2026-10-26).\n\nA browser app for plans.\n" loaded and converted'
+      scenario: "a vision \"# Demo\\n\\nStatus: agreed vision (2026-10-26).\\n\\nA browser app for plans.\\n\" loaded and converted"
       rejects: a pitch that returns the Status line instead of "A browser app for plans."
     - id: pitch-falls-back-to-metaplan
       file: tests/plan_feature_card_contracts.rs
       test: pitch_falls_back_to_metaplan
-      scenario: no vision; doc/plans/tokens/index.md is "# Token Optimization Metaplan\n\nThis metaplan orders six plans.\n"
+      scenario: >-
+        no vision; doc/plans/tokens/index.md is "# Token Optimization Metaplan\n\nThis
+        metaplan orders six plans.\n"
       rejects: a pitch that stays None when only a metaplan exists
     - id: step-counts-follow-documents
       file: tests/plan_feature_card_contracts.rs
       test: step_counts_follow_documents
-      scenario: a vision listing three sections in its section table with two section_NN.md files written, loaded and converted
-      rejects: a step 2 whose count is None or the step number instead of "2/3", or a sections list that is not three entries with written true, true, false
+      scenario: >-
+        a vision listing three sections in its section table with two section_NN.md
+        files written, loaded and converted
+      rejects: >-
+        a step 2 whose count is None or the step number instead of "2/3", or a sections
+        list that is not three entries with written true, true, false
     harness:
     - tests/plan_feature_card_contracts/**
-    sandbox: {}
-    implementers:
-    - codex
-    - claude
   - id: summary-engine
     name: Summary defaults, opening submission and the Codex backend
-    summary: >-
-      Makes summaries run on haiku at high effort by default, makes sure a summary session's
-      opening prompt is actually submitted, and lets the user run summaries on Codex with its
-      own model and effort.
-    stage_type: standard
-    skills:
-    - loom-rust
     description: |
       Read doc/plans/feat-planner/briefs/feat-planner-12-ui-repair/common.md, then summary-engine.md in the same directory, before dispatch.
       PATHS: working_dir is loom/; YAML and table paths are repository-relative.
@@ -370,8 +386,13 @@ loom:
       BLOCK: if codex exec documents no way to grant the runtime directory, E3 reports it and you run loom stage block summary-engine with the evidence.
       Use parallel subagents and skills to maximize performance.
       MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
+    summary: >-
+      Makes summaries run on haiku at high effort by default, makes sure a summary
+      session's opening prompt is actually submitted, and lets the user run summaries on
+      Codex with its own model and effort.
     dependencies:
     - card-payload
+    parallel_group: null
     acceptance:
     - cargo build
     - cargo clippy --all-targets -- -D warnings
@@ -382,7 +403,10 @@ loom:
     - "cargo test --lib plan_session::"
     - "cargo test --lib plan_server::summaries::"
     - cargo test --test maintainability
-    - cd ../web && node_modules/.bin/vitest run src/components/settings-plan-section.test.ts
+    - >-
+      cd ../web && node_modules/.bin/vitest run
+      src/components/settings-plan-section.test.ts
+    setup: []
     files:
     - loom/src/user_config/**
     - loom/src/fs/work_dir/config_sections/plan_config.rs
@@ -403,56 +427,67 @@ loom:
     - README.md
     - doc/product/feat-planner/section_04.md
     - doc/product/feat-planner/section_09.md
+    auto_merge: null
     working_dir: loom
+    stage_type: standard
     artifacts:
     - src/plan_server/summaries/codex_spawner.rs
+    wiring:
+    - source: src/plan_server/summaries/mod.rs
+      pattern: CodexSummarySpawner
+      description: the summary scheduler can be installed with the Codex spawner
     before_stage:
     - command: test ! -e src/plan_server/summaries/codex_spawner.rs
       description: the stage's new module does not exist yet
     after_stage:
     - command: test -s src/plan_server/summaries/codex_spawner.rs
       description: the Codex summary spawner exists
-    wiring:
-    - source: src/plan_server/summaries/mod.rs
-      pattern: CodexSummarySpawner
-      description: the summary scheduler can be installed with the Codex spawner
+    context_ceiling_tokens: null
+    sandbox: {}
+    ultracode: false
+    implementers:
+    - codex
+    - claude
+    skills:
+    - loom-rust
     contracts:
     - id: summary-models-default-to-haiku-high
       file: tests/summary_engine_contracts.rs
       test: summary_models_default_to_haiku_high
-      scenario: resolves SummaryModels from a default PlanConfig and a UserConfig parsed from an empty user config
-      rejects: defaults that leave the overview and summary session on sonnet or the document effort on medium
+      scenario: >-
+        resolves SummaryModels from a default PlanConfig and a UserConfig parsed from
+        an empty user config
+      rejects: >-
+        defaults that leave the overview and summary session on sonnet or the document
+        effort on medium
     - id: codex-summary-uses-configured-model
       file: tests/summary_engine_contracts.rs
       test: codex_summary_uses_configured_model
-      scenario: calls codex_summary_args("gpt-6-luna", "low", root, runtime, "prompt") with temp paths
-      rejects: an argument list that does not carry "exec", "-m" followed by "gpt-6-luna", and "model_reasoning_effort=low", for example one that hardcodes the pressure defaults
+      scenario: >-
+        calls codex_summary_args("gpt-6-luna", "low", root, runtime, "prompt") with
+        temp paths
+      rejects: >-
+        an argument list that does not carry "exec", "-m" followed by "gpt-6-luna", and
+        "model_reasoning_effort=low", for example one that hardcodes the pressure
+        defaults
     - id: opening-enter-is-repressed
       file: src/plan_session/bridge/tests_opening.rs
       test: plan_session::bridge::tests_opening::opening_enter_is_repressed
-      scenario: starts a Summary session on the fake host, delivers SessionStart so the opening is pasted, withholds UserPromptSubmit and advances the clock 4.5 s
-      rejects: a delivery that presses Enter only once, or that pastes the opening a second time
+      scenario: >-
+        starts a Summary session on the fake host, delivers SessionStart so the opening
+        is pasted, withholds UserPromptSubmit and advances the clock 4.5 s
+      rejects: >-
+        a delivery that presses Enter only once, or that pastes the opening a second
+        time
     - id: unsubmitted-opening-fails-summary-session
       file: src/plan_session/bridge/tests_opening.rs
       test: plan_session::bridge::tests_opening::unsubmitted_opening_fails_summary_session
       scenario: same setup, advancing past delivery_timeout with no UserPromptSubmit
-      rejects: a Summary session left Idle and paused instead of ended as failed with reason "opening not submitted"
-    sandbox: {}
-    implementers:
-    - codex
-    - claude
+      rejects: >-
+        a Summary session left Idle and paused instead of ended as failed with reason
+        "opening not submitted"
   - id: shell
     name: App bar, step rail, activity, presence and settings
-    summary: >-
-      Rebuilds the planner header to the agreed design: one app bar with logo, identity and a
-      labelled right cluster, the step rail as clickable counters with the next action beside
-      it, an activity popover that also holds the run, review and summary controls, avatars,
-      and the settings dialog. The home screen loses its chat panel.
-    stage_type: standard
-    model: opus
-    skills:
-    - loom-react
-    - loom-typescript
     description: |
       MODEL: opus for this stage's main agent (deliberate override): it judges screenshots against a transcribed design, which is the step the last redesign skipped.
       Read doc/plans/feat-planner/briefs/feat-planner-12-ui-repair/common.md, then shell.md in the same directory, before dispatch. Pass both paths to every worker and every reviewer.
@@ -471,8 +506,10 @@ loom:
       AFTER THE WORKERS: node_modules/.bin/oxfmt; the VISUAL CHECK in common.md for routes / /f/feat-planner /f/feat-planner/product and the Settings dialog (open it with ?settings=1 if the route supports it, else note it), fix every deviation through a fresh worker for the owning territory, then the gate: one loom check shell beside the final loom-code-reviewer round, whose brief carries shell.md, common.md and the screenshot paths.
       Use parallel subagents and skills to maximize performance.
       MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
+    summary: "Rebuilds the planner header to the agreed design: one app bar with logo, identity and a labelled right cluster, the step rail as clickable counters with the next action beside it, an activity popover that also holds the run, review and summary controls, avatars, and the settings dialog. The home screen loses its chat panel."
     dependencies:
     - card-payload
+    parallel_group: null
     acceptance:
     - bun run typecheck
     - bun run lint
@@ -480,6 +517,7 @@ loom:
     - >-
       node_modules/.bin/vitest run src/plan/header src/plan/ui src/plan/settings
       src/plan/run src/plan/review src/plan/summaries src/plan/shell.test.tsx
+    setup: []
     files:
     - web/src/plan/header/**
     - web/src/plan/header-extras.tsx
@@ -495,57 +533,63 @@ loom:
     - web/src/plan/review/changed-since*.tsx
     - web/src/plan/summaries/summary-status*.tsx
     - web/src/plan/settings/**
+    auto_merge: null
     working_dir: web
+    stage_type: standard
     artifacts:
     - src/plan/header/pressure-strip.tsx
+    wiring:
+    - source: src/plan/header/header.tsx
+      pattern: <PressureStrip
+      description: the header renders the pressure run strip
+      literal: true
+    - source: src/plan/header/activity.tsx
+      pattern: <RunStrip
+      description: the loom run row lives in the activity popover
+      literal: true
     before_stage:
     - command: test ! -e src/plan/header/pressure-strip.tsx
       description: the stage's new module does not exist yet
     after_stage:
     - command: test -s src/plan/header/pressure-strip.tsx
       description: the pressure strip exists
-    wiring:
-    - source: src/plan/header/header.tsx
-      pattern: <PressureStrip
-      literal: true
-      description: the header renders the pressure run strip
-    - source: src/plan/header/activity.tsx
-      pattern: <RunStrip
-      literal: true
-      description: the loom run row lives in the activity popover
-    contracts:
-    - id: home-route-renders-no-chat-panel
-      file: src/plan/header/shell.contracts.test.tsx
-      test: planner shell home route renders no chat panel
-      scenario: renders Dock in a memory router at "/" and at "/f/demo/product" on the default store with desktop matchMedia
-      rejects: a dock that still mounts the chat panel on "/" (the panel must exist on the feature route and not on home)
-    - id: header-shows-no-run-marquee
-      file: src/plan/header/shell.contracts.test.tsx
-      test: planner shell header shows no run marquee
-      scenario: renders PlanHeader at "/f/demo" with the run strip atom set to plan DONE-PLAN-x.md, daemon stopped, 0 of 10 merged
-      rejects: a header that still renders the run strip text "daemon stopped" in the banner
-    - id: rail-cell-shows-count-and-links-to-step
-      file: src/plan/header/shell.contracts.test.tsx
-      test: planner shell rail cell shows the server count and links to its step
-      scenario: renders StepTracker for feature demo whose step 2 has count "12/12" and label "Product spec"
-      rejects: a rail that shows the ordinal 2, or a cell that is not a link to /f/demo?step=2
-    harness:
-    - src/plan/header/shell-contracts-kit.tsx
+    context_ceiling_tokens: null
     sandbox: {}
+    model: opus
+    ultracode: false
     implementers:
     - claude
-  - id: features
-    name: Home, feature cards, the feature screen and the kickoff
-    summary: >-
-      Rebuilds the home screen (Features heading, the invitation card with its animated
-      doodle, feature cards with title, pitch, progress bar and facts, a collapsed shelf of
-      standalone plans), the feature screen as a step navigation with a step body, and the
-      kickoff conversation.
-    stage_type: standard
-    model: opus
     skills:
     - loom-react
     - loom-typescript
+    contracts:
+    - id: home-route-renders-no-chat-panel
+      file: src/plan/header/shell.contracts.test.tsx
+      test: planner shell > home route renders no chat panel
+      scenario: >-
+        renders Dock in a memory router at "/" and at "/f/demo/product" on the default
+        store with desktop matchMedia
+      rejects: >-
+        a dock that still mounts the chat panel on "/" (the panel must exist on the
+        feature route and not on home)
+    - id: header-shows-no-run-marquee
+      file: src/plan/header/shell.contracts.test.tsx
+      test: planner shell > header shows no run marquee
+      scenario: >-
+        renders PlanHeader at "/f/demo" with the run strip atom set to plan
+        DONE-PLAN-x.md, daemon stopped, 0 of 10 merged
+      rejects: a header that still renders the run strip text "daemon stopped" in the banner
+    - id: rail-cell-shows-count-and-links-to-step
+      file: src/plan/header/shell.contracts.test.tsx
+      test: planner shell > rail cell shows the server count and links to its step
+      scenario: >-
+        renders StepTracker for feature demo whose step 2 has count "12/12" and label
+        "Product spec"
+      rejects: a rail that shows the ordinal 2, or a cell that is not a link to /f/demo?step=2
+    harness:
+    - src/plan/header/shell-contracts-kit.tsx
+  - id: features
+    name: Home, feature cards, the feature screen and the kickoff
     description: |
       MODEL: opus for this stage's main agent (deliberate override): it judges screenshots against a transcribed design.
       Read doc/plans/feat-planner/briefs/feat-planner-12-ui-repair/common.md, then features.md in the same directory, before dispatch. Pass both paths to every worker and every reviewer.
@@ -563,13 +607,22 @@ loom:
       AFTER THE WORKERS: node_modules/.bin/oxfmt; the VISUAL CHECK in common.md for routes / /new /f/feat-planner "/f/feat-planner?step=2" /f/optim-token, fix every deviation through a fresh worker for the owning territory, then one loom check features beside the final loom-code-reviewer round, whose brief carries features.md, common.md and the screenshot paths.
       Use parallel subagents and skills to maximize performance.
       MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
+    summary: >-
+      Rebuilds the home screen (Features heading, the invitation card with its
+      animated doodle, feature cards with title, pitch, progress bar and facts, a collapsed
+      shelf of standalone plans), the feature screen as a step navigation with a step
+      body, and the kickoff conversation.
     dependencies:
     - card-payload
+    parallel_group: null
     acceptance:
     - bun run typecheck
     - bun run lint
     - bun run format:check
-    - node_modules/.bin/vitest run src/plan/home src/plan/feature src/plan/new src/plan/ui/doodle.test.tsx
+    - >-
+      node_modules/.bin/vitest run src/plan/home src/plan/feature src/plan/new
+      src/plan/ui/doodle.test.tsx
+    setup: []
     files:
     - web/src/plan/home/**
     - web/src/plan/feature/**
@@ -577,56 +630,62 @@ loom:
     - web/src/plan/ui/doodle.tsx
     - web/src/plan/ui/doodle.css
     - web/src/plan/ui/doodle.test.tsx
+    auto_merge: null
     working_dir: web
+    stage_type: standard
     artifacts:
     - src/plan/home/feature-mark.tsx
+    wiring:
+    - source: src/plan/home/feature-card.tsx
+      pattern: <FeatureMark
+      description: feature cards render the feature mark
+      literal: true
+    - source: src/plan/feature/feature-route.tsx
+      pattern: useSearchParams
+      description: the feature screen selects its step from the query
     before_stage:
     - command: test ! -e src/plan/home/feature-mark.tsx
       description: the stage's new module does not exist yet
     after_stage:
     - command: test -s src/plan/home/feature-mark.tsx
       description: the feature mark exists
-    wiring:
-    - source: src/plan/home/feature-card.tsx
-      pattern: <FeatureMark
-      literal: true
-      description: feature cards render the feature mark
-    - source: src/plan/feature/feature-route.tsx
-      pattern: useSearchParams
-      description: the feature screen selects its step from the query
+    context_ceiling_tokens: null
+    sandbox: {}
+    model: opus
+    ultracode: false
+    implementers:
+    - claude
+    skills:
+    - loom-react
+    - loom-typescript
     contracts:
     - id: feature-card-shows-title
       file: src/plan/home/features.contracts.test.tsx
       test: features repair feature card shows the title instead of the slug
-      scenario: renders FeatureCards with one checklist whose feature is "planner-ui" and title "Planner UI", 12 sections and 11 plans
-      rejects: a card whose heading is the slug "planner-ui", or that omits the "12 sections" fact
+      scenario: >-
+        renders FeatureCards with one checklist whose feature is "planner-ui" and title
+        "Planner UI", 12 sections and 11 plans
+      rejects: >-
+        a card whose heading is the slug "planner-ui", or that omits the "12 sections"
+        fact
     - id: standalone-shelf-starts-collapsed
       file: src/plan/home/features.contracts.test.tsx
       test: features repair standalone shelf starts collapsed with its count
       scenario: renders StandaloneShelf with 30 standalone plans in the project atom
-      rejects: a shelf that renders every plan row visible on load, instead of a closed details element whose summary reads "30 standalone plans"
+      rejects: >-
+        a shelf that renders every plan row visible on load, instead of a closed
+        details element whose summary reads "30 standalone plans"
     - id: feature-screen-selects-step-from-query
       file: src/plan/home/features.contracts.test.tsx
       test: features repair feature screen selects the step from the query
       scenario: renders FeatureRoute at /f/demo?step=4 for a feature whose current step is 2
-      rejects: a screen that ignores the query and selects step 2, or that has no nav "Steps" link "Plans" with aria-current="step" and no h1 "Write the plans"
+      rejects: >-
+        a screen that ignores the query and selects step 2, or that has no nav "Steps"
+        link "Plans" with aria-current="step" and no h1 "Write the plans"
     harness:
     - src/plan/home/features-contracts-kit.tsx
-    sandbox: {}
-    implementers:
-    - claude
   - id: reading
     name: Reading column, fold caps, keyboard and document headers
-    summary: >-
-      Puts the reading column on the agreed measure with the ink-wash hover, coloured marks,
-      inline fold caps and a key hint row; fixes Enter, Shift+Esc and mark colours; trims the
-      document key; and rebuilds every document header with the feature-title breadcrumb, one
-      chip row and the quiet path line.
-    stage_type: standard
-    model: opus
-    skills:
-    - loom-react
-    - loom-typescript
     description: |
       MODEL: opus for this stage's main agent (deliberate override): it judges screenshots against a transcribed design and coordinates a debugging worker.
       Read doc/plans/feat-planner/briefs/feat-planner-12-ui-repair/common.md, then reading.md in the same directory, before dispatch. Pass both paths to every worker and every reviewer.
@@ -644,13 +703,22 @@ loom:
       AFTER THE WORKERS: node_modules/.bin/oxfmt; the VISUAL CHECK in common.md for routes /f/feat-planner/product /f/feat-planner/engineering /f/feat-planner/product/section_05 and a plan and a section in file mode (pick their /files/ routes from the tree), with one run opened two levels deep in a scripted step if the script allows it (otherwise open it in a jsdom test and record that), fix every deviation through a fresh worker for the owning territory, then one loom check reading beside the final loom-code-reviewer round, whose brief carries reading.md, common.md and the screenshot paths.
       Use parallel subagents and skills to maximize performance.
       MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
+    summary: >-
+      Puts the reading column on the agreed measure with the ink-wash hover, coloured
+      marks, inline fold caps and a key hint row; fixes Enter, Shift+Esc and mark
+      colours; trims the document key; and rebuilds every document header with the
+      feature-title breadcrumb, one chip row and the quiet path line.
     dependencies:
     - card-payload
+    parallel_group: null
     acceptance:
     - bun run typecheck
     - bun run lint
     - bun run format:check
-    - node_modules/.bin/vitest run src/plan/concept src/plan/markdown src/plan/files src/plan/ui/doc-heading.test.tsx
+    - >-
+      node_modules/.bin/vitest run src/plan/concept src/plan/markdown src/plan/files
+      src/plan/ui/doc-heading.test.tsx
+    setup: []
     files:
     - web/src/plan/concept/**
     - web/src/plan/markdown/markdown.css
@@ -661,51 +729,49 @@ loom:
     - web/src/plan/files/lock-notice.tsx
     - web/src/plan/files/plan/**
     - web/src/plan/files/tree*.tsx
+    auto_merge: null
     working_dir: web
+    stage_type: standard
     artifacts:
     - src/plan/concept/open-all.ts
+    wiring:
+    - source: src/plan/concept/page-heading.tsx
+      pattern: useOpenAll
+      description: summary-page headers offer Open all
     before_stage:
     - command: test ! -e src/plan/concept/open-all.ts
       description: the stage's new module does not exist yet
     after_stage:
     - command: test -s src/plan/concept/open-all.ts
       description: the open-all hook exists
-    wiring:
-    - source: src/plan/concept/page-heading.tsx
-      pattern: useOpenAll
-      description: summary-page headers offer Open all
+    context_ceiling_tokens: null
+    sandbox: {}
+    model: opus
+    ultracode: false
+    implementers:
+    - claude
+    skills:
+    - loom-react
+    - loom-typescript
     contracts:
     - id: enter-opens-focused-sentence
       file: src/plan/concept/reading.contracts.test.tsx
-      test: reading repair enter opens the focused sentence
-      scenario: mounts the reading column harness with one openable sentence citing a placed section page, focuses the column, presses j then Enter
-      rejects: a key handler that ignores Enter on a focused sentence, leaving no group whose aria-label starts "Detail of"
-    - id: shift-escape-on-cap-folds-all
-      file: src/plan/concept/reading.contracts.test.tsx
-      test: reading repair shift escape on a cap folds every run
-      scenario: opens two runs, focuses a button named Fold, presses Escape with shiftKey
-      rejects: a handler that returns early for cap targets, leaving any "Detail of" group open
+      test: reading repair > enter opens the focused sentence
+      scenario: >-
+        mounts the reading column harness with one openable sentence citing a placed
+        section page, focuses the column, presses j then Enter
+      rejects: >-
+        a key handler that ignores Enter on a focused sentence, leaving no group whose
+        aria-label starts "Detail of"
     - id: document-key-shows-four-chips
       file: src/plan/concept/reading.contracts.test.tsx
-      test: reading repair document key shows four chips and a more chip
+      test: reading repair > document key shows four chips and a more chip
       scenario: renders DocumentKey for an overview page with twelve chips
       rejects: a key that renders all twelve chip links, or no button named "… 8 more"
     harness:
     - src/plan/concept/reading-contracts-kit.tsx
-    sandbox: {}
-    implementers:
-    - claude
   - id: chat-help
     name: Chat panel, pressure test and help
-    summary: >-
-      Fixes the chat panel's duplicate permission card, cross-feature sessions and stray
-      confirm, restyles it to the agreed design, rebuilds the pressure dialog, run and done
-      views, and re-targets help to the new screens with corrected pin placement.
-    stage_type: standard
-    model: opus
-    skills:
-    - loom-react
-    - loom-typescript
     description: |
       MODEL: opus for this stage's main agent (deliberate override): it coordinates a debugging worker and judges screenshots.
       Read doc/plans/feat-planner/briefs/feat-planner-12-ui-repair/common.md, then chat-help.md in the same directory, before dispatch. Read loom memory show --all for selector changes the shell, features and reading stages recorded, and pass them to C3.
@@ -723,61 +789,76 @@ loom:
       AFTER THE WORKERS: node_modules/.bin/oxfmt; the VISUAL CHECK in common.md for /f/feat-planner/product (chat panel) and a written standalone plan in file mode with the pressure dialog opened if the script can click "Pressure-test" (otherwise record it), and the help dialog on each topic if the script can press "?"; fix every deviation through a fresh worker for the owning territory, then one loom check chat-help beside the final loom-code-reviewer round, whose brief carries chat-help.md, common.md and the screenshot paths.
       Use parallel subagents and skills to maximize performance.
       MEMORY: record mistakes, decisions and surprises with loom memory immediately, subagents too; NEVER Claude Code auto-memory.
+    summary: >-
+      Fixes the chat panel's duplicate permission card, cross-feature sessions and
+      stray confirm, restyles it to the agreed design, rebuilds the pressure dialog, run
+      and done views, and re-targets help to the new screens with corrected pin
+      placement.
     dependencies:
     - shell
     - features
     - reading
+    parallel_group: null
     acceptance:
     - bun run typecheck
     - bun run lint
     - bun run format:check
     - node_modules/.bin/vitest run src/plan/chat src/plan/help src/plan/shell.test.tsx
+    setup: []
     files:
     - web/src/plan/chat/**
     - web/src/plan/help/**
+    auto_merge: null
     working_dir: web
+    stage_type: standard
     artifacts: []
     wiring:
     - source: src/plan/chat/pressure/*.tsx
       pattern: Then a record line goes at the end of the plan
-      literal: true
       description: the pressure dialog explains the record line under the round frame
+      literal: true
+    context_ceiling_tokens: null
+    sandbox: {}
+    model: opus
+    ultracode: false
+    implementers:
+    - claude
+    skills:
+    - loom-react
+    - loom-typescript
     contracts:
     - id: permission-card-renders-once
       file: src/plan/chat/repair.contracts.test.tsx
       test: chat repair permission card renders once
-      scenario: seeds a session waiting on a Bash permission request and renders ChatPanel at desktop width
+      scenario: >-
+        seeds a session waiting on a Bash permission request and renders ChatPanel at
+        desktop width
       rejects: a panel that renders the permission card both inside the transcript and below it
     - id: foreign-feature-session-not-shown
       file: src/plan/chat/repair.contracts.test.tsx
       test: chat repair a session from another feature is not shown
-      scenario: seeds a session started for feature alpha (title "Alpha") and renders ChatPanel at /f/beta/product
-      rejects: a panel that shows alpha's transcript on beta, instead of the empty state with a link reading "A session in Alpha needs you"
+      scenario: >-
+        seeds a session started for feature alpha (title "Alpha") and renders ChatPanel
+        at /f/beta/product
+      rejects: >-
+        a panel that shows alpha's transcript on beta, instead of the empty state with
+        a link reading "A session in Alpha needs you"
     - id: pressure-dialog-offers-quick-pick-rounds-only
       file: src/plan/chat/repair.contracts.test.tsx
       test: chat repair pressure dialog offers quick pick rounds only
       scenario: opens PressureDialog for a written plan
-      rejects: a dialog that still renders a spinbutton for rounds, or lacks the three round buttons 1, 2 and 3
+      rejects: >-
+        a dialog that still renders a spinbutton for rounds, or lacks the three round
+        buttons 1, 2 and 3
     - id: pressure-plan-card-shows-plan-title
       file: src/plan/chat/repair.contracts.test.tsx
       test: chat repair pressure plan card shows the plan title
-      scenario: 'opens PressureDialog for doc/plans/PLAN-adopt-ecc-best-practices.md whose title is "Plan: Adopt Best Practices from Everything Claude Code"'
+      scenario: "opens PressureDialog for doc/plans/PLAN-adopt-ecc-best-practices.md whose title is \"Plan: Adopt Best Practices from Everything Claude Code\""
       rejects: a plan card that shows the slug-derived "adopt ecc best practices"
     harness:
     - src/plan/chat/repair-contracts-kit.tsx
-    sandbox: {}
-    implementers:
-    - claude
   - id: integration-verify
     name: Integration Verification
-    summary: >-
-      Runs the full suites, reviews every repaired screen in a real browser in all four themes
-      against the stage briefs, and rebuilds the embedded web bundle.
-    stage_type: integration-verify
-    skills:
-    - loom-rust
-    - loom-react
-    - loom-typescript
     description: |
       Final verification of doc/plans/feat-planner/PLAN-feat-planner-12-ui-repair.md. Verify FUNCTIONAL INTEGRATION, not just tests passing. NEVER Claude Code auto-memory.
       CONTEXT: read the plan, the brief bundle (doc/plans/feat-planner/briefs/feat-planner-12-ui-repair/), loom memory show --all, doc/loom/knowledge/INDEX.md and only the relevant sections.
@@ -786,9 +867,13 @@ loom:
       CODE REVIEW: parallel loom-code-reviewer subagents: (1) web security (Untrusted on every server string, no dangerouslySetInnerHTML, storage keys through storageKey); (2) the summary engine (opening re-press limited to openings, Summary failure path, Codex sandbox grant and config guard, new [plan] keys in every surface); (3) visual fidelity: the screenshots against common.md, shell.md, features.md, reading.md and chat-help.md, with the screenshot paths in the brief. Fix every finding through an engineer agent (frontend-design:frontend-design for visual fixes) or dispute it; never defer one.
       WEB DIST: after the final review round, rebuild web/dist and commit it last as chore(web).
       Record discoveries to loom memory, including stale knowledge: loom memory note "stale-knowledge: ...".
+    summary: >-
+      Runs the full suites, reviews every repaired screen in a real browser in all
+      four themes against the stage briefs, and rebuilds the embedded web bundle.
     dependencies:
     - chat-help
     - summary-engine
+    parallel_group: null
     acceptance:
     - command: cargo test --all-targets --no-fail-fast
       timeout_secs: 3600
@@ -803,19 +888,24 @@ loom:
       cd ../web && d=$(mktemp -d "${TMPDIR:-/tmp}/dist.XXXXXX") &&
       node_modules/.bin/vite build --outDir "$d" --emptyOutDir --logLevel error && diff -r "$d" dist
     - cd ../web && git diff --quiet -- dist
+    setup: []
     files: []
+    auto_merge: null
     working_dir: loom
+    stage_type: integration-verify
     artifacts: []
     wiring: []
+    context_ceiling_tokens: null
     sandbox: {}
+    ultracode: false
     implementers:
     - claude
+    skills:
+    - loom-rust
+    - loom-react
+    - loom-typescript
   - id: knowledge-distill
     name: Knowledge Distillation
-    summary: >-
-      Records the repaired planner's header, rail, reading and help rules, the summary
-      defaults, backend and opening fix, and the feat-planner paths in the knowledge base.
-    stage_type: knowledge-distill
     description: |
       Curate all stage memories into permanent knowledge. NEVER Claude Code auto-memory. SINGLE-AGENT: do NOT spawn subagents.
       START with loom memory pending --group; read the plan and the knowledge sections it touches (conventions/plan-web.md, conventions/web-dashboard-typography.md, conventions/model-and-effort-config.md, architecture/summary-store.md, architecture/planning-session-bridge.md, architecture/plan-server.md, mistakes/plan-server-delivery.md).
@@ -823,18 +913,28 @@ loom:
       TIER ROUTING: about 40 lines or fewer inline in the tier-1 file; larger via loom knowledge update <category>/<slug> with a 2-4 line tier-1 summary and link.
       RECEIPTS: every taken memory gets loom memory resolve right after the write; finish with loom memory pending --strict.
       INDEX BUDGET: doc/loom/knowledge/INDEX.md stays at most 15,000 bytes; shorten blurbs, never delete topics.
+    summary: >-
+      Records the repaired planner's header, rail, reading and help rules, the
+      summary defaults, backend and opening fix, and the feat-planner paths in the knowledge
+      base.
     dependencies:
     - integration-verify
+    parallel_group: null
     acceptance:
     - loom knowledge check --strict --baseline doc/loom/knowledge/check-baseline.txt
     - loom memory pending --strict
     - test "$(wc -c < doc/loom/knowledge/INDEX.md)" -le 15000
+    setup: []
     files:
     - doc/loom/knowledge/**
+    auto_merge: null
     working_dir: '.'
+    stage_type: knowledge-distill
     artifacts: []
     wiring: []
+    context_ceiling_tokens: null
     sandbox: {}
+    ultracode: false
     implementers:
     - claude
 ```
