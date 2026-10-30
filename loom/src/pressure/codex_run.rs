@@ -190,18 +190,37 @@ pub fn codex_model_label(model: &str) -> String {
 /// and `effort` are the resolved [`super::models::PressureModels`] slots.
 /// Codex takes effort through a `-c` override rather than a dedicated flag.
 pub fn codex_args(repo_root: &Path, skill: &str, model: &str, effort: &str) -> Vec<String> {
-    vec![
+    codex_exec_args(repo_root, &[], skill, model, effort)
+}
+
+/// Build `codex exec` arguments for a prompt with optional additional writable
+/// directories, preserving their supplied order.
+pub fn codex_exec_args(
+    repo_root: &Path,
+    add_dirs: &[&Path],
+    prompt: &str,
+    model: &str,
+    effort: &str,
+) -> Vec<String> {
+    let mut args = vec![
         "exec".to_string(),
         "--sandbox".to_string(),
         "workspace-write".to_string(),
+    ];
+    for dir in add_dirs {
+        args.push("--add-dir".to_string());
+        args.push(dir.display().to_string());
+    }
+    args.extend([
         "-m".to_string(),
         model.to_string(),
         "-c".to_string(),
         format!("model_reasoning_effort={effort}"),
         "-C".to_string(),
         repo_root.display().to_string(),
-        skill.to_string(),
-    ]
+        prompt.to_string(),
+    ]);
+    args
 }
 
 /// Spawn `codex exec` with output captured to `log_path`. Each call
@@ -214,17 +233,36 @@ pub fn spawn_codex_background(
     model: &str,
     effort: &str,
 ) -> Result<Child> {
+    spawn_codex_logged(
+        codex_path,
+        codex_args(repo_root, skill, model, effort),
+        repo_root,
+        log_path,
+        |_| {},
+    )
+}
+
+/// Spawn Codex with a fresh output log, allowing callers to configure the
+/// command before spawning, such as setting environment variables or a process group.
+pub fn spawn_codex_logged(
+    codex_path: &Path,
+    args: Vec<String>,
+    cwd: &Path,
+    log_path: &Path,
+    configure: impl FnOnce(&mut Command),
+) -> Result<Child> {
     let log = std::fs::File::create(log_path)
         .with_context(|| format!("failed to create codex log {}", log_path.display()))?;
     let log_err = log
         .try_clone()
         .context("failed to clone codex log handle")?;
     let mut cmd = Command::new(codex_path);
-    cmd.args(codex_args(repo_root, skill, model, effort));
-    cmd.current_dir(repo_root);
+    cmd.args(args);
+    cmd.current_dir(cwd);
     cmd.stdin(Stdio::null());
     cmd.stdout(Stdio::from(log));
     cmd.stderr(Stdio::from(log_err));
+    configure(&mut cmd);
     cmd.spawn().context("failed to spawn codex")
 }
 

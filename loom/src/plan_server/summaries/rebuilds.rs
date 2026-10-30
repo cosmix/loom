@@ -20,6 +20,8 @@ mod tests_alive;
 #[cfg(test)]
 mod tests_bridge;
 #[cfg(test)]
+mod tests_codex;
+#[cfg(test)]
 mod tests_ordering;
 
 use std::collections::{BTreeMap, HashMap};
@@ -30,7 +32,6 @@ use chrono::{SecondsFormat, Utc};
 
 use super::attribution::{Attributed, Attribution};
 use super::scheduler::{Scheduler, SchedulerConfig, SchedulerEvent, SessionSpawner};
-use super::spawner::RealSpawner;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::lifecycle;
 use crate::plan_server::wire::message::PlanMessage;
@@ -152,8 +153,8 @@ pub struct Rebuilds {
 }
 
 impl Rebuilds {
-    /// The server's facade: the real spawner, the hub, the runtime directory's cost log.
-    pub fn new(ctx: &Arc<PlanContext>) -> Arc<Rebuilds> {
+    /// The server's facade over `spawner`, the hub and the runtime directory's cost log.
+    pub fn with_spawner(ctx: &Arc<PlanContext>, spawner: Arc<dyn SessionSpawner>) -> Arc<Rebuilds> {
         let problems = ctx.read_only().problems();
         let read_only = problems.first().map(|problem| problem.message.clone());
         let runtime = ctx.runtime().clone();
@@ -178,7 +179,7 @@ impl Rebuilds {
             bridge: None,
         };
         let config = SchedulerConfig::standard(read_only);
-        let mut rebuilds = Rebuilds::build(Arc::new(RealSpawner::new(ctx)), config, broadcast);
+        let mut rebuilds = Rebuilds::build(spawner, config, broadcast);
         rebuilds.attribution = Some(Mutex::new(attribution));
         rebuilds.log = Mutex::new(log);
         rebuilds.env = Some(env);
