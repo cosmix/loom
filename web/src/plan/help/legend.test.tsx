@@ -156,26 +156,37 @@ it("draws the reading marks with the reading column's own components", () => {
   }
 });
 
-it("draws step-list glyphs alongside the progress strip and documents the rail check", () => {
+it("draws step-list glyphs alongside the colour-only progress cell and documents the rail check", () => {
   render(<PlannerLegend />, { wrapper: MemoryRouter });
   const states = screen.getByRole("region", { name: "States" });
 
-  const bars = [
-    ["Done step", "✓", "done"],
-    ["Step with gaps", "!", "gap"],
-    ["Active step", "●", "active"],
-    ["Optional step", "−", "optional"],
+  const cells = [
+    ["Done step", "done", "done"],
+    ["Step with gaps", "gap", "idle"],
+    ["Active step", "active", "current"],
+    ["Optional step", "optional", "idle"],
   ] as const;
-  for (const [name, glyph, mark] of bars) {
+  for (const [name, mark, cell] of cells) {
     const tile = tileOf(states, name);
     expect(tile.querySelector(`[data-step-mark="${mark}"]`)).not.toBeNull();
     const strip = tile.querySelector('ol[aria-label="Progress"]');
     expect(strip?.querySelectorAll("li")).toHaveLength(1);
-    expect(strip?.textContent).toContain(glyph);
+    expect(strip?.querySelector("li")?.getAttribute("data-cell")).toBe(cell);
+    // The strip's grid has seven columns; one cell in it would be a 1px sliver in the tile.
+    expect(strip?.parentElement?.className).toContain("w-9");
+    expect(strip?.parentElement?.className).toContain("grid-cols-1");
   }
   expect(
     tileOf(states, "Step rail check").querySelector('[data-other-glyph="stepDone"]'),
   ).not.toBeNull();
+});
+
+it("sizes every legend glyph tile at 40px high", () => {
+  const { container } = render(<PlannerLegend />, { wrapper: MemoryRouter });
+
+  const tiles = container.querySelectorAll('dt > [aria-hidden="true"]');
+  expect(tiles.length).toBe(screen.getAllByRole("term").length);
+  for (const tile of tiles) expect(tile.className).toContain("h-10");
 });
 
 it("documents every other-concept and step-mark glyph exactly once", () => {
@@ -218,10 +229,6 @@ it("sets no legend text below 13px", () => {
   for (const meaning of screen.getAllByRole("definition")) {
     expect(meaning.className).toContain("text-[13px]");
   }
-  // The progress strip is production markup at text-xs; the legend overrides it at 13px.
-  const small = [...container.querySelectorAll(".text-xs")];
-  expect(small).toHaveLength(4);
-  for (const element of small) {
-    expect(element.closest('[class*="[&_li]:text-[13px]!"]')).not.toBeNull();
-  }
+  // The progress cells carry no text, so no production text-xs markup remains in the legend.
+  expect(container.querySelectorAll(".text-xs")).toHaveLength(0);
 });

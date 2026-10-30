@@ -1,18 +1,18 @@
-import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { useState } from "react";
 
-import { authoringViewSchema, projectChecklistViewSchema } from "@/plan/api/schema";
+import { projectChecklistViewSchema } from "@/plan/api/schema";
 import { fileTreeSchema } from "@/plan/api/schema-files";
 import { kickoffViewSchema } from "@/plan/api/schema-kickoff";
 import { treeAtom } from "@/plan/files/atoms";
 import type { PlannerHelpScene } from "@/plan/help/pinned-scene";
-import { SAMPLE_SERVER, SAMPLE_STEPS } from "@/plan/help/sample";
+import { createSampleStore, SAMPLE_STEPS } from "@/plan/help/sample";
 import { SceneRouter } from "@/plan/help/scene-router";
 import { FeatureCards } from "@/plan/home/feature-card";
+import { InvitationCard } from "@/plan/home/home";
 import { StandaloneShelf } from "@/plan/home/standalone-shelf";
 import { TakingShape } from "@/plan/new/taking-shape";
-import { authoringAtom, projectAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { projectAtom } from "@/plan/state/atoms";
 
 const SAMPLE_PROJECT = projectChecklistViewSchema.parse({
   checklists: [
@@ -41,8 +41,6 @@ const SAMPLE_PROJECT = projectChecklistViewSchema.parse({
   ],
   moves: [],
 });
-
-const SAMPLE_AUTHORING = authoringViewSchema.parse({ holder: null });
 
 const SAMPLE_TREE = fileTreeSchema.parse({
   product: [
@@ -89,23 +87,25 @@ const SAMPLE_KICKOFF = kickoffViewSchema.parse({
 
 export function FeaturesHomeScene() {
   const [store] = useState(() => {
-    const sample = createStore();
+    const sample = createSampleStore();
     sample.set(projectAtom, SAMPLE_PROJECT);
-    sample.set(serverInfoAtom, SAMPLE_SERVER);
-    sample.set(authoringAtom, SAMPLE_AUTHORING);
     sample.set(treeAtom, SAMPLE_TREE);
     return sample;
   });
 
-  // HomeRoute fetches the tree on mount and its InvitationCard is not exported, so this scene
-  // renders the exported cards and shelf. Revisit when home.tsx exports the invitation.
+  // HomeRoute fetches the tree on mount, so this scene lays out what it renders: the invitation
+  // beside the cards as production does, then the shelf.
   return (
     <Provider store={store}>
       <SceneRouter initialEntries={["/"]}>
         <div data-loom-plan inert>
-          <div className="mx-auto w-full max-w-5xl space-y-8 px-4 py-8 sm:px-6">
-            <FeatureCards />
-            <StandaloneShelf />
+          <div className="home">
+            <div className="home__head">
+              <p className="home__eyebrow">doc/ in this repository</p>
+              <h2 className="home__title">Features</h2>
+            </div>
+            <FeatureCards lead={<InvitationCard empty={false} />} />
+            <StandaloneShelf defaultOpen />
           </div>
         </div>
       </SceneRouter>
@@ -114,12 +114,16 @@ export function FeaturesHomeScene() {
 }
 
 export function FeaturesKickoffScene() {
+  // Its own store: the Write button reads the server's read-only state from the atoms.
+  const [store] = useState(createSampleStore);
   return (
-    <div data-loom-plan inert>
-      <div className="mx-auto max-w-md">
-        <TakingShape shape={SAMPLE_KICKOFF.shape} target={SAMPLE_KICKOFF.target} />
+    <Provider store={store}>
+      <div data-loom-plan inert>
+        <div className="mx-auto max-w-md">
+          <TakingShape shape={SAMPLE_KICKOFF.shape} target={SAMPLE_KICKOFF.target} />
+        </div>
       </div>
-    </div>
+    </Provider>
   );
 }
 
@@ -128,6 +132,10 @@ export const FEATURES_SCENES: readonly PlannerHelpScene[] = [
     title: "The project home",
     Scene: FeaturesHomeScene,
     notes: [
+      {
+        target: "section.invitation",
+        text: "The invitation starts a conversation about a new feature or a standalone plan.",
+      },
       {
         target: 'a[href="/f/atlas"]',
         text: "The feature card opens that feature's page.",

@@ -6,20 +6,24 @@ import { PlannerShortcuts, PLANNER_SHORTCUT_GROUPS } from "./shortcuts";
 afterEach(cleanup);
 
 describe("PlannerShortcuts", () => {
-  it("renders all four shortcut groups in order", () => {
+  it("renders the two shortcut groups in order", () => {
     render(<PlannerShortcuts />);
 
     expect(screen.getAllByRole("heading").map((heading) => heading.textContent)).toEqual([
       "While reading",
-      "Editor",
-      "Chat",
       "Anywhere",
     ]);
   });
 
   it.each([
-    { title: "Editor", action: "Save", keys: ["Ctrl", "S", "⌘", "S"] },
-    { title: "Chat", action: "Allow the pinned permission request", keys: ["y"] },
+    { title: "Anywhere", action: "Save in the editor", keys: ["Ctrl", "S", "⌘", "S"] },
+    { title: "Anywhere", action: "Allow the pinned permission request", keys: ["y"] },
+    { title: "Anywhere", action: "Focus the chat composer", keys: ["c"] },
+    {
+      title: "While reading",
+      action: "Attach the focused sentence or passage to the next chat message while authoring",
+      keys: ["a"],
+    },
   ])("renders the $title shortcut for $action", ({ title, action, keys }) => {
     render(<PlannerShortcuts />);
 
@@ -43,6 +47,14 @@ describe("PlannerShortcuts", () => {
         );
       }
     }
+  });
+
+  it("describes j and k as stopping on openable sentences and fold caps", () => {
+    render(<PlannerShortcuts />);
+
+    expect(screen.getByText("Focus the next openable sentence or fold cap")).toBeTruthy();
+    expect(screen.getByText("Focus the previous openable sentence or fold cap")).toBeTruthy();
+    expect(screen.queryByText(/passage, including opened runs/)).toBeNull();
   });
 
   it("includes the question-mark shortcut for opening or closing Help", () => {

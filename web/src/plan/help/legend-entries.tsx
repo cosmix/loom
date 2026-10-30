@@ -78,11 +78,18 @@ function NoSourceTile() {
   );
 }
 
+/**
+ * The strip's cells carry colour only: filled when done, accented when current, else plain. The
+ * strip is a seven-column grid, so a one-step strip needs its own single column and a fixed width
+ * for its cell to show in the tile.
+ */
 function StepBar({ mark }: { mark: StepView["mark"] }) {
-  // The strip sets its glyphs at text-xs; the legend keeps all text at 13px or more.
   return (
-    <span className="block w-6 [&_li]:text-[13px]!">
-      <ProgressStrip steps={[{ number: 1, name: "Step", mark, count: null, label: "Step" }]} />
+    <span className="block w-9 [&_.progress-cells]:grid-cols-1 [&_.progress-cells__cell]:h-2">
+      <ProgressStrip
+        steps={[{ number: 1, name: "Step", mark, count: null, label: "Step" }]}
+        current={mark === "active" ? 1 : null}
+      />
     </span>
   );
 }
@@ -186,25 +193,24 @@ const STEP_MARKS: readonly (Definition & { mark: StepView["mark"] })[] = [
   {
     mark: "done",
     name: "Done step",
-    meaning: "A circled check means the step is complete; its progress bar is filled with a check.",
+    meaning: "A circled check means the step is complete; its progress cell is filled.",
   },
   {
     mark: "gap",
     name: "Step with gaps",
     meaning:
-      "A warning triangle means the step has gaps to close; its progress bar is dashed with an exclamation mark.",
+      "A warning triangle means the step has gaps to close; its progress cell stays unfilled.",
   },
   {
     mark: "active",
     name: "Active step",
     meaning:
-      "A circled dot means the step is in progress; its progress bar has a double border and a dot.",
+      "A circled dot means the step is in progress; its progress cell takes the accent colour.",
   },
   {
     mark: "optional",
     name: "Optional step",
-    meaning:
-      "A dash means the step can be skipped; its progress bar has a dotted border and a dash.",
+    meaning: "A dash means the step can be skipped; its progress cell stays unfilled.",
   },
 ];
 

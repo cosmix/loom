@@ -1,3 +1,4 @@
+import { MousePointer2Icon } from "lucide-react";
 import {
   useId,
   useLayoutEffect,
@@ -23,6 +24,8 @@ export interface PlannerHelpScene {
   Scene: ComponentType;
   notes: readonly SceneNote[];
   scale?: number;
+  /** A chat-panel-width scene: the lifted stage hugs the panel and centres, freeing the gutters. */
+  panel?: boolean;
 }
 
 interface PinnedSceneProps {
@@ -30,6 +33,7 @@ interface PinnedSceneProps {
   title: string;
   notes: readonly SceneNote[];
   scale?: number;
+  panel?: boolean;
   children: ReactNode;
 }
 
@@ -44,16 +48,64 @@ function targetElements(stage: HTMLElement, target: SceneNote["target"]): Elemen
   return [...new Set(selectors.flatMap((selector) => [...stage.querySelectorAll(selector)]))];
 }
 
-function measureTarget(elements: Element[], origin: DOMRect): Box | null {
+/**
+ * Rectangles come back in viewport pixels with every ancestor transform applied, and the pins are
+ * positioned in the canvas's own pixels. The stage's own `scale` is already in the rectangles, but
+ * an ancestor's is not (the dialog zooms in as it opens), so divide it out: `k` is how much the
+ * canvas is scaled on screen.
+ */
+function layoutScale(root: HTMLElement, origin: DOMRect): number {
+  return root.offsetWidth > 0 && origin.width > 0 ? origin.width / root.offsetWidth : 1;
+}
+
+type Rect = Pick<DOMRect, "left" | "top" | "width" | "height">;
+
+function toCanvasBox(rect: Rect, origin: DOMRect, k: number): Box | null {
+  if (rect.width === 0 || rect.height === 0) return null;
+  return {
+    x: (rect.left - origin.left) / k,
+    y: (rect.top - origin.top) / k,
+    w: rect.width / k,
+    h: rect.height / k,
+  };
+}
+
+function measureTarget(elements: Element[], origin: DOMRect, k: number): Box | null {
   return anchorBox(
     elements.flatMap((element) => {
-      const rect = element.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return [];
-      return [
-        { x: rect.left - origin.left, y: rect.top - origin.top, w: rect.width, h: rect.height },
-      ];
+      const box = toCanvasBox(element.getBoundingClientRect(), origin, k);
+      return box ? [box] : [];
     }),
   );
+}
+
+const CONTROLS = "button, a[href], input, select, textarea, [role='button']";
+/** A control holding any of these is a wrapper (a card link): its text and inner controls count instead. */
+const WRAPPED = `${CONTROLS}, div, p, ol, ul, section, h1, h2, h3, h4, h5, h6`;
+
+/** One rectangle per line of every non-empty text node; none where the browser has no layout. */
+function textRects(stage: HTMLElement): Rect[] {
+  const range = document.createRange();
+  if (typeof range.getClientRects !== "function") return [];
+  const walker = document.createTreeWalker(stage, NodeFilter.SHOW_TEXT);
+  const rects: Rect[] = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!node.nodeValue?.trim()) continue;
+    range.selectNodeContents(node);
+    rects.push(...range.getClientRects());
+  }
+  return rects;
+}
+
+/** What a pin must not cover: the stage's text runs and its buttons, links and inputs. */
+function measureOccupied(stage: HTMLElement, origin: DOMRect, k: number): Box[] {
+  const controls = [...stage.querySelectorAll(CONTROLS)]
+    .filter((element) => element.querySelector(WRAPPED) === null)
+    .map((element) => element.getBoundingClientRect());
+  return [...textRects(stage), ...controls].flatMap((rect) => {
+    const box = toCanvasBox(rect, origin, k);
+    return box ? [box] : [];
+  });
 }
 
 function usePinTargets(
@@ -61,7 +113,6 @@ function usePinTargets(
   stage: RefObject<HTMLDivElement | null>,
   notes: readonly SceneNote[],
   scale: number,
-  children: ReactNode,
 ): Measurements {
   const [measured, setMeasured] = useState<Measurements>({
     height: undefined,
@@ -74,12 +125,19 @@ function usePinTargets(
     if (!root || !sample) return;
     const measure = () => {
       const origin = root.getBoundingClientRect();
-      const height = sample.getBoundingClientRect().height;
+      const k = layoutScale(root, origin);
+      const height = sample.getBoundingClientRect().height / k;
       const targets = notes.map((note) =>
-        measureTarget(targetElements(sample, note.target), origin),
+        measureTarget(targetElements(sample, note.target), origin, k),
       );
-      const bounds = { width: origin.width, height: height + CANVAS_MARGIN * 2 };
-      setMeasured({ height, targets, pins: placePins(targets, bounds, PIN_SIZE) });
+      const bounds = { width: origin.width / k, height: height + CANVAS_MARGIN * 2 };
+      const layout = {
+        occupied: measureOccupied(sample, origin, k),
+        stage: toCanvasBox(sample.getBoundingClientRect(), origin, k),
+      };
+      const next = { height, targets, pins: placePins(targets, bounds, PIN_SIZE, layout) };
+      // Boxes are plain numbers: an unchanged layout keeps the old state and skips the re-render.
+      setMeasured((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
     };
     measure();
     // Production components can finish their layout after their first render.
@@ -93,7 +151,9 @@ function usePinTargets(
       observer?.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [canvas, stage, notes, scale, children]);
+    // `children` is not a dependency: the parent builds a new element on every render (each search
+    // keystroke), and the observers already report the stage's own layout changes.
+  }, [canvas, stage, notes, scale]);
   return measured;
 }
 
@@ -168,7 +228,10 @@ function SceneHeader({
     <header className="planner-help-scene__header">
       <span className="planner-help-scene__label">Scene {number}</span>
       <h3 id={titleId}>{title}</h3>
-      <span className="planner-help-scene__hint">Hover a note to find it</span>
+      <span className="planner-help-scene__hint">
+        <MousePointer2Icon aria-hidden="true" />
+        Hover a note to find it
+      </span>
     </header>
   );
 }
@@ -178,12 +241,13 @@ export function PinnedScene({
   title,
   notes,
   scale = 1,
+  panel = false,
   children,
 }: PinnedSceneProps): JSX.Element {
   const titleId = useId();
   const canvas = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
-  const measured = usePinTargets(canvas, stage, notes, scale, children);
+  const measured = usePinTargets(canvas, stage, notes, scale);
   const [hovered, setHovered] = useState<number | null>(null);
   const [focused, setFocused] = useState<number | null>(null);
   const active = hovered ?? focused;
@@ -201,8 +265,9 @@ export function PinnedScene({
             <div
               ref={stage}
               className="planner-help-scene__stage"
+              data-panel={panel || undefined}
               inert
-              style={{ width: `${100 / scale}%`, transform: `scale(${scale})` }}
+              style={{ width: panel ? undefined : `${100 / scale}%`, transform: `scale(${scale})` }}
             >
               {children}
             </div>
