@@ -32,7 +32,7 @@ A summary's **id** is its path under `doc/loom/summaries/` without `.md`:
 `overview/<f>/product`, `overview/<f>/engineering`, `<f>/product/section_<nn>`, or `plans/<slug>`.
 Here `<f>` is a feature name (section 03), and `<nn>` has at least two digits. `plans` and
 `overview` are reserved feature names, so plan and overview ids cannot collide with a feature's
-section ids. For example: `overview/planner-ui/product`, `planner-ui/product/section_01`,
+section ids. For example: `overview/feat-planner/product`, `feat-planner/product/section_01`,
 `plans/delivery-truth`.
 
 Which documents get a summary:
@@ -70,43 +70,43 @@ one file and turn unrelated rebuilds into merge conflicts.)
 
 ## The summary file
 
-A document summary, `doc/loom/summaries/planner-ui/product/section_01.md`:
+A document summary, `doc/loom/summaries/feat-planner/product/section_01.md`:
 
 ```markdown
 ---
 kind: document
-of: doc/product/planner-ui/section_01.md
+of: doc/product/feat-planner/section_01.md
 file: sha256:9c1f…
 cites:
-  doc/product/planner-ui/section_01.md#the-model-in-one-paragraph: sha256:4a7e…
-  doc/product/planner-ui/section_01.md#detection-rules: sha256:e210…
-  doc/product/planner-ui/section_01.md#pressure-tests: sha256:07bd…
+  doc/product/feat-planner/section_01.md#the-model-in-one-paragraph: sha256:4a7e…
+  doc/product/feat-planner/section_01.md#detection-rules: sha256:e210…
+  doc/product/feat-planner/section_01.md#pressure-tests: sha256:07bd…
 ---
 
 # 01 — Workflow Model and Project State
 
-The app keeps no workflow state and recomputes each feature's checklist from its documents on every change. [§](../../../../product/planner-ui/section_01.md#the-model-in-one-paragraph)
-The feature's current step is the earliest step with a gap, and no gap blocks later work. [§](../../../../product/planner-ui/section_01.md#the-model-in-one-paragraph)
-A plan counts as pressure-tested once the `loom pressure` driver has appended a dated line to its `## Pressure tests` section. [§](../../../../product/planner-ui/section_01.md#pressure-tests)
+The app keeps no workflow state and recomputes each feature's checklist from its documents on every change. [§](../../../../product/feat-planner/section_01.md#the-model-in-one-paragraph)
+The feature's current step is the earliest step with a gap, and no gap blocks later work. [§](../../../../product/feat-planner/section_01.md#the-model-in-one-paragraph)
+A plan counts as pressure-tested once the `loom pressure` driver has appended a dated line to its `## Pressure tests` section. [§](../../../../product/feat-planner/section_01.md#pressure-tests)
 ```
 
-The feature's product overview, `doc/loom/summaries/overview/planner-ui/product.md`:
+The feature's product overview, `doc/loom/summaries/overview/feat-planner/product.md`:
 
 ```markdown
 ---
 kind: overview
-of: overview/planner-ui/product
+of: overview/feat-planner/product
 members:
-  planner-ui/product/section_01: sha256:51c0…
-  planner-ui/product/section_02: sha256:d93a…
+  feat-planner/product/section_01: sha256:51c0…
+  feat-planner/product/section_02: sha256:d93a…
 cites:
-  doc/product/planner-ui/index.md#vision: sha256:aa04…
+  doc/product/feat-planner/index.md#vision: sha256:aa04…
 ---
 
 # Product overview
 
-`loom plan` is a browser app that takes a feature from a vision to approved loom plans. [vision](../../../../product/planner-ui/index.md#vision)
-It derives the feature's workflow step from the files alone and never blocks out-of-order work. [01](../../planner-ui/product/section_01.md#s-3fa9c2d1) [01](../../planner-ui/product/section_01.md#s-77e0b412)
+`loom plan` is a browser app that takes a feature from a vision to approved loom plans. [vision](../../../../product/feat-planner/index.md#vision)
+It derives the feature's workflow step from the files alone and never blocks out-of-order work. [01](../../feat-planner/product/section_01.md#s-3fa9c2d1) [01](../../feat-planner/product/section_01.md#s-77e0b412)
 ```
 
 Rules for the body, enforced when the summary is sealed (below):

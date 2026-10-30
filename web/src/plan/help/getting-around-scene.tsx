@@ -14,6 +14,11 @@ import { checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 const SAMPLE_CHECKLIST = checklistViewSchema.parse({
   feature: "atlas",
   pitch: null,
+  title: "Atlas",
+  has_product: true,
+  sections: [],
+  plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
+  untested: 0,
   current: { kind: "step", number: 3 },
   steps: SAMPLE_STEPS,
   primary: {

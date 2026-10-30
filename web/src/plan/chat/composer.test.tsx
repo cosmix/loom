@@ -94,6 +94,11 @@ function offerPrimary(store: ReturnType<typeof setup>["store"]) {
   store.set(checklistAtom, {
     feature: "demo",
     pitch: null,
+    title: "Demo",
+    has_product: true,
+    sections: [],
+    plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
+    untested: 0,
     current: { kind: "ready" },
     steps: [],
     primary,

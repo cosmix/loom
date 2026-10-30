@@ -28,15 +28,29 @@ function documentItem(kind: GuidedKind, index: number, feature = "demo") {
   };
 }
 
+const documentsStep = {
+  number: 2,
+  name: "Documents",
+  mark: "gap",
+  count: null,
+  label: "Documents",
+} as const;
+const plansStep = { number: 4, name: "Plans", mark: "gap", count: null, label: "Plans" } as const;
+
 function makeChecklist(count: number, kind: GuidedKind = "write_section", feature = "demo") {
   const items = Array.from({ length: count }, (_, index) => documentItem(kind, index, feature));
   return checklistViewSchema.parse({
     feature,
     pitch: null,
+    title: feature.slice(0, 1).toUpperCase() + feature.slice(1),
+    has_product: true,
+    sections: [],
+    plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
+    untested: 0,
     current: { kind: "step", number: kind === "write_section" ? 2 : 4 },
     steps: [
-      { number: 2, name: "Product spec", mark: "gap" },
-      { number: 4, name: "Plans", mark: "gap" },
+      { number: 2, name: "Product spec", mark: "gap", count: null, label: "Product spec" },
+      { number: 4, name: "Plans", mark: "gap", count: null, label: "Plans" },
     ],
     primary: items[0]?.offer ?? null,
     secondary: [
@@ -135,7 +149,7 @@ it("finds a guided offer on an item when it is absent from primary and secondary
   const expected = fixtureOffers(checklist);
   const itemOnly = checklistViewSchema.parse({ ...checklist, primary: null });
 
-  expect(paceOffers(itemOnly, { number: 2, name: "Documents", mark: "gap" })).toEqual(expected);
+  expect(paceOffers(itemOnly, documentsStep)).toEqual(expected);
 });
 
 it("finds a primary team offer with a secondary guided offer", () => {
@@ -147,7 +161,7 @@ it("finds a primary team offer with a secondary guided offer", () => {
     secondary: [expected.guided],
   });
 
-  expect(paceOffers(swapped, { number: 2, name: "Documents", mark: "gap" })).toEqual(expected);
+  expect(paceOffers(swapped, documentsStep)).toEqual(expected);
 });
 
 it("offers the lowest-numbered missing section even when the items arrive out of order", () => {
@@ -159,7 +173,7 @@ it("offers the lowest-numbered missing section even when the items arrive out of
     items: [...checklist.items].reverse(),
   });
 
-  expect(paceOffers(reordered, { number: 2, name: "Documents", mark: "gap" })).toEqual(expected);
+  expect(paceOffers(reordered, documentsStep)).toEqual(expected);
 });
 
 it("finds a team offer on an item for the requested step", () => {
@@ -171,7 +185,7 @@ it("finds a team offer on an item for the requested step", () => {
     items: [...checklist.items, { step: 2, text: "Draft all", path: null, offer: expected.team }],
   });
 
-  expect(paceOffers(itemOnly, { number: 2, name: "Documents", mark: "gap" })).toEqual(expected);
+  expect(paceOffers(itemOnly, documentsStep)).toEqual(expected);
 });
 
 it("ignores a primary guided offer belonging to another step", () => {
@@ -183,9 +197,7 @@ it("ignores a primary guided offer belonging to another step", () => {
     items: [...sections.items, ...plans.items],
   });
 
-  expect(paceOffers(checklist, { number: 4, name: "Plans", mark: "gap" })).toEqual(
-    fixtureOffers(plans),
-  );
+  expect(paceOffers(checklist, plansStep)).toEqual(fixtureOffers(plans));
 });
 
 it.each(["guided", "team", "wrong-team", "other-step"] as const)(
@@ -207,6 +219,8 @@ it.each(["guided", "team", "wrong-team", "other-step"] as const)(
       number: missing === "other-step" ? 4 : 2,
       name: "Documents",
       mark: "gap",
+      count: null,
+      label: "Documents",
     } as const;
 
     expect(paceOffers(checklist, step)).toBeNull();
