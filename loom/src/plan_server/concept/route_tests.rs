@@ -6,14 +6,17 @@ use std::sync::Arc;
 
 use super::engine::ConceptState;
 use super::fixtures::{self, Fixture, ID1};
+use super::page::{load_page, page_key_of, PageContext, PageKey};
 use super::{install, page_keys, routes};
 use crate::plan_server::context::{BindInfo, PlanContext};
 use crate::plan_server::ids::BrowserId;
 use crate::plan_server::prereq::ReadOnly;
 use crate::plan_server::start_with_routes;
 use crate::plan_server::tests::support::{bootstrap, get, json_body, post_json, skip, status};
+use crate::plan_server::wire::concept::{Block, Citation, Sentence};
 use crate::plan_server::wire::server::{MissingPrereq, PrereqKind};
 use crate::plan_server::ServerOptions;
+use crate::planning::summary::evaluate::evaluate;
 use crate::planning::summary::store;
 use crate::planning::watch::{Batch, OwnWrites};
 
@@ -231,4 +234,64 @@ fn page_keys_for_a_summary() {
         keys("overview/demo/engineering"),
         ["overview/demo/engineering"]
     );
+}
+
+/// The sentences of `blocks`.
+fn sentences_of(blocks: &[Block]) -> Vec<&Sentence> {
+    let paragraphs = blocks.iter().filter_map(|block| match block {
+        Block::Paragraph { sentences } => Some(sentences),
+        Block::Heading { .. } => None,
+    });
+    paragraphs.flatten().collect()
+}
+
+#[test]
+fn a_citation_of_a_summary_whose_document_is_gone_is_dropped_and_the_rest_load() {
+    let (gone, kept) = ("doc/plans/demo/PLAN-a.md", "doc/plans/demo/PLAN-b.md");
+    let fixture = fixtures::fixture(&[
+        (
+            fixtures::META,
+            &fixtures::metaplan(&["PLAN-a.md", "PLAN-b.md"]),
+        ),
+        (gone, "# Plan: a\n\nDoes a.\n"),
+        (kept, "# Plan: b\n\nDoes b.\n"),
+    ]);
+    fixtures::seal_document(&fixture.root, "plans/a", &[("Plan a does.", "plan-a")]);
+    fixtures::seal_document(&fixture.root, "plans/b", &[("Plan b does.", "plan-b")]);
+    fixtures::seal_overview(
+        &fixture.root,
+        "overview/demo/engineering",
+        &[("plans/a", "Plan a does."), ("plans/b", "Plan b does.")],
+        &[],
+    );
+    std::fs::remove_file(fixture.root.join(gone)).expect("remove the plan");
+
+    let project = fixtures::load(&fixture.root);
+    let eval = evaluate(&project, &[]);
+    let key = PageKey::parse("overview/demo/engineering").expect("key");
+    let page = load_page(&project, &eval, &key, &PageContext::default()).expect("page");
+    let cited: Vec<&Citation> = sentences_of(&page.blocks)
+        .into_iter()
+        .flat_map(|sentence| &sentence.citations)
+        .collect();
+    let summaries: Vec<&str> = cited
+        .iter()
+        .filter_map(|citation| match citation {
+            Citation::Sentence { summary, .. } => Some(summary.as_str()),
+            Citation::Source { .. } => None,
+        })
+        .collect();
+    assert_eq!(summaries, ["plans/b"], "plans/a has no page to load");
+
+    if skip("a_citation_of_a_summary_whose_document_is_gone") {
+        return;
+    }
+    let server = served(&fixture, open());
+    let cookies = bootstrap(&server);
+    for summary in summaries {
+        // As the client does: the mark's page, else the summary id itself.
+        let page = page_key_of(&project, summary).unwrap_or_else(|| summary.to_owned());
+        let response = get(&server, &format!("/api/concept/{page}"), &cookies);
+        assert_eq!(status(&response), 200, "{page}: {response}");
+    }
 }
