@@ -102,15 +102,7 @@ This is a logically defensible design (commits exist, don't burn tokens redoing 
 
 ## Status Dashboard: `started_at` not refreshed on retry, stage appears "stale/orphaned"
 
-**Observed:** After a successful `loom stage retry --force` that spawned a fresh session, the status dashboard rendered `integration-verify` as `19h4m · 🔄 · orphaned (stale)` for the duration of the new attempt. The number came from the original (long-dead) `started_at`; the new session was actually `Up About a minute` in podman and actively making tool calls.
-
-**What's needed:** `stage_executor`'s spawn path (or `retry`) should reset `stage.started_at` to `Utc::now()` when a new session is created. The dashboard's "stale" heuristic should key off the new attempt, not the cumulative duration.
-
-**Where to look:**
-
-- `commands/stage/skip_retry.rs::retry` (where retry mutates stage fields)
-- `orchestrator/core/stage_spawn.rs` (`begin_attempt(Utc::now())` is already called here — confirm it's the only writer of `started_at` and that it's reached on retry).
-- The "stale" indicator emitter — likely in `commands/graph/indicators.rs` or a dashboard renderer.
+The claim that explicit retry retains the dead session start time is incorrect. `loom/src/commands/stage/skip_retry.rs` clears `started_at` and `attempt_started_at` before queuing a retry. `Stage::try_mark_executing` stamps the new start at spawn, and `begin_attempt` starts the attempt clock. Status elapsed time therefore measures from the fresh retry start.
 
 ## A Retry Reset a Completed Stage's Branch, and the Stage Still Read `merged: true`
 

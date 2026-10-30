@@ -74,7 +74,7 @@
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 240 |
-| [web-dashboard](architecture/web-dashboard.md) | Web | 110 |
+| [web-dashboard](architecture/web-dashboard.md) | Web | 118 |
 | [web-terminal](architecture/web-terminal.md) | Web TTY | 181 |
 
 ### entry-points
@@ -144,7 +144,7 @@
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | Shells | 345 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) | Stale | 266 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Rules | 206 |
-| [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 100 |
+| [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 110 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
 | [live-state-pollution](mistakes/live-state-pollution.md) |  | 133 |
 | [maintainability-baseline](mistakes/maintainability-baseline.md) |  | 10 |
@@ -177,7 +177,7 @@
 | [subagent-briefing](mistakes/subagent-briefing.md) | Briefs | 386 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Watch | 387 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegate | 391 |
-| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 350 |
+| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 360 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) | Fixtures | 145 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 398 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Vacuous | 392 |
@@ -204,7 +204,7 @@
 | [handoff-followups](concerns/handoff-followups.md) | Backlog | 57 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) |  | 49 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 103 |
-| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 125 |
+| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 117 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 40 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 143 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 42 |

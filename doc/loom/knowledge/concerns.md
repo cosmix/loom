@@ -181,7 +181,7 @@ gaps, duplicated helpers, provision and environment-lint gaps, gate and dispute 
 
 The merge/recovery edge cases: `loom stage merge`'s worktree-cwd requirement, a git-error-as-unverified
 revert path, the `BranchMissing` phantom-merge risk, the heuristic `BaseConflict` carve-out,
-`retry --force` racing orphan-recovery, `started_at` not resetting on retry, the completion-broker's
+`retry --force` racing orphan-recovery, the completion-broker's
 post-transition nonce-burn ordering, the attribution code that has nothing left to attribute, the
 editor residual between stash and pop, the `update-ref` window,
 accumulating autostash backup refs, `human-review --force-complete` requiring no operator proof by design, a

@@ -98,3 +98,13 @@ and a pre-collapse binary writes the pre-collapse generated-by marker — which 
 deleted verb, silently re-injecting into `doc/loom/knowledge/` the exact string this
 plan's acceptance forbids. Run any deleted-verb sweep AFTER the last knowledge write, and
 include `INDEX.md` in it.
+
+## Shell quoting on knowledge writes
+
+**What happened:** A knowledge update lost inline code names because a double-quoted shell argument evaluated Markdown backticks.
+
+**Why:** JavaScript Unicode escapes became literal backticks before the shell parsed the command.
+
+**Prevention:** Pass knowledge prose through single-quoted shell arguments with embedded apostrophes escaped; never rely on JavaScript escaping for shell quoting.
+
+**Fix:** Replace the damaged section using a properly quoted argument.
