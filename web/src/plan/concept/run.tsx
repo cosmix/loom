@@ -4,6 +4,7 @@ import { Link } from "react-router";
 
 import { pageHref } from "@/plan/api/page-key";
 import type { Sentence } from "@/plan/api/schema-concept";
+import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 
 import {
   firstWords,
@@ -44,7 +45,7 @@ export function SentenceNode({ site, glyph, flashPage, leading }: NodeProps): JS
 }
 
 function groupLabel(site: SentenceSite): string {
-  return `Detail of ${firstWords(site.sentence.text)}`;
+  return visibleControls(`Detail of ${firstWords(site.sentence.text)}`);
 }
 
 export function runColour(site: SentenceSite, summary: string): string {
@@ -108,9 +109,9 @@ type NoticeProps = { text: string; title: string; to: string };
 function CitedNotice({ text, title, to }: NoticeProps): JSX.Element {
   return (
     <span className="concept-muted">
-      {`${text} `}
+      <Untrusted text={text} />{" "}
       <Link to={to} tabIndex={-1} className="underline">
-        Read the {title} summary
+        Read the <Untrusted text={title} /> summary
       </Link>
     </span>
   );
@@ -180,7 +181,10 @@ function CitedSentence({ citing, citation, first, leading }: CitedProps): JSX.El
 
 /**
  * An opened sentence that rests on source: its passages stack as blocks in citation order and
- * the paragraph resumes after them. The group stands for the sentence in the roving focus.
+ * the paragraph resumes after them. The caps sit in the text: the start cap (after the
+ * enclosing run's, when this run is its first sentence) opens the first passage's chip line,
+ * and the end cap follows the last passage's body. The group stands for the sentence in the
+ * roving focus.
  */
 function PassageRun({ site, run, leading }: RunProps): JSX.Element {
   const column = useColumn();
@@ -188,6 +192,14 @@ function PassageRun({ site, run, leading }: RunProps): JSX.Element {
   const anchors = passageAnchors(sentence);
   const id = runDomId(parent, sentence.id);
   const onFold = () => column.foldRun(run);
+  const start = (
+    <>
+      {/* The wrapper tells the enclosing run's cap from this run's own (concept.css). */}
+      {leading && <span className="concept-run-leading">{leading}</span>}
+      <FoldCap runId={id} side="start" onFold={onFold} />
+    </>
+  );
+  const end = <FoldCap runId={id} side="end" onFold={onFold} />;
   return (
     <div
       id={id}
@@ -198,23 +210,23 @@ function PassageRun({ site, run, leading }: RunProps): JSX.Element {
       tabIndex={-1}
       data-focus={sentenceKey(parent, sentence.id)}
     >
-      <div className="concept-run-edge" data-side="start">
-        {/* Keep the enclosing run's cap with this first inline edge, above the block body. */}
-        {leading && <span className="concept-run-leading">{leading}</span>}
-        <FoldCap runId={id} side="start" onFold={onFold} />
-      </div>
-      {anchors.length === 0 && <p className="concept-muted">No source sections.</p>}
-      {anchors.map((anchor) => (
+      {anchors.length === 0 && (
+        <p className="concept-muted">
+          {start}
+          No source sections.
+          {end}
+        </p>
+      )}
+      {anchors.map((anchor, index) => (
         <PassageBlock
           key={`${anchor.path}#${anchor.anchor}`}
           parent={parent}
           sentenceId={sentence.id}
           anchor={anchor}
+          leading={index === 0 ? start : undefined}
+          trailing={index === anchors.length - 1 ? end : undefined}
         />
       ))}
-      <div className="concept-run-edge" data-side="end">
-        <FoldCap runId={id} side="end" onFold={onFold} />
-      </div>
     </div>
   );
 }

@@ -71,6 +71,27 @@ it.each([
   expect(container.querySelector(".lucide-file-text")).toBeNull();
 });
 
+it("keeps a plan's lock and state on the name's line, the name truncating and the state fixed", () => {
+  renderEntry({ state: "running", locked: true, title: "A very long plan title ".repeat(8) });
+
+  const title = screen.getByRole("link");
+  const row = title.parentElement as HTMLElement;
+  const lock = screen.getByLabelText("Locked");
+  const state = screen.getByText("running");
+  expect(title.classList.contains("truncate")).toBe(true);
+  expect(title.classList.contains("flex-1")).toBe(true);
+  expect(lock.parentElement).toBe(row);
+  expect(state.parentElement).toBe(row);
+  // The first line never wraps, so deep nesting cannot push the state below the name.
+  expect(row.classList.contains("flex-nowrap")).toBe(true);
+  expect(row.classList.contains("flex-wrap")).toBe(false);
+  expect([...row.children].indexOf(title)).toBeLessThan([...row.children].indexOf(lock));
+  expect([...row.children].indexOf(lock)).toBeLessThan([...row.children].indexOf(state));
+  for (const name of ["w-[5.25rem]", "shrink-0", "justify-end"]) {
+    expect(state.classList.contains(name)).toBe(true);
+  }
+});
+
 it.each([
   ["vision", "telescope"],
   ["section", "book-open"],
@@ -121,6 +142,14 @@ it("renders bidi controls visibly in isolated titles and expand labels", () => {
   expect(title?.style.direction).toBe("ltr");
   expect(screen.getByRole("button", { name: "Collapse Review safe⟨U+202E⟩" })).toBeTruthy();
   expect(container.textContent).not.toContain("\u202e");
+});
+
+it("renders bidi controls visibly in the file name tooltip and the blurb", () => {
+  const { container } = renderEntry({ file_name: "PLAN‮-one.md", blurb: "Plan‮ blurb" });
+
+  expect(screen.getByRole("link").getAttribute("title")).toBe("PLAN⟨U+202E⟩-one.md");
+  expect(screen.getByText("Plan⟨U+202E⟩ blurb")).toBeTruthy();
+  expect(container.textContent).not.toContain("‮");
 });
 
 it.each([

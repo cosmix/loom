@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
+import { vi } from "vitest";
 
 import { initClient } from "@/plan/api/client";
 import authoringFixture from "@/plan/api/fixtures/authoring.json";
@@ -79,7 +80,23 @@ export function canAuthor(store: Store): void {
   store.set(authoringAtom, authoringViewSchema.parse({ ...authoringFixture, holder: null }));
 }
 
+/**
+ * Below 1024px the header moves Settings and the view tabs into its overflow menu. At 1024px
+ * the desktop chat panel mounts and restores its draft from localStorage, so the store is
+ * cleared too, or attachments leak between tests.
+ */
+function stubWideLayout(): void {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query === "(min-width: 1024px)",
+    media: query,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  window.localStorage.clear();
+}
+
 export function renderAt(path: string, setup?: (store: Store) => void) {
+  stubWideLayout();
   const store = createStore();
   initClient(store);
   setup?.(store);

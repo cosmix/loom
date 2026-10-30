@@ -7,6 +7,7 @@ import { useFileSocket } from "@/plan/files/api";
 import { DiffPage } from "@/plan/diff";
 import { parseAddress } from "@/plan/files/address";
 import { treeAtom } from "@/plan/files/atoms";
+import { featureCrumb, useFeatureFacts } from "@/plan/files/heading-parts";
 import { ReadingColumn } from "@/plan/files/reading-column";
 import { Tree } from "@/plan/files/tree";
 import { DrawerOpener, TreeDrawer, TreeDrawerRoot, useTreeDrawer } from "@/plan/files/tree-drawer";
@@ -29,12 +30,15 @@ function GapView({
   target: string | null;
 }): JSX.Element {
   const features = useAtomValue(featuresAtom);
+  const facts = useFeatureFacts(feature);
+  const crumbs =
+    feature !== null && facts.title !== null ? [featureCrumb(feature, facts.title)] : [];
   const item = features
     .find((checklist) => checklist.feature === feature)
     ?.items.find((candidate) => target !== null && candidate.path === target);
   return (
     <div className="flex flex-col gap-3">
-      <DocHeading breadcrumb={[{ label: "Planner" }, { label: title }]} kind={null} title={title} />
+      <DocHeading breadcrumb={[...crumbs, { label: title }]} kind={null} title={title} />
       <p className="px-6 text-[13px] text-muted-foreground">This document is missing.</p>
       {item ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-6 pb-6 text-[13px]">

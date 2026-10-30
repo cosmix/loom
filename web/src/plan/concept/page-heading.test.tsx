@@ -1,14 +1,20 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { createStore, Provider } from "jotai";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
+import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import { featureOfKey } from "@/plan/api/page-key";
+import { checklistViewSchema } from "@/plan/api/schema";
 import { conceptPageSchema, type ConceptPage, type OutOfDate } from "@/plan/api/schema-concept";
+import { projectAtom } from "@/plan/state/atoms";
 
 import { PageHeading } from "./page-heading";
 import { outOfDateText, planStateText, summaryStatus } from "./summary-text";
 
+const openAll = vi.hoisted(() => vi.fn());
+vi.mock("./open-all", () => ({ useOpenAll: () => openAll }));
 vi.mock("./page-header-extras", () => ({
   PageHeaderExtras: ({ page }: { page: ConceptPage }) => (
     <div role="group" aria-label="Header extras">
@@ -17,7 +23,10 @@ vi.mock("./page-header-extras", () => ({
   ),
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  openAll.mockClear();
+});
 
 function pageWith(overrides: Partial<ConceptPage> = {}): ConceptPage {
   return conceptPageSchema.parse({
@@ -35,16 +44,17 @@ function show(overrides: Partial<ConceptPage> = {}) {
 }
 
 it.each([
-  ["current", "Up to date", "circle-check"],
-  ["incomplete", "Summary incomplete", "circle-dashed"],
-  ["stale", "Out of date", "circle-dashed"],
-  ["rebuilding", "Rebuilding", "refresh-cw"],
-  ["missing", "No summary yet", "circle-dashed"],
-] as const)("renders the %s summary status chip", (state, label, glyph) => {
+  ["current", "Summary current", "circle-check", "ok"],
+  ["incomplete", "Summary incomplete", "circle-dashed", "neutral"],
+  ["stale", "Out of date", "circle-dashed", "warning"],
+  ["rebuilding", "Summary rebuilding", "refresh-cw", "accent"],
+  ["missing", "No summary yet", "circle-dashed", "neutral"],
+] as const)("renders the %s summary status chip", (state, label, glyph, tone) => {
   show({ state: { state, out_of_date: null } });
 
-  const chip = screen.getByText(label).closest(".rounded-full");
+  const chip = screen.getByText(label).closest("[data-chip]");
   expect(chip?.querySelector(`svg.lucide-${glyph}`)).toBeTruthy();
+  expect(chip?.getAttribute("data-tone")).toBe(tone);
 });
 
 it.each([
@@ -62,52 +72,72 @@ it.each([
 ] as const)("renders a warning for %s (%s)", (reason, detail, label, glyph) => {
   show({ state: { state: "current", out_of_date: { reason, detail } } });
 
-  const chip = screen.getByText(label).closest(".rounded-full");
-  expect(chip?.classList.contains("text-(--tone-warning)")).toBe(true);
+  const chip = screen.getByText(label).closest("[data-chip]");
+  expect(chip?.getAttribute("data-tone")).toBe("warning");
   expect(chip?.querySelector(`svg.lucide-${glyph}`)).toBeTruthy();
 });
 
 it("omits summary status when no state is available", () => {
   const { container } = show();
 
-  expect(container.querySelectorAll(".rounded-full")).toHaveLength(0);
+  expect(container.querySelectorAll("[data-chip]")).toHaveLength(0);
 });
 
 it("warns for a stale state without an out-of-date reason", () => {
   show({ state: { state: "stale", out_of_date: null } });
 
-  expect(
-    screen
-      .getByText("Out of date")
-      .closest(".rounded-full")
-      ?.classList.contains("text-(--tone-warning)"),
-  ).toBe(true);
+  expect(screen.getByText("Out of date").closest("[data-chip]")?.getAttribute("data-tone")).toBe(
+    "warning",
+  );
 });
 
 it.each([
-  ["written", "pencil-line", null],
-  ["running", "play", "This plan is running. loom run works from the committed copy."],
-  ["done", "circle-check-big", "This plan is done. Record changes in a new plan."],
-  ["retired", "archive", "This plan is done. Record changes in a new plan."],
-] as const)("renders the %s plan state and its lock notice", (plan_state, glyph, notice) => {
-  show({ plan_state });
+  ["written", "Written", "pencil-line", "neutral", null],
+  [
+    "running",
+    "Running",
+    "play",
+    "accent",
+    "This plan is running. loom run works from the committed copy, so the app keeps it read-only.",
+  ],
+  ["done", "Done", "circle-check-big", "ok", "This plan is done. Record changes in a new plan."],
+  ["retired", "Retired", "archive", "neutral", "This plan is done. Record changes in a new plan."],
+] as const)(
+  "renders the %s plan state and its lock notice",
+  (plan_state, label, glyph, tone, notice) => {
+    show({ plan_state });
 
-  const chip = screen.getByTitle(`Plan state: ${plan_state}`);
-  expect(chip.textContent).toBe(plan_state);
-  expect(chip.querySelector(`svg.lucide-${glyph}`)).not.toBeNull();
-  expect(screen.queryByRole("note")?.textContent ?? null).toBe(notice);
-});
+    const chip = screen.getByText(label).closest("[data-chip]");
+    expect(chip?.getAttribute("data-tone")).toBe(tone);
+    expect(chip?.querySelector(`svg.lucide-${glyph}`)).not.toBeNull();
+    expect(screen.queryByRole("note")?.textContent ?? null).toBe(notice);
+  },
+);
 
-it("renders the last pressure test as a separate chip", () => {
+it("renders the last pressure test as an ok chip and an untested plan as a warning", () => {
   show({ last_pressure: "2026-10-20" });
 
-  expect(screen.getByText("Last pressure test 2026-10-20").closest(".rounded-full")).not.toBeNull();
+  const tested = screen.getByText("Pressure-tested 2026-10-20").closest("[data-chip]");
+  expect(tested?.getAttribute("data-tone")).toBe("ok");
+  expect(tested?.querySelector("svg.lucide-flask-conical")).not.toBeNull();
+  cleanup();
+
+  show({ key: "demo/engineering/a", plan_state: "written", last_pressure: null });
+  const untested = screen.getByText("Not pressure-tested").closest("[data-chip]");
+  expect(untested?.getAttribute("data-tone")).toBe("warning");
+  expect(untested?.querySelector("svg.lucide-gauge")).not.toBeNull();
+});
+
+it("leaves the pressure chip off a section summary with no test date", () => {
+  show();
+
+  expect(screen.queryByText(/pressure-tested/i)).toBeNull();
 });
 
 it("renders unstated implements metadata as one chip", () => {
   show({ implements: { kind: "not_stated" } });
 
-  expect(screen.getByText("Implements: not stated").closest(".rounded-full")).not.toBeNull();
+  expect(screen.getByText("Implements: not stated").closest("[data-chip]")).not.toBeNull();
 });
 
 it("links implemented sections and keeps unresolved section names unlinked", () => {
@@ -130,44 +160,109 @@ it("links implemented sections and keeps unresolved section names unlinked", () 
     },
   });
 
-  expect(screen.getByText("Implements:")).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Planning" }).getAttribute("href")).toBe(
-    "/f/demo/product/section_01",
-  );
+  const chip = screen.getByText("Implements", { exact: false }).closest("[data-chip]");
+  expect(chip?.textContent).toBe("Implements: §01, section_99");
+  const link = screen.getByRole("link", { name: "§01" });
+  expect(link.getAttribute("href")).toBe("/f/demo/product/section_01");
+  expect(link.getAttribute("title")).toBe("Planning");
   const unresolved = screen.getByText("section_99");
-  expect(unresolved.closest(".rounded-full")).not.toBeNull();
   expect(unresolved.closest("a")).toBeNull();
+  expect(unresolved.closest("[title]")).toBeNull();
 });
 
-it("links implementing plans with their human-readable states", () => {
+it("renders no Implements chip for a sections view with no links", () => {
+  show({ implements: { kind: "sections", links: [] } });
+
+  expect(screen.queryByText(/Implements/)).toBeNull();
+});
+
+it("chips the implementing plans as Built by their numbers, each linked with its state", () => {
   show({
     implemented_by: [
       { slug: "feat-planner.05", title: "Concept mode", state: "in_progress" },
-      { slug: "plan-two", title: "Second plan", state: "done" },
+      { slug: "feat-planner-09-reading", title: "Second plan", state: "done" },
     ],
   });
 
-  expect(screen.getByText("Implemented by:")).toBeTruthy();
-  const link = screen.getByRole("link", { name: "Concept mode (in progress)" });
+  const chip = screen.getByText("Built by", { exact: false }).closest("[data-chip]");
+  expect(chip?.textContent).toBe(
+    "Built by 05 (Concept mode, in progress) · 09 (Second plan, done)",
+  );
+  const link = screen.getByRole("link", { name: "05 (Concept mode, in progress)" });
   expect(link.getAttribute("href")).toBe("/f/demo/engineering/feat-planner.05");
-  expect(link.getAttribute("title")).toBe("Concept mode");
-  expect(screen.getByRole("link", { name: "Second plan (done)" }).getAttribute("href")).toBe(
-    "/f/demo/engineering/plan-two",
+  expect(screen.getByRole("link", { name: "09 (Second plan, done)" }).getAttribute("href")).toBe(
+    "/f/demo/engineering/feat-planner-09-reading",
   );
 });
 
 it.each([
-  ["demo/product/section_01", "Product", "/f/demo/product"],
-  ["overview/demo/product", "Product", "/f/demo/product"],
-  ["demo/engineering/my-plan", "Plans", "/f/demo/engineering"],
-  ["overview/demo/engineering", "Plans", "/f/demo/engineering"],
-] as const)("renders the group breadcrumb for %s", (key, label, to) => {
+  ["demo/product/section_01", "Product spec", "/f/demo/product", "Section 01"],
+  ["overview/demo/product", "Product spec", "/f/demo/product", "Planning"],
+  ["demo/engineering/my-plan", "Plans", "/f/demo/engineering", "my-plan"],
+  ["overview/demo/engineering", "Engineering", "/f/demo/engineering", "Planning"],
+] as const)("renders the area breadcrumb for %s", (key, label, to, current) => {
   show({ key });
 
   const nav = screen.getByRole("navigation", { name: "Breadcrumb" });
-  expect(within(nav).getByText("Planner").closest("a")).toBeNull();
+  expect(within(nav).queryByText("Planner")).toBeNull();
   expect(within(nav).getByRole("link", { name: label }).getAttribute("href")).toBe(to);
-  expect(nav.querySelector('[aria-current="page"]')?.textContent).toBe("Planning");
+  expect(nav.querySelector('[aria-current="page"]')?.textContent).toBe(current);
+});
+
+it("starts the breadcrumb at the feature's title, from the server, linking to its screen", () => {
+  const store = createStore();
+  store.set(projectAtom, {
+    checklists: [
+      {
+        ...checklistViewSchema.parse(structuredClone(checklistFixture.checklists[0])),
+        feature: "demo",
+        title: "Demo Feature",
+        sections: Array.from({ length: 12 }, (_, index) => ({
+          number: String(index + 1).padStart(2, "0"),
+          name: `S${index + 1}`,
+          written: true,
+          open_questions: 0,
+        })),
+      },
+    ],
+    standalone: [],
+    moves: [],
+  });
+  render(<PageHeading page={pageWith({ key: "demo/product/section_05" })} />, {
+    wrapper: ({ children }) => (
+      <Provider store={store}>
+        <MemoryRouter>{children}</MemoryRouter>
+      </Provider>
+    ),
+  });
+
+  const nav = screen.getByRole("navigation", { name: "Breadcrumb" });
+  expect(
+    within(nav)
+      .getAllByRole("listitem")
+      .map((item) => item.textContent),
+  ).toEqual(["Demo Feature", "Product spec", "Section 05 of 12"]);
+  const first = within(nav).getByRole("link", { name: "Demo Feature" });
+  expect(first.getAttribute("href")).toBe("/f/demo");
+  expect(first.querySelector("svg.lucide-layers")).not.toBeNull();
+});
+
+it("sets a plan summary's slug crumb in mono", () => {
+  show({ key: "demo/engineering/my-plan" });
+
+  const nav = screen.getByRole("navigation", { name: "Breadcrumb" });
+  expect(within(nav).getByText("my-plan").closest("[aria-current]")?.className).toContain(
+    "font-mono",
+  );
+});
+
+it("opens every sentence from the Open all outline button", () => {
+  show();
+
+  const button = screen.getByRole("button", { name: "Open all" });
+  expect(button.querySelector("svg.lucide-unfold-vertical")).not.toBeNull();
+  fireEvent.click(button);
+  expect(openAll).toHaveBeenCalledOnce();
 });
 
 it("switches from summary to the encoded source address without a diff link", () => {
@@ -178,7 +273,7 @@ it("switches from summary to the encoded source address without a diff link", ()
   expect(within(views).getByRole("link", { name: "Source" }).getAttribute("href")).toBe(
     "/files/plans/PLAN-a%20b%23.md",
   );
-  expect(screen.getByText("doc/plans/PLAN-a b#.md")).toBeTruthy();
+  expect(screen.queryByText("doc/plans/PLAN-a b#.md")).toBeNull();
   expect(screen.queryByRole("link", { name: "Uncommitted changes" })).toBeNull();
 });
 

@@ -1,6 +1,7 @@
 import type { PhrasingContent } from "mdast";
 import { Fragment, type JSX, type MouseEvent, type ReactNode } from "react";
 
+import { visibleControls } from "@/plan/chat/visible-controls";
 import { repoRel, resolveLink, toAddress } from "@/plan/files/address";
 import { rawHtmlText, type RenderContext } from "@/plan/markdown/context";
 
@@ -212,14 +213,19 @@ export function renderInlines(
   ));
 }
 
-/** Summary citations own navigation, so inline Markdown never creates a link here. */
+/**
+ * Summary citations own navigation, so inline Markdown never creates a link here. Format
+ * characters are made visible after the parse, so a character reference such as `&#x202E;`
+ * (decoded by the parser) cannot reach the DOM as a live bidi override, and a raw one cannot
+ * break delimiter flanking before the parse.
+ */
 function renderSummaryInline(node: PhrasingContent): ReactNode {
-  const fallbackText = "value" in node ? node.value : "";
+  const fallbackText = "value" in node ? visibleControls(node.value) : "";
   switch (node.type) {
     case "text":
-      return node.value;
+      return visibleControls(node.value);
     case "inlineCode":
-      return <code>{node.value}</code>;
+      return <code>{visibleControls(node.value)}</code>;
     case "emphasis":
       return <em>{renderSummaryInlines(node.children)}</em>;
     case "strong":
@@ -230,13 +236,13 @@ function renderSummaryInline(node: PhrasingContent): ReactNode {
       return renderSummaryInlines(node.children);
     case "image":
     case "imageReference":
-      return node.alt ?? "";
+      return visibleControls(node.alt ?? "");
     case "break":
       return " ";
     case "html":
-      return rawHtmlText(node.value);
+      return rawHtmlText(visibleControls(node.value));
     case "footnoteReference":
-      return node.label ?? node.identifier;
+      return visibleControls(node.label ?? node.identifier);
     default:
       return fallbackText;
   }

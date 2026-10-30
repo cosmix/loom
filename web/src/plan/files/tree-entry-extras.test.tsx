@@ -9,7 +9,7 @@ import { openQuestionsAtom } from "@/plan/review/live";
 
 afterEach(cleanup);
 
-it("lets the question link wrap below the title in reading order while keeping the link on one line", () => {
+it("keeps the question link after the title on the name's line, the row never wrapping, the link on one line", () => {
   const entry: TreeEntry = {
     feature: "loom",
     misplaced: false,
@@ -44,7 +44,8 @@ it("lets the question link wrap below the title in reading order while keeping t
   const extras = link.parentElement;
   const row = title.parentElement;
   expect(row).toBe(extras?.parentElement);
-  expect(row?.classList.contains("flex-wrap")).toBe(true);
+  expect(row?.classList.contains("flex-nowrap")).toBe(true);
+  expect(row?.classList.contains("flex-wrap")).toBe(false);
   expect(row?.classList.contains("min-w-0")).toBe(true);
   expect(row?.firstElementChild).toBe(title);
   expect(row?.lastElementChild).toBe(extras);

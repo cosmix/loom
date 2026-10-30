@@ -16,6 +16,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { pageHref } from "@/plan/api/page-key";
 import type { Block, ConceptPage, SourceAnchor } from "@/plan/api/schema-concept";
 import type { AttachmentDraft } from "@/plan/attachments/types";
+import { visibleControls } from "@/plan/chat/visible-controls";
 import { treeAtom } from "@/plan/files/atoms";
 import { docPathsOf } from "@/plan/files/tree";
 import { normalizeTitle } from "@/plan/markdown/render";
@@ -206,14 +207,6 @@ function columnKeyHandler(
   onAttach: Props["onAttach"],
 ) {
   return (event: KeyboardEvent<HTMLDivElement>) => {
-    const target = event.target as HTMLElement;
-    const modified = event.ctrlKey || event.metaKey || event.altKey;
-    if (!modified && event.key === "Escape" && target.matches("button.concept-run-cap")) {
-      event.preventDefault();
-      if (event.shiftKey) store.set(openRunsAtom(pageKey), []);
-      else target.click();
-      return;
-    }
     handleColumnKey(event, model.roving.current, {
       page,
       pageKey,
@@ -260,7 +253,7 @@ export function ReadingColumn({ pageKey, page, dropTitle = false, onAttach }: Pr
           onBlur={model.roving.onBlur}
         >
           <Blocks blocks={dropTitle ? withoutTitleBlock(page.blocks, page.title) : page.blocks} />
-          <Announcer title={page.title} arrival={model.arrival} />
+          <Announcer title={visibleControls(page.title)} arrival={model.arrival} />
         </div>
       </ColumnContext.Provider>
     </TooltipProvider>

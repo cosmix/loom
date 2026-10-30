@@ -11,9 +11,8 @@ import { authoringAtom, youAtom } from "@/plan/state/atoms";
 
 import { PageHeaderExtras } from "./page-header-extras";
 
-// The review marks fetch their own data; this test is about the Rebuild button's ids.
+// The build marker fetches its own data; this test is about the Rebuild button's ids.
 vi.mock("@/plan/review/built-marker", () => ({ BuiltMarker: () => null }));
-vi.mock("@/plan/review/open-questions", () => ({ OpenQuestionCount: () => null }));
 
 const ADA = { public_id: "0123456789abcdef", name: "Ada" };
 const fetchMock = vi.fn<typeof fetch>();

@@ -2,6 +2,7 @@ import { Fragment, type JSX } from "react";
 
 import { isOverviewKey } from "@/plan/api/page-key";
 import type { Block, Sentence } from "@/plan/api/schema-concept";
+import { Untrusted } from "@/plan/chat/visible-controls";
 
 import { summaryIdOfKey, useColumn } from "./column-context";
 import { FoldNoteLine } from "./fold-note";
@@ -49,7 +50,11 @@ function Paragraph({ sentences, first }: { sentences: Sentence[]; first: boolean
 
 function Heading({ level, text }: { level: number; text: string }): JSX.Element {
   const Tag = `h${Math.min(level + 1, 6)}` as "h2";
-  return <Tag className={`concept-heading concept-h${Math.min(level, 3)}`}>{text}</Tag>;
+  return (
+    <Tag className={`concept-heading concept-h${Math.min(level, 3)}`}>
+      <Untrusted text={text} />
+    </Tag>
+  );
 }
 
 /** The page's headings and paragraphs, in the order section 04 produced them. */

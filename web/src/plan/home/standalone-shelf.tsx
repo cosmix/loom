@@ -4,7 +4,7 @@ import { useId, useState, type SyntheticEvent } from "react";
 import { Link, useNavigate } from "react-router";
 
 import type { StandalonePlanView } from "@/plan/api/schema";
-import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
 import { plural } from "@/plan/feature/steps";
 import { toAddress } from "@/plan/files/address";
@@ -27,7 +27,7 @@ function PlanChip({ plan }: { plan: StandalonePlanView }) {
       <Link to={toAddress(plan.path)} className="shelf__chip">
         {/* The chip shows the slug; the title and state are there for screen readers. */}
         <span className="sr-only" style={{ unicodeBidi: "isolate", direction: "ltr" }}>
-          <SentenceText text={visibleControls(plan.title)} />
+          <SentenceText text={plan.title} />
         </span>{" "}
         <span className="shelf__slug">
           <Untrusted text={plan.slug} />

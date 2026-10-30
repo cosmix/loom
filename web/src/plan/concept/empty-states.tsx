@@ -8,17 +8,15 @@ import { EmptyState } from "@/aurora-ui/feedback/EmptyState";
 import { featureOfKey, overviewKey, pageHref, parsePageKey } from "@/plan/api/page-key";
 import type { ConceptPage, DocLink, EmptyState as EmptyData } from "@/plan/api/schema-concept";
 import { Button } from "@/components/ui/button";
+import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { toAddress } from "@/plan/files/address";
 import { fetchDoc } from "@/plan/files/api";
+import { plural } from "@/plan/files/heading-parts";
 import { LoadState } from "@/plan/ui/load-state";
 
 import { EmptyOffer } from "./empty-offer";
 
 type Copy = { icon: LucideIcon; title: string; description?: string };
-
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
 
 function copyFor(page: ConceptPage, empty: EmptyData): Copy {
   const building = page.building;
@@ -44,7 +42,7 @@ function copyFor(page: ConceptPage, empty: EmptyData): Copy {
         icon: FileTextIcon,
         title: "Summaries not built",
         description: `${plural(empty.count ?? 0, "document")} without a summary.${
-          page.estimate ? ` ${page.estimate}` : ""
+          page.estimate ? ` ${visibleControls(page.estimate)}` : ""
         }`,
       };
     case "building":
@@ -71,9 +69,11 @@ function DocList({ kind, docs }: { kind: EmptyData["kind"]; docs: DocLink[] }) {
       {docs.map((doc) => (
         <li key={doc.id}>
           <Link to={href(doc)} className="underline">
-            {doc.title}
+            <Untrusted text={doc.title} />
           </Link>{" "}
-          <span className="font-mono text-xs text-muted-foreground">{doc.path}</span>
+          <span className="font-mono text-xs text-muted-foreground">
+            <Untrusted text={doc.path} />
+          </span>
         </li>
       ))}
     </ul>
@@ -141,7 +141,7 @@ export function ConceptNotFound({ pageKey }: { pageKey: string }) {
     return (
       <EmptyState
         icon={FileTextIcon}
-        title={`No summary for ${name}`}
+        title={`No summary for ${visibleControls(name)}`}
         action={
           <Button asChild>
             <Link to={toAddress(source)}>Open in file mode</Link>
@@ -152,7 +152,11 @@ export function ConceptNotFound({ pageKey }: { pageKey: string }) {
   }
   return (
     <div className="flex flex-col gap-3">
-      <LoadState state="not_found" title="No such document" message={`${name} does not exist.`} />
+      <LoadState
+        state="not_found"
+        title="No such document"
+        message={`${visibleControls(name)} does not exist.`}
+      />
       {feature !== null ? (
         <nav aria-label="Overviews" className="flex justify-center gap-4 text-[13px]">
           <Link to={pageHref(overviewKey(feature, "product"))} className="underline">

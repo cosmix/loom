@@ -1,6 +1,6 @@
 import { useAtomValue, useSetAtom } from "jotai";
 
-import type { OfferKind, OfferView } from "@/plan/api/schema";
+import type { ChecklistView, OfferKind, OfferView } from "@/plan/api/schema";
 import type { PlanStateView } from "@/plan/api/schema-files";
 import { ConfigBlockNotice } from "@/plan/chat/pressure/config-block-notice";
 import { usePressureOptions, useStartReason } from "@/plan/chat/pressure/use-pressure";
@@ -46,39 +46,44 @@ function WrittenPlanActions({ path }: { path: string }) {
   );
 }
 
-function BuiltPlanActions({ path }: { path: string }) {
-  const reason = useAtomValue(authorBlockReasonAtom);
-  const checklist = useAtomValue(checklistAtom);
+/** The offer of `kind` the checklist makes for this plan (or for no plan in particular). */
+export function findOffer(
+  checklist: ChecklistView | null,
+  kind: OfferKind,
+  path: string,
+): OfferView | undefined {
   const offers = [
     checklist?.primary,
     ...(checklist?.secondary ?? []),
     ...(checklist?.items.map((item) => item.offer) ?? []),
   ];
-  const findOffer = (kind: OfferKind): OfferView | undefined =>
-    offers.find(
-      (offer): offer is OfferView =>
-        offer?.kind === kind && (offer.target === path || offer.target === null),
-    );
-  const review = findOffer("refine_spec");
-  const round = findOffer("new_metaplan_round");
+  return offers.find(
+    (offer): offer is OfferView =>
+      offer?.kind === kind && (offer.target === path || offer.target === null),
+  );
+}
+
+const BUILT_OFFERS: readonly { kind: OfferKind; label: string }[] = [
+  { kind: "refine_spec", label: "Review what was built" },
+  { kind: "new_metaplan_round", label: "Start a new metaplan round" },
+];
+
+/** A done plan's follow-ups: a button only for an offer the server makes, nothing otherwise. */
+function BuiltPlanActions({ path }: { path: string }) {
+  const reason = useAtomValue(authorBlockReasonAtom);
+  const checklist = useAtomValue(checklistAtom);
+  const available = BUILT_OFFERS.flatMap(({ kind, label }) => {
+    const offer = findOffer(checklist, kind, path);
+    return offer ? [{ kind, label, offer }] : [];
+  });
+  if (available.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-2">
-      <DisabledReason
-        reason={reason ?? (review ? null : "No offer is available")}
-        onClick={() => {
-          if (review) offerAction("refine_spec")?.(review);
-        }}
-      >
-        Review what was built
-      </DisabledReason>
-      <DisabledReason
-        reason={reason ?? (round ? null : "No offer is available")}
-        onClick={() => {
-          if (round) offerAction("new_metaplan_round")?.(round);
-        }}
-      >
-        Start a new metaplan round
-      </DisabledReason>
+      {available.map(({ kind, label, offer }) => (
+        <DisabledReason key={kind} reason={reason} onClick={() => offerAction(kind)?.(offer)}>
+          {label}
+        </DisabledReason>
+      ))}
     </div>
   );
 }

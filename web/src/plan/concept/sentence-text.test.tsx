@@ -118,6 +118,44 @@ describe("SentenceText", () => {
     expect(container.textContent).toBe(text);
   });
 
+  it.each([
+    ["&#x202E;", "‮", "⟨U+202E⟩"],
+    ["&rlm;", "‏", "⟨U+200F⟩"],
+    ["&zwj;", "‍", "⟨U+200D⟩"],
+    ["&shy;", "­", "⟨U+00AD⟩"],
+  ])("shows the format character that %s decodes to", (reference, character, shown) => {
+    const { container } = render(<SentenceText text={`Before ${reference} after`} />);
+
+    expect(container.textContent).toBe(`Before ${shown} after`);
+    expect(container.textContent).not.toContain(character);
+  });
+
+  it("shows raw format characters in a code span and plain text", () => {
+    const { container } = render(<SentenceText text={"a `x\u202Ey` plus \u202E"} />);
+
+    expect(container.querySelector("code")?.textContent).toBe("x⟨U+202E⟩y");
+    expect(container.textContent).toBe("a x⟨U+202E⟩y plus ⟨U+202E⟩");
+  });
+
+  it("keeps strong when a format character follows a word-internal marker", () => {
+    const { container } = render(<SentenceText text={"x**\u200Bword** y"} />);
+
+    expect(container.querySelector("strong")?.textContent).toBe("⟨U+200B⟩word");
+    expect(container.textContent).toBe("x⟨U+200B⟩word y");
+  });
+
+  it.each([
+    ["\uFEFF", "⟨U+FEFF⟩"],
+    ["\uFEFF\uFEFF# Title", "⟨U+FEFF⟩# Title"],
+    ["\uFEFF# Title", "# Title"],
+    ["\uFEFF1. Install", "1. Install"],
+    ["\uFEFFFirst.\n\n```ts\nx\n```", "First. ```ts\nx\n```"],
+  ])("keeps every block whole after a leading BOM: %j", (text, shown) => {
+    const { container } = render(<SentenceText text={text} />);
+
+    expect(container.textContent).toBe(shown);
+  });
+
   it("updates the parsed content when text changes", () => {
     const { container, rerender } = render(<SentenceText text="*Before*" />);
 

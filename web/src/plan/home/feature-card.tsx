@@ -4,7 +4,7 @@ import { useId, type ReactNode } from "react";
 import { Link } from "react-router";
 
 import type { ChecklistView } from "@/plan/api/schema";
-import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
 import { plural } from "@/plan/feature/steps";
 import { FeatureMark } from "@/plan/home/feature-mark";
@@ -88,7 +88,7 @@ export function FeatureCard({ checklist }: { checklist: ChecklistView }) {
       {checklist.pitch && (
         <p className="feature-pitch feature-card__pitch">
           <span style={{ unicodeBidi: "isolate", direction: "ltr" }}>
-            <SentenceText text={visibleControls(checklist.pitch)} />
+            <SentenceText text={checklist.pitch} />
           </span>
         </p>
       )}

@@ -1,8 +1,8 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createStore, useAtomValue } from "jotai";
 import { Provider } from "jotai/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { afterEach, beforeEach, vi } from "vitest";
+import { afterEach, beforeEach, expect, vi } from "vitest";
 
 import { initClient } from "@/plan/api/client";
 import { pageHref } from "@/plan/api/page-key";
@@ -110,6 +110,14 @@ export function nested(extraOverview: Partial<Sentence> = {}) {
 
 export const press = (key: string) =>
   fireEvent.keyDown(document.activeElement ?? document.body, { key });
+
+/** Opens `nested()`'s "Overview opens." and steps the focus onto its cited "Detail opens.". */
+export async function focusDetail(column: HTMLElement): Promise<void> {
+  fireEvent.click(button(column, /^Overview opens/));
+  await within(column).findByRole("button", { name: /^Detail opens/ });
+  press("ArrowDown");
+  await waitFor(() => expect(active().textContent).toMatch(/^Detail opens/));
+}
 export const active = () => document.activeElement as HTMLElement;
 export const button = (column: HTMLElement, name: RegExp | string) =>
   within(column).getByRole("button", { name });
@@ -117,6 +125,25 @@ export const group = (column: HTMLElement) =>
   within(column).findByRole("group", { name: /^Detail of/ });
 export const two = [src(S2, "intro"), src(S2, "detail")];
 export const pair = () => [sent("a", "Stays put."), sent("b", "Goes away.")];
+/** A sentence that opens: it rests on section_02's intro. */
+export const openable = (id: string, text: string) => sent(id, text, [src(S2, "intro")]);
+export const caps = (root: HTMLElement) => within(root).getAllByRole("button", { name: "Fold" });
+
+/**
+ * Chromium blurs a focused element while removing it, before it leaves the document; jsdom
+ * does not. A test of where focus lands after a fold opts in to the browser's behaviour.
+ */
+export function blurOnRemoval(): void {
+  const removeChild = Node.prototype.removeChild;
+  vi.spyOn(Node.prototype, "removeChild").mockImplementation(function blurFirst<T extends Node>(
+    this: Node,
+    child: T,
+  ): T {
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && child.contains(focused)) focused.blur();
+    return removeChild.call(this, child) as T;
+  });
+}
 export const flashed = (column: HTMLElement, text: string) =>
   within(column).getByText(text).className.includes("concept-flash");
 
