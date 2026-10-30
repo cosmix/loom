@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { initClient } from "@/plan/api/client";
 import chatFixture from "@/plan/api/fixtures/chat-snapshot.json";
+import docFixture from "@/plan/api/fixtures/files-doc.json";
 import hello from "@/plan/api/fixtures/hello.json";
 import optionsFixture from "@/plan/api/fixtures/pressure-options.json";
 import runFixture from "@/plan/api/fixtures/pressure-run.json";
@@ -12,7 +13,13 @@ import { sessionViewSchema } from "@/plan/api/schema-chat";
 import { pressureOptionsSchema, type PressureOptions } from "@/plan/api/schema-pressure";
 import { snapshotAtom } from "@/plan/chat/model";
 import { pressureDialogAtom } from "@/plan/offers/actions-pressure";
-import { authoringAtom, connectionAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
+import {
+  authoringAtom,
+  connectionAtom,
+  projectAtom,
+  serverInfoAtom,
+  youAtom,
+} from "@/plan/state/atoms";
 
 import { PressureDialog } from "./pressure-dialog";
 import { socketHarness } from "./pressure-test-harness";
@@ -20,7 +27,7 @@ import { pressureOptionsAtom } from "./use-pressure";
 
 const options = pressureOptionsSchema.parse(optionsFixture);
 const plan = "doc/plans/PLAN-example.md";
-const closingNotice = "The open chat ends first, with its closing write.";
+const closingNotice = /first, with its closing write/;
 
 function holderStore() {
   const store = createStore();
@@ -43,18 +50,23 @@ async function mount(store = holderStore()) {
       </MemoryRouter>
     </Provider>,
   );
-  await screen.findByRole("spinbutton", { name: "Rounds" });
+  await screen.findByRole("group", { name: "Rounds" });
   return store;
 }
 
-function stubFetch(value: PressureOptions = options) {
-  const spy = vi.fn<typeof fetch>(
-    async (input) =>
-      new Response(
-        JSON.stringify(String(input).includes("/api/pressure/options") ? value : runFixture),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  );
+function stubFetch(value: PressureOptions = options, doc?: unknown) {
+  const spy = vi.fn<typeof fetch>(async (input) => {
+    const url = String(input);
+    const body = url.includes("/api/pressure/options")
+      ? value
+      : url.includes("/api/doc") && doc !== undefined
+        ? doc
+        : runFixture;
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
   vi.stubGlobal("fetch", spy);
   return spy;
 }
@@ -75,7 +87,7 @@ it("explains the reviewers in the hero and preserves the consequences", async ()
     screen.getByRole("dialog", { name: "Pressure-test a plan" }).getAttribute("aria-describedby"),
   ).toBeTruthy();
   expect(
-    screen.getByText("Two reviewers read the plan at once, then an editor addresses both."),
+    screen.getByText("Two reviewers read the plan at once, then an editor addresses both reviews."),
   ).toBeTruthy();
   const consequences = within(screen.getByRole("list", { name: "Consequences" }));
   expect(consequences.getAllByRole("listitem")).toHaveLength(3);
@@ -83,24 +95,36 @@ it("explains the reviewers in the hero and preserves the consequences", async ()
   expect(
     consequences.getByText(/each round running two reviews then an address step\./),
   ).toBeTruthy();
-  expect(consequences.getByText("Edits the plan and its briefs.")).toBeTruthy();
-  expect(consequences.getByText("planning-omissions.md").parentElement?.textContent).toBe(
-    "Writes planning-omissions.md at the repository root.",
+  expect(consequences.getByText(/the plan and its brief bundle/).textContent).toBe(
+    "Edits the plan and its brief bundle",
   );
-  expect(screen.getByText("The record line is written at the end.")).toBeTruthy();
+  expect(consequences.getByText("planning-omissions.md").parentElement?.textContent).toBe(
+    "Writes planning-omissions.md",
+  );
+  expect(consequences.queryByText(/minute/i)).toBeNull();
+  expect(
+    screen.getByText("Then a record line goes at the end of the plan: date, models, rounds."),
+  ).toBeTruthy();
 });
 
 it("shows the plan-editing notice", async () => {
   await mount();
 
-  expect(screen.getByText("Edits the plan and its briefs.")).toBeTruthy();
+  expect(screen.getByText(/the plan and its brief bundle/)).toBeTruthy();
   expect(screen.queryByText(closingNotice)).toBeNull();
 });
 
-it("shows the selected plan's derived title, file name and Change affordance", async () => {
-  await mount();
+it("shows the standalone plan's title, the mono file name and the Change affordance", async () => {
+  const store = holderStore();
+  store.set(projectAtom, {
+    checklists: [],
+    moves: [],
+    standalone: [{ slug: "example", path: plan, state: "written", title: "Example plan" }],
+  });
+  await mount(store);
 
-  expect(screen.getByText("example")).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Example plan" })).toBeTruthy();
+  expect(screen.queryByText("example")).toBeNull();
   expect(screen.getByText("PLAN-example.md").closest("p")?.classList.contains("font-mono")).toBe(
     true,
   );
@@ -110,33 +134,93 @@ it("shows the selected plan's derived title, file name and Change affordance", a
   );
 });
 
+it("falls back to the document's title, with state, change and test chips, for an unlisted plan", async () => {
+  const view = {
+    ...docFixture,
+    feature: null,
+    path: plan,
+    title: "Fetched title",
+    last_change: new Date(Date.now() - 3 * 3600_000).toISOString(),
+    kind: "plan",
+    plan: {
+      slug: "example",
+      state: "written",
+      implements: [],
+      pressure_date: null,
+      last_change: null,
+      validation: null,
+      stages: [],
+      yaml: null,
+      yaml_error: null,
+      metadata_line: null,
+    },
+  };
+  stubFetch(options, view);
+  await mount();
+
+  expect(await screen.findByRole("heading", { name: "Fetched title" })).toBeTruthy();
+  expect(screen.getByText("Written")).toBeTruthy();
+  expect(screen.getByText("Changed 3 h ago")).toBeTruthy();
+  expect(screen.getByText("Never tested")).toBeTruthy();
+});
+
+it("renders the pressure date as untrusted text, naming a format character", async () => {
+  const view = {
+    ...docFixture,
+    feature: null,
+    path: plan,
+    title: "Fetched title",
+    last_change: null,
+    kind: "plan",
+    plan: {
+      slug: "example",
+      state: "written",
+      implements: [],
+      pressure_date: "2026-10-‮01",
+      last_change: null,
+      validation: null,
+      stages: [],
+      yaml: null,
+      yaml_error: null,
+      metadata_line: null,
+    },
+  };
+  stubFetch(options, view);
+  await mount();
+
+  const chip = (await screen.findByText(/^Tested/)).closest("span.inline-flex") as HTMLElement;
+  expect(chip.textContent).toBe("Tested 2026-10-⟨U+202E⟩01");
+  const date = within(chip).getByText("2026-10-⟨U+202E⟩01");
+  expect(date.style.unicodeBidi).toBe("isolate");
+});
+
+it("names no title for a plan neither source describes, and never offers its slug as one", async () => {
+  await mount();
+
+  expect(screen.queryByRole("heading", { name: /example/i })).toBeNull();
+  expect(screen.getByText("PLAN-example.md")).toBeTruthy();
+});
+
 it.each([
-  { rounds: 1, legend: "Each round, 1 time" },
+  { rounds: 1, legend: "Each round, once" },
   { rounds: 2, legend: "Each round, 2 times" },
   { rounds: 3, legend: "Each round, 3 times" },
-])(
-  "quick-pick $rounds sets the same rounds input and updates the diagram",
-  async ({ rounds, legend }) => {
-    const fetchSpy = stubFetch();
-    await mount();
+])("quick-pick $rounds presses one pill and updates the diagram", async ({ rounds, legend }) => {
+  const fetchSpy = stubFetch();
+  await mount();
 
-    fireEvent.click(screen.getByRole("button", { name: String(rounds) }));
+  fireEvent.click(screen.getByRole("button", { name: String(rounds) }));
 
-    expect(
-      (screen.getByRole("spinbutton", { name: "Rounds" }) as HTMLInputElement).valueAsNumber,
-    ).toBe(rounds);
-    expect(screen.getByRole("button", { name: String(rounds), pressed: true })).toBeTruthy();
-    expect(
-      within(screen.getByRole("group", { name: "Quick-pick rounds" })).getAllByRole("button", {
-        pressed: true,
-      }),
-    ).toHaveLength(1);
-    expect(screen.getByText(legend)).toBeTruthy();
-    expect(
-      fetchSpy.mock.calls.filter(([input]) => String(input).includes("/api/pressure/start")),
-    ).toHaveLength(0);
-  },
-);
+  expect(screen.queryAllByRole("spinbutton")).toEqual([]);
+  expect(screen.getByRole("button", { name: String(rounds), pressed: true })).toBeTruthy();
+  expect(
+    within(screen.getByRole("group", { name: "Rounds" })).getAllByRole("button", { pressed: true }),
+  ).toHaveLength(1);
+  expect(screen.getByText(legend)).toBeTruthy();
+  expect(
+    fetchSpy.mock.calls.filter(([input]) => String(input).includes("/api/pressure/start")),
+  ).toHaveLength(0);
+});
 
 it.each([
   { node: "Review", label: "/pressure" },
@@ -152,24 +236,10 @@ it.each([
   expect(within(group).getByRole("combobox", { name: `${label} effort` })).toBeTruthy();
 });
 
-it("updates the diagram and clears quick picks for a custom rounds value", async () => {
-  await mount();
-
-  fireEvent.change(screen.getByRole("spinbutton", { name: "Rounds" }), { target: { value: "7" } });
-
-  expect(screen.getByText(/^Each round, 7 times$/)).toBeTruthy();
-  expect(
-    within(screen.getByRole("group", { name: "Quick-pick rounds" })).queryAllByRole("button", {
-      pressed: true,
-    }),
-  ).toHaveLength(0);
-  expect(screen.getByText(/Time grows with the 7 rounds/)).toBeTruthy();
-});
-
 it("starts with the new label and the quick-picked rounds", async () => {
   const fetchSpy = stubFetch();
   const store = await mount();
-  expect(screen.getByText("Holds authoring until it finishes.")).toBeTruthy();
+  expect(screen.getByText("Holds authoring until it finishes")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "3" }));
 
   fireEvent.click(screen.getByRole("button", { name: "Start pressure test" }));
@@ -222,11 +292,18 @@ it.each(["none", "ended", "failed", "pressure"])(
   },
 );
 
-it("renders control characters in the new plan title and file name as visible markers", async () => {
-  stubFetch({ ...options, plans: ["doc/plans/PLAN-\u202Eevil.md"] });
-  await mount();
+it("renders control characters in the plan title and file name as visible markers", async () => {
+  const evil = "doc/plans/PLAN-\u202Eevil.md";
+  stubFetch({ ...options, plans: [evil] });
+  const store = holderStore();
+  store.set(projectAtom, {
+    checklists: [],
+    moves: [],
+    standalone: [{ slug: "evil", path: evil, state: "written", title: "Evil\u202E plan" }],
+  });
+  await mount(store);
 
-  expect(screen.getByText("⟨U+202E⟩evil")).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Evil⟨U+202E⟩ plan" })).toBeTruthy();
   expect(screen.getByText("PLAN-⟨U+202E⟩evil.md")).toBeTruthy();
   expect(document.body.textContent).not.toContain("\u202E");
 });

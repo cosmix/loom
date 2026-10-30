@@ -1,172 +1,134 @@
-import { useId } from "react";
+import { cn } from "cn";
+import { Clock, FilePen, FilePlus, TriangleAlert } from "lucide-react";
+import { useId, type JSX, type ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
-import { DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
-import { DocMark } from "@/plan/ui/doc-mark";
 
-import { Untrusted, visibleControls } from "../visible-controls";
+import { Untrusted } from "../visible-controls";
 
-export function PressureHero() {
+export function PressureHero(): JSX.Element {
   return (
-    <DialogHeader className="flex-row items-start gap-3 pr-6">
-      <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3.5 border-b border-hairline bg-[radial-gradient(120%_160%_at_0%_0%,color-mix(in_oklch,var(--primary)_16%,var(--card))_0%,var(--card)_62%)] px-5 pt-[18px] pb-4">
+      <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_oklch,var(--primary)_28%,transparent)] text-primary">
         <ActivityGlyph kind="pressure" className="size-6" />
       </span>
-      <div className="min-w-0 space-y-1">
-        <DialogTitle>Pressure-test a plan</DialogTitle>
-        <DialogDescription>
-          Two reviewers read the plan at once, then an editor addresses both.
+      <div className="min-w-0 space-y-0.5">
+        <DialogTitle className="text-[17px] font-[650]">Pressure-test a plan</DialogTitle>
+        <DialogDescription className="text-[13px]">
+          Two reviewers read the plan at once, then an editor addresses both reviews.
         </DialogDescription>
       </div>
-    </DialogHeader>
-  );
-}
-
-export function PressurePlanCard({
-  plan,
-  plans,
-  setPlan,
-}: {
-  plan: string;
-  plans: readonly string[];
-  setPlan: (plan: string) => void;
-}) {
-  const fileName = plan.split("/").at(-1) ?? plan;
-  const title = fileName
-    .replace(/^(?:IN_PROGRESS-PLAN-|DONE-PLAN-|PLAN-)/, "")
-    .replace(/\.md$/, "")
-    .replace(/[-_]+/g, " ");
-  return (
-    <div className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3">
-      <DocMark kind="plan" size="lg" />
-      <div className="min-w-0 flex-1 space-y-0.5 [overflow-wrap:anywhere]">
-        <p className="font-medium">
-          <Untrusted text={title} />
-        </p>
-        <p className="font-mono text-xs text-muted-foreground">
-          <Untrusted text={fileName} />
-        </p>
-      </div>
-      <PlanChoice plan={plan} plans={plans} setPlan={setPlan} />
+      {/* Room for the dialog's close button, which sits over the hero's right edge. */}
+      <span aria-hidden="true" className="w-7" />
     </div>
   );
 }
 
-function PlanChoice({
-  plan,
-  plans,
-  setPlan,
-}: {
-  plan: string;
-  plans: readonly string[];
-  setPlan: (plan: string) => void;
-}) {
-  const id = useId();
-  return (
-    <div className="relative shrink-0 rounded-md focus-within:outline-2 focus-within:outline-ring">
-      {/* The accessible name contains the visible word "Change" (WCAG 2.5.3). */}
-      <label htmlFor={id} className="sr-only">
-        Change plan
-      </label>
-      <span
-        aria-hidden="true"
-        className="inline-flex h-8 items-center px-2 text-sm underline underline-offset-4"
-      >
-        Change
-      </span>
-      <select
-        id={id}
-        value={plan}
-        required
-        className="absolute inset-0 size-full cursor-pointer opacity-0"
-        onChange={(event) => setPlan(event.currentTarget.value)}
-      >
-        {plans.map((option) => (
-          <option key={option} value={option}>
-            {visibleControls(option)}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
+const ROUND_CHOICES = [1, 2, 3] as const;
 
+/** The label row of "What happens": the section name, then Rounds with its 1, 2, 3 pill group. */
 export function PressureRounds({
   rounds,
   setRounds,
 }: {
   rounds: number;
   setRounds: (rounds: number) => void;
-}) {
-  const id = useId();
+}): JSX.Element {
+  const labelId = useId();
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <label htmlFor={id} className="text-sm font-medium">
-        Rounds
-      </label>
-      <div role="group" aria-label="Quick-pick rounds" className="flex rounded-md border p-0.5">
-        {[1, 2, 3].map((value) => (
-          <Button
-            key={value}
-            type="button"
-            size="sm"
-            variant={rounds === value ? "secondary" : "ghost"}
-            aria-pressed={rounds === value}
-            onClick={() => setRounds(value)}
-          >
-            {value}
-          </Button>
-        ))}
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h3 className="text-sm font-semibold">What happens</h3>
+      <div className="flex items-center gap-2">
+        <span id={labelId} className="text-xs font-medium text-muted-foreground">
+          Rounds
+        </span>
+        <div
+          role="group"
+          aria-labelledby={labelId}
+          className="flex rounded-full bg-background p-[3px] ring-1 ring-hairline"
+        >
+          {ROUND_CHOICES.map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={rounds === value}
+              onClick={() => setRounds(value)}
+              className={cn(
+                "h-[26px] w-[30px] rounded-full text-[12.5px] font-medium focus-visible:outline-2 focus-visible:outline-ring",
+                rounds === value
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
       </div>
-      <input
-        id={id}
-        className="h-8 w-16 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
-        name="rounds"
-        type="number"
-        min={1}
-        max={10}
-        step={1}
-        required
-        value={Number.isNaN(rounds) ? "" : rounds}
-        onChange={(event) => setRounds(event.currentTarget.valueAsNumber)}
-      />
     </div>
   );
 }
 
-export function PressureConsequences({ rounds, endsChat }: { rounds: number; endsChat: boolean }) {
-  const chosenRounds = Number.isFinite(rounds)
-    ? `${rounds} ${rounds === 1 ? "round" : "rounds"}`
-    : "chosen rounds";
+function Fact({
+  icon,
+  className,
+  children,
+}: {
+  icon: ReactNode;
+  className?: string;
+  children: ReactNode;
+}): JSX.Element {
   return (
-    <ul
-      aria-label="Consequences"
-      className="grid gap-x-6 gap-y-4 border-t pt-4 text-sm sm:grid-cols-2"
-    >
-      <li className="space-y-1">
-        <p className="font-medium">Takes time</p>
-        <p className="text-muted-foreground">
+    <li className={cn("flex items-start gap-2 text-[12.5px] text-muted-foreground", className)}>
+      <span aria-hidden="true" className="mt-0.5 inline-flex shrink-0 [&_svg]:size-3.5">
+        {icon}
+      </span>
+      <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
+    </li>
+  );
+}
+
+/**
+ * What the run changes. The time fact names no minutes: the server sends no duration to quote.
+ * `chatName` is the open authoring chat that the run ends first, or null when none is open.
+ */
+export function PressureConsequences({
+  rounds,
+  chatName,
+}: {
+  rounds: number;
+  chatName: string | null;
+}): JSX.Element {
+  const chosenRounds = `${rounds} ${rounds === 1 ? "round" : "rounds"}`;
+  return (
+    <ul aria-label="Consequences" className="grid gap-x-6 gap-y-2.5 sm:grid-cols-2">
+      <Fact icon={<Clock />}>
+        <strong className="font-semibold text-foreground">Takes time. </strong>
+        <span>
           This takes a while. Time grows with the {chosenRounds}, each round running two reviews
           then an address step.
-        </p>
-      </li>
-      <li className="space-y-1">
-        <p className="font-medium">Edits planning documents</p>
-        <p className="text-muted-foreground">Edits the plan and its briefs.</p>
-      </li>
-      <li className="space-y-1">
-        <p className="font-medium">Writes the omissions report</p>
-        <p className="text-muted-foreground">
-          Writes <span className="font-mono text-xs">planning-omissions.md</span> at the repository
-          root.
-        </p>
-      </li>
-      {endsChat && (
-        <li className="tone-warning space-y-1">
-          <p className="font-medium">Ends the open chat</p>
-          <p>The open chat ends first, with its closing write.</p>
-        </li>
+        </span>
+      </Fact>
+      <Fact icon={<FilePen />}>
+        <strong className="font-semibold text-foreground">Edits</strong> the plan and its brief
+        bundle
+      </Fact>
+      <Fact icon={<FilePlus />}>
+        <span>
+          <strong className="font-semibold text-foreground">Writes</strong>{" "}
+          <code className="font-mono text-xs">planning-omissions.md</code>
+        </span>
+      </Fact>
+      {chatName !== null && (
+        <Fact
+          icon={<TriangleAlert className="text-(--tone-warning)" />}
+          className="tone-warning text-foreground"
+        >
+          <strong className="font-semibold">Ends</strong> &lsquo;
+          <Untrusted text={chatName} />
+          &rsquo; first, with its closing write
+        </Fact>
       )}
     </ul>
   );

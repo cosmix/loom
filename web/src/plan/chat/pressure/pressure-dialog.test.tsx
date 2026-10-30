@@ -27,7 +27,7 @@ import { pressureOptionsAtom } from "./use-pressure";
 const options = pressureOptionsSchema.parse(optionsFixture);
 const plan = "doc/plans/PLAN-example.md";
 const otherPlan = "doc/plans/PLAN-other.md";
-const closingNotice = "The open chat ends first, with its closing write.";
+const closingNotice = /first, with its closing write/;
 
 function holderStore(value: PressureOptions = options) {
   const store = createStore();
@@ -90,9 +90,7 @@ afterEach(() => {
 it("prefills rounds and all six model slots from pressure options defaults", async () => {
   await mount();
 
-  expect(
-    (screen.getByRole("spinbutton", { name: "Rounds" }) as HTMLInputElement).valueAsNumber,
-  ).toBe(2);
+  expect(screen.getByRole("button", { name: "2", pressed: true })).toBeTruthy();
   const fields = [
     ["/pressure model", options.defaults.claude_model],
     ["/pressure effort", options.defaults.claude_effort],
@@ -229,7 +227,7 @@ it("posts the selected plan and slots and closes on success", async () => {
   fireEvent.change(screen.getByRole("combobox", { name: "Change plan" }), {
     target: { value: otherPlan },
   });
-  fireEvent.change(screen.getByRole("spinbutton", { name: "Rounds" }), { target: { value: "3" } });
+  fireEvent.click(screen.getByRole("button", { name: "3" }));
   fireEvent.change(screen.getByRole("combobox", { name: "/pressure model" }), {
     target: { value: "opus" },
   });
@@ -265,19 +263,6 @@ it("posts the selected plan and slots and closes on success", async () => {
     address_effort: "medium",
   });
   expect(screen.queryByRole("dialog")).toBeNull();
-});
-
-it.each(["", "0", "11", "1.5"])("rejects invalid rounds %j before sending Start", async (value) => {
-  const fetchSpy = stubFetch();
-  await mount();
-  fireEvent.change(screen.getByRole("spinbutton", { name: "Rounds" }), { target: { value } });
-
-  fireEvent.click(screen.getByRole("button", { name: "Start pressure test" }));
-
-  expect(
-    (screen.getByRole("spinbutton", { name: "Rounds" }) as HTMLInputElement).validity.valid,
-  ).toBe(false);
-  expect(callsTo(fetchSpy, "/api/pressure/start")).toEqual([]);
 });
 
 it("renders a start error as text and keeps the dialog open", async () => {
@@ -321,9 +306,7 @@ it("renders LoadState until the open-time refetch settles, even with cached opti
     release(jsonReply(optionsFixture));
   });
 
-  expect(
-    ((await screen.findByRole("spinbutton", { name: "Rounds" })) as HTMLInputElement).valueAsNumber,
-  ).toBe(2);
+  expect(await screen.findByRole("button", { name: "2", pressed: true })).toBeTruthy();
 });
 
 it("preselects and posts the clicked plan when only the refetched options list it", async () => {
@@ -364,16 +347,15 @@ it("renders a failed options response through LoadState", async () => {
 it("resets form defaults when reopened and cancels without posting", async () => {
   const fetchSpy = stubFetch();
   const store = await mount();
-  fireEvent.change(screen.getByRole("spinbutton", { name: "Rounds" }), { target: { value: "7" } });
+  fireEvent.click(screen.getByRole("button", { name: "3" }));
+  expect(screen.getByRole("button", { name: "3", pressed: true })).toBeTruthy();
 
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   await act(async () => {
     store.set(pressureDialogAtom, { open: true, plan });
   });
 
-  expect(
-    ((await screen.findByRole("spinbutton", { name: "Rounds" })) as HTMLInputElement).valueAsNumber,
-  ).toBe(2);
+  expect(await screen.findByRole("button", { name: "2", pressed: true })).toBeTruthy();
   expect(callsTo(fetchSpy, "/api/pressure/start")).toEqual([]);
 });
 
