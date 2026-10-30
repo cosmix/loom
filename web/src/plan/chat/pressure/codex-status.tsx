@@ -1,53 +1,79 @@
+import { Check, Minus, TriangleAlert } from "lucide-react";
+import type { JSX } from "react";
 import { Link } from "react-router";
 
-import { useNow } from "@/components/hooks/use-now";
-import { formatElapsed } from "@/lib/format";
-import type { CodexStatus } from "@/plan/api/schema-pressure";
+import type { CodexState, CodexStatus } from "@/plan/api/schema-pressure";
 import { toAddress } from "@/plan/files/address";
-import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
+import { ActivityTile } from "@/plan/ui/activity-glyphs";
 import { Untrusted } from "../visible-controls";
+import { LiveElapsed } from "./elapsed";
 
-function RunningCodex({ startedMs }: { startedMs?: number }) {
-  const now = useNow();
-  const seconds = startedMs === undefined ? 0 : Math.max(0, Math.floor((now - startedMs) / 1000));
-  return (
-    <>
-      <ActivityGlyph kind="codex" />
-      <span role="status" aria-live="polite" className="sr-only">
-        Codex is reviewing
-      </span>
-      <span>Running · {formatElapsed(seconds)}</span>
-    </>
+const SETTLED_ICON = {
+  review_written: <Check />,
+  no_review: <Minus />,
+  failed: <TriangleAlert />,
+} as const satisfies Record<Exclude<CodexState, "running">, JSX.Element>;
+
+function CodexTile({ state }: { state: CodexState }): JSX.Element {
+  // Only a running review animates: a settled one shows a static mark.
+  return state === "running" ? (
+    <ActivityTile kind="codex" />
+  ) : (
+    <ActivityTile>{SETTLED_ICON[state]}</ActivityTile>
   );
 }
 
+function CodexOutcome({ status }: { status: CodexStatus }): JSX.Element {
+  switch (status.state) {
+    case "running":
+      return <span>reviewing the plan in the background</span>;
+    case "review_written":
+      return status.report_path !== null ? (
+        <Link className="underline" to={toAddress(status.report_path)}>
+          Review written
+        </Link>
+      ) : (
+        <span>Review written</span>
+      );
+    case "no_review":
+      return <span>No review</span>;
+    case "failed":
+      return <span>Codex failed</span>;
+  }
+}
+
+/** The Codex card of a round: the model, what Codex is doing, and a mono clock while it runs. */
 export function CodexStatusItem({
   status,
   startedMs,
 }: {
   status: CodexStatus;
   startedMs?: number;
-}) {
+}): JSX.Element {
+  const running = status.state === "running";
   return (
-    <div className="space-y-2 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <span>
-          <Untrusted text={status.model} />
-        </span>
-        {status.state === "running" && <RunningCodex startedMs={startedMs} />}
-        {status.state === "review_written" &&
-          (status.report_path !== null ? (
-            <Link className="underline" to={toAddress(status.report_path)}>
-              Review written
-            </Link>
-          ) : (
-            <span>Review written</span>
-          ))}
-        {status.state === "no_review" && <span>No review</span>}
-        {status.state === "failed" && <span>Codex failed</span>}
+    <div className="grid grid-cols-[26px_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-2 rounded-[10px] border border-hairline bg-background px-3 py-2.5 text-sm">
+      <CodexTile state={status.state} />
+      <div className="min-w-0 [overflow-wrap:anywhere]">
+        <p className="text-[13px] font-semibold">
+          Codex <code className="font-mono text-xs font-normal">$pressure</code>
+        </p>
+        <p className="text-xs text-muted-foreground">
+          <Untrusted text={status.model} /> · <CodexOutcome status={status} />
+        </p>
+        {running && (
+          <span role="status" aria-live="polite" className="sr-only">
+            Codex is reviewing
+          </span>
+        )}
       </div>
+      {running && (
+        <span className="font-mono text-[11.5px] text-muted-foreground">
+          <LiveElapsed startMs={startedMs} />
+        </span>
+      )}
       {status.state === "failed" && status.log_tail !== null && (
-        <pre className="whitespace-pre-wrap break-words font-mono text-xs">
+        <pre className="col-span-3 font-mono text-xs break-words whitespace-pre-wrap">
           <code>
             <Untrusted text={status.log_tail} />
           </code>

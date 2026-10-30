@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "jotai";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
@@ -67,11 +67,15 @@ it("RunHeader switches between the normal and pressure headers with unconditiona
   store.set(pressureRunAtom, pressureRunSchema.parse(runFixture));
   const view = mount(<RunHeader session={initial.session!} />, store);
   expect(screen.getByText("authoring").textContent).toContain("Me authoring");
-  expect(screen.queryByText(/^Pressure test ·/)).toBeNull();
+  expect(screen.queryByText("Pressure test")).toBeNull();
 
   view.rerender(<RunHeader session={pressureSession} />);
 
-  expect(screen.getByText("Pressure test · PLAN-example.md · round 2 of 2 · Codex")).toBeTruthy();
+  expect(screen.getByText("Pressure test")).toBeTruthy();
+  expect(screen.getByText("round 2 of 2")).toBeTruthy();
+  expect(
+    within(document.querySelector<HTMLElement>(".chat-run-header")!).getByText("PLAN-example.md"),
+  ).toBeTruthy();
   expect(screen.queryByText("authoring")).toBeNull();
 
   view.rerender(<RunHeader session={initial.session!} />);

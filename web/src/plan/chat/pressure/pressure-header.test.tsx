@@ -79,9 +79,15 @@ afterEach(() => {
 it("shows round 2 of 2 at the Codex step with elapsed time and total tokens", () => {
   mount();
 
-  expect(screen.getByText("Pressure test · PLAN-example.md · round 2 of 2 · Codex")).toBeTruthy();
+  expect(screen.getByText("Pressure test")).toBeTruthy();
+  expect(screen.getByText("round 2 of 2")).toBeTruthy();
+  const head = within(document.querySelector<HTMLElement>(".chat-run-header")!);
+  expect(head.getByText("PLAN-example.md").parentElement?.classList.contains("font-mono")).toBe(
+    true,
+  );
   expect(screen.getByText("3s")).toBeTruthy();
-  expect(screen.getByText("· 175 tokens")).toBeTruthy();
+  expect(head.getByText("175 tokens")).toBeTruthy();
+  expect(head.queryByText("·")).toBeNull();
   expect(screen.getByText(/gpt-6.1-terra/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "End chat" })).toBeNull();
 });
@@ -193,7 +199,7 @@ it("renders markup in the plan name and stopping author as text", () => {
   const run = endedRun({ kind: "stopped", by: "<b>Ada</b>" });
   run.plan = "doc/plans/<img src=x onerror=alert(1)>.md";
   mount(setupStore(run));
-  expect(screen.getByText(/Pressure test · <img src=x onerror=alert\(1\)>.md/)).toBeTruthy();
+  expect(screen.getByText("<img src=x onerror=alert(1)>.md")).toBeTruthy();
   expect(screen.getByText("Stopped by <b>Ada</b>")).toBeTruthy();
   expect(document.querySelector("img, b")).toBeNull();
 });
@@ -209,7 +215,7 @@ it("lists each step's edits and tokens with file links when no turn is known", (
   mount();
   const footer = within(screen.getByLabelText("Round 2 /pressure"));
   expect(footer.getByText("175 tokens")).toBeTruthy();
-  expect(footer.getByRole("link", { name: "doc/plans/PLAN-example.md" }).getAttribute("href")).toBe(
+  expect(footer.getByRole("link", { name: "PLAN-example.md" }).getAttribute("href")).toBe(
     "/files/plans/PLAN-example.md",
   );
   expect(footer.queryByRole("link", { name: "Diff" })).toBeNull();
@@ -254,8 +260,26 @@ it("ticks elapsed time each second and freezes it when the run ends", () => {
     }),
   );
   act(() => vi.advanceTimersByTime(2000));
-  // The header and the recorded summary both freeze at the arrival time and agree.
-  expect(screen.getAllByText("4s")).toHaveLength(2);
+  // The done head freezes at the arrival time, in the tag that replaced the live clock.
+  expect(screen.getAllByText("4s")).toHaveLength(1);
+});
+
+it("shows one head, the done head, above the summary and the timeline once recorded", () => {
+  mount(setupStore(endedRun({ kind: "recorded" })));
+
+  expect(document.querySelectorAll(".chat-run-header")).toHaveLength(1);
+  expect(screen.getByText("Pressure test finished")).toBeTruthy();
+  expect(screen.queryByText("Pressure test")).toBeNull();
+  expect(screen.queryByText(/^round \d+ of \d+$/)).toBeNull();
+  expect(screen.getAllByRole("region", { name: "Pressure test summary" })).toHaveLength(1);
+  const head = document.querySelector(".chat-run-header")!;
+  const region = screen.getByRole("region", { name: "Pressure test summary" });
+  const timeline = document.querySelector("[data-pressure-timeline]")!;
+  expect(head.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(region.compareDocumentPosition(timeline) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(region.querySelector(":scope > div:last-child > a")?.textContent).toBe(
+    "Review the changes",
+  );
 });
 
 it("ignores a second Stop click while the stop request is pending and after it was accepted", async () => {
@@ -307,10 +331,11 @@ it("shows control characters in edit paths, the end reason and the plan name as 
   );
   mount(setupStore(run));
 
-  expect(screen.getByRole("link", { name: "doc/plans/PLAN-⟨U+202E⟩evil.md" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "PLAN-⟨U+202E⟩evil.md" })).toBeTruthy();
   expect(screen.getByText(`Step codex failed: ${shown}`)).toBeTruthy();
   expect(screen.getByText(shown)).toBeTruthy();
-  expect(screen.getByText(/Pressure test · PLAN-⟨U\+202E⟩evil.md/)).toBeTruthy();
+  // The head's file line and the edit's chip both name the file.
+  expect(screen.getAllByText("PLAN-⟨U+202E⟩evil.md")).toHaveLength(2);
   expect(document.body.textContent).not.toContain("\u202E");
 });
 

@@ -12,6 +12,7 @@ import {
 } from "@/plan/api/schema-pressure";
 import { pressureDialogAtom } from "@/plan/offers/actions-pressure";
 
+import { DoneHead } from "./done-head";
 import { PressureDone } from "./pressure-done";
 import { pressureOptionsAtom } from "./use-pressure";
 
@@ -44,6 +45,7 @@ function mount(run = recordedRun(), plans = [plan, nextPlan, "doc/plans/PLAN-lat
   const view = render(
     <Provider store={store}>
       <MemoryRouter>
+        <DoneHead run={run} />
         <PressureDone run={run} />
         <LocationProbe />
       </MemoryRouter>
@@ -75,8 +77,9 @@ it("shows rounds, elapsed whole seconds and compact total tokens", () => {
   mount();
 
   const summary = within(screen.getByRole("region", { name: "Pressure test summary" }));
-  expect(summary.getByText("2 rounds")).toBeTruthy();
-  expect(summary.getByText("1m5s")).toBeTruthy();
+  expect(screen.getByText("Pressure test finished")).toBeTruthy();
+  expect(screen.getByText("2 rounds")).toBeTruthy();
+  expect(screen.getByText("1m5s")).toBeTruthy();
   expect(summary.getByText("12.3k tokens")).toBeTruthy();
 });
 
@@ -120,13 +123,13 @@ it("lists each edited file once with its document and HEAD diff links", () => {
   const list = within(screen.getByRole("list", { name: "Edited files" }));
   const rows = list.getAllByRole("listitem");
   expect(rows).toHaveLength(2);
-  expect(within(rows[0]!).getByRole("link", { name: plan }).getAttribute("href")).toBe(
+  expect(within(rows[0]!).getByRole("link", { name: "PLAN-example.md" }).getAttribute("href")).toBe(
     "/files/plans/PLAN-example.md",
   );
   expect(within(rows[0]!).getByRole("link", { name: "Diff" }).getAttribute("href")).toBe(
     "/files/plans/PLAN-example.md?diff=head",
   );
-  expect(within(rows[1]!).getByRole("link", { name: brief }).getAttribute("href")).toBe(
+  expect(within(rows[1]!).getByRole("link", { name: "ui notes.md" }).getAttribute("href")).toBe(
     "/files/plans/briefs/example/ui%20notes.md",
   );
   expect(within(rows[1]!).getByRole("link", { name: "Diff" }).getAttribute("href")).toBe(
@@ -140,7 +143,7 @@ it("makes file control characters visible while preserving the encoded link", ()
 
   mount(run);
 
-  const link = screen.getByRole("link", { name: "doc/plans/PLAN-⟨U+202E⟩hidden.md" });
+  const link = screen.getByRole("link", { name: "PLAN-⟨U+202E⟩hidden.md" });
   expect(link.getAttribute("href")).toBe("/files/plans/PLAN-%E2%80%AEhidden.md");
   expect(link.textContent).not.toContain("\u202E");
 });
