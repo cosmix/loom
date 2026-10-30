@@ -1,5 +1,8 @@
 /* Planning-specific layout only; colours and type come from the shared tokens. */
 
+/* The visual system every planner surface follows: scales and primitives per ui/DESIGN.md. */
+@import "./ui/design.css";
+
 /*
  * Reading face: body text of rendered documents and concept prose. Chrome and titles stay in
  * `--font-sans` (Inter); code, paths and ids stay in `--font-mono` (Commit Mono Cosmix).
