@@ -13,6 +13,15 @@ fn missing_log_reads_empty() {
 }
 
 #[test]
+fn older_events_without_session_type_still_deserialize() {
+    let original = event("legacy", StageStatus::Executing);
+    let json = serde_json::to_value(&original).unwrap();
+    assert!(json.get("session_type").is_none());
+    let restored: StageEvent = serde_json::from_value(json).unwrap();
+    assert_eq!(restored, original);
+}
+
+#[test]
 fn returns_last_n_and_skips_garbage_line() {
     let dir = TempDir::new().unwrap();
     for i in 0..5 {

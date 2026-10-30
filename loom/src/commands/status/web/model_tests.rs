@@ -24,6 +24,7 @@ fn fixture_event(
         from,
         to,
         session: session.map(str::to_owned),
+        session_type: None,
         reason: None,
     }
 }

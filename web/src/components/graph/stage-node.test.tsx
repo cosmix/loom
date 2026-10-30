@@ -39,6 +39,18 @@ function renderNode(stage: StageSummary, tokens: StageFlow | null = null) {
 afterEach(cleanup);
 
 describe("StageNode contract phase", () => {
+  it.each(["completed", "completed-with-failures"] as const)(
+    "includes contract writing in the %s node duration",
+    (status) => {
+      const { getByText, queryByText } = renderNode(
+        stage({ status, execution_secs: 90, elapsed_secs: 150 }),
+      );
+
+      expect(getByText("2m30s")).toBeTruthy();
+      expect(queryByText("1m30s")).toBeNull();
+    },
+  );
+
   it("glows in the contract tone with no tag while a contract writer runs", () => {
     const { container, queryByText } = renderNode(
       stage({ status: "executing", session_type: "contract" }),

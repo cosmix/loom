@@ -254,6 +254,7 @@ export const stageEventSchema = z.object({
   from: stageStatusSchema,
   to: stageStatusSchema,
   session: z.string().nullable(),
+  session_type: sessionTypeSchema.nullish(),
   reason: z.string().nullable(),
 });
 export const statusDataSchema = z.object({
@@ -338,6 +339,7 @@ export function parseSnapshot(raw: unknown): ReturnType<typeof snapshotSchema.sa
 }
 
 export type StageStatus = z.infer<typeof stageStatusSchema>;
+export type SessionType = z.infer<typeof sessionTypeSchema>;
 export type StageSummary = z.infer<typeof stageSummarySchema>;
 export type StatusData = z.infer<typeof statusDataSchema>;
 export type FailingCriterion = z.infer<typeof failingCriterionSchema>;

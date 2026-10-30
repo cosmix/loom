@@ -1,6 +1,6 @@
 //! Durable log of stage status changes, `<work_dir>/stage-events.jsonl`.
 //!
-//! Every status change made through `update_stage` appends one line, so the
+//! Every status or executing-session change through `update_stage` appends one line, so the
 //! dashboard can show what happened before it connected. Storage is the shared
 //! bounded JSONL spool: once the file reaches the spool cap, further appends
 //! fail (and are logged by the caller) instead of growing without limit.
@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use super::jsonl_spool;
+use crate::models::session::SessionType;
 use crate::models::stage::StageStatus;
 
 const EVENTS_FILE: &str = "stage-events.jsonl";
@@ -28,6 +29,9 @@ pub struct StageEvent {
     pub to: StageStatus,
     /// The stage's session after the change, when it has one.
     pub session: Option<String>,
+    /// Session kind at the event time; absent in older logs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_type: Option<SessionType>,
     /// The close reason, only when the stage became blocked.
     pub reason: Option<String>,
 }
@@ -51,6 +55,7 @@ impl StageEvent {
             from,
             to,
             session,
+            session_type: None,
             reason,
         }
     }

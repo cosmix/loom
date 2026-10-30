@@ -113,7 +113,11 @@ describe("TUI formatter ports", () => {
   it.each<readonly [Partial<StageSummary>, string | null]>([
     [{ status: "waiting-for-deps" }, null],
     [{ status: "queued" }, null],
-    [{ status: "completed", execution_secs: 90, elapsed_secs: 5 }, "1m30s"],
+    [{ status: "completed", execution_secs: 90, elapsed_secs: 150 }, "2m30s"],
+    [{ status: "completed-with-failures", execution_secs: 90, elapsed_secs: 150 }, "2m30s"],
+    [{ status: "completed", execution_secs: 90, elapsed_secs: null }, "1m30s"],
+    [{ status: "completed", execution_secs: 90, elapsed_secs: 0 }, "0s"],
+    [{ status: "executing", execution_secs: 90, elapsed_secs: 150 }, "1m30s"],
     [{ status: "completed", execution_secs: null, elapsed_secs: 61 }, "1m1s"],
     [{ status: "completed", execution_secs: null, elapsed_secs: null }, ""],
   ])("formats time state %#", (overrides, expected) => {

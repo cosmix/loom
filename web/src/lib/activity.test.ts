@@ -19,6 +19,25 @@ function withEvents(...transitions: [from: StageStatus, to: StageStatus][]): Sna
 }
 
 describe("activityEntries", () => {
+  it("distinguishes contract writing and implementation at their recorded times", () => {
+    const snapshot = withEvents(["queued", "executing"], ["executing", "executing"]);
+    snapshot.status.activity[0]!.session_type = "contract";
+    snapshot.status.activity[1]!.session_type = "stage";
+    // Parse the wire data too: losing session_type would collapse both messages.
+    const entries = activityEntries(snapshotSchema.parse(snapshot));
+    expect(entries.map((entry) => entry.message)).toEqual([
+      "changing execution started",
+      "changing contract writing started",
+    ]);
+    expect(entries[0]!.at - entries[1]!.at).toBe(60_000);
+  });
+
+  it("does not label a resolver session change as stage execution", () => {
+    const snapshot = withEvents(["executing", "executing"]);
+    snapshot.status.activity[0]!.session_type = "merge";
+    expect(activityEntries(snapshot)).toEqual([]);
+  });
+
   it("is empty without a snapshot", () => {
     expect(activityEntries(null)).toEqual([]);
   });
