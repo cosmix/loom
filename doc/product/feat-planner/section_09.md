@@ -432,7 +432,7 @@ subagent per document summary, then the overviews itself. Its opening message li
 
 ```text
 loom plan: rebuild summaries.
-Rebuild: planner-ui/product/section_03, plans/delivery-truth, overview/planner-ui/product, overview/planner-ui/engineering.
+Rebuild: feat-planner/product/section_03, plans/delivery-truth, overview/feat-planner/product, overview/feat-planner/engineering.
 Load the skill loom-plan:summaries.
 ```
 

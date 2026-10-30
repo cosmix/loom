@@ -191,7 +191,7 @@ fn brainstorming_copy_keeps_mit_notice() {
     let kind = SessionGuidanceKind::Authoring(AuthoringStart::NoStep);
     fx.render(&kind, &fx.session, &models).unwrap();
     let license_path = repo_file(
-        "../doc/plans/planner-ui/briefs/feat-planner-08-guidance/upstream/superpowers-LICENSE",
+        "../doc/plans/feat-planner/briefs/feat-planner-08-guidance/upstream/superpowers-LICENSE",
     );
     let license = fs::read_to_string(license_path).unwrap();
     let license = license.trim_end_matches('\n');

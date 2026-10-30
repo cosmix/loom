@@ -1,7 +1,7 @@
 # `loom plan` Engineering Metaplan
 
-This metaplan cuts the `loom plan` product specification (`doc/product/planner-ui/index.md` and
-`doc/product/planner-ui/section_01.md` to `section_12.md`, agreed 2026-10-26) into eleven loom plans and
+This metaplan cuts the `loom plan` product specification (`doc/product/feat-planner/index.md` and
+`doc/product/feat-planner/section_01.md` to `section_12.md`, agreed 2026-10-26) into eleven loom plans and
 orders them. It was written on 2026-10-26 on branch `feat-planner-ui` at `b0f91c00`. Every
 entry names the product sections it implements, what it delivers, what it needs from earlier
 plans, the files it owns, its traps, and its acceptance bar. File and line references come from
@@ -9,8 +9,8 @@ the spec and were taken at that revision; a plan author re-reads each named rang
 stage briefs and anchors every brief by symbol as well as line.
 
 This file is not a loom plan. Each entry heading names the plan file to author later with
-`/loom-plan-writer` as `doc/plans/planner-ui/PLAN-<slug>.md`, checked with `loom plan verify`, committed
-with its briefs under `doc/plans/planner-ui/briefs/<slug>/` (`loom run` refuses uncommitted plan inputs),
+`/loom-plan-writer` as `doc/plans/feat-planner/PLAN-<slug>.md`, checked with `loom plan verify`, committed
+with its briefs under `doc/plans/feat-planner/briefs/<slug>/` (`loom run` refuses uncommitted plan inputs),
 and run with `loom run`. Each plan carries an `Implements:` line under its title naming the
 sections below (spec section 03, "Product-to-plan links").
 
@@ -600,7 +600,7 @@ plan writes one record line; the stage records it.
 
 ## Decisions
 
-- **Metaplan location.** This file lives at `doc/plans/planner-ui/index.md`, the
+- **Metaplan location.** This file lives at `doc/plans/feat-planner/index.md`, the
   `doc/plans/<feature>/index.md` metaplan form of the feature model, so its entries count toward step 4.
 - **Plan 9's size.** Plan 9 has four stages, under the split threshold, so the review loop stays
   in `PLAN-feat-planner-09-chat.md` and there is no separate review-loop plan.

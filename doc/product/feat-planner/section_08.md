@@ -325,9 +325,9 @@ Each turn ends with a footer under its last item.
 ```text
 41s · 2.8k tokens
 Changed 3 files
-  product/planner-ui/section_02.md +12 −4    Diff
+  product/feat-planner/section_02.md +12 −4    Diff
   plans/PLAN-plan-server.md        +3 −1     Diff
-  product/planner-ui/section_09.md new       Diff
+  product/feat-planner/section_09.md new       Diff
 Rebuilt summaries
   section_02                       3.1k tokens
   Product overview                 6.4k tokens
