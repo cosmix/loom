@@ -124,6 +124,14 @@ it("confirms Stop and posts to the whole-run endpoint", async () => {
   );
 });
 
+it("gives Stop its danger look as separate class tokens", () => {
+  mount();
+  const look = screen.getByRole("button", { name: "Stop" }).closest(".ml-auto");
+  const tokens = [...(look?.classList ?? [])];
+  expect(tokens).toContain("[&_button]:text-(--tone-blocked)");
+  expect(tokens.filter((token) => token.startsWith("[&_button]:hover:bg-"))).toHaveLength(1);
+});
+
 it("sends no request when Stop is declined", () => {
   vi.spyOn(window, "confirm").mockReturnValue(false);
   const fetch = vi.fn<typeof globalThis.fetch>();

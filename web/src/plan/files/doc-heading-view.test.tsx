@@ -98,7 +98,7 @@ describe("FileDocHeading", () => {
     const { container } = mount();
 
     const chip = screen.getByText("Implements", { exact: false }).closest("[data-chip]");
-    expect(chip?.textContent).toBe("Implements: §06, §07 (not found)");
+    expect(chip?.textContent).toBe("Implements §06, §07 (not found)");
     expect(screen.getByRole("link", { name: "§06" }).getAttribute("href")).toBe(
       "/files/product/demo/section_06.md",
     );

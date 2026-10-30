@@ -49,7 +49,8 @@ export function useProposalActions() {
       setPending(false);
     }
   };
-  // DisabledReason takes plain text; isolate the server's detailed reason in ProposalFeedback.
+  // These reasons are fixed strings; the server's own wording (`blockReason`) shows in
+  // ProposalFeedback. DisabledReason isolates whatever reason it is given.
   const reason = !canAuthor
     ? "Proposal actions require authoring"
     : pending
@@ -152,12 +153,12 @@ function ProposalAcceptance({
 }: ProposedTarget & { actions: ProposalActions; onRename: () => void }) {
   return (
     <div className="kickoff-proposal__actions">
-      <DisabledReason reason={actions.reason} onClick={() => actions.confirm(size, name)} size="sm">
+      <DisabledReason reason={actions.reason} onClick={() => actions.confirm(size, name)}>
         <Check aria-hidden="true" />
         Use this
       </DisabledReason>
       <div className="kickoff-ghost">
-        <DisabledReason reason={actions.reason} onClick={onRename} size="sm">
+        <DisabledReason reason={actions.reason} onClick={onRename}>
           <Pencil aria-hidden="true" />
           Rename
         </DisabledReason>
@@ -174,7 +175,6 @@ function ProposalAlternatives({ size, actions }: { size: KickoffSize; actions: P
         <DisabledReason
           reason={actions.reason}
           onClick={() => actions.message("I want to change the proposed sections.")}
-          size="sm"
         >
           <ListPlus aria-hidden="true" />
           Change sections
@@ -187,7 +187,6 @@ function ProposalAlternatives({ size, actions }: { size: KickoffSize; actions: P
             feature ? "Make this a standalone plan instead." : "Make this a feature instead.",
           )
         }
-        size="sm"
       >
         <Wrench aria-hidden="true" />
         {feature ? "Make it standalone" : "Make it a feature"}
@@ -212,14 +211,10 @@ function RenameForm({ name, reason, onConfirm, onCancel }: RenameFormProps) {
     >
       <RenameField value={value} onChange={setValue} disabled={reason !== null} valid={valid} />
       <div className="flex flex-wrap gap-2">
-        <DisabledReason
-          reason={reason ?? (valid ? null : "Choose a valid name")}
-          onClick={confirm}
-          size="sm"
-        >
+        <DisabledReason reason={reason ?? (valid ? null : "Choose a valid name")} onClick={confirm}>
           Confirm
         </DisabledReason>
-        <DisabledReason reason={reason} onClick={onCancel} size="sm">
+        <DisabledReason reason={reason} onClick={onCancel}>
           Cancel
         </DisabledReason>
       </div>

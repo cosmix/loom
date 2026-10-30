@@ -104,12 +104,12 @@ function RoundNode({
   return (
     <section
       aria-label={title}
-      className="grid h-full min-w-0 content-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5"
+      className="grid h-full min-w-0 content-start gap-2 rounded-[12px] border border-border bg-card px-3 py-2.5"
     >
       <div className="flex items-center gap-2">
         <span
           aria-hidden="true"
-          className="inline-flex size-[26px] shrink-0 items-center justify-center rounded-lg bg-[color-mix(in_oklch,var(--tile)_16%,transparent)] text-[13px] text-(--tile) dark:bg-[color-mix(in_oklch,var(--tile)_20%,transparent)]"
+          className="inline-flex size-[26px] shrink-0 items-center justify-center rounded-[8px] bg-[color-mix(in_oklch,var(--tile)_16%,transparent)] text-[13px] text-(--tile) dark:bg-[color-mix(in_oklch,var(--tile)_20%,transparent)]"
           style={{ "--tile": `var(${tile})` } as CSSProperties}
         >
           <ActivityGlyph kind={kind} paused className="size-[15px]" />

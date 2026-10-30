@@ -142,7 +142,7 @@ function Unlisted({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   const heading = scopeOfKey(pageKey) === "engineering" ? "Unlisted plans" : "Unlisted sections";
   return (
     <section aria-label={heading} className="pt-8">
-      <h2 className="eyebrow pb-2">{heading}</h2>
+      <h2 className="plan-eyebrow pb-2">{heading}</h2>
       <ul className="flex flex-col gap-1 text-[13px]">
         {page.unlisted.map((doc) => (
           <li key={doc.id}>
@@ -263,7 +263,7 @@ function LoadedPage({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
       {summary ? (
         <PageHeading page={page} />
       ) : (
-        <p className="eyebrow pb-3">{eyebrow !== null && <Untrusted text={eyebrow} />}</p>
+        <p className="plan-eyebrow pb-3">{eyebrow !== null && <Untrusted text={eyebrow} />}</p>
       )}
       {page.key_chips.length > 0 && <DocumentKey page={page} pageKey={pageKey} />}
       {page.empty ? (
