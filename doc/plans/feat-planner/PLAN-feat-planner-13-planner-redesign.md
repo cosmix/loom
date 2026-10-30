@@ -42,7 +42,11 @@ No knowledge-bootstrap: the tier-1 files describe this codebase and `doc/loom/kn
 
 ### 1. session-and-wire
 
-Exists by Q1: the shell needs the six-step wire, `plan_rows` and short labels merged. It carries auto mode and the `PermissionDenied` notice, the owner watch, test isolation, slug names, removal of step 6, the labels, and the spec rewrite. Risk walk:
+Exists by Q1: the shell needs the six-step wire, `plan_rows` and short labels merged. It carries auto mode and the `PermissionDenied` notice, the owner watch, test isolation, slug names, removal of step 6, the labels, and the spec rewrite.
+
+Lanes, by the operator's instruction: all Rust implementation runs on `gpt-6.1-sol` at effort `high` through `loom-codex-forwarder`, in 24 single-file units across four waves (`session-and-wire.md`, Lanes and units). Claude runs the web consumers (W5), the spec (W6), every fix, every check and every review, and loom's contract session writes the contract tests. This is the only stage with backend work. If codex is unavailable at run time the stage blocks and asks; it does not reroute to Claude.
+
+Risk walk:
 
 - Configuration propagation: `authoring-launches-in-auto`, `summary-stays-manual`.
 - Lifecycle: `owner-watch-tears-down-after-grace`, `owner-return-keeps-session`, `holder-read-takes-no-lock`.
@@ -153,17 +157,18 @@ loom:
       - plan_session::owner_watch::read_holder_pid(path: &Path) -> Option<u32> reads the lock file's JSON pid without taking the flock (plan_session never imports plan_server, so it does not reuse lock.rs); plan_server::lock::acquire(path) writes that file.
       - In-crate: loom/src/plan_server/context_contract_tests.rs (test path plan_server::context_contract_tests::<fn>) calls PlanContext::new(root, ReadOnly::from_problems(Vec::new()), BindInfo::new(addr, "test"), OwnWrites::default()), as summaries/rebuilds/panel/tests.rs:13-25 does, with LOOM_HOME unset and asserts the context's runtime dir is not under the real home's .loom.
       - Wire: loom::plan_server::wire::checklist::{ChecklistView, ProjectChecklistView}, as tests/plan_feature_card_contracts.rs builds them. ChecklistView loses title and gains metaplans: Vec<MetaplanRowView { path, title }> and plan_rows: Vec<PlanRowView { slug, path, title, state, pressure_date: Option<String>, listed }>. steps has six entries, the last named Run, number 6. primary is None for a finished feature.
-      WORKERS. First wave, in one message: W2, W3, W4, W6. Second wave, after the first harvest, in one message: W1, W5.
+      LANES (operator's instruction): ALL backend implementation runs on gpt-6.1-sol at effort high through loom-codex-forwarder. Fixes and verification do not. W1 to W4 are the backend, cut into the 24 file-sized units of the "Lanes and units" table in session-and-wire.md. Spawn each unit as a loom-codex-forwarder in the FOREGROUND with --model gpt-6.1-sol --effort high, a stable --unit-id, an explicit Bash timeout of 600000 ms, forwarded from the worktree root, never from loom/, at most six at once over disjoint files. Do not let the signal reroute this work: if the codex lane is unavailable, file loom stage block session-and-wire naming what is missing. Do not change the model or effort, and do not move a unit to Claude because it looks hard.
+      A unit that timed out is re-split against its partial result and forwarded again, never unchanged. A unit that came back wrong, a failing test, a failed gate or a review finding goes to a fresh loom-software-engineer (sonnet) with the evidence, then a loom-senior-software-engineer (opus) if that attempt fails, and never back to codex. Contract tests come from loom's contract session, never from a codex unit. You run the compile checks after each wave, regenerate wire fixtures by running the tests that write them, and own the gate and reviews.
+      WAVES: 1 (A1-A6) with W6 beside it; 2 (B1-B6); 3 (C1-C6); 4 (D1-D6); then W5. After each wave run git status --short and confirm every unit's files changed. Each unit's own proof is cargo check; it runs no fixture-backed test, no git, and writes nothing under .loom/.
       | Worker | Role | Tier | Files owned | Shared context | Brief path |
       | ------ | ---- | ---- | ----------- | -------------- | ---------- |
-      | W1 | Auto mode, ask rules, PermissionDenied notice, wiring the owner watch | sonnet | loom/src/plan_session/launch/script.rs; loom/src/plan_session/launch_tests.rs; loom/src/plan_session/sandbox/permissions.rs; loom/src/plan_session/sandbox/assert.rs; loom/src/plan_session/sandbox/tests.rs; loom/src/plan_session/sandbox/tests_kinds_fixture.rs; loom/src/plan_session/sandbox/tests_assert.rs; loom/src/plan_session/spool.rs; loom/src/plan_session/spool_tests.rs; loom/src/plan_session/hook_cli.rs; loom/src/plan_session/bridge/driver.rs; loom/tests/plan_session_bridge_core_contracts/support.rs; loom/tests/plan_session_sandbox_contracts.rs | common.md | doc/plans/feat-planner/briefs/feat-planner-13-planner-redesign/session-and-wire.md |
-      | W2 | Owner watch and lock read | opus/xhigh | loom/src/plan_session/owner_watch.rs; loom/src/plan_session/mod.rs | common.md | doc/plans/feat-planner/briefs/feat-planner-13-planner-redesign/session-and-wire.md |
-      | W3 | Test isolation and fixture teardown | sonnet | loom/src/planning/runtime.rs; loom/src/plan_server/chat/mod.rs; loom/src/plan_server/summaries/spawner.rs; loom/tests/plan_session_bridge_e2e.rs; loom/tests/plan_session_bridge_e2e/**; loom/tests/plan_chat_operator.rs | common.md | doc/plans/feat-planner/briefs/feat-planner-13-planner-redesign/session-and-wire.md |
-      | W4 | Wire: no title, six steps, labels, plan rows | sonnet | loom/src/plan_server/wire/**; loom/src/planning/checklist.rs; loom/src/planning/checklist/**; loom/src/planning/guidance/**; loom/src/commands/plan/check.rs; loom/src/plan_server/features.rs; loom/tests/planning_checklist_contracts.rs; loom/tests/plan_feature_card_contracts.rs; loom/tests/planning_guidance_contracts.rs | common.md | doc/plans/feat-planner/briefs/feat-planner-13-planner-redesign/session-and-wire.md |
+      | W1 | Auto mode, ask rules, PermissionDenied notice, wiring the owner watch | codex sol/high | loom/src/plan_session/launch/script.rs; loom/src/plan_session/launch_tests.rs; loom/src/plan_session/sandbox/permissions.rs; loom/src/plan_session/sandbox/mod.rs; loom/src/plan_session/sandbox/assert.rs; loom/src/plan_session/sandbox/tests.rs; loom/src/plan_session/sandbox/tests_kinds_fixture.rs; loom/src/plan_session/sandbox/tests_assert.rs; loom/src/plan_session/spool.rs; loom/src/plan_session/spool_tests.rs; loom/src/plan_session/hook_cli.rs; loom/src/plan_session/bridge/driver.rs; loom/src/plan_session/bridge/denied.rs; loom/src/plan_session/bridge/mod.rs; loom/tests/plan_session_bridge_core_contracts/support.rs; loom/tests/plan_session_sandbox_contracts.rs | common.md | doc/plans/feat-planner/briefs/feat-planner-13-planner-redesign/session-and-wire.md |
+      | W2 | Owner watch and lock read | codex sol/high | loom/src/plan_session/owner_watch.rs; loom/src/plan_session/mod.rs | common.md | doc/plans/feat-planner/briefs/feat-planner-13-planner-redesign/session-and-wire.md |
+      | W3 | Test isolation and fixture teardown | codex sol/high | loom/src/planning/runtime.rs; loom/src/plan_server/chat/mod.rs; loom/src/plan_server/summaries/spawner.rs; loom/tests/plan_session_bridge_e2e.rs; loom/tests/plan_session_bridge_e2e/**; loom/tests/plan_chat_operator.rs; loom/tests/plan_handoff_operator/common.rs | common.md | doc/plans/feat-planner/briefs/feat-planner-13-planner-redesign/session-and-wire.md |
+      | W4 | Wire: no title, six steps, labels, plan rows | codex sol/high | loom/src/plan_server/wire/**; loom/src/planning/checklist.rs; loom/src/planning/checklist/**; loom/src/planning/guidance/**; loom/src/commands/plan/check.rs; loom/src/commands/plan/check/tests.rs; loom/src/plan_server/features.rs; loom/tests/planning_checklist_contracts.rs; loom/tests/plan_feature_card_contracts.rs; loom/tests/planning_guidance_contracts.rs | common.md | doc/plans/feat-planner/briefs/feat-planner-13-planner-redesign/session-and-wire.md |
       | W5 | Web consumers of the wire | sonnet | web/src/plan/** | W4 field list | doc/plans/feat-planner/briefs/feat-planner-13-planner-redesign/session-and-wire.md |
       | W6 | Spec and metaplan | sonnet | doc/product/feat-planner/**; doc/plans/feat-planner/index.md | common.md | doc/plans/feat-planner/briefs/feat-planner-13-planner-redesign/session-and-wire.md |
-      Spawn W2 as loom-senior-software-engineer with effort xhigh, the rest as loom-software-engineer. Each prompt says: Your brief: <path>. Read it and common.md in full before anything else, then your "<worker>" section.
-      W1 wires the owner watch (the launch line and the OwnerWatch hook arm) per W2's section; it owns those two files.
+      Spawn W5 and W6 as loom-software-engineer. Each prompt says: Your brief: <path>. Read it and common.md in full before anything else, then your "<worker>" section.
       AFTER THE WORKERS: cargo fmt --all; in ../web node_modules/.bin/oxfmt. The gate is one loom check session-and-wire, beside the final loom-code-reviewer round. After the commit, file one dispute-integrity naming each file whose guards the wire change removed.
       LEDGER: no file this stage edits may cross 400 lines; a function over 50 lines is split.
       Use parallel subagents and skills to maximize performance.
@@ -191,6 +196,8 @@ loom:
     - loom/src/plan_server/**
     - loom/src/planning/**
     - loom/src/commands/plan/check.rs
+    - loom/src/commands/plan/check/tests.rs
+    - loom/tests/plan_handoff_operator/common.rs
     - loom/tests/plan_redesign_contracts.rs
     - loom/tests/plan_feature_card_contracts.rs
     - loom/tests/planning_checklist_contracts.rs
@@ -228,9 +235,11 @@ loom:
     - command: test -s src/plan_session/owner_watch.rs
       description: the owner watch exists
     context_ceiling_tokens: null
+    subagent_timeout_secs: 900
     sandbox: {}
     ultracode: false
     implementers:
+    - codex
     - claude
     skills:
     - loom-rust

@@ -22,6 +22,7 @@ Plan 12 passed every gate because its criteria checked structure, CSS values and
 5. **Step 6, Review, is removed from the model.** It records nothing and has no state: it is the user reading, and reading is what the screen is now for.
 6. **Chat stays docked on the right, knows what the user is viewing, and is visually redesigned.**
 7. **Every visual worker invokes `frontend-design:frontend-design` before writing code.** This is the operator's instruction.
+8. **All backend implementation runs on `gpt-6.1-sol` at effort `high`, through `loom-codex-forwarder`.** Fixes and verification stay on Claude. This is the operator's instruction. All Rust implementation is in `session-and-wire` (`session-and-wire.md`, Lanes and units); the later stages own no Rust file, and a backend fix in integration-verify goes to Claude.
 
 ## Decisions settled for this plan
 

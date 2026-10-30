@@ -2,7 +2,69 @@
 
 Read `common.md` first. Paths are repository-relative. Line numbers were read at commit 56a71845; find the symbol if they moved.
 
-## W1: auto mode and blocked actions (sonnet)
+## Lanes and units
+
+**Operator's instruction: all backend implementation in this plan runs on `gpt-6.1-sol` at effort `high`, through `loom-codex-forwarder`. Fixes and verification do not.** W1 to W4 are the backend. W5 (web) and W6 (docs) stay on Claude.
+
+| Work | Who |
+| --- | --- |
+| Every unit below | `loom-codex-forwarder`, `--model gpt-6.1-sol --effort high`, a stable `--unit-id`, foreground, explicit Bash timeout 600000 ms, forwarded from the worktree root and never from `loom/` |
+| A unit that timed out (exit 124) | The same lane, re-split against its partial result, because it is still implementation. Never re-forwarded unchanged |
+| A unit that came back wrong, a failing test, a failed gate, a review finding | Claude: a fresh `loom-software-engineer` (sonnet) with the evidence, then `loom-senior-software-engineer` (opus) if that attempt fails. Never back to codex |
+| Contract tests | Loom's contract session |
+| Compile checks after a wave, fixture regeneration by running the tests that write them, the gate, reviews | The main agent and `loom-code-reviewer` |
+
+If the codex lane is unavailable when the stage runs, do not let the signal reroute this work to Claude. File `loom stage block session-and-wire` naming what is missing.
+
+**Unit rules.**
+
+- A unit is at most one file and its test, or the small pair named below, with at most three steps. Cut the brief from the sections below, anchored by symbol names, and paste each shared signature verbatim: the navigation kit answers from the base layer and cannot see an earlier unit's edit, so name the file and say what changed.
+- Each unit's own proof is `cargo check --manifest-path loom/Cargo.toml --lib` (`--tests` for a test-only unit), and it reports only errors in its own files. Errors elsewhere are expected until the wave that fixes them. It runs no fixture-backed test.
+- The unit's text says: no git, no writes under `.loom/`, no apostrophe, and it must not use the word "complete" or the phrase `loom stage`, or the forward is blocked.
+- It names the target file's line count and the 400-line and 50-line limits with a 10% margin, because `cargo fmt` can push a file over.
+
+After each wave:
+
+1. Run `git status --short` and confirm every unit's files changed (`mistakes/plan-server-delivery.md`, "A Codex Forward Reported Success and Wrote No Files").
+2. Check each worker section's proof only once its last unit is in. A "One check" line in a section below is the main agent's command, run after that point.
+
+| Wave | Unit | Worker | Files | What |
+| --- | --- | --- | --- | --- |
+| 1 | A1 | W2 | `loom/src/plan_session/owner_watch.rs`, `loom/src/plan_session/mod.rs` | The watch, its trait, `read_holder_pid`, and its `pub mod` line |
+| 1 | A2 | W1 | `loom/src/plan_session/sandbox/permissions.rs`, `loom/src/plan_session/sandbox/mod.rs` | `permission_mode`, `defaultMode`, the ask rules, the re-export |
+| 1 | A3 | W4 | `loom/src/planning/checklist.rs`, `loom/src/planning/checklist/items.rs` | Delete `Step::Review` |
+| 1 | A4 | W4 | `loom/src/planning/checklist/offers.rs` | The labels, and no primary when finished |
+| 1 | A5 | W3 | `loom/src/planning/runtime.rs` | The `cfg(test)` home |
+| 1 | A6 | W4 | `loom/src/plan_server/wire/checklist.rs`, `loom/src/plan_server/wire/checklist_rows.rs` | Drop `title`, add the row types, the step-name match |
+| 2 | B1 | W1 | `loom/src/plan_session/launch/script.rs`, `loom/src/plan_session/launch_tests.rs` | The mode flag and the watch line |
+| 2 | B2 | W1 | `loom/src/plan_session/sandbox/assert.rs`, `loom/src/plan_session/sandbox/tests_assert.rs` | The invariant by kind |
+| 2 | B3 | W1 | `loom/src/plan_session/spool.rs`, `loom/src/plan_session/spool_tests.rs` | `PermissionDenied` in `SPOOL_EVENTS` |
+| 2 | B4 | W1 | `loom/src/plan_session/hook_cli.rs` | The `PermissionDenied` and `OwnerWatch` arms |
+| 2 | B5 | W1 | `loom/src/plan_session/bridge/driver.rs`, `loom/src/plan_session/bridge/denied.rs`, `loom/src/plan_session/bridge/mod.rs` | The notice |
+| 2 | B6 | W4 | `loom/src/plan_server/wire/checklist_card.rs`, `loom/src/plan_server/wire/checklist_rows.rs` | No title, six-step facts, filling the rows |
+| 3 | C1 | W3 | `loom/src/plan_server/chat/mod.rs`, `loom/src/plan_server/summaries/spawner.rs` | No real claude under `cfg(test)` |
+| 3 | C2 | W4 | `loom/src/commands/plan/check.rs`, `loom/src/commands/plan/check/tests.rs` | Six steps |
+| 3 | C3 | W4 | `loom/src/plan_server/wire/checklist_tests.rs`, `loom/src/plan_server/features.rs` | Expectations |
+| 3 | C4 | W4 | `loom/src/planning/checklist/tests.rs`, `loom/src/planning/checklist/scope_tests.rs` | Expectations (`c.steps[6]` becomes `[5]`) |
+| 3 | C5 | W4 | `loom/src/planning/checklist/offers_tests.rs`, `loom/src/planning/checklist/order_tests.rs` | Expectations |
+| 3 | C6 | W4 | `loom/src/planning/guidance/opening.rs`, `loom/src/planning/guidance/opening/tests.rs`, `loom/src/planning/guidance/opening/tests/names.rs`, `loom/src/planning/guidance/opening/tests/features.rs` | The name and its expectations |
+| 4 | D1 | W4 | `loom/src/planning/guidance/start/tests/labels.rs`, `loom/src/planning/guidance/tests/drafting.rs`, `loom/src/planning/guidance/tests/starting.rs` | Label expectations |
+| 4 | D2 | W1 | `loom/src/plan_session/sandbox/tests.rs`, `loom/src/plan_session/sandbox/tests_kinds_fixture.rs` | Expectations |
+| 4 | D3 | W1 | `loom/tests/plan_session_bridge_core_contracts/support.rs`, `loom/tests/plan_session_sandbox_contracts.rs` | Expectations |
+| 4 | D4 | W4 | `loom/tests/plan_feature_card_contracts.rs`, `loom/tests/planning_checklist_contracts.rs`, `loom/tests/planning_guidance_contracts.rs` | Expectations, and the two deleted title tests |
+| 4 | D5 | W3 | `loom/tests/plan_session_bridge_e2e.rs`, `loom/tests/plan_session_bridge_e2e/operator.rs`, `loom/tests/plan_session_bridge_e2e/diagnose.rs` | The `Drop` guard |
+| 4 | D6 | W3 | `loom/tests/plan_chat_operator.rs`, `loom/tests/plan_handoff_operator/common.rs` | The `Drop` guard |
+
+After wave 4:
+
+1. Run `cargo fmt --all`.
+2. Run the tests that regenerate `loom/src/plan_server/wire/fixtures/*.json`.
+3. Run each section's check.
+4. Spawn W5.
+
+Any other file a unit finds it must change goes to the main agent for a Claude fix, and the unit reports it. W6 runs beside wave 1.
+
+## W1: auto mode and blocked actions (codex sol/high)
 
 Evidence from a real interactive session (Claude Code 2.1.312, Haiku 5.5, `--permission-mode auto --settings <file>`):
 
@@ -34,7 +96,7 @@ The pressure rules in `pressure()` keep their asks; read them and add any comman
 
 **Blocked actions in the chat.** Add `PermissionDenied` to `SPOOL_EVENTS` (`plan_session/spool.rs:22`; its array length changes) and to the arm at `hook_cli.rs:21`, with the same "print nothing" behaviour, so no `retry` is ever requested.
 
-In `bridge/driver.rs:135` add an arm that adds a notice item through `self.notice` (`driver.rs:347`, `NoticeKind` read from `plan_session/model/mod.rs`). The text is `Auto mode blocked <tool_name>: <reason>`. Read both fields as optional JSON strings from the spool payload. A missing or non-string `reason` gives `Auto mode blocked <tool_name>`, and a missing tool gives `Auto mode blocked an action`. Pass both values through the same sanitising path other server notices use.
+In `bridge/driver.rs:135` add an arm that adds a notice item through `self.notice` (`driver.rs:347`, `NoticeKind` read from `plan_session/model/mod.rs`). `driver.rs` holds 389 lines, so the text building lives in a new `bridge/denied.rs` (`pub(super) fn denied_notice(payload: &serde_json::Value) -> String`) with its unit tests, and the arm is two lines. The text is `Auto mode blocked <tool_name>: <reason>`. Read both fields as optional JSON strings from the spool payload. A missing or non-string `reason` gives `Auto mode blocked <tool_name>`, and a missing tool gives `Auto mode blocked an action`. Pass both values through the same sanitising path other server notices use.
 
 Documented payload for the fixture:
 
@@ -44,7 +106,7 @@ Documented payload for the fixture:
 
 **Tests to update:** `launch_tests.rs:121`, `sandbox/tests.rs:133`, `sandbox/tests_kinds_fixture.rs:60`, `sandbox/tests_assert.rs:91`, `hook_cli.rs` tests (`SPOOL` array), `spool_tests.rs:284-299`, `loom/tests/plan_session_bridge_core_contracts/support.rs:155`, `loom/tests/plan_session_sandbox_contracts.rs:175`. Keep each refusal test. One check: `cargo test --lib plan_session::`.
 
-## W2: sessions cannot outlive their server (opus, effort xhigh)
+## W2: sessions cannot outlive their server (codex sol/high)
 
 **What was measured** with a fake `claude` in a scratch home:
 
@@ -87,7 +149,7 @@ The production probe:
 - `teardown` calls the existing bounded `kill-server` path. `session_alive` uses the socket path check `recovery.rs:133` uses.
 - Also tear down when the session record's identity is dead and no owner is alive: the leftover `remain-on-exit` server is the case that survived `killall claude`. `teardown` runs in that case through the same grace timer.
 
-**Wire it.** W1 owns `hook_cli.rs`, `launch/script.rs` and `launch_tests.rs` and makes these edits after W2 returns; W2 owns `owner_watch.rs` and `plan_session/mod.rs`.
+**Wire it.** W1's units B1 and B4 make these edits in wave 2, after A1 in wave 1; A1 owns `owner_watch.rs` and `plan_session/mod.rs`. Paste A1's signatures into B1 and B4.
 
 - `hook_cli.rs::run` gains the arm `"OwnerWatch"`, which runs `owner_watch::run` for the session directory, reading the session record for the socket and runtime paths. It is not in `SPOOL_EVENTS`: Claude never calls it.
 - `launch_script` (`launch/script.rs:43`) writes, before the `exec env -i` line: `<loom_bin> plan hook OwnerWatch <session dir> </dev/null >/dev/null 2>&1 &`, escaped with `shell_escape`. Read `plan_session::sandbox::hook_command` (`sandbox/mod.rs:113`) and reuse its argument order; the watch process is outside Claude's sandbox because the script is.
@@ -98,24 +160,24 @@ The production probe:
 
 One check: `cargo test --lib plan_session::owner_watch`.
 
-## W3: tests stay out of the operator's home and off the real claude (sonnet)
+## W3: tests stay out of the operator's home and off the real claude (codex sol/high)
 
 **The leak.**
 
 - About 24 modules under `loom/src/plan_server/` call `PlanContext::new`, which resolves `server_runtime_paths` (`context.rs:96`) to the real `~/.loom/plan`. Only `chat/tests.rs` calls `with_runtime` (`context.rs:117`).
 - `~/.loom/plan` holds 322 `.tmp*` project directories. Five of them held sessions whose `project_root` is a deleted temp dir.
-- `summaries/routes/tests.rs:44` (`start`) serves a writable context whose installed facade is the real spawner, so a fixture with stale summaries starts a real `claude` that nothing ends. Confirm this path by reading `routes.rs:89`, `summaries/backend.rs` and `chat/mod.rs:109`. If your reading names a different test, fix that one and record the correction with `loom memory`.
+- `summaries/routes/tests.rs:44` (`start`) serves a writable context whose installed facade is the real spawner, so a fixture with stale summaries starts a real `claude` that nothing ends. The main agent confirms this path before cutting A5 and C1, by reading `routes.rs:89`, `summaries/backend.rs` and `chat/mod.rs:109`. If that reading names a different test, the units fix that one and the main agent records the correction with `loom memory`.
 
 **Fix at the shared owner.**
 
 - Under `#[cfg(test)]`, when `LOOM_HOME` is unset, the runtime home resolved in `loom/src/planning/runtime.rs` is a per-process directory under `std::env::temp_dir()`. Tests that set `LOOM_HOME` keep working.
 - Under `#[cfg(test)]`, `chat/mod.rs:109` and `summaries/spawner.rs` do not resolve the real `claude`. A start under `cfg(test)` with no explicit test binary fails with a clear error. `the_real_spawner_starts_no_session_once_the_server_is_stopping` (`routes/tests_installed.rs:50`) must still see its "stopping" error, so the stopping check comes first.
 
-**The e2e fixtures.** `loom/tests/plan_session_bridge_e2e.rs` starts real sessions (three `loom plan: e2e` processes leaked). Give its fixture a `Drop` guard that runs `tmux -L <socket> kill-server` for every socket it started, so a panic or an early return tears them down. Apply the same to `loom/tests/plan_chat_operator.rs` and any other `#[ignore]` operator test that starts a real session (`rg -l 'find_claude_path|which::which\("claude"\)' loom/tests`).
+**The e2e fixtures.** `loom/tests/plan_session_bridge_e2e.rs` starts real sessions (three `loom plan: e2e` processes leaked). Give its fixture a `Drop` guard that runs `tmux -L <socket> kill-server` for every socket it started, so a panic or an early return tears them down. Apply the same to `loom/tests/plan_chat_operator.rs` and `loom/tests/plan_handoff_operator/common.rs`. The main agent runs `rg -l 'find_claude_path|which::which\("claude"\)' loom/tests` before cutting D5 and D6, and adds a unit for any other `#[ignore]` operator test that starts a real session.
 
 One check: `cargo test --lib plan_server::summaries::routes`.
 
-## W4: the wire: slug names, six steps, short labels, plan rows (sonnet)
+## W4: the wire: slug names, six steps, short labels, plan rows (codex sol/high)
 
 **Remove the title.** Delete `ChecklistView.title` (`wire/checklist.rs:51`, the fallback at `:323`, `checklist_card.rs:23`, `document_title`, `strip_title`, the suffix constants). `StandalonePlanView.title` stays.
 
@@ -155,9 +217,9 @@ pub metaplans: Vec<MetaplanRowView>,   // { path: String, title: String }
 pub plan_rows: Vec<PlanRowView>,       // { slug, path, title: String, state: String, pressure_date: Option<String>, listed: bool }
 ```
 
-Filled in `card_facts`, in metaplan order first, then unlisted plans of the feature. `state` uses the same string the file tree sends for plan state. `pressure_date` uses `files/plan_view.rs::latest_pressure_date`, the same function `files/tree.rs:91` calls: do not re-parse. `checklist_card.rs` must stay under 400 lines; put rows in `wire/checklist_rows.rs`.
+Filled from `card_facts`, in metaplan order first, then unlisted plans of the feature. `state` uses the same string the file tree sends for plan state. `pressure_date` uses `files/plan_view.rs::latest_pressure_date`, the same function `files/tree.rs:91` calls: do not re-parse. `wire/checklist.rs` holds 378 lines and `checklist_card.rs` 364, so the row types and the code that fills them live in `wire/checklist_rows.rs`, with `checklist.rs` re-exporting the types. A6 writes the types and B6 the filling.
 
-**Fixtures.** Regenerate `wire/fixtures/*.json` through the Rust tests that write them. Update `loom/tests/plan_feature_card_contracts.rs`: `title_strips_vision_suffix` and `title_falls_back_to_metaplan_heading` have no behaviour left, so delete them. That raises `TI-decl-rust` and `TI-edit`, which the main agent disputes after the commit.
+**Fixtures.** The main agent regenerates `wire/fixtures/*.json` after wave 4, through the Rust tests that write them. Update `loom/tests/plan_feature_card_contracts.rs`: `title_strips_vision_suffix` and `title_falls_back_to_metaplan_heading` have no behaviour left, so delete them. That raises `TI-decl-rust` and `TI-edit`, which the main agent disputes after the commit.
 
 One check: `cargo test --lib plan_server::wire`.
 
