@@ -156,7 +156,7 @@
 | [phantom-merges](mistakes/phantom-merges.md) | Phantoms | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 10 |
-| [plan-server-delivery](mistakes/plan-server-delivery.md) | Planner redesign delivery slips | 358 |
+| [plan-server-delivery](mistakes/plan-server-delivery.md) | Planner redesign delivery slips | 369 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | Renames | 319 |
