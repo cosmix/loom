@@ -244,6 +244,27 @@ pub const KEYS: &[KeySpec] = &[
         help: "Reasoning effort for overviews and summary sessions",
     },
     KeySpec {
+        name: "plan.summary_backend",
+        section: "plan",
+        field: "summary_backend",
+        kind: ValueKind::Enum(super::plan::SUMMARY_BACKENDS),
+        help: "Which agent builds summaries and overviews: Claude Code or Codex",
+    },
+    KeySpec {
+        name: "plan.summary_codex_model",
+        section: "plan",
+        field: "summary_codex_model",
+        kind: ValueKind::Enum(crate::codex::CODEX_MODELS),
+        help: "Codex model for summaries when the backend is codex",
+    },
+    KeySpec {
+        name: "plan.summary_codex_effort",
+        section: "plan",
+        field: "summary_codex_effort",
+        kind: ValueKind::Enum(crate::codex::CODEX_EFFORTS),
+        help: "Codex reasoning effort for summaries when the backend is codex",
+    },
+    KeySpec {
         name: "plan.spec_authoring_model",
         section: "plan",
         field: "spec_authoring_model",

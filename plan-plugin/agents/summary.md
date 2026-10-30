@@ -3,7 +3,7 @@ name: summary
 description: Rebuild the assigned document summaries from their sources and seal their drafts.
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: haiku
-effort: medium
+effort: high
 ---
 
 # Rebuild document summaries
