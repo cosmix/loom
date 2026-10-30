@@ -1,8 +1,10 @@
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import type { PlanView, StageRow as StageRowData } from "@/plan/api/schema-files";
 import { StageGraph } from "@/plan/files/plan/stage-graph";
 import { StageRow } from "@/plan/files/plan/stage-row";
+import { HEADING_BUTTON } from "@/plan/ui/doc-heading";
 
 function scrollToStage(id: string): void {
   document.getElementById(`stage:${id}`)?.scrollIntoView({ block: "nearest" });
@@ -45,19 +47,15 @@ export function StagesPanel({ plan }: { plan: PlanView }) {
   }
   const suffixes = idSuffixes(plan.stages);
   return (
-    <section aria-label="Stages" className="my-4 space-y-3">
+    <section aria-label="Stages" className="my-6 space-y-3">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-[13px] font-medium">Stages</h2>
-        <button
-          type="button"
-          onClick={() => setShowYaml((value) => !value)}
-          className="text-[13px] underline-offset-2 hover:underline"
-        >
+        <h2 className="text-(length:--type-title) font-semibold">Stages</h2>
+        <Button type="button" {...HEADING_BUTTON} onClick={() => setShowYaml((value) => !value)}>
           {showYaml ? "Show stages" : "Show YAML"}
-        </button>
+        </Button>
       </div>
       {showYaml ? (
-        <pre className="overflow-x-auto rounded-md border border-(--hairline) p-3 font-mono text-xs">
+        <pre className="overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs">
           <code>{plan.yaml}</code>
         </pre>
       ) : (

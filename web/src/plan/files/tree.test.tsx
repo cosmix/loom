@@ -68,6 +68,19 @@ describe("tree", () => {
     expect(within(plan).getByText(/2026-10-17/)).toBeTruthy();
   });
 
+  it("tones the state and error glyphs, never their words", () => {
+    const tree = fixture();
+    tree.plans[0] = { ...tree.plans[0], state: "running", errors: 2 };
+    renderTree(tree);
+    const plan = screen.getByText("File mode").closest("li") as HTMLElement;
+    const state = within(plan).getByText("running");
+    const errors = within(plan).getByText("2 errors");
+    expect(state.className).not.toContain("tone");
+    expect(state.querySelector("svg")?.getAttribute("class")).toContain("tone-executing");
+    expect(errors.className).not.toContain("tone");
+    expect(errors.querySelector("svg")?.getAttribute("class")).toContain("tone-blocked");
+  });
+
   it("filters by title and file name as you type", () => {
     renderTree(fixture());
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "notes.md" } });

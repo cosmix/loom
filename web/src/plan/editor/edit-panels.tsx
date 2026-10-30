@@ -12,8 +12,9 @@ export function GonePanel(props: { what: string; text: string; onDiscard(): void
       <div className="flex gap-2">
         <Button
           type="button"
-          variant="outline"
           size="sm"
+          data-look="secondary"
+          className="plan-button"
           onClick={() => void navigator.clipboard?.writeText(props.text)}
         >
           Copy
@@ -97,7 +98,13 @@ export function EditToolbar(props: {
       <DisabledReason reason={props.blockReason} onClick={props.onSave} size="sm">
         Save
       </DisabledReason>
-      <Button type="button" variant="outline" size="sm" onClick={props.onDone}>
+      <Button
+        type="button"
+        size="sm"
+        data-look="secondary"
+        className="plan-button"
+        onClick={props.onDone}
+      >
         Done
       </Button>
       {props.saving && (

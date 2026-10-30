@@ -4,7 +4,7 @@ import { expect, it, vi } from "vitest";
 import brief from "@/plan/api/fixtures/session-brief.json";
 import { EmptyOffer } from "@/plan/concept/empty-offer";
 import { OfferButton } from "@/plan/offers/offer-button";
-import { authoringAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { authoringAtom, checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { BriefDialog, BriefDialogHost } from "./brief-dialog";
 import { sendMessage, startChat } from "./commands";
 import { EndChatMenuItem } from "./end-chat";
@@ -32,7 +32,7 @@ it("offer start", async () => {
       startChat(h.store, offer, undefined, undefined, feature),
     ),
   );
-  h.mount(<EmptyOffer offer={offer.id} />);
+  h.mount(<EmptyOffer offer={offer.id} checklist={h.store.get(checklistAtom)} />);
   fireEvent.click(screen.getByRole("button", { name: offer.label }));
   expect(h.send).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -184,7 +184,7 @@ it("end current chat first", async () => {
     registerAuthoringOffers(({ offer, feature }) => starter.start(offer, feature)),
     starter.dispose,
   );
-  h.mount(<EmptyOffer offer={offer.id} />);
+  h.mount(<EmptyOffer offer={offer.id} checklist={h.store.get(checklistAtom)} />);
   fireEvent.click(screen.getByRole("button", { name: offer.label }));
   expect(window.confirm).toHaveBeenCalledWith(
     "End the current chat first? It will write its open questions into the documents before it stops.",
@@ -330,7 +330,7 @@ it.each(["viewer", "read-only"])("empty offers are text for %s", (mode) => {
           read_only: [{ what: "claude", message: "Missing Claude", fix: "Install Claude" }],
         },
     );
-  h.mount(<EmptyOffer offer={offer.id} />);
+  h.mount(<EmptyOffer offer={offer.id} checklist={h.store.get(checklistAtom)} />);
   expect(screen.getByText(offer.label)).toBeTruthy();
   expect(screen.queryByRole("button")).toBeNull();
 });
@@ -343,7 +343,7 @@ it("empty offers allow taking free authoring", async () => {
       startChat(h.store, offer, undefined, undefined, feature),
     ),
   );
-  h.mount(<EmptyOffer offer={offer.id} />);
+  h.mount(<EmptyOffer offer={offer.id} checklist={h.store.get(checklistAtom)} />);
   fireEvent.click(screen.getByRole("button", { name: offer.label }));
   expect(h.send).toHaveBeenCalledWith(
     expect.objectContaining({ command: "start", offer: offer.id }),

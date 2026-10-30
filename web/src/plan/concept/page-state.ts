@@ -55,13 +55,23 @@ function loadedKeys(store: Store): string[] {
   return [...pageAtoms.keys()].filter((key) => loadedPage(store, key) !== null);
 }
 
-/** The page key of a summary id, read from the page's document links (`doc.id` to `doc.page`). */
-export function pageKeyOfSummary(page: ConceptPage, summary: string): string {
+/**
+ * The page key of a summary id when the page names that document: its key chips and marks are
+ * the server's document links (`doc.id` to `doc.page`), and the server lists only documents that
+ * have a summary page. Null for a citation of a document the page cannot name (a plan that no
+ * longer exists), which has no page to fetch.
+ */
+export function linkedPageKey(page: ConceptPage, summary: string): string | null {
   const links = [
     ...page.key_chips.map((chip) => chip.doc),
     ...pageSentences(page).flatMap((sentence) => sentence.marks.map((mark) => mark.doc)),
   ];
-  return links.find((link) => link.id === summary)?.page ?? summary;
+  return links.find((link) => link.id === summary)?.page ?? null;
+}
+
+/** The page key of a summary id: the linked page, else the id itself. */
+export function pageKeyOfSummary(page: ConceptPage, summary: string): string {
+  return linkedPageKey(page, summary) ?? summary;
 }
 
 /** Resolves an overview's sentence citations against the summary pages loaded in `store`. */

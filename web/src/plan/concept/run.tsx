@@ -18,7 +18,13 @@ import {
 } from "./column-context";
 import { FoldCap } from "./fold-handle";
 import { citedMarks, docColour, pageMark } from "./marks";
-import { conceptPageAtom, isMissing, pageKeyOfSummary, type ConceptPageState } from "./page-state";
+import {
+  conceptPageAtom,
+  isMissing,
+  linkedPageKey,
+  pageKeyOfSummary,
+  type ConceptPageState,
+} from "./page-state";
 import { PassageBlock } from "./passage";
 import { ClosedSentence } from "./sentence";
 import type { OpenRun } from "./types";
@@ -57,8 +63,8 @@ type RunProps = { site: SentenceSite; run: OpenRun; leading?: JSX.Element };
 
 /**
  * An opened level 0 sentence: the cited level 1 sentences, in citation order, in the same
- * paragraph and the same type, on the faint wash. A cited sentence opened to passages breaks
- * the paragraph inside the run.
+ * paragraph and the same type, on the page ground under a hairline edge. A cited sentence opened
+ * to passages breaks the paragraph inside the run.
  */
 function InlineRun({ site, run, leading }: RunProps): JSX.Element {
   const column = useColumn();
@@ -143,19 +149,31 @@ function CitedSentence({ citing, citation, first, leading }: CitedProps): JSX.El
   const column = useColumn();
   const key = pageKeyOfSummary(column.page, citation.summary);
   const state = useAtomValue(conceptPageAtom(key));
+  const linked = linkedPageKey(column.page, citation.summary) !== null;
   const page = column.citedPage(citation.summary);
   const cited = column.lookup(citation.summary, citation.id);
   if (!page || !cited) {
     const title = citing.marks.find((mark) => mark.doc.id === citation.summary)?.doc.title;
-    const notice = page ? (
-      <CitedNotice
-        text={`The ${page.title} summary has been rebuilt since this overview.`}
-        title={page.title}
-        to={pageHref(key)}
-      />
-    ) : (
-      failedNotice(state, title ?? citation.summary, pageHref(key))
-    );
+    const name = title ?? citation.summary;
+    let notice: JSX.Element | null;
+    if (page) {
+      notice = (
+        <CitedNotice
+          text={`The ${page.title} summary has been rebuilt since this overview.`}
+          title={page.title}
+          to={pageHref(key)}
+        />
+      );
+    } else if (!linked) {
+      // The overview cites a document it has no link to: that summary is gone, and none was fetched.
+      notice = (
+        <span className="concept-muted">
+          <Untrusted text={`The ${name} summary no longer exists.`} />
+        </span>
+      );
+    } else {
+      notice = failedNotice(state, name, pageHref(key));
+    }
     return (
       <>
         {leading}
