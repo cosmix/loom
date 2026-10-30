@@ -364,6 +364,8 @@ fn apply_reset(stage: &mut Stage) {
     stage.retire_failure("loom stage reset");
     stage.retire_review_reason("loom stage reset");
     stage.merge_conflict = false;
+    stage.merge.handbacks = 0;
+    stage.merge.handback_refusal = None;
     stage.completed_at = None;
     stage.close_reason = None;
     stage.started_at = None;

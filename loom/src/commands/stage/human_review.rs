@@ -12,9 +12,11 @@ use super::progressive_complete::{
 };
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::handoff::completion::content::VerificationSnapshot;
+use crate::models::session::SessionType;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::adjudication::close_open_disputes;
 use crate::orchestrator::coherence::live_worker_sessions;
+use crate::orchestrator::session_registry::live_sessions_for_stage_of_type;
 use crate::verify::transitions::{load_stage, update_stage};
 
 /// Handle human review response for a stage.
@@ -97,7 +99,7 @@ fn show_review_status(stage_id: &str, stage: &Stage) -> Result<()> {
 /// NeedsHumanReview) never resets the budget, and a failed reset aborts the
 /// transition instead of leaving it approved with a still-spent budget.
 fn handle_approve(stage_id: &str, work_dir: &Path) -> Result<()> {
-    refuse_live_worker(stage_id, work_dir)?;
+    refuse_live_writer(stage_id, work_dir)?;
     // Disputes left open when the stage escalated would shadow the one the
     // fresh session files. Closing here also repairs a crash between an
     // escalation's status write and its own close. Before the transition, so
@@ -109,6 +111,8 @@ fn handle_approve(stage_id: &str, work_dir: &Path) -> Result<()> {
         stage.try_approve_review()?;
         stage.fix_attempts = 0;
         stage.stall_recoveries = 0;
+        // A fresh handback cap; the refusal stays for the session queued here.
+        stage.merge.handbacks = 0;
         super::skip_retry::reset_contract_budget(stage, work_dir)?;
         Ok(())
     })?;
@@ -118,20 +122,35 @@ fn handle_approve(stage_id: &str, work_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Refuse to approve while the stage has a live worker session: the executor
-/// would adopt it, by the same predicate, instead of spawning a fresh session.
-fn refuse_live_worker(stage_id: &str, work_dir: &Path) -> Result<()> {
+/// Refuse to approve while a live session may still write to the stage's
+/// worktree. A worker session would be adopted by the executor, by the same
+/// predicate, instead of a fresh one spawning. A merge resolver whose stop
+/// could not be proven would run beside the fresh session.
+fn refuse_live_writer(stage_id: &str, work_dir: &Path) -> Result<()> {
     let stage = load_stage(stage_id, work_dir)?;
     let live = live_worker_sessions(work_dir, &stage)?;
-    if live.is_empty() {
+    if !live.is_empty() {
+        let ids: Vec<&str> = live.iter().map(|session| session.id.as_str()).collect();
+        bail!(
+            "Stage '{stage_id}' still has live worker session(s) {}; approving would queue the \
+             stage onto that agent instead of a fresh session. Run 'loom stage reset {stage_id} \
+             --kill-session' to take it down (this also resets the stage), or approve once it \
+             has exited.",
+            ids.join(", ")
+        )
+    }
+    let resolvers = live_sessions_for_stage_of_type(work_dir, stage_id, SessionType::Merge)?;
+    if resolvers.is_empty() {
         return Ok(());
     }
-    let ids: Vec<&str> = live.iter().map(|session| session.id.as_str()).collect();
+    let ids: Vec<&str> = resolvers
+        .iter()
+        .map(|session| session.id.as_str())
+        .collect();
     bail!(
-        "Stage '{stage_id}' still has live worker session(s) {}; approving would queue the \
-         stage onto that agent instead of a fresh session. Run 'loom stage reset {stage_id} \
-         --kill-session' to take it down (this also resets the stage), or approve once it \
-         has exited.",
+        "Stage '{stage_id}' still has live merge resolver session(s) {}; approving would start \
+         a fresh session in its worktree. Stop it by hand or run 'loom stage reset {stage_id} \
+         --kill-session' (this also resets the stage), or approve once it has exited.",
         ids.join(", ")
     )
 }

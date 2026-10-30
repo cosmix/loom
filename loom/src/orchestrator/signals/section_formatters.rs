@@ -8,7 +8,11 @@
 //! for the OUTGOING signal, as opposed to `helpers.rs`'s `parse_signal_sections`
 //! and friends, which parse a signal file back in.
 
+use crate::context::untrusted::multiline_safe;
 use crate::models::stage::Stage;
+
+/// Most refusal lines the handback section lists; the rest stay in the stage file.
+const MAX_HANDBACK_LINES: usize = 40;
 
 /// Format the "## Target" markdown section for conflict-type signals.
 ///
@@ -110,6 +114,47 @@ pub(super) fn format_knowledge_target_section(
     content.push('\n');
 
     content
+}
+
+/// The "## Merge Resolver Handback" section for a stage whose resolver's
+/// committed merge failed completion verification, or `None` without one.
+/// Each non-empty line of the refusal is a bullet; the text came from command
+/// output, so it is neutralised with `multiline_safe`, which keeps long lines
+/// whole. The `- ` prefix stops a line that starts with `## ` from forming a
+/// heading. The review sentence appears only for stages the review gate covers.
+pub(super) fn format_merge_handback_section(stage: &Stage) -> Option<String> {
+    let refusal = stage.merge.handback_refusal.as_deref()?;
+    let mut content = String::from(
+        "\n## Merge Resolver Handback\n\n\
+         The merge of the target branch into this branch is committed, but its content failed \
+         completion verification, so loom stopped the resolver and gave the stage to you. Do \
+         not merge the target again. Fix only the failures listed here, or dispute them. \
+         Record any other problem, including ones in the stage memory, with `loom memory note` \
+         and leave it. Then run `loom stage complete` as usual",
+    );
+    if crate::verify::review::gate::covers(stage) {
+        content.push_str("; it needs a review round that matches the tree");
+    }
+    content.push_str(
+        ". If a listed line names no problem in the tree (a daemon or file error), run `loom stage \
+         complete` again; it verifies from scratch.\n\n",
+    );
+    for line in multiline_safe(refusal)
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .take(MAX_HANDBACK_LINES)
+    {
+        content.push_str(&format!("- {line}\n"));
+    }
+    Some(content)
+}
+
+/// Append the handback section to `content` when the stage has a refusal.
+pub(super) fn append_merge_handback_section(content: &mut String, stage: &Stage) {
+    if let Some(section) = format_merge_handback_section(stage) {
+        super::helpers::ensure_trailing_newline(content);
+        content.push_str(&section);
+    }
 }
 
 #[cfg(test)]

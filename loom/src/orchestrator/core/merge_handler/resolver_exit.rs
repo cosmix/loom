@@ -17,6 +17,18 @@ use super::landing::Landing;
 use super::review_route::awaits_merge;
 
 impl Orchestrator {
+    /// Drop the tracked entry of `stage_id` when it is the resolver
+    /// `session_id`. After a handback the entry may be the fresh stage session.
+    fn forget_tracked_resolver(&mut self, stage_id: &str, session_id: &str) {
+        if self
+            .active_sessions
+            .get(stage_id)
+            .is_some_and(|tracked| tracked.id == session_id)
+        {
+            self.active_sessions.remove(stage_id);
+        }
+    }
+
     pub(in crate::orchestrator::core) fn handle_merge_session_completed(
         &mut self,
         session_id: &str,
@@ -27,7 +39,7 @@ impl Orchestrator {
         if let Err(e) = remove_signal(session_id, &self.config.work_dir) {
             eprintln!("Warning: Failed to remove merge signal: {e}");
         }
-        self.active_sessions.remove(stage_id);
+        self.forget_tracked_resolver(stage_id, session_id);
         self.fold_back_resolver_permissions(stage_id);
 
         let mut stage = self.load_stage(stage_id)?;
@@ -112,9 +124,12 @@ impl Orchestrator {
     }
 
     /// Check the worktree the resolver left, land the merge, and clean up.
-    /// A worktree that is not ready, or a merge that does not land, leaves the
-    /// stage as it is: the spawn loop gives it another counted resolver, or
-    /// routes it to human review once the budget is spent.
+    /// Content that fails completion verification is handed back to a stage
+    /// session ([`Self::hand_merge_back`]) once a merge commit is proved. A
+    /// worktree that is not ready, content that fails with no merge commit, or
+    /// a merge that does not land, leaves the stage as it is: the spawn loop
+    /// gives it another counted resolver, or routes it to human review once
+    /// the budget is spent.
     fn land_resolved_worktree(
         &mut self,
         stage_id: &str,
@@ -127,19 +142,18 @@ impl Orchestrator {
             self.report_unresolved_merge(stage_id, &reason);
             return;
         }
-        let verification = self.load_stage(stage_id).and_then(|stage| {
-            crate::commands::stage::complete::verify_resolved_completion(
-                &stage,
-                &self.config.work_dir,
-            )
-        });
-        if let Err(error) = verification {
-            let reason = format!(
-                "resolver content failed completion verification: {error:#}; fix the failure \
-                 and run `loom stage complete {stage_id}` before landing"
-            );
-            self.route_merge_stage_to_review(stage_id, reason.clone(), None);
-            eprintln!("Stage '{stage_id}': {reason}");
+        let stage = match self.load_stage(stage_id) {
+            Ok(stage) => stage,
+            Err(error) => {
+                self.report_unresolved_merge(stage_id, &format!("{error:#}"));
+                return;
+            }
+        };
+        if let Err(error) = crate::commands::stage::complete::verify_resolved_completion(
+            &stage,
+            &self.config.work_dir,
+        ) {
+            self.settle_failed_exit_verification(&stage, &error);
             return;
         }
         match self.land_stage_merge(stage_id, target) {
@@ -150,6 +164,27 @@ impl Orchestrator {
             Landing::Failed(error) => self.report_unresolved_merge(stage_id, &error),
             // Each of these already told the operator what happened.
             Landing::Held | Landing::Conflict(_) | Landing::Blocked(_) => {}
+        }
+    }
+
+    /// The resolver exited with content that failed verification. With a
+    /// merge commit proved it goes back to a stage session; without one the
+    /// stage stays, so the spawn loop gives it another counted resolver.
+    fn settle_failed_exit_verification(&mut self, stage: &Stage, error: &anyhow::Error) {
+        let stage_id = stage.id.as_str();
+        let refusal = format!("resolver content failed completion verification: {error:#}");
+        if !self.resolver_merge_committed(stage) {
+            self.report_unresolved_merge(stage_id, &refusal);
+            return;
+        }
+        match self.hand_merge_back(stage_id, &refusal) {
+            Ok(note) => {
+                clear_status_line();
+                eprintln!("Stage '{stage_id}': {note}");
+            }
+            Err(why) => {
+                tracing::warn!(stage_id = %stage_id, %why, "Failed verification was not handed back");
+            }
         }
     }
 

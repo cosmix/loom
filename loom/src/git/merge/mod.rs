@@ -32,7 +32,7 @@ pub use in_progress::{
     git_dir_for_repo_path, merge_head_exists, ActiveMergeState, InProgressMerge, MergeLocation,
 };
 pub use inputs::blocked_merge_inputs;
-pub use resolved::check_resolved_worktree;
+pub use resolved::{check_resolved_worktree, has_merge_commit_since};
 pub use status::{build_merge_report, check_merge_state, MergeState, MergeStatusReport};
 pub(crate) use tree::rev_parse;
 pub use tree::{

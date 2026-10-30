@@ -46,6 +46,7 @@ pub(super) const EXPECTED_SECTIONS: &[&str] = &[
     super::generate::DEPENDENCY_FINDINGS_HEADING,
     "Goal-Backward Verification",
     "Adjudicator Feedback (from your prior dispute)",
+    "Merge Resolver Handback",
 ];
 
 /// Required sections that must be present

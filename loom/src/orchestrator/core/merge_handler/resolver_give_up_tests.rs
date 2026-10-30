@@ -1,37 +1,16 @@
 //! A merge resolver giving up its stage's merge: who may, what it stops, and
 //! what reaches the review reason and the ledger.
 
-use std::path::PathBuf;
-
-use super::super::resolver_attempts::{attempts_file, ReservedAttempt};
+use super::super::resolver_attempts::attempts_file;
 use super::super::resolver_spawn::test_fixtures::{
-    orchestrator_with_conflict, repo_with_stage_branches, resolver_for, write_pid_file,
-    write_signal,
+    orchestrator_with_conflict, repo_with_stage_branches, resolver_for, tracked_resolver,
+    write_pid_file,
 };
 use crate::fs::session_files::{load_session_exact, save_session};
 use crate::git::MergeBlock;
-use crate::models::session::{Session, SessionExitReason, SessionStatus};
+use crate::models::session::{SessionExitReason, SessionStatus};
 use crate::models::stage::StageStatus;
-use crate::orchestrator::core::Orchestrator;
 use crate::verify::transitions::{load_stage, update_stage};
-
-/// A running resolver for `stage_id` that `orchestrator` tracks. Its PID
-/// identity proves it gone once killed: the start time never matches.
-fn tracked_resolver(orchestrator: &mut Orchestrator, stage_id: &str) -> (Session, PathBuf) {
-    let work_dir = orchestrator.config.work_dir.clone();
-    let mut resolver = resolver_for(stage_id);
-    resolver.status = SessionStatus::Running;
-    save_session(&resolver, &work_dir).unwrap();
-    write_pid_file(&work_dir, &resolver, Some(u64::MAX));
-    let signal = write_signal(orchestrator, &resolver.id);
-    ReservedAttempt::record(&work_dir, stage_id, 0)
-        .unwrap()
-        .keep();
-    orchestrator
-        .active_sessions
-        .insert(stage_id.to_string(), resolver.clone());
-    (resolver, signal)
-}
 
 #[test]
 fn a_resolver_that_gives_up_is_stopped_and_its_reason_reaches_the_review() {

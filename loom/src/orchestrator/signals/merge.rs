@@ -227,7 +227,9 @@ fn format_merge_task(stage: &Stage, target_branch: &str, has_protected_paths: bo
          4. Finish the merge: {commit_rule} The worktree must end clean with no merge in \
          progress\n\
          5. Run: `loom stage merge {} --resolved`. Loom reruns all completion gates against the \
-         resolved commit and current policy before landing; fix any refusal and retry.\n\n",
+         resolved commit and current policy before landing. A failed gate stops this session and \
+         hands the stage to a stage session, so step 3 must pass before you commit; fix any \
+         other refusal and retry.\n\n",
         stage.id
     )
 }

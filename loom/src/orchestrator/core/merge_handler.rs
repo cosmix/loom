@@ -20,6 +20,7 @@ mod merge_gate;
 pub(super) mod resolver_attempts;
 mod resolver_exit;
 mod resolver_give_up;
+mod resolver_handback;
 mod resolver_spawn;
 mod resolver_stop;
 mod review_route;
