@@ -14,7 +14,8 @@ import { fetchDashboard, runStripAtom, type RunDashboard } from "./use-run";
 type Variant = "full" | "link";
 
 // The server validates the URL; refuse any other scheme here as well before it becomes an href.
-const webUrl = (url: string | undefined) => (url && /^https?:\/\//i.test(url) ? url : null);
+export const webUrl = (url: string | null | undefined) =>
+  url && /^https?:\/\//i.test(url) ? url : null;
 
 export function DashboardButton({ variant = "full" }: { variant?: Variant }): JSX.Element | null {
   const store = useStore();
@@ -68,13 +69,13 @@ export function DashboardButton({ variant = "full" }: { variant?: Variant }): JS
   );
 }
 
-function DashboardLink({ url }: { url: string }) {
+export function DashboardLink({ url }: { url: string }) {
   return (
     <a
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="underline underline-offset-4"
+      className="no-underline underline-offset-4 hover:underline"
     >
       Open dashboard
     </a>

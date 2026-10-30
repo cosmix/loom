@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { Provider } from "jotai";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -40,25 +40,19 @@ it("renders nothing for a done plan the server makes no offer for", () => {
   expect(screen.queryByText("No offer is available")).toBeNull();
 });
 
-it("renders only the follow-up the server offers, and runs its handler", () => {
+// The follow-ups belong to the feature's Run page (feature/run-page.test.tsx), not to a plan's header.
+it("draws no follow-up for a done plan, even when the server offers both", () => {
   const review = offer("refine_spec", "Review demo");
   const handler = vi.fn();
   const unregister = registerOfferAction("refine_spec", handler);
   try {
-    mountDone(review);
+    const { container } = mountDone(review, offer("new_metaplan_round", "Round demo"));
 
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByRole("button", { name: "Compare spec with build" })).toBeNull();
     expect(screen.queryByRole("button", { name: "New metaplan round" })).toBeNull();
-    expect(screen.queryByText("No offer is available")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Compare spec with build" }));
-    expect(handler).toHaveBeenCalledWith(review);
+    expect(handler).not.toHaveBeenCalled();
   } finally {
     unregister();
   }
-});
-
-it("renders both follow-ups when both are offered", () => {
-  mountDone(offer("refine_spec", "Review demo"), offer("new_metaplan_round", "Round demo"));
-
-  expect(screen.getByRole("button", { name: "Compare spec with build" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "New metaplan round" })).toBeTruthy();
 });

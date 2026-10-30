@@ -160,11 +160,12 @@ const withTunnel = () =>
     ),
   );
 
-it("styles the link as a link", async () => {
+it("underlines the link on hover only, as a link in chrome does", async () => {
   withTunnel();
   renderDashboard();
   const link = await screen.findByRole("link", { name: "Open dashboard" });
-  expect(link.classList.contains("underline")).toBe(true);
+  expect(link.classList.contains("hover:underline")).toBe(true);
+  expect(link.classList.contains("no-underline")).toBe(true);
 });
 
 it("keeps the tunnel line out of the wide header form", async () => {
