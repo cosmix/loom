@@ -10,13 +10,13 @@ import { ProgressStrip } from "@/plan/home/progress-strip";
 afterEach(cleanup);
 
 const steps: StepView[] = [
-  { number: 1, name: "Vision", mark: "done" },
-  { number: 2, name: "Product spec", mark: "done" },
-  { number: 3, name: "Metaplan", mark: "gap" },
-  { number: 4, name: "Plans", mark: "active" },
-  { number: 5, name: "Pressure", mark: "optional" },
-  { number: 6, name: "Review", mark: "optional" },
-  { number: 7, name: "Run", mark: "optional" },
+  { number: 1, name: "Vision", mark: "done", count: null, label: "Vision" },
+  { number: 2, name: "Product spec", mark: "done", count: null, label: "Product spec" },
+  { number: 3, name: "Metaplan", mark: "gap", count: null, label: "Metaplan" },
+  { number: 4, name: "Plans", mark: "active", count: null, label: "Plans" },
+  { number: 5, name: "Pressure", mark: "optional", count: null, label: "Pressure" },
+  { number: 6, name: "Review", mark: "optional", count: null, label: "Review" },
+  { number: 7, name: "Run", mark: "optional", count: null, label: "Run" },
 ];
 
 function renderStrip(value: StepView[]) {
@@ -59,7 +59,9 @@ describe("ProgressStrip", () => {
   });
 
   it("escapes control characters in server step names", () => {
-    renderStrip([{ number: 1, name: "Vision\u202E", mark: "done" }]);
+    renderStrip([
+      { number: 1, name: "Vision\u202E", mark: "done", count: null, label: "Vision\u202E" },
+    ]);
 
     expect(screen.getByText("Vision⟨U+202E⟩: done")).toBeTruthy();
   });

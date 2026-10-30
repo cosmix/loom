@@ -16,6 +16,11 @@ const project: ProjectChecklistView = {
     {
       feature: "search",
       pitch: null,
+      title: "Search",
+      has_product: true,
+      sections: [],
+      plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
+      untested: 0,
       current: { kind: "ready" },
       steps: [],
       primary: null,

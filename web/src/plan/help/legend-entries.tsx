@@ -82,7 +82,7 @@ function StepBar({ mark }: { mark: StepView["mark"] }) {
   // The strip sets its glyphs at text-xs; the legend keeps all text at 13px or more.
   return (
     <span className="block w-6 [&_li]:text-[13px]!">
-      <ProgressStrip steps={[{ number: 1, name: "Step", mark }]} />
+      <ProgressStrip steps={[{ number: 1, name: "Step", mark, count: null, label: "Step" }]} />
     </span>
   );
 }

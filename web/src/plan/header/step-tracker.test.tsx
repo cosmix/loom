@@ -11,11 +11,11 @@ const checklist = checklistViewSchema.parse({
   ...checklistFixture.checklists[0]!,
   steps: [
     ...checklistFixture.checklists[0]!.steps,
-    { number: 3, name: "Metaplan", mark: "active" },
-    { number: 4, name: "Plans", mark: "optional" },
-    { number: 5, name: "Plan review", mark: "optional" },
-    { number: 6, name: "Run review", mark: "optional" },
-    { number: 7, name: "Execute", mark: "optional" },
+    { number: 3, name: "Metaplan", mark: "active", count: null, label: "Metaplan" },
+    { number: 4, name: "Plans", mark: "optional", count: null, label: "Plans" },
+    { number: 5, name: "Plan review", mark: "optional", count: null, label: "Plan review" },
+    { number: 6, name: "Run review", mark: "optional", count: null, label: "Run review" },
+    { number: 7, name: "Execute", mark: "optional", count: null, label: "Execute" },
   ],
 });
 

@@ -11,13 +11,24 @@ afterEach(cleanup);
 const checklist = checklistViewSchema.parse({
   feature: "demo",
   pitch: null,
+  title: "Demo",
+  has_product: true,
+  sections: [],
+  plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
+  untested: 0,
   current: { kind: "step", number: 2 },
   steps: [
-    { number: 1, name: "Vision", mark: "done" },
-    { number: 2, name: "Product spec", mark: "gap" },
-    { number: 3, name: "Metaplan", mark: "active" },
-    { number: 4, name: "Plans", mark: "optional" },
-    { number: 7, name: "Server-defined step", mark: "optional" },
+    { number: 1, name: "Vision", mark: "done", count: null, label: "Vision" },
+    { number: 2, name: "Product spec", mark: "gap", count: null, label: "Product spec" },
+    { number: 3, name: "Metaplan", mark: "active", count: null, label: "Metaplan" },
+    { number: 4, name: "Plans", mark: "optional", count: null, label: "Plans" },
+    {
+      number: 7,
+      name: "Server-defined step",
+      mark: "optional",
+      count: null,
+      label: "Server-defined step",
+    },
   ],
   primary: null,
   secondary: [],
@@ -94,7 +105,9 @@ it("renders server step names through Untrusted", () => {
   renderList(
     checklistViewSchema.parse({
       ...checklist,
-      steps: [{ number: 2, name: "Spec\u202Ename", mark: "gap" }],
+      steps: [
+        { number: 2, name: "Spec\u202Ename", mark: "gap", count: null, label: "Spec\u202Ename" },
+      ],
     }),
   );
 

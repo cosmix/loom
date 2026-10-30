@@ -1,4 +1,6 @@
-//! Extract the home-card pitch from a vision's first prose paragraph.
+//! Extract the home-card pitch from a vision or metaplan's first prose paragraph.
+
+use std::path::Path;
 
 use crate::fs::knowledge::splice::atx_heading;
 use crate::planning::kinds::vision_path;
@@ -6,7 +8,15 @@ use crate::planning::project::Project;
 
 pub(super) fn feature_pitch(project: &Project, feature: &str) -> Option<String> {
     let path = vision_path(feature);
-    let doc = project.docs.get(&path)?;
+    if project.docs.contains_key(&path) {
+        return document_pitch(project, &path);
+    }
+    let path = &project.feature(feature)?.metaplans.first()?.0;
+    document_pitch(project, path)
+}
+
+fn document_pitch(project: &Project, path: &Path) -> Option<String> {
+    let doc = project.docs.get(path)?;
     let heading = doc
         .sections
         .headings
@@ -14,7 +24,7 @@ pub(super) fn feature_pitch(project: &Project, feature: &str) -> Option<String> 
         .find(|heading| heading.level == 1)?;
     // Keep the pitch consistent with this snapshot until the watcher refreshes it.
     let body = project
-        .text(&path)?
+        .text(path)?
         .lines()
         .skip(heading.span.start_line)
         .take(heading.span.end_line - heading.span.start_line)
@@ -39,7 +49,11 @@ fn first_paragraph(body: &str) -> Option<String> {
         }
         let heading = atx_heading(line).is_some() || underline(line);
         let next = lines.get(index + 1).copied().unwrap_or_default();
-        if line.is_empty() || heading || non_prose(source, next) {
+        if line.is_empty()
+            || heading
+            || non_prose(source, next)
+            || (paragraph.is_empty() && line.starts_with("Status:"))
+        {
             if !paragraph.is_empty() {
                 break;
             }
@@ -117,6 +131,62 @@ fn non_prose(source: &str, next: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pitch_skips_the_whole_status_paragraph() {
+        let body = concat!(
+            "# Demo\n\nStatus: agreed vision (2026-10-26).\n",
+            "This continuation is also status metadata.\n\nA browser app for plans.\n",
+        );
+
+        assert_eq!(
+            first_paragraph(body).as_deref(),
+            Some("A browser app for plans.")
+        );
+    }
+
+    #[test]
+    fn pitch_uses_the_first_metaplan_without_a_vision() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("doc/plans/tokens/index.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            path,
+            "# Token Optimization Metaplan\n\nThis metaplan orders six plans.\n",
+        )
+        .unwrap();
+        let project = Project::load(temp.path()).unwrap();
+
+        assert_eq!(
+            feature_pitch(&project, "tokens").as_deref(),
+            Some("This metaplan orders six plans.")
+        );
+    }
+
+    #[test]
+    fn pitch_prefers_the_vision_over_a_metaplan() {
+        let temp = tempfile::tempdir().unwrap();
+        for (relative, text) in [
+            (
+                "doc/product/demo/index.md",
+                "# Demo\n\nStatus: agreed vision (2026-10-26).\n\nA browser app for plans.\n",
+            ),
+            (
+                "doc/plans/demo/index.md",
+                "# Demo Metaplan\n\nThis metaplan orders six plans.\n",
+            ),
+        ] {
+            let path = temp.path().join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        }
+        let project = Project::load(temp.path()).unwrap();
+
+        assert_eq!(
+            feature_pitch(&project, "demo").as_deref(),
+            Some("A browser app for plans.")
+        );
+    }
 
     #[test]
     fn pitch_uses_cached_vision_until_refresh() {
