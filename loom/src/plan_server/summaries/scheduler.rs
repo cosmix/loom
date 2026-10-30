@@ -26,6 +26,13 @@ pub trait SessionSpawner: Send + Sync {
     fn start_summary(&self, ids: &[String]) -> anyhow::Result<String>;
     /// End `session`; with `release_claims`, also clear the claims it holds.
     fn stop(&self, session: &str, release_claims: bool);
+    /// True for a session the spawner runs itself, which the session bridge does not list, so
+    /// the liveness tick must not end it.
+    fn runs_outside_bridge(&self, _session: &str) -> bool {
+        false
+    }
+    /// Ends every session the spawner runs outside the bridge, for server shutdown.
+    fn stop_all(&self) {}
 }
 
 /// The open question: the queued summaries waiting for approval.

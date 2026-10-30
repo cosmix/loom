@@ -1,0 +1,209 @@
+/* The "Taking shape" panel: its rows, size control, sections and write footer. */
+
+[data-loom-plan] .kickoff-shape {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .kickoff-shape__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+[data-loom-plan] .kickoff-shape__title svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .kickoff-shape p {
+  margin: 0;
+}
+
+[data-loom-plan] .kickoff-muted {
+  color: var(--muted-foreground);
+}
+
+/* The icon owns column 1 and everything else, the h3 included, sits in column 2. The h3 stays a
+   direct child of the row because the help scene reads `:scope > h3`. */
+[data-loom-plan] .kickoff-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 4px 8px;
+}
+
+[data-loom-plan] .kickoff-row > :not(.kickoff-row__icon) {
+  grid-column: 2;
+  min-width: 0;
+}
+
+[data-loom-plan] .kickoff-row__icon {
+  grid-column: 1;
+  grid-row: 1;
+  display: grid;
+  place-items: center;
+  height: 18px;
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .kickoff-row__icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+[data-loom-plan] .kickoff-row__icon[data-tone="ok"] {
+  color: var(--tone-completed);
+}
+
+[data-loom-plan] .kickoff-row__icon[data-tone="warn"] {
+  color: var(--tone-warning);
+}
+
+[data-loom-plan] .kickoff-row__label {
+  grid-row: 1;
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 18px;
+}
+
+[data-loom-plan] .kickoff-row__list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .kickoff-row__list > li {
+  white-space: pre-wrap;
+}
+
+[data-loom-plan] .kickoff-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 1px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+[data-loom-plan] .kickoff-seg {
+  display: inline-flex;
+  justify-self: start;
+  padding: 2px;
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+  background: var(--card);
+}
+
+[data-loom-plan] .kickoff-seg button {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+[data-loom-plan] .kickoff-seg button[aria-pressed="true"] {
+  background: color-mix(in oklch, var(--primary) 26%, transparent);
+  color: var(--foreground);
+}
+
+[data-loom-plan] .kickoff-seg button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+[data-loom-plan] .kickoff-seg button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+[data-loom-plan] .kickoff-sections {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-loom-plan] .kickoff-sections > li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+}
+
+[data-loom-plan] .kickoff-sections__no {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+[data-loom-plan] .kickoff-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+[data-loom-plan] .kickoff-state svg {
+  width: 12px;
+  height: 12px;
+}
+
+[data-loom-plan] .kickoff-state[data-state="settled"] svg {
+  color: var(--tone-completed);
+}
+
+[data-loom-plan] .kickoff-state[data-state="wording"] {
+  color: var(--ring);
+}
+
+[data-loom-plan] .kickoff-shape__foot {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+[data-loom-plan] .kickoff-notice {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+[data-loom-plan] .kickoff-notice code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+[data-loom-plan] .kickoff-write > div {
+  align-items: stretch;
+}
+
+[data-loom-plan] .kickoff-write button {
+  width: 100%;
+  height: 38px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}

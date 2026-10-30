@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import { checklistViewSchema } from "@/plan/api/schema";
-import { Dock } from "@/plan/dock";
+import { Dock, hasChatPanel } from "@/plan/dock";
 import { readingFaceAtom, readingSizeAtom } from "@/plan/settings/preferences";
 import { PlanShell } from "@/plan/shell";
 import { checklistAtom, connectionAtom, unauthorizedAtom } from "@/plan/state/atoms";
@@ -149,6 +149,16 @@ describe("PlanShell", () => {
       </MemoryRouter>,
     );
     expect(container.innerHTML).toBe("");
+  });
+
+  it("keeps the chat panel off the home screen and the kickoff only", () => {
+    expect(["/", "/new"].map(hasChatPanel)).toEqual([false, false]);
+    expect(["/f/demo", "/f/demo/product", "/files", "/plans/x"].map(hasChatPanel)).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
   });
 
   it("mounts a tooltip inside the shell", () => {

@@ -42,7 +42,10 @@ function ViewTab({
   );
 }
 
-/** Home and registered planning views, as a segmented control in the header. */
+/**
+ * Home and registered planning views, as a segmented control. `view-switch` keeps the dashboard's
+ * touch sizing; `plan-view-switch` (header.css) restyles it for the planner.
+ */
 export function Tabs({ tabs = PLAN_TABS }: { tabs?: PlanTab[] }) {
   const { pathname } = useLocation();
   const featureRoute = useMatch("/f/:feature");
@@ -56,7 +59,7 @@ export function Tabs({ tabs = PLAN_TABS }: { tabs?: PlanTab[] }) {
     (features.length === 1 ? features[0]?.feature : null) ??
     null;
   return (
-    <nav aria-label="Views" className="view-switch">
+    <nav aria-label="Views" className="view-switch plan-view-switch">
       <NavLink to="/" end className={({ isActive }) => cn("view-tab", isActive && "is-active")}>
         <HomeIcon className="size-3.5" aria-hidden="true" />
         <span className="max-sm:sr-only">Home</span>

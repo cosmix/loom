@@ -1,6 +1,8 @@
 //! Summary rebuilds: the scheduler, its facade, the real session spawner, claim attribution and routes.
 
 pub mod attribution;
+mod backend;
+pub mod codex_spawner;
 pub mod rebuilds;
 pub mod routes;
 pub mod scheduler;
@@ -13,6 +15,7 @@ use std::sync::{Arc, Weak};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use self::backend::BackendSpawner;
 use self::rebuilds::Rebuilds;
 use super::concept::ConceptState;
 use super::context::PlanContext;
@@ -40,8 +43,12 @@ impl Drop for PollerStop {
 /// recovery, every summary engine update, the bridge's events, a 5 s tick, the quota poller
 /// and the server's stop. Needs concept mode's `ConceptState` and the chat's `Bridge`, so it
 /// is installed after both.
+///
+/// The facade starts sessions through a `BackendSpawner`, which picks the Claude bridge spawner
+/// or `CodexSummarySpawner` (a Codex job outside the bridge) on each start, by
+/// `plan.summary_backend`.
 pub fn install(ctx: &Arc<PlanContext>) {
-    let rebuilds = Rebuilds::new(ctx);
+    let rebuilds = Rebuilds::with_spawner(ctx, Arc::new(BackendSpawner::new(ctx)));
     ctx.extensions().insert(Arc::clone(&rebuilds));
     let concept = ctx.extensions().get::<ConceptState>();
     let bridge = ctx.extensions().get::<Bridge>();
@@ -146,8 +153,9 @@ fn run_ticks(ctx: &Weak<PlanContext>, rebuilds: &Weak<Rebuilds>) {
     }
 }
 
-/// The first Ctrl-C drops the queue and the question and stops the quota poller; plan 7's
-/// drain ends a running summary session, so this drain returns at once.
+/// The first Ctrl-C drops the queue and the question and stops the quota poller. The bridge
+/// drain ends bridge sessions; this drain also stops the Codex jobs through `stop_all`, which
+/// the bridge does not know.
 fn register_shutdown(ctx: &Arc<PlanContext>, rebuilds: &Arc<Rebuilds>, stop: Arc<AtomicBool>) {
     let (weak, abort_stop) = (Arc::downgrade(rebuilds), Arc::clone(&stop));
     ctx.shutdown().register(ShutdownHook {

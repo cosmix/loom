@@ -14,74 +14,130 @@ const LOGO_PATHS = [
   "M11 7H12",
 ] as const;
 
-const VIEW_MARKS = [82, 91, 100, 109] as const;
-const STEP_POSITIONS = [6, 22, 38, 54, 70, 86, 102] as const;
+const RAIL_X = 4;
+const CELL_W = 16;
+const CURRENT_CELL = 4;
+const DONE_CELLS = 4;
+
+const faint = (fill: string, opacity: number) => ({ fill, opacity });
+const stroked = (stroke: string, strokeWidth: number, opacity = 1) => ({
+  fill: "none",
+  stroke,
+  strokeWidth,
+  strokeLinecap: "round" as const,
+  opacity,
+});
 
 function SwatchHeader({ palette }: { palette: ThemePalette }): ReactElement {
   return (
     <g>
       <rect width={SWATCH_SIZE.width} height="13" style={{ fill: palette.card }} />
+      <path d="M0 13H120" style={stroked(palette.border, 0.5)} />
       <g
-        transform="translate(6 2.5) scale(0.95)"
-        style={{
-          fill: "none",
-          stroke: palette.foreground,
-          strokeWidth: 0.42,
-          strokeLinecap: "round",
-          strokeLinejoin: "miter",
-        }}
+        transform="translate(5 3.6) scale(0.8)"
+        style={{ ...stroked(palette.foreground, 0.5), strokeLinejoin: "miter" }}
       >
         {LOGO_PATHS.map((d) => (
           <path key={d} d={d} />
         ))}
       </g>
+      <path d="M18 4.6H28" style={stroked(palette.mutedForeground, 1.2, 0.6)} />
+      <path d="M18 8.4H34" style={stroked(palette.foreground, 1.8, 0.8)} />
       <rect
-        x="79"
+        x="62"
         y="3"
-        width="35"
+        width="30"
         height="7"
-        rx="3.5"
-        style={{ fill: palette.background, stroke: palette.border, strokeWidth: 0.6 }}
+        rx="2.5"
+        style={{ fill: palette.card, stroke: palette.border, strokeWidth: 0.5 }}
       />
-      <rect x="80" y="4" width="8" height="5" rx="2.5" style={{ fill: palette.border }} />
-      <path d="M88 4V9 M97 4V9 M106 4V9" style={{ stroke: palette.border, strokeWidth: 0.5 }} />
-      {VIEW_MARKS.map((x) => (
-        <rect
-          key={x}
-          x={x}
-          y="5.5"
-          width="3"
-          height="2"
-          rx="0.5"
-          style={{ fill: palette.foreground, opacity: 0.5 }}
-        />
-      ))}
+      <rect x="63.2" y="4.2" width="8" height="4.6" rx="1.6" style={faint(palette.primary, 0.3)} />
+      <path d="M74 6.5H79 M82 6.5H88" style={stroked(palette.mutedForeground, 1.2, 0.6)} />
+      <circle cx="100" cy="6.5" r="2.8" style={faint(palette.foreground, 0.3)} />
+      <circle cx="106.5" cy="6.5" r="2.8" style={faint(palette.foreground, 0.2)} />
     </g>
   );
 }
 
 function SwatchSteps({ palette }: { palette: ThemePalette }): ReactElement {
+  const cells = Array.from({ length: 7 }, (_, index) => RAIL_X + index * CELL_W);
   return (
-    <g data-region="steps">
-      {STEP_POSITIONS.map((x, index) => (
-        <rect
-          key={x}
-          x={x}
-          y="17"
-          width="12"
-          height="6"
-          rx="1.5"
-          style={{
-            fill: index === 3 ? palette.primary : palette.card,
-            stroke: index === 3 ? "none" : palette.border,
-            strokeWidth: 0.5,
-          }}
-        />
-      ))}
-      <path
-        d="M57 25H63"
-        style={{ stroke: palette.primary, strokeWidth: 1, strokeLinecap: "round" }}
+    <>
+      <rect
+        x={RAIL_X}
+        y="17"
+        width={CELL_W * 7}
+        height="9"
+        rx="2"
+        style={{ fill: palette.card, stroke: palette.border, strokeWidth: 0.5 }}
       />
+      <g data-region="steps">
+        {cells.map((x, index) => (
+          <rect
+            key={x}
+            x={x}
+            y="17"
+            width={CELL_W}
+            height="9"
+            style={
+              index === CURRENT_CELL
+                ? { fill: palette.primary, opacity: 0.3 }
+                : { fill: "transparent" }
+            }
+          />
+        ))}
+        {cells.map((x, index) => (
+          <g key={x}>
+            <circle
+              cx={x + 4}
+              cy="21.2"
+              r="1.5"
+              style={
+                index < DONE_CELLS
+                  ? faint(palette.mutedForeground, 0.9)
+                  : { ...stroked(palette.mutedForeground, 0.5, 0.7) }
+              }
+            />
+            <path d={`M${x + 7.5} 20.4h5`} style={stroked(palette.foreground, 1.4, 0.55)} />
+            <path
+              d={`M${x + 3} 23.8h${CELL_W - 6}`}
+              style={stroked(palette.mutedForeground, 0.9, 0.5)}
+            />
+          </g>
+        ))}
+        <path d={`M${cells[CURRENT_CELL]} 25.6h${CELL_W}`} style={stroked(palette.primary, 1.2)} />
+      </g>
+    </>
+  );
+}
+
+function SwatchNextStep({ palette }: { palette: ThemePalette }): ReactElement {
+  return (
+    <g>
+      <rect
+        x="4"
+        y="29"
+        width="76"
+        height="11"
+        rx="2.5"
+        style={{
+          fill: "none",
+          stroke: palette.border,
+          strokeWidth: 0.6,
+          strokeDasharray: "2 1.5",
+        }}
+      />
+      <rect
+        x="6.5"
+        y="31.5"
+        width="6"
+        height="6"
+        rx="1.5"
+        style={faint(palette.foreground, 0.16)}
+      />
+      <path d="M15 33.4H36" style={stroked(palette.foreground, 1.4, 0.75)} />
+      <path d="M15 36.4H46" style={stroked(palette.mutedForeground, 1, 0.55)} />
+      <rect x="66" y="32" width="11" height="5" rx="1.5" style={{ fill: palette.primary }} />
     </g>
   );
 }
@@ -89,31 +145,20 @@ function SwatchSteps({ palette }: { palette: ThemePalette }): ReactElement {
 function SwatchReading({ palette }: { palette: ThemePalette }): ReactElement {
   return (
     <g>
+      <rect x="4" y="44" width="36" height="3.2" rx="1" style={faint(palette.foreground, 0.7)} />
+      <path d="M4 51.5H74" style={stroked(palette.foreground, 1.6, 0.25)} />
+      <path d="M4 56.1H70" style={stroked(palette.foreground, 1.6, 0.25)} />
+      <path d="M4 60.7H46" style={stroked(palette.foreground, 1.6, 0.25)} />
+      <rect x="14" y="54.4" width="34" height="3.4" style={faint(palette.primary, 0.25)} />
+      <path d="M14 53.8V58.4 M48 53.8V58.4" style={stroked(palette.primary, 0.7)} />
+      <rect x="50.4" y="54.9" width="2.2" height="2.2" style={faint(palette.foreground, 0.55)} />
       <rect
-        x="6"
-        y="36"
-        width="60"
-        height="5"
-        rx="1"
-        style={{ fill: palette.foreground, opacity: 0.12 }}
+        x="53.8"
+        y="54.9"
+        width="2.2"
+        height="2.2"
+        style={faint(palette.mutedForeground, 0.7)}
       />
-      <rect
-        x="6"
-        y="45"
-        width="54"
-        height="5"
-        rx="1"
-        style={{ fill: palette.foreground, opacity: 0.12 }}
-      />
-      <rect
-        x="6"
-        y="57"
-        width="29"
-        height="3"
-        rx="1"
-        style={{ fill: palette.foreground, opacity: 0.08 }}
-      />
-      <path d="M6 35V42 M60 44V51" style={{ stroke: palette.foreground, opacity: 0.45 }} />
     </g>
   );
 }
@@ -122,31 +167,25 @@ function SwatchChat({ palette }: { palette: ThemePalette }): ReactElement {
   return (
     <g>
       <rect
-        x="76"
-        y="30"
-        width="39"
-        height="40"
+        x="84"
+        y="29"
+        width="32"
+        height="43"
         rx="3"
         style={{ fill: palette.card, stroke: palette.border, strokeWidth: 0.6 }}
       />
-      <rect x="80" y="35" width="31" height="11" rx="1.5" style={{ fill: palette.background }} />
-      <path d="M80 35V46" style={{ stroke: palette.primary, strokeWidth: 1.5 }} />
-      <path
-        d="M84 39H106 M84 42H101"
-        style={{ stroke: palette.foreground, strokeWidth: 1.5, opacity: 0.25 }}
-      />
+      <rect x="87" y="32" width="26" height="12" rx="1.5" style={{ fill: palette.background }} />
+      <path d="M87 32V44" style={stroked(palette.primary, 1.5)} />
+      <path d="M91 36H108 M91 39.5H103" style={stroked(palette.foreground, 1.4, 0.25)} />
       <rect
-        x="80"
-        y="59"
-        width="31"
-        height="7"
+        x="87"
+        y="63"
+        width="26"
+        height="6"
         rx="1.5"
         style={{ fill: palette.background, stroke: palette.border, strokeWidth: 0.6 }}
       />
-      <path
-        d="M83 62.5H98"
-        style={{ stroke: palette.mutedForeground, strokeWidth: 1, opacity: 0.5 }}
-      />
+      <path d="M90 66H102" style={stroked(palette.mutedForeground, 1, 0.5)} />
     </g>
   );
 }
@@ -167,6 +206,7 @@ export function PlannerThemeSwatch(palette: ThemePalette): ReactElement {
       />
       <SwatchHeader palette={palette} />
       <SwatchSteps palette={palette} />
+      <SwatchNextStep palette={palette} />
       <SwatchReading palette={palette} />
       <SwatchChat palette={palette} />
     </svg>

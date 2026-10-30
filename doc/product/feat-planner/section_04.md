@@ -308,21 +308,30 @@ session that seals nothing for 10 minutes is stopped, its claims are released, a
 summaries it held are shown as failed with the last `seal` error. (My call.)
 
 **Models.** Document summaries (one per product section, one per plan) are built on Haiku at
-medium effort by default. Overviews (product and engineering) are built on Sonnet at high
-effort. Config keys override both, per level: `[plan] document_summary_model` and
-`document_summary_effort` for document summaries, `[plan] overview_model` and `overview_effort`
-for overviews. They resolve with loom's existing precedence (project `.loom/work/config.toml`
+high effort by default. Overviews (product and engineering) and the background summary session
+also default to Haiku at high effort. The user selects the background summary backend with
+`[plan] summary_backend`: `claude` (default) or `codex`. The Claude backend uses the interactive
+session above. The Codex backend runs `codex exec` in the background with the workspace-write
+sandbox rooted at the project, plus write access to the runtime directory
+(`~/.loom/plan/<project-key>/`). It has no tmux attach link; the server console prints the job's
+log path (`<runtime>/codex-logs/<session>.log`), and it records no cost. When the backend is `codex`,
+`[plan] summary_codex_model` (default `gpt-6.1-terra`) and `summary_codex_effort` (default `high`)
+select its model and effort.
+
+For the Claude backend, config keys override the defaults per level:
+`[plan] document_summary_model` and `document_summary_effort` for document summaries,
+`[plan] overview_model` and `overview_effort` for overviews and the background summary session.
+All summary keys resolve with loom's existing precedence (project `.loom/work/config.toml`
 when present, then `~/.loom/config.toml`, then the default;
 `doc/loom/knowledge/conventions/model-and-effort-config.md`). The project tier reads these keys
 from a `[planning]` table of `.loom/work/config.toml`, because `[plan]` there holds the run's
 identity (`source_path`, `plan_id`, `plan_name`, `base_branch`); `~/.loom/config.toml` keeps the
-`[plan]` section. They follow the one
+`[plan]` section. The model and effort keys follow the one
 `[plan] <role>_model` / `<role>_effort` naming scheme section 09 uses for the authoring keys. The
 subagent tool takes no effort parameter, so the server writes the resolved model and effort into
 the `model` and `effort` frontmatter of the `loom-plan:summary` and `loom-plan:overview` agent
 definitions when the session starts (section 09), and each wave runs on its level's model
-without the authoring session choosing one. Summarizing one document is small work for Haiku;
-the overviews join many documents and get the stronger model. Cost is an anti-goal concern.
+without the authoring session choosing one. Cost is an anti-goal concern.
 
 ## Asking before a large rebuild
 

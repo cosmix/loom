@@ -18,8 +18,8 @@ mod exact;
 pub use enumerate::{enumerate_sessions, SessionEnumeration, SessionRecord};
 pub(crate) use exact::validate_session_file_id;
 pub use exact::{
-    load_session_exact, mark_session_terminal_reason, record_session_context_exact,
-    record_session_heartbeat_exact,
+    load_session_exact, load_session_exact_unlocked, mark_session_terminal_reason,
+    record_session_context_exact, record_session_heartbeat_exact,
 };
 
 /// Persist a session to `.loom/work/sessions/{id}.md`.

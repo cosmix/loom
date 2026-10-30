@@ -6,6 +6,7 @@ use std::sync::Arc;
 use super::*;
 use crate::plan_server::context::{BindInfo, PlanContext};
 use crate::plan_server::prereq::ReadOnly;
+use crate::plan_server::summaries::spawner::RealSpawner;
 use crate::planning::summary::evaluate::{evaluate, fixtures};
 use crate::planning::watch::OwnWrites;
 
@@ -30,7 +31,7 @@ fn overview_sizes_use_each_features_own_members() {
     fixtures::put(&fixture.root, fixtures::S2, &extra);
     let ctx = context(&fixture.root);
     let evaluation = evaluate(&ctx.project(), &[]);
-    let rebuilds = Rebuilds::new(&ctx);
+    let rebuilds = Rebuilds::with_spawner(&ctx, Arc::new(RealSpawner::new(&ctx)));
 
     let sizes = rebuilds.source_sizes(&evaluation).unwrap();
     let overviews: BTreeMap<_, _> = sizes

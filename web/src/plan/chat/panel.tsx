@@ -34,11 +34,20 @@ export { chatSheetOpenAtom } from "./sheet-state";
 
 const DESKTOP = "(min-width: 1024px)";
 
+/** The chat socket and attention watcher for routes that mount no ChatPanel, which owns them there. */
+function ChatConnection(): null {
+  const store = useStore();
+  useChatSocket(store);
+  useAttention();
+  return null;
+}
+
 /**
  * Mounts once beside the routed page so offers, Send to author, live review, the announcements
  * and the Brief dialog work at every width, with the panel collapsed or the sheet closed.
+ * `connect` also opens the chat socket and attention watcher, for routes without a ChatPanel.
  */
-export function ChatRegistrations(): JSX.Element {
+export function ChatRegistrations({ connect = false }: { connect?: boolean }): JSX.Element {
   const store = useStore();
   const desktop = useMediaQuery(DESKTOP);
   const sheetOpen = useAtomValue(chatSheetOpenAtom);
@@ -62,6 +71,7 @@ export function ChatRegistrations(): JSX.Element {
     <>
       <ChatAnnouncer inSheet={!desktop && sheetOpen} />
       <BriefDialogHost />
+      {connect && <ChatConnection />}
     </>
   );
 }

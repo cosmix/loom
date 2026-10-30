@@ -531,17 +531,17 @@
         "variants": ["low", "medium", "high", "xhigh", "max"]
       },
       "scopes": ["user", "project"],
-      "default": "medium",
+      "default": "high",
       "user": {
-        "value": "medium",
+        "value": "high",
         "set": false
       },
       "project": {
-        "value": "medium",
+        "value": "high",
         "set": false
       },
       "effective": {
-        "value": "medium",
+        "value": "high",
         "source": "default"
       }
     },
@@ -553,17 +553,17 @@
         "variants": ["haiku", "sonnet", "opus", "fable"]
       },
       "scopes": ["user", "project"],
-      "default": "sonnet",
+      "default": "haiku",
       "user": {
-        "value": "sonnet",
+        "value": "haiku",
         "set": false
       },
       "project": {
-        "value": "sonnet",
+        "value": "haiku",
         "set": false
       },
       "effective": {
-        "value": "sonnet",
+        "value": "haiku",
         "source": "default"
       }
     },
@@ -573,6 +573,72 @@
       "kind": {
         "type": "enum",
         "variants": ["low", "medium", "high", "xhigh", "max"]
+      },
+      "scopes": ["user", "project"],
+      "default": "high",
+      "user": {
+        "value": "high",
+        "set": false
+      },
+      "project": {
+        "value": "high",
+        "set": false
+      },
+      "effective": {
+        "value": "high",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.summary_backend",
+      "help": "Which agent builds summaries and overviews: Claude Code or Codex",
+      "kind": {
+        "type": "enum",
+        "variants": ["claude", "codex"]
+      },
+      "scopes": ["user", "project"],
+      "default": "claude",
+      "user": {
+        "value": "claude",
+        "set": false
+      },
+      "project": {
+        "value": "claude",
+        "set": false
+      },
+      "effective": {
+        "value": "claude",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.summary_codex_model",
+      "help": "Codex model for summaries when the backend is codex",
+      "kind": {
+        "type": "enum",
+        "variants": ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6.1-terra", "gpt-6-luna"]
+      },
+      "scopes": ["user", "project"],
+      "default": "gpt-6.1-terra",
+      "user": {
+        "value": "gpt-6.1-terra",
+        "set": false
+      },
+      "project": {
+        "value": "gpt-6.1-terra",
+        "set": false
+      },
+      "effective": {
+        "value": "gpt-6.1-terra",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.summary_codex_effort",
+      "help": "Codex reasoning effort for summaries when the backend is codex",
+      "kind": {
+        "type": "enum",
+        "variants": ["low", "medium", "high", "xhigh"]
       },
       "scopes": ["user", "project"],
       "default": "high",

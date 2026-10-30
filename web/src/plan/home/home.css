@@ -1,0 +1,140 @@
+.home {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+  max-width: 80rem;
+  margin: 0 auto;
+  padding: 24px clamp(16px, 3vw, 32px) 30px;
+}
+
+.home__head {
+  display: grid;
+  gap: 4px;
+}
+
+.home__eyebrow {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.home__title {
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.invitation {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 18px;
+  min-width: 0;
+  padding: 18px 20px;
+  border: 1px solid color-mix(in oklch, var(--primary) 55%, var(--border));
+  border-radius: 14px;
+  background: radial-gradient(
+    120% 140% at 0% 0%,
+    color-mix(in oklch, var(--primary) 14%, var(--card)) 0%,
+    var(--card) 60%
+  );
+  color: var(--card-foreground);
+  transition:
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.invitation:hover,
+.invitation:focus-within {
+  box-shadow:
+    0 0 0 1px var(--primary),
+    var(--dialog-shadow);
+  transform: translateY(-1px);
+}
+
+.invitation__art {
+  min-width: 0;
+}
+
+.invitation__body {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.invitation__title {
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+.invitation__lead {
+  display: grid;
+  gap: 6px;
+  font-family: var(--font-reading);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.invitation__empty {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.invitation__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.invitation__cta:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* The link covers the whole card, so the card is one target. */
+a.invitation__cta::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+}
+
+.invitation__note {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+@container (max-width: 593px) {
+  .invitation {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .invitation {
+    transition: none;
+  }
+
+  .invitation:hover,
+  .invitation:focus-within {
+    transform: none;
+  }
+}

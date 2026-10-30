@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
+import { vi } from "vitest";
 
 import { initClient } from "@/plan/api/client";
 import authoringFixture from "@/plan/api/fixtures/authoring.json";
@@ -77,6 +78,16 @@ export function planPage(extra: Page): Page {
 export function canAuthor(store: Store): void {
   store.set(serverInfoAtom, serverInfoSchema.parse({ ...serverInfoFixture, read_only: [] }));
   store.set(authoringAtom, authoringViewSchema.parse({ ...authoringFixture, holder: null }));
+}
+
+/** Below this width the header moves Settings and the view tabs into its overflow menu. */
+export function stubWideHeader(): void {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query === "(min-width: 1024px)",
+    media: query,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
 }
 
 export function renderAt(path: string, setup?: (store: Store) => void) {

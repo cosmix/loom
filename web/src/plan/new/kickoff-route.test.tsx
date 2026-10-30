@@ -139,7 +139,7 @@ it("loads the file tree for the document picker on a fresh visit to /new", async
     expect.objectContaining({ method: "GET", credentials: "same-origin" }),
   );
   await waitFor(() => expect(store.get(treeAtom)).toEqual(treeFixture));
-  fireEvent.click(screen.getByRole("button", { name: "Start from a document" }));
+  fireEvent.click(screen.getByRole("button", { name: "Attach notes or a document" }));
 
   const documents = within(screen.getByRole("list", { name: "Documents" }));
   expect(documents.getByRole("button", { name: "Vision" })).toBeTruthy();
@@ -174,8 +174,29 @@ it("shows the real transcript, composer, Taking shape and an unconfirmed proposa
   expect(panel.classList.contains("font-sans")).toBe(true);
   expect(within(panel).getByText("Finding plans takes too long.")).toBeTruthy();
   expect(screen.getByRole("region", { name: "Proposal" })).toBeTruthy();
-  expect(screen.getByText("Nothing is written under doc/ until you say so.")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Write the vision" })).toBeNull();
+  expect(screen.getByText(/^Nothing is written yet\./).textContent).toContain(
+    "'Write the vision' creates the vision with the open questions in it.",
+  );
+  const write = screen.getByRole("button", { name: "Write the vision" });
+  expect(write.getAttribute("aria-disabled")).toBe("true");
+  expect(screen.getByText("Settle the size and name first")).toBeTruthy();
+  expect(screen.getByText("Waiting for you", { selector: ".kickoff-pill" })).toBeTruthy();
+});
+
+it("asks the session to change the size from the segmented control", async () => {
+  const { socket } = mount({ current: session, view: kickoff });
+  const feature = screen.getByRole("button", { name: "Feature" });
+  const plan = screen.getByRole("button", { name: "Standalone plan" });
+  expect(feature.getAttribute("aria-pressed")).toBe("true");
+  expect(plan.getAttribute("aria-pressed")).toBe("false");
+
+  fireEvent.click(feature);
+  expect(socket.send).not.toHaveBeenCalled();
+  fireEvent.click(plan);
+  expect(socket.send).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ command: "send", text: "Make this a standalone plan instead." }),
+  );
+  await act(async () => socket.result());
 });
 
 it("recognizes the tab's kickoff before its shape arrives and consumes live snapshots", () => {
@@ -276,7 +297,7 @@ it.each(["feature", "plan"] as const)("writes the confirmed %s through chat", as
   const { store, socket } = mount({ current: session, view: kickoff });
   act(() => store.set(kickoffAtom, { ...kickoff, target, shape: { ...kickoff.shape, size } }));
   expect(screen.queryByRole("region", { name: "Proposal" })).toBeNull();
-  expect(screen.queryByText("Nothing is written under doc/ until you say so.")).toBeNull();
+  expect(screen.getByText(target)).toBeTruthy();
   const write = screen.getByRole("button", { name: label });
   fireEvent.click(write);
   expect(socket.send).toHaveBeenCalledExactlyOnceWith(
