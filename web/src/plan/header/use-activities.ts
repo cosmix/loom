@@ -23,7 +23,9 @@ type Permission = Extract<Item, { type: "permission" }>;
 export interface ActivitiesInput {
   summaryPanel: Pick<SummaryPanel, "running"> | null;
   runState: Pick<RunStateView, "workspace" | "active_plan"> | null;
-  runStrip: Pick<RunStrip, "daemon_running" | "plan"> | null;
+  runStrip:
+    | (Pick<RunStrip, "daemon_running" | "plan"> & Partial<Pick<RunStrip, "merged" | "total">>)
+    | null;
   pressureRun: PressureRunView | null;
   session: SessionView | null;
   pendingPermissions: readonly Pick<Permission, "tool">[];
@@ -39,8 +41,9 @@ function activity(
   kind: ActivityKind,
   subject: string | null,
   since: number | null,
+  title: string = ACTIVITY_LABELS[kind],
 ): Activity {
-  return { id, kind, title: ACTIVITY_LABELS[kind], subject, since };
+  return { id, kind, title, subject, since };
 }
 
 function compareActivities(a: Activity, b: Activity): number {
@@ -56,7 +59,8 @@ function compareActivities(a: Activity, b: Activity): number {
 function pressureActivities(run: PressureRunView | null): Activity[] {
   if (!run || run.ended !== null) return [];
   const id = `${run.plan}:${run.started_ms}`;
-  const activities = [activity(`pressure:${id}`, "pressure", run.plan, run.started_ms)];
+  const title = `${ACTIVITY_LABELS.pressure} · round ${run.round} of ${run.rounds}`;
+  const activities = [activity(`pressure:${id}`, "pressure", run.plan, run.started_ms, title)];
   // Codex can be running alongside Claude before run.step switches to "codex".
   for (const step of run.steps) {
     if (
@@ -79,7 +83,15 @@ function sessionActivities(
   if (session.state === "permission" || pending.length > 0) {
     const subject = pending.length > 0 ? pending.map((item) => item.tool).join(", ") : session.name;
     const permissionSince = session.state === "permission" ? since : null;
-    return [activity(`permission:${session.id}`, "permission", subject, permissionSince)];
+    return [
+      activity(
+        `permission:${session.id}`,
+        "permission",
+        subject,
+        permissionSince,
+        "Waiting for your answer",
+      ),
+    ];
   }
   if (session.state === "starting") {
     return [activity(`starting:${session.id}`, "starting", session.name, since)];
@@ -107,16 +119,25 @@ export function deriveActivities(input: ActivitiesInput): Activity[] {
         "summaries",
         `${rebuild.done} of ${rebuild.total}`,
         timestamp(rebuild.started_at),
+        `${rebuild.total} ${rebuild.total === 1 ? "summary" : "summaries"} rebuilding`,
       ),
     );
   }
   const running = input.runStrip?.daemon_running ?? input.runState?.workspace === "running";
   if (running) {
-    activities.push(
-      activity("run", "running", input.runStrip?.plan ?? input.runState?.active_plan ?? null, null),
-    );
+    activities.push(activity("run", "running", runSubject(input), null));
   }
   return activities.sort(compareActivities);
+}
+
+/** The plan, with merge progress once the run strip reports a stage count. */
+function runSubject({ runStrip, runState }: ActivitiesInput): string | null {
+  const path = runStrip?.plan ?? runState?.active_plan ?? null;
+  const total = runStrip?.total ?? 0;
+  // The file name keeps the progress visible when the row truncates.
+  const plan = path?.split("/").at(-1) ?? path;
+  if (plan === null || total === 0) return plan;
+  return `${plan} · ${runStrip?.merged ?? 0} of ${total} stages merged`;
 }
 
 export function useActivities(): Activity[] {

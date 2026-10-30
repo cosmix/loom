@@ -5,8 +5,8 @@
     align-items: center;
     justify-content: center;
     flex: none;
-    width: 1em;
-    height: 1em;
+    width: 1.15em;
+    height: 1.15em;
     vertical-align: middle;
   }
 
@@ -36,8 +36,8 @@
 
   .activity-glyph .activity-glyph__pulse {
     position: absolute;
-    inset: 0.1em;
-    border: 1px solid currentColor;
+    inset: -2px;
+    border: 1.5px solid currentColor;
     border-radius: 50%;
     opacity: 0.45;
     pointer-events: none;
@@ -49,7 +49,7 @@
   }
 
   .activity-glyph[data-kind="waiting"] {
-    color: var(--tone-warning);
+    color: var(--tone-completed);
   }
 
   .activity-glyph .activity-glyph__led {
@@ -61,8 +61,43 @@
   }
 
   .activity-glyph[data-kind="permission"] > .activity-glyph__motion {
-    transform-origin: 50% 20%;
+    transform-origin: 50% 10%;
     animation: activity-glyph-permission 2.4s ease-in-out infinite;
+  }
+
+  .activity-tile {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: var(--muted);
+    box-shadow: inset 0 0 0 1px var(--hairline);
+    /* The glyph is 1.15em, so 13px draws it at 15px. */
+    font-size: 13px;
+    color: var(--muted-foreground);
+  }
+
+  .activity-tile > svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .activity-tile[data-tone="executing"] {
+    color: var(--tone-executing);
+  }
+
+  .activity-tile[data-tone="ring"] {
+    color: var(--ring);
+  }
+
+  .activity-tile[data-tone="completed"] {
+    color: var(--tone-completed);
+  }
+
+  .activity-tile[data-tone="warning"] {
+    color: var(--tone-warning);
   }
 
   .activity-glyph[data-paused="true"],
@@ -120,7 +155,7 @@
     opacity: 0.6;
   }
   to {
-    transform: scale(1.6);
+    transform: scale(1.5);
     opacity: 0;
   }
 }
