@@ -49,15 +49,22 @@ function ChatConnection(): null {
  * Mounts once beside the routed page so offers, Send to author, live review, the announcements
  * and the Brief dialog work at every width, with the panel collapsed or the sheet closed.
  * `connect` also opens the chat socket and attention watcher, for routes without a ChatPanel.
+ * `panel` is false where the page mounts no ChatPanel: the `c` key then has no composer to focus.
  */
-export function ChatRegistrations({ connect = false }: { connect?: boolean }): JSX.Element {
+export function ChatRegistrations({
+  connect = false,
+  panel = true,
+}: {
+  connect?: boolean;
+  panel?: boolean;
+}): JSX.Element {
   const store = useStore();
   const desktop = useMediaQuery(DESKTOP);
   const sheetOpen = useAtomValue(chatSheetOpenAtom);
   useReviewLive();
   useSuggestionFeed();
   useQueueRefill();
-  useComposerShortcut();
+  useComposerShortcut(panel);
   useEffect(() => {
     const starter = createOfferStarter(store);
     const unregisterOffers = registerAuthoringOffers(({ offer, feature }) =>
@@ -299,7 +306,7 @@ function ChatSheet() {
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/20" />
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-(--dialog-backdrop)" />
         <Dialog.Content
           className="chat-sheet fixed inset-y-0 right-0 z-50 max-w-2xl outline-none"
           aria-describedby={undefined}

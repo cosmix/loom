@@ -205,5 +205,5 @@ it("sets the popover width, offset and surface from the brief", async () => {
   const dialog = await screen.findByRole("dialog", { name: "In progress" });
   expect(dialog.classList.contains("w-[min(360px,86vw)]")).toBe(true);
   expect(dialog.classList.contains("bg-card")).toBe(true);
-  expect(dialog.style.boxShadow).toContain("var(--dialog-shadow)");
+  expect(dialog.style.boxShadow).toContain("var(--plan-shadow)");
 });

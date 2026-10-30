@@ -29,6 +29,7 @@ const rebuild = {
   done: 1,
   total: 3,
   started_at: startedAt,
+  log_path: null,
 };
 const empty: ActivitiesInput = {
   summaryPanel: null,

@@ -5,8 +5,10 @@ import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import filesDocFixture from "@/plan/api/fixtures/files-doc.json";
+import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
 import { checklistViewSchema } from "@/plan/api/schema";
 import { conceptPageSchema } from "@/plan/api/schema-concept";
+import { storageKey } from "@/plan/chat/storage";
 import { checklistAtom } from "@/plan/state/atoms";
 
 import { conceptPageLabel } from "./concept-route";
@@ -90,11 +92,10 @@ describe("overviews and the document key", () => {
   );
   it("engineering tab renders and keeps runs", async () => {
     serveOverview();
-    renderAt("/f/demo/engineering");
+    renderAt("/f/demo/engineering", canAuthor);
     await openFirstRun();
-    expect(window.sessionStorage.getItem("loom-plan:concept:overview/demo/engineering")).toContain(
-      "s1",
-    );
+    const key = storageKey(serverInfoFixture.project_key, "concept:overview/demo/engineering");
+    expect(window.sessionStorage.getItem(key)).toContain("s1");
     expect(screen.getByText("Engineering overview")).toBeTruthy();
   });
   it("unlisted list links to summary pages", async () => {

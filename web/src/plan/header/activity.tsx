@@ -23,8 +23,8 @@ import "./activity.css";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { mostUrgent, useActivities, type Activity } from "./use-activities";
 
-/** `--dialog-shadow` is defined in index.css for both themes; the second layer adds lift. */
-const POPOVER_SHADOW = "var(--dialog-shadow), 0 18px 50px oklch(0 0 0 / 0.18)";
+/** `--plan-shadow` is defined in plan.css for both themes; the second layer adds lift. */
+const POPOVER_SHADOW = "var(--plan-shadow), 0 18px 50px oklch(0 0 0 / 0.18)";
 
 /** What `useQuestionPopover` returns; a sample pill supplies only the open state. */
 interface PopoverControl {
@@ -157,9 +157,9 @@ function Pill({
 function Footer({ load, reload }: { load: PanelLoad; reload: () => void }): JSX.Element {
   return (
     <div className="activity-foot">
-      <RunStrip variant="row" />
-      <ChangedSinceControl variant="row" />
-      <SummaryStatusRow load={load} reload={reload} announce={false} />
+      <RunStrip />
+      <ChangedSinceControl />
+      <SummaryStatusRow load={load} reload={reload} />
     </div>
   );
 }

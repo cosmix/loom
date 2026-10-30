@@ -4,7 +4,8 @@
     "ids": ["demo/product/section_01", "demo/product/section_02", "overview/demo/product"],
     "done": 1,
     "total": 3,
-    "started_at": "2026-10-29T08:10:00Z"
+    "started_at": "2026-10-29T08:10:00Z",
+    "log_path": null
   },
   "queue": ["demo/product/section_03"],
   "failed": [{ "id": "plans/loom-planner-ui", "error": "no seal in 10 minutes" }],

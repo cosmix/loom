@@ -86,6 +86,9 @@
   --ledger-head-rule: 3px double oklch(0.72 0.06 240);
   /* Dialogs float clear of the page: a deep drop under a tighter contact shadow. */
   --dialog-shadow: 0 32px 80px -20px oklch(0 0 0 / 0.45), 0 12px 28px -12px oklch(0 0 0 / 0.3);
+  /* The scrim behind a sheet, and the contact shadow under a small raised control (a switch knob). */
+  --dialog-backdrop: oklch(0 0 0 / 0.2);
+  --control-shadow: 0 1px 2px oklch(0 0 0 / 0.25);
 }
 
 .dark {

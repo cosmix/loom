@@ -70,6 +70,26 @@ describe("file mode layout", () => {
     },
   );
 
+  it("spells out control characters in the checklist item's text", () => {
+    const store = createStore();
+    const checklist = checklistViewSchema.parse(structuredClone(checklistFixture.checklists[0]));
+    const path = "doc/product/demo/section_03.md";
+    const item = { ...checklist.items[1]!, text: "section 03\u202E", path };
+    store.set(projectAtom, {
+      checklists: [{ ...checklist, items: [item] }],
+      standalone: [],
+      moves: [],
+    });
+
+    renderMode(
+      `/files?gap=Map%20view&feature=demo&target=${encodeURIComponent(path)}`,
+      tree(),
+      store,
+    );
+
+    expect(screen.getByText("section 03⟨U+202E⟩")).toBeTruthy();
+  });
+
   it("shows no checklist item when a link has no target and an item has no path", () => {
     const store = createStore();
     const checklist = checklistViewSchema.parse(structuredClone(checklistFixture.checklists[0]));
