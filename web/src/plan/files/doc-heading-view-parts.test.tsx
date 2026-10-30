@@ -7,7 +7,7 @@ import type { PlanView } from "@/plan/api/schema-files";
 import { openQuestionsAtom } from "@/plan/review/live";
 import { projectAtom } from "@/plan/state/atoms";
 
-import { authorStore, makeDoc, mount, withFeatureTitle } from "./doc-heading-kit";
+import { authorStore, makeDoc, mount, withFeature } from "./doc-heading-kit";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -22,15 +22,15 @@ afterEach(() => {
 });
 
 describe("FileDocHeading chips and crumbs", () => {
-  it("stands the slug's words in for a feature title that has not arrived", () => {
+  it("names the feature by its slug before the checklist arrives", () => {
     mount(makeDoc({ feature: "feat-planner" }));
     const nav = screen.getByRole("navigation", { name: "Breadcrumb" });
 
-    expect(within(nav).getAllByRole("listitem")[0]?.textContent).toBe("Feat Planner");
+    expect(within(nav).getAllByRole("listitem")[0]?.textContent).toBe("feat-planner");
   });
 
   it("reads a section as its number of the feature's total", () => {
-    const store = withFeatureTitle(authorStore(), "demo", "Demo Feature");
+    const store = withFeature(authorStore(), "demo");
     const sections = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"];
     store.set(projectAtom, (project) => ({
       ...project!,
@@ -53,7 +53,7 @@ describe("FileDocHeading chips and crumbs", () => {
       within(nav)
         .getAllByRole("listitem")
         .map((item) => item.textContent),
-    ).toEqual(["Demo Feature", "Product spec", "Section 05 of 12"]);
+    ).toEqual(["demo", "Product spec", "Section 05 of 12"]);
   });
 
   it.each<[PlanView["state"], string, string]>([
@@ -73,8 +73,8 @@ describe("FileDocHeading chips and crumbs", () => {
     mount(makeDoc({ editable: false }, { state: "done" }));
 
     expect(screen.queryByText("No offer is available")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Review what was built" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Start a new metaplan round" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Compare spec with build" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New metaplan round" })).toBeNull();
   });
 
   it("chips a section's open questions as a warning link to them", () => {

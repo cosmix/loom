@@ -72,12 +72,12 @@ it("links the Loom logo to the planner home", () => {
   expect(link.querySelector("svg")).not.toBeNull();
 });
 
-it("shows the route feature's title under the Planning eyebrow", () => {
+it("shows the route feature's slug under the Planning eyebrow", () => {
   show("/f/demo");
 
   expect(screen.getByText("Planning · feature")).toBeTruthy();
   const switcher = screen.getByRole("button", { name: "Switch feature, current: demo" });
-  expect(switcher.textContent).toBe("Demo");
+  expect(switcher.textContent).toBe("demo");
 });
 
 it.each([
@@ -200,7 +200,7 @@ it("removes feature progress when navigating from a feature to Files", () => {
 it("collapses the step rail and uses the overflow control below 1024px", () => {
   show("/f/demo", false);
 
-  expect(screen.getByRole("button", { name: /Step 2 of 2 · Product spec/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Step 2 of 6 · Product spec/ })).toBeTruthy();
   expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
   expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
   expect(screen.getByText(OFFER_LABEL)).toBeTruthy();
@@ -230,7 +230,7 @@ it("shows no chat button where the dock mounts no panel", () => {
 it("puts the collapsed rail and the next-step card in one row", () => {
   const { container } = show("/f/demo", false);
 
-  const trigger = screen.getByRole("button", { name: "Step 2 of 2 · Product spec" });
+  const trigger = screen.getByRole("button", { name: "Step 2 of 6 · Product spec" });
   const row = trigger.parentElement!;
   expect(row.classList.contains("plan-header-rail")).toBe(true);
   expect(row.hasAttribute("data-narrow")).toBe(true);

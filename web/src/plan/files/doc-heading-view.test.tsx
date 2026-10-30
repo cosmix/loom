@@ -15,7 +15,7 @@ import { pressureRunAtom } from "@/plan/chat/pressure/use-pressure";
 import { screenAtom } from "@/plan/chat/session-home";
 import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
 
-import { authorStore, makeDoc, mount, withFeatureTitle } from "./doc-heading-kit";
+import { authorStore, makeDoc, mount, withFeature } from "./doc-heading-kit";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -29,23 +29,19 @@ afterEach(() => {
 });
 
 describe("FileDocHeading", () => {
-  it("renders the feature title, group and plan slug as the breadcrumb, never the feature slug", () => {
-    mount(
-      makeDoc({ feature: "demo & space" }),
-      withFeatureTitle(authorStore(), "demo & space", "Demo Feature"),
-    );
+  it("renders the feature slug, group and plan slug as the breadcrumb", () => {
+    mount(makeDoc({ feature: "demo & space" }), withFeature(authorStore(), "demo & space"));
     const nav = screen.getByRole("navigation", { name: "Breadcrumb" });
 
     expect(
       within(nav)
         .getAllByRole("listitem")
         .map((item) => item.textContent),
-    ).toEqual(["Demo Feature", "Plans", "file-mode"]);
-    const first = within(nav).getByRole("link", { name: "Demo Feature" });
+    ).toEqual(["demo & space", "Plans", "file-mode"]);
+    const first = within(nav).getByRole("link", { name: "demo & space" });
     expect(first.getAttribute("href")).toBe("/f/demo%20%26%20space");
     expect(first.querySelector("svg.lucide-layers")).not.toBeNull();
     expect(within(nav).queryByText("Planner")).toBeNull();
-    expect(within(nav).queryByText("demo & space")).toBeNull();
     const slug = within(nav).getByText("file-mode").closest("[aria-current]");
     expect(slug?.getAttribute("aria-current")).toBe("page");
     expect(slug?.className).toContain("font-mono");

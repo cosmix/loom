@@ -36,8 +36,8 @@ export function setup(path: string, current: SessionView | null, selected = offe
   store.set(connectionAtom, { phase: "open", everOpen: true, lastMessageAt: Date.now() });
   store.set(projectAtom, {
     checklists: [
-      { ...checklist, feature: "alpha", title: "Alpha Feature" },
-      { ...checklist, feature: "beta", title: "Beta" },
+      { ...checklist, feature: "alpha" },
+      { ...checklist, feature: "beta" },
     ],
     standalone: [{ slug: "solo", path: "doc/plans/PLAN-solo.md", state: "written", title: "Solo" }],
     moves: [],

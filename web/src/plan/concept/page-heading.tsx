@@ -34,11 +34,10 @@ const LOCKED_NOTICES: Partial<Record<NonNullable<ConceptPage["plan_state"]>, str
   retired: DONE_NOTICE,
 };
 
-/** Feature title, then the area, then the document: a plan by its slug, a section by its number. */
+/** Feature slug, then the area, then the document: a plan by its slug, a section by its number. */
 function breadcrumb(page: ConceptPage, facts: ReturnType<typeof useFeatureFacts>): HeadingCrumb[] {
   const parts = parsePageKey(page.key);
-  const crumbs: HeadingCrumb[] =
-    page.feature === null || facts.title === null ? [] : [featureCrumb(page.feature, facts.title)];
+  const crumbs: HeadingCrumb[] = page.feature === null ? [] : [featureCrumb(page.feature)];
   if (parts === null || parts.kind === "standalone") {
     return [...crumbs, { label: "Plans" }, { label: parts?.doc ?? page.title, mono: true }];
   }

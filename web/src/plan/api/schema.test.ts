@@ -69,10 +69,27 @@ describe("planning wire schemas", () => {
   it("requires the card fields and nullable step counts on a checklist", () => {
     const view = checklist.checklists[0]!;
     expect(checklistViewSchema.safeParse(view).success).toBe(true);
-    for (const field of ["title", "has_product", "sections", "plans", "untested"] as const) {
+    for (const field of [
+      "has_product",
+      "sections",
+      "metaplans",
+      "plan_rows",
+      "plans",
+      "untested",
+    ] as const) {
       const { [field]: _omitted, ...rest } = view;
       expect(checklistViewSchema.safeParse(rest).success).toBe(false);
     }
+    // The feature is named by its slug: a title on the wire is an unknown key.
+    expect(checklistViewSchema.safeParse({ ...view, title: "Demo" }).success).toBe(false);
+    const row = view.plan_rows[0]!;
+    expect(
+      checklistViewSchema.safeParse({ ...view, plan_rows: [{ ...row, pressure_date: null }] })
+        .success,
+    ).toBe(true);
+    expect(
+      checklistViewSchema.safeParse({ ...view, plan_rows: [{ ...row, extra: true }] }).success,
+    ).toBe(false);
     const [step, ...others] = view.steps;
     const withoutCount = { ...step!, count: undefined };
     expect(

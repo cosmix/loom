@@ -9,7 +9,7 @@ import { runStripAtom } from "@/plan/run/use-run";
 
 import "./step-rail.css";
 
-const EXECUTE_STEP = 7;
+const EXECUTE_STEP = 6;
 
 export function isCurrentStep(current: CurrentView, step: StepView): boolean {
   return current.kind === "step" && current.number === step.number;
@@ -70,7 +70,7 @@ export function StepTracker({
 }) {
   const runStrip = useAtomValue(runStripAtom);
   if (checklist === null) return null;
-  // Step 7 shows the running ring only while a plan is actually executing.
+  // The Run step shows the running ring only while a plan is actually executing.
   const liveNumber = runStrip?.daemon_running ? EXECUTE_STEP : null;
   if (narrow) {
     const currentNumber = checklist.current.kind === "step" ? checklist.current.number : null;

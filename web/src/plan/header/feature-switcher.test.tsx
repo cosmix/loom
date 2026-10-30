@@ -12,12 +12,7 @@ import { activeFeatureAtom, projectAtom, serverInfoAtom } from "@/plan/state/ato
 
 afterEach(cleanup);
 
-/** The switcher lists titles with the slug beside each; this makes them distinct from the slug. */
-function titleOf(feature: string): string {
-  return feature === "demo" ? "Demo" : `Title of ${feature}`;
-}
-
-/** A list link by its target: its accessible name joins the title and the slug. */
+/** A list link by its target. */
 function linkTo(dialog: HTMLElement, href: string): HTMLElement {
   const link = within(dialog)
     .getAllByRole("link")
@@ -41,7 +36,7 @@ function show({
   const checklist = checklistViewSchema.parse(checklistFixture.checklists[0]);
   store.set(activeFeatureAtom, activeFeature);
   store.set(projectAtom, {
-    checklists: features.map((feature) => ({ ...checklist, feature, title: titleOf(feature) })),
+    checklists: features.map((feature) => ({ ...checklist, feature })),
     standalone: [],
     moves: [],
   });
@@ -60,10 +55,10 @@ function show({
   );
 }
 
-it("shows the active feature's title instead of the repository name", () => {
+it("shows the active feature's slug instead of the repository name", () => {
   show();
 
-  expect(screen.getByText("Demo")).toBeTruthy();
+  expect(screen.getByText("demo")).toBeTruthy();
   expect(screen.queryByRole("heading")).toBeNull();
   expect(
     screen
@@ -149,17 +144,16 @@ it("links to encoded feature routes and project navigation", async () => {
   expect(within(dialog).getByRole("separator")).toBeTruthy();
 });
 
-it("lists each feature by title with its slug in mono beside it", async () => {
+it("lists each feature by its slug in mono", async () => {
   show();
 
   fireEvent.click(screen.getByRole("button", { name: "Switch feature, current: demo" }));
 
   const dialog = await screen.findByRole("dialog", { name: "Switch feature" });
   const other = linkTo(dialog, "/f/Feature%20%2F%20one");
-  expect(other.textContent).toBe("Title of Feature / oneFeature / one");
+  expect(other.textContent).toBe("Feature / one");
   const slug = within(other).getByText("Feature / one").parentElement!;
   expect(slug.className).toContain("font-mono");
-  expect(slug.className).toContain("text-muted-foreground");
 });
 
 it.each(["/", "/files"])("marks no feature current on the project route %s", async (pathname) => {

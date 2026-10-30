@@ -268,9 +268,7 @@ export function FileDocHeading({ doc }: { doc: DocView }): JSX.Element {
           setValidationPath((path) => (path === doc.path ? null : doc.path)),
         );
   const breadcrumb: HeadingCrumb[] = [
-    ...(doc.feature === null || facts.title === null
-      ? []
-      : [featureCrumb(doc.feature, facts.title)]),
+    ...(doc.feature === null ? [] : [featureCrumb(doc.feature)]),
     { label: AREAS[doc.kind] ?? "Files" },
     documentCrumb(doc, facts.sections),
   ];

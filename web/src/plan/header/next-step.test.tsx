@@ -76,14 +76,14 @@ describe("NextStepCard", () => {
     expect(screen.getByTitle(detail)).toBeTruthy();
   });
 
-  it("names the feature by its title, not its slug, in feature-wide offers", () => {
+  it("names the feature by its slug in feature-wide offers", () => {
     renderCard({
       ...checklist,
-      title: "Demo Title",
+      feature: "demo-slug",
       primary: { id: "start-run", kind: "start_run", label: "Start the run", target: null },
     });
 
-    expect(screen.getByTitle("The plans for Demo Title are ready to run.")).toBeTruthy();
+    expect(screen.getByTitle("The plans for demo-slug are ready to run.")).toBeTruthy();
   });
 
   it.each([
@@ -92,8 +92,7 @@ describe("NextStepCard", () => {
     [3, "lucide-map"],
     [4, "lucide-list-checks"],
     [5, "lucide-list-checks"],
-    [6, "lucide-file-search"],
-    [7, "lucide-list-checks"],
+    [6, "lucide-list-checks"],
   ] as const)("renders a large DocMark for current step %i", (number, glyphClass) => {
     const { container } = renderCard({
       ...checklist,

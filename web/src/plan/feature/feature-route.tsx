@@ -43,7 +43,7 @@ function StepBody({ checklist, selected }: { checklist: ChecklistView; selected:
     <div className="plan-feature__body">
       <header className="plan-feature__head">
         <p className="plan-eyebrow">
-          <Untrusted text={checklist.title} /> · step {selected} of {STEP_COUNT}
+          <Untrusted text={checklist.feature} /> · step {selected} of {STEP_COUNT}
         </p>
         <h1 className="plan-feature__title">{stepTitle(selected)}</h1>
       </header>
