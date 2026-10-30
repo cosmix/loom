@@ -56,3 +56,12 @@ Design and rules: [Summary Backends](../architecture/summary-store.md#summary-ba
 
 - A full `cargo test --no-fail-fast` in the main checkout ended 13:53:44 and the plan's daemon died at 13:53:05 with no shutdown logged. The cause is unconfirmed: an earlier full run stopped at the `maintainability` binary and the daemon outlived it, so the binaries after it are the lead. Ruled out: the commit, an operator `loom stop`, and `plan_handoff_operator`'s `loom stop`. Do not run the full suite in a checkout with a live daemon until a test reaching the real daemon is traced or excluded.
 - Codex forwarders ran the wrapper from `loom/` because the guard blocks a `cd` prefix; their units still wrote the right files, and the evidence trailers in the tool-result files confirm unit id and state.
+
+## Feature names and permission mode: operator decisions not yet built
+
+- **Feature name.** The operator decided a feature is named by its slug everywhere in the app, browser tab included. The app still shows the vision's H1 (`wire/checklist_card.rs::card_facts`, repair brief `common.md` decision 4). The H1 stays as the document's own heading only.
+- **Permission mode.** The operator wants authoring chats in auto mode. `plan_session/launch/script.rs:29`, `sandbox/assert.rs:28` and `section_12.md:377` still pin `default`. Unproven: whether kickoff's `ask` rules survive auto mode and whether a classifier block reaches the chat.
+
+## Planning sessions can outlive their server
+
+Measured with a fake `claude` under a scratch home: SIGTERM tears the session and its tmux server down within seconds; SIGKILL leaves both running; a new server on the same project resumes the survivor (`bridge/recovery.rs:143`). A project never reopened keeps its session forever, and `remain-on-exit` keeps the tmux server after claude dies. In-crate tests make this common: `PlanContext::new` resolves the real `~/.loom/plan` unless a test calls `with_runtime`, so `cargo test` can start real `claude` sessions on temp fixtures and leaves `.tmp*` directories there. A fake `claude` for such a test must answer `auth status` and sleep only on `--session-id`, or the server's own startup probe reads as the session. `PLAN-feat-planner-13-planner-redesign` holds the fix (owner watch, test isolation).
