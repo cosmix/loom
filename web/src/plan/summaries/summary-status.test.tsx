@@ -19,7 +19,8 @@ import {
   youAtom,
 } from "@/plan/state/atoms";
 
-import { SummaryStatus } from "./summary-status";
+import { panelLoadAtom, type PanelLoad } from "./state";
+import { SummaryStatus, SummaryStatusRow } from "./summary-status";
 
 type Message = Record<string, unknown>;
 type Handler = (message: Message) => void;
@@ -53,7 +54,7 @@ function fakeSocket(): ReturnType<typeof connectPlanSocket> {
   >;
 }
 
-function show(compact = false, canAnswer = true) {
+function seededStore(canAnswer: boolean) {
   const store = createStore();
   initClient(store);
   store.set(youAtom, helloFixture.you);
@@ -66,6 +67,24 @@ function show(compact = false, canAnswer = true) {
     },
   });
   store.set(planSocketAtom, fakeSocket());
+  return store;
+}
+
+function showRow(load: PanelLoad) {
+  const store = seededStore(true);
+  store.set(panelLoadAtom, load);
+  render(
+    <Provider store={store}>
+      <TooltipProvider>
+        <SummaryStatusRow load={load} reload={() => {}} />
+      </TooltipProvider>
+    </Provider>,
+  );
+  return store;
+}
+
+function show(compact = false, canAnswer = true) {
+  const store = seededStore(canAnswer);
   render(
     <Provider store={store}>
       <TooltipProvider>
@@ -342,4 +361,34 @@ it("sends one answer when an answer button is clicked twice before the reply", a
     );
   });
   await waitFor(() => expect(screen.queryByRole("button", { name: "Not now" })).toBeNull());
+});
+
+it("the row variant labels the status, expands in place, and runs no feed of its own", () => {
+  showRow({ status: "ready", panel: summaryPanelSchema.parse(panelFixture) });
+
+  const row = screen.getByRole("button", { name: "Summary rebuilds: Rebuilding 1 of 3" });
+  expect(visibleText(row)).toContain("Rebuilding 1 of 3");
+  expect(visibleText(row)).toContain("1/3");
+  expect(row.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("heading", { name: "Rebuilding 1 of 3" })).toBeNull();
+
+  fireEvent.click(row);
+
+  expect(row.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("heading", { name: "Rebuilding 1 of 3" })).toBeTruthy();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(handlers.size).toBe(0);
+});
+
+it("the row variant expands for an open question and announces it", () => {
+  showRow({
+    status: "ready",
+    panel: summaryPanelSchema.parse({ ...panelFixture, running: null, question }),
+  });
+
+  expect(
+    screen.getByRole("button", { name: /^Summary rebuilds:/ }).getAttribute("aria-expanded"),
+  ).toBe("true");
+  expect(screen.getByRole("status").textContent).toContain(`Rebuild ${question.count} summaries?`);
 });

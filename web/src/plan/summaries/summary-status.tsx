@@ -1,12 +1,14 @@
 import { useAtomValue } from "jotai/react";
-import { RefreshCwIcon } from "lucide-react";
+import { ChevronDown, ChevronUp, RefreshCwIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useNow } from "@/components/hooks/use-now";
 import { Button } from "@/components/ui/button";
 import type { SummaryPanel as Panel, SummaryQuestion } from "@/plan/api/schema-summaries";
+import "@/plan/header/activity.css";
 import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
 import { canAuthorAtom } from "@/plan/state/atoms";
+import { ActivityTile } from "@/plan/ui/activity-glyphs";
 import { LoadState } from "@/plan/ui/load-state";
 
 import { RebuildQuestion } from "./rebuild-question";
@@ -114,7 +116,7 @@ function StatusContent({ load, reload }: { load: PanelLoad; reload: () => void }
  * Open state for the popover. An arriving question opens it without taking focus and without
  * pulling focus to the trigger when it closes; an open the user starts behaves like any popover.
  */
-function useQuestionPopover(question: SummaryQuestion | null) {
+export function useQuestionPopover(question: SummaryQuestion | null) {
   const [open, setOpen] = useState(false);
   const lastAnnouncedId = useRef<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -168,10 +170,69 @@ export function SummaryStatus({ compact = false }: { compact?: boolean }) {
           <StatusContent load={load} reload={reload} />
         </PopoverContent>
       </Popover>
-      <div role="status" aria-live="polite" className="sr-only">
-        {question &&
-          `Rebuild ${question.count} summaries? Estimated ${question.estimate_tokens.toLocaleString("en-US")} tokens.`}
-      </div>
+      <QuestionAnnouncement question={question} />
+    </>
+  );
+}
+
+/** Lives outside the activity popover, which mounts its rows only while open. */
+export function QuestionAnnouncement({ question }: { question: SummaryQuestion | null }) {
+  return (
+    <div role="status" aria-live="polite" className="sr-only">
+      {question &&
+        `Rebuild ${question.count} summaries? Estimated ${question.estimate_tokens.toLocaleString("en-US")} tokens.`}
+    </div>
+  );
+}
+
+/**
+ * The footer row of the activity popover. The caller owns the feed (the pill needs the panel
+ * while the popover is closed), so the row takes its load state; it expands in place, and a
+ * question that arrives expands it, since the popover has no nested popover to open.
+ */
+export function SummaryStatusRow({
+  load,
+  reload,
+  announce = true,
+}: {
+  load: PanelLoad;
+  reload: () => void;
+  /** False when the caller renders QuestionAnnouncement outside the popover that holds this row. */
+  announce?: boolean;
+}) {
+  const question = useAtomValue(summaryQuestionAtom);
+  const questionId = question?.id ?? null;
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (questionId !== null) setExpanded(true);
+  }, [questionId]);
+  const { label, count } = statusText(load);
+  const running = load.status === "ready" && load.panel.running !== null;
+  const Chevron = expanded ? ChevronUp : ChevronDown;
+  return (
+    <>
+      <button
+        type="button"
+        className="activity-row"
+        aria-expanded={expanded}
+        aria-label={`Summary rebuilds: ${label}`}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <ActivityTile kind="summaries" paused={!running} />
+        <span className="activity-row__body">
+          <span className="activity-row__title">Summaries</span>
+          <span className="activity-row__sub">{label}</span>
+        </span>
+        <span className="activity-row__time">
+          {count} <Chevron aria-hidden="true" className="activity-row__chevron inline" />
+        </span>
+      </button>
+      {expanded && (
+        <div className="activity-foot__detail [overflow-wrap:anywhere]">
+          <StatusContent load={load} reload={reload} />
+        </div>
+      )}
+      {announce && <QuestionAnnouncement question={question} />}
     </>
   );
 }

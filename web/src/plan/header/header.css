@@ -1,3 +1,265 @@
-[data-loom-plan] .plan-header-controls > * {
+/*
+ * Planner app bar: logo, identity, right cluster and, on feature routes, a second row for the step
+ * rail and next-step card. Unlayered on purpose: these rules override the dashboard's
+ * `@layer components` `.view-switch` / `.view-tab` look, whose 40px touch sizing still applies.
+ */
+
+.plan-header {
+  min-width: 0;
   flex-shrink: 0;
+  border-bottom: 1px solid var(--hairline);
+  background: linear-gradient(to bottom, var(--card), var(--background));
+}
+
+/* The identity column keeps 150px; the cluster wraps rather than overlap it. */
+.plan-appbar {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 1fr) auto;
+  align-items: center;
+  gap: 14px 20px;
+  padding: 14px 20px 16px;
+}
+
+.plan-logo-link {
+  display: block;
+  color: var(--foreground);
+}
+
+.plan-logo {
+  display: block;
+  height: 34px;
+  width: auto;
+}
+
+.plan-identity {
+  display: grid;
+  gap: 2px;
+  min-width: 150px;
+}
+
+.plan-eyebrow {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.plan-switcher {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  border-radius: 6px;
+  text-align: left;
+  color: var(--foreground);
+}
+
+.plan-switcher:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.plan-switcher-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.plan-header-controls {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.plan-header-controls > * {
+  flex-shrink: 0;
+}
+
+.plan-header-rail {
+  grid-column: 1 / -1;
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 12px;
+}
+
+/* On phones the collapsed rail and the card's button share one row. */
+.plan-header-rail[data-narrow] {
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* "Step n of 7 · <label>" never shrinks; the next-step button takes the remaining width. */
+.plan-rail-summary {
+  flex: none;
+  white-space: nowrap;
+}
+
+.plan-next-action-compact {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.plan-next-action-compact > div {
+  width: 100%;
+  min-width: 0;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.plan-next-action-compact button {
+  display: block;
+  width: 100%;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* The offer label (text-only offers) and the disabled reason: one line, ellipsis. */
+.plan-next-action-compact > span,
+.plan-next-action-compact > div > span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Icon button: 28px high, icon plus optional label. */
+.plan-ibtn {
+  height: 28px;
+  min-width: 28px;
+  gap: 6px;
+  border-radius: 7px;
+  padding: 0 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.plan-ibtn:hover {
+  background: var(--muted);
+}
+
+/* Segmented view switch: 2px padding, 9px outer radius, 26px items with 7px radius. */
+.plan-view-switch {
+  display: inline-flex;
+  gap: 0;
+  border-radius: 9px;
+  background: var(--card);
+  padding: 2px;
+  box-shadow: none;
+  border: 1px solid var(--hairline);
+}
+
+.plan-view-switch .view-tab {
+  height: 26px;
+  gap: 6px;
+  border-radius: 7px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.plan-view-switch .view-tab:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.plan-view-switch .view-tab.is-active {
+  background: color-mix(in oklch, var(--primary) 26%, transparent);
+  color: var(--foreground);
+  box-shadow: none;
+}
+
+.plan-view-switch .view-tab[aria-disabled="true"] {
+  opacity: 0.5;
+}
+
+/* Presence: a stack of initials, at most three plus a "+N" circle. */
+.plan-avatars {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+}
+
+.plan-avatars:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.plan-avatar {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: oklch(0.2 0.02 260);
+  background: oklch(0.82 0.11 var(--avatar-hue, 260));
+}
+
+.plan-avatar[data-holder] {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.plan-avatar-more {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+/* The overflow menu stacks the view switch over a wrapping row of the remaining controls. */
+.plan-overflow {
+  width: auto;
+  gap: 10px;
+}
+
+.plan-overflow .plan-view-switch {
+  align-self: flex-start;
+}
+
+.plan-overflow-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 1023.98px) {
+  .plan-appbar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px 12px;
+    padding: 10px 14px 12px;
+  }
+
+  .plan-logo {
+    height: 28px;
+  }
+
+  .plan-identity {
+    min-width: 0;
+  }
 }

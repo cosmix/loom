@@ -3,7 +3,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ACTIVITY_KINDS, ACTIVITY_LABELS, ActivityGlyph } from "./activity-glyphs";
+import {
+  ACTIVITY_KINDS,
+  ACTIVITY_LABELS,
+  ACTIVITY_TONES,
+  ActivityGlyph,
+  ActivityTile,
+} from "./activity-glyphs";
 
 const EXPECTED_KINDS = [
   "permission",
@@ -66,6 +72,49 @@ describe("activity glyphs", () => {
     const { container } = render(<ActivityGlyph kind="running" />);
     expect(container.querySelector(".activity-glyph > .activity-glyph__pulse")).not.toBeNull();
     expect(container.querySelector(".activity-glyph > svg")).not.toBeNull();
+  });
+
+  it("draws the gauge with ticks and a needle pivoting at 12px 15px", () => {
+    const { container } = render(<ActivityGlyph kind="pressure" />);
+
+    expect(container.querySelectorAll("svg path")).toHaveLength(3);
+    expect(container.querySelector(".activity-glyph__needle")).not.toBeNull();
+    expect(css).toMatch(/\.activity-glyph__needle\s*\{[^}]*transform-origin:\s*12px 15px;/);
+    expect(css).toMatch(/\.activity-glyph__needle\s*\{[^}]*activity-glyph-pressure 1\.8s/);
+  });
+
+  it("gives the waiting LED the completed tone and the running ring its measures", () => {
+    expect(css).toMatch(/\[data-kind="waiting"\]\s*\{\s*color:\s*var\(--tone-completed\)/);
+    expect(css).toMatch(/\.activity-glyph__pulse\s*\{[^}]*inset:\s*-2px;[^}]*border:\s*1\.5px/);
+    expect(css).toMatch(/transform-origin:\s*50% 10%/);
+  });
+
+  it.each([
+    ["running", "executing"],
+    ["summaries", "executing"],
+    ["codex", "executing"],
+    ["starting", "executing"],
+    ["pressure", "ring"],
+    ["drafting", "ring"],
+    ["waiting", "completed"],
+    ["permission", "warning"],
+  ] as const)("tiles the %s glyph in the %s tone", (kind, tone) => {
+    expect(ACTIVITY_TONES[kind]).toBe(tone);
+    const { container } = render(<ActivityTile kind={kind} />);
+
+    expect(container.firstElementChild?.getAttribute("data-tone")).toBe(tone);
+    expect(container.querySelector(`[data-kind="${kind}"]`)).not.toBeNull();
+  });
+
+  it("draws children in a neutral tile", () => {
+    const { container } = render(
+      <ActivityTile>
+        <svg />
+      </ActivityTile>,
+    );
+
+    expect(container.firstElementChild?.getAttribute("data-tone")).toBe("neutral");
+    expect(container.querySelector("[data-kind]")).toBeNull();
   });
 
   it.each(EXPECTED_KINDS)("defines and uses CSS keyframes for %s", (kind) => {
