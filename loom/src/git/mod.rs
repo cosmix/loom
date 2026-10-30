@@ -30,8 +30,9 @@ pub use worktree::{
 
 pub use merge::{
     blocked_merge_inputs, build_merge_report, check_merge_state, check_resolved_worktree,
-    control_path_violation, get_conflicting_files, merge_stage, verify_merge_succeeded, MergeBlock,
-    MergeGate, MergeResult, MergeState, MergeStatusReport, StashReapply,
+    control_path_violation, get_conflicting_files, has_merge_commit_since, merge_stage,
+    verify_merge_succeeded, MergeBlock, MergeGate, MergeResult, MergeState, MergeStatusReport,
+    StashReapply,
 };
 
 pub use repository::{ensure_repo_ready_for_worktrees, RepoBootstrapResult};

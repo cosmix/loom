@@ -4,9 +4,11 @@ use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
+use crate::fs::session_files::save_session;
 use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{Session, SessionBackendKind, TerminalConfig};
+use crate::models::session::{Session, SessionBackendKind, SessionStatus, TerminalConfig};
 use crate::models::stage::{Stage, StageStatus};
+use crate::orchestrator::core::merge_handler::resolver_attempts::ReservedAttempt;
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::plan::ExecutionGraph;
 use crate::verify::transitions::save_stage;
@@ -180,4 +182,25 @@ pub(crate) fn write_signal(orchestrator: &Orchestrator, session_id: &str) -> Pat
     std::fs::create_dir_all(signal.parent().unwrap()).unwrap();
     std::fs::write(&signal, "merge signal").unwrap();
     signal
+}
+
+/// A running resolver for `stage_id` that `orchestrator` tracks. Its PID
+/// identity proves it gone once killed: the start time never matches.
+pub(crate) fn tracked_resolver(
+    orchestrator: &mut Orchestrator,
+    stage_id: &str,
+) -> (Session, PathBuf) {
+    let work_dir = orchestrator.config.work_dir.clone();
+    let mut resolver = resolver_for(stage_id);
+    resolver.status = SessionStatus::Running;
+    save_session(&resolver, &work_dir).unwrap();
+    write_pid_file(&work_dir, &resolver, Some(u64::MAX));
+    let signal = write_signal(orchestrator, &resolver.id);
+    ReservedAttempt::record(&work_dir, stage_id, 0)
+        .unwrap()
+        .keep();
+    orchestrator
+        .active_sessions
+        .insert(stage_id.to_string(), resolver.clone());
+    (resolver, signal)
 }

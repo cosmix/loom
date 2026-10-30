@@ -44,6 +44,25 @@ pub struct MergeRecord {
         skip_serializing_if = "Option::is_none"
     )]
     pub conflict_since: Option<DateTime<Utc>>,
+    /// How many times a resolver's committed content failed completion
+    /// verification and the stage went back to a stage session; caps the
+    /// loop. Reset by `loom stage human-review --approve` and `loom stage
+    /// reset`.
+    #[serde(rename = "merge_handbacks", default, skip_serializing_if = "is_zero")]
+    pub handbacks: u32,
+    /// The verification failure of the latest handback. It is cleared when a
+    /// completion succeeds or the stage is reset, and replaced by the next
+    /// handback.
+    #[serde(
+        rename = "merge_handback_refusal",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub handback_refusal: Option<String>,
+}
+
+fn is_zero(count: &u32) -> bool {
+    *count == 0
 }
 
 impl Stage {
@@ -170,6 +189,38 @@ impl Stage {
         if self.merge.block.take().is_some() {
             self.retire_failure("merge block cleared");
         }
+    }
+
+    /// Hand a stage whose resolver committed the merge back to a stage
+    /// session: `Queued`, with `refusal` kept for the signal and the fix and
+    /// stall budgets fresh. Changes nothing unless the stage is in
+    /// `MergeConflict` or `MergeBlocked`.
+    ///
+    /// A conflict steps through `Blocked` because the table keeps
+    /// `MergeConflict -> Queued` illegal, so no retry, resume or recovery path
+    /// can requeue an unresolved conflict. The callers have proved a
+    /// merge commit on the branch (`has_merge_commit_since`).
+    pub fn try_hand_back_merge(&mut self, refusal: String) -> anyhow::Result<()> {
+        match self.status {
+            StageStatus::MergeConflict => {
+                self.try_transition(StageStatus::Blocked)?;
+                self.try_transition(StageStatus::Queued)?;
+            }
+            StageStatus::MergeBlocked => self.try_transition(StageStatus::Queued)?,
+            // Not a merge state: `Queued` may be legal from here (human
+            // review), but a handback is not.
+            ref status => anyhow::bail!(
+                "Invalid stage status transition: {status} -> Queued (not MergeConflict or \
+                 MergeBlocked)"
+            ),
+        }
+        self.merge_conflict = false;
+        self.release_session();
+        self.merge.handbacks += 1;
+        self.merge.handback_refusal = Some(refusal);
+        self.fix_attempts = 0;
+        self.stall_recoveries = 0;
+        Ok(())
     }
 
     /// Move the stage to `MergeConflict`, clearing any merge block.

@@ -314,6 +314,10 @@ fn missing_allow_write_from_merged(work_dir: &Path, stage: &Stage) -> Vec<String
 }
 
 fn append_stage_feedback(content: &mut String, stage: &Stage, work_dir: &Path) {
+    // A resolver's committed merge failed verification: the section is not
+    // gated on disputes, since the stage may never have filed one.
+    super::section_formatters::append_merge_handback_section(content, stage);
+
     // Adjudicator feedback (disputed stages only), appended last so it sits
     // where the agent's recitation attention is highest.
     if has_disputes(stage) {

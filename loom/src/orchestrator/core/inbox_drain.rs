@@ -41,6 +41,8 @@ mod tests_matrix;
 #[cfg(test)]
 mod tests_merge;
 #[cfg(test)]
+mod tests_merge_handback;
+#[cfg(test)]
 mod tests_sweep;
 
 use std::path::Path;

@@ -155,6 +155,15 @@ impl Stage {
         if *from == self.status {
             return;
         }
+        // A refusal describes one failure: once the stage completes or merges
+        // again it must not brief a later session. A hold goes to
+        // `NeedsHumanReview`, which keeps it for the approved session.
+        if matches!(
+            self.status,
+            StageStatus::Completed | StageStatus::MergeConflict | StageStatus::MergeBlocked
+        ) {
+            self.merge.handback_refusal = None;
+        }
         if *from == StageStatus::MergeConflict {
             self.issue_history.push(StageIssue {
                 detected_at: self.merge.conflict_since.take(),

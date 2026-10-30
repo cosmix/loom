@@ -156,6 +156,37 @@ fn test_human_review_approve_refuses_while_a_worker_session_is_live() {
     assert_eq!(approved.status, StageStatus::Queued);
 }
 
+/// A merge resolver whose stop was not proven may still write to the
+/// worktree, so approval refuses while one is live and names it.
+#[test]
+fn test_human_review_approve_refuses_while_a_merge_resolver_is_live() {
+    let temp = TempDir::new().unwrap();
+    let work_dir = temp.path();
+    setup_stage(
+        &temp,
+        StageStatus::NeedsHumanReview,
+        Some("resolver may run"),
+    );
+    let tmux = TerminalConfig {
+        backend: SessionBackendKind::Tmux,
+    };
+    write_terminal_config(work_dir, &tmux).unwrap();
+    let mut resolver = Session::new();
+    resolver.session_type = crate::models::session::SessionType::Merge;
+    resolver.assign_to_stage("test-stage".to_string());
+    resolver.status = SessionStatus::Running;
+    resolver.backend = SessionBackendKind::Tmux;
+    save_session(&resolver, work_dir).unwrap();
+    write_test_pid_identity(work_dir, &resolver, std::process::id()).unwrap();
+
+    let message = format!("{:#}", handle_approve("test-stage", work_dir).unwrap_err());
+
+    assert!(message.contains("live merge resolver"), "{message}");
+    assert!(message.contains(&resolver.id), "{message}");
+    let refused = load_stage("test-stage", work_dir).unwrap();
+    assert_eq!(refused.status, StageStatus::NeedsHumanReview);
+}
+
 #[test]
 fn test_human_review_reject() {
     let temp = TempDir::new().unwrap();
@@ -256,4 +287,27 @@ fn test_human_review_approve_resets_stall_recoveries() {
     let approved = load_stage("test-stage", temp.path()).unwrap();
     assert_eq!(approved.status, StageStatus::Queued);
     assert_eq!(approved.stall_recoveries, 0);
+}
+
+/// An approval gives the handback cap a fresh budget but keeps the refusal:
+/// the session the approval queues needs the failure text.
+#[test]
+fn test_human_review_approve_resets_handbacks_and_keeps_the_refusal() {
+    let temp = TempDir::new().unwrap();
+    setup_stage(&temp, StageStatus::NeedsHumanReview, Some("Escalated"));
+    crate::verify::transitions::update_stage("test-stage", temp.path(), |stage| {
+        stage.merge.handbacks = 2;
+        stage.merge.handback_refusal = Some("tests failed".to_string());
+        Ok(())
+    })
+    .unwrap();
+
+    handle_approve("test-stage", temp.path()).unwrap();
+
+    let stage = load_stage("test-stage", temp.path()).unwrap();
+    assert_eq!(stage.merge.handbacks, 0);
+    assert_eq!(
+        stage.merge.handback_refusal.as_deref(),
+        Some("tests failed")
+    );
 }

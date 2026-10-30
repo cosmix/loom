@@ -59,6 +59,9 @@ pub fn generate_recovery_signal(
     // spawns only once a v2 stage's contracts are frozen: it needs the same
     // frozen-contracts block a fresh implementation signal carries.
     super::v2_section::append_v2_section(&mut signal_content, stage, work_dir);
+    // A stage handed back from a merge resolver must see the failure it has to
+    // fix on every resume, not only in its first signal.
+    super::section_formatters::append_merge_handback_section(&mut signal_content, stage);
 
     // Same contract as both fresh-spawn paths (`generate.rs`): the delivery
     // record goes down BEFORE the signal that quotes it, so a resumed session

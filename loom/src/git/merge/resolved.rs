@@ -48,6 +48,31 @@ pub fn check_resolved_worktree(
     check_work_survived(&git, commit)
 }
 
+/// Whether the stage branch holds a merge commit made after `commit`, the
+/// stage's recorded completed commit. This is the proof that a resolver
+/// merged something; a clean tree on the right branch proves nothing of the
+/// kind. The target's tip is not tested, since the target may have moved since
+/// the resolver merged. A failed git command is `Err`.
+pub fn has_merge_commit_since(
+    repo_root: &Path,
+    stage_id: &str,
+    commit: &str,
+) -> Result<bool, String> {
+    let path = repo_root.join(".worktrees").join(stage_id);
+    let git = WorktreeGit::pinned(repo_root, &path).map_err(|error| {
+        format!(
+            "the stage worktree {} cannot be checked: {error:#}",
+            path.display()
+        )
+    })?;
+    let range = format!("{commit}..HEAD");
+    let (ok, merges) = query(&git, &["rev-list", "--merges", "--max-count=1", &range])?;
+    if !ok {
+        return Err(format!("git rev-list {range} failed in the stage worktree"));
+    }
+    Ok(!merges.is_empty())
+}
+
 /// HEAD on `loom/<stage_id>`, no merge in progress, no unmerged path, no
 /// tracked change.
 fn check_branch_and_index(git: &WorktreeGit, stage_id: &str) -> Result<(), String> {
@@ -181,6 +206,17 @@ mod tests {
         assert_eq!(check(&repo, &commit), Ok(()));
         std::fs::write(wt.join("stub.txt"), "sandbox stub").unwrap();
         assert_eq!(check(&repo, &commit), Ok(()));
+    }
+
+    #[test]
+    fn a_merge_commit_since_the_completed_commit_is_found_and_a_plain_commit_is_not() {
+        let (repo, wt, commit) = repo_with_worktree();
+        commit_file(&wt, "more.txt", "more", "plain work");
+        assert_eq!(has_merge_commit_since(repo.path(), "s", &commit), Ok(false));
+        commit_file(repo.path(), "m.txt", "main", "main work");
+        git_ok(&wt, &["merge", "main", "-m", "merge main"]);
+        assert_eq!(has_merge_commit_since(repo.path(), "s", &commit), Ok(true));
+        assert!(has_merge_commit_since(repo.path(), "s", "not-a-commit").is_err());
     }
 
     #[test]
