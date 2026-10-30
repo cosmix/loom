@@ -58,7 +58,7 @@ const STEP_NAMES = [
   "Step with gaps",
   "Active step",
   "Optional step",
-  "Step rail check",
+  "Finished pressure step",
 ] as const;
 
 const STATE_NAMES = [
@@ -156,28 +156,23 @@ it("draws the reading marks with the reading column's own components", () => {
   }
 });
 
-it("draws step-list glyphs alongside the colour-only progress cell and documents the rail check", () => {
+it("draws each spine mark with its glyph and the pressure timeline's check", () => {
   render(<PlannerLegend />, { wrapper: MemoryRouter });
   const states = screen.getByRole("region", { name: "States" });
 
-  const cells = [
-    ["Done step", "done", "done"],
-    ["Step with gaps", "gap", "idle"],
-    ["Active step", "active", "current"],
-    ["Optional step", "optional", "idle"],
-  ] as const;
-  for (const [name, mark, cell] of cells) {
+  for (const [name, mark] of [
+    ["Done step", "done"],
+    ["Step with gaps", "gap"],
+    ["Active step", "active"],
+    ["Optional step", "optional"],
+  ] as const) {
     const tile = tileOf(states, name);
     expect(tile.querySelector(`[data-step-mark="${mark}"]`)).not.toBeNull();
-    const strip = tile.querySelector('ol[aria-label="Progress"]');
-    expect(strip?.querySelectorAll("li")).toHaveLength(1);
-    expect(strip?.querySelector("li")?.getAttribute("data-cell")).toBe(cell);
-    // The strip's grid has several columns; one cell in it would be a 1px sliver in the tile.
-    expect(strip?.parentElement?.className).toContain("w-9");
-    expect(strip?.parentElement?.className).toContain("grid-cols-1");
+    // The spine states its marks as glyphs, so no progress strip stands beside them.
+    expect(tile.querySelector('ol[aria-label="Progress"]')).toBeNull();
   }
   expect(
-    tileOf(states, "Step rail check").querySelector('[data-other-glyph="stepDone"]'),
+    tileOf(states, "Finished pressure step").querySelector('[data-other-glyph="stepDone"]'),
   ).not.toBeNull();
 });
 
@@ -229,6 +224,6 @@ it("sets no legend text below 13px", () => {
   for (const meaning of screen.getAllByRole("definition")) {
     expect(meaning.className).toContain("text-[13px]");
   }
-  // The progress cells carry no text, so no production text-xs markup remains in the legend.
+  // No production text-xs markup remains in the legend.
   expect(container.querySelectorAll(".text-xs")).toHaveLength(0);
 });

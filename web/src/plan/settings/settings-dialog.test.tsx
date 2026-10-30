@@ -94,7 +94,7 @@ describe("planner settings sections", () => {
     for (const label of ["Ledger", "Aubergine", "Pacific", "Graphite"]) {
       const card = within(theme).getByRole("button", { name: `${label} theme` });
       expect(card.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 120 76");
-      expect(card.querySelector('[data-region="steps"]')).toBeTruthy();
+      expect(card.querySelector('[data-region="spine"]')).toBeTruthy();
     }
   });
 

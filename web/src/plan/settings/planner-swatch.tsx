@@ -1,12 +1,20 @@
-import type { ReactElement } from "react";
+import type { CSSProperties, ReactElement } from "react";
 
 import { LOGO_PATHS } from "@/components/logo";
 import { SWATCH_SIZE, type ThemePalette } from "@/components/theme-picker";
 
-const RAIL_X = 4;
-const CELL_W = 16;
-const CURRENT_CELL = 4;
-const DONE_CELLS = 4;
+/** The spine's rows in workflow order: name length, and whether the step is finished. */
+const SPINE_ROWS = [
+  { name: 10, done: true },
+  { name: 14, done: false },
+  { name: 10, done: true },
+  { name: 8, done: true },
+  { name: 13, done: false },
+  { name: 6, done: false },
+];
+const CURRENT_ROW = 1;
+const SPINE_WIDTH = 30;
+const READ_X = 36;
 
 const faint = (fill: string, opacity: number) => ({ fill, opacity });
 const stroked = (stroke: string, strokeWidth: number, opacity = 1) => ({
@@ -48,116 +56,101 @@ function SwatchHeader({ palette }: { palette: ThemePalette }): ReactElement {
   );
 }
 
-/** One rail cell's marker, title line and caption line; a finished step has a filled marker. */
-function StepLabel({
+/** One spine row: its mark, then its name. The current row takes the accent mark and a bolder name. */
+function SpineRow({
   palette,
-  x,
+  y,
+  name,
   done,
+  current,
 }: {
   palette: ThemePalette;
-  x: number;
+  y: number;
+  name: number;
   done: boolean;
+  current: boolean;
 }): ReactElement {
+  let mark: CSSProperties = stroked(palette.mutedForeground, 0.5, 0.7);
+  if (done) mark = faint(palette.mutedForeground, 0.9);
+  if (current) mark = { fill: palette.primary, opacity: 1 };
   return (
     <g>
       <circle
-        cx={x + 4}
-        cy="21.2"
-        r="1.5"
+        cx="6"
+        cy={y}
+        r={current ? 1.7 : 1.4}
+        data-current={current || undefined}
+        style={mark}
+      />
+      <path
+        d={`M10 ${y}h${name}`}
         style={
-          done ? faint(palette.mutedForeground, 0.9) : stroked(palette.mutedForeground, 0.5, 0.7)
+          current
+            ? stroked(palette.foreground, 1.6, 0.9)
+            : stroked(palette.mutedForeground, 1.2, 0.55)
         }
       />
-      <path d={`M${x + 7.5} 20.4h5`} style={stroked(palette.foreground, 1.4, 0.55)} />
-      <path d={`M${x + 3} 23.8h${CELL_W - 6}`} style={stroked(palette.mutedForeground, 0.9, 0.5)} />
     </g>
   );
 }
 
-function SwatchSteps({ palette }: { palette: ThemePalette }): ReactElement {
-  const cells = Array.from({ length: 7 }, (_, index) => RAIL_X + index * CELL_W);
+/** The spine column: the next step with its one primary button, then the rows, a hairline on its edge. */
+function SwatchSpine({ palette }: { palette: ThemePalette }): ReactElement {
   return (
-    <>
-      <rect
-        x={RAIL_X}
-        y="17"
-        width={CELL_W * 7}
-        height="9"
-        rx="2"
-        style={{ fill: palette.card, stroke: palette.border, strokeWidth: 0.5 }}
-      />
-      <g data-region="steps">
-        {cells.map((x, index) => (
-          <rect
-            key={x}
-            x={x}
-            y="17"
-            width={CELL_W}
-            height="9"
-            style={
-              index === CURRENT_CELL
-                ? { fill: palette.primary, opacity: 0.3 }
-                : { fill: "transparent" }
-            }
-          />
-        ))}
-        {cells.map((x, index) => (
-          <StepLabel key={x} palette={palette} x={x} done={index < DONE_CELLS} />
-        ))}
-        <path d={`M${cells[CURRENT_CELL]} 25.6h${CELL_W}`} style={stroked(palette.primary, 1.2)} />
-      </g>
-    </>
-  );
-}
-
-function SwatchNextStep({ palette }: { palette: ThemePalette }): ReactElement {
-  return (
-    <g>
-      <rect
-        x="4"
-        y="29"
-        width="76"
-        height="11"
-        rx="2.5"
-        style={{
-          fill: "none",
-          stroke: palette.border,
-          strokeWidth: 0.6,
-          strokeDasharray: "2 1.5",
-        }}
-      />
-      <rect
-        x="6.5"
-        y="31.5"
-        width="6"
-        height="6"
-        rx="1.5"
-        style={faint(palette.foreground, 0.16)}
-      />
-      <path d="M15 33.4H36" style={stroked(palette.foreground, 1.4, 0.75)} />
-      <path d="M15 36.4H46" style={stroked(palette.mutedForeground, 1, 0.55)} />
-      <rect x="66" y="32" width="11" height="5" rx="1.5" style={{ fill: palette.primary }} />
+    <g data-region="spine">
+      <path d={`M${SPINE_WIDTH} 13V76`} style={stroked(palette.border, 0.5)} />
+      <path d="M4 20H24" style={stroked(palette.foreground, 1.3, 0.75)} />
+      <path d="M4 23.2H19" style={stroked(palette.mutedForeground, 1, 0.55)} />
+      <rect x="4" y="26" width="13" height="5" rx="1.5" style={{ fill: palette.primary }} />
+      {SPINE_ROWS.map((row, index) => (
+        <SpineRow
+          key={index}
+          palette={palette}
+          y={38 + index * 6.4}
+          name={row.name}
+          done={row.done}
+          current={index === CURRENT_ROW}
+        />
+      ))}
     </g>
   );
 }
 
 function SwatchReading({ palette }: { palette: ThemePalette }): ReactElement {
+  const line = (y: number, end: number) => (
+    <path d={`M${READ_X} ${y}H${end}`} style={stroked(palette.foreground, 1.6, 0.25)} />
+  );
   return (
     <g>
-      <rect x="4" y="44" width="36" height="3.2" rx="1" style={faint(palette.foreground, 0.7)} />
-      <path d="M4 51.5H74" style={stroked(palette.foreground, 1.6, 0.25)} />
-      <path d="M4 56.1H70" style={stroked(palette.foreground, 1.6, 0.25)} />
-      <path d="M4 60.7H46" style={stroked(palette.foreground, 1.6, 0.25)} />
-      <rect x="14" y="54.4" width="34" height="3.4" style={faint(palette.primary, 0.25)} />
-      <path d="M14 53.8V58.4 M48 53.8V58.4" style={stroked(palette.primary, 0.7)} />
-      <rect x="50.4" y="54.9" width="2.2" height="2.2" style={faint(palette.foreground, 0.55)} />
+      <path d={`M${READ_X} 20H${READ_X + 8}`} style={stroked(palette.mutedForeground, 1, 0.5)} />
       <rect
-        x="53.8"
-        y="54.9"
-        width="2.2"
-        height="2.2"
-        style={faint(palette.mutedForeground, 0.7)}
+        x={READ_X}
+        y="22.5"
+        width="30"
+        height="3.2"
+        rx="1"
+        style={faint(palette.foreground, 0.7)}
       />
+      {line(31, 80)}
+      {line(35.6, 76)}
+      {line(40.2, 58)}
+      <rect x={READ_X + 4} y="33.9" width="30" height="3.4" style={faint(palette.primary, 0.25)} />
+      <path
+        d={`M${READ_X + 4} 33.3V37.9 M${READ_X + 34} 33.3V37.9`}
+        style={stroked(palette.primary, 0.7)}
+      />
+      <rect
+        x={READ_X}
+        y="46"
+        width="22"
+        height="2.6"
+        rx="1"
+        style={faint(palette.foreground, 0.55)}
+      />
+      {line(53, 80)}
+      {line(57.6, 74)}
+      {line(62.2, 78)}
+      {line(66.8, 52)}
     </g>
   );
 }
@@ -167,15 +160,16 @@ function SwatchChat({ palette }: { palette: ThemePalette }): ReactElement {
     <g>
       <rect
         x="84"
-        y="29"
+        y="17"
         width="32"
-        height="43"
+        height="55"
         rx="3"
         style={{ fill: palette.card, stroke: palette.border, strokeWidth: 0.6 }}
       />
-      <rect x="87" y="32" width="26" height="12" rx="1.5" style={{ fill: palette.background }} />
-      <path d="M87 32V44" style={stroked(palette.primary, 1.5)} />
-      <path d="M91 36H108 M91 39.5H103" style={stroked(palette.foreground, 1.4, 0.25)} />
+      <rect x="87" y="20" width="26" height="12" rx="1.5" style={{ fill: palette.background }} />
+      <path d="M87 20V32" style={stroked(palette.primary, 1.5)} />
+      <path d="M91 24H108 M91 27.5H103" style={stroked(palette.foreground, 1.4, 0.25)} />
+      <path d="M91 40H110 M91 43.5H100" style={stroked(palette.foreground, 1.4, 0.18)} />
       <rect
         x="87"
         y="63"
@@ -204,8 +198,7 @@ export function PlannerThemeSwatch(palette: ThemePalette): ReactElement {
         style={{ fill: palette.background }}
       />
       <SwatchHeader palette={palette} />
-      <SwatchSteps palette={palette} />
-      <SwatchNextStep palette={palette} />
+      <SwatchSpine palette={palette} />
       <SwatchReading palette={palette} />
       <SwatchChat palette={palette} />
     </svg>

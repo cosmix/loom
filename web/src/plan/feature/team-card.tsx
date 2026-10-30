@@ -27,7 +27,7 @@ export function TeammateCard({ teammate }: { teammate: TeammateStatus }) {
   const writing = teammate.state === "working";
   const [initial = ""] = Array.from(teammate.name);
   return (
-    <li className="plan-team-card">
+    <li className="plan-team-card plan-surface">
       <span
         className="plan-team-card__avatar"
         style={avatarColour(teammate.name)}

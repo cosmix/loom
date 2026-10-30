@@ -7,12 +7,10 @@ import {
   CircleDashed,
   CircleDot,
   CircleHelp,
-  Cog,
   FileSearch,
   FileText,
   FlaskConical,
   FolderTree,
-  Gauge,
   House,
   Library,
   ListChecks,
@@ -20,14 +18,12 @@ import {
   Map as MapIcon,
   MessageCircleQuestion,
   Minus,
-  Package,
   PencilLine,
   Play,
   RefreshCw,
   SlidersHorizontal,
   StickyNote,
   Telescope,
-  TriangleAlert,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -44,26 +40,7 @@ export type DocKind =
   | "review";
 export type PlanState = "written" | "running" | "done" | "retired";
 export type SummaryState = "current" | "rebuilding" | "stale";
-export type ViewId = "home" | "product" | "engineering" | "files";
-
-// Step n uses index n - 1 in both arrays.
-export const STEP_GLYPHS: readonly LucideIcon[] = [
-  Telescope,
-  BookOpen,
-  MapIcon,
-  ListChecks,
-  Gauge,
-  Play,
-];
-
-export const STEP_DOC_KIND: readonly DocKind[] = [
-  "vision",
-  "section",
-  "metaplan",
-  "plan",
-  "plan",
-  "plan",
-];
+export type ViewId = "home" | "files";
 
 export const DOC_KIND_GLYPHS: Record<DocKind, LucideIcon> = {
   vision: Telescope,
@@ -89,18 +66,17 @@ export const SUMMARY_STATE_GLYPHS: Record<SummaryState, LucideIcon> = {
   stale: CircleDashed,
 };
 
-// Only done has a shared status glyph in the rail; other rail cells show the step's glyph.
+// A spine row's mark. A gap is a dashed circle, the same shape a missing document and an
+// out-of-date summary take: warning glyphs are for warnings (ui/DESIGN.md, Status).
 export const STEP_MARK_GLYPHS: Record<MarkView, LucideIcon> = {
   done: CircleCheck,
   active: CircleDot,
-  gap: TriangleAlert,
+  gap: CircleDashed,
   optional: Minus,
 };
 
 export const VIEW_GLYPHS: Record<ViewId, LucideIcon> = {
   home: House,
-  product: Package,
-  engineering: Cog,
   files: FolderTree,
 };
 

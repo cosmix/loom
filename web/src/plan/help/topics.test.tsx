@@ -17,7 +17,8 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Help must not request live data")));
   vi.stubGlobal("WebSocket", vi.fn());
   vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
-    matches: query === "(min-width: 1024px)",
+    // Every min-width query holds, so the header and the spine take their wide layouts.
+    matches: query.startsWith("(min-width"),
     media: query,
     onchange: null,
     addEventListener() {},
@@ -81,24 +82,20 @@ it("gives every topic an intro and description and every scene note non-empty te
   }
 });
 
-it("renders the sample project and all six steps without throwing", () => {
+const SPINE = 'nav[aria-label="Feature documents"]';
+
+it("renders the sample project and its spine without throwing", () => {
   const { container } = render(<GettingAroundScene />);
 
   expect(
     within(container).getByRole("button", { name: "Switch feature, current: atlas", hidden: true }),
   ).toBeDefined();
-  expect(
-    within(container).getByTitle("The product spec for atlas is ready for its first metaplan."),
-  ).toBeDefined();
-  const steps = within(container).getByRole("list", { name: "Steps", hidden: true });
-  expect(within(steps).getAllByRole("listitem", { hidden: true })).toHaveLength(6);
-  expect(
-    within(steps).getByRole("listitem", { current: "step", hidden: true }).textContent,
-  ).toContain("Metaplan");
+  expect(container.querySelectorAll(SPINE)).toHaveLength(1);
+  expect(container.querySelectorAll(".plan-spine-next")).toHaveLength(1);
 });
 
 it.each(["/", "/files", "/f/other/product"])(
-  "keeps the sample feature progress when help opens from %s",
+  "keeps the sample feature spine when help opens from %s",
   (pathname) => {
     const router = createMemoryRouter([{ path: "*", element: <GettingAroundScene /> }], {
       initialEntries: [`${pathname}?help=open#topic`],
@@ -112,11 +109,7 @@ it.each(["/", "/files", "/f/other/product"])(
         hidden: true,
       }),
     ).toBeDefined();
-    const steps = within(container).getByRole("list", { name: "Steps", hidden: true });
-    expect(within(steps).getAllByRole("listitem", { hidden: true })).toHaveLength(6);
-    expect(
-      within(container).getByTitle("The product spec for atlas is ready for its first metaplan."),
-    ).toBeDefined();
+    expect(container.querySelectorAll(SPINE)).toHaveLength(1);
     expect(router.state.location).toMatchObject({ pathname, search: "?help=open", hash: "#topic" });
     expect(globalThis.fetch).not.toHaveBeenCalled();
     expect(globalThis.WebSocket).not.toHaveBeenCalled();
@@ -180,72 +173,31 @@ it("pins the header's logo, switcher, activity pill, settings and help once each
   }
 });
 
-it("pins the next-step card on the third note, not Share", () => {
+it("pins the spine's next step on the third note, not Share", () => {
   const note = PLANNER_HELP_TOPICS[0]!.scenes[0]!.notes[2]!;
   const targets = typeof note.target === "string" ? [note.target] : note.target;
   const { container } = render(<GettingAroundScene />);
 
   const matched = new Set(targets.flatMap((selector) => [...container.querySelectorAll(selector)]));
   expect(matched.size).toBe(1);
-  const card = [...matched][0] as HTMLElement;
-  expect(card.classList.contains("plan-next-step")).toBe(true);
-  expect(card.textContent).toContain("Start the metaplan");
-  expect(within(card).queryByRole("button", { name: /share/i, hidden: true })).toBeNull();
-  expect(card.contains(container.querySelector('[aria-label="Settings"]'))).toBe(false);
+  const next = [...matched][0] as HTMLElement;
+  expect(next.classList.contains("plan-spine-next")).toBe(true);
+  expect(next.textContent).toMatch(/metaplan/i);
+  expect(within(next).queryByRole("button", { name: /share/i, hidden: true })).toBeNull();
+  expect(next.contains(container.querySelector('[aria-label="Settings"]'))).toBe(false);
 });
 
-it("pins the whole step rail, which shows the six real steps and cannot scroll the scene", () => {
+it("pins the whole spine, which holds no removed step and cannot scroll the scene", () => {
   const note = PLANNER_HELP_TOPICS[0]!.scenes[0]!.notes[1]!;
-  const [railSelector] = note.target as readonly string[];
+  expect(note.target).toBe(SPINE);
   const { container } = render(<GettingAroundScene />);
 
-  const rail = container.querySelector(railSelector!)!;
-  expect(container.querySelectorAll(railSelector!)).toHaveLength(1);
-  expect([...rail.querySelectorAll(".plan-step-name")].map((name) => name.textContent)).toEqual([
-    "Vision",
-    "Product spec",
-    "Metaplan",
-    "Plans",
-    "Pressure test",
-    "Run",
-  ]);
-  expect([...rail.querySelectorAll(".plan-step-count")].map((count) => count.textContent)).toEqual([
-    "1",
-    "5/6",
-    "1",
-    "—",
-    "—",
-    "—",
-  ]);
-  expect(rail.textContent).not.toContain("Plan review");
+  const spine = container.querySelector(SPINE)!;
+  expect(container.querySelectorAll(SPINE)).toHaveLength(1);
+  expect(spine.textContent).not.toContain("Plan review");
   // The stage clips a header wider than itself instead of growing a scrollbar in the scene.
   const css = readFileSync(join(import.meta.dirname, "pinned-scene.css"), "utf8");
   expect(css).toMatch(/__stage\s*\{[^}]*overflow-x:\s*clip;/);
-});
-
-it("pins the step rail in the wide header and its popover button in the narrow one", () => {
-  const stepNote = PLANNER_HELP_TOPICS[0]!.scenes[0]!.notes[1]!;
-  const [rail, button] = stepNote.target as readonly string[];
-  const wide = render(<GettingAroundScene />);
-  expect(wide.container.querySelectorAll(rail!)).toHaveLength(1);
-  wide.unmount();
-
-  vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addEventListener() {},
-    removeEventListener() {},
-    addListener() {},
-    removeListener() {},
-    dispatchEvent: () => false,
-  }));
-  const narrow = render(<GettingAroundScene />);
-  expect(narrow.container.querySelectorAll(rail!)).toHaveLength(0);
-  const popover = narrow.container.querySelectorAll(button!);
-  expect(popover).toHaveLength(1);
-  expect(popover[0]!.textContent).toContain("Step 3 of 6");
-  expect(popover[0]!.querySelector("span.sr-only")).toBeNull();
 });
 
 it("keeps the scene inert without HTTP requests or a live socket", () => {

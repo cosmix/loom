@@ -5,7 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "@/plan/router";
 
 vi.mock("@/plan/home/home", () => ({ HomeRoute: () => <div>Home page</div> }));
-vi.mock("@/plan/feature/feature-route", () => ({ FeatureRoute: () => <div>Feature page</div> }));
+// The layout stands in as a marker that still routes its children, so the catch-all is reachable.
+vi.mock("@/plan/feature/feature-layout", async () => {
+  const { createElement } = await import("react");
+  const { Outlet } = await import("react-router");
+  return {
+    FeatureLayout: () => createElement("div", null, "Feature page", createElement(Outlet)),
+    FeatureLanding: () => createElement("div", null, "Feature landing"),
+  };
+});
 vi.mock("@/plan/new/kickoff-route", () => ({ KickoffRoute: () => <div>Kickoff page</div> }));
 
 // vi.mock factories are hoisted above the JSX runtime import, so the element is built from an
@@ -48,9 +56,16 @@ describe("plan routes", () => {
     expect(within(shell!).getByText("Home page")).toBeTruthy();
   });
 
-  it("renders the feature screen at /f/:feature", () => {
+  it("renders the feature layout around its landing at /f/:feature", () => {
     const shell = renderRoute("/f/demo");
     expect(within(shell!).getByText("Feature page")).toBeTruthy();
+    expect(within(shell!).getByText("Feature landing")).toBeTruthy();
+  });
+
+  it("answers a feature page that has no route with an error, not a blank page", () => {
+    const shell = renderRoute("/f/demo/pressure");
+    expect(within(shell!).getByText("Feature page")).toBeTruthy();
+    expect(within(shell!).getByText("No such page")).toBeTruthy();
   });
 
   it("renders the kickoff conversation at /new", () => {

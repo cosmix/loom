@@ -2,7 +2,7 @@ import { CircleCheck } from "lucide-react";
 import { useState, type JSX } from "react";
 
 import { formatElapsed } from "@/lib/format";
-import { plural } from "@/plan/files/heading-parts";
+import { plural } from "@/plan/ui/plural";
 import type { PressureRunView } from "@/plan/api/schema-pressure";
 import { Untrusted } from "../visible-controls";
 import { runEndMs } from "./steps";

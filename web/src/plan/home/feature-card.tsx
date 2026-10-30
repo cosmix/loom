@@ -6,7 +6,7 @@ import { Link } from "react-router";
 import type { ChecklistView } from "@/plan/api/schema";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
-import { plural } from "@/plan/feature/steps";
+import { plural } from "@/plan/ui/plural";
 import { FeatureMark } from "@/plan/home/feature-mark";
 import { ProgressStrip } from "@/plan/home/progress-strip";
 import { featuresAtom } from "@/plan/state/atoms";

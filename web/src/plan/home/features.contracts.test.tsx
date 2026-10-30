@@ -44,16 +44,21 @@ it("features repair standalone shelf starts collapsed with its count", () => {
   }
 });
 
-it("features repair feature screen selects the step from the query", () => {
-  const demo = checklist("demo", { sections: 3, plans: 2, current: 2 });
-  renderFeatureRoute("/f/demo?step=4", project({ checklists: [demo] }));
+it("features repair feature screen marks the row of the route as current", () => {
+  const demo = checklist("demo", { sections: 3, plans: 2, current: 4 });
+  renderFeatureRoute("/f/demo/engineering", project({ checklists: [demo] }));
 
-  const nav = screen.getByRole("navigation", { name: "Steps" });
-  const plans = within(nav)
-    .getAllByRole("link")
-    .find((link) => /\bPlans\b/.test(link.textContent ?? ""));
+  const nav = screen.getByRole("navigation", { name: "Feature documents" });
+  const rowOf = (name: RegExp) =>
+    Array.from(nav.querySelectorAll("li.plan-spine__group")).find((group) =>
+      name.test(group.querySelector(".plan-spine__head")?.textContent ?? ""),
+    );
+  const plans = rowOf(/\bPlans\b/);
+  const productSpec = rowOf(/\bProduct spec\b/);
   expect(plans).toBeDefined();
-  expect(plans?.getAttribute("aria-current")).toBe("step");
-  expect(screen.getByRole("heading", { level: 1, name: "Write the plans" })).toBeTruthy();
-  expect(screen.queryByRole("heading", { level: 1, name: "Write the product spec" })).toBeNull();
+  expect(productSpec).toBeDefined();
+  expect(within(plans as HTMLElement).getByRole("link", { current: "page" })).toBeTruthy();
+  expect(
+    within(productSpec as HTMLElement).queryAllByRole("link", { current: "page" }),
+  ).toHaveLength(0);
 });

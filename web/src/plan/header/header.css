@@ -1,23 +1,25 @@
 /*
- * Planner app bar: logo, identity, right cluster and, on feature routes, a second row for the step
- * rail and next-step card. Unlayered on purpose: these rules override the dashboard's
- * `@layer components` `.view-switch` / `.view-tab` look, whose 40px touch sizing still applies.
+ * Planner app bar: one row of logo, identity and the right cluster. A feature's progress lives in
+ * the spine (feature/spine.tsx), not here. Type, space and buttons follow ui/DESIGN.md. Unlayered
+ * on purpose: these rules override the dashboard's `@layer components` `.view-switch` /
+ * `.view-tab` look, whose 40px touch sizing would otherwise apply.
  */
 
 .plan-header {
   min-width: 0;
   flex-shrink: 0;
   border-bottom: 1px solid var(--hairline);
-  background: linear-gradient(to bottom, var(--card), var(--background));
+  background: var(--background);
 }
 
-/* The identity column keeps 150px; the cluster wraps rather than overlap it. */
+/* About 60px high. The identity column gives way first; the cluster never wraps. */
 .plan-appbar {
   display: grid;
-  grid-template-columns: auto minmax(150px, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 14px 20px;
-  padding: 14px 20px 16px;
+  gap: var(--space-4);
+  min-height: 60px;
+  padding: var(--space-2) var(--page-gutter);
 }
 
 .plan-logo-link {
@@ -27,23 +29,22 @@
 
 .plan-logo {
   display: block;
-  height: 34px;
+  height: 26px;
   width: auto;
 }
 
 .plan-identity {
   display: grid;
-  gap: 2px;
-  min-width: 150px;
+  gap: 1px;
+  min-width: 0;
 }
 
-.plan-eyebrow {
-  margin: 0;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
+/* The eyebrow is the one uppercase run, defined in ui/design.css. Concept pages share the class,
+   so the header sizes its own copy through `.plan-identity`, with a selector that outweighs it. */
+[data-loom-plan] .plan-identity .plan-eyebrow {
+  font-size: var(--type-fine);
+  line-height: var(--leading-ui);
+  letter-spacing: 0.08em;
 }
 
 .plan-switcher {
@@ -51,11 +52,18 @@
   min-width: 0;
   max-width: 100%;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   justify-self: start;
-  border-radius: 6px;
+  margin-left: calc(var(--space-1) * -1);
+  padding: 1px var(--space-1);
+  border-radius: var(--corner-control);
   text-align: left;
   color: var(--foreground);
+  transition: background-color 120ms;
+}
+
+.plan-switcher:hover {
+  background: var(--muted);
 }
 
 .plan-switcher:focus-visible {
@@ -68,8 +76,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 17px;
-  line-height: 1.25;
+  font-size: var(--type-title);
+  line-height: 1.3;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -77,123 +85,63 @@
 .plan-header-controls {
   display: flex;
   min-width: 0;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .plan-header-controls > * {
   flex-shrink: 0;
 }
 
-.plan-header-rail {
-  grid-column: 1 / -1;
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: stretch;
-  gap: 12px;
+/* An icon-only button is square at the control height. */
+.plan-header .plan-button[data-size="icon-sm"] {
+  width: var(--control-height);
+  padding: 0;
 }
 
-/* On phones the collapsed rail and the card's button share one row. */
-.plan-header-rail[data-narrow] {
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 8px;
-}
-
-/* "Step n of 6 · <label>" never shrinks; the next-step button takes the remaining width. */
-.plan-rail-summary {
-  flex: none;
-  white-space: nowrap;
-}
-
-.plan-next-action-compact {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.plan-next-action-compact > div {
-  width: 100%;
-  min-width: 0;
-  align-items: stretch;
-  gap: 2px;
-}
-
-.plan-next-action-compact button {
-  display: block;
-  width: 100%;
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 8px;
-  overflow: hidden;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-/* The offer label (text-only offers) and the disabled reason: one line, ellipsis. */
-.plan-next-action-compact > span,
-.plan-next-action-compact > div > span {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Icon button: 28px high, icon plus optional label. */
-.plan-ibtn {
-  height: 28px;
-  min-width: 28px;
-  gap: 6px;
-  border-radius: 7px;
-  padding: 0 8px;
-  font-size: 12.5px;
-  font-weight: 500;
-}
-
-.plan-ibtn:hover {
-  background: var(--muted);
-}
-
-/* Segmented view switch: 2px padding, 9px outer radius, 26px items with 7px radius. */
+/* Home and Files: quiet links, the current one on a wash. The dashboard's pill is not used. */
 .plan-view-switch {
   display: inline-flex;
-  gap: 0;
-  border-radius: 9px;
-  background: var(--card);
-  padding: 2px;
+  gap: 2px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
-  border: 1px solid var(--hairline);
 }
 
 .plan-view-switch .view-tab {
-  height: 26px;
-  gap: 6px;
-  border-radius: 7px;
+  height: var(--control-height);
+  min-height: 0;
+  min-width: 0;
+  gap: var(--space-1);
   padding: 0 10px;
-  font-size: 12.5px;
+  border-radius: var(--corner-control);
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--type-ui);
   font-weight: 500;
+  line-height: 1;
   color: var(--muted-foreground);
+  transition:
+    background-color 120ms,
+    color 120ms;
 }
 
 .plan-view-switch .view-tab:hover {
-  background: var(--muted);
+  background: color-mix(in oklch, var(--muted) 60%, transparent);
   color: var(--foreground);
 }
 
 .plan-view-switch .view-tab.is-active {
-  background: color-mix(in oklch, var(--primary) 26%, transparent);
+  background: var(--muted);
   color: var(--foreground);
   box-shadow: none;
 }
 
-.plan-view-switch .view-tab[aria-disabled="true"] {
-  opacity: 0.5;
+.plan-view-switch .view-tab:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 /* Presence: a stack of initials, at most three plus a "+N" circle. */
@@ -231,10 +179,10 @@
   color: var(--muted-foreground);
 }
 
-/* The overflow menu stacks the view switch over a wrapping row of the remaining controls. */
+/* The overflow menu stacks the view links over a wrapping row of the remaining controls. */
 .plan-overflow {
   width: auto;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .plan-overflow .plan-view-switch {
@@ -245,32 +193,40 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
-/* Below lg the cluster takes the third column; the logo, padding and gap keep their stated values. */
-@media (max-width: 1023.98px) {
-  .plan-appbar {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .plan-identity {
-    min-width: 0;
+/* Between 1024px and 1280px the cluster is tight: Settings and Help keep their name and lose the
+   visible label. Revisit when the cluster sheds a control. */
+@media (min-width: 1024px) and (max-width: 1279.98px) {
+  .plan-header-controls .plan-button[aria-label="Settings"] > span,
+  .plan-header-controls .plan-button[aria-label="Help"] > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 
-/*
- * Below 480px the stated values (34px logo, `14px 20px 16px` padding, `14px 20px` gap) do not fit:
- * at 390px the row (logo 60, identity 150, activity, chat, overflow) needs about 407-422px with
- * them, and the page must not scroll sideways. Revisit when the row sheds one of those items.
- */
+/* A compact row on phones: the eyebrow goes (nothing sets type below 13px there) and the logo
+   and gaps tighten so logo, identity, activity, chat and overflow fit 390px without scrolling. */
 @media (max-width: 479.98px) {
   .plan-appbar {
-    gap: 10px 12px;
-    padding: 10px 14px 12px;
+    gap: var(--space-2);
+    min-height: 52px;
   }
 
   .plan-logo {
-    height: 28px;
+    height: 22px;
+  }
+
+  .plan-identity .plan-eyebrow {
+    display: none;
+  }
+
+  .plan-header-controls {
+    gap: var(--space-1);
   }
 }

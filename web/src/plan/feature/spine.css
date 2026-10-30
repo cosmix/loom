@@ -1,0 +1,256 @@
+/*
+ * The feature spine: the documents of one feature in workflow order, with the next step at its
+ * head. Chrome set in --type-ui and --muted-foreground, the current row in --foreground; the
+ * accent marks the current row's glyph and nothing else (ui/DESIGN.md). Groups divide by
+ * hairlines, children sit under their group with no rule of their own.
+ */
+[data-loom-plan] .plan-spine {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  /* Known limit: the header and banners sit above <main>, and 7.5rem is a guess at their height.
+     The spine scrolls inside it. The real height is <main>'s own (a flex child of the shell,
+     plan/shell.tsx), which CSS here cannot name: `container-type: size` on <main> would make it
+     the containing block of the reading column's `position: fixed` selection actions
+     (attachments/add-to-chat.tsx), whose coordinates are viewport rects. Revisit when the shell
+     publishes <main>'s height (a ResizeObserver custom property) or that control is portaled;
+     then this becomes that height. */
+  max-height: calc(100dvh - 7.5rem);
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-2) var(--space-5) var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .plan-spine__menu {
+  display: none;
+}
+
+/* One explicit column that may shrink to the spine's width. An implicit grid column sizes to
+   max-content, so a nowrap button label would widen it past the layout's 18rem and the spine's
+   overflow would clip every row on the right. min-width: 0 carries that down the row chain. */
+[data-loom-plan] .plan-spine__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+}
+
+[data-loom-plan] .plan-spine__body > *,
+[data-loom-plan] .plan-spine__group,
+[data-loom-plan] .plan-spine__row {
+  min-width: 0;
+}
+
+/* The next step: one sentence, then at most one button. The button's wrapper spans the column so
+   a long label truncates inside it (design.css, `.plan-button`) instead of widening the spine. */
+[data-loom-plan] .plan-spine-next {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+}
+
+[data-loom-plan] .plan-spine-next__text {
+  max-width: 48ch;
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--type-ui);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .plan-spine__groups,
+[data-loom-plan] .plan-spine__children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-loom-plan] .plan-spine__group + .plan-spine__group {
+  border-top: 1px solid var(--hairline);
+}
+
+[data-loom-plan] .plan-spine__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+[data-loom-plan] .plan-spine__link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 var(--space-2);
+  border-radius: var(--corner-control);
+  color: var(--muted-foreground);
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+
+[data-loom-plan] .plan-spine__head {
+  flex: 1;
+}
+
+[data-loom-plan] .plan-spine__link:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+[data-loom-plan] .plan-spine__link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+[data-loom-plan] .plan-spine__group[data-here] > .plan-spine__row > .plan-spine__head,
+[data-loom-plan] .plan-spine__link[aria-current="page"] {
+  color: var(--foreground);
+}
+
+[data-loom-plan] .plan-spine__link[aria-current="page"] {
+  font-weight: 600;
+}
+
+/* A mark is a glyph; the word beside it says what it means, so colour never carries it alone. */
+[data-loom-plan] .plan-spine__mark {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+[data-loom-plan] .plan-spine__group[data-mark="done"] > .plan-spine__row .plan-spine__mark {
+  color: var(--tone-completed);
+}
+
+/* The accent marks the group the route is in, whether its head or one of its documents is current. */
+[data-loom-plan] .plan-spine__group[data-here] > .plan-spine__row .plan-spine__mark {
+  color: var(--primary);
+}
+
+[data-loom-plan] .plan-spine__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-loom-plan] .plan-spine__mono,
+[data-loom-plan] .plan-spine__number {
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+}
+
+[data-loom-plan] .plan-spine__number {
+  flex: none;
+  color: var(--muted-foreground);
+}
+
+/* A count or word beside a name keeps its width; the name gives way first. */
+[data-loom-plan] .plan-spine__head > .plan-fine {
+  flex: none;
+  white-space: nowrap;
+}
+
+[data-loom-plan] .plan-spine__disclose {
+  width: var(--control-height-sm);
+  padding: 0;
+  flex: none;
+}
+
+[data-loom-plan] .plan-spine__disclose svg {
+  transition: transform 120ms;
+}
+
+[data-loom-plan] .plan-spine__disclose[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
+/* Documents sit under their group's name: the indent is the mark's width and its gap. */
+[data-loom-plan] .plan-spine__children {
+  padding-bottom: var(--space-2);
+  padding-left: calc(var(--space-2) + 14px);
+}
+
+[data-loom-plan] .plan-spine__child {
+  min-height: 30px;
+}
+
+/* A document not yet written is plain text beside the links, in plain --muted-foreground at weight
+   400 with its "not written" word. It reads dimmer than the written rows because those are raised,
+   below, not because it is lowered: opacity would take the muted text under 4.5:1 in the light
+   themes. */
+[data-loom-plan] li.plan-spine__child {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+
+/* A written document is a link set between muted and foreground (both existing tokens, no new
+   hue). At 0,2,1 it sits under the hover and current rules above (0,3,0), so those still win. */
+[data-loom-plan] a.plan-spine__child {
+  color: color-mix(in oklab, var(--foreground) 70%, var(--muted-foreground));
+  font-weight: 500;
+}
+
+@media (max-width: 759.98px) {
+  [data-loom-plan] .plan-spine {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding: var(--space-2) var(--page-gutter);
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  [data-loom-plan] .plan-spine__menu {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
+  [data-loom-plan] .plan-spine__here {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted-foreground);
+    text-align: left;
+    text-overflow: ellipsis;
+  }
+
+  [data-loom-plan] .plan-spine__here::before {
+    content: "· ";
+  }
+
+  /* The flip is instant: a 120ms turn read as a left-pointing chevron when caught half way. */
+  [data-loom-plan] .plan-spine__menu svg {
+    margin-left: auto;
+  }
+
+  [data-loom-plan] .plan-spine[data-open] .plan-spine__menu svg {
+    transform: rotate(180deg);
+  }
+
+  [data-loom-plan] .plan-spine:not([data-open]) .plan-spine__body {
+    display: none;
+  }
+
+  [data-loom-plan] .plan-spine[data-open] .plan-spine__body {
+    padding-top: var(--space-3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-loom-plan] .plan-spine__link,
+  [data-loom-plan] .plan-spine__disclose svg {
+    transition: none;
+  }
+}

@@ -5,7 +5,7 @@ import { Fragment, useEffect, useId, useRef, useState } from "react";
 import type { KickoffShape, KickoffSize } from "@/plan/api/schema-kickoff";
 import { sendChatCommand, sendMessage } from "@/plan/chat/commands";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { plural } from "@/plan/feature/steps";
+import { plural } from "@/plan/ui/plural";
 import { FEATURE_NAME_HINT, isFeatureName } from "@/plan/new/feature-name";
 import { authorBlockReasonAtom, canAuthorAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
