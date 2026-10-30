@@ -38,7 +38,7 @@ function MissingDocument({
   return (
     <div className="plan-document plan-document--empty">
       <p className="plan-empty">{sentence}</p>
-      {offer && <EmptyOffer offer={offer.id} />}
+      {offer && <EmptyOffer offer={offer.id} checklist={checklist} />}
     </div>
   );
 }

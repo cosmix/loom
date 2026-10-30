@@ -163,6 +163,33 @@ describe("run subscription", () => {
     dispose();
   });
 
+  it("refetches state when the strip's plan or daemon changes, not for progress alone", async () => {
+    const store = createStore();
+    const socket = socketHarness(store);
+    const dispose = installRunSubscription(store);
+    const strip = runStripSchema.parse(stripFixture);
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => response(initialState()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    socket.receive({ type: "run_strip", ...strip });
+    socket.receive({ type: "run_strip", ...strip, merged: 2 });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    socket.receive({ type: "run_strip", ...strip, plan: "doc/plans/DONE-PLAN-example.md" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    socket.receive({
+      type: "run_strip",
+      ...strip,
+      plan: "doc/plans/DONE-PLAN-example.md",
+      daemon_running: false,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(store.get(runStateAtom)).toEqual(initialState()));
+    dispose();
+  });
+
   it("follows socket replacement and detaches all handlers on disposal", () => {
     const store = createStore();
     const dispose = installRunSubscription(store);
