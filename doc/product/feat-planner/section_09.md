@@ -355,7 +355,7 @@ Load the skill loom-plan:plan, then begin by telling me what you read and what y
 | Draft all missing plans                | 4    | the missing plans and their brief bundles in the feature | `loom-plan:plan`      |
 | Add an unlisted plan to a metaplan     | 4    | the metaplan, with the plan's file name                  | `loom-plan:metaplan`  |
 | Refine a document or a passage         | any  | the document, with any attached passage                  | `loom-plan:refine`    |
-| Review what was built                  | done | the done plans and their run reviews                     | `loom-plan:retro`     |
+| Compare spec with build                | done | the done plans and their run reviews                     | `loom-plan:retro`     |
 | Start a new metaplan round             | done | `doc/plans/<feature>/metaplan-<nn>.md`                   | `loom-plan:metaplan`  |
 | Change the knowledge base              | any  | the knowledge file, if one was open                      | `loom-plan:knowledge` |
 
@@ -447,7 +447,7 @@ table the app cannot parse, a section file the table does not list, a document w
 title, a metaplan entry naming no plan file, a missing, duplicate, or broken `Implements:` line, a
 broken cross-reference (section 03), a brief reference that does not resolve. It reads only files,
 needs no running server, and exits non-zero when the checked files have a problem. (My call: a
-malformed vision table otherwise breaks detection silently until the user notices the tracker;
+malformed vision table otherwise breaks detection silently until the user notices the spine;
 the detector exists in the server anyway.) It sits beside `loom plan verify` and
 `loom plan summary` (section 02).
 
@@ -477,10 +477,12 @@ The pressure steps keep the existing `[pressure]` keys
 app and one started from a terminal resolve the same way.
 
 **Spec steps** are the product-spec work: step 1 (vision), step 2 (product sections), a refinement
-started on a document under `doc/product/`, a review of what was built (it records into product
+started on a document under `doc/product/`, a comparison of the spec with what was built (it records into product
 sections), a knowledge change, and a chat started with no step. **Plan steps** are step 3
 (metaplans), step 4 (loom plans), a refinement started on a document under `doc/plans/`, and a new
-metaplan round. Spec steps run at medium effort, plan steps at high: a plan fixes the stages,
+metaplan round. A chat started by sending a message counts as a plan step when its first
+attached document is under `doc/plans/`, and as a spec step otherwise. Spec steps run at medium
+effort, plan steps at high: a plan fixes the stages,
 files and acceptance criteria every execution session follows, and a mistake there costs a run.
 
 Every key resolves with loom's existing precedence, per key: project `.loom/work/config.toml`

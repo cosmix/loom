@@ -7,8 +7,8 @@ takes it into a chat, the session edits the documents, and the reader sees what 
 settles how attached passages are written into the message the session receives, how a reviewer
 undoes a turn's edit, what a refinement may do once plans have run, how a product change points
 at the plans that implement it, what a read-only browser can contribute, where open questions
-show, and how a reviewer sees what changed since they last looked. Step 6 of the workflow is the
-user reading; the app records no approval (vision, Decisions, "Approval").
+show, and how a reviewer sees what changed since they last looked. Reviewing is the
+user reading, which has no step in the workflow; the app records no approval (vision, Decisions, "Approval").
 
 ## The loop in one paragraph
 
@@ -157,7 +157,7 @@ uncommitted diff and git remain.
 
 ## Approval
 
-There is no approve button, no sign-off record, and no "reviewed" flag on any document. Step 6 is
+There is no approve button, no sign-off record, and no "reviewed" flag on any document. Reviewing is
 the user reading; when they are satisfied, starting a run is their act (section 11). A team that
 wants a record of who agreed uses its usual means, a pull request review of the committed `doc/`
 tree, which the plain-Markdown rule (vision, principle 1) makes possible.
@@ -249,7 +249,7 @@ places:
 - **Counts.** Section 01 counts them beside each product section in the checklist. The same count
   shows on every document's summary page header and on its file mode tree entry, for any document
   with that heading: product sections, metaplans, and plans. (My call: a plan's open questions
-  matter at step 6 as much as a section's.) The count links to the heading in file mode.
+  matter in a review as much as a section's.) The count links to the heading in file mode.
 - **Reading.** The heading is an ordinary heading section: summaries may cite it, and it opens in
   concept mode like any passage.
 - **Answering.** An open question is attached like any passage. A session that settles one moves

@@ -22,9 +22,14 @@ dashboard. Plans that finish bring the project to the returning author's offers.
 
 ### Where it is offered
 
-Pressure testing is optional (section 01, "The seven steps"). The app offers it:
+Pressure testing is optional (section 01, "The six steps"). The app offers it:
 
-- in the checklist, for the first plan with no pressure-test record (section 01, "What the app offers"), beside the offer to start a run;
+- on the Pressure test page, `/f/<feature>/pressure`, which has one row per plan: the slug (linking to the plan's
+  concept page), its state, the date of its last pressure test or "Not tested", and for an untested written plan the
+  offer to test it; a tested plan has a "Record" link to the `## Pressure tests` section in file mode. The first
+  untested plan's offer is the step's offer, drawn on this page and once in the spine's next-step line (section 01,
+  "What the app offers"), beside the offer to start a run. A feature with no plan gets one sentence naming what
+  comes first and a link to Plans;
 - on every written plan's view, in file mode and concept mode, including unlisted plans and plans already tested.
 
 It is offered only for plans in the written state, `<plan home>/PLAN-<slug>.md`. The plan home is `doc/plans/<feature>/`
@@ -101,9 +106,9 @@ A **pressure session** is the fourth session kind in section 07's table. It star
 - Permission mode and write rules come from section 12 ("Pressure sessions"): the session may
   edit the plan under test and its brief bundle, write `planning-omissions.md` at the repository
   root, and create its marker under `<session dir>/done/`; every other plan, locked plans and
-  their brief bundles included, stays read-only. It runs in Manual mode with prompts going to the
-  holder, where the terminal driver uses `--permission-mode auto`
-  (`loom/src/commands/pressure/spawn.rs:38`).
+  their brief bundles included, stays read-only. It runs in auto mode, as the terminal driver does
+  (`--permission-mode auto`, `loom/src/commands/pressure/spawn.rs:38`): allow rules run, a rule
+  that asks reaches the holder in the chat, and an action the classifier blocks shows as a notice.
 
 The Codex process is a child of the server, with its process identity recorded in the run's
 session record so a later server can find it (below). Codex runs headless (`codex exec`) under the
@@ -371,8 +376,13 @@ in a new browser tab. The dashboard picks its own port from 7373 up, as it alway
 The planning app does not monitor stages; the dashboard does (vision, Non-goals). It shows:
 
 - **Plan states from file names** (section 01, "Plans"): written, running, done, retired, in the
-  checklist, in file mode, and in the engineering overview. The tracker marks step 7 active while
+  spine, in file mode, and in the engineering overview. The spine marks step 6, Run, active while
   any plan is `IN_PROGRESS-`.
+- **The Run page**, `/f/<feature>/run`: a line for the overall state (nothing running, running with
+  stages merged out of the total, or done), the action that starts a run, the dashboard link when
+  the dashboard is up, and one row per plan with its state, each linking to the plan's concept
+  page. The global run state covers only the active plan, so the page shows no per-plan progress
+  beyond state. (My call; revisit if per-stage progress is wanted here.)
 - **A run strip** in the header, while `.loom/work` exists: a Play glyph with an outgoing pulse
   while the daemon runs, the active plan, whether the daemon
   runs, the count of stages merged out of the total, and the count needing attention, with the
@@ -397,11 +407,13 @@ checklist moves on.
 
 ## After plans complete
 
-Section 01 gives the state where every metaplan entry's plan is done its own offers: refine the
-spec in light of what was built, and start a new metaplan round. The same offers appear on any
-done plan's view while other plans remain.
+A finished feature, where every metaplan entry's plan is done, has no primary offer (section
+01). Two secondary offers appear on the Run page: compare the spec with what was built, with one
+sentence saying it starts a chat that compares the done plans and their run reviews with the
+spec, and start a new metaplan round. The same offers appear on any done plan's view while other
+plans remain.
 
-- **Review what was built** opens a session with the `loom-plan:retro` skill (section 09). It reads
+- **Compare spec with build** opens a session with the `loom-plan:retro` skill (section 09). It reads
   the done plans' run reviews and the sections their `Implements:` lines name, and records, with
   the user, what the spec should now say. The knowledge base, which knowledge stages updated
   during the run, is read as evidence and changed only through `loom knowledge`.
