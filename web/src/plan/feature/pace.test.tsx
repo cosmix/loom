@@ -228,14 +228,14 @@ it.each(["guided", "team", "wrong-team", "other-step"] as const)(
 );
 
 it.each([
-  [1, "Up to 1 teammates, 1 documents, one run."],
+  [1, "Up to 1 teammate, 1 document, one run."],
   [3, "Up to 3 teammates, 3 documents, one run."],
   [7, "Up to 5 teammates, 7 documents, one run."],
 ] as const)("shows the cost for %i missing documents", (count, cost) => {
   renderChoice(makeChecklist(count));
 
   expect(screen.getByText(cost).textContent).toBe(cost);
-  expect(screen.getByRole("heading", { name: "Guided" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Guided, one section at a time" })).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Draft all, with a team" })).toBeTruthy();
   expect(screen.getAllByRole("button")).toHaveLength(2);
 });
@@ -268,7 +268,9 @@ it("counts only the plans in the guided offer's step", () => {
   renderChoice(checklist);
 
   expect(screen.getByText("Up to 3 teammates, 3 documents, one run.")).toBeTruthy();
-  expect(screen.getByText(/first missing plan/).textContent).toContain("read it");
+  expect(screen.getByRole("heading", { name: "Guided, one plan at a time" })).toBeTruthy();
+  expect(screen.getByText(/drafts one plan with you/).textContent).toContain("read it");
+  expect(screen.getByText(/every missing plan at once/)).toBeTruthy();
 });
 
 it("renders nothing when no documents are missing", () => {
@@ -297,7 +299,7 @@ it("keeps both pace actions disabled with an explanation for a read-only browser
   const { guided, team } = fixtureOffers(checklist);
   renderChoice(checklist, true);
 
-  expect(screen.getByRole("heading", { name: "Guided" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Guided, one section at a time" })).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Draft all, with a team" })).toBeTruthy();
   const guidedButton = screen.getByRole("button", {
     name: `Start guided writing: ${guided.label}`,

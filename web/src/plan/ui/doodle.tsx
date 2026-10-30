@@ -4,46 +4,47 @@ import "./doodle.css";
 
 const TITLE = "A thread leaves a spool, loops through a thought and weaves into cloth on a loom";
 
-const THREAD_PATHS = [
-  "M24 75Q38 82 52 75M24 84Q38 91 52 84M24 93Q38 100 52 93",
-  "M160 52V116",
-  "M170 52V116",
-  "M180 52V116",
-  "M190 52V116",
-  "M200 52V116",
-  "M52 84C68 96 84 92 89 74C92 64 101 64 104 57" +
-    "C91 61 87 48 94 41C100 34 109 37 113 41C124 35 134 43 130 53" +
-    "C127 62 115 65 104 57C112 79 137 88 158 82" +
-    "Q164 79 170 82T194 82Q208 78 204 89" +
-    "Q198 92 192 89T168 89Q154 85 158 96" +
-    "Q164 93 170 96T194 96Q208 92 204 103" +
-    "Q198 106 192 103T168 103Q154 99 158 110" +
-    "Q164 107 170 110T194 110L204 110",
-] as const;
+// The spool: a flange ellipse, two cheeks, a rounded foot and two turns of wound thread.
+const SPOOL =
+  "M18 72V102M44 72V102M18 102C18 108 44 108 44 102M18 82Q31 88 44 82M18 92Q31 98 44 92";
+
+// The frame is a rect (below); six warp lines run top to bottom inside it.
+const WARPS = [163, 175, 188, 200, 213, 225] as const;
+
+// One weft: out of the spool, a single loop around the thought at (100, 40), into the frame and
+// across the warps in three passes (left to right, right to left, left to right), ending at the
+// dot at (204, 92).
+const WEFT =
+  "M44 88C60 88 74 72 98 55C112 45 120 32 108 27C94 22 82 36 90 48C98 60 124 66 150 74" +
+  "Q156 68 163 68Q169 62 175 68T188 68T200 68T213 68T225 68L232 68" +
+  "Q238 74 232 80Q226 86 219 80T206 80T194 80T181 80T169 80L156 80" +
+  "Q150 86 158 92L163 92Q169 86 175 92T188 92T200 92L204 92";
+
+const SPARKS = ["M62 32V42M57 37H67", "M130 22V32M125 27H135", "M80 12V20M76 16H84"] as const;
 
 export function LoomDoodle({ className }: { className?: string }): JSX.Element {
   return (
     <svg
       className={className ? `loom-doodle ${className}` : "loom-doodle"}
-      viewBox="0 0 240 140"
+      viewBox="0 0 270 128"
       role="img"
       aria-label={TITLE}
       fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
       strokeLinecap="round"
-      strokeLinejoin="miter"
+      strokeLinejoin="round"
     >
       <title>{TITLE}</title>
-      <ellipse cx="38" cy="64" rx="18" ry="6" />
-      <path d="M22 66V106M54 66V106M20 106C20 114 56 114 56 106" />
-      <path d="M150 122V44H214V122M146 52H218M146 116H218" />
-      {THREAD_PATHS.map((d) => (
-        <path key={d} className="loom-doodle__thread" d={d} pathLength="1" />
+      <ellipse className="loom-doodle__ink" cx="31" cy="72" rx="13" ry="4" />
+      <path className="loom-doodle__ink" d={SPOOL} />
+      <rect className="loom-doodle__ink" x="150" y="52" width="88" height="60" rx="2" />
+      {WARPS.map((x) => (
+        <path key={x} className="loom-doodle__ink" d={`M${x} 52V112`} />
       ))}
-      <path className="loom-doodle__spark" d="M72 43V53M67 48H77" />
-      <path className="loom-doodle__spark" d="M139 22V30M135 26H143" />
-      <path className="loom-doodle__spark" d="M225 68V78M220 73H230" />
+      <path className="loom-doodle__thread" d={WEFT} pathLength="1" />
+      <circle className="loom-doodle__dot" cx="204" cy="92" r="2.6" />
+      {SPARKS.map((d) => (
+        <path key={d} className="loom-doodle__spark" d={d} />
+      ))}
     </svg>
   );
 }

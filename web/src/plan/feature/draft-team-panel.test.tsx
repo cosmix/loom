@@ -114,19 +114,21 @@ describe("DraftTeamPanel", () => {
   it("shows all token counts including cached tokens without a tooltip", () => {
     renderPanel();
 
-    expect(screen.getByText("2 teammates, 3 documents · 5.0k tokens total")).toBeTruthy();
+    expect(screen.getByText("2 teammates · 3 documents · 5.0k tokens so far")).toBeTruthy();
     const teammates = screen.getByRole("list", { name: "Teammates" });
     const rows = within(teammates).getAllByRole("listitem");
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText("Ada")).toBeTruthy();
-    expect(within(rows[0]).getByText("working")).toBeTruthy();
+    expect(within(rows[0]).getByText("writing")).toBeTruthy();
+    expect(within(rows[0]).getByText("§02")).toBeTruthy();
     expect(within(rows[0]).getByText(paths[1])).toBeTruthy();
-    expect(within(rows[0]).getByText("1.9k tokens")).toBeTruthy();
+    expect(within(rows[0]).getByText("1.9k")).toBeTruthy();
     expect(
       within(rows[0]).getByText("1.0k in / 400 out · 200 cache write · 300 cache read"),
     ).toBeTruthy();
     expect(within(rows[1]).getByText("Grace")).toBeTruthy();
-    expect(within(rows[1]).getByText("3.1k tokens")).toBeTruthy();
+    expect(within(rows[1]).getByText("3.1k")).toBeTruthy();
+    expect(within(rows[1]).queryByText(/^§/)).toBeNull();
     expect(within(rows[1]).getByText("Current document: None")).toBeTruthy();
     expect(
       within(rows[1]).getByText("2.0k in / 500 out · 100 cache write · 500 cache read"),
@@ -150,7 +152,8 @@ describe("DraftTeamPanel", () => {
     expect(within(row).getByText(expected)).toBeTruthy();
     expect(row.querySelector('[data-kind="drafting"]')).toBeNull();
     const teammates = screen.getByRole("list", { name: "Teammates" });
-    expect(within(within(teammates).getAllByRole("listitem")[0]).getByText(state)).toBeTruthy();
+    const card = within(teammates).getAllByRole("listitem")[0];
+    expect(within(card).getByText(state === "working" ? "writing" : "drafted")).toBeTruthy();
   });
 
   it("uses teammate assignment order while preserving the document queue order", () => {

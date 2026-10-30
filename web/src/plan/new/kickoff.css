@@ -1,73 +1,369 @@
+/*
+ * The kickoff screen: the empty invitation and the conversation. The "Taking shape" panel and the
+ * proposal card have their own files (taking-shape.css, proposal.css). Colours come from theme
+ * tokens only; the composer card uses --dialog-shadow because the planner has no shadow token of
+ * its own.
+ */
+
+/* ---- Empty state ---------------------------------------------------------------------------- */
+
 [data-loom-plan] .kickoff-empty {
-  display: flex;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 14px;
   width: 100%;
-  max-width: 44rem;
   min-width: 0;
   margin-inline: auto;
-  padding: 2rem 1.5rem 3rem;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.5rem;
+  padding: 36px 20px 34px;
 }
 
 [data-loom-plan] .kickoff-empty .loom-doodle {
-  width: 20rem;
+  width: min(420px, 100%);
+  height: auto;
 }
 
-[data-loom-plan] .kickoff-composer,
-[data-loom-plan] .kickoff-starters,
-[data-loom-plan] .kickoff-starters > button {
+[data-loom-plan] .kickoff-empty h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  text-align: center;
+}
+
+[data-loom-plan] .kickoff-lead {
+  max-width: 56ch;
+  margin: 0;
+  color: var(--muted-foreground);
   font-family: var(--font-reading);
-  font-size: var(--reading-size);
-  line-height: var(--reading-line);
+  font-size: 17px;
+  line-height: 1.55;
+  text-align: center;
+}
+
+[data-loom-plan] .kickoff-card {
+  display: grid;
+  gap: 8px;
+  width: min(640px, 100%);
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: var(--dialog-shadow);
+  transition: border-color 160ms;
+}
+
+[data-loom-plan] .kickoff-card:focus-within {
+  border-color: color-mix(in oklch, var(--primary) 55%, var(--border));
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 [data-loom-plan] .kickoff-composer {
   display: block;
   width: 100%;
-  min-height: 10rem;
-  padding: 1.25rem;
+  min-height: 70px;
+  padding: 4px 4px 0;
   resize: vertical;
-  border: 1px solid var(--input);
-  border-radius: 0.75rem;
-  background: var(--background);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-family: var(--font-reading);
+  font-size: 17px;
+  line-height: 1.5;
+}
+
+[data-loom-plan] .kickoff-composer:disabled {
+  opacity: 0.5;
+}
+
+[data-loom-plan] .kickoff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+[data-loom-plan] .kickoff-attach {
+  height: 32px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+
+[data-loom-plan] .kickoff-attach:enabled:hover {
   color: var(--foreground);
 }
 
-[data-loom-plan] .kickoff-composer:focus-visible,
-[data-loom-plan] .kickoff-starter:focus-visible {
+/* DisabledReason puts its reason under the button; keep it hugging the card's right edge. */
+[data-loom-plan] .kickoff-start > div {
+  align-items: flex-end;
+  max-width: 30ch;
+  text-align: right;
+}
+
+[data-loom-plan] .kickoff-start svg {
+  width: 15px;
+  height: 15px;
+}
+
+[data-loom-plan] .kickoff-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0 4px;
+  list-style: none;
+  font-size: 12.5px;
+}
+
+[data-loom-plan] .kickoff-attachment {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--muted);
+}
+
+[data-loom-plan] .kickoff-attachment > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .kickoff-attachment button {
+  flex-shrink: 0;
+  text-decoration: underline;
+}
+
+[data-loom-plan] .kickoff-starters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 720px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+[data-loom-plan] .kickoff-starters:disabled {
+  opacity: 0.5;
+}
+
+/* The fieldset already dims the whole group; the document pill is a Button that would dim again. */
+[data-loom-plan] .kickoff-starters .kickoff-starter:disabled {
+  opacity: 1;
+}
+
+[data-loom-plan] .kickoff-starter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    border-color 140ms,
+    background-color 140ms,
+    transform 140ms;
+}
+
+[data-loom-plan] .kickoff-starter svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .kickoff-starter:enabled:hover {
+  border-color: color-mix(in oklch, var(--primary) 55%, var(--border));
+  background: color-mix(in oklch, var(--primary) 8%, var(--card));
+  transform: translateY(-1px);
+}
+
+[data-loom-plan] .kickoff-starter:enabled:hover svg {
+  color: var(--primary);
+}
+
+[data-loom-plan] .kickoff-starter:focus-visible,
+[data-loom-plan] .kickoff-attach:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 3px;
 }
 
-[data-loom-plan] .kickoff-starter {
-  display: block;
-  width: 100%;
-  padding: 0.5rem 0;
+[data-loom-plan] .kickoff-note {
+  margin: 0;
   color: var(--muted-foreground);
-  text-align: left;
+  font-size: 13px;
+  text-align: center;
 }
 
-[data-loom-plan] .kickoff-starter:enabled:hover {
-  color: var(--foreground);
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
+@keyframes kickoff-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
 }
 
-[data-loom-plan] .kickoff-composer:disabled,
-[data-loom-plan] .kickoff-starters:disabled {
-  opacity: 0.5;
+[data-loom-plan] .kickoff-empty > * {
+  animation: kickoff-rise 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+[data-loom-plan] .kickoff-empty > :nth-child(2) {
+  animation-delay: 60ms;
+}
+
+[data-loom-plan] .kickoff-empty > :nth-child(3) {
+  animation-delay: 110ms;
+}
+
+[data-loom-plan] .kickoff-empty > :nth-child(n + 4) {
+  animation-delay: 160ms;
+}
+
+/* ---- Conversation --------------------------------------------------------------------------- */
+
+[data-loom-plan] .kickoff-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  height: 100%;
+  min-height: 600px;
+  flex: 1;
+}
+
+@media (min-width: 1024px) {
+  [data-loom-plan] .kickoff-grid {
+    grid-template-columns: minmax(0, 1fr) 330px;
+    grid-template-rows: minmax(0, 1fr);
+  }
+}
+
+[data-loom-plan] .kickoff-transcript {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 24rem;
+}
+
+@media (min-width: 1024px) {
+  [data-loom-plan] .kickoff-transcript {
+    min-height: 0;
+  }
+}
+
+[data-loom-plan] .kickoff-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13.5px;
+}
+
+[data-loom-plan] .kickoff-head svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .kickoff-head h2 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+[data-loom-plan] .kickoff-head__sub {
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .kickoff-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+[data-loom-plan] .kickoff-pill[data-state="permission"] {
+  border-color: color-mix(in oklch, var(--tone-warning) 50%, var(--hairline));
+  color: var(--tone-warning);
+}
+
+[data-loom-plan] .kickoff-pill[data-state="failed"] {
+  border-color: color-mix(in oklch, var(--tone-blocked) 50%, var(--hairline));
+  color: var(--tone-blocked);
+}
+
+[data-loom-plan] .kickoff-side {
+  min-width: 0;
+  border-top: 1px solid var(--hairline);
+  background: var(--card);
+}
+
+@media (min-width: 1024px) {
+  [data-loom-plan] .kickoff-side {
+    overflow-y: auto;
+    border-top: 0;
+    border-left: 1px solid var(--hairline);
+  }
+}
+
+/* The shared transcript centres in a 70ch column; the reading face is set per speaker. */
+[data-loom-plan] .kickoff-transcript [role="log"] > div {
+  max-width: 70ch;
+  margin-inline: auto;
 }
 
 [data-loom-plan] .kickoff-transcript [role="log"],
 [data-loom-plan] .kickoff-transcript [class~="group/message"] {
   font-family: var(--font-reading);
-  font-size: var(--reading-size);
-  line-height: var(--reading-line);
+  font-size: 16.5px;
+  line-height: 1.55;
+}
+
+[data-loom-plan] .kickoff-transcript [class~="group/message"][class~="ml-auto"] {
+  font-size: 16px;
 }
 
 /* Message Markdown carries its own compact text utilities inside the shared transcript. */
 [data-loom-plan] .kickoff-transcript [role="log"] .md {
-  --text-sm: var(--reading-size);
-  --leading-normal: var(--reading-line);
+  --text-sm: 16.5px;
+  --leading-normal: 1.55;
+}
+
+[data-loom-plan] .kickoff-transcript [class~="ml-auto"] .md {
+  --text-sm: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-loom-plan] .kickoff-empty > *,
+  [data-loom-plan] .kickoff-starter,
+  [data-loom-plan] .kickoff-card {
+    animation: none;
+    transition: none;
+  }
+
+  [data-loom-plan] .kickoff-starter:enabled:hover {
+    transform: none;
+  }
 }

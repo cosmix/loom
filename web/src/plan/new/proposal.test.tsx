@@ -89,7 +89,8 @@ it.each([{ proposal: false }, { name: null }, { size: null }])(
 it("confirms the proposed feature and waits for the command result", async () => {
   const { send, result } = mount();
   const section = screen.getByRole("region", { name: "Proposal" });
-  expect(section.textContent).toContain("I suggest a feature called planner-search.");
+  expect(section.textContent).toContain("Proposed: a feature");
+  expect(section.textContent).toContain("Name planner-search.");
   expect(section.classList.contains("font-sans")).toBe(true);
   expect(screen.getByText("planner-search").parentElement?.classList.contains("font-mono")).toBe(
     true,
@@ -179,7 +180,7 @@ it("offers the standalone plan label and confirms its size", async () => {
   const { send, result } = mount({ ...featureShape, size: "plan" });
 
   expect(screen.getByRole("region", { name: "Proposal" }).textContent).toContain(
-    "I suggest a standalone plan called planner-search.",
+    "Proposed: a standalone plan",
   );
   expect(screen.queryByRole("button", { name: "Change sections" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Make it standalone" })).toBeNull();
@@ -257,6 +258,22 @@ it.each(["Use this", "Change sections"])(
     await result();
   },
 );
+
+it("lists the proposed sections after the name, each through Untrusted", () => {
+  mount({
+    ...featureShape,
+    sections: [
+      { title: "Scope", state: "open" },
+      { title: "<i>Order\u202e</i>", state: "open" },
+    ],
+  });
+
+  const section = screen.getByRole("region", { name: "Proposal" });
+  expect(section.textContent).toContain(
+    "Name planner-search and 2 sections: Scope, <i>Order⟨U+202E⟩</i>.",
+  );
+  expect(screen.getByText("<i>Order⟨U+202E⟩</i>").style.unicodeBidi).toBe("isolate");
+});
 
 it("renders the model's proposed name through Untrusted", () => {
   mount({ ...featureShape, name: "<b>search\u202e</b>" });

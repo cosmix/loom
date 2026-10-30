@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { expect, it, vi } from "vitest";
 
 import { snapshotAtom } from "@/plan/chat/model";
@@ -29,9 +30,15 @@ const { document } = vi.hoisted(() => ({
 
 // Document selection has its own tests; this boundary delivers its picked passage to the screen.
 vi.mock("./document-starter", () => ({
-  DocumentStarter: ({ onPick }: { onPick: (document: StarterDocument) => void }) => (
+  DocumentStarter: ({
+    onPick,
+    children,
+  }: {
+    onPick: (document: StarterDocument) => void;
+    children: ReactNode;
+  }) => (
     <button type="button" onClick={() => onPick(document)}>
-      Start from a document
+      {children}
     </button>
   ),
 }));
@@ -64,20 +71,21 @@ it("renders the invitation and all conversation starters", () => {
 
   expect(screen.getByRole("heading", { name: "What do you want to build?" })).toBeTruthy();
   expect(screen.getByRole("img")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "A new feature" })).toBeTruthy();
+  expect(screen.getByText(/Describe it the way you would to a colleague/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "A new feature for this project" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "A small fix or improvement" })).toBeTruthy();
-  expect(
-    screen.getByRole("button", { name: "Grow my standalone plans into a feature" }),
-  ).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Start from a document" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Grow standalone plans into a feature" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Start from a document I have" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Attach notes or a document" })).toBeTruthy();
+  expect(submitButton().textContent).toBe("Start the conversation");
   expect(screen.getByText("Nothing is written until you say so.")).toBeTruthy();
 });
 
 it.each([
-  ["A new feature", "I want to build a new feature: "],
+  ["A new feature for this project", "I want to build a new feature: "],
   ["A small fix or improvement", "I want to fix or improve: "],
   [
-    "Grow my standalone plans into a feature",
+    "Grow standalone plans into a feature",
     "I have standalone plans that belong together and want to grow them into a feature.",
   ],
 ])("fills the composer from %s", (label, text) => {
@@ -93,7 +101,7 @@ it("starts kickoff with the draft and selected document and waits for the sessio
   const h = mount();
   h.store.set(panelCollapsedAtom, true);
   enterText();
-  fireEvent.click(screen.getByRole("button", { name: "Start from a document" }));
+  fireEvent.click(screen.getByRole("button", { name: "Attach notes or a document" }));
   expect(screen.getByRole("listitem").textContent).toContain("Attached: My notes");
 
   fireEvent.click(submitButton());
@@ -149,7 +157,7 @@ it("uses the small kickoff offer when opened for standalone work", () => {
 
 it("switches back to feature kickoff when choosing the feature starter", () => {
   const h = mount(true);
-  fireEvent.click(screen.getByRole("button", { name: "A new feature" }));
+  fireEvent.click(screen.getByRole("button", { name: "A new feature for this project" }));
 
   fireEvent.click(submitButton());
 
@@ -158,7 +166,7 @@ it("switches back to feature kickoff when choosing the feature starter", () => {
 
 it("allows an attachment to start without draft text", () => {
   const h = mount();
-  fireEvent.click(screen.getByRole("button", { name: "Start from a document" }));
+  fireEvent.click(screen.getByRole("button", { name: "Attach notes or a document" }));
 
   fireEvent.click(submitButton());
 
@@ -169,7 +177,7 @@ it("allows an attachment to start without draft text", () => {
 
 it("removes an attached document before sending", () => {
   const h = mount();
-  fireEvent.click(screen.getByRole("button", { name: "Start from a document" }));
+  fireEvent.click(screen.getByRole("button", { name: "Attach notes or a document" }));
   fireEvent.click(within(screen.getByRole("listitem")).getByRole("button", { name: "Remove" }));
 
   fireEvent.click(submitButton());
@@ -177,6 +185,18 @@ it("removes an attached document before sending", () => {
   expect(screen.queryByRole("list", { name: "Attached documents" })).toBeNull();
   expect(submitButton().getAttribute("aria-disabled")).toBe("true");
   expect(h.send).not.toHaveBeenCalled();
+});
+
+it("attaches a document from the starter pill as well", () => {
+  const h = mount();
+  fireEvent.click(screen.getByRole("button", { name: "Start from a document I have" }));
+  expect(screen.getByRole("listitem").textContent).toContain("Attached: My notes");
+
+  fireEvent.click(submitButton());
+
+  expect(h.send).toHaveBeenCalledWith(
+    expect.objectContaining({ text: "", attachments: [document.attachment] }),
+  );
 });
 
 it.each(["", "  \n  "])("blocks an empty kickoff draft %j", (text) => {

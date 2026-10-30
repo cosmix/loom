@@ -110,7 +110,7 @@ it("auto-opens a lone feature once and lets the Home link return", async () => {
 
   expect(await screen.findByRole("heading", { name: "Start something new" })).toBeTruthy();
   expect(router.state.location.pathname).toBe("/");
-  expect(screen.getByRole("link", { name: "search" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Search" })).toBeTruthy();
 });
 
 it.each(["/new", "/f/search"])("keeps Home visible after first arriving from %s", async (entry) => {
@@ -121,7 +121,7 @@ it.each(["/new", "/f/search"])("keeps Home visible after first arriving from %s"
   expect(await screen.findByRole("heading", { name: "Start something new" })).toBeTruthy();
   expect(router.state.location.pathname).toBe("/");
 
-  fireEvent.click(screen.getByRole("link", { name: "search" }));
+  fireEvent.click(screen.getByRole("link", { name: "Search" }));
   await screen.findByRole("heading", { name: "Feature screen" });
   fireEvent.click(screen.getByRole("link", { name: "Home" }));
 
@@ -137,7 +137,7 @@ it("consumes auto-open on navigation before returning to the initial Home entry"
   act(() => store.set(projectAtom, { ...emptyProject, checklists: [feature("search")] }));
   fireEvent.click(screen.getByRole("link", { name: "Home" }));
   await screen.findByRole("heading", { name: "Start something new" });
-  fireEvent.click(screen.getByRole("link", { name: "search" }));
+  fireEvent.click(screen.getByRole("link", { name: "Search" }));
   await screen.findByRole("heading", { name: "Feature screen" });
 
   await act(async () => {
@@ -210,16 +210,31 @@ it("renders the invitation followed by feature cards and the standalone shelf", 
   const invitation = screen.getByRole("region", { name: "Start something new" });
   const cards = screen.getByRole("list", { name: "Features" });
   const shelf = screen.getByRole("region", { name: "Standalone plans" });
-  expect(within(cards).getByRole("link", { name: "search" }).getAttribute("href")).toBe(
+  expect(within(cards).getByRole("link", { name: "Search" }).getAttribute("href")).toBe(
     "/f/search",
   );
-  expect(within(cards).getByRole("link", { name: "billing" }).getAttribute("href")).toBe(
+  expect(within(cards).getByRole("link", { name: "Billing" }).getAttribute("href")).toBe(
     "/f/billing",
   );
   expect(within(shelf).getByRole("link", { name: "Fix search fix-search written" })).toBeTruthy();
-  expect(invitation.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(cards.contains(invitation)).toBe(true);
+  expect(within(cards).getAllByRole("listitem")[0]?.contains(invitation)).toBe(true);
   expect(cards.compareDocumentPosition(shelf) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.queryByText("No features yet.")).toBeNull();
+  expect(screen.getByRole("heading", { level: 2, name: "Features" })).toBeTruthy();
+  expect(screen.getByText("doc/ in this repository")).toBeTruthy();
+  expect(within(invitation).getByRole("heading", { level: 2 })).toBeTruthy();
+  expect(
+    within(invitation).getByText(/Bring a rough idea\. Loom talks it through with you/),
+  ).toBeTruthy();
+  const cardLinks = within(cards).getAllByRole("link", { name: /Search|Billing/ });
+  const firstCard = cardLinks[0];
+  // The invitation is the grid's first item, so the first feature card sits beside it.
+  expect(
+    invitation.compareDocumentPosition(firstCard as Element) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(cards.contains(shelf)).toBe(false);
+  expect(shelf.querySelector("details")?.open).toBe(false);
 });
 
 it("one feature and a standalone plan opens the feature", async () => {
@@ -246,7 +261,7 @@ it("navigating back to Home does not redirect", async () => {
 
   expect(await screen.findByRole("heading", { name: "Start something new" })).toBeTruthy();
   expect(router.state.location.pathname).toBe("/");
-  expect(screen.getByRole("link", { name: "search" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Search" })).toBeTruthy();
   expect(screen.getByRole("region", { name: "Standalone plans" })).toBeTruthy();
 });
 
@@ -274,6 +289,7 @@ it("shows the empty lead and accessible doodle as the whole empty screen", () =>
   ).toBeTruthy();
   expect(invitation.hasAttribute("data-doodle-host")).toBe(true);
   expect(within(invitation).getByText("Nothing is written until you say so.")).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Features" })).toBeNull();
   expect(screen.queryByRole("list", { name: "Features" })).toBeNull();
   expect(screen.queryByRole("region", { name: "Standalone plans" })).toBeNull();
 });
@@ -282,6 +298,7 @@ it("starts a conversation through the kickoff link", async () => {
   mount();
   const start = screen.getByRole("link", { name: "Start a conversation" });
   expect(start.getAttribute("href")).toBe("/new");
+  expect(screen.getByRole("region", { name: "Start something new" }).contains(start)).toBe(true);
 
   fireEvent.click(start);
 
