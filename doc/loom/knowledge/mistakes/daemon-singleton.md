@@ -1,6 +1,6 @@
 # Daemon Singleton Incident
 
-> Daemons
+>
 
 ## Resolution
 

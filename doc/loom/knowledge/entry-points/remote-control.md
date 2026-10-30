@@ -1,6 +1,6 @@
 # Remote Control
 
-> Calls
+>
 
 ## Remote Control & Permission Mode Integration Points
 

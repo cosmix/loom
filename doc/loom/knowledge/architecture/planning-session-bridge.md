@@ -1,6 +1,6 @@
 # Planning Session Bridge
 >
-> Bridge
+>
 
 The bridge owns Claude Code sessions for `loom plan`: it starts each in its own tmux server, reads the
 hook spool and the transcript, runs the state machine, delivers chat input, answers permission
@@ -103,14 +103,26 @@ death outside `Ending` is `Failed` (`FailureKind::Died`), a failed spawn `Failur
 Delivery happens only while `Idle`, one message at a time, from a server-side queue of at most
 `MAX_QUEUED` = 20. Three tmux commands on the session's socket: `load-buffer -b loom-input -` with the text on
 stdin (a writer thread, since 100 KB exceeds a pipe buffer), `paste-buffer -p -d` (bracketed paste, so newlines
-do not submit), `send-keys Enter`. Never `load-buffer -w` (clipboard; crashes tmux 3.6a with a client
-attached). A delivery counts when `UserPromptSubmit` arrives within `delivery_timeout` = 10 s; otherwise the
-item is marked undelivered (the last `UNDELIVERED_KEPT` = 8 stay resendable). A failed paste of the opening
-fails the live session at once through `Bridge::fail_live`. The delivered text, with the attachment block,
-is capped at `MAX_DELIVERED_BYTES` = 100 000. `check_send` refuses text whose first non-whitespace
-character, after skipping a leading U+FEFF, is `/`, except `/compact`. Attachments: at most 10, quotes cut
-at 2,000 characters on a line boundary with `[…N more characters; read the source]` where N is the quote's
-characters minus the shown lines joined by newlines.
+do not submit), then `send-keys Enter` `ENTER_AFTER_PASTE` = 150 ms later from a short-lived `loom-paste-enter` thread
+(`tmux_io.rs` `paste_text`, `enter_after_paste`): the paste stays synchronous so a failed paste still fails the opening,
+and the driver thread never sleeps, since one tick serves every session. A lost Enter is only logged. Never `load-buffer -w`
+(clipboard; crashes tmux 3.6a with a client attached). A delivery counts when `UserPromptSubmit` arrives within
+`delivery_timeout` = 10 s; otherwise the item is marked undelivered (the last `UNDELIVERED_KEPT` = 8 stay resendable).
+A failed paste of the opening fails the live session at once through `Bridge::fail_live`.
+
+**An unsubmitted opening.** `bridge/opening.rs` covers an opening whose Enter was swallowed: `enter_again` presses Enter
+again (never pastes again; `SessionHost::press_enter`, a default no-op that `TmuxHost` and `fake_host.rs` override) every
+2 s, at most twice, inside `delivery_timeout`, and only while the session is live and `Idle` (Enter on a permission prompt
+would answer it; a chat message never gets one, as its box may hold half-typed text). `unsubmitted_opening` fails a Summary
+session whose opening still has no `UserPromptSubmit` at `delivery_timeout` through `Bridge::fail_live` with "opening not
+submitted within <timeout>", so the scheduler requeues its ids. An opening whose `UserPromptSubmit` and transcript match
+were both lost therefore keeps delivering until the session next goes `Idle`, then fails once. `Delivering.opening` is
+`Option<u8>` (`Some(n)` = the opening, `n` re-presses; `session.rs`).
+
+The delivered text, with the attachment block, is capped at `MAX_DELIVERED_BYTES` = 100 000. `check_send` refuses text whose
+first non-whitespace character, after skipping a leading U+FEFF, is `/`, except `/compact`. Attachments: at most 10, quotes
+cut at 2,000 characters on a line boundary with `[…N more characters; read the source]` where N is the quote's characters
+minus the shown lines joined by newlines.
 
 ## Interrupt, end, teardown
 

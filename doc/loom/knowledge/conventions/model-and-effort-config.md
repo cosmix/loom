@@ -116,22 +116,26 @@ Claude Code `/fast`; it is not a model id and never belongs in `CODEX_MODELS`.
 
 ## `[plan]` Keys and Defaults
 
-Eight string keys pick the model and reasoning effort of planning sessions. Summary keys (`planning/summary/config.rs`,
-`SummaryModels::resolve`): `plan.document_summary_model` haiku and `plan.document_summary_effort` medium for a
-document summary; `plan.overview_model` sonnet and `plan.overview_effort` high for an overview and the summary session
-that rebuilds them. Authoring keys (`planning/guidance/models.rs`, `GuidanceModels::resolve`; `user_config/plan_authoring.rs`):
-`plan.spec_authoring_model` opus and `plan.spec_authoring_effort` medium for steps that write the product spec;
-`plan.plan_authoring_model` opus and `plan.plan_authoring_effort` high for steps that write metaplans and plans.
-`step_class` (`planning/guidance/start.rs`) sorts each authoring start into the spec or plan class (the rules are in
-[Planning Session Guidance](../architecture/planning-guidance.md#plan-authoring-keys-and-step-classes)). The user tier
-is the `[plan]` table of `~/.loom/config.toml` (`user_config/plan.rs`, defaults `DEFAULT_PLAN_*`, values validated as model
-and effort enums); the project tier is the `[planning]` table of `.loom/work/config.toml`
-(`fs/work_dir/config_sections/plan_config.rs`, `read_plan_config`, `deny_unknown_fields`). The tables differ because the
-project `[plan]` table already holds the run identity (`plan_id`, `source_path`, ...), so the keys sit in `[planning]`
-there. A project table holding one unknown or malformed key is dropped whole without a log line, so all eight project
-overrides revert to the user tier; this mirrors `read_pressure_config`. The README configuration table lists all eight
-rows. The server resolves them once at start (see [follow-ups](../concerns/planning-guidance-followups.md)).
+Eleven string keys pick the model, reasoning effort and backend of planning sessions. Summary keys (`planning/summary/config.rs`,
+`SummaryModels::resolve`; defaults `DEFAULT_PLAN_*` in `user_config/plan.rs`): `plan.document_summary_model` haiku and
+`plan.document_summary_effort` high for a document summary; `plan.overview_model` haiku and `plan.overview_effort` high for an
+overview and the summary session that rebuilds them. `plan.summary_backend` (`claude` default, or `codex`) picks the agent that
+builds summaries; `plan.summary_codex_model` (`gpt-6.1-terra`) and `plan.summary_codex_effort` (`high`) apply only to the `codex`
+backend (the key list is `user_config/keys.rs`; backend rules in [Summary Rebuilds and Cost](../architecture/summary-store.md#rebuilds-and-cost)).
+Haiku accepts `--effort high`: `claude --help` lists the levels with no per-model restriction. Authoring keys (`planning/guidance/models.rs`,
+`GuidanceModels::resolve`; `user_config/plan_authoring.rs`): `plan.spec_authoring_model` opus and `plan.spec_authoring_effort`
+medium for steps that write the product spec; `plan.plan_authoring_model` opus and `plan.plan_authoring_effort` high for steps
+that write metaplans and plans. `step_class` (`planning/guidance/start.rs`) sorts each authoring start into the spec or plan class
+(the rules are in [Planning Session Guidance](../architecture/planning-guidance.md#plan-authoring-keys-and-step-classes)). The user
+tier is the `[plan]` table of `~/.loom/config.toml` (`user_config/plan.rs`, values validated as model and effort enums); the project
+tier is the `[planning]` table of `.loom/work/config.toml` (`fs/work_dir/config_sections/plan_config.rs`, `read_plan_config`,
+`deny_unknown_fields`). The tables differ because the project `[plan]` table already holds the run identity (`plan_id`,
+`source_path`, ...), so the keys sit in `[planning]` there. A project table holding one unknown or malformed key is dropped whole
+without a log line, so every project override reverts to the user tier; this mirrors `read_pressure_config`. The README
+configuration table lists every row, and the web Settings dialog pairs the keys into six `plan` rows (`web/src/components/settings-model.ts`,
+pinned by `settings-model.test.ts`; the Codex pair is `plan.summary_codex`). The server resolves the keys once at start (see
+[follow-ups](../concerns/planning-guidance-followups.md)). The allowed backends are one constant, `SUMMARY_BACKENDS` (`user_config/plan.rs`), shared by the key list, the user tier and the project tier.
 
 ## Planner Execution Worker Allocation
 
-For planner plans 06–11 and their linked briefs, substantial Codex execution units use `gpt-6.1-sol` with `--effort high`; routine types, fixtures, documentation and mechanical wiring may use `gpt-6.1-terra` at high effort. The planner UI redesign plan and its briefs use `gpt-6.1-sol` with `--effort high` for implementation and fix workers in its eight standard stages and integration verification. The integration-verification stage is explicitly pinned to opus; code reviewers use opus. Knowledge distillation remains single-agent. This user-selected allocation applies to execution subagents, not verification judgment.
+For planner plans 06–11 and their linked briefs, substantial Codex execution units use `gpt-6.1-sol` with `--effort high`; routine types, fixtures, documentation and mechanical wiring may use `gpt-6.1-terra` at high effort. The planner UI redesign plan and its briefs use `gpt-6.1-sol` with `--effort high` for implementation and fix workers in its eight standard stages and integration verification. The integration-verification stage is explicitly pinned to opus; code reviewers use opus. Knowledge distillation remains single-agent. This user-selected allocation applies to execution subagents, not verification judgment. The UI repair plan (`feat-planner-12-ui-repair`) runs its visual stages on Claude only (haiku, sonnet, opus; implementers load `frontend-design:frontend-design`), and gives Codex `gpt-6.1-sol` at high effort only the Rust payload, configuration keys and Codex summary spawner units, in file-sized units through `loom-codex-forwarder`; the opening-submission fix stays on opus. Contract tests always come from loom's Claude contract session.

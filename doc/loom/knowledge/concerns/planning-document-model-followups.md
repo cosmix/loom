@@ -13,7 +13,7 @@ Reviewer suggestions not applied, with the file that owns each. See [Planning Do
 **Anchors and parsing**
 
 - `sections.rs`: a punctuation-only heading yields anchor `""`, which `find("")` shadows with the preamble; later duplicates then take `-1`. Skip such headings in `scan_headings` or give them a distinct anchor.
-- `sections.rs`: only ATX headings are recognised while `doc/product/planner-ui/section_03.md` says CommonMark; add a test or a note for setext headings.
+- `sections.rs`: only ATX headings are recognised while `doc/product/feat-planner/section_03.md` says CommonMark; add a test or a note for setext headings.
 - `xref.rs`: `at_token_start` tests any occurrence of the path in the text, so a line holding one path both with and without a `src/` prefix yields a duplicate `PathToken`; it also drops a path wrapped in `**`, `_` or written after `key=` (add `*`, `_`, `=`, `{` to the accepted preceding characters). A link with an empty fragment (a link ending in `#`) gets anchor `Some("")` and is reported broken while `find("")` addresses the preamble; filter empty fragments to `None`.
 - `pressure.rs` and `vision.rs`: heading matches are exact for "Pressure tests" but case-insensitive for "Open questions" and "Specification sections"; pick one rule.
 - `implements.rs`: a substring test finds where metadata starts; use `DocSections.metadata.start_line`.
@@ -42,7 +42,7 @@ Reviewer suggestions not applied, with the file that owns each. See [Planning Do
 
 - `commands/plan/check.rs` prints step marks with `{mark:?}`; give `StepMark` an explicit label. `println!` panics on a closed pipe (EPIPE) like every `loom` command; the fix belongs in `main.rs`, not here.
 - Not asserted: `ProjectState.sections_listed`, `sections_written` and `metaplans` in `checklist_json_shape` (it pins `plans_by_state` and `locked_files`); `Project::load` with an unreadable Markdown file raising no `missing-title`; exit 2 on a `Project::load` error such as `doc/` nested deeper than 16 levels; a symlinked document in the watcher and in `LockedSet::scan`; sparse-file and `..`-glob cases of `inputs.rs`.
-- `doc/product/planner-ui/section_01.md` says the table's step 2 writes the "lowest-numbered missing section" but the code and `table_order_decides_the_first_missing_section` follow the vision table's order.
+- `doc/product/feat-planner/section_01.md` says the table's step 2 writes the "lowest-numbered missing section" but the code and `table_order_decides_the_first_missing_section` follow the vision table's order.
 - Four plans (`PLAN-adopt-ecc-best-practices`, `PLAN-loom-ui-mods`, `PLAN-model-router-hooks`, `PLAN-web-host-graft-followthrough`) have no `Implements:` line, so `loom plan check` reports `implements-missing` and exits 1 on this repository; `Implements: none` under each title clears it (`section_03.md`).
 
 ## Summary Store Open Items
@@ -74,7 +74,7 @@ Robustness:
 - `fs/work_dir/config_sections/plan_config.rs` `read_plan_config` drops the whole `[planning]` table without a log line on
   one bad key; a `warn` would help.
 - `SummaryModels::load` returns `Result` but never errors and its only caller is `tests/planning_summary_cli_contracts.rs`;
-  the signature is pinned by `planner-ui/briefs/feat-planner-04-summary-store/common.md`; `planning/guidance/models.rs` calls
+  the signature is pinned by `feat-planner/briefs/feat-planner-04-summary-store/common.md`; `planning/guidance/models.rs` calls
   `resolve`, so no production code needs the `Result` and it can become infallible with the next change to that brief.
 - `loom-hooks/worktree-file-guard.sh:193` `allow_loom_scratch` is confined to the validated scratch directory, but its
   comment omits `validate_session_dir`'s 0700 mode check, `LOOM_SCRATCH_DIR` is not tied to the scratch root, and file
@@ -90,7 +90,7 @@ and `end_turn=false` in `commands/stage/adjudicate.rs`. In tests, `summary_cli_u
 `#[serial]` tests that mutate `LOOM_HOME` race un-annotated tests in the same binary that read the environment, and
 `seal_rejects_duplicate_sentence` matches `'3'` and `'5'` loosely enough for a hex id to satisfy it.
 
-Open question for the operator: the "incomplete" row of `doc/product/planner-ui/section_04.md` ("What out of date means") still
+Open question for the operator: the "incomplete" row of `doc/product/feat-planner/section_04.md` ("What out of date means") still
 lists a removed member summary as a trigger, but with seal requiring every member cited a removal stales the citing
 overview sentences instead, so that route is reachable only by a hand edit. Confirm the stale direction and amend the row.
 

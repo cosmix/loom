@@ -1,6 +1,6 @@
 # Merge Flow
 
-> Merge
+>
 
 ## Merge Flow
 
@@ -132,3 +132,7 @@ Completion validates committed tracked content and rejects untracked inputs, exc
 `loom stage complete` in a session relays a `complete` request, and the daemon completes the stage only from a passing host job (`host_verify/apply.rs::bind_and_complete`). It records the verified `completed_commit`, and transitions the stage to Completed with `merged: false` for non-knowledge stages; the merge flow lands it afterwards. Missing proof cannot be filled from a newer branch tip to authorize landing. See [Host Verification Jobs](verification-v2-gates.md).
 
 Operator progressive completion performs its merge before the final Completed transition (`commands/stage/progressive_complete/finish.rs`). The host-job completion does not.
+
+## A Resolver's Committed Content That Fails Completion
+
+A merge resolver cannot repair content its own merge commit made fail `verify_resolved_completion`: a Merge-scope commit needs the merge in progress, which the merge commit used up, and a Merge stage cannot dispute (`MergeConflict` reaches only `Completed` and `Blocked`, `models/stage/transitions.rs`). `merge_handler/resolver_handback.rs` therefore stops every resolver of the stage and requeues the stage so a fresh Stage session gets the refusal text (up to `MAX_MERGE_HANDBACKS` = 2; an approval zeroes the count; the refusal is cut at `MAX_REFUSAL_BYTES`). `MergeConflict` to `Queued` stays illegal: `Stage::try_hand_back_merge` (`models/stage/merge_block.rs`) steps through `Blocked`. The stage is held for the operator (`NeedsHumanReview`) instead when a resolver may still run, a live worker session exists, the stage used its handbacks, or the merge commit since `completed_commit` is missing. Every `Err` of `verify_resolved_completion` counts as a failure, transient ones included, on purpose: the fresh session verifies from scratch and the cap holds a repeating error. Past mistakes: [Planner UI Repair](../mistakes/planner-ui-repair.md#a-merge-resolver-could-not-land-a-merge-that-edited-an-accepted-test-file).
