@@ -193,8 +193,10 @@ fn record_status_change(stage_path: &Path, stage: &Stage, from: StageStatus) {
         stage.session.clone(),
         stage.close_reason.as_deref(),
     );
+    // Unlocked read: callers such as `complete_stage` hold the sessions-directory
+    // lock across `update_stage`, and a second `flock` in this process would block.
     event.session_type = stage.session.as_deref().and_then(|id| {
-        crate::fs::session_files::load_session_exact(work_dir, id)
+        crate::fs::session_files::load_session_exact_unlocked(work_dir, id)
             .ok()
             .flatten()
             .map(|session| session.session_type)

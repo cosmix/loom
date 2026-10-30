@@ -282,3 +282,51 @@ fn contract_handoff_records_both_session_starts_without_status_change() {
     assert!(events[1].at >= events[0].at);
     assert_ne!(events[0].session, events[1].session);
 }
+
+#[test]
+fn status_change_under_held_sessions_lock_records_session_type() {
+    use crate::fs::{
+        locking::locked_dir_update, session_files::save_session, stage_events::read_recent,
+    };
+    use crate::models::session::{Session, SessionType};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path().to_path_buf();
+    let mut session = Session::new();
+    session.session_type = SessionType::Contract;
+    session.stage_id = Some("held".into());
+    save_session(&session, &work_dir).unwrap();
+    let stage = Stage {
+        id: "held".into(),
+        status: StageStatus::Executing,
+        session: Some(session.id.clone()),
+        ..Stage::default()
+    };
+    create_stage(&stage, &work_dir).unwrap();
+
+    // `complete_stage` holds the sessions-directory lock across `update_stage`.
+    // A deadlock must fail the test, so the update runs on a thread and the
+    // test waits on a channel with a timeout.
+    let (sender, receiver) = mpsc::channel();
+    let thread_dir = work_dir.clone();
+    std::thread::spawn(move || {
+        let result = locked_dir_update(&thread_dir.join("sessions"), || {
+            update_stage("held", &thread_dir, |current| {
+                current.status = StageStatus::Completed;
+                Ok(())
+            })
+        });
+        let _ = sender.send(result.map(|_| ()));
+    });
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("update_stage deadlocked while the sessions lock was held")
+        .unwrap();
+
+    let events = read_recent(&work_dir, 10);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].to, StageStatus::Completed);
+    assert_eq!(events[0].session_type, Some(SessionType::Contract));
+}
