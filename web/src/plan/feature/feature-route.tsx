@@ -1,15 +1,19 @@
 import { useAtomValue, useSetAtom } from "jotai/react";
 import { useEffect } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 
 import type { ChecklistView } from "@/plan/api/schema";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { ChecklistGaps } from "@/plan/checklist-view";
 import { DraftTeamPanel } from "@/plan/feature/draft-team-panel";
+import { PaceChoice } from "@/plan/feature/pace";
+import { Queue, remainingItems } from "@/plan/feature/queue";
+import { StepItems } from "@/plan/feature/step-items";
 import { StepList } from "@/plan/feature/step-list";
-import { isCurrentStep, readyLabel } from "@/plan/header/step-tracker";
+import { selectedStep, STEP_COUNT, stepTitle } from "@/plan/feature/steps";
 import { activeFeatureAtom, featuresAtom, projectAtom } from "@/plan/state/atoms";
 import { LoadState } from "@/plan/ui/load-state";
+
+import "./feature.css";
 
 function decodeFeature(feature: string): string {
   try {
@@ -17,13 +21,6 @@ function decodeFeature(feature: string): string {
   } catch {
     return feature;
   }
-}
-
-function heading(checklist: ChecklistView): string {
-  const ready = readyLabel(checklist.current);
-  if (ready) return ready;
-  const step = checklist.steps.find((candidate) => isCurrentStep(checklist.current, candidate));
-  return step ? `Step ${step.number} of ${checklist.steps.length}: ${step.name}` : "Planning";
 }
 
 function UnknownFeature({ name }: { name: string }) {
@@ -40,8 +37,28 @@ function UnknownFeature({ name }: { name: string }) {
   );
 }
 
+function StepBody({ checklist, selected }: { checklist: ChecklistView; selected: number }) {
+  const step = checklist.steps.find((candidate) => candidate.number === selected);
+  return (
+    <div className="plan-feature__body">
+      <header className="plan-feature__head">
+        <p className="plan-eyebrow">
+          <Untrusted text={checklist.title} /> · step {selected} of {STEP_COUNT}
+        </p>
+        <h1 className="plan-feature__title">{stepTitle(selected)}</h1>
+      </header>
+      {step && <PaceChoice checklist={checklist} step={step} />}
+      <DraftTeamPanel feature={checklist.feature} />
+      {selected === 2 && <Queue checklist={checklist} kind="section" />}
+      {selected === 4 && <Queue checklist={checklist} kind="plan" />}
+      <StepItems items={remainingItems(checklist, selected)} />
+    </div>
+  );
+}
+
 export function FeatureRoute() {
   const { feature } = useParams();
+  const [search] = useSearchParams();
   const project = useAtomValue(projectAtom);
   const features = useAtomValue(featuresAtom);
   const setActiveFeature = useSetAtom(activeFeatureAtom);
@@ -58,17 +75,11 @@ export function FeatureRoute() {
 
   if (project === null) return <LoadState state="loading" title="Loading the feature" />;
   if (!checklist) return <UnknownFeature name={decodedFeature} />;
+  const selected = selectedStep(search.get("step"), checklist);
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
-      <h1 className="font-display text-2xl">
-        <Untrusted text={checklist.feature} />
-      </h1>
-      <p className="text-sm text-muted-foreground">
-        <Untrusted text={heading(checklist)} />
-      </p>
-      <StepList checklist={checklist} />
-      <DraftTeamPanel feature={checklist.feature} />
-      {checklist.items.length > 0 && <ChecklistGaps checklist={checklist} />}
+    <div className="plan-feature">
+      <StepList checklist={checklist} selected={selected} />
+      <StepBody checklist={checklist} selected={selected} />
     </div>
   );
 }

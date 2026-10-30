@@ -1,34 +1,56 @@
 .loom-doodle {
   display: block;
-  width: 240px;
+  width: 270px;
   max-width: 100%;
   height: auto;
 }
 
+/* Ink is the muted foreground; the weft, its end dot and the sparks take the accent. */
+.loom-doodle .loom-doodle__ink {
+  stroke: var(--muted-foreground);
+  stroke-width: 1.6;
+}
+
 .loom-doodle .loom-doodle__thread {
+  stroke: var(--ring);
+  stroke-width: 2.1;
   stroke-dasharray: 1;
   stroke-dashoffset: 0;
 }
 
+.loom-doodle .loom-doodle__dot {
+  fill: var(--ring);
+  opacity: 1;
+}
+
 .loom-doodle .loom-doodle__spark {
   stroke: var(--ring);
+  stroke-width: 1.6;
   opacity: 1;
   transform-box: fill-box;
   transform-origin: center;
 }
 
+/* At rest the drawing is complete; hovering or focusing it, or its host, draws it again. */
 .loom-doodle:hover .loom-doodle__thread,
 .loom-doodle:focus-within .loom-doodle__thread,
 [data-doodle-host]:hover .loom-doodle .loom-doodle__thread,
 [data-doodle-host]:focus-within .loom-doodle .loom-doodle__thread {
-  animation: loom-doodle-draw 1.4s ease-out;
+  animation: loom-doodle-draw 2.4s cubic-bezier(0.45, 0.05, 0.35, 1);
 }
 
 .loom-doodle:hover .loom-doodle__spark,
 .loom-doodle:focus-within .loom-doodle__spark,
 [data-doodle-host]:hover .loom-doodle .loom-doodle__spark,
 [data-doodle-host]:focus-within .loom-doodle .loom-doodle__spark {
-  animation: loom-doodle-twinkle 1.4s ease-out;
+  animation: loom-doodle-twinkle 1.2s ease-in-out 3;
+}
+
+.loom-doodle:hover .loom-doodle__dot,
+.loom-doodle:focus-within .loom-doodle__dot,
+[data-doodle-host]:hover .loom-doodle .loom-doodle__dot,
+[data-doodle-host]:focus-within .loom-doodle .loom-doodle__dot {
+  animation: loom-doodle-pop 2.4s linear;
 }
 
 @keyframes loom-doodle-draw {
@@ -44,15 +66,21 @@
   0%,
   100% {
     opacity: 1;
-    transform: scale(1);
+    transform: scale(1) rotate(0deg);
   }
-  25% {
-    opacity: 0.25;
-    transform: scale(0.7);
+  50% {
+    opacity: 0.6;
+    transform: scale(1.5) rotate(45deg);
   }
-  60% {
+}
+
+@keyframes loom-doodle-pop {
+  0%,
+  90% {
+    opacity: 0;
+  }
+  100% {
     opacity: 1;
-    transform: scale(1.15);
   }
 }
 
@@ -67,6 +95,7 @@
     stroke-dashoffset: 0;
   }
 
+  .loom-doodle .loom-doodle__dot,
   .loom-doodle .loom-doodle__spark {
     opacity: 1;
     transform: none;
