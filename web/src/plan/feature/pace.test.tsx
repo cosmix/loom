@@ -77,7 +77,8 @@ function fixtureOffers(checklist: ChecklistView) {
   return { guided, team };
 }
 
-const HOLDER_REASON = `Ada${String.fromCodePoint(0x202e)} holds authoring`;
+// DisabledReason shows the reason through Untrusted, which spells the control character out.
+const HOLDER_REASON = "Ada⟨U+202E⟩ holds authoring";
 
 function renderChoice(
   checklist: ChecklistView,

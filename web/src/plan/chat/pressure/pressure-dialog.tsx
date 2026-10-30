@@ -62,7 +62,7 @@ export function PressureDialog() {
         if (!open) close();
       }}
     >
-      <DialogContent className="max-h-[calc(100%-8px)] gap-0 overflow-y-auto rounded-2xl border border-border bg-card p-0 ring-0 sm:max-w-[min(660px,100%)]">
+      <DialogContent className="max-h-[calc(100%-8px)] gap-0 overflow-y-auto rounded-[16px] border border-border bg-card p-0 ring-0 sm:max-w-[min(660px,100%)]">
         <PressureHero />
         {options?.ok && refreshed ? (
           <PressureForm
@@ -77,7 +77,7 @@ export function PressureDialog() {
             title={
               options?.ok === false ? "Could not load pressure options" : "Loading pressure options"
             }
-            message={options?.ok === false ? options.message : undefined}
+            message={options?.ok === false ? visibleControls(options.message) : undefined}
           />
         )}
       </DialogContent>
@@ -148,7 +148,13 @@ function PressureFooter({
         <Lock aria-hidden="true" className="size-3.5" />
         Holds authoring until it finishes
       </p>
-      <Button type="button" variant="outline" onClick={close}>
+      {/* The ghost button: no fill, a 1px border, weight 500, at the primary button's measures. */}
+      <Button
+        type="button"
+        variant="ghost"
+        className="h-[30px] rounded-[8px] border-border px-3 text-[13px] font-medium"
+        onClick={close}
+      >
         Cancel
       </Button>
       <DisabledReason reason={reason} onClick={onStart}>
@@ -284,7 +290,7 @@ function OptionSelect({
         name={name}
         value={value}
         required
-        className="h-7 w-full rounded-lg border border-hairline bg-background px-2 font-mono text-[11.5px] focus-visible:outline-2 focus-visible:outline-ring"
+        className="h-7 w-full rounded-[8px] border border-hairline bg-background px-2 font-mono text-[11.5px] focus-visible:outline-2 focus-visible:outline-ring"
         onChange={(event) => onChange(event.currentTarget.value)}
       >
         {values.map((option) => (

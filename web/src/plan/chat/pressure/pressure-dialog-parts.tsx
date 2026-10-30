@@ -10,7 +10,7 @@ import { Untrusted } from "../visible-controls";
 export function PressureHero(): JSX.Element {
   return (
     <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3.5 border-b border-hairline bg-[radial-gradient(120%_160%_at_0%_0%,color-mix(in_oklch,var(--primary)_16%,var(--card))_0%,var(--card)_62%)] px-5 pt-[18px] pb-4">
-      <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_oklch,var(--primary)_28%,transparent)] text-primary">
+      <span className="flex size-11 shrink-0 items-center justify-center rounded-[12px] bg-[color-mix(in_oklch,var(--primary)_28%,transparent)] text-primary">
         <ActivityGlyph kind="pressure" className="size-6" />
       </span>
       <div className="min-w-0 space-y-0.5">

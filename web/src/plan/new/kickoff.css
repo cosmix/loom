@@ -1,8 +1,7 @@
 /*
  * The kickoff screen: the empty invitation and the conversation. The "Taking shape" panel and the
  * proposal card have their own files (taking-shape.css, proposal.css). Colours come from theme
- * tokens only; the composer card uses --dialog-shadow because the planner has no shadow token of
- * its own.
+ * tokens only; the composer card uses the planner's --plan-shadow (plan.css).
  */
 
 /* ---- Empty state ---------------------------------------------------------------------------- */
@@ -50,7 +49,7 @@
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--card);
-  box-shadow: var(--dialog-shadow);
+  box-shadow: var(--plan-shadow);
   transition: border-color 160ms;
 }
 

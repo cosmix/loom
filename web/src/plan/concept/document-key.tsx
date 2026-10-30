@@ -40,7 +40,7 @@ export function chipTitle(title: string): string {
 
 /** A key chip: 28px high, the DocMark flush at the left padding. */
 const CHIP_CLASS =
-  "flex h-7 items-center gap-[7px] rounded-lg border border-hairline bg-card pr-2.5 pl-1 text-[12.5px] font-medium";
+  "flex h-7 items-center gap-[7px] rounded-[8px] border border-hairline bg-card pr-2.5 pl-1 text-[12.5px] font-medium";
 
 /** The key shows this many chips; the rest sit behind the "more" chip. */
 const VISIBLE_CHIPS = 4;
@@ -54,7 +54,7 @@ function ChipMark({ chip, rebuilding }: { chip: KeyChip; rebuilding: boolean }) 
       aria-hidden="true"
       data-kind={kind}
       data-rebuilding={rebuilding}
-      className="concept-key-mark inline-flex shrink-0 rounded"
+      className="concept-key-mark inline-flex shrink-0 rounded-[5px]"
       style={{ color: colour, "--key-colour": colour } as CSSProperties}
     >
       {/* Chip colours identify documents within a scope, independently of their kind. */}

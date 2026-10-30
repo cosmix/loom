@@ -22,7 +22,7 @@ const STOP_CONFIRM =
 
 // DisabledReason fixes its button's look, so the danger outline is laid over it from outside.
 const STOP_LOOK =
-  "ml-auto [&_button]:h-[26px] [&_button]:gap-1.5 [&_button]:border [&_button]:border-(--tone-blocked) [&_button]:bg-transparent [&_button]:px-2 [&_button]:text-xs [&_button]:text-(--tone-blocked) [&_button]:hover:bg-[color-mix(in_oklch,var(--tone-blocked)_12%,transparent)] [&_button]:aria-disabled:hover:bg-transparent";
+  "ml-auto [&_button]:h-[26px] [&_button]:gap-1.5 [&_button]:border [&_button]:border-(--tone-blocked) [&_button]:bg-transparent [&_button]:px-2 [&_button]:text-xs [&_button]:font-medium [&_button]:text-(--tone-blocked) [&_button]:hover:bg-[color-mix(in_oklch,var(--tone-blocked)_12%,transparent)] [&_button]:aria-disabled:hover:bg-transparent";
 
 function EndedElapsed({ run }: { run: PressureRunView }): JSX.Element {
   const [arrived] = useState(Date.now);

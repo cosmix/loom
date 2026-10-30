@@ -65,7 +65,8 @@
   color: var(--muted-foreground);
 }
 
-/* The two actions sit at the end of the row, as ghost buttons over the shared button styles. */
+/* The two actions sit at the end of the row, as ghost buttons over the shared button styles. They
+   keep `size="sm"`, so the ghost button's 30px, `0 12px` and 13px are set here. */
 .shelf__actions {
   display: flex;
   flex-wrap: wrap;
@@ -75,10 +76,18 @@
 }
 
 .shelf__actions button {
+  height: 30px;
+  padding: 0 12px;
   border-color: var(--border);
   background: transparent;
   color: var(--foreground);
+  font-size: 13px;
   font-weight: 500;
+}
+
+/* The blocked reason under a button would otherwise inherit the summary row's 600. */
+.shelf__actions button + span {
+  font-weight: 400;
 }
 
 .shelf__actions button:hover {

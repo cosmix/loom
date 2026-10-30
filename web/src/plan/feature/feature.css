@@ -1,8 +1,10 @@
-/* The feature screen: a 220px step navigation beside the selected step's body. */
+/* The feature screen: a 220px step navigation beside the selected step's body. The grid is at
+   least as tall as <main>, so the navigation's fill and right rule run down to the dock's bottom
+   edge on a short step. */
 [data-loom-plan] .plan-feature {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
-  min-height: 480px;
+  min-height: max(480px, 100%);
 }
 
 [data-loom-plan] .plan-feature > * {
@@ -188,8 +190,8 @@
 [data-loom-plan] .plan-queue__side button {
   max-width: 100%;
   height: auto;
-  min-height: 32px;
-  padding-block: 6px;
+  min-height: 30px;
+  padding-block: 4px;
   white-space: normal;
   text-align: left;
   overflow-wrap: anywhere;
@@ -229,6 +231,8 @@
 [data-loom-plan] .plan-queue__num {
   display: inline-grid;
   place-items: center;
+  /* A 20px badge at the start of the 34px column, not stretched across it. */
+  justify-self: start;
   min-width: 20px;
   height: 20px;
   padding: 0 3px;
@@ -262,10 +266,9 @@
   text-decoration-color: currentColor;
 }
 
-/* Plan names are slugs, so they read in mono. */
+/* Plan names are slugs, so they read in mono, at the section names' 13.5px. */
 [data-loom-plan] .plan-queue[data-kind="plan"] .plan-queue__name {
   font-family: var(--font-mono);
-  font-size: 12.5px;
 }
 
 [data-loom-plan] .plan-queue__side {
