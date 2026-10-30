@@ -5,8 +5,10 @@
 ## Sources
 
 - **Claude**: `GET https://api.anthropic.com/api/oauth/usage` with `Authorization: Bearer <token>` and `anthropic-beta: oauth-2025-04-20` (`loom/src/quota/claude.rs::fetch` `fetch`). `parse_response` (`quota/claude.rs::parse_response`) accepts two shapes: `five_hour`/`seven_day` buckets with `utilization` 0-100 and an RFC 3339 `resets_at`, or a `limits` array whose `session`/`weekly_all` kinds map to the same two windows (a `percent: 0` limit with null `resets_at` is a placeholder and is ignored; buckets win when both shapes are present). A 429 becomes the typed `RateLimited { retry_after_secs }` error.
-- **Codex**: one bounded `codex app-server` stdio exchange per poll (`loom/src/quota/codex.rs::poll_once`): `initialize` (id 0), the `initialized` notification, then `account/rateLimits/read` (id 1). `rateLimits.primary`/`secondary` are classified by `windowDurationMins` (300 = five-hour, 10080 = seven-day); `planType` is kept as `plan`. On the current operator plan only the weekly window is populated, so one window per provider is normal.
+- **Codex**: one bounded `codex app-server` stdio exchange per poll (`loom/src/quota/codex.rs::poll_once`): `initialize` (id 0), the `initialized` notification, then `account/rateLimits/read` (id 1). `rateLimits.primary`/`secondary` are classified by `windowDurationMins` (300 = five-hour, 10080 = seven-day); `planType` is kept as `plan`. A provider may report only the weekly window; absent windows remain unknown rather than being inferred as zero usage.
 - **Token lookup**: `credentials::access_token(home)` (`loom/src/quota/credentials.rs::access_token`) reads `.claudeAiOauth.accessToken` from the macOS keychain item `Claude Code-credentials` (bounded by `run_bounded`) or from `~/.claude/.credentials.json`; no login means no claude file, silently. The codex binary comes from `codex::find_codex_path()`; absent means no codex file.
+
+Claude plan metadata comes from subscriptionType in the same OAuth credential source as the access token (credentials::account), and is attached to successful shared quota polls. The web tooltip explains when the provider does not report a window.
 
 ## Cadence and backoff
 

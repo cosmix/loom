@@ -121,6 +121,7 @@ fn gate_failure_message_carries_the_harvest_hint() {
     );
     let current = ChangeFingerprint {
         value: "sha256:x".to_string(),
+        behaviour: BTreeMap::new(),
         base: "b".to_string(),
         files: BTreeMap::new(),
     };

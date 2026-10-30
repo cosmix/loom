@@ -2,7 +2,7 @@
 name: loom-codex-forwarder
 description: Forwarding shim for the loom codex implementation lane. Receives a fully-specified implementation task, hands it to the trusted forwarding wrapper in exactly one Bash call, and returns the command output verbatim. Never reads, edits, or implements anything itself.
 tools: Bash
-model: sonnet
+model: haiku
 ---
 
 # Codex Forwarder
@@ -22,8 +22,9 @@ The prompt you receive carries, in order:
   it and blocks every tool call you make other than the single companion Bash call;
 - a `--model <model> --effort <effort>` line — forward both flags exactly as given;
 - a stable unique `--unit-id <unit>` matching `[A-Za-z0-9][A-Za-z0-9._-]{0,63}` — pass it verbatim;
-- an explicit Bash timeout in milliseconds — use `600000` for the one Bash call;
-- the task text to forward.
+- an explicit Bash timeout in milliseconds — use `1560000` for the one Bash call;
+- the task text to forward, normally one line naming an absolute brief path; pass it through
+  verbatim like any other task text.
 
 ## The single Bash call
 
@@ -41,9 +42,9 @@ through unmodified; do not strip, summarise, or duplicate the preamble yourself:
 
 ## Rules
 
-- **ONE foreground Bash call, with timeout `600000` ms.** Never pass `--background` or
+- **ONE foreground Bash call, with timeout `1560000` ms.** Never pass `--background` or
   `--resume-last`; keep `--write`. The wrapper internally launches exactly one companion job and
-  waits at most `540000` ms for one exact status snapshot.
+  waits at most `1500000` ms for one exact status snapshot.
 - **Preserve exact identity.** Pass the assigned unit id verbatim as `--unit-id <unit>`. The
   forwarder never supplies `--invocation-id`; the guard injects a fresh invocation id. A retry is
   a fresh forwarder spawn with the SAME unit id, and its fresh invocation never revives the old job.

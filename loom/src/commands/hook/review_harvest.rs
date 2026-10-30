@@ -250,6 +250,8 @@ fn build_round(
         agent_id: agent_id.to_string(),
         harvested_at: Utc::now(),
         fingerprint: current.value,
+        base: current.base,
+        behaviour: current.behaviour,
         files: current.files,
         malformed: None,
         findings: Vec::new(),

@@ -42,6 +42,30 @@ pub fn access_token(home: &Path) -> Result<String> {
     resolve_token(home, keychain_token)
 }
 
+/// Read plan metadata from the same credential source as the access token.
+pub fn account(home: &Path) -> Result<(String, Option<String>)> {
+    let raw = if cfg!(target_os = "macos") {
+        keychain_raw()
+            .filter(|raw| extract_access_token(raw).is_some())
+            .or_else(|| file_raw(home))
+    } else {
+        file_raw(home)
+    }
+    .ok_or_else(|| anyhow!("no claude.ai login"))?;
+    let token = extract_access_token(&raw).ok_or_else(|| anyhow!("no claude.ai login"))?;
+    Ok((token, extract_plan(&raw)))
+}
+
+fn extract_plan(raw: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(raw).ok()?;
+    value
+        .get("claudeAiOauth")?
+        .get("subscriptionType")?
+        .as_str()
+        .filter(|plan| !plan.trim().is_empty())
+        .map(crate::context::untrusted::inline_safe)
+}
+
 /// [`access_token`] with the Keychain lookup injected, so a test reads only the
 /// credentials file it was given and never the host's own login.
 fn resolve_token(home: &Path, keychain: impl FnOnce() -> Option<String>) -> Result<String> {
@@ -54,6 +78,10 @@ fn resolve_token(home: &Path, keychain: impl FnOnce() -> Option<String>) -> Resu
 }
 
 fn keychain_token() -> Option<String> {
+    extract_access_token(&keychain_raw()?)
+}
+
+fn keychain_raw() -> Option<String> {
     let (program, args) = keychain_argv();
     let mut command = Command::new(program);
     command.args(args);
@@ -64,17 +92,21 @@ fn keychain_token() -> Option<String> {
         return None;
     }
     let stdout = String::from_utf8(output.stdout).ok()?;
-    extract_access_token(stdout.trim())
+    Some(stdout)
 }
 
 fn file_token(home: &Path) -> Option<String> {
+    extract_access_token(&file_raw(home)?)
+}
+
+fn file_raw(home: &Path) -> Option<String> {
     let path = home.join(".claude/.credentials.json");
     let file = std::fs::File::open(path).ok()?;
     let mut body = String::new();
     file.take(MAX_CREDENTIALS_FILE_BYTES)
         .read_to_string(&mut body)
         .ok()?;
-    extract_access_token(&body)
+    Some(body)
 }
 
 fn extract_access_token(raw: &str) -> Option<String> {

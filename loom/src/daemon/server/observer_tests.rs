@@ -213,6 +213,8 @@ fn round_at(seen: &ChangeFingerprint) -> ReviewRound {
         agent_id: "agent-1".to_string(),
         harvested_at: chrono::Utc::now(),
         fingerprint: seen.value.clone(),
+        base: seen.base.clone(),
+        behaviour: seen.behaviour.clone(),
         files: seen.files.clone(),
         malformed: None,
         findings: Vec::new(),

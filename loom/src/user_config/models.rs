@@ -11,9 +11,7 @@ use crate::models::stage::StageType;
 
 use super::{parse, ConfigValue, KeySpec, Origin, UserConfig};
 
-/// The `[models]` section as the file set it. Twelve keys: one model/effort pair
-/// per [`StageType`] plus the `loom-code-reviewer` subagent's pair and the
-/// contract writer session's pair.
+/// The `[models]` section as the file set it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct ModelsSection {
     standard_model: Option<String>,
@@ -25,6 +23,7 @@ pub(super) struct ModelsSection {
     integration_verify_model: Option<String>,
     integration_verify_effort: Option<String>,
     code_reviewer_model: Option<String>,
+    code_reviewer_followup_model: Option<String>,
     code_reviewer_effort: Option<String>,
     contract_writer_model: Option<String>,
     contract_writer_effort: Option<String>,
@@ -66,6 +65,12 @@ impl ModelsSection {
                 efforts,
             )?,
             code_reviewer_model: parse::get_enum(doc, "models", "code_reviewer_model", models)?,
+            code_reviewer_followup_model: parse::get_enum(
+                doc,
+                "models",
+                "code_reviewer_followup_model",
+                models,
+            )?,
             code_reviewer_effort: parse::get_enum(doc, "models", "code_reviewer_effort", efforts)?,
             contract_writer_model: parse::get_enum(doc, "models", "contract_writer_model", models)?,
             contract_writer_effort: parse::get_enum(
@@ -124,6 +129,14 @@ impl UserConfig {
             .unwrap_or(crate::claude::DEFAULT_CODE_REVIEWER_MODEL)
     }
 
+    /// The follow-up reviewer model absent a project override. Default: sonnet.
+    pub fn code_reviewer_followup_model(&self) -> &str {
+        self.models
+            .code_reviewer_followup_model
+            .as_deref()
+            .unwrap_or("sonnet")
+    }
+
     /// The reasoning effort the `loom-code-reviewer` subagent runs at absent
     /// a project `[models]` override. Default:
     /// [`crate::claude::DEFAULT_CODE_REVIEWER_EFFORT`].
@@ -156,23 +169,7 @@ impl UserConfig {
     /// The typed value and origin for a `models.*` key, or `None` when
     /// `spec` is not one — the arm `UserConfig::value_of` delegates to.
     pub(super) fn models_value_of(&self, spec: &KeySpec) -> Option<(ConfigValue, Origin)> {
-        let m = &self.models;
-        let session_slot = match spec.name {
-            "models.code_reviewer_model" => {
-                Some((self.code_reviewer_model(), &m.code_reviewer_model))
-            }
-            "models.code_reviewer_effort" => {
-                Some((self.code_reviewer_effort(), &m.code_reviewer_effort))
-            }
-            "models.contract_writer_model" => {
-                Some((self.contract_writer_model(), &m.contract_writer_model))
-            }
-            "models.contract_writer_effort" => {
-                Some((self.contract_writer_effort(), &m.contract_writer_effort))
-            }
-            _ => None,
-        };
-        if let Some((value, set)) = session_slot {
+        if let Some((value, set)) = self.session_slot(spec.name) {
             return Some((
                 ConfigValue::Text(value.to_string()),
                 self.origin_of(set.as_ref()),
@@ -203,12 +200,35 @@ impl UserConfig {
         Some((value, self.origin_of(set)))
     }
 
+    fn session_slot(&self, name: &str) -> Option<(&str, &Option<String>)> {
+        let m = &self.models;
+        match name {
+            "models.code_reviewer_model" => {
+                Some((self.code_reviewer_model(), &m.code_reviewer_model))
+            }
+            "models.code_reviewer_followup_model" => Some((
+                self.code_reviewer_followup_model(),
+                &m.code_reviewer_followup_model,
+            )),
+            "models.code_reviewer_effort" => {
+                Some((self.code_reviewer_effort(), &m.code_reviewer_effort))
+            }
+            "models.contract_writer_model" => {
+                Some((self.contract_writer_model(), &m.contract_writer_model))
+            }
+            "models.contract_writer_effort" => {
+                Some((self.contract_writer_effort(), &m.contract_writer_effort))
+            }
+            _ => None,
+        }
+    }
+
     /// The `[models]` block of `loom config --print`, every key resolved.
     /// Ends with a single newline — [`UserConfig::to_toml_string`] supplies
     /// the blank line separating sections.
     pub(super) fn models_toml(&self) -> String {
         format!(
-            "[models]\nstandard_model = {}\nstandard_effort = {}\nknowledge_model = {}\nknowledge_effort = {}\nknowledge_distill_model = {}\nknowledge_distill_effort = {}\nintegration_verify_model = {}\nintegration_verify_effort = {}\ncode_reviewer_model = {}\ncode_reviewer_effort = {}\ncontract_writer_model = {}\ncontract_writer_effort = {}\n",
+            "[models]\nstandard_model = {}\nstandard_effort = {}\nknowledge_model = {}\nknowledge_effort = {}\nknowledge_distill_model = {}\nknowledge_distill_effort = {}\nintegration_verify_model = {}\nintegration_verify_effort = {}\ncode_reviewer_model = {}\ncode_reviewer_followup_model = {}\ncode_reviewer_effort = {}\ncontract_writer_model = {}\ncontract_writer_effort = {}\n",
             ConfigValue::Text(self.stage_model(StageType::Standard).to_string()).to_toml_literal(),
             ConfigValue::Text(self.stage_reasoning_effort(StageType::Standard).to_string())
                 .to_toml_literal(),
@@ -230,6 +250,7 @@ impl UserConfig {
             )
             .to_toml_literal(),
             ConfigValue::Text(self.code_reviewer_model().to_string()).to_toml_literal(),
+            ConfigValue::Text(self.code_reviewer_followup_model().to_string()).to_toml_literal(),
             ConfigValue::Text(self.code_reviewer_effort().to_string()).to_toml_literal(),
             ConfigValue::Text(self.contract_writer_model().to_string()).to_toml_literal(),
             ConfigValue::Text(self.contract_writer_effort().to_string()).to_toml_literal(),

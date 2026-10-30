@@ -205,11 +205,26 @@ BLOCK-B — model allocation playbook:
 
 **Lowest tier, fullest brief.** For each worker, write the lowest tier that can do its piece without losing quality in the worker table's `Tier` column (Section 5); the orchestrator escalates only on evidence. The `Tier` column may read `opus/xhigh` for hard debugging, core algorithmic or architectural work, distributed systems, heavily multithreaded or parallel code, and systems engineering (BLOCK-B point 3); plain `opus` runs at effort high. The cheaper the tier, the more the brief settles — exact paths and `file:line` ranges, signatures, the pattern to mirror, every decision made, every trap named, the proof command. Never paste code the worker can open. A piece whose brief cannot settle every decision is judgment work: settle it in the plan, or raise the tier.
 
-**Sizing rubric — group by cost.** A subagent typically completes under about 400,000 tokens, and every spawn pays about 28,000 tokens of boot before it reads anything. Group small tasks into one assignment and never split below what 400,000 tokens needs; an assignment likely to pass that is two assignments, or a coordinator with two workers. Write each stage so its implementation is assigned to subagents: the main agent's own edits are limited to BLOCK-B point 1's small-change test.
+**Sizing rubric — group by cost.** About 400,000 tokens is a Claude worker ceiling, not a target. Measured sonnet workers peak at a median of 86,000. Merge task B into worker A when B's turns
+times A's leftover context times the cache-read rate (0.1) is less than 1.25 times B's startup
+and orientation (about 55,000 tokens). Bundle short tasks and keep long ones apart. Send all
+findings of one review round to ONE fix worker. Assign implementation to subagents within BLOCK-B point 1's small-change rule.
 
 **Stage descriptions carry decomposable detail:** exact file paths, signatures, `file:line` patterns to follow (and which property of the pattern NOT to copy), step-by-step subtasks, integration wiring (`mod.rs`, registry, route), and the error-handling approach. If you cannot write that, go back to Section 1. Full text, a worked example, `subagent_timeout_secs` (an idle budget, default 300) and the waiting protocol: `references/stage-sizing.md`.
 
-**Implementation lanes.** Neither lane is the default: judge each stage's work against both. Codex (`loom-codex-forwarder` → gpt-6.1-terra, xhigh; gpt-6-luna only when the user or plan asks for it, otherwise boilerplate and simple unit tests go to haiku) fits well-specified implementation that splits into single-file units with pinned interfaces, a large share of implementation work: its Claude-side cost is one sonnet forwarder per unit, and up to 6 units run at once in the foreground. Each unit must finish inside the 540 s wrapper deadline, runs no fixture-backed tests, and never touches git or `.loom/`. Claude fits exploration, multi-file iteration, work that converges by running tests, UI/visual design, and debugging, at its tier's token rate. Mixed stages list both lanes, preferred first. Check codex availability, then ask the user ONCE to confirm a per-stage lane recommendation, one-line reason each; if codex is unavailable, say so and plan on Claude. Comparison table, decision rule, install checks, unit sizing, anchors, and prohibitions: `references/codex-implementers.md`.
+**Implementation lanes.** Judge each stage against both lanes. Codex fits well-specified concerns:
+code, consumers and tests together in dependency order in one brief, possibly across several files.
+Two jobs never write one file. Each job starts near 23,000 tokens; per file-sized change at high effort, gpt-6.1-sol takes about 3 minutes and 50,000 tokens of context, gpt-6.1-terra about 1 minute
+and 20,000 tokens. Budget twice the time at xhigh. Keep peak context at most about 250,000 tokens and finish well inside 1500000 ms: about 4 to 6 changes on sol, about 12 on terra. Re-split a
+timeout against its partial tree. A haiku forwarder costs about 20,000 tokens per job plus
+orchestrator turns. Every turn re-reads the context, making cost grow with its length squared: 4 jobs of 6 changes cost about 1.8 times the Codex tokens of 24 jobs of one. Claude quota is scarcer,
+which justifies cohesive bundles; never bundle unrelated concerns to fill a job. Up to 6 jobs run
+in the foreground with Bash timeout 1560000 ms; waves follow real dependencies, never that cap. Forward ONE line naming an absolute brief path; without a committed brief, write it under the
+worktree scratch directory first. Quote applicable skill rules there: declared skills are for Claude
+workers, and Codex opens no skill files. Codex runs no fixture-backed tests and touches no git or `.loom/`. Claude fits exploration, fixture-backed test convergence, UI design and debugging.
+Mixed stages list both lanes, preferred first. Check availability and ask the user ONCE to confirm
+a per-stage lane recommendation with one-line reasons; if unavailable, say so and plan on Claude.
+Model selection, anchors, forwarding-line restrictions and checks: `references/codex-implementers.md`.
 
 ### Context ceiling (`context_ceiling_tokens`)
 

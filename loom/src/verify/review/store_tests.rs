@@ -16,6 +16,8 @@ fn round(number: u32) -> ReviewRound {
         agent_id: AGENT.to_string(),
         harvested_at: Utc::now(),
         fingerprint: FINGERPRINT.to_string(),
+        base: String::new(),
+        behaviour: BTreeMap::new(),
         files: BTreeMap::new(),
         malformed: None,
         findings: Vec::new(),

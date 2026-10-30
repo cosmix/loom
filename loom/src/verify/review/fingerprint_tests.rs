@@ -37,6 +37,33 @@ fn fingerprint_from_sorts_paths_before_hashing() {
 }
 
 #[test]
+fn behaviour_is_additive_and_does_not_change_the_content_fingerprint() {
+    let before = fingerprint_from(
+        "base",
+        &[
+            ("a.rs".into(), Some(b"fn a() {}\n".to_vec())),
+            ("doc/x.md".into(), Some(b"old".to_vec())),
+        ],
+    );
+    let after = fingerprint_from(
+        "base",
+        &[
+            ("a.rs".into(), Some(b"// note\nfn a() {}\n\n".to_vec())),
+            ("doc/x.md".into(), Some(b"new".to_vec())),
+        ],
+    );
+    assert_ne!(before.value, after.value);
+    assert_ne!(before.files, after.files);
+    assert_eq!(before.behaviour, after.behaviour);
+    assert_eq!(before.behaviour.len(), 1);
+    let wire = serde_json::to_vec(&after).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<ChangeFingerprint>(&wire).unwrap(),
+        after
+    );
+}
+
+#[test]
 fn changed_since_includes_one_sided_paths() {
     let previous = BTreeMap::from([
         ("a.txt".to_string(), "old".to_string()),
@@ -48,6 +75,50 @@ fn changed_since_includes_one_sided_paths() {
     ]);
 
     assert_eq!(changed_since(&previous, &current), ["a.txt", "c.txt"]);
+}
+
+#[test]
+fn behaviour_tracks_code_additions_deletions_and_directives() {
+    let before = fingerprint_from("base", &[("a.ts".into(), Some(b"run();\n".to_vec()))]);
+    for content in [
+        None,
+        Some(b"/// <reference types=\"x\" />\nrun();\n".to_vec()),
+    ] {
+        let after = fingerprint_from("base", &[("a.ts".into(), content)]);
+        assert_ne!(before.value, after.value);
+        assert_ne!(before.behaviour, after.behaviour);
+    }
+    let added = fingerprint_from(
+        "base",
+        &[
+            ("a.ts".into(), Some(b"run();\n".to_vec())),
+            ("b.rs".into(), Some(b"// comment only\n".to_vec())),
+        ],
+    );
+    assert_ne!(before.behaviour, added.behaviour);
+    assert!(added.behaviour.contains_key("b.rs"));
+}
+
+#[test]
+fn daemon_response_preserves_behaviour_hashes() {
+    use crate::daemon::Response;
+
+    let fingerprint = fingerprint_from("base", &[("a.rs".into(), Some(b"fn a() {}\n".to_vec()))]);
+    let response = Response::ChangesObserved {
+        target_branch: "main".into(),
+        fingerprint: fingerprint.clone(),
+    };
+    let wire = serde_json::to_vec(&response).unwrap();
+    match serde_json::from_slice::<Response>(&wire).unwrap() {
+        Response::ChangesObserved {
+            fingerprint: observed,
+            ..
+        } => {
+            assert!(!observed.behaviour.is_empty());
+            assert_eq!(observed, fingerprint);
+        }
+        other => panic!("expected changes, got {other:?}"),
+    }
 }
 
 fn git_ok(root: &Path, args: &[&str]) -> Result<()> {

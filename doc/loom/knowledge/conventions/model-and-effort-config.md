@@ -40,7 +40,9 @@ is configurable through `[models]`.
 set the `loom-code-reviewer` subagent, applied by the spawn guard to every reviewer spawn and
 overriding a model the caller passes. They resolve project -> user -> built-in per key through
 `fs::work_dir::resolve_code_reviewer_model_effort`, which the hidden `loom hook reviewer-model`
-prints as `model=<m> effort=<e>` (non-zero exit on a config parse error).
+prints as `model=<m> effort=<e>` (non-zero exit on a config parse error). Once the stage holds a
+well-formed review round, the hook prints `models.code_reviewer_followup_model` (sonnet) instead,
+with the same effort; a round store it cannot read falls back to the first-round model.
 
 `models.contract_writer_model` opus / `models.contract_writer_effort` high set the contract
 writer session (`SessionType::Contract`), independently of the stage type it writes for: a weak

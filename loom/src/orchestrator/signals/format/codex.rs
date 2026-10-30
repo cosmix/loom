@@ -108,7 +108,7 @@ fn push_codex_spawn_rules(content: &mut String) {
         "  \"--model {CODEX_IMPLEMENTER_MODEL_LUNA} --effort {CODEX_IMPLEMENTER_EFFORT} <task>\" for\n",
         "  boilerplate/scaffolding/simple unit tests. Give every logical Codex unit a stable unique id\n",
         "  matching `[A-Za-z0-9][A-Za-z0-9._-]{{0,63}}` and state `--unit-id <unit>` in the prompt. The forwarder\n",
-        "  makes ONE foreground Bash call with timeout 600000 ms and exact shape\n",
+        "  (haiku, about 20,000 tokens per job) makes ONE foreground Bash call with timeout 1560000 ms and exact shape\n",
         "  `~/.claude/hooks/loom/codex-forward.sh task '<task>' --model <m> --effort <e> --write --unit-id <unit>`.\n",
         "  It passes the unit verbatim and never supplies `--invocation-id`; the guard injects it.\n",
     ),
@@ -116,15 +116,20 @@ fn push_codex_spawn_rules(content: &mut String) {
         CODEX_IMPLEMENTER_EFFORT = CODEX_IMPLEMENTER_EFFORT,
         CODEX_IMPLEMENTER_MODEL_LUNA = CODEX_IMPLEMENTER_MODEL_LUNA,
     ));
-    content.push_str(
-        "- SIZE EVERY UNIT FOR THE 540000 ms DEADLINE: the wrapper cancels a companion job still running at\n\
-         540000 ms, prints `LOOM-FORWARD-END ... \"outcome\":\"timed_out\",\"exit_code\":124` and exits 124. A\n\
-         unit is ONE file, or one file plus its test file, at most three numbered steps, its interfaces\n\
-         pinned verbatim in the brief so parallel units compile together (one module pair at xhigh has\n\
-         measured 24-30 minutes). A timed-out unit is NEVER re-forwarded as is: re-split the remainder\n\
-         against the partial tree into smaller units - a single retry keeps the SAME unit id, a split\n\
-         gives each part its own id.\n",
-    );
+    content.push_str(concat!(
+        "- A codex job is ONE CONCERN: code, consumers and tests together in dependency order, in one brief.\n",
+        "  It may span several files; two jobs never write one file. Size per file-sized change at high effort:\n",
+        "  gpt-6.1-sol takes about 3 minutes and 50,000 tokens of context; gpt-6.1-terra about 1 minute and\n",
+        "  20,000 tokens. Each job starts near 23,000 tokens. Budget twice the time at xhigh.\n",
+        "  Keep peak context at most about 250,000 tokens and finish well inside the 1500000 ms deadline:\n",
+        "  about 4 to 6 file-sized changes on sol, about 12 on terra. The wrapper cancels at the deadline\n",
+        "  and exits 124 timed_out. A timed-out job is NEVER re-forwarded as is: re-split against its partial\n",
+        "  tree, giving each part its own id. A retry of the same logical job keeps the SAME unit id.\n",
+        "- Fill only cohesive jobs: every turn re-reads the whole context, so cost grows with its length\n",
+        "  squared. Four jobs of six changes cost about 1.8 times the Codex tokens of 24 single-change jobs.\n",
+        "  Claude quota is scarcer: a haiku forwarder costs about 20,000 tokens per job plus orchestrator\n",
+        "  turns, which can justify cohesive bundles. Never bundle unrelated concerns to reach a size.\n",
+    ));
 }
 
 /// Push the navigation-kit, prompt-writing, and fan-out rules.
@@ -136,14 +141,17 @@ fn push_codex_prompt_rules(content: &mut String) {
          doc/loom/knowledge/ - do not re-paste that guidance. Its one blind spot: the index reflects\n\
          the branch point, so it cannot see a sibling subagent's edits this session - name the file.\n",
     );
-    content.push_str(
-        "- WRITE THE PROMPT LIKE A SONNET ONE, PLUS ANCHORS: files it owns (write) and may read, the\n\
-         symbols/files to start from by name, what done means and the command that proves it, and\n\
-         any constraint the graph can't show - not pasted signatures or file bodies, which it looks\n\
-         up faster than you can quote them. NEVER prepend the Claude subagent preamble to a codex\n\
-         prompt - codex never reads CLAUDE.md, and `loom-hooks/codex-forward.sh` already prepends its own\n\
-         rules to every forwarded prompt.\n",
-    );
+    content.push_str(concat!(
+        "- WRITE THE PROMPT LIKE A SONNET ONE, PLUS ANCHORS: write each job brief to a file naming files\n",
+        "  owned/read, entry symbols, the done condition and proof command, and traps. Forward ONE line\n",
+        "  naming its absolute path; the forwarder never retypes the brief. Without a committed brief,\n",
+        "  write one under the worktree scratch directory first. The apostrophe, complete-substring and\n",
+        "  loom stage restrictions apply to that one line. Declared skills are for Claude workers: quote\n",
+        "  applicable rules in the Codex brief. The wrapper sets LOOM_CODEX_FORWARD=1: loom's\n",
+        "  context-injecting hooks stay silent while guard hooks still run. Never prepend the Claude preamble.\n",
+        "- Waves follow real dependencies only: order work inside a job first; a later wave exists only\n",
+        "  when a job needs another job result on disk. Never slice jobs into waves by the cap of 6.\n",
+    ));
     content.push_str(
         "- loom-codex-forwarder forwards with --write by default. PARALLEL FAN-OUT: run up to 6 at\n\
          once, each owning a DISJOINT file set, in the same file-ownership table as any sonnet\n\
@@ -152,7 +160,7 @@ fn push_codex_prompt_rules(content: &mut String) {
     content.push_str(concat!(
         "- MIXED FAN-OUT: codex and Claude subagents may share a wave - file ownership keeps them\n",
         "  apart, enforced across lanes just as within one. FOREGROUND ONLY, and skip `--resume-last`:\n",
-        "  the wrapper waits at most 540000 ms for one exact status snapshot, then cancels a still-running\n",
+        "  the wrapper waits at most 1500000 ms for one exact status snapshot, then cancels a still-running\n",
         "  job and exits 124 with `\"outcome\":\"timed_out\"` - the unit was too large; re-split it. Start ONE\n",
         "  background `loom subagents watch`, naming one `--worker codex:<unit-id>` for each forwarded\n",
         "  unit and passing `--timeout 3600`; never use a model-driven status loop, a\n",
@@ -201,7 +209,7 @@ fn push_codex_blast_radius_and_evidence(content: &mut String) {
         "  then `record:`. Accept only when the named record has completed status with \"phase\":\"done\",\n",
         "  the trailer unit equals the unit you assigned, and its invocation matches that job's authorization.\n",
         "  A report with `state: timed_out` and an END marker carrying `\"outcome\":\"timed_out\"` means the\n",
-        "  wrapper cancelled the job at the 540000 ms deadline: the unit was too large; re-split it. In\n",
+        "  wrapper cancelled the job at the 1500000 ms deadline: the unit was too large; re-split it. In\n",
         "  `mode: direct (...)` (where the stage sandbox refuses nesting), `thread:` names one exact thread;\n",
         "  its START is printed when Codex reports the thread, its END only when the thread finishes.\n",
         "  A direct `state: unknown` (END outcome `unknown`, exit 125) is never success: retained ownership\n",

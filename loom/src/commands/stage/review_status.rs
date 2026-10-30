@@ -142,7 +142,7 @@ fn freshness_report(rounds: &[ReviewRound], current: &ChangeFingerprint) -> Vec<
     let latest = rounds.last();
     match latest {
         Some(round) => {
-            let matches = if round.fingerprint == current.value {
+            let matches = if crate::verify::review::gate::covers_review(round, current) {
                 "yes"
             } else {
                 "no"
@@ -151,6 +151,7 @@ fn freshness_report(rounds: &[ReviewRound], current: &ChangeFingerprint) -> Vec<
                 "Latest round ({}) matches the current fingerprint: {matches}",
                 round.round
             ));
+            append_exempt_changes(&mut lines, round, current);
             if round.malformed.is_some() {
                 lines.push(
                     "The latest round is malformed; the gate needs a well-formed round at the \
@@ -172,6 +173,21 @@ fn freshness_report(rounds: &[ReviewRound], current: &ChangeFingerprint) -> Vec<
         lines.push(format!("  {}", single_line(&path)));
     }
     lines
+}
+
+fn append_exempt_changes(
+    lines: &mut Vec<String>,
+    round: &ReviewRound,
+    current: &ChangeFingerprint,
+) {
+    if round.fingerprint != current.value
+        && crate::verify::review::gate::covers_review(round, current)
+    {
+        lines.push("Matches the worktree through comment or prose changes alone:".to_string());
+        for path in fingerprint::changed_since(&round.files, &current.files) {
+            lines.push(format!("  {}", single_line(&path)));
+        }
+    }
 }
 
 /// Picks the diff baseline: the latest **well-formed** round's recorded

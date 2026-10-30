@@ -33,6 +33,10 @@ PATH="${LOOM_HOOK_PATH:-$PATH}"
 set -euo pipefail
 umask 077
 
+if [[ -n "${LOOM_CODEX_FORWARD:-}" ]]; then
+	exit 0
+fi
+
 # Read JSON input from stdin (Claude Code passes prompt info via stdin)
 source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
 INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)

@@ -381,3 +381,13 @@ sibling's files.
 **Why:** the plan was written from an earlier reading of the default backend.
 
 **Prevention:** before freezing a "change the default" contract, read the `#[default]` and its tests at the stage base; a contract that is already green at freeze proves nothing.
+
+## Commit scope for quota repair
+
+**What happened**: The user explicitly requested committing everything when the quota repair finishes.
+
+**Why**: The checkout includes concurrent and pre-existing changes beyond quota code.
+
+**Prevention**: Preserve the requested whole-checkout commit scope and distinguish focused verification from validation of unrelated work.
+
+**Fix**: Commit all current tracked and untracked changes after the quota checks finish.

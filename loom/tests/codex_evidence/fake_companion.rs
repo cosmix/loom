@@ -107,7 +107,7 @@ if (command === "task") {
   const id = argv[1];
   const job = readJob(id);
   const waitTimedOut = job.status === "queued" || job.status === "running";
-  console.log(JSON.stringify({ workspaceRoot, job, waitTimedOut, timeoutMs: 540000 }));
+  console.log(JSON.stringify({ workspaceRoot, job, waitTimedOut, timeoutMs: 1500000 }));
 } else if (command === "result") {
   const id = argv[1];
   const job = readJob(id);

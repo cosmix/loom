@@ -150,3 +150,13 @@ exists, or pin the interface inline in the brief so codex does not wait for it.
 **Prevention:** brief "replace the placeholder with one Update File hunk" (and `Add File` only for new paths), or do not create placeholders. A rejected patch changes nothing, so the cost is a wasted call, not a wrong tree.
 
 **Fix:** one `Update File` per placeholder.
+
+## A Stalled Codex Thread Reads as Running (2026-10-30)
+
+**What happened:** five Codex threads stopped at about 19:50 UTC with no error, and an interactive session reported "No active thread is available". The companion kept reporting each job as `running`, and its progress log stopped growing. One job was interrupted and still read `running`. The orchestrator waited with `status --wait` and learned of the stall only when the operator asked why it was slow.
+
+**Why:** a new `codex exec` hung during session setup while the `vnkt` MCP server, which answers an unauthenticated request with 401, stayed enabled in `~/.codex/config.toml`. With only that server disabled, the same command replied in 3 s. Whether it also caused the threads that stalled mid-turn was not shown. A status wait reports job state and a blocked thread has a live process, so nothing changed state. `codex doctor` passed its connectivity checks, and Codex's log held no error-level entry.
+
+**Prevention:** when waiting on Codex outside a stage's owned wait, also watch the rollout under `~/.codex/sessions`: no new event for 5 minutes during a turn is a stall, and a `turn_aborted` event is a dead job whatever its status says. On a hang, bisect with `codex exec --ignore-user-config`, then `-c mcp_servers.<name>.enabled=false` per server, with stdin closed.
+
+**Fix:** `enabled = false` on `vnkt` and on `node_repl` (its binary is missing) in `~/.codex/config.toml`.

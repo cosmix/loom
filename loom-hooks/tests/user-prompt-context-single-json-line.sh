@@ -3,6 +3,7 @@
 # multiple lines, never non-JSON. The fake `loom` binary emits the exact
 # shape the real delegate contract specifies.
 set -euo pipefail
+unset LOOM_CODEX_FORWARD LOOM_HOOK_PATH LOOM_BIN
 HOOK="$(dirname "$0")/../user-prompt-context.sh"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
@@ -22,6 +23,11 @@ SH
 chmod +x "$TMP/bin/loom"
 
 INPUT='{"session_id":"s1","prompt":"explain how the retrieval pipeline picks which knowledge sections to quote"}'
+
+FORWARDED=$(printf '%s' "$INPUT" |
+	PATH="$SHIMS$TMP/bin:/usr/bin:/bin" LOOM_WORK_DIR="$TMP/work" LOOM_CODEX_FORWARD=1 \
+	bash "$HOOK" 2>&1)
+[[ -z "$FORWARDED" ]]
 
 OUTPUT=$(printf '%s' "$INPUT" |
 	env -u LOOM_MAIN_AGENT_PID -u LOOM_WORKTREE_PATH -u LOOM_SESSION_ID \

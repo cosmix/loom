@@ -68,7 +68,7 @@ pub(super) fn detect(
         // A companion job is classified by `engine::codex_outcome`, which calls
         // `codex_lifecycle::companion_outcome_with_progress` directly so the job
         // is located once per poll instead of twice. A direct Codex invocation
-        // is killed by its own supervisor at 540s, and a teammate has no
+        // is killed by its own supervisor at 1500s, and a teammate has no
         // transcript of its own to measure.
         WorkerIdentity::Codex { .. } | WorkerIdentity::ClaudeTeammate { .. } => None,
     }

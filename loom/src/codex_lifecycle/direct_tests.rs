@@ -210,7 +210,7 @@ fn direct_forward_without_receipt_past_window_is_unknown() -> Result<()> {
     assert!(matches!(
         only_outcome(&report)?,
         WorkerOutcome::Unknown(detail)
-            if detail.starts_with("no forward receipt 600 s after authorization")
+            if detail.starts_with("no forward receipt 1560 s after authorization")
     ));
     assert_nothing_written(&fixture, &authorization);
     Ok(())

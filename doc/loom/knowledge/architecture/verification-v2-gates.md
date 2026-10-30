@@ -112,7 +112,11 @@ and every finding and carried finding is closed (listed `resolved` by a later ro
 does not fail the gate; it is quoted only when the gate fails for another reason. `loom stage review status`
 diffs against the latest well-formed round, not `rounds.last()`; a malformed round has a valid fingerprint and
 zero findings and would tell the next reviewer nothing changed. Review order: fix findings, run the full gate,
-run the final review, complete; any edit after it, formatting included, needs another round.
+run the final review, complete; a code edit after it, formatting included, needs another round. `gate::covers_review`
+also accepts a round whose fingerprint differs only by whole-line comments, blank lines and prose markdown: same base,
+and equal non-empty `behaviour` maps (`verify/review/prose.rs`, which keeps pragma comments and markdown under `skills/`,
+`agents/`, `commands/`, `loom-hooks/`, tests and fixtures in the hash). An empty map never passes through this exemption.
+Known limit: a comment-prefixed line inside a multi-line string literal counts as a comment.
 `STATE_READ_DIRS` (`sandbox/settings.rs`) gains `contracts` and `reviews`; it is `#[rustfmt::skip]` on one
 line to stay at the ledgered 445 lines, and two `sandbox::settings::tests` pin the exact allow list.
 

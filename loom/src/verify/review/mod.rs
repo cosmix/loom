@@ -7,6 +7,7 @@
 pub mod fingerprint;
 pub mod gate;
 mod observer;
+pub mod prose;
 pub mod report;
 pub mod store;
 pub mod verdict_records;

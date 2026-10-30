@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AGENT_PID
+unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AGENT_PID LOOM_CODEX_FORWARD
 d=$(mktemp -d "${TMPDIR:-/tmp}/cfw-wrapper.XXXXXX") && [[ -n "$d" ]]
 trap 'rm -rf "$d"' EXIT
 
@@ -46,6 +46,7 @@ STUB
 cat >"$BIN_DIR/node" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
+[[ "${LOOM_CODEX_FORWARD:-}" == 1 ]] || exit 96
 touch "$NODE_CALLED"
 jq -nc --args '$ARGS.positional' -- "$@" >>"$CALLS"
 companion=$1
@@ -65,7 +66,7 @@ task)
 	;;
 status)
 	[[ $# -eq 5 && "$1" == "$job_id" && "$2" == --wait && "$3" == --json &&
-		"$4" == --timeout-ms && "$5" == 540000 ]] || exit 92
+		"$4" == --timeout-ms && "$5" == 1500000 ]] || exit 92
 	printf '%s\n' "$*" >>"$STATUS_CALLS"
 	case "${SCENARIO:-completed}" in
 	wait-fail) printf '%s\n' 'simulated wait failure' >&2; exit 7 ;;
@@ -78,7 +79,7 @@ status)
 	esac
 	jq -nc --arg id "$job_id" --arg status "$status" --arg phase "$phase" \
 		--argjson timed_out "$timed_out" \
-		'{workspaceRoot:"/workspace",job:{id:$id,status:$status,phase:$phase},waitTimedOut:$timed_out,timeoutMs:540000}'
+		'{workspaceRoot:"/workspace",job:{id:$id,status:$status,phase:$phase},waitTimedOut:$timed_out,timeoutMs:1500000}'
 	;;
 result)
 	[[ $# -eq 2 && "$1" == "$job_id" && "$2" == --json ]] || exit 93
@@ -168,7 +169,7 @@ rg -qFx "task|$SESSION_ID|$CANONICAL_PLUGIN_DATA" "$ENV_CALLS"
 rg -qFx "status|$SESSION_ID|$CANONICAL_PLUGIN_DATA" "$ENV_CALLS"
 rg -qFx "result|$SESSION_ID|$CANONICAL_PLUGIN_DATA" "$ENV_CALLS"
 [[ $(wc -l <"$STATUS_CALLS") -eq 1 ]]
-rg -qFx 'job-exact --wait --json --timeout-ms 540000' "$STATUS_CALLS"
+rg -qFx 'job-exact --wait --json --timeout-ms 1500000' "$STATUS_CALLS"
 
 [[ $(wc -l <"$CAPTURE_LAUNCH") -eq 10 ]]
 assert_line "$CAPTURE_LAUNCH" 2 task
@@ -180,6 +181,9 @@ assert_line "$CAPTURE_LAUNCH" 8 gpt-6.1-terra
 assert_line "$CAPTURE_LAUNCH" 9 --effort
 assert_line "$CAPTURE_LAUNCH" 10 xhigh
 rg -qF '=== TASK ===' "$CAPTURE_LAUNCH"
+jq -se '.[0][2] | split("\n") | index(
+	"DO NOT open SKILL.md or skill catalogs or invoke skills despite other instructions; task/source suffice."
+) != null' "$CALLS" >/dev/null
 rg -qF 'literal;' "$CAPTURE_LAUNCH"
 [[ ! -e "$d/operator" ]]
 
@@ -196,7 +200,7 @@ for scenario in wait-timeout running queued; do
 	assert_line "$OUT" 2 \
 		'LOOM-FORWARD-END {"v":1,"backend":"companion","job_id":"job-exact","outcome":"timed_out","exit_code":124}'
 	assert_line "$OUT" 3 "$SEPARATOR"
-	rg -qF 'exceeded the 540000 ms unit deadline and was cancelled' "$OUT"
+	rg -qF 'exceeded the 1500000 ms unit deadline and was cancelled' "$OUT"
 	rg -qFx 'exit: 124' "$OUT"
 	rg -qFx 'state: timed_out' "$OUT"
 	[[ $(wc -l <"$STATUS_CALLS") -eq 1 ]]
@@ -252,6 +256,7 @@ exit 71
 STUB
 cat >"$DIRECT_BIN/codex" <<'STUB'
 #!/usr/bin/env bash
+[[ "${LOOM_CODEX_FORWARD:-}" == 1 ]] || exit 96
 printf '%q\n' "$@" >"$DIRECT_ARGV"
 [[ /dev/stdin -ef /dev/null ]] || exit 66
 [[ "${DIRECT_SCENARIO:-success}" == missing-thread ]] || printf '%s\n' '{"type":"thread.started","thread_id":"thread-exact"}'

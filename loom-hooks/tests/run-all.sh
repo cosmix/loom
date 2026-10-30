@@ -29,7 +29,7 @@ run_test() {
     # its own.
     if output=$(env -u LOOM_HOOK_PATH -u LOOM_BIN -u LOOM_HOOK_CONTEXT \
         -u LOOM_SCRATCH_DIR -u LOOM_SESSION_TYPE -u LOOM_STAGE_ID -u LOOM_SESSION_ID \
-        -u LOOM_WORK_DIR -u LOOM_WORKTREE_PATH -u LOOM_MAIN_AGENT_PID \
+        -u LOOM_WORK_DIR -u LOOM_WORKTREE_PATH -u LOOM_MAIN_AGENT_PID -u LOOM_CODEX_FORWARD \
         ${path_args[@]+"${path_args[@]}"} \
         bash "$script" 2>&1); then
         echo "  PASS: $name"
@@ -114,6 +114,7 @@ run_test "commit-guard: a contract session gets the freeze reminder, not the che
 run_test "commit-guard: the memory reminder reads this stage's journal, shows for thin or absent, hides for 11+ lines, under padded wc" "$SCRIPT_DIR/commit-guard-memory-reminder.sh"
 run_test "learning-validator: warns unless this stage's own journal holds an entry" "$SCRIPT_DIR/learning-validator-stage-journal.sh"
 run_test "user-prompt-context: short prompt produces no output" "$SCRIPT_DIR/user-prompt-context-short-prompt.sh"
+run_test "skill-trigger: forwarded Codex is silent, Claude unchanged" "$SCRIPT_DIR/skill-trigger-forward.sh"
 run_test "user-prompt-context: no LOOM_WORK_DIR exits silently" "$SCRIPT_DIR/user-prompt-context-no-workdir.sh"
 run_test "user-prompt-context: malformed JSON fails open" "$SCRIPT_DIR/user-prompt-context-malformed-json.sh"
 run_test "user-prompt-context: output is a single JSON object" "$SCRIPT_DIR/user-prompt-context-single-json-line.sh"
