@@ -348,3 +348,13 @@ expects to expire stays short. Reproduce a timing failure by looping the test un
 **Prevention:** a fake that sits on `PATH` ignores argv it was not written for (the fake `codex` exits 1 unless `argv[1] == exec`). Every test binary that spawns the loom binary gets a `SANCTIONED_SPAWNERS` entry and a `LOOM_*` scrub. A raw string holding shell or Markdown uses `r##"..."##` when the body can contain `"#`.
 
 **Fix:** the fake exits unrecorded for other argv; the entry and the scrub were added.
+
+## Stage event test setup used a create-only writer
+
+**What happened:** The contract handoff regression test called `save_stage` on an already seeded stage and failed with `Stage already exists`.
+
+**Why:** The fixture assumed `save_stage` overwrites; the persistence API routes it through create-only semantics.
+
+**Prevention:** Create fixtures in their intended initial status, or use `update_stage` for mutations.
+
+**Fix:** Construct the queued fixture directly and call `create_stage` once.
