@@ -4,11 +4,14 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { initClient } from "@/plan/api/client";
+import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import { featureOfKey } from "@/plan/api/page-key";
+import { checklistViewSchema } from "@/plan/api/schema";
 import { conceptPageSchema, type ConceptPage } from "@/plan/api/schema-concept";
 import { authorStore, makeDoc } from "@/plan/files/doc-heading-kit";
+import { checklistAtom } from "@/plan/state/atoms";
 
 import { PageHeading } from "./page-heading";
 import {
@@ -245,5 +248,24 @@ describe("document key across pages", () => {
 
     await more(2);
     expect(document.activeElement).toBe(within(keyList()).getAllByRole("link")[0]);
+  });
+});
+
+describe("overview eyebrow", () => {
+  it("never shows a slug holding a format character: the route refuses it before any eyebrow", async () => {
+    const slug = "dem\u202Eo";
+    // Served so that a loosened slug rule would load the overview and reach the eyebrow.
+    const key = `overview/${slug}/engineering`;
+    pages = { [key]: { ...clone(overviewFixture), key } };
+    renderAt(`/f/${encodeURIComponent(slug)}/engineering`, (store) =>
+      store.set(
+        checklistAtom,
+        checklistViewSchema.parse({ ...checklistFixture.checklists[0]!, feature: slug }),
+      ),
+    );
+    await screen.findByText("No such document");
+    expect(screen.queryByRole("document", { name: "Reading column" })).toBeNull();
+    expect(text()).not.toContain("\u202E");
+    expect(fetched.some((url) => url.includes("/api/concept/"))).toBe(false);
   });
 });
