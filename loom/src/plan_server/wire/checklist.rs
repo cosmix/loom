@@ -3,10 +3,13 @@
 use serde::{Deserialize, Serialize};
 
 use super::files::PlanStateView;
+use crate::fs::knowledge::index::title_case;
 use crate::planning::checklist::{Checklist, CurrentStep, Offer, Step, StepMark};
 use crate::planning::project::Project;
 use crate::planning::slug::PlanState;
 
+#[path = "checklist_card.rs"]
+mod card;
 #[path = "checklist_pitch.rs"]
 mod pitch;
 
@@ -44,6 +47,16 @@ pub struct ChecklistView {
     pub feature: String,
     /// The vision's first paragraph as plain text, absent without a vision.
     pub pitch: Option<String>,
+    /// The feature's document title, falling back to its capitalised slug.
+    pub title: String,
+    /// Whether the feature's vision document exists.
+    pub has_product: bool,
+    /// Sections listed in the vision's section table, in table order.
+    pub sections: Vec<SectionView>,
+    /// Listed plan count and plan file counts by lifecycle state.
+    pub plans: PlanCountsView,
+    /// Plans whose pressure-test item is untested.
+    pub untested: u32,
     /// The earliest gap, or the ready state.
     pub current: CurrentView,
     /// Marks of the seven planning steps.
@@ -66,6 +79,40 @@ pub struct StepView {
     pub name: String,
     /// Its completion or availability mark.
     pub mark: MarkView,
+    /// The rail's counter text, absent when no count is available.
+    pub count: Option<String>,
+    /// The rail label displayed below the counter.
+    pub label: String,
+}
+
+/// One section listed in the vision's section table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SectionView {
+    /// The two-digit section number.
+    pub number: String,
+    /// The section's name in the vision.
+    pub name: String,
+    /// Whether the section document exists.
+    pub written: bool,
+    /// Open questions in the section document, or zero when absent.
+    pub open_questions: u32,
+}
+
+/// Plan counts for a feature's metaplans and plan files.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlanCountsView {
+    /// Plans listed by the feature's metaplans.
+    pub listed: u32,
+    /// Plan files in any lifecycle state.
+    pub total: u32,
+    /// Written plan files.
+    pub written: u32,
+    /// Running plan files.
+    pub running: u32,
+    /// Completed plan files.
+    pub done: u32,
 }
 
 /// Completion and availability marks for planning steps.
@@ -231,6 +278,7 @@ impl From<&Project> for ProjectChecklistView {
             .map(|feature| {
                 let mut view = ChecklistView::from(&feature.checklist);
                 view.pitch = pitch::feature_pitch(project, &feature.name);
+                card::card_facts(project, &feature.name, &mut view);
                 view
             })
             .collect();
@@ -272,6 +320,11 @@ impl From<&Checklist> for ChecklistView {
         Self {
             feature: checklist.feature.clone(),
             pitch: None,
+            title: title_case(&checklist.feature),
+            has_product: false,
+            sections: Vec::new(),
+            plans: PlanCountsView::default(),
+            untested: 0,
             current,
             steps: checklist
                 .steps
@@ -285,6 +338,8 @@ impl From<&Checklist> for ChecklistView {
                         StepMark::Active => MarkView::Active,
                         StepMark::Optional => MarkView::Optional,
                     },
+                    count: None,
+                    label: step_name(*step).into(),
                 })
                 .collect(),
             primary: checklist.primary.as_ref().map(offer_view),
