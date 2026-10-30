@@ -21,9 +21,12 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
+use super::collection::rust::target_scope;
+use super::failed_builds::BuildKey;
 use super::{normalize, store};
+use crate::fs::safe_read::read_to_string_bounded;
 use crate::plan::schema::ContractSpec;
-use crate::testrun::TestRunnerAdapter;
+use crate::testrun::{TargetScope, TestRunnerAdapter};
 
 /// Where and how one contract runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,7 +39,25 @@ pub struct ContractRun {
     /// single-test command, or the contract's `test` itself when no adapter
     /// applies, in which case only its exit code can be judged.
     pub command: String,
+    /// `command` with the test name taken out: the adapter's command for the
+    /// fixed test name `BUILD_PROBE_TEST`, built by the same call as
+    /// `command`, so no quoting or escaping of the real name leaks into it.
+    /// Two contracts with the same `dir` and `build` compile the same code.
+    /// `None` when no adapter applies, since the contract's own `test` is an
+    /// arbitrary command.
+    pub build: Option<String>,
 }
+
+impl ContractRun {
+    /// What this run shares with another that compiles the same code.
+    pub(crate) fn build_key(&self) -> Option<BuildKey> {
+        let build = self.build.clone()?;
+        Some((self.dir.clone(), build))
+    }
+}
+
+/// The test name the build command is built with; see [`ContractRun::build`].
+const BUILD_PROBE_TEST: &str = "loom_build_probe";
 
 /// Resolve where `contract` runs and the command that runs it there.
 /// `working_dir` is the stage's working directory, which the contract file is
@@ -69,17 +90,37 @@ pub fn resolve_run(
     let relative_file = beneath(&file, &run_dir)
         .with_context(|| format!("contract '{id}': its file is not beneath its run directory"))?;
     let dir = inside(&run_dir, &root).with_context(|| format!("contract '{id}'"))?;
-    let command = match adapter {
-        Some(adapter) => adapter.single_test_command(&relative_file, &contract.test, &dir),
-        None => contract.test.clone(),
+    // The run directory lies in the worktree, so it is beneath the root
+    // unless it is the root itself.
+    let cwd = beneath(&run_dir, &root).unwrap_or_else(|_| ".".to_string());
+    let scope = adapter
+        .filter(|adapter| adapter.language() == "rust")
+        .and_then(|_| rust_scope(&root, &file, &contract.test, &cwd));
+    let command_for = |adapter: &dyn TestRunnerAdapter, test: &str| match &scope {
+        Some(scope) => adapter.scoped_test_command(scope, &relative_file, test, &dir),
+        None => adapter.single_test_command(&relative_file, test, &dir),
     };
+    let command = adapter.map_or_else(
+        || contract.test.clone(),
+        |adapter| command_for(adapter, &contract.test),
+    );
+    let build = adapter.map(|adapter| command_for(adapter, BUILD_PROBE_TEST));
     Ok(ContractRun {
         dir,
-        // The run directory lies in the worktree, so it is beneath the root
-        // unless it is the root itself.
-        cwd: beneath(&run_dir, &root).unwrap_or_else(|_| ".".to_string()),
+        cwd,
         command,
+        build,
     })
+}
+
+/// The cargo target compiling `file` as `test` when run from `cwd`, both
+/// resolved against the worktree `root`.
+fn rust_scope(root: &Path, file: &Path, test: &str, cwd: &str) -> Option<TargetScope> {
+    let source = |path: &str| {
+        read_to_string_bounded(root, Path::new(path), store::MAX_FROZEN_FILE_BYTES).ok()
+    };
+    let relative = beneath(file, root).ok()?;
+    target_scope(&source, &relative, test, cwd)
 }
 
 /// `run_dir` canonicalized, refused unless it exists inside `root`.
@@ -161,3 +202,7 @@ fn is_regular(path: &Path) -> bool {
 #[cfg(test)]
 #[path = "run_dir_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "run_dir_build_tests.rs"]
+mod build_tests;

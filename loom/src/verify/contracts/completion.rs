@@ -11,6 +11,7 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use super::collection::rust::{chain_problems, run_dir_problems};
+use super::failed_builds::FailedBuilds;
 use super::run_dir::resolve_run;
 use super::store::{self, FreezeRecord};
 use super::{normalize, resolve_adapter};
@@ -59,9 +60,10 @@ fn check_with(
         acceptance_dir,
         worktree_root,
     };
+    let mut rejected = FailedBuilds::default();
     for contract in &stage.contracts {
         let recorded = store::recorded_cwd(&record, contract);
-        let found = run_contract(contract, recorded, &place, runner)?;
+        let found = run_contract(contract, recorded, &place, runner, &mut rejected)?;
         failures.extend(found);
     }
     if failures.is_empty() {
@@ -93,11 +95,15 @@ struct Place<'a> {
 /// the check still runs and reports every other contract. A Rust contract's
 /// collection (its module chain and run directory) is checked whether or not
 /// the run is cached, since a cached pass would otherwise hide a redirect.
+/// A contract whose build an earlier contract of `rejected` already had the
+/// compiler reject is not run: it fails naming that contract, and so records
+/// nothing in the certified cache.
 fn run_contract(
     contract: &ContractSpec,
     recorded: Option<&str>,
     place: &Place<'_>,
     runner: &dyn ProbeRunner,
+    rejected: &mut FailedBuilds<()>,
 ) -> Result<Vec<String>> {
     let adapter = resolve_adapter(contract, place.acceptance_dir);
     let resolved = match resolve_run(
@@ -116,11 +122,36 @@ fn run_contract(
         }
     };
     let mut failures = collection_problems(contract, place, &resolved.cwd)?;
+    let build = resolved.build_key();
+    if let Some((first, ())) = build.as_ref().and_then(|build| rejected.get(build)) {
+        failures.push(format!(
+            "contract '{}' was not run: the build it shares with contract '{first}' failed",
+            contract.id
+        ));
+        return Ok(failures);
+    }
     let run = runner
         .run(&resolved.command, &resolved.dir)
         .with_context(|| format!("failed to run contract '{}'", contract.id))?;
+    if let (Some(build), Some(adapter)) = (build, adapter) {
+        if compile_rejected(adapter, &run) {
+            rejected.record(build, contract.id.clone(), ());
+        }
+    }
     failures.extend(judge(contract, adapter, &resolved.command, &run));
     Ok(failures)
+}
+
+/// Whether `run` ended with the compiler rejecting the code. A cached run is a
+/// certified pass, and a timed-out one has no output to read.
+fn compile_rejected(adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> bool {
+    !run.timed_out
+        && run.cached.is_none()
+        && adapter.compile_rejected(&RunOutput {
+            stdout: &run.stdout,
+            stderr: &run.stderr,
+            exit_code: run.exit_code,
+        })
 }
 
 /// Whether `contract` runs through a Rust adapter: its `runner`, else the
@@ -283,3 +314,7 @@ mod tests;
 #[cfg(test)]
 #[path = "completion_adapter_tests.rs"]
 mod adapter_tests;
+
+#[cfg(test)]
+#[path = "completion_share_tests.rs"]
+mod share_tests;

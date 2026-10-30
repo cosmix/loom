@@ -1,7 +1,8 @@
 #[cfg(feature = "source-graph")]
 use super::super::chain_problems;
+use super::super::run_dir::run_dir_problems;
 use super::super::tree;
-use super::{package_of, run_dir_problems, test_roots, Kind, Root};
+use super::{package_of, test_roots, Kind, Root};
 
 const PACKAGE: &str = "[package]\nname = \"fx\"\nversion = \"0.1.0\"\nedition = \"2021\"\n";
 
@@ -82,6 +83,30 @@ fn autolib_false_leaves_the_chain_no_target() {
     let problems = chain_problems(&tree(&files), "src/a.rs", "a::rejects_x");
     assert_eq!(problems.len(), 1, "{problems:?}");
     assert!(problems[0].contains("no test target"), "{problems:?}");
+}
+
+/// An entry named like an auto root takes the name over: cargo never compiles
+/// the auto file, so it is no root, while the entry's own file is.
+#[test]
+fn an_entry_displaces_the_auto_root_of_its_name() {
+    let test_entry = manifest("\n[[test]]\nname = \"it\"\npath = \"tests/legacy/it.rs\"\n");
+    let files = [
+        ("Cargo.toml", test_entry.as_str()),
+        ("tests/legacy/it.rs", ""),
+    ];
+    assert_eq!(
+        roots(&files, "tests/it.rs"),
+        vec![root("tests/legacy/it.rs", Kind::Test, None)]
+    );
+    let bin_entry = manifest("\n[[bin]]\nname = \"tool\"\npath = \"src/legacy/tool.rs\"\n");
+    let files = [
+        ("Cargo.toml", bin_entry.as_str()),
+        ("src/legacy/tool.rs", ""),
+    ];
+    assert_eq!(
+        roots(&files, "src/bin/tool.rs"),
+        vec![root("src/legacy/tool.rs", Kind::Bin, None)]
+    );
 }
 
 #[test]

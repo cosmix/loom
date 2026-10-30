@@ -7,7 +7,8 @@
 //!   a runner is started with (`env`, `bunx`, `uv run`, `cargo +nightly`, ...).
 //! - Flags: [`has_flag`], [`positionals`], [`split_double_dash`].
 //! - Output: [`pattern`], [`combined_output`], [`strip_ansi`], [`sum_matches`],
-//!   [`last_match`], [`count_matches`], [`summary_from_counts`].
+//!   [`last_match`], [`count_matches`], [`summary_from_counts`],
+//!   [`cargo_target_unselected`].
 
 use std::borrow::Cow;
 use std::fs;
@@ -281,6 +282,28 @@ pub fn pattern(source: &str) -> Regex {
         Ok(regex) => regex,
         Err(error) => panic!("invalid output pattern {source:?}: {error}"),
     }
+}
+
+/// Cargo's refusal of a target selection (`--test`, `--bin`, `--lib`) that
+/// names no target of the package, as printed before anything is built.
+static NO_SUCH_TARGET: LazyLock<Regex> = LazyLock::new(|| {
+    pattern(
+        r"(?m)^error: (no (test|bin) target named `[^`]*`|no library targets found in package `[^`]*`)",
+    )
+});
+
+/// Whether `text` holds cargo's refusal of the selected target. No test ran
+/// and nothing failed to compile, so a caller reads it as a run that selected
+/// nothing.
+pub fn cargo_target_unselected(text: &str) -> bool {
+    NO_SUCH_TARGET.is_match(text)
+}
+
+/// Whether `text` holds cargo's report that rustc rejected a target
+/// (`could not compile`). A build error without it is a failure of the run
+/// (rustc killed, a missing subcommand).
+pub fn cargo_could_not_compile(text: &str) -> bool {
+    text.contains("could not compile")
 }
 
 /// `text` without ANSI escape sequences (colour, cursor and OSC codes).

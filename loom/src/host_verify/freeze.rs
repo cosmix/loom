@@ -23,11 +23,13 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use super::apply::Applied;
+use super::freeze_memo::run_memoized;
 use super::freeze_refuse::{failure_message, REFUSAL_MAX_BYTES};
 use super::runner::DAEMON_STOPPED;
 use super::{child, digest, store, CriterionOutcome, JobRecord, JobResult, JobState};
 use crate::commands::stage::contracts::freeze::{
-    check_formatting, check_site_changes, refused_problems, run_contract,
+    check_formatting, check_site_changes, prepare_contract, refused_problems, run_prepared,
+    PreparedContract,
 };
 use crate::commands::stage::contracts::ContractSite;
 use crate::daemon::ContractRunReport;
@@ -166,7 +168,7 @@ fn run(
         stage.sandbox.command_confinement,
         plan_confinement(work_dir),
     );
-    let reports = run_contracts(&site, &stage, confinement, outcomes)?;
+    let reports = run_contracts(work_dir, record, &site, &stage, confinement, outcomes)?;
     outcomes.push(format_outcome(&contract_site, confinement)?);
     let reloaded = load_stage(&record.stage_id, work_dir)?;
     if let Some(change) = before.changes(&ContractReports::capture(&site, &reloaded)?) {
@@ -197,42 +199,60 @@ fn request_mismatch(binding: &ContractReports, record: &JobRecord) -> Option<Str
 }
 
 /// Run every contract; each is an outcome `contract:<id>` that passes when
-/// the run is red, as the freeze requires. Returns the red runs' reports.
+/// the run is red, as the freeze requires, and is appended to the job's
+/// progress the moment it is known. Returns the red runs' reports.
 fn run_contracts(
+    work_dir: &Path,
+    record: &JobRecord,
     site: &Site,
     stage: &Stage,
     confinement: CommandConfinement,
     outcomes: &mut Vec<CriterionOutcome>,
 ) -> Result<Vec<ContractRunReport>> {
     let mut reports = Vec::new();
-    for contract in &stage.contracts {
-        let judged = run_contract(
-            &site.worktree_root,
-            &site.working_dir,
-            contract,
-            confinement,
-        )?;
-        let (passed, summary) = match judged {
-            Ok(report) => {
-                let verdict = verdict_line(&contract.id, &report);
-                reports.push(report);
-                (true, verdict)
+    run_memoized(
+        &stage.contracts,
+        |contract| prepare_contract(&site.worktree_root, &site.working_dir, contract),
+        PreparedContract::build_key,
+        |contract, prepared| run_prepared(&site.worktree_root, contract, prepared, confinement),
+        |contract, verdict| {
+            let (passed, summary) = match verdict.judged {
+                Ok(report) => {
+                    let line = verdict_line(&report, verdict.shared_from.as_deref());
+                    reports.push(report);
+                    (true, line)
+                }
+                Err(problem) => (false, problem),
+            };
+            let label = format!("contract:{}", contract.id);
+            let done = outcome(label, passed, &summary);
+            // Progress is a courtesy to the waiting writer: the final result
+            // carries every outcome, so a failed append is logged only.
+            if let Err(error) =
+                store::append_progress(work_dir, &record.stage_id, &record.id, &done)
+            {
+                let job = &record.id;
+                let error = format!("{error:#}");
+                tracing::warn!(job = %job, error = %error, "cannot record contract progress");
             }
-            Err(problem) => (false, problem),
-        };
-        let label = format!("contract:{}", contract.id);
-        outcomes.push(outcome(label, passed, &summary));
-    }
+            outcomes.push(done);
+        },
+    )?;
     Ok(reports)
 }
 
-/// The summary of a contract the run classified red.
-fn verdict_line(id: &str, report: &ContractRunReport) -> String {
+/// The summary of a contract the run classified red; `shared_from` names the
+/// contract whose failed build it took instead of running its own.
+fn verdict_line(report: &ContractRunReport, shared_from: Option<&str>) -> String {
+    let id = &report.contract_id;
     let exit = report
         .exit_code
         .map_or_else(|| "no exit code".to_string(), |code| format!("exit {code}"));
+    let shared = shared_from.map_or_else(String::new, |first| {
+        format!("; shares the failed build of contract `{first}`, not run again")
+    });
     format!(
-        "contract `{id}` is red ({}, {exit}), as the freeze requires",
+        "contract `{id}` is red ({}, {exit}), as the freeze requires{shared}",
         report.outcome
     )
 }

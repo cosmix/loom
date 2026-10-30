@@ -9,7 +9,7 @@
 
 use toml::{Table, Value};
 
-use super::{clean, contract_path, join, parent, FileSource};
+use super::{clean, join, parent, FileSource};
 
 /// The package that owns a file: the nearest ancestor directory whose
 /// `Cargo.toml` parses and has a `[package]` table.
@@ -85,45 +85,6 @@ pub(super) fn test_roots(source: FileSource<'_>, package: &Package, file: &str) 
         .collect()
 }
 
-/// Problems with running `contract_file`'s tests from `run_dir`: cargo picks
-/// the manifest nearest the directory it runs in, and from a workspace root
-/// above the package it compiles `default-members` or every member, so a
-/// same-named test in another member could stand in for the frozen one.
-pub(super) fn run_dir_problems(
-    source: FileSource<'_>,
-    contract_file: &str,
-    run_dir: &str,
-) -> Vec<String> {
-    let file = match contract_path(contract_file) {
-        Ok(file) => file,
-        Err(problem) => return vec![problem],
-    };
-    let Some(package) = package_of(source, &file) else {
-        return vec![no_package(&file)];
-    };
-    let Some(run) = clean(run_dir) else {
-        return vec![format!(
-            "run directory {run_dir} is not a plain relative path"
-        )];
-    };
-    let want = shown(&package.dir);
-    let nearest = ancestors(&run).find(|dir| source(&join(dir, "Cargo.toml")).is_some());
-    match nearest {
-        Some(dir) if dir == package.dir && package.selects_itself() => Vec::new(),
-        Some(dir) => vec![format!(
-            "cargo runs contract tests in {}, whose manifest {} does not select package {want}; \
-             set the contract's cwd to {want}",
-            shown(&run),
-            join(dir, "Cargo.toml")
-        )],
-        None => vec![format!(
-            "cargo runs contract tests in {}, which has no Cargo.toml at or above it; \
-             set the contract's cwd to {want}",
-            shown(&run)
-        )],
-    }
-}
-
 impl Package {
     /// `file` relative to the package directory.
     pub(super) fn local<'f>(&self, file: &'f str) -> Option<&'f str> {
@@ -136,6 +97,16 @@ impl Package {
     /// A key of the `[package]` table.
     fn key(&self, name: &str) -> Option<&Value> {
         self.manifest.get("package")?.as_table()?.get(name)
+    }
+
+    /// The `[[bin]]` or `[[test]]` entries (`key` is `bin` or `test`).
+    fn entries(&self, key: &str) -> Vec<&Table> {
+        let array = self.manifest.get(key).and_then(Value::as_array);
+        array
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_table)
+            .collect()
     }
 
     /// Whether the `auto*` flag `name` leaves auto-discovery on.
@@ -171,14 +142,7 @@ impl Package {
         present: &dyn Fn(&str) -> bool,
     ) -> Vec<Root> {
         let key = if kind == Kind::Bin { "bin" } else { "test" };
-        let entries: Vec<&Table> = self
-            .manifest
-            .get(key)
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_table)
-            .collect();
+        let entries = self.entries(key);
         let mut roots: Vec<Root> = entries
             .iter()
             .filter_map(|entry| {
@@ -192,8 +156,17 @@ impl Package {
         if !entries.is_empty() && self.edition_2015(source) {
             return roots;
         }
+        let declared: Vec<&str> = entries
+            .iter()
+            .filter_map(|entry| entry.get("name")?.as_str())
+            .collect();
         for path in self.auto_paths(kind, local) {
-            if !roots.iter().any(|root| root.path == path) {
+            // An entry named like an auto root takes its name over: cargo
+            // never compiles the auto file, `--test <name>` builds the entry's.
+            let displaced = self
+                .auto_name(kind, &path)
+                .is_some_and(|name| declared.contains(&name.as_str()));
+            if !displaced && !roots.iter().any(|root| root.path == path) {
                 roots.push(Root {
                     path,
                     kind,
@@ -215,6 +188,14 @@ impl Package {
             return clean(path);
         }
         let name = entry.get("name").and_then(Value::as_str)?;
+        self.default_paths(kind, name)
+            .into_iter()
+            .find(|path| present(path))
+    }
+
+    /// The paths cargo gives the `[[bin]]` or `[[test]]` entry `name` when
+    /// it sets no `path`, package-relative, in cargo's order.
+    fn default_paths(&self, kind: Kind, name: &str) -> Vec<String> {
         let defaults = match kind {
             Kind::Bin if name == self.name => vec!["src/main.rs".to_string()],
             Kind::Bin => vec![
@@ -223,10 +204,51 @@ impl Package {
             ],
             _ => vec![format!("tests/{name}.rs"), format!("tests/{name}/main.rs")],
         };
-        defaults
-            .iter()
-            .filter_map(|path| clean(path))
-            .find(|path| present(path))
+        defaults.iter().filter_map(|path| clean(path)).collect()
+    }
+
+    /// The name cargo gives the bin or test target rooted at `root` (a path
+    /// from [`test_roots`]): the name of the manifest entry that owns the
+    /// path, else the one the auto-discovery layout implies. `None` for the
+    /// lib, which `--lib` selects without a name.
+    pub(super) fn target_name(&self, root: &Root) -> Option<String> {
+        if root.kind == Kind::Lib {
+            return None;
+        }
+        let local = self.local(&root.path)?;
+        let key = if root.kind == Kind::Bin {
+            "bin"
+        } else {
+            "test"
+        };
+        let entry_name = self.entries(key).into_iter().find_map(|entry| {
+            let name = entry.get("name")?.as_str()?;
+            let paths = match entry.get("path").and_then(Value::as_str) {
+                Some(path) => vec![clean(path)?],
+                None => self.default_paths(root.kind, name),
+            };
+            paths
+                .iter()
+                .any(|path| path == local)
+                .then(|| name.to_string())
+        });
+        entry_name.or_else(|| self.auto_name(root.kind, local))
+    }
+
+    /// The name auto-discovery gives the target rooted at the
+    /// package-relative `local`.
+    fn auto_name(&self, kind: Kind, local: &str) -> Option<String> {
+        let dir = match kind {
+            Kind::Bin if local == "src/main.rs" => return Some(self.name.clone()),
+            Kind::Bin => "src/bin",
+            _ => "tests",
+        };
+        let rest = local.strip_prefix(dir)?.strip_prefix('/')?;
+        match rest.split_once('/') {
+            Some((name, "main.rs")) => Some(name.to_string()),
+            Some(_) => None,
+            None => rest.strip_suffix(".rs").map(str::to_string),
+        }
     }
 
     /// The auto roots of `kind` that may reach the package-relative `local`.
@@ -277,7 +299,7 @@ impl Package {
     /// Whether cargo run in the package directory tests the package: not
     /// when its manifest is also a workspace root whose `default-members`
     /// leave the root package out.
-    fn selects_itself(&self) -> bool {
+    pub(super) fn selects_itself(&self) -> bool {
         let members = self
             .manifest
             .get("workspace")
@@ -334,12 +356,12 @@ fn manifest(source: FileSource<'_>, dir: &str) -> Option<Table> {
 }
 
 /// `dir`, then each directory above it, ending with the source root "".
-fn ancestors(dir: &str) -> impl Iterator<Item = &str> {
+pub(super) fn ancestors(dir: &str) -> impl Iterator<Item = &str> {
     std::iter::successors(Some(dir), |dir| (!dir.is_empty()).then(|| parent(dir)))
 }
 
 /// A directory for a message: "." for the source root.
-fn shown(dir: &str) -> &str {
+pub(super) fn shown(dir: &str) -> &str {
     if dir.is_empty() {
         "."
     } else {

@@ -66,6 +66,29 @@ pub struct TestTarget {
     pub name: Option<String>,
 }
 
+/// The cargo target that compiles a contract's test file. A scoped run builds
+/// and runs that one target instead of every target of the package.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TargetScope {
+    /// The package's library target (`--lib`).
+    Lib,
+    /// A binary target by name (`--bin <name>`).
+    Bin(String),
+    /// An integration test target by name (`--test <name>`).
+    Test(String),
+}
+
+impl TargetScope {
+    /// The cargo selector words for this target, each quoted for the shell.
+    pub fn cargo_flags(&self) -> String {
+        match self {
+            Self::Lib => "--lib".to_string(),
+            Self::Bin(name) => format!("--bin {}", command::shell_word(name)),
+            Self::Test(name) => format!("--test {}", command::shell_word(name)),
+        }
+    }
+}
+
 /// How a runner's selection names its tests.
 #[derive(Debug, Clone, Copy)]
 pub enum SelectionNames {
@@ -99,6 +122,19 @@ pub trait TestRunnerAdapter: Sync {
     /// `package_dir` as its cwd.
     fn single_test_command(&self, file: &str, test: &str, package_dir: &Path) -> String;
 
+    /// [`Self::single_test_command`] restricted to the build target `scope`.
+    /// Only runners that can name a build target override it; every other
+    /// runner ignores the scope.
+    fn scoped_test_command(
+        &self,
+        _scope: &TargetScope,
+        file: &str,
+        test: &str,
+        package_dir: &Path,
+    ) -> String {
+        self.single_test_command(file, test, package_dir)
+    }
+
     /// Files whose presence makes a directory the one this runner must run
     /// from, because the runner reads its configuration or finds its project
     /// in its cwd. A `*.ext` entry matches any file with that extension. A
@@ -127,4 +163,12 @@ pub trait TestRunnerAdapter: Sync {
 
     /// Read the counts and the build status from a run's output.
     fn parse(&self, out: &RunOutput<'_>) -> RunSummary;
+
+    /// Whether `out` shows the compiler or loader rejecting the code, so that
+    /// another contract building the same code would fail the same way. A
+    /// failure of the run itself (a killed compiler, a missing subcommand) is
+    /// not a rejection. Defaults to the runner's own `build_failed`.
+    fn compile_rejected(&self, out: &RunOutput<'_>) -> bool {
+        self.parse(out).build_failed
+    }
 }

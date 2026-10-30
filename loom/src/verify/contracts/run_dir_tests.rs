@@ -218,5 +218,31 @@ fn a_named_runner_builds_its_single_test_command() {
 
     let run = resolve(&tmp, ".", &contract, Some(adapter), None).unwrap();
 
-    assert!(run.command.contains("tests::rejects_x"), "{}", run.command);
+    assert_eq!(run.command, "cargo test tests::rejects_x -- --exact");
+    assert_eq!(
+        run.build.as_deref(),
+        Some("cargo test loom_build_probe -- --exact"),
+        "no manifest: the target is unknown"
+    );
+}
+
+#[cfg(feature = "source-graph")]
+#[test]
+fn a_cargo_contract_runs_only_the_target_holding_its_file() {
+    let manifest = "[package]\nname = \"fx\"\nversion = \"0.1.0\"\nedition = \"2021\"\n";
+    let tmp = worktree(&["tests", "src"], &["src/lib.rs", "tests/x_contract.rs"]);
+    std::fs::write(tmp.path().join("Cargo.toml"), manifest).unwrap();
+    let contract = contract();
+    let adapter = super::super::resolve_adapter(&contract, tmp.path()).unwrap();
+
+    let run = resolve(&tmp, ".", &contract, Some(adapter), None).unwrap();
+
+    assert_eq!(
+        run.command,
+        "cargo test --test x_contract tests::rejects_x -- --exact"
+    );
+    assert_eq!(
+        run.build.as_deref(),
+        Some("cargo test --test x_contract loom_build_probe -- --exact")
+    );
 }
