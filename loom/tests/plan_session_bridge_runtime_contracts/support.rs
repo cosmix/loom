@@ -173,6 +173,8 @@ impl Fixture {
             transcript_path: Some(s.transcript.clone()),
             started_at: Utc::now().to_rfc3339(),
             children: Vec::new(),
+            feature: None,
+            plan: None,
         };
         write_record(&s.dir, &record).unwrap();
         s
@@ -276,6 +278,8 @@ impl Harness {
             guidance,
             opening_origin: Some(Origin::Start),
             offer: None,
+            feature: None,
+            plan: None,
             extra_env: Vec::new(),
         };
         let id = self.bridge.start_session(request).unwrap();

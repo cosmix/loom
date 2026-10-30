@@ -46,6 +46,8 @@ fn session() -> SessionView {
             message: "gone".into(),
         }),
         offer: Some("offer".into()),
+        feature: Some("feature".into()),
+        plan: None,
     }
 }
 

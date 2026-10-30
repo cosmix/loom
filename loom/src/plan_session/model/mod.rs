@@ -45,6 +45,10 @@ pub struct SessionView {
     pub last_activity: Option<String>,
     pub failure: Option<Failure>,
     pub offer: Option<String>,
+    /// The feature the session was started for; `None` for one with no feature.
+    pub feature: Option<String>,
+    /// The standalone plan's slug the session was started for; `None` for one with no plan.
+    pub plan: Option<String>,
 }
 
 /// A session failure and its explanation.

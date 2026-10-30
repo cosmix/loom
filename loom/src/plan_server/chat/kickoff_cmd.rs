@@ -26,6 +26,7 @@ pub(super) fn confirm(ctx: &PlanContext, conn: &ConnCtx, size: KickoffSize, name
     let id = bridge.chat_session_id().ok_or_else(|| NO_CHAT.to_owned())?;
     let dir = SessionDir::new(ctx.runtime().sessions.join(&id));
     let target = arm_and_send(ctx, &bridge, &dir, &id, size, name)?;
+    record_owner(&bridge, &id, size, name);
     let document = target.document.to_string_lossy();
     let view = lock(&state.kickoff).confirm(&id, &document);
     if let Some(view) = view {
@@ -54,6 +55,20 @@ fn arm_and_send(
         return Err(error.to_string());
     }
     Ok(target)
+}
+
+/// The confirmed name owns the session from here on, so it shows on that feature's or plan's
+/// screens and nowhere else. The grant is armed and sent by now: a session gone in between has
+/// nothing left to show.
+fn record_owner(bridge: &Bridge, id: &str, size: KickoffSize, name: &str) {
+    let name = Some(name.to_owned());
+    let (feature, plan) = match size {
+        KickoffSize::Feature => (name, None),
+        KickoffSize::Plan => (None, name),
+    };
+    if let Err(error) = bridge.set_owner(id, feature, plan) {
+        tracing::warn!(session = %id, %error, "cannot record the kickoff's owner");
+    }
 }
 
 fn confirmation(size: KickoffSize, name: &str) -> String {

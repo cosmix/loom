@@ -15,6 +15,8 @@ mod error;
 mod flow;
 pub mod host;
 mod opening;
+mod owner;
+mod publish;
 mod rebuilding;
 mod recovery;
 pub mod registry;
@@ -91,6 +93,10 @@ pub struct StartRequest {
     pub opening_origin: Option<Origin>,
     /// The `Offer::id` the chat started from.
     pub offer: Option<String>,
+    /// The feature the session belongs to; `None` for a standalone or project-wide session.
+    pub feature: Option<String>,
+    /// The standalone plan's slug the session belongs to; `None` for any other session.
+    pub plan: Option<String>,
     pub extra_env: Vec<(String, String)>,
 }
 
