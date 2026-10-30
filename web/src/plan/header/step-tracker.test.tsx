@@ -1,16 +1,33 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render as rtlRender, screen, within } from "@testing-library/react";
+import { createStore } from "jotai";
+import { Provider } from "jotai/react";
+import type { ReactElement } from "react";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it } from "vitest";
 
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
+import runStripFixture from "@/plan/api/fixtures/run-strip.json";
 import { checklistViewSchema } from "@/plan/api/schema";
+import { runStripSchema } from "@/plan/api/schema-run";
 import { StepTracker } from "@/plan/header/step-tracker";
+import { runStripAtom } from "@/plan/run/use-run";
 
 afterEach(cleanup);
+
+function render(ui: ReactElement, store = createStore()) {
+  return rtlRender(
+    <Provider store={store}>
+      <MemoryRouter initialEntries={["/f/demo"]}>{ui}</MemoryRouter>
+    </Provider>,
+  );
+}
 
 const checklist = checklistViewSchema.parse({
   ...checklistFixture.checklists[0]!,
   steps: [
-    ...checklistFixture.checklists[0]!.steps,
+    ...checklistFixture.checklists[0]!.steps.map((step) =>
+      step.number === 2 ? { ...step, count: "3/5" } : step,
+    ),
     { number: 3, name: "Metaplan", mark: "active", count: null, label: "Metaplan" },
     { number: 4, name: "Plans", mark: "optional", count: null, label: "Plans" },
     { number: 5, name: "Plan review", mark: "optional", count: null, label: "Plan review" },
@@ -36,33 +53,41 @@ describe("StepTracker cells", () => {
   });
 
   it.each([
-    [1, "Vision"],
-    [2, "Product spec"],
-    [3, "Metaplan"],
-    [4, "Plans"],
-    [5, "Plan review"],
-    [6, "Run review"],
-    [7, "Execute"],
-  ] as const)("shows step %i and its name %s in a counter cell", (number, name) => {
+    [1, "Vision", "1"],
+    [2, "Product spec", "3/5"],
+    [3, "Metaplan", "—"],
+    [4, "Plans", "—"],
+    [5, "Plan review", "—"],
+    [6, "Run review", "—"],
+    [7, "Execute", "—"],
+  ] as const)("shows step %i as its server count over its label %s", (_number, name, count) => {
     render(<StepTracker checklist={checklist} narrow={false} />);
 
     const label = screen.getByText(name);
     expect(label.classList.contains("plan-step-name")).toBe(true);
     expect(label.closest(".sr-only, .hidden, [hidden], [aria-hidden='true']")).toBeNull();
-    const count = within(label.closest("li")!).getByText(String(number));
-    expect(count.classList.contains("tabular-nums")).toBe(true);
+    const counter = within(label.closest("li")!).getByText(count);
+    expect(counter.classList.contains("tabular-nums")).toBe(true);
+  });
+
+  it("links each cell to its step on the feature route", () => {
+    render(<StepTracker checklist={checklist} narrow={false} />);
+    const links = within(screen.getByRole("list", { name: "Steps" })).getAllByRole("link");
+    expect(links.map((link) => link.getAttribute("href"))).toEqual(
+      [1, 2, 3, 4, 5, 6, 7].map((number) => `/f/${checklist.feature}?step=${number}`),
+    );
   });
 });
 
 describe("StepTracker glyphs", () => {
   it.each([
     ["Vision", "lucide-circle-check", "text-(--tone-completed)"],
-    ["Product spec", "lucide-book-open", "text-(--tone-warning)"],
-    ["Metaplan", "lucide-map", "text-(--tone-executing)"],
-    ["Plans", "lucide-list-checks", "text-(--tone-dimmed)"],
-    ["Plan review", "lucide-gauge", "text-(--tone-dimmed)"],
-    ["Run review", "lucide-scan-eye", "text-(--tone-dimmed)"],
-    ["Execute", "lucide-play", "text-(--tone-dimmed)"],
+    ["Product spec", "lucide-book-open", "text-foreground"],
+    ["Metaplan", "lucide-map", "text-muted-foreground"],
+    ["Plans", "lucide-list-checks", "text-muted-foreground"],
+    ["Plan review", "lucide-gauge", "text-muted-foreground"],
+    ["Run review", "lucide-scan-eye", "text-muted-foreground"],
+    ["Execute", "lucide-play", "text-muted-foreground"],
   ])("renders %s with its glyph %s and tone %s", (name, glyphClass, tone) => {
     render(<StepTracker checklist={checklist} narrow={false} />);
 
@@ -71,28 +96,50 @@ describe("StepTracker glyphs", () => {
     expect(glyph.classList.contains(tone)).toBe(true);
     expect(glyph.getAttribute("aria-hidden")).toBe("true");
   });
+
+  it("swaps step 7's glyph for the running ring while a plan runs", () => {
+    const store = createStore();
+    store.set(runStripAtom, { ...runStripSchema.parse(runStripFixture), daemon_running: true });
+    render(<StepTracker checklist={checklist} narrow={false} />, store);
+
+    const execute = screen.getByText("Execute").closest("li")!;
+    const ring = execute.querySelector("[data-kind='running']");
+    expect(ring?.classList.contains("text-(--tone-executing)")).toBe(true);
+    // The ring replaces the step glyph; its own play shape sits inside the ring.
+    expect(execute.querySelector("svg.plan-step-glyph")).toBeNull();
+    const other = screen.getByText("Plans").closest("li")!;
+    expect(other.querySelector("[data-kind='running']")).toBeNull();
+  });
+
+  it("keeps step 7's own glyph when no plan is running", () => {
+    const store = createStore();
+    store.set(runStripAtom, { ...runStripSchema.parse(runStripFixture), daemon_running: false });
+    render(<StepTracker checklist={checklist} narrow={false} />, store);
+
+    const execute = screen.getByText("Execute").closest("li")!;
+    expect(execute.querySelector("svg.lucide-play.plan-step-glyph")).not.toBeNull();
+    expect(execute.querySelector("[data-kind='running']")).toBeNull();
+  });
 });
 
 describe("StepTracker wide layout", () => {
-  it("tints the current cell and underlines it with a two-pixel primary accent", () => {
+  it("gives only the current cell the primary wash and inset underline class", () => {
     render(<StepTracker checklist={checklist} narrow={false} />);
 
     const current = screen.getByRole("listitem", { current: "step" });
-    expect(current.classList.contains("bg-muted")).toBe(true);
-    expect(current.classList.contains("border-b-2")).toBe(true);
-    expect(current.classList.contains("border-b-primary")).toBe(true);
+    expect(current.classList.contains("plan-step-cell-current")).toBe(true);
+    expect(current.classList.contains("border-b-2")).toBe(false);
     const done = screen.getByText("Vision").closest("li")!;
-    expect(done.classList.contains("border-b-primary")).toBe(false);
+    expect(done.classList.contains("plan-step-cell-current")).toBe(false);
   });
 
-  it("contains the wide rail in a horizontal scroll container", () => {
+  it("wraps the rail in a shrinkable container", () => {
     render(<StepTracker checklist={checklist} narrow={false} />);
 
     const list = screen.getByRole("list", { name: "Steps" });
-    expect(list.classList.contains("plan-step-rail-vertical")).toBe(false);
+    expect(list.classList.contains("plan-step-rail")).toBe(true);
     expect(list.parentElement!.classList.contains("min-w-0")).toBe(true);
     expect(list.parentElement!.classList.contains("max-w-full")).toBe(true);
-    expect(list.parentElement!.classList.contains("overflow-x-auto")).toBe(true);
   });
 });
 
@@ -126,24 +173,32 @@ describe("StepTracker narrow layout and loading", () => {
     render(<StepTracker checklist={checklist} narrow />);
     expect(screen.queryByRole("list")).toBeNull();
     const trigger = screen.getByRole("button", { name: "Step 2 of 7 · Product spec" });
-    // shrink-0 on Button's base class would stop the inner truncate from ever applying.
-    expect(trigger.classList.contains("shrink")).toBe(true);
-    expect(trigger.classList.contains("shrink-0")).toBe(false);
-    expect(trigger.classList.contains("max-w-full")).toBe(true);
+    // The summary keeps its full text (flex: none, nowrap in header.css); the next-step button yields.
+    expect(trigger.classList.contains("plan-rail-summary")).toBe(true);
     const label = within(trigger).getByText("Step 2 of 7 · Product spec");
-    expect(label.classList.contains("min-w-0")).toBe(true);
-    expect(label.classList.contains("truncate")).toBe(true);
+    expect(label.classList.contains("truncate")).toBe(false);
     expect(label.closest(".sr-only, .hidden, [hidden], [aria-hidden='true']")).toBeNull();
     fireEvent.click(trigger);
     const dialog = screen.getByRole("dialog", { name: "Steps" });
     // The portal needs its own planner scope for the rail's CSS.
     expect(dialog.hasAttribute("data-loom-plan")).toBe(true);
     const list = within(dialog).getByRole("list", { name: "Steps" });
-    expect(list.classList.contains("plan-step-rail-vertical")).toBe(true);
     expect(within(list).getAllByRole("listitem")).toHaveLength(7);
+    expect(
+      within(list)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("href")),
+    ).toEqual([1, 2, 3, 4, 5, 6, 7].map((number) => `/f/${checklist.feature}?step=${number}`));
     expect(within(list).getByRole("listitem", { current: "step" }).textContent).toContain(
       "Product spec",
     );
+  });
+
+  it("closes the popover when a step link is followed", () => {
+    render(<StepTracker checklist={checklist} narrow />);
+    fireEvent.click(screen.getByRole("button", { name: "Step 2 of 7 · Product spec" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Steps" })).getByText("Plans"));
+    expect(screen.queryByRole("dialog", { name: "Steps" })).toBeNull();
   });
 
   it.each([

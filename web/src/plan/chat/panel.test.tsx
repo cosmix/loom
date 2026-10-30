@@ -234,7 +234,7 @@ it("two pending permissions name both tools and count 2", () => {
   ).toContain("2");
 });
 
-it("compact header keeps the chat button and shrinks changed-since", () => {
+it("compact header keeps the chat button; changed-since lives in the activity popover", () => {
   media(false);
   render(
     <Provider store={storeFor()}>
@@ -242,7 +242,7 @@ it("compact header keeps the chat button and shrinks changed-since", () => {
     </Provider>,
   );
   expect(screen.getByRole("button", { name: "Open chat" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Changed since" }).textContent).toBe("● 2");
+  expect(screen.queryByRole("button", { name: "Changed since" })).toBeNull();
 });
 
 it("below lg with the sheet closed, an OfferButton is a button", async () => {

@@ -32,7 +32,54 @@ function openPresence(entries: ReturnType<typeof entry>[], holderFrees: string |
   return within(screen.getByRole("list", { name: "People here" }));
 }
 
+function renderPresence(entries: ReturnType<typeof entry>[]) {
+  const store = createStore();
+  store.set(youAtom, { public_id: "me", name: "Alex" });
+  store.set(presenceAtom, { entries });
+  render(
+    <Provider store={store}>
+      <Presence />
+    </Provider>,
+  );
+  return screen.getByRole("button", { name: /people here/i });
+}
+
 describe("Presence", () => {
+  it("shows initials avatars for at most three people, then a +N circle", () => {
+    const trigger = renderPresence([
+      entry("me", "Alex"),
+      entry("ada", "Ada Lovelace"),
+      entry("bob", "bob"),
+      entry("cy", "Cy"),
+      entry("di", "Di"),
+    ]);
+    expect(trigger.getAttribute("aria-label")).toBe("People here: 5");
+    const circles = Array.from(trigger.querySelectorAll(".plan-avatar"));
+    expect(circles.map((circle) => circle.textContent)).toEqual(["A", "AL", "B", "+2"]);
+  });
+
+  it("gives the same person the same hue and rings the authoring holder first", () => {
+    const trigger = renderPresence([entry("me", "Alex"), entry("ada", "Ada", { holder: true })]);
+    const [first, second] = Array.from(trigger.querySelectorAll<HTMLElement>(".plan-avatar"));
+    expect(first!.textContent).toBe("A");
+    expect(first!.hasAttribute("data-holder")).toBe(true);
+    expect(second!.hasAttribute("data-holder")).toBe(false);
+    expect(first!.style.getPropertyValue("--avatar-hue")).not.toBe(
+      second!.style.getPropertyValue("--avatar-hue"),
+    );
+    cleanup();
+    const again = renderPresence([entry("ada", "Ada")]);
+    expect(
+      again.querySelector<HTMLElement>(".plan-avatar")!.style.getPropertyValue("--avatar-hue"),
+    ).toBe(first!.style.getPropertyValue("--avatar-hue"));
+  });
+
+  it("takes initials from letters and digits only", () => {
+    const trigger = renderPresence([entry("eve", "<img src=x>")]);
+    expect(trigger.querySelector(".plan-avatar")!.textContent).toBe("IS");
+    expect(trigger.querySelector("img")).toBeNull();
+  });
+
   it("marks you, the holder and an away holder with the free-up time", () => {
     const list = openPresence(
       [

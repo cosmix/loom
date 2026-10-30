@@ -1,5 +1,6 @@
 import { atom, useAtomValue, useStore } from "jotai";
-import { useEffect, useRef, useState } from "react";
+import { History } from "lucide-react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -9,10 +10,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import "@/plan/header/activity.css";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { DiffView } from "@/plan/diff/diff-view";
 import { fetchDoc } from "@/plan/files/api";
 import { planSocketAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { ActivityTile } from "@/plan/ui/activity-glyphs";
 import { LoadState } from "@/plan/ui/load-state";
 
 import { getAtCommit, getCompare, type CompareResponse } from "./api";
@@ -280,7 +283,42 @@ function ComparisonList({ changes }: { changes: Change[] }) {
   );
 }
 
-function ChangedSinceWidget({ compact, changes }: { compact: boolean; changes: Change[] }) {
+type Variant = "button" | "row";
+
+/**
+ * The footer row of the activity popover: a tile, the title and the count, in one button. It
+ * spreads the props DialogTrigger hands its child (handlers, ARIA state and the ref).
+ */
+function RowTrigger({ count, ...props }: ComponentProps<"button"> & { count: number }) {
+  return (
+    <button
+      type="button"
+      className="activity-row"
+      aria-label={`Changed since you looked · ${count}`}
+      {...props}
+    >
+      <ActivityTile>
+        <History />
+      </ActivityTile>
+      <span className="activity-row__body">
+        <span className="activity-row__title">Changed since you looked</span>{" "}
+        <span className="activity-row__sub">Review against your checkpoint or a git ref</span>
+      </span>{" "}
+      {/* The spaces keep the row's text readable ("… ref 2"); grid and flex layout ignore them. */}
+      <span className="activity-row__time">{count}</span>
+    </button>
+  );
+}
+
+function ChangedSinceWidget({
+  compact,
+  variant,
+  changes,
+}: {
+  compact: boolean;
+  variant: Variant;
+  changes: Change[];
+}) {
   const [open, setOpen] = useState(false);
   const opener = useRef<HTMLButtonElement>(null);
   if (!changes.length && !open) return null;
@@ -288,20 +326,24 @@ function ChangedSinceWidget({ compact, changes }: { compact: boolean; changes: C
     <Dialog open={open} onOpenChange={setOpen}>
       {changes.length > 0 && (
         <DialogTrigger asChild>
-          <Button
-            ref={opener}
-            variant="ghost"
-            size="sm"
-            aria-label={`Changed since you looked · ${changes.length}`}
-          >
-            {compact ? (
-              <>
-                <span aria-hidden="true">●</span> {changes.length}
-              </>
-            ) : (
-              <>Changed since you looked · {changes.length}</>
-            )}
-          </Button>
+          {variant === "row" ? (
+            <RowTrigger ref={opener} count={changes.length} />
+          ) : (
+            <Button
+              ref={opener}
+              variant="ghost"
+              size="sm"
+              aria-label={`Changed since you looked · ${changes.length}`}
+            >
+              {compact ? (
+                <>
+                  <span aria-hidden="true">●</span> {changes.length}
+                </>
+              ) : (
+                <>Changed since you looked · {changes.length}</>
+              )}
+            </Button>
+          )}
         </DialogTrigger>
       )}
       <DialogContent
@@ -323,10 +365,17 @@ function ChangedSinceWidget({ compact, changes }: { compact: boolean; changes: C
   );
 }
 
-export function ChangedSinceControl({ compact }: { compact: boolean }) {
+/** `row` is the activity popover's footer row, which has room for the full title and ignores `compact`. */
+export function ChangedSinceControl({
+  compact = false,
+  variant = "button",
+}: {
+  compact?: boolean;
+  variant?: Variant;
+}) {
   const changes = useChangedSince();
   const projectKey = useAtomValue(serverInfoAtom)?.project_key;
   return projectKey ? (
-    <ChangedSinceWidget key={projectKey} compact={compact} changes={changes} />
+    <ChangedSinceWidget key={projectKey} compact={compact} variant={variant} changes={changes} />
   ) : null;
 }

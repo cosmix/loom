@@ -51,10 +51,7 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
           },
           {
             // Below 1024px the header shows only the "Step n of 7" button, not the rail.
-            target: [
-              '.plan-header ol[aria-label="Steps"]',
-              '.plan-header .mt-3 button[aria-haspopup="dialog"]',
-            ],
+            target: ['.plan-header ol[aria-label="Steps"]', ".plan-header .plan-rail-summary"],
             text: "The step rail shows the current step and which steps are done, have gaps or are optional.",
           },
           {
@@ -79,7 +76,7 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
     ],
     tips: [
       "The step rail belongs to a feature and is hidden on the project home.",
-      "The activity pill lists a running plan, a pressure test, a Codex review or a summary rebuild, and a chat that is starting, drafting a document, needs permission or is waiting for you; a chat that is working does not appear, and the pill is absent when nothing applies.",
+      'The activity pill lists a running plan, a pressure test, a Codex review or a summary rebuild, and a chat that is starting, drafting a document, needs permission or is waiting for you; a chat that is working does not appear, and the pill reads "Idle" when nothing applies.',
     ],
   },
   {

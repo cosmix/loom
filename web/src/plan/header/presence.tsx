@@ -1,7 +1,7 @@
 import { useAtomValue } from "jotai/react";
 import { UsersIcon } from "lucide-react";
+import type { CSSProperties } from "react";
 
-import { Button } from "@/components/ui/button";
 import type { HolderView, PresenceEntry } from "@/plan/api/schema";
 import { NamePrompt } from "@/plan/header/name-prompt";
 import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
@@ -13,6 +13,62 @@ function freeTime(holder: HolderView | null, entry: PresenceEntry): string | nul
   return Number.isNaN(at.getTime())
     ? holder.frees_at
     : at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+const MAX_AVATARS = 3;
+
+/** Up to two initials from letters and digits only, so a hostile name cannot inject marks. */
+function initials(name: string): string {
+  const marks = name
+    .split(/\s+/)
+    .map((word) => Array.from(word).find((char) => /[\p{L}\p{N}]/u.test(char)) ?? "")
+    .filter((mark) => mark !== "");
+  return (marks.length > 1 ? marks[0]! + marks[1]! : (marks[0] ?? "?")).toUpperCase();
+}
+
+/** A stable hue per viewer, so the same person keeps the same colour across reloads. */
+function hueOf(publicId: string): number {
+  let hash = 0;
+  for (const char of publicId) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0;
+  return hash % 360;
+}
+
+function Avatar({ entry }: { entry: PresenceEntry }) {
+  return (
+    <span
+      className="plan-avatar"
+      data-holder={entry.holder ? "" : undefined}
+      style={{ "--avatar-hue": hueOf(entry.public_id) } as CSSProperties}
+      aria-hidden="true"
+    >
+      {initials(entry.name)}
+    </span>
+  );
+}
+
+function AvatarStack({ entries }: { entries: PresenceEntry[] }) {
+  if (entries.length === 0) {
+    return (
+      <span className="plan-avatar plan-avatar-more" aria-hidden="true">
+        <UsersIcon className="size-3.5" />
+      </span>
+    );
+  }
+  // The authoring holder leads, so its ring is never hidden behind the "+N" circle.
+  const ordered = [...entries].sort((a, b) => Number(b.holder) - Number(a.holder));
+  const extra = ordered.length - MAX_AVATARS;
+  return (
+    <>
+      {ordered.slice(0, MAX_AVATARS).map((entry) => (
+        <Avatar key={entry.public_id} entry={entry} />
+      ))}
+      {extra > 0 && (
+        <span className="plan-avatar plan-avatar-more" aria-hidden="true">
+          +{extra}
+        </span>
+      )}
+    </>
+  );
 }
 
 function PresenceRow({
@@ -50,10 +106,13 @@ export function Presence() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" aria-label={`People here: ${entries.length}`}>
-          <UsersIcon aria-hidden="true" />
-          <span>{entries.length}</span>
-        </Button>
+        <button
+          type="button"
+          className="plan-avatars"
+          aria-label={`People here: ${entries.length}`}
+        >
+          <AvatarStack entries={entries} />
+        </button>
       </PopoverTrigger>
       <PopoverContent aria-label="People here">
         <NamePrompt />

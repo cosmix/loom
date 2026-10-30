@@ -110,7 +110,14 @@ it("orders activities by urgency, then oldest start within a kind", () => {
     startedMs,
     startedMs + 100,
   ]);
-  expect(activities.every((item) => item.title === ACTIVITY_LABELS[item.kind])).toBe(true);
+  expect(activities.map((item) => item.title)).toEqual([
+    "Waiting for your answer",
+    "Plan running",
+    "Pressure test · round 1 of 2",
+    ACTIVITY_LABELS.codex,
+    ACTIVITY_LABELS.codex,
+    "3 summaries rebuilding",
+  ]);
   expect(mostUrgent([...activities].reverse())).toBe(activities[0]);
 });
 
@@ -145,11 +152,36 @@ it("shows summary progress and its actual start time", () => {
     {
       id: "summaries",
       kind: "summaries",
-      title: ACTIVITY_LABELS.summaries,
+      title: "3 summaries rebuilding",
       subject: "1 of 3",
       since: startedMs,
     },
   ]);
+});
+
+it("names the plan run with its merge progress, by file name", () => {
+  expect(
+    deriveActivities({
+      ...empty,
+      runStrip: { daemon_running: true, plan: "doc/plans/PLAN-example.md", merged: 1, total: 3 },
+    }),
+  ).toMatchObject([
+    { kind: "running", title: "Plan running", subject: "PLAN-example.md · 1 of 3 stages merged" },
+  ]);
+  expect(
+    deriveActivities({
+      ...empty,
+      runStrip: { daemon_running: true, plan: "doc/plans/PLAN-example.md", merged: 0, total: 0 },
+    }),
+  ).toMatchObject([{ subject: "PLAN-example.md" }]);
+});
+
+it("uses the singular for a one-summary rebuild", () => {
+  const [row] = deriveActivities({
+    ...empty,
+    summaryPanel: { running: { ...rebuild, ids: ["a"], total: 1 } },
+  });
+  expect(row?.title).toBe("1 summary rebuilding");
 });
 
 it("returns no activities for empty state and no most urgent activity", () => {
@@ -167,7 +199,7 @@ it.each([
     {
       id: `${kind}:chat-1`,
       kind,
-      title: ACTIVITY_LABELS[kind],
+      title: kind === "permission" ? "Waiting for your answer" : ACTIVITY_LABELS[kind],
       subject: "Planning",
       since: startedMs,
     },

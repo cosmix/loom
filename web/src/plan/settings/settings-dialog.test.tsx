@@ -14,9 +14,10 @@ import {
 } from "./preferences";
 import { SettingsDialog } from "./settings-dialog";
 
-const NOTIFICATION_LABEL = "Browser notification when a session needs you";
-const ENGLISH_PREVIEW = "A quiet morning leaves room for a new idea.";
-const GREEK_PREVIEW = "Ένα ήσυχο πρωινό αφήνει χώρο για μια νέα ιδέα.";
+const NOTIFICATION_LABEL = "Notify when a session needs me";
+const ENGLISH_PREVIEW =
+  "The app stores no workflow state and works out the current step from the earliest gap in the doc/ tree.";
+const GREEK_PREVIEW = "Η εφαρμογή δεν αποθηκεύει κατάσταση ροής εργασίας.";
 
 function stubNotifications(
   permission: NotificationPermission,
@@ -67,14 +68,19 @@ afterEach(() => {
 });
 
 describe("planner settings sections", () => {
-  it("renders the title, browser description and four section headings", () => {
+  it("renders the title, a hidden browser description, four headings and their hints", () => {
     renderSettings();
 
     const dialog = screen.getByRole("dialog", { name: "Settings" });
-    expect(within(dialog).getByText("Saved in this browser")).toBeTruthy();
-    for (const name of ["Theme", "Reading face", "Reading size", "Reading toggles"]) {
+    expect(within(dialog).getByText("Saved in this browser").className).toContain("sr-only");
+    for (const name of ["Theme", "Reading face", "Reading size", "Reading"]) {
       expect(within(dialog).getByRole("heading", { name })).toBeTruthy();
     }
+    expect(within(dialog).queryByRole("heading", { name: "Reading toggles" })).toBeNull();
+    expect(within(dialog).getByText("Remembered in this browser")).toBeTruthy();
+    expect(
+      within(dialog).getByText("Document text only; titles and controls stay Inter"),
+    ).toBeTruthy();
     expect(screen.getByRole("radiogroup", { name: "Reading face" })).toBeTruthy();
     expect(screen.getByRole("radiogroup", { name: "Reading size" })).toBeTruthy();
   });
@@ -99,13 +105,16 @@ describe("planner settings sections", () => {
     expect(within(group).getAllByRole("radio")).toHaveLength(3);
     for (const face of READING_FACES) {
       const card = within(group).getByRole("radio", { name: face.label }).closest("label")!;
-      const specimen = within(card).getByText(/Aa/);
-      expect(specimen.textContent).toBe("Aa Ωω");
+      const specimen = within(card).getByText("Aa").parentElement!;
+      expect(specimen.textContent).toBe("AaΩω");
       expect(specimen.style.fontFamily).toBe(face.family);
+      expect(within(card).getByText(face.label)).toBeTruthy();
       expect(within(card).getByText(face.scripts)).toBeTruthy();
     }
+    const flags = screen.getAllByText("Default");
+    expect(flags).toHaveLength(1);
     const defaultCard = screen.getByRole("radio", { name: "Source Serif 4" }).closest("label")!;
-    expect(within(defaultCard).getByText("Default")).toBeTruthy();
+    expect(defaultCard.contains(flags[0]!)).toBe(true);
   });
 
   it.each(READING_FACES)("selects $label and writes the reading face atom", (face) => {
@@ -139,6 +148,21 @@ describe("planner settings sections", () => {
     },
   );
 
+  it("renders the size choices as a segmented control with the pressed segment checked", () => {
+    renderSettings();
+
+    const group = screen.getByRole("radiogroup", { name: "Reading size" });
+    expect(group.className).toContain("ps-seg");
+    const labels = within(group)
+      .getAllByRole("radio")
+      .map((radio) => radio.closest("label")!.textContent);
+    expect(labels).toEqual(["Compact17px", "Comfortable19px", "Large21px"]);
+    expect(within(group).getByRole("radio", { name: "Comfortable 19px" })).toHaveProperty(
+      "checked",
+      true,
+    );
+  });
+
   it("updates the bilingual preview from the selected face and size", () => {
     const store = createStore();
     store.set(readingFaceAtom, "source-serif");
@@ -160,7 +184,7 @@ describe("planner settings sections", () => {
   });
 
   it.each([
-    ["Show source marks", sourceMarksAtom],
+    ["Show source marks after sentences", sourceMarksAtom],
     ["Rebuild summaries automatically", autoRebuildAtom],
   ] as const)("toggles %s in the provided store", (label, preference) => {
     const store = createStore();
@@ -234,7 +258,7 @@ describe("planner notification preference", () => {
       expect(toggle).toHaveProperty("disabled", true);
       expect(toggle).toHaveProperty("checked", false);
       expect(screen.getByRole("status").textContent).toBe(message);
-      expect(toggle.getAttribute("aria-describedby")).toBe(screen.getByRole("status").id);
+      expect(toggle.getAttribute("aria-describedby")).toContain(screen.getByRole("status").id);
       await waitFor(() => expect(store.get(notificationsEnabledAtom)).toBe(false));
     },
   );
