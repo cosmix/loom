@@ -33,7 +33,7 @@
 | [context-retrieval-routing](architecture/context-retrieval-routing.md) |  | 75 |
 | [context-retrieval-state](architecture/context-retrieval-state.md) | Layers | 193 |
 | [contract-collection](architecture/contract-collection.md) | Scaffold | 70 |
-| [contract-phase](architecture/contract-phase.md) | Freeze | 226 |
+| [contract-phase](architecture/contract-phase.md) | Freeze | 253 |
 | [core-abstractions](architecture/core-abstractions.md) | Graph | 135 |
 | [daemon-launch](architecture/daemon-launch.md) |  | 65 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) |  | 151 |
@@ -136,7 +136,7 @@
 | [completion-runtime](mistakes/completion-runtime.md) | Churn | 72 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Couplings | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 57 |
-| [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 65 |
+| [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 75 |
 | [contract-phase-human-blocking](mistakes/contract-phase-human-blocking.md) |  | 11 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |

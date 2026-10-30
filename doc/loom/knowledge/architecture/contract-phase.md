@@ -34,11 +34,12 @@ agent's sandbox):
 `Request::FreezeContracts` then goes over the dispute-criteria transport (socket, relay, spool). The daemon
 (`stage_service::handle_freeze_contracts`) admits only the stage's running Contract session and queues a
 `Freeze` host job for the HEAD and tree digest the writer saw. The job (`host_verify/freeze.rs`) re-checks
-the changes with git pinned to the stage's registered git directory, runs every contract through its
-adapter's `single_test_command` (or, with no adapter, its own `test` string via
-`verify::contracts::contract_command`) at the stage's resolved confinement, runs the format gate, and checks
+the changes with git pinned to the stage's registered git directory, runs every contract through the command `resolve_run` builds (see
+[Where a Contract Runs](#where-a-contract-runs)) at the stage's resolved confinement, runs the format gate, and checks
 its binding (HEAD, tree digest, file hashes, contract definitions) again. `Failed` and `BuildFailed` pass the
-freeze; `Passed` and `NotSelected` are errors; `Unparsed` needs a non-zero exit. Applying the job
+freeze; `Passed` and `NotSelected` are errors; `Unparsed` needs a non-zero exit. A failed compile runs once per build
+([Shared Failed Builds](#shared-failed-builds)). Each `contract:<id>` outcome goes to the job's `progress.jsonl` as it
+is produced. Applying the job
 (`freeze::apply_freeze_result`, `stage_service::freeze_with_reports`) re-checks the changes, hashes every
 contract and harness-matched file, requires them to equal what the run hashed, copies them to
 `.loom/work/contracts/<stage>/files/`, and writes `freeze.json`. The freeze copies and hashes EVERY existing
@@ -136,6 +137,15 @@ stage-strip label reads `... · contract phase`, and the stage dialog's session-
 `contract writer` (`sessionTypeLabel`). `web/src/api/schema.ts` must accept
 `session_type: "contract"` (see mistakes/web-dashboard-server.md).
 
+While the stage's Freeze host job for the current writer is queued or running,
+`StageSummary.contract_testing` (`status/data/contract_testing.rs`: `load_current` plus the `contract:` lines of
+`progress.jsonl`) carries `done`, `total`, `queued` and `running_secs`. It is `None` for a dead job child, and
+`contract_testing_text` is `None` for a dead, orphaned or crashed writer. Every surface renders
+`contracts written, testing 9/11 · 6m12s` (`contracts written, waiting to test` while queued): in place of the
+`contracts` tag in static status, which also drops the idle icon and `(stale)` marker because the writer's silence is
+expected then; ahead of every live writer wording in the TUI cell and `format-activity.ts`; `... · testing contracts`
+on the stage strip; a separate `testing contracts` state-key chip; and a `contract testing` row in the stage dialog.
+
 ## Where a Contract Runs
 
 `verify/contracts/run_dir.rs::resolve_run` picks the directory every contract command runs from, and is the only builder of a contract command (freeze CLI, daemon freeze record, completion, dispute re-freeze, contract signal, adjudication prompt). Priority:
@@ -145,9 +155,26 @@ stage-strip label reads `... · contract phase`, and the stage dialog's session-
 3. the nearest ancestor of the contract file holding one of the adapter's `run_root_markers()` (regular files only, symlinks ignored), walking up to the worktree root;
 4. the stage's `working_dir`.
 
+A Rust contract's command is limited to the one cargo target compiling its file (`collection/rust/scope.rs::target_scope`, the `chain` and `targets` derivation the freeze scaffold uses): `--lib`, `--bin <name>` or `--test <name>`, for cargo and nextest. No scope, so the unscoped command, for a doctest name, a run directory cargo would not run the package from, no owning package, no or several targets reaching the file, a dotfile target, or a file that is its own root whose test starts with its stem. A wrong target would exit 101 and read as `build_failed`, so `cargo_target_unselected` (`testrun/recognize.rs`) turns cargo's `no test target named`, `no bin target named` and `no library targets found` into zero tests executed, which the freeze refuses as `NotSelected`. The writer's signal can show the unscoped command, since the chain usually does not exist when the signal is written.
+
 The file is passed to the runner relative to that directory. The daemon records each contract's normalized `file` (relative to `working_dir`) and resolved `cwd` in `FrozenContract`. `store::recorded_cwd` trusts an entry only for the file it was recorded with: the entry with the contract's id and file, else any entry with its file (a renamed id keeps its cwd, so markers the agent plants cannot move it), else an entry with its id and no `file`. A contract re-pointed to another file gets no recorded cwd and falls to rules 3-4; so does an entry without `cwd`.
 
 An accepted contract dispute re-freezes the whole frozen set, including the disputed contract; its `cwd` values still come from `store::recorded_cwd` as above. See [Accepted Dispute Re-Freeze](#accepted-dispute-re-freeze). See mistakes/verification-v2-delivery.md, "Contracts in a Sub-Workspace Ran Under the Root's Runner Config".
+
+## Shared Failed Builds
+
+A failed compile is shared within one freeze job and one completion check, for every adapter
+(`verify/contracts/failed_builds.rs`). Contracts with the same `ContractRun::build_key()` compile the same code, so once
+`TestRunnerAdapter::compile_rejected` says the compiler rejected one run, later contracts with that key run nothing. The
+key is the run directory plus the command rebuilt with a fixed test name, so it needs no knowledge of the runner: one
+build per cargo target, Go package or Gradle, Maven or sbt run directory, and one per file where the command names the
+file (jest, pytest, rspec).
+
+`compile_rejected` defaults to `build_failed`; cargo and nextest also require `could not compile`, so a killed rustc or
+a missing `cargo nextest` reds only its own contract. A freeze takes the report under the contract's own id with a
+summary naming the shared build; completion reports `was not run: the build it shares with contract '<id>' failed`. A
+build that succeeds is left to the runner's own incremental cache. A failing test and a pass are never shared, and
+contracts are not batched into one command because `RunSummary` is aggregate.
 
 ## Accepted Dispute Re-Freeze
 
