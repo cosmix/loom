@@ -69,7 +69,7 @@ edits the documents in `doc/`.
 The project home (`/`) lists features, each named by its slug, with a pitch from its vision, a
 six-cell progress strip and document counts. A feature is named by its slug everywhere in the
 app: switcher, eyebrow, cards, breadcrumbs, chat and the browser tab. A document keeps its own
-heading. Standalone plans share a shelf with "New standalone plan" and "Move into a feature…";
+heading. Standalone plans share a shelf with "Add plan" and "Move plan";
 they have no six-step checklist or per-plan workflow offers. An invitation card offers "Start a
 conversation" at `/new`: the kickoff settles whether the work needs a feature or a standalone
 plan before writing anything. A repository with exactly one feature opens on `/f/<name>`.
