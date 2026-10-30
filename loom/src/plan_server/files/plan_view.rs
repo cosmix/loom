@@ -144,7 +144,7 @@ fn implements_links(text: &str, product_sections: &BTreeMap<u32, String>) -> Vec
         .collect()
 }
 
-fn last_change(root: &Path, rel: &Path) -> Option<String> {
+pub fn last_change(root: &Path, rel: &Path) -> Option<String> {
     let root_fd = safe_open_dirfd(root).ok()?;
     let fd = open_safely(
         root_fd.as_raw_fd(),

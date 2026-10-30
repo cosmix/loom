@@ -73,6 +73,7 @@ const SOURCE_DOC: DocView = {
     { level: 2, title: "Saved places", anchor: SOURCE.anchor, start_line: 1, end_line: 3 },
   ],
   plan: null,
+  last_change: null,
   too_large: false,
   truncated: false,
   size: SOURCE_TEXT.length,

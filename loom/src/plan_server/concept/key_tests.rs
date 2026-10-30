@@ -74,6 +74,33 @@ fn colours_repeat_after_eight() {
 }
 
 #[test]
+fn colours_follow_the_chips_that_remain() {
+    let long = "a".repeat(129);
+    let long_entry = format!("PLAN-{long}.md");
+    let long_file = format!("doc/plans/demo/{long_entry}");
+    let fixture = fixtures::fixture(&[
+        (
+            fixtures::META,
+            &fixtures::metaplan(&[long_entry.as_str(), "PLAN-a.md", "PLAN-b.md"]),
+        ),
+        (&long_file, "# Long\n"),
+        ("doc/plans/demo/PLAN-a.md", "# A\n"),
+        ("doc/plans/demo/PLAN-b.md", "# B\n"),
+    ]);
+    let project = fixtures::load(&fixture.root);
+    let chips = key_chips(
+        &project,
+        &evaluate(&project, &[]),
+        "demo",
+        Scope::Engineering,
+        &PageContext::default(),
+    );
+    let ids: Vec<_> = chips.iter().map(|chip| chip.doc.id.as_str()).collect();
+    assert_eq!(ids, ["plans/a", "plans/b"]);
+    assert_eq!(chips.iter().map(|c| c.colour).collect::<Vec<_>>(), [1, 2]);
+}
+
+#[test]
 fn no_plan_only_with_an_engineering_scope() {
     let fixture = fixtures::two_sections();
     fixtures::put(

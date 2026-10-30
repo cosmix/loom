@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use super::plan_view::{plan_view, product_sections};
+use super::plan_view::{last_change, plan_view, product_sections};
 use super::texts::{PinnedText, TextStore};
 use super::validate::ValidationCache;
 use crate::plan_server::context::PlanContext;
@@ -29,7 +29,8 @@ use crate::planning::slug::PlanState;
 pub const MAX_EDIT_BYTES: usize = 1_048_576;
 
 /// Lock notices, verbatim from section 06 "Locked files".
-pub const RUNNING_NOTICE: &str = "This plan is running. `loom run` works from the committed copy.";
+pub const RUNNING_NOTICE: &str =
+    "This plan is running. `loom run` works from the committed copy, so the app keeps it read-only.";
 pub const DONE_NOTICE: &str = "This plan is done. Record changes in a new plan.";
 pub const KNOWLEDGE_NOTICE: &str =
     "The knowledge base changes through `loom knowledge`. Ask in chat.";
@@ -82,6 +83,7 @@ pub fn doc_view(ctx: &PlanContext, rel: &Path) -> Result<DocView, ApiResponse> {
         lock: facts.lock,
         sections: sections.as_ref().map(section_views).unwrap_or_default(),
         plan,
+        last_change: last_change(ctx.root(), rel),
         too_large,
         truncated: too_large,
         size: u64::try_from(size).unwrap_or(u64::MAX),
