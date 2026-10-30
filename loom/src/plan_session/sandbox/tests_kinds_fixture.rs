@@ -1,12 +1,13 @@
-//! Assertion-free fixture helpers of the per-kind sandbox tests: the session kinds and the
-//! expected settings that `tests_kinds` and `tests_assert` compare against.
+//! Assertion-free fixture helpers and settings snapshots of the sandbox tests.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
 use super::tests_kinds::Fixture;
 use crate::plan_session::kind::SessionKind;
+use crate::plan_session::scope::{KickoffScope, SessionScope};
+use crate::planning::runtime::RuntimePaths;
 
 pub(super) fn kinds() -> [SessionKind; 3] {
     [
@@ -18,8 +19,8 @@ pub(super) fn kinds() -> [SessionKind; 3] {
     ]
 }
 
-fn expected_read_denies(f: &Fixture) -> Value {
-    let state = f.root.join(".loom/work");
+fn expected_read_denies(root: &Path, home: &Path, rt: &RuntimePaths) -> Value {
+    let state = root.join(".loom/work");
     json!([
         "~/.ssh/**",
         "~/.aws/**",
@@ -36,8 +37,8 @@ fn expected_read_denies(f: &Fixture) -> Value {
         "~/.cargo/credentials.toml",
         "~/.cargo/credentials",
         "~/.codex/auth.json",
-        f.runtime.planning_root,
-        f.home.join(".loom/plan"),
+        rt.planning_root,
+        home.join(".loom/plan"),
         format!("/{}/admin.token", state.display()),
         format!("/{}/user.token", state.display()),
         format!("/{}/completion-attestation.key", state.display()),
@@ -45,19 +46,29 @@ fn expected_read_denies(f: &Fixture) -> Value {
     ])
 }
 
+/// Compatibility helper for the Summary snapshot; other kinds use `expected_common_for`.
 pub(super) fn expected_common(f: &Fixture) -> Value {
+    expected_common_for(f, &SessionKind::Summary)
+}
+
+pub(super) fn expected_common_for(f: &Fixture, kind: &SessionKind) -> Value {
+    let mode = match kind {
+        SessionKind::Authoring | SessionKind::Pressure { .. } => "auto",
+        SessionKind::Summary => "default",
+    };
     json!({
         "sandbox": {
             "enabled": true, "failIfUnavailable": true,
             "autoAllowBashIfSandboxed": false, "allowUnsandboxedCommands": false,
             "network": {"strictAllowlist": true},
             "filesystem": {
-                "denyWrite": [], "allowWrite": [], "denyRead": expected_read_denies(f),
+                "denyWrite": [], "allowWrite": [],
+                "denyRead": expected_read_denies(&f.root, &f.home, &f.runtime),
                 "allowRead": [f.runtime.drafts, f.runtime.claims, f.runtime.summaries_lock]
             }
         },
         "permissions": {
-            "defaultMode": "default", "disableBypassPermissionsMode": "disable",
+            "defaultMode": mode, "disableBypassPermissionsMode": "disable",
             "allow": [], "ask": [], "deny": []
         },
         "worktree": {"bgIsolation": "none"},
@@ -66,4 +77,72 @@ pub(super) fn expected_common(f: &Fixture) -> Value {
             "hooks": [{"type": "command", "command": f.command("PreToolUse"), "timeout": 10}]
         }]}
     })
+}
+
+pub(super) fn expected_filesystem(root: &Path, home: &Path, rt: &RuntimePaths) -> Value {
+    json!({
+        "denyWrite": [
+            root.join(".claude"), root.join(".git"), root.join(".loom"),
+            root.join("README.md"), root.join("doc/plans/IN_PROGRESS-PLAN-b.md"),
+            root.join("doc/plans/REVIEW-PLAN-b.md"), root.join("doc/plans/archive"),
+            root.join("doc/plans/briefs/b"), root.join("loom"),
+        ],
+        "allowWrite": [rt.claims, rt.drafts, rt.summaries_lock],
+        "denyRead": expected_read_denies(root, home, rt),
+        "allowRead": [rt.drafts, rt.claims, rt.summaries_lock],
+    })
+}
+
+pub(super) fn expected_permissions(root: &Path, rt: &RuntimePaths) -> Value {
+    let root = root.display();
+    json!({
+        "defaultMode": "auto",
+        "disableBypassPermissionsMode": "disable",
+        "allow": [
+            format!("Edit(/{root}/doc/product/**)"),
+            format!("Edit(/{root}/doc/plans/**)"),
+            format!("Edit(/{root}/doc/notes/**)"),
+            format!("Edit(/{root}/doc/index.md)"),
+            format!("Edit(/{}/**)", rt.drafts.display()),
+            format!("Read(/{}/**)", rt.drafts.display()),
+            format!("Read(/{}/**)", rt.claims.display()),
+            "Bash(loom knowledge *)", "Bash(loom plan summary *)",
+            "Bash(loom plan verify *)", "Bash(loom plan check*)", "Bash(loom map *)",
+            "WebSearch",
+        ],
+        "ask": ["WebFetch"],
+        "deny": [
+            "LSP", "RemoteTrigger", "CronCreate", "PushNotification", "Workflow",
+            "SendMessage", "ListAgents", "AskUserQuestion",
+            format!("Edit(/{root}/doc/plans/IN_PROGRESS-PLAN-b.md)"),
+            format!("Edit(/{root}/doc/plans/REVIEW-*.md)"),
+            format!("Edit(/{root}/doc/plans/archive/**)"),
+            format!("Edit(/{root}/doc/plans/briefs/b/**)"),
+            // Archived plan c keeps a bundle deny even though its directory does not exist.
+            format!("Edit(/{root}/doc/plans/briefs/c/**)"),
+        ],
+    })
+}
+
+pub(super) fn scope_cases() -> anyhow::Result<Vec<(SessionScope, Value)>> {
+    Ok(vec![
+        (SessionScope::Open, json!(["WebFetch"])),
+        (
+            SessionScope::team(vec!["doc/product/new/section_1.md".into()], Vec::new())?,
+            json!(["WebFetch", "Bash(loom knowledge *)"]),
+        ),
+        (
+            SessionScope::Kickoff(KickoffScope {
+                existing: Vec::new(),
+                grant: None,
+            }),
+            json!([
+                "WebFetch",
+                "Bash(loom knowledge *)",
+                "Bash(loom plan summary seal*)",
+                "Bash(loom plan summary brief*)",
+                "Bash(loom plan summary release*)",
+            ]),
+        ),
+    ])
 }

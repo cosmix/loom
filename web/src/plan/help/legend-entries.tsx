@@ -80,7 +80,7 @@ function NoSourceTile() {
 
 /**
  * The strip's cells carry colour only: filled when done, accented when current, else plain. The
- * strip is a seven-column grid, so a one-step strip needs its own single column and a fixed width
+ * strip is a multi-column grid, so a one-step strip needs its own single column and a fixed width
  * for its cell to show in the tile.
  */
 function StepBar({ mark }: { mark: StepView["mark"] }) {

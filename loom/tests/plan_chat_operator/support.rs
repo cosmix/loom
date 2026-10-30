@@ -3,7 +3,7 @@
 use std::ffi::OsString;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, TcpStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
@@ -16,7 +16,10 @@ use loom::plan_server::wire::chat::ChatCommand;
 use loom::plan_server::wire::message::{ClientMessage, PlanMessage};
 use loom::plan_server::{start, RunningServer, ServerOptions};
 use loom::plan_session::attachments::{AttachmentInput, AttachmentKind};
+use loom::plan_session::bridge::registry::read_record;
 use loom::plan_session::bridge::Bridge;
+use loom::plan_session::kind::SessionDir;
+use loom::planning::runtime::server_runtime_paths;
 use loom::process::{run_bounded, BoundedOutput};
 use reqwest::blocking::Client;
 use tempfile::TempDir;
@@ -85,23 +88,49 @@ impl Drop for LoomHome {
     }
 }
 
-pub struct ServerGuard(pub Option<RunningServer>);
+struct SessionServers(PathBuf);
+
+impl Drop for SessionServers {
+    fn drop(&mut self) {
+        let Ok(sessions) = fs::read_dir(&self.0) else {
+            return;
+        };
+        for entry in sessions.flatten() {
+            if let Ok(record) = read_record(&SessionDir::new(entry.path())) {
+                let _ = Command::new("tmux")
+                    .args(["-L", record.socket.as_str(), "kill-server"])
+                    .output();
+            }
+        }
+    }
+}
+
+pub struct ServerGuard {
+    pub server: Option<RunningServer>,
+    _sessions: SessionServers,
+}
 
 impl ServerGuard {
     /// Starts the planning server in-process on port 0 over `root`.
     pub fn start(root: &Path) -> Result<Self> {
-        Ok(Self(Some(start(ServerOptions {
+        let (runtime, _) = server_runtime_paths(root)?;
+        let sessions = SessionServers(runtime.sessions);
+        let server = start(ServerOptions {
             root: root.to_path_buf(),
             host: IpAddr::V4(Ipv4Addr::LOCALHOST),
             port: Some(0),
             read_only: ReadOnly::from_problems(vec![]),
-        })?)))
+        })?;
+        Ok(Self {
+            server: Some(server),
+            _sessions: sessions,
+        })
     }
 }
 
 impl Drop for ServerGuard {
     fn drop(&mut self) {
-        if let Some(server) = self.0.take() {
+        if let Some(server) = self.server.take() {
             if let Some(bridge) = server.ctx.extensions().get::<Bridge>() {
                 bridge.abort();
             }

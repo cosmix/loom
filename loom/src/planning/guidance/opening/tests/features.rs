@@ -39,7 +39,35 @@ fn opening_names_feature_and_its_paths() {
             message.contains("Feature: f.\nChecklist: Vision=Done"),
             "{message}"
         );
+        assert_eq!(message.matches('=').count(), 6, "{message}");
+        assert!(!message.contains("Review="), "{message}");
     }
+}
+
+#[test]
+fn opening_uses_feature_slug_when_document_titles_change() {
+    let (temp, _) = fixture();
+    fs::write(
+        temp.path().join("doc/product/f/index.md"),
+        VISION.replacen("# Vision", "# Product document title", 1),
+    )
+    .unwrap();
+    fs::write(
+        temp.path().join("doc/plans/f/index.md"),
+        "# Engineering document title\n",
+    )
+    .unwrap();
+    let project = Project::load(temp.path()).unwrap();
+
+    let message = opening_message(
+        &AuthoringStart::Offer(Offer::RefineSpec),
+        &project,
+        Some("f"),
+    )
+    .unwrap();
+
+    assert!(message.contains("Feature: f.\nChecklist:"), "{message}");
+    assert!(!message.contains("document title"), "{message}");
 }
 
 #[test]

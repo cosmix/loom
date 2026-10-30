@@ -42,11 +42,12 @@ function makeChecklist(count: number, kind: GuidedKind = "write_section", featur
   return checklistViewSchema.parse({
     feature,
     pitch: null,
-    title: feature.slice(0, 1).toUpperCase() + feature.slice(1),
     has_product: true,
     sections: [],
     plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
     untested: 0,
+    metaplans: [],
+    plan_rows: [],
     current: { kind: "step", number: kind === "write_section" ? 2 : 4 },
     steps: [
       { number: 2, name: "Product spec", mark: "gap", count: null, label: "Product spec" },

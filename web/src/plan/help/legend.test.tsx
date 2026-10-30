@@ -172,7 +172,7 @@ it("draws step-list glyphs alongside the colour-only progress cell and documents
     const strip = tile.querySelector('ol[aria-label="Progress"]');
     expect(strip?.querySelectorAll("li")).toHaveLength(1);
     expect(strip?.querySelector("li")?.getAttribute("data-cell")).toBe(cell);
-    // The strip's grid has seven columns; one cell in it would be a 1px sliver in the tile.
+    // The strip's grid has several columns; one cell in it would be a 1px sliver in the tile.
     expect(strip?.parentElement?.className).toContain("w-9");
     expect(strip?.parentElement?.className).toContain("grid-cols-1");
   }

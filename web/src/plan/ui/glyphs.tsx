@@ -24,7 +24,6 @@ import {
   PencilLine,
   Play,
   RefreshCw,
-  ScanEye,
   SlidersHorizontal,
   StickyNote,
   Telescope,
@@ -54,7 +53,6 @@ export const STEP_GLYPHS: readonly LucideIcon[] = [
   MapIcon,
   ListChecks,
   Gauge,
-  ScanEye,
   Play,
 ];
 
@@ -64,7 +62,6 @@ export const STEP_DOC_KIND: readonly DocKind[] = [
   "metaplan",
   "plan",
   "plan",
-  "review",
   "plan",
 ];
 

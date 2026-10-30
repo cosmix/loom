@@ -35,6 +35,7 @@ use serde_json::{json, Value};
 use shell_escape::escape;
 
 pub use assert::assert_planning_settings;
+pub use permissions::permission_mode;
 pub use reads::{read_denies, ReadDenies};
 
 use crate::fs::safe_fs::{
@@ -159,9 +160,7 @@ pub fn build_settings(
         "hooks": permissions::hooks(&build, extra_hooks)?,
     });
     if pressure || build.scope.peer_tools() {
-        // Pressure and team-scoped sessions keep teammates inside their own process, so
-        // they open no tmux pane the bridge does not watch (section 11). A top-level key; Claude
-        // Code does not read it inside `permissions`.
+        // Top-level setting: keep teammates in-process so the bridge watches every pane (section 11).
         settings["teammateMode"] = json!("in-process");
     }
     Ok(settings)
@@ -217,7 +216,7 @@ pub fn write_session_sandbox(
     }
     let locked = LockedSet::scan(inputs.project_root)?;
     let settings = build_settings(inputs, &locked, extra_hooks)?;
-    assert_planning_settings(&settings)?;
+    assert::assert_planning_settings_for(&settings, inputs.kind)?;
     // GuardPolicy (`plan_session::guard`), written from its exact fields so this module does not
     // depend on the guard; `build_settings` refused every non-UTF-8 path above.
     let guard = json!({

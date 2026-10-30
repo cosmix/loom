@@ -3,8 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::files::PlanStateView;
-use crate::fs::knowledge::index::title_case;
-use crate::planning::checklist::{Checklist, CurrentStep, Offer, Step, StepMark};
+use crate::planning::checklist::{Offer, Step};
 use crate::planning::project::Project;
 use crate::planning::slug::PlanState;
 
@@ -12,6 +11,10 @@ use crate::planning::slug::PlanState;
 mod card;
 #[path = "checklist_pitch.rs"]
 mod pitch;
+#[path = "checklist_rows.rs"]
+mod rows;
+
+pub use rows::{MetaplanRowView, PlanRowView};
 
 /// All feature checklists, standalone plans and misplaced-document offers in a snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,7 +42,7 @@ pub struct StandalonePlanView {
     pub title: String,
 }
 
-/// The seven-step checklist belonging to one feature.
+/// The six-step checklist belonging to one feature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChecklistView {
@@ -47,19 +50,21 @@ pub struct ChecklistView {
     pub feature: String,
     /// The vision's first paragraph as plain text, absent without a vision.
     pub pitch: Option<String>,
-    /// The feature's document title, falling back to its capitalised slug.
-    pub title: String,
     /// Whether the feature's vision document exists.
     pub has_product: bool,
     /// Sections listed in the vision's section table, in table order.
     pub sections: Vec<SectionView>,
+    /// Metaplan documents in feature order.
+    pub metaplans: Vec<MetaplanRowView>,
+    /// Plans in metaplan order, followed by unlisted feature plans.
+    pub plan_rows: Vec<PlanRowView>,
     /// Listed plan count and plan file counts by lifecycle state.
     pub plans: PlanCountsView,
     /// Plans whose pressure-test item is untested.
     pub untested: u32,
     /// The earliest gap, or the ready state.
     pub current: CurrentView,
-    /// Marks of the seven planning steps.
+    /// Marks of the six planning steps.
     pub steps: Vec<StepView>,
     /// The next proposed action, when available.
     pub primary: Option<OfferView>,
@@ -278,7 +283,9 @@ impl From<&Project> for ProjectChecklistView {
             .map(|feature| {
                 let mut view = ChecklistView::from(&feature.checklist);
                 view.pitch = pitch::feature_pitch(project, &feature.name);
-                card::card_facts(project, &feature.name, &mut view);
+                let facts = card::card_facts(project, &feature.name, &mut view);
+                view.metaplans = facts.metaplans;
+                view.plan_rows = facts.plan_rows;
                 view
             })
             .collect();
@@ -310,57 +317,6 @@ impl From<&Project> for ProjectChecklistView {
     }
 }
 
-impl From<&Checklist> for ChecklistView {
-    fn from(checklist: &Checklist) -> Self {
-        let current = match checklist.current {
-            CurrentStep::Step(step) => CurrentView::Step { number: step as u8 },
-            CurrentStep::Ready => CurrentView::Ready,
-            CurrentStep::ReadyAllDone => CurrentView::ReadyAllDone,
-        };
-        Self {
-            feature: checklist.feature.clone(),
-            pitch: None,
-            title: title_case(&checklist.feature),
-            has_product: false,
-            sections: Vec::new(),
-            plans: PlanCountsView::default(),
-            untested: 0,
-            current,
-            steps: checklist
-                .steps
-                .iter()
-                .map(|(step, mark)| StepView {
-                    number: *step as u8,
-                    name: step_name(*step).into(),
-                    mark: match mark {
-                        StepMark::Done => MarkView::Done,
-                        StepMark::Gap => MarkView::Gap,
-                        StepMark::Active => MarkView::Active,
-                        StepMark::Optional => MarkView::Optional,
-                    },
-                    count: None,
-                    label: step_name(*step).into(),
-                })
-                .collect(),
-            primary: checklist.primary.as_ref().map(offer_view),
-            secondary: checklist.secondary.iter().map(offer_view).collect(),
-            items: checklist
-                .items
-                .iter()
-                .map(|item| ItemView {
-                    step: item.step as u8,
-                    text: item.label.clone(),
-                    path: item
-                        .path
-                        .as_ref()
-                        .map(|path| path.to_string_lossy().into_owned()),
-                    offer: item.offer.as_ref().map(offer_view),
-                })
-                .collect(),
-        }
-    }
-}
-
 fn step_name(step: Step) -> &'static str {
     match step {
         Step::Vision => "Vision",
@@ -368,7 +324,6 @@ fn step_name(step: Step) -> &'static str {
         Step::Metaplan => "Metaplan",
         Step::Plans => "Plans",
         Step::PressureTest => "Pressure test",
-        Step::Review => "Review",
         Step::Run => "Run",
     }
 }

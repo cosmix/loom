@@ -1,6 +1,6 @@
 import type { ChecklistView, StepView } from "@/plan/api/schema";
 
-export const STEP_COUNT = 7;
+export const STEP_COUNT = 6;
 
 /** Action title of each step; step n uses index n - 1. */
 export const STEP_TITLES: readonly string[] = [
@@ -9,7 +9,6 @@ export const STEP_TITLES: readonly string[] = [
   "Write the metaplan",
   "Write the plans",
   "Pressure-test the plans",
-  "Review what was built",
   "Run the plans",
 ];
 
@@ -22,7 +21,7 @@ export function stepTitle(number: number): string {
   return STEP_TITLES[number - 1] ?? `Step ${number}`;
 }
 
-/** `?step=<n>` wins when it names one of the seven steps; else the current step, or the last when ready. */
+/** `?step=<n>` wins when it names one of the six steps; else the current step, or the last when ready. */
 export function selectedStep(raw: string | null, checklist: ChecklistView): number {
   const requested = Number(raw);
   if (raw !== null && String(requested) === raw && requested >= 1 && requested <= STEP_COUNT) {
@@ -46,8 +45,6 @@ export function stepLine(checklist: ChecklistView, step: StepView): string | nul
     case 5:
       return untested > 0 ? `${untested} untested` : "all tested";
     case 6:
-      return "optional";
-    case 7:
       return plans.running > 0 ? `${plans.running} running` : `${plans.done} done`;
     default:
       return null;

@@ -77,21 +77,13 @@ describe("planner glyphs", () => {
     expect(Object.keys(glyphs).sort()).toEqual([...keys].sort());
   });
 
-  it("provides seven step glyphs and document kinds", () => {
-    expect(STEP_GLYPHS).toHaveLength(7);
-    expect(STEP_DOC_KIND).toHaveLength(7);
+  it("provides six step glyphs and document kinds", () => {
+    expect(STEP_GLYPHS).toHaveLength(6);
+    expect(STEP_DOC_KIND).toHaveLength(6);
   });
 
   it("assigns document kinds in step order", () => {
-    expect(STEP_DOC_KIND).toEqual([
-      "vision",
-      "section",
-      "metaplan",
-      "plan",
-      "plan",
-      "review",
-      "plan",
-    ]);
+    expect(STEP_DOC_KIND).toEqual(["vision", "section", "metaplan", "plan", "plan", "plan"]);
   });
 
   it.each(glyphCases)("renders $name as an SVG", ({ glyph }) => {

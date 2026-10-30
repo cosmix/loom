@@ -209,14 +209,13 @@ it.each([
   expect(nav.querySelector('[aria-current="page"]')?.textContent).toBe(current);
 });
 
-it("starts the breadcrumb at the feature's title, from the server, linking to its screen", () => {
+it("starts the breadcrumb at the feature's slug, linking to its screen", () => {
   const store = createStore();
   store.set(projectAtom, {
     checklists: [
       {
         ...checklistViewSchema.parse(structuredClone(checklistFixture.checklists[0])),
         feature: "demo",
-        title: "Demo Feature",
         sections: Array.from({ length: 12 }, (_, index) => ({
           number: String(index + 1).padStart(2, "0"),
           name: `S${index + 1}`,
@@ -241,8 +240,8 @@ it("starts the breadcrumb at the feature's title, from the server, linking to it
     within(nav)
       .getAllByRole("listitem")
       .map((item) => item.textContent),
-  ).toEqual(["Demo Feature", "Product spec", "Section 05 of 12"]);
-  const first = within(nav).getByRole("link", { name: "Demo Feature" });
+  ).toEqual(["demo", "Product spec", "Section 05 of 12"]);
+  const first = within(nav).getByRole("link", { name: "demo" });
   expect(first.getAttribute("href")).toBe("/f/demo");
   expect(first.querySelector("svg.lucide-layers")).not.toBeNull();
 });

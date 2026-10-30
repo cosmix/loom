@@ -4,8 +4,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::json;
-use tempfile::TempDir;
 
+pub(super) use super::scope_tests::{load, put, tree};
 use super::{Checklist, CurrentStep, ItemStatus, Offer, Step, StepMark};
 use crate::planning::project::Project;
 use crate::planning::watch::{OwnWrites, Watcher};
@@ -14,21 +14,6 @@ pub(super) const FEATURE: &str = "demo";
 pub(super) const VISION: &str = "doc/product/demo/index.md";
 pub(super) const META: &str = "doc/plans/demo/index.md";
 const RECORD: &str = "\n## Pressure tests\n\n- 2026-10-26: one round\n";
-
-fn put(root: &Path, rel: &str, text: &str) {
-    let path = root.join(rel);
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, text).unwrap();
-}
-
-fn tree(files: &[(&str, String)]) -> TempDir {
-    let temp = TempDir::new().unwrap();
-    fs::create_dir_all(temp.path().join("doc")).unwrap();
-    for (rel, text) in files {
-        put(temp.path(), rel, text);
-    }
-    temp
-}
 
 pub(super) fn vision(numbers: &[u32]) -> (&'static str, String) {
     let rows: String = numbers
@@ -72,13 +57,6 @@ pub(super) fn spec(more: Vec<(String, String)>) -> Vec<(String, String)> {
     let mut files = vec![(rel.to_string(), text), section(1)];
     files.extend(more);
     files
-}
-
-pub(super) fn load(files: &[(String, String)]) -> (TempDir, Project) {
-    let pairs: Vec<(&str, String)> = files.iter().map(|(r, t)| (r.as_str(), t.clone())).collect();
-    let temp = tree(&pairs);
-    let project = Project::load(temp.path()).unwrap();
-    (temp, project)
 }
 
 pub(super) fn checklist(project: &Project) -> &Checklist {
@@ -146,8 +124,8 @@ fn checklist_json_shape() {
     let value = serde_json::to_value(checklist(&project)).unwrap();
     assert_eq!(value["feature"], json!(FEATURE));
     assert_eq!(value["current"], json!("ready"));
-    assert_eq!(value["steps"][6], json!({"step": "run", "mark": "active"}));
-    assert_eq!(value["steps"].as_array().map(Vec::len), Some(7));
+    assert_eq!(value["steps"][5], json!({"step": "run", "mark": "active"}));
+    assert_eq!(value["steps"].as_array().map(Vec::len), Some(6));
     assert_eq!(value["state"]["plans_by_state"], json!({"running": 1}));
     let locked = json!(["doc/plans/demo/IN_PROGRESS-PLAN-a.md"]);
     assert_eq!(value["state"]["locked_files"], locked);
@@ -169,8 +147,8 @@ fn ready_rows_secondaries() {
     let (_temp, project) = load(&spec(vec![owned(metaplan(&["a"])), done]));
     let c = checklist(&project);
     assert_eq!(c.current, CurrentStep::ReadyAllDone);
-    assert_eq!(ids(&c.secondary), ["new-metaplan-round"]);
-    assert_eq!(c.steps[6], (Step::Run, StepMark::Done));
+    assert_eq!(ids(&c.secondary), ["refine-spec", "new-metaplan-round"]);
+    assert_eq!(c.steps[5], (Step::Run, StepMark::Done));
 }
 
 #[test]

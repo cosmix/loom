@@ -15,7 +15,7 @@ import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
 import "./feature-card.css";
 
 const METAPLAN_STEP = 3;
-const RUN_STEP = 7;
+const RUN_STEP = 6;
 
 /** The two folders a feature is a pair of, or which one is missing. */
 function pathLine(checklist: ChecklistView): string {
@@ -78,7 +78,7 @@ export function FeatureCard({ checklist }: { checklist: ChecklistView }) {
         <FeatureMark slug={checklist.feature} />
         <div className="feature-card__id">
           <h3 id={headingId} className="feature-card__title">
-            <Untrusted text={checklist.title} />
+            <Untrusted text={checklist.feature} />
           </h3>
           <span className="feature-card__path">
             <Untrusted text={pathLine(checklist)} />

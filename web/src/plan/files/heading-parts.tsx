@@ -38,38 +38,21 @@ export function relativeTime(stamp: string, now: number): string {
   return `${Math.floor(age / 86400)} d ago`;
 }
 
-/** The server's last-resort title for a feature: the slug with `-` as spaces, words capitalised. */
-function slugTitle(slug: string): string {
-  return slug
-    .split("-")
-    .filter((word) => word !== "")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
-
 /**
- * The feature's title (`ChecklistView.title`) and its section count. Until the checklist arrives
- * the slug stands in through the rule the server applies last, so a crumb never shows a raw slug;
- * the count is null then, and "Section 05 of 12" drops its total.
+ * The feature's section count, null until the checklist arrives, when "Section 05 of 12" drops its
+ * total.
  */
-export function useFeatureFacts(feature: string | null): {
-  title: string | null;
-  sections: number | null;
-} {
+export function useFeatureFacts(feature: string | null): { sections: number | null } {
   const features = useAtomValue(featuresAtom);
-  if (feature === null) return { title: null, sections: null };
   const checklist = features.find((candidate) => candidate.feature === feature);
-  const title = checklist?.title;
-  return {
-    title: title === undefined || title === "" ? slugTitle(feature) : title,
-    sections: checklist?.sections.length ?? null,
-  };
+  return { sections: checklist?.sections.length ?? null };
 }
 
-/** The first crumb of every feature document: the feature's title, linking to its screen. */
-export function featureCrumb(feature: string, title: string): HeadingCrumb {
+/** The first crumb of every feature document: the feature's slug, linking to its screen. */
+export function featureCrumb(feature: string): HeadingCrumb {
   return {
-    label: title,
+    label: feature,
+    mono: true,
     to: `/f/${encodeURIComponent(feature)}`,
     icon: <Layers />,
   };

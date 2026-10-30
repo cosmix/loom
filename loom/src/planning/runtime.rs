@@ -182,11 +182,34 @@ fn grants_mounted(state: &Path, parent: &Path, state_dev: u64) -> bool {
 }
 
 fn loom_user_dir() -> Result<PathBuf> {
+    #[cfg(test)]
+    if std::env::var_os("LOOM_HOME")
+        .filter(|value| !value.is_empty())
+        .is_none()
+    {
+        return test_loom_user_dir();
+    }
+
     let config = crate::user_config::config_path()?;
     config
         .parent()
         .map(Path::to_path_buf)
         .ok_or_else(|| anyhow!("loom config path has no parent: {}", config.display()))
+}
+
+/// Keep in-crate tests without an explicit home out of the operator's runtime state.
+#[cfg(test)]
+fn test_loom_user_dir() -> Result<PathBuf> {
+    static HOME: std::sync::OnceLock<std::io::Result<PathBuf>> = std::sync::OnceLock::new();
+    let home = HOME.get_or_init(|| {
+        let dir = std::env::temp_dir().join(format!("loom-test-home-{}", std::process::id()));
+        std::fs::create_dir_all(&dir)?;
+        Ok(dir)
+    });
+    match home {
+        Ok(dir) => Ok(dir.clone()),
+        Err(error) => Err(anyhow!("cannot create test loom user directory: {error}")),
+    }
 }
 
 /// Runtime paths for the in-session CLI: honours `LOOM_PLAN_STATE` and `LOOM_PLAN_SESSION`.

@@ -20,7 +20,7 @@ save like any other change to the file (section 04). File mode never shows anyth
 
 ## Layout and addresses
 
-The header's file-mode tab adds a tree pane, about 18rem wide, to the left of the reading
+The header's Files link opens file mode, which adds a tree pane, about 18rem wide, to the left of the reading
 column and the chat panel (vision, "The screen"). Below 900px the tree becomes a drawer opened
 from the top of the reading column. Every document has an address, `/files/<path relative to doc/>#<anchor>`, so the back button,
 reloads, links pasted into chat, and the presence list (section 02) all name a place in a

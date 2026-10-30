@@ -8,8 +8,12 @@ use anyhow::Result;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
+use super::tests_kinds_fixture::{
+    expected_common_for, expected_filesystem, expected_permissions, kinds, scope_cases,
+};
 use super::{build_settings, ensure_runtime_grants, write_session_sandbox, SandboxInputs};
 use crate::plan_session::kind::{SessionDir, SessionKind};
+use crate::plan_session::scope;
 use crate::planning::paths::LockedSet;
 use crate::planning::runtime::{runtime_paths_under, RuntimePaths};
 
@@ -83,82 +87,6 @@ impl Fixture {
     }
 }
 
-fn expected_read_denies(f: &Fixture) -> Value {
-    let state = f.root.join(".loom/work");
-    json!([
-        "~/.ssh/**",
-        "~/.aws/**",
-        "~/.config/gcloud/**",
-        "~/.gnupg/**",
-        "~/.claude/.credentials.json",
-        "~/.config/gh/hosts.yml",
-        "~/.netrc",
-        "~/.npmrc",
-        "~/.git-credentials",
-        "~/.docker/config.json",
-        "~/.kube/config",
-        "~/.pypirc",
-        "~/.cargo/credentials.toml",
-        "~/.cargo/credentials",
-        "~/.codex/auth.json",
-        f.runtime.planning_root,
-        f.home.join(".loom/plan"),
-        format!("/{}/admin.token", state.display()),
-        format!("/{}/user.token", state.display()),
-        format!("/{}/completion-attestation.key", state.display()),
-        state.join("terminal-history"),
-    ])
-}
-
-fn expected_filesystem(f: &Fixture) -> Value {
-    let root = &f.root;
-    let rt = &f.runtime;
-    json!({
-        "denyWrite": [
-            root.join(".claude"), root.join(".git"), root.join(".loom"),
-            root.join("README.md"), root.join("doc/plans/IN_PROGRESS-PLAN-b.md"),
-            root.join("doc/plans/REVIEW-PLAN-b.md"), root.join("doc/plans/archive"),
-            root.join("doc/plans/briefs/b"), root.join("loom"),
-        ],
-        "allowWrite": [rt.claims, rt.drafts, rt.summaries_lock],
-        "denyRead": expected_read_denies(f),
-        "allowRead": [rt.drafts, rt.claims, rt.summaries_lock],
-    })
-}
-
-fn expected_permissions(f: &Fixture) -> Value {
-    let root = f.root.display();
-    let rt = &f.runtime;
-    json!({
-        "defaultMode": "default",
-        "disableBypassPermissionsMode": "disable",
-        "allow": [
-            format!("Edit(/{root}/doc/product/**)"),
-            format!("Edit(/{root}/doc/plans/**)"),
-            format!("Edit(/{root}/doc/notes/**)"),
-            format!("Edit(/{root}/doc/index.md)"),
-            format!("Edit(/{}/**)", rt.drafts.display()),
-            format!("Read(/{}/**)", rt.drafts.display()),
-            format!("Read(/{}/**)", rt.claims.display()),
-            "Bash(loom knowledge *)", "Bash(loom plan summary *)",
-            "Bash(loom plan verify *)", "Bash(loom plan check*)", "Bash(loom map *)",
-            "WebSearch",
-        ],
-        "ask": ["WebFetch"],
-        "deny": [
-            "LSP", "RemoteTrigger", "CronCreate", "PushNotification", "Workflow",
-            "SendMessage", "ListAgents", "AskUserQuestion",
-            format!("Edit(/{root}/doc/plans/IN_PROGRESS-PLAN-b.md)"),
-            format!("Edit(/{root}/doc/plans/REVIEW-*.md)"),
-            format!("Edit(/{root}/doc/plans/archive/**)"),
-            format!("Edit(/{root}/doc/plans/briefs/b/**)"),
-            // common.md "Layer 2": a bundle deny per locked plan's slug, including the archived
-            // plan c, whose bundle directory does not exist (its file is under `archive/**`).
-            format!("Edit(/{root}/doc/plans/briefs/c/**)"),
-        ],
-    })
-}
-
 #[test]
 fn authoring_settings_match_whole_json_snapshot() -> Result<()> {
     let f = Fixture::new()?;
@@ -168,9 +96,9 @@ fn authoring_settings_match_whole_json_snapshot() -> Result<()> {
             "enabled": true, "failIfUnavailable": true,
             "autoAllowBashIfSandboxed": false, "allowUnsandboxedCommands": false,
             "network": {"strictAllowlist": true},
-            "filesystem": expected_filesystem(&f),
+            "filesystem": expected_filesystem(&f.root, &f.home, &f.runtime),
         },
-        "permissions": expected_permissions(&f),
+        "permissions": expected_permissions(&f.root, &f.runtime),
         "worktree": {"bgIsolation": "none"},
         "hooks": {"PreToolUse": [{
             "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob",
@@ -185,6 +113,37 @@ fn authoring_settings_match_whole_json_snapshot() -> Result<()> {
     });
 
     assert_eq!(f.settings()?, expected);
+    Ok(())
+}
+
+#[test]
+fn permission_mode_matches_each_session_kind() -> Result<()> {
+    let f = super::tests_kinds::Fixture::new();
+    for kind in kinds() {
+        let settings = f.build(&kind, &[])?;
+        let expected = expected_common_for(&f, &kind);
+        assert_eq!(
+            settings["permissions"]["defaultMode"],
+            expected["permissions"]["defaultMode"]
+        );
+        super::assert::assert_planning_settings_for(&settings, &kind)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn authoring_ask_rules_match_each_scope() -> Result<()> {
+    let f = Fixture::new()?;
+    for (session_scope, expected_ask) in scope_cases()? {
+        scope::write(&f.session, &session_scope)?;
+        let settings = f.settings()?;
+        assert_eq!(settings["permissions"]["defaultMode"], json!("auto"));
+        assert_eq!(
+            settings["permissions"]["ask"], expected_ask,
+            "{session_scope:?}"
+        );
+        super::assert::assert_planning_settings_for(&settings, &SessionKind::Authoring)?;
+    }
     Ok(())
 }
 

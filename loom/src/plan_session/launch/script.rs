@@ -6,6 +6,7 @@ use std::path::Path;
 use shell_escape::escape;
 
 use crate::plan_session::bridge::host::LaunchSpec;
+use crate::plan_session::sandbox::{hook_command, permission_mode};
 
 /// Build the fresh session's launch line, with an argv opening only when explicitly supplied.
 pub fn launch_script(spec: &LaunchSpec, settings: &Path, env: &[(OsString, OsString)]) -> String {
@@ -27,7 +28,7 @@ pub fn launch_script(spec: &LaunchSpec, settings: &Path, env: &[(OsString, OsStr
             "--effort".into(),
             spec.guidance.effort.as_str().into(),
             "--permission-mode".into(),
-            "default".into(),
+            permission_mode(&spec.kind).into(),
             "--plugin-dir".into(),
             spec.guidance.plugin_dir.to_string_lossy(),
             "--strict-mcp-config".into(),
@@ -41,8 +42,9 @@ pub fn launch_script(spec: &LaunchSpec, settings: &Path, env: &[(OsString, OsStr
         words.push(escape(opening.as_str().into()).into_owned());
     }
     format!(
-        "#!/bin/sh\ncd {} || exit 1\n{}\n",
+        "#!/bin/sh\ncd {} || exit 1\n{} </dev/null >/dev/null 2>&1 &\n{}\n",
         escape(spec.project_root.to_string_lossy()),
+        hook_command(&spec.loom_bin, "OwnerWatch", spec.dir.path()),
         words.join(" ")
     )
 }
@@ -195,7 +197,7 @@ mod tests {
                 "--effort",
                 "medium",
                 "--permission-mode",
-                "default",
+                "auto",
                 "--plugin-dir",
                 spec.guidance.plugin_dir.to_str().unwrap(),
                 "--strict-mcp-config",
@@ -265,6 +267,7 @@ mod tests {
         let script = launch_script(&spec, &spec.dir.settings(), &env);
 
         assert!(!script.contains("TMUX"), "{script}");
+        assert!(script.contains("2>&1 &\nexec env -i "), "{script}");
     }
 
     #[test]

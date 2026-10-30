@@ -11,15 +11,16 @@ import { projectAtom } from "@/plan/state/atoms";
 
 afterEach(cleanup);
 
-function checklist(feature = "demo", title = "Demo"): ChecklistView {
+function checklist(feature = "demo"): ChecklistView {
   return {
     feature,
     pitch: null,
-    title,
     has_product: true,
     sections: [],
     plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
     untested: 0,
+    metaplans: [],
+    plan_rows: [],
     current: { kind: "step", number: 3 },
     steps: [
       { number: 1, name: "Vision", mark: "done", count: null, label: "Vision" },
@@ -27,8 +28,7 @@ function checklist(feature = "demo", title = "Demo"): ChecklistView {
       { number: 3, name: "Metaplan", mark: "gap", count: null, label: "Metaplan" },
       { number: 4, name: "Plans", mark: "active", count: null, label: "Plans" },
       { number: 5, name: "Pressure", mark: "optional", count: null, label: "Pressure" },
-      { number: 6, name: "Review", mark: "optional", count: null, label: "Review" },
-      { number: 7, name: "Run", mark: "optional", count: null, label: "Run" },
+      { number: 6, name: "Run", mark: "optional", count: null, label: "Run" },
     ],
     primary: null,
     secondary: [],
@@ -55,12 +55,11 @@ function renderHome(ui: ReactNode, { features = [] }: { features?: ChecklistView
 }
 
 describe("FeatureCard", () => {
-  it("shows the title, not the slug, and links to the encoded route", () => {
-    renderHome(<FeatureCard checklist={checklist("demo / café", "Demo café")} />);
+  it("shows the slug and links to the encoded route", () => {
+    renderHome(<FeatureCard checklist={checklist("demo / café")} />);
 
-    expect(screen.getByRole("heading", { name: "Demo café" })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "demo / café" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Demo café" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("heading", { name: "demo / café" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "demo / café" }).getAttribute("href")).toBe(
       "/f/demo%20%2F%20caf%C3%A9",
     );
   });
@@ -68,18 +67,18 @@ describe("FeatureCard", () => {
   it("folds the step and gap counts into screen-reader text beside the progress cells", () => {
     renderHome(<FeatureCard checklist={checklist()} />);
 
-    expect(screen.getByText("2 of 7 steps done, 1 with gaps")).toBeTruthy();
-    expect(screen.queryByText("2 of 7 steps done")).toBeNull();
+    expect(screen.getByText("2 of 6 steps done, 1 with gaps")).toBeTruthy();
+    expect(screen.queryByText("2 of 6 steps done")).toBeNull();
     expect(screen.getByRole("list", { name: "Progress" })).toBeTruthy();
   });
 
   it("describes the link with the folded step summary", () => {
     renderHome(<FeatureCard checklist={checklist()} />);
 
-    const link = screen.getByRole("link", { name: "Demo" });
+    const link = screen.getByRole("link", { name: "demo" });
     expect(link.getAttribute("aria-describedby")).toBeTruthy();
     expect(link.getAttribute("aria-describedby")).not.toBe(link.getAttribute("aria-labelledby"));
-    expect(screen.getByRole("link", { name: "Demo", description: /2 of 7 steps done/ })).toBe(link);
+    expect(screen.getByRole("link", { name: "demo", description: /2 of 6 steps done/ })).toBe(link);
   });
 
   it("uses the singular label for one step", () => {
@@ -164,9 +163,9 @@ describe("FeatureCard", () => {
     const pitch = screen.getByText("Make planning easier to follow.").closest("p");
     expect(pitch?.classList.contains("feature-pitch")).toBe(true);
     expect(pitch?.parentElement?.closest(".feature-pitch")).toBeNull();
-    expect(screen.getByRole("heading", { name: "Demo" }).closest(".feature-pitch")).toBeNull();
+    expect(screen.getByRole("heading", { name: "demo" }).closest(".feature-pitch")).toBeNull();
     expect(screen.getByRole("list", { name: "Progress" }).closest(".feature-pitch")).toBeNull();
-    expect(screen.getByText("2 of 7 steps done, 1 with gaps").closest(".feature-pitch")).toBeNull();
+    expect(screen.getByText("2 of 6 steps done, 1 with gaps").closest(".feature-pitch")).toBeNull();
   });
 
   it("renders inline Markdown in the checklist pitch", () => {
@@ -187,14 +186,12 @@ describe("FeatureCard", () => {
     expect(container.querySelector("p")).toBeNull();
   });
 
-  it("escapes control characters in titles, slugs and vision pitches", () => {
+  it("escapes control characters in slugs and vision pitches", () => {
     renderHome(
-      <FeatureCard
-        checklist={{ ...checklist("demo\u202E", "Demo\u202E"), pitch: "Build\u2066 with care." }}
-      />,
+      <FeatureCard checklist={{ ...checklist("demo\u202E"), pitch: "Build\u2066 with care." }} />,
     );
 
-    expect(screen.getByRole("heading", { name: "Demo⟨U+202E⟩" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "demo⟨U+202E⟩" })).toBeTruthy();
     expect(screen.getByText("product/demo⟨U+202E⟩/ · no plans yet")).toBeTruthy();
     expect(screen.getByText("Build⟨U+2066⟩ with care.")).toBeTruthy();
   });
@@ -203,28 +200,28 @@ describe("FeatureCard", () => {
 describe("FeatureCards", () => {
   it("renders a card for every feature from project state", () => {
     renderHome(<FeatureCards />, {
-      features: [checklist("alpha", "Alpha"), checklist("beta", "Beta")],
+      features: [checklist("alpha"), checklist("beta")],
     });
 
     const list = screen.getByRole("list", { name: "Features" });
     expect(within(list).getAllByRole("link")).toHaveLength(2);
-    expect(within(list).getByRole("link", { name: "Alpha" }).getAttribute("href")).toBe("/f/alpha");
-    expect(within(list).getByRole("link", { name: "Beta" }).getAttribute("href")).toBe("/f/beta");
+    expect(within(list).getByRole("link", { name: "alpha" }).getAttribute("href")).toBe("/f/alpha");
+    expect(within(list).getByRole("link", { name: "beta" }).getAttribute("href")).toBe("/f/beta");
   });
 
   it("renders the lead node as the first list item, and no empty item without one", () => {
     renderHome(<FeatureCards lead={<p>Lead card</p>} />, {
-      features: [checklist("alpha", "Alpha")],
+      features: [checklist("alpha")],
     });
 
     const items = [...screen.getByRole("list", { name: "Features" }).children];
     expect(items).toHaveLength(2);
     expect(within(items[0] as HTMLElement).getByText("Lead card")).toBeTruthy();
-    expect(within(items[1] as HTMLElement).getByRole("link", { name: "Alpha" })).toBeTruthy();
+    expect(within(items[1] as HTMLElement).getByRole("link", { name: "alpha" })).toBeTruthy();
   });
 
   it("adds no extra list item without a lead", () => {
-    renderHome(<FeatureCards />, { features: [checklist("alpha", "Alpha")] });
+    renderHome(<FeatureCards />, { features: [checklist("alpha")] });
 
     expect(screen.getByRole("list", { name: "Features" }).children).toHaveLength(1);
   });

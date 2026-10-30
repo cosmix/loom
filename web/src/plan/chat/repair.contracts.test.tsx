@@ -29,7 +29,7 @@ describe("chat repair", () => {
     const panel = await mountPanel("/f/beta/product", waitingSessionFrame("alpha"));
 
     const notice = await within(panel).findByRole("link", {
-      name: "A session in Alpha needs you",
+      name: "A session in alpha needs you",
     });
 
     expect(notice.getAttribute("href")).toMatch(/^\/f\/alpha(?:[/?]|$)/);

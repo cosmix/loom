@@ -8,7 +8,7 @@ use glob::{MatchOptions, Pattern};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
-use super::tests_kinds_fixture::{expected_common, kinds};
+use super::tests_kinds_fixture::{expected_common, expected_common_for, kinds};
 use super::{
     assert_planning_settings, build_settings, ensure_runtime_grants, HookSpec, SandboxInputs,
 };
@@ -138,7 +138,7 @@ fn summary_whole_json_snapshot() {
 #[test]
 fn pressure_whole_json_snapshot() {
     let f = Fixture::new();
-    let mut expected = expected_common(&f);
+    let mut expected = expected_common_for(&f, &kinds()[2]);
     expected["sandbox"]["filesystem"]["denyWrite"] = json!(f.paths(&[
         ".claude",
         ".git",

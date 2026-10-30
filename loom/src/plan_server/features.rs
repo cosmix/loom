@@ -68,6 +68,7 @@ mod tests {
     use crate::plan_server::tests::support::{
         body, bootstrap, get, json_body, options, project, request, send, skip, status,
     };
+    use crate::plan_server::wire::checklist::CurrentView;
     use serde_json::json;
     use std::path::Path;
 
@@ -110,6 +111,10 @@ mod tests {
         assert_eq!(features[0]["has_vision"], true);
         assert_eq!(features[0]["has_metaplan"], false);
         assert_eq!(features[0]["checklist"]["feature"], "alpha");
+        assert_eq!(
+            features[0]["checklist"]["steps"].as_array().unwrap().len(),
+            6
+        );
         assert_eq!(features[1]["name"], "zeta");
         assert_eq!(features[1]["has_vision"], false);
         assert_eq!(features[1]["has_metaplan"], true);
@@ -157,6 +162,52 @@ mod tests {
         assert_eq!(status(&head), 200);
         assert_eq!(body(&head), "");
         server.stop().unwrap();
+    }
+
+    #[test]
+    fn finished_feature_uses_its_slug_and_has_no_primary_offer() {
+        let root = tempfile::tempdir().unwrap();
+        put(
+            root.path(),
+            "doc/product/demo/index.md",
+            "# Demo\n\nA demo.\n\n## Specification sections\n\n| # | Section |\n| --- | --- |\n| 01 | Alpha |\n",
+        );
+        put(
+            root.path(),
+            "doc/product/demo/section_01.md",
+            "# Alpha\n\nBody.\n",
+        );
+        put(
+            root.path(),
+            "doc/plans/demo/index.md",
+            "# Engineering\n\n## 1. Done (`PLAN-fix.md`)\n",
+        );
+        put(
+            root.path(),
+            "doc/plans/demo/archive/DONE-PLAN-fix.md",
+            "# Finished\n",
+        );
+        let project = Project::load(root.path()).unwrap();
+        let view = FeaturesView::from(&project);
+        let feature = &view.features[0];
+
+        assert_eq!(feature.name, "demo");
+        assert_eq!(feature.checklist.feature, "demo");
+        assert_eq!(feature.checklist.current, CurrentView::ReadyAllDone);
+        assert_eq!(feature.checklist.primary, None);
+        let secondary: Vec<_> = feature
+            .checklist
+            .secondary
+            .iter()
+            .map(|offer| (offer.id.as_str(), offer.label.as_str()))
+            .collect();
+        assert_eq!(
+            secondary,
+            [
+                ("refine-spec", "Compare spec with build"),
+                ("new-metaplan-round", "New metaplan round"),
+            ]
+        );
     }
 
     #[test]

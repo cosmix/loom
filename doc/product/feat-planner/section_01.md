@@ -2,7 +2,7 @@
 
 Part of the [Loom Plan product vision](index.md).
 
-This section defines the seven workflow steps as states, how the app reads the project's state
+This section defines the six workflow steps as states, how the app reads the project's state
 from the files under `doc/`, what it offers next, and how it reads a project that skipped or
 reordered steps. Where a document convention is needed to make detection possible, this section
 states the minimum the detector relies on; section 03 owns the full conventions.
@@ -13,29 +13,32 @@ The app stores no workflow state. On every start, and on every change under `doc
 reads the tree and builds one **checklist per feature**, scoped to `doc/product/<f>/` and
 `doc/plans/<f>/`: one line per document the workflow expects, each either present or a gap.
 Each feature's **current step** is the earliest step that has a gap. The app shows that step
-in the feature's tracker, offers to close its first gap, and lists every other gap as a secondary
+in the feature's spine, offers to close its first gap, and lists every other gap as a secondary
 offer. Nothing is blocked: a gap in an early step never stops the user from working on a later
 one. The project view lists features and standalone plans; standalone plans have no checklist.
 
-## The seven steps
+## The six steps
 
-| Step | Name          | Done when                                                        |
-| ---- | ------------- | ---------------------------------------------------------------- |
-| 1    | Vision        | `doc/product/<f>/index.md` exists                                |
-| 2    | Product spec  | every section the feature's vision lists has its file            |
-| 3    | Metaplan      | at least one metaplan exists in the feature                      |
-| 4    | Plans         | every entry in the feature's metaplans has a plan file           |
-| 5    | Pressure test | optional: the user decides which plans to pressure-test          |
-| 6    | Review        | never recorded; the user reading is the step (vision, Decisions) |
-| 7    | Run           | the user starts `loom run`; the app shows plans running or done  |
+| Step | Name          | Done when                                                       |
+| ---- | ------------- | --------------------------------------------------------------- |
+| 1    | Vision        | `doc/product/<f>/index.md` exists                               |
+| 2    | Product spec  | every section the feature's vision lists has its file           |
+| 3    | Metaplan      | at least one metaplan exists in the feature                     |
+| 4    | Plans         | every entry in the feature's metaplans has a plan file          |
+| 5    | Pressure test | optional: the user decides which plans to pressure-test         |
+| 6    | Run           | the user starts `loom run`; the app shows plans running or done |
 
-Step 5 never holds a feature back. Once steps 1 to 4 have no gaps, its tracker marks step 5
+Reviewing the result is the user reading, and the app records nothing about it (vision,
+Decisions). It is no step and has no state: the screens of sections 05 and 06 are where it
+happens.
+
+Step 5 never holds a feature back. Once steps 1 to 4 have no gaps, the spine marks step 5
 while any written plan has no pressure-test record, and offers to test it next to the offer to
 start a run; the user picks either. An untested plan is a suggestion, never a gap.
 
-Steps 6 and 7 share one state, "ready", because the app records no approval. The tracker marks
-step 7 as active while any plan is `IN_PROGRESS-`, and as done when every metaplan entry's plan
-is `DONE-` or `RETIRED-`.
+With steps 1 to 4 complete the feature is "ready", because the app records no approval. The
+spine marks step 6 as active while any plan is `IN_PROGRESS-`, and as done when every metaplan
+entry's plan is `DONE-` or `RETIRED-`.
 
 ## Detection rules
 
@@ -128,7 +131,7 @@ a metaplan and is not a gap for step 4.
 
 Standalone plans live directly under `doc/plans/`, with their archive under `doc/plans/archive/`
 and briefs under `doc/plans/briefs/<slug>/`. They have their own lifecycle (written,
-pressure-tested, running, done or retired), no seven-step checklist, and write `Implements: none`.
+pressure-tested, running, done or retired), no six-step checklist, and write `Implements: none`.
 Work with a product spec, a metaplan, or several related plans belongs in a feature.
 
 The home screen shows standalone plans on one shelf with "New standalone plan" and
@@ -169,18 +172,43 @@ the last test's date beside the plan's last change, so a reviewer can judge for 
 ## What the app offers
 
 Each feature's **primary offer** closes the first gap of its current step. Every other gap is
-listed in a compact checklist under it, each with its own offer. Accepting any offer opens a
+listed in the page's queue (below), each with its own offer. Accepting any offer opens a
 new session briefed for that step and that document (section 09).
 
-| Current step    | Primary offer                                                          |
-| --------------- | ---------------------------------------------------------------------- |
-| 1               | Start a vision discussion                                              |
-| 2               | Write the lowest-numbered missing section                              |
-| 3               | Start a metaplan from the product spec                                 |
-| 4               | Write the first metaplan entry's missing plan                          |
-| 5               | Pressure-test the first untested plan, or start a run (user's choice)  |
-| ready           | Refine any document; start a run (section 11)                          |
-| ready, all done | Refine the spec in light of completed work; start a new metaplan round |
+| Current step    | Primary offer                                                         |
+| --------------- | --------------------------------------------------------------------- |
+| 1               | Start a vision discussion                                             |
+| 2               | Write the lowest-numbered missing section                             |
+| 3               | Start a metaplan from the product spec                                |
+| 4               | Write the first metaplan entry's missing plan                         |
+| 5               | Pressure-test the first untested plan, or start a run (user's choice) |
+| ready           | Refine any document; start a run (section 11)                         |
+| ready, all done | none                                                                  |
+
+A finished feature has no primary offer. Its two follow-ups, comparing the spec with what was
+built and starting a new metaplan round, are secondary offers drawn only on the Run page
+(section 11).
+
+Offer labels are short, and the sentence beside the button explains what it does:
+
+| Offer                            | Label                          |
+| -------------------------------- | ------------------------------ |
+| Start the vision                 | `Start the vision`             |
+| Fix the vision's section list    | `Fix the section table`        |
+| Write a missing section          | `Write section NN`             |
+| Add an unlisted section          | `Add section NN to the vision` |
+| Start a metaplan                 | `Start the metaplan`           |
+| Write a missing plan             | `Write plan <slug>`            |
+| Pressure-test a plan             | `Pressure-test <slug>`         |
+| Start a run                      | `Start a run`                  |
+| Compare spec with what was built | `Compare spec with build`      |
+| Start a new metaplan round       | `New metaplan round`           |
+| Draft all sections or plans      | `Draft all with a team`        |
+
+**No screen draws one offer twice.** The chat panel carries no offer to start a step (section
+08). On the product and engineering pages the page owns the primary offer while its pace and
+queue show, and the spine keeps the sentence only; a queue row whose offer is the primary shows
+"Next" with no button.
 
 "First" follows document order: the vision's table order for sections, the metaplan's heading
 order for plans, then unlisted plans by file name.
@@ -201,6 +229,20 @@ teammates coordinate while drafting. The lead checks consistency and hands the u
 queue ordered by open-question count. The cost line shows assignments and model before launch;
 "Stop the team" ends it and keeps written documents. Section 09 owns the session procedure.
 Pace belongs to the session request; it adds no stored workflow state or approval record.
+
+## Where a feature opens
+
+Opening `/f/<feature>` redirects by what the feature's checklist finds:
+
+| State                                            | Opens on      |
+| ------------------------------------------------ | ------------- |
+| No vision and no metaplan                        | `vision`      |
+| A vision exists, a listed section is missing     | `vision`      |
+| A vision exists, every listed section is written | `product`     |
+| No vision, a metaplan exists                     | `engineering` |
+
+A finished feature (every plan done) whose spec is written opens on the product overview, where
+its reading starts. The pages behind these routes are section 05's table.
 
 ## Skipped and reordered steps
 
@@ -229,7 +271,7 @@ steps out of order reads as a normal feature with an early gap:
 Each feature's checklist is a pure function of the file tree under `doc/` (paths, file names,
 the headings and tables named above). The server recomputes the checklists at start and whenever
 the file watcher the summary engine uses (section 04) reports a change, and pushes them to every
-open tab. An edit from an editor, another session, or a `git pull` moves the tracker without a reload.
+open tab. An edit from an editor, another session, or a `git pull` moves the spine without a reload.
 
 Read-only tabs (vision, Decisions, "One authoring session per project") see the same feature
 checklists but no offers.

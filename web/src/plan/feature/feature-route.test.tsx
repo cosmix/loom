@@ -15,8 +15,18 @@ import { activeFeatureAtom, checklistAtom, draftTeamAtom, projectAtom } from "@/
 afterEach(cleanup);
 
 const { type: _type, ...projectFrame } = checklistFixture;
-const project = projectChecklistViewSchema.parse(projectFrame);
-const checklist = project.checklists[0]!;
+const parsed = projectChecklistViewSchema.parse(projectFrame);
+// The screen is rebuilt on the six-step spine in the next stage; until then these tests pin it
+// against the first two steps and a feature with no plans, as the fixture was before it grew.
+const checklist = {
+  ...parsed.checklists[0]!,
+  steps: parsed.checklists[0]!.steps.slice(0, 2),
+  plans: { listed: 1, total: 0, written: 0, running: 0, done: 0 },
+  untested: 0,
+  metaplans: [],
+  plan_rows: [],
+};
+const project = { ...parsed, checklists: [checklist] };
 
 function renderRoute(
   path = "/f/demo",
@@ -69,13 +79,13 @@ describe("FeatureRoute", () => {
     expect(store.get(activeFeatureAtom)).toBe("demo");
   });
 
-  it("renders the feature title, current step and step navigation", () => {
+  it("renders the feature slug, current step and step navigation", () => {
     renderRoute();
 
     expect(screen.getAllByRole("heading", { level: 1 }).map((node) => node.textContent)).toEqual([
       "Write the product spec",
     ]);
-    expect(eyebrow()).toBe("Demo · step 2 of 7");
+    expect(eyebrow()).toBe("demo · step 2 of 6");
     const steps = within(screen.getByRole("navigation", { name: "Steps" }));
     expect(steps.getAllByRole("link").map((node) => node.textContent?.split(",")[0])).toEqual([
       "Conversation",
@@ -89,7 +99,7 @@ describe("FeatureRoute", () => {
   it("selects the step from the query and falls back to the current step", () => {
     renderRoute("/f/demo?step=1");
     expect(screen.getByRole("heading", { level: 1, name: "Write the vision" })).toBeTruthy();
-    expect(eyebrow()).toBe("Demo · step 1 of 7");
+    expect(eyebrow()).toBe("demo · step 1 of 6");
     cleanup();
 
     renderRoute("/f/demo?step=9");
@@ -251,8 +261,8 @@ describe("FeatureRoute", () => {
     const gaps = within(screen.getByRole("list", { name: "Documents and gaps" }));
     const metaplanRow = within(gaps.getByRole("listitem"));
     expect(metaplanRow.getByText("no metaplan")).toBeTruthy();
-    expect(metaplanRow.getByText("Start a metaplan from the product spec")).toBeTruthy();
-    expect(screen.getAllByText("Start a metaplan from the product spec")).toHaveLength(1);
+    expect(metaplanRow.getByText("Start the metaplan")).toBeTruthy();
+    expect(screen.getAllByText("Start the metaplan")).toHaveLength(1);
     expect(screen.queryByText("Write section 05")).toBeNull();
   });
 
@@ -288,7 +298,7 @@ describe("FeatureRoute", () => {
     const value = { ...project, checklists: [other, checklist] };
     const { store } = renderRoute("/f/demo", value, "other");
 
-    expect(eyebrow()).toBe("Demo · step 2 of 7");
+    expect(eyebrow()).toBe("demo · step 2 of 6");
     expect(screen.queryByRole("link", { name: /Other step/ })).toBeNull();
     expect(screen.getByRole("list", { name: "Section queue" })).toBeTruthy();
     await waitFor(() => expect(store.get(activeFeatureAtom)).toBe("demo"));
@@ -362,7 +372,7 @@ describe("FeatureRoute", () => {
     });
 
     expect(screen.getByRole("heading", { level: 1, name: "Run the plans" })).toBeTruthy();
-    expect(eyebrow()).toBe("Demo · step 7 of 7");
+    expect(eyebrow()).toBe("demo · step 6 of 6");
     expect(screen.getAllByText(label)).toHaveLength(1);
     expect(screen.queryByRole("link", { current: "step" })).toBeNull();
   });

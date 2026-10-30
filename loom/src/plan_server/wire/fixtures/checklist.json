@@ -1,7 +1,6 @@
 {
   "feature": "demo",
   "pitch": "Turn product ideas into clear specifications and executable plans your team can follow.",
-  "title": "Demo",
   "has_product": true,
   "sections": [
     {
@@ -11,14 +10,38 @@
       "open_questions": 0
     }
   ],
+  "metaplans": [
+    {
+      "path": "doc/plans/demo/index.md",
+      "title": "Demo Metaplan"
+    }
+  ],
+  "plan_rows": [
+    {
+      "slug": "alpha",
+      "path": "doc/plans/demo/PLAN-alpha.md",
+      "title": "Alpha plan",
+      "state": "written",
+      "pressure_date": "2026-10-20",
+      "listed": true
+    },
+    {
+      "slug": "beta",
+      "path": "doc/plans/demo/PLAN-beta.md",
+      "title": "Beta plan",
+      "state": "written",
+      "pressure_date": null,
+      "listed": false
+    }
+  ],
   "plans": {
     "listed": 1,
-    "total": 0,
-    "written": 0,
+    "total": 2,
+    "written": 2,
     "running": 0,
     "done": 0
   },
-  "untested": 0,
+  "untested": 1,
   "current": {
     "kind": "step",
     "number": 2
@@ -37,6 +60,34 @@
       "mark": "gap",
       "count": "0/1",
       "label": "Product spec"
+    },
+    {
+      "number": 3,
+      "name": "Metaplan",
+      "mark": "done",
+      "count": "1",
+      "label": "Metaplan"
+    },
+    {
+      "number": 4,
+      "name": "Plans",
+      "mark": "done",
+      "count": "1/1",
+      "label": "Plans"
+    },
+    {
+      "number": 5,
+      "name": "Pressure test",
+      "mark": "optional",
+      "count": "1",
+      "label": "Untested"
+    },
+    {
+      "number": 6,
+      "name": "Run",
+      "mark": "optional",
+      "count": null,
+      "label": "Run"
     }
   ],
   "primary": {
@@ -51,7 +102,7 @@
     {
       "id": "start-metaplan",
       "kind": "start_metaplan",
-      "label": "Start a metaplan from the product spec",
+      "label": "Start the metaplan",
       "target": null,
       "feature": "demo"
     }
