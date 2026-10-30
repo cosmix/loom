@@ -1,5 +1,5 @@
 import type { ItemView } from "@/plan/api/schema";
-import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
 import { OfferButton } from "@/plan/offers/offer-button";
 
@@ -14,7 +14,7 @@ export function StepItems({ items }: { items: ItemView[] }) {
       {items.map((item, index) => (
         <li key={`${index}:${item.text}`} className="plan-items__row">
           <span className="plan-items__label" style={{ unicodeBidi: "isolate", direction: "ltr" }}>
-            <SentenceText text={visibleControls(item.text)} />
+            <SentenceText text={item.text} />
           </span>
           {item.path && (
             <code className="plan-items__path">

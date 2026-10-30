@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 
 import type { ChecklistView, ItemView } from "@/plan/api/schema";
-import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
 import { plural } from "@/plan/feature/steps";
 import { toAddress } from "@/plan/files/address";
@@ -91,11 +91,7 @@ function State({ tone, icon, children }: { tone: string; icon: ReactNode; childr
 }
 
 function RowName({ row }: { row: QueueRow }) {
-  return row.markdown ? (
-    <SentenceText text={visibleControls(row.name)} />
-  ) : (
-    <Untrusted text={row.name} />
-  );
+  return row.markdown ? <SentenceText text={row.name} /> : <Untrusted text={row.name} />;
 }
 
 function RowStates({ row, drafting }: { row: QueueRow; drafting: boolean }) {
