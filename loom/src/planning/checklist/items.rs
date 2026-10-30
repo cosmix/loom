@@ -1,10 +1,42 @@
 //! The checklist's items: one per expected document, unlisted document and untested plan.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use super::{ChecklistItem, Facts, ItemStatus, Offer, Step};
-use crate::planning::kinds::{plan_path, section_path, vision_path};
+use super::{ChecklistItem, Facts, ItemStatus, Offer, ParsedDocs, Step};
+use crate::planning::discover::DocTree;
+use crate::planning::kinds::{plan_path, section_path, vision_path, DocKind};
 use crate::planning::vision::VisionRow;
+
+/// Every metaplan entry naming a plan: `(metaplan, slug)`.
+pub(super) fn metaplan_entries(parsed: &ParsedDocs) -> Vec<(&Path, &str)> {
+    parsed
+        .metaplans
+        .iter()
+        .flat_map(|(path, list)| {
+            list.iter()
+                .filter_map(move |e| Some((path.as_path(), e.slug.as_deref()?)))
+        })
+        .collect()
+}
+
+pub(super) fn unlisted_sections<'a>(
+    tree: &'a DocTree,
+    feature: &str,
+    rows: Option<&[VisionRow]>,
+) -> Vec<(u32, &'a Path)> {
+    let listed: BTreeSet<u32> = rows.unwrap_or_default().iter().map(|r| r.number).collect();
+    tree.docs
+        .iter()
+        .filter(|doc| doc.kind.feature() == Some(feature))
+        .filter_map(|doc| match &doc.kind {
+            DocKind::ProductSection { number, .. } if !listed.contains(number) => {
+                Some((*number, doc.path.as_path()))
+            }
+            _ => None,
+        })
+        .collect()
+}
 
 impl Facts<'_> {
     /// Every item in step order.

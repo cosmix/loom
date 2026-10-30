@@ -61,6 +61,21 @@ fn first_untested_plan_follows_metaplan_heading_order() {
 }
 
 #[test]
+fn finished_feature_has_no_primary_and_keeps_followups_in_order() {
+    let files = spec(vec![
+        owned(metaplan(&["a"])),
+        plan("doc/plans/demo/archive/DONE-PLAN-a.md", true),
+    ]);
+    let (_temp, project) = load(&files);
+    let c = checklist(&project);
+    assert_eq!(c.current, CurrentStep::ReadyAllDone);
+    assert_eq!(c.primary, None);
+    assert_eq!(c.secondary, [Offer::RefineSpec, Offer::NewMetaplanRound]);
+    assert_eq!(c.steps.len(), 6);
+    assert_eq!(c.steps[5], (Step::Run, StepMark::Done));
+}
+
+#[test]
 fn first_missing_plan_belongs_to_the_first_metaplan_in_reading_order() {
     let files = spec(vec![
         metaplan_at(SECOND_META, &["x"]),

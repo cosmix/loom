@@ -2,23 +2,10 @@
 
 use super::*;
 use serde_json::{json, Value};
-use std::path::Path;
 
-fn put(root: &Path, relative: &str, contents: &str) {
-    let path = root.join(relative);
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, contents).unwrap();
-}
-
-fn pitch_of(text: &str) -> Option<String> {
-    let temp = tempfile::tempdir().unwrap();
-    put(temp.path(), "doc/product/demo/index.md", text);
-    let project = Project::load(temp.path()).unwrap();
-    ProjectChecklistView::from(&project)
-        .checklists
-        .remove(0)
-        .pitch
-}
+#[path = "checklist_plan_rows_tests.rs"]
+mod plan_rows;
+use plan_rows::{assert_offer, pitch_of, put};
 
 #[test]
 fn pitch_joins_only_the_first_paragraph_after_the_title_and_keeps_inline_markdown() {
@@ -69,12 +56,6 @@ fn pitch_is_absent_without_a_heading_or_a_prose_paragraph() {
     );
 }
 
-fn assert_offer(offer: Offer, expected: Value) {
-    let view = offer_view(&offer);
-    assert_eq!(serde_json::to_value(&view).unwrap(), expected);
-    assert_eq!(serde_json::from_value::<OfferView>(expected).unwrap(), view);
-}
-
 #[test]
 fn checklist_fixture_matches_serde_output() {
     let fixture: Value = serde_json::from_str(include_str!("fixtures/checklist.json")).unwrap();
@@ -106,7 +87,11 @@ fn feature_checklist_converts_with_the_core_offer_fields() {
     assert!(view.items.iter().any(|item| item.path.as_deref()
         == Some("doc/product/demo/section_05.md")
         && item.offer == view.primary));
-    assert_eq!(view.steps.len(), 7);
+    assert_eq!(view.steps.len(), 6);
+    assert_eq!(
+        (view.steps[5].number, view.steps[5].name.as_str()),
+        (6, "Run")
+    );
 }
 
 #[test]
@@ -118,7 +103,7 @@ fn draft_all_offers_include_labels_and_features() {
             },
             json!({
                 "id": "draft-all-sections", "kind": "draft_all_sections", "feature": "demo",
-                "label": "Draft all missing sections with a team", "target": null
+                "label": "Draft all with a team", "target": null
             }),
         ),
         (
@@ -127,7 +112,7 @@ fn draft_all_offers_include_labels_and_features() {
             },
             json!({
                 "id": "draft-all-plans", "kind": "draft_all_plans", "feature": "demo",
-                "label": "Draft all missing plans with a team", "target": null
+                "label": "Draft all with a team", "target": null
             }),
         ),
     ];
@@ -176,7 +161,7 @@ fn vision_and_metaplan_offers_keep_their_labels_and_core_targets() {
             },
             json!({
                 "id": "start-vision", "kind": "start_vision", "feature": "demo",
-                "label": "Start a vision discussion", "target": null
+                "label": "Start the vision", "target": null
             }),
         ),
         (
@@ -185,7 +170,7 @@ fn vision_and_metaplan_offers_keep_their_labels_and_core_targets() {
             },
             json!({
                 "id": "fix-vision-table", "kind": "fix_vision_table", "feature": "demo",
-                "label": "Fix the vision's section table", "target": "doc/product/demo/index.md"
+                "label": "Fix the section table", "target": "doc/product/demo/index.md"
             }),
         ),
         (
@@ -194,7 +179,7 @@ fn vision_and_metaplan_offers_keep_their_labels_and_core_targets() {
             },
             json!({
                 "id": "start-metaplan", "kind": "start_metaplan", "feature": "demo",
-                "label": "Start a metaplan from the product spec", "target": null
+                "label": "Start the metaplan", "target": null
             }),
         ),
     ];
@@ -213,7 +198,7 @@ fn section_offers_pad_labels_without_truncating_large_numbers() {
             },
             json!({
                 "id": "add-section-to-vision:05", "kind": "add_section_to_vision",
-                "label": "Add section 05 to the vision's table", "feature": "demo",
+                "label": "Add section 05 to the vision", "feature": "demo",
                 "number": 5, "target": "doc/product/demo/section_05.md"
             }),
         ),
@@ -246,14 +231,14 @@ fn unscoped_offers_omit_optional_context_and_keep_a_null_target() {
             Offer::RefineSpec,
             json!({
                 "id": "refine-spec", "kind": "refine_spec",
-                "label": "Refine the spec in light of what was built", "target": null
+                "label": "Compare spec with build", "target": null
             }),
         ),
         (
             Offer::NewMetaplanRound,
             json!({
                 "id": "new-metaplan-round", "kind": "new_metaplan_round",
-                "label": "Start a new metaplan round", "target": null
+                "label": "New metaplan round", "target": null
             }),
         ),
     ];
@@ -278,8 +263,7 @@ fn project_snapshot_groups_features_and_uses_winning_standalone_paths_and_titles
     ] {
         put(temp.path(), path, text);
     }
-    let project = Project::load(temp.path()).unwrap();
-    let snapshot = ProjectChecklistView::from(&project);
+    let snapshot = ProjectChecklistView::from(&Project::load(temp.path()).unwrap());
     let names: Vec<_> = snapshot
         .checklists
         .iter()

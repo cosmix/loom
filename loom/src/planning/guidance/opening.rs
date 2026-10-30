@@ -27,7 +27,7 @@ pub fn opening_message(
     Ok(opening)
 }
 
-/// Describe the selected feature's seven checklist marks at launch.
+/// Describe the selected feature's six checklist marks at launch.
 pub(super) fn feature_checklist(project: &Project, name: &str) -> String {
     let Some(feature) = project.feature(name) else {
         return "Checklist: absent (new feature).".into();
@@ -111,7 +111,7 @@ fn offer_step_and_skill(offer: &Offer) -> Result<(&'static str, &'static str)> {
         Offer::StartMetaplan { .. } => ("step 3, Metaplan", "metaplan"),
         Offer::WritePlan { .. } => ("step 4, Plans", "plan"),
         Offer::DraftAllPlans { .. } => ("step 4, Draft all missing plans", "plan"),
-        Offer::RefineSpec => ("done, Review what was built", "retro"),
+        Offer::RefineSpec => ("done, Compare spec with build", "retro"),
         Offer::NewMetaplanRound => ("done, New metaplan round", "metaplan"),
         _ => bail!("{} is not an authoring offer", offer.id()),
     })
