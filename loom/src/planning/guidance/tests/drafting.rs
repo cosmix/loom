@@ -35,6 +35,7 @@ fn draft_all_briefs_derive_step_target_skill_and_team_limits_from_the_opening() 
         let text = brief::common_brief(&start, &project, Some("f")).unwrap();
         let (_, block) = text.split_once("## Starting point\n\n").unwrap();
 
+        assert_eq!(start.label(), "Draft all with a team");
         assert!(block.starts_with(&format!(
             "Step: {step}.\nTarget: Draft these missing documents"
         )));

@@ -1,7 +1,7 @@
 import type { StepView } from "@/plan/api/schema";
 import { Untrusted } from "@/plan/chat/visible-controls";
 
-const RUN_STEP = 7;
+const RUN_STEP = 6;
 
 type Cell = "done" | "current" | "running" | "idle";
 
@@ -12,7 +12,7 @@ function cellOf(step: StepView, current: number | null, running: boolean): Cell 
 }
 
 /**
- * Seven thin cells, one per step: done, the current step, a running Run step, or the rest. The
+ * Thin cells, one per step: done, the current step, a running Run step, or the rest. The
  * list text names every step and what it is for screen readers; the cells are colour only.
  */
 export function ProgressStrip({

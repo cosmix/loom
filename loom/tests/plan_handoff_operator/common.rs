@@ -81,6 +81,8 @@ pub fn tools_ready() -> bool {
 pub struct Scratch {
     pub root: PathBuf,
     previous_home: Option<OsString>,
+    // Drop session servers before either temporary directory is removed.
+    _sessions: SessionServers,
     _repo: TempDir,
     home: TempDir,
 }
@@ -102,9 +104,11 @@ impl Scratch {
         git(&root, &["commit", "-q", "-m", "plan"]);
         let previous_home = std::env::var_os("LOOM_HOME");
         std::env::set_var("LOOM_HOME", home.path());
+        let (runtime, _) = server_runtime_paths(&root).unwrap();
         Scratch {
             root,
             previous_home,
+            _sessions: SessionServers(runtime.sessions),
             _repo: repo,
             home,
         }
@@ -141,6 +145,23 @@ impl Drop for Scratch {
         match self.previous_home.take() {
             Some(home) => std::env::set_var("LOOM_HOME", home),
             None => std::env::remove_var("LOOM_HOME"),
+        }
+    }
+}
+
+struct SessionServers(PathBuf);
+
+impl Drop for SessionServers {
+    fn drop(&mut self) {
+        let Ok(sessions) = std::fs::read_dir(&self.0) else {
+            return;
+        };
+        for entry in sessions.flatten() {
+            if let Ok(record) = read_record(&SessionDir::new(entry.path())) {
+                let _ = Command::new("tmux")
+                    .args(["-L", record.socket.as_str(), "kill-server"])
+                    .output();
+            }
         }
     }
 }

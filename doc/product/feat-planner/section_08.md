@@ -28,15 +28,15 @@ browser.
 ┌ Chat ─────────────────────────────────────── ⋯ ┐
 │ ◐ Working · 41s · Edit section_02.md           │  state line
 │ Dana authoring · 2 watching · 18.4k tokens     │  session line
+│ About section_02                          [×]  │  context line
 ├────────────────────────────────────────────────┤
 │  turns, oldest first                           │  transcript
 │  …                                             │
+│  Suggested prompts (no chat, empty draft)      │  context prompts
 ├────────────────────────────────────────────────┤
 │ Queued (1)                                     │  queue
 │ [section_02.md › Port · lines 54–60] [×]       │  attachment chips
-│ ┌────────────────────────────────────────────┐ │
-│ │ Message…                                   │ │  composer
-│ └────────────────────────────────────────────┘ │
+│ Ask about section_02, or say what to change    │  composer
 │                                  Stop   Send   │
 └────────────────────────────────────────────────┘
 ```
@@ -52,14 +52,21 @@ browser.
   chip without opening the sheet; the button shows the attachment count. (My call: on a phone
   the reader collects passages first and writes once.)
 - **Surface.** The panel sits on `--card` with a `--hairline` left border, beside the reading
-  column on `--background`. No coloured spine marks anything in it
+  column on `--background`. It is one continuous surface: hierarchy comes from type, space and a
+  single hairline, with no nested cards. A user turn is set apart without a bubble in a box, tool
+  activity is a quiet run of lines that folds, and the composer is part of the panel with no card
+  floating in it. A permission decision is the one item allowed real emphasis, and even that does
+  not nest boxes. No coloured spine marks anything in it
   (`conventions/web-dashboard-typography.md`, "Stage thread chips").
 - **Header.** The title is "Chat", with Collapse in the dock and Close in the sheet. A live
   chat adds **New chat**; an ended or failed chat offers it in the composer area. The menu
   appears when the browser can end the chat. Below the state line, a chat's session line names
   the authoring browser, the watcher count and the running token total; another browser sees
   "Read-only · Dana is authoring". An away holder shows when authoring frees. With no chat,
-  there is no session line; the checklist's offer belongs below "No chat".
+  there is no session line. The context line (below) sits under the session line, in the head.
+- **No offers.** The panel draws no offer to start a step. Offers sit in the feature's spine and
+  on the pages that own them (section 01), so no screen shows one offer twice. The panel offers
+  New chat and the context prompts only.
 
 On `/new`, an active kickoff conversation puts the transcript and composer in the main column,
 with **Taking shape** in place of the chat dock. The transcript uses the selected reading face;
@@ -68,19 +75,20 @@ for a feature, proposed sections. On narrow screens the panel follows the transc
 
 ## Message rendering
 
-Each item in section 07's model renders as follows. Type is Inter at 14px with a 1.5 line height
-for message text, between the dashboard's 12-13px chrome and concept mode's 17, 19 (default) or 21px reading text;
+Each item in section 07's model renders as follows. Type is 14px with a 1.5 line height for
+message text, Inter for the user's messages and the reading face for the assistant's, between the
+dashboard's 12-13px chrome and concept mode's 17, 19 (default) or 21px reading text;
 state words, tool rows, and footers use the 12-13px chrome size. Monospace only for paths,
 commands, and identifiers (`conventions/web-dashboard-typography.md`). (My call.)
 
-| Item         | Rendering                                                                                           |
-| ------------ | --------------------------------------------------------------------------------------------------- |
-| `user`       | Right-aligned block on `--muted`, rounded, at most 85% of the panel width; attachment chips under it |
-| `text`       | Full-width Markdown, no bubble                                                                      |
-| `thinking`   | One muted line, "Thought for 3s"; consecutive markers in one message merge into one line            |
-| `tool`       | A tool row (below)                                                                                  |
-| `permission` | A permission card (below)                                                                           |
-| `notice`     | A centred muted line with a small glyph; API errors in `--tone-blocked`                             |
+| Item         | Rendering                                                                                                                                                         |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user`       | Set apart by type and space, not a bubble in a box; attachment chips under it                                                                                     |
+| `text`       | Full-width Markdown in the reading face (section 06's renderer), no bubble                                                                                        |
+| `thinking`   | One muted line, "Thought for 3s"; consecutive markers in one message merge into one line                                                                          |
+| `tool`       | A tool row (below)                                                                                                                                                |
+| `permission` | A permission decision (below)                                                                                                                                     |
+| `notice`     | A centred muted line with a small glyph; API errors in `--tone-blocked`; an auto-mode block (below) reads as "the session was stopped here", not as an error card |
 
 **Markdown.** Assistant text uses the renderer file mode uses (section 06), with its rules: raw
 HTML never rendered, HTML comments dropped, tables in the ledger style and scrolling inside their
@@ -162,19 +170,18 @@ the only signal. The states are section 07's.
 
 | State      | State line                                                                            | Composer (authoring browser)                 |
 | ---------- | ------------------------------------------------------------------------------------- | -------------------------------------------- |
-| none       | "No chat"; the primary offer and "New chat" occupy separate rows below it             | Enabled; sending starts a chat               |
+| none       | "No chat"; "New chat" and the context prompts (below) sit beneath it                  | Enabled; sending starts a chat               |
 | Starting   | `BusyRoundel` turning, "Starting session", the session's name and model               | Enabled; messages queue                      |
 | Idle       | Roundel at rest, "Waiting for you"                                                    | Enabled; Send delivers                       |
 | Working    | Roundel turning, "Working · 41s", the newest tool row's summary, "2 subagents" if any | Enabled; Send queues; Stop shown             |
 | Permission | `--tone-warning` glyph, "Needs a decision: Bash"; the card is pinned (below)          | Enabled; Send queues; Stop shown             |
 | Ending     | Roundel turning, "Writing final notes into the documents"; the 10-minute bound        | Disabled, with the reason                    |
-| Ended      | Muted stamp, "Chat ended · 3m ago"                                                    | Replaced by "New chat" and the primary offer |
+| Ended      | Muted stamp, "Chat ended · 3m ago"                                                    | Replaced by "New chat" and the prompts       |
 | Failed     | `HazardPanel` (`web/src/aurora-ui/feedback/HazardPanel.tsx:116`) in its error tone    | Replaced by "New chat"                       |
 
-**Empty state.** "No chat" stands beside its resting glyph. The primary offer from section 01,
-when available, and **New chat** each get a full row beneath it, so an offer's title is distinct
-from the state label. The composer stays available to the authoring browser; sending its text
-and attachments starts a chat.
+**Empty state.** "No chat" stands beside its resting glyph, with **New chat** and, for an empty
+draft, the context prompts beneath it. The panel carries no offer from section 01. The composer
+stays available to the authoring browser; sending its text and attachments starts a chat.
 
 **Header glyphs.** The collapsed rail and the sheet-opening button use `ChatGlyph`: a turning
 `LoaderCircle` for Starting, a writing `PenLine` for Working and Ending, and a ringing `BellRing`
@@ -199,9 +206,10 @@ Elapsed times use `formatElapsed` (`web/src/lib/format.ts:42`).
   starting state, under a divider with the end time, and leaves the panel when the new session
   writes its first item.
 
-The browser tab's title carries the state when it needs the user: `(!)` while a permission
-decision waits, `(✓)` when a turn ended while the tab was hidden; the prefix clears when the tab
-is shown. The holding browser can also get a desktop notification for both, through the
+The browser tab's title names the place and carries the state when it needs the user. On
+`/f/<feature>/...` it reads `<slug> · loom plan`, elsewhere `<project> · loom plan`. A `(!)`
+prefix shows while a permission decision waits, `(✓)` when a turn ended while the tab was hidden;
+the prefix clears when the tab is shown. The holding browser can also get a desktop notification for both, through the
 dashboard's opt-in notifications (`web/src/state/notifications.ts`), off by default. (My call.)
 
 ## Permission prompts
@@ -209,6 +217,14 @@ dashboard's opt-in notifications (`web/src/state/notifications.ts`), off by defa
 A permission request (section 07, "Permission prompts") renders as a card in the transcript at
 the point it arose, and the same card is pinned above the composer while it is pending, so the
 holder sees it wherever the transcript is scrolled.
+
+In auto mode (section 07) a card appears only for a call that matches an `ask` rule in the
+session's settings: `WebFetch`, and the `loom knowledge` and `loom plan summary` commands that
+Kickoff and Team do not pre-allow (section 12). A call that Claude Code's classifier blocks shows
+as a notice in the transcript, `Auto mode blocked Bash: [Irreversible Local Destruction]` (the
+tool and the classifier's reason; `Auto mode blocked an action` when the payload names no tool).
+The notice has no buttons, and its tone reads as the session having been stopped at that point,
+not as an error.
 
 The card shows the tool name, its input, and the time left before the automatic deny:
 
@@ -318,6 +334,53 @@ The browser holds the attachments' structured form (path, anchor, selected text,
 stage id, summary sentence id, source anchors) as sections 05 and 06 define it. How they are
 written into the delivered text, and read back from the transcript, is section 10's.
 
+## Context: what the reader is viewing
+
+The panel knows which document the reader is on. Each page sets a **viewed document**: a kind
+(vision, product overview, section, metaplan, engineering overview, plan, pressure, run, file, or
+none), a short name for the chip ("section_05", "Product overview", "metaplan"), and the
+repository-relative source path to attach. The pressure and run pages have no path. The paths:
+
+| Kind                 | Source path           |
+| -------------------- | --------------------- |
+| vision               | the vision            |
+| product overview     | the vision            |
+| section              | the section file      |
+| metaplan             | that metaplan         |
+| engineering overview | the first metaplan    |
+| plan                 | the plan file         |
+| file                 | the file's address    |
+
+1. **Context line.** A quiet line in the panel head reads "About section_05", with the
+   accessible name "Viewing section_05" and a "Dismiss context" button. It follows navigation
+   immediately, whether or not a chat runs; while one does, it reads "Now viewing section_05".
+   Dismissing clears the context for that document until the reader opens another.
+2. **Composer placeholder.** "Ask about section_05, or say what to change"; with no context, "Ask
+   about this feature".
+3. **Prompts.** With no session and an empty draft, the panel shows two or three prompts for the
+   kind, in a list named "Suggested prompts". A click fills the composer, focuses it and sends
+   nothing, so no click spends tokens.
+
+   | Kind                 | Prompts                                                                                                       |
+   | -------------------- | ------------------------------------------------------------------------------------------------------------- |
+   | vision               | Which sections does this imply? · What is still undecided?                                                    |
+   | product overview     | What are the main decisions here? · What is still undecided?                                                  |
+   | section              | What does this section decide? · What does this conflict with? · Change this section so that                  |
+   | metaplan             | Is the plan order right? · Which plan carries the most risk?                                                  |
+   | engineering overview | What are the main engineering decisions? · What could go wrong?                                               |
+   | plan                 | What could go wrong with this plan? · Does this cover what its sections ask for? · Change this plan so that   |
+   | pressure             | Which plan should be tested first?                                                                            |
+   | run                  | What did the build change compared to the spec?                                                               |
+   | file, none           | none                                                                                                          |
+
+4. **Sending.** When the viewed document has a path that differs from the last one attached in
+   this session, the message carries a source attachment for it, built the way **Discuss** builds
+   one (above), ahead of the text. A passage the reader selected and added stays first. If the
+   document cannot be fetched, the message goes without the attachment and the panel shows
+   nothing alarming. The attachment already carries the path, so the server needs no new field:
+   the first attachment's path picks plan or spec guidance for a chat started by a message
+   (section 09).
+
 ## What a turn changed
 
 Each turn ends with a footer under its last item.
@@ -372,12 +435,13 @@ where the spending happens.)
 
 A chat starts in one of three ways, all from the browser that will hold authoring:
 
-1. **An offer** (section 01): the checklist's primary or secondary offer, an empty state's offer
-   (section 05), or a missing entry in file mode's tree (section 06).
+1. **An offer** (section 01) on the page that owns it: the spine's next step, a queue row on the
+   product or engineering page, the Pressure test or Run page, an empty state's offer (section
+   05), or a missing entry in file mode's tree (section 06). The panel offers none.
 2. **New chat**: a refinement session with no step-specific brief (section 09 owns its brief).
 3. **Sending a message** when no chat runs: a new refinement session whose opening message is
-   the composer's text and attachments. (My call: a reviewer who selected a passage and typed a
-   question should not need a separate start step.)
+   the composer's text and attachments, the viewed document included (below). (My call: a
+   reviewer who selected a passage and typed a question should not need a separate start step.)
 
 Starting opens the panel if it is collapsed and shows the Starting state with the session's name
 (section 07's display name, `loom plan: section 08`), its model and effort (section 09), and a
@@ -446,7 +510,7 @@ panel exactly as the holder does, live, with these differences:
 
 - no composer while another browser holds authoring: in its place a muted line, "Read-only ·
   Dana is authoring". When nobody holds authoring there is no read-only browser: every browser
-  gets the composer, "New chat", and the primary offer, and the first to use one takes authoring
+  gets the composer and "New chat", and the first to use one takes authoring
   (section 02);
 - no Allow or Deny on permission cards, no Stop, no End chat (the Brief link still opens);
 - queued messages as a count only;

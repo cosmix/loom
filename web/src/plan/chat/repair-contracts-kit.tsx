@@ -56,9 +56,9 @@ function helloFrame(): Obj {
     presence: { entries: [] },
     authoring: { holder: { ...base.you, away_since: null, frees_at: null } },
     checklists: [
-      { ...checklist, feature: "alpha", title: "Alpha" },
-      { ...checklist, feature: "beta", title: "Beta" },
-      { ...checklist, feature: "demo", title: "Demo" },
+      { ...checklist, feature: "alpha" },
+      { ...checklist, feature: "beta" },
+      { ...checklist, feature: "demo" },
     ],
   };
 }

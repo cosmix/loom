@@ -86,7 +86,7 @@ fn starting_point_uses_checklist_counts_and_sorts_only_locked_plan_files() {
 }
 
 #[test]
-fn starting_point_names_offer_refinement_knowledge_and_message_skills() {
+fn starting_point_names_vision_and_completed_feature_offer_skills() {
     let (_temp, project) = fixture(&[]);
     for (start, expected) in [
         (
@@ -99,10 +99,21 @@ fn starting_point_names_offer_refinement_knowledge_and_message_skills() {
         (
             AuthoringStart::Offer(Offer::RefineSpec),
             concat!(
-                "Step: done, Review what was built.\nTarget: Review the done plans and their ",
+                "Step: done, Compare spec with build.\nTarget: Review the done plans and their ",
                 "run reviews in doc/plans/f/ against the product spec in doc/product/f/.\nSkill: loom-plan:retro.\n"
             ),
         ),
+    ] {
+        let text = brief::common_brief(&start, &project, Some("f")).unwrap();
+        let (_, block) = text.split_once("## Starting point\n\n").unwrap();
+        assert!(block.starts_with(expected), "{block}");
+    }
+}
+
+#[test]
+fn starting_point_names_offer_refinement_knowledge_and_message_skills() {
+    let (_temp, project) = fixture(&[]);
+    for (start, expected) in [
         (
             AuthoringStart::Refine {
                 target: "doc/product/f/section_07.md".into(),

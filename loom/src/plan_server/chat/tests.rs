@@ -121,6 +121,7 @@ impl Fixture {
         install_with(&ctx, host.clone(), move |config| {
             config.runtime = runtime;
             config.home = root.join("home");
+            config.claude_bin = "/nonexistent/claude".into(); // FakeHost never runs it
             config.tick = Duration::from_millis(20);
             config.identity_interval = Duration::from_millis(100);
             config.final_write_bound = Duration::from_secs(5);

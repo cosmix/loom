@@ -2,12 +2,14 @@ import { useStore } from "jotai";
 import { useEffect } from "react";
 
 import type { ChatSnapshot, Item } from "@/plan/api/schema-chat";
-import { isHolderAtom } from "@/plan/state/atoms";
+import { isHolderAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { notificationSupport, notificationsEnabledAtom } from "@/state/notifications";
 import type { Store } from "@/state/store";
 import { pendingPermissionsAtom, snapshotAtom } from "./model";
-import { sessionHomeAtom } from "./session-home";
+import { tabFeatureAtom } from "./session-home";
 import { visibleControls } from "./visible-controls";
+
+const TAB_SUFFIX = "loom plan";
 
 function notify(store: Store, title: string, body: string, tag: string): void {
   if (
@@ -57,6 +59,12 @@ function notifyTurnEnd(store: Store, previous: ChatSnapshot, next: ChatSnapshot)
   return true;
 }
 
+/** `<slug> · loom plan` on a feature's routes, `<project> · loom plan` elsewhere. */
+function tabTitle(store: Store): string {
+  const subject = store.get(tabFeatureAtom) ?? store.get(serverInfoAtom)?.project;
+  return subject ? `${visibleControls(subject)} · ${TAB_SUFFIX}` : TAB_SUFFIX;
+}
+
 function watchAttention(store: Store): () => void {
   const baseTitle = document.title;
   let previous = store.get(snapshotAtom);
@@ -68,8 +76,7 @@ function watchAttention(store: Store): () => void {
       .get(pendingPermissionsAtom)
       .some((item) => !acknowledged.has(item.request_id));
     const marker = waiting ? "(!) " : completed ? "(✓) " : "";
-    const home = marker ? store.get(sessionHomeAtom) : null;
-    document.title = `${marker}${home ? `${visibleControls(home.title)} · ` : ""}${baseTitle}`;
+    document.title = `${marker}${tabTitle(store)}`;
   };
   const update = () => {
     const next = store.get(snapshotAtom);
@@ -88,14 +95,16 @@ function watchAttention(store: Store): () => void {
   };
   title();
   const unsubscribe = store.sub(snapshotAtom, update);
-  // The hello that carries a feature's title can arrive after the chat snapshot.
-  const unwatchHome = store.sub(sessionHomeAtom, title);
+  // The route and the server info (the project name) can change after the chat snapshot.
+  const unwatchRoute = store.sub(tabFeatureAtom, title);
+  const unwatchProject = store.sub(serverInfoAtom, title);
   // The empty listener mounts the storage-backed atom so changes made in other tabs arrive.
   const unwatch = store.sub(notificationsEnabledAtom, () => {});
   document.addEventListener("visibilitychange", visible);
   return () => {
     unsubscribe();
-    unwatchHome();
+    unwatchRoute();
+    unwatchProject();
     unwatch();
     document.removeEventListener("visibilitychange", visible);
     document.title = baseTitle;

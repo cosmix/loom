@@ -4,7 +4,7 @@ import { serverInfoSchema } from "@/plan/api/schema";
 import { authoringAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
 
 /**
- * The seven planning steps as the server publishes them: `name` is the step, `label` and `count`
+ * The six planning steps as the server publishes them: `name` is the step, `label` and `count`
  * are what the rail cell shows. One done, one gap and one active step, shared by every scene.
  */
 export const SAMPLE_STEPS = [
@@ -13,8 +13,7 @@ export const SAMPLE_STEPS = [
   { number: 3, name: "Metaplan", mark: "active", count: "1", label: "Metaplan" },
   { number: 4, name: "Plans", mark: "optional", count: null, label: "Plans" },
   { number: 5, name: "Pressure test", mark: "optional", count: null, label: "Pressure test" },
-  { number: 6, name: "Review", mark: "optional", count: null, label: "Review" },
-  { number: 7, name: "Run", mark: "optional", count: null, label: "Run" },
+  { number: 6, name: "Run", mark: "optional", count: null, label: "Run" },
 ] as const;
 
 export const SAMPLE_SERVER = serverInfoSchema.parse({

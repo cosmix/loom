@@ -275,13 +275,41 @@ fn missing_and_symlinked_spools_are_not_read_or_written() {
 }
 
 #[test]
+fn permission_denied_round_trip_preserves_the_payload() {
+    let tmp = TempDir::new().expect("tempdir");
+    let payload = json!({
+        "session_id": "abc123",
+        "transcript_path": "/x.jsonl",
+        "cwd": "/x",
+        "permission_mode": "auto",
+        "hook_event_name": "PermissionDenied",
+        "tool_name": "Bash",
+        "tool_input": {
+            "command": "rm -rf /tmp/build",
+            "description": "Clean build directory"
+        },
+        "tool_use_id": "toolu_01ABC",
+        "reason": "[Irreversible Local Destruction]"
+    });
+
+    append_event(tmp.path(), "PermissionDenied", &payload).expect("append");
+    let events = SpoolReader::new(tmp.path().join("events.jsonl")).read_new();
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event, "PermissionDenied");
+    assert_eq!(events[0].payload, payload);
+}
+
+#[test]
 fn hook_registrations_cover_every_spool_event() {
+    assert_eq!(SPOOL_EVENTS.len(), 11);
     assert_eq!(
         SPOOL_EVENTS.map(|hook| hook.event),
         [
             "SessionStart",
             "UserPromptSubmit",
             "PermissionRequest",
+            "PermissionDenied",
             "Notification",
             "Stop",
             "StopFailure",

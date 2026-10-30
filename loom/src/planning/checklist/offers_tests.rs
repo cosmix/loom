@@ -1,16 +1,14 @@
 //! Offer wire contracts, feature targets and draft-all placement.
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
-use super::{build_checklist, offers::move_offers, Checklist, Offer, ParsedDocs};
+use super::tests::{self, load, metaplan, owned, plan, vision};
+use super::{offers::move_offers, Checklist, Offer};
 use crate::planning::discover::discover;
-use crate::planning::kinds::DocKind;
-use crate::planning::{metaplan, vision::parse_sections_table};
 
 fn assert_offer(offer: Offer, id: &str, label: &str, target: Option<&str>, expected: Value) {
     assert_eq!(offer.id(), id);
@@ -27,7 +25,7 @@ fn start_vision_contract() {
             feature: "demo".into(),
         },
         "start-vision",
-        "Start a vision discussion",
+        "Start the vision",
         None,
         json!({"id": "start-vision", "kind": "start-vision",
             "feature": "demo", "target": null}),
@@ -41,7 +39,7 @@ fn fix_vision_table_contract() {
             feature: "demo".into(),
         },
         "fix-vision-table",
-        "Fix the vision's section table",
+        "Fix the section table",
         Some("doc/product/demo/index.md"),
         json!({"id": "fix-vision-table", "kind": "fix-vision-table",
             "feature": "demo", "target": "doc/product/demo/index.md"}),
@@ -71,7 +69,7 @@ fn add_section_to_vision_contract() {
             number: 7,
         },
         "add-section-to-vision:07",
-        "Add section 07 to the vision's table",
+        "Add section 07 to the vision",
         Some("doc/product/demo/section_07.md"),
         json!({"id": "add-section-to-vision:07", "kind": "add-section-to-vision",
             "feature": "demo", "number": 7, "target": "doc/product/demo/section_07.md"}),
@@ -85,7 +83,7 @@ fn start_metaplan_contract() {
             feature: "demo".into(),
         },
         "start-metaplan",
-        "Start a metaplan from the product spec",
+        "Start the metaplan",
         None,
         json!({"id": "start-metaplan", "kind": "start-metaplan",
             "feature": "demo", "target": null}),
@@ -136,14 +134,14 @@ fn shared_action_contracts() {
     assert_offer(
         Offer::RefineSpec,
         "refine-spec",
-        "Refine the spec in light of what was built",
+        "Compare spec with build",
         None,
         json!({"id": "refine-spec", "kind": "refine-spec", "target": null}),
     );
     assert_offer(
         Offer::NewMetaplanRound,
         "new-metaplan-round",
-        "Start a new metaplan round",
+        "New metaplan round",
         None,
         json!({"id": "new-metaplan-round", "kind": "new-metaplan-round", "target": null}),
     );
@@ -156,7 +154,7 @@ fn draft_all_sections_contract() {
             feature: "demo".into(),
         },
         "draft-all-sections",
-        "Draft all missing sections with a team",
+        "Draft all with a team",
         None,
         json!({"id": "draft-all-sections", "kind": "draft-all-sections",
             "feature": "demo", "target": null}),
@@ -170,7 +168,7 @@ fn draft_all_plans_contract() {
             feature: "demo".into(),
         },
         "draft-all-plans",
-        "Draft all missing plans with a team",
+        "Draft all with a team",
         None,
         json!({"id": "draft-all-plans", "kind": "draft-all-plans",
             "feature": "demo", "target": null}),
@@ -235,44 +233,10 @@ fn move_offers_include_only_misplaced_documents_in_path_order() {
 }
 
 fn checklist(numbers: &[u32], slugs: &[&str], written: &[&str]) -> Checklist {
-    let temp = TempDir::new().unwrap();
-    let rows: String = numbers
-        .iter()
-        .map(|n| format!("| {n:02} | S{n} |\n"))
-        .collect();
-    let vision =
-        format!("# Vision\n\n## Specification sections\n\n| # | Name |\n| --- | --- |\n{rows}");
-    let headings: String = slugs
-        .iter()
-        .enumerate()
-        .map(|(i, slug)| format!("## {}. Plan (`PLAN-{slug}.md`)\n\n", i + 1))
-        .collect();
-    let metaplan = format!("# Metaplan\n\n{headings}");
-    put(temp.path(), "doc/product/demo/index.md", &vision);
-    put(temp.path(), "doc/plans/demo/index.md", &metaplan);
-    for path in written {
-        put(temp.path(), path, "# Written\n\nImplements: none\n");
-    }
-    let tree = discover(temp.path()).unwrap();
-    let sections_written = tree
-        .docs
-        .iter()
-        .filter_map(|doc| match &doc.kind {
-            DocKind::ProductSection { number, .. } => Some(*number),
-            _ => None,
-        })
-        .collect();
-    let parsed = ParsedDocs {
-        vision_rows: parse_sections_table(&vision),
-        metaplans: vec![(
-            "doc/plans/demo/index.md".into(),
-            metaplan::entries(&metaplan),
-        )],
-        pressure: BTreeMap::new(),
-        locked_files: Vec::new(),
-        sections_written,
-    };
-    build_checklist(&tree, &parsed, "demo")
+    let mut files = vec![owned(vision(numbers)), owned(metaplan(slugs))];
+    files.extend(written.iter().map(|path| plan(path, false)));
+    let (_temp, project) = load(&files);
+    tests::checklist(&project).clone()
 }
 
 fn ids(checklist: &Checklist) -> Vec<String> {

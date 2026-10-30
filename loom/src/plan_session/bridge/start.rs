@@ -40,6 +40,13 @@ struct Launch {
 impl Bridge {
     /// Reserve the session, create its directory, run the guidance; the driver launches it.
     pub fn start_session(&self, req: StartRequest) -> Result<String, BridgeError> {
+        // An empty path means no claude was found (or none is allowed, as under test); refuse
+        // before the session record or any process exists.
+        if self.config.claude_bin.as_os_str().is_empty() {
+            return Err(BridgeError::Refused(
+                "no claude binary is configured".to_owned(),
+            ));
+        }
         if self.config.home.as_os_str().is_empty() {
             return Err(BridgeError::Refused("HOME is not set".to_owned()));
         }

@@ -7,7 +7,7 @@ import { useFileSocket } from "@/plan/files/api";
 import { DiffPage } from "@/plan/diff";
 import { parseAddress, type FileAddress } from "@/plan/files/address";
 import { treeAtom } from "@/plan/files/atoms";
-import { featureCrumb, useFeatureFacts } from "@/plan/files/heading-parts";
+import { featureCrumb } from "@/plan/files/heading-parts";
 import { ReadingColumn } from "@/plan/files/reading-column";
 import { Tree } from "@/plan/files/tree";
 import { DrawerOpener, TreeDrawer, TreeDrawerRoot, useTreeDrawer } from "@/plan/files/tree-drawer";
@@ -31,9 +31,7 @@ function GapView({
   target: string | null;
 }): JSX.Element {
   const features = useAtomValue(featuresAtom);
-  const facts = useFeatureFacts(feature);
-  const crumbs =
-    feature !== null && facts.title !== null ? [featureCrumb(feature, facts.title)] : [];
+  const crumbs = feature !== null ? [featureCrumb(feature)] : [];
   const item = features
     .find((checklist) => checklist.feature === feature)
     ?.items.find((candidate) => target !== null && candidate.path === target);

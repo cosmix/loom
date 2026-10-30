@@ -25,7 +25,7 @@ fn address_form() {
     );
 }
 
-fn authoring_display_name_cases() -> [(Offer, &'static str); 8] {
+fn authoring_display_name_cases() -> [(Offer, &'static str); 6] {
     [
         (
             Offer::StartVision {
@@ -67,14 +67,16 @@ fn authoring_display_name_cases() -> [(Offer, &'static str); 8] {
             },
             "loom plan: plan",
         ),
-        (Offer::RefineSpec, "loom plan: retro"),
-        (Offer::NewMetaplanRound, "loom plan: metaplan"),
     ]
 }
 
 #[test]
 fn authoring_display_names() {
-    for (offer, expected) in authoring_display_name_cases() {
+    let cases = authoring_display_name_cases().into_iter().chain([
+        (Offer::RefineSpec, "loom plan: retro"),
+        (Offer::NewMetaplanRound, "loom plan: metaplan"),
+    ]);
+    for (offer, expected) in cases {
         assert_eq!(
             display_name("authoring", Some(&AuthoringStart::Offer(offer))),
             expected

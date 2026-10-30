@@ -75,7 +75,6 @@ fn step_name(step: Step) -> &'static str {
         Step::Metaplan => "Metaplan",
         Step::Plans => "Plans",
         Step::PressureTest => "Pressure test",
-        Step::Review => "Review",
         Step::Run => "Run",
     }
 }

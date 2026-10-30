@@ -8,6 +8,25 @@ use super::{assert_planning_settings, HookSpec};
 use crate::plan_session::kind::SessionKind;
 
 #[test]
+fn settings_permission_mode_matches_session_kind() {
+    let f = Fixture::new();
+    let cases = [
+        (SessionKind::Authoring, "auto"),
+        (
+            SessionKind::Pressure {
+                plan: "doc/plans/PLAN-a.md".into(),
+            },
+            "auto",
+        ),
+        (SessionKind::Summary, "default"),
+    ];
+    for (kind, expected) in cases {
+        let settings = f.build(&kind, &[]).unwrap();
+        assert_eq!(settings["permissions"]["defaultMode"], expected, "{kind:?}");
+    }
+}
+
+#[test]
 fn hooks_keep_guard_and_register_extras_in_order_within_each_event() {
     let f = Fixture::new();
     let extra = [
@@ -90,6 +109,11 @@ key_refusal!(
     refuses_default_mode,
     "/permissions/defaultMode",
     "acceptEdits"
+);
+key_refusal!(
+    refuses_bypass_permissions_mode,
+    "/permissions/defaultMode",
+    "bypassPermissions"
 );
 key_refusal!(
     refuses_bypass_mode,

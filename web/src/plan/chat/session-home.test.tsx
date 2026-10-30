@@ -78,7 +78,7 @@ it.each(["/f/alpha/product", "/f/alpha", "/files/product/alpha/section_01.md"])(
     setup(path, session());
     expect(within(panel()).getByRole("log")).toBeTruthy();
     expect(panel().querySelector(".chat-state-pill")?.textContent).toBe("Waiting for you");
-    expect(notice("Alpha Feature")).toBeNull();
+    expect(notice("alpha")).toBeNull();
   },
 );
 
@@ -90,7 +90,7 @@ it.each(["/f/beta/product", "/files/product/beta/section_01.md", "/plans/solo", 
     expect(within(panel()).queryByText("Composer")).toBeNull();
     expect(within(panel()).getByRole("heading", { name: "Chat" })).toBeTruthy();
     expect(within(panel()).getByRole("button", { name: "New chat" })).toBeTruthy();
-    expect(notice("Alpha Feature")?.getAttribute("href")).toBe("/f/alpha");
+    expect(notice("alpha")?.getAttribute("href")).toBe("/f/alpha");
   },
 );
 
@@ -99,7 +99,7 @@ it("navigating between a session's feature and another moves it in and out of th
   expect(within(panel()).getByRole("log")).toBeTruthy();
   await act(() => router.navigate("/f/beta/product"));
   expect(within(panel()).queryByRole("log")).toBeNull();
-  expect(notice("Alpha Feature")).toBeTruthy();
+  expect(notice("alpha")).toBeTruthy();
   await act(() => router.navigate("/f/alpha/product"));
   expect(within(panel()).getByRole("log")).toBeTruthy();
 });
@@ -179,7 +179,7 @@ it("an offer with the open session on another screen raises no confirm and says 
   expect(endChat).not.toHaveBeenCalled();
   expect(startChat).not.toHaveBeenCalled();
   expect(within(panel()).getByRole("alert").textContent).toContain(
-    "Finish the session in Alpha Feature first.",
+    "Finish the session in alpha first.",
   );
   expect(store.get(offerErrorAtom)).not.toBeNull();
 });
@@ -191,7 +191,7 @@ it("New chat with the open session on another screen raises no confirm", async (
   expect(window.confirm).not.toHaveBeenCalled();
   expect(endChat).not.toHaveBeenCalled();
   expect(startChat).not.toHaveBeenCalled();
-  expect(within(panel()).getByRole("alert").textContent).toContain("Alpha Feature");
+  expect(within(panel()).getByRole("alert").textContent).toContain("alpha");
 });
 
 it("with nothing open anywhere an offer raises no confirm and starts", async () => {

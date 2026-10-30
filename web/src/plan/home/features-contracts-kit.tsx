@@ -13,7 +13,7 @@ import {
 import { FeatureRoute } from "@/plan/feature/feature-route";
 import { projectAtom } from "@/plan/state/atoms";
 
-const STEP_NAMES = ["Vision", "Product spec", "Metaplan", "Plans", "Pressure", "Review", "Run"];
+const STEP_NAMES = ["Vision", "Product spec", "Metaplan", "Plans", "Pressure", "Run"];
 
 function section(number: number) {
   return {
@@ -24,26 +24,24 @@ function section(number: number) {
   };
 }
 
-/** A seven-step checklist whose current step is `current`; earlier steps are done. */
+/** A six-step checklist whose current step is `current`; earlier steps are done. */
 export function checklist(
   feature: string,
   {
-    title,
     sections = 0,
     plans = 0,
     current = 2,
-  }: Partial<Record<"sections" | "plans" | "current", number>> & {
-    title: string;
-  },
+  }: Partial<Record<"sections" | "plans" | "current", number>> = {},
 ): ChecklistView {
   return {
     feature,
     pitch: null,
-    title,
     has_product: true,
     sections: Array.from({ length: sections }, (_, index) => section(index + 1)),
     plans: { listed: plans, total: plans, written: plans, running: 0, done: 0 },
     untested: 0,
+    metaplans: [],
+    plan_rows: [],
     current: { kind: "step", number: current },
     steps: STEP_NAMES.map((name, index) => ({
       number: index + 1,

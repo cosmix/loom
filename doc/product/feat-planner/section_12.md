@@ -220,12 +220,13 @@ Authoring sessions have one of three scopes (`plan_session/scope.rs`):
   if removed during the session. Only one confirmation is accepted. The session continues
   writing its vision or plan within this grant; loading another skill does not widen it.
   Bash pre-allows only read-only `loom plan summary status*` among the `doc/loom/` commands;
-  `loom knowledge *` and other `loom plan summary` commands ask the holder.
+  `loom knowledge *`, `loom plan summary seal*`, `brief*` and `release*` ask the holder through
+  explicit ask rules (see "Commands").
 - **Team**, used by draft-all, permits file-tool writes only to the missing documents the run
   starts for and paths inside their plan brief bundles. Written sections and other documents
   outside that set remain unwritable. The lead and its in-process teammates share the scope
   (section 09). Bash pre-allows `loom plan summary *` for turn-end summaries of the documents
-  it drafted; `loom knowledge *` asks the holder.
+  it drafted; `loom knowledge *` asks the holder through an explicit ask rule.
 
 The server stores the scope and grant in `sessions/<id>/scope.json` in the runtime session
 directory. That file is outside the sandbox's writable set and the planning guard denies
@@ -309,10 +310,14 @@ layer 3; the other layers retain the broader authoring write set.
 
 ### Commands
 
-Sandboxed Bash does not run unprompted: `autoAllowBashIfSandboxed` is `false` (stages run with
-it `true`). A command runs without a prompt when it is in Claude Code's built-in read-only set
-(`ls`, `cat`, `grep`, read-only `git`, and the rest) or matches an allow rule. Open authoring
-sessions have these rules:
+Sandboxed Bash is not auto-allowed: `autoAllowBashIfSandboxed` is `false` (stages run with it
+`true`). A command runs without a prompt when it is in Claude Code's built-in read-only set
+(`ls`, `cat`, `grep`, read-only `git`, and the rest) or matches an allow rule, and it asks the
+holder when it matches an ask rule. Authoring and pressure sessions run in auto mode, so the
+classifier decides any command or tool that no rule lists: a routine call goes through, a risky
+one is blocked, and the block shows in the chat as a notice (section 07). Summary sessions run
+in `default` mode, where an unlisted command is denied at once. Open authoring sessions have
+these allow rules:
 
 ```text
 Bash(loom knowledge *)
@@ -324,18 +329,30 @@ Bash(loom map *)
 
 Every authoring scope keeps `loom plan verify`, `loom plan check` and `loom map` pre-allowed.
 Team also pre-allows `Bash(loom plan summary *)` for turn-end summaries of the documents it
-drafted; `Bash(loom knowledge *)` asks the holder. Kickoff pre-allows only the read-only
-`Bash(loom plan summary status*)` among these `doc/loom/` commands; `loom knowledge *` and
-other `loom plan summary` commands ask the holder through section 07's permission flow
-(`AUTHORING_READ_ONLY_BASH`, `AUTHORING_DOC_WRITER_BASH` in `sandbox/permissions.rs`). An
-approval does not make Bash subject to the file-tool scope above.
+drafted. Kickoff pre-allows only the read-only `Bash(loom plan summary status*)` among these
+`doc/loom/` commands. Those commands have no allow rule, and under auto mode the classifier
+would decide them, so each gets an explicit ask rule. The rules sit in the `ask` list beside
+`WebFetch` and reach the holder through section 07's permission flow (the allow lists are
+`AUTHORING_READ_ONLY_BASH` and `AUTHORING_DOC_WRITER_BASH` in `sandbox/permissions.rs`):
 
-Every other command goes through the permission flow of section 07 and reaches the authoring
-holder's browser. A planning session needs very few commands beyond reading and loom's own
-document tools; anything else, `mv` of a plan, a script, a build, is unusual enough that the
-person at the chat should see it. Commands that start sessions or runs
-(`loom run`, `loom init`, `loom pressure`) are not on the list and would fail in this sandbox
-anyway; section 11 runs them from the server.
+| Scope   | Ask rules                                                                                                                       |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Open    | none added                                                                                                                      |
+| Team    | `Bash(loom knowledge *)`                                                                                                        |
+| Kickoff | `Bash(loom knowledge *)`, `Bash(loom plan summary seal*)`, `Bash(loom plan summary brief*)`, `Bash(loom plan summary release*)` |
+
+Kickoff does not use `Bash(loom plan summary *)` as an ask: an ask rule outranks an allow rule,
+so it would stop the pre-allowed `status*`. The subcommands are those of `loom plan summary
+--help` (`seal`, `brief`, `status`, `release`). An approval does not make Bash subject to the
+file-tool scope above.
+
+In authoring and pressure sessions every other command goes to the classifier, and the holder
+sees a block as a notice. A planning session needs very few commands beyond reading and loom's
+own document tools; anything else, `mv` of a plan, a script, a build, is unusual, and the layers
+above bound what a classifier-approved call can do: the OS sandbox, the `.git` deny and the
+`PreToolUse` guard, which denies or stays silent and never allows, and which still runs in auto
+mode. Commands that start sessions or runs (`loom run`, `loom init`, `loom pressure`) are not on
+the list and would fail in this sandbox anyway; section 11 runs them from the server.
 
 `loom map` and `loom knowledge context` refresh the source graph cache under
 `.loom/cache/context-v1` when they can. In a planning session `.loom` is write-denied,
@@ -367,28 +384,33 @@ A session must never answer its own permission request. The channels and what cl
 - **The server's HTTP port**: loopback TCP goes through the sandbox's network filter, which
   allows nothing; the token is unreadable anyway.
 - **Mode changes**: `permissions.disableBypassPermissionsMode` is `"disable"`, and the chat
-  refuses slash commands other than `/compact` (section 07).
+  refuses slash commands other than `/compact` (section 07). The settings assertion pins the
+  mode of each kind (below) and refuses `bypassPermissions` and `acceptEdits` for every kind.
 - **Text the server pastes into the pane**: see "Input delivered to the pane" below.
 
 ### Modes per kind
 
-| Setting                  | Authoring                                 | Summary                                | Pressure                         |
-| ------------------------ | ----------------------------------------- | -------------------------------------- | -------------------------------- |
-| `--permission-mode`      | `default` (Manual)                        | `default` (Manual)                     | `default` (Manual)               |
-| Unlisted command or tool | asks the holder (section 07)              | denied at once and logged (section 07) | asks the holder                  |
-| File-tool writes         | `doc/` per the table and scope, drafts    | drafts only                            | per Pressure sessions below      |
-| Allowed commands         | 5 Open; 4 Team; 4 Kickoff (summary status) | `loom plan summary *` only             | five above and completion marker |
-| `WebSearch`, `WebFetch`  | see above                                 | denied                                 | see above                        |
-| `AskUserQuestion`        | denied (section 07)                       | denied                                 | denied                           |
-| `SendMessage`            | allowed for draft-all Team only           | denied                                 | allowed                          |
-| `ListAgents`             | allowed for draft-all Team only           | denied                                 | allowed                          |
+| Setting                  | Authoring                                                         | Summary                                | Pressure                         |
+| ------------------------ | ----------------------------------------------------------------- | -------------------------------------- | -------------------------------- |
+| `--permission-mode`      | `auto`                                                            | `default` (Manual)                     | `auto`                           |
+| Unlisted command or tool | decided by the classifier; a block shows as a notice (section 07) | denied at once and logged (section 07) | decided by the classifier        |
+| Ask rules                | `WebFetch`; per scope above                                       | none                                   | `WebFetch`                       |
+| File-tool writes         | `doc/` per the table and scope, drafts                            | drafts only                            | per Pressure sessions below      |
+| Allowed commands         | 5 Open; 4 Team; 4 Kickoff (summary status)                        | `loom plan summary *` only             | five above and completion marker |
+| `WebSearch`, `WebFetch`  | see above                                                         | denied                                 | see above                        |
+| `AskUserQuestion`        | denied (section 07)                                               | denied                                 | denied                           |
+| `SendMessage`            | allowed for draft-all Team only                                   | denied                                 | allowed                          |
+| `ListAgents`             | allowed for draft-all Team only                                   | denied                                 | allowed                          |
 
 `SendMessage` and `ListAgents` are allowed for draft-all Team and pressure sessions only;
 every other session denies them (`PEER_TOOLS`, `base_denies` in `sandbox/permissions.rs`).
 
 Summary sessions run in Manual mode so that anything outside their rules reaches the
 `PermissionRequest` hook, which denies it and logs the request. A logged request means the
-rules here are wrong, and the log is how that gets found.
+rules here are wrong, and the log is how that gets found. Authoring and pressure sessions run
+in auto mode: the classifier decides whatever no rule lists, and only an ask rule reaches the
+holder. A block arrives through the `PermissionDenied` hook, which the server shows as a notice
+and answers with nothing, so no retry is requested (section 07).
 
 The authoring session's refinement subagents (sections 04 and 07: the `loom-plan:summary`
 wave, then the `loom-plan:overview` agent) run inside the authoring session with its settings
@@ -421,13 +443,14 @@ are enumerated too.
     }
   },
   "permissions": {
-    "defaultMode": "default",
+    "defaultMode": "auto",
     "disableBypassPermissionsMode": "disable",
     "allow": ["Edit(//<root>/doc/product/**)", "Edit(//<root>/doc/plans/**)",
               "Edit(//<root>/doc/<each other dir>/**)", "Edit(//<root>/doc/<each file>)",
               "Edit(//<rt>/drafts/**)", "Read(//<rt>/drafts/**)", "Read(//<rt>/claims/**)",
               "Bash(loom knowledge *)", "Bash(loom plan summary *)", "Bash(loom plan verify *)",
               "Bash(loom plan check*)", "Bash(loom map *)", "WebSearch"],
+    "ask": ["WebFetch"],
     "deny": ["…base denies: stage tool denies and Workflow", "AskUserQuestion", "SendMessage", "ListAgents",
              "Edit(//<root>/<home>/IN_PROGRESS-PLAN-x.md)",
              "Edit(//<root>/<home>/REVIEW-*.md)", "Edit(//<root>/<home>/archive/**)",
@@ -437,7 +460,8 @@ are enumerated too.
 }
 ```
 
-Kickoff and Team omit the two `doc/loom/` writer command grants; Team also omits the
+Kickoff and Team omit the two `doc/loom/` writer command grants and carry the ask rules of
+"Commands"; Team also omits the
 `SendMessage` and `ListAgents` denies. Their document scope lives in `scope.json` and the
 guard, not in narrower `Edit` rules.
 
@@ -465,17 +489,19 @@ orchestration-state reads, and plan-authored `sandbox:` config, which planning h
 | Linux and WSL sandbox prerequisite check                                     | `sandbox_prerequisite_problem`, `commands/run/sandbox_preflight.rs:56` |
 | `bgIsolation: none`, `--setting-sources user,project`, `--strict-mcp-config` | `sandbox/settings.rs:307`, `capsule.rs`   |
 
-| Differs                       | Stages                                         | Planning sessions                                         |
-| ----------------------------- | ---------------------------------------------- | --------------------------------------------------------- |
-| Where                         | a worktree (knowledge stages: the checkout)    | the checkout, on the user's branch                        |
-| Write set                     | the worktree, minus control surfaces           | `doc/` and three runtime grants; the rest of the root denied |
-| Permission mode               | `auto`                                         | `default` (Manual)                                        |
-| Sandboxed Bash                | runs unprompted                                | read-only and scope's loom commands; the rest asks          |
-| Network                       | the plan's allowed domains                     | none                                                      |
-| File-tool path guards         | `worktree-file-guard.sh`, `credential-guard.sh` | `loom plan hook PreToolUse`, in Rust, sharing the server's predicate |
-| Package caches                | writable                                       | not granted                                               |
-| `.git`                        | writable except hooks, config, sibling admin dirs | denied whole                                           |
-| Home control surfaces         | denied (`~/.loom/**` among them)               | outside the write set; `~/.loom/**` is not denied, since a deny would override the runtime grants |
+| Differs               | Stages                                            | Planning sessions                                                                                 |
+| --------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Where                 | a worktree (knowledge stages: the checkout)       | the checkout, on the user's branch                                                                |
+| Write set             | the worktree, minus control surfaces              | `doc/` and three runtime grants; the rest of the root denied                                      |
+| Sandboxed Bash        | runs unprompted                                   | read-only and allowed commands; ask rules ask; the classifier decides the rest                    |
+| Network               | the plan's allowed domains                        | none                                                                                              |
+| File-tool path guards | `worktree-file-guard.sh`, `credential-guard.sh`   | `loom plan hook PreToolUse`, in Rust, sharing the server's predicate                              |
+| Package caches        | writable                                          | not granted                                                                                       |
+| `.git`                | writable except hooks, config, sibling admin dirs | denied whole                                                                                      |
+| Home control surfaces | denied (`~/.loom/**` among them)                  | outside the write set; `~/.loom/**` is not denied, since a deny would override the runtime grants |
+
+Authoring and pressure sessions share the stages' `auto` permission mode; summary sessions run
+in `default` (see "Modes per kind").
 
 The guard scripts key on `LOOM_STAGE_ID` and friends, which a planning session never sets
 (section 07), so they do not apply; the planning hook takes their place.
@@ -508,10 +534,10 @@ those three paths only. A plan under test that becomes locked during the run (re
 is refused by the hook at once, and section 11's record writer then finds the plan moved and
 writes nothing.
 
-The permission mode is `default` (Manual), as for authoring: an unlisted command or `WebFetch`
-asks the holder, who watches the run in the chat and can answer (section 11, "What the chat
-shows"). The terminal driver's `--permission-mode auto` is not used, because the app's
-permission flow is the holder's prompt. `/pressure`'s teammates run in the session's own process
+The permission mode is `auto`, as for authoring and as for the terminal driver
+(`--permission-mode auto`): `WebFetch` asks the holder, who watches the run in the chat and can
+answer (section 11, "What the chat shows"), and the classifier decides any other call that no rule
+lists, with a block shown as a notice. `/pressure`'s teammates run in the session's own process
 (section 11), so they inherit these settings and hooks. Pressure sessions keep `SendMessage` and
 `ListAgents`, which `/pressure`'s teammates use.
 

@@ -71,15 +71,15 @@ export function conceptPageLabel(pathname: string): string | null {
 }
 
 /**
- * The eyebrow above an overview: "<feature title> · product overview", or the plain page label
- * while the feature's title is not loaded.
+ * The eyebrow above an overview: "<feature slug> · product overview", or the plain page label
+ * while the feature is not in the project's checklists.
  */
 function useOverviewEyebrow(pageKey: string, pathname: string): string | null {
   const feature = featureOfKey(pageKey);
-  const title = useAtomValue(featuresAtom).find((item) => item.feature === feature)?.title;
+  const known = useAtomValue(featuresAtom).some((item) => item.feature === feature);
   const label = conceptPageLabel(pathname);
-  if (!title || label === null) return label;
-  return `${title} · ${label.toLowerCase()}`;
+  if (!feature || !known || label === null) return label;
+  return `${feature} · ${label.toLowerCase()}`;
 }
 
 /** `g p` and `g e` go to the overviews; ignored while typing. */

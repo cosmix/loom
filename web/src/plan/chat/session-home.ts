@@ -17,6 +17,9 @@ const PLAN_FILE = /^(?:(?:IN_PROGRESS|DONE|RETIRED)-)?PLAN-(.+)\.md$/;
  */
 export const screenAtom = atom<Screen | null>(null);
 
+/** The feature whose `/f/:feature/*` route is showing, for the tab title; null on any other route. */
+export const tabFeatureAtom = atom<string | null>(null);
+
 function planSlug(path: string): string | null {
   return PLAN_FILE.exec(path.split("/").pop() ?? "")?.[1] ?? null;
 }
@@ -80,8 +83,7 @@ export const sessionHomeAtom = atom<SessionHome | null>((get) => {
   if (!session) return null;
   if (session.feature !== null) {
     const { feature } = session;
-    const title = get(featuresAtom).find((item) => item.feature === feature)?.title ?? feature;
-    return { feature, plan: null, title, href: `/f/${encodeURIComponent(feature)}` };
+    return { feature, plan: null, title: feature, href: `/f/${encodeURIComponent(feature)}` };
   }
   const { plan } = session;
   if (plan === null) return null;

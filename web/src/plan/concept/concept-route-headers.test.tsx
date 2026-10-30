@@ -75,8 +75,8 @@ describe("summary page header", () => {
     const header = title.closest("header") as HTMLElement;
     expect(within(header).queryByText("doc/product/demo/section_01.md")).toBeNull();
     const crumbs = within(header).getByRole("navigation", { name: "Breadcrumb" });
-    expect(within(crumbs).getAllByRole("listitem")[0]?.textContent).toBe("Demo");
-    expect(within(crumbs).getByRole("link", { name: "Demo" }).getAttribute("href")).toBe("/f/demo");
+    expect(within(crumbs).getAllByRole("listitem")[0]?.textContent).toBe("demo");
+    expect(within(crumbs).getByRole("link", { name: "demo" }).getAttribute("href")).toBe("/f/demo");
     expect((title.previousElementSibling as HTMLElement).style.color).toBe("var(--doc-2)");
     expect(within(header).getByText("Out of date: the source changed")).toBeTruthy();
     const link = within(header).getByRole("link", { name: "Source" });
@@ -252,16 +252,20 @@ describe("document key across pages", () => {
 });
 
 describe("overview eyebrow", () => {
-  it("shows a format character in the feature title as its code point", async () => {
-    serveOverview();
-    const title = "Dem\u202Eo";
-    renderAt("/f/demo/engineering", (store) =>
+  it("never shows a slug holding a format character: the route refuses it before any eyebrow", async () => {
+    const slug = "dem\u202Eo";
+    // Served so that a loosened slug rule would load the overview and reach the eyebrow.
+    const key = `overview/${slug}/engineering`;
+    pages = { [key]: { ...clone(overviewFixture), key } };
+    renderAt(`/f/${encodeURIComponent(slug)}/engineering`, (store) =>
       store.set(
         checklistAtom,
-        checklistViewSchema.parse({ ...checklistFixture.checklists[0]!, title }),
+        checklistViewSchema.parse({ ...checklistFixture.checklists[0]!, feature: slug }),
       ),
     );
-    await readingColumn();
-    expect(screen.getByText("Dem⟨U+202E⟩o · engineering overview")).toBeTruthy();
+    await screen.findByText("No such document");
+    expect(screen.queryByRole("document", { name: "Reading column" })).toBeNull();
+    expect(text()).not.toContain("\u202E");
+    expect(fetched.some((url) => url.includes("/api/concept/"))).toBe(false);
   });
 });

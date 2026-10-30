@@ -124,7 +124,7 @@ fn write_plan_names_entry_heading() {
 fn refine_spec() {
     assert_opening(
         AuthoringStart::Offer(Offer::RefineSpec),
-        "done, Review what was built",
+        "done, Compare spec with build",
         "Review the done plans and their run reviews in doc/plans/f/ against the product spec in doc/product/f/.",
         "retro",
     );

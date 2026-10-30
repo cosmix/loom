@@ -151,20 +151,20 @@ impl Offer {
     /// The human-readable action shown by planning clients and authoring sessions.
     pub fn label(&self) -> String {
         match self {
-            Offer::StartVision { .. } => "Start a vision discussion".into(),
-            Offer::FixVisionTable { .. } => "Fix the vision's section table".into(),
+            Offer::StartVision { .. } => "Start the vision".into(),
+            Offer::FixVisionTable { .. } => "Fix the section table".into(),
             Offer::WriteSection { number, .. } => format!("Write section {number:02}"),
             Offer::AddSectionToVision { number, .. } => {
-                format!("Add section {number:02} to the vision's table")
+                format!("Add section {number:02} to the vision")
             }
-            Offer::StartMetaplan { .. } => "Start a metaplan from the product spec".into(),
+            Offer::StartMetaplan { .. } => "Start the metaplan".into(),
             Offer::WritePlan { slug, .. } => format!("Write plan {slug}"),
             Offer::PressureTest { slug, .. } => format!("Pressure-test {slug}"),
             Offer::StartRun => "Start a run".into(),
-            Offer::RefineSpec => "Refine the spec in light of what was built".into(),
-            Offer::NewMetaplanRound => "Start a new metaplan round".into(),
-            Offer::DraftAllSections { .. } => "Draft all missing sections with a team".into(),
-            Offer::DraftAllPlans { .. } => "Draft all missing plans with a team".into(),
+            Offer::RefineSpec => "Compare spec with build".into(),
+            Offer::NewMetaplanRound => "New metaplan round".into(),
+            Offer::DraftAllSections { .. } => "Draft all with a team".into(),
+            Offer::DraftAllPlans { .. } => "Draft all with a team".into(),
             Offer::MoveIntoFeature { path } => {
                 format!("Move {} into a feature", path.to_string_lossy())
             }
@@ -242,7 +242,12 @@ pub(super) fn choose(current: &CurrentStep, facts: &Facts) -> (Option<Offer>, Ve
     offers.extend(extras(facts));
     let mut seen = BTreeSet::new();
     let mut unique = offers.into_iter().filter(|offer| seen.insert(offer.id()));
-    (unique.next(), unique.collect())
+    let primary = if matches!(current, CurrentStep::ReadyAllDone) {
+        None
+    } else {
+        unique.next()
+    };
+    (primary, unique.collect())
 }
 
 /// The offers of every gap of steps 1 to 4, in step order. The first is the current step's

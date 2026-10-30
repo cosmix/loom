@@ -23,14 +23,10 @@ export function authorStore(canAuthor = true) {
   return store;
 }
 
-export function withFeatureTitle(
-  store: ReturnType<typeof authorStore>,
-  feature: string,
-  title: string,
-) {
+export function withFeature(store: ReturnType<typeof authorStore>, feature: string) {
   const checklist = checklistViewSchema.parse(structuredClone(checklistFixture.checklists[0]));
   store.set(projectAtom, {
-    checklists: [{ ...checklist, feature, title }],
+    checklists: [{ ...checklist, feature }],
     standalone: [],
     moves: [],
   });

@@ -81,17 +81,17 @@ it("gives every topic an intro and description and every scene note non-empty te
   }
 });
 
-it("renders the sample project and all seven steps without throwing", () => {
+it("renders the sample project and all six steps without throwing", () => {
   const { container } = render(<GettingAroundScene />);
 
   expect(
     within(container).getByRole("button", { name: "Switch feature, current: atlas", hidden: true }),
   ).toBeDefined();
   expect(
-    within(container).getByTitle("The product spec for Atlas is ready for its first metaplan."),
+    within(container).getByTitle("The product spec for atlas is ready for its first metaplan."),
   ).toBeDefined();
   const steps = within(container).getByRole("list", { name: "Steps", hidden: true });
-  expect(within(steps).getAllByRole("listitem", { hidden: true })).toHaveLength(7);
+  expect(within(steps).getAllByRole("listitem", { hidden: true })).toHaveLength(6);
   expect(
     within(steps).getByRole("listitem", { current: "step", hidden: true }).textContent,
   ).toContain("Metaplan");
@@ -113,9 +113,9 @@ it.each(["/", "/files", "/f/other/product"])(
       }),
     ).toBeDefined();
     const steps = within(container).getByRole("list", { name: "Steps", hidden: true });
-    expect(within(steps).getAllByRole("listitem", { hidden: true })).toHaveLength(7);
+    expect(within(steps).getAllByRole("listitem", { hidden: true })).toHaveLength(6);
     expect(
-      within(container).getByTitle("The product spec for Atlas is ready for its first metaplan."),
+      within(container).getByTitle("The product spec for atlas is ready for its first metaplan."),
     ).toBeDefined();
     expect(router.state.location).toMatchObject({ pathname, search: "?help=open", hash: "#topic" });
     expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -194,7 +194,7 @@ it("pins the next-step card on the third note, not Share", () => {
   expect(card.contains(container.querySelector('[aria-label="Settings"]'))).toBe(false);
 });
 
-it("pins the whole step rail, which shows the seven real steps and cannot scroll the scene", () => {
+it("pins the whole step rail, which shows the six real steps and cannot scroll the scene", () => {
   const note = PLANNER_HELP_TOPICS[0]!.scenes[0]!.notes[1]!;
   const [railSelector] = note.target as readonly string[];
   const { container } = render(<GettingAroundScene />);
@@ -207,14 +207,12 @@ it("pins the whole step rail, which shows the seven real steps and cannot scroll
     "Metaplan",
     "Plans",
     "Pressure test",
-    "Review",
     "Run",
   ]);
   expect([...rail.querySelectorAll(".plan-step-count")].map((count) => count.textContent)).toEqual([
     "1",
     "5/6",
     "1",
-    "—",
     "—",
     "—",
     "—",
@@ -246,7 +244,7 @@ it("pins the step rail in the wide header and its popover button in the narrow o
   expect(narrow.container.querySelectorAll(rail!)).toHaveLength(0);
   const popover = narrow.container.querySelectorAll(button!);
   expect(popover).toHaveLength(1);
-  expect(popover[0]!.textContent).toContain("Step 3 of 7");
+  expect(popover[0]!.textContent).toContain("Step 3 of 6");
   expect(popover[0]!.querySelector("span.sr-only")).toBeNull();
 });
 

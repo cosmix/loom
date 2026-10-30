@@ -107,3 +107,6 @@ fn abandon(socket: &str, error: anyhow::Error) -> anyhow::Error {
 #[cfg(test)]
 #[path = "launch_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod mode_contract_tests;

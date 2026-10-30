@@ -4,16 +4,16 @@ import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import fixture from "@/plan/api/fixtures/chat-snapshot.json";
-import hello from "@/plan/api/fixtures/hello.json";
-import { checklistViewSchema } from "@/plan/api/schema";
+import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
+import { serverInfoSchema } from "@/plan/api/schema";
 import { chatSnapshotSchema, type Item } from "@/plan/api/schema-chat";
-import { authoringAtom, projectAtom, youAtom } from "@/plan/state/atoms";
+import { authoringAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
 import { NOTIFICATIONS_STORAGE_KEY, notificationsEnabledAtom } from "@/state/notifications";
 import { useAttention } from "./attention";
 import { snapshotAtom } from "./model";
+import { tabFeatureAtom } from "./session-home";
 
 const snapshot = chatSnapshotSchema.parse(fixture);
-const checklist = checklistViewSchema.parse(hello.checklists[0]);
 
 class FakeNotification {
   static permission: NotificationPermission = "granted";
@@ -47,6 +47,7 @@ function permission(id = "request-1"): Extract<Item, { type: "permission" }> {
 function harness({ optedIn = false, holder = true, open = true, items = [] as Item[] } = {}) {
   const store = createStore();
   store.set(notificationsEnabledAtom, optedIn);
+  store.set(serverInfoAtom, { ...serverInfoSchema.parse(serverInfoFixture), project: "Project" });
   store.set(youAtom, { public_id: holder ? "holder" : "viewer", name: "You" });
   store.set(authoringAtom, {
     holder: { public_id: "holder", name: "Dana", away_since: null, frees_at: null },
@@ -107,30 +108,38 @@ it("tab title prefixes", () => {
   visibility(true);
 
   chat.setItems([permission()]);
-  expect(document.title).toBe("(!) Project · loom");
+  expect(document.title).toBe("(!) Project · loom plan");
   chat.setItems([]);
   chat.endTurn();
-  expect(document.title).toBe("(✓) Project · loom");
+  expect(document.title).toBe("(✓) Project · loom plan");
   visibility(false);
-  expect(document.title).toBe("Project · loom");
+  expect(document.title).toBe("Project · loom plan");
 });
 
-it("the marked title names the session's feature", () => {
+it("on a feature route the tab names the feature by slug", () => {
   const chat = harness();
-  act(() => {
-    chat.store.set(snapshotAtom, (current) => ({
-      ...current,
-      session: { ...current.session!, feature: "alpha" },
-    }));
-    chat.store.set(projectAtom, {
-      checklists: [{ ...checklist, feature: "alpha", title: "Alpha Feature" }],
-      standalone: [],
-      moves: [],
-    });
-  });
-  expect(document.title).toBe("Project · loom");
+  act(() => chat.store.set(tabFeatureAtom, "alpha"));
+  expect(document.title).toBe("alpha · loom plan");
+
   chat.setItems([permission()]);
-  expect(document.title).toBe("(!) Alpha Feature · Project · loom");
+  expect(document.title).toBe("(!) alpha · loom plan");
+
+  act(() => chat.store.set(tabFeatureAtom, null));
+  expect(document.title).toBe("(!) Project · loom plan");
+});
+
+it("the tab names the project until the server info arrives", () => {
+  const chat = harness();
+  act(() => chat.store.set(serverInfoAtom, null));
+  expect(document.title).toBe("loom plan");
+
+  act(() =>
+    chat.store.set(serverInfoAtom, {
+      ...serverInfoSchema.parse(serverInfoFixture),
+      project: "Late",
+    }),
+  );
+  expect(document.title).toBe("Late · loom plan");
 });
 
 it("permission takes priority over a hidden turn completion", () => {
@@ -140,18 +149,18 @@ it("permission takes priority over a hidden turn completion", () => {
 
   chat.setItems([permission()]);
 
-  expect(document.title).toBe("(!) Project · loom");
+  expect(document.title).toBe("(!) Project · loom plan");
 });
 
 it("showing the tab clears a waiting prefix until a new permission arrives", () => {
   const chat = harness({ items: [permission()] });
-  expect(document.title).toBe("(!) Project · loom");
+  expect(document.title).toBe("(!) Project · loom plan");
 
   visibility(false);
   chat.setItems([permission()]);
-  expect(document.title).toBe("Project · loom");
+  expect(document.title).toBe("Project · loom plan");
   chat.setItems([permission(), permission("request-2")]);
-  expect(document.title).toBe("(!) Project · loom");
+  expect(document.title).toBe("(!) Project · loom plan");
 });
 
 it("a turn ending in the visible tab leaves the title alone", () => {
@@ -159,7 +168,7 @@ it("a turn ending in the visible tab leaves the title alone", () => {
 
   chat.endTurn();
 
-  expect(document.title).toBe("Project · loom");
+  expect(document.title).toBe("Project · loom plan");
 });
 
 it("historical closed turns do not announce completion on mount", () => {
@@ -167,7 +176,7 @@ it("historical closed turns do not announce completion on mount", () => {
 
   harness({ optedIn: true, open: false });
 
-  expect(document.title).toBe("Project · loom");
+  expect(document.title).toBe("Project · loom plan");
   expect(FakeNotification.instances).toHaveLength(0);
 });
 
@@ -183,7 +192,7 @@ it("another session does not announce completion of the previous turn", () => {
     })),
   );
 
-  expect(document.title).toBe("Project · loom");
+  expect(document.title).toBe("Project · loom plan");
   expect(FakeNotification.instances).toHaveLength(0);
 });
 
@@ -208,7 +217,7 @@ it("viewers receive no desktop notifications", () => {
   chat.endTurn();
 
   expect(FakeNotification.instances).toHaveLength(0);
-  expect(document.title).toBe("(!) Project · loom");
+  expect(document.title).toBe("(!) Project · loom plan");
 });
 
 it("a hidden turn completion notifies the holder once and focuses on click", () => {
@@ -233,7 +242,7 @@ it("denied browser permission suppresses notifications", () => {
   chat.setItems([permission()]);
 
   expect(FakeNotification.instances).toHaveLength(0);
-  expect(document.title).toBe("(!) Project · loom");
+  expect(document.title).toBe("(!) Project · loom plan");
 });
 
 it("unmount restores the title and removes attention subscriptions", () => {

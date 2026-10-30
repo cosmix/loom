@@ -219,7 +219,7 @@ planning app's code and both stay one product. (My call.)
 
 ## Without `.loom/work`
 
-Steps 1 to 6 need nothing from `.loom/work`; `loom plan` works in a project that has never run
+Steps 1 to 5 need nothing from `.loom/work`; `loom plan` works in a project that has never run
 `loom init`, unlike `loom status --web`, which exits before binding without it.
 
 What it reads of a run comes from the plan files: section 01 derives running and done plans

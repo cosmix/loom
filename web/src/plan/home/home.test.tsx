@@ -31,11 +31,12 @@ function feature(name: string): ChecklistView {
   return {
     feature: name,
     pitch: null,
-    title: name.slice(0, 1).toUpperCase() + name.slice(1),
     has_product: true,
     sections: [],
     plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
     untested: 0,
+    metaplans: [],
+    plan_rows: [],
     current: { kind: "step", number: 1 },
     steps: [{ number: 1, name: "Vision", mark: "gap", count: null, label: "Vision" }],
     primary: null,
@@ -110,7 +111,7 @@ it("auto-opens a lone feature once and lets the Home link return", async () => {
 
   expect(await screen.findByRole("heading", { name: "Start something new" })).toBeTruthy();
   expect(router.state.location.pathname).toBe("/");
-  expect(screen.getByRole("link", { name: "Search" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "search" })).toBeTruthy();
 });
 
 it.each(["/new", "/f/search"])("keeps Home visible after first arriving from %s", async (entry) => {
@@ -121,7 +122,7 @@ it.each(["/new", "/f/search"])("keeps Home visible after first arriving from %s"
   expect(await screen.findByRole("heading", { name: "Start something new" })).toBeTruthy();
   expect(router.state.location.pathname).toBe("/");
 
-  fireEvent.click(screen.getByRole("link", { name: "Search" }));
+  fireEvent.click(screen.getByRole("link", { name: "search" }));
   await screen.findByRole("heading", { name: "Feature screen" });
   fireEvent.click(screen.getByRole("link", { name: "Home" }));
 
@@ -137,7 +138,7 @@ it("consumes auto-open on navigation before returning to the initial Home entry"
   act(() => store.set(projectAtom, { ...emptyProject, checklists: [feature("search")] }));
   fireEvent.click(screen.getByRole("link", { name: "Home" }));
   await screen.findByRole("heading", { name: "Start something new" });
-  fireEvent.click(screen.getByRole("link", { name: "Search" }));
+  fireEvent.click(screen.getByRole("link", { name: "search" }));
   await screen.findByRole("heading", { name: "Feature screen" });
 
   await act(async () => {
@@ -210,10 +211,10 @@ it("renders the invitation followed by feature cards and the standalone shelf", 
   const invitation = screen.getByRole("region", { name: "Start something new" });
   const cards = screen.getByRole("list", { name: "Features" });
   const shelf = screen.getByRole("region", { name: "Standalone plans" });
-  expect(within(cards).getByRole("link", { name: "Search" }).getAttribute("href")).toBe(
+  expect(within(cards).getByRole("link", { name: "search" }).getAttribute("href")).toBe(
     "/f/search",
   );
-  expect(within(cards).getByRole("link", { name: "Billing" }).getAttribute("href")).toBe(
+  expect(within(cards).getByRole("link", { name: "billing" }).getAttribute("href")).toBe(
     "/f/billing",
   );
   expect(within(shelf).getByRole("link", { name: "Fix search fix-search written" })).toBeTruthy();
@@ -227,7 +228,7 @@ it("renders the invitation followed by feature cards and the standalone shelf", 
   expect(
     within(invitation).getByText(/Bring a rough idea\. Loom talks it through with you/),
   ).toBeTruthy();
-  const cardLinks = within(cards).getAllByRole("link", { name: /Search|Billing/ });
+  const cardLinks = within(cards).getAllByRole("link", { name: /search|billing/ });
   const firstCard = cardLinks[0];
   // The invitation is the grid's first item, so the first feature card sits beside it.
   expect(
@@ -261,7 +262,7 @@ it("navigating back to Home does not redirect", async () => {
 
   expect(await screen.findByRole("heading", { name: "Start something new" })).toBeTruthy();
   expect(router.state.location.pathname).toBe("/");
-  expect(screen.getByRole("link", { name: "Search" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "search" })).toBeTruthy();
   expect(screen.getByRole("region", { name: "Standalone plans" })).toBeTruthy();
 });
 

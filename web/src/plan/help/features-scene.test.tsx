@@ -130,11 +130,11 @@ it("renders the feature progress and standalone shelf", () => {
   const { container } = render(<FeaturesHomeScene />);
   const scene = within(container);
 
-  expect(scene.getByRole("link", { name: "Atlas", hidden: true }).getAttribute("href")).toBe(
+  expect(scene.getByRole("link", { name: "atlas", hidden: true }).getAttribute("href")).toBe(
     "/f/atlas",
   );
   const progress = scene.getByRole("list", { name: "Progress", hidden: true });
-  expect(within(progress).getAllByRole("listitem", { hidden: true })).toHaveLength(7);
+  expect(within(progress).getAllByRole("listitem", { hidden: true })).toHaveLength(6);
   expect(scene.getByRole("region", { name: "Standalone plans", hidden: true })).toBeDefined();
   expect(
     scene

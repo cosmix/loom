@@ -2,6 +2,7 @@
 //! bind its socket), and the operator's end-to-end run with a logged-in Claude Code
 //! (`--include-ignored`), which prints what the installed Claude Code actually does.
 
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -72,6 +73,7 @@ struct Running {
     deltas: Arc<Mutex<Vec<ChatDelta>>>,
     stop: Arc<AtomicBool>,
     driver: Option<JoinHandle<()>>,
+    cleanup_servers: bool,
 }
 
 impl Running {
@@ -95,6 +97,7 @@ impl Running {
             deltas,
             stop,
             driver,
+            cleanup_servers: true,
         }
     }
 
@@ -132,6 +135,17 @@ impl Drop for Running {
         self.stop.store(true, Ordering::SeqCst);
         if let Some(driver) = self.driver.take() {
             let _ = driver.join();
+        }
+        if self.cleanup_servers {
+            let sockets: BTreeSet<_> = self
+                .bridge
+                .sessions()
+                .into_iter()
+                .map(|(id, ..)| socket_of(&id))
+                .collect();
+            for socket in sockets {
+                drop(ServerGuard(socket));
+            }
         }
     }
 }
@@ -230,9 +244,9 @@ fn abandoned_session(
     runtime: &RuntimePaths,
     claude: &Path,
     home: &Path,
-) -> (String, SessionDir) {
+) -> (String, SessionDir, ServerGuard) {
     let bound = Duration::from_secs(600);
-    let a = Running::new(config(root, runtime, claude.to_path_buf(), home, bound));
+    let mut a = Running::new(config(root, runtime, claude.to_path_buf(), home, bound));
     a.bridge.recover();
     let opening = request("Begin.", Some(Origin::Start), false);
     let id = a.bridge.start_session(opening).unwrap();
@@ -242,11 +256,14 @@ fn abandoned_session(
             |e: &&BridgeEvent| matches!(e, BridgeEvent::Started { id: s, .. } if *s == id);
         events.iter().any(|e| started(&e))
     });
+    // Recovery needs the live server after this bridge stops; transfer its cleanup guard.
+    let server = ServerGuard(socket_of(&id));
+    a.cleanup_servers = false;
     drop(a);
     let dir = SessionDir::new(runtime.sessions.join(&id));
     let start = json!({"hook_event_name": "SessionStart", "session_id": id, "source": "startup"});
     append_event(dir.path(), "SessionStart", &start).unwrap();
-    (id, dir)
+    (id, dir, server)
 }
 
 /// A record written by hand for a live pid with no start time: its identity is unverifiable.
@@ -273,6 +290,13 @@ fn unverifiable_session(runtime: &RuntimePaths) -> (String, SessionDir) {
     (id, dir)
 }
 
+fn tmux_available(sockets: &Path, test: &str) -> bool {
+    let tmux = Command::new("tmux").arg("-V").stdin(Stdio::null()).output();
+    let tmux = tmux.is_ok_and(|output| output.status.success());
+    let why = "needs a tmux binary and a sandbox that lets it bind its unix socket";
+    !skip_unless(tmux && unix_socket_bindable(sockets), test, why)
+}
+
 #[test]
 #[serial]
 fn recovery_closes_a_live_session_and_leaves_an_unverifiable_one() {
@@ -281,10 +305,7 @@ fn recovery_closes_a_live_session_and_leaves_an_unverifiable_one() {
         .tempdir_in("/tmp")
         .or_else(|_| TempDir::new());
     let sockets = sockets.unwrap();
-    let tmux = Command::new("tmux").arg("-V").stdin(Stdio::null()).output();
-    let tmux = tmux.is_ok_and(|output| output.status.success());
-    let why = "needs a tmux binary and a sandbox that lets it bind its unix socket";
-    if skip_unless(tmux && unix_socket_bindable(sockets.path()), test, why) {
+    if !tmux_available(sockets.path(), test) {
         return;
     }
     let _tmux_dir = EnvGuard::set("TMUX_TMPDIR", sockets.path());
@@ -298,8 +319,7 @@ fn recovery_closes_a_live_session_and_leaves_an_unverifiable_one() {
     let claude = base.join("claude");
     fs::write(&claude, "#!/bin/sh\nexec sleep 600\n").unwrap();
     fs::set_permissions(&claude, fs::Permissions::from_mode(0o755)).unwrap();
-    let (id, dir) = abandoned_session(&root, &runtime, &claude, &home);
-    let _server = ServerGuard(socket_of(&id));
+    let (id, dir, _server) = abandoned_session(&root, &runtime, &claude, &home);
     let (other, other_dir) = unverifiable_session(&runtime);
 
     let bound = Duration::from_secs(2);

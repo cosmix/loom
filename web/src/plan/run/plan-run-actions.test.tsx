@@ -253,8 +253,8 @@ it("dispatches the real checklist offers for a done plan", () => {
         <PlanRunActions path={featurePath} state="done" />
       </Provider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Review what was built" }));
-    fireEvent.click(screen.getByRole("button", { name: "Start a new metaplan round" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare spec with build" }));
+    fireEvent.click(screen.getByRole("button", { name: "New metaplan round" }));
     expect(handler).toHaveBeenNthCalledWith(1, review);
     expect(handler).toHaveBeenNthCalledWith(2, round);
   } finally {
