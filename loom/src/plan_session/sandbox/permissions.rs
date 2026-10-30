@@ -23,6 +23,7 @@ use crate::fs::safe_read::EntryKind;
 use crate::orchestrator::terminal::native::session_settings::contents::{
     SESSION_TOOL_DENIES, WORKFLOW_TOOL,
 };
+use crate::plan_session::kind::SessionKind;
 use crate::plan_session::scope::SessionScope;
 use crate::planning::paths::LockReason;
 use crate::planning::slug::plan_slug;
@@ -37,6 +38,14 @@ const WEB_FETCH: &str = "WebFetch";
 const SUMMARY_BASH: &str = "Bash(loom plan summary *)";
 /// Kickoff sessions may inspect summary status while summary writers need holder approval.
 const SUMMARY_STATUS_BASH: &str = "Bash(loom plan summary status*)";
+const KNOWLEDGE_BASH: &str = "Bash(loom knowledge *)";
+/// Ask rules take precedence over allows, so summary status must stay outside this list.
+const KICKOFF_WRITER_ASKS: [&str; 4] = [
+    KNOWLEDGE_BASH,
+    "Bash(loom plan summary seal*)",
+    "Bash(loom plan summary brief*)",
+    "Bash(loom plan summary release*)",
+];
 /// Read-only authoring commands stay allowed in every scope.
 const AUTHORING_READ_ONLY_BASH: [&str; 3] = [
     "Bash(loom plan verify *)",
@@ -44,7 +53,7 @@ const AUTHORING_READ_ONLY_BASH: [&str; 3] = [
     "Bash(loom map *)",
 ];
 /// Open authoring permits both writers; Team and Kickoff need approval for knowledge writes.
-const AUTHORING_DOC_WRITER_BASH: [&str; 2] = ["Bash(loom knowledge *)", SUMMARY_BASH];
+const AUTHORING_DOC_WRITER_BASH: [&str; 2] = [KNOWLEDGE_BASH, SUMMARY_BASH];
 /// Directories under `doc/` the authoring per-directory allow skips: `loom` is never allowed,
 /// `product` and `plans` have their own rules.
 const NOT_PER_DIR: [&str; 3] = ["loom", "product", "plans"];
@@ -62,6 +71,14 @@ pub(super) fn tool_denies(peer_tools: bool) -> Vec<&'static str> {
         .collect()
 }
 
+/// The permission mode shared by the session settings and launch command.
+pub fn permission_mode(kind: &SessionKind) -> &'static str {
+    match kind {
+        SessionKind::Authoring | SessionKind::Pressure { .. } => "auto",
+        SessionKind::Summary => "default",
+    }
+}
+
 /// The `permissions` object of the session.
 pub(super) fn permissions(build: &Build<'_>) -> Result<Value> {
     let (allow, ask, deny) = match &build.target {
@@ -70,7 +87,7 @@ pub(super) fn permissions(build: &Build<'_>) -> Result<Value> {
         Target::Pressure { plan, bundle } => pressure(build, plan, bundle)?,
     };
     Ok(json!({
-        "defaultMode": "default",
+        "defaultMode": permission_mode(build.inputs.kind),
         "disableBypassPermissionsMode": "disable",
         "allow": allow,
         "ask": ask,
@@ -98,16 +115,23 @@ fn authoring(build: &Build<'_>) -> Result<Rules> {
         allow.push(path_rule("Edit", &doc.join(file), ""));
     }
     allow.extend(runtime_rules(build));
+    let mut ask = vec![WEB_FETCH.to_owned()];
     match build.scope {
         SessionScope::Open => allow.extend(AUTHORING_DOC_WRITER_BASH.map(String::from)),
-        SessionScope::Team { .. } => allow.push(SUMMARY_BASH.to_owned()),
-        SessionScope::Kickoff(_) => allow.push(SUMMARY_STATUS_BASH.to_owned()),
+        SessionScope::Team { .. } => {
+            allow.push(SUMMARY_BASH.to_owned());
+            ask.push(KNOWLEDGE_BASH.to_owned());
+        }
+        SessionScope::Kickoff(_) => {
+            allow.push(SUMMARY_STATUS_BASH.to_owned());
+            ask.extend(KICKOFF_WRITER_ASKS.map(String::from));
+        }
     }
     allow.extend(AUTHORING_READ_ONLY_BASH.map(String::from));
     allow.push(WEB_SEARCH.to_owned());
     let mut deny = base_denies(!build.scope.peer_tools());
     deny.extend(locked_denies(build)?);
-    Ok((allow, vec![WEB_FETCH.to_owned()], deny))
+    Ok((allow, ask, deny))
 }
 
 fn summary(build: &Build<'_>) -> Rules {

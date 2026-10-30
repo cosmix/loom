@@ -30,6 +30,7 @@ fn pressure(plan: &str) -> SessionKind {
 fn authoring_settings_deny_every_top_level_entry_but_doc() {
     let f = Fixture::new();
     let settings = f.settings(&SessionKind::Authoring);
+    assert_eq!(settings["permissions"]["defaultMode"], "auto");
     let deny = list(&settings, "/sandbox/filesystem/denyWrite");
     for entry in [".git", "loom", "README.md", ".hidden", ".claude", ".loom"] {
         let path = path_str(&f.at(entry));
@@ -53,10 +54,8 @@ fn locked_set_collapses_to_directories_with_no_nested_deny() {
         f.write(&format!("doc/plans/{rel}"), "brief\n");
     }
     f.write("doc/plans/briefs/a/z.md", "brief\n");
-    let deny = list(
-        &f.settings(&SessionKind::Authoring),
-        "/sandbox/filesystem/denyWrite",
-    );
+    let settings = f.settings(&SessionKind::Authoring);
+    let deny = list(&settings, "/sandbox/filesystem/denyWrite");
     for rel in [
         "archive",
         "briefs/b",
@@ -109,6 +108,7 @@ fn permission_rules_are_absolute_edit_rules_with_no_write_or_read_deny() {
 fn summary_settings_allow_only_drafts_and_summary_commands() {
     let f = Fixture::new();
     let settings = f.settings(&SessionKind::Summary);
+    assert_eq!(settings["permissions"]["defaultMode"], "default");
     let allow = list(&settings, "/permissions/allow");
     let deny = list(&settings, "/permissions/deny");
     let doc_edit = format!("Edit(/{}", f.at("doc").display());
@@ -120,10 +120,8 @@ fn summary_settings_allow_only_drafts_and_summary_commands() {
         contains(&allow, rule("Edit", &f.runtime.drafts, "/**")),
         "{allow:?}"
     );
-    for tool in ["WebSearch", "WebFetch", "SendMessage", "ListAgents"] {
-        assert!(contains(&deny, tool), "{tool} missing from {deny:?}");
-    }
-    for tool in CAPSULE_TOOLS {
+    let tools = ["WebSearch", "WebFetch", "SendMessage", "ListAgents"];
+    for tool in tools.into_iter().chain(CAPSULE_TOOLS) {
         assert!(contains(&deny, tool), "{tool} missing from {deny:?}");
     }
     let deny_write = list(&settings, "/sandbox/filesystem/denyWrite");
@@ -143,6 +141,7 @@ fn pressure_settings_write_only_the_plan_its_bundle_omissions_and_marker() {
     f.write("planning-omissions.md", "none\n");
     fs::create_dir_all(f.session.done()).unwrap();
     let settings = f.settings(&pressure("doc/plans/PLAN-a.md"));
+    assert_eq!(settings["permissions"]["defaultMode"], "auto");
     let allow_write = list(&settings, "/sandbox/filesystem/allowWrite");
     assert_eq!(allow_write, [path_str(&f.session.done())]);
     let allow = list(&settings, "/permissions/allow");
@@ -173,6 +172,7 @@ fn assert_planning_settings_refuses_each_escape_hatch() {
     assert_planning_settings(&good).expect("freshly built authoring settings pass");
     let cases = [
         ("/permissions/defaultMode", json!("bypassPermissions")),
+        ("/permissions/defaultMode", json!("acceptEdits")),
         ("/sandbox/enabled", json!(false)),
         ("/sandbox/allowUnsandboxedCommands", json!(true)),
         ("/sandbox/network/allowedDomains", json!(["example.com"])),
@@ -194,10 +194,8 @@ fn guard_denies_edit_of_a_plan_locked_after_spawn() {
     assert_eq!(f.guard("Edit", open), None, "an unlocked plan is editable");
     let locked = f.at("doc/plans/IN_PROGRESS-PLAN-x.md");
     fs::rename(f.at("doc/plans/PLAN-x.md"), &locked).unwrap();
-    assert_denied(
-        &f.guard("Edit", file_input(&locked)),
-        "edit of a running plan",
-    );
+    let out = f.guard("Edit", file_input(&locked));
+    assert_denied(&out, "edit of a running plan");
 }
 
 #[test]
@@ -209,10 +207,8 @@ fn guard_denies_write_through_a_symlinked_directory_under_doc() {
     f.sandbox(&SessionKind::Authoring);
     let out = f.guard("Write", file_input(&f.at("doc/notes/a.md")));
     assert_denied(&out, "write through the doc/notes symlink");
-    assert_eq!(
-        f.guard("Write", file_input(&f.at("doc/product/ok.md"))),
-        None
-    );
+    let allowed = f.guard("Write", file_input(&f.at("doc/product/ok.md")));
+    assert_eq!(allowed, None);
 }
 
 #[test]
@@ -257,10 +253,8 @@ fn guard_denies_reads_of_the_runtime_lock_and_allows_drafts() {
     let f = Fixture::new();
     f.sandbox(&SessionKind::Authoring);
     let answers = f.session.path().join("answers/a.json");
-    assert_denied(
-        &f.guard("Read", file_input(&f.runtime.lock)),
-        "runtime lock",
-    );
+    let lock = f.guard("Read", file_input(&f.runtime.lock));
+    assert_denied(&lock, "runtime lock");
     assert_denied(&f.guard("Read", file_input(&answers)), "session answers");
     let drafts = f.guard("Read", file_input(&f.runtime.drafts.join("x.md")));
     assert_eq!(drafts, None, "drafts are in the session's own grants");
@@ -271,19 +265,12 @@ fn authoring_and_pressure_settings_deny_the_capsule_tools() {
     let f = Fixture::new();
     f.write("doc/plans/PLAN-a.md", "# a\n");
     let authoring = list(&f.settings(&SessionKind::Authoring), "/permissions/deny");
-    let pressure = list(
-        &f.settings(&pressure("doc/plans/PLAN-a.md")),
-        "/permissions/deny",
-    );
-    for tool in CAPSULE_TOOLS {
-        assert!(
-            contains(&authoring, tool),
-            "authoring lacks {tool}: {authoring:?}"
-        );
-        assert!(
-            contains(&pressure, tool),
-            "pressure lacks {tool}: {pressure:?}"
-        );
+    let settings = f.settings(&pressure("doc/plans/PLAN-a.md"));
+    let pressure = list(&settings, "/permissions/deny");
+    for (kind, deny) in [("authoring", &authoring), ("pressure", &pressure)] {
+        for tool in CAPSULE_TOOLS {
+            assert!(contains(deny, tool), "{kind} lacks {tool}: {deny:?}");
+        }
     }
     for tool in ["SendMessage", "ListAgents"] {
         assert!(
@@ -335,10 +322,8 @@ fn guard_denies_read_and_grep_through_a_symlink_under_doc() {
         json!({ "pattern": "BEGIN", "path": f.at("doc/notes") }),
     );
     assert_denied(&grep, "grep of the doc/notes symlink");
-    assert_eq!(
-        f.guard("Read", file_input(&f.at("doc/product/spec.md"))),
-        None
-    );
+    let allowed = f.guard("Read", file_input(&f.at("doc/product/spec.md")));
+    assert_eq!(allowed, None);
 }
 
 #[test]
@@ -369,24 +354,13 @@ fn loom_plan_hook_answers_through_the_binary() {
     let bare = f.base.join("no-guard");
     fs::create_dir_all(&bare).unwrap();
     let pre = run_hook(&f, "PreToolUse", &bare);
-    assert_eq!(
-        pre.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&pre.stderr)
-    );
+    let stderr = String::from_utf8_lossy(&pre.stderr);
+    assert_eq!(pre.status.code(), Some(0), "{stderr}");
     let stdout = String::from_utf8(pre.stdout).unwrap();
     assert_denied(&Some(stdout), "PreToolUse without guard.json");
     let stop = run_hook(&f, "Stop", &bare);
-    assert_eq!(
-        stop.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&stop.stderr)
-    );
-    assert!(
-        stop.stdout.is_empty(),
-        "{}",
-        String::from_utf8_lossy(&stop.stdout)
-    );
+    let stderr = String::from_utf8_lossy(&stop.stderr);
+    assert_eq!(stop.status.code(), Some(0), "{stderr}");
+    let stdout = String::from_utf8_lossy(&stop.stdout);
+    assert!(stop.stdout.is_empty(), "{stdout}");
 }

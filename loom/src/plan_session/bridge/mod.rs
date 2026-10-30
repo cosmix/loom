@@ -9,6 +9,7 @@
 //! thread (the driver, a command, recovery, drain) go on.
 
 mod commands;
+mod denied;
 mod driver;
 mod ending;
 mod error;
@@ -35,6 +36,8 @@ mod harness;
 mod tests;
 #[cfg(test)]
 mod tests_end;
+#[cfg(test)]
+mod tests_guards;
 #[cfg(test)]
 mod tests_lifecycle;
 #[cfg(test)]
@@ -82,10 +85,8 @@ pub struct LaunchGuidance {
     /// a command and a plan path (px-seams-R04).
     pub opening_on_argv: bool,
 }
-
 /// Writes the session's guidance files into its directory and describes the launch.
 pub type GuidanceFn = Box<dyn FnOnce(&SessionDir) -> anyhow::Result<LaunchGuidance> + Send>;
-
 /// A request to start one session.
 pub struct StartRequest {
     pub kind: SessionKind,
@@ -100,7 +101,6 @@ pub struct StartRequest {
     pub plan: Option<String>,
     pub extra_env: Vec<(String, String)>,
 }
-
 /// The bridge's paths, programs and timings.
 #[derive(Clone)]
 pub struct BridgeConfig {
@@ -122,7 +122,6 @@ pub struct BridgeConfig {
     /// The driver's period (200 ms).
     pub tick: Duration,
 }
-
 /// What subscribers hear about sessions.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BridgeEvent {
@@ -157,7 +156,6 @@ pub enum BridgeEvent {
         outcome: EndOutcome,
     },
 }
-
 /// How a session ended. A `Marker` end keeps the session's children and its directory until
 /// `release_session`; every other end terminates the children and removes the directory,
 /// except a failure, which keeps the directory.
@@ -168,7 +166,6 @@ pub enum EndOutcome {
     TornDown,
     Failed(String),
 }
-
 /// How `end` ends a session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndMode {
@@ -178,7 +175,6 @@ pub enum EndMode {
     /// Deny what is pending and tear down now.
     Teardown,
 }
-
 /// Who asked for the end. `GraceExpired` and `Draining` deny every pending and new permission
 /// request at once; `Holder` and `Caller` keep them answerable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -188,21 +184,18 @@ pub enum EndCause {
     Draining,
     Caller,
 }
-
 /// What `send` did with a message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SendOutcome {
     Delivering { item_id: String },
     Queued { queue_id: String },
 }
-
 /// Turn boundaries recorded against the text store (plan 3); keys are `<session id>/<turn id>`.
 pub trait TurnPins: Send + Sync {
     fn begin_turn(&self, turn: &str);
     /// The paths the turn changed, with their hash at the turn's start.
     fn end_turn(&self, turn: &str) -> Vec<(String, Option<String>)>;
 }
-
 /// A session recovery ended.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecoveredSession {
@@ -210,7 +203,6 @@ pub struct RecoveredSession {
     pub kind: SessionKind,
     pub children: Vec<ChildRecord>,
 }
-
 /// What `recover` found in the sessions directory.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RecoveryReport {
@@ -219,14 +211,12 @@ pub struct RecoveryReport {
     /// `(id, socket, why)`; the socket is empty when no record named one.
     pub left_alone: Vec<(String, String, String)>,
 }
-
 /// A session's transcripts, for plan 10's cost reader.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Transcripts {
     pub main: Option<PathBuf>,
     pub subagents: Vec<(String, PathBuf)>,
 }
-
 type Listener<T> = Arc<dyn Fn(&T) + Send + Sync>;
 
 /// The session bridge.
@@ -239,7 +229,6 @@ pub struct Bridge {
     chat_listeners: Mutex<Vec<Listener<ChatDelta>>>,
     flushing: AtomicBool,
 }
-
 impl Bridge {
     pub fn new(
         config: BridgeConfig,
@@ -256,7 +245,6 @@ impl Bridge {
             flushing: AtomicBool::new(false),
         })
     }
-
     /// The driver thread: one tick every `config.tick` until `stop` is set.
     pub fn run(self: &Arc<Self>, stop: Arc<AtomicBool>) -> JoinHandle<()> {
         let bridge = Arc::clone(self);
@@ -270,19 +258,16 @@ impl Bridge {
             }
         })
     }
-
     /// Hear every event. A listener must return quickly and never wait on the bridge; one that
     /// panics misses only the event it panicked on.
     pub fn subscribe(&self, listener: Box<dyn Fn(&BridgeEvent) + Send + Sync>) {
         guard(&self.listeners).push(Arc::from(listener));
     }
-
     /// Hear every delta of the chat session. `Queue` deltas carry the queued texts: strip them
     /// for anyone but the holder.
     pub fn subscribe_chat(&self, listener: Box<dyn Fn(&ChatDelta) + Send + Sync>) {
         guard(&self.chat_listeners).push(Arc::from(listener));
     }
-
     pub fn chat_snapshot(&self, for_holder: bool) -> ChatSnapshot {
         let inner = self.lock();
         let current = inner.chat.as_ref().and_then(|id| inner.sessions.get(id));
@@ -295,12 +280,10 @@ impl Bridge {
             previous: inner.previous.clone(),
         }
     }
-
     /// The authoring or pressure session shown in the chat.
     pub fn chat_session_id(&self) -> Option<String> {
         self.lock().chat.clone()
     }
-
     /// The chat session is Starting, Working or Permission.
     pub fn turn_running(&self) -> bool {
         let inner = self.lock();
@@ -310,7 +293,6 @@ impl Bridge {
             Some(SessionState::Starting | SessionState::Working | SessionState::Permission)
         )
     }
-
     pub fn transcripts(&self, id: &str) -> Option<Transcripts> {
         let main = {
             let inner = self.lock();
@@ -321,7 +303,6 @@ impl Bridge {
         };
         Some(transcripts_of(main))
     }
-
     pub fn sessions(&self) -> Vec<(String, SessionKind, SessionState)> {
         let inner = self.lock();
         let sessions = inner.sessions.values();
@@ -329,11 +310,9 @@ impl Bridge {
             .map(|session| (session.id.clone(), session.kind.clone(), session.state()))
             .collect()
     }
-
     fn lock(&self) -> MutexGuard<'_, Inner> {
         guard(&self.inner)
     }
-
     /// Hand the outbox to the listeners; returns at once while another call is doing it.
     fn flush(&self) {
         loop {
@@ -357,7 +336,6 @@ impl Bridge {
             }
         }
     }
-
     fn publish(&self, batch: Vec<Out>) {
         let events = guard(&self.listeners).clone();
         let deltas = guard(&self.chat_listeners).clone();
@@ -369,7 +347,6 @@ impl Bridge {
         }
     }
 }
-
 /// Call one listener. A panic stays here: unwinding into the flush would drop the rest of the
 /// batch for every listener and stop the flushing thread (recovery would never finish).
 fn hear<T>(listener: &Listener<T>, value: &T) {
@@ -377,7 +354,6 @@ fn hear<T>(listener: &Listener<T>, value: &T) {
         tracing::error!("a session bridge listener panicked");
     }
 }
-
 /// Lock, recovering the data a panicking holder left: each step leaves it consistent.
 fn guard<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)

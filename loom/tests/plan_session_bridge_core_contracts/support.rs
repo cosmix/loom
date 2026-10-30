@@ -152,7 +152,7 @@ pub fn bash_permission_payload() -> Value {
     hook_payload(
         "PermissionRequest",
         json!({
-            "permission_mode": "default",
+            "permission_mode": "auto",
             "tool_name": "Bash",
             "tool_input": {"command": "rm -rf build", "description": "Remove the build directory"},
         }),

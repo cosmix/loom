@@ -7,8 +7,9 @@
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
 
-use super::permissions::{tool_denies, ASK_USER_QUESTION};
+use super::permissions::{permission_mode, tool_denies, ASK_USER_QUESTION};
 use super::{PRE_TOOL_USE, PRE_TOOL_USE_MATCHER};
+use crate::plan_session::kind::SessionKind;
 
 /// `sandbox.network` keys that open a way out of the sandbox.
 const NETWORK_ESCAPES: [&str; 4] = [
@@ -18,14 +19,40 @@ const NETWORK_ESCAPES: [&str; 4] = [
     "allowAllUnixSockets",
 ];
 
-/// Refuse `settings` unless every planning invariant holds: the permission mode and bypass
-/// lock, the sandbox switches, no network escape, no `Write(` rule and no `Read(` deny, every
-/// required tool deny plus `AskUserQuestion`, no background worktree isolation, and the guard's
-/// `PreToolUse` hook. Peer-tool denies are optional for pressure sessions (inferred from their
+const MODE_POINTER: &str = "/permissions/defaultMode";
+
+/// Refuse `settings` unless every planning invariant holds for a session of `kind`:
+/// `/permissions/defaultMode` equal to `permission_mode(kind)`, then the checks of
+/// [`assert_planning_settings`].
+pub fn assert_planning_settings_for(settings: &Value, kind: &SessionKind) -> Result<()> {
+    let wanted = permission_mode(kind);
+    if settings.pointer(MODE_POINTER) != Some(&json!(wanted)) {
+        bail!("planning settings: {MODE_POINTER} must be \"{wanted}\" for this session kind");
+    }
+    check_shared(settings)
+}
+
+/// Refuse `settings` unless every planning invariant holds: a permission mode of `"auto"` or
+/// `"default"` (never `acceptEdits`, `bypassPermissions` or anything else; callers that know
+/// the session kind use `assert_planning_settings_for`), the bypass lock, the sandbox
+/// switches, no network escape, no `Write(` rule and no `Read(` deny, every required tool deny
+/// plus `AskUserQuestion`, no background worktree isolation, and the guard's `PreToolUse` hook.
+/// Peer-tool denies are optional for pressure sessions (inferred from their
 /// `Bash(touch <marker>)` allow) and sessions with `teammateMode` set to `"in-process"`.
 pub fn assert_planning_settings(settings: &Value) -> Result<()> {
+    let mode = settings.pointer(MODE_POINTER).and_then(Value::as_str);
+    if !matches!(mode, Some("auto" | "default")) {
+        let found = settings
+            .pointer(MODE_POINTER)
+            .map_or_else(|| "nothing".to_owned(), Value::to_string);
+        bail!("planning settings: {MODE_POINTER} must be \"auto\" or \"default\", found {found}");
+    }
+    check_shared(settings)
+}
+
+/// Every invariant that does not depend on the permission mode.
+fn check_shared(settings: &Value) -> Result<()> {
     let expected = [
-        ("/permissions/defaultMode", json!("default")),
         (
             "/permissions/disableBypassPermissionsMode",
             json!("disable"),
@@ -184,6 +211,41 @@ mod tests {
             let mut settings = good();
             set(&mut settings, pointer, value);
             refused(&settings, pointer);
+        }
+    }
+
+    #[test]
+    fn mode_must_match_the_session_kind() {
+        let pressure = SessionKind::Pressure {
+            plan: "doc/plans/PLAN-a.md".into(),
+        };
+        let cases = [
+            (SessionKind::Authoring, "auto", "default"),
+            (pressure, "auto", "default"),
+            (SessionKind::Summary, "default", "auto"),
+        ];
+        for (kind, right, wrong) in cases {
+            let mut settings = good();
+            set(&mut settings, "/permissions/defaultMode", json!(right));
+            assert_planning_settings_for(&settings, &kind).unwrap();
+            assert_planning_settings(&settings).unwrap();
+            set(&mut settings, "/permissions/defaultMode", json!(wrong));
+            let error = assert_planning_settings_for(&settings, &kind)
+                .expect_err("wrong mode for the kind")
+                .to_string();
+            assert!(error.contains("/permissions/defaultMode"), "{error}");
+            assert_planning_settings(&settings).unwrap();
+        }
+    }
+
+    #[test]
+    fn bypass_and_accept_edits_are_refused_for_every_kind() {
+        for mode in ["bypassPermissions", "acceptEdits", ""] {
+            let mut settings = good();
+            set(&mut settings, "/permissions/defaultMode", json!(mode));
+            refused(&settings, "/permissions/defaultMode");
+            let kind = SessionKind::Authoring;
+            assert!(assert_planning_settings_for(&settings, &kind).is_err());
         }
     }
 
