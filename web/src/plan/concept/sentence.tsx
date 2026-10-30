@@ -27,7 +27,7 @@ type ClosedSentenceProps = {
 /**
  * A summary sentence that is not open. With citations it is a button that opens in place; with
  * none it is a defect (section 05) and shows a muted "no source" mark instead of colour marks.
- * Marks, the chevron and the plan glyph sit after the inline text, outside the button.
+ * Marks, the chevron hint and the plan glyph sit after the inline text, outside the button.
  */
 export function ClosedSentence({ site, glyph, flashPage }: ClosedSentenceProps): JSX.Element {
   const column = useColumn();
@@ -45,6 +45,9 @@ export function ClosedSentence({ site, glyph, flashPage }: ClosedSentenceProps):
         aria-expanded={button ? false : undefined}
         aria-controls={button ? runDomId(parent, sentence.id) : undefined}
         tabIndex={-1}
+        // Isolated like the other untrusted text, so a format character cannot reorder the
+        // sentences around it; the element is also the text parent the selection code reads.
+        style={{ unicodeBidi: "isolate", direction: "ltr" }}
         data-focus={sentenceKey(parent, sentence.id)}
         data-sentence-id={sentence.id}
         data-summary={summary}
@@ -66,7 +69,10 @@ export function ClosedSentence({ site, glyph, flashPage }: ClosedSentenceProps):
       {button ? (
         <>
           <Marks marks={site.marks} onOpen={column.openPage} />
-          <ChevronDown aria-hidden="true" className="concept-sentence-chevron" />
+          {/* The anchor takes no inline width; the chevron floats just after the marks. */}
+          <span aria-hidden="true" className="concept-sentence-hint">
+            <ChevronDown className="concept-sentence-chevron" />
+          </span>
         </>
       ) : (
         <span className="concept-no-source">no source</span>

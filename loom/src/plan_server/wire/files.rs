@@ -78,6 +78,8 @@ pub struct DocView {
     pub lock: Option<LockView>,
     pub sections: Vec<SectionView>,
     pub plan: Option<PlanView>,
+    /// When the file last changed on disk (RFC 3339, UTC); null when it cannot be read.
+    pub last_change: Option<String>,
     pub too_large: bool,
     pub truncated: bool,
     pub size: u64,

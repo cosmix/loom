@@ -55,5 +55,8 @@ it.each(["click", "Enter"])("sentences still open by %s with source marks off", 
   else fireEvent.keyDown(sentence, { key: "Enter" });
 
   expect(within(column).getByRole("group", { name: /^Detail of/ })).toBeTruthy();
-  expect(conceptCss).toMatch(/text-decoration: underline 2px;/);
+  expect(conceptCss).toContain(
+    "box-shadow: inset 0 -2px 0 color-mix(in oklch, var(--sentence-colour) 85%, transparent);",
+  );
+  expect(conceptCss).not.toMatch(/text-decoration: underline 2px/);
 });

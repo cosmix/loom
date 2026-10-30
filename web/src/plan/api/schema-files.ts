@@ -141,6 +141,7 @@ export const docViewSchema = z.strictObject({
   lock: lockViewSchema.nullable(),
   sections: z.array(sectionViewSchema),
   plan: planViewSchema.nullable(),
+  last_change: z.string().nullable(),
   too_large: z.boolean(),
   truncated: z.boolean(),
   size: u64,

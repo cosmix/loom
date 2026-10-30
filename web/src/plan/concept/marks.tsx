@@ -2,6 +2,7 @@ import type { CSSProperties, JSX } from "react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ConceptPage, Mark, OutOfDate, Sentence } from "@/plan/api/schema-concept";
+import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 
 /**
  * Colours run 1 to 8 (`--doc-1` to `--doc-8`) and repeat after eight. Colour 0 is the server's
@@ -46,7 +47,7 @@ function MarkSquare({ mark, onOpen }: { mark: Mark; onOpen: (page: string) => vo
           type="button"
           tabIndex={-1}
           className="concept-mark"
-          aria-label={markLabel(mark)}
+          aria-label={visibleControls(markLabel(mark))}
           data-dashed={dashed ? "true" : undefined}
           style={style}
           onClick={() => onOpen(mark.doc.page)}
@@ -54,8 +55,8 @@ function MarkSquare({ mark, onOpen }: { mark: Mark; onOpen: (page: string) => vo
       </TooltipTrigger>
       <TooltipContent>
         <span className="flex flex-col">
-          <span>{`${mark.doc.title}: ${mark.doc.path}`}</span>
-          {mark.out_of_date && <span>{`Out of date: ${reasonText(mark.out_of_date)}`}</span>}
+          <Untrusted text={`${mark.doc.title}: ${mark.doc.path}`} />
+          {mark.out_of_date && <Untrusted text={`Out of date: ${reasonText(mark.out_of_date)}`} />}
         </span>
       </TooltipContent>
     </Tooltip>

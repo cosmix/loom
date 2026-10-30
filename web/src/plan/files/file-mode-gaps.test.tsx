@@ -60,7 +60,7 @@ describe("file mode layout", () => {
       );
       expect(screen.getByRole("heading", { name: "Map view" })).toBeTruthy();
       expect(screen.getByRole("navigation", { name: "Breadcrumb" }).textContent).toBe(
-        "PlannerMap view",
+        "DemoMap view",
       );
       expect(screen.getByText("This document is missing.")).toBeTruthy();
       expect(screen.getByText(text)).toBeTruthy();

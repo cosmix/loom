@@ -1,9 +1,18 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import type { JSX } from "react";
+import { useRef, useState, type JSX } from "react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-/** Each end of a run folds it; Escape remains the column's keyboard shortcut. */
+/** Room the tooltip keeps from the edge of the reading area before it flips below the cap. */
+const COLLISION_PADDING = 8;
+
+/**
+ * Each end of a run folds it; Escape remains the column's keyboard shortcut. The tooltip sits
+ * above the cap and flips below when there is no room above inside the reading area: the
+ * planner scrolls its pages inside `main` (plan/shell.tsx), under the app header and the
+ * document heading, so `main` is the collision boundary rather than the window. Outside
+ * `main` (the help dialog's scenes) the window is.
+ */
 export function FoldCap({
   runId,
   side,
@@ -13,10 +22,17 @@ export function FoldCap({
   side: "start" | "end";
   onFold: () => void;
 }): JSX.Element {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [boundary, setBoundary] = useState<Element | null>(null);
   return (
-    <Tooltip>
+    <Tooltip
+      onOpenChange={(open) => {
+        if (open) setBoundary(trigger.current?.closest("main") ?? null);
+      }}
+    >
       <TooltipTrigger asChild>
         <button
+          ref={trigger}
           type="button"
           tabIndex={0}
           aria-label="Fold"
@@ -41,7 +57,14 @@ export function FoldCap({
           )}
         </button>
       </TooltipTrigger>
-      <TooltipContent>Fold · Esc</TooltipContent>
+      <TooltipContent
+        side="top"
+        avoidCollisions
+        collisionBoundary={boundary}
+        collisionPadding={COLLISION_PADDING}
+      >
+        Fold · Esc
+      </TooltipContent>
     </Tooltip>
   );
 }

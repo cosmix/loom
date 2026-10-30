@@ -2,6 +2,7 @@ import type { PhrasingContent } from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { type JSX, useMemo } from "react";
 
+import { visibleControls } from "@/plan/chat/visible-controls";
 import { renderSummaryInlines } from "@/plan/markdown/inline";
 
 /**
@@ -10,9 +11,11 @@ import { renderSummaryInlines } from "@/plan/markdown/inline";
  * enabled: summaries use code spans, emphasis and strong only. A link reference definition
  * draws nothing in rendered Markdown, so it draws nothing here.
  */
-function summaryInlines(text: string): PhrasingContent[] {
+function summaryInlines(raw: string): PhrasingContent[] {
+  // The parser drops one leading BOM and counts offsets without it, so slice with that one gone.
+  const text = raw.replace(/^\uFEFF/, "");
   const nodes: PhrasingContent[] = [];
-  for (const block of fromMarkdown(text).children) {
+  for (const block of fromMarkdown(raw).children) {
     if (block.type === "definition") continue;
     const start = block.position?.start.offset;
     const end = block.position?.end.offset;
@@ -40,5 +43,5 @@ function summaryInlines(text: string): PhrasingContent[] {
 
 export function SentenceText({ text }: { text: string }): JSX.Element {
   const nodes = useMemo(() => summaryInlines(text), [text]);
-  return <>{nodes.length > 0 ? renderSummaryInlines(nodes) : text}</>;
+  return <>{nodes.length > 0 ? renderSummaryInlines(nodes) : visibleControls(text)}</>;
 }

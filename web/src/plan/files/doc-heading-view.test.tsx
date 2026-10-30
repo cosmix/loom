@@ -1,56 +1,16 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { createStore, Provider } from "jotai";
-import { MemoryRouter } from "react-router";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import planFixture from "@/plan/api/fixtures/files-doc-plan.json";
-import hello from "@/plan/api/fixtures/hello.json";
 import runFixture from "@/plan/api/fixtures/pressure-run.json";
-import { serverInfoSchema } from "@/plan/api/schema";
-import {
-  docViewSchema,
-  type DocView,
-  type EntryKind,
-  type PlanView,
-} from "@/plan/api/schema-files";
+import type { EntryKind, PlanView } from "@/plan/api/schema-files";
 import { pressureRunSchema } from "@/plan/api/schema-pressure";
 import { pendingAttachmentsAtom } from "@/plan/attachments";
 import { focusComposerAtom } from "@/plan/chat/composer-hooks";
 import { panelCollapsedAtom } from "@/plan/chat/prefs";
 import { pressureRunAtom } from "@/plan/chat/pressure/use-pressure";
 import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
-import { authoringAtom, serverInfoAtom } from "@/plan/state/atoms";
 
-import { FileDocHeading } from "./doc-heading-view";
-
-function makeDoc(patch: Partial<DocView> = {}, plan: Partial<PlanView> = {}): DocView {
-  const base = docViewSchema.parse(planFixture);
-  return { ...base, plan: { ...base.plan!, ...plan }, ...patch };
-}
-
-function authorStore(canAuthor = true) {
-  const store = createStore();
-  store.set(serverInfoAtom, serverInfoSchema.parse({ ...hello.server, read_only: [] }));
-  store.set(authoringAtom, canAuthor ? { holder: null } : hello.authoring);
-  return store;
-}
-
-function mount(
-  doc = makeDoc(),
-  store = authorStore(),
-  address = "/files/plans/demo/PLAN-file-mode.md",
-) {
-  return {
-    store,
-    ...render(
-      <Provider store={store}>
-        <MemoryRouter initialEntries={[address]}>
-          <FileDocHeading doc={doc} />
-        </MemoryRouter>
-      </Provider>,
-    ),
-  };
-}
+import { authorStore, makeDoc, mount, withFeatureTitle } from "./doc-heading-kit";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -64,23 +24,29 @@ afterEach(() => {
 });
 
 describe("FileDocHeading", () => {
-  it("renders the project, encoded feature link, group and current document breadcrumb", () => {
-    mount(makeDoc({ feature: "demo & space" }));
+  it("renders the feature title, group and plan slug as the breadcrumb, never the feature slug", () => {
+    mount(
+      makeDoc({ feature: "demo & space" }),
+      withFeatureTitle(authorStore(), "demo & space", "Demo Feature"),
+    );
     const nav = screen.getByRole("navigation", { name: "Breadcrumb" });
 
     expect(
       within(nav)
         .getAllByRole("listitem")
         .map((item) => item.textContent),
-    ).toEqual(["Planner", "demo & space", "Plans", "File mode"]);
-    expect(within(nav).getByRole("link").getAttribute("href")).toBe("/f/demo%20%26%20space");
-    expect(within(nav).getByText("Planner").closest("a")).toBeNull();
-    expect(
-      within(nav).getByText("File mode").closest("[aria-current]")?.getAttribute("aria-current"),
-    ).toBe("page");
+    ).toEqual(["Demo Feature", "Plans", "file-mode"]);
+    const first = within(nav).getByRole("link", { name: "Demo Feature" });
+    expect(first.getAttribute("href")).toBe("/f/demo%20%26%20space");
+    expect(first.querySelector("svg.lucide-layers")).not.toBeNull();
+    expect(within(nav).queryByText("Planner")).toBeNull();
+    expect(within(nav).queryByText("demo & space")).toBeNull();
+    const slug = within(nav).getByText("file-mode").closest("[aria-current]");
+    expect(slug?.getAttribute("aria-current")).toBe("page");
+    expect(slug?.className).toContain("font-mono");
   });
 
-  it("omits the feature breadcrumb for a standalone document", () => {
+  it("starts a standalone document's breadcrumb at its group", () => {
     mount(makeDoc({ feature: null }));
     const nav = screen.getByRole("navigation", { name: "Breadcrumb" });
 
@@ -88,17 +54,17 @@ describe("FileDocHeading", () => {
       within(nav)
         .getAllByRole("listitem")
         .map((item) => item.textContent),
-    ).toEqual(["Planner", "Plans", "File mode"]);
+    ).toEqual(["Plans", "file-mode"]);
     expect(within(nav).queryByRole("link")).toBeNull();
   });
 
   it.each<[EntryKind, string]>([
-    ["vision", "Product"],
-    ["section", "Product"],
-    ["note", "Product"],
+    ["vision", "Product spec"],
+    ["section", "Product spec"],
+    ["note", "Product spec"],
     ["knowledge", "Knowledge"],
     ["brief", "Briefs"],
-    ["metaplan", "Files"],
+    ["metaplan", "Engineering"],
     ["feature", "Files"],
     ["metaplan_entry", "Files"],
     ["brief_folder", "Files"],
@@ -123,28 +89,26 @@ describe("FileDocHeading", () => {
     expect(screen.getByText(label)).toBeTruthy();
   });
 
-  it("links implemented sections and strikes through a missing target without a link", () => {
+  it("links implemented sections in one chip and leaves a missing target plain", () => {
     const { container } = mount();
 
-    expect(screen.getByRole("link", { name: "Implements §6" }).getAttribute("href")).toBe(
+    const chip = screen.getByText("Implements", { exact: false }).closest("[data-chip]");
+    expect(chip?.textContent).toBe("Implements: §06, §07 (not found)");
+    expect(screen.getByRole("link", { name: "§06" }).getAttribute("href")).toBe(
       "/files/product/demo/section_06.md",
     );
-    const missing = screen.getByText("Implements §7");
-    const chip = missing.closest("[title]");
+    const missing = screen.getByText("§07", { exact: false });
     expect(missing.closest("a")).toBeNull();
-    expect(chip?.getAttribute("title")).toBe("not found");
-    expect(chip?.textContent).toBe("Implements §7 (not found)");
-    expect(chip?.querySelector(".sr-only")?.textContent).toBe("(not found)");
-    expect(container.firstElementChild?.className).toContain(
-      "[&_[title='not_found']]:line-through",
-    );
+    expect(missing.closest("[title]")?.getAttribute("title")).toBe("not found");
+    expect(missing.closest("[title]")?.querySelector(".sr-only")?.textContent).toBe("(not found)");
+    expect(container.innerHTML).not.toContain("line-through");
   });
 
   it("shows validation errors with danger tone and toggles their list with pressed state", () => {
     mount();
     const toggle = screen.getByRole("button", { name: "1 error, 1 warning" });
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
-    expect(toggle.className).toContain("text-(--tone-blocked)");
+    expect(toggle.getAttribute("data-tone")).toBe("danger");
     expect(screen.queryByTestId("validation-list")).toBeNull();
 
     fireEvent.click(toggle);
@@ -177,7 +141,9 @@ describe("FileDocHeading", () => {
       ),
     );
 
-    expect(screen.getByRole("button", { name: "Valid · 4 warnings" })).toBeTruthy();
+    const chip = screen.getByRole("button", { name: "Valid · 4 warnings" });
+    expect(chip.getAttribute("data-tone")).toBe("warning");
+    expect(chip.querySelector("svg.lucide-shield-check")).not.toBeNull();
   });
 
   it("labels zero warnings and omits validation when no result is available", () => {
@@ -195,7 +161,9 @@ describe("FileDocHeading", () => {
         },
       ),
     );
-    expect(screen.getByRole("button", { name: "Valid · 0 warnings" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Valid · 0 warnings" }).getAttribute("data-tone"),
+    ).toBe("ok");
     cleanup();
 
     mount(makeDoc({}, { validation: null }));
@@ -209,7 +177,11 @@ describe("FileDocHeading", () => {
   ])("labels the pressure date %s", (pressure_date, label) => {
     mount(makeDoc({}, { pressure_date }));
 
-    expect(screen.getByText(label)).toBeTruthy();
+    const chip = screen.getByText(label).closest("[data-chip]");
+    expect(chip?.getAttribute("data-tone")).toBe(pressure_date === null ? "warning" : "ok");
+    expect(
+      chip?.querySelector(pressure_date === null ? "svg.lucide-gauge" : "svg.lucide-flask-conical"),
+    ).not.toBeNull();
   });
 
   it("prioritizes an active pressure run and hides Edit until the run ends", () => {
@@ -250,9 +222,9 @@ describe("FileDocHeading", () => {
     vi.setSystemTime(new Date("2026-10-29T22:51:53Z"));
     mount(makeDoc({}, { last_change: "2026-10-29T20:51:53Z" }));
 
-    expect(screen.getByText("Changed 2 h ago").closest("[title]")?.getAttribute("title")).toBe(
-      "2026-10-29T20:51:53Z",
-    );
+    const changed = screen.getByText("Changed 2 h ago").closest("[title]");
+    expect(changed?.getAttribute("title")).toBe("2026-10-29T20:51:53Z");
+    expect(changed?.querySelector("svg.lucide-clock")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Pressure-test" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Start a run" })).toBeTruthy();
   });
@@ -317,7 +289,7 @@ describe("FileDocHeading", () => {
       expect(edit?.getAttribute("href")).toBe("/files/plans/demo/PLAN-file-mode.md?edit=1");
   });
 
-  it("renders the lock notice and hides Edit for a locked, non-editable document", () => {
+  it("renders the lock notice and shows Edit disabled with a lock for a locked document", () => {
     mount(
       makeDoc({
         editable: false,
@@ -336,6 +308,10 @@ describe("FileDocHeading", () => {
     expect(note.querySelector("em")?.textContent).toBe("committed");
     expect(within(note).queryByRole("link")).toBeNull();
     expect(screen.queryByRole("link", { name: "Edit" })).toBeNull();
+    const edit = screen.getByRole("button", { name: "Edit" });
+    expect(edit.getAttribute("aria-disabled")).toBe("true");
+    expect(edit.getAttribute("title")).toBe("Read-only while running");
+    expect(edit.querySelector("svg.lucide-lock")).not.toBeNull();
   });
 
   it("renders a non-plan document without plan chips, summary links or plan actions", () => {

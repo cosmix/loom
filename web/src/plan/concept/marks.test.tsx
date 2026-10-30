@@ -41,4 +41,16 @@ describe("Marks", () => {
     expect(none!.style.background).not.toContain("--doc-8");
     expect(third!.style.background).toContain("--doc-3");
   });
+
+  it("shows a format character in the title as its code point in the accessible name", () => {
+    const mark = markOf(2);
+    render(
+      <TooltipProvider>
+        <Marks marks={[{ ...mark, doc: { ...mark.doc, title: "Vis‮ion" } }]} onOpen={() => {}} />
+      </TooltipProvider>,
+    );
+    const name = screen.getByRole("button").getAttribute("aria-label");
+    expect(name).toBe("Vis⟨U+202E⟩ion: doc/product/vision.md");
+    expect(name).not.toContain("‮");
+  });
 });

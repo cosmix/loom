@@ -1,7 +1,7 @@
 import { useId } from "react";
 
 import type { ChecklistView as Checklist, ItemView } from "@/plan/api/schema";
-import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
 import { OfferButton } from "@/plan/offers/offer-button";
 
@@ -10,7 +10,7 @@ export function Item({ item }: { item: ItemView }) {
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-[13px]">
       <span className="text-muted-foreground">Step {item.step}</span>
       <span className="font-medium" style={{ unicodeBidi: "isolate", direction: "ltr" }}>
-        <SentenceText text={visibleControls(item.text)} />
+        <SentenceText text={item.text} />
       </span>
       {item.path && (
         <code className="font-mono text-xs text-muted-foreground">

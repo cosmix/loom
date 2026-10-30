@@ -36,6 +36,7 @@ const document: DocView = {
     { level: 2, title: "Other", anchor: "other", start_line: 4, end_line: 5 },
   ],
   plan: null,
+  last_change: null,
   too_large: false,
   truncated: false,
   size: 48,

@@ -12,12 +12,14 @@ import {
   docLink,
   docs,
   flashed,
+  focusDetail,
   group,
   installColumnTestHooks,
   mark,
   mount,
   mountProduct,
   nested,
+  openable,
   pair,
   press,
   replace,
@@ -185,7 +187,7 @@ it("ArrowLeft folds like Escape", async () => {
 });
 
 it("j and k move like the arrows", async () => {
-  const { column } = mountProduct([sent("a", "First line."), sent("b", "Second line.")]);
+  const { column } = mountProduct([openable("a", "First line."), openable("b", "Second line.")]);
   column.focus();
   await waitFor(() => expect(active().textContent).toBe("First line."));
   press("j");
@@ -374,10 +376,7 @@ it("passage heading carries no id", async () => {
 
 it("Fold all moves focus to the outer sentence", async () => {
   const { column, store } = nested();
-  fireEvent.click(button(column, /^Overview opens/));
-  await within(column).findByRole("button", { name: /^Detail opens/ });
-  press("ArrowDown");
-  await waitFor(() => expect(active().textContent).toMatch(/^Detail opens/));
+  await focusDetail(column);
   act(() => store.set(openRunsAtom("overview/demo/product"), []));
   await waitFor(() => expect(active().textContent).toMatch(/^Overview opens/));
   expect(column.contains(active())).toBe(true);
@@ -386,10 +385,7 @@ it("Fold all moves focus to the outer sentence", async () => {
 it("a rebuild that folds the focused run moves focus to the restored sentence", async () => {
   const rests = (anchor: string) => ({ rests_on: [{ path: S1, anchor }] });
   const { column, store } = nested(rests("intro"));
-  fireEvent.click(button(column, /^Overview opens/));
-  await within(column).findByRole("button", { name: /^Detail opens/ });
-  press("ArrowDown");
-  await waitFor(() => expect(active().textContent).toMatch(/^Detail opens/));
+  await focusDetail(column);
   const rewritten = {
     ...sent("o", "Overview opens.", [cite("section_01", "x")], [mark("section_01", "Planning", 1)]),
     ...rests("other"),
