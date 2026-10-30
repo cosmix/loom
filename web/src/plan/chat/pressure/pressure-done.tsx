@@ -1,33 +1,29 @@
 import { useSetAtom } from "jotai";
-import { useState, type JSX } from "react";
+import { Gauge, ScanEye } from "lucide-react";
+import type { JSX } from "react";
 import { Link } from "react-router";
 
-import { formatElapsed } from "@/lib/format";
 import { compactTokens } from "@/lib/tokens";
 import type { PressureRunView } from "@/plan/api/schema-pressure";
 import { openDiff } from "@/plan/diff/open-diff";
 import { toAddress } from "@/plan/files/address";
+import { plural } from "@/plan/files/heading-parts";
 import { pressureDialogAtom } from "@/plan/offers/actions-pressure";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
-import { OTHER_GLYPHS } from "@/plan/ui/glyphs";
 
-import { Untrusted } from "../visible-controls";
-import { runEndMs } from "./steps";
+import { FileChip } from "./file-chip";
 import { usePressureOptions } from "./use-pressure";
 
-const DoneGlyph = OTHER_GLYPHS.stepDone;
+// DisabledReason fixes its button's look, so the ghost outline is laid over it from outside.
+const GHOST_LOOK =
+  "[&_button]:h-[30px] [&_button]:gap-1.5 [&_button]:rounded-lg [&_button]:border [&_button]:border-border [&_button]:bg-transparent [&_button]:px-3 [&_button]:text-[13px] [&_button]:font-medium [&_button]:text-foreground [&_button]:hover:bg-muted [&_button]:aria-disabled:hover:bg-transparent";
 
 function EditedFiles({ paths }: { paths: string[] }): JSX.Element {
   return (
-    <ul aria-label="Edited files" className="space-y-1">
+    <ul aria-label="Edited files" className="flex w-full flex-wrap gap-1.5">
       {paths.map((path) => (
-        <li key={path} className="flex flex-wrap items-baseline gap-x-3">
-          <Link className="min-w-0 break-all font-mono underline" to={toAddress(path)}>
-            <Untrusted text={path} />
-          </Link>
-          <Link className="underline" to={openDiff("head", path)}>
-            Diff
-          </Link>
+        <li key={path} className="grid max-w-full">
+          <FileChip path={path} to={toAddress(path)} diffTo={openDiff("head", path)} />
         </li>
       ))}
     </ul>
@@ -38,21 +34,29 @@ function SummaryActions({ plan }: { plan: string }): JSX.Element {
   const options = usePressureOptions();
   const setDialog = useSetAtom(pressureDialogAtom);
   const nextPlan = options?.ok ? options.value.plans.find((path) => path !== plan) : undefined;
+  // The review link and the next-plan control are direct children of the summary box.
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <Link className="font-medium underline" to={openDiff("head", plan)}>
+    <>
+      <Link
+        className="inline-flex h-[30px] items-center gap-1.5 rounded-lg bg-primary px-3 text-[13px] font-semibold text-primary-foreground hover:bg-primary/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        to={openDiff("head", plan)}
+      >
+        <ScanEye aria-hidden="true" className="size-3.5" />
         Review the changes
       </Link>
-      <DisabledReason
-        reason={nextPlan === undefined ? "There is no other plan to pressure-test." : null}
-        size="sm"
-        onClick={() => {
-          if (nextPlan !== undefined) setDialog({ open: true, plan: nextPlan });
-        }}
-      >
-        Test the next plan
-      </DisabledReason>
-    </div>
+      <div className={GHOST_LOOK}>
+        <DisabledReason
+          reason={nextPlan === undefined ? "There is no other plan to pressure-test." : null}
+          size="sm"
+          onClick={() => {
+            if (nextPlan !== undefined) setDialog({ open: true, plan: nextPlan });
+          }}
+        >
+          <Gauge aria-hidden="true" />
+          Test the next plan
+        </DisabledReason>
+      </div>
+    </>
   );
 }
 
@@ -60,30 +64,23 @@ export function PressureDone({ run }: { run: PressureRunView }): JSX.Element | n
   return run.ended?.kind === "recorded" ? <RecordedSummary run={run} /> : null;
 }
 
-// Mounted only once the recorded end arrives, so the arrival time matches the header's.
 function RecordedSummary({ run }: { run: PressureRunView }): JSX.Element {
-  const [arrivedMs] = useState(Date.now);
-  const seconds = Math.max(0, Math.floor((runEndMs(run, arrivedMs) - run.started_ms) / 1000));
   const paths = [...new Set(run.steps.flatMap((step) => step.edits))];
+  const addressed =
+    run.rounds === 2 ? "Both rounds addressed" : `${plural(run.rounds, "round")} addressed`;
   return (
-    <section
-      role="region"
-      aria-label="Pressure test summary"
-      className="space-y-3 rounded-lg border border-border bg-muted/30 p-3 text-xs text-foreground"
-    >
-      <div className="flex items-center gap-2 font-medium">
-        <DoneGlyph aria-hidden="true" className="size-4 shrink-0 text-primary" />
-        <span>Summary of this pressure test</span>
+    <section role="region" aria-label="Pressure test summary" className="text-xs text-foreground">
+      <div className="flex flex-wrap items-center gap-2 rounded-[10px] border border-[color-mix(in_oklch,var(--tone-completed)_45%,transparent)] bg-[color-mix(in_oklch,var(--tone-completed)_8%,transparent)] p-3.5">
+        <div className="grid w-full gap-0.5">
+          <p className="text-[13px] font-bold">{addressed}</p>
+          <p className="text-muted-foreground">
+            <span>{compactTokens(run.tokens_total)} tokens</span>
+            <span> · {plural(paths.length, "file")} edited</span>
+          </p>
+        </div>
+        <EditedFiles paths={paths} />
+        <SummaryActions plan={run.plan} />
       </div>
-      <p className="flex flex-wrap gap-x-3 text-muted-foreground">
-        <span>
-          {run.rounds} {run.rounds === 1 ? "round" : "rounds"}
-        </span>
-        <span>{formatElapsed(seconds)}</span>
-        <span>{compactTokens(run.tokens_total)} tokens</span>
-      </p>
-      <EditedFiles paths={paths} />
-      <SummaryActions plan={run.plan} />
     </section>
   );
 }

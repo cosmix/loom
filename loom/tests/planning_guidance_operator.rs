@@ -239,6 +239,8 @@ fn exercise(running: &RunningServer, offer: Offer, skill: &str, target: &Path) -
         }),
         opening_origin: Some(Origin::Offer),
         offer: Some(offer_id),
+        feature: Some("demo".to_owned()),
+        plan: None,
         extra_env: vec![],
     })?;
     let dir = SessionDir::new(running.ctx.runtime().sessions.join(&id));

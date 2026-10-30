@@ -30,7 +30,8 @@ it("user item layout and chips", () => {
   const text = within(log).getByText(/First line/);
   expect(text.textContent).toBe("First line\nSecond line");
   expect(text.closest('[class*="whitespace-pre-wrap"]')).not.toBeNull();
-  expect(text.closest('[class*="bg-muted"]')).not.toBeNull();
+  expect(text.closest(".chat-user-body")).not.toBeNull();
+  expect(text.closest(".chat-user-body")?.firstElementChild?.className).toBe("chat-user-quote");
   expect(log.querySelector('[class*="max-w-"]')).not.toBeNull();
   expect(within(log).getByRole("button", { name: /reference-0.md/ })).toBeTruthy();
 });

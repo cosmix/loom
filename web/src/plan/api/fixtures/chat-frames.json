@@ -17,7 +17,9 @@
       "subagents_running": 0,
       "last_activity": "2026-10-28T09:01:30Z",
       "failure": null,
-      "offer": null
+      "offer": null,
+      "feature": null,
+      "plan": null
     },
     "turns": [
       {

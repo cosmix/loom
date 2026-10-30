@@ -120,7 +120,6 @@ it("drop before result rejects and keeps the client_id unconfirmed", async () =>
   const sending = expect(pending).rejects.toThrow(CONNECTION_LOST);
   const stopping = expect(interrupt).rejects.toThrow(CONNECTION_LOST);
   const { client_id } = send.mock.calls[0][0] as { client_id: string };
-
   store.set(connectionAtom, { phase: "reconnecting", everOpen: true, lastMessageAt: null });
 
   await Promise.all([sending, stopping]);
@@ -242,6 +241,17 @@ it("start includes the feature alongside the existing positional fields", async 
     text: "Start here",
     attachments,
   });
+  result(0);
+  await pending;
+});
+
+it("start names a standalone plan, and sends no owner key it was not given", async () => {
+  const { store, send, result } = harness();
+
+  const pending = startChat(store, null, null, [], undefined, "solo");
+
+  expect(send.mock.calls[0]![0]).toMatchObject({ command: "start", plan: "solo" });
+  expect(send.mock.calls[0]![0]).not.toHaveProperty("feature");
   result(0);
   await pending;
 });

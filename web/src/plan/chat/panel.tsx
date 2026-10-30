@@ -1,27 +1,31 @@
 import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
 import { Dialog } from "radix-ui";
 import { useEffect, useRef, type JSX, type KeyboardEvent, type PointerEvent } from "react";
+import { Link } from "react-router";
 
 import { useMediaQuery } from "@/lib/use-media-query";
 import { pendingAttachmentsAtom } from "@/plan/attachments";
 import { useReviewLive } from "@/plan/review/live";
 import { registerSendToAuthor } from "@/plan/review/send-to-author";
+import { canAuthorAtom } from "@/plan/state/atoms";
 import { AnnouncerRegions, ChatAnnouncer } from "./announcer";
 import { useAttention } from "./attention";
 import { BriefDialogHost } from "./brief-dialog";
 import { ChatGlyph, STATE_NAME } from "./chat-state-glyph";
+import { PendingChips } from "./chips";
 import { ComposerArea } from "./composer";
 import { ConnectionBanner, useConnectionDim } from "./connection-banner";
-import { EndChatMenuItem, useCanEndChat } from "./end-chat";
 import { pendingPermissionsAtom, sessionAtom, useChatSocket } from "./model";
 import { offerErrorAtom } from "./offer-error";
-import { createOfferStarter } from "./offer-flow";
+import { createOfferStarter, DESKTOP } from "./offer-flow";
 import { registerAuthoringOffers } from "./offer-handlers";
+import { PanelHead } from "./panel-head";
 import { panelCollapsedAtom, panelWidthAtom } from "./prefs";
 import { RunHeader } from "./run-header";
+import { ScreenSync } from "./screen-sync";
+import { elsewhereSessionAtom, panelSessionAtom, sessionHereAtom } from "./session-home";
 import { chatSheetOpenAtom } from "./sheet-state";
 import { shownSessionAtom } from "./shown-session";
-import { NewChatButton } from "./start-chat";
 import { StateLine } from "./state-line";
 import { useQueueRefill } from "./stop-control";
 import { useComposerShortcut } from "./composer-hooks";
@@ -29,10 +33,9 @@ import { useSuggestionFeed } from "./suggestion-cards";
 import { Transcript } from "./transcript";
 import { Untrusted } from "./visible-controls";
 import "./chat.css";
+import "./chat-surface.css";
 
 export { chatSheetOpenAtom } from "./sheet-state";
-
-const DESKTOP = "(min-width: 1024px)";
 
 /** The chat socket and attention watcher for routes that mount no ChatPanel, which owns them there. */
 function ChatConnection(): null {
@@ -69,6 +72,7 @@ export function ChatRegistrations({ connect = false }: { connect?: boolean }): J
   }, [store]);
   return (
     <>
+      <ScreenSync />
       <ChatAnnouncer inSheet={!desktop && sheetOpen} />
       <BriefDialogHost />
       {connect && <ChatConnection />}
@@ -220,65 +224,74 @@ function ResizeHandle() {
   );
 }
 
-/** The ⋯ menu exists only when it holds an item. */
-function ChatMenu() {
-  const canEnd = useCanEndChat();
-  if (!canEnd) return null;
+/** Keeps the empty state's label and offer apart; a session's row needs no such layout. */
+function StateRowSlot() {
+  const session = useAtomValue(panelSessionAtom);
   return (
-    <details className="relative">
-      <summary aria-label="Chat menu">⋯</summary>
-      <div className="absolute right-0 z-10 min-w-32 bg-card p-2 shadow-(--dialog-shadow)">
-        <EndChatMenuItem />
-      </div>
-    </details>
+    <div
+      className={
+        session
+          ? undefined
+          : "[&_.chat-state-line_[aria-live=off]>.flex]:grid [&_.chat-state-line_[aria-live=off]>.flex]:grid-cols-[auto_1fr] [&_.chat-state-line_[aria-live=off]>.flex]:gap-y-3 [&_.chat-state-line_[aria-live=off]>.flex>:nth-child(n+3)]:col-span-2"
+      }
+    >
+      <StateLine />
+    </div>
   );
 }
 
-function PanelBody({ sheet }: { sheet: boolean }) {
+/** A session this screen does not own: the empty state, and the way to where it is. */
+function ElsewhereBody({ sheet }: { sheet: boolean }) {
+  const elsewhere = useAtomValue(elsewhereSessionAtom);
+  const canAuthor = useAtomValue(canAuthorAtom);
+  return (
+    <div className="chat-panel-top">
+      <PanelHead sheet={sheet} />
+      <StateRowSlot />
+      {elsewhere ? (
+        <p className="chat-elsewhere">
+          <Link to={elsewhere.href}>
+            A session in <Untrusted text={elsewhere.title} /> needs you
+          </Link>
+        </p>
+      ) : (
+        canAuthor && (
+          // Attaching is allowed while no chat is open; the chip would otherwise stay unseen.
+          <div className="chat-pending-chips">
+            <PendingChips />
+          </div>
+        )
+      )}
+      <OfferError />
+      <ConnectionBanner />
+    </div>
+  );
+}
+
+function SessionBody({ sheet }: { sheet: boolean }) {
   const session = useAtomValue(sessionAtom);
-  const shown = useAtomValue(shownSessionAtom);
-  // A failed or ended chat carries New chat in the composer, so the header would repeat it.
-  const live = shown !== null && shown.state !== "failed" && shown.state !== "ended";
-  const setCollapsed = useSetAtom(panelCollapsedAtom);
-  const setOpen = useSetAtom(chatSheetOpenAtom);
   const dim = useConnectionDim();
   return (
     <>
-      <header className="flex items-center gap-2 p-3 text-[13px]">
-        {/* The focus fallback for dialogs whose opener has left the page (see BriefDialog). */}
-        <h2 className="mr-auto font-medium" tabIndex={-1} data-chat-heading>
-          Chat
-        </h2>
-        {live && <NewChatButton />}
-        <ChatMenu />
-        <button
-          type="button"
-          aria-label={sheet ? "Close chat" : "Collapse chat"}
-          onClick={() => (sheet ? setOpen(false) : setCollapsed(true))}
-        >
-          {sheet ? "Close" : "Collapse"}
-        </button>
-      </header>
-      {/* StateRow's first two children are the glyph and label; offers follow as siblings. */}
-      <div
-        className={
-          shown
-            ? undefined
-            : "[&_.chat-state-line_[aria-live=off]>.flex]:grid [&_.chat-state-line_[aria-live=off]>.flex]:grid-cols-[auto_1fr] [&_.chat-state-line_[aria-live=off]>.flex]:gap-y-3 [&_.chat-state-line_[aria-live=off]>.flex>:nth-child(n+3)]:col-span-2"
-        }
-      >
-        <StateLine />
+      <div className="chat-panel-top">
+        <PanelHead sheet={sheet} />
+        <StateRowSlot />
+        <OfferError />
+        {session && <RunHeader session={session} />}
+        <ConnectionBanner />
       </div>
-      <OfferError />
-      {session && <RunHeader session={session} />}
-      <ConnectionBanner />
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="chat-panel-middle">
         {dim && <p className="px-3 text-[12px] text-muted-foreground">{dim}</p>}
         <Transcript />
       </div>
       <ComposerArea />
     </>
   );
+}
+
+function PanelBody({ sheet }: { sheet: boolean }) {
+  const here = useAtomValue(sessionHereAtom);
+  return here ? <SessionBody sheet={sheet} /> : <ElsewhereBody sheet={sheet} />;
 }
 
 function ChatSheet() {
@@ -317,12 +330,23 @@ export function ChatPanel() {
   const desktop = useMediaQuery(DESKTOP);
   const collapsed = useAtomValue(panelCollapsedAtom);
   const width = useAtomValue(panelWidthAtom);
-  if (!desktop) return <ChatSheet />;
-  if (collapsed) return <CollapsedRail />;
   return (
-    <aside aria-label="Chat" className="chat-panel" style={{ width: `${width}rem`, flexShrink: 0 }}>
-      <ResizeHandle />
-      <PanelBody sheet={false} />
-    </aside>
+    <>
+      <ScreenSync />
+      {!desktop ? (
+        <ChatSheet />
+      ) : collapsed ? (
+        <CollapsedRail />
+      ) : (
+        <aside
+          aria-label="Chat"
+          className="chat-panel"
+          style={{ width: `${width}rem`, flexShrink: 0 }}
+        >
+          <ResizeHandle />
+          <PanelBody sheet={false} />
+        </aside>
+      )}
+    </>
   );
 }

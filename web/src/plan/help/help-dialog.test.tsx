@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
 import { useState, type ReactNode } from "react";
@@ -107,6 +109,8 @@ it("renders the dialog title, first topic, scene and tips", () => {
   expect(screen.getByText("Your work is saved as you go.")).toBeTruthy();
   expect(screen.getByText("?").tagName).toBe("KBD");
   expect(screen.getByText("Esc").tagName).toBe("KBD");
+  expect(screen.getByText(/opens this guide/)).toBeTruthy();
+  expect(screen.getByPlaceholderText("Search help")).toBeTruthy();
 });
 
 it("applies reading preferences to the portalled dialog content", () => {
@@ -255,7 +259,7 @@ it("resets article scrolling when selecting another topic", () => {
   expect(article.scrollTop).toBe(0);
 });
 
-it("shows a topic picker on phones and returns to it from an article", () => {
+function phone() {
   vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
     matches: query === "(max-width: 767px)",
     media: query,
@@ -266,19 +270,75 @@ it("shows a topic picker on phones and returns to it from an article", () => {
     removeEventListener() {},
     dispatchEvent: () => true,
   }));
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView,
+  });
+  return scrollIntoView;
+}
+
+afterEach(() => {
+  Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+});
+
+// The dialog scrolls as a whole on a phone: the list, then the current topic below it.
+it("shows the topic list and the first topic together on phones", () => {
+  phone();
   show();
-  expect(screen.queryByRole("article")).toBeNull();
+
+  expect(topicNav().getAllByRole("button")).toHaveLength(2);
+  expect(screen.getByRole("article")).toBeTruthy();
+  expect(screen.getByText("Topic 1 of 2")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "All topics" })).toBeNull();
+});
+
+it("scrolls a chosen topic into view on phones and focuses its article", () => {
+  const scrollIntoView = phone();
+  show();
+  expect(scrollIntoView).not.toHaveBeenCalled();
 
   fireEvent.click(topicNav().getByRole("button", { name: /Reading summaries/ }));
 
-  expect(screen.getByRole("article")).toBe(document.activeElement);
+  const article = screen.getByRole("article");
+  expect(article).toBe(document.activeElement);
+  expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  expect(scrollIntoView.mock.contexts[0]).toBe(article);
   expect(screen.getByText("Topic 2 of 2")).toBeTruthy();
-  expect(screen.queryByRole("navigation", { name: "Help topics" })).toBeNull();
-
-  fireEvent.click(screen.getByRole("button", { name: "All topics" }));
-
   expect(topicNav().getAllByRole("button")).toHaveLength(2);
-  expect(screen.queryByRole("article")).toBeNull();
+});
+
+it("does not scroll or take focus while a phone reader types a search", () => {
+  const scrollIntoView = phone();
+  const { search } = show();
+  search.focus();
+
+  fireEvent.change(search, { target: { value: "passage" } });
+
+  expect(screen.getByText("Topic 2 of 2")).toBeTruthy();
+  expect(scrollIntoView).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(search);
+});
+
+it("keeps the dialog's phone styles scrolling as a whole", () => {
+  const css = readFileSync(join(import.meta.dirname, "help-dialog.css"), "utf8");
+  const phoneRules = css.slice(css.indexOf("@media (max-width: 767px)"));
+
+  expect(phoneRules).toMatch(/\.planner-help\s*\{[^}]*overflow-y:\s*auto;/);
+  expect(phoneRules).toMatch(/\.planner-help-article\s*\{[^}]*overflow:\s*visible;/);
+  expect(phoneRules).not.toContain("grid-template-rows");
+});
+
+it("keeps Close in reach on a phone while the dialog scrolls", () => {
+  const css = readFileSync(join(import.meta.dirname, "help-dialog.css"), "utf8");
+  const phoneRules = css.slice(css.indexOf("@media (max-width: 767px)"));
+  const close = phoneRules.match(/\[data-slot="dialog-close"\]\s*\{([^}]*)\}/)?.[1] ?? "";
+
+  expect(close).toMatch(/position:\s*sticky;/);
+  expect(close).toMatch(/top:\s*8px;/);
+  expect(close).toMatch(/order:\s*-1;/);
+  expect(close).toMatch(/background:\s*var\(--background\);/);
+  expect(phoneRules).toMatch(/\.planner-help\s*\{[^}]*flex-direction:\s*column;/);
 });
 
 it("returns focus to its opener without a Radix trigger", async () => {

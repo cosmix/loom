@@ -51,7 +51,7 @@ it("every state row", () => {
   }
 });
 
-it("none offers the checklist primary offer and New chat", () => {
+it("none offers the checklist primary offer; New chat is the panel head's", () => {
   const h = harness(null);
   const primary = {
     ...checklistViewSchema.parse(helloFixture.checklists[0]).primary!,
@@ -75,7 +75,7 @@ it("none offers the checklist primary offer and New chat", () => {
   h.store.set(checklistAtom, checklist);
   h.show();
   expect(screen.getByRole("button", { name: "Write section 05" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
 });
 
 it("working shows elapsed, newest tool, subagents", () => {
@@ -187,14 +187,13 @@ it("announces state changes only, never elapsed time or tool summaries", () => {
   expect(status.textContent).toBe("");
 });
 
-it("no chat hides its duplicated words but keeps the buttons reachable", () => {
+it("no chat hides its duplicated words from browse mode", () => {
   const { container } = harness(null).show();
   const hidden = [...container.querySelectorAll("[aria-hidden='true']")].filter(
     (node) => node.textContent === "No chat",
   );
   expect(hidden).toHaveLength(1);
   expect(screen.getAllByRole("status")[0].textContent).toBe("No chat");
-  expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
 });
 
 const concluded = (fields: Partial<SessionView>) => ({

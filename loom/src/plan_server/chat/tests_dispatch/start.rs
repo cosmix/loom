@@ -63,6 +63,7 @@ fn a_refused_start_leaves_authoring_free() {
         client_id: Some("c1".into()),
         offer: None,
         feature: None,
+        plan: None,
         text: Some("/help".into()),
         attachments: Vec::new(),
     };
@@ -81,6 +82,7 @@ fn a_start_with_an_id_the_checklist_does_not_offer_is_refused_by_the_provider() 
         client_id: Some("c1".into()),
         offer: Some(offer.into()),
         feature: None,
+        plan: None,
         text: None,
         attachments: Vec::new(),
     };
@@ -107,6 +109,7 @@ fn a_replaced_provider_decides_which_offer_ids_start_a_chat() {
         client_id: Some("c1".into()),
         offer: Some(offer.into()),
         feature: None,
+        plan: None,
         text: None,
         attachments: Vec::new(),
     };
@@ -142,6 +145,8 @@ fn reserve_held(f: &Fixture, other: &Tab) -> (mpsc::Receiver<()>, mpsc::Sender<(
         guidance,
         opening_origin: Some(Origin::Start),
         offer: None,
+        feature: None,
+        plan: None,
         extra_env: Vec::new(),
     };
     let bridge = Arc::clone(&f.bridge);

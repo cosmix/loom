@@ -24,6 +24,7 @@ import { endChat } from "./commands";
 import { ComposerArea } from "./composer";
 import { draftAtom } from "./drafts";
 import { snapshotAtom } from "./model";
+import { Transcript } from "./transcript";
 import { panelCollapsedAtom } from "./prefs";
 import { chatSheetOpenAtom } from "./sheet-state";
 import { storageFullAtom } from "./storage";
@@ -111,10 +112,10 @@ it("storage full note", () => {
   act(() => getDefaultStore().set(storageFullAtom, true));
   expect(screen.getByText("Unsaved text is not being kept: browser storage is full")).toBeTruthy();
 });
-it("second pending permission pins after the first is answered", () => {
+it("second pending permission takes the card after the first is answered", () => {
   const h = setup("permission");
   permissions(h.store);
-  mount(h.store);
+  mount(h.store, <Transcript />);
   expect(screen.getByRole("region", { name: "Permission: Bash 0" })).toBeTruthy();
   act(() =>
     h.store.set(snapshotAtom, (s) => ({
@@ -133,13 +134,12 @@ it("second pending permission pins after the first is answered", () => {
 it("1 of 2 decisions", () => {
   const h = setup("permission");
   permissions(h.store);
-  mount(h.store);
+  mount(h.store, <Transcript />);
   expect(screen.getByText("1 of 2 decisions")).toBeTruthy();
 });
-it("20 suggestions, a queue of 3, a pending card and 10 chips keep the textbox outside the capped containers", () => {
+it("20 suggestions, a queue of 3 and 10 chips keep the textbox outside the capped containers", () => {
   const h = setup("permission");
   queue(h.store);
-  permissions(h.store, 1);
   mount(h.store);
   act(() => {
     for (let i = 0; i < 10; i++) h.store.set(addAttachmentAtom, source(i));
@@ -148,7 +148,6 @@ it("20 suggestions, a queue of 3, a pending card and 10 chips keep the textbox o
   expect(box().parentElement?.closest(".overflow-y-auto")).toBeNull();
   expect(send().closest(".overflow-y-auto")).toBeNull();
   expect(screen.getByText("Queued (3)")).toBeTruthy();
-  expect(screen.getByRole("region", { name: "Permission: Bash 0" })).toBeTruthy();
 });
 it("read-only server mode line names the missing piece", () => {
   const h = setup();

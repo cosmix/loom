@@ -156,7 +156,7 @@ it("the resize handle announces whole rem while a drag stores fractions", () => 
   expect(separator.getAttribute("aria-valuetext")).toBe(`${Math.round(width)} rem`);
 });
 
-it("the header offers New chat while a chat runs, and leaves it to the composer once it concluded", () => {
+it("the chat menu offers New chat while a chat runs, and leaves it to the composer once it concluded", () => {
   const store = storeFor();
   const { session } = chatSnapshotSchema.parse(fixture);
   const show = (state: "idle" | "failed" | "ended") =>
@@ -170,11 +170,12 @@ it("the header offers New chat while a chat runs, and leaves it to the composer 
     );
   mount(store);
   show("idle");
-  expect(screen.getAllByRole("button", { name: "New chat" })).toHaveLength(1);
+  // The menu is a closed <details>: the item is in the document, a click away.
+  expect(screen.getByLabelText("Chat menu").parentElement?.textContent).toContain("New chat");
   show("failed");
-  expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
+  expect(screen.queryByText("New chat")).toBeNull();
   show("ended");
-  expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
+  expect(screen.queryByText("New chat")).toBeNull();
 });
 
 it("a stale transcript carries no coloured mark and no fade", () => {

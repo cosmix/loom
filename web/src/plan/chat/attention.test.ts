@@ -4,13 +4,16 @@ import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import fixture from "@/plan/api/fixtures/chat-snapshot.json";
+import hello from "@/plan/api/fixtures/hello.json";
+import { checklistViewSchema } from "@/plan/api/schema";
 import { chatSnapshotSchema, type Item } from "@/plan/api/schema-chat";
-import { authoringAtom, youAtom } from "@/plan/state/atoms";
+import { authoringAtom, projectAtom, youAtom } from "@/plan/state/atoms";
 import { NOTIFICATIONS_STORAGE_KEY, notificationsEnabledAtom } from "@/state/notifications";
 import { useAttention } from "./attention";
 import { snapshotAtom } from "./model";
 
 const snapshot = chatSnapshotSchema.parse(fixture);
+const checklist = checklistViewSchema.parse(hello.checklists[0]);
 
 class FakeNotification {
   static permission: NotificationPermission = "granted";
@@ -110,6 +113,24 @@ it("tab title prefixes", () => {
   expect(document.title).toBe("(✓) Project · loom");
   visibility(false);
   expect(document.title).toBe("Project · loom");
+});
+
+it("the marked title names the session's feature", () => {
+  const chat = harness();
+  act(() => {
+    chat.store.set(snapshotAtom, (current) => ({
+      ...current,
+      session: { ...current.session!, feature: "alpha" },
+    }));
+    chat.store.set(projectAtom, {
+      checklists: [{ ...checklist, feature: "alpha", title: "Alpha Feature" }],
+      standalone: [],
+      moves: [],
+    });
+  });
+  expect(document.title).toBe("Project · loom");
+  chat.setItems([permission()]);
+  expect(document.title).toBe("(!) Alpha Feature · Project · loom");
 });
 
 it("permission takes priority over a hidden turn completion", () => {

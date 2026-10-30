@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { cleanup, render, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -52,9 +54,11 @@ it("provides the seven topics in order with unique ids and their production cont
   expect(chat!.scenes).toBe(CHAT_SCENES);
   expect(pressure!.scenes).toBe(PRESSURE_SCENES);
   for (const topic of [reading!, features!, chat!, pressure!]) {
-    expect(topic.scenes.length).toBeGreaterThanOrEqual(2);
+    expect(topic.scenes.length).toBeGreaterThanOrEqual(1);
     expect(topic.tips?.length ?? 0).toBeGreaterThan(0);
   }
+  expect(reading!.scenes).toHaveLength(1);
+  expect(pressure!.scenes).toHaveLength(1);
   expect(legend!.Body).toBe(PlannerLegend);
   expect(legend!.scenes).toEqual([]);
   expect(shortcuts!.Body).toBe(PlannerShortcuts);
@@ -84,7 +88,7 @@ it("renders the sample project and all seven steps without throwing", () => {
     within(container).getByRole("button", { name: "Switch feature, current: atlas", hidden: true }),
   ).toBeDefined();
   expect(
-    within(container).getByTitle("The product spec for atlas is ready for its first metaplan."),
+    within(container).getByTitle("The product spec for Atlas is ready for its first metaplan."),
   ).toBeDefined();
   const steps = within(container).getByRole("list", { name: "Steps", hidden: true });
   expect(within(steps).getAllByRole("listitem", { hidden: true })).toHaveLength(7);
@@ -111,13 +115,25 @@ it.each(["/", "/files", "/f/other/product"])(
     const steps = within(container).getByRole("list", { name: "Steps", hidden: true });
     expect(within(steps).getAllByRole("listitem", { hidden: true })).toHaveLength(7);
     expect(
-      within(container).getByTitle("The product spec for atlas is ready for its first metaplan."),
+      within(container).getByTitle("The product spec for Atlas is ready for its first metaplan."),
     ).toBeDefined();
     expect(router.state.location).toMatchObject({ pathname, search: "?help=open", hash: "#topic" });
     expect(globalThis.fetch).not.toHaveBeenCalled();
     expect(globalThis.WebSocket).not.toHaveBeenCalled();
   },
 );
+
+/** True when the element sits in a collapsed <details> body, where it takes no space. */
+function hiddenByDetails(element: Element): boolean {
+  const summary = element.closest("summary");
+  let node = element.closest("details");
+  while (node) {
+    const inOwnSummary = summary !== null && summary.parentElement === node;
+    if (!node.open && !inOwnSummary) return true;
+    node = node.parentElement?.closest("details") ?? null;
+  }
+  return false;
+}
 
 it("matches every pin selector inside its rendered production scene", () => {
   for (const topic of PLANNER_HELP_TOPICS) {
@@ -131,6 +147,12 @@ it("matches every pin selector inside its rendered production scene", () => {
           targets.some((selector) => container.querySelector(selector) !== null),
           targets.join(" | "),
         ).toBe(true);
+        // Every ringed element is on screen: not hidden, and not inside a closed <details>.
+        const matched = targets.flatMap((selector) => [...container.querySelectorAll(selector)]);
+        for (const element of matched) {
+          expect(element.closest("[hidden]"), targets.join(" | ")).toBeNull();
+          expect(hiddenByDetails(element), targets.join(" | ")).toBe(false);
+        }
       }
       unmount();
     }
@@ -156,6 +178,51 @@ it("pins the header's logo, switcher, activity pill, settings and help once each
   for (const selector of selectors) {
     expect(container.querySelectorAll(selector)).toHaveLength(1);
   }
+});
+
+it("pins the next-step card on the third note, not Share", () => {
+  const note = PLANNER_HELP_TOPICS[0]!.scenes[0]!.notes[2]!;
+  const targets = typeof note.target === "string" ? [note.target] : note.target;
+  const { container } = render(<GettingAroundScene />);
+
+  const matched = new Set(targets.flatMap((selector) => [...container.querySelectorAll(selector)]));
+  expect(matched.size).toBe(1);
+  const card = [...matched][0] as HTMLElement;
+  expect(card.classList.contains("plan-next-step")).toBe(true);
+  expect(card.textContent).toContain("Start the metaplan");
+  expect(within(card).queryByRole("button", { name: /share/i, hidden: true })).toBeNull();
+  expect(card.contains(container.querySelector('[aria-label="Settings"]'))).toBe(false);
+});
+
+it("pins the whole step rail, which shows the seven real steps and cannot scroll the scene", () => {
+  const note = PLANNER_HELP_TOPICS[0]!.scenes[0]!.notes[1]!;
+  const [railSelector] = note.target as readonly string[];
+  const { container } = render(<GettingAroundScene />);
+
+  const rail = container.querySelector(railSelector!)!;
+  expect(container.querySelectorAll(railSelector!)).toHaveLength(1);
+  expect([...rail.querySelectorAll(".plan-step-name")].map((name) => name.textContent)).toEqual([
+    "Vision",
+    "Product spec",
+    "Metaplan",
+    "Plans",
+    "Pressure test",
+    "Review",
+    "Run",
+  ]);
+  expect([...rail.querySelectorAll(".plan-step-count")].map((count) => count.textContent)).toEqual([
+    "1",
+    "5/6",
+    "1",
+    "—",
+    "—",
+    "—",
+    "—",
+  ]);
+  expect(rail.textContent).not.toContain("Plan review");
+  // The stage clips a header wider than itself instead of growing a scrollbar in the scene.
+  const css = readFileSync(join(import.meta.dirname, "pinned-scene.css"), "utf8");
+  expect(css).toMatch(/__stage\s*\{[^}]*overflow-x:\s*clip;/);
 });
 
 it("pins the step rail in the wide header and its popover button in the narrow one", () => {

@@ -3,6 +3,10 @@ import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import snapshotFixture from "@/plan/api/fixtures/chat-snapshot.json";
+import { sessionViewSchema } from "@/plan/api/schema-chat";
+import { snapshotAtom } from "@/plan/chat/model";
+import { screenAtom } from "@/plan/chat/session-home";
 import { authoringAtom, canAuthorAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
 
 import { AddToChat, MAX_ATTACHMENT_BYTES } from "./add-to-chat";
@@ -68,6 +72,53 @@ describe("AddToChat", () => {
     const blocked = storeWith(ada);
     expect(blocked.get(canAuthorAtom)).toBe(false);
     const { container } = mount(blocked);
+    expect(container.textContent).toBe("");
+  });
+
+  it("hides the button while the open session belongs to another screen", () => {
+    const store = storeWith(null);
+    const session = sessionViewSchema.parse({
+      ...snapshotFixture.session,
+      state: "idle",
+      feature: "alpha",
+    });
+    store.set(snapshotAtom, { session, turns: [], queue: [], previous: null });
+    store.set(screenAtom, { feature: "beta", plan: null });
+    const { container } = mount(store);
+    expect(container.textContent).toBe("");
+    cleanup();
+
+    store.set(screenAtom, { feature: "alpha", plan: null });
+    mount(store);
+    expect(screen.getByRole("button", { name: "Add to chat" })).toBeTruthy();
+  });
+
+  it("keeps the button once the session that belongs to another screen has ended", () => {
+    const store = storeWith(null);
+    const session = sessionViewSchema.parse({
+      ...snapshotFixture.session,
+      state: "ended",
+      feature: "alpha",
+    });
+    store.set(screenAtom, { feature: "beta", plan: null });
+    store.set(snapshotAtom, {
+      session: null,
+      turns: [],
+      queue: [],
+      previous: { session, turns: [] },
+    });
+    mount(store);
+    expect(screen.getByRole("button", { name: "Add to chat" })).toBeTruthy();
+    cleanup();
+
+    // The same session, still open, is the control: it hides the button.
+    store.set(snapshotAtom, {
+      session: { ...session, state: "idle" },
+      turns: [],
+      queue: [],
+      previous: null,
+    });
+    const { container } = mount(store);
     expect(container.textContent).toBe("");
   });
 

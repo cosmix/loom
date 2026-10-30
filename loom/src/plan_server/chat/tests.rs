@@ -1,5 +1,4 @@
-//! Chat wiring over a fake session host: snapshots and queue privacy, grace expiry, the
-//! shutdown drain and the authoring release rules. `tests_dispatch` shares this harness.
+//! Chat wiring over a fake session host; `tests_dispatch` shares this harness.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -19,8 +18,9 @@ use crate::plan_server::prereq::ReadOnly;
 use crate::plan_server::wire::chat::ChatCommand;
 use crate::plan_server::wire::server::{MissingPrereq, PrereqKind};
 use crate::plan_session::bridge::host::{LaunchSpec, SessionHost, Spawned};
-use crate::plan_session::bridge::StartRequest;
-use crate::plan_session::bridge::{Bridge, BridgeEvent, EndCause, EndMode, EndOutcome};
+use crate::plan_session::bridge::{
+    Bridge, BridgeEvent, EndCause, EndMode, EndOutcome, StartRequest,
+};
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::SessionState;
 use crate::plan_session::spool::append_event;
@@ -258,6 +258,7 @@ pub(super) fn start() -> ChatCommand {
         client_id: Some("c1".into()),
         offer: None,
         feature: None,
+        plan: None,
         text: None,
         attachments: Vec::new(),
     }
@@ -346,8 +347,7 @@ fn a_failed_chat_releases_authoring_unless_a_lease_holds_it() {
     let holder = browser();
     let tab = f.connect(&holder);
     f.host.fail_spawn.store(true, Ordering::SeqCst);
-    // Every end here is a failed launch. The release runs in the listener installed before the
-    // fixture's own, so it has happened once the fixture sees the `Ended`.
+    // Every end is a failed launch; its release runs before the fixture's listener sees `Ended`.
     let fail = |count: usize| {
         assert_eq!(f.command(&tab, start()), ok_result());
         wait_until("the failure", || {
@@ -369,10 +369,9 @@ fn a_failed_chat_releases_authoring_unless_a_lease_holds_it() {
 #[test]
 fn a_pressure_session_neither_ends_at_grace_expiry_nor_releases_authoring() {
     let f = Fixture::new(false);
-    let holder = browser();
+    let (holder, ctx) = (browser(), Arc::clone(&f.ctx));
     f.connect(&holder);
     f.ctx.require_authoring(&holder, Take::TakeIfFree).unwrap();
-    let ctx = Arc::clone(&f.ctx);
     let guidance =
         Box::new(move |dir: &SessionDir| FixedGuidance.authoring(&ctx, dir, None, None, None));
     let request = StartRequest {
@@ -382,6 +381,8 @@ fn a_pressure_session_neither_ends_at_grace_expiry_nor_releases_authoring() {
         guidance,
         opening_origin: None,
         offer: None,
+        feature: None,
+        plan: None,
         extra_env: Vec::new(),
     };
     let s = f.launched(&f.bridge.start_session(request).unwrap());

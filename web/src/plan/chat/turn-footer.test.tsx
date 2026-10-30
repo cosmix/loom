@@ -145,8 +145,10 @@ it("duration and token tooltip", () => {
 
 it("rows and diff link", async () => {
   mount();
-  expect(screen.getByText("Changed 1 files")).toBeTruthy();
-  expect(screen.getByText("product/demo/section_02.md")).toBeTruthy();
+  expect(screen.getByText("Changed 1 file")).toBeTruthy();
+  expect(screen.getByText("section_02.md").closest("[title]")?.getAttribute("title")).toBe(
+    "product/demo/section_02.md",
+  );
   expect(await screen.findByText("+1 −1")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Diff" }).getAttribute("href")).toContain("?diff=turn");
   expect(restoreButton).toHaveBeenCalledWith(
@@ -171,7 +173,7 @@ it("footer diff link carries the session/turn key and a doc-relative path", asyn
 
 it("running turn disables diff", () => {
   mount(turn({ open: true }));
-  expect(screen.getByText("Changing 1 files")).toBeTruthy();
+  expect(screen.getByText("Changing 1 file")).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Diff" })).toBeNull();
   expect(screen.getByRole("button", { name: "Diff" }).getAttribute("aria-disabled")).toBe("true");
   expect(screen.getByText("Available when the turn ends")).toBeTruthy();
@@ -215,7 +217,8 @@ it("rebuilt rows states", () => {
   });
   const { container, rerender } = mount(value);
   expect(screen.getAllByText("Rebuilding")).toHaveLength(3);
-  expect(container.querySelectorAll('[data-kind="summaries"]')).toHaveLength(3);
+  expect(screen.getByText("3 summaries rebuilding")).toBeTruthy();
+  expect(container.querySelectorAll('[data-kind="summaries"]')).toHaveLength(1);
   expect(screen.getByRole("link", { name: "demo/product/section_01" }).getAttribute("href")).toBe(
     "/f/demo/product/section_01",
   );
@@ -353,7 +356,7 @@ it("fetches plans once per turn and scopes them to the changed feature section",
   );
   await screen.findAllByText("+1 −1");
   await screen.findAllByRole("group", { name: "written plans" });
-  const other = screen.getByText("product/other/section_02.md").closest("li")!;
+  const other = screen.getByTitle("product/other/section_02.md").closest("li")!;
   expect(within(other).queryByRole("group")).toBeNull();
   const count = (pathname: string) => requests.filter((r) => r.startsWith(pathname)).length;
   expect(count("/api/implemented-by")).toBe(1);
@@ -385,7 +388,7 @@ it.each([
   ["web/src/index.md", null],
 ] as const)("changed file %s has document mark %s", async (name, kind) => {
   mount(turn({ changed_files: [{ path: name, before_hash: "h", by_tool: true }] }));
-  const row = screen.getByText(name.replace(/^doc\//, "")).closest("li")!;
+  const row = screen.getByTitle(name.replace(/^doc\//, "")).closest("li")!;
   const mark = row.querySelector("[data-doc-kind]");
   expect(mark?.getAttribute("data-doc-kind") ?? null).toBe(kind);
   if (kind !== null) expect(mark?.querySelector("svg")).toBeTruthy();

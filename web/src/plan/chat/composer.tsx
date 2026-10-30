@@ -11,6 +11,7 @@ import {
   stoppingAtom,
 } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
+import { AttachDocument } from "./attach-document";
 import { PendingChips } from "./chips";
 import { composerBlock } from "./composer-gate";
 import {
@@ -23,15 +24,9 @@ import {
 } from "./composer-hooks";
 import { draftAtom } from "./drafts";
 import { formatMessage } from "./format-attachments";
-import {
-  composerUnconfirmedAtom,
-  pendingPermissionsAtom,
-  RESEND_OFFLINE,
-  sessionAtom,
-} from "./model";
+import { composerUnconfirmedAtom, RESEND_OFFLINE, sessionAtom } from "./model";
 import { CONTROLS } from "./model-identity";
 import { NewChatOffers } from "./new-chat-offers";
-import { PermissionCard } from "./permission-card";
 import { ConfigBlockNotice } from "./pressure/config-block-notice";
 import { codexRunsAlone } from "./pressure/steps";
 import { pressureRunAtom } from "./pressure/use-pressure";
@@ -41,6 +36,7 @@ import { StopControl } from "./stop-control";
 import { storageFullAtom } from "./storage";
 import { SuggestionCards } from "./suggestion-cards";
 import { Untrusted } from "./visible-controls";
+import "./chat-surface.css";
 
 const CAP = 100_000;
 const HOLD_NOTE =
@@ -129,7 +125,7 @@ function ComposerInput() {
   const ref = useComposerBox(draft.text);
   const id = useId();
   return (
-    <div className="shrink-0 space-y-2">
+    <div className="chat-composer-input">
       <PendingChips />
       <textarea
         ref={ref}
@@ -137,7 +133,7 @@ function ComposerInput() {
         rows={Math.min(8, Math.max(1, draft.text.split("\n").length))}
         value={draft.text}
         aria-describedby={error ? id : undefined}
-        className="block w-full resize-none overflow-y-auto rounded border border-border bg-background p-2 font-sans text-sm leading-[1.5] focus-visible:outline-2 focus-visible:outline-ring"
+        className="chat-composer-box font-sans"
         style={{ maxHeight: "186px" }}
         onChange={(event) => store.set(draftAtom, (old) => ({ ...old, text: event.target.value }))}
         onKeyDown={(event) => {
@@ -146,9 +142,14 @@ function ComposerInput() {
           if (!reason) void send();
         }}
       />
-      <DisabledReason reason={reason} onClick={() => void send()}>
-        Send
-      </DisabledReason>
+      <div className="chat-composer-actions">
+        <AttachDocument />
+        <div className="chat-composer-send">
+          <DisabledReason reason={reason} onClick={() => void send()}>
+            Send
+          </DisabledReason>
+        </div>
+      </div>
       {error && (
         <p id={id} role="status" className="text-xs text-muted-foreground">
           <Untrusted text={error} />
@@ -244,27 +245,25 @@ export function ComposerArea() {
   const server = useAtomValue(serverInfoAtom);
   const state = useAtomValue(shownSessionAtom)?.state;
   const session = useAtomValue(sessionAtom);
-  const permissions = useAtomValue(pendingPermissionsAtom);
   const viewer = !!server?.read_only.length || (!canAuthor && !!authoring?.holder);
   const concluded = state === "ended" || state === "failed";
   const view: View = viewer ? "read-only" : concluded ? "concluded" : "composer";
   const onLeave = useFocusHandoff(view);
   return (
-    <div className="flex min-h-0 shrink-0 flex-col gap-2 border-t border-border p-3 font-sans">
+    <div className="chat-composer font-sans">
       <ConfigBlockNotice context="chat" />
       <div className="max-h-[33vh] min-h-0 overflow-y-auto space-y-2">
         <QueueStrip />
-        {permissions[0] && (
-          <div>
-            <PermissionCard key={permissions[0].request_id} item={permissions[0]} inline={false} />
-          </div>
-        )}
         <SuggestionCards />
       </div>
       {view === "read-only" ? (
         <ReadOnlyLine />
       ) : view === "concluded" ? (
-        <ConcludedChat ended={state === "ended"} onLeave={onLeave} />
+        <>
+          {/* An attachment made on a concluded session's own screen waits for the next chat. */}
+          {canAuthor && <PendingChips />}
+          <ConcludedChat ended={state === "ended"} onLeave={onLeave} />
+        </>
       ) : (
         <ComposerInput />
       )}

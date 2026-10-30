@@ -9,7 +9,7 @@ import type { ChecklistView, StandalonePlanView } from "@/plan/api/schema";
 import { sessionViewSchema, type SessionView } from "@/plan/api/schema-chat";
 import type { KickoffView } from "@/plan/api/schema-kickoff";
 import { sessionAtom, snapshotAtom } from "@/plan/chat/model";
-import { isActiveSession } from "@/plan/chat/offer-flow";
+import { isActiveSession } from "@/plan/chat/session-home";
 import { resetKickoffLanding, useKickoffLanding } from "@/plan/new/kickoff-landing";
 import { kickoffAtom, projectAtom } from "@/plan/state/atoms";
 

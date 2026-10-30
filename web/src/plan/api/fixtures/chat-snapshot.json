@@ -15,7 +15,9 @@
     "subagents_running": 0,
     "last_activity": "2026-10-17T08:11:00Z",
     "failure": null,
-    "offer": null
+    "offer": null,
+    "feature": null,
+    "plan": null
   },
   "turns": [
     {
@@ -406,7 +408,9 @@
         "kind": "died",
         "message": "The session process exited."
       },
-      "offer": null
+      "offer": null,
+      "feature": null,
+      "plan": null
     },
     "turns": [
       {

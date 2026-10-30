@@ -159,6 +159,24 @@ pub(crate) fn validate_feature(project: &Project, feature: Option<&str>) -> Resu
     Ok(())
 }
 
+/// Reject a plan the project does not list as standalone, and a chat named for both a feature
+/// and a plan. A listed slug came from a file name, so it needs no shape check of its own.
+pub(crate) fn validate_plan(
+    project: &Project,
+    feature: Option<&str>,
+    plan: Option<&str>,
+) -> Result<()> {
+    if let Some(name) = plan {
+        ensure!(
+            feature.is_none(),
+            "a chat belongs to a feature or a plan, not both"
+        );
+        let known = project.standalone.iter().any(|slug| slug == name);
+        ensure!(known, "unknown plan: {name}");
+    }
+    Ok(())
+}
+
 fn offers_step(feature: &Feature, offer: &str) -> bool {
     feature
         .checklist

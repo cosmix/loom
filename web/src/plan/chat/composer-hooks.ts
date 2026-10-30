@@ -10,6 +10,7 @@ import { sendMessage, startChat, toAttachmentInput } from "./commands";
 import { draftAtom } from "./drafts";
 import { sessionAtom, unconfirmedSendsAtom } from "./model";
 import { holdNoteSeenAtom, panelCollapsedAtom } from "./prefs";
+import { sessionHereAtom, startOwnerAtom } from "./session-home";
 import { chatSheetOpenAtom } from "./sheet-state";
 
 /** Set by the `c` shortcut after it opens the panel; the mounted composer focuses on it. */
@@ -36,6 +37,8 @@ export function useComposerShortcut(): void {
       )
         return;
       if (event.target instanceof Element && event.target.closest(TYPING_TARGET)) return;
+      // A session that belongs elsewhere leaves the panel with no composer to focus.
+      if (!store.get(sessionHereAtom)) return;
       event.preventDefault();
       store.set(panelCollapsedAtom, false);
       store.set(chatSheetOpenAtom, true);
@@ -101,9 +104,10 @@ export function useSendDraft() {
     setPending(true);
     setError(null);
     try {
+      const { feature, plan } = store.get(startOwnerAtom);
       const result =
         store.get(sessionAtom) === null
-          ? await startChat(store, null, text, attachments)
+          ? await startChat(store, null, text, attachments, feature, plan)
           : await sendMessage(store, text, attachments);
       if (!result.ok) throw new Error(result.error ?? "Command refused");
       if (resendId)

@@ -7,7 +7,7 @@ import { compactTokens } from "@/lib/tokens";
 import type { DraftTeamView, TeammateStatus } from "@/plan/api/schema-kickoff";
 import { endChat } from "@/plan/chat/commands";
 import { sessionAtom } from "@/plan/chat/model";
-import { isActiveSession } from "@/plan/chat/offer-flow";
+import { isActiveSession } from "@/plan/chat/session-home";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { plural } from "@/plan/feature/steps";
 import { TeammateCard, totalTokens } from "@/plan/feature/team-card";

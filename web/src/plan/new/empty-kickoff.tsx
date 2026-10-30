@@ -4,12 +4,8 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { startChat } from "@/plan/chat/commands";
 import { sessionAtom } from "@/plan/chat/model";
-import {
-  confirmEndFirst,
-  endCurrentChat,
-  isActiveSession,
-  startError,
-} from "@/plan/chat/offer-flow";
+import { noPanelRefusal, startError } from "@/plan/chat/offer-flow";
+import { isActiveSession } from "@/plan/chat/session-home";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { kickoffSessionAtom } from "@/plan/new/kickoff-state";
 import { authorBlockReasonAtom, canAuthorAtom } from "@/plan/state/atoms";
@@ -87,13 +83,8 @@ async function beginKickoff(
   signal: AbortSignal,
   onTimeout: () => void,
 ) {
-  const current = store.get(sessionAtom);
-  if (isActiveSession(current))
-    await endCurrentChat(store, current, signal, "start the conversation");
-  if (signal.aborted) return;
-  if (!store.get(canAuthorAtom)) {
-    throw new Error(store.get(authorBlockReasonAtom) ?? "Authoring is unavailable");
-  }
+  // An ended session may remain in the snapshot; only a different one is this kickoff's.
+  const previous = store.get(sessionAtom);
   store.set(kickoffSessionAtom, null);
   await startChat(
     store,
@@ -101,7 +92,7 @@ async function beginKickoff(
     text,
     documents.map((document) => document.attachment),
   );
-  if (!signal.aborted) await waitForKickoffSession(store, current?.id ?? null, signal, onTimeout);
+  if (!signal.aborted) await waitForKickoffSession(store, previous?.id ?? null, signal, onTimeout);
 }
 
 function useKickoffStart() {
@@ -115,7 +106,11 @@ function useKickoffStart() {
     if (request.current || !store.get(canAuthorAtom) || (!text.trim() && !documents.length)) return;
     const current = store.get(sessionAtom);
     if (isActiveSession(current)) {
-      if (current.id === store.get(kickoffSessionAtom) || !confirmEndFirst()) return;
+      // This form shows only while the route shows no session, so a chat open now is not on this
+      // screen and is not this screen's to end. The exception is this tab's own kickoff, whose
+      // snapshot has arrived and is about to replace the form.
+      if (current.id !== store.get(kickoffSessionAtom)) setError(noPanelRefusal(store));
+      return;
     }
     sessionWait.current?.abort();
     const controller = new AbortController();

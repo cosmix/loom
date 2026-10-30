@@ -1,11 +1,13 @@
 import { useAtomValue, useStore } from "jotai";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
+import { FlaskConical, Lock } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import type { PressureOptions, PressureSlots } from "@/plan/api/schema-pressure";
 import { sessionAtom } from "@/plan/chat/model";
-import { isActiveSession } from "@/plan/chat/offer-flow";
+import { isActiveSession } from "@/plan/chat/session-home";
 import { pressureDialogAtom } from "@/plan/offers/actions-pressure";
 import { ActionError } from "@/plan/ui/action-error";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
@@ -13,12 +15,8 @@ import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
 
 import { visibleControls } from "../visible-controls";
-import {
-  PressureConsequences,
-  PressureHero,
-  PressurePlanCard,
-  PressureRounds,
-} from "./pressure-dialog-parts";
+import { PressureConsequences, PressureHero, PressureRounds } from "./pressure-dialog-parts";
+import { PressurePlanCard } from "./pressure-plan-card";
 import { RoundDiagram } from "./round-diagram";
 import {
   refreshPressureOptions,
@@ -64,7 +62,7 @@ export function PressureDialog() {
         if (!open) close();
       }}
     >
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[calc(100%-8px)] gap-0 overflow-y-auto rounded-2xl border border-border bg-card p-0 ring-0 sm:max-w-[min(660px,100%)]">
         <PressureHero />
         {options?.ok && refreshed ? (
           <PressureForm
@@ -101,24 +99,29 @@ function PressureForm({ options, initialPlan, close }: PressureFormProps) {
   const { submit, pending, error } = usePressureStart(plan, slots, reason, close);
 
   return (
-    <form ref={form} onSubmit={submit} className="space-y-5">
-      <fieldset disabled={pending} className="min-w-0 space-y-5">
+    <form ref={form} onSubmit={submit} className="grid">
+      <fieldset disabled={pending} className="m-0 grid min-w-0 gap-[18px] px-5 pt-[18px] pb-5">
         <PressurePlanCard plan={plan} plans={options.plans} setPlan={setPlan} />
-        <section aria-label="What happens" className="space-y-3">
-          <h3 className="text-sm font-semibold">What happens</h3>
+        <section aria-label="What happens" className="grid gap-3">
           <PressureRounds
             rounds={slots.rounds}
             setRounds={(rounds) => setSlots({ ...slots, rounds })}
           />
           <ModelRows options={options} slots={slots} setSlots={setSlots} />
-          <p className="text-xs text-muted-foreground">The record line is written at the end.</p>
+          <p className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+            <span
+              aria-hidden="true"
+              className="size-1.5 shrink-0 rounded-full bg-(--tone-completed)"
+            />
+            {RECORD_LINE}
+          </p>
         </section>
+        <PressureConsequences
+          rounds={slots.rounds}
+          chatName={isActiveSession(session) && session.kind === "authoring" ? session.name : null}
+        />
+        {error !== null && <ActionError message={error} />}
       </fieldset>
-      <PressureConsequences
-        rounds={slots.rounds}
-        endsChat={isActiveSession(session) && session.kind === "authoring"}
-      />
-      {error !== null && <ActionError message={error} />}
       <PressureFooter
         reason={reason ?? (pending ? "Starting pressure test…" : null)}
         close={close}
@@ -127,6 +130,8 @@ function PressureForm({ options, initialPlan, close }: PressureFormProps) {
     </form>
   );
 }
+
+const RECORD_LINE = "Then a record line goes at the end of the plan: date, models, rounds.";
 
 function PressureFooter({
   reason,
@@ -138,15 +143,19 @@ function PressureFooter({
   onStart: () => void;
 }) {
   return (
-    <DialogFooter className="flex-col sm:items-center">
-      <p className="mr-auto text-xs text-muted-foreground">Holds authoring until it finishes.</p>
+    <div className="flex flex-wrap items-center gap-2 border-t border-hairline bg-background px-5 py-3.5">
+      <p className="mr-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Lock aria-hidden="true" className="size-3.5" />
+        Holds authoring until it finishes
+      </p>
       <Button type="button" variant="outline" onClick={close}>
         Cancel
       </Button>
       <DisabledReason reason={reason} onClick={onStart}>
+        <FlaskConical aria-hidden="true" />
         Start pressure test
       </DisabledReason>
-    </DialogFooter>
+    </div>
   );
 }
 
@@ -217,8 +226,11 @@ function ModelRows({
   setSlots: (slots: PressureSlots) => void;
 }) {
   const [review, secondReview, address] = modelRows(options).map((row) => (
-    <fieldset key={row.model} className="grid min-w-0 grid-cols-2 gap-3">
-      <legend className="mb-1 text-sm font-medium">{row.label}</legend>
+    <fieldset
+      key={row.model}
+      className="m-0 grid min-w-0 grid-cols-[minmax(0,1.5fr)_auto_minmax(0,1fr)] items-center gap-1.5 p-0"
+    >
+      <legend className="sr-only">{row.label}</legend>
       <OptionSelect
         label={`${row.label} model`}
         name={row.model}
@@ -226,6 +238,9 @@ function ModelRows({
         values={row.models}
         onChange={(value) => setSlots({ ...slots, [row.model]: value })}
       />
+      <span aria-hidden="true" className="font-mono text-[11.5px] text-muted-foreground">
+        ·
+      </span>
       <OptionSelect
         label={`${row.label} effort`}
         name={row.effort}
@@ -260,14 +275,16 @@ function OptionSelect({
 }) {
   const id = useId();
   return (
-    <div className="min-w-0 space-y-1">
-      <label htmlFor={id}>{label}</label>
+    <div className="min-w-0">
+      <label htmlFor={id} className="sr-only">
+        {label}
+      </label>
       <select
         id={id}
         name={name}
         value={value}
         required
-        className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+        className="h-7 w-full rounded-lg border border-hairline bg-background px-2 font-mono text-[11.5px] focus-visible:outline-2 focus-visible:outline-ring"
         onChange={(event) => onChange(event.currentTarget.value)}
       >
         {values.map((option) => (

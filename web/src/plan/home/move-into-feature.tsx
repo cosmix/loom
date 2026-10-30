@@ -1,5 +1,6 @@
 import { useAtomValue, useStore } from "jotai";
 import { useEffect, useId, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 
 import {
   Dialog,
@@ -9,17 +10,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { startChat } from "@/plan/chat/commands";
-import { sessionAtom } from "@/plan/chat/model";
-import {
-  confirmEndFirst,
-  endCurrentChat,
-  isActiveSession,
-  startError,
-} from "@/plan/chat/offer-flow";
+import { noPanelRefusal, startError } from "@/plan/chat/offer-flow";
 import { panelCollapsedAtom } from "@/plan/chat/prefs";
 import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { repoRel } from "@/plan/files/address";
+import { repoRel, toAddress } from "@/plan/files/address";
 import { FEATURE_NAME_HINT, isFeatureName } from "@/plan/new/feature-name";
 import {
   authorBlockReasonAtom,
@@ -30,39 +25,53 @@ import {
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import type { Store } from "@/state/store";
 
+/**
+ * Starts the move's chat and returns the route where its session shows: `/` mounts no chat panel,
+ * so the dialog closing would otherwise leave nothing visibly changed. The chat belongs to the
+ * destination feature when it exists, else to the whole project, which every panel shows, so the
+ * moved plan's page is where it is reached. Any other source is reached at its own document.
+ */
 async function beginMove(store: Store, path: string, name: string, signal: AbortSignal) {
-  const current = store.get(sessionAtom);
-  if (isActiveSession(current)) await endCurrentChat(store, current, signal, "move the document");
-  if (signal.aborted) return;
-  if (!store.get(canAuthorAtom)) {
-    throw new Error(store.get(authorBlockReasonAtom) ?? "Authoring is unavailable");
-  }
   const text =
     `Move ${repoRel(path)} into the feature "${name}": ` +
     `use git mv into the matching doc/product/${name}/ or doc/plans/${name}/ directory, ` +
     "keep file names, and fix every reference to it.";
-  await startChat(store, null, text);
-  if (signal.aborted) return;
+  // The chat belongs to its destination. A new feature's name is refused as a start's owner until
+  // the move has written it, so that chat starts for the whole project.
+  const known = store.get(featuresAtom).some((item) => item.feature === name);
+  await startChat(store, null, text, [], known ? name : undefined);
+  if (signal.aborted) return null;
   store.set(panelCollapsedAtom, false);
   store.set(chatSheetOpenAtom, true);
+  if (known) return `/f/${encodeURIComponent(name)}`;
+  const plan = store.get(standaloneAtom).find((item) => item.path === path);
+  return plan ? `/plans/${encodeURIComponent(plan.slug)}` : toAddress(path);
 }
 
 function useMoveChat(onClose: () => void) {
   const store = useStore();
+  const navigate = useNavigate();
   const request = useRef<AbortController | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => () => request.current?.abort(), []);
   const start = async (path: string, name: string) => {
     if (request.current || !store.get(canAuthorAtom)) return;
-    if (isActiveSession(store.get(sessionAtom)) && !confirmEndFirst()) return;
+    const refusal = noPanelRefusal(store);
+    if (refusal) {
+      setError(refusal);
+      return;
+    }
     const controller = new AbortController();
     request.current = controller;
     setPending(true);
     setError(null);
     try {
-      await beginMove(store, path, name, controller.signal);
-      if (!controller.signal.aborted) onClose();
+      const destination = await beginMove(store, path, name, controller.signal);
+      if (!controller.signal.aborted) {
+        if (destination) void navigate(destination);
+        onClose();
+      }
     } catch (cause) {
       if (!controller.signal.aborted) setError(startError(store, cause));
     } finally {

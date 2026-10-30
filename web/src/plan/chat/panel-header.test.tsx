@@ -44,11 +44,14 @@ it.each([true, false])("separates the empty label and hint (primary offer: %s)",
   const line = container.querySelector<HTMLElement>(".chat-state-line")!;
   const row = line.querySelector<HTMLElement>('[aria-live="off"] > .flex')!;
   const label = within(row.children[1] as HTMLElement).getByText("No chat");
-  const hint = within(row).getByText(primary ? title : "New chat");
+  const hint = within(row).queryByText(title);
   expect(row.children[0].getAttribute("aria-hidden")).toBe("true");
   expect(row.children[1].contains(label)).toBe(true);
   expect(row.children[1].contains(hint)).toBe(false);
-  expect([...row.children].slice(2).some((child) => child.contains(hint))).toBe(true);
+  expect([...row.children].slice(2).some((child) => child.contains(hint))).toBe(primary);
+  // With no chat the head offers New chat, so the row does not repeat it.
+  expect(within(row).queryByText("New chat")).toBeNull();
+  expect(within(container.querySelector("header")!).getByText("New chat")).toBeTruthy();
   expect(within(line).getByRole("status").textContent).toBe("No chat");
   // jsdom has no layout: assert the scoped grid rules that keep offers below the label.
   expect(line.parentElement?.className).toContain(

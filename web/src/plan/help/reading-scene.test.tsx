@@ -1,12 +1,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import {
-  READING_SCENES,
-  READING_TIPS,
-  ReadingFoldScene,
-  ReadingSentenceScene,
-} from "@/plan/help/reading-scene";
+import { READING_SCENES, READING_TIPS, ReadingScene } from "@/plan/help/reading-scene";
 
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Help must not request live data")));
@@ -29,10 +24,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("exports the two reading scenes in order", () => {
+it("exports the one reading scene with four pins", () => {
   expect(READING_SCENES.map(({ title, Scene }) => ({ title, Scene }))).toEqual([
-    { title: "A summary sentence and its marks", Scene: ReadingSentenceScene },
-    { title: "Folding and sources", Scene: ReadingFoldScene },
+    { title: "A sentence, its marks and its source", Scene: ReadingScene },
+  ]);
+  expect(READING_SCENES[0]?.notes.map(({ text }) => text)).toEqual([
+    "A sentence that opens. Hover shows its document's colour; click or press Enter.",
+    "Which document the sentence draws on. A dashed mark is being rebuilt.",
+    "Fold back to the sentence you opened. Esc folds one level, Shift+Esc all.",
+    "The source passage, with its file and heading. It opens in file mode.",
   ]);
 });
 
@@ -50,7 +50,7 @@ it.each(READING_SCENES)(
       for (const selector of selectors) {
         expect(container.querySelector(selector), selector).not.toBeNull();
       }
-      expect(note.text.trim()).toMatch(/^[^.!?]+[.!?]$/u);
+      expect(note.text.trim()).toMatch(/[.!?]$/u);
       expect(note.text.trim().split(/\s+/u).length).toBeGreaterThanOrEqual(5);
     }
     expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -69,19 +69,15 @@ it.each(READING_SCENES)("rings exactly one element per note in $title", ({ Scene
   }
 });
 
-it("shows both current and out of date document marks on the real summary sentence", () => {
-  const { container } = render(<ReadingSentenceScene />);
+it("shows a closed sentence with a current and a rebuilding mark above the opened source", () => {
+  const { container } = render(<ReadingScene />);
 
   expect(container.querySelector(".concept-sentence strong")?.textContent).toBe("save places");
-  expect(container.querySelectorAll(".concept-mark")).toHaveLength(2);
+  expect(container.querySelectorAll(".concept-sentence")).toHaveLength(1);
+  expect(container.querySelectorAll(".concept-marks .concept-mark")).toHaveLength(2);
   expect(container.querySelector('[data-dashed="true"]')?.getAttribute("aria-label")).toContain(
-    "out of date: source changed, rebuild pending",
+    "out of date: rebuilding",
   );
-});
-
-it("renders both fold caps and the loaded source excerpt without requesting a document", () => {
-  const { container } = render(<ReadingFoldScene />);
-
   expect(container.querySelectorAll(".concept-run-cap")).toHaveLength(2);
   expect(container.querySelector(".concept-passage-chip")?.getAttribute("href")).toBe(
     "/files/product/map-view.md?lines=1-3#saved-places",
@@ -94,6 +90,13 @@ it("renders both fold caps and the loaded source excerpt without requesting a do
   expect(globalThis.WebSocket).not.toHaveBeenCalled();
 });
 
+it("pads the column so its sentences sit off the stage edge", () => {
+  const { container } = render(<ReadingScene />);
+  const column = container.querySelector<HTMLElement>("[data-loom-plan]")!;
+
+  expect(column.style.padding).toBe("14px 16px");
+});
+
 it("provides one to three single sentence reading tips", () => {
   expect(READING_TIPS.length).toBeGreaterThanOrEqual(1);
   expect(READING_TIPS.length).toBeLessThanOrEqual(3);
@@ -104,7 +107,7 @@ it("provides one to three single sentence reading tips", () => {
 
 it("seeds the open passage without writing the reader's session storage", () => {
   sessionStorage.clear();
-  const { container } = render(<ReadingFoldScene />);
+  const { container } = render(<ReadingScene />);
 
   expect(container.querySelector(".concept-passage-chip")).not.toBeNull();
   const written = Object.keys(sessionStorage).filter((key) => key.startsWith("loom-plan:concept:"));

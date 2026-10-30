@@ -5,18 +5,35 @@ import { endChat, startChat } from "./commands";
 import { sessionAtom } from "./model";
 import { offerErrorAtom } from "./offer-error";
 import { panelCollapsedAtom } from "./prefs";
+import {
+  elsewhereSessionAtom,
+  isActiveSession,
+  startOwnerAtom,
+  type SessionHome,
+} from "./session-home";
 import { chatSheetOpenAtom } from "./sheet-state";
 
-/** The width at which the panel is a side rail; keep in step with `DESKTOP` in panel.tsx. */
-const DESKTOP = "(min-width: 1024px)";
+/** The width at which the panel is a side rail. */
+export const DESKTOP = "(min-width: 1024px)";
 const END_FIRST_CONFIRM =
   "End the current chat first? It will write its open questions into the documents before it stops.";
 
-export function isActiveSession(session: SessionView | null): session is SessionView {
-  return session !== null && session.state !== "ended" && session.state !== "failed";
+export function elsewhereRefusal(home: SessionHome): string {
+  return `Finish the session in ${home.title} first.`;
 }
 
-/** Asks before a new chat replaces the running one. */
+/**
+ * Why a screen with no panel (`/`, an empty `/new`) refuses a start, or null with no chat open. Such
+ * a screen never shows a session, so it never offers to end one: not even one with no home, which
+ * reads as here on every screen that has a panel.
+ */
+export function noPanelRefusal(store: Store): string | null {
+  if (!isActiveSession(store.get(sessionAtom))) return null;
+  const elsewhere = store.get(elsewhereSessionAtom);
+  return elsewhere ? elsewhereRefusal(elsewhere) : "Finish the open chat first.";
+}
+
+/** Asks before a new chat replaces the running one on this screen. */
 export function confirmEndFirst(): boolean {
   return window.confirm(END_FIRST_CONFIRM);
 }
@@ -75,9 +92,10 @@ export function startError(store: Store, error: unknown): string {
 }
 
 /**
- * Starts a chat from an offer for every registered offer handler. With a chat running it asks
- * first, ends it and waits for it to be over. A refusal is shown in the panel, which a start
- * opens in the layout in use so the message is never hidden. One start runs at a time.
+ * Starts a chat from an offer for every registered offer handler. With a chat running on this
+ * screen it asks first, ends it and waits for it to be over; with one running elsewhere it refuses
+ * without asking. A refusal is shown in the panel, which a start opens in the layout in use so the
+ * message is never hidden. One start runs at a time.
  */
 export function createOfferStarter(store: Store): {
   start: (offer: string, feature?: string) => Promise<void>;
@@ -90,6 +108,14 @@ export function createOfferStarter(store: Store): {
   };
   const start = async (offer: string, feature?: string): Promise<void> => {
     if (request) return;
+    // The end wait can last minutes: the chat belongs to the screen the offer was chosen on.
+    const plan = feature === undefined ? store.get(startOwnerAtom).plan : undefined;
+    const elsewhere = store.get(elsewhereSessionAtom);
+    if (elsewhere) {
+      store.set(offerErrorAtom, elsewhereRefusal(elsewhere));
+      reveal();
+      return;
+    }
     const running = store.get(sessionAtom);
     if (isActiveSession(running) && !confirmEndFirst()) return;
     const controller = new AbortController();
@@ -98,7 +124,7 @@ export function createOfferStarter(store: Store): {
       if (isActiveSession(running))
         await endCurrentChat(store, running, controller.signal, "choose the offer");
       if (controller.signal.aborted) return;
-      await startChat(store, offer, undefined, undefined, feature);
+      await startChat(store, offer, undefined, undefined, feature, plan);
       // Disposed while the start was in flight: the panel is gone, so write and reveal nothing.
       if (controller.signal.aborted) return;
       store.set(offerErrorAtom, null);

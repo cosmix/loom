@@ -79,6 +79,8 @@ export const sessionViewSchema = z.strictObject({
   last_activity: z.string().nullable(),
   failure: failureSchema.nullable(),
   offer: z.string().nullable(),
+  feature: z.string().nullable(),
+  plan: z.string().nullable(),
 });
 export const tokenCountsSchema = z.strictObject({
   input: u64,
@@ -237,6 +239,7 @@ export const chatCommandSchema = z.discriminatedUnion("command", [
     ...clientId,
     offer: z.string().nullable(),
     feature: z.string().nullable().optional(),
+    plan: z.string().nullable().optional(),
     text: z.string().nullable(),
     attachments: z.array(attachmentInputSchema),
   }),
