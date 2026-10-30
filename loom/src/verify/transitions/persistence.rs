@@ -166,29 +166,39 @@ where
     }
 
     let before = stage.status.clone();
+    let previous_session = stage.session.clone();
     modify(&mut stage)?;
     let new_content = serialize_stage_to_markdown(&stage)?;
     atomic_write_locked(stage_path, &new_content)?;
-    if stage.status != before {
+    let session_started = stage.status == StageStatus::Executing
+        && stage.session.is_some()
+        && stage.session != previous_session;
+    if stage.status != before || session_started {
         record_status_change(stage_path, &stage, before);
     }
     Ok(stage)
 }
 
-/// Append the status change to the durable event log. The stage write already
+/// Append the status or executing-session change to the durable event log. The stage write already
 /// succeeded, so a failed append is logged and never fails the update.
 fn record_status_change(stage_path: &Path, stage: &Stage, from: StageStatus) {
     // Stage files live in `<work_dir>/stages/`.
     let Some(work_dir) = stage_path.parent().and_then(Path::parent) else {
         return;
     };
-    let event = StageEvent::new(
+    let mut event = StageEvent::new(
         &stage.id,
         from,
         stage.status.clone(),
         stage.session.clone(),
         stage.close_reason.as_deref(),
     );
+    event.session_type = stage.session.as_deref().and_then(|id| {
+        crate::fs::session_files::load_session_exact(work_dir, id)
+            .ok()
+            .flatten()
+            .map(|session| session.session_type)
+    });
     if let Err(err) = append_event(work_dir, &event) {
         tracing::warn!(stage = %stage.id, "failed to record stage event: {err:#}");
     }

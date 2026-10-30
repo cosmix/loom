@@ -99,7 +99,11 @@ export function timeText(stage: StageSummary): string | null {
   if (stage.status === "waiting-for-deps" || stage.status === "queued") {
     return null;
   }
-  const seconds = stage.execution_secs ?? stage.elapsed_secs;
+  // Completion covers the whole run, including contract writing and phase transitions.
+  const completed = stage.status === "completed" || stage.status === "completed-with-failures";
+  const seconds = completed
+    ? (stage.elapsed_secs ?? stage.execution_secs)
+    : (stage.execution_secs ?? stage.elapsed_secs);
   return seconds === null ? "" : formatElapsed(seconds);
 }
 

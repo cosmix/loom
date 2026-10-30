@@ -240,3 +240,45 @@ fn blocked_transition_event_carries_close_reason() {
     let events = read_recent(work_dir, 10);
     assert_eq!(events[0].reason.as_deref(), Some("criteria failed"));
 }
+
+#[test]
+fn contract_handoff_records_both_session_starts_without_status_change() {
+    use crate::fs::{session_files::save_session, stage_events::read_recent};
+    use crate::models::session::{Session, SessionType};
+
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path();
+    let stage = Stage {
+        id: "phases".into(),
+        status: StageStatus::Queued,
+        ..Stage::default()
+    };
+    create_stage(&stage, work_dir).unwrap();
+    for session_type in [SessionType::Contract, SessionType::Stage] {
+        let mut session = Session::new();
+        session.session_type = session_type;
+        session.stage_id = Some(stage.id.clone());
+        save_session(&session, work_dir).unwrap();
+        update_stage(&stage.id, work_dir, |current| {
+            current.try_mark_executing()?;
+            current.assign_session(session.id.clone());
+            Ok(())
+        })
+        .unwrap();
+        // Repeated writes of the same session must not duplicate the start.
+        update_stage(&stage.id, work_dir, |current| {
+            current.assign_session(session.id.clone());
+            Ok(())
+        })
+        .unwrap();
+    }
+    let events = read_recent(work_dir, 10);
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].from, StageStatus::Queued);
+    assert_eq!(events[0].session_type, Some(SessionType::Contract));
+    assert_eq!(events[1].from, StageStatus::Executing);
+    assert_eq!(events[1].to, StageStatus::Executing);
+    assert_eq!(events[1].session_type, Some(SessionType::Stage));
+    assert!(events[1].at >= events[0].at);
+    assert_ne!(events[0].session, events[1].session);
+}
