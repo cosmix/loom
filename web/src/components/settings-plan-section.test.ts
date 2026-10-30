@@ -12,14 +12,38 @@ it("the plan section rows carry a caption and pair model with effort", () => {
   expect(plan?.caption).toBe("what loom plan's sessions run on");
 
   const rows = plan?.rows ?? [];
-  expect(rows).toHaveLength(4);
+  expect(rows).toHaveLength(6);
   const pairs = rows.map((row) =>
-    row.kind === "pair" ? [row.model.name, row.effort.name] : [row.kind],
+    row.kind === "pair" ? [row.model.name, row.effort.name] : [row.kind, row.entry.name],
   );
   expect(pairs).toEqual([
     ["plan.document_summary_model", "plan.document_summary_effort"],
     ["plan.overview_model", "plan.overview_effort"],
+    ["single", "plan.summary_backend"],
+    ["plan.summary_codex_model", "plan.summary_codex_effort"],
     ["plan.spec_authoring_model", "plan.spec_authoring_effort"],
     ["plan.plan_authoring_model", "plan.plan_authoring_effort"],
+  ]);
+  expect(rows.find((row) => row.kind === "pair" && row.label === "summary_codex")).toMatchObject({
+    caption: "summaries and overviews, Codex",
+  });
+  expect(
+    fixture.entries
+      .filter((entry) =>
+        [
+          "plan.document_summary_effort",
+          "plan.overview_model",
+          "plan.summary_backend",
+          "plan.summary_codex_model",
+          "plan.summary_codex_effort",
+        ].includes(entry.name),
+      )
+      .map((entry) => [entry.name, entry.default]),
+  ).toEqual([
+    ["plan.document_summary_effort", "high"],
+    ["plan.overview_model", "haiku"],
+    ["plan.summary_backend", "claude"],
+    ["plan.summary_codex_model", "gpt-6.1-terra"],
+    ["plan.summary_codex_effort", "high"],
   ]);
 });

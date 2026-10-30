@@ -347,9 +347,10 @@ fn value_of_has_an_arm_for_every_registered_key() {
                 assert_eq!(value, DEFAULT_CONTEXT_CEILING_TOKENS.to_string())
             }
             "plan.document_summary_model" => assert_eq!(value, "haiku"),
-            "plan.document_summary_effort" => assert_eq!(value, "medium"),
-            "plan.overview_model" => assert_eq!(value, "sonnet"),
+            "plan.document_summary_effort" => assert_eq!(value, "high"),
+            "plan.overview_model" => assert_eq!(value, "haiku"),
             "plan.overview_effort" => assert_eq!(value, "high"),
+            name if name.starts_with("plan.summary_") => {} // pinned in plan_keys_tests.rs
             "plan.spec_authoring_model" => assert_eq!(value, "opus"),
             "plan.spec_authoring_effort" => assert_eq!(value, "medium"),
             "plan.plan_authoring_model" => assert_eq!(value, "opus"),

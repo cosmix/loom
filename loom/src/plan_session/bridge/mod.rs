@@ -11,8 +11,10 @@
 mod commands;
 mod driver;
 mod ending;
+mod error;
 mod flow;
 pub mod host;
+mod opening;
 mod rebuilding;
 mod recovery;
 pub mod registry;
@@ -34,6 +36,8 @@ mod tests_end;
 #[cfg(test)]
 mod tests_lifecycle;
 #[cfg(test)]
+mod tests_opening;
+#[cfg(test)]
 mod tests_permission;
 #[cfg(test)]
 mod tests_queue;
@@ -44,7 +48,6 @@ mod tests_recovery;
 #[cfg(test)]
 mod tests_team;
 
-use std::fmt;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -54,10 +57,10 @@ use std::time::Duration;
 
 use self::commands::Out;
 pub use self::ending::TEARDOWN_FAILED;
+pub use self::error::BridgeError;
 use self::host::SessionHost;
 use self::registry::{transcripts_of, ChildRecord, Feeds};
 use self::session::Inner;
-use super::input::InputRefusal;
 use super::kind::{SessionDir, SessionKind};
 use super::model::{ChangedFile, ChatDelta, ChatSnapshot, Origin, SessionState};
 use crate::planning::runtime::RuntimePaths;
@@ -185,31 +188,6 @@ pub enum SendOutcome {
     Delivering { item_id: String },
     Queued { queue_id: String },
 }
-
-/// Why the bridge refused a call.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BridgeError {
-    NoSession,
-    NotRunning,
-    Busy(&'static str),
-    Input(InputRefusal),
-    Refused(String),
-    Io(String),
-}
-
-impl fmt::Display for BridgeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NoSession => write!(f, "no such session"),
-            Self::NotRunning => write!(f, "the chat is closing"),
-            Self::Busy(why) => write!(f, "{why}"),
-            Self::Input(refusal) => write!(f, "{refusal}"),
-            Self::Refused(why) | Self::Io(why) => write!(f, "{why}"),
-        }
-    }
-}
-
-impl std::error::Error for BridgeError {}
 
 /// Turn boundaries recorded against the text store (plan 3); keys are `<session id>/<turn id>`.
 pub trait TurnPins: Send + Sync {

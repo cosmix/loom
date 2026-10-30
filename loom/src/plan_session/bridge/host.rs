@@ -49,6 +49,11 @@ pub trait SessionHost: Send + Sync {
     fn spawn(&self, spec: &LaunchSpec) -> anyhow::Result<Spawned>;
     /// Paste `text` into the session's pane and submit it.
     fn deliver(&self, socket: &str, target: &str, text: &str) -> anyhow::Result<()>;
+    /// Press Enter once in the session's pane: submits a pasted opening its first Enter missed.
+    /// The default presses nothing, for the test hosts that keep no input box.
+    fn press_enter(&self, _socket: &str, _target: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
     /// Press Escape once in the session's pane.
     fn interrupt(&self, socket: &str, target: &str) -> anyhow::Result<()>;
     /// End the session's tmux server and remove its socket.
