@@ -25,9 +25,10 @@ function docLoadable(path: string) {
 }
 
 /**
- * The documents the open passages last rendered, per store, by repo path, and how many
- * mounted passages show each path. An entry goes when its last passage unmounts or its
- * refetch fails (the file was deleted or renamed, or could not be read).
+ * The documents the mounted readers of a file last rendered, per store, by repo path, and how
+ * many mounted readers show each path (passages, and the summary heading's Edit and Discuss).
+ * An entry goes when its last reader unmounts or its refetch fails (the file was deleted or
+ * renamed, or could not be read).
  */
 type Shown = { docs: Map<string, DocView>; users: Map<string, number> };
 const shown = new WeakMap<Store, Shown>();
@@ -41,7 +42,7 @@ function shownOf(store: Store): Shown {
   return entry;
 }
 
-/** Counts a mounted passage of `path`; the path's document is dropped with its last passage. */
+/** Counts a mounted reader of `path`; the path's document is dropped with its last reader. */
 function useShownUser(store: Store, path: string): void {
   useEffect(() => {
     const entry = shownOf(store);
@@ -68,7 +69,10 @@ export function useKeptDoc(path: string): { doc: DocView | null; failed: boolean
   useShownUser(store, path);
   useEffect(() => {
     const { docs } = shownOf(store);
-    if (failed) docs.delete(path);
+    if (failed) {
+      docs.delete(path);
+      setKept(null);
+    }
     if (!data) return;
     setKept(data);
     docs.set(path, data);
@@ -79,11 +83,12 @@ export function useKeptDoc(path: string): { doc: DocView | null; failed: boolean
 }
 
 /**
- * Whether a source section is still in its file, judged on the document a mounted passage of
- * that file last rendered. Undefined when no passage of the file is mounted or its last fetch
- * failed, so nothing is fetched and a dropped section reads "was removed". The runs whose
- * sections a rebuild drops show those passages, and a source change refetches them before the
- * rebuild arrives, so a kept document is current; a deleted file's refetch fails and drops it.
+ * Whether a source section is still in its file, judged on the document a mounted reader of
+ * that file (a passage or the summary heading) last rendered. Undefined when no reader of the
+ * file is mounted or its last fetch failed, so nothing is fetched and a dropped section reads
+ * "was removed". The runs whose sections a rebuild drops show those passages, and a source
+ * change refetches them before the rebuild arrives, so a kept document is current; a deleted
+ * file's refetch fails and drops it.
  */
 export function sectionInShownDoc(store: Store, anchor: SourceAnchor): boolean | undefined {
   const doc = shown.get(store)?.docs.get(anchor.path);

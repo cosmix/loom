@@ -136,7 +136,7 @@ describe("PlanView", () => {
     ).toBe(doc.plan!.last_change);
   });
 
-  it("links a stage error to its row and strikes through a missing Implements target", () => {
+  it("links a stage error to its row and leaves a missing Implements target plain", () => {
     renderPlan(makeDoc());
     const toggle = screen.getByRole("button", { name: "1 error, 1 warning" });
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
@@ -145,13 +145,11 @@ describe("PlanView", () => {
     const link = screen.getByRole("link", { name: "build" });
     expect(link.getAttribute("href")).toBe("#stage:build");
     expect(screen.getByText("Stage needs files", { exact: false })).toBeTruthy();
-    const missing = screen.getByText("Implements §7");
+    const missing = screen.getByText("§07", { exact: false });
     expect(missing.closest("[title]")?.getAttribute("title")).toBe("not found");
     expect(missing.closest("a")).toBeNull();
-    expect(missing.closest("[class*='line-through']")?.className).toContain(
-      "[&_[title='not_found']]:line-through",
-    );
-    expect(screen.getByRole("link", { name: "Implements §6" })).toBeTruthy();
+    expect(document.body.innerHTML).not.toContain("line-through");
+    expect(screen.getByRole("link", { name: "§06" })).toBeTruthy();
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
     expect(screen.queryByTestId("validation-list")).toBeNull();

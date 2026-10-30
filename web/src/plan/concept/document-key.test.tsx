@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { MemoryRouter } from "react-router";
@@ -68,13 +68,23 @@ it("links a key chip to its feature-qualified summary", () => {
   expect(link.getAttribute("href")).toBe("/f/demo/product/section_01");
 });
 
+it("shows a format character in the chip's label and title as its code point", () => {
+  const chip = chipOf({ label: "0\u202E1" });
+  chip.doc.title = "01 — Plan\u202Ening";
+  const link = showChip(chip);
+
+  expect(link.textContent).toBe("0⟨U+202E⟩1Plan⟨U+202E⟩ning");
+});
+
 it("renders a section DocMark in the chip's colour", () => {
   const link = showChip(chipOf());
   const mark = link.querySelector<HTMLElement>('[data-kind="section"]');
 
   expect(mark?.getAttribute("data-rebuilding")).toBe("false");
   expect(mark?.style.color).toBe("var(--doc-3)");
-  expect(mark?.style.backgroundColor).toBe("color-mix(in oklch, var(--doc-3) 14%, transparent)");
+  // The 16% light / 20% dark tint is the `.concept-key-mark` rule, fed by this variable.
+  expect(mark?.classList.contains("concept-key-mark")).toBe(true);
+  expect(mark?.style.getPropertyValue("--key-colour")).toBe("var(--doc-3)");
   expect(mark?.firstElementChild?.classList.contains("size-5")).toBe(true);
   expect(mark?.firstElementChild?.classList.contains("!text-inherit")).toBe(true);
   expect(mark?.firstElementChild?.classList.contains("!bg-transparent")).toBe(true);
@@ -141,4 +151,42 @@ it("keeps implements text in the description for a feature-qualified plan chip",
   const description = document.getElementById(link.getAttribute("aria-describedby") ?? "");
 
   expect(description?.textContent).toBe("Implements: not stated");
+});
+
+describe("long keys", () => {
+  function showKey(count: number) {
+    const chips = Array.from({ length: count }, (_, index) => {
+      const label = String(index + 1).padStart(2, "0");
+      const chip = chipOf({ label, colour: index + 1 });
+      chip.doc = { ...chip.doc, id: `section_${label}`, page: `demo/product/section_${label}` };
+      return chip;
+    });
+    const page = conceptPageSchema.parse({ ...overviewFixture, key_chips: chips });
+    render(
+      <Provider store={createStore()}>
+        <MemoryRouter>
+          <TooltipProvider>
+            <DocumentKey page={page} pageKey={page.key} />
+          </TooltipProvider>
+        </MemoryRouter>
+      </Provider>,
+    );
+  }
+
+  it("shows four chips, then expands the rest in place and folds them back", () => {
+    showKey(6);
+    expect(screen.getAllByRole("link")).toHaveLength(4);
+
+    fireEvent.click(screen.getByRole("button", { name: /^…\s?2 more$/ }));
+    expect(screen.getAllByRole("link")).toHaveLength(6);
+
+    fireEvent.click(screen.getByRole("button", { name: "Fewer" }));
+    expect(screen.getAllByRole("link")).toHaveLength(4);
+  });
+
+  it("has no more chip and no Fold all button for a short key", () => {
+    showKey(4);
+    expect(screen.getAllByRole("link")).toHaveLength(4);
+    expect(screen.queryByRole("button")).toBeNull();
+  });
 });

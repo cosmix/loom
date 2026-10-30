@@ -3,13 +3,14 @@
  * in the selected reading face (Source Serif 4 by default), size and line-height tokens.
  * The column width is in ch, so browser zoom to 200% reflows without
  * horizontal scrolling; a long token wraps rather than widening it. The route wrapper owns the
- * page gutter (16px below lg), so the column adds none and its text lines up with the key and
- * the header. Headings and chrome retain Inter; code and paths retain the mono face.
+ * page gutter and its own 68ch cap, set in the chrome face. The column's 68ch is in the reading
+ * face, so it stays left-aligned instead of centring, and its text lines up with the key and
+ * the header at any reading size. Headings and chrome retain Inter; code and paths retain the
+ * mono face.
  */
 .concept-column {
   position: relative;
-  max-width: 70ch;
-  margin-inline: auto;
+  max-width: 68ch;
   font-family: var(--font-reading);
   font-size: var(--reading-size);
   line-height: var(--reading-line);
@@ -19,21 +20,16 @@
 
 .concept-heading {
   font-family: var(--font-sans);
-  line-height: 1.25;
-  margin-block: 1.5em 0.5em;
-  font-weight: 600;
+  font-size: 1.15em;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  margin: 36px 0 12px;
+  text-wrap: balance;
 }
 
-.concept-h1 {
-  font-size: 1.75rem;
-}
-
-.concept-h2 {
-  font-size: 1.35rem;
-}
-
-.concept-h3 {
-  font-size: 1.1rem;
+.concept-heading:first-child {
+  margin-top: 0;
 }
 
 .concept-paragraph {
@@ -49,49 +45,83 @@
 
 .concept-sentence {
   cursor: pointer;
-  border-radius: 2px;
-}
-
-/* A plain sentence has nothing to open, so it takes no hover tint. */
-.concept-sentence:not(.concept-sentence-plain):is(:hover, :focus-visible) {
-  background: color-mix(in oklch, var(--sentence-colour) 20%, transparent);
-  text-decoration: underline 2px;
-  text-decoration-color: var(--sentence-colour);
-  text-underline-offset: 0.18em;
+  border-radius: 3px;
 }
 
 .concept-sentence code {
   font-family: var(--font-mono);
-  font-size: 0.875em;
+  font-size: 0.8em;
+  padding: 0.06em 0.32em;
+  border-radius: 4px;
+  background: var(--muted);
 }
 
 .concept-sentence-plain {
   cursor: default;
 }
 
+/*
+ * The ink wash. The hover sits on the wrap so the marks are washed with their sentence; a plain
+ * sentence (nothing to open) takes none. The inset bottom edge replaces an underline.
+ */
+.concept-sentence-wrap {
+  border-radius: 3px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition:
+    background-color 120ms,
+    box-shadow 120ms;
+}
+
+.concept-sentence-wrap:has(> .concept-sentence:not(.concept-sentence-plain)):is(
+    :hover,
+    :has(:focus-visible)
+  ) {
+  background: color-mix(in oklch, var(--sentence-colour) 20%, transparent);
+  box-shadow: inset 0 -2px 0 color-mix(in oklch, var(--sentence-colour) 85%, transparent);
+}
+
+.concept-sentence-hint {
+  position: relative;
+}
+
 .concept-sentence-chevron {
-  display: inline-block;
-  width: 0.8em;
-  height: 0.8em;
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  width: 0.85em;
+  height: 0.85em;
   margin-inline-start: 0.15em;
-  vertical-align: -0.1em;
+  transform: translateY(-50%);
   opacity: 0;
   color: var(--sentence-colour);
   transition: opacity 120ms;
 }
 
-.concept-sentence-wrap:has(
-    .concept-sentence:not(.concept-sentence-plain):is(:hover, :focus-visible)
+.concept-sentence-wrap:has(> .concept-sentence:not(.concept-sentence-plain)):is(
+    :hover,
+    :has(:focus-visible)
   )
   .concept-mark {
   transform: scale(1.35);
 }
 
-.concept-sentence-wrap:has(
-    .concept-sentence:not(.concept-sentence-plain):is(:hover, :focus-visible)
+.concept-sentence-wrap:has(> .concept-sentence:not(.concept-sentence-plain)):is(
+    :hover,
+    :has(:focus-visible)
   )
   .concept-sentence-chevron {
   opacity: 1;
+}
+
+/* A key chip's DocMark tint: the document colour (`--key-colour`, set inline) at 16% in light
+   themes and 20% in dark ones. */
+.concept-key-mark {
+  background-color: color-mix(in oklch, var(--key-colour) 16%, transparent);
+}
+
+.dark .concept-key-mark {
+  background-color: color-mix(in oklch, var(--key-colour) 20%, transparent);
 }
 
 .concept-marks {
@@ -106,12 +136,12 @@
 .concept-mark {
   display: inline-block;
   box-sizing: border-box;
-  width: 0.55em;
-  height: 0.55em;
-  margin-inline-end: 0.2em;
+  width: 0.5em;
+  height: 0.5em;
+  margin-inline-end: 0.18em;
   padding: 0;
-  vertical-align: baseline;
-  border: 1px solid transparent;
+  vertical-align: 0.08em;
+  border: 0;
   border-radius: 2px;
   cursor: pointer;
   transition: transform 120ms;
@@ -125,7 +155,13 @@
 /* An out-of-date mark is an outline, not a fill: the shape differs, not only the colour. */
 .concept-mark[data-dashed="true"] {
   background: transparent !important;
-  border: 1.5px dashed var(--mark-colour);
+  outline: 1.5px dashed var(--mark-colour);
+  outline-offset: -1.5px;
+}
+
+.concept-mark[data-dashed="true"]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .concept-no-source {
@@ -139,25 +175,40 @@
 .concept-run,
 .concept-passages {
   background: color-mix(in oklch, var(--run-colour) 10%, transparent);
-  border-radius: 3px;
+  border-radius: 5px;
+  transition:
+    background-color 120ms,
+    box-shadow 120ms;
 }
 
 .concept-run {
+  padding: 0.14em 0.1em;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
 
-/* Only this run's own caps deepen it; nested caps leave the outer wash alone. */
+/* A passage block at either end leaves an empty inline fragment whose padding would still draw a
+   tinted sliver line box beside it. */
+.concept-run:has(> .concept-passages:first-child),
+.concept-run:has(> .concept-passages:last-child) {
+  padding-inline: 0;
+}
+
+/* Only this run's own caps deepen it; nested caps leave the outer wash alone. An inline run's
+   start cap is a direct child unless its first sentence opened to passages: then it waits in
+   that run's first passage (or its "No source sections." line) inside .concept-run-leading. */
 .concept-run:has(> .concept-run-cap:is(:hover, :focus-visible)),
 .concept-run:has(
   > .concept-passages
-    > .concept-run-edge
+    > :is(.concept-passage, .concept-muted)
     > .concept-run-leading
     > .concept-run-cap:is(:hover, :focus-visible)
 ),
-.concept-passages:has(> .concept-run-edge > .concept-run-cap:is(:hover, :focus-visible)) {
+.concept-passages:has(
+  > :is(.concept-passage, .concept-muted) > .concept-run-cap:is(:hover, :focus-visible)
+) {
   background: color-mix(in oklch, var(--run-colour) 22%, transparent);
-  outline: 1px solid color-mix(in oklch, var(--run-colour) 55%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--run-colour) 45%, transparent);
 }
 
 .concept-run-cap {
@@ -166,22 +217,16 @@
   justify-content: center;
   width: 1.3em;
   height: 1.3em;
+  margin: 0 0.22em;
   padding: 0;
   border: 0;
   border-radius: 50%;
   background: var(--run-colour);
   color: var(--background);
-  vertical-align: -0.2em;
+  box-shadow: 0 1px 0 oklch(0 0 0 / 0.12);
+  vertical-align: -0.24em;
   cursor: pointer;
   transition: transform 120ms;
-}
-
-.concept-run-cap[data-side="start"] {
-  margin-inline-end: 0.3em;
-}
-
-.concept-run-cap[data-side="end"] {
-  margin-inline-start: 0.3em;
 }
 
 .concept-run-cap-icon {
@@ -199,49 +244,79 @@
 }
 
 .concept-passages {
-  margin-block: 8px;
-  padding: 6px 10px;
+  margin-block: 0.4em;
+  padding: 0.45em 0.6em;
 }
 
-.concept-run-edge,
-.concept-run-edge > .concept-run-leading {
-  display: flex;
-  align-items: center;
-}
-
-.concept-run-edge[data-side="start"] {
-  justify-content: flex-start;
-}
-
-.concept-run-edge[data-side="end"] {
-  justify-content: flex-end;
-}
-
+/* No overflow-x here: tables and code scroll in their own wrappers, and an overflow box would
+   clip the start cap's 1.12 scale and its focus ring at the left edge. */
 .concept-passage {
-  padding-block: 4px;
-  overflow-x: auto;
+  padding-block: 0.15em;
+}
+
+.concept-passage + .concept-passage {
+  margin-top: 0.6em;
+}
+
+/* The chip names the section, so the passage's own heading line (every passage starts with
+   it, passages.ts passageOf) is not drawn a second time. */
+.concept-passage .md > :is(h1, h2, h3, h4, h5, h6, .md-heading):first-child {
+  display: none;
+}
+
+.concept-passage .md > :is(h1, h2, h3, h4, h5, h6, .md-heading):first-child + * {
+  margin-top: 0;
+}
+
+/* The body flows on from the chip line: a one-paragraph passage reads inline after the chip,
+   and the last paragraph carries the end cap on its last line. Earlier paragraphs, lists,
+   tables and code stay block, so after one of those the end cap takes a trailing line. */
+.concept-passage .md,
+.concept-passage .md > p:last-child {
+  display: inline;
+}
+
+/* The last paragraph is inline, so the `.md > * + *` top margin no longer separates it from the
+   block before it; that block carries the gap instead. The hidden first heading is excluded: a
+   one-paragraph passage has nothing to separate. */
+.concept-passage
+  .md
+  > :has(+ p:last-child):not(:is(h1, h2, h3, h4, h5, h6, .md-heading):first-child) {
+  margin-bottom: 0.75em;
 }
 
 .concept-passage-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.35em;
-  margin-bottom: 6px;
-  padding: 1px 8px;
+  height: 1.35em;
+  margin-inline-end: 0.45em;
+  padding: 0 0.45em;
   border: 1px solid var(--hairline);
-  border-radius: 999px;
+  border-radius: 5px;
   background: var(--card);
   color: var(--muted-foreground);
   font-family: var(--font-sans);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 0.6em;
   font-weight: 500;
+  line-height: 1;
+  vertical-align: middle;
+  white-space: nowrap;
   text-decoration: none;
+  transition:
+    color 120ms,
+    border-color 120ms;
+}
+
+.concept-passage-chip > svg {
+  flex: none;
+  width: 1.1em;
+  height: 1.1em;
 }
 
 .concept-passage-chip:hover {
   color: var(--foreground);
-  border-color: var(--foreground);
+  border-color: var(--border);
 }
 
 .concept-passage-path {
@@ -313,9 +388,13 @@
     background: color-mix(in oklch, var(--primary) 30%, transparent);
   }
 
+  .concept-sentence-wrap,
   .concept-mark,
   .concept-sentence-chevron,
-  .concept-run-cap {
+  .concept-run-cap,
+  .concept-run,
+  .concept-passages,
+  .concept-passage-chip {
     transition: none;
   }
 }

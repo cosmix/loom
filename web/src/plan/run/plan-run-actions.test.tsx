@@ -260,24 +260,15 @@ it("dispatches the real checklist offers for a done plan", () => {
   }
 });
 
-it("explains when a done-plan offer is unavailable", () => {
-  render(
+it("renders no button for a done-plan offer that does not exist", () => {
+  const { container } = render(
     <Provider store={createStore()}>
       <PlanRunActions path={path} state="done" />
     </Provider>,
   );
-  expect(
-    screen.getByRole("button", {
-      name: "Review what was built",
-      description: "No offer is available",
-    }),
-  ).toBeTruthy();
-  expect(
-    screen.getByRole("button", {
-      name: "Start a new metaplan round",
-      description: "No offer is available",
-    }),
-  ).toBeTruthy();
+  expect(container.innerHTML).toBe("");
+  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.queryByText("No offer is available")).toBeNull();
 });
 
 it.each(["running", "retired"] as const)("renders no actions for a %s plan", (state) => {

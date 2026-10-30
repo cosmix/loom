@@ -159,14 +159,35 @@ describe("overviews and the document key", () => {
     await readingColumn();
     expect(within(keyList()).getByText("no plan").className).toContain("text-muted-foreground");
   });
-  it("Fold all folds every run", async () => {
+  it("the key has no Fold all button; the hint row names the keys that fold", async () => {
+    serveOverview();
+    renderAt("/f/demo/product", canAuthor);
+    await openFirstRun();
+    expect(screen.queryByRole("button", { name: "Fold all" })).toBeNull();
+    const hints = screen.getByRole("group", { name: "Reading keys" });
+    expect(Array.from(hints.querySelectorAll("kbd"), (kbd) => kbd.textContent)).toEqual([
+      "Enter",
+      "Esc",
+      "⇧ Esc",
+      "a",
+    ]);
+    expect(hints.textContent).toContain("adds the sentence to chat");
+  });
+  it("the hint row omits the add key when the browser cannot author", async () => {
     serveOverview();
     renderAt("/f/demo/product");
-    const column = await openFirstRun();
-    fireEvent.click(screen.getByRole("button", { name: "Fold all" }));
-    await waitFor(() =>
-      expect(within(column).queryByRole("group", { name: OVERVIEW_RUN })).toBeNull(),
+    await openFirstRun();
+    const hints = screen.getByRole("group", { name: "Reading keys" });
+    expect(Array.from(hints.querySelectorAll("kbd"), (kbd) => kbd.textContent)).not.toContain("a");
+    expect(hints.textContent).not.toContain("adds the sentence to chat");
+  });
+  it("the overview eyebrow names the feature by its title", async () => {
+    serveOverview();
+    renderAt("/f/demo/engineering", (store) =>
+      store.set(checklistAtom, checklistViewSchema.parse(checklistFixture.checklists[0]!)),
     );
+    await readingColumn();
+    expect(screen.getByText("Demo · engineering overview")).toBeTruthy();
   });
   it("opening a run changes no URL and sends no request", async () => {
     serveOverview();
@@ -331,7 +352,6 @@ describe("empty and partial states", () => {
     expect(button.hasAttribute("disabled")).toBe(false);
     expect(descriptionOf(button)).toBe("");
   });
-
   it("unknown summary shows not-found with file mode link", async () => {
     docs = {
       "product/demo/section_09.md": {
@@ -345,7 +365,6 @@ describe("empty and partial states", () => {
       "/files/product/demo/section_09.md",
     );
   });
-
   it("fetch failure shows the error with Retry and Retry refetches", async () => {
     serveOverview();
     failing = true;
@@ -356,7 +375,6 @@ describe("empty and partial states", () => {
     expect(await readingColumn()).toBeTruthy();
   });
 });
-
 describe("wiring", () => {
   it("conceptPageLabel names Product overview and section_04 summary", () => {
     expect(conceptPageLabel("/f/demo/product")).toBe("Product overview");
@@ -369,7 +387,6 @@ describe("wiring", () => {
     expect(conceptPageLabel("/f/demo/product/a%2Fb")).toBeNull();
     expect(conceptPageLabel("/files/doc/x.md")).toBeNull();
   });
-
   it("PageHeaderExtras, KeyChipExtras and KeyRowExtras mounted", async () => {
     serveOverview();
     renderAt("/f/demo/product/section_01");

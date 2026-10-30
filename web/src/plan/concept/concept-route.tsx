@@ -2,6 +2,7 @@ import { useAtomValue, useSetAtom, useStore } from "jotai/react";
 import { useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 
+import { Kbd } from "@/components/ui/kbd";
 import { isTyping } from "@/lib/is-typing";
 import {
   featureOfKey,
@@ -15,7 +16,8 @@ import {
 } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
 import { AddToChat, addAttachmentAtom, useSelectionAttachment } from "@/plan/attachments";
-import { activeFeatureAtom, canAuthorAtom } from "@/plan/state/atoms";
+import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
+import { activeFeatureAtom, canAuthorAtom, featuresAtom } from "@/plan/state/atoms";
 import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
 
@@ -64,6 +66,18 @@ export function conceptPageLabel(pathname: string): string | null {
     return parts.scope === "product" ? "Product overview" : "Engineering overview";
   }
   return `${parts.doc} summary`;
+}
+
+/**
+ * The eyebrow above an overview: "<feature title> · product overview", or the plain page label
+ * while the feature's title is not loaded.
+ */
+function useOverviewEyebrow(pageKey: string, pathname: string): string | null {
+  const feature = featureOfKey(pageKey);
+  const title = useAtomValue(featuresAtom).find((item) => item.feature === feature)?.title;
+  const label = conceptPageLabel(pathname);
+  if (!title || label === null) return label;
+  return `${title} · ${label.toLowerCase()}`;
 }
 
 /** `g p` and `g e` go to the overviews; ignored while typing. */
@@ -131,7 +145,7 @@ function Unlisted({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
         {page.unlisted.map((doc) => (
           <li key={doc.id}>
             <Link to={pageHref(doc.page)} className="underline">
-              {doc.title}
+              <Untrusted text={doc.title} />
             </Link>
           </li>
         ))}
@@ -199,21 +213,54 @@ function Column({
   );
 }
 
+const HINTS: { keys: string; text: string }[] = [
+  { keys: "Enter", text: "opens the focused sentence" },
+  { keys: "Esc", text: "folds one level" },
+  { keys: "⇧ Esc", text: "folds all" },
+];
+const ATTACH_HINT = { keys: "a", text: "adds the sentence to chat" };
+
+/** The keys of the reading column, under it; `a` only where the column can attach. */
+function KeyHints() {
+  const canAuthor = useAtomValue(canAuthorAtom);
+  const hints = canAuthor ? [...HINTS, ATTACH_HINT] : HINTS;
+  return (
+    <div
+      aria-label="Reading keys"
+      role="group"
+      className="mt-1.5 flex flex-wrap gap-x-4 gap-y-2 font-sans text-xs text-muted-foreground"
+    >
+      {hints.map(({ keys, text }) => (
+        <span key={keys} className="inline-flex items-center gap-1.5">
+          <Kbd className="h-auto min-w-0 rounded-[4px] border border-b-2 border-hairline bg-card px-[5px] py-px font-mono text-[11px]">
+            {keys}
+          </Kbd>
+          {text}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function LoadedPage({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   const { pathname } = useLocation();
+  const eyebrow = useOverviewEyebrow(pageKey, pathname);
   const summary = !isOverviewKey(pageKey);
   return (
     <>
       {summary ? (
         <PageHeading page={page} />
       ) : (
-        <p className="eyebrow pb-3">{conceptPageLabel(pathname)}</p>
+        <p className="eyebrow pb-3">{eyebrow !== null && <Untrusted text={eyebrow} />}</p>
       )}
       {page.key_chips.length > 0 && <DocumentKey page={page} pageKey={pageKey} />}
       {page.empty ? (
         <EmptyStates page={page} empty={page.empty} />
       ) : (
-        <Column page={page} pageKey={pageKey} dropTitle={summary} />
+        <>
+          <Column page={page} pageKey={pageKey} dropTitle={summary} />
+          <KeyHints />
+        </>
       )}
       <Unlisted page={page} pageKey={pageKey} />
     </>
@@ -239,7 +286,7 @@ function RouteBody({ pageKey }: { pageKey: string }) {
     <LoadState
       state="error"
       title="Could not load this page"
-      message={state.error}
+      message={visibleControls(state.error)}
       action={{ label: "Retry", onClick: () => void loadConceptPage(store, pageKey) }}
     />
   );
@@ -250,12 +297,14 @@ export function ConceptRoute() {
   const { pathname } = useLocation();
   const key = pageKeyOfPath(pathname);
   return (
-    <div className="mx-auto w-full max-w-[70ch] px-4 py-6 lg:px-6">
-      {key === null ? (
-        <ConceptNotFound pageKey={rawNameOf(pathname)} />
-      ) : (
-        <RouteBody pageKey={key} />
-      )}
+    <div className="w-full px-[clamp(16px,4vw,56px)] pt-8 pb-12">
+      <div className="mx-auto max-w-[68ch]">
+        {key === null ? (
+          <ConceptNotFound pageKey={rawNameOf(pathname)} />
+        ) : (
+          <RouteBody pageKey={key} />
+        )}
+      </div>
     </div>
   );
 }
