@@ -60,7 +60,16 @@ describe("ChecklistGaps", () => {
       <ChecklistGaps
         checklist={{
           ...checklist,
-          steps: [...checklist.steps, { number: 3, name: "Engineering spec", mark: "gap" }],
+          steps: [
+            ...checklist.steps,
+            {
+              number: 3,
+              name: "Engineering spec",
+              mark: "gap",
+              count: null,
+              label: "Engineering spec",
+            },
+          ],
           items: [
             checklist.items[1]!,
             checklist.items[0]!,
@@ -109,7 +118,9 @@ describe("ChecklistGaps", () => {
       <ChecklistGaps
         checklist={{
           ...checklist,
-          steps: [{ number: 1, name: "Vis\u202Eion", mark: "gap" }],
+          steps: [
+            { number: 1, name: "Vis\u202Eion", mark: "gap", count: null, label: "Vis\u202Eion" },
+          ],
           items: [{ step: 1, text: "Re\u202Eview", path: "doc/vis\u202Eion.md", offer: null }],
         }}
       />,

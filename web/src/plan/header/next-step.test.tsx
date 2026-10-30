@@ -66,7 +66,7 @@ describe("NextStepCard", () => {
     const { container } = renderCard({
       ...checklist,
       current: { kind: "step", number },
-      steps: [{ number, name: "Current step", mark: "gap" }],
+      steps: [{ number, name: "Current step", mark: "gap", count: null, label: "Current step" }],
     });
 
     const glyph = container.querySelector(`.${glyphClass}`);

@@ -98,6 +98,8 @@ export const stepViewSchema = z.strictObject({
   number: u8,
   name: z.string(),
   mark: markViewSchema,
+  count: z.string().nullable(),
+  label: z.string(),
 });
 export const currentViewSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("step"), number: u8 }),
@@ -120,9 +122,28 @@ export const itemViewSchema = z.strictObject({
   path: z.string().nullable(),
   offer: offerViewSchema.nullable(),
 });
+const u32 = z.number().int().min(0).max(4294967295);
+export const sectionViewSchema = z.strictObject({
+  number: z.string(),
+  name: z.string(),
+  written: z.boolean(),
+  open_questions: u32,
+});
+export const planCountsViewSchema = z.strictObject({
+  listed: u32,
+  total: u32,
+  written: u32,
+  running: u32,
+  done: u32,
+});
 export const checklistViewSchema = z.strictObject({
   feature: z.string(),
   pitch: z.string().nullable(),
+  title: z.string(),
+  has_product: z.boolean(),
+  sections: z.array(sectionViewSchema),
+  plans: planCountsViewSchema,
+  untested: u32,
   current: currentViewSchema,
   steps: z.array(stepViewSchema),
   primary: offerViewSchema.nullable(),

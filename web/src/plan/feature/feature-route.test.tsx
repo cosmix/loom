@@ -86,7 +86,10 @@ describe("FeatureRoute", () => {
       checklists: [
         {
           ...checklist,
-          steps: [...checklist.steps, { number: 3, name: "Metaplan", mark: "gap" }],
+          steps: [
+            ...checklist.steps,
+            { number: 3, name: "Metaplan", mark: "gap", count: null, label: "Metaplan" },
+          ],
           items: [
             ...checklist.items,
             {
@@ -137,7 +140,9 @@ describe("FeatureRoute", () => {
     const other = {
       ...checklist,
       feature: "other",
-      steps: [{ number: 1, name: "Other step", mark: "done" as const }],
+      steps: [
+        { number: 1, name: "Other step", mark: "done" as const, count: null, label: "Other step" },
+      ],
       primary: null,
       secondary: [],
       items: [],

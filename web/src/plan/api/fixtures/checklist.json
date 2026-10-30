@@ -4,6 +4,24 @@
     {
       "feature": "demo",
       "pitch": "Turn product ideas into clear specifications and executable plans your team can follow.",
+      "title": "Demo",
+      "has_product": true,
+      "sections": [
+        {
+          "number": "05",
+          "name": "Example",
+          "written": false,
+          "open_questions": 0
+        }
+      ],
+      "plans": {
+        "listed": 1,
+        "total": 0,
+        "written": 0,
+        "running": 0,
+        "done": 0
+      },
+      "untested": 0,
       "current": {
         "kind": "step",
         "number": 2
@@ -12,12 +30,16 @@
         {
           "number": 1,
           "name": "Vision",
-          "mark": "done"
+          "mark": "done",
+          "count": "1",
+          "label": "Vision"
         },
         {
           "number": 2,
           "name": "Product spec",
-          "mark": "gap"
+          "mark": "gap",
+          "count": "0/1",
+          "label": "Product spec"
         }
       ],
       "primary": {

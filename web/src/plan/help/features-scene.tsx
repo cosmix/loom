@@ -19,6 +19,11 @@ const SAMPLE_PROJECT = projectChecklistViewSchema.parse({
     {
       feature: "atlas",
       pitch: "Plan field trips, track who signed up and keep every itinerary in one place.",
+      title: "Atlas",
+      has_product: true,
+      sections: [],
+      plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
+      untested: 0,
       current: { kind: "step", number: 3 },
       steps: SAMPLE_STEPS,
       primary: null,

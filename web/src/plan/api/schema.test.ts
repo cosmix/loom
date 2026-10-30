@@ -66,6 +66,24 @@ describe("planning wire schemas", () => {
     ).toBe(false);
   });
 
+  it("requires the card fields and nullable step counts on a checklist", () => {
+    const view = checklist.checklists[0]!;
+    expect(checklistViewSchema.safeParse(view).success).toBe(true);
+    for (const field of ["title", "has_product", "sections", "plans", "untested"] as const) {
+      const { [field]: _omitted, ...rest } = view;
+      expect(checklistViewSchema.safeParse(rest).success).toBe(false);
+    }
+    const [step, ...others] = view.steps;
+    const withoutCount = { ...step!, count: undefined };
+    expect(
+      checklistViewSchema.safeParse({ ...view, steps: [withoutCount, ...others] }).success,
+    ).toBe(false);
+    expect(
+      checklistViewSchema.safeParse({ ...view, steps: [{ ...step!, count: null }, ...others] })
+        .success,
+    ).toBe(true);
+  });
+
   it("accepts each flattened server message and nullable wire fields", () => {
     const messages = [
       { type: "presence", ...presence },

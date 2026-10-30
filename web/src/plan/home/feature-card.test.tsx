@@ -15,15 +15,20 @@ function checklist(feature = "demo"): ChecklistView {
   return {
     feature,
     pitch: null,
+    title: "Demo",
+    has_product: true,
+    sections: [],
+    plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
+    untested: 0,
     current: { kind: "step", number: 3 },
     steps: [
-      { number: 1, name: "Vision", mark: "done" },
-      { number: 2, name: "Product spec", mark: "done" },
-      { number: 3, name: "Metaplan", mark: "gap" },
-      { number: 4, name: "Plans", mark: "active" },
-      { number: 5, name: "Pressure", mark: "optional" },
-      { number: 6, name: "Review", mark: "optional" },
-      { number: 7, name: "Run", mark: "optional" },
+      { number: 1, name: "Vision", mark: "done", count: null, label: "Vision" },
+      { number: 2, name: "Product spec", mark: "done", count: null, label: "Product spec" },
+      { number: 3, name: "Metaplan", mark: "gap", count: null, label: "Metaplan" },
+      { number: 4, name: "Plans", mark: "active", count: null, label: "Plans" },
+      { number: 5, name: "Pressure", mark: "optional", count: null, label: "Pressure" },
+      { number: 6, name: "Review", mark: "optional", count: null, label: "Review" },
+      { number: 7, name: "Run", mark: "optional", count: null, label: "Run" },
     ],
     primary: null,
     secondary: [],
@@ -65,7 +70,7 @@ describe("FeatureCard", () => {
   it("uses singular labels for one step and one gap", () => {
     const value: ChecklistView = {
       ...checklist(),
-      steps: [{ number: 1, name: "Vision", mark: "done" }],
+      steps: [{ number: 1, name: "Vision", mark: "done", count: null, label: "Vision" }],
       items: [{ step: 1, text: "Vision decision missing", path: null, offer: null }],
     };
     renderHome(<FeatureCard checklist={value} />);
