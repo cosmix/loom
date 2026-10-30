@@ -4,7 +4,7 @@ import { useLocation } from "react-router";
 import type { KickoffView } from "@/plan/api/schema-kickoff";
 import { ComposerArea } from "@/plan/chat/composer";
 import { sessionAtom, useChatSocket } from "@/plan/chat/model";
-import { isActiveSession } from "@/plan/chat/offer-flow";
+import { isActiveSession } from "@/plan/chat/session-home";
 import { Transcript } from "@/plan/chat/transcript";
 import { useFileSocket } from "@/plan/files/api";
 import { EmptyKickoff } from "@/plan/new/empty-kickoff";

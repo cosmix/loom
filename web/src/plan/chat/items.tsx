@@ -111,7 +111,7 @@ function OpeningLabel({ turn }: { turn: Turn }): JSX.Element {
 function DeliveryState({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JSX.Element | null {
   if (item.delivery === "delivered") return null;
   if (item.delivery === "sent") {
-    return <p className="text-xs text-muted-foreground">Sending</p>;
+    return <p className="text-end text-xs text-muted-foreground">Sending</p>;
   }
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs text-(--tone-warning)">
@@ -127,8 +127,15 @@ function UserItem({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JSX.Ele
   const collapsed = item.origin !== null && !expanded;
   const shown = collapsed ? (item.text.split(/\r\n?|\n/, 1)[0] ?? "") : item.text;
   return (
-    <div className="group/message ml-auto w-fit max-w-[85%] space-y-1 font-sans text-sm leading-normal">
-      <div className="space-y-2 rounded-lg bg-muted px-3 py-2">
+    <div className="group/message ml-auto w-fit max-w-[88%] space-y-1 font-sans text-[13px] leading-normal">
+      <div className="chat-user-body">
+        {item.attachments.map((attachment, index) =>
+          attachment.quote ? (
+            <blockquote key={index} className="chat-user-quote">
+              <Untrusted text={attachment.quote} />
+            </blockquote>
+          ) : null,
+        )}
         {item.origin !== null && (
           <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
             <div>
@@ -167,7 +174,7 @@ function TextItem({ item, turn }: { item: ItemOf<"text">; turn: Turn }): JSX.Ele
   const paths = useMemo(() => docPathsOf(tree, CHAT_PATH), [tree]);
   const source = useMemo(() => chatSource(item.markdown), [item.markdown]);
   return (
-    <div className="group/message w-full min-w-0 font-sans text-sm leading-normal">
+    <div className="chat-assistant-text group/message w-full min-w-0 font-sans text-sm leading-normal">
       <div
         style={{ unicodeBidi: "plaintext", direction: "ltr" }}
         className="[&>.md]:max-w-none! [&>.md]:text-sm! [&>.md]:leading-normal!"
@@ -252,7 +259,7 @@ export function ItemView({
     case "tool":
       return <ToolRow item={item} nested={nested} />;
     case "permission":
-      return <PermissionCard item={item} inline />;
+      return <PermissionCard item={item} />;
     case "notice":
       return <NoticeItem item={item} />;
   }

@@ -146,6 +146,7 @@ it("an offer with a chat running asks, ends it, waits, then starts", async () =>
     undefined,
     undefined,
     offerView.feature,
+    undefined,
   );
 });
 
@@ -158,7 +159,14 @@ it.each([
 
   await clickOffer();
 
-  expect(startChat).toHaveBeenCalledExactlyOnceWith(store, id, undefined, undefined, "demo");
+  expect(startChat).toHaveBeenCalledExactlyOnceWith(
+    store,
+    id,
+    undefined,
+    undefined,
+    "demo",
+    undefined,
+  );
 });
 
 it("declining the end-first question changes nothing", async () => {

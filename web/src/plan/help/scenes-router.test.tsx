@@ -2,7 +2,7 @@ import { cleanup, render } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { ReadingFoldScene } from "./reading-scene";
+import { ReadingScene } from "./reading-scene";
 import { SceneRouter } from "./scene-router";
 import { PLANNER_HELP_TOPICS } from "./topics";
 
@@ -49,8 +49,8 @@ it.each(PLANNER_HELP_TOPICS.flatMap(({ scenes }) => scenes))(
   },
 );
 
-it("renders the reading fold scene outside any router", () => {
-  const { container } = render(<ReadingFoldScene />);
+it("renders the reading scene outside any router", () => {
+  const { container } = render(<ReadingScene />);
 
   expect(container.querySelector("[data-loom-plan][inert] .concept-passage-chip")).not.toBeNull();
   expect(globalThis.fetch).not.toHaveBeenCalled();

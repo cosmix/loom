@@ -5,11 +5,15 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { initClient } from "@/plan/api/client";
+import snapshotFixture from "@/plan/api/fixtures/chat-snapshot.json";
 import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import filesDocFixture from "@/plan/api/fixtures/files-doc.json";
+import { sessionViewSchema } from "@/plan/api/schema-chat";
 import { conceptPageSchema } from "@/plan/api/schema-concept";
 import { pendingAttachmentsAtom } from "@/plan/attachments";
+import { snapshotAtom } from "@/plan/chat/model";
+import { screenAtom } from "@/plan/chat/session-home";
 import { PLANNER_SHORTCUT_GROUPS } from "@/plan/help/shortcuts";
 import { activeFeatureAtom } from "@/plan/state/atoms";
 
@@ -28,6 +32,7 @@ import {
 import { conceptPageAtom } from "./page-state";
 import { openRunsAtom } from "./view-state";
 
+const HINT = /adds the sentence to chat/;
 let pages: Record<string, unknown> = {};
 const fetched: string[] = [];
 const requested = (prefix: string) => fetched.filter((url) => url.startsWith(prefix));
@@ -213,6 +218,30 @@ describe("keys", () => {
     await waitFor(() => expect(column.contains(document.activeElement)).toBe(true));
     fireEvent.keyDown(column, { key: "a" });
     await waitFor(() => expect(store.get(pendingAttachmentsAtom)).toHaveLength(1));
+  });
+  it("a does nothing while the open session belongs to another screen", async () => {
+    serveOverview();
+    const { store } = renderAt("/f/demo/product", (setup) => {
+      canAuthor(setup);
+      const session = sessionViewSchema.parse({
+        ...snapshotFixture.session,
+        state: "idle",
+        feature: "elsewhere",
+      });
+      setup.set(snapshotAtom, { session, turns: [], queue: [], previous: null });
+      setup.set(screenAtom, { feature: "demo", plan: null });
+    });
+    const column = await readingColumn();
+    column.focus();
+    await waitFor(() => expect(column.contains(document.activeElement)).toBe(true));
+    fireEvent.keyDown(column, { key: "a" });
+    expect(store.get(pendingAttachmentsAtom)).toHaveLength(0);
+    expect(screen.queryByText(HINT)).toBeNull();
+    // The same key attaches once the session is on this screen, so the refusal above is the guard.
+    store.set(screenAtom, { feature: "elsewhere", plan: null });
+    fireEvent.keyDown(column, { key: "a" });
+    await waitFor(() => expect(store.get(pendingAttachmentsAtom)).toHaveLength(1));
+    expect(screen.getByText(HINT)).toBeTruthy();
   });
   it("a does nothing while another browser holds authoring", async () => {
     serveOverview();

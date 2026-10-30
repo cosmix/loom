@@ -14,8 +14,7 @@ import { checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 const SAMPLE_CHECKLIST = checklistViewSchema.parse({
   feature: "atlas",
   pitch: null,
-  // Matches the slug: the Help pins and their tests quote the next-step tooltip "for atlas".
-  title: "atlas",
+  title: "Atlas",
   has_product: true,
   sections: [],
   plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
@@ -50,6 +49,8 @@ const SAMPLE_SESSION = sessionViewSchema.parse({
   last_activity: null,
   failure: null,
   offer: null,
+  feature: null,
+  plan: null,
 });
 
 export function GettingAroundScene() {

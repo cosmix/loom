@@ -202,6 +202,8 @@ fn request(opening: &str, origin: Option<Origin>, on_argv: bool) -> StartRequest
         guidance,
         opening_origin: origin,
         offer: None,
+        feature: None,
+        plan: None,
         extra_env: Vec::new(),
     }
 }
@@ -264,6 +266,8 @@ fn unverifiable_session(runtime: &RuntimePaths) -> (String, SessionDir) {
         transcript_path: None,
         started_at: "2026-10-28T00:00:00.000Z".to_owned(),
         children: Vec::new(),
+        feature: None,
+        plan: None,
     };
     write_record(&dir, &record).unwrap();
     (id, dir)

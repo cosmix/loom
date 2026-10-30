@@ -119,23 +119,61 @@ it("groups interleaved steps into chronological rounds with reviewers before add
   expect(firstRound).not.toBe(secondRound);
 });
 
-it("places Codex and Claude in wrapping columns with the address card spanning the next row", () => {
+it("lists a round's steps as one row each, in review, review, address order", () => {
   mount({
     ...run,
     steps: [step(1, "claude_pressure"), step(1, "claude_address"), step(1, "codex")],
+    round: 1,
+    ended: { kind: "interrupted", by: null, step: null, reason: null, line: null },
   });
 
   const codex = screen.getByRole("group", { name: "Round 1 Codex" });
   const claude = screen.getByRole("group", { name: "Round 1 /pressure" });
   const address = screen.getByRole("group", { name: "Round 1 /address" });
+  expect(codex.getAttribute("class")).toContain("grid-cols-[20px_minmax(0,1fr)_auto]");
   expect(codex.parentElement).toBe(claude.parentElement);
-  expect(codex.parentElement?.classList.contains("grid")).toBe(true);
-  expect(codex.parentElement?.className).toContain(
-    "grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]",
-  );
   expect(codex.nextElementSibling).toBe(claude);
-  expect(codex.parentElement?.nextElementSibling).toBe(address);
-  expect(address.parentElement).toBe(codex.parentElement?.parentElement);
+  expect(claude.nextElementSibling).toBe(address);
+  expect(screen.getByText("Round 1").className).toContain("uppercase");
+});
+
+it("derives queued rows for the missing steps, later rounds and the record line", () => {
+  mount({ ...run, round: 1, rounds: 2, steps: [step(1, "claude_pressure", "running")] });
+
+  const first = document.querySelector("[data-pressure-round='1']") as HTMLElement;
+  const second = document.querySelector("[data-pressure-round='2']") as HTMLElement;
+  expect(
+    within(first)
+      .getAllByText("queued")
+      .map((node) => node.parentElement?.textContent),
+  ).toEqual(["Codex reviews the planqueued", "Claude addresses both reviewsqueued"]);
+  expect(within(second).getAllByText("queued")).toHaveLength(3);
+  expect(screen.getByText("Write the record line").textContent).toBe("Write the record linequeued");
+  expect(screen.getAllByRole("group")).toHaveLength(1);
+});
+
+it("shows the record line as done once recorded and drops queued rows when a run stops", () => {
+  const { container } = mount({
+    ...run,
+    round: 1,
+    rounds: 1,
+    steps: [step(1, "codex"), step(1, "claude_pressure"), step(1, "claude_address")],
+    ended: { kind: "recorded", by: null, step: null, reason: null, line: "ok" },
+  });
+  const record = screen.getByText("Write the record line").parentElement as HTMLElement;
+  expect(within(record).getByText("done")).toBeTruthy();
+  expect(container.querySelector(".lucide-circle-dashed")).toBeNull();
+  cleanup();
+
+  mount({
+    ...run,
+    round: 1,
+    rounds: 2,
+    steps: [step(1, "codex", "stopped")],
+    ended: { kind: "stopped", by: "Ada", step: null, reason: null, line: null },
+  });
+  expect(screen.queryByText("queued")).toBeNull();
+  expect(screen.queryByText("Write the record line")).toBeNull();
 });
 
 it("renders only the steps received for a partially completed round", () => {
@@ -200,12 +238,15 @@ it("pauses the header gauge when a socket update ends the run", () => {
   expect(screen.getByText("Interrupted")).toBeTruthy();
 });
 
-it("mounts PressureDone after the timeline and before the run controls with the latest run", () => {
+it("mounts PressureDone before the timeline and the end line with the latest run", () => {
   const { socket } = mount({ ...run, steps: [step(2, "claude_address", "running")] });
   const done = screen.getByTestId("pressure-done");
   expect(done.getAttribute("data-plan")).toBe(run.plan);
   expect(done.getAttribute("data-end")).toBe("running");
-  expect(done.nextElementSibling?.textContent).toBe("Stop");
+  const timeline = done.nextElementSibling;
+  expect(timeline?.hasAttribute("data-pressure-timeline")).toBe(true);
+  expect(timeline?.nextElementSibling).toBeNull();
+  expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
 
   act(() =>
     socket.receive({
@@ -216,9 +257,10 @@ it("mounts PressureDone after the timeline and before the run controls with the 
   );
 
   const address = screen.getByRole("group", { name: "Round 2 /address" });
-  expect(address.parentElement?.parentElement?.nextElementSibling).toBe(done);
+  const recorded = address.closest("[data-pressure-timeline]");
+  expect(recorded?.previousElementSibling).toBe(done);
   expect(done.getAttribute("data-end")).toBe("recorded");
-  expect(done.nextElementSibling).toBe(
+  expect(recorded?.nextElementSibling).toBe(
     screen.getByText("Pressure test recorded · rounds complete").closest("p"),
   );
 });

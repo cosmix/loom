@@ -18,23 +18,25 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it("shows the running model, busy indicator and elapsed time ticking each second", () => {
+it("shows the running model, background note, busy indicator and elapsed time ticking each second", () => {
   vi.useFakeTimers();
   vi.setSystemTime(65_000);
 
   render(<CodexStatusItem status={status} startedMs={1000} />);
 
   expect(screen.getByText(status.model)).toBeTruthy();
+  expect(screen.getByText("reviewing the plan in the background")).toBeTruthy();
+  expect(screen.getByText("$pressure").tagName).toBe("CODE");
   expect(screen.getByRole("status").textContent).toContain("Codex is reviewing");
-  expect(screen.getByText("Running · 1m4s")).toBeTruthy();
+  expect(screen.getByText("1m4s").parentElement?.classList.contains("font-mono")).toBe(true);
   act(() => vi.advanceTimersByTime(1000));
-  expect(screen.getByText("Running · 1m5s")).toBeTruthy();
+  expect(screen.getByText("1m5s")).toBeTruthy();
 });
 
 it("starts at zero when the start time is absent", () => {
   render(<CodexStatusItem status={status} />);
 
-  expect(screen.getByText("Running · 0s")).toBeTruthy();
+  expect(screen.getByText("0s")).toBeTruthy();
 });
 
 it("clamps elapsed time to zero when the start time is in the future", () => {
@@ -43,7 +45,7 @@ it("clamps elapsed time to zero when the start time is in the future", () => {
 
   render(<CodexStatusItem status={status} startedMs={2000} />);
 
-  expect(screen.getByText("Running · 0s")).toBeTruthy();
+  expect(screen.getByText("0s")).toBeTruthy();
 });
 
 it("links a written review to its encoded file-mode address", () => {
@@ -101,7 +103,8 @@ it("removes the elapsed clock and busy indicator when the review finishes", () =
   act(() => vi.advanceTimersByTime(1000));
 
   expect(screen.getByText("No review")).toBeTruthy();
-  expect(screen.queryByText(/^Running/)).toBeNull();
+  expect(screen.queryByText(/background/)).toBeNull();
+  expect(screen.queryByText("1s")).toBeNull();
   expect(screen.queryByRole("status")).toBeNull();
   expect(vi.getTimerCount()).toBe(0);
 });

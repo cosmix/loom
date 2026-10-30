@@ -14,6 +14,8 @@ const notes: readonly SceneNote[] = [
 const observers: ResizeObserverStub[] = [];
 let targetOffset = 0;
 let sampleHeight = 100;
+// How much an ancestor of the canvas (the dialog zooming in) scales everything on screen.
+let ancestorScale = 1;
 
 class ResizeObserverStub {
   observe = vi.fn();
@@ -41,17 +43,18 @@ function rect(x: number, y: number, width: number, height: number): DOMRect {
 }
 
 function measuredRect(this: HTMLElement): DOMRect {
-  if (this.classList.contains("planner-help-scene__canvas")) return rect(100, 50, 600, 164);
+  const a = ancestorScale;
+  if (this.classList.contains("planner-help-scene__canvas")) return rect(100, 50, 600 * a, 164 * a);
   const stage = this.closest<HTMLElement>(".planner-help-scene__stage");
   const scale = Number(stage?.style.transform.match(/scale\(([^)]+)\)/)?.[1] ?? 1);
-  if (this === stage) return rect(132, 82, 536, sampleHeight * scale);
+  if (this === stage) return rect(100 + 32 * a, 50 + 32 * a, 536 * a, sampleHeight * scale * a);
   const x = this.dataset.x;
   if (x === undefined) return rect(0, 0, 0, 0);
   return rect(
-    132 + (Number(x) + targetOffset) * scale,
-    82 + Number(this.dataset.y) * scale,
-    Number(this.dataset.width) * scale,
-    20 * scale,
+    100 + (32 + (Number(x) + targetOffset) * scale) * a,
+    50 + (32 + Number(this.dataset.y) * scale) * a,
+    Number(this.dataset.width) * scale * a,
+    20 * scale * a,
   );
 }
 
@@ -77,10 +80,17 @@ function Example({
 beforeEach(() => {
   targetOffset = 0;
   sampleHeight = 100;
+  ancestorScale = 1;
   observers.length = 0;
   vi.useFakeTimers();
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(measuredRect);
+  // The canvas is 600px wide in its own layout; ancestors may scale it on screen.
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.classList.contains("planner-help-scene__canvas") ? 600 : 1;
+    },
+  );
 });
 
 afterEach(() => {
@@ -180,6 +190,26 @@ describe("PinnedScene", () => {
     );
   });
 
+  it("divides out an ancestor's scale so pins stay in the canvas's own pixels", () => {
+    ancestorScale = 0.5;
+    const { container } = render(<Example />);
+
+    expect(container.querySelector<HTMLElement>(".planner-help-scene__pin")?.style.left).toBe(
+      "109px",
+    );
+    expect(container.querySelector<HTMLElement>(".planner-help-scene__frame")?.style.height).toBe(
+      "100px",
+    );
+    fireEvent.focus(screen.getAllByRole("listitem")[0]);
+    const ring = container.querySelector<HTMLElement>(".planner-help-scene__ring")!;
+    expect([ring.style.left, ring.style.top, ring.style.width, ring.style.height]).toEqual([
+      "80px",
+      "52px",
+      "80px",
+      "20px",
+    ]);
+  });
+
   it("remeasures observed layouts and cancels observers and timers on unmount", () => {
     const { container, unmount } = render(<Example />);
     expect(observers[0].observe).toHaveBeenCalledTimes(4);
@@ -221,6 +251,51 @@ describe("PinnedScene", () => {
     fireEvent.focus(screen.getAllByRole("listitem")[2]);
     expect(container.querySelector(".planner-help-scene__ring")).toBeNull();
     expect(container.querySelector(".planner-help-scene__pin[data-active]")).toBeNull();
+  });
+
+  it("lets a panel scene's stage hug its content and centre in the canvas", () => {
+    const plain = render(<Example />);
+    const stage = plain.container.querySelector<HTMLElement>(".planner-help-scene__stage")!;
+    expect(stage.hasAttribute("data-panel")).toBe(false);
+    expect(stage.style.width).toBe("100%");
+    plain.unmount();
+
+    const { container } = render(
+      <PinnedScene number={1} title="Panel" notes={notes} panel>
+        <button className="identity" data-x="48" data-y="20" data-width="80" />
+      </PinnedScene>,
+    );
+    const panel = container.querySelector<HTMLElement>(".planner-help-scene__stage")!;
+    expect(panel.hasAttribute("data-panel")).toBe(true);
+    expect(panel.style.width).toBe("");
+    expect(css).toMatch(
+      /\[data-panel\]\s*\{\s*width:\s*fit-content;\s*max-width:\s*100%;\s*margin-inline:\s*auto;/,
+    );
+  });
+
+  it("keeps a pin off the text the stage lays out beside its target", () => {
+    // jsdom has no layout for text, so give every text run one line box just above the target,
+    // where its pin would otherwise go (the target is at x 80, y 52 in the canvas).
+    Object.defineProperty(Range.prototype, "getClientRects", {
+      configurable: true,
+      value: () => [rect(100 + 32 + 40, 50 + 32 + 20 - 18, 120, 14)],
+    });
+    try {
+      const { container } = render(
+        <PinnedScene number={1} title="Text" notes={[notes[0]!]}>
+          <p>A line of text over the control.</p>
+          <button className="identity control" data-x="48" data-y="20" data-width="80">
+            Sample name
+          </button>
+        </PinnedScene>,
+      );
+      const pin = container.querySelector<HTMLElement>(".planner-help-scene__pin")!;
+
+      // Above would be x 109, y 24; it is taken by the text, so the pin hangs to the left.
+      expect([pin.style.left, pin.style.top]).toEqual(["52px", "51px"]);
+    } finally {
+      Reflect.deleteProperty(Range.prototype, "getClientRects");
+    }
   });
 
   it("disables pin transitions and halo pulses for reduced motion", () => {

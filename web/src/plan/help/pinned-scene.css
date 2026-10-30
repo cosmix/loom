@@ -1,9 +1,13 @@
+/* A scene card: head, a dotted canvas holding a lifted production component with numbered pins, notes. */
 .planner-help-scene {
+  display: grid;
+  gap: 12px;
   min-width: 0;
   max-width: 100%;
+  padding: 14px;
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
   background: var(--card);
   color: var(--card-foreground);
   font-family: var(--font-sans);
@@ -12,32 +16,50 @@
 .planner-help-scene .planner-help-scene__header {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 12px;
-  padding: 18px 20px;
+  align-items: center;
+  gap: 6px 10px;
 }
 
-.planner-help-scene .planner-help-scene__label,
-.planner-help-scene .planner-help-scene__hint {
+.planner-help-scene .planner-help-scene__label {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 99px;
+  background: var(--muted);
   color: var(--muted-foreground);
   font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .planner-help-scene .planner-help-scene__header h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 
 .planner-help-scene .planner-help-scene__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.planner-help-scene .planner-help-scene__hint svg {
+  width: 14px;
+  height: 14px;
 }
 
 .planner-help-scene .planner-help-scene__scroll {
   max-width: 100%;
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  border-radius: 11px;
+  scrollbar-width: thin;
 }
 
 .planner-help-scene .planner-help-scene__canvas {
@@ -45,21 +67,41 @@
   box-sizing: border-box;
   /* Keep samples readable on phones; the surrounding viewport owns scrolling. */
   min-width: 544px;
+  border-radius: 11px;
   background:
-    radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0) 0 0 / 16px 16px,
-    color-mix(in oklch, var(--muted) 45%, var(--card));
+    radial-gradient(
+        circle at 1px 1px,
+        color-mix(in oklch, var(--muted-foreground) 26%, transparent) 1px,
+        transparent 0
+      )
+      0 0 / 14px 14px,
+    var(--background);
 }
 
 .planner-help-scene .planner-help-scene__frame {
   position: relative;
 }
 
+/*
+ * The component is lifted off the canvas. `overflow-x: clip` keeps a header that is wider than its
+ * stage from growing a scrollbar in the scene, without making the stage a scroll container.
+ */
 .planner-help-scene .planner-help-scene__stage {
   display: flow-root;
+  overflow-x: clip;
   transform-origin: top left;
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--background);
-  box-shadow: 0 8px 24px color-mix(in oklch, var(--foreground) 14%, transparent);
+  box-shadow:
+    0 1px 2px color-mix(in oklch, var(--foreground) 10%, transparent),
+    0 8px 24px color-mix(in oklch, var(--foreground) 12%, transparent);
+}
+
+/* A panel-width scene: the stage hugs the panel and centres, so the canvas gutters stay free for pins. */
+.planner-help-scene .planner-help-scene__stage[data-panel] {
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
 }
 
 .planner-help-scene .planner-help-scene__overlay {
@@ -77,17 +119,21 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: var(--primary);
-  color: var(--primary-foreground);
-  font-size: 13px;
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
+/* The pin discs are the one place help type drops below 13px (11.5px, per the design). */
 .planner-help-scene .planner-help-scene__pin {
   position: absolute;
   z-index: 2;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 11.5px;
+  box-shadow:
+    0 0 0 3px var(--background),
+    0 2px 6px color-mix(in oklch, var(--foreground) 30%, transparent);
   transition: transform 140ms ease;
 }
 
@@ -100,7 +146,7 @@
 }
 
 .planner-help-scene .planner-help-scene__pin[data-active] {
-  transform: scale(1.18);
+  transform: scale(1.22);
 }
 
 .planner-help-scene .planner-help-scene__pin[data-active]::before {
@@ -112,29 +158,37 @@
   z-index: 1;
   border-radius: 8px;
   outline: 2px solid var(--ring);
-  outline-offset: 3px;
-  box-shadow: 0 0 0 6px color-mix(in oklch, var(--primary) 18%, transparent);
+  outline-offset: 4px;
 }
 
 .planner-help-scene .planner-help-scene__notes {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px 20px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 6px;
   margin: 0;
-  padding: 16px 20px;
+  padding: 0;
   list-style: none;
 }
 
 .planner-help-scene .planner-help-scene__notes li {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 8px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 8px 10px;
   border-radius: 8px;
+  transition: background-color 140ms ease;
 }
 
+.planner-help-scene .planner-help-scene__notes li:hover,
 .planner-help-scene .planner-help-scene__notes li[data-active] {
-  background: color-mix(in oklch, var(--primary) 12%, transparent);
+  background: var(--muted);
+}
+
+.planner-help-scene .planner-help-scene__note-number {
+  background: color-mix(in oklch, var(--primary) 30%, transparent);
+  color: var(--foreground);
+  font-size: 13px;
 }
 
 .planner-help-scene .planner-help-scene__notes li:focus-visible,
@@ -145,8 +199,8 @@
 
 .planner-help-scene .planner-help-scene__notes p {
   margin: 0;
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 13.5px;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
@@ -158,10 +212,6 @@
 }
 
 @media (max-width: 639px) {
-  .planner-help-scene .planner-help-scene__notes {
-    grid-template-columns: 1fr;
-  }
-
   .planner-help-scene .planner-help-scene__hint {
     flex-basis: 100%;
     margin-left: 0;

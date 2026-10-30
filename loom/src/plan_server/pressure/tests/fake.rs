@@ -222,6 +222,8 @@ impl FakeSessions {
             start_time: None,
             transcript_path: None,
             started_at: "2026-10-29T00:00:00.000Z".into(),
+            feature: None,
+            plan: None,
             children: Vec::new(),
         };
         write_record(&dir, &record).unwrap();
@@ -356,6 +358,8 @@ fn view(id: &str) -> SessionView {
         last_activity: None,
         failure: None,
         offer: None,
+        feature: None,
+        plan: None,
     }
 }
 

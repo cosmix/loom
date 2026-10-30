@@ -62,6 +62,8 @@ impl SessionSpawner for RealSpawner {
             guidance,
             opening_origin: None,
             offer: None,
+            feature: None,
+            plan: None,
             extra_env: Vec::new(),
         };
         bridge

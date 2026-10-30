@@ -4,20 +4,22 @@ import { useState } from "react";
 import { authorBlockReasonAtom, isHolderAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { endChat } from "./commands";
-import { sessionAtom } from "./model";
-import { isActiveSession } from "./offer-flow";
+import { isActiveSession, panelSessionAtom } from "./session-home";
 import { Untrusted } from "./visible-controls";
 
-/** Whether this browser may end the running chat; pressure-test sessions end on their own. */
+/**
+ * Whether this browser may end the chat the panel shows: never one that belongs to another screen,
+ * which the panel presents as no chat. Pressure-test sessions end on their own.
+ */
 export function useCanEndChat(): boolean {
-  const session = useAtomValue(sessionAtom);
+  const session = useAtomValue(panelSessionAtom);
   const holder = useAtomValue(isHolderAtom);
   return holder && isActiveSession(session) && session.kind !== "pressure";
 }
 
 export function EndChatMenuItem() {
   const store = useStore();
-  const session = useAtomValue(sessionAtom);
+  const session = useAtomValue(panelSessionAtom);
   const canEnd = useCanEndChat();
   const reason = useAtomValue(authorBlockReasonAtom);
   const [pending, setPending] = useState(false);

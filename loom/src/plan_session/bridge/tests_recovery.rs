@@ -57,6 +57,8 @@ fn recorded(h: &Harness, kind: SessionKind, pid: Option<u32>) -> Sess {
         start_time: pid.map(|_| 42),
         transcript_path: Some(transcript.clone()),
         started_at: chrono::Utc::now().to_rfc3339(),
+        feature: None,
+        plan: None,
         children: Vec::new(),
     };
     write_record(&dir, &record).unwrap();
@@ -102,6 +104,22 @@ fn unverifiable_is_left_alone_dead_is_cleaned_and_alive_is_closed() {
         "no Ended for the closed session"
     );
     assert!(!alive.dir.path().exists());
+}
+
+#[test]
+fn a_recovered_session_stays_with_its_feature_and_plan() {
+    let h = Harness::new(|c| c.final_write_bound = Duration::from_secs(1));
+    let alive = recorded(&h, Authoring, Some(3_800_151));
+    let mut record = read_record(&alive.dir).unwrap();
+    record.feature = Some("alpha".to_owned());
+    record.plan = Some("solo".to_owned());
+    write_record(&alive.dir, &record).unwrap();
+    h.spool(&alive, "SessionStart", json!({"source": "startup"}));
+    let report = h.bridge.recover();
+    assert_eq!(report.closed.len(), 1);
+    let session = h.bridge.chat_snapshot(true).previous.unwrap().session;
+    assert_eq!(session.feature.as_deref(), Some("alpha"));
+    assert_eq!(session.plan.as_deref(), Some("solo"));
 }
 
 #[test]

@@ -14,10 +14,11 @@
   line-height: 1.5;
 }
 
+/* minmax(0, 1fr): a bare 1fr track grows with the transcript and pushes it under the head. */
 .chat-panel {
   position: relative;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100%;
   border-inline-start: 1px solid var(--hairline);
 }
@@ -46,13 +47,11 @@
 .chat-message {
   min-width: 0;
   font-family: var(--font-sans), Inter, sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
-.chat-panel header,
-.chat-sheet header,
 .chat-connection-banner,
 .chat-last-update {
   font-size: 12px;

@@ -1,0 +1,325 @@
+/* The chat's measures. Unlayered on purpose: these rules override the utility classes of the
+ * shared Button. Kept apart from chat.css, whose test pins that the panel's frame carries no tone
+ * or fade (a stale transcript is marked by words alone).
+ */
+
+/* Head */
+.chat-panel-top {
+  min-width: 0;
+}
+
+/* Keeps the chip grid off the panel edges and clear of the resize handle; an empty wrapper (no
+ * chips) takes no space. */
+.chat-pending-chips {
+  padding: 8px 16px;
+}
+
+.chat-pending-chips:empty {
+  display: none;
+}
+
+.chat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: 53px;
+  padding: 12px 16px;
+  border-block-end: 1px solid var(--hairline);
+}
+
+.chat-head-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.chat-head-side {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-head-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
+  border-radius: 7px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  list-style: none;
+}
+
+.chat-head-button::-webkit-details-marker {
+  display: none;
+}
+
+.chat-head-button:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.chat-head-button:focus-visible,
+.chat-elsewhere a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.chat-state-pill {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 7px;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.chat-led {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+
+.chat-state-pill[data-state="idle"] .chat-led {
+  background: var(--tone-completed);
+  animation: chat-led-breathe 2.4s ease-in-out infinite;
+}
+
+.chat-state-pill:is([data-state="working"], [data-state="starting"], [data-state="ending"])
+  .chat-led {
+  background: var(--tone-executing);
+}
+
+.chat-state-pill[data-state="permission"] .chat-led {
+  background: var(--tone-warning);
+}
+
+.chat-state-pill[data-state="failed"] .chat-led {
+  background: var(--tone-blocked);
+}
+
+@keyframes chat-led-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Queue and Stop buttons sit beside the primary Send: the shared Button's fill is overridden. */
+.chat-new-chat button,
+.chat-ghost-actions button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.chat-new-chat button:hover,
+.chat-ghost-actions button:hover {
+  background: var(--muted);
+}
+
+.chat-ghost-actions button[aria-disabled="true"]:hover {
+  background: transparent;
+}
+
+/* The head's pill says what these rows would repeat; each keeps its sr-only announcement. The
+ * padding and rule sit on the visible row, so a state with nothing to show draws no empty line. */
+.chat-panel .chat-holder-row,
+.chat-panel .chat-state-line > [aria-live="off"] {
+  padding: 6px 16px;
+  border-block-end: 1px solid var(--hairline);
+}
+
+/* A pressure run's head states its own elapsed time; the row would repeat it alone. */
+.chat-panel .chat-state-line[data-kind="pressure"][data-state="working"] > [aria-live="off"],
+.chat-panel .chat-state-line:is([data-state="idle"], [data-state="permission"]) > [aria-live="off"],
+.chat-panel
+  .chat-state-line[data-state="working"]
+  :is(.chat-state-glyph, .chat-state-words, .chat-state-sep) {
+  display: none;
+}
+
+.chat-elsewhere {
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+.chat-elsewhere a {
+  border-radius: 4px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Transcript */
+.chat-panel-middle {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.chat-transcript {
+  padding: 16px;
+}
+
+.chat-transcript-flow {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+
+.chat-turn,
+.chat-turn-items {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.chat-user-body {
+  display: grid;
+  gap: 6px;
+  padding: 9px 12px;
+  border-radius: 12px 12px 4px 12px;
+  background: color-mix(in oklch, var(--primary) 22%, var(--card));
+}
+
+.chat-user-quote {
+  display: -webkit-box;
+  overflow: hidden;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-family: var(--font-reading);
+  font-size: 14px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.chat-assistant-text .md {
+  font-family: var(--font-reading);
+}
+
+.chat-tool-target {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.chat-file-chip,
+.chat-rebuild-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.chat-file-counts {
+  color: var(--muted-foreground);
+}
+
+/* Composer */
+.chat-composer {
+  display: grid;
+  min-height: 0;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 12px;
+  border-block-start: 1px solid var(--hairline);
+}
+
+.chat-composer-input {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.chat-composer-box {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 10px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--background);
+  font-size: 13px;
+  line-height: 1.5;
+  resize: none;
+}
+
+.chat-composer-box:focus-visible {
+  outline: 2px solid var(--ring);
+}
+
+.chat-composer-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.chat-attach {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 7px;
+  color: var(--muted-foreground);
+}
+
+.chat-composer-send {
+  margin-inline-start: auto;
+  min-width: 0;
+}
+
+.chat-composer-send > div {
+  align-items: flex-end;
+  text-align: end;
+}
+
+.chat-composer-send button {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-led,
+  .chat-state-pill[data-state="idle"] .chat-led {
+    animation: none;
+  }
+}

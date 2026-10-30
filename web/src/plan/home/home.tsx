@@ -53,7 +53,7 @@ function StartConversation() {
   );
 }
 
-function InvitationCard({ empty }: { empty: boolean }) {
+export function InvitationCard({ empty }: { empty: boolean }) {
   const headingId = useId();
 
   return (

@@ -17,7 +17,9 @@
       "subagents_running": 0,
       "last_activity": "2026-10-28T09:01:30Z",
       "failure": null,
-      "offer": null
+      "offer": null,
+      "feature": null,
+      "plan": null
     }
   },
   {
@@ -138,7 +140,9 @@
       "subagents_running": 0,
       "last_activity": "2026-10-28T10:01:30Z",
       "failure": null,
-      "offer": null
+      "offer": null,
+      "feature": null,
+      "plan": null
     }
   },
   {
@@ -159,7 +163,9 @@
       "subagents_running": 0,
       "last_activity": "2026-10-28T10:02:30Z",
       "failure": null,
-      "offer": null
+      "offer": null,
+      "feature": null,
+      "plan": null
     }
   },
   {
@@ -180,7 +186,9 @@
       "subagents_running": 0,
       "last_activity": "2026-10-28T10:03:30Z",
       "failure": null,
-      "offer": null
+      "offer": null,
+      "feature": null,
+      "plan": null
     }
   },
   {
@@ -201,7 +209,9 @@
       "subagents_running": 0,
       "last_activity": "2026-10-28T10:04:30Z",
       "failure": null,
-      "offer": null
+      "offer": null,
+      "feature": null,
+      "plan": null
     }
   },
   {
@@ -225,7 +235,9 @@
         "kind": "spawn",
         "message": "tmux could not start the planning session"
       },
-      "offer": null
+      "offer": null,
+      "feature": null,
+      "plan": null
     }
   }
 ]

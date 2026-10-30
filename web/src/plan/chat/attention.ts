@@ -6,6 +6,7 @@ import { isHolderAtom } from "@/plan/state/atoms";
 import { notificationSupport, notificationsEnabledAtom } from "@/state/notifications";
 import type { Store } from "@/state/store";
 import { pendingPermissionsAtom, snapshotAtom } from "./model";
+import { sessionHomeAtom } from "./session-home";
 import { visibleControls } from "./visible-controls";
 
 function notify(store: Store, title: string, body: string, tag: string): void {
@@ -66,7 +67,9 @@ function watchAttention(store: Store): () => void {
     const waiting = store
       .get(pendingPermissionsAtom)
       .some((item) => !acknowledged.has(item.request_id));
-    document.title = `${waiting ? "(!) " : completed ? "(✓) " : ""}${baseTitle}`;
+    const marker = waiting ? "(!) " : completed ? "(✓) " : "";
+    const home = marker ? store.get(sessionHomeAtom) : null;
+    document.title = `${marker}${home ? `${visibleControls(home.title)} · ` : ""}${baseTitle}`;
   };
   const update = () => {
     const next = store.get(snapshotAtom);
@@ -85,11 +88,14 @@ function watchAttention(store: Store): () => void {
   };
   title();
   const unsubscribe = store.sub(snapshotAtom, update);
+  // The hello that carries a feature's title can arrive after the chat snapshot.
+  const unwatchHome = store.sub(sessionHomeAtom, title);
   // The empty listener mounts the storage-backed atom so changes made in other tabs arrive.
   const unwatch = store.sub(notificationsEnabledAtom, () => {});
   document.addEventListener("visibilitychange", visible);
   return () => {
     unsubscribe();
+    unwatchHome();
     unwatch();
     document.removeEventListener("visibilitychange", visible);
     document.title = baseTitle;

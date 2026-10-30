@@ -7,7 +7,7 @@ import { storageKey, validatedStorage } from "./storage";
 
 const MIN_WIDTH = 20;
 const MAX_WIDTH = 40;
-const DEFAULT_WIDTH = 26;
+const DEFAULT_WIDTH = 21.25;
 
 type Update<Value> = Value | ((previous: Value) => Value);
 

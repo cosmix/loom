@@ -1,4 +1,3 @@
-import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { useState } from "react";
 
@@ -11,12 +10,11 @@ import { holdNoteSeenAtom } from "@/plan/chat/prefs";
 import { StateLine } from "@/plan/chat/state-line";
 import { Transcript } from "@/plan/chat/transcript";
 import type { PlannerHelpScene } from "@/plan/help/pinned-scene";
-import { SAMPLE_HOLDER, SAMPLE_SERVER } from "@/plan/help/sample";
+import { createSampleStore, PANEL_LOOK, SAMPLE_HOLDER } from "@/plan/help/sample";
 import { SceneRouter } from "@/plan/help/scene-router";
-import { authoringAtom, connectionAtom, youAtom } from "@/plan/state/atoms";
+import { connectionAtom } from "@/plan/state/atoms";
 
 const STARTED_AT = "2026-10-29T10:00:00Z";
-const READER = SAMPLE_SERVER.you;
 const PASSAGE: AttachmentDraft = {
   kind: "source",
   path: "doc/vision.md",
@@ -57,13 +55,13 @@ function sampleSession(state: SessionView["state"]): SessionView {
     last_activity: STARTED_AT,
     failure: null,
     offer: null,
+    feature: null,
+    plan: null,
   };
 }
 
 function sampleStore(state: SessionView["state"]) {
-  const store = createStore();
-  store.set(youAtom, READER);
-  store.set(authoringAtom, SAMPLE_HOLDER);
+  const store = createSampleStore();
   store.set(connectionAtom, { phase: "open", everOpen: true, lastMessageAt: null });
   // No server/project key: draft and preference atoms stay in this store's memory.
   store.set(holdNoteSeenAtom, true);
@@ -154,7 +152,7 @@ export function ChatComposerScene() {
   return (
     <Provider store={store}>
       <SceneRouter>
-        <div data-loom-plan inert>
+        <div data-loom-plan inert className={PANEL_LOOK}>
           <ComposerArea />
         </div>
       </SceneRouter>
@@ -171,7 +169,7 @@ export function ChatConversationScene() {
   return (
     <Provider store={store}>
       <SceneRouter>
-        <div data-loom-plan inert className="space-y-3">
+        <div data-loom-plan inert className={`${PANEL_LOOK} space-y-3 p-3`}>
           <StateLine />
           <Transcript />
         </div>
@@ -184,6 +182,7 @@ export const CHAT_SCENES: readonly PlannerHelpScene[] = [
   {
     title: "The composer",
     Scene: ChatComposerScene,
+    panel: true,
     notes: [
       {
         target: 'textarea[aria-label="Message"]',
@@ -191,18 +190,18 @@ export const CHAT_SCENES: readonly PlannerHelpScene[] = [
       },
       {
         target: '[aria-label="Pending attachments"] button:not([aria-label^="Remove"])',
-        text: "The passage chip opens the document at the attached passage.",
+        text: "The passage chip opens the document at the attached passage, and its remove button detaches it from your draft.",
       },
       {
-        target: '[aria-label="Pending attachments"] button[aria-label^="Remove"]',
-        text: "The remove button detaches the passage from your draft.",
+        target: ".chat-composer-actions .chat-attach",
+        text: "Attach adds another document to the draft, and pressing a on a sentence attaches that passage.",
       },
       {
-        target: 'textarea[aria-label="Message"] + div > button',
+        target: ".chat-composer-send button",
         text: "Send submits your text and attached passages to the session.",
       },
       {
-        target: 'div:has(> textarea[aria-label="Message"]) + div button',
+        target: ".chat-composer-input + div button",
         text: "Stop interrupts the current turn.",
       },
       {
@@ -214,6 +213,7 @@ export const CHAT_SCENES: readonly PlannerHelpScene[] = [
   {
     title: "A conversation",
     Scene: ChatConversationScene,
+    panel: true,
     notes: [
       {
         target: '[aria-label="Chat transcript"] button[aria-expanded]',

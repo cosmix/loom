@@ -16,6 +16,8 @@ import {
 } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
 import { AddToChat, addAttachmentAtom, useSelectionAttachment } from "@/plan/attachments";
+import type { AttachmentDraft } from "@/plan/attachments/types";
+import { elsewhereSessionAtom } from "@/plan/chat/session-home";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { activeFeatureAtom, canAuthorAtom, featuresAtom } from "@/plan/state/atoms";
 import { LoadState } from "@/plan/ui/load-state";
@@ -187,6 +189,12 @@ function Column({
   const selection = useSelectionAttachment(columnRef, (sel) =>
     attachmentFromSelection(sel, sentenceResolver(store, page, pageKey)),
   );
+  // An open session that belongs to another screen leaves the panel with no composer, so a draft
+  // added now would carry a chip nobody sees. A concluded one is not open: the next chat starts
+  // here, so attaching still works.
+  const attachHere = (draft: AttachmentDraft) => {
+    if (store.get(elsewhereSessionAtom) === null) add(draft);
+  };
   // `addRest` re-reads the live selection, so it holds the others to the limit itself.
   const addRest = () => {
     const sel = window.getSelection();
@@ -204,7 +212,7 @@ function Column({
         pageKey={pageKey}
         page={page}
         dropTitle={dropTitle}
-        onAttach={canAuthor ? (draft) => add(draft) : undefined}
+        onAttach={canAuthor ? attachHere : undefined}
       />
       {selection.draft && selection.rect && (
         <AddToChat draft={selection.draft} rect={selection.rect} onAdded={addRest} />
@@ -222,8 +230,12 @@ const ATTACH_HINT = { keys: "a", text: "adds the sentence to chat" };
 
 /** The keys of the reading column, under it; `a` only where the column can attach. */
 function KeyHints() {
+  // `a` is a no-op while an open session belongs to another screen (`attachHere`).
+  // Both atoms are read unconditionally: a hook behind `&&` changes the hook count with authoring.
   const canAuthor = useAtomValue(canAuthorAtom);
-  const hints = canAuthor ? [...HINTS, ATTACH_HINT] : HINTS;
+  const elsewhere = useAtomValue(elsewhereSessionAtom);
+  const canAttach = canAuthor && elsewhere === null;
+  const hints = canAttach ? [...HINTS, ATTACH_HINT] : HINTS;
   return (
     <div
       aria-label="Reading keys"

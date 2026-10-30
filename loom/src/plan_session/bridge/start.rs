@@ -43,7 +43,7 @@ impl Bridge {
         if self.config.home.as_os_str().is_empty() {
             return Err(BridgeError::Refused("HOME is not set".to_owned()));
         }
-        let (id, dir, leftovers) = self.reserve(&req.kind)?;
+        let (id, dir, leftovers) = self.reserve(&req.kind, req.feature, req.plan)?;
         for leftover in leftovers {
             if let Err(error) = remove_session_dir(&leftover) {
                 tracing::warn!(%error, "cannot remove an ended session's directory");
@@ -75,6 +75,8 @@ impl Bridge {
     fn reserve(
         &self,
         kind: &SessionKind,
+        feature: Option<String>,
+        plan: Option<String>,
     ) -> Result<(String, SessionDir, Vec<SessionDir>), BridgeError> {
         let mut inner = self.lock();
         if !matches!(inner.recovery, Recovery::Done(_)) {
@@ -110,6 +112,8 @@ impl Bridge {
             start_time: None,
             transcript_path: None,
             started_at: stamp(Utc::now()),
+            feature,
+            plan,
             children: Vec::new(),
         };
         let session = Session::new(record, dir.clone(), self.config.project_root.clone());
@@ -196,7 +200,9 @@ impl Bridge {
         }
         let next_identity = Instant::now() + self.config.identity_interval;
         self.step(&id, |session, _, step| {
-            session.record = record;
+            // Field by field: a kickoff's confirmation may have named the owner meanwhile.
+            session.record.pid = record.pid;
+            session.record.start_time = record.start_time;
             session.phase = Phase::Live;
             session.next_identity = next_identity;
             let (id, kind) = (session.id.clone(), session.kind.clone());

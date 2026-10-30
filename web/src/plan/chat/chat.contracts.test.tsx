@@ -166,9 +166,7 @@ function ancestorWith(element: Element, needle: string): Element {
 }
 async function pinnedCard(chat: HTMLElement): Promise<HTMLElement> {
   const log = await logOf(chat);
-  const cards = () => within(chat).queryAllByRole("region", { name: "Permission: Bash" });
-  const pinned = () => cards().find((card) => !log.contains(card));
-  return waitFor(() => pinned() ?? Promise.reject(new Error("no card outside the transcript")));
+  return within(log).findByRole("region", { name: "Permission: Bash" });
 }
 
 beforeEach(() => {

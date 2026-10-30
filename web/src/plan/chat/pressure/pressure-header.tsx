@@ -1,158 +1,36 @@
 import { useAtomValue, useStore } from "jotai";
-import { X } from "lucide-react";
-import { useState } from "react";
-import { Link } from "react-router";
+import { Square } from "lucide-react";
+import { useState, type JSX } from "react";
 
-import { useNow } from "@/components/hooks/use-now";
-import { formatElapsed } from "@/lib/format";
 import { compactTokens } from "@/lib/tokens";
-import type { ChatSnapshot, SessionView } from "@/plan/api/schema-chat";
-import type {
-  PressureRunView,
-  PressureStepKind,
-  PressureStepView,
-} from "@/plan/api/schema-pressure";
-import { openDiff } from "@/plan/diff/open-diff";
-import { toAddress } from "@/plan/files/address";
+import type { SessionView } from "@/plan/api/schema-chat";
+import type { PressureRunView } from "@/plan/api/schema-pressure";
 import { authorBlockReasonAtom, isHolderAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { ActionError } from "@/plan/ui/action-error";
 import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
-import { OTHER_GLYPHS } from "@/plan/ui/glyphs";
-import { snapshotAtom } from "../model";
 import { Untrusted } from "../visible-controls";
-import { CodexStatusItem } from "./codex-status";
+import { Elapsed, LiveElapsed } from "./elapsed";
+import { DoneHead, RunFileName } from "./done-head";
 import { PressureDone } from "./pressure-done";
-import { endLine, runEndMs, stepLabel } from "./steps";
+import { StepTimeline } from "./pressure-timeline";
+import { endLine, runEndMs } from "./steps";
 import { pressureRunWaitingAtom, stopPressure, usePressureRun } from "./use-pressure";
 
 const STOP_CONFIRM =
   "Stop the pressure test? The plan keeps the edits made so far, and no record is written.";
 
-function Elapsed({ startMs, untilMs }: { startMs: number; untilMs: number }) {
-  return <span>{formatElapsed(Math.max(0, Math.floor((untilMs - startMs) / 1000)))}</span>;
-}
+// DisabledReason fixes its button's look, so the danger outline is laid over it from outside.
+const STOP_LOOK =
+  "ml-auto [&_button]:h-[26px] [&_button]:gap-1.5 [&_button]:border [&_button]:border-(--tone-blocked) [&_button]:bg-transparent [&_button]:px-2 [&_button]:text-xs [&_button]:text-(--tone-blocked) [&_button]:hover:bg-[color-mix(in_oklch,var(--tone-blocked)_12%,transparent)] [&_button]:aria-disabled:hover:bg-transparent";
 
-function LiveElapsed({ run }: { run: PressureRunView }) {
-  const now = useNow();
-  return <Elapsed startMs={run.started_ms} untilMs={now} />;
-}
-
-function EndedElapsed({ run }: { run: PressureRunView }) {
+function EndedElapsed({ run }: { run: PressureRunView }): JSX.Element {
   const [arrived] = useState(Date.now);
   return <Elapsed startMs={run.started_ms} untilMs={runEndMs(run, arrived)} />;
 }
 
-function RunElapsed({ run }: { run: PressureRunView }) {
-  return run.ended === null ? <LiveElapsed run={run} /> : <EndedElapsed run={run} />;
-}
-
-function editAddress(snapshot: ChatSnapshot, step: PressureStepView, path: string): string {
-  if (!step.session_id) return toAddress(path);
-  const frame =
-    snapshot.session?.id === step.session_id
-      ? snapshot
-      : snapshot.previous?.session.id === step.session_id
-        ? snapshot.previous
-        : null;
-  const turn = frame?.turns.findLast((item) =>
-    item.changed_files.some((file) => file.path === path),
-  );
-  return turn && !turn.open
-    ? openDiff("turn", path, `${step.session_id}/${turn.id}`)
-    : toAddress(path);
-}
-
-function StepGlyph({ step }: { step: PressureStepView }) {
-  if (step.state === "running") {
-    const kind =
-      step.kind === "codex" ? "codex" : step.kind === "claude_pressure" ? "pressure" : "drafting";
-    return <ActivityGlyph kind={kind} className="text-sm" />;
-  }
-  const Glyph = step.state === "done" ? OTHER_GLYPHS.stepDone : X;
-  return <Glyph className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />;
-}
-
-function StepFooter({ step }: { step: PressureStepView }) {
-  const snapshot = useAtomValue(snapshotAtom);
-  const tokens = step.tokens;
-  return (
-    <div
-      className="min-w-0 space-y-2 rounded-md border border-border/70 bg-background/60 p-3"
-      role="group"
-      aria-label={`Round ${step.round} ${stepLabel(step.kind)}`}
-    >
-      {step.kind === "codex" && step.codex && (
-        <CodexStatusItem status={step.codex} startedMs={step.started_ms} />
-      )}
-      <p className="flex items-center gap-2">
-        <StepGlyph step={step} />
-        {stepLabel(step.kind)} · round {step.round}
-        <span className="sr-only">{step.state}</span>
-      </p>
-      {step.edits.map((path) => {
-        const address = editAddress(snapshot, step, path);
-        return (
-          <div key={path} className="flex flex-wrap gap-x-2 break-words">
-            <Link className="min-w-0 break-words font-mono underline" to={toAddress(path)}>
-              <Untrusted text={path} />
-            </Link>
-            {address !== toAddress(path) && (
-              <Link className="underline" to={address}>
-                Diff
-              </Link>
-            )}
-          </div>
-        );
-      })}
-      {tokens && (
-        <p
-          title={`Input: ${tokens.input}; cache write: ${tokens.cache_write}; cache read: ${tokens.cache_read}; output: ${tokens.output}`}
-        >
-          {compactTokens(tokens.input + tokens.cache_write + tokens.cache_read + tokens.output)}{" "}
-          tokens
-        </p>
-      )}
-    </div>
-  );
-}
-
-function RoundRow({ round, steps }: { round: number; steps: PressureStepView[] }) {
-  const reviewers: PressureStepKind[] = ["codex", "claude_pressure"];
-  return (
-    <div data-pressure-round={round} className="space-y-2">
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-2">
-        {reviewers.flatMap((kind) =>
-          steps
-            .filter((step) => step.kind === kind)
-            .map((step) => <StepFooter key={`${round}/${step.kind}`} step={step} />),
-        )}
-      </div>
-      {steps
-        .filter((step) => step.kind === "claude_address")
-        .map((step) => (
-          <StepFooter key={`${round}/${step.kind}`} step={step} />
-        ))}
-    </div>
-  );
-}
-
-function StepTimeline({ steps }: { steps: PressureStepView[] }) {
-  const rounds = new Map<number, PressureStepView[]>();
-  for (const step of steps) {
-    const round = rounds.get(step.round) ?? [];
-    round.push(step);
-    rounds.set(step.round, round);
-  }
-  return (
-    <div className="space-y-3">
-      {[...rounds]
-        .sort(([left], [right]) => left - right)
-        .map(([round, items]) => (
-          <RoundRow key={round} round={round} steps={items} />
-        ))}
-    </div>
-  );
+function RunElapsed({ run }: { run: PressureRunView }): JSX.Element {
+  return run.ended === null ? <LiveElapsed startMs={run.started_ms} /> : <EndedElapsed run={run} />;
 }
 
 function useStopRun() {
@@ -178,8 +56,43 @@ function useStopRun() {
   return { writable, reason, stopping, error, stop };
 }
 
-function RunControls({ run }: { run: PressureRunView }) {
-  const { writable, reason, stopping, error, stop } = useStopRun();
+type StopRun = ReturnType<typeof useStopRun>;
+
+function RunHead({ run, stop }: { run: PressureRunView; stop: StopRun }): JSX.Element {
+  return (
+    <div className="chat-run-header grid gap-2 border-b border-hairline px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <ActivityGlyph kind="pressure" paused={run.ended !== null} className="text-sm" />
+        <span className="text-[13.5px] font-bold text-foreground">Pressure test</span>
+        <span className="inline-flex h-5 items-center rounded-md bg-muted px-1.5 text-[11.5px] font-medium">
+          round {run.round} of {run.rounds}
+        </span>
+        {stop.writable && !run.ended && (
+          <div className={STOP_LOOK}>
+            <DisabledReason
+              reason={stop.stopping ? "Stopping…" : stop.reason}
+              onClick={() => {
+                void stop.stop();
+              }}
+              size="sm"
+            >
+              <Square aria-hidden="true" className="fill-current" />
+              Stop
+            </DisabledReason>
+          </div>
+        )}
+      </div>
+      <RunFileName plan={run.plan} />
+      {/* No separator glyph: at a wrap, a dangling one would lead or trail a line. */}
+      <div className="flex flex-wrap gap-x-3 font-mono text-[11.5px] text-muted-foreground">
+        <RunElapsed run={run} />
+        <span>{compactTokens(run.tokens_total)} tokens</span>
+      </div>
+    </div>
+  );
+}
+
+function RunEnd({ run, error }: { run: PressureRunView; error: string | null }): JSX.Element {
   const configChanged = run.ended?.reason?.startsWith("Codex changed session configuration");
   return (
     <>
@@ -193,42 +106,30 @@ function RunControls({ run }: { run: PressureRunView }) {
           <Untrusted text={run.ended?.reason ?? ""} />
         </p>
       )}
-      {writable && !run.ended && (
-        <DisabledReason
-          reason={stopping ? "Stopping…" : reason}
-          onClick={() => {
-            void stop();
-          }}
-          size="sm"
-        >
-          Stop
-        </DisabledReason>
-      )}
       {error && <ActionError message={error} />}
     </>
   );
 }
 
-export function PressureHeader({ session }: { session: SessionView }) {
-  const run = usePressureRun();
+// Keyed by the run's start, so the stop state and the frozen clock reset with a new run.
+function RunBody({ run, sessionId }: { run: PressureRunView; sessionId: string }): JSX.Element {
   const waiting = useAtomValue(pressureRunWaitingAtom);
-  if (!run) return null;
-  const fileName = run.plan.split("/").at(-1) ?? run.plan;
+  const stop = useStopRun();
   return (
-    <div className="space-y-2 px-3 text-xs text-muted-foreground" data-session-id={session.id}>
-      <div className="chat-run-header flex flex-wrap items-center gap-x-1">
-        <ActivityGlyph kind="pressure" paused={run.ended !== null} className="mr-1 text-sm" />
-        <Untrusted
-          text={`Pressure test · ${fileName} · round ${run.round} of ${run.rounds} · ${stepLabel(run.step)}`}
-        />
-        <span>·</span>
-        <RunElapsed key={run.started_ms} run={run} />
-        <span>· {compactTokens(run.tokens_total)} tokens</span>
+    <div className="text-xs text-muted-foreground" data-session-id={sessionId}>
+      {run.ended?.kind === "recorded" ? <DoneHead run={run} /> : <RunHead run={run} stop={stop} />}
+      <div className="grid gap-3 px-4 py-3">
+        {waiting && <p role="status">reconnected; waiting for the run's next update</p>}
+        <PressureDone run={run} />
+        <StepTimeline run={run} />
+        <RunEnd run={run} error={stop.error} />
       </div>
-      {waiting && <p role="status">reconnected; waiting for the run's next update</p>}
-      <StepTimeline steps={run.steps} />
-      <PressureDone run={run} />
-      <RunControls key={run.started_ms} run={run} />
     </div>
   );
+}
+
+export function PressureHeader({ session }: { session: SessionView }): JSX.Element | null {
+  const run = usePressureRun();
+  if (!run) return null;
+  return <RunBody key={run.started_ms} run={run} sessionId={session.id} />;
 }

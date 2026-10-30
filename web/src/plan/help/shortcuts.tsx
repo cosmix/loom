@@ -7,8 +7,8 @@ export const PLANNER_SHORTCUT_GROUPS: HelpShortcutGroup[] = [
   {
     title: "While reading",
     rows: [
-      ["↓ / j", "Focus the next sentence or passage, including opened runs"],
-      ["↑ / k", "Focus the previous sentence or passage"],
+      ["↓ / j", "Focus the next openable sentence or fold cap"],
+      ["↑ / k", "Focus the previous openable sentence or fold cap"],
       ["Enter / → / Space", "Open the focused closed sentence"],
       ["Esc", "Fold the innermost run around the focus, or else the run opened last"],
       ["Shift + Esc", "Fold every open run"],
@@ -21,34 +21,25 @@ export const PLANNER_SHORTCUT_GROUPS: HelpShortcutGroup[] = [
     ],
   },
   {
-    title: "Editor",
-    rows: [
-      ["Ctrl + S / ⌘ + S", "Save"],
-      ["Esc", "Leave the editor (closes the search panel first)"],
-    ],
-  },
-  {
-    title: "Chat",
-    rows: [
-      ["c", "Focus the chat composer"],
-      ["y", "Allow the pinned permission request"],
-      ["n", "Deny it, with a note"],
-    ],
-  },
-  {
     title: "Anywhere",
     rows: [
       ["?", "Open or close Help outside text fields"],
       ["Esc", "Close the active dialog"],
+      ["c", "Focus the chat composer"],
+      ["y", "Allow the pinned permission request"],
+      ["n", "Deny it, with a note"],
       ["/", "Focus search in file mode outside text fields"],
       ["Esc", "Clear search in file mode"],
+      ["Ctrl + S / ⌘ + S", "Save in the editor"],
+      ["Esc", "Leave the editor (closes the search panel first)"],
     ],
   },
 ];
 
 export function PlannerShortcuts(): JSX.Element {
   return (
-    <div className="font-sans text-[13px] text-foreground [&_dd]:text-[13px]! [&_kbd]:border-b-2 [&_kbd]:text-[13px]! [&_kbd]:shadow-sm">
+    // Keys are at least 26px wide with a 2px bottom edge, as the dialog's other key hints.
+    <div className="font-sans text-[13px] text-foreground [&_dd]:text-[13px]! [&_kbd]:inline-flex [&_kbd]:min-w-[26px] [&_kbd]:justify-center [&_kbd]:border-b-2 [&_kbd]:text-[13px]! [&_kbd]:shadow-[0_2px_0_var(--border)]">
       <ShortcutGroups groups={PLANNER_SHORTCUT_GROUPS} />
     </div>
   );

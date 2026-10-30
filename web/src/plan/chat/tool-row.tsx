@@ -8,6 +8,9 @@ import { Untrusted } from "./visible-controls";
 
 type ToolItem = Extract<Item, { type: "tool" }>;
 
+/** A finished row reads as what happened; a tool without an entry keeps its own name. */
+const DONE_VERB: Record<string, string> = { Edit: "Edited", MultiEdit: "Edited", Write: "Wrote" };
+
 function ToolStatus({ status }: { status: ToolItem["status"] }): JSX.Element {
   if (status === "pending") {
     return (
@@ -131,7 +134,7 @@ function ToolHeader({
       type="button"
       aria-expanded={expanded}
       aria-controls={detailsId}
-      className="flex w-full min-w-0 items-start gap-2 rounded px-2 py-1.5 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+      className="flex w-full min-w-0 items-start gap-2 rounded px-1 py-1 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
       onClick={onToggle}
     >
       <ChevronRight
@@ -142,9 +145,9 @@ function ToolHeader({
       <Wrench size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-muted-foreground" />
       <span className="flex min-w-0 flex-1 items-baseline gap-2">
         <span className="shrink-0 font-medium">
-          <Untrusted text={item.name} />
+          <Untrusted text={(item.status === "done" && DONE_VERB[item.name]) || item.name} />
         </span>{" "}
-        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+        <span className="chat-tool-target">
           <Untrusted text={item.summary} />
         </span>
         {item.name === "Agent" && (
@@ -172,7 +175,7 @@ export function ToolRow({
   const children =
     item.name === "Agent" ? nested.filter((child) => child.parent === item.tool_use_id) : [];
   return (
-    <div className="min-w-0 text-[13px]" aria-live="off">
+    <div className="min-w-0 text-[12px] text-muted-foreground" aria-live="off">
       <ToolHeader
         item={item}
         expanded={expanded}

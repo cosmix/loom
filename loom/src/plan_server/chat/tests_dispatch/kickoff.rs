@@ -11,6 +11,7 @@ use super::{fixture, ok_result, opening, received_frames, record_guidance, refus
 use crate::plan_server::authoring::{Refusal, Take};
 use crate::plan_server::wire::chat::ChatCommand;
 use crate::plan_session::bridge::host::LaunchSpec;
+use crate::plan_session::bridge::registry::read_record;
 use crate::plan_session::bridge::{EndCause, EndMode};
 use crate::plan_session::model::{ChatDelta, Item, SessionState};
 use crate::plan_session::scope::{self, KickoffGrant, KickoffSize, SessionScope};
@@ -20,6 +21,7 @@ pub(super) fn offer(id: &str, feature: Option<&str>) -> ChatCommand {
         client_id: Some("c1".into()),
         offer: Some(id.into()),
         feature: feature.map(str::to_owned),
+        plan: None,
         text: None,
         attachments: Vec::new(),
     }
@@ -177,6 +179,35 @@ fn confirmation_arms_one_target_sends_one_message_and_publishes_the_target() {
         refused("This kickoff already has a confirmed target.")
     );
     assert_eq!(f.host.delivered_to(&s.socket).len(), 2);
+}
+
+#[test]
+fn confirmation_makes_the_named_feature_or_plan_the_sessions_owner() {
+    for (size, feature, plan) in [
+        (KickoffSize::Feature, Some("fresh"), None),
+        (KickoffSize::Plan, None, Some("fresh")),
+    ] {
+        let f = fixture(false);
+        let tab = f.connect(&browser());
+        let s = ready_proposal(&f, &tab);
+
+        assert_eq!(f.command(&tab, confirm(size, "fresh")), ok_result());
+
+        let session = f.bridge.chat_snapshot(true).session.unwrap();
+        assert_eq!(session.feature.as_deref(), feature);
+        assert_eq!(session.plan.as_deref(), plan);
+        wait_until("the rewritten record", || {
+            read_record(&s.dir)
+                .is_ok_and(|r| r.feature.as_deref() == feature && r.plan.as_deref() == plan)
+        });
+        wait_until("the published view", || {
+            received_frames(&f, &tab).iter().any(|frame| {
+                frame["op"] == "session"
+                    && frame["session"]["feature"].as_str() == feature
+                    && frame["session"]["plan"].as_str() == plan
+            })
+        });
+    }
 }
 
 #[test]

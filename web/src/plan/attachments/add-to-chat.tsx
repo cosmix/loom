@@ -3,6 +3,7 @@ import type { ReactNode, RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { SectionView } from "@/plan/api/schema-files";
+import { elsewhereSessionAtom } from "@/plan/chat/session-home";
 import { canAuthorAtom } from "@/plan/state/atoms";
 
 import { addAttachmentAtom } from "./atoms";
@@ -20,7 +21,11 @@ const encoder = new TextEncoder();
 type AddToChatProps = { draft: AttachmentDraft; rect: DOMRect; onAdded: () => void };
 
 export function AddToChat({ draft, rect, onAdded }: AddToChatProps) {
-  const canAuthor = useAtomValue(canAuthorAtom);
+  const holdsAuthoring = useAtomValue(canAuthorAtom);
+  const elsewhere = useAtomValue(elsewhereSessionAtom);
+  // An open session on another screen has no composer here, so its draft would hold an unseen
+  // chip. A concluded one is not open: the next chat starts here, so attaching still works.
+  const canAuthor = holdsAuthoring && elsewhere === null;
   const add = useSetAtom(addAttachmentAtom);
   const tooLong = encoder.encode(draft.text).length > MAX_ATTACHMENT_BYTES;
   const secondaries = selectionSecondaries().map((render, index) => {

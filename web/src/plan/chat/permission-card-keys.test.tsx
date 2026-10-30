@@ -58,14 +58,11 @@ it("keys ignored in composer", () => {
   expect(screen.queryByRole("textbox", { name: "Deny note" })).toBeNull();
 });
 
-it("keys ignored in deny note and inline copy", () => {
+it("keys ignored in deny note", () => {
   const h = harness();
-  const view = h.show();
+  h.show();
   fireEvent.keyDown(card(), { key: "n" });
   fireEvent.keyDown(screen.getByRole("textbox", { name: "Deny note" }), { key: "y" });
-  view.unmount();
-  h.show(permission(), true);
-  fireEvent.keyDown(card(), { key: "y" });
 
   expect(h.send).not.toHaveBeenCalled();
 });
@@ -97,12 +94,7 @@ it("focus rule: the card announces nothing itself and never steals typing focus"
         <button>Outside</button>
         <aside aria-label="Chat">
           <textarea aria-label="Message" />
-          {show && (
-            <>
-              <PermissionCard item={permission()} inline />
-              <PermissionCard item={permission()} />
-            </>
-          )}
+          {show && <PermissionCard item={permission()} />}
         </aside>
       </Provider>
     );
@@ -111,7 +103,7 @@ it("focus rule: the card announces nothing itself and never steals typing focus"
   const composer = screen.getByRole("textbox", { name: "Message" });
   composer.focus();
   view.rerender(<Panel show />);
-  const pinned = screen.getAllByRole("region", { name: "Permission: Bash" })[1];
+  const pinned = screen.getByRole("region", { name: "Permission: Bash" });
 
   // Focus stays in the editable composer, so a typed "y" never reaches the card.
   expect(document.activeElement).toBe(composer);

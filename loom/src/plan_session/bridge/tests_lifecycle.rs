@@ -1,5 +1,6 @@
-//! Bridge tests: a Stop that a running subagent holds open, abort during a launch, an end
-//! nobody asked for and its queue, a spawn whose teardown failed, an oversized closing message.
+//! Bridge tests: a Stop that a running subagent holds open, abort during a launch, an owner named
+//! during one, an end nobody asked for and its queue, a spawn whose teardown failed, an oversized
+//! closing message.
 
 use std::sync::Arc;
 use std::thread;
@@ -8,13 +9,78 @@ use serde_json::json;
 
 use super::fake_host::*;
 use super::host::socket_name;
-use super::registry::read_record;
-use super::{EndCause, EndMode, EndOutcome, SendOutcome, TEARDOWN_FAILED};
+use super::registry::{read_record, SessionRecord};
+use super::{BridgeError, EndCause, EndMode, EndOutcome, SendOutcome, TEARDOWN_FAILED};
 use crate::plan_session::input::MAX_DELIVERED_BYTES;
 use crate::plan_session::kind::SessionDir;
 use crate::plan_session::kind::SessionKind::{Authoring, Summary};
 use crate::plan_session::model::{ChatDelta, FailureKind, Item, SessionState};
 use crate::process::IdentityStatus;
+
+#[test]
+fn the_view_names_the_feature_the_session_was_started_for() {
+    let h = Harness::ready(|_| {});
+    let mut request = h.request(Authoring, OPENING, false);
+    request.feature = Some("alpha".to_owned());
+    h.bridge.start_session(request).unwrap();
+    let session = h.bridge.chat_snapshot(true).session.unwrap();
+    assert_eq!(session.feature.as_deref(), Some("alpha"));
+}
+
+#[test]
+fn the_view_names_the_plan_the_session_was_started_for() {
+    let h = Harness::ready(|_| {});
+    let mut request = h.request(Authoring, OPENING, false);
+    request.plan = Some("solo".to_owned());
+    h.bridge.start_session(request).unwrap();
+    let session = h.bridge.chat_snapshot(true).session.unwrap();
+    assert_eq!(session.plan.as_deref(), Some("solo"));
+    assert_eq!(session.feature, None);
+}
+
+#[test]
+fn naming_an_owner_rewrites_the_record_and_publishes_the_view() {
+    let h = Harness::ready(|_| {});
+    let s = h.start(Authoring);
+    wait_until("the complete record", || {
+        read_record(&s.dir).is_ok_and(|record| record.pid.is_some())
+    });
+    h.bridge
+        .set_owner(&s.id, None, Some("solo".to_owned()))
+        .unwrap();
+    let session = h.bridge.chat_snapshot(true).session.unwrap();
+    assert_eq!(session.plan.as_deref(), Some("solo"));
+    wait_until("the rewritten record", || {
+        read_record(&s.dir).is_ok_and(|record| record.plan.as_deref() == Some("solo"))
+    });
+    let gone = h.bridge.set_owner("no-such-session", None, None);
+    assert!(matches!(gone, Err(BridgeError::NoSession)), "{gone:?}");
+}
+
+#[test]
+fn an_owner_named_during_the_launch_survives_the_launch_finishing() {
+    let h = Harness::ready(|_| {});
+    h.host.hold_spawn(true);
+    let id = h
+        .bridge
+        .start_session(h.request(Authoring, OPENING, false))
+        .unwrap();
+    let socket = socket_name(&id);
+    wait_until("the spawn", || {
+        h.host.count(&Call::Spawn(socket.clone())) == 1
+    });
+    h.bridge
+        .set_owner(&id, None, Some("solo".to_owned()))
+        .unwrap();
+    h.host.hold_spawn(false);
+    let dir = SessionDir::new(h.runtime.sessions.join(&id));
+    wait_until("the complete record with the owner", || {
+        let named = |record: &SessionRecord| record.plan.as_deref() == Some("solo");
+        read_record(&dir).is_ok_and(|record| record.pid.is_some() && named(&record))
+    });
+    let session = h.bridge.chat_snapshot(true).session.unwrap();
+    assert_eq!(session.plan.as_deref(), Some("solo"));
+}
 
 #[test]
 fn a_summary_session_stays_open_at_a_stop_while_a_subagent_runs() {
