@@ -63,3 +63,13 @@
 **Why:** the table listed the files each feature creates, not the files that must change for a new item to be reachable.
 
 **Prevention:** for each new `pub(crate)` item, the ownership table names the module file that re-exports it and each dispatcher that must route the new kind; a private `mod` needs its re-export in the parent (`signals::contract` is private, so `scaffold_line` needed a `signals/mod.rs` re-export).
+
+## Freeze Rebuilt Per Contract, Silently
+
+**What happened:** A freeze of 11 contracts took 8m13s, about 45 s each, with the status surfaces saying `writing contract tests` and the writer's terminal empty. All 11 reports were `build_failed` from one lib test target's compile error, although 8 of the contracts lived in an integration test file that was never compiled. The first fix shared failed builds only for cargo contracts with a resolved target, and only in freezes, which the operator rejected: loom runs on many projects and runners.
+
+**Why:** Three separate causes. `single_test_command` ignored the contract's file from the adapter's first version (af929bc9), so `cargo test <name> -- --exact` built every target and aborted at the first failure. Runners cache no failed compile, so each contract repeated it. Moving freeze to a daemon host job (23ceedb3) took the `Running contract` lines out of the writer's Bash output, and the job wrote no progress until it ended, so nothing showed the work. The first fix was shaped by the one project it was measured on.
+
+**Prevention:** Moving work out of a session into a daemon job must carry its progress to a status surface in the same change. A contract's red verdict must come from compiling its own file: `build_failed` passes a freeze, so an unscoped command lets any other target's compile error pass a misspelt or already green contract. A fix to loom's runner handling is stated and tested over every registered adapter and any contract count, never in terms of loom's own crate.
+
+**Fix:** Target-scoped cargo commands, failed builds shared by a runner-agnostic build key in freeze and completion, per-contract `progress.jsonl` lines and `StageSummary.contract_testing`; see [contract-phase](../architecture/contract-phase.md#where-a-contract-runs).
