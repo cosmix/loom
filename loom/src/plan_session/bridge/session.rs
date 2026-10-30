@@ -116,8 +116,8 @@ pub(super) struct Delivering {
     /// `None` until the driver pasted it.
     pub(super) sent_at: Option<Instant>,
     pub(super) closing: bool,
-    /// The opening: a failed paste of it fails the session (no turn ever ran).
-    pub(super) opening: bool,
+    /// `Some(n)`: the opening, Enter pressed again `n` times. Its failed paste fails the session.
+    pub(super) opening: Option<u8>,
     pub(super) compact: bool,
 }
 

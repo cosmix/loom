@@ -38,13 +38,19 @@ describe("TakingShape", () => {
     expect(within(panel).getByText("Nothing settled yet")).toBeTruthy();
     expect(within(panel).getByText("No open questions")).toBeTruthy();
     expect(within(panel).queryByRole("heading", { name: "Sections" })).toBeNull();
-    expect(within(panel).queryByText("Will write")).toBeNull();
+    expect(within(panel).queryByText(/Nothing is written yet/)).toBeNull();
+    expect(within(panel).queryByRole("button", { name: /^Write the/ })).toBeNull();
   });
 
   it("shows a full feature and all three section states with distinct icons", () => {
     render(<TakingShape shape={featureShape} target={null} />);
 
-    expect(screen.getByText("Feature")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Feature" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: "Standalone plan" }).getAttribute("aria-pressed"),
+    ).toBe("false");
     expect(screen.getByText("planner-search").parentElement?.classList.contains("font-mono")).toBe(
       true,
     );
@@ -58,29 +64,65 @@ describe("TakingShape", () => {
     expect(questions.getByRole("listitem").textContent).toBe("Should archived plans appear?");
     const sections = within(screen.getByRole("region", { name: "Sections" }));
     expect(sections.getAllByRole("listitem").map((item) => item.textContent)).toEqual([
-      "Search scopeSettled",
-      "Result orderingBeing worded",
-      "Archive handlingOpen",
+      "01Search scopeSettled",
+      "02Result orderingBeing worded",
+      "03Archive handlingOpen",
     ]);
     expect(sections.getByText("Settled").querySelector(".lucide-circle-check")).not.toBeNull();
-    expect(sections.getByText("Being worded").querySelector(".lucide-pencil")).not.toBeNull();
+    expect(
+      sections.getByText("Being worded").querySelector('.activity-glyph[data-kind="drafting"]'),
+    ).not.toBeNull();
     expect(sections.getByText("Open").querySelector(".lucide-circle")).not.toBeNull();
   });
 
   it("hides proposed sections for a standalone plan", () => {
     render(<TakingShape shape={{ ...featureShape, size: "plan" }} target={null} />);
 
-    expect(screen.getByText("Standalone plan")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Standalone plan" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(screen.getByRole("button", { name: "Write the plan" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Sections" })).toBeNull();
     expect(screen.queryByText("Search scope")).toBeNull();
   });
 
-  it("shows where the named work will be written", () => {
+  it("states where the named work will be written and enables writing", () => {
     render(<TakingShape shape={featureShape} target="doc/product/planner-search/index.md" />);
 
     const target = screen.getByText("doc/product/planner-search/index.md");
-    expect(target.closest("p")?.textContent).toBe("Will write doc/product/planner-search/index.md");
-    expect(target.parentElement?.classList.contains("font-mono")).toBe(true);
+    expect(target.closest("p")?.textContent).toBe(
+      "Nothing is written yet. 'Write the vision' creates doc/product/planner-search/index.md with the open questions in it.",
+    );
+    expect(target.closest("code")).not.toBeNull();
+  });
+
+  it("drops the path from the notice and blocks writing while no name is settled", () => {
+    render(<TakingShape shape={featureShape} target={null} />);
+
+    expect(screen.getByText(/Nothing is written yet/).textContent).toBe(
+      "Nothing is written yet. 'Write the vision' creates the vision with the open questions in it.",
+    );
+    expect(
+      screen.getByRole("button", { name: "Write the vision" }).getAttribute("aria-disabled"),
+    ).toBe("true");
+  });
+
+  it("keeps the Size row the first section and renders a proposal slot above the rows", () => {
+    render(
+      <TakingShape shape={featureShape} target={null}>
+        <div role="region" aria-label="Proposal" />
+      </TakingShape>,
+    );
+
+    const panel = screen.getByRole("complementary", { name: "Taking shape" });
+    expect(panel.querySelector(":scope > section:nth-of-type(1) h3")?.textContent).toBe("Size");
+    expect(panel.querySelector(":scope > section:nth-of-type(6) h3")?.textContent).toBe("Sections");
+    expect(
+      panel
+        .querySelector('[aria-label="Proposal"]')!
+        .compareDocumentPosition(panel.querySelector(":scope > section:nth-of-type(1)")!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
   });
 
   it("shows placeholders for a shape whose fields are still empty", () => {

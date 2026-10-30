@@ -19,11 +19,11 @@ const steps: StepView[] = [
   { number: 7, name: "Run", mark: "optional", count: null, label: "Run" },
 ];
 
-function renderStrip(value: StepView[]) {
+function renderStrip(value: StepView[], current: number | null = 4, running = false) {
   return render(
     <Provider store={createStore()}>
       <MemoryRouter>
-        <ProgressStrip steps={value} />
+        <ProgressStrip steps={value} current={current} running={running} />
       </MemoryRouter>
     </Provider>,
   );
@@ -48,14 +48,35 @@ describe("ProgressStrip", () => {
     ]);
   });
 
-  it("distinguishes the four marks with visible glyphs", () => {
-    renderStrip(steps);
+  it("colours done steps, the current step and a running Run step; the rest stay idle", () => {
+    renderStrip(steps, 4, true);
 
-    const list = screen.getByRole("list", { name: "Progress" });
-    expect(within(list).getAllByText("✓")).toHaveLength(2);
-    expect(within(list).getByText("!")).toBeTruthy();
-    expect(within(list).getByText("●")).toBeTruthy();
-    expect(within(list).getAllByText("−")).toHaveLength(3);
+    const cells = within(screen.getByRole("list", { name: "Progress" })).getAllByRole("listitem");
+    expect(cells.map((cell) => cell.getAttribute("data-cell"))).toEqual([
+      "done",
+      "done",
+      "idle",
+      "current",
+      "idle",
+      "idle",
+      "running",
+    ]);
+    expect(cells[6].textContent).toBe("Run: running");
+  });
+
+  it("marks no step current when none is, and keeps Run idle while nothing runs", () => {
+    renderStrip(steps, null, false);
+
+    const cells = within(screen.getByRole("list", { name: "Progress" })).getAllByRole("listitem");
+    expect(cells.map((cell) => cell.getAttribute("data-cell"))).toEqual([
+      "done",
+      "done",
+      "idle",
+      "idle",
+      "idle",
+      "idle",
+      "idle",
+    ]);
   });
 
   it("escapes control characters in server step names", () => {

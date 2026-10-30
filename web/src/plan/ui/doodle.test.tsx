@@ -30,11 +30,30 @@ it("normalizes every thread path for the redraw animation", () => {
   }
 });
 
+it("draws a spool, a six-warp loom frame, one weft ending at a dot and three sparks", () => {
+  render(<LoomDoodle />);
+  const svg = screen.getByRole("img", { name: TITLE });
+  expect(svg.getAttribute("viewBox")).toBe("0 0 270 128");
+  expect(svg.querySelectorAll("rect.loom-doodle__ink")).toHaveLength(1);
+  expect(svg.querySelectorAll("path.loom-doodle__thread")).toHaveLength(1);
+  expect(svg.querySelectorAll("path.loom-doodle__spark")).toHaveLength(3);
+  const dot = svg.querySelector("circle.loom-doodle__dot");
+  expect([dot?.getAttribute("cx"), dot?.getAttribute("cy"), dot?.getAttribute("r")]).toEqual([
+    "204",
+    "92",
+    "2.6",
+  ]);
+  const warps = [...svg.querySelectorAll("path.loom-doodle__ink")].filter((path) =>
+    /^M\d+ 52V112$/.test(path.getAttribute("d") ?? ""),
+  );
+  expect(warps).toHaveLength(6);
+});
+
 it("keeps threads drawn at rest and supports local and host interaction", () => {
   expect(css).toMatch(/stroke-dasharray:\s*1\s*;/);
   expect(css).toMatch(/stroke-dashoffset:\s*0\s*;/);
   for (const state of ["hover", "focus-within"]) {
-    for (const part of ["thread", "spark"]) {
+    for (const part of ["thread", "spark", "dot"]) {
       expect(css).toContain(`.loom-doodle:${state} .loom-doodle__${part}`);
       expect(css).toContain(`[data-doodle-host]:${state} .loom-doodle .loom-doodle__${part}`);
     }

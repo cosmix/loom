@@ -1,8 +1,11 @@
+import type { LucideIcon } from "lucide-react";
+import { Link } from "react-router";
+
 import type { ChecklistView, MarkView, StepView } from "@/plan/api/schema";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { PaceChoice } from "@/plan/feature/pace";
+import { stepLine } from "@/plan/feature/steps";
 import { isCurrentStep, readyLabel } from "@/plan/header/step-tracker";
-import { STEP_MARK_GLYPHS } from "@/plan/ui/glyphs";
+import { OTHER_GLYPHS, STEP_GLYPHS } from "@/plan/ui/glyphs";
 
 const MARK_LABELS: Record<MarkView, string> = {
   done: "done",
@@ -11,47 +14,90 @@ const MARK_LABELS: Record<MarkView, string> = {
   optional: "optional",
 };
 
-function StepMark({ mark }: { mark: MarkView }) {
-  const Glyph = STEP_MARK_GLYPHS[mark];
-  return (
-    <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-      <Glyph data-step-mark={mark} className="size-4 shrink-0" aria-hidden="true" />
-      <span>{MARK_LABELS[mark]}</span>
-    </span>
-  );
+function featurePath(feature: string): string {
+  return `/f/${encodeURIComponent(feature)}`;
 }
 
-function StepRow({ checklist, step }: { checklist: ChecklistView; step: StepView }) {
+function Row({
+  to,
+  mark,
+  selected,
+  current = false,
+  glyph,
+  label,
+  line,
+}: {
+  to: string;
+  mark: MarkView;
+  /** The step the body shows: the only row that carries aria-current. */
+  selected: boolean;
+  /** The server's current step; marked quietly when the body shows another one. */
+  current?: boolean;
+  glyph: LucideIcon;
+  label: string;
+  line: string | null;
+}) {
+  const Glyph = mark === "done" ? OTHER_GLYPHS.stepDone : glyph;
   return (
-    <li
-      aria-current={isCurrentStep(checklist.current, step) ? "step" : undefined}
-      className="border-b border-hairline py-4 last:border-b-0"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-medium text-foreground">
-          <Untrusted text={step.name} />
-        </h2>
-        <StepMark mark={step.mark} />
-      </div>
-      <PaceChoice checklist={checklist} step={step} />
+    <li>
+      <Link
+        to={to}
+        aria-current={selected ? "step" : undefined}
+        data-step-mark={mark}
+        data-current={current && !selected ? "" : undefined}
+        className="plan-step-row"
+      >
+        <span className="plan-step-badge">
+          <Glyph className="size-3.5" aria-hidden="true" />
+        </span>
+        <span className="plan-step-text">
+          <span className="plan-step-label">
+            <Untrusted text={label} />
+            <span className="sr-only">, {MARK_LABELS[mark]}</span>
+          </span>{" "}
+          {line !== null && (
+            <span className="plan-step-line">
+              <Untrusted text={line} />
+            </span>
+          )}
+        </span>
+      </Link>
     </li>
   );
 }
 
-export function StepList({ checklist }: { checklist: ChecklistView }) {
+function serverRow(checklist: ChecklistView, step: StepView, selected: number) {
+  return (
+    <Row
+      key={step.number}
+      to={`${featurePath(checklist.feature)}?step=${step.number}`}
+      mark={step.mark}
+      selected={step.number === selected}
+      current={isCurrentStep(checklist.current, step)}
+      glyph={STEP_GLYPHS[step.number - 1] ?? OTHER_GLYPHS.openQuestions}
+      label={step.name}
+      line={stepLine(checklist, step)}
+    />
+  );
+}
+
+/** The step navigation: Conversation, then one link per server step; `selected` is the step the body shows. */
+export function StepList({ checklist, selected }: { checklist: ChecklistView; selected: number }) {
   const ready = readyLabel(checklist.current);
   return (
-    <div>
-      <ol aria-label="Steps" className="list-none p-0">
-        <li className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline py-4">
-          <h2 className="font-medium text-foreground">Conversation</h2>
-          <StepMark mark="done" />
-        </li>
-        {checklist.steps.map((step) => (
-          <StepRow key={step.number} checklist={checklist} step={step} />
-        ))}
+    <nav aria-label="Steps" className="plan-feature__nav">
+      <ol className="plan-step-list">
+        <Row
+          to={featurePath(checklist.feature)}
+          mark="done"
+          selected={false}
+          glyph={OTHER_GLYPHS.stepDone}
+          label="Conversation"
+          line={checklist.feature}
+        />
+        {checklist.steps.map((step) => serverRow(checklist, step, selected))}
       </ol>
-      {ready && <p className="py-3 text-sm text-muted-foreground">{ready}</p>}
-    </div>
+      {ready && <p className="plan-step-ready">{ready}</p>}
+    </nav>
   );
 }

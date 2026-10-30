@@ -11,9 +11,12 @@ import { PlanHeader } from "@/plan/header/header";
 import { activeFeatureAtom, checklistAtom, projectAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 const NEXT_STEP = "Section 05 is the next product spec document to write.";
+/** The compact card, used on phones, is only the offer (text until an action is registered). */
+const OFFER_LABEL = checklistFixture.checklists[0]!.primary!.label;
 
 vi.mock("@/plan/header-extras", () => ({
-  HeaderExtras: () => <button type="button">Chat</button>,
+  HeaderExtras: ({ compact }: { compact: boolean }) =>
+    compact ? <button type="button">Chat</button> : null,
 }));
 vi.mock("@/plan/header/name-prompt", () => ({ useResendStoredName: () => {} }));
 vi.mock("@/plan/header/overflow", () => ({ Overflow: () => <button type="button">More</button> }));
@@ -69,11 +72,24 @@ it("links the Loom logo to the planner home", () => {
   expect(link.querySelector("svg")).not.toBeNull();
 });
 
-it("shows the route feature under the Planning eyebrow", () => {
+it("shows the route feature's title under the Planning eyebrow", () => {
   show("/f/demo");
 
-  expect(screen.getByText("Planning")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Switch feature, current: demo" })).toBeTruthy();
+  expect(screen.getByText("Planning · feature")).toBeTruthy();
+  const switcher = screen.getByRole("button", { name: "Switch feature, current: demo" });
+  expect(switcher.textContent).toBe("Demo");
+});
+
+it.each([
+  ["/", "Planning · project", "Example project"],
+  ["/new", "Planning · new feature", "Untitled"],
+  ["/files", "Planning · files", "Example project"],
+  ["/plans/standalone", "Planning · files", "Example project"],
+])("names %s with the eyebrow %s over %s", (pathname, eyebrow, title) => {
+  show(pathname);
+
+  expect(screen.getByText(eyebrow)).toBeTruthy();
+  expect(screen.getByRole("button", { name: `${title}, switch feature` }).textContent).toBe(title);
 });
 
 it("keeps the route feature name before the server info arrives", () => {
@@ -86,6 +102,13 @@ it("includes the shared theme toggle", () => {
   show();
 
   expect(screen.getByRole("button", { name: /^Switch to/ })).toBeTruthy();
+});
+
+it("labels Settings and Help beside their icons", () => {
+  show();
+
+  expect(screen.getByRole("button", { name: "Settings" }).textContent).toBe("Settings");
+  expect(screen.getByRole("button", { name: "Help" }).textContent).toBe("Help");
 });
 
 it("opens settings with its callback", () => {
@@ -122,7 +145,7 @@ it.each(["/", "/new", "/files", "/plans/standalone"])(
     const { store } = show(pathname);
 
     expect(store.get(activeFeatureAtom)).toBe("demo");
-    expect(screen.getByRole("button", { name: "Example project, switch feature" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /, switch feature$/ })).toBeTruthy();
     expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
     expect(screen.queryByTitle(NEXT_STEP)).toBeNull();
   },
@@ -180,38 +203,52 @@ it("collapses the step rail and uses the overflow control below 1024px", () => {
   expect(screen.getByRole("button", { name: /Step 2 of 2 · Product spec/ })).toBeTruthy();
   expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
   expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
-  expect(screen.getByTitle(NEXT_STEP)).toBeTruthy();
+  expect(screen.getByText(OFFER_LABEL)).toBeTruthy();
 });
 
-it("wraps the controls across the full header width on phones", () => {
+it("keeps one row of logo, identity, activity and overflow on phones", () => {
   const { container } = show("/f/demo", false);
   const controls = container.querySelector<HTMLDivElement>(".plan-header-controls")!;
 
-  expect(controls.classList.contains("flex-wrap")).toBe(true);
-  expect(controls.classList.contains("col-span-2")).toBe(true);
-  expect(controls.classList.contains("sm:col-span-1")).toBe(true);
-  expect(controls.classList.contains("overflow-x-auto")).toBe(false);
-  expect(controls.parentElement!.classList.contains("grid-cols-[auto_minmax(8rem,1fr)]")).toBe(
-    true,
-  );
-  expect(within(controls).getByRole("link", { name: "Files" })).toBeTruthy();
+  expect(controls.classList.contains("header-controls")).toBe(true);
+  expect(controls.parentElement!.classList.contains("plan-appbar")).toBe(true);
   expect(within(controls).getByRole("button", { name: "More" })).toBeTruthy();
-  expect(within(controls).getByRole("button", { name: /^Switch to/ })).toBeTruthy();
-  expect(within(controls).getByRole("button", { name: "Settings" })).toBeTruthy();
-  expect(within(controls).getByRole("button", { name: "Help" })).toBeTruthy();
+  expect(within(controls).getByRole("button", { name: "Chat" })).toBeTruthy();
+  // Everything else sits behind the overflow menu.
+  for (const name of ["Settings", "Help", /^Switch to/]) {
+    expect(within(controls).queryByRole("button", { name })).toBeNull();
+  }
+  expect(within(controls).queryByRole("link", { name: "Files" })).toBeNull();
 });
 
-it("reserves space for the collapsed rail beside the next-step card", () => {
-  show("/f/demo", false);
+it("shows no chat button where the dock mounts no panel", () => {
+  show("/", false);
+
+  expect(screen.queryByRole("button", { name: "Chat" })).toBeNull();
+});
+
+it("puts the collapsed rail and the next-step card in one row", () => {
+  const { container } = show("/f/demo", false);
 
   const trigger = screen.getByRole("button", { name: "Step 2 of 2 · Product spec" });
-  const row = trigger.parentElement!.parentElement!;
-  expect(row.classList.contains("grid-cols-[auto_minmax(0,1fr)]")).toBe(true);
-  expect(row.classList.contains("lg:flex")).toBe(true);
-  expect(within(trigger).getByText("Step 2 of 2 · Product spec")).toBeTruthy();
+  const row = trigger.parentElement!;
+  expect(row.classList.contains("plan-header-rail")).toBe(true);
+  expect(row.hasAttribute("data-narrow")).toBe(true);
+  expect(row.parentElement!.classList.contains("plan-appbar")).toBe(true);
+  expect(within(row).getByText(OFFER_LABEL)).toBeTruthy();
+  expect(container.querySelectorAll(".plan-header-rail")).toHaveLength(1);
 });
 
-it("omits the activity pill when idle", () => {
+it("lets the rail and the card wrap at desktop widths", () => {
+  show("/f/demo");
+
+  const rail = screen.getByRole("list", { name: "Steps" });
+  const row = rail.closest(".plan-header-rail")!;
+  expect(row.hasAttribute("data-narrow")).toBe(false);
+  expect(within(row as HTMLElement).getByTitle(NEXT_STEP)).toBeTruthy();
+});
+
+it("lists no operation as in progress when idle", () => {
   show();
 
   expect(screen.queryByRole("button", { name: /in progress/i })).toBeNull();

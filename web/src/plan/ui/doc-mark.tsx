@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import type { JSX } from "react";
+import type { CSSProperties, JSX } from "react";
 
 import { ActivityGlyph } from "./activity-glyphs";
 import { DOC_KIND_GLYPHS, type DocKind } from "./glyphs";
@@ -34,11 +34,13 @@ export function DocMark({
     <span
       aria-hidden="true"
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded",
-        size === "lg" ? "size-[30px]" : "size-5",
+        "inline-flex shrink-0 items-center justify-center",
+        // The fill is the document colour at 16% (20% in the dark themes); the glyph keeps it whole.
+        "bg-[color-mix(in_oklch,var(--doc-mark)_16%,transparent)] dark:bg-[color-mix(in_oklch,var(--doc-mark)_20%,transparent)]",
+        size === "lg" ? "size-[30px] rounded-[8px]" : "size-5 rounded-[5px]",
         className,
       )}
-      style={{ color: colour, backgroundColor: `color-mix(in oklch, ${colour} 14%, transparent)` }}
+      style={{ color: colour, "--doc-mark": colour } as CSSProperties}
     >
       {rebuilding ? (
         <ActivityGlyph kind="summaries" className={glyphClassName} />

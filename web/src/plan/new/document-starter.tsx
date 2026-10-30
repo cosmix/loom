@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai/react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { apiGet } from "@/plan/api/client";
@@ -101,7 +101,20 @@ function DocumentOption({
   );
 }
 
-export function DocumentStarter({ onPick }: { onPick: (document: StarterDocument) => void }) {
+export function DocumentStarter({
+  onPick,
+  children = "Start from a document",
+  className,
+  variant = "outline",
+  disabled,
+}: {
+  onPick: (document: StarterDocument) => void;
+  /** The trigger's content; the default names the picker. */
+  children?: ReactNode;
+  className?: string;
+  variant?: ComponentProps<typeof Button>["variant"];
+  disabled?: boolean;
+}) {
   const tree = useAtomValue(treeAtom);
   const { open, changeOpen, pending, error, pick } = useDocumentPick(onPick);
   const documents = tree
@@ -116,8 +129,8 @@ export function DocumentStarter({ onPick }: { onPick: (document: StarterDocument
   return (
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline">
-          Start from a document
+        <Button type="button" variant={variant} className={className} disabled={disabled}>
+          {children}
         </Button>
       </PopoverTrigger>
       <PopoverContent aria-label="Choose a starter document" align="start">

@@ -69,6 +69,7 @@ pub mod keys;
 pub mod value;
 
 use keys::KeySpec;
+pub use plan::SUMMARY_BACKENDS;
 pub use value::ConfigValue;
 
 mod models;
@@ -93,6 +94,9 @@ mod redirect;
 
 #[cfg(test)]
 pub(crate) use redirect::{redirect_user_config, UserConfigRedirect};
+
+#[cfg(test)]
+mod plan_keys_tests;
 
 #[cfg(test)]
 mod tests;

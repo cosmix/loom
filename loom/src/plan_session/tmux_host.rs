@@ -18,6 +18,10 @@ impl SessionHost for TmuxHost {
         tmux_io::paste_text(socket, target, text)
     }
 
+    fn press_enter(&self, socket: &str, target: &str) -> anyhow::Result<()> {
+        tmux_io::press(socket, target, "Enter")
+    }
+
     fn interrupt(&self, socket: &str, target: &str) -> anyhow::Result<()> {
         tmux_io::press(socket, target, "Escape")
     }

@@ -248,3 +248,19 @@ it("closing after mark all seen puts focus on the page main, not the body", asyn
   await waitFor(() => expect(document.activeElement).toBe(main));
   main.remove();
 });
+
+it("the row variant shows the title and count, and opens the same dialog and returns focus", async () => {
+  mount({ variant: "row" });
+
+  const opener = await screen.findByRole("button", { name: "Changed since you looked · 3" });
+  expect(opener.textContent).toContain("Changed since you looked");
+  expect(opener.textContent).toContain("3");
+  expect(opener.classList.contains("activity-row")).toBe(true);
+
+  fireEvent.click(opener);
+  await screen.findByRole("button", { name: `Show diff for ${A}` });
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(opener));
+});

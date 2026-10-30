@@ -23,6 +23,7 @@ import {
   planPage,
   readingColumn,
   renderAt,
+  stubWideHeader,
   text,
   type Page,
   type Store,
@@ -207,6 +208,7 @@ describe("overviews and the document key", () => {
     expect(fetched).toHaveLength(before);
   });
   it("tab switching keeps open runs", async () => {
+    stubWideHeader();
     serveOverview();
     renderAt("/f/demo/product");
     await openFirstRun();

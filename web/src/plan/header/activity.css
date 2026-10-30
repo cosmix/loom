@@ -1,0 +1,168 @@
+@layer components {
+  /* The header pill that opens the activity popover. */
+  .activity-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    background: var(--card);
+    color: var(--foreground);
+    font-family: var(--font-sans, inherit);
+    font-size: 12.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .activity-pill:hover,
+  .activity-pill[data-state="open"] {
+    background: var(--muted);
+  }
+
+  .activity-pill:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  .activity-pill__chevron {
+    width: 14px;
+    height: 14px;
+    color: var(--muted-foreground);
+  }
+
+  .activity-pill__idle {
+    width: 15px;
+    height: 15px;
+    color: var(--tone-completed);
+  }
+
+  .activity-pill[data-tone="executing"] .activity-glyph {
+    color: var(--tone-executing);
+  }
+
+  .activity-pill[data-tone="ring"] .activity-glyph {
+    color: var(--ring);
+  }
+
+  .activity-pill[data-tone="completed"] .activity-glyph {
+    color: var(--tone-completed);
+  }
+
+  .activity-pill[data-tone="warning"] .activity-glyph {
+    color: var(--tone-warning);
+  }
+
+  /* Rows: the operations in the list and the run, review and summary rows in the footer. */
+  .activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .activity-row {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    padding: 8px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--foreground);
+    font: inherit;
+    font-size: 12.5px;
+    text-align: left;
+  }
+
+  .activity-row:hover {
+    background: var(--muted);
+  }
+
+  button.activity-row {
+    cursor: pointer;
+  }
+
+  button.activity-row:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+  }
+
+  .activity-row__body {
+    display: grid;
+    min-width: 0;
+    gap: 1px;
+  }
+
+  .activity-row__title {
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .activity-row__sub {
+    overflow: hidden;
+    color: var(--muted-foreground);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .activity-row__sub--wrap {
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .activity-row__time {
+    color: var(--muted-foreground);
+    font-family: var(--font-mono, monospace);
+    font-size: 11.5px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .activity-row__chevron {
+    width: 14px;
+    height: 14px;
+    color: var(--muted-foreground);
+  }
+
+  .activity-empty {
+    margin: 0;
+    padding: 8px;
+    color: var(--muted-foreground);
+    font-size: 12.5px;
+  }
+
+  /* The run, review and summary rows below the operations. */
+  .activity-foot {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .activity-list + .activity-foot,
+  .activity-empty + .activity-foot {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--hairline);
+  }
+
+  .activity-foot__detail {
+    padding: 4px 8px 8px 44px;
+    font-size: 12.5px;
+  }
+
+  .activity-run {
+    position: relative;
+  }
+}

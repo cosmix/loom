@@ -134,7 +134,7 @@
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 206 |
 | [completion-runtime](mistakes/completion-runtime.md) | Churn | 72 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Couplings | 284 |
-| [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 47 |
+| [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 57 |
 | [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 65 |
 | [contract-phase-human-blocking](mistakes/contract-phase-human-blocking.md) | Waits | 11 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork | 38 |

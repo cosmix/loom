@@ -234,12 +234,12 @@ fn plan_summary_keys_resolve() {
     let user = with_loom_home(home.path(), UserConfig::load);
     let project = PlanConfig::from_section_toml("overview_model = \"opus\"").expect("planning");
     let resolved = SummaryModels::resolve(&project, &user);
-    assert_eq!(models(&resolved), ["sonnet", "medium", "opus", "high"]);
+    assert_eq!(models(&resolved), ["sonnet", "high", "opus", "high"]);
     let empty = TempDir::new().unwrap();
     let user = with_loom_home(empty.path(), UserConfig::load);
     let project = PlanConfig::from_section_toml("").expect("empty planning table");
     let defaults = SummaryModels::resolve(&project, &user);
-    assert_eq!(models(&defaults), ["haiku", "medium", "sonnet", "high"]);
+    assert_eq!(models(&defaults), ["haiku", "high", "haiku", "high"]);
 }
 
 #[test]
@@ -253,7 +253,7 @@ fn plan_keys_beside_run_identity() {
     let empty = TempDir::new().unwrap();
     let loaded = with_loom_home(empty.path(), || SummaryModels::load(tmp.path()));
     let loaded = loaded.expect("load beside the run's [plan] table");
-    assert_eq!(models(&loaded), ["haiku", "medium", "opus", "high"]);
+    assert_eq!(models(&loaded), ["haiku", "high", "opus", "high"]);
 }
 
 #[test]

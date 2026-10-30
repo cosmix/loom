@@ -2,7 +2,7 @@
 name: overview
 description: Rebuild the assigned overviews from current document summaries and seal their drafts.
 tools: Read, Write, Edit, Bash, Glob, Grep
-model: sonnet
+model: haiku
 effort: high
 ---
 

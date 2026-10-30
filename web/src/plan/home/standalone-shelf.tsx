@@ -1,11 +1,12 @@
 import { useAtomValue } from "jotai";
-import { useId, useState } from "react";
+import { ChevronRight, FolderInput, Plus, Wrench } from "lucide-react";
+import { useId, useState, type SyntheticEvent } from "react";
 import { Link, useNavigate } from "react-router";
 
 import type { StandalonePlanView } from "@/plan/api/schema";
-import type { PlanStateView } from "@/plan/api/schema-files";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
+import { plural } from "@/plan/feature/steps";
 import { toAddress } from "@/plan/files/address";
 import { MoveIntoFeatureDialog } from "@/plan/home/move-into-feature";
 import {
@@ -16,29 +17,23 @@ import {
 } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 
-const STATE_TONES: Record<PlanStateView, string> = {
-  written: "text-muted-foreground",
-  running: "text-(--tone-executing)",
-  done: "text-(--tone-completed)",
-  retired: "text-(--tone-dimmed)",
-};
+import "./standalone-shelf.css";
 
-function PlanRow({ plan }: { plan: StandalonePlanView }) {
+const CHIPS_SHOWN = 24;
+
+function PlanChip({ plan }: { plan: StandalonePlanView }) {
   return (
-    <li className="border-b border-border last:border-0">
-      <Link
-        to={toAddress(plan.path)}
-        className="flex flex-wrap items-center justify-between gap-2 rounded-sm py-3 focus-visible:outline-2 focus-visible:outline-ring"
-      >
-        <span className="min-w-0">
-          <span className="block font-medium" style={{ unicodeBidi: "isolate", direction: "ltr" }}>
-            <SentenceText text={plan.title} />
-          </span>{" "}
-          <span className="block text-xs text-muted-foreground">
-            <Untrusted text={plan.slug} />
-          </span>
+    <li>
+      <Link to={toAddress(plan.path)} className="shelf__chip">
+        {/* The chip shows the slug; the title and state are there for screen readers. */}
+        <span className="sr-only" style={{ unicodeBidi: "isolate", direction: "ltr" }}>
+          <SentenceText text={plan.title} />
         </span>{" "}
-        <span className={`text-xs ${STATE_TONES[plan.state]}`}>
+        <span className="shelf__slug">
+          <Untrusted text={plan.slug} />
+        </span>{" "}
+        <span className="shelf__dot" data-state={plan.state} aria-hidden="true" />
+        <span className="sr-only">
           <Untrusted text={plan.state} />
         </span>
       </Link>
@@ -46,16 +41,38 @@ function PlanRow({ plan }: { plan: StandalonePlanView }) {
   );
 }
 
+function PlanChips({ plans }: { plans: StandalonePlanView[] }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? plans : plans.slice(0, CHIPS_SHOWN);
+  const hidden = plans.length - shown.length;
+
+  return (
+    <ul className="shelf__chips">
+      {shown.map((plan) => (
+        <PlanChip key={plan.path} plan={plan} />
+      ))}
+      {hidden > 0 && (
+        <li>
+          <button type="button" className="shelf__more" onClick={() => setAll(true)}>
+            {`+${hidden} more`}
+          </button>
+        </li>
+      )}
+    </ul>
+  );
+}
+
 function MoveRows({ onMove, reason }: { onMove: (path: string) => void; reason: string | null }) {
   const moves = useAtomValue(movesAtom);
+  if (moves.length === 0) return null;
   return (
-    <ul className="space-y-3">
+    <ul className="shelf__moves">
       {moves.map((offer) => {
         const path = offer.target;
         if (path === null) return null;
         return (
-          <li key={offer.id} className="flex flex-wrap items-center justify-between gap-2">
-            <span className="break-words text-sm">
+          <li key={offer.id} className="shelf__move">
+            <span>
               Move <Untrusted text={path} /> into a feature
             </span>
             <DisabledReason reason={reason} onClick={() => onMove(path)} size="sm">
@@ -68,49 +85,69 @@ function MoveRows({ onMove, reason }: { onMove: (path: string) => void; reason: 
   );
 }
 
+/** The actions live in the summary row; their clicks must not open or close the shelf. */
 function ShelfActions({ reason, onMove }: { reason: string | null; onMove: () => void }) {
   const navigate = useNavigate();
+  const keep = (event: SyntheticEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
   return (
-    <div className="flex flex-wrap gap-3">
-      <DisabledReason reason={reason} onClick={() => navigate("/new", { state: { small: true } })}>
+    <div role="presentation" className="shelf__actions" onClick={keep}>
+      <DisabledReason
+        reason={reason}
+        size="sm"
+        onClick={() => navigate("/new", { state: { small: true } })}
+      >
+        <Plus aria-hidden="true" />
         New standalone plan
       </DisabledReason>
-      <DisabledReason reason={reason} onClick={onMove}>
+      <DisabledReason reason={reason} size="sm" onClick={onMove}>
+        <FolderInput aria-hidden="true" />
         Move into a feature…
       </DisabledReason>
     </div>
   );
 }
 
-export function StandaloneShelf() {
+/**
+ * Collapsed by default; an empty shelf opens so its explanation shows. `defaultOpen` lets a host
+ * (the help scene) show the chips without a click.
+ */
+export function StandaloneShelf({ defaultOpen = false }: { defaultOpen?: boolean }) {
+  const headingId = useId();
   const plans = useAtomValue(standaloneAtom);
   const moves = useAtomValue(movesAtom);
   const canAuthor = useAtomValue(canAuthorAtom);
   const blockReason = useAtomValue(authorBlockReasonAtom);
-  const headingId = useId();
   const [dialog, setDialog] = useState<{ path: string | null } | null>(null);
   const reason = canAuthor ? null : "Authoring is unavailable";
   return (
-    <section aria-labelledby={headingId} className="space-y-4 border-t border-border pt-6">
-      <h2 id={headingId} className="font-heading text-lg font-medium">
+    <section aria-labelledby={headingId} className="shelf">
+      {/* The summary row carries the visible count; this names the region. */}
+      <h2 id={headingId} className="sr-only">
         Standalone plans
       </h2>
-      {plans.length === 0 && moves.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          Bugfixes and small changes that need no product spec live here.
-        </p>
-      )}
-      {plans.length > 0 && (
-        <ul>
-          {plans.map((plan) => (
-            <PlanRow key={plan.path} plan={plan} />
-          ))}
-        </ul>
-      )}
       <MoveRows reason={reason} onMove={(path) => setDialog({ path })} />
-      <ShelfActions reason={reason} onMove={() => setDialog({ path: null })} />
+      <details className="shelf__details" open={defaultOpen || plans.length === 0}>
+        <summary className="shelf__summary">
+          <ChevronRight aria-hidden="true" className="shelf__chevron" />
+          <Wrench aria-hidden="true" className="shelf__wrench" />
+          <span>{plural(plans.length, "standalone plan")}</span>
+          <span className="shelf__hint">
+            · bugfixes, performance work and small features in doc/plans/
+          </span>
+          <ShelfActions reason={reason} onMove={() => setDialog({ path: null })} />
+        </summary>
+        {plans.length === 0 && moves.length === 0 && (
+          <p className="shelf__empty">
+            Bugfixes and small changes that need no product spec live here.
+          </p>
+        )}
+        {plans.length > 0 && <PlanChips plans={plans} />}
+      </details>
       {!canAuthor && blockReason && (
-        <p className="text-xs text-muted-foreground">
+        <p className="shelf__reason">
           <Untrusted text={blockReason} />
         </p>
       )}

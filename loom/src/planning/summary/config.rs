@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::fs::work_dir::{read_plan_config, PlanConfig, WorkDir};
 use crate::user_config::UserConfig;
 
-/// Resolved model and reasoning effort for document summaries and overviews.
+/// Resolved backend, models and reasoning efforts for document summaries and overviews.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SummaryModels {
     /// Model used for document summaries.
@@ -16,6 +16,12 @@ pub struct SummaryModels {
     pub overview_model: String,
     /// Reasoning effort used for overviews and summary sessions.
     pub overview_effort: String,
+    /// Backend used for document summaries and overviews.
+    pub backend: String,
+    /// Codex model used for document summaries and overviews.
+    pub codex_model: String,
+    /// Codex reasoning effort used for document summaries and overviews.
+    pub codex_effort: String,
 }
 
 impl SummaryModels {
@@ -37,6 +43,18 @@ impl SummaryModels {
             overview_effort: project
                 .overview_effort()
                 .unwrap_or_else(|| user.plan_overview_effort())
+                .to_string(),
+            backend: project
+                .summary_backend()
+                .unwrap_or_else(|| user.plan_summary_backend())
+                .to_string(),
+            codex_model: project
+                .summary_codex_model()
+                .unwrap_or_else(|| user.plan_summary_codex_model())
+                .to_string(),
+            codex_effort: project
+                .summary_codex_effort()
+                .unwrap_or_else(|| user.plan_summary_codex_effort())
                 .to_string(),
         }
     }

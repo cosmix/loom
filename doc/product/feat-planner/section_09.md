@@ -20,13 +20,13 @@ every step's skill is in the plugin and the brief only names the starting point.
 
 ## What each session kind gets
 
-| Kind                      | Brief                         | Opening message                         | Skills it loads                        | Model, effort (default) |
-| ------------------------- | ----------------------------- | --------------------------------------- | -------------------------------------- | ----------------------- |
-| Authoring, spec steps     | common brief + starting point | step, target, the skill to load         | the step's skill; others as it moves   | opus, medium            |
-| Authoring, plan steps     | common brief + starting point | step, target, the skill to load         | the step's skill; others as it moves   | opus, high              |
-| Summary (background)      | summary brief                 | the summary ids to rebuild              | `loom-plan:summaries`                  | sonnet, high            |
-| Refinement (subagent)     | the agent definition          | written by the authoring session        | none; the agent prompt carries it      | per level (below)       |
-| Pressure (section 11)     | `loom pressure`'s completion instruction | `/loom-plan:pressure <plan>` or `/loom-plan:address <plan>` | the command itself | the `[pressure]` keys   |
+| Kind                  | Brief                                    | Opening message                                             | Skills it loads                      | Model, effort (default) |
+| --------------------- | ---------------------------------------- | ----------------------------------------------------------- | ------------------------------------ | ----------------------- |
+| Authoring, spec steps | common brief + starting point            | step, target, the skill to load                             | the step's skill; others as it moves | opus, medium            |
+| Authoring, plan steps | common brief + starting point            | step, target, the skill to load                             | the step's skill; others as it moves | opus, high              |
+| Summary (background)  | summary brief                            | the summary ids to rebuild                                  | `loom-plan:summaries`                | haiku, high             |
+| Refinement (subagent) | the agent definition                     | written by the authoring session                            | none; the agent prompt carries it    | per level (below)       |
+| Pressure (section 11) | `loom pressure`'s completion instruction | `/loom-plan:pressure <plan>` or `/loom-plan:address <plan>` | the command itself                   | the `[pressure]` keys   |
 
 Section 07 lists the four kinds; the two authoring rows are one kind whose model depends on the
 starting step (below, "Models and effort"); section 11 owns the pressure kind.
@@ -453,17 +453,25 @@ the detector exists in the server anyway.) It sits beside `loom plan verify` and
 
 ## Models and effort
 
-| Session or agent                      | Default model      | Default effort     | Configuration keys                                           |
-| ------------------------------------- | ------------------ | ------------------ | ------------------------------------------------------------ |
-| Authoring, spec steps                 | opus               | medium             | `[plan] spec_authoring_model`, `spec_authoring_effort`       |
-| Authoring, plan steps                 | opus               | high               | `[plan] plan_authoring_model`, `plan_authoring_effort`       |
-| Summary (background)                  | sonnet             | high               | `[plan] overview_model`, `overview_effort` (section 04)      |
-| `loom-plan:summary` agent             | haiku              | medium             | `[plan] document_summary_model`, `document_summary_effort`   |
-| `loom-plan:overview` agent            | sonnet             | high               | `[plan] overview_model`, `overview_effort`                   |
-| Pressure steps (section 11)           | as `loom pressure` | as `loom pressure` | `[pressure]` keys                                            |
+| Session or agent            | Default model      | Default effort     | Configuration keys                                         |
+| --------------------------- | ------------------ | ------------------ | ---------------------------------------------------------- |
+| Authoring, spec steps       | opus               | medium             | `[plan] spec_authoring_model`, `spec_authoring_effort`     |
+| Authoring, plan steps       | opus               | high               | `[plan] plan_authoring_model`, `plan_authoring_effort`     |
+| Summary (background)        | haiku              | high               | `[plan] overview_model`, `overview_effort` (section 04)    |
+| `loom-plan:summary` agent   | haiku              | high               | `[plan] document_summary_model`, `document_summary_effort` |
+| `loom-plan:overview` agent  | haiku              | high               | `[plan] overview_model`, `overview_effort`                 |
+| Pressure steps (section 11) | as `loom pressure` | as `loom pressure` | `[pressure]` keys                                          |
 
-Every `[plan]` key follows one scheme, `<role>_model` and `<role>_effort`, shared with section
-04. The pressure steps keep the existing `[pressure]` keys
+The `[plan]` model and effort keys follow one scheme, `<role>_model` and `<role>_effort`, shared
+with section 04. The user selects the background summary backend with `[plan] summary_backend`:
+`claude` (default) or `codex`. The table's summary defaults apply to Claude. For Codex,
+`[plan] summary_codex_model` defaults to `gpt-6.1-terra` and `summary_codex_effort` to `high`.
+A Codex summary job runs `codex exec` in the background with the workspace-write sandbox
+rooted at the project, plus write access to the runtime directory
+(`~/.loom/plan/<project-key>/`). It has no tmux attach link; the server console prints the job's
+log path (`<runtime>/codex-logs/<session>.log`), and it records no cost.
+
+The pressure steps keep the existing `[pressure]` keys
 (`doc/loom/knowledge/conventions/model-and-effort-config.md`), so a pressure run started from the
 app and one started from a terminal resolve the same way.
 

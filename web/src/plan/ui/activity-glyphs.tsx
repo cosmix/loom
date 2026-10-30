@@ -1,5 +1,5 @@
 import { BellRing, LoaderCircle, PenLine, Play, RefreshCw } from "lucide-react";
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 
 import "./activity-glyphs.css";
 
@@ -39,7 +39,8 @@ function PressureGauge(): JSX.Element {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
       <path d="M3 15a9 9 0 0 1 18 0" strokeLinecap="round" />
-      <path className="activity-glyph__needle" d="M12 15V8" strokeLinecap="round" />
+      <path d="M5.6 8.6l1.4 1.4M12 6v2M18.4 8.6L17 10" strokeWidth={1.5} strokeLinecap="round" />
+      <path className="activity-glyph__needle" d="M12 15V9" strokeLinecap="round" />
       <circle cx={12} cy={15} r={1.5} fill="currentColor" stroke="none" />
     </svg>
   );
@@ -104,6 +105,43 @@ export function ActivityGlyph({
       aria-hidden="true"
     >
       <ActivityShape kind={kind} />
+    </span>
+  );
+}
+
+export type ActivityTone = "executing" | "ring" | "completed" | "warning" | "neutral";
+
+export const ACTIVITY_TONES: Record<ActivityKind, ActivityTone> = {
+  running: "executing",
+  summaries: "executing",
+  codex: "executing",
+  starting: "executing",
+  pressure: "ring",
+  drafting: "ring",
+  waiting: "completed",
+  permission: "warning",
+};
+
+/**
+ * The 26px tile that leads an activity row. A kind gives its glyph and tone; `children` replace
+ * the glyph, and a tile with neither kind draws in the muted tone.
+ */
+export function ActivityTile({
+  kind,
+  paused = false,
+  children,
+}: {
+  kind?: ActivityKind;
+  paused?: boolean;
+  children?: ReactNode;
+}): JSX.Element {
+  return (
+    <span
+      className="activity-tile"
+      data-tone={kind ? ACTIVITY_TONES[kind] : "neutral"}
+      aria-hidden="true"
+    >
+      {children ?? (kind && <ActivityGlyph kind={kind} paused={paused} />)}
     </span>
   );
 }

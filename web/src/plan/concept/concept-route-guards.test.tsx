@@ -24,6 +24,7 @@ import {
   planPage,
   readingColumn,
   renderAt,
+  stubWideHeader,
 } from "./concept-route-support";
 import { conceptPageAtom } from "./page-state";
 import { openRunsAtom } from "./view-state";
@@ -248,6 +249,7 @@ describe("keys", () => {
 
 describe("route keyboard and feature guards", () => {
   async function openTwoRuns() {
+    stubWideHeader();
     serveOverview();
     const { store } = renderAt("/f/demo/product");
     const column = await openFirstRun();
