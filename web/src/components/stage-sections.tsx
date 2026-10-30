@@ -25,7 +25,7 @@ import {
   type SectionSpec,
 } from "@/components/stage-detail";
 import { contextUsage, formatStamp } from "@/lib/format";
-import { exitReasonLabel, sessionTypeLabel } from "@/lib/format-activity";
+import { contractTesting, exitReasonLabel, sessionTypeLabel } from "@/lib/format-activity";
 
 /// What each field means, in the words a person reading the ledger needs.
 const HINT = {
@@ -47,6 +47,8 @@ const HINT = {
   backend: "Where the session runs: a native terminal window or a tmux pane.",
   sessionType:
     "What the session was spawned to do: stage work, a merge, a base-conflict fix, knowledge, adjudication, or writing contract tests.",
+  contractTesting:
+    "The contract writer has frozen its contracts; loom is running them as a host job while the writer waits.",
   exitReason: "Why the outgoing session ended, independently of the stage's workflow status.",
   activity:
     "Working: a tool ran recently. Busy: a tool call is still open; the time is the silence so far. Quiet: no heartbeat for 5 min, but within the stage's budget. Stale: no heartbeat past the stage's budget (5 min by default) and no tool call open. Idle: no live session, or the stage is finished. Orphaned: executing with no session record. Error: the process died.",
@@ -145,6 +147,7 @@ function sessionRows(stage: StageSummary) {
       true,
     ),
     row("activity", HINT.activity, stage.activity_status, true),
+    row("contract testing", HINT.contractTesting, contractTesting(stage), true),
     row("last tool", HINT.lastTool, stage.last_tool, true),
     row("last activity", HINT.lastActivity, lastActivityDetail(stage), true),
     row("staleness", HINT.staleness, secs(stage.staleness_secs), true),

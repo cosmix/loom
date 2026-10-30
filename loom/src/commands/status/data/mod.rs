@@ -1,6 +1,7 @@
 mod busy;
 mod collector;
 pub(crate) mod completion_view;
+mod contract_testing;
 mod criteria_results;
 mod disputes;
 mod execution_models;
@@ -18,6 +19,7 @@ pub use completion_view::{
     completion_blocker_summary, outgoing_exit_reason, CompletionBlockerState,
     CompletionBlockerSummary,
 };
+pub use contract_testing::ContractTesting;
 pub use criteria_results::FailingCriterion;
 pub use execution_models::execution_models_for_stage;
 
@@ -111,7 +113,7 @@ pub struct StatusData {
 }
 
 /// Stage display data
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StageSummary {
     pub id: String,
     pub name: String,
@@ -247,6 +249,11 @@ pub struct StageSummary {
     /// current status; this is everything before it, in full.
     #[serde(default)]
     pub history: Vec<StageIssue>,
+    /// The freeze job a contract writer is blocked on: set only while the
+    /// stage is in the contract phase and its current session's freeze job is
+    /// queued or running.
+    #[serde(default)]
+    pub contract_testing: Option<ContractTesting>,
 }
 
 /// The facts about a blocked stage that the attention card lists: which
@@ -265,6 +272,22 @@ impl BlockDetail {
 }
 
 impl StageSummary {
+    /// The contract-testing sentence, unless the writer is orphaned, crashed or
+    /// known dead: its silence then means something and must not read as
+    /// healthy, even before the monitor marks the session crashed.
+    pub fn contract_testing_text(&self) -> Option<String> {
+        let writer_dead = self.pid.is_some() && !self.session_alive;
+        if writer_dead
+            || matches!(
+                self.activity_status,
+                ActivityStatus::Orphaned | ActivityStatus::Error
+            )
+        {
+            return None;
+        }
+        self.contract_testing.as_ref().map(ContractTesting::text)
+    }
+
     /// The word a merged stage wears: `assumed` when an operator asserted the
     /// merge with `--assume-merged`, `merged` when loom performed it.
     pub fn merge_label(&self) -> &'static str {

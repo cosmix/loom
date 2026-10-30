@@ -30,6 +30,21 @@ describe("StateKey contract chip", () => {
     expect(chip?.querySelector(".key-count")?.textContent).toBe("1");
   });
 
+  it("counts stages testing contracts apart from those still writing", () => {
+    const testing = { done: 9, total: 11, queued: false, running_secs: 372 };
+    renderKey([
+      stage("a", { status: "executing", session_type: "contract" }),
+      stage("b", { status: "executing", session_type: "contract", contract_testing: testing }),
+    ]);
+
+    const writing = screen.getByText("writing contracts").closest(".key-chip");
+    const chip = screen.getByText("testing contracts").closest(".key-chip");
+    expect(writing?.querySelector(".key-count")?.textContent).toBe("1");
+    expect(chip?.tagName).toBe("SPAN");
+    expect(chip?.classList.contains("tone-contract")).toBe(true);
+    expect(chip?.querySelector(".key-count")?.textContent).toBe("1");
+  });
+
   it("shows no such chip when no stage is in the contract phase", () => {
     renderKey([stage("a", { status: "executing", session_type: "stage" })]);
 

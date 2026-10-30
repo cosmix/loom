@@ -45,50 +45,9 @@ mod tests {
         StageSummary {
             id: "stage".to_owned(),
             name: "stage".to_owned(),
-            description: None,
-            summary: None,
             status,
-            stage_type: StageType::Standard,
-            dependencies: vec![],
-            context_tokens: None,
-            elapsed_secs: None,
-            execution_secs: None,
-            base_branch: None,
-            base_merged_from: vec![],
-            failure_info: None,
-            activity_status: ActivityStatus::Idle,
-            last_tool: None,
-            last_activity: None,
-            staleness_secs: None,
-            context_ceiling_tokens: None,
-            review_reason: None,
-            review_notes: None,
-            merged: false,
-            merge_assumed: false,
-            cleanup_warning: None,
-            merge_block: None,
-            stash_warning: None,
-            held: false,
-            retry_count: 0,
-            max_retries: None,
-            pid: None,
-            session_alive: false,
             model: "opus".to_owned(),
-            session_type: None,
-            incoherence: None,
-            execution_models: vec![],
-            dispute_count: 0,
-            judge_heartbeat_secs: None,
-            session_backend: None,
-            outgoing_session_exit_reason: None,
-            completion_blocker: None,
-            merge_resolver_session: None,
-            merge_resolver_attempts: None,
-            close_reason: None,
-            acceptance: vec![],
-            terminal_history_session: None,
-            block_detail: Default::default(),
-            history: Vec::new(),
+            ..Default::default()
         }
     }
 
@@ -226,6 +185,45 @@ mod tests {
         stage.activity_status = ActivityStatus::Stale;
         stage.staleness_secs = Some(61);
         assert_eq!(activity_cell(&stage, 40).text, "contract writer idle 1m1s");
+    }
+
+    #[test]
+    fn contract_testing_outranks_heartbeat_wording_but_not_a_dead_writer() {
+        use crate::commands::status::{data::ContractTesting, ui::theme::Theme};
+        let mut stage = summary(StageStatus::Executing);
+        stage.session_type = Some(SessionType::Contract);
+        stage.contract_testing = Some(ContractTesting {
+            done: 9,
+            total: 11,
+            queued: false,
+            running_secs: Some(372),
+        });
+        stage.staleness_secs = Some(6 * 60);
+        for status in [
+            ActivityStatus::Working,
+            ActivityStatus::Idle,
+            ActivityStatus::Busy,
+            ActivityStatus::Quiet,
+            ActivityStatus::Stale,
+        ] {
+            stage.activity_status = status;
+            let cell = activity_cell(&stage, 60);
+            assert_eq!(cell.text, "contracts written, testing 9/11 · 6m12s");
+            assert_eq!(cell.style, Theme::status_contract());
+        }
+        assert!(
+            text_width(&activity_cell(&stage, 20).text) <= 20,
+            "narrow columns truncate"
+        );
+        stage.contract_testing.as_mut().unwrap().queued = true;
+        assert_eq!(
+            activity_cell(&stage, 60).text,
+            "contracts written, waiting to test"
+        );
+        stage.activity_status = ActivityStatus::Orphaned;
+        assert_eq!(activity_cell(&stage, 60).text, "orphaned");
+        stage.activity_status = ActivityStatus::Error;
+        assert_eq!(activity_cell(&stage, 60).text, "crashed");
     }
 
     #[test]

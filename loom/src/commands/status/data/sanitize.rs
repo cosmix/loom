@@ -155,7 +155,7 @@ pub(super) fn valid_stage_id(stage_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::status::data::{ActivityStatus, StageStatus, StageType};
+    use crate::commands::status::data::{ActivityStatus, StageStatus};
     use crate::context::untrusted::MAX_INLINE_CHARS;
     use crate::models::failure::{FailureInfo, FailureType};
     use chrono::Utc;
@@ -164,50 +164,10 @@ mod tests {
         StageSummary {
             id: "stage-1".to_string(),
             name: "Stage One".to_string(),
-            description: None,
-            summary: None,
             status: StageStatus::Executing,
-            stage_type: StageType::Standard,
-            dependencies: vec![],
-            context_tokens: None,
-            elapsed_secs: None,
-            execution_secs: None,
-            base_branch: None,
-            base_merged_from: vec![],
-            failure_info: None,
             activity_status: ActivityStatus::Working,
-            last_tool: None,
-            last_activity: None,
-            staleness_secs: None,
-            context_ceiling_tokens: None,
-            review_reason: None,
-            review_notes: None,
-            merged: false,
-            merge_assumed: false,
-            cleanup_warning: None,
-            merge_block: None,
-            stash_warning: None,
-            held: false,
-            retry_count: 0,
-            max_retries: None,
-            pid: None,
-            session_alive: false,
             model: "sonnet".to_string(),
-            session_type: None,
-            incoherence: None,
-            execution_models: vec![],
-            dispute_count: 0,
-            judge_heartbeat_secs: None,
-            session_backend: None,
-            outgoing_session_exit_reason: None,
-            completion_blocker: None,
-            merge_resolver_session: None,
-            merge_resolver_attempts: None,
-            close_reason: None,
-            acceptance: vec![],
-            terminal_history_session: None,
-            block_detail: Default::default(),
-            history: Vec::new(),
+            ..Default::default()
         }
     }
 

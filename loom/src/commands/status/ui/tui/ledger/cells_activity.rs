@@ -137,8 +137,16 @@ fn executing_activity(stage: &StageSummary, width: u16) -> Cell {
 /// quiet or busy contract writer keeps the same silence duration suffix as any
 /// other session, just under different wording. `None` for an orphaned or
 /// crashed writer, so the caller falls back to the ordinary orphaned/crashed
-/// cell instead of reading as healthy.
+/// cell instead of reading as healthy. While the writer's frozen contracts run
+/// as a host job it is blocked and silent by design, so the testing progress
+/// outranks every heartbeat-derived wording.
 fn contract_writer_activity(stage: &StageSummary, width: u16) -> Option<Cell> {
+    if let Some(text) = stage.contract_testing_text() {
+        return Some(Cell {
+            text,
+            style: Theme::status_contract(),
+        });
+    }
     match stage.activity_status {
         ActivityStatus::Working | ActivityStatus::Idle => Some(Cell {
             text: "writing contract tests".to_owned(),

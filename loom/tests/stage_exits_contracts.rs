@@ -6,7 +6,7 @@
 //! `loom::commands::status::render::attention_entries` and
 //! `loom::models::failure::{FailureInfo, FailureType}`.
 
-use loom::commands::status::data::{ActivityStatus, StageSummary, StageType};
+use loom::commands::status::data::StageSummary;
 use loom::commands::status::render::attention_entries;
 use loom::models::failure::{FailureInfo, FailureType};
 use loom::models::stage::StageStatus;
@@ -15,50 +15,11 @@ fn blocked_summary(id: &str, info: Option<FailureInfo>, reason: Option<String>) 
     StageSummary {
         id: id.to_string(),
         name: id.to_string(),
-        description: None,
-        summary: None,
         status: StageStatus::Blocked,
-        stage_type: StageType::Standard,
-        dependencies: vec![],
-        context_tokens: None,
-        elapsed_secs: None,
-        execution_secs: None,
-        base_branch: None,
-        base_merged_from: vec![],
         failure_info: info,
-        activity_status: ActivityStatus::default(),
-        last_tool: None,
-        last_activity: None,
-        staleness_secs: None,
-        context_ceiling_tokens: None,
-        review_reason: None,
-        review_notes: None,
-        merged: false,
-        merge_assumed: false,
-        cleanup_warning: None,
-        merge_block: None,
-        stash_warning: None,
-        held: false,
-        retry_count: 0,
-        max_retries: None,
-        pid: None,
-        session_alive: false,
         model: "opus".to_string(),
-        session_type: None,
-        incoherence: None,
-        execution_models: vec![],
-        dispute_count: 0,
-        judge_heartbeat_secs: None,
-        session_backend: None,
-        outgoing_session_exit_reason: None,
-        completion_blocker: None,
-        merge_resolver_session: None,
-        merge_resolver_attempts: None,
         close_reason: reason,
-        acceptance: vec![],
-        terminal_history_session: None,
-        block_detail: Default::default(),
-        history: Vec::new(),
+        ..Default::default()
     }
 }
 

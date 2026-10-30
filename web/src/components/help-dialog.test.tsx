@@ -46,6 +46,7 @@ describe("help guide", () => {
     fireEvent.click(within(nav).getByRole("button", { name: "Legend" }));
     for (const entry of LEGEND) expect(screen.getByText(entry.legend)).toBeTruthy();
     expect(screen.getByText("writing contract tests")).toBeTruthy();
+    expect(screen.getByText("contracts written, testing 9/11 · 6m12s")).toBeTruthy();
     expect(screen.getByText(/resident tokens/)).toBeTruthy();
     expect(screen.getByText(/fresh tokens per minute/)).toBeTruthy();
     // Renders every topic and the full legend; the default 5 s times out under full-suite load.

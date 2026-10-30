@@ -456,12 +456,12 @@ pub struct Stage {
 /// - `status == Completed` (work is done)
 /// - `merged == true` (changes merged to main)
 ///
-/// This ensures dependent stages can use main as their base, containing all
-/// dependency work.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// This ensures dependent stages can use main as their base, with all dependency work.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum StageStatus {
     /// Stage is waiting for upstream dependencies to complete AND merge.
     /// Cannot be executed until all dependencies are Completed with `merged: true`.
+    #[default]
     #[serde(rename = "waiting-for-deps", alias = "pending")]
     WaitingForDeps,
 
