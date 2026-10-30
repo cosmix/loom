@@ -7,7 +7,7 @@ import { Link } from "react-router";
 
 import { cn } from "cn";
 import type { TreeEntry } from "@/plan/api/schema-files";
-import { visibleControls } from "@/plan/chat/visible-controls";
+import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
 import { toAddress } from "@/plan/files/address";
 import { openDocAtom, validationAtom } from "@/plan/files/atoms";
@@ -50,25 +50,38 @@ export function containsPath(entry: TreeEntry, path: string | null): boolean {
   return entry.path === path || entry.children.some((child) => containsPath(child, path));
 }
 
+const STATE_TONES = {
+  running: "text-(--tone-executing)",
+  done: "text-(--tone-completed)",
+  retired: "text-(--tone-dimmed)",
+} as const;
+
+/** A plan's state: a fixed-width right-aligned label that stays on the name's line. */
+function StateLabel({ entry }: { entry: TreeEntry }): JSX.Element | null {
+  if (entry.kind !== "plan" || entry.state === null) return null;
+  const Icon = PLAN_STATE_GLYPHS[entry.state];
+  return (
+    <span
+      className={cn(
+        "flex w-[5.25rem] shrink-0 items-center justify-end gap-1 text-xs text-muted-foreground",
+        entry.state !== "written" && STATE_TONES[entry.state],
+      )}
+    >
+      <Icon className="size-3" aria-hidden="true" />
+      {entry.state}
+    </span>
+  );
+}
+
+/** The plan's pressure date and error count, under the name. */
 function PlanMeta({ entry }: { entry: TreeEntry }): JSX.Element | null {
   const validation = useAtomValue(validationAtom);
   if (entry.kind !== "plan" || entry.state === null) return null;
-  const Icon = PLAN_STATE_GLYPHS[entry.state];
   const live = entry.path ? validation[entry.path] : undefined;
   const errors = live ? live.errors.length : entry.errors;
+  if (!entry.pressure_date && errors === 0) return null;
   return (
     <span className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-      <span
-        className={cn(
-          "flex items-center gap-1",
-          entry.state === "running" && "text-(--tone-executing)",
-          entry.state === "done" && "text-(--tone-completed)",
-          entry.state === "retired" && "text-(--tone-dimmed)",
-        )}
-      >
-        <Icon className="size-3" aria-hidden="true" />
-        {entry.state}
-      </span>
       {entry.pressure_date && <span>Pressure-tested {entry.pressure_date}</span>}
       {errors > 0 && (
         <span className="text-(--tone-blocked)">
@@ -93,12 +106,12 @@ export function plainTitle(text: string): string {
 
 function Title({ entry, current }: { entry: TreeEntry; current: boolean }): JSX.Element {
   const className = cn(
-    "min-w-0 max-w-full truncate text-[13px] font-medium",
+    "max-w-full min-w-[8ch] flex-1 basis-0 truncate text-[13px] font-medium",
     current && "text-foreground",
   );
   const title = (
     <span style={{ unicodeBidi: "isolate", direction: "ltr" }}>
-      <SentenceText text={visibleControls(entry.title)} />
+      <SentenceText text={entry.title} />
     </span>
   );
   if (entry.gap) {
@@ -115,7 +128,7 @@ function Title({ entry, current }: { entry: TreeEntry; current: boolean }): JSX.
   return (
     <Link
       to={toAddress(entry.path)}
-      title={entry.file_name ?? undefined}
+      title={entry.file_name ? visibleControls(entry.file_name) : undefined}
       aria-current={current ? "page" : undefined}
       className={className}
     >
@@ -128,12 +141,13 @@ type Props = { entry: TreeEntry; forceOpen: boolean };
 
 function EntryLabel({ entry, current }: { entry: TreeEntry; current: boolean }): JSX.Element {
   return (
-    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5">
+    <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1">
       <Title entry={entry} current={current} />
       {entry.gap && <span className="text-xs text-muted-foreground">missing</span>}
       {entry.locked && (
         <ReadOnly className="size-3 shrink-0 text-muted-foreground" aria-label="Locked" />
       )}
+      <StateLabel entry={entry} />
       <TreeEntryExtras entry={entry} />
     </div>
   );
@@ -172,7 +186,11 @@ export function TreeEntryRow({ entry, forceOpen }: Props): JSX.Element {
       </div>
       <div className="flex flex-col gap-0.5 pr-2 pl-7">
         <PlanMeta entry={entry} />
-        {entry.blurb && <span className="text-xs text-muted-foreground">{entry.blurb}</span>}
+        {entry.blurb && (
+          <span className="text-xs text-muted-foreground">
+            <Untrusted text={entry.blurb} />
+          </span>
+        )}
       </div>
       {current && open && <Outline path={open.path} sections={open.sections} />}
       {shown && (

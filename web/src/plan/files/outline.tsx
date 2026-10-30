@@ -3,7 +3,6 @@ import { Link } from "react-router";
 
 import { cn } from "cn";
 import type { SectionView } from "@/plan/api/schema-files";
-import { visibleControls } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
 import { toAddress } from "@/plan/files/address";
 
@@ -63,7 +62,7 @@ function OutlineLink({
       )}
     >
       <span style={{ unicodeBidi: "isolate", direction: "ltr" }}>
-        <SentenceText text={visibleControls(section.title)} />
+        <SentenceText text={section.title} />
       </span>
     </Link>
   );

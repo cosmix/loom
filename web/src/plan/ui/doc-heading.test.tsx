@@ -2,6 +2,8 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { LockNotice } from "@/plan/files/lock-notice";
+
 import { DocHeading, type DocHeadingProps } from "./doc-heading";
 
 const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
@@ -62,8 +64,9 @@ it("renders the document title as the main heading", () => {
   renderHeading();
 
   const title = screen.getByRole("heading", { level: 1, name: "Execution handoff" });
-  expect(title.classList.contains("font-display")).toBe(true);
-  expect(title.classList.contains("text-2xl")).toBe(true);
+  expect(title.classList.contains("text-[22px]")).toBe(true);
+  expect(title.classList.contains("font-[650]")).toBe(true);
+  expect(title.classList.contains("text-balance")).toBe(true);
   expect(title.closest("header")).not.toBeNull();
 });
 
@@ -104,7 +107,7 @@ it.each([
   expect(disabled.tagName).toBe("SPAN");
   expect(disabled.getAttribute("aria-disabled")).toBe("true");
   expect(active?.getAttribute("aria-disabled")).toBeNull();
-  expect(active?.classList.contains("bg-muted")).toBe(true);
+  expect(active?.className).toContain("color-mix(in_oklch,var(--primary)_26%,transparent)");
   expect(within(group).queryAllByRole("link")).toHaveLength(0);
 });
 
@@ -119,7 +122,7 @@ it("renders actions after the view switch", () => {
 });
 
 it("omits optional view, chip, path and lock rows when their data is absent", () => {
-  const { container } = renderHeading({ chips: [], path: null, lock: null });
+  const { container } = renderHeading({ chips: [], path: null });
 
   expect(screen.queryByRole("group", { name: "View" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Copy path" })).toBeNull();
@@ -155,6 +158,7 @@ it("renders linked, pressed-button and plain chips in one wrapping row", () => {
   expect(link.parentElement).toBe(button.parentElement);
   expect(button.parentElement).toBe(plain.parentElement);
   expect(plain.parentElement?.classList.contains("flex-wrap")).toBe(true);
+  expect(plain.parentElement?.classList.contains("gap-1.5")).toBe(true);
 
   fireEvent.click(button);
   expect(onClick).toHaveBeenCalledOnce();
@@ -285,29 +289,46 @@ it("announces through role=status without an aria-live attribute", () => {
   expect(container.querySelector('[role="status"]')).not.toBeNull();
 });
 
-it("links uncommitted changes beside the path as plain text with no status dot", () => {
-  renderHeading({ path: "doc/plan.md", changes: { to: "/diff/head/doc/plan.md" } });
+it("links uncommitted changes at the end of the path row, after a warning dot outside the link", () => {
+  const { container } = renderHeading({
+    path: "doc/plan.md",
+    changes: { to: "/diff/head/doc/plan.md" },
+  });
 
   const link = screen.getByRole("link", { name: "Uncommitted changes" });
   expect(link.getAttribute("href")).toBe("/diff/head/doc/plan.md");
-  expect(link.parentElement?.querySelector("code")?.textContent).toBe("doc/plan.md");
+  const pair = link.parentElement as HTMLElement;
+  expect(pair.className).toContain("ml-auto");
+  expect(pair.parentElement?.querySelector("code")?.textContent).toBe("doc/plan.md");
   expect(link.querySelector("[aria-hidden]")).toBeNull();
   expect(link.textContent).toBe("Uncommitted changes");
+  const dot = link.previousElementSibling as HTMLElement;
+  expect(dot.tagName).toBe("SPAN");
+  expect(dot.getAttribute("aria-hidden")).toBe("true");
+  expect(dot.parentElement).toBe(pair);
+  expect(dot.className).toContain("size-[7px]");
+  expect(dot.className).toContain("bg-(--tone-warning)");
+  expect(container.querySelector("svg.lucide-file")).not.toBeNull();
 });
 
 it("renders the lock notice and leaves children last inside the header", () => {
   const { container } = renderHeading({
-    lock: "This plan is running.",
     children: (
-      <ul aria-label="Validation">
-        <li>All checks passed</li>
-      </ul>
+      <>
+        <LockNotice notice="This plan is running." />
+        <ul aria-label="Validation">
+          <li>All checks passed</li>
+        </ul>
+      </>
     ),
   });
 
   const note = screen.getByRole("note");
   expect(note.textContent).toBe("This plan is running.");
   expect(note.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+  for (const name of ["bg-muted", "rounded-lg", "gap-2", "px-2.5", "py-2", "text-[12.5px]"]) {
+    expect(note.classList.contains(name)).toBe(true);
+  }
   expect(container.querySelector("header")?.lastElementChild).toBe(
     screen.getByRole("list", { name: "Validation" }),
   );
@@ -321,12 +342,24 @@ it("passes kind, large size and rebuilding to the document mark", () => {
   expect(activity?.parentElement?.style.color).toBe("var(--doc-1)");
 });
 
-it("renders no document mark and drops its grid column when kind is null", () => {
+it("renders no document mark and leaves the title alone in its group when kind is null", () => {
   const { container } = renderHeading({ kind: null, rebuilding: true });
 
-  const row = screen.getByRole("heading", { level: 1 }).parentElement;
-  expect(row?.querySelector("svg")).toBeNull();
+  const group = screen.getByRole("heading", { level: 1 }).parentElement;
+  expect(group?.querySelector("svg")).toBeNull();
   expect(container.querySelector('[data-kind="summaries"]')).toBeNull();
-  expect(row?.classList.contains("grid-cols-[minmax(0,1fr)_auto]")).toBe(true);
-  expect(row?.children).toHaveLength(2);
+  expect(group?.children).toHaveLength(1);
+  expect(group?.parentElement?.children).toHaveLength(2);
+});
+
+it("wraps the actions under the title instead of squeezing it, whatever the column width", () => {
+  renderHeading({ actions: <button type="button">Edit</button> });
+
+  const group = screen.getByRole("heading", { level: 1 }).parentElement as HTMLElement;
+  const row = group.parentElement as HTMLElement;
+  const actions = screen.getByRole("button", { name: "Edit" }).parentElement as HTMLElement;
+  expect(row.classList.contains("flex-wrap")).toBe(true);
+  expect(group.classList.contains("flex-[1_1_max-content]")).toBe(true);
+  expect(actions.classList.contains("ml-auto")).toBe(true);
+  expect(actions.classList.contains("max-[900px]:basis-full")).toBe(true);
 });

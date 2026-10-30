@@ -200,7 +200,7 @@ it("count on summary header and tree entry", async () => {
     </>,
   );
   expect(
-    within(screen.getByRole("banner")).getByRole("link", { name: "Open questions · 3" }),
+    within(screen.getByRole("banner")).getByRole("link", { name: "3 open questions" }),
   ).toBeTruthy();
   expect(
     within(within(screen.getByRole("list", { name: "Tree" })).getByRole("listitem")).getByRole(
@@ -209,9 +209,12 @@ it("count on summary header and tree entry", async () => {
     ),
   ).toBeTruthy();
   act(() => store.set(openQuestionsAtom, { [path]: 0 }));
-  expect(screen.getAllByRole("link", { name: "Open questions · 0" })).toHaveLength(2);
+  expect(
+    within(screen.getByRole("banner")).queryByRole("link", { name: /open question/i }),
+  ).toBeNull();
+  expect(screen.getAllByRole("link", { name: "Open questions · 0" })).toHaveLength(1);
   act(() => store.set(openQuestionsAtom, {}));
-  expect(screen.queryByRole("link", { name: /Open questions/ })).toBeNull();
+  expect(screen.queryByRole("link", { name: /open question/i })).toBeNull();
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(builtUrl, expect.anything()));
 });
 
@@ -222,8 +225,13 @@ it("count links to open-questions anchor with a decorative legend glyph", () => 
       <TreeEntryExtras entry={{ ...entry, path: "product/demo/section_01.md" }} />
     </>,
   );
-  for (const link of screen.getAllByRole("link", { name: "Open questions · 3" })) {
-    expect(link.getAttribute("href")).toBe("/files/product/demo/section_01.md#open-questions");
+  const anchor = "/files/product/demo/section_01.md#open-questions";
+  const chip = within(screen.getByRole("banner")).getByRole("link", { name: "3 open questions" });
+  expect(chip.getAttribute("href")).toBe(anchor);
+  const links = screen.getAllByRole("link", { name: "Open questions · 3" });
+  expect(links).toHaveLength(1);
+  for (const link of links) {
+    expect(link.getAttribute("href")).toBe(anchor);
     const glyph = link.querySelector('[data-other-glyph="openQuestions"]');
     expect(glyph).not.toBeNull();
     expect(glyph?.getAttribute("aria-hidden")).toBe("true");
@@ -349,7 +357,9 @@ it.each([
   "plans/feat-review",
 ])("does not request build markers for %s", (key) => {
   mount(<PageHeading page={{ ...page, key, feature: featureOfKey(key) }} />);
-  expect(fetchMock).not.toHaveBeenCalled();
+  // The header reads its own source document for Edit and Discuss; nothing else is requested.
+  const urls = fetchMock.mock.calls.map(([url]) => String(url));
+  expect(urls.filter((url) => !url.startsWith("/api/doc?path="))).toEqual([]);
 });
 
 it("pathless summaries and folders have no review indicators", () => {

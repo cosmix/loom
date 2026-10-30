@@ -8,6 +8,7 @@ import { toAddress } from "@/plan/files/address";
 import type { Store } from "@/state/store";
 
 import { sentenceCitations, targetKey, type SentenceSite } from "./column-context";
+import { focusElement } from "./column-focus";
 import { findSite } from "./column-model";
 import { pageSentences, type CitedLookup } from "./open-state";
 import { pageKeyOfSummary } from "./page-state";
@@ -149,9 +150,54 @@ function attach(env: KeyEnv, target: ColumnTarget): void {
   });
 }
 
-function step(env: KeyEnv, index: number, delta: number): void {
-  const next = env.order[Math.min(Math.max(index + delta, 0), env.order.length - 1)];
-  if (next) env.move(targetKey(next));
+/** What j/k and the up and down arrows stop on: openable sentences and fold caps. */
+const STOPS = '[data-sentence-id][role="button"], button.concept-run-cap';
+const CAP = "button.concept-run-cap";
+const RUN = '[role="group"][data-focus]';
+const STEPS: Partial<Record<string, 1 | -1>> = { ArrowDown: 1, j: 1, ArrowUp: -1, k: -1 };
+
+/**
+ * Moves focus to the next (`delta` 1) or previous (-1) stop in document order, which is the
+ * order on screen: a run's start cap, its sentences, its end cap. A focused element holding
+ * stops (an opened run, a passage carrying its run's caps) stands on its first one, so `j`
+ * from a run just opened enters it. Passage bodies and sentences that open nothing are never
+ * stops; at either end the focus stays.
+ */
+function step(column: HTMLElement, from: HTMLElement, delta: 1 | -1): void {
+  const stops = Array.from(column.querySelectorAll<HTMLElement>(STOPS));
+  const origin = from === column ? from : (stops.find((stop) => from.contains(stop)) ?? from);
+  const after = (stop: HTMLElement) =>
+    (origin.compareDocumentPosition(stop) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  const next =
+    delta > 0
+      ? stops.find((stop) => stop !== origin && after(stop))
+      : stops.findLast((stop) => stop !== origin && !after(stop) && !stop.contains(origin));
+  next?.focus();
+}
+
+/** The outermost run around `element` inside the column, if any. */
+function outermostRun(column: HTMLElement, element: HTMLElement): HTMLElement | null {
+  let outer: HTMLElement | null = null;
+  for (
+    let run = element.closest<HTMLElement>(RUN);
+    run && column.contains(run);
+    run = run.parentElement?.closest<HTMLElement>(RUN) ?? null
+  ) {
+    outer = run;
+  }
+  return outer;
+}
+
+/**
+ * Shift+Escape folds every open run, from any focus in the column. Focus goes to the sentence
+ * that opened the outermost run around it; asked for explicitly because the folded element
+ * leaves the document (Chromium blurs it on the way out, so focus would fall to `body`).
+ */
+function foldAll(event: KeyboardEvent<HTMLElement>, env: KeyEnv, element: HTMLElement): void {
+  event.preventDefault();
+  const opener = outermostRun(event.currentTarget, element)?.getAttribute("data-focus") ?? null;
+  env.store.set(openRunsAtom(env.pageKey), []);
+  if (opener !== null) env.move(opener);
 }
 
 /** Opens the focused sentence; false when it is not a closed sentence that can open. */
@@ -164,11 +210,6 @@ function openFocused(env: KeyEnv, target: ColumnTarget): boolean {
 }
 
 function foldFromKey(event: KeyboardEvent<HTMLElement>, env: KeyEnv, target: ColumnTarget): void {
-  if (event.shiftKey && event.key === "Escape") {
-    event.preventDefault();
-    env.store.set(openRunsAtom(env.pageKey), []);
-    return;
-  }
   const run =
     runAround(env, target) ?? (event.key === "Escape" ? env.open[env.open.length - 1] : undefined);
   if (run) {
@@ -178,10 +219,13 @@ function foldFromKey(event: KeyboardEvent<HTMLElement>, env: KeyEnv, target: Col
 }
 
 /**
- * The reading column's keys (section 05, "Keyboard"). Keys are ignored while the user types
- * and when they come from a control inside the column (a link in a passage keeps Enter).
- * Escape folds the innermost run around focus, else the last opened; Shift+Escape folds all.
- * ArrowLeft folds only the innermost run around focus.
+ * The reading column's keys (section 05, "Keyboard"). Keys are ignored while the user types.
+ * Shift+Escape folds every run from anywhere in the column. On a fold cap, Escape and
+ * ArrowLeft fold the cap's run (the cap's own Enter and Space do too). Other keys from a
+ * control inside the column are left to it (a link in a passage keeps Enter).
+ * `j`/`k` and the arrows step between openable sentences and caps (`step`).
+ * Escape folds the innermost run around focus, else the last opened; ArrowLeft folds only
+ * the innermost run around focus.
  * `g p` and `g e` live in `useGoKeys` (concept-route.tsx), active only on concept routes.
  */
 export function handleColumnKey(
@@ -191,21 +235,38 @@ export function handleColumnKey(
 ): void {
   if (event.ctrlKey || event.metaKey || event.altKey || isTyping(event.target)) return;
   const element = event.target as HTMLElement;
-  if (element !== event.currentTarget && !element.hasAttribute("data-focus")) return;
+  const column = event.currentTarget;
+  if (event.key === "Escape" && event.shiftKey) return foldAll(event, env, element);
+  const cap = element.matches(CAP);
+  if (!cap && element !== column && !element.hasAttribute("data-focus")) return;
+  const delta = STEPS[event.key];
+  if (delta !== undefined) {
+    event.preventDefault();
+    const from = element === column ? focusElement(column, focusKey) : element;
+    return step(column, from ?? column, delta);
+  }
+  if (cap) return foldFromCap(event, element);
   const key = element.getAttribute("data-focus") ?? focusKey;
-  const index = env.order.findIndex((target) => targetKey(target) === key);
-  const target = env.order[index];
-  if (!target) return;
+  const target = env.order.find((item) => targetKey(item) === key);
+  if (target) actOnTarget(event, env, target, element);
+}
+
+/** Escape and ArrowLeft on a cap fold the run it belongs to, as clicking it does. */
+function foldFromCap(event: KeyboardEvent<HTMLElement>, cap: HTMLElement): void {
+  if (event.key !== "Escape" && event.key !== "ArrowLeft") return;
+  event.preventDefault();
+  cap.click();
+}
+
+/** The keys that act on the focused sentence or passage. */
+function actOnTarget(
+  event: KeyboardEvent<HTMLElement>,
+  env: KeyEnv,
+  target: ColumnTarget,
+  element: HTMLElement,
+): void {
   const consume = () => event.preventDefault();
   switch (event.key) {
-    case "ArrowDown":
-    case "j":
-      consume();
-      return step(env, index, 1);
-    case "ArrowUp":
-    case "k":
-      consume();
-      return step(env, index, -1);
     case "Enter":
     case "ArrowRight":
       consume();

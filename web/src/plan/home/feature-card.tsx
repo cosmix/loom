@@ -3,7 +3,7 @@ import { useId } from "react";
 import { Link } from "react-router";
 
 import type { ChecklistView } from "@/plan/api/schema";
-import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
 import { ProgressStrip } from "@/plan/home/progress-strip";
 import { featuresAtom } from "@/plan/state/atoms";
@@ -26,7 +26,7 @@ export function FeatureCard({ checklist }: { checklist: ChecklistView }) {
       {checklist.pitch && (
         <p className="feature-pitch break-words text-muted-foreground">
           <span style={{ unicodeBidi: "isolate", direction: "ltr" }}>
-            <SentenceText text={visibleControls(checklist.pitch)} />
+            <SentenceText text={checklist.pitch} />
           </span>
         </p>
       )}

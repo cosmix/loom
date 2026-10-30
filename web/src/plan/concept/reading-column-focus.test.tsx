@@ -1,14 +1,17 @@
-import { fireEvent, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, waitFor, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 
 import { cite, pageOf, S1, sent, src } from "./reading-column-fixtures";
 import {
   active,
+  blurOnRemoval,
   button,
+  caps,
   installColumnTestHooks,
   mark,
   loadPage,
   mount,
+  nested,
   pages,
   press,
   replace,
@@ -50,15 +53,41 @@ async function sharedCitation() {
   return { ...view, first, second, passage };
 }
 
-it("the arrows walk the passages of a sentence opened under its second citer", async () => {
-  const { second, passage } = await sharedCitation();
+it("the arrows step over the caps of a run under its second citer, never onto a passage or plain sentence", async () => {
+  const { first, second, passage } = await sharedCitation();
+  // Second's start cap and x's start cap open the passage's chip line; x's end cap ends it.
+  const [secondStart, xStart, xEnd, secondEnd] = caps(second);
+  expect(passage.contains(secondStart!) && passage.contains(xStart!)).toBe(true);
   press("ArrowDown");
-  await waitFor(() => expect(active().textContent).toBe("Closing line."));
+  await waitFor(() => expect(active()).toBe(xStart));
+  press("ArrowDown");
+  expect(active()).toBe(xEnd);
+  press("ArrowDown");
+  expect(active()).toBe(secondEnd);
+  // "Closing line." opens nothing: the walk ends on the run's end cap.
+  press("ArrowDown");
+  expect(active()).toBe(secondEnd);
   press("ArrowUp");
-  await waitFor(() => expect(active()).toBe(passage));
   press("ArrowUp");
-  await waitFor(() => expect(active().getAttribute("aria-label")).toBe("Detail of Detail opens."));
+  press("ArrowUp");
+  expect(active()).toBe(secondStart);
   expect(second.contains(active())).toBe(true);
+  press("ArrowUp");
+  expect(active()).toBe(caps(first).at(-1));
+  expect(active().hasAttribute("data-passage")).toBe(false);
+});
+
+it("Shift+Escape from a nested cap folds every run and focuses the outermost opener", async () => {
+  const { column } = nested();
+  fireEvent.click(button(column, /^Overview opens/));
+  fireEvent.click(await within(column).findByRole("button", { name: /^Detail opens/ }));
+  await within(column).findByRole("group", { name: /^Detail of Detail/ });
+  const inner = caps(column)[1]!;
+  act(() => inner.focus());
+  blurOnRemoval();
+  expect(fireEvent.keyDown(inner, { key: "Escape", shiftKey: true })).toBe(false);
+  expect(within(column).queryByRole("group")).toBeNull();
+  await waitFor(() => expect(active()).toBe(button(column, /^Overview opens/)));
 });
 
 it("Escape on a passage under the second citer folds that citer's run only", async () => {

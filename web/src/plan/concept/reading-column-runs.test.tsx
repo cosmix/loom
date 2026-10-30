@@ -4,7 +4,7 @@ import { expect, it, vi } from "vitest";
 import { conceptPageAtom } from "./page-state";
 import { sectionInShownDoc } from "./passage-doc";
 import { docViewAtom, refreshDocView } from "./passages";
-import { cite, pageOf, rect, S1, S2, sent, src } from "./reading-column-fixtures";
+import { cite, docOf, pageOf, rect, S1, S2, sent, src } from "./reading-column-fixtures";
 import {
   active,
   button,
@@ -99,7 +99,8 @@ it("a on a passage whose file cannot be read attaches nothing", async () => {
   );
   fireEvent.click(button(column, /^Gone file/));
   await within(column).findByText("This file could not be loaded.");
-  press("ArrowDown");
+  // The arrows never stop on a passage; a click focuses it.
+  act(() => column.querySelector<HTMLElement>("[data-passage]")!.focus());
   await waitFor(() => expect(active().hasAttribute("data-passage")).toBe(true));
   press("a");
   await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
@@ -187,6 +188,15 @@ it("an open passage whose refetch failed says the file could not be loaded", asy
   await act(() => store.get(docViewAtom(S2)).catch(() => undefined));
   expect(await within(column).findByText("This file could not be loaded.")).toBeTruthy();
   expect(within(column).queryByText("Alpha text")).toBeNull();
+  // A later refresh (a socket resync) is held in flight: the deleted file's section must not
+  // come back from the kept document while the loadable reads loading.
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => new Promise<Response>(() => {})),
+  );
+  act(() => refreshDocView(store, S2));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+  expect(within(column).queryByText("Alpha text")).toBeNull();
 });
 
 it("a file's shown document goes with its last passage", async () => {
@@ -223,4 +233,16 @@ it("a cited summary page that failed to load says it could not be loaded", async
   const run = await group(column);
   expect(within(run).getByText(/^The Planning summary could not be loaded/)).toBeTruthy();
   expect(within(run).getByRole("link", { name: /Read the Planning summary/ })).toBeTruthy();
+});
+
+it("the passage source chip shows a format character in the file name as its code point", async () => {
+  const path = "doc/product/sec\u202E_03.md";
+  docs["product/sec\u202E_03.md"] = docOf(path);
+  const { column } = mountProduct([sent("a", "Spaced one.", [src(path, "intro")])]);
+  fireEvent.click(button(column, /^Spaced one/));
+  const run = await group(column);
+
+  const chip = run.querySelector(".concept-passage-chip")!;
+  expect(chip.textContent).toContain("sec⟨U+202E⟩_03.md");
+  expect(chip.textContent).not.toContain("\u202E");
 });

@@ -1,10 +1,11 @@
 import { cn } from "cn";
 import { FileText } from "lucide-react";
-import { useMemo, type JSX } from "react";
+import { useMemo, type JSX, type ReactNode } from "react";
 import { Link } from "react-router";
 
 import type { SourceAnchor } from "@/plan/api/schema-concept";
 import type { DocView } from "@/plan/api/schema-files";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { toAddress } from "@/plan/files/address";
 import { Markdown } from "@/plan/markdown";
 
@@ -62,17 +63,22 @@ function missingText(failed: boolean, doc: DocView | null): string {
  * One source passage: a heading section of a file under `doc/`, flowing inline in the opened
  * run after a chip naming its file and heading, with no card or border. Its body goes through
  * file mode's Markdown renderer as an excerpt (line offset, no heading ids), so a cut never
- * claims another section's id.
+ * claims another section's id. `leading` opens the chip line and `trailing` follows the body:
+ * the run's fold caps, so they sit in the text rather than on rows of their own.
  */
 export function PassageBlock({
   parent,
   sentenceId,
   anchor,
+  leading,
+  trailing,
 }: {
   /** The parent of the run showing the passage: `sentenceId` may be open under two citers. */
   parent: string | null;
   sentenceId: string;
   anchor: SourceAnchor;
+  leading?: ReactNode;
+  trailing?: ReactNode;
 }): JSX.Element {
   const { doc, failed } = useKeptDoc(anchor.path);
   const passage = useMemo(() => (doc ? passageOf(doc, anchor.anchor) : null), [doc, anchor.anchor]);
@@ -89,17 +95,21 @@ export function PassageBlock({
       data-end-line={lines?.end}
       tabIndex={-1}
     >
+      {leading}
       <Link tabIndex={-1} className="concept-passage-chip" to={passageHref(anchor, lines)}>
         <FileText aria-hidden="true" size={12} />
-        <span className="concept-passage-path">{fileName(anchor.path)}</span>
+        <span className="concept-passage-path">
+          <Untrusted text={fileName(anchor.path)} />
+        </span>
         {" › "}
-        {passage?.title ?? anchor.anchor}
+        <Untrusted text={passage?.title ?? anchor.anchor} />
       </Link>
       {passage && doc ? (
         <PassageBody anchor={anchor} passage={passage} doc={doc} />
       ) : (
         <p className="concept-muted">{missingText(failed, doc)}</p>
       )}
+      {trailing}
     </div>
   );
 }

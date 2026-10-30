@@ -4,7 +4,13 @@ import { expect, it } from "vitest";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import { conceptPageSchema } from "@/plan/api/schema-concept";
 
-import { installColumnTestHooks, mount, pages } from "./reading-column-harness";
+import {
+  blurOnRemoval,
+  caps as foldCaps,
+  installColumnTestHooks,
+  mount,
+  pages,
+} from "./reading-column-harness";
 
 installColumnTestHooks();
 
@@ -81,7 +87,39 @@ it("Shift+Escape from a cap folds all runs", () => {
   expect(within(column).queryByRole("group", { name: /^Detail of/ })).toBeNull();
 });
 
-it("the enclosing start cap shares the first passage edge when its first citation opens", async () => {
+it("Shift+Escape from the first run's cap returns focus to the sentence that opened it", async () => {
+  const { column } = mount(pageKey, conceptPageSchema.parse(summaryFixture));
+  fireEvent.click(within(column).getByRole("button", { name: firstSentence }));
+  fireEvent.click(within(column).getByRole("button", { name: secondSentence }));
+  const cap = foldCaps(column).find((item) => item.getAttribute("data-side") === "end")!;
+  act(() => cap.focus());
+  blurOnRemoval();
+
+  expect(fireEvent.keyDown(cap, { key: "Escape", shiftKey: true })).toBe(false);
+
+  expect(within(column).queryByRole("group", { name: /^Detail of/ })).toBeNull();
+  await waitFor(() => {
+    expect(document.activeElement).toBe(
+      within(column).getByRole("button", { name: firstSentence }),
+    );
+  });
+});
+
+it("an opened passage carries its caps inline: start before the chip, end after the body", () => {
+  const { column } = mount(pageKey, conceptPageSchema.parse(summaryFixture));
+  fireEvent.click(within(column).getByRole("button", { name: firstSentence }));
+
+  const run = within(column).getByRole("group", { name: /^Detail of/ });
+  const passages = run.querySelectorAll<HTMLElement>(".concept-passage");
+  const [start, end] = foldCaps(run);
+  const chip = passages[0]!.querySelector(".concept-passage-chip")!;
+  expect(run.querySelector(".concept-run-edge")).toBeNull();
+  expect(start!.parentElement).toBe(passages[0]);
+  expect(start!.nextElementSibling).toBe(chip);
+  expect(passages[passages.length - 1]!.lastElementChild).toBe(end);
+});
+
+it("the enclosing start cap shares the first passage's chip line when its first citation opens", async () => {
   const page = conceptPageSchema.parse(summaryFixture);
   const cited = conceptPageSchema.parse({ ...summaryFixture, key: "demo/product/section_02" });
   const paragraph = page.blocks.find((block) => block.kind === "paragraph")!;
@@ -100,7 +138,10 @@ it("the enclosing start cap shares the first passage edge when its first citatio
     "end",
     "end",
   ]);
-  expect(caps[0]!.closest('[data-side="start"].concept-run-edge')?.parentElement).toBe(inner);
+  const firstPassage = inner.querySelector(".concept-passage")!;
+  expect(caps[0]!.closest(".concept-run-leading")?.parentElement).toBe(firstPassage);
+  expect(caps[1]!.parentElement).toBe(firstPassage);
+  expect(caps[1]!.nextElementSibling).toBe(firstPassage.querySelector(".concept-passage-chip"));
   expect(caps[0]!.getAttribute("aria-describedby")).toBe(outer.id);
   expect(caps[3]!.parentElement).toBe(outer);
 });
