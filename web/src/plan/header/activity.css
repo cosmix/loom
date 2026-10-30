@@ -3,18 +3,26 @@
   .activity-pill {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
-    height: 28px;
+    gap: var(--space-1);
+    height: var(--control-height);
     padding: 0 10px;
-    border: 1px solid var(--hairline);
-    border-radius: 999px;
-    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--corner-control);
+    background: transparent;
     color: var(--foreground);
     font-family: var(--font-sans, inherit);
-    font-size: 12.5px;
+    font-size: var(--type-ui);
     font-weight: 500;
     white-space: nowrap;
     cursor: pointer;
+  }
+
+  /* The dashboard's touch rule (`.header-controls button`, src/header.css) gives every header
+     button a 40px floor below 640px. The planner's row is 28px (ui/design.css), so the pill
+     lifts that floor; the two-class selector outranks the dashboard's one class and one tag. */
+  .plan-header-controls .activity-pill {
+    min-width: 0;
+    min-height: 0;
   }
 
   .activity-pill:hover,

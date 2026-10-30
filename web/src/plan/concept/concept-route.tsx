@@ -1,5 +1,5 @@
 import { useAtomValue, useSetAtom, useStore } from "jotai/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 
 import { Kbd } from "@/components/ui/kbd";
@@ -304,13 +304,18 @@ function RouteBody({ pageKey }: { pageKey: string }) {
   );
 }
 
-/** The Product and Engineering tabs and their document summary pages. */
-export function ConceptRoute() {
+/**
+ * The overview and summary pages of Product and Engineering. `above` renders in the page's column
+ * ahead of the page, so the feature screen can put its gaps there without a second column or
+ * scroll container.
+ */
+export function ConceptRoute({ above }: { above?: ReactNode }) {
   const { pathname } = useLocation();
   const key = pageKeyOfPath(pathname);
   return (
     <div className="w-full px-[clamp(16px,4vw,56px)] pt-8 pb-12">
       <div className="mx-auto max-w-[68ch]">
+        {above}
         {key === null ? (
           <ConceptNotFound pageKey={rawNameOf(pathname)} />
         ) : (

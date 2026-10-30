@@ -1,33 +1,31 @@
 /* The drafting team: a cost line, the document queue, and one card per teammate. */
 [data-loom-plan] .plan-team {
   display: grid;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 [data-loom-plan] .plan-team__title {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--type-title);
   font-weight: 600;
 }
 
+/* A sub-section of the panel, set in the scale's UI type in sentence case. */
 [data-loom-plan] .plan-team__sub {
-  margin: 4px 0 0;
-  color: var(--muted-foreground);
-  font-size: 10.5px;
+  margin: var(--space-1) 0 0;
+  font-size: var(--type-ui);
   font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  line-height: var(--leading-ui);
 }
 
+/* The cost line is text on the page: no fill, no edge. */
 [data-loom-plan] .plan-team-cost {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--muted);
-  font-size: 12.5px;
+  gap: var(--space-2);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
 }
 
 [data-loom-plan] .plan-team-cost > p {
@@ -38,34 +36,18 @@
   margin-left: auto;
 }
 
-/* DisabledReason renders the default button; the cost line shows it as a ghost button. */
-[data-loom-plan] .plan-team-cost__stop button {
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--foreground);
-  font-weight: 500;
-}
-
-[data-loom-plan] .plan-team-cost__stop button:not([aria-disabled="true"]):hover {
-  background: var(--card);
-}
-
 [data-loom-plan] .plan-team__docs {
   margin: 0;
   padding: 0;
-  overflow: hidden;
   list-style: none;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: var(--card);
 }
 
 [data-loom-plan] .plan-team__doc {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 12px;
-  padding: 9px 12px;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) 0;
 }
 
 [data-loom-plan] .plan-team__doc + .plan-team__doc {
@@ -75,53 +57,49 @@
 [data-loom-plan] .plan-team__cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
-  gap: 8px;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* A teammate card is the one surface on the page (`.plan-surface` in the markup): the avatar,
+   name and counts inside it draw no edge, fill or shadow. */
 [data-loom-plan] .plan-team-card {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: var(--card);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
 }
 
+/* The initial is a glyph in the teammate's document hue. */
 [data-loom-plan] .plan-team-card__avatar {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: color-mix(in oklch, var(--avatar) 20%, transparent);
   color: var(--avatar);
-  font-size: 13px;
-  font-weight: 650;
-  text-transform: uppercase;
+  font-size: var(--type-title);
+  font-weight: 600;
+  text-transform: capitalize;
 }
 
 [data-loom-plan] .plan-team-card__main {
   display: grid;
   min-width: 0;
-  gap: 1px;
+  gap: 0;
 }
 
 [data-loom-plan] .plan-team-card__name {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--space-1);
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--type-ui);
 }
 
 [data-loom-plan] .plan-team-card__name strong {
   overflow: hidden;
-  font-weight: 650;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -129,7 +107,7 @@
 [data-loom-plan] .plan-team-card__mark,
 [data-loom-plan] .plan-team-card__tokens {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--type-fine);
 }
 
 [data-loom-plan] .plan-team-card__mark {
@@ -139,9 +117,9 @@
 [data-loom-plan] .plan-team-card__state {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-1);
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--type-fine);
 }
 
 [data-loom-plan] .plan-team-card__tokens {

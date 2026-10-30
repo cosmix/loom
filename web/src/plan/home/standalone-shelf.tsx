@@ -6,7 +6,7 @@ import { Link, useNavigate } from "react-router";
 import type { StandalonePlanView } from "@/plan/api/schema";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
-import { plural } from "@/plan/feature/steps";
+import { plural } from "@/plan/ui/plural";
 import { toAddress } from "@/plan/files/address";
 import { MoveIntoFeatureDialog } from "@/plan/home/move-into-feature";
 import {

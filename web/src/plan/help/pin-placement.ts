@@ -26,7 +26,7 @@ function overlapArea(a: Box, b: Box): number {
   return width * height;
 }
 
-/** A control group this much wider than tall reads as a bar (a step rail, a row of buttons). */
+/** A control group this much wider than tall reads as a bar (the spine's head, a row of buttons). */
 const BAR_RATIO = 4;
 
 function isBar(target: Box, size: number): boolean {

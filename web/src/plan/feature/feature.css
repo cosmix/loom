@@ -1,160 +1,63 @@
-/* The feature screen: a 220px step navigation beside the selected step's body. The grid is at
-   least as tall as <main>, so the navigation's fill and right rule run down to the dock's bottom
-   edge on a short step. */
-[data-loom-plan] .plan-feature {
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  min-height: max(480px, 100%);
+/* The feature screen: the spine beside the routed page. The page keeps <main> as its scroll
+   container (the spine sticks inside it), so the reading column's scroll logic is untouched. */
+[data-loom-plan] .plan-layout {
+  min-height: 100%;
 }
 
-[data-loom-plan] .plan-feature > * {
+[data-loom-plan] .plan-layout[data-spine] {
+  display: grid;
+  grid-template-columns: 18rem minmax(0, 1fr);
+}
+
+[data-loom-plan] .plan-layout__page {
   min-width: 0;
 }
 
-[data-loom-plan] .plan-feature__nav {
+/* The spine's edge is a hairline on the page, so it runs the page's full height. */
+[data-loom-plan] .plan-layout[data-spine] > .plan-layout__page {
+  border-left: 1px solid var(--hairline);
+}
+
+/* What is still to write, above an overview: pace, the draft team, the queue. */
+[data-loom-plan] .plan-gaps {
   display: grid;
-  align-content: start;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 4px;
-  min-width: 0;
-  padding: 18px 14px;
-  background: var(--card);
-  border-right: 1px solid var(--hairline);
+  gap: var(--space-5);
+  margin-bottom: var(--space-6);
 }
 
-/* Containing block for the rows' sr-only text: without it, absolutely positioned text escapes the
-   narrow-width horizontal scroller and widens the document. */
-[data-loom-plan] .plan-step-list {
-  position: relative;
+[data-loom-plan] .plan-gaps:empty {
+  display: none;
+}
+
+/* The vision and the metaplans read as source, in the reading column's measure. */
+[data-loom-plan] .plan-document {
+  width: 100%;
+  max-width: calc(68ch + 2 * var(--space-5));
+  margin: 0 auto;
+  padding: var(--space-5) 0 var(--space-7);
+}
+
+[data-loom-plan] .plan-document--empty {
   display: grid;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  justify-items: start;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--page-gutter);
 }
 
-[data-loom-plan] .plan-step-row {
-  display: grid;
-  grid-template-columns: 26px 1fr;
-  gap: 8px;
-  padding: 8px;
-  border-radius: 8px;
-  color: var(--foreground);
-  font-size: 13px;
-  text-decoration: none;
-  transition: background-color 120ms ease;
-}
-
-[data-loom-plan] .plan-step-row:hover {
-  background: color-mix(in oklch, var(--muted) 55%, transparent);
-}
-
-[data-loom-plan] .plan-step-row:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: -2px;
-}
-
-[data-loom-plan] .plan-step-row[aria-current="step"] {
-  background: var(--muted);
-  font-weight: 600;
-}
-
-[data-loom-plan] .plan-step-badge {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  color: var(--muted-foreground);
-}
-
-[data-loom-plan] .plan-step-row[data-step-mark="done"] .plan-step-badge {
-  border-color: transparent;
-  background: color-mix(in oklch, var(--tone-completed) 20%, transparent);
-  color: var(--tone-completed);
-}
-
-[data-loom-plan] .plan-step-row[aria-current="step"] .plan-step-badge {
-  border-color: var(--primary);
-  background: color-mix(in oklch, var(--primary) 25%, transparent);
-  color: var(--foreground);
-}
-
-/* The server's current step while the body shows another: the badge ring only, no row fill or weight. */
-[data-loom-plan] .plan-step-row[data-current] .plan-step-badge {
-  border-color: var(--primary);
-}
-
-[data-loom-plan] .plan-step-text {
-  display: grid;
-  align-content: center;
-  min-width: 0;
-}
-
-[data-loom-plan] .plan-step-label,
-[data-loom-plan] .plan-step-line {
-  overflow-wrap: anywhere;
-}
-
-[data-loom-plan] .plan-step-line {
-  color: var(--muted-foreground);
-  font-size: 11.5px;
-  font-weight: 400;
-}
-
-[data-loom-plan] .plan-step-ready {
-  margin: 8px 8px 0;
-  color: var(--muted-foreground);
-  font-size: 12.5px;
-}
-
-[data-loom-plan] .plan-feature__body {
-  display: grid;
-  align-content: start;
-  gap: 16px;
-  min-width: 0;
-  padding: 24px clamp(16px, 3vw, 32px);
-}
-
-[data-loom-plan] .plan-feature__head {
-  display: grid;
-  gap: 4px;
-}
-
-[data-loom-plan] .plan-eyebrow {
-  margin: 0;
-  color: var(--muted-foreground);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-[data-loom-plan] .plan-feature__title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-}
-
-/* Pace choice: two cards, each with its own offer. */
+/* Pace choice: two columns on the page, each with its own offer. Space divides them: a column
+   holds a bordered button, so it draws no box of its own (DESIGN.md, Surfaces and borders). */
 [data-loom-plan] .plan-pace {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-  gap: 10px;
+  gap: var(--space-5) var(--space-6);
 }
 
 [data-loom-plan] .plan-pace__card {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--card);
 }
 
 [data-loom-plan] .plan-pace__title {
@@ -178,7 +81,8 @@
   font-size: 12px;
 }
 
-/* Both cards pin their offer to the bottom edge; long labels wrap inside the card, and in a queue row. */
+/* Both cards pin their offer to the bottom edge. The button keeps the design-system scale and
+   never wraps: a label that would is too long (DESIGN.md, Buttons). */
 [data-loom-plan] .plan-pace__offer {
   min-width: 0;
   max-width: 100%;
@@ -186,202 +90,68 @@
   padding-top: 4px;
 }
 
-[data-loom-plan] .plan-pace__offer button,
-[data-loom-plan] .plan-queue__side button {
-  max-width: 100%;
-  height: auto;
-  min-height: 30px;
-  padding-block: 4px;
-  white-space: normal;
-  text-align: left;
-  overflow-wrap: anywhere;
-}
-
-/* Section and plan queues: one bordered list with hairline dividers. */
-[data-loom-plan] .plan-queue {
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  list-style: none;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: var(--card);
-}
-
+/* Section and plan queues: rows on hairlines (design.css `.plan-list`), the list's edges the page's. */
 [data-loom-plan] .plan-queue > li {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-}
-
-[data-loom-plan] .plan-queue > li + li {
-  border-top: 1px solid var(--hairline);
-}
-
-[data-loom-plan] .plan-queue {
-  --queue-hue: var(--doc-2);
-}
-
-[data-loom-plan] .plan-queue[data-kind="plan"] {
-  --queue-hue: var(--doc-5);
+  flex-wrap: wrap;
 }
 
 [data-loom-plan] .plan-queue__num {
-  display: inline-grid;
-  place-items: center;
-  /* A 20px badge at the start of the 34px column, not stretched across it. */
-  justify-self: start;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 3px;
-  border-radius: 5px;
-  background: color-mix(in oklch, var(--queue-hue) 16%, transparent);
-  color: var(--queue-hue);
+  flex: none;
+  min-width: 2ch;
+  color: var(--muted-foreground);
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 600;
-}
-
-.dark [data-loom-plan] .plan-queue__num {
-  background: color-mix(in oklch, var(--queue-hue) 20%, transparent);
+  font-size: var(--type-fine);
 }
 
 [data-loom-plan] .plan-queue__name {
-  min-width: 0;
-  font-size: 13.5px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-[data-loom-plan] .plan-queue__name a {
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-color: var(--hairline);
-  text-underline-offset: 3px;
-}
-
-[data-loom-plan] .plan-queue__name a:hover {
-  text-decoration-color: currentColor;
-}
-
-/* Plan names are slugs, so they read in mono, at the section names' 13.5px. */
-[data-loom-plan] .plan-queue[data-kind="plan"] .plan-queue__name {
-  font-family: var(--font-mono);
-}
-
-[data-loom-plan] .plan-queue__side {
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px 12px;
-}
-
-[data-loom-plan] .plan-queue__states {
-  display: inline-flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px 12px;
-}
-
-[data-loom-plan] .plan-queue__state {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-[data-loom-plan] .plan-queue__state[data-tone="ok"] {
-  color: var(--tone-completed);
-}
-
-[data-loom-plan] .plan-queue__state[data-tone="warn"] {
-  color: var(--tone-warning);
-}
-
-[data-loom-plan] .plan-queue__state[data-tone="run"] {
-  color: var(--tone-executing);
-}
-
-/* Items a queue does not carry: label, mono path, offer. */
-[data-loom-plan] .plan-items {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-[data-loom-plan] .plan-items__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
-  padding: 7px 0;
-  font-size: 13px;
-}
-
-[data-loom-plan] .plan-items__row + .plan-items__row {
-  border-top: 1px solid var(--hairline);
-}
-
-[data-loom-plan] .plan-items__label {
+  flex: 1 1 12ch;
   min-width: 0;
   font-weight: 500;
   overflow-wrap: anywhere;
 }
 
-[data-loom-plan] .plan-items__path {
-  min-width: 0;
-  color: var(--muted-foreground);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  overflow-wrap: anywhere;
+[data-loom-plan] .plan-queue__name a {
+  color: inherit;
+  text-decoration: none;
 }
 
-[data-loom-plan] .plan-items__offer {
+[data-loom-plan] .plan-queue__name a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+[data-loom-plan] .plan-queue__name a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Plan names are slugs, so they read in mono. */
+[data-loom-plan] .plan-queue[data-kind="plan"] .plan-queue__name {
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+}
+
+[data-loom-plan] .plan-queue__side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1) var(--space-3);
   margin-left: auto;
 }
 
-@media (max-width: 759.98px) {
-  [data-loom-plan] .plan-feature {
-    grid-template-columns: minmax(0, 1fr);
-    min-height: 0;
-  }
-
-  [data-loom-plan] .plan-feature__nav {
-    padding: 10px 14px;
-    overflow-x: auto;
-    border-right: 0;
-    border-bottom: 1px solid var(--hairline);
-  }
-
-  [data-loom-plan] .plan-queue > li {
-    grid-template-columns: 34px minmax(0, 1fr);
-  }
-
-  [data-loom-plan] .plan-queue__side {
-    grid-column: 2;
-    justify-content: flex-start;
-  }
-
-  [data-loom-plan] .plan-step-list {
-    min-width: 0;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(150px, max-content);
-    overflow-x: auto;
-  }
-
-  [data-loom-plan] .plan-step-ready {
-    margin-left: 0;
-  }
+/* The row whose offer is the primary: the pace choice above carries its button. */
+[data-loom-plan] .plan-queue__next {
+  font-size: var(--type-fine);
+  font-weight: 600;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  [data-loom-plan] .plan-step-row {
-    transition: none;
+@media (max-width: 759.98px) {
+  [data-loom-plan] .plan-layout[data-spine] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-loom-plan] .plan-layout[data-spine] > .plan-layout__page {
+    border-left: 0;
   }
 }

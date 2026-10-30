@@ -1,163 +1,222 @@
 import { useAtomValue } from "jotai/react";
-import { CircleCheck, CircleDashed, MessageCircleQuestion } from "lucide-react";
-import type { ReactNode } from "react";
+import { CircleCheck, CircleDashed, MessageCircleQuestion, type LucideIcon } from "lucide-react";
 import { Link } from "react-router";
 
-import type { ChecklistView, ItemView } from "@/plan/api/schema";
+import type { ChecklistView, OfferView } from "@/plan/api/schema";
+import type { DraftTeamView } from "@/plan/api/schema-kickoff";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
-import { plural } from "@/plan/feature/steps";
-import { toAddress } from "@/plan/files/address";
+import { paceOfferIds, type GapScope } from "@/plan/feature/page-offer";
+import { featureHref } from "@/plan/feature/use-feature";
+import { slugNumber } from "@/plan/files/heading-parts";
 import { planSlug } from "@/plan/files/tree";
 import { OfferButton } from "@/plan/offers/offer-button";
 import { draftTeamAtom } from "@/plan/state/atoms";
 import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
+import { PLAN_STATE_GLYPHS, type PlanState } from "@/plan/ui/glyphs";
+import { plural } from "@/plan/ui/plural";
 
-type QueueKind = "section" | "plan";
+export type QueueKind = "section" | "plan";
 
 type QueueRow = {
   key: string;
   number: string;
   name: string;
-  path: string | null;
-  written: boolean;
-  questions: number;
-  /** The checklist item this row stands for; its offer renders on the row. */
-  item: ItemView | null;
   /** Section names are Markdown phrasing (backticked code); plan names are slugs, shown verbatim. */
   markdown: boolean;
+  /** The concept page of a written document; null while it is missing. */
+  to: string | null;
+  /** Repository path of the document, to tell which row a teammate is drafting. */
+  path: string | null;
+  /** The word beside the row's glyph: "Written", "Missing", or a plan's lifecycle state. */
+  state: string;
+  icon: LucideIcon;
+  /** The `tone-*` class that colours the glyph, for a finished document. */
+  tone?: string;
+  written: boolean;
+  questions: number;
+  /** The offer that writes the missing document. */
+  offer: OfferView | null;
 };
 
-/** The step a queue of this kind draws from. */
-const QUEUE_STEP: Record<QueueKind, number> = { section: 2, plan: 4 };
-
-/** The checklist text of a written plan (`plan <slug>`); "plan X is not in a metaplan" has more words. */
-const WRITTEN_PLAN_TEXT = /^plan \S+$/;
-
-/** A step-4 item the plan queue carries: a plan with an offer (missing) or a written one; not an unlisted warning. */
-function isQueuedPlan(item: ItemView): boolean {
-  return (
-    item.step === QUEUE_STEP.plan && (item.offer !== null || WRITTEN_PLAN_TEXT.test(item.text))
-  );
+function planIcon(state: string): LucideIcon {
+  return state in PLAN_STATE_GLYPHS ? PLAN_STATE_GLYPHS[state as PlanState] : CircleCheck;
 }
 
-/** Sections come from the checklist; the plan queue is the step-4 items, whose offers mark the missing ones. */
-export function queueRows(checklist: ChecklistView, kind: QueueKind): QueueRow[] {
-  if (kind === "section") {
-    return checklist.sections.map((section) => ({
+function capitalised(word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+function sectionRows(checklist: ChecklistView): QueueRow[] {
+  return checklist.sections.map((section) => {
+    const path = `doc/product/${checklist.feature}/section_${section.number}.md`;
+    const offer = checklist.items.find(
+      (item) =>
+        item.offer?.kind === "write_section" &&
+        (item.path === path || item.offer.number === Number(section.number)),
+    )?.offer;
+    return {
       key: section.number,
       number: section.number,
       name: section.name,
-      path: `doc/product/${checklist.feature}/section_${section.number}.md`,
+      markdown: true,
+      to: section.written
+        ? featureHref(checklist.feature, `product/section_${section.number}`)
+        : null,
+      path,
+      state: section.written ? "Written" : "Missing",
+      icon: section.written ? CircleCheck : CircleDashed,
+      tone: section.written ? "tone-completed" : undefined,
       written: section.written,
       questions: section.open_questions,
-      markdown: true,
-      item:
-        checklist.items.find(
-          (item) =>
-            item.step === QUEUE_STEP.section &&
-            item.path === `doc/product/${checklist.feature}/section_${section.number}.md`,
-        ) ?? null,
+      offer: offer ?? null,
+    };
+  });
+}
+
+/** Plans a metaplan lists: the written ones from `plan_rows`, then the ones still to write. */
+function planRows(checklist: ChecklistView): QueueRow[] {
+  const written = checklist.plan_rows
+    .filter((plan) => plan.listed)
+    .map((plan) => ({
+      slug: plan.slug,
+      to: featureHref(checklist.feature, `engineering/${encodeURIComponent(plan.slug)}`),
+      path: plan.path,
+      state: capitalised(plan.state),
+      icon: planIcon(plan.state),
+      tone: plan.state === "done" ? "tone-completed" : undefined,
+      written: true,
+      offer: null,
     }));
-  }
-  return checklist.items.filter(isQueuedPlan).map((item, index) => ({
-    key: `${index}:${item.text}`,
-    number: String(index + 1).padStart(2, "0"),
-    name: planSlug(item.path?.split("/").at(-1) ?? null) ?? item.text,
-    path: item.path,
-    written: item.offer === null,
-    questions: 0,
-    item,
+  const missing = checklist.items
+    .filter((item) => item.offer?.kind === "write_plan")
+    .map((item) => ({
+      slug: item.offer?.slug ?? planSlug(item.path?.split("/").at(-1) ?? null) ?? item.text,
+      to: null,
+      path: item.path,
+      state: "Missing",
+      icon: CircleDashed,
+      tone: undefined,
+      written: false,
+      offer: item.offer,
+    }));
+  return [...written, ...missing].map(({ slug, ...row }, index) => ({
+    ...row,
+    key: `${index}:${slug}`,
+    // The number the slug carries, else the row's place: written plans list first, so the place
+    // alone would number a plan by when it was written.
+    number: slugNumber(slug) ?? String(index + 1).padStart(2, "0"),
+    name: slug,
     markdown: false,
+    questions: 0,
   }));
 }
 
-/** The step's items that no queue row carries; steps without a queue keep all of theirs. */
-export function remainingItems(checklist: ChecklistView, step: number): ItemView[] {
-  const items = checklist.items.filter((item) => item.step === step);
-  const kind = (Object.keys(QUEUE_STEP) as QueueKind[]).find((key) => QUEUE_STEP[key] === step);
-  if (kind === undefined) return items;
-  const queued = queueRows(checklist, kind).map((row) => row.item);
-  return items.filter((item) => !queued.includes(item));
+/** Sections come from the checklist; plans from `plan_rows`, with the missing ones from the offers. */
+export function queueRows(checklist: ChecklistView, kind: QueueKind): QueueRow[] {
+  return kind === "section" ? sectionRows(checklist) : planRows(checklist);
 }
 
-function State({ tone, icon, children }: { tone: string; icon: ReactNode; children: ReactNode }) {
+/** Whether any row of the queue still has its document to write. */
+export function hasGaps(checklist: ChecklistView, kind: QueueKind): boolean {
+  return queueRows(checklist, kind).some((row) => !row.written);
+}
+
+function Status({
+  icon: Icon,
+  tone,
+  children,
+}: {
+  icon: LucideIcon;
+  tone?: string;
+  children: string;
+}) {
   return (
-    <span className="plan-queue__state" data-tone={tone}>
-      {icon}
+    <span className="plan-status plan-fine">
+      <Icon className={tone} aria-hidden="true" />
       {children}
     </span>
   );
 }
 
-function RowName({ row }: { row: QueueRow }) {
-  return row.markdown ? <SentenceText text={row.name} /> : <Untrusted text={row.name} />;
-}
-
-function RowStates({ row, drafting }: { row: QueueRow; drafting: boolean }) {
-  const icon = "size-3.5 shrink-0";
+function RowStatus({ row, drafting }: { row: QueueRow; drafting: boolean }) {
   return (
-    <span className="plan-queue__states">
+    <>
       {drafting ? (
-        <State tone="run" icon={<ActivityGlyph kind="drafting" />}>
+        <span className="plan-status plan-fine">
+          <ActivityGlyph kind="drafting" />
           Drafting…
-        </State>
-      ) : row.written ? (
-        <State tone="ok" icon={<CircleCheck className={icon} aria-hidden="true" />}>
-          Written
-        </State>
+        </span>
       ) : (
-        <State tone="muted" icon={<CircleDashed className={icon} aria-hidden="true" />}>
-          Missing
-        </State>
+        <Status icon={row.icon} tone={row.tone}>
+          {row.state}
+        </Status>
       )}
       {row.questions > 0 && (
-        <State tone="warn" icon={<MessageCircleQuestion className={icon} aria-hidden="true" />}>
+        <Status icon={MessageCircleQuestion} tone="tone-warning">
           {plural(row.questions, "open question")}
-        </State>
+        </Status>
       )}
-    </span>
+    </>
   );
 }
+
+/**
+ * "Next" stands in for the button of a row whose offer another surface already draws: the
+ * primary (the spine or the pace card owns it) and either pace card's offer.
+ */
+function RowAction({ row, drawn }: { row: QueueRow; drawn: string[] }) {
+  if (row.offer === null) return null;
+  if (drawn.includes(row.offer.id)) return <span className="plan-queue__next">Next</span>;
+  return <OfferButton offer={row.offer} size="sm" />;
+}
+
+function isDrafting(row: QueueRow, team: DraftTeamView | null): boolean {
+  return (
+    row.path !== null &&
+    (team?.teammates.some(
+      (teammate) => teammate.state === "working" && teammate.current === row.path,
+    ) ??
+      false)
+  );
+}
+
+const QUEUE_SCOPE: Record<QueueKind, GapScope> = { section: "product", plan: "engineering" };
 
 export function Queue({ checklist, kind }: { checklist: ChecklistView; kind: QueueKind }) {
   const team = useAtomValue(draftTeamAtom);
   const rows = queueRows(checklist, kind);
   if (rows.length === 0) return null;
+  const drawn = paceOfferIds(checklist, QUEUE_SCOPE[kind]);
+  if (checklist.primary !== null) drawn.push(checklist.primary.id);
   return (
     <ul
       aria-label={kind === "section" ? "Section queue" : "Plan queue"}
-      className="plan-queue"
+      className="plan-list plan-queue"
       data-kind={kind}
     >
-      {rows.map((row) => {
-        const drafting =
-          row.path !== null &&
-          (team?.teammates.some(
-            (teammate) => teammate.state === "working" && teammate.current === row.path,
-          ) ??
-            false);
-        return (
-          <li key={row.key}>
-            <span className="plan-queue__num">
-              <Untrusted text={row.number} />
-            </span>
-            <span className="plan-queue__name">
-              {row.written && row.path ? (
-                <Link to={toAddress(row.path)}>
-                  <RowName row={row} />
-                </Link>
-              ) : (
-                <RowName row={row} />
-              )}
-            </span>
-            <span className="plan-queue__side">
-              <RowStates row={row} drafting={drafting} />
-              {row.item?.offer && <OfferButton offer={row.item.offer} />}
-            </span>
-          </li>
-        );
-      })}
+      {rows.map((row) => (
+        <li key={row.key}>
+          <span className="plan-queue__num">
+            <Untrusted text={row.number} />
+          </span>
+          <span className="plan-queue__name">
+            {row.to ? (
+              <Link to={row.to}>
+                {row.markdown ? <SentenceText text={row.name} /> : <Untrusted text={row.name} />}
+              </Link>
+            ) : row.markdown ? (
+              <SentenceText text={row.name} />
+            ) : (
+              <Untrusted text={row.name} />
+            )}
+          </span>
+          <span className="plan-queue__side">
+            <RowStatus row={row} drafting={isDrafting(row, team)} />
+            <RowAction row={row} drawn={drawn} />
+          </span>
+        </li>
+      ))}
     </ul>
   );
 }

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "jotai/react";
 import { createStore } from "jotai/vanilla";
 import { MemoryRouter } from "react-router";
@@ -8,10 +8,9 @@ import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
 import { checklistViewSchema, serverInfoSchema } from "@/plan/api/schema";
 import { PlanHeader } from "@/plan/header/header";
-import { activeFeatureAtom, checklistAtom, projectAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { activeFeatureAtom, checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 const NEXT_STEP = "Section 05 is the next product spec document to write.";
-/** The compact card, used on phones, is only the offer (text until an action is registered). */
 const OFFER_LABEL = checklistFixture.checklists[0]!.primary!.label;
 
 vi.mock("@/plan/header-extras", () => ({
@@ -129,13 +128,16 @@ it("opens help with its callback", () => {
   expect(onOpenSettings).not.toHaveBeenCalled();
 });
 
-it.each(["/f/demo", "/f/demo/product", "/f/demo/engineering/planning"])(
-  "shows the step rail and next-step card on feature route %s",
-  (pathname) => {
-    show(pathname);
+const NO_PROGRESS = '.plan-next-step, .plan-header-rail, [class*="plan-step"]';
 
-    expect(screen.getByRole("list", { name: "Steps" })).toBeTruthy();
-    expect(screen.getByTitle(NEXT_STEP)).toBeTruthy();
+it.each(["/f/demo", "/f/demo/product", "/f/demo/engineering/planning"])(
+  "draws no step rail or next-step card on feature route %s",
+  (pathname) => {
+    const { container } = show(pathname);
+
+    expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
+    expect(screen.queryByTitle(NEXT_STEP)).toBeNull();
+    expect(container.querySelector(NO_PROGRESS)).toBeNull();
   },
 );
 
@@ -152,43 +154,18 @@ it.each(["/", "/new", "/files", "/plans/standalone"])(
 );
 
 it.each(["/f/other", "/f/other/product", "/f/other/engineering/planning"])(
-  "uses the route feature's checklist on %s while the active feature is stale",
+  "names the route feature on %s while the active feature is stale",
   (pathname) => {
     const { store } = show(pathname);
-    const demo = checklistViewSchema.parse(checklistFixture.checklists[0]);
-    act(() => {
-      store.set(projectAtom, {
-        checklists: [
-          demo,
-          {
-            ...demo,
-            feature: "other",
-            steps: [
-              { number: 1, name: "Other vision", mark: "done", count: null, label: "Other vision" },
-            ],
-            current: { kind: "ready_all_done" },
-            primary: null,
-            items: [],
-          },
-        ],
-        standalone: [],
-        moves: [],
-      });
-    });
 
     expect(store.get(activeFeatureAtom)).toBe("demo");
     expect(screen.getByRole("button", { name: "Switch feature, current: other" })).toBeTruthy();
-    const rail = screen.getByRole("list", { name: "Steps" });
-    expect(within(rail).getByText("Other vision")).toBeTruthy();
-    expect(within(rail).queryByText("Product spec")).toBeNull();
-    expect(screen.getByTitle("All plans done")).toBeTruthy();
-    expect(screen.queryByTitle(NEXT_STEP)).toBeNull();
+    expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
   },
 );
 
-it("removes feature progress when navigating from a feature to Files", () => {
+it("keeps no feature progress when navigating from a feature to Files", () => {
   const { store } = show("/f/demo");
-  expect(screen.getByRole("list", { name: "Steps" })).toBeTruthy();
 
   fireEvent.click(screen.getByRole("link", { name: "Files" }));
 
@@ -197,13 +174,13 @@ it("removes feature progress when navigating from a feature to Files", () => {
   expect(screen.queryByTitle(NEXT_STEP)).toBeNull();
 });
 
-it("collapses the step rail and uses the overflow control below 1024px", () => {
-  show("/f/demo", false);
+it("uses the overflow control below 1024px and draws no rail or card", () => {
+  const { container } = show("/f/demo", false);
 
-  expect(screen.getByRole("button", { name: /Step 2 of 6 · Product spec/ })).toBeTruthy();
   expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
-  expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
-  expect(screen.getByText(OFFER_LABEL)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Step \d of 6/ })).toBeNull();
+  expect(screen.queryByText(OFFER_LABEL)).toBeNull();
+  expect(container.querySelector(NO_PROGRESS)).toBeNull();
 });
 
 it("keeps one row of logo, identity, activity and overflow on phones", () => {
@@ -227,25 +204,18 @@ it("shows no chat button where the dock mounts no panel", () => {
   expect(screen.queryByRole("button", { name: "Chat" })).toBeNull();
 });
 
-it("puts the collapsed rail and the next-step card in one row", () => {
-  const { container } = show("/f/demo", false);
+it.each([true, false])("keeps the app bar to one row at wide=%s", (wide) => {
+  const { container } = show("/f/demo", wide);
 
-  const trigger = screen.getByRole("button", { name: "Step 2 of 6 · Product spec" });
-  const row = trigger.parentElement!;
-  expect(row.classList.contains("plan-header-rail")).toBe(true);
-  expect(row.hasAttribute("data-narrow")).toBe(true);
-  expect(row.parentElement!.classList.contains("plan-appbar")).toBe(true);
-  expect(within(row).getByText(OFFER_LABEL)).toBeTruthy();
-  expect(container.querySelectorAll(".plan-header-rail")).toHaveLength(1);
-});
-
-it("lets the rail and the card wrap at desktop widths", () => {
-  show("/f/demo");
-
-  const rail = screen.getByRole("list", { name: "Steps" });
-  const row = rail.closest(".plan-header-rail")!;
-  expect(row.hasAttribute("data-narrow")).toBe(false);
-  expect(within(row as HTMLElement).getByTitle(NEXT_STEP)).toBeTruthy();
+  const bar = container.querySelector(".plan-appbar")!;
+  expect(container.querySelectorAll(".plan-appbar")).toHaveLength(1);
+  expect(bar.querySelector(NO_PROGRESS)).toBeNull();
+  // Logo, identity and the controls cluster are the row's only three cells.
+  expect([...bar.children].map((cell) => cell.className)).toEqual([
+    "plan-logo-link",
+    "plan-identity",
+    "plan-header-controls header-controls",
+  ]);
 });
 
 it("lists no operation as in progress when idle", () => {

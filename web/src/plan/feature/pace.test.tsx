@@ -249,12 +249,10 @@ it.each(["write_section", "write_plan"] as const)(
     const { guided, team } = fixtureOffers(checklist);
     renderChoice(checklist);
 
-    const guidedLabel = `Start guided writing: ${guided.label}`;
-    expect(screen.queryByRole("button", { name: guided.label })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: guidedLabel }));
+    fireEvent.click(screen.getByRole("button", { name: guided.label }));
     fireEvent.click(screen.getByRole("button", { name: team.label }));
 
-    expect(handlers[kind]).toHaveBeenCalledWith({ ...guided, label: guidedLabel });
+    expect(handlers[kind]).toHaveBeenCalledWith(guided);
     expect(
       handlers[kind === "write_section" ? "draft_all_sections" : "draft_all_plans"],
     ).toHaveBeenCalledWith(team);
@@ -291,9 +289,7 @@ it("uses the incoming feature checklist before the active checklist catches up",
   fireEvent.click(screen.getByRole("button", { name: team.label }));
 
   expect(handlers.draft_all_sections).toHaveBeenCalledWith(team);
-  expect(
-    screen.getByRole("button", { name: `Start guided writing: ${guided.label}` }),
-  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: guided.label })).toBeTruthy();
 });
 
 it("keeps both pace actions disabled with an explanation for a read-only browser", () => {
@@ -304,7 +300,7 @@ it("keeps both pace actions disabled with an explanation for a read-only browser
   expect(screen.getByRole("heading", { name: "Guided, one section at a time" })).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Draft all, with a team" })).toBeTruthy();
   const guidedButton = screen.getByRole("button", {
-    name: `Start guided writing: ${guided.label}`,
+    name: guided.label,
     description: HOLDER_REASON,
   });
   const teamButton = screen.getByRole("button", {
@@ -319,3 +315,29 @@ it("keeps both pace actions disabled with an explanation for a read-only browser
   expect(handlers.write_section).not.toHaveBeenCalled();
   expect(handlers.draft_all_sections).not.toHaveBeenCalled();
 });
+
+const OTHER_OFFER = {
+  id: "fix-vision-table",
+  kind: "fix_vision_table",
+  label: "Fix the vision table",
+  target: null,
+} as const;
+
+it.each([
+  ["the guided offer", "guided", ["primary", "secondary"]],
+  ["the team offer", "team", ["secondary", "primary"]],
+  ["another offer", "other", ["secondary", "secondary"]],
+] as const)(
+  "makes only the card holding the primary a primary button: %s",
+  (_name, owner, looks) => {
+    const base = makeChecklist(3);
+    const { guided, team } = fixtureOffers(base);
+    const primary = { guided, team, other: OTHER_OFFER }[owner];
+    renderChoice(checklistViewSchema.parse({ ...base, primary }));
+
+    const looksOf = [guided, team].map((offer) =>
+      screen.getByRole("button", { name: offer.label }).getAttribute("data-look"),
+    );
+    expect(looksOf).toEqual(looks);
+  },
+);
