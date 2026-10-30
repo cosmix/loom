@@ -26,7 +26,7 @@
 | [codex-concurrency](architecture/codex-concurrency.md) | Limits | 128 |
 | [codex-plugin](architecture/codex-plugin.md) |  | 391 |
 | [completion-recovery](architecture/completion-recovery.md) | Attest | 36 |
-| [config-value-types](architecture/config-value-types.md) |  | 85 |
+| [config-value-types](architecture/config-value-types.md) | web API, TypeScript client, React — instead of collapsing to a string at the… | 85 |
 | [context-ceiling](architecture/context-ceiling.md) |  | 111 |
 | [context-retrieval](architecture/context-retrieval.md) |  | 397 |
 | [context-retrieval-corpus](architecture/context-retrieval-corpus.md) | BM25 | 178 |
@@ -46,7 +46,7 @@
 | [merge-checkout-state](architecture/merge-checkout-state.md) | FF | 28 |
 | [merge-flow](architecture/merge-flow.md) |  | 138 |
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Ticks | 79 |
-| [owned-waits](architecture/owned-waits.md) |  | 70 |
+| [owned-waits](architecture/owned-waits.md) | One bound wait per parent session, keyed to an explicit worker set, replacing a… | 70 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 257 |
 | [plan-server](architecture/plan-server.md) | Chat | 243 |
 | [planner-web-shell](architecture/planner-web-shell.md) | Shell and screens | 45 |
@@ -58,7 +58,7 @@
 | [quota-poller](architecture/quota-poller.md) |  | 35 |
 | [remote-control](architecture/remote-control.md) |  | 81 |
 | [run-handoff](architecture/run-handoff.md) | Run lane | 52 |
-| [security-and-isolation](architecture/security-and-isolation.md) |  | 188 |
+| [security-and-isolation](architecture/security-and-isolation.md) | config.worktree deny and check | 188 |
 | [signal-generation](architecture/signal-generation.md) |  | 241 |
 | [skill-catalog](architecture/skill-catalog.md) |  | 155 |
 | [source-graph](architecture/source-graph.md) | Contract | 369 |
@@ -74,7 +74,7 @@
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 376 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) |  | 240 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | Daemon-run host jobs for completion, checks and freezes: state, child, apply | 240 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 118 |
 | [web-terminal](architecture/web-terminal.md) |  | 181 |
 
@@ -87,7 +87,7 @@
 | [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Fs, git | 133 |
 | [hooks](entry-points/hooks.md) |  | 150 |
 | [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) |  | 248 |
-| [remote-control](entry-points/remote-control.md) |  | 96 |
+| [remote-control](entry-points/remote-control.md) | **Note:** Any references to a "container backend" or `BackendType` elsewhere in… | 96 |
 
 ### patterns
 
@@ -153,11 +153,11 @@
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | Cleanup | 171 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Git ops | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) |  | 15 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) |  | 343 |
-| [phantom-merges](mistakes/phantom-merges.md) |  | 347 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Merge cleanup, daemon singleton, broker, waiting-state incidents | 343 |
+| [phantom-merges](mistakes/phantom-merges.md) | Plan stages split by compile order instead of merge order | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 10 |
-| [plan-server-delivery](mistakes/plan-server-delivery.md) | Delivery slips | 370 |
+| [plan-server-delivery](mistakes/plan-server-delivery.md) | Delivery slips | 371 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair slips | 84 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
@@ -191,7 +191,7 @@
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) |  | 141 |
 | [web-dashboard](mistakes/web-dashboard.md) | UI | 17 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Races | 278 |
-| [web-terminal](mistakes/web-terminal.md) |  | 135 |
+| [web-terminal](mistakes/web-terminal.md) | Mistakes in the PTY/tmux terminal bridge under… | 135 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Keys | 105 |
 
 ### concerns
@@ -200,12 +200,12 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 379 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gaps | 79 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) |  | 265 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | recovery sync resets a finished node; macOS forward-guard branches unrun | 265 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 49 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 63 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) |  | 49 |
-| [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 103 |
+| [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 111 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 117 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 40 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 58 |
@@ -216,10 +216,10 @@
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 156 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 384 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 85 |
-| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) |  | 329 |
+| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Host-verification review suggestions: open and fixed defects by file:line | 329 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 17 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 349 |
 | [typed-config-values](concerns/typed-config-values.md) | Gaps | 27 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) |  | 173 |
-| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) |  | 102 |
+| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | oversights. See… | 102 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 159 |
