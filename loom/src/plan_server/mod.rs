@@ -41,6 +41,8 @@ mod authoring_tests;
 #[cfg(test)]
 mod browser_tests;
 #[cfg(test)]
+mod context_contract_tests;
+#[cfg(test)]
 mod gate_tests;
 #[cfg(test)]
 mod ids_tests;
