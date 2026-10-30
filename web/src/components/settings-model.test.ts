@@ -68,12 +68,14 @@ describe("sectionRows", () => {
     expect(models?.caption).toBe("model and effort per session kind");
   });
 
-  it("pairs plan into four rows", () => {
+  it("pairs plan into six rows", () => {
     const plan = sections[5];
-    expect(plan?.rows).toHaveLength(4);
+    expect(plan?.rows).toHaveLength(6);
     expect(plan?.rows.map((row) => rowLabel(row))).toEqual([
       "document_summary",
       "overview",
+      "summary_backend",
+      "summary_codex",
       "spec_authoring",
       "plan_authoring",
     ]);

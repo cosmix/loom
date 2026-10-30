@@ -326,7 +326,7 @@ it("renders the lock notice and leaves children last inside the header", () => {
   const note = screen.getByRole("note");
   expect(note.textContent).toBe("This plan is running.");
   expect(note.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
-  for (const name of ["bg-muted", "rounded-lg", "gap-2", "px-2.5", "py-2", "text-[12.5px]"]) {
+  for (const name of ["bg-muted", "rounded-[8px]", "gap-2", "px-2.5", "py-2", "text-[12.5px]"]) {
     expect(note.classList.contains(name)).toBe(true);
   }
   expect(container.querySelector("header")?.lastElementChild).toBe(

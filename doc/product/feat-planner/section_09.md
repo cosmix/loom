@@ -467,9 +467,10 @@ with section 04. The user selects the background summary backend with `[plan] su
 `claude` (default) or `codex`. The table's summary defaults apply to Claude. For Codex,
 `[plan] summary_codex_model` defaults to `gpt-6.1-terra` and `summary_codex_effort` to `high`.
 A Codex summary job runs `codex exec` in the background with the workspace-write sandbox
-rooted at the project, plus write access to the runtime directory
-(`~/.loom/plan/<project-key>/`). It has no tmux attach link; the server console prints the job's
-log path (`<runtime>/codex-logs/<session>.log`), and it records no cost.
+rooted at the project, plus write access to `drafts/` and `claims/` in the runtime directory
+(`~/.loom/plan/<project-key>/`). It has no tmux attach link; the running rebuild's record in the
+summary panel shows the job's log path (`<runtime>/codex-logs/<session>.log`) instead, and it
+records no cost.
 
 The pressure steps keep the existing `[pressure]` keys
 (`doc/loom/knowledge/conventions/model-and-effort-config.md`), so a pressure run started from the

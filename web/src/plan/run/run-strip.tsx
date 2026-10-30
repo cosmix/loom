@@ -1,48 +1,26 @@
 import { useAtomValue } from "jotai";
 
-import { Button } from "@/components/ui/button";
 import type { RunStrip as Strip } from "@/plan/api/schema-run";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import "@/plan/header/activity.css";
-import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
-import { ActivityGlyph, ActivityTile } from "@/plan/ui/activity-glyphs";
+import { ActivityTile } from "@/plan/ui/activity-glyphs";
 
 import { DashboardButton } from "./dashboard-button";
 import { runStripAtom } from "./use-run";
 
-const daemonState = (strip: Strip) => (strip.daemon_running ? "running" : "stopped");
-
 function stripText(plan: string, strip: Strip): string {
-  return `${plan} · daemon ${daemonState(strip)} · ${strip.merged}/${strip.total} merged · ${strip.attention} need attention`;
+  const daemon = strip.daemon_running ? "running" : "stopped";
+  return `${plan} · daemon ${daemon} · ${strip.merged}/${strip.total} merged · ${strip.attention} need attention`;
 }
 
 /**
- * `bar` is the bordered strip; `row` is the footer row of the activity popover, which has room
- * for the full status line and ignores `compact`.
+ * The run's footer row in the activity popover, which has room for the full status line: the plan
+ * (as its file name, with the path in the title), the dashboard link and the merged progress.
  */
-export function RunStrip({
-  compact = false,
-  variant = "bar",
-}: {
-  compact?: boolean;
-  variant?: "bar" | "row";
-}) {
+export function RunStrip() {
   const strip = useAtomValue(runStripAtom);
   if (!strip?.plan) return null;
-  if (variant === "row") return <RowStrip plan={strip.plan} strip={strip} />;
-  return (
-    <div className="relative flex min-w-0 items-center gap-2 rounded-lg border border-border/70 bg-muted/30 px-2 py-1 text-sm">
-      {compact ? (
-        <CompactStrip plan={strip.plan} strip={strip} />
-      ) : (
-        <WideStrip plan={strip.plan} strip={strip} />
-      )}
-      <MergedProgress strip={strip} />
-    </div>
-  );
-}
-
-function RowStrip({ plan, strip }: { plan: string; strip: Strip }) {
+  const { plan } = strip;
   return (
     <div className="activity-row activity-run">
       <ActivityTile kind="running" paused={!strip.daemon_running} />
@@ -58,57 +36,6 @@ function RowStrip({ plan, strip }: { plan: string; strip: Strip }) {
       <DashboardButton variant="link" />
       <MergedProgress strip={strip} />
     </div>
-  );
-}
-
-/** Beside Changed since and Summary status in a narrow header: a button, details in a popover. */
-function CompactStrip({ plan, strip }: { plan: string; strip: Strip }) {
-  return (
-    <>
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-label={`Run status: daemon ${daemonState(strip)}, ${strip.attention} need attention`}
-          >
-            <ActivityGlyph
-              kind="running"
-              paused={!strip.daemon_running}
-              className={strip.daemon_running ? "" : "opacity-50"}
-            />
-            <span
-              className={`tabular-nums${strip.attention > 0 ? " font-medium text-(--tone-warning)" : ""}`}
-            >
-              {strip.attention}
-            </span>
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent aria-label="Run status" className="[overflow-wrap:anywhere]">
-          <p>
-            <StripStatusText plan={plan} strip={strip} />
-          </p>
-        </PopoverContent>
-      </Popover>
-      <DashboardButton variant="icon" />
-    </>
-  );
-}
-
-/**
- * The header cannot spare the repo-relative path: the line shows the file name and truncates,
- * the title carries the full text.
- */
-function WideStrip({ plan, strip }: { plan: string; strip: Strip }) {
-  return (
-    <>
-      <ActivityGlyph kind="running" paused={!strip.daemon_running} />
-      <span className="min-w-0 max-w-72 truncate" title={visibleControls(stripText(plan, strip))}>
-        <StripStatusText plan={plan.split("/").at(-1) ?? plan} strip={strip} />
-      </span>
-      <DashboardButton variant="link" />
-    </>
   );
 }
 

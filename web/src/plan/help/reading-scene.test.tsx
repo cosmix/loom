@@ -110,6 +110,6 @@ it("seeds the open passage without writing the reader's session storage", () => 
   const { container } = render(<ReadingScene />);
 
   expect(container.querySelector(".concept-passage-chip")).not.toBeNull();
-  const written = Object.keys(sessionStorage).filter((key) => key.startsWith("loom-plan:concept:"));
+  const written = Object.keys(sessionStorage).filter((key) => key.includes(":concept:"));
   expect(written).toEqual([]);
 });

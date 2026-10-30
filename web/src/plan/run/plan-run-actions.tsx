@@ -46,7 +46,11 @@ function WrittenPlanActions({ path }: { path: string }) {
   );
 }
 
-/** The offer of `kind` the checklist makes for this plan (or for no plan in particular). */
+/**
+ * The offer of `kind` the checklist makes for this plan. An offer with no target (`refine_spec`,
+ * `new_metaplan_round`) is the feature's, so it applies only to a plan under that feature: the
+ * checklist is the last visited feature's, and a standalone plan has none to be offered.
+ */
 export function findOffer(
   checklist: ChecklistView | null,
   kind: OfferKind,
@@ -57,9 +61,10 @@ export function findOffer(
     ...(checklist?.secondary ?? []),
     ...(checklist?.items.map((item) => item.offer) ?? []),
   ];
+  const inFeature = checklist !== null && path.startsWith(`doc/plans/${checklist.feature}/`);
   return offers.find(
     (offer): offer is OfferView =>
-      offer?.kind === kind && (offer.target === path || offer.target === null),
+      offer?.kind === kind && (offer.target === path || (offer.target === null && inFeature)),
   );
 }
 

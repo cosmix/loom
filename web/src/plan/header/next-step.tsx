@@ -6,9 +6,10 @@ import { OfferButton } from "@/plan/offers/offer-button";
 import { DocMark } from "@/plan/ui/doc-mark";
 import { STEP_DOC_KIND } from "@/plan/ui/glyphs";
 
-// Primary button measures (30px, 13px/600); a long offer label wraps instead of overflowing.
+// DisabledReason owns the primary measures (30px, radius 8px, 13px/600); a long offer label wraps
+// instead of overflowing, so the height becomes a minimum.
 const ACTION_CLASS =
-  "plan-next-action min-w-0 max-w-full [&_button]:h-auto [&_button]:min-h-[30px] [&_button]:rounded-lg [&_button]:px-3 [&_button]:py-1 [&_button]:text-left [&_button]:text-[13px] [&_button]:font-semibold [&_button]:whitespace-normal [&_span]:max-w-full [&_span]:break-words";
+  "plan-next-action min-w-0 max-w-full [&_button]:h-auto [&_button]:min-h-[30px] [&_button]:py-1 [&_button]:text-left [&_button]:whitespace-normal [&_span]:max-w-full [&_span]:break-words";
 
 // The narrow row gives the button what the rail summary leaves over: one line with an ellipsis,
 // and the disabled reason under it clamped the same way (rules in header.css).

@@ -10,9 +10,12 @@ use super::commands::Step;
 use super::session::{Phase, Session};
 use super::Bridge;
 use crate::plan_session::kind::SessionKind;
-use crate::plan_session::model::{Delivery, FailureKind};
+use crate::plan_session::model::{Activity, Delivery, FailureKind};
 use crate::plan_session::state::Input;
 
+/// How the failure of a Summary session's unsubmitted opening starts; the rebuild scheduler
+/// tells it apart by this, since no turn ran and its summaries deserve another session.
+pub const OPENING_NOT_SUBMITTED: &str = "opening not submitted";
 /// How long a pasted opening waits for its `UserPromptSubmit` before Enter is pressed again.
 const ENTER_AGAIN_AFTER: Duration = Duration::from_secs(2);
 /// How many times Enter is pressed again for one opening, inside the delivery timeout.
@@ -21,8 +24,8 @@ const ENTER_AGAIN_TIMES: u8 = 2;
 impl Bridge {
     /// A pasted opening with no `UserPromptSubmit` gets Enter again when one is due. A Summary
     /// session whose opening is still unsubmitted at the delivery timeout fails the way a
-    /// failed paste of it does; the scheduler then marks its unsealed summaries failed until
-    /// they are invalidated again or the rebuild button is pressed.
+    /// failed paste of it does; the scheduler then requeues its unsealed summaries once, and
+    /// marks them failed when the next session's opening goes the same way.
     pub(super) fn opening_step(&self, id: &str) {
         let timeout = self.config.delivery_timeout;
         let claimed = self.with_session(id, |session, step| {
@@ -64,7 +67,9 @@ impl Session {
         opening && matches!(self.kind, SessionKind::Summary) && self.flow.end.is_none()
     }
 
-    /// The failure of a live Summary session whose opening is unsubmitted at the timeout.
+    /// The failure of a live Summary session whose opening is unsubmitted at the timeout. Only
+    /// an idle session is unsubmitted: one working or on a permission prompt took the opening
+    /// and lost its `UserPromptSubmit`, and has a turn to finish.
     fn unsubmitted_opening(
         &mut self,
         timeout: Duration,
@@ -72,21 +77,26 @@ impl Session {
         step: &mut Step,
     ) -> Option<String> {
         let overdue = self.waited(now).is_some_and(|waited| waited >= timeout);
-        if !overdue || !self.opening_fails() || !matches!(self.phase, Phase::Live) {
+        if !overdue || !self.opening_fails() || !self.idle_and_live() {
             return None;
         }
         let late = self.flow.delivering.take()?;
         self.set_delivery(&late.item_id, Delivery::Undelivered, step);
-        Some(format!("opening not submitted within {timeout:?}"))
+        Some(format!("{OPENING_NOT_SUBMITTED} within {timeout:?}"))
+    }
+
+    fn idle_and_live(&self) -> bool {
+        matches!(self.phase, Phase::Live) && self.machine.activity() == Activity::Idle
     }
 
     /// The pane to press Enter in when a pasted opening is due another: every
     /// [`ENTER_AGAIN_AFTER`], at most [`ENTER_AGAIN_TIMES`], inside the timeout. Only Enter, as
     /// the text is already in the box. A chat message never gets one: its box may hold text
-    /// the user has half typed.
+    /// the user has half typed. A session not idle gets none either: Enter would answer its
+    /// permission prompt.
     fn enter_again(&mut self, timeout: Duration, now: Instant) -> Option<(String, String)> {
         let waited = self.waited(now).filter(|waited| *waited < timeout)?;
-        if !matches!(self.phase, Phase::Live) {
+        if !self.idle_and_live() {
             return None;
         }
         let presses = self.flow.delivering.as_mut()?.opening.as_mut()?;
@@ -96,5 +106,32 @@ impl Session {
         }
         *presses += 1;
         Some((self.socket().to_owned(), self.target().to_owned()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::thread;
+
+    use serde_json::json;
+
+    use super::super::fake_host::*;
+    use super::*;
+    use crate::plan_session::kind::SessionKind::Summary;
+    use crate::plan_session::model::SessionState;
+
+    #[test]
+    fn a_session_not_idle_gets_no_enter_and_does_not_fail() {
+        let timeout = Duration::from_millis(2500);
+        let h = Harness::ready(|c| c.delivery_timeout = timeout);
+        let s = h.start(Summary);
+        h.spool(&s, "SessionStart", json!({"source": "startup"}));
+        wait_until("the opening", || h.host.delivered(&s.socket) == [OPENING]);
+        h.permission(&s, "Bash", json!({"command": "true"}));
+        h.wait_state(&s, SessionState::Permission);
+        thread::sleep(timeout + Duration::from_millis(500));
+        let presses = h.host.count(&Call::PressEnter(s.socket.clone()));
+        assert_eq!(presses, 0, "Enter would answer the permission prompt");
+        assert!(h.ended(&s.id).is_none(), "the session has a turn to finish");
     }
 }

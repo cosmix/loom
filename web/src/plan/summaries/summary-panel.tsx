@@ -2,7 +2,12 @@ import { useAtomValue } from "jotai/react";
 import { useId, useState, type ReactNode } from "react";
 
 import { QuotaMeters } from "@/components/quota-meters";
-import type { SummaryPanel as SummaryPanelData, TokenVector } from "@/plan/api/schema-summaries";
+import type {
+  RunningRebuild,
+  SummaryPanel as SummaryPanelData,
+  TokenVector,
+} from "@/plan/api/schema-summaries";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { authorBlockReasonAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { useSummaryActions } from "./state";
@@ -10,7 +15,11 @@ import { useSummaryActions } from "./state";
 export function SummaryPanel({ panel, nowSecs }: { panel: SummaryPanelData; nowSecs: number }) {
   return (
     <div className="w-full min-w-0 max-w-full space-y-4 text-[13px] [overflow-wrap:anywhere]">
-      {panel.read_only !== null && <p className="text-muted-foreground">{panel.read_only}</p>}
+      {panel.read_only !== null && (
+        <p className="text-muted-foreground">
+          <Untrusted text={panel.read_only} />
+        </p>
+      )}
       <RebuildActivity panel={panel} />
       <Section title="Last rebuild">
         <TokenFigures tokens={panel.last?.tokens} />
@@ -66,26 +75,46 @@ function Section({
   );
 }
 
+/**
+ * A Claude session has a tmux terminal to attach to, which this panel does not offer; a Codex job
+ * has none, so its log file is the way to follow it.
+ */
+function RunningRebuildSection({ running }: { running: RunningRebuild }) {
+  return (
+    <section aria-label="Running rebuild" className="space-y-1">
+      <h3 className="font-medium">
+        Rebuilding {running.done} of {running.total}
+      </h3>
+      <ul className="space-y-1 font-mono text-xs">
+        {running.ids.map((id) => (
+          <li key={id}>
+            <Untrusted text={id} />
+          </li>
+        ))}
+      </ul>
+      {running.log_path !== null && (
+        <p className="text-muted-foreground">
+          Log:{" "}
+          <code className="font-mono text-xs">
+            <Untrusted text={running.log_path} />
+          </code>
+        </p>
+      )}
+    </section>
+  );
+}
+
 function RebuildActivity({ panel }: { panel: SummaryPanelData }) {
   return (
     <>
-      {panel.running !== null && (
-        <section aria-label="Running rebuild" className="space-y-1">
-          <h3 className="font-medium">
-            Rebuilding {panel.running.done} of {panel.running.total}
-          </h3>
-          <ul className="space-y-1 font-mono text-xs">
-            {panel.running.ids.map((id) => (
-              <li key={id}>{id}</li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {panel.running !== null && <RunningRebuildSection running={panel.running} />}
       {panel.queue.length > 0 && (
         <Section title="Queue">
           <ul className="space-y-1 font-mono text-xs">
             {panel.queue.map((id) => (
-              <li key={id}>{id}</li>
+              <li key={id}>
+                <Untrusted text={id} />
+              </li>
             ))}
           </ul>
         </Section>
@@ -95,8 +124,12 @@ function RebuildActivity({ panel }: { panel: SummaryPanelData }) {
           <ul className="space-y-2">
             {panel.failed.map(({ id, error }) => (
               <li key={id}>
-                <span className="font-mono text-xs">{id}</span>
-                <p className="text-muted-foreground">{error}</p>
+                <span className="font-mono text-xs">
+                  <Untrusted text={id} />
+                </span>
+                <p className="text-muted-foreground">
+                  <Untrusted text={error} />
+                </p>
               </li>
             ))}
           </ul>
@@ -104,7 +137,7 @@ function RebuildActivity({ panel }: { panel: SummaryPanelData }) {
       )}
       {panel.start_error !== null && (
         <p role="alert" className="text-destructive">
-          {panel.start_error}
+          <Untrusted text={panel.start_error} />
         </p>
       )}
     </>
@@ -128,7 +161,9 @@ function TerminalClaim({ id, canRelease }: { id: string; canRelease: boolean }) 
   return (
     <li className="min-w-0 space-y-1">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-        <span className="min-w-0 font-mono text-xs">{id}</span>
+        <span className="min-w-0 font-mono text-xs">
+          <Untrusted text={id} />
+        </span>
         {canRelease && (
           <DisabledReason
             reason={reason}
@@ -144,7 +179,7 @@ function TerminalClaim({ id, canRelease }: { id: string; canRelease: boolean }) 
       </div>
       {canRelease && error !== null && (
         <p role="alert" className="text-destructive">
-          {error}
+          <Untrusted text={error} />
         </p>
       )}
     </li>

@@ -63,14 +63,14 @@ export interface DocHeadingProps {
 
 const FOCUS = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 /** The `.m` status chip: fill by tone (go, warn, danger wash 18%); the icon alone carries the tone. */
-const CHIP_FILL: Record<HeadingTone, string> = {
+export const CHIP_FILL: Record<HeadingTone, string> = {
   neutral: "bg-muted",
   ok: "bg-muted",
   warning: "bg-[color-mix(in_oklch,var(--tone-warning)_18%,transparent)]",
   danger: "bg-[color-mix(in_oklch,var(--tone-blocked)_18%,transparent)]",
   accent: "bg-[color-mix(in_oklch,var(--tone-executing)_18%,transparent)]",
 };
-const CHIP_ICON: Record<HeadingTone, string> = {
+export const CHIP_ICON: Record<HeadingTone, string> = {
   neutral: "text-muted-foreground",
   ok: "text-(--tone-completed)",
   warning: "text-(--tone-warning)",

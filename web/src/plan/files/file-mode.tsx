@@ -5,12 +5,13 @@ import { useLocation } from "react-router";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { useFileSocket } from "@/plan/files/api";
 import { DiffPage } from "@/plan/diff";
-import { parseAddress } from "@/plan/files/address";
+import { parseAddress, type FileAddress } from "@/plan/files/address";
 import { treeAtom } from "@/plan/files/atoms";
 import { featureCrumb, useFeatureFacts } from "@/plan/files/heading-parts";
 import { ReadingColumn } from "@/plan/files/reading-column";
 import { Tree } from "@/plan/files/tree";
 import { DrawerOpener, TreeDrawer, TreeDrawerRoot, useTreeDrawer } from "@/plan/files/tree-drawer";
+import { SentenceText } from "@/plan/concept/sentence-text";
 import { OfferButton } from "@/plan/offers/offer-button";
 import { featuresAtom } from "@/plan/state/atoms";
 import { DocHeading } from "@/plan/ui/doc-heading";
@@ -43,7 +44,9 @@ function GapView({
       {item ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-6 pb-6 text-[13px]">
           <span className="text-muted-foreground">Step {item.step}</span>
-          <span className="font-medium">{item.text}</span>
+          <span className="font-medium" style={{ unicodeBidi: "isolate", direction: "ltr" }}>
+            <SentenceText text={item.text} />
+          </span>
           {item.offer && <OfferButton offer={item.offer} />}
         </div>
       ) : (
@@ -68,6 +71,24 @@ function NoDocument({ search, opener }: { search: URLSearchParams; opener?: JSX.
       )}
     </>
   );
+}
+
+/** What the reading region holds: a diff, a document, or the no-document state. */
+function DocumentPane({
+  address,
+  hasPath,
+  search,
+  opener,
+}: {
+  address: FileAddress;
+  hasPath: boolean;
+  search: URLSearchParams;
+  opener?: JSX.Element;
+}): JSX.Element {
+  const tree = useAtomValue(treeAtom);
+  if (!hasPath) return <NoDocument search={search} opener={opener} />;
+  if (address.diff) return <DiffPage path={address.path} kind={address.diff} turn={address.turn} />;
+  return <ReadingColumn path={address.path} anchor={address.anchor} tree={tree} opener={opener} />;
 }
 
 /** The Files tab: the tree beside the reading column, a drawer on narrow screens. */
@@ -105,18 +126,7 @@ export function FileMode(): JSX.Element {
           tabIndex={-1}
           className="min-w-0 flex-1 overflow-y-auto outline-none"
         >
-          {hasPath && address.diff ? (
-            <DiffPage path={address.path} kind={address.diff} turn={address.turn} />
-          ) : hasPath ? (
-            <ReadingColumn
-              path={address.path}
-              anchor={address.anchor}
-              tree={tree}
-              opener={opener}
-            />
-          ) : (
-            <NoDocument search={search} opener={opener} />
-          )}
+          <DocumentPane address={address} hasPath={hasPath} search={search} opener={opener} />
         </div>
       </div>
     </TreeDrawerRoot>

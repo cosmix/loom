@@ -227,14 +227,17 @@ it("shows the config block beside the actions and re-enables Pressure-test after
   );
 });
 
+// The fixture checklist is the demo feature's; a null-target offer is that feature's own.
+const featurePath = "doc/plans/demo/PLAN-example.md";
+const review: OfferView = { id: "review-id", kind: "refine_spec", label: "Review", target: null };
+
 it("dispatches the real checklist offers for a done plan", () => {
   const store = createStore();
-  const review: OfferView = { id: "review-id", kind: "refine_spec", label: "Review", target: null };
   const round: OfferView = {
     id: "round-id",
     kind: "new_metaplan_round",
     label: "Round",
-    target: path,
+    target: featurePath,
   };
   store.set(checklistAtom, {
     ...checklistViewSchema.parse(fixture.checklists[0]),
@@ -247,7 +250,7 @@ it("dispatches the real checklist offers for a done plan", () => {
   try {
     render(
       <Provider store={store}>
-        <PlanRunActions path={path} state="done" />
+        <PlanRunActions path={featurePath} state="done" />
       </Provider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Review what was built" }));
@@ -258,6 +261,22 @@ it("dispatches the real checklist offers for a done plan", () => {
     unregisterReview();
     unregisterRound();
   }
+});
+
+it("offers a done standalone plan nothing from the last visited feature's checklist", () => {
+  const store = createStore();
+  const round: OfferView = { ...review, id: "round-id", kind: "new_metaplan_round" };
+  store.set(checklistAtom, {
+    ...checklistViewSchema.parse(fixture.checklists[0]),
+    primary: review,
+    secondary: [round],
+  });
+  const { container } = render(
+    <Provider store={store}>
+      <PlanRunActions path={path} state="done" />
+    </Provider>,
+  );
+  expect(container.innerHTML).toBe("");
 });
 
 it("renders no button for a done-plan offer that does not exist", () => {

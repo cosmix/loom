@@ -238,7 +238,8 @@
   transform: scale(1.12);
 }
 
-.concept-run-cap:focus-visible {
+.concept-run-cap:focus-visible,
+.concept-plan-glyph:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
@@ -360,11 +361,6 @@
 
 .concept-plan-glyph:hover {
   color: var(--foreground);
-}
-
-.concept-plan-glyph:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
 }
 
 /* Arrival flash: a --primary wash fading over about one second. */

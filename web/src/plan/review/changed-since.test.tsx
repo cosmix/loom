@@ -189,13 +189,6 @@ it("resolveRef refusal shown", async () => {
   expect(await screen.findByText("The ref does not name a known commit")).toBeTruthy();
 });
 
-it("compact shows only a dot and count with the full accessible name", () => {
-  mount({ compact: true });
-
-  const control = screen.getByRole("button", { name: "Changed since you looked · 3" });
-  expect(control.textContent).toBe("● 3");
-});
-
 it("a reviewed removal is marked seen without inventing a current hash", async () => {
   const { store } = mount();
   await openList();
@@ -249,8 +242,8 @@ it("closing after mark all seen puts focus on the page main, not the body", asyn
   main.remove();
 });
 
-it("the row variant shows the title and count, and opens the same dialog and returns focus", async () => {
-  mount({ variant: "row" });
+it("the row shows the title and count, and opens the dialog and returns focus", async () => {
+  mount();
 
   const opener = await screen.findByRole("button", { name: "Changed since you looked · 3" });
   expect(opener.textContent).toContain("Changed since you looked");

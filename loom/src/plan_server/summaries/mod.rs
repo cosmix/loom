@@ -7,6 +7,8 @@ pub mod rebuilds;
 pub mod routes;
 pub mod scheduler;
 pub mod spawner;
+#[cfg(test)]
+mod tests_shutdown;
 
 pub use routes::routes;
 
@@ -16,6 +18,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use self::backend::BackendSpawner;
+use self::codex_spawner::FORCE_AFTER;
 use self::rebuilds::Rebuilds;
 use super::concept::ConceptState;
 use super::context::PlanContext;
@@ -154,18 +157,28 @@ fn run_ticks(ctx: &Weak<PlanContext>, rebuilds: &Weak<Rebuilds>) {
 }
 
 /// The first Ctrl-C drops the queue and the question and stops the quota poller. The bridge
-/// drain ends bridge sessions; this drain also stops the Codex jobs through `stop_all`, which
-/// the bridge does not know.
+/// drain ends bridge sessions; this drain also stops the Codex jobs, which the bridge does not
+/// know, and stays until they are gone: up to [`FORCE_AFTER`], then they are forced. The abort
+/// ends that wait and forces them itself, without blocking, since the process exits right after.
 fn register_shutdown(ctx: &Arc<PlanContext>, rebuilds: &Arc<Rebuilds>, stop: Arc<AtomicBool>) {
-    let (weak, abort_stop) = (Arc::downgrade(rebuilds), Arc::clone(&stop));
+    let (weak, abort_weak) = (Arc::downgrade(rebuilds), Arc::downgrade(rebuilds));
+    let (abort_stop, aborted) = (Arc::clone(&stop), Arc::new(AtomicBool::new(false)));
+    let wait_aborted = Arc::clone(&aborted);
     ctx.shutdown().register(ShutdownHook {
         name: "summaries",
         drain: Box::new(move || {
             stop.store(true, Ordering::SeqCst);
             if let Some(rebuilds) = weak.upgrade() {
                 rebuilds.server_stopping();
+                rebuilds.force_stopped_jobs(FORCE_AFTER, &wait_aborted);
             }
         }),
-        abort: Box::new(move || abort_stop.store(true, Ordering::SeqCst)),
+        abort: Box::new(move || {
+            abort_stop.store(true, Ordering::SeqCst);
+            aborted.store(true, Ordering::SeqCst);
+            if let Some(rebuilds) = abort_weak.upgrade() {
+                rebuilds.force_stopped_jobs(Duration::ZERO, &aborted);
+            }
+        }),
     });
 }

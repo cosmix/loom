@@ -20,6 +20,17 @@ describe("summary wire schemas", () => {
     expect(summaryPanelSchema.parse({ ...panel, today: {}, week: {} }).today).toEqual({});
   });
 
+  it("requires the running rebuild's log path, a string for a Codex job and null otherwise", () => {
+    const withLog = (log_path: string | null | undefined) => ({
+      ...panel,
+      running: { ...panel.running, log_path },
+    });
+    const path = "/home/me/.loom/summary-1.log";
+    expect(summaryPanelSchema.parse(withLog(path)).running?.log_path).toBe(path);
+    expect(summaryPanelSchema.parse(withLog(null)).running?.log_path).toBeNull();
+    expect(summaryPanelSchema.safeParse(withLog(undefined)).success).toBe(false);
+  });
+
   it("parses the question and rejects an unknown estimate basis", () => {
     expect(summaryQuestionSchema.parse(question)).toEqual(question);
     expect(summaryQuestionSchema.safeParse({ ...question, basis: "unknown" }).success).toBe(false);

@@ -9,6 +9,19 @@ use crate::planning::summary::cost::Trigger;
 /// Why a summary fails when a second normal end leaves it claimed but unsealed.
 pub(super) const ENDED_UNSEALED: &str = "the summary session ended twice without sealing it";
 
+/// What a session's end does to its unsealed ids.
+#[derive(Clone, Copy)]
+enum SessionEnd<'a> {
+    /// A normal end: an id the session claimed was worked on, one it never reached was not.
+    Closed,
+    /// A job's clean exit: it exits by itself, so an id it never claimed counts as worked too.
+    JobClosed,
+    /// The opening never went in: nothing ran, so the ids get one more session.
+    OpeningUnsubmitted(&'a str),
+    /// A failure: the ids fail with it.
+    Failed(&'a str),
+}
+
 impl Scheduler {
     pub fn running_session(&self) -> Option<&str> {
         self.running
@@ -114,7 +127,14 @@ impl Scheduler {
 
     /// The session ended: its unsealed ids go back to the queue; then try a start.
     pub fn session_ended(&mut self, session: &str, now: Instant, spawner: &dyn SessionSpawner) {
-        self.end_session(session, None, now, spawner);
+        self.end_session(session, SessionEnd::Closed, now, spawner);
+    }
+
+    /// A job the spawner runs itself exited cleanly with ids unsealed. A Claude session never
+    /// exits by itself, so the stall timer bounds it; a job would restart at once and forever,
+    /// so its first such end requeues and marks every unsealed id and the next fails them.
+    pub fn job_ended(&mut self, session: &str, now: Instant, spawner: &dyn SessionSpawner) {
+        self.end_session(session, SessionEnd::JobClosed, now, spawner);
     }
 
     /// The session ended with `reason`: its unsealed ids fail with it; then try a start.
@@ -125,7 +145,24 @@ impl Scheduler {
         now: Instant,
         spawner: &dyn SessionSpawner,
     ) {
-        self.end_session(session, Some(reason), now, spawner);
+        self.end_session(session, SessionEnd::Failed(reason), now, spawner);
+    }
+
+    /// The session's opening was never submitted: its unsealed ids requeue with the unsealed
+    /// mark, and when the next session of a marked id ends the same way they fail with `reason`.
+    pub fn opening_unsubmitted(
+        &mut self,
+        session: &str,
+        reason: &str,
+        now: Instant,
+        spawner: &dyn SessionSpawner,
+    ) {
+        self.end_session(
+            session,
+            SessionEnd::OpeningUnsubmitted(reason),
+            now,
+            spawner,
+        );
     }
 
     /// Stop a session that sealed nothing for the timeout, releasing its claims; its unsealed
@@ -152,11 +189,11 @@ impl Scheduler {
         }
     }
 
-    /// The session is gone: its unsealed ids return to the queue, or fail with `failure`.
+    /// The session is gone: its unsealed ids return to the queue or fail, as `end` says.
     fn end_session(
         &mut self,
         session: &str,
-        failure: Option<&str>,
+        end: SessionEnd<'_>,
         now: Instant,
         spawner: &dyn SessionSpawner,
     ) {
@@ -169,29 +206,47 @@ impl Scheduler {
             .filter(|id| !running.sealed.contains(*id) && !self.failed.contains_key(*id))
             .cloned()
             .collect();
-        let reason = failure.map_or(StopReason::Ended, |why| StopReason::Failed(why.to_owned()));
+        let reason = match end {
+            SessionEnd::Closed | SessionEnd::JobClosed => StopReason::Ended,
+            SessionEnd::OpeningUnsubmitted(why) | SessionEnd::Failed(why) => {
+                StopReason::Failed(why.to_owned())
+            }
+        };
         let session = session.to_owned();
         self.out.push(SchedulerEvent::Stopped { session, reason });
-        match failure {
-            Some(why) => self.fail(unsealed, why),
-            None => self.requeue_unsealed(unsealed, &running),
+        let claimed = |id: &String| running.claimed.contains(id);
+        match end {
+            SessionEnd::Closed => {
+                self.requeue_unsealed(unsealed, &running, claimed, ENDED_UNSEALED);
+            }
+            SessionEnd::JobClosed => {
+                self.requeue_unsealed(unsealed, &running, |_| true, ENDED_UNSEALED);
+            }
+            SessionEnd::OpeningUnsubmitted(why) => {
+                self.requeue_unsealed(unsealed, &running, |_| true, why);
+            }
+            SessionEnd::Failed(why) => self.fail(unsealed, why),
         }
         self.try_start(now, spawner);
     }
 
-    /// After a normal end, requeue the unsealed ids. An id the session claimed was worked on
-    /// and released without a seal; when the previous normal end did the same to it, it fails
-    /// instead (a summary whose seal never validates would otherwise rebuild forever, at a
-    /// token cost every round). An id the session never claimed (it ended before reaching it)
-    /// requeues and keeps its mark.
-    fn requeue_unsealed(&mut self, unsealed: Vec<String>, running: &Running) {
-        let worked = |id: &String| running.claimed.contains(id);
+    /// Requeue the unsealed ids, bounded: an id `worked` says the session spent itself on gets
+    /// the mark, and when the previous end marked it already it fails with `error` instead (a
+    /// summary whose seal never validates would otherwise rebuild forever, at a token cost every
+    /// round). Any other id (the session ended before reaching it) requeues and keeps its mark.
+    fn requeue_unsealed(
+        &mut self,
+        unsealed: Vec<String>,
+        running: &Running,
+        worked: impl Fn(&String) -> bool,
+        error: &str,
+    ) {
         let (twice, again): (Vec<String>, Vec<String>) = unsealed
             .into_iter()
             .partition(|id| worked(id) && self.unsealed.contains(id));
         self.unsealed
             .extend(again.iter().filter(|id| worked(id)).cloned());
-        self.fail(twice, ENDED_UNSEALED);
+        self.fail(twice, error);
         self.requeue(again, &running.vias);
     }
 

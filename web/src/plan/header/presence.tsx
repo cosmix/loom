@@ -3,6 +3,7 @@ import { UsersIcon } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import type { HolderView, PresenceEntry } from "@/plan/api/schema";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { NamePrompt } from "@/plan/header/name-prompt";
 import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
 import { authoringAtom, presenceAtom, youAtom } from "@/plan/state/atoms";
@@ -84,15 +85,24 @@ function PresenceRow({
   return (
     <li className="flex flex-col rounded-md px-1.5 py-1">
       <span className="flex flex-wrap items-baseline gap-x-1.5 text-[13px] font-medium">
-        <span>{entry.name}</span>
+        <Untrusted text={entry.name} />
         {you && <span className="text-muted-foreground">(you)</span>}
         {entry.holder && <span className="text-(--tone-executing)">authoring</span>}
         {entry.away && (
-          <span className="text-(--tone-warning)">away{frees ? `, frees at ${frees}` : ""}</span>
+          <span className="text-(--tone-warning)">
+            away
+            {frees && (
+              <>
+                , frees at <Untrusted text={frees} />
+              </>
+            )}
+          </span>
         )}
       </span>
       {entry.reading && (
-        <span className="truncate text-xs text-muted-foreground">{entry.reading}</span>
+        <span className="truncate text-xs text-muted-foreground">
+          <Untrusted text={entry.reading} />
+        </span>
       )}
     </li>
   );

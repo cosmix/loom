@@ -6,10 +6,10 @@ use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ExitStatus};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Context, Result};
 use nix::sys::signal::{killpg, Signal};
@@ -19,19 +19,28 @@ mod guard;
 mod registry;
 
 use self::guard::{codex_snapshot, guarded_outcome};
-use self::registry::{discard, lock, register, terminate, terminate_all, Job, Jobs, Registry};
+use self::registry::{
+    discard, force_stopped, lock, register, terminate, terminate_all, Job, Jobs, Registry,
+};
 use super::rebuilds::Rebuilds;
 use super::scheduler::SessionSpawner;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::lifecycle::{line, safe};
 use crate::plan_server::pressure::config_guard::{self, ConfigSnapshot};
 use crate::plan_session::bridge::EndOutcome;
+use crate::plan_session::sandbox::ensure_runtime_grants;
+use crate::planning::runtime::{RuntimePaths, DRAFTS_DIR};
 use crate::planning::summary::claims::clear_session_claims;
 use crate::planning::summary::config::SummaryModels;
 use crate::pressure::codex_run::{codex_exec_args, spawn_codex_logged};
 
+/// The claims directory's name under the runtime directory, as `RuntimePaths` joins it.
+const CLAIMS_DIR: &str = "claims";
+
 /// The `codex exec` command line for a summary job: the project is the working directory and
-/// only `runtime` is writable besides it; the sandbox is never widened.
+/// only `drafts/` and `claims/` under `runtime` are writable besides it, the two directories the
+/// Claude summary sandbox grants. The rest of `runtime` holds other sessions' permission
+/// answers, settings and launch scripts and stays read-only; the sandbox is never widened.
 pub fn codex_summary_args(
     model: &str,
     effort: &str,
@@ -39,7 +48,8 @@ pub fn codex_summary_args(
     runtime: &Path,
     prompt: &str,
 ) -> Vec<String> {
-    codex_exec_args(root, &[runtime], prompt, model, effort)
+    let (drafts, claims) = (runtime.join(DRAFTS_DIR), runtime.join(CLAIMS_DIR));
+    codex_exec_args(root, &[&drafts, &claims], prompt, model, effort)
 }
 
 /// The job prompt with the assigned ids and the runtime directory filled in.
@@ -81,19 +91,35 @@ struct Launch {
     codex_before: BTreeMap<PathBuf, String>,
 }
 
-/// Session ids of Codex jobs start with this; a Claude session id is a UUID.
-const SESSION_PREFIX: &str = "codex-";
+/// Session ids of Codex jobs start with this; a Claude session id is a UUID, whose first dash
+/// is at index 8. Only hex digits and dashes, as `LOOM_PLAN_SESSION` must be for
+/// `loom plan summary` to accept it (`planning/runtime.rs`, `check_state`).
+const SESSION_PREFIX: &str = "c0de-";
 
 /// Logs kept under `<runtime>/codex-logs`; older ones are removed when a job starts.
 const KEPT_LOGS: usize = 20;
+
+/// How long a process group asked to stop has before it is forced.
+pub(super) const FORCE_AFTER: Duration = Duration::from_secs(5);
 
 /// True for a session id this spawner issues, whether or not its job still runs.
 pub(super) fn is_codex_session(session: &str) -> bool {
     session.starts_with(SESSION_PREFIX)
 }
 
+/// The directory of the job logs under the runtime directory.
+fn logs_dir(runtime: &RuntimePaths) -> PathBuf {
+    runtime.dir.join("codex-logs")
+}
+
+/// The log of `session` in the logs directory.
+fn log_of(logs: &Path, session: &str) -> PathBuf {
+    logs.join(format!("{session}.log"))
+}
+
 /// A job stopped on request ends as a teardown whatever its exit status, so the scheduler
-/// requeues its ids instead of failing them.
+/// requeues its ids instead of failing them. Any other end keeps its exit outcome; a clean exit
+/// with ids unsealed is bounded by the scheduler (`Scheduler::job_ended`).
 pub(super) fn final_outcome(stopping: bool, outcome: EndOutcome) -> EndOutcome {
     if stopping {
         EndOutcome::TornDown
@@ -156,13 +182,21 @@ impl CodexSummarySpawner {
 }
 
 impl CodexSummarySpawner {
-    /// The session id, log path, command line and configuration snapshots of a new job.
-    fn prepare(&self, ctx: &Arc<PlanContext>, ids: &[String]) -> Result<Launch> {
-        let models = SummaryModels::load(ctx.root())?;
+    /// A new job's session id.
+    fn next_session(&self) -> Result<String> {
         let millis = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
         let counter = self.counter.fetch_add(1, Ordering::Relaxed);
-        let session = format!("{SESSION_PREFIX}{millis}-{counter}");
-        let logs = ctx.runtime().dir.join("codex-logs");
+        Ok(format!("{SESSION_PREFIX}{millis}-{counter}"))
+    }
+
+    /// The session id, log path, command line and configuration snapshots of a new job, with
+    /// its sandbox grants in place: `--add-dir` needs the directories, and the job cannot
+    /// create the lock file it locks.
+    fn prepare(&self, ctx: &Arc<PlanContext>, ids: &[String]) -> Result<Launch> {
+        let models = SummaryModels::load(ctx.root())?;
+        let session = self.next_session()?;
+        ensure_runtime_grants(ctx.runtime()).context("cannot create the codex summary grants")?;
+        let logs = logs_dir(ctx.runtime());
         std::fs::create_dir_all(&logs).context("cannot create codex summary log directory")?;
         let before =
             config_guard::snapshot(ctx.root()).context("cannot snapshot session configuration")?;
@@ -176,7 +210,7 @@ impl CodexSummarySpawner {
             &ctx.runtime().dir,
             &prompt,
         );
-        let log = logs.join(format!("{session}.log"));
+        let log = log_of(&logs, &session);
         Ok(Launch {
             session,
             log,
@@ -225,7 +259,7 @@ impl SessionSpawner for CodexSummarySpawner {
             discard(pid, &mut child);
             bail!("loom plan is stopping; no new summary session starts");
         }
-        prune_logs(&ctx.runtime().dir.join("codex-logs"));
+        prune_logs(&logs_dir(ctx.runtime()));
         self.watch(&ctx, &session, child, log.clone())?;
         line(&format!(
             "summaries: codex session {} logs to {}",
@@ -256,6 +290,15 @@ impl SessionSpawner for CodexSummarySpawner {
 
     fn stop_all(&self) {
         terminate_all(&self.jobs);
+    }
+
+    fn force_stopped(&self, grace: Duration, aborted: &AtomicBool) {
+        force_stopped(&self.jobs, grace, aborted);
+    }
+
+    fn log_path(&self, session: &str) -> Option<PathBuf> {
+        let ctx = self.ctx.upgrade().filter(|_| is_codex_session(session))?;
+        Some(log_of(&logs_dir(ctx.runtime()), session))
     }
 }
 
@@ -325,6 +368,8 @@ fn log_tail(path: &Path) -> String {
     String::from_utf8_lossy(&read().unwrap_or_default()).into_owned()
 }
 
+#[cfg(test)]
+mod launch_tests;
 #[cfg(test)]
 #[path = "codex_spawner_tests.rs"]
 mod tests;

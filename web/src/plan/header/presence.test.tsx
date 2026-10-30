@@ -111,6 +111,18 @@ describe("Presence", () => {
     expect(document.querySelector("img")).toBeNull();
   });
 
+  it("shows a name, a reading path and a free-up fallback with their controls spelled out", () => {
+    const list = openPresence(
+      [entry("eve", "Eve\u202E", { holder: true, away: true, reading: "doc/\u202Ea.md" })],
+      "soon\u202E",
+    );
+    const text = list.getByRole("listitem").textContent;
+    expect(text).toContain("Eve⟨U+202E⟩");
+    expect(text).toContain("doc/⟨U+202E⟩a.md");
+    expect(text).toContain("frees at soon⟨U+202E⟩");
+    expect(text).not.toContain("\u202E");
+  });
+
   it("asks for a name only while none is stored", () => {
     window.localStorage.removeItem("loom-plan-name");
     openPresence([entry("me", "Alex")]);

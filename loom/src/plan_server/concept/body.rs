@@ -89,7 +89,7 @@ fn section_number(project: &Project, of: &str) -> Option<u32> {
 }
 
 fn sentence(cx: &Cx, file: &SummaryFile, one: &format::Sentence, number: Option<u32>) -> Sentence {
-    let citations = citations(&one.links);
+    let citations = citations(cx, &one.links);
     let (rests_on, marks) = if citations.is_empty() {
         (Vec::new(), Vec::new())
     } else {
@@ -111,14 +111,18 @@ fn sentence(cx: &Cx, file: &SummaryFile, one: &format::Sentence, number: Option<
     }
 }
 
-fn citations(links: &[format::Link]) -> Vec<Citation> {
+/// The sentence's citations. A cited summary whose document is gone has no page to load and no
+/// mark, so its citation goes the way of an unresolved link; [`mark`] applies the same test.
+fn citations(cx: &Cx, links: &[format::Link]) -> Vec<Citation> {
     links
         .iter()
         .filter_map(|link| match &link.resolved {
-            LinkTarget::Sentence { summary, id } => Some(Citation::Sentence {
-                summary: summary.clone(),
-                id: id.clone(),
-            }),
+            LinkTarget::Sentence { summary, id } => summary_source(cx, summary)
+                .and_then(|path| doc_link(cx.project, &path))
+                .map(|_| Citation::Sentence {
+                    summary: summary.clone(),
+                    id: id.clone(),
+                }),
             LinkTarget::Source { path, anchor } => Some(Citation::Source {
                 path: path.to_string_lossy().into_owned(),
                 anchor: anchor.clone(),

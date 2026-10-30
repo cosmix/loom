@@ -283,8 +283,6 @@ function ComparisonList({ changes }: { changes: Change[] }) {
   );
 }
 
-type Variant = "button" | "row";
-
 /**
  * The footer row of the activity popover: a tile, the title and the count, in one button. It
  * spreads the props DialogTrigger hands its child (handlers, ARIA state and the ref).
@@ -310,15 +308,7 @@ function RowTrigger({ count, ...props }: ComponentProps<"button"> & { count: num
   );
 }
 
-function ChangedSinceWidget({
-  compact,
-  variant,
-  changes,
-}: {
-  compact: boolean;
-  variant: Variant;
-  changes: Change[];
-}) {
+function ChangedSinceWidget({ changes }: { changes: Change[] }) {
   const [open, setOpen] = useState(false);
   const opener = useRef<HTMLButtonElement>(null);
   if (!changes.length && !open) return null;
@@ -326,24 +316,7 @@ function ChangedSinceWidget({
     <Dialog open={open} onOpenChange={setOpen}>
       {changes.length > 0 && (
         <DialogTrigger asChild>
-          {variant === "row" ? (
-            <RowTrigger ref={opener} count={changes.length} />
-          ) : (
-            <Button
-              ref={opener}
-              variant="ghost"
-              size="sm"
-              aria-label={`Changed since you looked · ${changes.length}`}
-            >
-              {compact ? (
-                <>
-                  <span aria-hidden="true">●</span> {changes.length}
-                </>
-              ) : (
-                <>Changed since you looked · {changes.length}</>
-              )}
-            </Button>
-          )}
+          <RowTrigger ref={opener} count={changes.length} />
         </DialogTrigger>
       )}
       <DialogContent
@@ -365,17 +338,9 @@ function ChangedSinceWidget({
   );
 }
 
-/** `row` is the activity popover's footer row, which has room for the full title and ignores `compact`. */
-export function ChangedSinceControl({
-  compact = false,
-  variant = "button",
-}: {
-  compact?: boolean;
-  variant?: Variant;
-}) {
+/** The activity popover's footer row, which opens the comparison dialog. */
+export function ChangedSinceControl() {
   const changes = useChangedSince();
   const projectKey = useAtomValue(serverInfoAtom)?.project_key;
-  return projectKey ? (
-    <ChangedSinceWidget key={projectKey} compact={compact} variant={variant} changes={changes} />
-  ) : null;
+  return projectKey ? <ChangedSinceWidget key={projectKey} changes={changes} /> : null;
 }

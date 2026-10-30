@@ -16,7 +16,7 @@ import { usePressureOptions } from "./use-pressure";
 
 // DisabledReason fixes its button's look, so the ghost outline is laid over it from outside.
 const GHOST_LOOK =
-  "[&_button]:h-[30px] [&_button]:gap-1.5 [&_button]:rounded-lg [&_button]:border [&_button]:border-border [&_button]:bg-transparent [&_button]:px-3 [&_button]:text-[13px] [&_button]:font-medium [&_button]:text-foreground [&_button]:hover:bg-muted [&_button]:aria-disabled:hover:bg-transparent";
+  "[&_button]:h-[30px] [&_button]:gap-1.5 [&_button]:rounded-[8px] [&_button]:border [&_button]:border-border [&_button]:bg-transparent [&_button]:px-3 [&_button]:text-[13px] [&_button]:font-medium [&_button]:text-foreground [&_button]:hover:bg-muted [&_button]:aria-disabled:hover:bg-transparent";
 
 function EditedFiles({ paths }: { paths: string[] }): JSX.Element {
   return (
@@ -38,7 +38,7 @@ function SummaryActions({ plan }: { plan: string }): JSX.Element {
   return (
     <>
       <Link
-        className="inline-flex h-[30px] items-center gap-1.5 rounded-lg bg-primary px-3 text-[13px] font-semibold text-primary-foreground hover:bg-primary/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className="inline-flex h-[30px] items-center gap-1.5 rounded-[8px] bg-primary px-3 text-[13px] font-semibold text-primary-foreground hover:bg-primary/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         to={openDiff("head", plan)}
       >
         <ScanEye aria-hidden="true" className="size-3.5" />

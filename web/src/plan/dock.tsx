@@ -14,15 +14,16 @@ export function hasChatPanel(pathname: string): boolean {
  * offers, Send to author, the permission and conclusion announcements and the Brief dialog work
  * at every width, whether the panel is collapsed or the sheet is open or closed. Where no panel
  * mounts, the registrations also own the chat socket and attention watcher, except on `/new`,
- * whose kickoff route opens its own socket.
+ * whose kickoff route opens its own socket, and the `c` shortcut has no composer to focus.
  */
 export function Dock(): JSX.Element {
   const { pathname } = useLocation();
+  const panel = hasChatPanel(pathname);
   return (
     <>
-      <ChatRegistrations connect={!hasChatPanel(pathname) && pathname !== "/new"} />
+      <ChatRegistrations panel={panel} connect={!panel && pathname !== "/new"} />
       {/* Kickoff owns the transcript and replaces the chat panel with Taking shape. */}
-      {hasChatPanel(pathname) && <ChatPanel />}
+      {panel && <ChatPanel />}
     </>
   );
 }

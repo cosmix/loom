@@ -1,5 +1,5 @@
-//! The configuration guard of a Codex summary job: Codex must leave `.claude` and `.codex`
-//! unchanged.
+//! The configuration guard of a Codex summary job: Codex must leave `.claude`, `.codex`,
+//! `AGENTS.md` and `AGENTS.override.md` unchanged.
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -24,7 +24,7 @@ pub(super) fn guarded_outcome(
     match check() {
         Ok(false) => None,
         Ok(true) => Some(EndOutcome::Failed(
-            "codex changed the .claude or .codex configuration".into(),
+            "codex changed the .claude, .codex or AGENTS.md configuration".into(),
         )),
         Err(error) => Some(EndOutcome::Failed(format!(
             "cannot check codex session configuration: {error:#}"
@@ -32,13 +32,17 @@ pub(super) fn guarded_outcome(
     }
 }
 
-// The shared pressure guard watches Claude configuration only. Also fingerprint .codex,
+/// What Codex reads as configuration or standing instructions, relative to the project root.
+const CODEX_CONFIG: [&str; 3] = [".codex", "AGENTS.md", "AGENTS.override.md"];
+
+// The shared pressure guard watches Claude configuration only. Also fingerprint .codex and the
+// AGENTS.md and AGENTS.override.md Codex reads from the project root, files the job could write,
 // including symlink targets inside the repository, without reading through symlinks.
 pub(super) fn codex_snapshot(root: &Path) -> Result<BTreeMap<PathBuf, String>> {
     let root = root.canonicalize()?;
     let mut files = BTreeMap::new();
     let mut seen = HashSet::new();
-    let mut pending = vec![PathBuf::from(".codex")];
+    let mut pending: Vec<PathBuf> = CODEX_CONFIG.iter().map(PathBuf::from).collect();
     while let Some(path) = pending.pop() {
         if !seen.insert(path.clone()) {
             continue;

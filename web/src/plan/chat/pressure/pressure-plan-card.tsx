@@ -9,7 +9,7 @@ import { fetchDoc } from "@/plan/files/api";
 import { repoRel } from "@/plan/files/address";
 import { planStateChip, relativeTime } from "@/plan/files/heading-parts";
 import { standaloneAtom } from "@/plan/state/atoms";
-import type { HeadingTone } from "@/plan/ui/doc-heading";
+import { CHIP_FILL, CHIP_ICON, type HeadingTone } from "@/plan/ui/doc-heading";
 import { DocMark } from "@/plan/ui/doc-mark";
 import type { PlanState } from "@/plan/ui/glyphs";
 
@@ -50,21 +50,6 @@ function usePlanFacts(plan: string): PlanFacts {
   };
 }
 
-const CHIP_FILL: Record<HeadingTone, string> = {
-  neutral: "bg-muted",
-  ok: "bg-muted",
-  warning: "bg-[color-mix(in_oklch,var(--tone-warning)_18%,transparent)]",
-  danger: "bg-[color-mix(in_oklch,var(--tone-blocked)_18%,transparent)]",
-  accent: "bg-[color-mix(in_oklch,var(--tone-executing)_18%,transparent)]",
-};
-const CHIP_ICON: Record<HeadingTone, string> = {
-  neutral: "text-muted-foreground",
-  ok: "text-(--tone-completed)",
-  warning: "text-(--tone-warning)",
-  danger: "text-(--tone-blocked)",
-  accent: "text-(--tone-executing)",
-};
-
 function StatusChip({
   icon,
   tone = "neutral",
@@ -80,7 +65,7 @@ function StatusChip({
     <span
       title={title === undefined ? undefined : visibleControls(title)}
       className={cn(
-        "inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-xs font-medium",
+        "inline-flex h-6 items-center gap-1.5 rounded-[6px] px-2 text-xs font-medium",
         CHIP_FILL[tone],
       )}
     >
@@ -133,7 +118,7 @@ export function PressurePlanCard({
   const facts = usePlanFacts(plan);
   const fileName = plan.split("/").at(-1) ?? plan;
   return (
-    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-hairline bg-background px-3.5 py-3">
+    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-[12px] border border-hairline bg-background px-3.5 py-3">
       <DocMark kind="plan" size="lg" />
       <div className="min-w-0 [overflow-wrap:anywhere]">
         {facts.title !== null && (

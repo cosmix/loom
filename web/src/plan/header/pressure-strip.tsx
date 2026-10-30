@@ -1,8 +1,7 @@
 import type { JSX } from "react";
 
-import { useNow } from "@/components/hooks/use-now";
-import { formatElapsed } from "@/lib/format";
 import type { PressureRunView } from "@/plan/api/schema-pressure";
+import { LiveElapsed } from "@/plan/chat/pressure/elapsed";
 import { stepLabel } from "@/plan/chat/pressure/steps";
 import { usePressureRun } from "@/plan/chat/pressure/use-pressure";
 import { Untrusted } from "@/plan/chat/visible-controls";
@@ -13,11 +12,6 @@ const STEPS_PER_ROUND = 3;
 
 function planTitle(path: string): string {
   return path.split("/").at(-1) ?? path;
-}
-
-function LiveElapsed({ startMs }: { startMs: number }): JSX.Element {
-  const now = useNow();
-  return <span>{formatElapsed(Math.max(0, Math.floor((now - startMs) / 1000)))}</span>;
 }
 
 function Progress({ run }: { run: PressureRunView }): JSX.Element {
