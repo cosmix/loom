@@ -1,6 +1,6 @@
 # Hooks
 
-> Scripts
+>
 
 ## Hooks
 
