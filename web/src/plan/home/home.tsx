@@ -41,7 +41,7 @@ function StartConversation() {
 
   return (
     <div className="grid gap-1">
-      <DisabledReason reason="Authoring is unavailable" onClick={() => {}}>
+      <DisabledReason reason="Authoring is unavailable" look="primary" onClick={() => {}}>
         Start a conversation
       </DisabledReason>
       {blockReason && (

@@ -5,7 +5,6 @@ import type { StepView } from "@/plan/api/schema";
 import { FoldCap } from "@/plan/concept/fold-handle";
 import { Marks } from "@/plan/concept/marks";
 import { PlanGlyph } from "@/plan/concept/plan-glyph";
-import { ProgressStrip } from "@/plan/home/progress-strip";
 import {
   ACTIVITY_KINDS,
   ACTIVITY_LABELS,
@@ -74,22 +73,6 @@ function NoSourceTile() {
   return (
     <span className="concept-no-source" style={{ margin: 0, fontSize: 13 }}>
       no source
-    </span>
-  );
-}
-
-/**
- * The strip's cells carry colour only: filled when done, accented when current, else plain. The
- * strip is a multi-column grid, so a one-step strip needs its own single column and a fixed width
- * for its cell to show in the tile.
- */
-function StepBar({ mark }: { mark: StepView["mark"] }) {
-  return (
-    <span className="block w-9 [&_.progress-cells]:grid-cols-1 [&_.progress-cells__cell]:h-2">
-      <ProgressStrip
-        steps={[{ number: 1, name: "Step", mark, count: null, label: "Step" }]}
-        current={mark === "active" ? 1 : null}
-      />
     </span>
   );
 }
@@ -193,24 +176,22 @@ const STEP_MARKS: readonly (Definition & { mark: StepView["mark"] })[] = [
   {
     mark: "done",
     name: "Done step",
-    meaning: "A circled check means the step is complete; its progress cell is filled.",
+    meaning: "A circled check on a spine row means its documents are all written.",
   },
   {
     mark: "gap",
     name: "Step with gaps",
-    meaning:
-      "A warning triangle means the step has gaps to close; its progress cell stays unfilled.",
+    meaning: "A dashed circle on a spine row means it has documents still to write.",
   },
   {
     mark: "active",
     name: "Active step",
-    meaning:
-      "A circled dot means the step is in progress; its progress cell takes the accent colour.",
+    meaning: "A circled dot on a spine row means it is the step in progress.",
   },
   {
     mark: "optional",
     name: "Optional step",
-    meaning: "A dash means the step can be skipped; its progress cell stays unfilled.",
+    meaning: "A dash on a spine row means the step can be skipped.",
   },
 ];
 
@@ -232,18 +213,12 @@ export const STATES: readonly LegendEntry[] = [
     return {
       name,
       meaning,
-      glyph: (
-        <span className="inline-flex items-center gap-2">
-          <Glyph data-step-mark={mark} className="size-4" />
-          <StepBar mark={mark} />
-        </span>
-      ),
-      wide: true,
+      glyph: <Glyph data-step-mark={mark} className="size-4" />,
     };
   }),
   {
-    name: "Step rail check",
-    meaning: "In the step rail, a check replaces a step's own glyph once the step is done.",
+    name: "Finished pressure step",
+    meaning: "In the pressure timeline, a check replaces a step's own glyph once the step is done.",
     glyph: (
       <OTHER_GLYPHS.stepDone
         data-other-glyph="stepDone"

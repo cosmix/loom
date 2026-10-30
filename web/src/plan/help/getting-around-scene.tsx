@@ -6,6 +6,7 @@ import { Route, Routes } from "react-router";
 import { checklistViewSchema } from "@/plan/api/schema";
 import { sessionViewSchema } from "@/plan/api/schema-chat";
 import { snapshotAtom } from "@/plan/chat/model";
+import { Spine } from "@/plan/feature/spine";
 import { PlanHeader } from "@/plan/header/header";
 import { ignoreAction, SAMPLE_SERVER, SAMPLE_STEPS } from "@/plan/help/sample";
 import { SceneRouter } from "@/plan/help/scene-router";
@@ -66,13 +67,17 @@ export function GettingAroundScene() {
   return (
     <Provider store={store}>
       <SceneRouter initialEntries={["/f/atlas"]}>
-        {/* Keep the illustrated feature visible on any app route without nesting a router. */}
+        {/* Keep the illustrated feature visible on any app route without nesting a router. The spine
+            reads its feature from the route, so it renders inside a `:feature` route. */}
         <Routes location="/f/atlas">
           <Route
-            path="*"
+            path="/f/:feature/*"
             element={
               <div data-loom-plan inert>
                 <PlanHeader sample onOpenSettings={ignoreAction} onOpenHelp={ignoreAction} />
+                <div className="w-64 max-w-full">
+                  <Spine />
+                </div>
               </div>
             }
           />

@@ -6,12 +6,17 @@ import { serverInfoAtom, stoppingAtom } from "@/plan/state/atoms";
 
 function Banner({ children }: { children: ReactNode }) {
   return (
+    // One line at desktop, wrapping on a phone: the glyph carries the tone, the words stay in
+    // --foreground (ui/DESIGN.md, Do not).
     <div
       role="status"
-      className="flex items-start gap-2 border-b border-hairline px-4 py-2 text-[13px] font-medium text-(--tone-warning)"
+      className="flex items-start gap-2 border-b border-hairline px-(--page-gutter) py-2 text-[13px] leading-[1.35] font-medium text-foreground"
     >
-      <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-      <div className="min-w-0">{children}</div>
+      <TriangleAlertIcon
+        className="mt-px size-3.5 shrink-0 text-(--tone-warning)"
+        aria-hidden="true"
+      />
+      <p className="m-0 min-w-0 [overflow-wrap:anywhere]">{children}</p>
     </div>
   );
 }
@@ -35,14 +40,12 @@ export function Banners() {
       )}
       {server && server.read_only.length > 0 && (
         <Banner>
-          <p>loom plan is read-only.</p>
-          <ul>
-            {server.read_only.map((problem) => (
-              <li key={problem.what}>
-                {withoutTrailingStop(problem.message)}. {problem.fix}
-              </li>
-            ))}
-          </ul>
+          loom plan is read-only.{" "}
+          {server.read_only.map((problem) => (
+            <span key={problem.what}>
+              {withoutTrailingStop(problem.message)}. {withoutTrailingStop(problem.fix)}.{" "}
+            </span>
+          ))}
         </Banner>
       )}
       {stopping && <Banner>loom plan is stopping.</Banner>}

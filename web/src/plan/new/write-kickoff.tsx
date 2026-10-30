@@ -55,7 +55,7 @@ export function WriteKickoff({
   const { label, reason, authorReason, error, write } = useKickoffWrite(size, target);
   return (
     <div className="kickoff-write">
-      <DisabledReason reason={reason} onClick={() => void write()} size="lg">
+      <DisabledReason reason={reason} look="primary" onClick={() => void write()} size="lg">
         <Feather aria-hidden="true" />
         {label}
       </DisabledReason>

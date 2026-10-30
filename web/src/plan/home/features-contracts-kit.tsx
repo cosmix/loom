@@ -10,7 +10,7 @@ import {
   type ProjectChecklistView,
   type StandalonePlanView,
 } from "@/plan/api/schema";
-import { FeatureRoute } from "@/plan/feature/feature-route";
+import { FeatureLanding, FeatureLayout } from "@/plan/feature/feature-layout";
 import { projectAtom } from "@/plan/state/atoms";
 
 const STEP_NAMES = ["Vision", "Product spec", "Metaplan", "Plans", "Pressure", "Run"];
@@ -86,7 +86,14 @@ export function renderFeatureRoute(path: string, value: ProjectChecklistView) {
   const router = createMemoryRouter(
     [
       { path: "/", element: <p>Home</p> },
-      { path: "/f/:feature", element: <FeatureRoute /> },
+      {
+        path: "/f/:feature",
+        element: <FeatureLayout />,
+        children: [
+          { index: true, element: <FeatureLanding /> },
+          { path: "*", element: <p>Feature page</p> },
+        ],
+      },
     ],
     { initialEntries: [path] },
   );

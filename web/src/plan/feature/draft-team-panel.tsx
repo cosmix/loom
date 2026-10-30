@@ -9,7 +9,7 @@ import { endChat } from "@/plan/chat/commands";
 import { sessionAtom } from "@/plan/chat/model";
 import { isActiveSession } from "@/plan/chat/session-home";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { plural } from "@/plan/feature/steps";
+import { plural } from "@/plan/ui/plural";
 import { TeammateCard, totalTokens } from "@/plan/feature/team-card";
 import { docRel, toAddress } from "@/plan/files/address";
 import {

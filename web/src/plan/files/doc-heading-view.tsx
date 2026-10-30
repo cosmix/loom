@@ -26,6 +26,7 @@ import { openDiff } from "@/plan/diff/open-diff";
 import { canAuthorAtom } from "@/plan/state/atoms";
 import { DocHeading, IBTN, type HeadingChip, type HeadingCrumb } from "@/plan/ui/doc-heading";
 import type { DocKind } from "@/plan/ui/glyphs";
+import { plural } from "@/plan/ui/plural";
 import type { Store } from "@/state/store";
 
 import { toAddress } from "./address";
@@ -33,7 +34,6 @@ import {
   changedChip,
   featureCrumb,
   planStateChip,
-  plural,
   pressureChip,
   sectionLabel,
   sectionNumberLabel,

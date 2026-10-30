@@ -149,7 +149,7 @@ function ConfirmationActions({ flow }: { flow: ReturnType<typeof useAbandonFlow>
       <Button variant="outline" disabled={flow.pending} onClick={flow.cancel}>
         Cancel
       </Button>
-      <DisabledReason reason={flow.reason} onClick={flow.confirm}>
+      <DisabledReason reason={flow.reason} look="primary" onClick={flow.confirm}>
         {flow.confirmation?.step === "branches"
           ? deleteLabel(flow.confirmation.branches.length)
           : "Abandon run"}

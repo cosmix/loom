@@ -25,7 +25,13 @@ export function Overflow({ onOpenSettings, onOpenHelp }: OverflowActions) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon-sm" className="plan-ibtn" aria-label="More">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          data-look="quiet"
+          className="plan-button"
+          aria-label="More"
+        >
           <EllipsisIcon aria-hidden="true" />
         </Button>
       </PopoverTrigger>

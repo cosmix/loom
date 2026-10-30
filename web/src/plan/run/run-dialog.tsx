@@ -168,7 +168,7 @@ function RunActions({ state, form }: { state: RunStateView; form: ReturnType<typ
       {state.offer === "none_running" ? (
         <p>The plan is running</p>
       ) : (
-        <DisabledReason reason={form.startReason} onClick={form.start}>
+        <DisabledReason reason={form.startReason} look="primary" onClick={form.start}>
           {primaryLabel(state.offer)}
         </DisabledReason>
       )}

@@ -5,7 +5,7 @@ import { authoringAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
 
 /**
  * The six planning steps as the server publishes them: `name` is the step, `label` and `count`
- * are what the rail cell shows. One done, one gap and one active step, shared by every scene.
+ * are what the spine row shows. One done, one gap and one active step, shared by every scene.
  */
 export const SAMPLE_STEPS = [
   { number: 1, name: "Vision", mark: "done", count: "1", label: "Vision" },
