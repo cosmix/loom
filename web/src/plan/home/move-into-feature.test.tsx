@@ -1,9 +1,12 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { MemoryRouter, useLocation } from "react-router";
+import { describe, expect, it } from "vitest";
 
 import type { ProjectChecklistView } from "@/plan/api/schema";
 import { snapshotAtom } from "@/plan/chat/model";
+import { panelCollapsedAtom } from "@/plan/chat/prefs";
+import { screenAtom } from "@/plan/chat/session-home";
 import { harness, installStartChatLifecycle, session } from "@/plan/chat/start-chat-test-kit";
 import { MoveIntoFeatureDialog } from "@/plan/home/move-into-feature";
 import { FEATURE_NAME_HINT } from "@/plan/new/feature-name";
@@ -44,10 +47,21 @@ const expectedText =
   "use git mv into the matching doc/product/search/ or doc/plans/search/ directory, " +
   "keep file names, and fix every reference to it.";
 
+function Where() {
+  return <output data-testid="where">{useLocation().pathname}</output>;
+}
+
 function DialogHost({ path }: { path: string | null }) {
   const [open, setOpen] = useState(true);
-  return <MoveIntoFeatureDialog path={path} open={open} onOpenChange={setOpen} />;
+  return (
+    <MemoryRouter initialEntries={["/"]}>
+      <MoveIntoFeatureDialog path={path} open={open} onOpenChange={setOpen} />
+      <Where />
+    </MemoryRouter>
+  );
 }
+
+const where = () => screen.getByTestId("where").textContent;
 
 function mount(path: string | null = source, current: typeof session | null = null) {
   const h = harness(current);
@@ -117,6 +131,7 @@ describe("MoveIntoFeatureDialog", () => {
       type: "chat",
       command: "start",
       offer: null,
+      feature: "search",
       text: expectedText,
       attachments: [],
       client_id: expect.any(String),
@@ -124,6 +139,8 @@ describe("MoveIntoFeatureDialog", () => {
     expect(screen.getByRole("dialog", { name: "Move into a feature" })).toBeTruthy();
     h.result();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // `/` mounts no chat panel: the move's session shows on the destination feature's screen.
+    await waitFor(() => expect(where()).toBe("/f/search"));
   });
 
   it("selects a standalone plan when no path is supplied", async () => {
@@ -137,6 +154,20 @@ describe("MoveIntoFeatureDialog", () => {
     expect(h.send).toHaveBeenCalledWith(expect.objectContaining({ text: expectedText }));
     h.result();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("opens the plan's page when the destination feature is new, and stays put on a refusal", async () => {
+    const h = mount();
+    enterName("new-feature");
+    fireEvent.click(confirmButton());
+    h.result(0, "Cannot move");
+    await screen.findByRole("alert");
+    expect(where()).toBe("/");
+
+    fireEvent.click(confirmButton());
+    h.result(1);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(where()).toBe("/plans/fix-search"));
   });
 
   it("starts a move for a newly named feature and normalizes a doc-relative source", async () => {
@@ -153,8 +184,12 @@ describe("MoveIntoFeatureDialog", () => {
           "directory, keep file names, and fix every reference to it.",
       }),
     );
+    // The server refuses a start for a feature that does not exist yet.
+    expect(h.send.mock.calls[0][0]).not.toHaveProperty("feature");
     h.result();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // A misplaced document is no listed plan: its own page shows the chat, `/` has no panel.
+    await waitFor(() => expect(where()).toBe("/files/product/index.md"));
   });
 
   it("explains why a read-only browser cannot confirm", () => {
@@ -184,20 +219,17 @@ describe("MoveIntoFeatureDialog", () => {
     expect(confirmButton().getAttribute("aria-disabled")).toBeNull();
   });
 
-  it("waits for the running chat to end before starting the move", async () => {
+  it("refuses without asking while a project-wide chat is open, and starts once it ended", async () => {
     const current = { ...session, state: "idle" as const };
     const h = mount(source, current);
     enterName("search");
 
     fireEvent.click(confirmButton());
 
-    expect(window.confirm).toHaveBeenCalledWith(
-      "End the current chat first? It will write its open questions into the documents before it stops.",
-    );
-    expect(h.send.mock.calls[0][0]).toMatchObject({ command: "end" });
-    h.result();
-    await act(async () => {});
-    expect(h.send).toHaveBeenCalledTimes(1);
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(h.send).not.toHaveBeenCalled();
+    expect((await screen.findByRole("alert")).textContent).toBe("Finish the open chat first.");
+    expect(screen.getByRole("dialog")).toBeTruthy();
     act(() => {
       h.store.set(snapshotAtom, {
         session: { ...current, state: "ended" },
@@ -206,45 +238,24 @@ describe("MoveIntoFeatureDialog", () => {
         previous: null,
       });
     });
-    await waitFor(() => expect(h.send).toHaveBeenCalledTimes(2));
-    expect(h.send.mock.calls[1][0]).toMatchObject({ command: "start", text: expectedText });
-    h.result(1);
+    fireEvent.click(confirmButton());
+    expect(h.send.mock.calls[0][0]).toMatchObject({ command: "start", text: expectedText });
+    h.result();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("preserves the current chat when ending it is cancelled", () => {
-    const h = mount(source, { ...session, state: "idle" });
-    vi.mocked(window.confirm).mockReturnValue(false);
-    enterName("search");
+  it("names the feature a running chat belongs to", async () => {
+    const h = mount(source, { ...session, state: "idle", feature: "search" });
+    act(() => h.store.set(screenAtom, { feature: null, plan: null }));
+    enterName("other");
 
     fireEvent.click(confirmButton());
 
+    expect(window.confirm).not.toHaveBeenCalled();
     expect(h.send).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog")).toBeTruthy();
-  });
-
-  it("rechecks authoring after the old chat ends", async () => {
-    const current = { ...session, state: "idle" as const };
-    const h = mount(source, current);
-    enterName("search");
-    fireEvent.click(confirmButton());
-    h.result();
-    await act(async () => {});
-
-    act(() => {
-      h.store.set(authoringAtom, {
-        holder: { public_id: "other", name: "Alex", away_since: null, frees_at: null },
-      });
-      h.store.set(snapshotAtom, {
-        session: { ...current, state: "ended" },
-        turns: [],
-        queue: [],
-        previous: null,
-      });
-    });
-
-    expect((await screen.findByRole("alert")).textContent).toBe("Alex holds authoring");
-    expect(h.send).toHaveBeenCalledTimes(1);
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Finish the session in Search first.",
+    );
   });
 
   it("blocks duplicate starts while waiting for the server", async () => {
@@ -260,25 +271,16 @@ describe("MoveIntoFeatureDialog", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("cancels an end wait when the dialog is closed", async () => {
-    const current = { ...session, state: "idle" as const };
-    const h = mount(source, current);
+  it("a dialog closed during the start reveals no panel", async () => {
+    const h = mount();
+    h.store.set(panelCollapsedAtom, true);
     enterName("search");
     fireEvent.click(confirmButton());
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     h.result();
     await act(async () => {});
 
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    act(() => {
-      h.store.set(snapshotAtom, {
-        session: { ...current, state: "ended" },
-        turns: [],
-        queue: [],
-        previous: null,
-      });
-    });
-    await act(async () => {});
-
-    expect(h.send).toHaveBeenCalledTimes(1);
+    expect(h.store.get(panelCollapsedAtom)).toBe(true);
   });
 });

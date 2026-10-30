@@ -33,7 +33,7 @@ export function RunHeader({ session }: { session: SessionView }) {
       ? "waiting"
       : null;
   return (
-    <div className="chat-run-header flex flex-wrap items-center gap-x-1 px-3 text-xs text-muted-foreground">
+    <div className="chat-run-header chat-holder-row flex flex-wrap items-center gap-x-1 px-3 text-xs text-muted-foreground">
       {activity && <ActivityGlyph kind={activity} />}
       {awayUntil ? (
         <span>

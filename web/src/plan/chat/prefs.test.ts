@@ -25,7 +25,7 @@ afterEach(() => {
 
 it("persists both preferences per project", () => {
   const store = readyStore();
-  expect(store.get(panelWidthAtom)).toBe(26);
+  expect(store.get(panelWidthAtom)).toBe(21.25);
   expect(store.get(panelCollapsedAtom)).toBe(false);
   store.set(panelWidthAtom, 32);
   store.set(panelCollapsedAtom, true);
@@ -38,7 +38,7 @@ it("persists both preferences per project", () => {
   expect(reloaded.get(panelCollapsedAtom)).toBe(true);
   unsubWidth();
   unsubCollapsed();
-  expect(readyStore("another-project").get(panelWidthAtom)).toBe(26);
+  expect(readyStore("another-project").get(panelWidthAtom)).toBe(21.25);
 });
 
 it("clamps width updates to 20–40 rem", () => {
@@ -64,9 +64,9 @@ it.each([
   ["a width above the range", "1000", 40],
   ["a width below the range", "3", 20],
   ["a width in the range", "30", 30],
-  ["a string width", '"wide"', 26],
-  ["invalid JSON", "{", 26],
-  ["null", "null", 26],
+  ["a string width", '"wide"', 21.25],
+  ["invalid JSON", "{", 21.25],
+  ["null", "null", 21.25],
 ])("reads %s (stored %s) as %d", (_label, stored, expected) => {
   localStorage.setItem(storageKey("prefs-bad-width", "panel-width"), stored);
   const store = readyStore("prefs-bad-width");

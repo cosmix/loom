@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 
 import { snapshotAtom } from "@/plan/chat/model";
 import { panelCollapsedAtom } from "@/plan/chat/prefs";
+import { screenAtom } from "@/plan/chat/session-home";
 import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
 import { harness, installStartChatLifecycle, session } from "@/plan/chat/start-chat-test-kit";
 import type { StarterDocument } from "@/plan/new/document-starter";
@@ -247,37 +248,38 @@ it("shows the read-only reason and blocks a populated draft", () => {
   expect(h.send).not.toHaveBeenCalled();
 });
 
-it("asks before replacing an active chat and waits for it to end", async () => {
-  const current = { ...session, state: "idle" as const };
+it("refuses without asking while a feature's chat runs elsewhere, and starts once it ended", async () => {
+  const current = { ...session, state: "idle" as const, feature: "alpha" };
   const h = mount(false, current);
+  act(() => h.store.set(screenAtom, { feature: null, plan: null }));
   enterText();
 
   fireEvent.click(submitButton());
 
-  expect(window.confirm).toHaveBeenCalledOnce();
-  expect(h.send).toHaveBeenCalledWith(expect.objectContaining({ command: "end" }));
-  h.result();
-  await act(async () => {});
-  expect(h.send).toHaveBeenCalledTimes(1);
+  expect(window.confirm).not.toHaveBeenCalled();
+  expect(h.send).not.toHaveBeenCalled();
+  expect(screen.getByRole("status").textContent).toBe("Finish the session in alpha first.");
   showSession(h, { ...current, state: "ended" });
-  await waitFor(() => expect(h.send).toHaveBeenCalledTimes(2));
-  expect(h.send.mock.calls[1][0]).toMatchObject({ command: "start", offer: "kickoff" });
-  h.result(1);
+  fireEvent.click(submitButton());
+  await waitFor(() => expect(h.send).toHaveBeenCalledTimes(1));
+  expect(h.send.mock.calls[0][0]).toMatchObject({ command: "start", offer: "kickoff" });
+  h.result(0);
   await act(async () => {});
   expect(h.store.get(kickoffSessionAtom)).toBeNull();
   showSession(h, { ...session, id: "new-kickoff" });
   await waitFor(() => expect(h.store.get(kickoffSessionAtom)).toBe("new-kickoff"));
 });
 
-it("keeps the active chat when end confirmation is declined", () => {
+it("refuses a project-wide chat too: this screen does not show it either", () => {
   const h = mount(false, session);
-  vi.mocked(window.confirm).mockReturnValue(false);
+  act(() => h.store.set(screenAtom, { feature: null, plan: null }));
   enterText();
-
   fireEvent.click(submitButton());
-
+  expect(window.confirm).not.toHaveBeenCalled();
   expect(h.send).not.toHaveBeenCalled();
   expect(h.store.get(kickoffSessionAtom)).toBeNull();
+  expect(screen.getByRole("status").textContent).toBe("Finish the open chat first.");
+  expect(composer().value).toBe("Build a project notebook");
 });
 
 it("preserves the draft and renders a start failure safely", async () => {

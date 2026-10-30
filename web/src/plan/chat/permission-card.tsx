@@ -9,7 +9,7 @@ import { PatchView } from "./patch-view";
 import { Untrusted, visibleControls } from "./visible-controls";
 
 type Permission = Extract<Item, { type: "permission" }>;
-type Props = { item: Permission; inline?: boolean };
+type Props = { item: Permission };
 const buttonClass =
   "min-h-7 rounded border px-2 text-xs font-medium focus-visible:outline-2 focus-visible:outline-ring";
 
@@ -155,11 +155,11 @@ function TimeLeft({ expiresAt }: { expiresAt: string }): JSX.Element {
  * assertive announcement is ChatAnnouncer's: this card is unmounted while the panel is collapsed
  * or the sheet is closed, and the request must still be heard then.
  */
-function usePinnedFocus(item: Permission, inline: boolean) {
+function usePinnedFocus(item: Permission) {
   const card = useRef<HTMLDivElement>(null);
   const focused = useRef<string | null>(null);
   useEffect(() => {
-    if (inline || focused.current === item.request_id) return;
+    if (focused.current === item.request_id) return;
     focused.current = item.request_id;
     const panel = card.current?.closest(
       'aside[aria-label="Chat"], [role="complementary"][aria-label="Chat"]',
@@ -169,7 +169,7 @@ function usePinnedFocus(item: Permission, inline: boolean) {
     // announcement still tells the holder a decision is waiting.
     const active = document.activeElement;
     if (panel?.contains(active) && !isEditable(active)) card.current?.focus();
-  }, [inline, item.request_id]);
+  }, [item.request_id]);
   return card;
 }
 
@@ -306,7 +306,6 @@ function DecisionFooter({
 
 function usePermissionKeys(
   item: Permission,
-  inline: boolean,
   busy: boolean,
   answer: (allow: boolean) => Promise<void>,
   setDenyOpen: (open: boolean) => void,
@@ -314,7 +313,7 @@ function usePermissionKeys(
   const isHolder = useAtomValue(isHolderAtom);
   const pending = useAtomValue(pendingPermissionsAtom);
   return function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (inline || !isHolder || busy || event.defaultPrevented || event.repeat) return;
+    if (!isHolder || busy || event.defaultPrevented || event.repeat) return;
     if (event.altKey || event.ctrlKey || event.metaKey || isEditable(event.target)) return;
     if (pending.length && pending[0].request_id !== item.request_id) return;
     if (event.key === "y") {
@@ -328,12 +327,12 @@ function usePermissionKeys(
   };
 }
 
-function PendingPermission({ item, inline = false }: Props): JSX.Element {
+function PendingPermission({ item }: Props): JSX.Element {
   const pending = useAtomValue(pendingPermissionsAtom);
   const [denyOpen, setDenyOpen] = useState(false);
   const { answer, busy, error } = useAnswer(item);
-  const card = usePinnedFocus(item, inline);
-  const onKeyDown = usePermissionKeys(item, inline, busy, answer, setDenyOpen);
+  const card = usePinnedFocus(item);
+  const onKeyDown = usePermissionKeys(item, busy, answer, setDenyOpen);
   return (
     <div
       ref={card}
@@ -341,11 +340,9 @@ function PendingPermission({ item, inline = false }: Props): JSX.Element {
       aria-label={`Permission: ${visibleControls(item.tool)}`}
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className="min-w-0 space-y-2 rounded border p-3 text-sm leading-relaxed focus-visible:outline-2 focus-visible:outline-ring"
+      className="min-w-0 space-y-2 rounded-[10px] border border-border bg-background p-3 text-[13px] leading-relaxed focus-visible:outline-2 focus-visible:outline-ring"
     >
-      {!inline && pending.length > 1 && (
-        <p className="text-xs font-medium">1 of {pending.length} decisions</p>
-      )}
+      {pending.length > 1 && <p className="text-xs font-medium">1 of {pending.length} decisions</p>}
       <p className="text-[13px] font-medium">
         <span aria-hidden="true">!</span> Needs a decision: <Untrusted text={item.tool} />
       </p>
@@ -362,9 +359,8 @@ function PendingPermission({ item, inline = false }: Props): JSX.Element {
   );
 }
 
-export function PermissionCard({ item, inline = false }: Props): JSX.Element {
-  if (item.status === "pending")
-    return <PendingPermission key={item.request_id} item={item} inline={inline} />;
+export function PermissionCard({ item }: Props): JSX.Element {
+  if (item.status === "pending") return <PendingPermission key={item.request_id} item={item} />;
   return (
     // A group, not a region: an answered row is history and would only crowd landmark navigation.
     <div

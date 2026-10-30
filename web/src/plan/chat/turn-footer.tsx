@@ -1,3 +1,4 @@
+import { FileDiff } from "lucide-react";
 import { memo, useMemo, type JSX } from "react";
 import { Link } from "react-router";
 
@@ -7,8 +8,8 @@ import type { Turn } from "@/plan/api/schema-chat";
 import type { DiffTexts } from "@/plan/api/schema-files";
 import { openDiff } from "@/plan/diff/open-diff";
 import { docRel } from "@/plan/files/address";
+import { plural } from "@/plan/files/heading-parts";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
-import { DocMark } from "@/plan/ui/doc-mark";
 import type { DocKind } from "@/plan/ui/glyphs";
 import { TurnFooterExtras } from "./footer-extras";
 import { lineCounts } from "./line-diff";
@@ -73,11 +74,15 @@ function ChangedRow(props: RowProps) {
   const label = useMemo(() => changeLabel(file, row?.texts), [file, row?.texts]);
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <span className="inline-flex items-center gap-2 font-mono" data-doc-kind={kind ?? undefined}>
-        {kind !== null && <DocMark kind={kind} />}
-        <Untrusted text={docRel(file.path)} />
+      <span
+        className="chat-file-chip"
+        data-doc-kind={kind ?? undefined}
+        title={visibleControls(docRel(file.path))}
+      >
+        <FileDiff size={12} aria-hidden="true" />
+        <Untrusted text={file.path.split("/").pop() ?? file.path} />
+        {label && <span className="chat-file-counts">{label}</span>}
       </span>
-      <span>{label}</span>
       {!file.by_tool && <span>changed during this turn</span>}
       {inside ? (
         <RowActions {...props} />
@@ -131,7 +136,7 @@ function ChangedFiles({
   return (
     <div>
       <p>
-        {turn.open ? "Changing" : "Changed"} {turn.changed_files.length} files
+        {turn.open ? "Changing" : "Changed"} {plural(turn.changed_files.length, "file")}
       </p>
       <ul className="space-y-2">
         {turn.changed_files.map((file) => (
@@ -176,7 +181,7 @@ function TurnFooterView({ turn, sessionId }: { turn: Turn; sessionId: string }):
     <div
       role="group"
       aria-label={`Turn ${visibleControls(number)} changes`}
-      className="space-y-2 border-t border-border py-2 text-xs font-medium"
+      className="space-y-2 border-t border-(--hairline) py-2 text-xs font-medium"
       style={displayStyle}
     >
       <TurnStats turn={turn} />

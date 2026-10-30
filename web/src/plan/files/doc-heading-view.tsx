@@ -16,8 +16,11 @@ import { overviewKey, pageHref, summaryKey } from "@/plan/api/page-key";
 import type { DocView, EntryKind, PlanView, ValidationView } from "@/plan/api/schema-files";
 import { addAttachmentAtom } from "@/plan/attachments";
 import { focusComposerAtom } from "@/plan/chat/composer-hooks";
+import { offerErrorAtom } from "@/plan/chat/offer-error";
+import { elsewhereRefusal } from "@/plan/chat/offer-flow";
 import { panelCollapsedAtom } from "@/plan/chat/prefs";
 import { usePressureRun } from "@/plan/chat/pressure/use-pressure";
+import { elsewhereSessionAtom } from "@/plan/chat/session-home";
 import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
 import { openDiff } from "@/plan/diff/open-diff";
 import { canAuthorAtom } from "@/plan/state/atoms";
@@ -175,6 +178,16 @@ function EditAction({ doc, hidden }: { doc: DocView; hidden: boolean }): JSX.Ele
 }
 
 function discussDoc(store: Store, doc: DocView): void {
+  store.set(panelCollapsedAtom, false);
+  store.set(chatSheetOpenAtom, true);
+  // An open session on another screen has no composer here: a chip added now would wait in its
+  // draft, unseen, and ride the next send into that session. Say why nothing happened instead.
+  const elsewhere = store.get(elsewhereSessionAtom);
+  if (elsewhere) {
+    store.set(offerErrorAtom, elsewhereRefusal(elsewhere));
+    return;
+  }
+  store.set(offerErrorAtom, null);
   store.set(addAttachmentAtom, {
     kind: "source",
     path: doc.path,
@@ -185,8 +198,6 @@ function discussDoc(store: Store, doc: DocView): void {
     text: Array.from(doc.text).slice(0, 2_000).join(""),
     hash: doc.hash,
   });
-  store.set(panelCollapsedAtom, false);
-  store.set(chatSheetOpenAtom, true);
   store.set(focusComposerAtom, true);
 }
 

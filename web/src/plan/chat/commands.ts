@@ -166,6 +166,7 @@ export function startChat(
   text: string | null = null,
   attachments: AttachmentInput[] = [],
   feature?: string,
+  plan?: string,
 ): Promise<CommandResult> {
   return sendChatCommand(store, {
     command: "start",
@@ -173,6 +174,7 @@ export function startChat(
     text,
     attachments,
     ...(feature !== undefined ? { feature } : {}),
+    ...(plan !== undefined ? { plan } : {}),
   });
 }
 
