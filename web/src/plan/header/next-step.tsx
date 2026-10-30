@@ -98,8 +98,8 @@ const DOCUMENT_TEXT: Record<DocumentKind, OfferTextBuilder> = {
 /** Offers about the engineering plans and the run. */
 const PLAN_TEXT: Record<Exclude<OfferKind, DocumentKind>, OfferTextBuilder> = {
   write_plan: ({ plan }) => ({
-    title: `Write plan ${plan}`,
-    detail: "It is the next plan to write.",
+    title: "Write the next plan",
+    detail: `Plan ${plan} is the next plan to write.`,
   }),
   pressure_test: ({ checklist, plan }) => ({
     title: "Pressure-test the next plan",
@@ -177,7 +177,7 @@ export function NextStepCard({
         </p>
         {text.detail !== null && (
           <p
-            className="m-0 text-[12.5px] leading-[17px] text-muted-foreground"
+            className="m-0 text-[12.5px] leading-[17px] break-words whitespace-normal text-muted-foreground"
             title={visibleControls(text.detail)}
           >
             <Untrusted text={text.detail} />

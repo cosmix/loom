@@ -36,7 +36,7 @@ describe("NextStepCard", () => {
     expect(screen.queryByText(secondary.label)).toBeNull();
   });
 
-  it("names the next plan from the offer's slug in the title", () => {
+  it("names the next plan from the offer's slug instead of repeating its label", () => {
     renderCard({
       ...checklist,
       current: { kind: "step", number: 4 },
@@ -49,8 +49,11 @@ describe("NextStepCard", () => {
       },
     });
 
-    expect(screen.getByTitle("Write plan feat-planner-01-documents")).toBeTruthy();
-    expect(screen.getByTitle("It is the next plan to write.")).toBeTruthy();
+    expect(screen.getByTitle("Write the next plan")).toBeTruthy();
+    expect(
+      screen.getByTitle("Plan feat-planner-01-documents is the next plan to write.").textContent,
+    ).toBe("Plan feat-planner-01-documents is the next plan to write.");
+    expect(screen.queryByTitle("Write plan feat-planner-01-documents")).toBeNull();
   });
 
   it.each([
@@ -162,16 +165,24 @@ describe("NextStepCard", () => {
     const { container } = renderCard(checklist);
     const card = container.firstElementChild!;
     const title = screen.getByTitle("Write the next section");
+    const sentence = screen.getByTitle("Section 05 is the next product spec document to write.");
     const action = screen.getByText(primary.label).parentElement;
 
     expect(card.classList.contains("flex")).toBe(true);
     expect(card.classList.contains("border-dashed")).toBe(true);
-    expect(card.classList.contains("min-w-0")).toBe(true);
+    expect(container.firstElementChild?.classList.contains("min-w-0")).toBe(true);
     expect(card.classList.contains("flex-[1_1_280px]")).toBe(true);
     expect(title.classList.contains("font-semibold")).toBe(true);
     expect(title.className).not.toContain("truncate");
+    expect(sentence.textContent).toBe("Section 05 is the next product spec document to write.");
+    expect(sentence.className).not.toContain("line-clamp");
+    expect(sentence.classList.contains("break-words")).toBe(true);
+    expect(sentence.classList.contains("whitespace-normal")).toBe(true);
+    expect(sentence.classList.contains("truncate")).toBe(false);
+    expect(sentence.classList.contains("hidden")).toBe(false);
     expect(action?.classList.contains("ml-auto")).toBe(true);
     expect(action?.classList.contains("[&_button]:whitespace-normal")).toBe(true);
+    expect(action?.classList.contains("[&_button]:h-auto")).toBe(true);
     expect(action?.className).not.toContain("truncate");
   });
 
