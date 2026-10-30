@@ -357,3 +357,13 @@ Mistakes from the plan that moved the planner to features, kickoff, draft-all te
 - `loom check` was run redirected into a file in the background, and the relay refused the ticket. Loom commands run in the foreground, unredirected; wait with `loom request status <id> --wait 90` as its own Bash call.
 - A forward ended `succeeded` while its owned file had no diff (its last message was mid-investigation), and two forwards were moved to the background after 180 s because the forwarder's Bash call lacked the 600000 ms timeout. `git diff` every owned file after a `succeeded` forward; a doc unit's brief says the run must write, and caps the reading it needs.
 - A `--worker claude:<id> --worker codex:<unit>` watch over the same units is refused; bind forwarder units with `--worker codex:<unit>` alone, and only after the forwarder's Bash call has started.
+
+## The Redesign Shipped Without Its Executors Ever Seeing the Mockup (2026-10-30)
+
+**What happened:** the planner-ui-redesign build looks nothing like the locked mockup (claude.ai artifact 2T7SurQrDQJhCX4yyKi9iu): the home has no Features heading, the feature cards are empty or show raw status text, the activity pill and avatars are missing, chat shows on the home screen, and the feature screen is a checklist instead of the reading workspace.
+
+**Why:** the plan and briefs pointed to the design only through a claude.ai link ("the artifact linked under Draft status shows the target"). Every web stage ran on the codex lane (gpt-6.1-sol), which has no claude.ai session and could not open it. No copy of the mockup HTML or its screenshots went into the repo or the brief bundle. The plan text described components without layout, so roughly 1,500 lines of mockup became a few lines of prose per screen. No acceptance criterion rendered a page: the gates were typecheck, lint and jsdom vitest, and the "inspect at 390px and 1280px" step was an unchecked note.
+
+**Prevention:** a plan with a visual target commits the mockup into its brief bundle (`mockup.html` plus one PNG per screen, as `briefs/web-terminal/web-terminal/mockup.html` does). Every worker brief names those files. Each UI stage gets a real-browser screenshot criterion compared against the PNGs. Visual and layout work goes to a Claude lane, never codex.
+
+**Fix:** pending; see the screen-by-screen gap list against the mockup.
