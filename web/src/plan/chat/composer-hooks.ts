@@ -22,10 +22,13 @@ const TYPING_TARGET =
 /**
  * Registers the `c` key. It opens a collapsed panel or a closed sheet first, then asks the
  * composer to focus. Call it from a component that stays mounted while the panel is hidden.
+ * With `enabled` false (a screen that mounts no panel) the key is left alone: nothing there
+ * would clear the requests it sets, so the sheet would open unasked on the next screen.
  */
-export function useComposerShortcut(): void {
+export function useComposerShortcut(enabled = true): void {
   const store = useStore();
   useEffect(() => {
+    if (!enabled) return;
     const onKey = (event: KeyboardEvent) => {
       if (
         event.defaultPrevented ||
@@ -46,7 +49,7 @@ export function useComposerShortcut(): void {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [store]);
+  }, [store, enabled]);
 }
 
 /** Clears a focus request once the composer had its chance to take it (child effects run first). */

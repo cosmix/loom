@@ -2,6 +2,7 @@ import { useAtomValue } from "jotai/react";
 import { useRef, useState } from "react";
 
 import type { SummaryQuestion } from "@/plan/api/schema-summaries";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { canAuthorAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 
@@ -65,7 +66,7 @@ export function PendingApprovalNotice() {
       <ApprovalNotice question={question} canAnswer={canAnswer} onAnswer={onAnswer} />
       {failure?.questionId === question.id && (
         <p role="alert" className="text-sm text-destructive">
-          {failure.message}
+          <Untrusted text={failure.message} />
         </p>
       )}
     </div>

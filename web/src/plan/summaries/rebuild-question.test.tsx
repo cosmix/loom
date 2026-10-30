@@ -179,7 +179,7 @@ describe("PendingApprovalNotice", () => {
       Response.json(
         {
           error: "refused",
-          message: "Dana holds authoring",
+          message: "Dana holds authoring\u202E",
         },
         { status: 409 },
       ),
@@ -188,7 +188,8 @@ describe("PendingApprovalNotice", () => {
     const store = makeStore();
     show(<PendingApprovalNotice />, store);
     fireEvent.click(screen.getByRole("button", { name: "Rebuild all" }));
-    expect((await screen.findByRole("alert")).textContent).toBe("Dana holds authoring");
+    // The server's text goes through Untrusted: the control character shows as a marker.
+    expect((await screen.findByRole("alert")).textContent).toBe("Dana holds authoring⟨U+202E⟩");
     expect(screen.getByRole("button", { name: "Rebuild all" })).toBeTruthy();
     act(() =>
       store.set(panelLoadAtom, {

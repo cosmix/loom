@@ -1,8 +1,6 @@
 import { useAtomValue, useStore } from "jotai";
-import { ExternalLinkIcon } from "lucide-react";
 import { useEffect, useState, type JSX } from "react";
 
-import { buttonVariants } from "@/components/ui/button";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { authorBlockReasonAtom, isHolderAtom } from "@/plan/state/atoms";
 import { LoadState } from "@/plan/ui/load-state";
@@ -10,10 +8,10 @@ import { LoadState } from "@/plan/ui/load-state";
 import { fetchDashboard, runStripAtom, type RunDashboard } from "./use-run";
 
 /**
- * `full` is the run dialog's link with the tunnel hint and any failure; `link` and `icon` are the
- * header's, which have no room for either (the dialog shows them), `icon` being the narrow form.
+ * `full` is the run dialog's link with the tunnel hint and any failure; `link` is the activity
+ * popover's, which has room for neither (the dialog shows them).
  */
-type Variant = "full" | "link" | "icon";
+type Variant = "full" | "link";
 
 // The server validates the URL; refuse any other scheme here as well before it becomes an href.
 const webUrl = (url: string | undefined) => (url && /^https?:\/\//i.test(url) ? url : null);
@@ -59,7 +57,7 @@ export function DashboardButton({ variant = "full" }: { variant?: Variant }): JS
   }
   return (
     <div className="space-y-1">
-      <DashboardLink url={url} icon={variant === "icon"} />
+      <DashboardLink url={url} />
       {variant === "full" && result.dashboard?.tunnel && (
         <p className="text-xs [overflow-wrap:anywhere]">
           <Untrusted text={result.dashboard.tunnel} />
@@ -70,21 +68,15 @@ export function DashboardButton({ variant = "full" }: { variant?: Variant }): JS
   );
 }
 
-function DashboardLink({ url, icon }: { url: string; icon: boolean }) {
+function DashboardLink({ url }: { url: string }) {
   return (
     <a
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label={icon ? "Open dashboard" : undefined}
-      title={icon ? "Open dashboard" : undefined}
-      className={
-        icon
-          ? buttonVariants({ variant: "ghost", size: "icon-sm" })
-          : "underline underline-offset-4"
-      }
+      className="underline underline-offset-4"
     >
-      {icon ? <ExternalLinkIcon aria-hidden="true" /> : "Open dashboard"}
+      Open dashboard
     </a>
   );
 }

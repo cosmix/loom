@@ -1,29 +1,28 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { Provider, createStore } from "jotai";
+import { Provider } from "jotai";
 import { RouterProvider, createMemoryRouter } from "react-router";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 
-import fixture from "@/plan/api/fixtures/chat-snapshot.json";
 import hello from "@/plan/api/fixtures/hello.json";
-import { checklistViewSchema, offerViewSchema } from "@/plan/api/schema";
-import { chatSnapshotSchema, type SessionView } from "@/plan/api/schema-chat";
+import { offerViewSchema } from "@/plan/api/schema";
 import { addAttachmentAtom, pendingAttachmentsAtom } from "@/plan/attachments";
-import { OfferButton } from "@/plan/offers/offer-button";
-import {
-  authoringAtom,
-  connectionAtom,
-  projectAtom,
-  serverInfoAtom,
-  youAtom,
-} from "@/plan/state/atoms";
+import { activeFeatureAtom, authoringAtom } from "@/plan/state/atoms";
 import { endChat, startChat } from "./commands";
 import { focusComposerAtom } from "./composer-hooks";
-import { snapshotAtom } from "./model";
 import { offerErrorAtom } from "./offer-error";
 import { createOfferStarter } from "./offer-flow";
-import { ChatPanel, ChatRegistrations } from "./panel";
 import { panelCollapsedAtom } from "./prefs";
 import { screenOfPath } from "./session-home";
+import {
+  clickOffer,
+  installHomeLifecycle,
+  notice,
+  offer,
+  panel,
+  session,
+  setup,
+} from "./session-home-kit";
+import { chatSheetOpenAtom } from "./sheet-state";
 
 vi.mock("./transcript", () => ({ Transcript: () => <div role="log">Transcript</div> }));
 vi.mock("./composer", () => ({ ComposerArea: () => <div>Composer</div> }));
@@ -46,88 +45,9 @@ vi.mock("./model", async (original) => ({
 
 const { ComposerArea: RealComposerArea } =
   await vi.importActual<typeof import("./composer")>("./composer");
-const offer = offerViewSchema.parse(hello.checklists[0]!.primary);
-const checklist = checklistViewSchema.parse(hello.checklists[0]);
-const base = chatSnapshotSchema.parse(fixture).session!;
 const CONFIRM = /End the current chat first/;
-let serial = 0;
 
-function session(fields: Partial<SessionView> = {}): SessionView {
-  return { ...base, state: "idle", feature: "alpha", ...fields };
-}
-
-function setup(path: string, current: SessionView | null) {
-  const store = createStore();
-  store.set(serverInfoAtom, { ...hello.server, project_key: `home-${++serial}`, read_only: [] });
-  store.set(youAtom, hello.you);
-  store.set(authoringAtom, { holder: { ...hello.you, away_since: null, frees_at: null } });
-  store.set(connectionAtom, { phase: "open", everOpen: true, lastMessageAt: Date.now() });
-  store.set(projectAtom, {
-    checklists: [
-      { ...checklist, feature: "alpha", title: "Alpha Feature" },
-      { ...checklist, feature: "beta", title: "Beta" },
-    ],
-    standalone: [{ slug: "solo", path: "doc/plans/PLAN-solo.md", state: "written", title: "Solo" }],
-    moves: [],
-  });
-  store.set(snapshotAtom, { session: current, turns: [], queue: [], previous: null });
-  const router = createMemoryRouter(
-    [
-      {
-        path: "*",
-        element: (
-          <>
-            <ChatRegistrations />
-            <ChatPanel />
-          </>
-        ),
-      },
-    ],
-    { initialEntries: [path] },
-  );
-  render(
-    <Provider store={store}>
-      <RouterProvider router={router} />
-    </Provider>,
-  );
-  // The offer mounts after the registration effect, as it does in the app.
-  render(
-    <Provider store={store}>
-      <OfferButton offer={offer} />
-    </Provider>,
-  );
-  return { store, router };
-}
-
-const panel = () => screen.getByRole("complementary", { name: "Chat" });
-const notice = (title: string) =>
-  within(panel()).queryByRole("link", { name: `A session in ${title} needs you` });
-const clickOffer = async () => {
-  fireEvent.click(screen.getByRole("button", { name: offer.label }));
-  await act(async () => {});
-};
-
-beforeEach(() => {
-  localStorage.clear();
-  vi.clearAllMocks();
-  vi.spyOn(window, "confirm").mockReturnValue(false);
-  vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
-    matches: query.includes("min-width"),
-    media: query,
-    onchange: null,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    dispatchEvent: () => true,
-  }));
-});
-
-afterEach(() => {
-  cleanup();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
+installHomeLifecycle();
 
 it.each([
   ["/f/alpha", "alpha", null],
@@ -230,6 +150,28 @@ it("the c key does nothing while the panel has no composer to focus", () => {
   expect(home.store.get(focusComposerAtom)).toBe(true);
 });
 
+it("the empty panel offers the checklist's next step on its own feature's screens only", async () => {
+  const { store, router } = setup("/f/alpha", null);
+  // The last visited feature: its checklist stays current on screens it does not own.
+  act(() => store.set(activeFeatureAtom, "alpha"));
+  // Text or button, by whether the registration effect had run when the panel first rendered.
+  const shown = () => within(panel()).queryAllByText(offer.label).length > 0;
+  expect(shown()).toBe(true);
+  for (const path of ["/plans/solo", "/files/product/beta/section_01.md", "/f/beta"]) {
+    await act(() => router.navigate(path));
+    expect(shown()).toBe(false);
+  }
+  await act(() => router.navigate("/f/alpha/product"));
+  expect(shown()).toBe(true);
+});
+
+it.each(["/", "/new"])("the c key sets no request on %s, which mounts no panel", (path) => {
+  const { store } = setup(path, null);
+  fireEvent.keyDown(document.body, { key: "c" });
+  expect(store.get(focusComposerAtom)).toBe(false);
+  expect(store.get(chatSheetOpenAtom)).toBe(false);
+});
+
 it("an offer with the open session on another screen raises no confirm and says why", async () => {
   const { store } = setup("/f/beta/product", session());
   await clickOffer();
@@ -321,6 +263,20 @@ it("an offer that names no feature, chosen on a plan's screen, starts for that p
     "solo",
   );
 });
+
+// The wire carries no feature for these two offers (`Offer::feature`), so the screen's names it.
+it.each([
+  ["refine_spec", "refine-spec", "Refine the spec in light of what was built"],
+  ["new_metaplan_round", "new-metaplan-round", "Start a new metaplan round"],
+] as const)(
+  "the %s offer chosen on a feature's screen starts for that feature",
+  async (kind, id, label) => {
+    const wire = offerViewSchema.parse({ id, kind, label, target: null });
+    const { store } = setup("/f/alpha", null, wire);
+    await clickOffer(wire);
+    expect(startChat).toHaveBeenCalledWith(store, id, undefined, undefined, "alpha", undefined);
+  },
+);
 
 it.each([
   ["pressure", "loom plan: pressure", "Pressure test"],

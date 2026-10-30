@@ -109,7 +109,10 @@ export function createOfferStarter(store: Store): {
   const start = async (offer: string, feature?: string): Promise<void> => {
     if (request) return;
     // The end wait can last minutes: the chat belongs to the screen the offer was chosen on.
-    const plan = feature === undefined ? store.get(startOwnerAtom).plan : undefined;
+    // `refine_spec` and `new_metaplan_round` name no feature on the wire, so the screen's applies.
+    const owner = store.get(startOwnerAtom);
+    const ownerFeature = feature ?? owner.feature;
+    const plan = feature === undefined ? owner.plan : undefined;
     const elsewhere = store.get(elsewhereSessionAtom);
     if (elsewhere) {
       store.set(offerErrorAtom, elsewhereRefusal(elsewhere));
@@ -124,7 +127,7 @@ export function createOfferStarter(store: Store): {
       if (isActiveSession(running))
         await endCurrentChat(store, running, controller.signal, "choose the offer");
       if (controller.signal.aborted) return;
-      await startChat(store, offer, undefined, undefined, feature, plan);
+      await startChat(store, offer, undefined, undefined, ownerFeature, plan);
       // Disposed while the start was in flight: the panel is gone, so write and reveal nothing.
       if (controller.signal.aborted) return;
       store.set(offerErrorAtom, null);

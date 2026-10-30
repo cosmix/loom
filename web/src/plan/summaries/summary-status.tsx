@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNow } from "@/components/hooks/use-now";
 import { Button } from "@/components/ui/button";
 import type { SummaryPanel as Panel, SummaryQuestion } from "@/plan/api/schema-summaries";
+import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import "@/plan/header/activity.css";
 import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
 import { canAuthorAtom } from "@/plan/state/atoms";
@@ -82,7 +83,7 @@ function QuestionAnswer({ question }: { question: SummaryQuestion }) {
       />
       {error && (
         <p role="alert" className="text-destructive">
-          {error}
+          <Untrusted text={error} />
         </p>
       )}
     </>
@@ -96,7 +97,7 @@ function StatusContent({ load, reload }: { load: PanelLoad; reload: () => void }
     return (
       <LoadState
         state="error"
-        message={load.message}
+        message={visibleControls(load.message)}
         action={{ label: "Retry", onClick: reload }}
       />
     );
@@ -188,18 +189,10 @@ export function QuestionAnnouncement({ question }: { question: SummaryQuestion |
 /**
  * The footer row of the activity popover. The caller owns the feed (the pill needs the panel
  * while the popover is closed), so the row takes its load state; it expands in place, and a
- * question that arrives expands it, since the popover has no nested popover to open.
+ * question that arrives expands it, since the popover has no nested popover to open. The caller
+ * renders QuestionAnnouncement outside the popover, which mounts this row only while open.
  */
-export function SummaryStatusRow({
-  load,
-  reload,
-  announce = true,
-}: {
-  load: PanelLoad;
-  reload: () => void;
-  /** False when the caller renders QuestionAnnouncement outside the popover that holds this row. */
-  announce?: boolean;
-}) {
+export function SummaryStatusRow({ load, reload }: { load: PanelLoad; reload: () => void }) {
   const question = useAtomValue(summaryQuestionAtom);
   const questionId = question?.id ?? null;
   const [expanded, setExpanded] = useState(false);
@@ -232,7 +225,6 @@ export function SummaryStatusRow({
           <StatusContent load={load} reload={reload} />
         </div>
       )}
-      {announce && <QuestionAnnouncement question={question} />}
     </>
   );
 }

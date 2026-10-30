@@ -2,12 +2,21 @@ import { useAtomValue } from "jotai/react";
 
 import { OfferButton } from "@/plan/offers/offer-button";
 import { checklistAtom } from "@/plan/state/atoms";
+import { screenAtom, startOwnerAtom } from "./session-home";
 import { NewChatButton } from "./start-chat";
 
-/** The checklist's primary offer, the empty state's way into a chat. */
+/**
+ * The checklist's primary offer, the empty state's way into a chat. The checklist is the last
+ * visited feature's, and a click starts a chat owned by the screen it is made on, so the offer
+ * shows only on that feature's screens. A mount outside a router has no screen to disagree with.
+ */
 export function PrimaryOffer() {
   const checklist = useAtomValue(checklistAtom);
-  return checklist?.primary ? <OfferButton offer={checklist.primary} /> : null;
+  const screen = useAtomValue(screenAtom);
+  const owner = useAtomValue(startOwnerAtom);
+  if (!checklist?.primary) return null;
+  if (screen !== null && owner.feature !== checklist.feature) return null;
+  return <OfferButton offer={checklist.primary} />;
 }
 
 /**

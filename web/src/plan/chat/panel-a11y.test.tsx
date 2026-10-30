@@ -44,9 +44,7 @@ vi.mock("./model", async (original) => ({
   useChatSocket: vi.fn(),
 }));
 vi.mock("@/plan/review/changed-since", () => ({
-  ChangedSinceControl: ({ compact }: { compact: boolean }) => (
-    <button aria-label="Changed since">{compact ? "● 2" : "Changed since · 2 files"}</button>
-  ),
+  ChangedSinceControl: () => <button aria-label="Changed since">Changed since · 2 files</button>,
 }));
 
 installPanelLifecycle();

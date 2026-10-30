@@ -57,6 +57,43 @@ it("lists the running rebuild's progress and ids", () => {
   ]);
 });
 
+const RUNNING = summaryPanelSchema.parse(panelFixture).running!;
+
+it("shows a Codex job's log path in mono, and nothing for a Claude session", () => {
+  show();
+  expect(screen.queryByText(/^Log:/)).toBeNull();
+  cleanup();
+
+  show({ running: { ...RUNNING, log_path: "/home/me/.loom/summary-2.log\u202E" } });
+  const path = screen.getByText("/home/me/.loom/summary-2.log⟨U+202E⟩");
+  expect(path.closest("code")?.className).toContain("font-mono");
+  expect(
+    within(screen.getByRole("region", { name: "Running rebuild" })).getByText(/^Log:/),
+  ).toBeTruthy();
+});
+
+it("spells out control characters in every server string it shows", () => {
+  const bad = (text: string) => `${text}\u202E`;
+  show({
+    running: { ...RUNNING, ids: [bad("run-id")] },
+    queue: [bad("queued-id")],
+    failed: [{ id: bad("failed-id"), error: bad("failed-error") }],
+    start_error: bad("start-error"),
+    read_only: bad("read-only"),
+    terminal_claims: [bad("claim-id")],
+  });
+  for (const text of [
+    "run-id",
+    "queued-id",
+    "failed-id",
+    "failed-error",
+    "start-error",
+    "read-only",
+    "claim-id",
+  ])
+    expect(screen.getByText(`${text}⟨U+202E⟩`)).toBeTruthy();
+});
+
 it("lists queued ids", () => {
   show();
 

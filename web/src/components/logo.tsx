@@ -12,7 +12,7 @@
  * Round caps mark free ends; a cap that lands on a crossing stroke is hidden
  * inside it, so corners and T-junctions stay square.
  */
-const LOGO_PATHS = [
+export const LOGO_PATHS = [
   // l: the half-stem of ╷ through two │ into ┴, then the foot and the ┘ hook.
   "M0.5 1V7",
   "M0 7H2.5V6",
