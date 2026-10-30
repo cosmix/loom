@@ -248,18 +248,29 @@
   gap: 8px;
 }
 
+/* Below lg the cluster takes the third column; the logo, padding and gap keep their stated values. */
 @media (max-width: 1023.98px) {
   .plan-appbar {
     grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .plan-identity {
+    min-width: 0;
+  }
+}
+
+/*
+ * Below 480px the stated values (34px logo, `14px 20px 16px` padding, `14px 20px` gap) do not fit:
+ * at 390px the row (logo 60, identity 150, activity, chat, overflow) needs about 407-422px with
+ * them, and the page must not scroll sideways. Revisit when the row sheds one of those items.
+ */
+@media (max-width: 479.98px) {
+  .plan-appbar {
     gap: 10px 12px;
     padding: 10px 14px 12px;
   }
 
   .plan-logo {
     height: 28px;
-  }
-
-  .plan-identity {
-    min-width: 0;
   }
 }

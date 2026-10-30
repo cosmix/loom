@@ -112,7 +112,7 @@ function implementsChip(plan: PlanView): HeadingChip[] {
   return [
     {
       key: "implements",
-      label: "Implements:",
+      label: "Implements",
       links: plan.implements.map((link) => ({
         label: sectionNumberLabel(link.number),
         ...(link.path === null

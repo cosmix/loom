@@ -6,12 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 
 import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
+import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
+import { serverInfoSchema } from "@/plan/api/schema";
 import {
   conceptPageSchema,
   type ConceptChanged,
   type ConceptPage,
 } from "@/plan/api/schema-concept";
-import { planSocketAtom } from "@/plan/state/atoms";
+import { storageKey } from "@/plan/chat/storage";
+import { planSocketAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 import { pageSentences } from "./open-state";
 import {
@@ -286,8 +289,11 @@ describe("resync and remount", () => {
         parent: null,
       },
     ];
-    window.sessionStorage.setItem(`loom-plan:concept:${key}`, JSON.stringify(stored));
+    const server = serverInfoSchema.parse({ ...serverInfoFixture, read_only: [] });
+    const storedAt = storageKey(server.project_key, `concept:${key}`);
+    window.sessionStorage.setItem(storedAt, JSON.stringify(stored));
     const store = createStore();
+    store.set(serverInfoAtom, server);
     await loadConceptPage(store, key);
     expect(store.get(openRunsAtom(key))).toEqual([
       {
@@ -304,9 +310,7 @@ describe("resync and remount", () => {
         path: SECTION_01,
       },
     ]);
-    expect(
-      JSON.parse(window.sessionStorage.getItem(`loom-plan:concept:${key}`) ?? "[]"),
-    ).toHaveLength(1);
+    expect(JSON.parse(window.sessionStorage.getItem(storedAt) ?? "[]")).toHaveLength(1);
   });
 });
 

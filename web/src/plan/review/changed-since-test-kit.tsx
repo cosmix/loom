@@ -82,9 +82,7 @@ function Live() {
 export function mount(
   options: {
     checkpoint?: Checkpoint | null;
-    compact?: boolean;
     live?: boolean;
-    variant?: "button" | "row";
   } = {},
 ) {
   const store = createStore();
@@ -116,7 +114,7 @@ export function mount(
     <Provider store={store}>
       <MemoryRouter>
         {options.live && <Live />}
-        <ChangedSinceControl compact={options.compact ?? false} variant={options.variant} />
+        <ChangedSinceControl />
       </MemoryRouter>
     </Provider>,
   );

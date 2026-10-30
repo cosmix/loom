@@ -52,9 +52,7 @@ export function StepGlyph({
 function StepListText({ step }: { step: StepView }) {
   return (
     <>
-      <span className="plan-step-list-label" dir="ltr">
-        {visibleControls(step.label)}
-      </span>
+      <span dir="ltr">{visibleControls(step.label)}</span>
       <span className="plan-step-list-count tabular-nums" dir="ltr">
         {step.count === null ? "—" : visibleControls(step.count)}
       </span>

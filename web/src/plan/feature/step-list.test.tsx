@@ -2,12 +2,15 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { MemoryRouter } from "react-router";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import { checklistViewSchema, type ChecklistView } from "@/plan/api/schema";
 import { StepList } from "@/plan/feature/step-list";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+});
 
 const checklist = checklistViewSchema.parse({
   feature: "demo",
@@ -175,4 +178,36 @@ it.each([
   );
 
   expect(stepLink(name).textContent).toContain(line);
+});
+
+it("scrolls the selected step into view on mount and when the selection changes", () => {
+  const reached: Element[] = [];
+  const scrollIntoView = vi.fn(function (this: Element) {
+    reached.push(this);
+  });
+  // jsdom has no scrollIntoView, so the component's guard is what lets the other tests render.
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView,
+  });
+  const view = renderList(checklist, 2);
+
+  expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  expect(scrollIntoView).toHaveBeenLastCalledWith({
+    block: "nearest",
+    inline: "nearest",
+    behavior: "instant",
+  });
+  expect(reached[0]).toBe(stepLink("Product spec"));
+
+  view.rerender(
+    <Provider store={createStore()}>
+      <MemoryRouter>
+        <StepList checklist={checklist} selected={4} />
+      </MemoryRouter>
+    </Provider>,
+  );
+
+  expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  expect(reached[1]).toBe(stepLink("Plans"));
 });

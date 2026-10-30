@@ -11,7 +11,7 @@ import { authoringAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
 import { DashboardButton } from "./dashboard-button";
 import { runStripAtom } from "./use-run";
 
-function renderDashboard(holder = true, variant?: "full" | "link" | "icon") {
+function renderDashboard(holder = true, variant?: "full" | "link") {
   const store = createStore();
   store.set(serverInfoAtom, { ...hello.server, read_only: [] });
   store.set(youAtom, hello.you);
@@ -165,16 +165,6 @@ it("styles the link as a link", async () => {
   renderDashboard();
   const link = await screen.findByRole("link", { name: "Open dashboard" });
   expect(link.classList.contains("underline")).toBe(true);
-});
-
-it("renders the narrow header form as an icon link with a name and no tunnel line", async () => {
-  withTunnel();
-  renderDashboard(true, "icon");
-  const link = await screen.findByRole("link", { name: "Open dashboard" });
-  expect(link.getAttribute("aria-label")).toBe("Open dashboard");
-  expect(link.textContent).toBe("");
-  expect(link.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
-  expect(screen.queryByText(/ssh -L/)).toBeNull();
 });
 
 it("keeps the tunnel line out of the wide header form", async () => {

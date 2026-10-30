@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { Link } from "react-router";
 
 import type { ChecklistView, MarkView, StepView } from "@/plan/api/schema";
@@ -84,9 +85,18 @@ function serverRow(checklist: ChecklistView, step: StepView, selected: number) {
 /** The step navigation: Conversation, then one link per server step; `selected` is the step the body shows. */
 export function StepList({ checklist, selected }: { checklist: ChecklistView; selected: number }) {
   const ready = readyLabel(checklist.current);
+  const list = useRef<HTMLOListElement>(null);
+  // Below 760px the list scrolls sideways, so the selected step can sit past the edge. `nearest`
+  // leaves a visible row alone; the jump is instant, so reduced motion needs no special case.
+  // jsdom has no scrollIntoView.
+  useEffect(() => {
+    list.current
+      ?.querySelector('[aria-current="step"]')
+      ?.scrollIntoView?.({ block: "nearest", inline: "nearest", behavior: "instant" });
+  }, [selected, checklist.feature]);
   return (
     <nav aria-label="Steps" className="plan-feature__nav">
-      <ol className="plan-step-list">
+      <ol ref={list} className="plan-step-list">
         <Row
           to={featurePath(checklist.feature)}
           mark="done"

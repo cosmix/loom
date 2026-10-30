@@ -24,6 +24,21 @@ type ClosedSentenceProps = {
   flashPage: string;
 };
 
+/** What follows the text: the marks and a chevron hint, or the muted "no source" mark. */
+function SentenceTail({ site, button }: { site: SentenceSite; button: boolean }): JSX.Element {
+  const column = useColumn();
+  if (!button) return <span className="concept-no-source">no source</span>;
+  return (
+    <>
+      <Marks marks={site.marks} onOpen={column.openPage} />
+      {/* The anchor takes no inline width; the chevron floats just after the marks. */}
+      <span aria-hidden="true" className="concept-sentence-hint">
+        <ChevronDown className="concept-sentence-chevron" />
+      </span>
+    </>
+  );
+}
+
 /**
  * A summary sentence that is not open. With citations it is a button that opens in place; with
  * none it is a defect (section 05) and shows a muted "no source" mark instead of colour marks.
@@ -66,17 +81,7 @@ export function ClosedSentence({ site, glyph, flashPage }: ClosedSentenceProps):
       >
         <SentenceText text={sentence.text} />
       </span>
-      {button ? (
-        <>
-          <Marks marks={site.marks} onOpen={column.openPage} />
-          {/* The anchor takes no inline width; the chevron floats just after the marks. */}
-          <span aria-hidden="true" className="concept-sentence-hint">
-            <ChevronDown className="concept-sentence-chevron" />
-          </span>
-        </>
-      ) : (
-        <span className="concept-no-source">no source</span>
-      )}
+      <SentenceTail site={site} button={button} />
       {cited && <PlanGlyph plans={plansOf(cited, sentence)} sections={implementsOf(cited)} />}
     </span>
   );

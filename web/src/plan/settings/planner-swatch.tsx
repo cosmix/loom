@@ -1,18 +1,7 @@
 import type { ReactElement } from "react";
 
+import { LOGO_PATHS } from "@/components/logo";
 import { SWATCH_SIZE, type ThemePalette } from "@/components/theme-picker";
-
-// Miniature of the terminal logo strokes in components/logo.tsx.
-const LOGO_PATHS = [
-  "M0.5 1V7",
-  "M0 7H2.5V6",
-  "M3.5 3H5.5V7H3.5Z",
-  "M6.5 3H8.5V7H6.5Z",
-  "M9.5 7V3H11.5V7",
-  "M10.5 3V6",
-  "M9 7H10",
-  "M11 7H12",
-] as const;
 
 const RAIL_X = 4;
 const CELL_W = 16;
@@ -59,6 +48,32 @@ function SwatchHeader({ palette }: { palette: ThemePalette }): ReactElement {
   );
 }
 
+/** One rail cell's marker, title line and caption line; a finished step has a filled marker. */
+function StepLabel({
+  palette,
+  x,
+  done,
+}: {
+  palette: ThemePalette;
+  x: number;
+  done: boolean;
+}): ReactElement {
+  return (
+    <g>
+      <circle
+        cx={x + 4}
+        cy="21.2"
+        r="1.5"
+        style={
+          done ? faint(palette.mutedForeground, 0.9) : stroked(palette.mutedForeground, 0.5, 0.7)
+        }
+      />
+      <path d={`M${x + 7.5} 20.4h5`} style={stroked(palette.foreground, 1.4, 0.55)} />
+      <path d={`M${x + 3} 23.8h${CELL_W - 6}`} style={stroked(palette.mutedForeground, 0.9, 0.5)} />
+    </g>
+  );
+}
+
 function SwatchSteps({ palette }: { palette: ThemePalette }): ReactElement {
   const cells = Array.from({ length: 7 }, (_, index) => RAIL_X + index * CELL_W);
   return (
@@ -87,23 +102,7 @@ function SwatchSteps({ palette }: { palette: ThemePalette }): ReactElement {
           />
         ))}
         {cells.map((x, index) => (
-          <g key={x}>
-            <circle
-              cx={x + 4}
-              cy="21.2"
-              r="1.5"
-              style={
-                index < DONE_CELLS
-                  ? faint(palette.mutedForeground, 0.9)
-                  : { ...stroked(palette.mutedForeground, 0.5, 0.7) }
-              }
-            />
-            <path d={`M${x + 7.5} 20.4h5`} style={stroked(palette.foreground, 1.4, 0.55)} />
-            <path
-              d={`M${x + 3} 23.8h${CELL_W - 6}`}
-              style={stroked(palette.mutedForeground, 0.9, 0.5)}
-            />
-          </g>
+          <StepLabel key={x} palette={palette} x={x} done={index < DONE_CELLS} />
         ))}
         <path d={`M${cells[CURRENT_CELL]} 25.6h${CELL_W}`} style={stroked(palette.primary, 1.2)} />
       </g>

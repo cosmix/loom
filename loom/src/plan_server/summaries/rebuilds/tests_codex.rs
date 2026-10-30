@@ -2,6 +2,7 @@
 //! leaves it alone, its watcher's end reaches the scheduler like a bridge `Ended`, an end
 //! that beats the start's settling is kept, and the server stop reaches the spawner.
 
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use super::tests::{update, Row};
@@ -11,7 +12,9 @@ use crate::plan_server::summaries::scheduler::SchedulerConfig;
 use crate::plan_server::wire::summaries::FailedSummary;
 use crate::planning::summary::evaluate::SummaryState::Missing;
 
-const SESSION: &str = "codex-1-0";
+const SESSION: &str = "c0de-1-0";
+const LOG: &str = "/runtime/codex-logs/c0de-1-0.log";
+const TWICE: &str = "the summary session ended twice without sealing it";
 
 /// A spawner whose sessions are the Codex spawner's: `runs_outside_bridge` says whether the
 /// session it answers is one.
@@ -68,6 +71,10 @@ impl SessionSpawner for CodexProbe {
 
     fn stop_all(&self) {
         *lock(&self.stop_alls) += 1;
+    }
+
+    fn log_path(&self, session: &str) -> Option<PathBuf> {
+        (self.outside && session == SESSION).then(|| PathBuf::from(LOG))
     }
 }
 
@@ -160,6 +167,48 @@ fn a_torn_down_job_requeues_its_ids() {
         "a requested stop is no failure"
     );
     assert_eq!(lock(&probe.starts).len(), 2, "requeued and started again");
+}
+
+#[test]
+fn a_job_that_exits_clean_twice_fails_its_ids_and_is_not_started_a_third_time() {
+    let rig = Rig::new(true);
+    let probe = CodexProbe::new(true);
+    let rebuilds = facade_over(&rig, &probe);
+    report_missing(&rebuilds);
+    rebuilds.codex_session_ended(SESSION, &EndOutcome::Closed);
+    assert_eq!(rebuilds.panel().failed, vec![], "the first exit requeues");
+    assert_eq!(lock(&probe.starts).len(), 2, "and starts again");
+    rebuilds.codex_session_ended(SESSION, &EndOutcome::Closed);
+    let panel = rebuilds.panel();
+    assert_eq!((panel.failed, panel.running), (failed(TWICE), None));
+    assert_eq!(lock(&probe.starts).len(), 2, "no third start");
+}
+
+#[test]
+fn a_clean_exit_that_beats_the_start_settling_counts_towards_the_bound() {
+    let rig = Rig::new(true);
+    let probe = CodexProbe::new(true);
+    let rebuilds = facade_over(&rig, &probe);
+    *lock(&probe.end_first) = Some(EndOutcome::Closed);
+    report_missing(&rebuilds);
+    assert_eq!(lock(&probe.starts).len(), 2, "requeued and started again");
+    rebuilds.codex_session_ended(SESSION, &EndOutcome::Closed);
+    assert_eq!(rebuilds.panel().failed, failed(TWICE));
+    assert_eq!(lock(&probe.starts).len(), 2, "no third start");
+}
+
+#[test]
+fn a_running_job_shows_its_log_path_and_a_bridge_session_none() {
+    let rig = Rig::new(true);
+    for (outside, want) in [(true, Some(LOG.to_owned())), (false, None)] {
+        let probe = CodexProbe::new(outside);
+        let rebuilds = facade_over(&rig, &probe);
+        report_missing(&rebuilds);
+        let running = rebuilds.panel().running.expect("running");
+        let wire = serde_json::to_value(&running).expect("serialise");
+        assert_eq!(running.log_path, want);
+        assert_eq!(wire["log_path"], serde_json::json!(want), "always sent");
+    }
 }
 
 #[test]

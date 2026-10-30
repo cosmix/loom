@@ -16,7 +16,9 @@ mod tests_session;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::time::Instant;
+use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::time::{Duration, Instant};
 
 pub use config::{SchedulerConfig, AUTO_LIMIT, NO_SEAL_TIMEOUT};
 
@@ -33,6 +35,12 @@ pub trait SessionSpawner: Send + Sync {
     }
     /// Ends every session the spawner runs outside the bridge, for server shutdown.
     fn stop_all(&self) {}
+    /// Wait up to `grace`, or until `aborted`, for what was asked to stop; force what remains.
+    fn force_stopped(&self, _grace: Duration, _aborted: &AtomicBool) {}
+    /// The log a session writes where it has no tmux pane to attach to.
+    fn log_path(&self, _session: &str) -> Option<PathBuf> {
+        None
+    }
 }
 
 /// The open question: the queued summaries waiting for approval.

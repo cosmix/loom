@@ -26,6 +26,8 @@ export const runningRebuildSchema = z.strictObject({
   done: uint,
   total: uint,
   started_at: z.string(),
+  /** The Codex job's log file; null for a Claude session, which has a tmux terminal to attach to. */
+  log_path: z.string().nullable(),
 });
 
 export const failedSummarySchema = z.strictObject({ id: z.string(), error: z.string() });
@@ -84,5 +86,6 @@ export const summaryMessageSchemas = [
 ] as const;
 
 export type TokenVector = z.infer<typeof tokenVectorSchema>;
+export type RunningRebuild = z.infer<typeof runningRebuildSchema>;
 export type SummaryQuestion = z.infer<typeof summaryQuestionSchema>;
 export type SummaryPanel = z.infer<typeof summaryPanelSchema>;

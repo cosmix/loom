@@ -195,16 +195,16 @@ it("keeps a trigger during loading and shows the loading state when opened", () 
 
 it("shows a panel fetch error and retries from the popover", async () => {
   replies = [
-    { status: 500, body: { error: "internal", message: "panel failed" } },
+    { status: 500, body: { error: "internal", message: "panel failed\u202E" } },
     { status: 200, body: idle },
   ];
   show();
   fireEvent.click(await screen.findByRole("button", { name: /status unavailable/ }));
-  expect(await screen.findByText("panel failed")).toBeTruthy();
+  expect(await screen.findByText("panel failed⟨U+202E⟩")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   await screen.findByRole("button", { name: "Summary rebuilds: Summaries up to date" });
   expect(fetchMock).toHaveBeenCalledTimes(2);
-  expect(screen.queryByText("panel failed")).toBeNull();
+  expect(screen.queryByText("panel failed⟨U+202E⟩")).toBeNull();
 });
 
 it("opens an arriving question and announces it without taking focus or answering", async () => {
@@ -260,14 +260,14 @@ it("shows a failed answer and sends the chosen question ID and choice", async ()
   await screen.findByRole("button", { name: /Summaries up to date/ });
   deliver("summary_question", question);
   fetchMock.mockResolvedValueOnce(
-    new Response(JSON.stringify({ error: "internal", message: "answer failed" }), {
+    new Response(JSON.stringify({ error: "internal", message: "answer failed\u202E" }), {
       status: 500,
       headers: { "content-type": "application/json" },
     }),
   );
   fireEvent.click(await screen.findByRole("button", { name: "Not now" }));
   const dialog = screen.getByRole("dialog", { name: "Summary rebuilds" });
-  expect((await within(dialog).findByRole("alert")).textContent).toBe("answer failed");
+  expect((await within(dialog).findByRole("alert")).textContent).toBe("answer failed⟨U+202E⟩");
   expect(fetchMock).toHaveBeenLastCalledWith(
     expect.stringContaining("/api/summaries/answer"),
     expect.objectContaining({
@@ -283,7 +283,7 @@ it("shows a failed answer and sends the chosen question ID and choice", async ()
   );
   fireEvent.click(screen.getByRole("button", { name: "Rebuild all" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Not now" })).toBeNull());
-  expect(screen.queryByText("answer failed")).toBeNull();
+  expect(screen.queryByText("answer failed⟨U+202E⟩")).toBeNull();
 });
 
 it("shows the question to a browser that cannot answer", async () => {
@@ -381,7 +381,7 @@ it("the row variant labels the status, expands in place, and runs no feed of its
   expect(handlers.size).toBe(0);
 });
 
-it("the row variant expands for an open question and announces it", () => {
+it("the row variant expands for an open question and leaves the announcing to its caller", () => {
   showRow({
     status: "ready",
     panel: summaryPanelSchema.parse({ ...panelFixture, running: null, question }),
@@ -390,5 +390,5 @@ it("the row variant expands for an open question and announces it", () => {
   expect(
     screen.getByRole("button", { name: /^Summary rebuilds:/ }).getAttribute("aria-expanded"),
   ).toBe("true");
-  expect(screen.getByRole("status").textContent).toContain(`Rebuild ${question.count} summaries?`);
+  expect(screen.queryByRole("status")).toBeNull();
 });

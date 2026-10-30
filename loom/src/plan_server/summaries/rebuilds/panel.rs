@@ -40,6 +40,10 @@ impl Rebuilds {
         let runtime = self.env.as_ref().map(|env| env.runtime.dir.as_path());
         let quota = runtime.map(crate::quota::read_snapshot).unwrap_or_default();
         let running = view.running.map(|(session, ids)| RunningRebuild {
+            log_path: self
+                .spawner
+                .log_path(&session)
+                .map(|path| path.display().to_string()),
             session,
             done: view.sealed.len(),
             total: ids.len(),

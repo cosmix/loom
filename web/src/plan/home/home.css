@@ -52,7 +52,7 @@
 .invitation:focus-within {
   box-shadow:
     0 0 0 1px var(--primary),
-    var(--dialog-shadow);
+    var(--plan-shadow);
   transform: translateY(-1px);
 }
 

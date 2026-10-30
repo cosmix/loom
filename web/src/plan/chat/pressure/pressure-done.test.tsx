@@ -179,7 +179,8 @@ it.each([{ plans: [plan] }, { plans: [] }])(
     expect(button.disabled).toBe(false);
     expect(button.getAttribute("aria-disabled")).toBe("true");
     const reason = screen.getByText("There is no other plan to pressure-test.");
-    expect(button.getAttribute("aria-describedby")).toBe(reason.id);
+    // The text sits in the isolated `Untrusted` span inside the described element.
+    expect(button.getAttribute("aria-describedby")).toBe(reason.parentElement?.id);
     expect(store.get(pressureDialogAtom)).toEqual({ open: false, plan: null });
   },
 );

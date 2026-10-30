@@ -1,6 +1,14 @@
+import { cn } from "cn";
 import { useId, type ComponentProps, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Untrusted } from "@/plan/chat/visible-controls";
+
+// The planner's primary button: 30px high, `0 12px`, radius 8px, 13px/600. A caller that passes a
+// `size` wants that size's measures instead. A ghost or danger look laid over the button from a
+// wrapper (`[&_button]:` classes, `.x button` rules) out-ranks these on every property it sets, so
+// such a wrapper must set `font-weight` too or the button reads 600.
+const PRIMARY_MEASURES = "h-[30px] rounded-[8px] px-3 text-[13px] font-semibold";
 
 export function DisabledReason({
   reason,
@@ -22,7 +30,10 @@ export function DisabledReason({
       <Button
         type="button"
         size={size}
-        className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-primary aria-disabled:active:translate-y-0!"
+        className={cn(
+          size === undefined && PRIMARY_MEASURES,
+          "aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-primary aria-disabled:active:translate-y-0!",
+        )}
         aria-disabled={blocked || undefined}
         aria-describedby={blocked ? reasonId : undefined}
         onClick={blocked ? undefined : onClick}
@@ -31,7 +42,8 @@ export function DisabledReason({
       </Button>
       {blocked && (
         <span id={reasonId} className="text-xs text-muted-foreground">
-          {reason}
+          {/* The reason can carry a server name or message (`authorBlockReasonAtom`). */}
+          <Untrusted text={reason} />
         </span>
       )}
     </div>

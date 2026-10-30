@@ -106,7 +106,7 @@ function Live() {
 }
 
 function mount(
-  children: ReactNode = <ChangedSinceControl compact={false} />,
+  children: ReactNode = <ChangedSinceControl />,
   options: {
     checkpoint?: Checkpoint | null;
     live?: boolean;
@@ -297,20 +297,22 @@ it("running note", async () => {
   expect(within(note).queryByRole("link")).toBeNull();
 });
 
-it("help keys hold the Chat group", () => {
-  expect(PLANNER_SHORTCUT_GROUPS.filter(({ title }) => title === "Chat")).toHaveLength(1);
-  expect(PLANNER_SHORTCUT_GROUPS.find(({ title }) => title === "Chat")?.rows).toContainEqual([
+it("help keys hold the Anywhere group", () => {
+  expect(PLANNER_SHORTCUT_GROUPS.filter(({ title }) => title === "Anywhere")).toHaveLength(1);
+  expect(PLANNER_SHORTCUT_GROUPS.find(({ title }) => title === "Anywhere")?.rows).toContainEqual([
     "c",
     "Focus the chat composer",
   ]);
 });
 
 it("help keys hold c, y and n", () => {
-  expect(PLANNER_SHORTCUT_GROUPS.find(({ title }) => title === "Chat")?.rows).toEqual([
-    ["c", "Focus the chat composer"],
-    ["y", "Allow the pinned permission request"],
-    ["n", "Deny it, with a note"],
-  ]);
+  expect(PLANNER_SHORTCUT_GROUPS.find(({ title }) => title === "Anywhere")?.rows).toEqual(
+    expect.arrayContaining([
+      ["c", "Focus the chat composer"],
+      ["y", "Allow the pinned permission request"],
+      ["n", "Deny it, with a note"],
+    ]),
+  );
 });
 
 it("checkpoint keyed by project key", async () => {
