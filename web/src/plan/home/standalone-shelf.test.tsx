@@ -99,8 +99,8 @@ describe("StandaloneShelf", () => {
     expect(details.open).toBe(false);
     expect(summary.textContent).toContain("4 standalone plans");
     expect(summary.textContent).toContain("bugfixes, performance work and small features");
-    expect(within(summary).getByRole("button", { name: "New standalone plan" })).toBeTruthy();
-    expect(within(summary).getByRole("button", { name: "Move into a feature…" })).toBeTruthy();
+    expect(within(summary).getByRole("button", { name: "Add plan" })).toBeTruthy();
+    expect(within(summary).getByRole("button", { name: "Move plan" })).toBeTruthy();
     expect(within(summary).queryByRole("link")).toBeNull();
   });
 
@@ -110,9 +110,7 @@ describe("StandaloneShelf", () => {
       .getByRole("region", { name: "Standalone plans" })
       .querySelector("details") as HTMLDetailsElement;
 
-    const notCancelled = fireEvent.click(
-      screen.getByRole("button", { name: "Move into a feature…" }),
-    );
+    const notCancelled = fireEvent.click(screen.getByRole("button", { name: "Move plan" }));
 
     expect(notCancelled).toBe(false);
     expect(details.open).toBe(false);
@@ -142,7 +140,7 @@ describe("StandaloneShelf", () => {
   it("opens kickoff with the small-work route state", () => {
     mount();
 
-    fireEvent.click(screen.getByRole("button", { name: "New standalone plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add plan" }));
 
     expect(screen.getByText('Kickoff state: {"small":true}')).toBeTruthy();
   });
@@ -153,14 +151,14 @@ describe("StandaloneShelf", () => {
     expect(
       screen.getByText("Bugfixes and small changes that need no product spec live here."),
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "New standalone plan" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Move into a feature…" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add plan" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Move plan" })).toBeTruthy();
   });
 
   it("opens the general move dialog with a choice of standalone plans", () => {
     mount();
 
-    fireEvent.click(screen.getByRole("button", { name: "Move into a feature…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move plan" }));
 
     expect(screen.getByRole("dialog", { name: "Move into a feature" })).toBeTruthy();
     expect(
@@ -170,7 +168,7 @@ describe("StandaloneShelf", () => {
 
   it("returns focus to the move button when the dialog closes", async () => {
     mount();
-    const opener = screen.getByRole("button", { name: "Move into a feature…" });
+    const opener = screen.getByRole("button", { name: "Move plan" });
     opener.focus();
     fireEvent.click(opener);
 
@@ -199,7 +197,7 @@ describe("StandaloneShelf", () => {
     expect(
       screen.queryByText("Bugfixes and small changes that need no product spec live here."),
     ).toBeNull();
-    fireEvent.click(screen.getAllByRole("button", { name: "Move into a feature…" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Move plan" })[0]);
 
     expect(screen.getByRole("dialog", { name: "Move into a feature" })).toBeTruthy();
     const dialog = screen.getByRole("dialog", { name: "Move into a feature" });
@@ -211,9 +209,16 @@ describe("StandaloneShelf", () => {
     mount(project, true);
 
     expect(screen.getByRole("link", { name: "Fix search fix-search written" })).toBeTruthy();
-    const newPlan = screen.getByRole("button", { name: "New standalone plan" });
+    const newPlan = screen.getByRole("button", { name: "Add plan" });
     expect(newPlan.getAttribute("aria-disabled")).toBe("true");
-    expect(screen.getByText("Alex holds authoring")).toBeTruthy();
+    // Each blocked control is described by the real reason, and no third line repeats it.
+    const move = screen.getByRole("button", { name: "Move plan" });
+    for (const button of [newPlan, move]) {
+      const described = document.getElementById(button.getAttribute("aria-describedby") ?? "");
+      expect(described?.textContent).toBe("Alex holds authoring");
+    }
+    expect(screen.getAllByText("Alex holds authoring")).toHaveLength(2);
+    expect(screen.queryByText("Authoring is unavailable")).toBeNull();
     fireEvent.click(newPlan);
     expect(screen.queryByText('Kickoff state: {"small":true}')).toBeNull();
   });

@@ -98,19 +98,21 @@ describe("FeatureCard", () => {
     expect(screen.getByText("0 of 0 steps done, 0 with gaps")).toBeTruthy();
   });
 
-  it("names both folders, or which one is missing", () => {
+  it("names one folder: the product directory, else the plans directory", () => {
     const { rerender } = renderHome(<FeatureCard checklist={checklist("demo")} />);
-    expect(screen.getByText("product/demo/ · no plans yet")).toBeTruthy();
+    expect(screen.getByText("product/demo/")).toBeTruthy();
 
     const withPlans = {
       ...checklist("demo"),
       plans: { listed: 2, total: 2, written: 2, running: 0, done: 0 },
     };
     rerender(wrap(<FeatureCard checklist={withPlans} />));
-    expect(screen.getByText("product/demo/ · plans/demo/")).toBeTruthy();
+    expect(screen.getByText("product/demo/")).toBeTruthy();
+    expect(screen.queryByText(/plans\/demo/)).toBeNull();
 
     rerender(wrap(<FeatureCard checklist={{ ...withPlans, has_product: false }} />));
-    expect(screen.getByText("plans/demo/ · no product spec")).toBeTruthy();
+    expect(screen.getByText("plans/demo/")).toBeTruthy();
+    expect(screen.queryByText(/product\/demo/)).toBeNull();
   });
 
   it("states sections, plans, untested and running as facts with the right conditions", () => {
@@ -192,7 +194,7 @@ describe("FeatureCard", () => {
     );
 
     expect(screen.getByRole("heading", { name: "demo⟨U+202E⟩" })).toBeTruthy();
-    expect(screen.getByText("product/demo⟨U+202E⟩/ · no plans yet")).toBeTruthy();
+    expect(screen.getByText("product/demo⟨U+202E⟩/")).toBeTruthy();
     expect(screen.getByText("Build⟨U+2066⟩ with care.")).toBeTruthy();
   });
 });

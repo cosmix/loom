@@ -7,7 +7,7 @@ import { Kbd } from "@/components/ui/kbd";
 import type { HelpSearch } from "@/plan/help/help-search";
 import type { PlannerHelpTopic } from "@/plan/help/topics";
 
-/** `--planner-help-hue` tints a topic's tile and its hero badge. */
+/** `--planner-help-hue` colours a topic's glyph in the list and in its hero. */
 export function topicHue(topic: PlannerHelpTopic): CSSProperties {
   return { "--planner-help-hue": `var(--doc-${topic.hue})` } as CSSProperties;
 }

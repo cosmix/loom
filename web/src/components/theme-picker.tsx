@@ -243,8 +243,11 @@ function ThemeSwatch(palette: ThemePalette): ReactElement {
 
 export function ThemePicker({
   swatch = ThemeSwatch,
+  optionClassName,
 }: {
   swatch?: (palette: ThemePalette) => ReactElement;
+  /** Added to every option button, for a caller whose stylesheet restyles the cards. */
+  optionClassName?: string;
 } = {}): ReactElement {
   const [scheme, setScheme] = useAtom(themeAtom);
   const [lightVariant, setLightVariant] = useAtom(lightVariantAtom);
@@ -272,7 +275,7 @@ export function ThemePicker({
             }}
             className={`flex flex-col items-start gap-1 rounded-lg border bg-card p-2 text-left transition-shadow ${
               active ? "border-primary ring-2 ring-primary" : "border-border"
-            }`}
+            }${optionClassName ? ` ${optionClassName}` : ""}`}
           >
             {swatch(option.palette)}
             <span className="mt-1 text-[13px] font-medium leading-4">{option.label}</span>
