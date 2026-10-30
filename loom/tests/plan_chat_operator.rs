@@ -52,7 +52,7 @@ fn operator() -> Result<()> {
     let repo = fixture()?;
     let _home = LoomHome::new()?;
     let guard = ServerGuard::start(repo.path())?;
-    let server = guard.0.as_ref().context("server guard is empty")?;
+    let server = guard.server.as_ref().context("server guard is empty")?;
     create_runtime_dir(server.ctx.runtime())?;
     let bridge = server
         .ctx

@@ -32,9 +32,7 @@ use super::files::texts::TextStore;
 use super::ids::{BrowserId, PublicId};
 use super::lifecycle;
 use super::shutdown::ShutdownHook;
-use super::wire::chat::ChatFrame;
-use super::wire::message::PlanMessage;
-use super::wire::team::DraftTeamView;
+use super::wire::{chat::ChatFrame, message::PlanMessage, team::DraftTeamView};
 use crate::plan_session::bridge::host::SessionHost;
 use crate::plan_session::bridge::registry::read_record;
 use crate::plan_session::bridge::{
@@ -105,10 +103,11 @@ impl Drop for DriverStop {
 
 /// Build the bridge over tmux and wire it to the hub, authoring and shutdown.
 pub fn install(ctx: &Arc<PlanContext>) {
-    // A missing claude leaves the path empty: read-only mode refuses every start and says why.
-    let claude_bin = crate::claude::find_claude_path().unwrap_or_default();
-    install_with(ctx, Arc::new(TmuxHost), move |config| {
-        config.claude_bin = claude_bin;
+    install_with(ctx, Arc::new(TmuxHost), |_config| {
+        #[cfg(not(test))]
+        {
+            _config.claude_bin = crate::claude::find_claude_path().unwrap_or_default();
+        }
     });
 }
 

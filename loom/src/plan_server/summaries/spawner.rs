@@ -124,8 +124,15 @@ fn batch_feature<'a>(project: &'a Project, ids: &'a [String]) -> Option<&'a str>
 
 #[cfg(test)]
 mod tests {
-    use super::{batch_feature, summary_feature};
+    use std::sync::Arc;
+
+    use super::{batch_feature, summary_feature, RealSpawner, SessionSpawner};
+    use crate::plan_server::context::{BindInfo, PlanContext};
+    use crate::plan_server::prereq::ReadOnly;
+    use crate::plan_session::bridge::Bridge;
     use crate::planning::project::Project;
+    use crate::planning::runtime::runtime_paths_under;
+    use crate::planning::watch::OwnWrites;
 
     fn fixture() -> (tempfile::TempDir, Project) {
         let temp = tempfile::tempdir().unwrap();
@@ -142,6 +149,37 @@ mod tests {
         }
         let project = Project::load(temp.path()).unwrap();
         (temp, project)
+    }
+
+    #[test]
+    fn installed_spawner_without_a_test_binary_refuses_before_reserving_a_session() {
+        let (temp, _) = fixture();
+        let runtime = runtime_paths_under(&temp.path().join("runtime"), temp.path()).unwrap();
+        let ctx = PlanContext::new(
+            temp.path().to_path_buf(),
+            ReadOnly::from_problems(Vec::new()),
+            BindInfo::new("127.0.0.1:0".parse().unwrap(), &"ab".repeat(32)),
+            OwnWrites::default(),
+        )
+        .unwrap()
+        .with_runtime(runtime);
+        let ctx = Arc::new(ctx);
+        crate::plan_server::chat::install(&ctx);
+
+        let error = RealSpawner::new(&ctx)
+            .start_summary(&["demo/product/section_01".to_owned()])
+            .expect_err("an installed test spawner must not launch the real claude");
+
+        assert_eq!(error.to_string(), "no claude binary is configured");
+        let bridge = ctx.extensions().get::<Bridge>().unwrap();
+        assert!(
+            bridge.sessions().is_empty(),
+            "no process can be queued to launch"
+        );
+        assert!(
+            !ctx.runtime().sessions.exists(),
+            "no session directory was created"
+        );
     }
 
     #[test]
