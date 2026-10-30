@@ -1,9 +1,9 @@
 ---
 kind: document
 of: doc/product/feat-planner/section_05.md
-file: sha256:63575346311b77b8a797cb305373e2278dcdb254059a8e52d11c40f843ef4cfe
+file: sha256:01eea572800e6ac67dfc0b7b08ef2f2bc63c993fca7823fbd55c75ff54d86431
 cites:
-  "doc/product/feat-planner/section_05.md#document-summary-pages": "sha256:caf835101a94d6c42701545d92063aa7822b8498e488370b2b96d76a03765158"
+  "doc/product/feat-planner/section_05.md#document-summary-pages": "sha256:c0013de4e6355d37bfc699cd10bdd4397dd3f7d8a952e9204e05e1a7ed9ec3ea"
   "doc/product/feat-planner/section_05.md#empty-and-partial-states": "sha256:999423b5c11c617864adee32baa67f586582311f93b3b82ad8d97e5c9e6b3a5b"
   "doc/product/feat-planner/section_05.md#folding-back": "sha256:7e6416b94780187a6b180806a7850f5a22cb5cd263bdf8244a00744659f429a4"
   "doc/product/feat-planner/section_05.md#keyboard": "sha256:77ae1c7f3fbc11bf3657956152f95e2886b232431bc50a99fa79c01ebfab146e"
@@ -12,7 +12,7 @@ cites:
   "doc/product/feat-planner/section_05.md#product-to-plan-links": "sha256:6822d84d7d1e2eacc6dda66a024ef07cd8cc7f40a271f00d3d5da0ce955169db"
   "doc/product/feat-planner/section_05.md#rebuilds-while-reading": "sha256:f816da1f309a1f14a715a1f8fadd6b927791b7b38c73e5e9ce3b920d9a85eb3a"
   "doc/product/feat-planner/section_05.md#sentences-and-their-marks": "sha256:3546e6d8e7fc8aa88fcdfd4f6da38734732d0f015ca06d9e3ecd4a1e31fb024b"
-  "doc/product/feat-planner/section_05.md#the-two-overviews": "sha256:cb78ac22de97d3c22fad07d35b526d10555b1b564ce6d7afad5fa64d2c675bf5"
+  "doc/product/feat-planner/section_05.md#the-two-overviews": "sha256:3ba211debcb0e033c9c74216855f9ec680d1889f5f16e998f7410c757008e433"
   "doc/product/feat-planner/section_05.md#what-stays-open": "sha256:8dfbc5fb1cdc04d766d5ded820d0c164049c64c2968d75c30812169bce98a843"
 ---
 

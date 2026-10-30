@@ -1,7 +1,7 @@
 ---
 kind: document
 of: doc/product/feat-planner/section_08.md
-file: sha256:e4ad3c55abedb7decc6ca4553f92b734ff13ef3379b7b01e2bac163bbc5076d8
+file: sha256:e97f52bdbffed773c5d73e1f9055538ec878b9e70f09005a50748cbf34d7cd4a
 cites:
   "doc/product/feat-planner/section_08.md#attachments": "sha256:e5d8341c3a4f0f6573f71c86b5e40a2b3d386025590b3e5989f795e087cf3944"
   "doc/product/feat-planner/section_08.md#composing-and-sending": "sha256:7a80f7feb3248c2476b414c2cc059e9c76a5e936532f17a79720f02f7ddfdaa5"
@@ -13,7 +13,7 @@ cites:
   "doc/product/feat-planner/section_08.md#session-states": "sha256:8815a3313132fb6914cb6d1375f11c4e4d9705904af9833721df00c90a31a6d2"
   "doc/product/feat-planner/section_08.md#the-model-in-one-paragraph": "sha256:e80905946d108346ffbcd89c576c0f24ae9c63f58dd1c0eaff08c305b092f899"
   "doc/product/feat-planner/section_08.md#tool-activity": "sha256:521f79f2544e1c11de645f123c7a8228f6edfcd7a4ca0816c5150c236f10fe67"
-  "doc/product/feat-planner/section_08.md#what-a-turn-changed": "sha256:8c78dff501f9bf33cd47303f7d70e8c477f1d04d7174071db14f13112b5ee814"
+  "doc/product/feat-planner/section_08.md#what-a-turn-changed": "sha256:1169a1b9d403f10490e71f39f21ed0650bec4adeedb2d399561d61113cded34c"
 ---
 
 # Chat interface
@@ -46,4 +46,4 @@ Interrupting moves queued messages back into the composer, joined with blank lin
 ## Attachments and turn footers
 
 Each attachment chip labels its document and any passage, line range, or stage, and a message takes at most 10 attachments. [Attachments](../../../../product/feat-planner/section_08.md#attachments)
-The turn footer lists each changed file with its line counts and a Diff link, and each rebuilt summary with its tokens. [What a turn changed](../../../../product/feat-planner/section_08.md#what-a-turn-changed)
+The turn footer lists each changed file with its line counts and a Diff link that is disabled until the turn ends, and each rebuilt summary with its tokens. [What a turn changed](../../../../product/feat-planner/section_08.md#what-a-turn-changed)

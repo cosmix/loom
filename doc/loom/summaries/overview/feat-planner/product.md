@@ -9,11 +9,11 @@ members:
   "feat-planner/product/section_01": "sha256:2b142f9668a39fac39255dce25d0e34d9d300a47cac2726b6d8a5e6f05463da8"
   "feat-planner/product/section_02": "sha256:09da3fd1be3a1dc98eac2d53a32605e4ec341887d7870eb8f0013e857fd948a0"
   "feat-planner/product/section_03": "sha256:cc8404b3c8884a86f193143990b0679944d39bb1c04c9b39348f3ab62b571f72"
-  "feat-planner/product/section_04": "sha256:4f64ddc7b612c6a57b33cb3e2d6734c630fb8da1805641e0b715ed23e1c21278"
+  "feat-planner/product/section_04": "sha256:0472610608f90e74d8b729681374a179af9b8d3ab936a51847ff40781362b096"
   "feat-planner/product/section_05": "sha256:d2f641a07397db971bd309f4b3a013dbe29902c9896eb2ec89871a2ee0ebb0ae"
   "feat-planner/product/section_06": "sha256:52acfaf0406393f59afa2a5b89257b5710cde667af18288fd4226d7b638778e2"
   "feat-planner/product/section_07": "sha256:8c603ca815bc62f97a459f282214f5696c9fa9c15686734efb5c2b43c80f4546"
-  "feat-planner/product/section_08": "sha256:d0b9ed695931324eda095490f53d406e00e43f149316212f7d7f3823ff752c93"
+  "feat-planner/product/section_08": "sha256:42912d99fa15b11ade8d15a19d922e2725702e9ec97cfaeb7a103d8ef1f8ea25"
   "feat-planner/product/section_09": "sha256:18c4acff559940acbd8a4230371102915acfb19f65b1f6a88f108b3b67341795"
   "feat-planner/product/section_10": "sha256:5c9a8a455bdc3bc9afdb3c154c5554f33a837e1798bec0ce2d87a5db810ae7c9"
   "feat-planner/product/section_11": "sha256:57cc4b242347c7836fb0dd620db8ed791e169dba76550e47d4688704202bea65"
@@ -48,7 +48,7 @@ Knowledge files stay read-only in the app and change only through `loom knowledg
 
 Every summary is a committed Markdown file with a manifest of content hashes, and the engine rehashes sources to find out-of-date sentences. [04](../../feat-planner/product/section_04.md#s-3bc8275e) [04](../../feat-planner/product/section_04.md#s-84992440)
 
-Document summaries run on Haiku and overviews on Sonnet, and rebuilds start at once for up to 5 out-of-date summaries and ask first above that. [04](../../feat-planner/product/section_04.md#s-ca63f450) [04](../../feat-planner/product/section_04.md#s-014f2b82)
+Document summaries and overviews run on Haiku at high effort by default, and background rebuilds start at once for up to 5 out-of-date summaries and ask first above that. [04](../../feat-planner/product/section_04.md#s-7286fd62) [04](../../feat-planner/product/section_04.md#s-014f2b82)
 
 ## Reading in two modes
 
@@ -70,7 +70,7 @@ Sessions start cold and never use `claude --resume`, and permission decisions go
 
 The chat panel docks on the right and shows assistant text a whole block at a time with one row per tool call, and only the holder has a composer. [08](../../feat-planner/product/section_08.md#s-257c2d99) [08](../../feat-planner/product/section_08.md#s-f6d593b6) [08](../../feat-planner/product/section_08.md#s-bfd1930f)
 
-Each turn footer lists the files a turn changed with diff links and the summaries it rebuilt. [08](../../feat-planner/product/section_08.md#s-1a9bcd0e)
+The turn footer lists each changed file with its line counts and a Diff link, and each rebuilt summary with its tokens. [08](../../feat-planner/product/section_08.md#s-418e212d)
 
 Every planning session gets a generated brief, an opening message naming its step and target, and a per-session plugin of skills and summary agents. [09](../../feat-planner/product/section_09.md#s-e2717c2d) [09](../../feat-planner/product/section_09.md#s-be412e4b)
 

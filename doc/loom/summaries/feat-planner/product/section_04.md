@@ -1,7 +1,7 @@
 ---
 kind: document
 of: doc/product/feat-planner/section_04.md
-file: sha256:4b48a2992932412d5019c24d75c0cf1c4b56fb5392eb061ef904d44d5e91367c
+file: sha256:35809c1095a5961ea8a1e7a3692d8333bef62d220ea76db69d6a234a0fd68dca
 cites:
   "doc/product/feat-planner/section_04.md#asking-before-a-large-rebuild": "sha256:179b382fa17da7481c486b54298906ea21c8fbf9b15eb403b275b2b7884eb598"
   "doc/product/feat-planner/section_04.md#cost": "sha256:bc793e6ad7bb50fb6671aa456e06b3d246c8309a43e46695ea862028750e2a39"
@@ -9,11 +9,11 @@ cites:
   "doc/product/feat-planner/section_04.md#sealing-a-summary": "sha256:980e0ac047534d60340c9fdc88c9c76a3707bc910d29836df5ae15b3cb4ff168"
   "doc/product/feat-planner/section_04.md#the-front-matter": "sha256:39aa73b8dbcc46e2b23db3e1f8854ea3b29b8680d2b5cf8b412758f65fb2340d"
   "doc/product/feat-planner/section_04.md#the-model-in-one-paragraph": "sha256:be8f6f8acb4144939ec53d970b9b413383d49674babaed889811da3a9ec6565b"
-  "doc/product/feat-planner/section_04.md#the-store": "sha256:483970fa04b3576e649329da5aff1f2aab5f5a5d74f2163fabc6e1ba23a423fe"
-  "doc/product/feat-planner/section_04.md#the-summary-file": "sha256:e35b06b80b7eac50f22d937eb73fe35ca03e4ef0db64e4bc7be67e3618b1faaa"
+  "doc/product/feat-planner/section_04.md#the-store": "sha256:417910f2bd06529bfb98ca599f8c0a47d48dc06b05ba02bd1c52e72e903130ab"
+  "doc/product/feat-planner/section_04.md#the-summary-file": "sha256:3f47b1bdf5758f98d84edd0fd36852a0ffd43ae904ea6a8a75fcb8eff8aaa096"
   "doc/product/feat-planner/section_04.md#the-watcher": "sha256:aaa58f3e2b97356965e6ef64808b39f127e2b8df538b32ff7b6503e086dddad2"
   "doc/product/feat-planner/section_04.md#what-out-of-date-means": "sha256:321933f5cc98a62189f076cf40fa79d97bb097c01e2018a91af0139c24316489"
-  "doc/product/feat-planner/section_04.md#who-rebuilds-what": "sha256:cbeb7eefc9c849c5effd26990794038b20bf5e1dd3ff962c403824a289e62675"
+  "doc/product/feat-planner/section_04.md#who-rebuilds-what": "sha256:17ac66d5814b44b7a77787e2fc435eac1af720f61d7842a2cb51a44105e97200"
 ---
 
 # 04 — Summary Engine
@@ -31,7 +31,7 @@ Plan summaries are keyed by slug, so lifecycle renames and moves keep the same i
 ## The summary file
 
 Each document summary cites only heading sections of its own source file, and a link without a fragment cites the text before the first heading. [§](../../../../product/feat-planner/section_04.md#the-summary-file)
-A sentence id is `s-` plus the first 8 hex digits of the SHA-256 of the sentence text with its links removed, and the id is never written into the file. [§](../../../../product/feat-planner/section_04.md#the-summary-file)
+A sentence id is `s-` plus the first 8 hex digits of the SHA-256 of the sentence text with its links removed and its whitespace collapsed, and the id is never written into the file. [§](../../../../product/feat-planner/section_04.md#the-summary-file)
 
 ## The front matter
 
@@ -56,7 +56,7 @@ The store lock is an exclusive OS lock held only for the write, so one writer at
 ## Who rebuilds what
 
 Background rebuilds start at once for up to 5 out-of-date summaries, and above 5 the app asks first. [§](../../../../product/feat-planner/section_04.md#who-rebuilds-what)
-Document summaries run on Haiku at medium effort by default, and overviews run on Sonnet at high effort. [§](../../../../product/feat-planner/section_04.md#who-rebuilds-what)
+Document summaries run on Haiku at high effort by default, and overviews and the background summary session also default to Haiku at high effort. [§](../../../../product/feat-planner/section_04.md#who-rebuilds-what)
 
 ## Asking before a large rebuild
 

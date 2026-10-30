@@ -82,3 +82,13 @@
 - **Silent exit 0.** `web/scripts/plan-screens.mjs` guarded `main()` with `import.meta.url === file://argv[1]`, which exits 0 without running on a path with spaces or a symlink. Call `main` unconditionally in CLI scripts.
 - **Searches in guessed paths.** Two workers searched `loom/src/fs/user_config` and an assumed test path that did not exist. Locate with `rg --files` before narrowing a path.
 - **Background `loom check`.** The first gate ran with `run_in_background`, so its `LOOM_RELAY_V1` line went to a task file the relay hook does not read (a recurrence of [the live-state entry](live-state-pollution.md); the hook proposal is in [concerns](../concerns/code-quality-and-hook-debt.md#no-hook-refuses-a-relayed-loom-command-run-in-the-background-or-through-a-pipe)). Build screenshots from a `git archive` export in scratch so the live worktree stays untouched while the host gate reads it.
+
+## The Repair Passed Every Gate While the Feature Screen Stayed Unusable
+
+**What happened:** plan 12 replaced the feature screen with a step status page. Vision and Metaplan show a path that is no link, Pressure test, Review and Run are blank, Conversation lands on Run, and a finished feature opens on the blank Run page. Concept mode works but only a header tab or a chip reaches it. The operator found all of this on first use, after 12 plans were marked done.
+
+**Why:** the brief said to build to the mockup literally (`briefs/feat-planner-12-ui-repair/common.md:14-16`) and decision 6 overrode the spec's first-screen table (`doc/product/feat-planner/index.md:102-110`) without anyone noticing the conflict. Criteria checked structure, CSS and copy; none walked a user task.
+
+**Prevention:** a UI plan's acceptance includes scripted journeys in a real browser against real documents: start a feature, review a finished one down to source, change a section by chat and by direct edit. A mockup that overrides the spec changes the spec in the same plan.
+
+**Fix:** open; the planner redesign is under discussion with the operator.

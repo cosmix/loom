@@ -158,7 +158,7 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 10 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Delivery slips | 371 |
-| [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair slips | 84 |
+| [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair slips | 94 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 319 |
@@ -208,7 +208,7 @@
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 111 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 117 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 40 |
-| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 58 |
+| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 67 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 143 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 42 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 185 |
