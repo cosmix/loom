@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 pub use super::types_config::ConfigArgs;
-use super::types_help::{positive_usize, HELP_TEMPLATE, VERSION_STRING};
+use super::types_help::{help_template, positive_usize, VERSION_STRING};
 pub use super::types_memory::{KnowledgeCommands, MemoryCommands};
 pub use super::types_ops::{
     ContextCommands, HookCommands, PlanCommands, PlanServeArgs, RequestCommands, SessionsCommands,
@@ -29,7 +29,7 @@ pub use target::TargetCommands;
 #[command(about = "Agent orchestration CLI", long_about = None)]
 #[command(version = VERSION_STRING)]
 #[command(disable_version_flag = true)]
-#[command(help_template = HELP_TEMPLATE)]
+#[command(help_template = help_template())]
 #[command(subcommand_help_heading = "Commands")]
 pub struct Cli {
     #[command(subcommand)]
