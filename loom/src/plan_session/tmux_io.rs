@@ -18,8 +18,16 @@ use crate::process::run_bounded_output;
 const TMUX_IO_TIMEOUT: Duration = Duration::from_secs(5);
 /// The named paste buffer; `paste-buffer -d` deletes it again.
 const INPUT_BUFFER: &str = "loom-input";
+/// The pause between `paste-buffer` and the Enter that submits the paste. Claude Code takes a
+/// bracketed paste into its input box asynchronously; an Enter that reaches the pane before
+/// the paste is in the box is lost, and the text sits typed but never submitted. The bridge
+/// presses Enter again for an opening that still has no `UserPromptSubmit`.
+const ENTER_AFTER_PASTE: Duration = Duration::from_millis(150);
 
-/// Paste `text` into `target` as one bracketed paste and submit it with Enter.
+/// Paste `text` into `target` as one bracketed paste; Enter follows `ENTER_AFTER_PASTE`
+/// later. `Ok` means the paste reached tmux: the Enter goes from a short-lived thread, since
+/// the bridge pastes from its driver thread, and a failed Enter is only logged (the missing
+/// `UserPromptSubmit` times the delivery out).
 ///
 /// The caller sanitised `text` (`plan_session::input::sanitize`); a C0 control other than a
 /// newline or a tab would reach the pane as a keystroke.
@@ -33,7 +41,22 @@ pub fn paste_text(socket: &str, target: &str, text: &str) -> Result<()> {
     load_buffer(socket, text)?;
     let paste = ["paste-buffer", "-p", "-d", "-b", INPUT_BUFFER, "-t", target];
     run(socket, &paste)?;
-    press(socket, target, "Enter")
+    enter_after_paste(socket, target)
+}
+
+/// Press Enter in `target` once [`ENTER_AFTER_PASTE`] has passed, on its own thread.
+fn enter_after_paste(socket: &str, target: &str) -> Result<()> {
+    let (socket, target) = (socket.to_owned(), target.to_owned());
+    std::thread::Builder::new()
+        .name("loom-paste-enter".to_owned())
+        .spawn(move || {
+            std::thread::sleep(ENTER_AFTER_PASTE);
+            if let Err(error) = press(&socket, &target, "Enter") {
+                tracing::warn!(%socket, %error, "cannot submit the paste");
+            }
+        })
+        .map(drop)
+        .context("cannot start the thread that submits the paste")
 }
 
 /// Press the named key (`Escape`, `Enter`, ...) once in `target`.

@@ -1,5 +1,6 @@
 //! Bridge tests: sending, the queue, delivery timeouts, withdrawal, interrupts and `/compact`.
 
+use std::thread;
 use std::time::Duration;
 
 use serde_json::json;
@@ -93,6 +94,44 @@ fn an_unconfirmed_paste_turns_undelivered_and_a_late_prompt_delivers_it() {
     assert_eq!(h.sent(&s), ["A"], "the queue resumed before a Stop");
     h.spool(&s, "Stop", json!({}));
     wait_until("B", || h.sent(&s) == ["A", "B"]);
+}
+
+#[test]
+fn an_unsubmitted_authoring_opening_waits_undelivered_and_a_late_prompt_delivers_it() {
+    let h = Harness::ready(|c| c.delivery_timeout = Duration::from_millis(2500));
+    let s = h.start(Authoring);
+    h.spool(&s, "SessionStart", json!({"source": "startup"}));
+    wait_until("the opening", || h.host.delivered(&s.socket) == [OPENING]);
+    wait_until("the opening undelivered", || {
+        delivery(&h, OPENING) == Some(Delivery::Undelivered)
+    });
+    let enter = Call::PressEnter(s.socket.clone());
+    assert_eq!(
+        h.host.count(&enter),
+        1,
+        "Enter again at 2 s, none past the timeout"
+    );
+    assert_eq!(
+        h.ended(&s.id),
+        None,
+        "an authoring session failed on its opening"
+    );
+    assert_eq!(h.host.delivered(&s.socket), [OPENING]);
+    h.spool(&s, "UserPromptSubmit", json!({"prompt": OPENING}));
+    wait_until("the opening delivered", || {
+        delivery(&h, OPENING) == Some(Delivery::Delivered)
+    });
+}
+
+#[test]
+fn a_chat_message_never_gets_enter_again() {
+    let h = Harness::ready(|_| {});
+    let s = h.idle(Authoring);
+    send(&h, &s, "A");
+    wait_until("A pasted", || h.sent(&s) == ["A"]);
+    thread::sleep(Duration::from_millis(2300));
+    assert_eq!(h.host.count(&Call::PressEnter(s.socket.clone())), 0);
+    assert_eq!(h.sent(&s), ["A"]);
 }
 
 #[test]
