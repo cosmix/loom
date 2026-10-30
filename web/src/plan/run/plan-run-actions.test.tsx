@@ -6,7 +6,6 @@ import { initClient } from "@/plan/api/client";
 import fixture from "@/plan/api/fixtures/checklist.json";
 import hello from "@/plan/api/fixtures/hello.json";
 import { checklistViewSchema, type OfferView } from "@/plan/api/schema";
-import { registerOfferAction } from "@/plan/offers/actions";
 import { pressureDialogAtom } from "@/plan/offers/actions-pressure";
 import { runDialogAtom } from "@/plan/offers/actions-run";
 import optionsFixture from "@/plan/api/fixtures/pressure-options.json";
@@ -227,44 +226,10 @@ it("shows the config block beside the actions and re-enables Pressure-test after
   );
 });
 
-// The fixture checklist is the demo feature's; a null-target offer is that feature's own.
-const featurePath = "doc/plans/demo/PLAN-example.md";
-const review: OfferView = { id: "review-id", kind: "refine_spec", label: "Review", target: null };
-
-it("dispatches the real checklist offers for a done plan", () => {
+// The follow-ups of a finished feature are drawn on its Run page (feature/run-page.test.tsx).
+it("draws no follow-up for a done plan, whatever the checklist offers", () => {
   const store = createStore();
-  const round: OfferView = {
-    id: "round-id",
-    kind: "new_metaplan_round",
-    label: "Round",
-    target: featurePath,
-  };
-  store.set(checklistAtom, {
-    ...checklistViewSchema.parse(fixture.checklists[0]),
-    primary: review,
-    secondary: [round],
-  });
-  const handler = vi.fn();
-  const unregisterReview = registerOfferAction("refine_spec", handler);
-  const unregisterRound = registerOfferAction("new_metaplan_round", handler);
-  try {
-    render(
-      <Provider store={store}>
-        <PlanRunActions path={featurePath} state="done" />
-      </Provider>,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Compare spec with build" }));
-    fireEvent.click(screen.getByRole("button", { name: "New metaplan round" }));
-    expect(handler).toHaveBeenNthCalledWith(1, review);
-    expect(handler).toHaveBeenNthCalledWith(2, round);
-  } finally {
-    unregisterReview();
-    unregisterRound();
-  }
-});
-
-it("offers a done standalone plan nothing from the last visited feature's checklist", () => {
-  const store = createStore();
+  const review: OfferView = { id: "review-id", kind: "refine_spec", label: "Review", target: null };
   const round: OfferView = { ...review, id: "round-id", kind: "new_metaplan_round" };
   store.set(checklistAtom, {
     ...checklistViewSchema.parse(fixture.checklists[0]),
@@ -273,24 +238,14 @@ it("offers a done standalone plan nothing from the last visited feature's checkl
   });
   const { container } = render(
     <Provider store={store}>
-      <PlanRunActions path={path} state="done" />
-    </Provider>,
-  );
-  expect(container.innerHTML).toBe("");
-});
-
-it("renders no button for a done-plan offer that does not exist", () => {
-  const { container } = render(
-    <Provider store={createStore()}>
-      <PlanRunActions path={path} state="done" />
+      <PlanRunActions path="doc/plans/demo/PLAN-example.md" state="done" />
     </Provider>,
   );
   expect(container.innerHTML).toBe("");
   expect(screen.queryByRole("button")).toBeNull();
-  expect(screen.queryByText("No offer is available")).toBeNull();
 });
 
-it.each(["running", "retired"] as const)("renders no actions for a %s plan", (state) => {
+it.each(["running", "retired", "done"] as const)("renders no actions for a %s plan", (state) => {
   const { container } = render(
     <Provider store={createStore()}>
       <PlanRunActions path={path} state={state} />

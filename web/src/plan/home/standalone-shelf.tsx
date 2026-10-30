@@ -66,7 +66,7 @@ function MoveRows({ onMove, reason }: { onMove: (path: string) => void; reason: 
   const moves = useAtomValue(movesAtom);
   if (moves.length === 0) return null;
   return (
-    <ul className="shelf__moves">
+    <ul className="plan-list shelf__moves">
       {moves.map((offer) => {
         const path = offer.target;
         if (path === null) return null;
@@ -76,7 +76,7 @@ function MoveRows({ onMove, reason }: { onMove: (path: string) => void; reason: 
               Move <Untrusted text={path} /> into a feature
             </span>
             <DisabledReason reason={reason} onClick={() => onMove(path)} size="sm">
-              Move into a feature…
+              Move plan
             </DisabledReason>
           </li>
         );
@@ -100,11 +100,11 @@ function ShelfActions({ reason, onMove }: { reason: string | null; onMove: () =>
         onClick={() => navigate("/new", { state: { small: true } })}
       >
         <Plus aria-hidden="true" />
-        New standalone plan
+        Add plan
       </DisabledReason>
       <DisabledReason reason={reason} size="sm" onClick={onMove}>
         <FolderInput aria-hidden="true" />
-        Move into a feature…
+        Move plan
       </DisabledReason>
     </div>
   );
@@ -121,7 +121,8 @@ export function StandaloneShelf({ defaultOpen = false }: { defaultOpen?: boolean
   const canAuthor = useAtomValue(canAuthorAtom);
   const blockReason = useAtomValue(authorBlockReasonAtom);
   const [dialog, setDialog] = useState<{ path: string | null } | null>(null);
-  const reason = canAuthor ? null : "Authoring is unavailable";
+  // The server's reason is each control's own description; no second line repeats it.
+  const reason = canAuthor ? null : (blockReason ?? "Authoring is unavailable");
   return (
     <section aria-labelledby={headingId} className="shelf">
       {/* The summary row carries the visible count; this names the region. */}
@@ -135,22 +136,20 @@ export function StandaloneShelf({ defaultOpen = false }: { defaultOpen?: boolean
           <Wrench aria-hidden="true" className="shelf__wrench" />
           <span>{plural(plans.length, "standalone plan")}</span>
           <span className="shelf__hint">
-            · bugfixes, performance work and small features in doc/plans/
+            <span aria-hidden="true" className="shelf__sep">
+              ·{" "}
+            </span>
+            bugfixes, performance work and small features in doc/plans/
           </span>
           <ShelfActions reason={reason} onMove={() => setDialog({ path: null })} />
         </summary>
         {plans.length === 0 && moves.length === 0 && (
-          <p className="shelf__empty">
+          <p className="plan-empty shelf__empty">
             Bugfixes and small changes that need no product spec live here.
           </p>
         )}
         {plans.length > 0 && <PlanChips plans={plans} />}
       </details>
-      {!canAuthor && blockReason && (
-        <p className="shelf__reason">
-          <Untrusted text={blockReason} />
-        </p>
-      )}
       <MoveIntoFeatureDialog
         path={dialog?.path ?? null}
         open={dialog !== null}

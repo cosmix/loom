@@ -243,8 +243,9 @@ it("shows the read-only reason and blocks a populated draft", () => {
   expect(submitButton().getAttribute("aria-disabled")).toBe("true");
   expect(composer().disabled).toBe(true);
   expect(
-    screen.getByText("loom plan is in read-only mode: tmux is unavailable⟨U+202E⟩"),
-  ).toBeTruthy();
+    screen.getAllByText("loom plan is in read-only mode: tmux is unavailable⟨U+202E⟩"),
+  ).toHaveLength(1);
+  expect(screen.queryByText("Authoring is unavailable")).toBeNull();
   expect(h.send).not.toHaveBeenCalled();
 });
 

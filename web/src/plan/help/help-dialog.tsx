@@ -10,6 +10,7 @@ import { useHelpSearch, type HelpSearch } from "@/plan/help/help-search";
 import { PinnedScene } from "@/plan/help/pinned-scene";
 import { PLANNER_HELP_TOPICS, type PlannerHelpTopic } from "@/plan/help/topics";
 import { readingFaceAtom, readingSizeAtom } from "@/plan/settings/preferences";
+import { DisabledReason } from "@/plan/ui/disabled-reason";
 import "./help-dialog.css";
 import "./help-dialog-topic.css";
 
@@ -155,10 +156,10 @@ function TopicHero({ topic, titleId }: { topic: PlannerHelpTopic; titleId: strin
         <topic.Icon aria-hidden="true" />
       </span>
       <div>
-        <p className="planner-help-position">
+        <p className="plan-eyebrow planner-help-position">
           Topic {PLANNER_HELP_TOPICS.indexOf(topic) + 1} of {PLANNER_HELP_TOPICS.length}
         </p>
-        <h2 id={titleId} className="font-display">
+        <h2 id={titleId} className="plan-page-title">
           {topic.label}
         </h2>
       </div>
@@ -189,9 +190,9 @@ function EmptySearch({ onClear }: { onClear: () => void }) {
   return (
     <div className="planner-help-empty">
       <p role="status">No topics match your search.</p>
-      <button type="button" onClick={onClear}>
+      <DisabledReason reason={null} onClick={onClear}>
         Clear search
-      </button>
+      </DisabledReason>
     </div>
   );
 }

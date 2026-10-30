@@ -1,7 +1,7 @@
 /*
  * The kickoff screen: the empty invitation and the conversation. The "Taking shape" panel and the
  * proposal card have their own files (taking-shape.css, proposal.css). Colours come from theme
- * tokens only; the composer card uses the planner's --plan-shadow (plan.css).
+ * tokens only, and nothing in the page flow casts a shadow (ui/DESIGN.md).
  */
 
 /* ---- Empty state ---------------------------------------------------------------------------- */
@@ -10,11 +10,11 @@
   display: grid;
   justify-items: center;
   align-content: start;
-  gap: 14px;
+  gap: var(--space-3);
   width: 100%;
   min-width: 0;
   margin-inline: auto;
-  padding: 36px 20px 34px;
+  padding: var(--space-6) var(--page-gutter);
 }
 
 [data-loom-plan] .kickoff-empty .loom-doodle {
@@ -23,38 +23,30 @@
 }
 
 [data-loom-plan] .kickoff-empty h1 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
   text-align: center;
 }
 
 [data-loom-plan] .kickoff-lead {
-  max-width: 56ch;
+  max-width: 48ch;
   margin: 0;
   color: var(--muted-foreground);
-  font-family: var(--font-reading);
-  font-size: 17px;
-  line-height: 1.55;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
   text-align: center;
 }
 
+/* The composer is an input, so it keeps its edge. Focus is the ring, as everywhere else. */
 [data-loom-plan] .kickoff-card {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   width: min(640px, 100%);
-  padding: 12px;
+  padding: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--corner-surface);
   background: var(--card);
-  box-shadow: var(--plan-shadow);
-  transition: border-color 160ms;
 }
 
 [data-loom-plan] .kickoff-card:focus-within {
-  border-color: color-mix(in oklch, var(--primary) 55%, var(--border));
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
@@ -63,14 +55,14 @@
   display: block;
   width: 100%;
   min-height: 70px;
-  padding: 4px 4px 0;
+  padding: var(--space-1) var(--space-1) 0;
   resize: vertical;
   border: 0;
   outline: 0;
   background: transparent;
   color: var(--foreground);
   font-family: var(--font-reading);
-  font-size: 17px;
+  font-size: 16px;
   line-height: 1.5;
 }
 
@@ -83,17 +75,7 @@
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
-}
-
-[data-loom-plan] .kickoff-attach {
-  height: 32px;
-  color: var(--muted-foreground);
-  font-size: 12.5px;
-}
-
-[data-loom-plan] .kickoff-attach:enabled:hover {
-  color: var(--foreground);
+  gap: var(--space-2);
 }
 
 /* DisabledReason puts its reason under the button; keep it hugging the card's right edge. */
@@ -103,30 +85,21 @@
   text-align: right;
 }
 
-[data-loom-plan] .kickoff-start svg {
-  width: 15px;
-  height: 15px;
-}
-
 [data-loom-plan] .kickoff-attachments {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  gap: var(--space-1);
   margin: 0;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   list-style: none;
-  font-size: 12.5px;
+  font-size: var(--type-ui);
 }
 
 [data-loom-plan] .kickoff-attachment {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: baseline;
+  gap: var(--space-2);
   min-width: 0;
-  padding: 4px 10px;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--muted);
 }
 
 [data-loom-plan] .kickoff-attachment > span {
@@ -134,16 +107,27 @@
   overflow-wrap: anywhere;
 }
 
-[data-loom-plan] .kickoff-attachment button {
+[data-loom-plan] .kickoff-attachment__remove {
   flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
   text-decoration: underline;
+}
+
+[data-loom-plan] .kickoff-attachment__remove:hover {
+  color: var(--foreground);
+}
+
+[data-loom-plan] .kickoff-attachment__remove:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 [data-loom-plan] .kickoff-starters {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
   max-width: 720px;
   margin: 0;
@@ -155,7 +139,7 @@
   opacity: 0.5;
 }
 
-/* The fieldset already dims the whole group; the document pill is a Button that would dim again. */
+/* The fieldset already dims the whole group; a starter is a Button that would dim again. */
 [data-loom-plan] .kickoff-starters .kickoff-starter:disabled {
   opacity: 1;
 }
@@ -163,49 +147,15 @@
 [data-loom-plan] .kickoff-starter {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--card);
-  color: var(--foreground);
-  font-size: 12.5px;
-  font-weight: 500;
-  white-space: nowrap;
-  transition:
-    border-color 140ms,
-    background-color 140ms,
-    transform 140ms;
+  justify-content: center;
 }
 
 [data-loom-plan] .kickoff-starter svg {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
   color: var(--muted-foreground);
-}
-
-[data-loom-plan] .kickoff-starter:enabled:hover {
-  border-color: color-mix(in oklch, var(--primary) 55%, var(--border));
-  background: color-mix(in oklch, var(--primary) 8%, var(--card));
-  transform: translateY(-1px);
-}
-
-[data-loom-plan] .kickoff-starter:enabled:hover svg {
-  color: var(--primary);
-}
-
-[data-loom-plan] .kickoff-starter:focus-visible,
-[data-loom-plan] .kickoff-attach:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 3px;
 }
 
 [data-loom-plan] .kickoff-note {
   margin: 0;
-  color: var(--muted-foreground);
-  font-size: 13px;
   text-align: center;
 }
 
@@ -268,12 +218,12 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--hairline);
-  font-size: 13.5px;
+  font-size: var(--type-ui);
 }
 
-[data-loom-plan] .kickoff-head svg {
+[data-loom-plan] .kickoff-head > svg {
   width: 16px;
   height: 16px;
   color: var(--muted-foreground);
@@ -281,7 +231,7 @@
 
 [data-loom-plan] .kickoff-head h2 {
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--type-title);
   font-weight: 600;
 }
 
@@ -289,27 +239,22 @@
   color: var(--muted-foreground);
 }
 
+/* Status is a glyph and a word: no pill, no border, and only the glyph takes a tone. */
 [data-loom-plan] .kickoff-pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 28px;
+  gap: var(--space-1);
   margin-left: auto;
-  padding: 0 10px;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  background: var(--card);
-  font-size: 12.5px;
+  font-size: var(--type-ui);
   font-weight: 500;
+  white-space: nowrap;
 }
 
-[data-loom-plan] .kickoff-pill[data-state="permission"] {
-  border-color: color-mix(in oklch, var(--tone-warning) 50%, var(--hairline));
+[data-loom-plan] .kickoff-pill[data-state="permission"] .activity-glyph {
   color: var(--tone-warning);
 }
 
-[data-loom-plan] .kickoff-pill[data-state="failed"] {
-  border-color: color-mix(in oklch, var(--tone-blocked) 50%, var(--hairline));
+[data-loom-plan] .kickoff-pill__alert {
   color: var(--tone-blocked);
 }
 
@@ -355,14 +300,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-loom-plan] .kickoff-empty > *,
-  [data-loom-plan] .kickoff-starter,
-  [data-loom-plan] .kickoff-card {
+  [data-loom-plan] .kickoff-empty > * {
     animation: none;
-    transition: none;
-  }
-
-  [data-loom-plan] .kickoff-starter:enabled:hover {
-    transform: none;
   }
 }

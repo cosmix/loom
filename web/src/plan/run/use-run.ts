@@ -161,7 +161,18 @@ export function installRunSubscription(store: Store): () => void {
       if (output.done || starts) void fetchRunState(store);
     });
     const stopStrip = socket.subscribe("run_strip", ({ type: _type, ...strip }) => {
+      const previous = store.get(runStripAtom);
       store.set(runStripAtom, strip);
+      // The server pushes no run state, but the strip moves with it: a finished plan is renamed,
+      // a run started from a terminal appears, a dead daemon stops. Progress counts alone do not
+      // change the state, so they do not refetch; the first strip has nothing to differ from, and
+      // whoever mounted a run view fetched on arrival.
+      if (
+        previous !== null &&
+        (previous.plan !== strip.plan || previous.daemon_running !== strip.daemon_running)
+      ) {
+        void fetchRunState(store);
+      }
     });
     const stopResync = socket.onResync(() => {
       // Frames were missed while disconnected, possibly a done frame.

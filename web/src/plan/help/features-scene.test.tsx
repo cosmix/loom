@@ -137,9 +137,7 @@ it("renders the feature progress and standalone shelf", () => {
   expect(within(progress).getAllByRole("listitem", { hidden: true })).toHaveLength(6);
   expect(scene.getByRole("region", { name: "Standalone plans", hidden: true })).toBeDefined();
   expect(
-    scene
-      .getByRole("button", { name: "New standalone plan", hidden: true })
-      .getAttribute("aria-disabled"),
+    scene.getByRole("button", { name: "Add plan", hidden: true }).getAttribute("aria-disabled"),
   ).not.toBe("true");
 });
 

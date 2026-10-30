@@ -1,4 +1,3 @@
-import { cn } from "cn";
 import { Ellipsis } from "lucide-react";
 import { useId, useState, type CSSProperties } from "react";
 import { useAtomValue } from "jotai/react";
@@ -10,6 +9,7 @@ import type { ConceptPage, ImplementsView, KeyChip } from "@/plan/api/schema-con
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { DocMark } from "@/plan/ui/doc-mark";
 
+import "./concept-page.css";
 import { KeyChipExtras } from "./key-chip-extras";
 import { KeyRowExtras } from "./key-row-extras";
 import { docColour } from "./marks";
@@ -38,10 +38,6 @@ export function chipTitle(title: string): string {
   return title.replace(/^\s*\d+\s+[—–-]\s+/, "");
 }
 
-/** A key chip: 28px high, the DocMark flush at the left padding. */
-const CHIP_CLASS =
-  "flex h-7 items-center gap-[7px] rounded-[8px] border border-hairline bg-card pr-2.5 pl-1 text-[12.5px] font-medium";
-
 /** The key shows this many chips; the rest sit behind the "more" chip. */
 const VISIBLE_CHIPS = 4;
 
@@ -54,7 +50,7 @@ function ChipMark({ chip, rebuilding }: { chip: KeyChip; rebuilding: boolean }) 
       aria-hidden="true"
       data-kind={kind}
       data-rebuilding={rebuilding}
-      className="concept-key-mark inline-flex shrink-0 rounded-[5px]"
+      className="concept-key-mark"
       style={{ color: colour, "--key-colour": colour } as CSSProperties}
     >
       {/* Chip colours identify documents within a scope, independently of their kind. */}
@@ -79,13 +75,13 @@ function ChipLink({
       to={pageHref(chip.doc.page)}
       data-dashed={chip.out_of_date ? "true" : undefined}
       aria-describedby={description ? descriptionId : undefined}
-      className={cn(CHIP_CLASS, "data-[dashed=true]:border-dashed")}
+      className="concept-key-doc"
     >
       <ChipMark chip={chip} rebuilding={rebuilding} />
-      <span className="font-mono text-[11px] text-muted-foreground">
+      <span className="concept-key-label font-mono">
         <Untrusted text={chip.label} />
       </span>
-      <span style={{ unicodeBidi: "isolate", direction: "ltr" }}>
+      <span className="concept-key-title" style={{ unicodeBidi: "isolate", direction: "ltr" }}>
         <SentenceText text={chipTitle(chip.doc.title)} />
       </span>
     </Link>
@@ -110,7 +106,7 @@ function Chip({ chip }: { chip: KeyChip }) {
     loaded?.state?.state === "rebuilding" ||
     loaded?.state?.out_of_date?.reason === "rebuilding";
   return (
-    <li className="flex items-center gap-1.5">
+    <li>
       <ChipLink
         chip={chip}
         rebuilding={rebuilding}
@@ -122,7 +118,7 @@ function Chip({ chip }: { chip: KeyChip }) {
           <Untrusted text={description} />
         </span>
       )}
-      {chip.no_plan && <span className="text-xs text-muted-foreground">no plan</span>}
+      {chip.no_plan && <span className="plan-fine text-muted-foreground">no plan</span>}
       <KeyChipExtras chip={chip} />
     </li>
   );
@@ -139,14 +135,11 @@ function MoreChip({
   onToggle: () => void;
 }) {
   return (
-    <li className="flex items-center">
+    <li>
       <button
         type="button"
         aria-expanded={expanded}
-        className={cn(
-          CHIP_CLASS,
-          "cursor-pointer px-2.5 text-muted-foreground hover:text-foreground",
-        )}
+        className="concept-key-doc concept-key-more"
         onClick={onToggle}
       >
         {expanded ? (
@@ -164,7 +157,12 @@ function MoreChip({
   );
 }
 
-/** The first four chips of the documents the page draws on, "more" for the rest, and the key row's extras. */
+/**
+ * What the spine cannot show: which colour is which document, and what the squares after a
+ * sentence mean. One quiet run of documents on the page ground (a swatch and a name each), the
+ * first four with "more" for the rest, then the mark legend and the key row's extras. No chips,
+ * no box (DESIGN.md, Surfaces).
+ */
 export function DocumentKey({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   // Expansion belongs to one page: another page opens collapsed without remounting the key row,
   // which would drop focus from the chip that navigated. Coming straight back finds it expanded.
@@ -172,9 +170,10 @@ export function DocumentKey({ page, pageKey }: { page: ConceptPage; pageKey: str
   const expanded = expandedOn === pageKey;
   const hidden = Math.max(0, page.key_chips.length - VISIBLE_CHIPS);
   const shown = expanded ? page.key_chips : page.key_chips.slice(0, VISIBLE_CHIPS);
+  const dashed = page.key_chips.some((chip) => chip.out_of_date !== null);
   return (
-    <div className="mt-1.5 mb-[30px] flex flex-col gap-2">
-      <ul role="list" aria-label="Document key" className="flex flex-wrap items-center gap-1.5">
+    <div className="concept-key">
+      <ul role="list" aria-label="Document key" className="concept-key-list">
         {shown.map((chip) => (
           <Chip key={chip.doc.id} chip={chip} />
         ))}
@@ -186,6 +185,12 @@ export function DocumentKey({ page, pageKey }: { page: ConceptPage; pageKey: str
           />
         )}
       </ul>
+      <p className="plan-fine concept-key-legend">
+        <span aria-hidden="true" className="concept-key-square" />
+        {dashed
+          ? "A square after a sentence names a document it draws on. Dashed means out of date."
+          : "A square after a sentence names a document it draws on."}
+      </p>
       <KeyRowExtras page={page} />
     </div>
   );

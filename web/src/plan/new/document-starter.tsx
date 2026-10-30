@@ -11,6 +11,7 @@ import { docRel } from "@/plan/files/address";
 import { treeAtom } from "@/plan/files/atoms";
 import { treeDocs } from "@/plan/files/tree";
 import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
+import type { ButtonLook } from "@/plan/ui/disabled-reason";
 
 export type StarterDocument = { attachment: AttachmentInput; label: string };
 
@@ -106,6 +107,7 @@ export function DocumentStarter({
   children = "Start from a document",
   className,
   variant = "outline",
+  look,
   disabled,
 }: {
   onPick: (document: StarterDocument) => void;
@@ -113,6 +115,8 @@ export function DocumentStarter({
   children?: ReactNode;
   className?: string;
   variant?: ComponentProps<typeof Button>["variant"];
+  /** Draws the trigger on the planner's button scale; without it the caller's class styles it. */
+  look?: ButtonLook;
   disabled?: boolean;
 }) {
   const tree = useAtomValue(treeAtom);
@@ -129,7 +133,13 @@ export function DocumentStarter({
   return (
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
-        <Button type="button" variant={variant} className={className} disabled={disabled}>
+        <Button
+          type="button"
+          variant={variant}
+          data-look={look}
+          className={look ? `plan-button ${className ?? ""}` : className}
+          disabled={disabled}
+        >
           {children}
         </Button>
       </PopoverTrigger>

@@ -194,7 +194,8 @@ function useMoveReason(
   const plans = useAtomValue(standaloneAtom);
   const features = useAtomValue(featuresAtom);
   const canAuthor = useAtomValue(canAuthorAtom);
-  if (!canAuthor) return "Authoring is unavailable";
+  const blockReason = useAtomValue(authorBlockReasonAtom);
+  if (!canAuthor) return blockReason ?? "Authoring is unavailable";
   if (pending) return "Starting the move conversation";
   if (!source || (path === null && !plans.some((plan) => plan.path === source))) {
     return "Choose a standalone plan to move";
@@ -209,8 +210,6 @@ function useMoveReason(
 }
 
 function MoveForm({ path, onClose }: { path: string | null; onClose: () => void }) {
-  const canAuthor = useAtomValue(canAuthorAtom);
-  const blockReason = useAtomValue(authorBlockReasonAtom);
   const [selectedPath, setSelectedPath] = useState("");
   const [feature, setFeature] = useState("");
   const [name, setName] = useState("");
@@ -240,13 +239,9 @@ function MoveForm({ path, onClose }: { path: string | null; onClose: () => void 
           <Untrusted text={error} />
         </p>
       )}
-      {!canAuthor && blockReason && (
-        <p className="text-xs text-muted-foreground">
-          <Untrusted text={blockReason} />
-        </p>
-      )}
       <DisabledReason
         reason={reason}
+        look="primary"
         onClick={() => {
           void start(source, feature || name);
         }}

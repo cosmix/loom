@@ -44,7 +44,7 @@ function useKickoffWrite(size: KickoffSize | null, target: string | null) {
   return { label, reason, authorReason: canAuthor ? null : authorReason, error, write };
 }
 
-/** The large write button; disabled until the conversation has settled a target. */
+/** The write button; blocked until the conversation has settled a target. */
 export function WriteKickoff({
   size,
   target,
@@ -54,13 +54,18 @@ export function WriteKickoff({
 }) {
   const { label, reason, authorReason, error, write } = useKickoffWrite(size, target);
   return (
-    <div className="kickoff-write">
-      <DisabledReason reason={reason} look="primary" onClick={() => void write()} size="lg">
+    <div className="grid gap-2">
+      {/* The proposal's "Use this" is the primary until a target is settled. */}
+      <DisabledReason
+        reason={reason}
+        look={target === null ? "secondary" : "primary"}
+        onClick={() => void write()}
+      >
         <Feather aria-hidden="true" />
         {label}
       </DisabledReason>
       {authorReason !== null && (
-        <p className="kickoff-muted">
+        <p className="plan-fine">
           <Untrusted text={authorReason} />
         </p>
       )}

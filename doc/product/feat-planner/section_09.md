@@ -169,8 +169,8 @@ sections with clear topic ownership in the proposal block the app renders.
 After each turn that changes the state, the skill ends its reply with a `loom-kickoff` fenced
 block containing the current size, name, problem, settled decisions, open questions and proposed
 sections. Each section is settled, being worded or open. The proposal uses `proposal: true`;
-the app offers Use this, Rename, Change sections and Make it standalone for a feature, or
-Use this, Rename and Make it a feature for a plan. The skill keeps the taking-shape block current.
+the app offers Use this, Rename, Change sections and Make standalone for a feature, or
+Use this, Rename and Make a feature for a plan. The skill keeps the taking-shape block current.
 
 Nothing is written under `doc/` until the user confirms the size and name and the app sends the
 exact creation grant; conversational agreement alone grants no writes. For a feature, the skill

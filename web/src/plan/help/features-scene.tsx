@@ -102,8 +102,8 @@ export function FeaturesHomeScene() {
         <div data-loom-plan inert>
           <div className="home">
             <div className="home__head">
-              <p className="home__eyebrow">doc/ in this repository</p>
-              <h2 className="home__title">Features</h2>
+              <p className="plan-eyebrow">doc/ in this repository</p>
+              <h2 className="plan-page-title">Features</h2>
             </div>
             <FeatureCards lead={<InvitationCard empty={false} />} />
             <StandaloneShelf defaultOpen />
@@ -142,8 +142,8 @@ export const FEATURES_SCENES: readonly PlannerHelpScene[] = [
         text: "The feature card opens that feature's page.",
       },
       {
-        target: 'ol[aria-label="Progress"]',
-        text: "The progress strip marks each step as done, active, optional, or having gaps.",
+        target: ".feature-card__meta",
+        text: "The count shows how many steps are done and how many have gaps.",
       },
       {
         target: 'a[href="/files/plans/PLAN-fix-search.md"]',

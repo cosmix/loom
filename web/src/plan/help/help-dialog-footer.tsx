@@ -44,7 +44,7 @@ function PagerCard({
   return (
     <button
       type="button"
-      className={`planner-help-pager-${direction}`}
+      className={`planner-help-pager-card planner-help-pager-${direction}`}
       aria-label={`${label}: ${topic.label}`}
       onClick={() => onSelect(topic)}
     >

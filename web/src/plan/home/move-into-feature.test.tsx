@@ -204,7 +204,8 @@ describe("MoveIntoFeatureDialog", () => {
 
     fireEvent.click(confirmButton());
 
-    expect(screen.getByText("Alex holds authoring")).toBeTruthy();
+    expect(screen.getAllByText("Alex holds authoring")).toHaveLength(1);
+    expect(screen.queryByText("Authoring is unavailable")).toBeNull();
     expect(confirmButton().getAttribute("aria-disabled")).toBe("true");
     expect(h.send).not.toHaveBeenCalled();
   });

@@ -19,6 +19,9 @@ export function ShapeSize({ size }: { size: KickoffSize | null }) {
           <button
             key={choice.size}
             type="button"
+            data-look={size === choice.size ? "secondary" : "quiet"}
+            data-size="sm"
+            className="plan-button kickoff-seg__choice"
             aria-pressed={size === choice.size}
             aria-disabled={actions.reason !== null || undefined}
             title={actions.reason ?? undefined}

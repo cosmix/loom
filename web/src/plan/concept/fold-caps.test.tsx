@@ -124,6 +124,15 @@ it("the enclosing start cap shares the first passage's chip line when its first 
   const cited = conceptPageSchema.parse({ ...summaryFixture, key: "demo/product/section_02" });
   const paragraph = page.blocks.find((block) => block.kind === "paragraph")!;
   paragraph.sentences[0]!.citations = [{ kind: "sentence", summary: cited.key, id: "s1" }];
+  // The overview names the cited document, as the server's page does for every summary it can
+  // reach: the column prefetches only the pages the overview names.
+  const doc = {
+    id: cited.key,
+    title: "Planning",
+    path: "doc/product/demo/section_02.md",
+    page: cited.key,
+  };
+  paragraph.sentences[0]!.marks = [{ doc, colour: 1, out_of_date: null }];
   pages[cited.key] = cited;
   const { column } = mount(pageKey, page);
   fireEvent.click(within(column).getByRole("button", { name: firstSentence }));

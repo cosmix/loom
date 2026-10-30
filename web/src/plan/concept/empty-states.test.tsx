@@ -160,6 +160,29 @@ it("suppresses the offer by the route feature's primary, not the active feature'
   unregister();
 });
 
+it("draws the route feature's offer when the active feature lists none", () => {
+  const unregister = registerOfferAction("start_metaplan", vi.fn());
+  const store = writableStore();
+  const view = (feature: string, secondary: (typeof METAPLAN_OFFER)[]) =>
+    checklistViewSchema.parse({
+      ...checklistFixture.checklists[0],
+      feature,
+      primary: null,
+      secondary,
+      items: [],
+    });
+  store.set(projectAtom, {
+    checklists: [view("demo", []), view("other", [METAPLAN_OFFER])],
+    standalone: [],
+    moves: [],
+  });
+  store.set(activeFeatureAtom, "demo");
+  renderEmptyMetaplan(store, "/f/other/product");
+
+  expect(screen.getByRole("button", { name: "Start the metaplan" })).toBeTruthy();
+  unregister();
+});
+
 it("links listed sections to feature-qualified summaries", () => {
   showEmpty("sections_no_vision");
 

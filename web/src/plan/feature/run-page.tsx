@@ -1,0 +1,153 @@
+import { useAtomValue, useStore } from "jotai/react";
+import { useEffect, useState } from "react";
+
+import type { ChecklistView, OfferView } from "@/plan/api/schema";
+import { ConfigBlockNotice } from "@/plan/chat/pressure/config-block-notice";
+import { Untrusted } from "@/plan/chat/visible-controls";
+import { offerOfKind } from "@/plan/feature/page-offer";
+import { NoPlans, PlanPage, UnwrittenPlans } from "@/plan/feature/plan-page";
+import { PlanName, PlanStateStatus } from "@/plan/feature/plan-state";
+import {
+  allPlansDone,
+  runScope,
+  runSentence,
+  startControl,
+  type RunRead,
+} from "@/plan/feature/run-scope";
+import { useFeature } from "@/plan/feature/use-feature";
+import { OfferButton } from "@/plan/offers/offer-button";
+import { DashboardLink, webUrl } from "@/plan/run/dashboard-button";
+import { StartRunButton } from "@/plan/run/plan-run-actions";
+import { fetchRunState, runStateAtom, runStripAtom } from "@/plan/run/use-run";
+import { LoadState } from "@/plan/ui/load-state";
+
+function PlanRows({ checklist }: { checklist: ChecklistView }) {
+  return (
+    <ul aria-label="Plans" className="plan-list plan-page__rows">
+      {checklist.plan_rows.map((row) => (
+        <li key={row.path}>
+          <PlanName feature={checklist.feature} slug={row.slug} />
+          <span className="plan-page__side">
+            <PlanStateStatus state={row.state} />
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The page's one Start a run button (`startControl`), with the Codex configuration notice under
+ * it, and a dashboard link while a run of this feature (or none) is up. It is the screen's
+ * primary only when the checklist's primary is the start_run offer.
+ */
+function RunActions({ checklist, read }: { checklist: ChecklistView; read: RunRead }) {
+  const state = useAtomValue(runStateAtom);
+  const control = startControl(checklist, state, read);
+  const dashboard = runScope(checklist, state) === "foreign" ? null : webUrl(state?.dashboard_url);
+  if (control === null && dashboard === null) return null;
+  return (
+    <div className="plan-page__actions">
+      {control !== null && (
+        <div>
+          <StartRunButton
+            path={control.path}
+            blockedBy={control.reason}
+            look={checklist.primary?.kind === "start_run" ? "primary" : "secondary"}
+          />
+          <ConfigBlockNotice context="plan" />
+        </div>
+      )}
+      {dashboard !== null && <DashboardLink url={dashboard} />}
+    </div>
+  );
+}
+
+/**
+ * Once every plan is done, the feature's retro and next round: secondaries, drawn only here
+ * (DESIGN.md, Buttons). The sentence explains the comparison, so its button stays short.
+ */
+function Followups({ checklist }: { checklist: ChecklistView }) {
+  if (!allPlansDone(checklist)) return null;
+  const compare = offerOfKind(checklist, "refine_spec");
+  const offers = [compare, offerOfKind(checklist, "new_metaplan_round")].filter(
+    (offer): offer is OfferView => offer !== undefined,
+  );
+  if (offers.length === 0) return null;
+  return (
+    <section className="plan-page__section" aria-labelledby="plan-followups">
+      <h2 id="plan-followups" className="plan-section-title">
+        Next round
+      </h2>
+      {compare && (
+        <p className="plan-page__note">
+          Comparing starts a chat that reads the done plans and their run reviews against the spec.
+        </p>
+      )}
+      <div className="plan-page__offers">
+        {offers.map((offer) => (
+          <OfferButton key={offer.kind} offer={offer} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The server pushes no run state, so the page asks for it on arrival, as the run dialog does. A
+ * failed request reads as failed, never as idle. An answer dropped because a newer request
+ * overtook it leaves the page waiting for that request's state, and a state that arrives by any
+ * other route replaces the sentence anyway.
+ */
+function useRunRead(): RunRead {
+  const store = useStore();
+  const [read, setRead] = useState<RunRead>("pending");
+  useEffect(() => {
+    let live = true;
+    void fetchRunState(store).then((result) => {
+      if (!live) return;
+      if (!result.ok) setRead("failed");
+      else if (store.get(runStateAtom) !== null) setRead("read");
+    });
+    return () => {
+      live = false;
+    };
+  }, [store]);
+  return read;
+}
+
+/** `/f/:feature/run`: the run's state, the one start action, each plan's state, then follow-ups. */
+export function RunPage() {
+  const { checklist } = useFeature();
+  const state = useAtomValue(runStateAtom);
+  const strip = useAtomValue(runStripAtom);
+  const read = useRunRead();
+  if (!checklist) return <LoadState state="loading" title="Loading the feature" />;
+  const sentence = runSentence(checklist, state, strip, read);
+  return (
+    <PlanPage
+      feature={checklist.feature}
+      label="run"
+      title="Run"
+      lede={
+        <span role="status">
+          <Untrusted text={sentence} />
+        </span>
+      }
+    >
+      {checklist.plan_rows.length === 0 ? (
+        <NoPlans
+          feature={checklist.feature}
+          sentence="Write a plan first. A run builds a written plan, stage by stage."
+        />
+      ) : (
+        <>
+          <RunActions checklist={checklist} read={read} />
+          <PlanRows checklist={checklist} />
+          <UnwrittenPlans checklist={checklist} />
+          <Followups checklist={checklist} />
+        </>
+      )}
+    </PlanPage>
+  );
+}

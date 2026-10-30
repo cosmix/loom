@@ -1,38 +1,27 @@
+/* The shelf sits on the page ground below the cards: no box, no border. Rows divide with
+   hairlines (`.plan-list`), and the plans are links, not chips. */
 .shelf {
   display: grid;
-  gap: 12px;
+  gap: var(--space-3);
   min-width: 0;
 }
 
-.shelf__moves {
-  display: grid;
-  gap: 10px;
-}
-
 .shelf__move {
-  display: flex;
   flex-wrap: wrap;
-  align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  font-size: 14px;
+  gap: var(--space-2);
+  font-size: var(--type-ui);
   overflow-wrap: anywhere;
-}
-
-.shelf__details {
-  border: 1px solid var(--hairline);
-  border-radius: 12px;
-  background: var(--card);
-  color: var(--card-foreground);
 }
 
 .shelf__summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  font-size: 13.5px;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: var(--space-1) 0;
+  font-size: var(--type-ui);
   font-weight: 600;
   cursor: pointer;
   list-style: none;
@@ -44,14 +33,14 @@
 
 .shelf__summary:focus-visible {
   outline: 2px solid var(--ring);
-  outline-offset: -2px;
-  border-radius: 12px;
+  outline-offset: 2px;
+  border-radius: var(--corner-control);
 }
 
 .shelf__chevron,
 .shelf__wrench {
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
   color: var(--muted-foreground);
 }
@@ -65,64 +54,73 @@
   color: var(--muted-foreground);
 }
 
-/* The two actions sit at the end of the row; they ask DisabledReason for the secondary look. */
+/* On a narrow row the hint wraps under the count, where a leading dot would stand alone. */
+@media (max-width: 759.98px) {
+  .shelf__sep {
+    display: none;
+  }
+}
+
+/* The two actions sit at the end of the row; DisabledReason draws them secondary. */
 .shelf__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   margin-left: auto;
+  min-width: 0;
+  max-width: 100%;
   cursor: default;
 }
 
-.shelf__empty,
-.shelf__reason {
-  font-size: 13px;
-  color: var(--muted-foreground);
+/* A blocked control's reason can be a long server message: it wraps under its own button, so the
+   actions stay on the summary row instead of taking a line for themselves. */
+.shelf__actions > div {
+  min-width: 0;
+  max-width: 28ch;
+  overflow-wrap: anywhere;
 }
 
 .shelf__empty {
-  padding: 0 14px 14px;
+  padding: var(--space-1) 0 var(--space-2);
 }
 
 .shelf__chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 14px 14px;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: var(--space-1) 0 var(--space-2);
+  list-style: none;
 }
 
 .shelf__chip,
 .shelf__more {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
+  gap: var(--space-1);
+  min-height: 28px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--type-fine);
   color: var(--foreground);
 }
 
 .shelf__chip:hover,
 .shelf__more:hover {
-  border-color: var(--primary);
-  background: var(--muted);
+  text-decoration: underline;
 }
 
 .shelf__chip:focus-visible,
 .shelf__more:focus-visible {
   outline: 2px solid var(--ring);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 .shelf__more {
-  background: transparent;
   color: var(--muted-foreground);
   cursor: pointer;
 }
 
+/* A state is a toned glyph, here a dot; the word is in the link's accessible name. */
 .shelf__dot {
   width: 7px;
   height: 7px;
