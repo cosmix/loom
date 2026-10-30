@@ -78,6 +78,45 @@ fn code_reviewer_defaults_to_opus_high() {
 }
 
 #[test]
+fn followup_model_resolves_per_key_and_round_trips_user_config() {
+    let temp = tempfile::tempdir().unwrap();
+    let work = temp.path();
+    let user_path = work.join("user.toml");
+    std::fs::write(
+        &user_path,
+        "[models]\ncode_reviewer_followup_model = \"haiku\"\ncode_reviewer_effort = \"low\"\n",
+    )
+    .unwrap();
+    let _redirect = crate::user_config::redirect_user_config(user_path);
+    assert_eq!(
+        UserConfig::default().code_reviewer_followup_model(),
+        "sonnet"
+    );
+    assert_eq!(
+        resolve_code_reviewer_followup_model_effort(None).unwrap(),
+        ("haiku".into(), "low".into())
+    );
+    std::fs::write(
+        work.join("config.toml"),
+        "[models]\ncode_reviewer_followup_model = \"opus\"\n",
+    )
+    .unwrap();
+    assert_eq!(
+        resolve_code_reviewer_followup_model_effort(Some(work)).unwrap(),
+        ("opus".into(), "low".into())
+    );
+    let user = UserConfig::load_strict().unwrap();
+    let printed = crate::user_config::parse_document(&user.to_toml_string()).unwrap();
+    assert_eq!(printed.code_reviewer_followup_model(), "haiku");
+    assert!(crate::user_config::parse_document(
+        "[models]\ncode_reviewer_followup_model = \"bad\"\n"
+    )
+    .is_err());
+    std::fs::write(work.join("config.toml"), "[models\n").unwrap();
+    assert!(resolve_code_reviewer_followup_model_effort(Some(work)).is_err());
+}
+
+#[test]
 fn code_reviewer_project_beats_user_beats_default_per_key() {
     let user = crate::user_config::parse_document(
         "[models]\ncode_reviewer_model = \"haiku\"\ncode_reviewer_effort = \"low\"\n",

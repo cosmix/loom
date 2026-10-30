@@ -9,6 +9,12 @@ Read when: a stage needs more than about six workers, inter-agent messaging, or 
 - **Claude-only.** Ultracode Workflow fan-out spawns CLAUDE subagents only — the codex lane (`gpt-6.1-terra` / `gpt-6-luna`) is not addressable from inside a Workflow script. A stage licensed for both lanes uses the Workflow for its Claude-side fan-out and reaches `loom-codex-forwarder` Agent spawns outside the Workflow for codex work. Ultracode is therefore never a reason to list codex in `implementers`, nor vice versa.
 - **Agent teams** — wide, exploratory scope needing inter-agent comms or dynamic task discovery (~7× whole-job cost; the `loom-orchestration` skill, `## Rule 6 — Subagents`). Don't use for concrete file-partitioned work.
 
+**Codex waves follow dependencies.** Order code, consumers and tests inside one concern's job
+first, across several files where cohesive. A later wave exists only when a job needs another
+job's result on disk. Never slice a list into waves by the cap of 6. Two jobs never write one file.
+Size by the measured rates and limits in `codex-implementers.md`. Without a committed brief,
+write one under the worktree scratch directory and forward ONE line naming its absolute path.
+
 ## Hierarchical worker table example
 
 **Large fan-out (>~6 workers)** — use an `EXECUTION PLAN - HIERARCHICAL` block (coordinators × workers) instead of a flat wave, so the main agent absorbs a few compact summaries instead of a dozen raw results (the `loom-orchestration` skill, `## Rule 6 — Subagents`):
@@ -24,10 +30,11 @@ description: |
   AGENT TYPE, each with the fixed prompt plus "Your brief: <path>. Read it in
   full before anything else."
   This stage licenses both lanes (implementers ["codex", "claude"]). Each
-  handler is one file whose signature is pinned in its brief, so A1-A3 and
-  B1-B3 are codex units: coordinators spawn them as loom-codex-forwarder in
-  the FOREGROUND, six at once, within the fan-out cap of 6. The test rows own
-  several files and stay on Claude.
+  handler is one concern with its consumers and tests in dependency order,
+  so A1-A3 and B1-B3 are codex jobs. Coordinators spawn haiku
+  loom-codex-forwarder workers in the FOREGROUND, up to six at once,
+  passing ONE line naming each absolute brief path. The test rows stay on
+  Claude because their work needs fixture-backed test convergence.
 
   | Worker | Role | Tier | Files owned | Shared context | Brief path |
   | ------ | ---- | ---- | ------------ | --------------- | ---------- |

@@ -93,3 +93,49 @@ fn orchestrator_pastes_the_acceptance_criteria_into_the_reviewer_brief() {
         "loom-code-reviewer must take the criteria from its brief, not a signal it never sees"
     );
 }
+
+#[test]
+fn codex_job_doctrine_pins_sizing_and_brief_handoff() {
+    use super::format::format_codex_implementers_section;
+    use crate::models::stage::{Implementer, Implementers};
+
+    let text =
+        format_codex_implementers_section(&Implementers::new(vec![Implementer::Codex]), true);
+    for needle in [
+        "ONE CONCERN",
+        "250,000",
+        "23,000",
+        "gpt-6.1-sol",
+        "gpt-6.1-terra",
+        "50,000",
+        "20,000",
+        "1500000",
+        "1560000",
+        "twice the time at xhigh",
+        "absolute path",
+        "never retypes the brief",
+        "LOOM_CODEX_FORWARD=1",
+        "context-injecting hooks stay silent while guard hooks still run",
+        "Never slice jobs into waves by the cap of 6",
+    ] {
+        assert!(text.contains(needle), "codex doctrine lost {needle:?}");
+    }
+}
+
+#[test]
+fn orchestration_review_loop_pins_followup_and_edit_exceptions() {
+    for needle in [
+        "models.code_reviewer_model",
+        "models.code_reviewer_followup_model",
+        "ONE fix worker before ONE re-review",
+        "Comment-only lines, blank lines",
+        "prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures",
+        "the base must be unchanged",
+        "Block comments and every other edit",
+    ] {
+        assert!(
+            ORCHESTRATION_SKILL.contains(needle),
+            "review loop lost {needle:?}"
+        );
+    }
+}

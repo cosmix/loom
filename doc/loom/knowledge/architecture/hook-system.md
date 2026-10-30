@@ -305,3 +305,7 @@ exists inside the git root.
 
 Re-derive these with the commands above rather than trusting the numbers here —
 they have gone stale three times.
+
+## Forwarded Codex context hooks
+
+`loom-hooks/codex-forward.sh` exports `LOOM_CODEX_FORWARD=1` before launching either the companion or direct Codex lane. With a nonempty marker, `skill-trigger.sh --codex`, `user-prompt-context.sh`, and `knowledge-orient.sh` exit 0 without output before processing input. Claude-mode skill suggestions retain their normal behavior. Guard hooks still run; the marker suppresses only these context-injecting hooks. The wrapper retains its instruction against opening skill files, while hook suppression prevents forwarded jobs from receiving injected skill/context directives.

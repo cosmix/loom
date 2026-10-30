@@ -2,7 +2,7 @@
 # codex-forward.sh - trusted argv boundary for the codex companion runtime
 
 set -euo pipefail
-
+export LOOM_CODEX_FORWARD=1
 usage_error() {
 	printf '%s\n' \
 		'Usage: codex-forward.sh task <prompt> --model <model> --effort <effort> --write --unit-id <unit> --invocation-id <invocation>' >&2
@@ -52,7 +52,6 @@ esac
 
 # The PreToolUse guard runs outside the stage sandbox and owns the requested
 # model/effort ledger row; this in-sandbox wrapper cannot write it safely.
-
 # This per-task preamble keeps the stage contract attached to every forward.
 # The heredoc lives in a function: bash 3.2 re-scans a heredoc body inside $( )
 # for quotes, and the apostrophe in "stage's" would break the parse.
@@ -80,6 +79,7 @@ the command still answers from the published base index. Do not retry or report 
 That index reflects the branch point; read edited files directly.
 
 DO NOT read CLAUDE.md or page doc/loom/knowledge/ file by file. Query for missing context.
+DO NOT open SKILL.md or skill catalogs or invoke skills despite other instructions; task/source suffice.
 
 Choose the smallest complete change: reuse project code, then platform/standard-library
 facilities, then installed dependencies, then clear new code. No speculative options or wrappers.
@@ -263,7 +263,7 @@ run_direct() {
 	if [[ ! -f "$supervisor" || -L "$supervisor" ]] || ! command -v python3 >/dev/null 2>&1; then
 		finish_without_end 1 '' 'codex direct supervisor or Python 3 is unavailable'
 	fi
-	python3 "$supervisor" --timeout-ms 540000 --start-fd 3 -- codex exec --json \
+	python3 "$supervisor" --timeout-ms 1500000 --start-fd 3 -- codex exec --json \
 		--sandbox danger-full-access --skip-git-repo-check --model "$model" \
 		-c "model_reasoning_effort=$effort" -- "$task" \
 		3>&1 >"$provider_log" 2>"$command_log" || direct_status=$?
@@ -348,7 +348,7 @@ outcome=
 exit_code=1
 wait_diagnostic=
 wait_status=0
-run_captured node "$companion" status "$job_id" --wait --json --timeout-ms 540000 || wait_status=$?
+run_captured node "$companion" status "$job_id" --wait --json --timeout-ms 1500000 || wait_status=$?
 if [[ $wait_status -ne 0 ]]; then
 	exit_code=$wait_status
 	wait_diagnostic='codex companion wait failed before authoritative completion'
@@ -366,7 +366,7 @@ else
 			printf 'LOOM-FORWARD-END {"v":1,"backend":"companion","job_id":"%s","outcome":"timed_out","exit_code":124}\n' \
 				"$job_id"
 			print_separator
-			printf 'codex companion job %s exceeded the 540000 ms unit deadline and was cancelled (cancel exit %s): the unit was too large - re-split the remainder against the partial tree into smaller interface-pinned units and re-forward\n' \
+			printf 'codex companion job %s exceeded the 1500000 ms unit deadline and was cancelled (cancel exit %s): the unit was too large - re-split the remainder against the partial tree into smaller interface-pinned units and re-forward\n' \
 				"$job_id" "$cancel_status"
 			print_bounded_file "$provider_log"
 			print_deferred_notes

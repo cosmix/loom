@@ -52,6 +52,8 @@ fn record_open_finding(work_dir: &Path) {
         agent_id: "reviewer-1".to_string(),
         harvested_at: Utc::now(),
         fingerprint: "sha256:00".to_string(),
+        base: String::new(),
+        behaviour: Default::default(),
         files: BTreeMap::new(),
         malformed: None,
         findings: vec![RecordedFinding {

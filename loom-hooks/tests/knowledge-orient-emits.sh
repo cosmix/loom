@@ -4,6 +4,7 @@
 # including the absolute index path and the table's row count, when run from
 # a subdirectory of a repository that has one.
 set -euo pipefail
+unset LOOM_CODEX_FORWARD
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOOK="$SCRIPT_DIR/../knowledge-orient.sh"
@@ -12,8 +13,7 @@ TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
 REPO="$TMP/repo"
-mkdir -p "$REPO"
-(cd "$REPO" && git init -q)
+mkdir -p "$REPO/.git"
 
 KNOWLEDGE_DIR="$REPO/doc/loom/knowledge"
 mkdir -p "$KNOWLEDGE_DIR"
@@ -29,6 +29,11 @@ EOF
 
 SUBDIR="$REPO/src/nested"
 mkdir -p "$SUBDIR"
+
+FORWARDED=$(cd "$SUBDIR" && printf '%s' '{"source":"startup"}' |
+	env -u LOOM_STAGE_ID -u LOOM_WORK_DIR -u LOOM_MAIN_AGENT_PID \
+	LOOM_CODEX_FORWARD=1 bash "$HOOK" 2>&1)
+[[ -z "$FORWARDED" ]]
 
 OUTPUT=$(cd "$SUBDIR" && printf '%s' '{"source":"startup"}' |
 	env -u LOOM_STAGE_ID -u LOOM_WORK_DIR -u LOOM_MAIN_AGENT_PID bash "$HOOK")

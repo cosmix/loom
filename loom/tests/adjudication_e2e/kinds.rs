@@ -28,6 +28,8 @@ fn record_review(work: &Path, stage_id: &str) {
         agent_id: "reviewer".to_string(),
         harvested_at: chrono::Utc::now(),
         fingerprint: "sha256:0".to_string(),
+        base: String::new(),
+        behaviour: Default::default(),
         files: std::collections::BTreeMap::new(),
         malformed: None,
         findings: vec![RecordedFinding {

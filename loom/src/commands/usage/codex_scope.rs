@@ -10,12 +10,12 @@ use super::forward_join::{ForwardJoin, ReceiptThread};
 use super::provider_types::{NormalizedEvent, Provider, SourceKind};
 use super::time_range::TimeRange;
 
-/// Longest a forward runs: the wrapper's unit deadline is 540 s
-/// (`codex-forward.sh`, `--timeout-ms 540000`), rounded up. A payload-formed
+/// Longest a forward runs: the wrapper's unit deadline is 1500 s
+/// (`codex-forward.sh`, `--timeout-ms 1500000`), rounded up. A payload-formed
 /// receipt carries the PostToolUse instant, after the forward ended, so a
 /// receipt observed less than this after `--since` may belong to a forward
 /// whose rows all precede the window.
-const MAX_FORWARD_SECS: i64 = 600;
+const MAX_FORWARD_SECS: i64 = 1560;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CodexScope {

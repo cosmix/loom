@@ -332,8 +332,7 @@ fn value_of_has_an_arm_for_every_registered_key() {
     // `value_of`'s match on `spec.name` has an `unreachable!()` fallback arm
     // that nothing checks at compile time - a key added to `keys::KEYS`
     // without a matching arm would panic `loom config --list` at runtime.
-    // Looping over the real registry here means that panic happens in this
-    // test instead of in the field.
+    // Looping over the real registry catches that panic here before runtime.
     let config = UserConfig::default();
     for key in keys::KEYS {
         let (value, origin) = config.value_of(key);
@@ -364,6 +363,7 @@ fn value_of_has_an_arm_for_every_registered_key() {
             "models.standard_model" => assert_eq!(value, "sonnet"),
             "models.standard_effort" => assert_eq!(value, "high"),
             "models.code_reviewer_model" => assert_eq!(value, "opus"),
+            "models.code_reviewer_followup_model" => assert_eq!(value, "sonnet"),
             "models.code_reviewer_effort" => assert_eq!(value, "high"),
             "models.contract_writer_model" => assert_eq!(value, "opus"),
             "models.contract_writer_effort" => assert_eq!(value, "high"),

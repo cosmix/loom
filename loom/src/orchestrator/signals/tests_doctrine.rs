@@ -304,7 +304,7 @@ fn codex_navigation_kit_wrapper_carries_and_delivers_the_preamble() {
         "NEVER run git",
         ".loom/work/",
         "--unit-id",
-        "540000",
+        "1500000",
         "print_evidence 124 \"$job_id\" timed_out",
         "\"outcome\":\"timed_out\"",
         "unit:",

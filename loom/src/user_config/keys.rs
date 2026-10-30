@@ -192,7 +192,14 @@ pub const KEYS: &[KeySpec] = &[
         section: "models",
         field: "code_reviewer_model",
         kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
-        help: "Model the loom-code-reviewer subagent runs on",
+        help: "Model the loom-code-reviewer subagent runs on for its first round",
+    },
+    KeySpec {
+        name: "models.code_reviewer_followup_model",
+        section: "models",
+        field: "code_reviewer_followup_model",
+        kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
+        help: "Model the loom-code-reviewer subagent runs on after a well-formed round",
     },
     KeySpec {
         name: "models.code_reviewer_effort",

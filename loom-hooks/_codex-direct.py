@@ -334,7 +334,7 @@ def parse_args() -> argparse.Namespace:
         parser.error("command must be codex exec --json ...")
     if args.start_fd is not None and args.start_fd < 3:
         parser.error("--start-fd must name an inherited descriptor above stderr")
-    if not 1 <= args.timeout_ms <= 540_000 or not 1 <= args.grace_ms <= 5000:
+    if not 1 <= args.timeout_ms <= 1_500_000 or not 1 <= args.grace_ms <= 5000:
         parser.error("timeouts exceed the direct supervisor bounds")
     return args
 

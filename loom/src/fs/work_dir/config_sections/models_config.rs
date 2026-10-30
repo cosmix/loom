@@ -32,6 +32,7 @@ struct ModelsConfig {
     integration_verify_model: Option<String>,
     integration_verify_effort: Option<String>,
     code_reviewer_model: Option<String>,
+    code_reviewer_followup_model: Option<String>,
     code_reviewer_effort: Option<String>,
     contract_writer_model: Option<String>,
     contract_writer_effort: Option<String>,
@@ -90,6 +91,14 @@ impl ModelsConfig {
             self.code_reviewer_model.as_ref(),
             crate::claude::CLAUDE_MODELS,
             "models.code_reviewer_model",
+        )
+    }
+
+    fn code_reviewer_followup_model(&self) -> Option<&str> {
+        allowed_value(
+            self.code_reviewer_followup_model.as_ref(),
+            crate::claude::CLAUDE_MODELS,
+            "models.code_reviewer_followup_model",
         )
     }
 
@@ -209,6 +218,24 @@ pub fn resolve_code_reviewer_model_effort(
         &project,
         &UserConfig::load_strict()?,
     ))
+}
+
+/// Follow-up reviewer model and shared effort, each resolved independently.
+pub fn resolve_code_reviewer_followup_model_effort(
+    work_dir: Option<&Path>,
+) -> anyhow::Result<(String, String)> {
+    let project = match work_dir {
+        Some(dir) => super::read_section::<ModelsConfig>(dir, MODELS_SECTION)?.unwrap_or_default(),
+        None => ModelsConfig::default(),
+    };
+    let user = UserConfig::load_strict()?;
+    let model = project
+        .code_reviewer_followup_model()
+        .unwrap_or_else(|| user.code_reviewer_followup_model());
+    let effort = project
+        .code_reviewer_effort()
+        .unwrap_or_else(|| user.code_reviewer_effort());
+    Ok((model.to_string(), effort.to_string()))
 }
 
 /// Pure contract-writer resolution: project key, else user tier (which already

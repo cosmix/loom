@@ -23,7 +23,7 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [adjudication-lifecycle](architecture/adjudication-lifecycle.md) | Verdicts | 166 |
-| [codex-concurrency](architecture/codex-concurrency.md) | Limits | 128 |
+| [codex-concurrency](architecture/codex-concurrency.md) | Limits | 110 |
 | [codex-plugin](architecture/codex-plugin.md) |  | 391 |
 | [completion-recovery](architecture/completion-recovery.md) | Attest | 36 |
 | [config-value-types](architecture/config-value-types.md) | web API, TypeScript client, React — instead of collapsing to a string at the… | 85 |
@@ -39,7 +39,7 @@
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) |  | 151 |
 | [directory-structure](architecture/directory-structure.md) | Tree | 50 |
 | [execution-containment](architecture/execution-containment.md) |  | 394 |
-| [hook-system](architecture/hook-system.md) |  | 307 |
+| [hook-system](architecture/hook-system.md) |  | 311 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Digest | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
 | [memory-spool](architecture/memory-spool.md) |  | 197 |
@@ -55,7 +55,7 @@
 | [planning-session-bridge](architecture/planning-session-bridge.md) |  | 230 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 135 |
 | [pressure](architecture/pressure.md) | Pipeline | 42 |
-| [quota-poller](architecture/quota-poller.md) |  | 35 |
+| [quota-poller](architecture/quota-poller.md) |  | 37 |
 | [remote-control](architecture/remote-control.md) |  | 81 |
 | [run-handoff](architecture/run-handoff.md) | Run lane | 52 |
 | [security-and-isolation](architecture/security-and-isolation.md) | config.worktree deny and check | 188 |
@@ -74,7 +74,7 @@
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 376 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | Daemon-run host jobs for completion, checks and freezes: state, child, apply | 240 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | Daemon-run host jobs for completion, checks and freezes: state, child, apply | 244 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 118 |
 | [web-terminal](architecture/web-terminal.md) |  | 181 |
 
@@ -114,7 +114,7 @@
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 119 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 235 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 139 |
-| [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 141 |
+| [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 143 |
 | [plan-web](conventions/plan-web.md) |  | 69 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 62 |
@@ -125,12 +125,12 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 230 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 156 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 383 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 393 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift | 353 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 177 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 102 |
-| [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 152 |
+| [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 162 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 206 |
 | [completion-runtime](mistakes/completion-runtime.md) | Churn | 72 |

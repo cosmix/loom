@@ -358,7 +358,7 @@ fn test_signal_codex_implementers_section_gated() {
              run; no hook covers codex's own shell commands"
         );
 
-        #[rustfmt::skip] let needles = ["600000", "540000", "timed_out", "6 when a bound worker is hung"];
+        #[rustfmt::skip] let needles = ["1560000", "1500000", "timed_out", "6 when a bound worker is hung"];
         assert!(
             needles.iter().all(|needle| content.contains(needle)),
             "the codex block must tell the orchestrator to state an explicit Bash \

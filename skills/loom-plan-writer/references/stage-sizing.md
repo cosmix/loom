@@ -40,7 +40,7 @@ Consequences for how you write a plan:
 - **"Keep sonnet stages small" becomes "keep each subagent's assignment small."** A stage can be as large as the work genuinely requires; what must stay small is each individual subagent's task — that is what earns it a cheap model and keeps it inside its own context budget.
 - **ESCALATION RULE: two failures on the same task ⇒ spawn a `loom-advisor` (fable) subagent, NOT a blind retry.** This replaces any earlier guidance to retry a failing subagent with a bigger model — diagnose first (narrow scope, full detail, advice returned), then re-dispatch with whatever the advisor recommends.
 
-**The plan author still writes to sonnet-level detail — it now feeds the orchestrator's decomposition, not a sonnet agent's own literal execution.** Subagents follow what THEY are told literally; they don't infer intent, resolve ambiguity, or discover integration points. A vague stage description makes the orchestrator guess at decomposition, pick the wrong pattern for a subagent, or hand a subagent an underspecified task that produces stubs. Every stage description MUST include enough detail for the orchestrator to turn it into precise subagent assignments:
+**The plan author still writes to sonnet-level detail — it now feeds the orchestrator's decomposition, not a sonnet worker's own literal execution.** Subagents follow what THEY are told literally; they don't infer intent, resolve ambiguity, or discover integration points. A vague stage description makes the orchestrator guess at decomposition, pick the wrong pattern for a subagent, or hand a subagent an underspecified task that produces stubs. Every stage description MUST include enough detail for the orchestrator to turn it into precise subagent assignments:
 
 1. Exact file paths to create/modify (not globs).
 2. Function/struct signatures to implement (name, params, return).
@@ -71,9 +71,13 @@ Consequences for how you write a plan:
     then `loom check` for the gate; commit.
 ```
 
-**Size each subagent's assignment by cost — decompose, don't up-model for headroom.** A subagent typically finishes under about 400,000 tokens, and every spawn pays a boot cost of about 28,000 tokens before it reads anything, plus a brief and a harvest turn. Two levers, in order: (1) group small tasks into one assignment and never split below what 400,000 tokens needs — an assignment likely to pass that is two assignments; (2) past about six assignments, decompose with a subagent hierarchy (`SKILL.md` Section 5) so the orchestrator (and any coordinator subagent) stays a THIN COORDINATOR at every level — workers burn their own (discarded) context and return compact summaries. **Delegation is a cost decision, tokens times model tier (BLOCK-B point 1):** a stage's main agent makes a small change itself (at most 20 changed lines in at most 2 files it has already read, proven by one command) and delegates everything larger. A stage whose bulk of implementation lands in the main session pays the main session's tier for every token of it; write the stage so that work is assigned to subagents.
-
-**Size every worker task to finish under about 400,000 tokens. A task that needs more is two tasks — or a coordinator with two workers. A task far smaller than that joins another worker's assignment.**
+**Size Claude assignments by cost.** About 400,000 tokens is a ceiling, not a target.
+Measured sonnet workers peak at a median of 86,000. Merge task B into worker A when B's turns
+times A's leftover context times the cache-read rate (0.1) is less than 1.25 times B's startup
+and orientation (about 55,000 tokens). Bundle short tasks and keep long ones apart. Send all
+findings of one review round to ONE fix worker before one re-review. Beyond about six Claude
+assignments, consider a hierarchy (`SKILL.md` Section 5) to keep coordinators thin. Codex job
+sizing uses the measured model rates, context and deadline in `codex-implementers.md`.
 
 **Bookend defaults:** knowledge-bootstrap defaults to opus at medium effort, integration-verify to opus at xhigh effort — both omit `model`/`reasoning_effort` unless deliberately overridden (`SKILL.md` Section 4). knowledge-distill is the one exception whose default model is not opus: sonnet at high effort, single-agent with NO subagents.
 

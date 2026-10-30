@@ -10,7 +10,7 @@ use serial_test::serial;
 use std::path::PathBuf;
 
 /// DESIGN D16 BLOCK-E, copied from the design so the renderer is pinned to it.
-const BLOCK_E: &str = "**Review order (plan v2):** run `loom check` once beside the final review round; fix every finding and failed criterion, re-check the failed criteria with `loom check <stage-id> --criterion <n>` and re-review the changed files, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.";
+const BLOCK_E: &str = "**Review order (plan v2):** run `loom check` once beside the final review. One fix worker handles all findings and failed criteria; re-check failures with `loom check <stage-id> --criterion <n>`, then one re-review on the follow-up model, then complete. After the final round, code edits including formatting need re-review. Comment-only lines, blank lines, and prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures need none; the base must be unchanged. Block comments and every other edit need re-review. Commits do not change it.";
 
 fn v2_stage() -> Stage {
     Stage {
@@ -124,6 +124,8 @@ fn review_gate_block_carries_block_e_verbatim() {
         assert!(content.contains(BLOCK_E), "{stage_type:?} lacks BLOCK-E");
         assert!(content.contains("Every finding blocks completion"));
         assert!(content.contains("`loom-code-reviewer`"));
+        assert!(content.contains("`models.code_reviewer_followup_model` (sonnet by default)"));
+        assert!(content.contains("ONE fix worker before ONE re-review on the follow-up model"));
         assert!(content.contains("`loom stage review status s1`"));
         assert!(
             content.contains("`loom stage dispute-findings s1 --finding <id> ... --reason ...`")

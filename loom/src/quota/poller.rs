@@ -131,7 +131,7 @@ fn poll_claude(work_root: &Path, state: &mut ProviderState) {
     };
     // No claude.ai login is a common, expected state (e.g. codex-only use) -
     // skip silently rather than treat it as a poll failure worth logging.
-    let Ok(token) = credentials::access_token(&home) else {
+    let Ok((token, plan)) = credentials::account(&home) else {
         state.next_due = Instant::now() + state.interval;
         return;
     };
@@ -152,7 +152,9 @@ fn poll_claude(work_root: &Path, state: &mut ProviderState) {
     let dir = shared::shared_dir(&home);
     let key = shared::token_key(&token);
     match shared::poll_shared(&dir, &key, now, || {
-        claude::fetch(&client, &token, epoch_now())
+        let mut quota = claude::fetch(&client, &token, epoch_now())?;
+        quota.plan = plan;
+        Ok(quota)
     }) {
         Ok(account) => project_account(work_root, state, &account, now),
         Err(e) => {

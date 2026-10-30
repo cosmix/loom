@@ -54,17 +54,19 @@ describe("sectionRows", () => {
     expect(pressure?.caption).toBe("who runs each step of loom pressure");
   });
 
-  it("pairs models into six rows", () => {
+  it("pairs models into six rows plus a single follow-up model row", () => {
     const models = sections[4];
-    expect(models?.rows).toHaveLength(6);
+    expect(models?.rows).toHaveLength(7);
     expect(models?.rows.map((row) => rowLabel(row))).toEqual([
       "standard",
       "knowledge",
       "knowledge_distill",
       "integration_verify",
       "code_reviewer",
+      "code_reviewer_followup_model",
       "contract_writer",
     ]);
+    expect(models?.rows[5]?.kind).toBe("single");
     expect(models?.caption).toBe("model and effort per session kind");
   });
 

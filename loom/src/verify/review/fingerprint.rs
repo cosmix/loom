@@ -27,6 +27,8 @@ pub struct ChangeFingerprint {
     pub value: String,
     pub base: String,
     pub files: BTreeMap<String, String>,
+    #[serde(default)]
+    pub behaviour: BTreeMap<String, String>,
 }
 
 /// `entries` are worktree-relative paths with content, or `None` for a deletion.
@@ -57,6 +59,13 @@ pub fn fingerprint_from(base: &str, entries: &[(String, Option<Vec<u8>>)]) -> Ch
         value: format!("sha256:{}", hex::encode(hasher.finalize())),
         base: base.to_string(),
         files,
+        behaviour: entries
+            .iter()
+            .filter_map(|(path, content)| {
+                super::prose::behaviour_digest(path, content.as_deref())
+                    .map(|digest| (path.clone(), digest))
+            })
+            .collect(),
     }
 }
 

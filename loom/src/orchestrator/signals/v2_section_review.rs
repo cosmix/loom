@@ -17,7 +17,7 @@ use crate::verify::review::store::load_carried;
 
 /// DESIGN D16 BLOCK-E, byte for byte. doctrine-v2 pins it against the
 /// orchestration skill's copy.
-const REVIEW_ORDER: &str = "**Review order (plan v2):** run `loom check` once beside the final review round; fix every finding and failed criterion, re-check the failed criteria with `loom check <stage-id> --criterion <n>` and re-review the changed files, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.";
+const REVIEW_ORDER: &str = "**Review order (plan v2):** run `loom check` once beside the final review. One fix worker handles all findings and failed criteria; re-check failures with `loom check <stage-id> --criterion <n>`, then one re-review on the follow-up model, then complete. After the final round, code edits including formatting need re-review. Comment-only lines, blank lines, and prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures need none; the base must be unchanged. Block comments and every other edit need re-review. Commits do not change it.";
 
 /// The review gate of a v2 standard or integration-verify stage: what
 /// `loom stage complete` checks, how reviews are run and briefed, the review
@@ -36,7 +36,9 @@ pub(super) fn append_review_gate(content: &mut String, stage: &Stage, work_dir: 
          severity; suggestions never do.\n\n",
     );
     content.push_str(&format!(
-        "- Spawn a `loom-code-reviewer` BY AGENT TYPE, without `name`, for the stage diff. Only \
+        "- Spawn a `loom-code-reviewer` BY AGENT TYPE, without `name` or model override, for the stage diff. \
+         The guard uses `models.code_reviewer_model` (opus by default) for the first round and \
+         `models.code_reviewer_followup_model` (sonnet by default) for later rounds after a well-formed round. Only \
          that type is recorded: when it stops, a hook records the `loom-review` block from its \
          `SubagentHandback` report, or from its final message when it hands back nothing, as \
          the next review round. Neither carrying a valid block records a malformed round, \
@@ -46,7 +48,8 @@ pub(super) fn append_review_gate(content: &mut String, stage: &Stage, work_dir: 
          - Paste the output of `loom stage review status {id}` into every re-review brief. It \
          lists the rounds, every open finding with its id, whether the latest round matches the \
          current worktree, and the files changed since that round.\n\
-         - A re-review covers the files changed since the previous round plus the open \
+         - Send all findings of a round to ONE fix worker before ONE re-review on the follow-up model. \
+         A re-review covers the files changed since the previous round plus the open \
          findings. A finding closes when a later round lists its id under `resolved`.\n\n",
         id = stage.id
     ));

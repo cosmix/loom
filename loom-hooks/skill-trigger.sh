@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from _bounded_input import read_input
 
 CODEX = "--codex" in sys.argv[1:]
+if CODEX and os.environ.get("LOOM_CODEX_FORWARD"):
+    sys.exit(0)
 MAX_SUGGESTIONS = 5
 MIN_SCORE = 2
 DEBUG = os.environ.get("LOOM_SKILL_DEBUG", "") == "1"
@@ -33,8 +35,6 @@ STOPWORDS = frozenset({
     "session", "token", "context", "sync", "agent", "model", "report",
     "graph", "document", "prompt", "review", "comment",
 })
-
-
 _AGENT_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 

@@ -415,7 +415,7 @@
     },
     {
       "name": "models.code_reviewer_model",
-      "help": "Model the loom-code-reviewer subagent runs on",
+      "help": "Model the loom-code-reviewer subagent runs on for its first round",
       "kind": {
         "type": "enum",
         "variants": ["haiku", "sonnet", "opus", "fable"]
@@ -432,6 +432,28 @@
       },
       "effective": {
         "value": "opus",
+        "source": "default"
+      }
+    },
+    {
+      "name": "models.code_reviewer_followup_model",
+      "help": "Model the loom-code-reviewer subagent runs on after a well-formed round",
+      "kind": {
+        "type": "enum",
+        "variants": ["haiku", "sonnet", "opus", "fable"]
+      },
+      "scopes": ["user", "project"],
+      "default": "sonnet",
+      "user": {
+        "value": "sonnet",
+        "set": false
+      },
+      "project": {
+        "value": "sonnet",
+        "set": false
+      },
+      "effective": {
+        "value": "sonnet",
         "source": "default"
       }
     },

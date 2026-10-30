@@ -180,7 +180,7 @@ work, never the plugin agent directly. The rogue-wrapper incident (see
 `tools: Bash` frontmatter is not enforced for in-process subagents: a wrapper holding a codex
 prompt implemented all the edits itself on sonnet and nothing surfaced it. Three shipped layers:
 
-1. **`agents/loom-codex-forwarder.md`** — loom-owned forwarding shim (sonnet, `tools: Bash`),
+1. **`agents/loom-codex-forwarder.md`** — loom-owned forwarding shim (haiku, `tools: Bash`),
    installed by `install.sh` with the other `loom-*` agents. Unlike the plugin wrapper, its
    `tools:` allowlist IS hard-enforced — user-scope agents enforce the field, plugin agents
    ignore it by design (code.claude.com/docs/en/sub-agents#available-tools) — so Edit/Read are
@@ -375,8 +375,8 @@ through its receipt first (`codex_lifecycle/direct.rs::receipt_outcome`, matched
 - a direct receipt records a `CodexExecution::Direct` row with producer `codex_direct` (state from the
   receipt: `running`, `succeeded`, `failed` with its exit code, `canceled` and `timed_out` both Cancelled);
 - a companion receipt, or no receipt, falls through to `locate_job`;
-- an authorization with neither a receipt nor a job stays Active for `RECEIPT_WINDOW_SECS = 600` after
-  `authorized_at` (the wrapper's 540 s unit deadline plus the receipt write), then is Unknown;
+- an authorization with neither a receipt nor a job stays Active for `RECEIPT_WINDOW_SECS = 1560` after
+  `authorized_at` (the wrapper's 1500 s job deadline plus the receipt write), then is Unknown;
 - a damaged receipt journal (truncated or malformed rows), a receipt that disagrees with its authorization,
   or a `queued`/`unknown` direct receipt is Unknown and records nothing, companion rows included.
 

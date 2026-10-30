@@ -132,7 +132,7 @@ fn assert_task_args(call: &Value) -> Result<()> {
 fn assert_status_args(call: &Value, job_id: &str) -> Result<()> {
     let args = string_args(call)?;
     ensure!(
-        args == [job_id, "--wait", "--json", "--timeout-ms", "540000"],
+        args == [job_id, "--wait", "--json", "--timeout-ms", "1500000"],
         "status call was not the one bounded exact wait: {args:?}"
     );
     Ok(())

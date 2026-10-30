@@ -70,9 +70,8 @@ stages. Every prompt carries a file-ownership table:
 | Subagent 2 — [role] | `other/files` | `shared/config` | `patterns.md#<heading>` |
 
 **Declared skills.** A stage may list `skills: [<skill-name>, ...]` (full names, such as
-`loom-rust`; `loom plan verify` rejects an unknown name). Pass every declared skill into each
-brief whose work it covers, with the invocation the stage signal names for it, so the subagent
-loads it before writing code instead of rediscovering it.
+`loom-rust`; `loom plan verify` rejects an unknown name). Pass declared skills and their signal-named invocation to applicable Claude briefs.
+For Codex, quote applicable rules in the brief; Codex opens no skill files.
 
 **Sibling-read ledger.** Every agent of one session writes its reads ledger into one session directory:
 `$LOOM_WORK_DIR/hooks/reads/<LOOM_SESSION_ID>/<agent-id>.tsv` inside a stage, a per-session
@@ -214,26 +213,24 @@ the worktree. A contract that is itself wrong is disputed, never edited:
 
 **The review loop** (standard and integration-verify stages):
 
-1. Spawn a `loom-code-reviewer` BY AGENT TYPE, without `name`, for the stage diff. Only that type is recorded:
-   when it stops, a hook records the `loom-review` block from its `SubagentHandback` report, or
-   from its final message when it hands back nothing, as the next review round. Neither carrying a
-   valid block records a malformed round, which counts for nothing. The reviewer never sees the
-   stage signal: paste the stage's acceptance criteria (with `exit_code` and `stdout_contains`
-   where set) and its description into every reviewer brief.
-2. Brief every re-review with the output of `loom stage review status <stage-id>`: the rounds,
-   every open finding (own and carried) with its id, whether the latest round matches the
-   worktree, and the files changed since that round. A re-review covers those files plus the open
-   findings, and the reviewer lists each open id under `resolved` or `unresolved`.
-3. Every finding blocks completion, whatever its severity; suggestions never do. Each finding is
-   either fixed and re-reviewed, or disputed. It closes when a later round lists it under
-   `resolved`, or when the judge rules it `dismiss` or `defer`; `uphold` leaves it open.
-4. Dispute a round's findings in one command:
-   `loom stage dispute-findings <stage-id> --finding <id> ... --reason "..."`. Filing ends this
-   session by design; the daemon starts a fresh session with the verdict. A stage may file 3
-   disputes of each kind (findings, contract, integrity, impact tests); one more escalates it
-   to `NeedsHumanReview`.
+1. Spawn `loom-code-reviewer` BY AGENT TYPE, without `name` or model override.
+   The guard uses `models.code_reviewer_model` (opus by default) for the first round,
+   `models.code_reviewer_followup_model` (sonnet by default) for later rounds in the stage.
+   Only this type records rounds. Its hook reads the `loom-review` block from its
+   `SubagentHandback` report, else its final message. Invalid/missing blocks do not count. Reviewers lack the signal:
+   paste the stage's acceptance criteria (with `exit_code` and `stdout_contains` where set)
+   and its description into every reviewer brief.
+2. Send all findings of a round to ONE fix worker before ONE re-review on the follow-up model.
+   Brief with `loom stage review status <stage-id>`: rounds, all open finding ids
+   (own and carried), tree match and changed files. Review changed files and findings; list each open id under `resolved` or `unresolved`.
+3. Findings block completion at every severity; suggestions do not. Fix and re-review
+   or dispute each finding. A later `resolved` closes it; a judge's `dismiss` or `defer`
+   closes it; `uphold` leaves it open.
+4. Dispute a round in one command:
+   `loom stage dispute-findings <stage-id> --finding <id> ... --reason "..."`.
+   Filing ends the session; the daemon restarts with the verdict. Allow three disputes per kind (findings, contract, integrity, impact tests); one more means `NeedsHumanReview`.
 
-**Review order (plan v2):** run `loom check` once beside the final review round; fix every finding and failed criterion, re-check the failed criteria with `loom check <stage-id> --criterion <n>` and re-review the changed files, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.
+**Review order (plan v2):** run `loom check` once beside the final review. One fix worker handles all findings and failed criteria; re-check failures with `loom check <stage-id> --criterion <n>`, then one re-review on the follow-up model, then complete. After the final round, code edits including formatting need re-review. Comment-only lines, blank lines, and prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures need none; the base must be unchanged. Block comments and every other edit need re-review. Commits do not change it.
 
 **Test integrity** (standard and integration-verify stages). Completion compares the stage's test
 files with the base. Fewer test declarations or assertions in a language, assertion lines removed

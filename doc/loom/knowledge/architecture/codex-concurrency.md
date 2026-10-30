@@ -71,23 +71,12 @@ the same consequence before reporting the conjunction as a verdict — report pe
 
 ## Doctrine
 
-- **Foreground fan-out over disjoint files: allowed**, up to 6 verified. This is the supported way to buy
-  speed from codex.
-- **Background fan-out: forbidden.** Background results are retrieved through the very record that gets
-  clobbered — the `logFile` pointer that `/codex:result` needs is the field most often lost.
-- **Avoid `--resume-last` under fan-out.** It resolves "the last job" out of the corrupted state and can
-  attach to the wrong thread. Use fresh runs.
-- **Same-file work belongs in separate stages** (worktree isolation), never concurrent subagents in one
-  worktree. Disjoint file sets are the precondition for everything above.
-- **One unit = one file (or one file plus its test), at most three steps, interfaces pinned.**
-  The wrapper cancels a companion job still running at 540000 ms and exits 124 with
-  `"outcome":"timed_out"`; a timed-out unit is re-split, never re-forwarded as is — see
-  [Owned Waits](owned-waits.md). Watch for it with `loom subagents watch --worker codex:<unit>`, which
-  now exits 6 when a bound job's process is gone or its log stops growing past the stall budget.
-- **Expect an "appears hung" warning on long foreground runs.** A foreground codex call is one Bash
-  tool call, and the heartbeat only advances on PostToolUse — see
-  [Long Codex Runs Starve the Loom Heartbeat](../concerns/codex-heartbeat-starvation.md). The warning is
-  advisory; nothing is killed or retried.
+- **Foreground fan-out over disjoint files: allowed**, up to 6 verified. This is the supported way to buy speed from codex.
+- **Background fan-out: forbidden.** Background results are retrieved through the very record that gets clobbered: the `logFile` pointer that `/codex:result` needs is the field most often lost.
+- **Avoid `--resume-last` under fan-out.** It resolves "the last job" out of the corrupted state and can attach to the wrong thread. Use fresh runs.
+- **Same-file work belongs in separate stages** (worktree isolation), never concurrent subagents in one worktree. Disjoint file sets are the precondition for everything above.
+- **Size jobs by concern and measured rates:** [Job Sizing](#job-sizing). The wrapper cancels a job still running at 1500000 ms and exits 124 with `"outcome":"timed_out"`; a timed-out job is re-split, never re-forwarded as is (see [Owned Waits](owned-waits.md)). Watch for it with `loom subagents watch --worker codex:<unit>`, which exits 6 when a bound job's process is gone or its log stops growing past the stall budget.
+- **Expect an "appears hung" warning on long foreground runs.** A foreground codex call is one Bash tool call, and the heartbeat only advances on PostToolUse: see [Long Codex Runs Starve the Loom Heartbeat](../concerns/codex-heartbeat-starvation.md). The warning is advisory; nothing is killed or retried.
 
 ## Evidence status — what execution did and did NOT add
 
@@ -108,21 +97,14 @@ evidence.
 
 ## Wave Planning for Codex-Heavy Stages
 
-What the four implementation stages of PLAN-token-optimization-2026-09-13 converged on; each ran
-sol/terra xhigh units through `loom-codex-forwarder`:
+Waves come from real dependencies only: order work inside a job first, and start a later wave only when a job needs another job's result on disk. Never slice a list of jobs into waves by the cap of 6. Pin every cross-job contract (marker channel, receipt path and fields, CLI shape) verbatim in each brief, so parallel jobs agree without reading each other's code.
 
-- Split the stage's briefs into waves of disjoint file sets; a compile dependency inside a stage is
-  a serial wave, not an extra worktree. Pin every cross-unit contract (marker channel, receipt path
-  and fields, CLI shape) verbatim in each brief, so parallel units agree without reading each
-  other's code.
-- Keep one forward to about three items: one module pair plus tests at xhigh ran 24-30 minutes,
-  past the forwarder's 600 s Bash call (see
-  [Codex Lane Rogue Wrapper](../mistakes/codex-lane-rogue-wrapper.md)).
-- Shared files get one writer per wave: `loom-hooks/tests/run-all.sh` lists every hook test
-  explicitly, and `loom/maintainability-baseline.txt` fails on stale entries.
-- A new hook helper file needs edits outside most stages' ownership (the `include_str!` registry in
-  `loom/src/fs/permissions/constants.rs`, the run-all list), so keep shell work inside hooks the
-  stage already owns, or grant those files.
-- After each settled wave: `cargo fmt`, build all targets, run the new modules' tests, re-check the
-  400/50 limits, then dispatch the next wave. Codex workers skip verification by design, and their
-  own sandbox cannot run fixture tests under the plan's scratch root.
+- Shared files get one writer: `loom-hooks/tests/run-all.sh` lists every hook test explicitly, and `loom/maintainability-baseline.txt` fails on stale entries.
+- A new hook helper file needs edits outside most stages' ownership (the `include_str!` registry in `loom/src/fs/permissions/constants.rs`, the run-all list), so keep shell work inside hooks the stage already owns, or grant those files.
+- After each wave: `cargo fmt`, build all targets, run the new modules' tests, re-check the 400/50 limits. Codex workers skip verification by design, and their own sandbox cannot run fixture tests under the plan's scratch root. A size-limit fix must survive `cargo fmt`: a line squeezed by hand comes back.
+
+## Job Sizing
+
+A job is one concern: the code, its consumers and its tests together, in dependency order, in one brief passed as an absolute path. Measured per file-sized change, across 491 jobs: `gpt-6.1-sol` at high effort about 3 minutes and 50,000 tokens of context, `gpt-6.1-terra` at high effort about 1 minute and 20,000 tokens, on a start of about 23,000. Limits are about 250,000 tokens of peak context and the 1500 s deadline: about 4 to 6 changes on sol, about 12 on terra.
+
+Filling a job costs Codex tokens, because every turn re-reads the context: a replay of one 24-unit stage put 4 jobs of 6 changes at about 1.8 times the Codex tokens of 24 jobs of one. Claude quota is the scarcer side, so a job's Claude cost (a haiku forwarder of about 20,000 tokens plus the orchestrator's turns) justifies that for cohesive work. Unrelated concerns are never bundled to reach a size.

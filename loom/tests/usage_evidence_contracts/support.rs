@@ -247,6 +247,8 @@ fn write_review(work_dir: &Path) {
         agent_id: "agent-r1".to_string(),
         harvested_at: at("2026-10-14T06:09:00Z"),
         fingerprint: format!("sha256:{}", "a".repeat(64)),
+        base: String::new(),
+        behaviour: Default::default(),
         files: BTreeMap::new(),
         malformed: None,
         findings: vec![RecordedFinding {

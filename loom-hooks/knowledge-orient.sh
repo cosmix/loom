@@ -33,6 +33,10 @@
 set -euo pipefail
 umask 077
 
+if [[ -n "${LOOM_CODEX_FORWARD:-}" ]]; then
+	exit 0
+fi
+
 # Read stdin JSON under the shared deadline.
 source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
 INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)

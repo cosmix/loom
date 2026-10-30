@@ -26,9 +26,9 @@ use super::authorization::CodexAuthorization;
 use super::jobs::JobObservation;
 
 /// How long an authorization may have neither a forward receipt nor a
-/// companion job before reconcile reports it unknown: the wrapper's 540 s unit
+/// companion job before reconcile reports it unknown: the wrapper's 1500 s unit
 /// deadline plus slack for the PostToolUse receipt write.
-pub(super) const RECEIPT_WINDOW_SECS: i64 = 600;
+pub(super) const RECEIPT_WINDOW_SECS: i64 = 1560;
 
 /// Entry detail for an authorization still inside the receipt window.
 pub(super) const AWAITING_RECEIPT: &str = "awaiting forward receipt or companion job";

@@ -168,9 +168,9 @@ fn terminal_receipt_past_the_cutoff_never_removes_usage() {
 }
 
 #[test]
-fn receipt_just_after_since_without_rows_is_not_missing() {
+fn receipt_just_before_the_cutoff_without_rows_is_not_missing() {
     let range = window(None);
-    let scope = CodexScope::from_receipt_threads(&[receipt(Some("t-a"), at(10, 1, 0))], &range);
+    let scope = CodexScope::from_receipt_threads(&[receipt(Some("t-a"), at(10, 25, 59))], &range);
     let mut rows = Vec::new();
 
     assert_eq!(apply(&scope, &mut rows).missing_threads, 0);
@@ -179,7 +179,7 @@ fn receipt_just_after_since_without_rows_is_not_missing() {
 #[test]
 fn receipt_well_after_since_without_rows_is_missing() {
     let range = window(None);
-    let observed = range.since + Duration::seconds(700);
+    let observed = range.since + Duration::seconds(1660);
     let scope = CodexScope::from_receipt_threads(&[receipt(Some("t-a"), observed)], &range);
     let mut rows = Vec::new();
 

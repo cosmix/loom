@@ -158,7 +158,7 @@ fn ledger_text(text: &str) -> String {
 
 /// Why `latest` no longer covers the `current` changes, if it does not.
 fn stale_review(latest: &ReviewRound, current: &ChangeFingerprint) -> Option<String> {
-    if current.value == latest.fingerprint {
+    if covers_review(latest, current) {
         return None;
     }
     let changed = fingerprint::changed_since(&latest.files, &current.files);
@@ -172,6 +172,16 @@ fn stale_review(latest: &ReviewRound, current: &ChangeFingerprint) -> Option<Str
         "review round {} saw {}, but the worktree is now at {} ({since})",
         latest.round, latest.fingerprint, current.value
     ))
+}
+
+/// Whether a round covers the current tree, allowing only comment and prose changes.
+pub fn covers_review(latest: &ReviewRound, current: &ChangeFingerprint) -> bool {
+    latest.fingerprint == current.value
+        || (!latest.base.is_empty()
+            && latest.base == current.base
+            && !latest.behaviour.is_empty()
+            && !current.behaviour.is_empty()
+            && latest.behaviour == current.behaviour)
 }
 
 fn describe_open(open: &OpenFinding) -> String {

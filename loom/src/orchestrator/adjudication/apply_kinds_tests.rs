@@ -80,6 +80,8 @@ fn stage_with_finding(work: &Path, stage: &Stage) {
         agent_id: "reviewer".to_string(),
         harvested_at: Utc::now(),
         fingerprint: "sha256:0".to_string(),
+        base: String::new(),
+        behaviour: Default::default(),
         files: BTreeMap::new(),
         malformed: None,
         findings: vec![RecordedFinding {

@@ -66,6 +66,8 @@ fn round(number: u32, at: &ChangeFingerprint, claims: &[&str], resolved: &[&str]
         agent_id: format!("agent-{number}"),
         harvested_at: chrono::Utc::now(),
         fingerprint: at.value.clone(),
+        base: at.base.clone(),
+        behaviour: at.behaviour.clone(),
         files: at.files.clone(),
         malformed: None,
         findings: findings.collect(),
@@ -77,6 +79,114 @@ fn round(number: u32, at: &ChangeFingerprint, claims: &[&str], resolved: &[&str]
 
 fn current(fx: &Fixture) -> ChangeFingerprint {
     fingerprint::compute(&fx.worktree, "main").unwrap()
+}
+
+fn snapshot(path: &str, content: Option<&str>) -> ChangeFingerprint {
+    fingerprint::fingerprint_from(
+        "base",
+        &[
+            ("anchor.rs".into(), Some(b"fn anchor() {}\n".to_vec())),
+            (path.into(), content.map(|text| text.as_bytes().to_vec())),
+        ],
+    )
+}
+
+#[test]
+fn gate_allows_only_comment_and_prose_changes() {
+    let cases = [
+        ("a.rs", "fn a() {}\n", "// note\nfn a() {}\n\n", true),
+        ("a.rs", "fn a() {}\n", "fn b() {}\n", false),
+        (
+            "a.rs",
+            "struct A;\n",
+            "#[derive(Clone)]\nstruct A;\n",
+            false,
+        ),
+        ("a.ts", "run();\n", "// @ts-ignore\nrun();\n", false),
+        (
+            "a.ts",
+            "run();\n",
+            "/// <reference types=\"x\" />\nrun();\n",
+            false,
+        ),
+        ("a.ts", "// eslint-disable\nrun();\n", "run();\n", false),
+        ("doc/x.md", "old", "new", true),
+        ("skills/y/SKILL.md", "old", "new", false),
+        ("agents/z.md", "old", "new", false),
+        ("CLAUDE.md.template", "old", "new", false),
+        ("loom/tests/fixtures/a.md", "old", "new", false),
+        ("a.sh", "run\n", "# note\nrun\n", false),
+    ];
+    let fx = fixture();
+    for (path, before, after, allowed) in cases {
+        let seen = round(1, &snapshot(path, Some(before)), &[], &[]);
+        write_round_case(&fx, seen, &snapshot(path, Some(after)), allowed, path);
+    }
+}
+
+fn write_round_case(
+    fx: &Fixture,
+    seen: ReviewRound,
+    now: &ChangeFingerprint,
+    allowed: bool,
+    path: &str,
+) {
+    let tmp = TempDir::new().unwrap();
+    write_round(tmp.path(), STAGE, &seen).unwrap();
+    assert_eq!(check(&fx.stage, tmp.path(), now).is_ok(), allowed, "{path}");
+}
+
+#[test]
+fn new_deleted_files_base_changes_and_legacy_rounds_need_review() {
+    let before = snapshot("a.rs", Some("fn a() {}\n"));
+    let seen = round(1, &before, &[], &[]);
+    let empty = fingerprint::fingerprint_from("base", &[]);
+    assert!(!covers_review(&round(1, &empty, &[], &[]), &before));
+    assert!(!covers_review(&seen, &snapshot("a.rs", None)));
+    let mut now = snapshot("a.rs", Some("// note\nfn a() {}\n"));
+    now.base = "other".into();
+    assert!(!covers_review(&seen, &now));
+    let mut legacy = seen.clone();
+    legacy.base.clear();
+    assert!(covers_review(&legacy, &before));
+    assert!(!covers_review(
+        &legacy,
+        &snapshot("a.rs", Some("// note\nfn a() {}\n"))
+    ));
+}
+
+#[test]
+fn legacy_rounds_deserialize_without_exemption_fields() {
+    let before = snapshot("a.rs", Some("fn a() {}\n"));
+    let mut json = serde_json::to_value(round(1, &before, &[], &[])).unwrap();
+    json.as_object_mut().unwrap().remove("base");
+    json.as_object_mut().unwrap().remove("behaviour");
+    let legacy: ReviewRound = serde_json::from_value(json).unwrap();
+    assert!(legacy.base.is_empty());
+    assert!(legacy.behaviour.is_empty());
+    assert!(covers_review(&legacy, &before));
+    assert!(!covers_review(
+        &legacy,
+        &snapshot("a.rs", Some("// note\nfn a() {}\n"))
+    ));
+}
+
+#[test]
+fn missing_behaviour_needs_an_exact_fingerprint_match() {
+    let before = snapshot("a.rs", Some("fn a() {}\n"));
+    let mut seen = round(1, &before, &[], &[]);
+    seen.behaviour.clear();
+    let mut now = before.clone();
+    now.behaviour.clear();
+    assert!(covers_review(&seen, &now));
+    now.value = "different".into();
+    assert!(!covers_review(&seen, &now));
+    assert!(covers_review(&seen, &before));
+    let mut changed = before.clone();
+    changed.value = "different".into();
+    assert!(!covers_review(&seen, &changed));
+    let seen = round(1, &before, &[], &[]);
+    assert!(!covers_review(&seen, &now));
 }
 
 fn gate(fx: &Fixture) -> Result<()> {
@@ -163,6 +273,7 @@ fn gate_passes_when_later_round_resolves_finding() {
     let fx = fixture();
     let earlier = ChangeFingerprint {
         value: "sha256:earlier".to_string(),
+        behaviour: BTreeMap::new(),
         base: "a".repeat(40),
         files: BTreeMap::new(),
     };
@@ -261,6 +372,7 @@ fn rounds_are_numbered_in_order_and_never_replaced() {
     let work_dir = tmp.path();
     let seen = ChangeFingerprint {
         value: "sha256:x".to_string(),
+        behaviour: BTreeMap::new(),
         base: "b".to_string(),
         files: BTreeMap::from([("src/a.rs".to_string(), "deleted".to_string())]),
     };

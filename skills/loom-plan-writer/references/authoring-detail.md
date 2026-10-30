@@ -78,6 +78,13 @@ description: |
   | W3     | Metrics  | sonnet | src/metrics/*.rs  | src/config.rs (read-only)  | doc/plans/briefs/add-modules/add-auth-logging-metrics/w3-metrics.md |
 ```
 
+For each Codex job, forward ONE line naming its absolute brief path; the forwarder never
+retypes the brief. Without a committed brief, write one under the worktree scratch directory.
+The brief names owned files, entry symbols, done condition and traps, and quotes applicable
+declared-skill rules: Codex opens no skill files. Keep a concern's code, consumers and tests
+together in dependency order, spanning several files where cohesive. Waves follow dependencies
+on another job's result on disk; never slice jobs into waves by the cap of 6.
+
 Match agent type to work: execution → `loom-software-engineer` (pins sonnet), or `loom-codex-forwarder` for a codex unit on a stage licensed for codex (`codex-implementers.md`); judgment → `loom-senior-software-engineer`.
 
 ## Section 6 — Prose promises
