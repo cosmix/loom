@@ -17,11 +17,10 @@ Never write under `doc/` or anywhere in the repository except through
 
 Run `loom plan summary status --json` to inspect the assigned summaries and their
 dependencies. Separate document summaries from overviews without adding ids to the
-batch. Leave another session's claims alone. For feature summaries, use the feature
-name supplied in the assignment. Feature ids are `overview/<feature>/product`,
-`overview/<feature>/engineering`, and `<feature>/product/section_<nn>`. Plan summary
-ids are `plans/<slug>` with repository-wide unique slugs; plan document ids remain
-`plan/<slug>`.
+batch. Leave another session's claims alone. A feature summary's id names its feature:
+feature ids are `overview/<feature>/product`, `overview/<feature>/engineering`, and
+`<feature>/product/section_<nn>`. Plan summary ids are `plans/<slug>` with
+repository-wide unique slugs; plan document ids remain `plan/<slug>`.
 
 Process document summaries first, one at a time in the listed order. Then process
 overviews in dependency order, after their document summaries have sealed. Never
@@ -29,19 +28,18 @@ rebuild an unassigned id or edit a source to repair an unavailable dependency.
 
 For each id, complete these steps before moving to the next id:
 
-1. Run `loom plan summary brief <id>`. If the assignment includes a correction
-   note, pass it as `loom plan summary brief <id> --note <text>`. The command reads
-   the source, claims the id, and prints source paths, existing summary text with
-   stale sentences marked, sentences that may stay word for word, body rules, the
-   draft path, and the seal command. If it refuses the claim, record the id and
-   reason for the final report; never take over or release another session's claim.
+1. Run `loom plan summary brief <id>`. The command reads the source, claims the id,
+   and prints source paths, existing summary text with stale sentences marked,
+   sentences that may stay word for word, body rules, the draft path, and the seal
+   command. If it refuses the claim, record the id and reason for the final report;
+   never take over or release another session's claim.
 2. Read only what the brief names. For a document summary, check every claim
    against its named source document and the brief's existing summary. For an
    overview, check every claim against the document summaries in scope and the
    vision passages for a product overview or metaplan passages for an engineering
-   overview. Preserve current sentences word for word unless an assigned
-   correction requires changing them; their text determines the sentence ids
-   overviews cite. Replace stale or incorrect claims with supported prose.
+   overview. Preserve current sentences word for word; their text determines the
+   sentence ids overviews cite. Replace only stale or incorrect claims, with
+   supported prose.
 3. Write only the draft file named by the brief. Write the summary body without
    store frontmatter, hashes, or sentence ids; sealing generates the metadata.
    Follow every body rule in the brief and the format below.

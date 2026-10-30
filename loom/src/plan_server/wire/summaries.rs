@@ -19,6 +19,8 @@ pub struct RunningRebuild {
     pub total: usize,
     /// Session start time.
     pub started_at: String,
+    /// The log of a session with no tmux pane to attach to (a Codex job); null for the others.
+    pub log_path: Option<String>,
 }
 
 /// A summary whose rebuild failed.

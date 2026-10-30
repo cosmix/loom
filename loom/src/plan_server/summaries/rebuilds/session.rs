@@ -1,13 +1,15 @@
 //! Session events, the 5 s tick, the start-up sweep and the server stop.
 
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::{evaluation, Attributed, Attribution, Rebuilds, State, PENDING};
 use crate::plan_server::lifecycle::{line, safe};
 use crate::plan_server::summaries::attribution::last_seal_error;
+use crate::plan_server::summaries::codex_spawner::is_codex_session;
 use crate::plan_server::summaries::scheduler::{SessionSpawner, SuspendReason};
-use crate::plan_session::bridge::{Bridge, BridgeEvent, EndOutcome};
+use crate::plan_session::bridge::{Bridge, BridgeEvent, EndOutcome, OPENING_NOT_SUBMITTED};
 use crate::plan_session::kind::SessionKind;
 use crate::plan_session::model::SessionState;
 use crate::planning::summary::claims::list_claims;
@@ -138,7 +140,8 @@ impl Rebuilds {
     }
 
     /// A Codex summary job ended. It runs outside the session bridge and has no transcript, so
-    /// this is [`Rebuilds::session_gone`] for a Summary session without the transcript note.
+    /// this is [`Rebuilds::session_gone`] for a Summary session without the transcript note;
+    /// [`State::summary_ended`] knows the job by its id and bounds a clean exit.
     pub(crate) fn codex_session_ended(&self, session: &str, outcome: &EndOutcome) {
         self.clear_ended_session(session, |_| {});
         self.run(|state, spawner, now| {
@@ -328,12 +331,21 @@ impl Rebuilds {
         // Also covers a job whose start has not settled yet, which `running_session` hides.
         self.spawner.stop_all();
     }
+
+    /// Wait up to `grace`, or until `aborted`, for the jobs [`Rebuilds::server_stopping`] asked
+    /// to stop, then force what remains: the server's exit would take any later forced stop
+    /// with it.
+    pub(crate) fn force_stopped_jobs(&self, grace: Duration, aborted: &AtomicBool) {
+        self.spawner.force_stopped(grace, aborted);
+    }
 }
 
 impl State {
     /// A summary session ended. While a start settles, the running session is the pending
     /// placeholder, so an end of the session being started (a launch that failed at once) would
-    /// match nothing: it is kept for the start to apply once it knows its session id.
+    /// match nothing: it is kept for the start to apply once it knows its session id. The id
+    /// says whether a Codex job ended, also for an end kept here; a job's failure text comes
+    /// from its log, so only a bridge session's can be an unsubmitted opening.
     pub(super) fn summary_ended(
         &mut self,
         id: &str,
@@ -345,8 +357,13 @@ impl State {
             self.ended_early.push((id.to_owned(), outcome.clone()));
             return;
         }
+        let job = is_codex_session(id);
         match outcome {
+            EndOutcome::Failed(why) if !job && why.starts_with(OPENING_NOT_SUBMITTED) => {
+                self.scheduler.opening_unsubmitted(id, why, now, spawner);
+            }
             EndOutcome::Failed(why) => self.scheduler.session_failed(id, why, now, spawner),
+            EndOutcome::Closed if job => self.scheduler.job_ended(id, now, spawner),
             _ => self.scheduler.session_ended(id, now, spawner),
         }
     }

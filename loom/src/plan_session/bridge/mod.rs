@@ -61,6 +61,7 @@ use self::commands::Out;
 pub use self::ending::TEARDOWN_FAILED;
 pub use self::error::BridgeError;
 use self::host::SessionHost;
+pub use self::opening::OPENING_NOT_SUBMITTED;
 use self::registry::{transcripts_of, ChildRecord, Feeds};
 use self::session::Inner;
 use super::kind::{SessionDir, SessionKind};

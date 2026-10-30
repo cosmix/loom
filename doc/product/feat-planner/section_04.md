@@ -312,9 +312,13 @@ high effort by default. Overviews (product and engineering) and the background s
 also default to Haiku at high effort. The user selects the background summary backend with
 `[plan] summary_backend`: `claude` (default) or `codex`. The Claude backend uses the interactive
 session above. The Codex backend runs `codex exec` in the background with the workspace-write
-sandbox rooted at the project, plus write access to the runtime directory
-(`~/.loom/plan/<project-key>/`). It has no tmux attach link; the server console prints the job's
-log path (`<runtime>/codex-logs/<session>.log`), and it records no cost. When the backend is `codex`,
+sandbox rooted at the project, plus write access to `drafts/` and `claims/` in the runtime
+directory (`~/.loom/plan/<project-key>/`); the rest of that directory stays read-only to the job,
+which takes the store lock through a read-only descriptor on `summaries.lock`. It has no tmux
+attach link; the running rebuild's record in the summary panel shows the job's log path
+(`<runtime>/codex-logs/<session>.log`) instead, and it records no cost. A job exits by itself, so
+a clean exit that leaves summaries unsealed requeues them once and a second one marks them
+failed. When the backend is `codex`,
 `[plan] summary_codex_model` (default `gpt-6.1-terra`) and `summary_codex_effort` (default `high`)
 select its model and effort.
 

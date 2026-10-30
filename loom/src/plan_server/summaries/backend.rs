@@ -2,7 +2,9 @@
 //! Codex job, chosen by `plan.summary_backend` at each start.
 
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::time::Duration;
 
 use super::codex_spawner::{is_codex_session, CodexSummarySpawner};
 use super::scheduler::SessionSpawner;
@@ -69,5 +71,13 @@ impl SessionSpawner for BackendSpawner {
 
     fn stop_all(&self) {
         self.codex.stop_all();
+    }
+
+    fn force_stopped(&self, grace: Duration, aborted: &AtomicBool) {
+        self.codex.force_stopped(grace, aborted);
+    }
+
+    fn log_path(&self, session: &str) -> Option<PathBuf> {
+        self.codex.log_path(session)
     }
 }
