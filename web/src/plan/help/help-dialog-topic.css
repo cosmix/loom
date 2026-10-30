@@ -1,0 +1,230 @@
+/* A topic's article: hero, scenes, tips and the footer. Type stays at 13px or more. */
+.planner-help .planner-help-content {
+  display: grid;
+  gap: 20px;
+}
+
+.planner-help .planner-help-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 14px;
+  row-gap: 14px;
+}
+
+.planner-help .planner-help-hero > .planner-help-badge {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+}
+
+.planner-help .planner-help-hero .planner-help-badge svg {
+  width: 26px;
+  height: 26px;
+}
+
+.planner-help .planner-help-position {
+  margin: 0 0 4px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.planner-help .planner-help-hero h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  font-weight: 650;
+  text-wrap: balance;
+}
+
+.planner-help .planner-help-intro {
+  grid-column: 1 / -1;
+  max-width: 62ch;
+  margin: 0;
+  font-family: var(--font-reading);
+  font-size: 17px;
+  line-height: var(--reading-line, 1.55);
+  color: var(--muted-foreground);
+}
+
+.planner-help .planner-help-tips {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in oklch, var(--primary) 30%, transparent);
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--primary) 9%, transparent);
+}
+
+.planner-help .planner-help-tips-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: color-mix(in oklch, var(--primary) 22%, transparent);
+  color: var(--foreground);
+}
+
+.planner-help .planner-help-tips-tile svg {
+  width: 16px;
+  height: 16px;
+}
+
+.planner-help .planner-help-tips h3 {
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.planner-help .planner-help-tips ul {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.planner-help .planner-help-tips li {
+  position: relative;
+  padding-left: 16px;
+}
+
+.planner-help .planner-help-tips li::before {
+  position: absolute;
+  top: 0.55em;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ring);
+  content: "";
+}
+
+.planner-help .planner-help-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+}
+
+/* The nav landmark stays; its two cards sit in the footer's grid at the sides. */
+.planner-help .planner-help-pager {
+  display: contents;
+}
+
+.planner-help .planner-help-pager button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--card);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.planner-help .planner-help-pager button:hover {
+  border-color: var(--ring);
+  background: var(--muted);
+}
+
+.planner-help .planner-help-pager small,
+.planner-help .planner-help-pager button > span > span {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planner-help .planner-help-pager .planner-help-pager-previous {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: start;
+}
+
+.planner-help .planner-help-pager .planner-help-pager-next {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+  flex-direction: row-reverse;
+  text-align: right;
+}
+
+.planner-help .planner-help-key-hint {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* The shared shortcut rows pull their hover tint 10px past the column; the rules stay on it. */
+.planner-help .help-shortcuts > div {
+  margin-inline: 0;
+}
+
+/* The shared Kbd sets text-xs (12px); the help dialog keeps all text at 13px or more. */
+.planner-help kbd {
+  font-size: 13px;
+}
+
+@media (max-width: 767px) {
+  .planner-help .planner-help-content {
+    gap: 16px;
+  }
+
+  .planner-help .planner-help-footer {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .planner-help .planner-help-pager .planner-help-pager-previous {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .planner-help .planner-help-pager .planner-help-pager-next {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .planner-help .planner-help-key-hint {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .planner-help,
+  .planner-help *,
+  .planner-help *::before,
+  .planner-help *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

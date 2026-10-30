@@ -15,6 +15,7 @@ import { ReadingColumn } from "@/plan/concept/reading-column";
 import type { OpenRun } from "@/plan/concept/types";
 import { openRunsAtom } from "@/plan/concept/view-state";
 import type { PlannerHelpScene } from "@/plan/help/pinned-scene";
+import { createSampleStore } from "@/plan/help/sample";
 import { SceneRouter } from "@/plan/help/scene-router";
 
 const SOURCE = { path: "doc/product/map-view.md", anchor: "saved-places" };
@@ -36,7 +37,7 @@ const OUTDATED_MARK: Mark = {
     page: summaryKey("help", "product", "offline-access"),
   },
   colour: 2,
-  out_of_date: { reason: "source_changed", detail: null },
+  out_of_date: { reason: "rebuilding", detail: null },
 };
 const SUMMARY_SENTENCE: Sentence = {
   id: "help-summary",
@@ -49,7 +50,8 @@ const SUMMARY_SENTENCE: Sentence = {
   rests_on: [SOURCE],
   plans: [],
 };
-const FOLD_SENTENCE: Sentence = {
+// Opened in place of its text, so the page shows a cap, the source chip and the excerpt.
+const OPEN_SENTENCE: Sentence = {
   id: "help-saved-places",
   text: "Saved places stay on the map for the next visit.",
   marks: [CURRENT_MARK],
@@ -79,7 +81,7 @@ const SOURCE_DOC: DocView = {
   size: SOURCE_TEXT.length,
 };
 
-function samplePage(key: string, sentence: Sentence): ConceptPage {
+function samplePage(key: string, sentences: Sentence[]): ConceptPage {
   return {
     feature: "help",
     key,
@@ -91,7 +93,7 @@ function samplePage(key: string, sentence: Sentence): ConceptPage {
     plan_state: null,
     last_pressure: null,
     key_chips: [],
-    blocks: [{ kind: "paragraph", sentences: [sentence] }],
+    blocks: [{ kind: "paragraph", sentences }],
     unlisted: [],
     implements: null,
     implemented_by: [],
@@ -101,14 +103,13 @@ function samplePage(key: string, sentence: Sentence): ConceptPage {
   };
 }
 
-const SENTENCE_PAGE = samplePage(
-  summaryKey("help", "product", "reading-sentence"),
+const READING_PAGE = samplePage(summaryKey("help", "product", "reading"), [
   SUMMARY_SENTENCE,
-);
-const FOLD_PAGE = samplePage(summaryKey("help", "product", "reading-fold"), FOLD_SENTENCE);
+  OPEN_SENTENCE,
+]);
 const OPEN_RUN: OpenRun = {
   level: 1,
-  sentenceId: FOLD_SENTENCE.id,
+  sentenceId: OPEN_SENTENCE.id,
   restsOn: [SOURCE],
   parent: null,
 };
@@ -130,75 +131,47 @@ function seedSample<Value>(
 }
 
 function sampleStore(page: ConceptPage, open: OpenRun[]): ReturnType<typeof createStore> {
-  const store = createStore();
+  const store = createSampleStore();
   store.set(conceptPageAtom(page.key), { page, previous: null, error: null });
   seedSample(store, openRunsAtom(page.key), open);
   seedSample(store, loadable(docViewAtom(SOURCE.path)), { state: "hasData", data: SOURCE_DOC });
   return store;
 }
 
-function ReadingSample({
-  store,
-  page,
-}: {
-  store: ReturnType<typeof createStore>;
-  page: ConceptPage;
-}): JSX.Element {
+export function ReadingScene(): JSX.Element {
+  const [store] = useState(() => sampleStore(READING_PAGE, [OPEN_RUN]));
   return (
     <Provider store={store}>
-      <SceneRouter initialEntries={[pageHref(page.key)]}>
-        <div data-loom-plan inert style={{ maxWidth: 640 }}>
-          <ReadingColumn pageKey={page.key} page={page} />
+      <SceneRouter initialEntries={[pageHref(READING_PAGE.key)]}>
+        {/* The column's own text sits at the stage edge in production, where the page pads it. */}
+        <div data-loom-plan inert style={{ maxWidth: 640, padding: "14px 16px" }}>
+          <ReadingColumn pageKey={READING_PAGE.key} page={READING_PAGE} />
         </div>
       </SceneRouter>
     </Provider>
   );
 }
 
-export function ReadingSentenceScene(): JSX.Element {
-  const [store] = useState(() => sampleStore(SENTENCE_PAGE, []));
-  return <ReadingSample store={store} page={SENTENCE_PAGE} />;
-}
-
-export function ReadingFoldScene(): JSX.Element {
-  const [store] = useState(() => sampleStore(FOLD_PAGE, [OPEN_RUN]));
-  return <ReadingSample store={store} page={FOLD_PAGE} />;
-}
-
 export const READING_SCENES: readonly PlannerHelpScene[] = [
   {
-    title: "A summary sentence and its marks",
-    Scene: ReadingSentenceScene,
+    title: "A sentence, its marks and its source",
+    Scene: ReadingScene,
     notes: [
       {
         target: '.concept-sentence[data-sentence-id="help-summary"]',
-        text: "The summary sentence opens its supporting detail in place when you click it.",
+        text: "A sentence that opens. Hover shows its document's colour; click or press Enter.",
       },
       {
-        target: ".concept-mark:not([data-dashed])",
-        text: "The solid colour mark opens the summary page of a document this sentence draws on.",
+        target: ".concept-marks",
+        text: "Which document the sentence draws on. A dashed mark is being rebuilt.",
       },
-      {
-        target: '.concept-mark[data-dashed="true"]',
-        text: "The dashed mark opens the summary page of a document whose summary is out of date.",
-      },
-    ],
-  },
-  {
-    title: "Folding and sources",
-    Scene: ReadingFoldScene,
-    notes: [
       {
         target: '.concept-run-cap[data-side="start"]',
-        text: "The fold cap at the start of the open passage folds it back into its summary sentence.",
+        text: "Fold back to the sentence you opened. Esc folds one level, Shift+Esc all.",
       },
       {
         target: ".concept-passage-chip",
-        text: "The source chip names the file and section and links to those lines in the full file.",
-      },
-      {
-        target: ".concept-passage .md",
-        text: "The source excerpt shows the text of the section that supports the summary sentence.",
+        text: "The source passage, with its file and heading. It opens in file mode.",
       },
     ],
   },

@@ -1,4 +1,3 @@
-import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { useState } from "react";
 
@@ -8,12 +7,10 @@ import type { CodexStatus, PressureStepKind, PressureStepView } from "@/plan/api
 import { pressureRunAtom } from "@/plan/chat/pressure/use-pressure";
 import { RunHeader } from "@/plan/chat/run-header";
 import type { PlannerHelpScene } from "@/plan/help/pinned-scene";
-import { SAMPLE_HOLDER, SAMPLE_SERVER } from "@/plan/help/sample";
+import { createSampleStore, PANEL_LOOK, SAMPLE_HOLDER } from "@/plan/help/sample";
 import { SceneRouter } from "@/plan/help/scene-router";
-import { authoringAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
 
 const PLAN = "doc/plans/PLAN-atlas.md";
-const REPORT = "doc/plans/reviews/atlas-codex.md";
 const SESSION = sessionViewSchema.parse({
   id: "pressure-help",
   kind: "pressure",
@@ -31,9 +28,11 @@ const SESSION = sessionViewSchema.parse({
   last_activity: null,
   failure: null,
   offer: null,
+  feature: null,
+  plan: null,
 });
 const CODEX: CodexStatus = {
-  model: "gpt-6.1-sol",
+  model: "gpt-6.1-terra",
   state: "running",
   report_path: null,
   log_tail: null,
@@ -60,10 +59,7 @@ function step(
 }
 
 function seededStore(run: unknown) {
-  const store = createStore();
-  store.set(serverInfoAtom, SAMPLE_SERVER);
-  store.set(youAtom, SAMPLE_SERVER.you);
-  store.set(authoringAtom, SAMPLE_HOLDER);
+  const store = createSampleStore();
   store.set(pressureRunAtom, pressureRunSchema.parse(run));
   return store;
 }
@@ -86,48 +82,12 @@ function runningStore() {
   });
 }
 
-/** One finished round whose end was recorded, with the Codex report and the address edits. */
-function recordedStore() {
-  const codex: CodexStatus = { ...CODEX, state: "review_written", report_path: REPORT };
-  return seededStore({
-    plan: PLAN,
-    rounds: 1,
-    round: 1,
-    step: "claude_address",
-    started_ms: 1000,
-    tokens_total: 12600,
-    steps: [
-      step("codex", { ended_ms: 181000, codex }, 1000),
-      step("claude_pressure", { ended_ms: 181000 }, 1000),
-      step(
-        "claude_address",
-        { ended_ms: 301000, edits: [PLAN, "doc/plans/briefs/atlas.md"] },
-        181000,
-      ),
-    ],
-    ended: { kind: "recorded", by: null, step: null, reason: null, line: "1 round complete" },
-  });
-}
-
-export function PressureHeaderScene() {
+export function PressureRunScene() {
   const [store] = useState(runningStore);
   return (
     <Provider store={store}>
       <SceneRouter>
-        <div data-loom-plan inert className="max-w-[680px]">
-          <RunHeader session={SESSION} />
-        </div>
-      </SceneRouter>
-    </Provider>
-  );
-}
-
-export function PressureRunScene() {
-  const [store] = useState(recordedStore);
-  return (
-    <Provider store={store}>
-      <SceneRouter>
-        <div data-loom-plan inert className="max-w-[680px]">
+        <div data-loom-plan inert className={PANEL_LOOK}>
           <RunHeader session={SESSION} />
         </div>
       </SceneRouter>
@@ -138,50 +98,21 @@ export function PressureRunScene() {
 // The run strip is not shown: RunStrip mounts DashboardButton, which POSTs /api/run/dashboard on mount; revisit when the fetch can be injected.
 export const PRESSURE_SCENES: readonly PlannerHelpScene[] = [
   {
-    title: "The run header",
-    Scene: PressureHeaderScene,
+    title: "A run in the chat",
+    Scene: PressureRunScene,
+    panel: true,
     notes: [
       {
         target: ".chat-run-header",
-        text: "The header line names the plan, the round, the active step, the elapsed time and the token total.",
+        text: "The plan, the round and the step. Stop ends the whole run.",
       },
       {
         target: '[aria-label="Round 1 Codex"]',
-        text: "The Codex card shows the background review model and how long it has been running.",
+        text: "Codex reviews in the background; its report links here when written.",
       },
       {
         target: '[aria-label="Round 1 /pressure"]',
-        text: "The /pressure card runs beside Codex in the same round and reports its own token total.",
-      },
-      {
-        target: "[data-session-id] button",
-        text: "Stop asks for confirmation, then ends the pressure test and keeps the edits made so far.",
-      },
-    ],
-  },
-  {
-    title: "Following a run",
-    Scene: PressureRunScene,
-    notes: [
-      {
-        target: '[aria-label="Round 1 Codex"] a',
-        text: "Review written opens the report that Codex produced.",
-      },
-      {
-        target: '[aria-label="Round 1 /address"]',
-        text: "The address card lists the planning documents edited after the reviews.",
-      },
-      {
-        target: '[aria-label="Round 1 /address"] [title^="Input:"]',
-        text: "Hover a step's token total to see its input, cache and output counts.",
-      },
-      {
-        target: '[aria-label="Edited files"]',
-        text: "The summary lists every edited document with a link to its diff.",
-      },
-      {
-        target: '[aria-label="Pressure test summary"] > div:last-child > a',
-        text: "Review the changes opens the plan diff once the pressure test is recorded.",
+        text: "Claude reviews at the same time, then a second session addresses both reviews.",
       },
     ],
   },
@@ -189,5 +120,6 @@ export const PRESSURE_SCENES: readonly PlannerHelpScene[] = [
 
 export const PRESSURE_TIPS: readonly string[] = [
   "Each pressure round runs two reviews in parallel before an address step edits the plan and its briefs.",
+  "A finished run summarizes the edited files and links to the diff of the changes.",
   "Starting a pressure test ends an open authoring chat with its closing write.",
 ];

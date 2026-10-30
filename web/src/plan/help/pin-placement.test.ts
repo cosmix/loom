@@ -52,6 +52,152 @@ describe("placePins side selection", () => {
   });
 });
 
+describe("placePins bars and stacked targets", () => {
+  // Getting around, pin 2: the step rail is a bar under a busy row, and its pin hung off the far
+  // left end of it. A bar takes the side below it before left or right.
+  it("centres a bar's pin below it instead of at its far left end", () => {
+    const tall = { width: 300, height: 260 };
+    const rail = { x: 20, y: 150, w: 260, h: 30 };
+    const row = { x: 100, y: 100, w: 100, h: 44 };
+    const [pin] = placePins([rail, row], tall);
+
+    expect(pin).toEqual({ x: 139, y: 186, w: 22, h: 22 });
+    expect(pin!.x + pin!.w / 2).toBe(rail.x + rail.w / 2);
+    expect(overlaps(pin!, rail)).toBe(false);
+  });
+
+  it("keeps the side order for a target that is not a bar", () => {
+    const control = { x: 100, y: 80, w: 40, h: 20 };
+    const blocker = { x: 109, y: 52, w: 22, h: 22 };
+
+    expect(placePins([control, blocker], bounds)[0]).toEqual({ x: 72, y: 79, w: 22, h: 22 });
+  });
+
+  // Pressure, pin 3: cards that share their edges leave no free side; the pin used to float at a
+  // clamped spot away from its card.
+  it("places a pin inside the corner of a card whose every side is taken", () => {
+    const cards = [
+      { x: 0, y: 0, w: 200, h: 60 },
+      { x: 0, y: 60, w: 200, h: 60 },
+      { x: 0, y: 120, w: 200, h: 80 },
+    ];
+    const pins = placePins(cards, { width: 200, height: 200 });
+
+    expect(pins[2]).toEqual({ x: 6, y: 126, w: 22, h: 22 });
+    pins.forEach((pin, index) => {
+      const card = cards[index]!;
+      expect(pin!.x).toBeGreaterThanOrEqual(card.x);
+      expect(pin!.y).toBeGreaterThanOrEqual(card.y);
+      expect(pin!.x + pin!.w).toBeLessThanOrEqual(card.x + card.w);
+      expect(pin!.y + pin!.h).toBeLessThanOrEqual(card.y + card.h);
+    });
+  });
+
+  it("does not sit inside a target too small to hold a pin", () => {
+    const [pin] = placePins([{ x: 100, y: 80, w: 20, h: 20 }], bounds);
+
+    expect(overlaps(pin!, { x: 100, y: 80, w: 20, h: 20 })).toBe(false);
+  });
+});
+
+// Chat scene, pin 1: the chip's remove button sat under the pin; pressure, pin 3: it sat on a line
+// of text. Text runs and controls the stage holds are boxes a side may not cover.
+describe("placePins occupied boxes", () => {
+  const target = { x: 100, y: 80, w: 40, h: 20 };
+
+  it("skips a side that would cover a text run or a control", () => {
+    const text = { x: 90, y: 50, w: 70, h: 16 };
+
+    expect(placePins([target], bounds, PIN_SIZE, { occupied: [text] })[0]).toEqual({
+      x: 72,
+      y: 79,
+      w: 22,
+      h: 22,
+    });
+    const control = { x: 60, y: 70, w: 36, h: 36 };
+    expect(placePins([target], bounds, PIN_SIZE, { occupied: [text, control] })[0]).toEqual({
+      x: 109,
+      y: 106,
+      w: 22,
+      h: 22,
+    });
+  });
+
+  it("keeps the side order when nothing is occupied", () => {
+    expect(placePins([target], bounds, PIN_SIZE, { occupied: [] })[0]).toEqual({
+      x: 109,
+      y: 52,
+      w: 22,
+      h: 22,
+    });
+  });
+});
+
+// A stage inset 60px from each canvas edge, as a panel scene's is, leaves a gutter either side.
+describe("placePins gutter", () => {
+  const stage = { x: 60, y: 0, w: 180, h: 200 };
+  const target = { x: 100, y: 80, w: 40, h: 20 };
+  const surrounded = [
+    { x: 90, y: 50, w: 70, h: 16 },
+    { x: 60, y: 70, w: 36, h: 36 },
+    { x: 100, y: 106, w: 40, h: 16 },
+    { x: 146, y: 70, w: 30, h: 36 },
+  ];
+
+  it("uses the margin level with the target's centre when no side is clean", () => {
+    const [pin] = placePins([target], bounds, PIN_SIZE, { occupied: surrounded, stage });
+
+    expect(pin).toEqual({ x: 32, y: 79, w: 22, h: 22 });
+    expect(pin!.y + pin!.h / 2).toBe(target.y + target.h / 2);
+    expect(overlaps(pin!, stage)).toBe(false);
+  });
+
+  it("takes the right margin when the left one is out of the canvas", () => {
+    const edge = { x: 0, y: 0, w: 220, h: 200 };
+    const [pin] = placePins([target], { width: 300, height: 200 }, PIN_SIZE, {
+      occupied: surrounded,
+      stage: edge,
+    });
+
+    expect(pin).toEqual({ x: 226, y: 79, w: 22, h: 22 });
+  });
+
+  it("slides along the margin away from a pin already placed there", () => {
+    const pins = placePins([target, { ...target }], bounds, PIN_SIZE, {
+      occupied: surrounded,
+      stage,
+    });
+
+    expect(pins[0]).toEqual({ x: 32, y: 79, w: 22, h: 22 });
+    expect(pins[1]!.x).toBe(32);
+    expect(pins[1]!.y).not.toBe(79);
+    expect(overlaps(pins[1]!, { x: 30, y: 77, w: 26, h: 26 })).toBe(false);
+  });
+
+  it("prefers a clean side over the margin", () => {
+    expect(placePins([target], bounds, PIN_SIZE, { occupied: [], stage })[0]).toEqual({
+      x: 109,
+      y: 52,
+      w: 22,
+      h: 22,
+    });
+  });
+
+  it("falls back to the inside corner only when the margin is out of reach too", () => {
+    const wide = { width: 200, height: 200 };
+    const card = { x: 0, y: 60, w: 200, h: 80 };
+    const full = { x: 0, y: 0, w: 200, h: 200 };
+    const blockers = [
+      { x: 0, y: 30, w: 200, h: 26 },
+      { x: 0, y: 144, w: 200, h: 26 },
+    ];
+
+    const [pin] = placePins([card], wide, PIN_SIZE, { occupied: blockers, stage: full });
+
+    expect(pin).toEqual({ x: 6, y: 66, w: 22, h: 22 });
+  });
+});
+
 describe("placePins inputs", () => {
   it("preserves null targets and empty input", () => {
     expect(placePins([null, { x: 100, y: 80, w: 40, h: 20 }, null], bounds)).toEqual([

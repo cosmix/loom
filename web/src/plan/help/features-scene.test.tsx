@@ -1,4 +1,5 @@
 import { cleanup, render, within } from "@testing-library/react";
+import { getDefaultStore } from "jotai";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import {
@@ -7,6 +8,8 @@ import {
   FeaturesHomeScene,
   FeaturesKickoffScene,
 } from "@/plan/help/features-scene";
+import { SAMPLE_SERVER } from "@/plan/help/sample";
+import { serverInfoAtom } from "@/plan/state/atoms";
 
 const SHELF_BUTTONS = "section[aria-labelledby] button";
 
@@ -91,11 +94,43 @@ it("anchors each kickoff note to the section its text names", () => {
   ]);
 });
 
+it("draws the invitation beside the feature cards and pins it first", () => {
+  const { container } = render(<FeaturesHomeScene />);
+  const scene = within(container);
+
+  expect(scene.getByRole("region", { name: "Start something new", hidden: true })).toBeDefined();
+  expect(
+    scene.getByRole("link", { name: "Start a conversation", hidden: true }).getAttribute("href"),
+  ).toBe("/new");
+  const [invitation] = FEATURES_SCENES[0]!.notes;
+  expect(invitation?.text).toBe(
+    "The invitation starts a conversation about a new feature or a standalone plan.",
+  );
+  expect(container.querySelectorAll(invitation?.target as string)).toHaveLength(1);
+  expect(container.querySelector(".card-grid__lead .invitation")).not.toBeNull();
+});
+
+it("shows nothing of the host's server state in the kickoff scene", () => {
+  const store = getDefaultStore();
+  store.set(serverInfoAtom, {
+    ...SAMPLE_SERVER,
+    read_only: [{ what: "claude_login", message: "Claude Code is not logged in", fix: "login" }],
+  });
+  try {
+    const { container } = render(<FeaturesKickoffScene />);
+
+    expect(container.textContent).not.toContain("read-only mode");
+    expect(container.textContent).not.toContain("not logged in");
+  } finally {
+    store.set(serverInfoAtom, null);
+  }
+});
+
 it("renders the feature progress and standalone shelf", () => {
   const { container } = render(<FeaturesHomeScene />);
   const scene = within(container);
 
-  expect(scene.getByRole("link", { name: "atlas", hidden: true }).getAttribute("href")).toBe(
+  expect(scene.getByRole("link", { name: "Atlas", hidden: true }).getAttribute("href")).toBe(
     "/f/atlas",
   );
   const progress = scene.getByRole("list", { name: "Progress", hidden: true });

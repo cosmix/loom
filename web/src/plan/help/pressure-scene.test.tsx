@@ -1,12 +1,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import {
-  PRESSURE_SCENES,
-  PRESSURE_TIPS,
-  PressureHeaderScene,
-  PressureRunScene,
-} from "@/plan/help/pressure-scene";
+import { PRESSURE_SCENES, PRESSURE_TIPS, PressureRunScene } from "@/plan/help/pressure-scene";
 
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Help must not request live data")));
@@ -29,10 +24,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("exports the two pressure scenes in order", () => {
+it("exports the one pressure scene with three pins", () => {
   expect(PRESSURE_SCENES.map(({ title, Scene }) => [title, Scene])).toEqual([
-    ["The run header", PressureHeaderScene],
-    ["Following a run", PressureRunScene],
+    ["A run in the chat", PressureRunScene],
+  ]);
+  expect(PRESSURE_SCENES[0]?.notes.map(({ text }) => text)).toEqual([
+    "The plan, the round and the step. Stop ends the whole run.",
+    "Codex reviews in the background; its report links here when written.",
+    "Claude reviews at the same time, then a second session addresses both reviews.",
   ]);
 });
 
@@ -53,10 +52,24 @@ it.each(PRESSURE_SCENES)("renders $title with every note anchored", ({ Scene, no
   }
 });
 
-it.each(PRESSURE_SCENES)("gives $title nonempty single sentence notes", ({ notes }) => {
+it.each(PRESSURE_SCENES)("gives $title nonempty sentence notes", ({ notes }) => {
   for (const note of notes) {
-    expect(note.text.trim()).toMatch(/^[^.!?]+[.!?]$/);
+    expect(note.text.trim()).toMatch(/^[^.!?]+(?:[.!?] [^.!?]+)*[.!?]$/);
   }
+});
+
+it("draws the run in the chat: run head with Stop, a Codex card and a Claude step", () => {
+  const { container } = render(<PressureRunScene />);
+
+  expect(container.querySelector("[data-session-id] button")?.textContent).toContain("Stop");
+  expect(container.querySelector('[aria-label="Round 1 Codex"]')?.textContent).toContain(
+    "reviewing the plan in the background",
+  );
+  expect(container.querySelector('[aria-label="Round 1 Codex"]')?.textContent).toContain(
+    "gpt-6.1-terra",
+  );
+  expect(PRESSURE_SCENES[0]?.panel).toBe(true);
+  expect(container.querySelector('[aria-label="Round 1 /pressure"]')).not.toBeNull();
 });
 
 it.each(PRESSURE_SCENES)("keeps $title free of network activity", async ({ Scene }) => {
