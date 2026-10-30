@@ -134,8 +134,8 @@ and briefs under `doc/plans/briefs/<slug>/`. They have their own lifecycle (writ
 pressure-tested, running, done or retired), no six-step checklist, and write `Implements: none`.
 Work with a product spec, a metaplan, or several related plans belongs in a feature.
 
-The home screen shows standalone plans on one shelf with "New standalone plan" and
-"Move into a feature…". The shelf has no per-plan workflow offers.
+The home screen shows standalone plans on one shelf with "Add plan" and
+"Move plan". The shelf has no per-plan workflow offers.
 
 ### Pressure tests
 
