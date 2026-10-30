@@ -16,12 +16,12 @@ vi.mock("./dashboard-button", () => ({
 }));
 afterEach(cleanup);
 
-function renderStrip(patch: object, compact = false) {
+function renderStrip(patch: object, compact = false, variant?: "bar" | "row") {
   const store = createStore();
   store.set(runStripAtom, { ...runStripSchema.parse(fixture), ...patch });
   return render(
     <Provider store={store}>
-      <RunStrip compact={compact} />
+      <RunStrip compact={compact} variant={variant} />
     </Provider>,
   );
 }
@@ -146,4 +146,34 @@ it("keeps an untrusted plan name escaped when attention is emphasized", () => {
   expect(screen.getByText(/PLAN-⟨U\+202E⟩exe\.md · daemon running/)).toBeTruthy();
   expect(screen.getByText("2 need attention")).toBeTruthy();
   expect(document.body.textContent).not.toContain("‮");
+});
+
+it("renders the row variant with the status line, a dashboard link and merged progress", () => {
+  const { container } = renderStrip({ attention: 2, merged: 1, total: 4 }, true, "row");
+
+  expect(screen.getByText("loom run")).toBeTruthy();
+  const line = screen.getByText(/PLAN-example\.md · daemon running · 1\/4 merged/);
+  expect(line.closest("[title]")?.getAttribute("title")).toBe(
+    "doc/plans/PLAN-example.md · daemon running · 1/4 merged · 2 need attention",
+  );
+  expect(screen.getByText("2 need attention").closest('[class*="tone-warning"]')).not.toBeNull();
+  expect(screen.getByRole("link", { name: "Open dashboard" }).dataset.variant).toBe("link");
+  expect(screen.queryByRole("button")).toBeNull();
+  expect(
+    screen.getByRole("progressbar", { name: "Merged stages" }).getAttribute("aria-valuenow"),
+  ).toBe("1");
+  expect(container.querySelector('[data-kind="running"]')?.hasAttribute("data-paused")).toBe(false);
+});
+
+it("pauses the row's running glyph while the daemon is stopped", () => {
+  const { container } = renderStrip({ daemon_running: false }, false, "row");
+
+  expect(container.querySelector('[data-kind="running"]')?.getAttribute("data-paused")).toBe(
+    "true",
+  );
+  expect(container.textContent).toContain("daemon stopped");
+});
+
+it("renders nothing for the row variant without a plan", () => {
+  expect(renderStrip({ plan: null }, false, "row").container.innerHTML).toBe("");
 });

@@ -24,7 +24,6 @@ import * as fmt from "./format-attachments";
 type Obj = Record<string, unknown>;
 type Store = ReturnType<typeof createStore>;
 type StartOptions = { turn?: Obj; extra?: Obj; viewer?: boolean; path?: string };
-
 const ATTACHMENTS = join(import.meta.dirname, "../../../../loom/tests/fixtures/plan_session");
 const ADA = { public_id: "0123456789abcdef", name: "Ada" };
 const DANA = { public_id: "bbbbbbbbbbbbbbbb", name: "Dana" };
@@ -362,6 +361,7 @@ it("chat changed since you looked lists documents whose hash differs from the ch
   replies["/api/hashes"] = { head: "c2", docs };
   await mount("/f/demo/product");
   seed(snapshot(null, []));
+  fireEvent.click(await screen.findByRole("button", { name: /^(Activity: idle|\d+ in progress)/ }));
   const control = await screen.findByRole("button", { name: /Changed since you looked/ });
   await waitFor(() => expect(text(control)).toMatch(/\b2\b/));
   fireEvent.click(control);

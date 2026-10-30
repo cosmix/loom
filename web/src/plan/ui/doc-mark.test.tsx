@@ -14,7 +14,7 @@ describe("DocMark", () => {
     const mark = container.firstElementChild;
 
     expect(mark?.classList.contains(squareClass)).toBe(true);
-    expect(mark?.classList.contains("rounded")).toBe(true);
+    expect(mark?.classList.contains(size === "lg" ? "rounded-[8px]" : "rounded-[5px]")).toBe(true);
     expect(mark?.querySelector("svg")?.classList.contains(glyphClass)).toBe(true);
   });
 
@@ -41,7 +41,13 @@ describe("DocMark", () => {
 
     expect(DOC_KIND_COLOUR[kind]).toBe(index);
     expect(mark.style.color).toBe(colour);
-    expect(mark.style.backgroundColor).toBe(`color-mix(in oklch, ${colour} 14%, transparent)`);
+    expect(mark.style.getPropertyValue("--doc-mark")).toBe(colour);
+    expect(
+      mark.classList.contains("bg-[color-mix(in_oklch,var(--doc-mark)_16%,transparent)]"),
+    ).toBe(true);
+    expect(
+      mark.classList.contains("dark:bg-[color-mix(in_oklch,var(--doc-mark)_20%,transparent)]"),
+    ).toBe(true);
   });
 
   it.each([

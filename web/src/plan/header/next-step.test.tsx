@@ -24,9 +24,10 @@ function renderCard(value: ChecklistView | null, store = createStore()) {
 }
 
 describe("NextStepCard", () => {
-  it("describes the primary offer's document in a sentence distinct from its button label", () => {
+  it("shows an imperative title over a one-line detail, distinct from the button label", () => {
     renderCard(checklist);
 
+    expect(screen.getByTitle("Write the next section").textContent).toBe("Write the next section");
     expect(
       screen.getByTitle("Section 05 is the next product spec document to write.").textContent,
     ).toBe("Section 05 is the next product spec document to write.");
@@ -35,7 +36,7 @@ describe("NextStepCard", () => {
     expect(screen.queryByText(secondary.label)).toBeNull();
   });
 
-  it("names the next plan from the offer's slug instead of repeating its label", () => {
+  it("names the next plan from the offer's slug in the title", () => {
     renderCard({
       ...checklist,
       current: { kind: "step", number: 4 },
@@ -48,10 +49,38 @@ describe("NextStepCard", () => {
       },
     });
 
-    expect(
-      screen.getByTitle("Plan feat-planner-01-documents is the next plan to write.").textContent,
-    ).toBe("Plan feat-planner-01-documents is the next plan to write.");
-    expect(screen.queryByTitle("Write plan feat-planner-01-documents")).toBeNull();
+    expect(screen.getByTitle("Write plan feat-planner-01-documents")).toBeTruthy();
+    expect(screen.getByTitle("It is the next plan to write.")).toBeTruthy();
+  });
+
+  it.each([
+    [3, "3 plans are untested. You can also start a run."],
+    [1, "1 plan is untested. You can also start a run."],
+  ] as const)("counts the untested plans in the pressure-test detail (%i)", (untested, detail) => {
+    renderCard({
+      ...checklist,
+      untested,
+      primary: {
+        id: "pressure-test:x",
+        kind: "pressure_test",
+        label: "Pressure-test plan x",
+        slug: "x",
+        target: null,
+      },
+    });
+
+    expect(screen.getByTitle("Pressure-test the next plan")).toBeTruthy();
+    expect(screen.getByTitle(detail)).toBeTruthy();
+  });
+
+  it("names the feature by its title, not its slug, in feature-wide offers", () => {
+    renderCard({
+      ...checklist,
+      title: "Demo Title",
+      primary: { id: "start-run", kind: "start_run", label: "Start the run", target: null },
+    });
+
+    expect(screen.getByTitle("The plans for Demo Title are ready to run.")).toBeTruthy();
   });
 
   it.each([
@@ -62,7 +91,7 @@ describe("NextStepCard", () => {
     [5, "lucide-list-checks"],
     [6, "lucide-file-search"],
     [7, "lucide-list-checks"],
-  ] as const)("renders a small DocMark for current step %i", (number, glyphClass) => {
+  ] as const)("renders a large DocMark for current step %i", (number, glyphClass) => {
     const { container } = renderCard({
       ...checklist,
       current: { kind: "step", number },
@@ -71,8 +100,8 @@ describe("NextStepCard", () => {
 
     const glyph = container.querySelector(`.${glyphClass}`);
     expect(glyph).not.toBeNull();
-    expect(glyph?.classList.contains("size-3")).toBe(true);
-    expect(glyph?.parentElement?.classList.contains("size-5")).toBe(true);
+    expect(glyph?.classList.contains("size-4")).toBe(true);
+    expect(glyph?.parentElement?.classList.contains("size-[30px]")).toBe(true);
     expect(container.querySelectorAll("svg")).toHaveLength(1);
   });
 
@@ -129,24 +158,48 @@ describe("NextStepCard", () => {
     expect(screen.getByTitle("Nothing to do next").textContent).toBe("Nothing to do next");
   });
 
-  it("wraps the full sentence and action without clamping at any width", () => {
+  it("lays the card out as a dashed flex row with the action pushed right", () => {
     const { container } = renderCard(checklist);
-    const sentence = screen.getByTitle("Section 05 is the next product spec document to write.");
+    const card = container.firstElementChild!;
+    const title = screen.getByTitle("Write the next section");
     const action = screen.getByText(primary.label).parentElement;
 
-    expect(sentence.textContent).toBe("Section 05 is the next product spec document to write.");
-    expect(sentence.className).not.toContain("line-clamp");
-    expect(sentence.classList.contains("break-words")).toBe(true);
-    expect(sentence.classList.contains("whitespace-normal")).toBe(true);
-    expect(sentence.classList.contains("truncate")).toBe(false);
-    expect(sentence.classList.contains("hidden")).toBe(false);
-    expect(container.firstElementChild?.classList.contains("min-w-0")).toBe(true);
-    expect(container.firstElementChild?.classList.contains("grid")).toBe(true);
-    expect(action?.classList.contains("col-span-2")).toBe(true);
-    expect(action?.classList.contains("sm:col-start-2")).toBe(true);
+    expect(card.classList.contains("flex")).toBe(true);
+    expect(card.classList.contains("border-dashed")).toBe(true);
+    expect(card.classList.contains("min-w-0")).toBe(true);
+    expect(card.classList.contains("flex-[1_1_280px]")).toBe(true);
+    expect(title.classList.contains("font-semibold")).toBe(true);
+    expect(title.className).not.toContain("truncate");
+    expect(action?.classList.contains("ml-auto")).toBe(true);
     expect(action?.classList.contains("[&_button]:whitespace-normal")).toBe(true);
-    expect(action?.classList.contains("[&_button]:h-auto")).toBe(true);
     expect(action?.className).not.toContain("truncate");
+  });
+
+  it("compact renders only the offer button", () => {
+    const unregister = registerOfferAction(primary.kind, vi.fn());
+    try {
+      const { container } = render(
+        <Provider store={createStore()}>
+          <NextStepCard checklist={checklist} compact />
+        </Provider>,
+      );
+
+      expect(screen.getByRole("button", { name: primary.label })).toBeTruthy();
+      expect(screen.queryByTitle("Write the next section")).toBeNull();
+      expect(container.querySelector("svg")).toBeNull();
+    } finally {
+      unregister();
+    }
+  });
+
+  it("compact renders nothing without a primary offer", () => {
+    const { container } = render(
+      <Provider store={createStore()}>
+        <NextStepCard checklist={{ ...checklist, primary: null }} compact />
+      </Provider>,
+    );
+
+    expect(container.innerHTML).toBe("");
   });
 
   it("renders nothing before the first checklist", () => {

@@ -44,7 +44,7 @@ describe("Tabs", () => {
   it("keeps Home available without registered tabs", () => {
     show({ tabs: [] });
     const nav = screen.getByRole("navigation", { name: "Views" });
-    expect(nav.className).toBe("view-switch");
+    expect(nav.className).toBe("view-switch plan-view-switch");
     expect(screen.getAllByRole("link")).toHaveLength(1);
     const home = screen.getByRole("link", { name: /Home/ });
     expect(home.getAttribute("href")).toBe("/");
@@ -77,7 +77,9 @@ describe("Tabs", () => {
 
   it("renders the default views with icons and accessible labels on narrow screens", () => {
     show({ features: ["demo"] });
-    expect(screen.getByRole("navigation", { name: "Views" }).className).toBe("view-switch");
+    expect(screen.getByRole("navigation", { name: "Views" }).className).toBe(
+      "view-switch plan-view-switch",
+    );
     const links = screen.getAllByRole("link");
     expect(links.map((link) => link.getAttribute("href"))).toEqual([
       "/",
