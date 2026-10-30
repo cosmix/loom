@@ -13,7 +13,7 @@ use super::tests::{owned, update, Probe, Row, Sent};
 use super::*;
 use crate::plan_server::wire::summaries::FailedSummary;
 use crate::plan_session::bridge::host::SessionHost;
-use crate::plan_session::bridge::{BridgeConfig, BridgeEvent, EndOutcome};
+use crate::plan_session::bridge::{BridgeConfig, BridgeEvent, EndOutcome, OPENING_NOT_SUBMITTED};
 use crate::plan_session::kind::SessionKind;
 use crate::plan_session::model::SessionState;
 use crate::plan_session::tmux_host::TmuxHost;
@@ -348,4 +348,22 @@ fn the_tick_leaves_a_session_alone_without_a_bridge() {
     rig.rebuilds.tick();
     assert_eq!(rig.starts().len(), 1);
     assert_eq!(rig.rebuilds.panel().running.expect("s1").session, "s1");
+}
+
+#[test]
+fn an_unsubmitted_opening_requeues_once_then_fails_with_its_reason() {
+    let reason = format!("{OPENING_NOT_SUBMITTED} within 10s");
+    let failure = EndOutcome::Failed(reason.clone());
+    let rig = Rig::new(false);
+    rig.report_missing();
+    rig.event(ended_with("s1", SessionKind::Summary, failure.clone()));
+    assert_eq!(rig.rebuilds.panel().failed, vec![], "requeued, not failed");
+    assert_eq!(rig.starts().len(), 2, "and started again");
+    rig.event(ended_with("s2", SessionKind::Summary, failure));
+    let failed = vec![FailedSummary {
+        id: ID.to_owned(),
+        error: reason,
+    }];
+    assert_eq!(rig.rebuilds.panel().failed, failed);
+    assert_eq!(rig.starts().len(), 2, "no third session");
 }

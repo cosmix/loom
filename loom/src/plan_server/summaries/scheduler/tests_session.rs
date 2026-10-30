@@ -270,3 +270,51 @@ fn a_seal_a_button_or_a_current_summary_clears_the_unsealed_mark() {
         assert!(s.panel_state().failed.is_empty(), "case {case}");
     }
 }
+
+#[test]
+fn a_job_that_exits_clean_counts_every_unsealed_id_as_worked() {
+    let (mut s, stub, now) = setup();
+    let a = ids(&["a"]);
+    s.on_update(&a, &a, now, &stub);
+    s.job_ended("s1", now, &stub);
+    assert_eq!(stub.starts().len(), 2, "the first exit requeues");
+    assert!(s.panel_state().failed.is_empty());
+    s.job_ended("s2", now, &stub);
+    assert_eq!(stub.starts().len(), 2, "the second does not");
+    let view = s.panel_state();
+    assert_eq!(view.failed, vec![(a[0].clone(), ENDED_UNSEALED.to_owned())]);
+    assert!(view.queue.is_empty() && view.running.is_none());
+}
+
+#[test]
+fn an_unsubmitted_opening_requeues_once_then_fails_with_its_reason() {
+    let reason = "opening not submitted within 10s";
+    let (mut s, stub, now) = setup();
+    let a = ids(&["a"]);
+    s.on_update(&a, &a, now, &stub);
+    s.take_events();
+
+    s.opening_unsubmitted("s1", reason, now, &stub);
+    assert_eq!(stub.starts(), vec![a.clone(), a.clone()], "requeued");
+    assert!(s.panel_state().failed.is_empty(), "not failed yet");
+    let stopped = SchedulerEvent::Stopped {
+        session: "s1".into(),
+        reason: StopReason::Failed(reason.into()),
+    };
+    assert!(
+        s.take_events().contains(&stopped),
+        "the event keeps the reason"
+    );
+
+    s.opening_unsubmitted("s2", reason, now, &stub);
+    assert_eq!(stub.starts().len(), 2, "no third session");
+    let failed = SchedulerEvent::Failed {
+        ids: a.clone(),
+        error: reason.into(),
+    };
+    assert!(s.take_events().contains(&failed));
+    assert_eq!(
+        s.panel_state().failed,
+        vec![(a[0].clone(), reason.to_owned())]
+    );
+}

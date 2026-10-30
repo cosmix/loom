@@ -18,7 +18,9 @@ fn summary_args_preserve_sandbox_paths_model_effort_and_prompt() {
             "--sandbox",
             "workspace-write",
             "--add-dir",
-            "/runtime with spaces",
+            "/runtime with spaces/drafts",
+            "--add-dir",
+            "/runtime with spaces/claims",
             "-m",
             "test-model",
             "-c",
@@ -155,7 +157,7 @@ fn a_job_nobody_stopped_keeps_its_exit_outcome() {
 
 #[test]
 fn only_codex_ids_are_codex_sessions() {
-    assert!(is_codex_session("codex-1761000000000-0"));
+    assert!(is_codex_session("c0de-1761000000000-0"));
     assert!(!is_codex_session("0f8fad5b-d9cb-469f-a165-70867728950e"));
 }
 
@@ -204,16 +206,16 @@ fn jobs_with(id: &str, job: Job) -> Jobs {
 fn settle_signalled(stopping: bool) -> (EndOutcome, bool) {
     let root = tempfile::TempDir::new().expect("temp dir");
     let job = job_for(root.path(), Pid::from_raw(i32::MAX), stopping);
-    let jobs = jobs_with("codex-1-0", job);
+    let jobs = jobs_with("c0de-1-0", job);
     let signalled = std::process::ExitStatus::from_raw(15);
     let outcome = settle_outcome(
         &jobs,
         root.path(),
-        "codex-1-0",
+        "c0de-1-0",
         Ok(signalled),
         &root.path().join("missing.log"),
     );
-    let left = lock(&jobs).jobs.contains_key("codex-1-0");
+    let left = lock(&jobs).jobs.contains_key("c0de-1-0");
     (outcome, left)
 }
 
@@ -237,7 +239,7 @@ fn a_job_killed_without_a_stop_request_settles_as_failed() {
 fn a_changed_configuration_outranks_a_requested_stop() {
     let root = tempfile::TempDir::new().expect("temp dir");
     let job = job_for(root.path(), Pid::from_raw(i32::MAX), true);
-    let jobs = jobs_with("codex-1-0", job);
+    let jobs = jobs_with("c0de-1-0", job);
     let codex_dir = root.path().join(".codex");
     std::fs::create_dir(&codex_dir).expect("codex dir");
     std::fs::write(codex_dir.join("config.toml"), "model = \"x\"\n").expect("codex config");
@@ -245,16 +247,18 @@ fn a_changed_configuration_outranks_a_requested_stop() {
     let outcome = settle_outcome(
         &jobs,
         root.path(),
-        "codex-1-0",
+        "c0de-1-0",
         Ok(std::process::ExitStatus::from_raw(15)),
         &root.path().join("missing.log"),
     );
 
     assert_eq!(
         outcome,
-        EndOutcome::Failed("codex changed the .claude or .codex configuration".to_owned())
+        EndOutcome::Failed(
+            "codex changed the .claude, .codex or AGENTS.md configuration".to_owned()
+        )
     );
-    assert!(!lock(&jobs).jobs.contains_key("codex-1-0"));
+    assert!(!lock(&jobs).jobs.contains_key("c0de-1-0"));
 }
 
 #[test]
@@ -266,7 +270,7 @@ fn stop_all_closes_the_registry_and_stops_every_registered_job() {
         .spawn()
         .expect("spawn sleep");
     let pid = Pid::from_raw(child.id() as i32);
-    let jobs = jobs_with("codex-1-0", job_for(root.path(), pid, false));
+    let jobs = jobs_with("c0de-1-0", job_for(root.path(), pid, false));
     let spawner = CodexSummarySpawner {
         ctx: Weak::new(),
         counter: AtomicU64::new(0),
@@ -278,15 +282,16 @@ fn stop_all_closes_the_registry_and_stops_every_registered_job() {
     {
         let registry = lock(&jobs);
         assert!(registry.closed);
-        assert!(registry.jobs["codex-1-0"].stopping);
+        assert!(registry.jobs["c0de-1-0"].stopping);
     }
-    // SIGTERM ends `sleep`; the forced stop 5 s later finds the job gone.
+    // SIGTERM ends `sleep`; the group waits in `stopped_groups` for the server stop's force.
+    assert_eq!(lock(&jobs).stopped_groups, [pid]);
     let status = child.wait().expect("reap sleep");
     assert!(!status.success());
-    lock(&jobs).jobs.remove("codex-1-0");
+    lock(&jobs).jobs.remove("c0de-1-0");
     let late = job_for(root.path(), Pid::from_raw(i32::MAX), false);
-    assert!(!register(&jobs, "codex-1-1", late));
-    assert!(!lock(&jobs).jobs.contains_key("codex-1-1"));
+    assert!(!register(&jobs, "c0de-1-1", late));
+    assert!(!lock(&jobs).jobs.contains_key("c0de-1-1"));
 }
 
 #[test]
@@ -294,6 +299,6 @@ fn an_open_registry_accepts_a_job() {
     let root = tempfile::TempDir::new().expect("temp dir");
     let jobs = Jobs::default();
     let job = job_for(root.path(), Pid::from_raw(i32::MAX), false);
-    assert!(register(&jobs, "codex-1-0", job));
-    assert!(lock(&jobs).jobs.contains_key("codex-1-0"));
+    assert!(register(&jobs, "c0de-1-0", job));
+    assert!(lock(&jobs).jobs.contains_key("c0de-1-0"));
 }
