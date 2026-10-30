@@ -4,7 +4,7 @@
 //! code. Every test that runs a contract starts loom's real confinement and
 //! skips where it cannot start.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use chrono::Utc;
@@ -17,14 +17,15 @@ use super::{digest, new_job_id, store, JobKind, JobRecord, JobResult, JobState};
 use crate::fs::session_files::save_session;
 use crate::fs::work_dir::WorkDir;
 use crate::models::session::{Session, SessionStatus, SessionType};
-use crate::models::stage::StageStatus;
+use crate::models::stage::{Stage, StageStatus};
 use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
 use crate::stage_service::contracts::freeze_with_reports;
 use crate::stage_service::{handle_freeze_contracts, Response};
 use crate::verify::contracts::refusal::daemon_refusal;
 use crate::verify::contracts::store::load_freeze;
 use crate::verify::contracts::test_support::{
-    contract_stage, red_reports, shell_contract_worktree, write_test_freeze, CONTRACT_FILE,
+    contract_stage, contract_worktree, red_reports, shell_contract_worktree, write_test_freeze,
+    CONTRACT_FILE,
 };
 use crate::verify::transitions::{load_stage, save_stage};
 
@@ -51,9 +52,22 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn new(command: &str) -> Self {
+        Self::over(shell_contract_worktree, |stage| {
+            stage.contracts[0].runner = None;
+            stage.contracts[0].test = command.to_string();
+        })
+    }
+
+    /// The fixture over a real cargo package (`make_worktree` is
+    /// [`contract_worktree`]) with the stage `edit` leaves.
+    pub(super) fn cargo(edit: impl FnOnce(&mut Stage)) -> Self {
+        Self::over(contract_worktree, edit)
+    }
+
+    fn over(make_worktree: fn(&Path, &str) -> PathBuf, edit: impl FnOnce(&mut Stage)) -> Self {
         let tmp = TempDir::new().unwrap();
         let repo = tmp.path().canonicalize().unwrap().join("repo");
-        let worktree = shell_contract_worktree(&repo, STAGE);
+        let worktree = make_worktree(&repo, STAGE);
         std::fs::write(worktree.join(HARNESS), "harness\n").unwrap();
         let workspace = WorkDir::new(&repo).unwrap();
         workspace.adopt_existing().unwrap();
@@ -64,8 +78,7 @@ impl Fixture {
         session.status = SessionStatus::Running;
         save_session(&session, &work_dir).unwrap();
         let mut stage = contract_stage(STAGE, &session.id);
-        stage.contracts[0].runner = None;
-        stage.contracts[0].test = command.to_string();
+        edit(&mut stage);
         stage.harness = vec![HARNESS.to_string()];
         save_stage(&stage, &work_dir).unwrap();
         Self {
@@ -179,6 +192,24 @@ fn red_contracts_pass_and_are_frozen() {
         "{applied:?}"
     );
     assert!(fx.frozen());
+}
+
+#[test]
+#[serial]
+fn each_contract_outcome_is_appended_to_the_job_progress() {
+    if confinement_unavailable("each_contract_outcome_is_appended_to_the_job_progress") {
+        return;
+    }
+    let fx = Fixture::new("exit 1");
+    let (record, _) = fx.run(fx.job(JobState::Running));
+    let progress = store::read_progress(&fx.work_dir, STAGE, &record.id).unwrap();
+    let contract_lines: Vec<_> = progress
+        .iter()
+        .filter(|outcome| outcome.label.starts_with("contract:"))
+        .collect();
+    assert_eq!(contract_lines.len(), 1, "{progress:?}");
+    assert_eq!(contract_lines[0].label, "contract:rejects-x");
+    assert!(contract_lines[0].passed);
 }
 
 #[test]

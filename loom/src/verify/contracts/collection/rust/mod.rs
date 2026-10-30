@@ -9,10 +9,13 @@
 
 mod chain;
 mod items;
+mod run_dir;
 mod scaffold;
+mod scope;
 mod targets;
 
 use super::{FileSource, ScaffoldEdit};
+use crate::testrun::TargetScope;
 
 /// What a build without tree-sitter reports instead of a verdict (fail
 /// closed: the chain cannot be proven without parsing Rust).
@@ -51,11 +54,23 @@ pub fn scaffold_problems(
     scaffold::problems(edits, base, current)
 }
 
+/// The one cargo target that compiles `contract_file` as `test`, run from
+/// `run_dir` (relative to the source root); `None` when it cannot be told
+/// for certain, which keeps the unscoped command.
+pub fn target_scope(
+    source: FileSource<'_>,
+    contract_file: &str,
+    test: &str,
+    run_dir: &str,
+) -> Option<TargetScope> {
+    scope::target_scope(source, contract_file, test, run_dir)
+}
+
 /// Empty when the nearest `Cargo.toml` at or above `run_dir` ("" or "." is the
 /// source root) is the manifest of the package that owns `contract_file`;
 /// otherwise one problem naming both directories.
 pub fn run_dir_problems(source: FileSource<'_>, contract_file: &str, run_dir: &str) -> Vec<String> {
-    targets::run_dir_problems(source, contract_file, run_dir)
+    run_dir::run_dir_problems(source, contract_file, run_dir)
 }
 
 /// `name` inside the directory `dir` ("" is the source root).

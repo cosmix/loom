@@ -3,8 +3,9 @@
 //! (DESIGN D8). The rules are two pure functions, [`check_changes`] and
 //! [`judge_run`]. The CLI checks the changes where it runs, then requests a
 //! host contract run for the HEAD and tree it saw; the daemon's job
-//! (`host_verify::freeze`) runs every contract with [`run_contract`] and the
-//! format gate with [`check_formatting`]. No CLI path runs a contract. In a
+//! (`host_verify::freeze`) prepares each contract with [`prepare_contract`],
+//! runs it with [`run_prepared`] and runs the format gate with
+//! [`check_formatting`]. No CLI path runs a contract. In a
 //! relayed session the CLI also keeps each attempt's outcome for the Stop
 //! hook ([`crate::verify::contracts::refusal`]).
 
@@ -21,18 +22,19 @@ use crate::models::stage::CommandConfinement;
 use crate::plan::schema::ContractSpec;
 use crate::relay::emit::{mode, EnvSnapshot, RelayMode, RelaySink, StdSink};
 use crate::relay::RequestKind;
-use crate::testrun::{classify, RunOutcome, RunOutput, RunSummary, TestRunnerAdapter};
+use crate::testrun::{classify, RunOutcome, RunSummary, TestRunnerAdapter};
 use crate::verify::contracts::changes::{changed_paths, stage_base};
 use crate::verify::contracts::collection::{freeze_scaffold, ScaffoldCheck};
 use crate::verify::contracts::format_gate::format_problems;
-use crate::verify::contracts::run_dir::resolve_run;
-use crate::verify::contracts::{is_contract_or_harness, refusal, resolve_adapter};
-use crate::verify::criteria::{run_spec_in_optional_tree, CommandSpec};
+use crate::verify::contracts::{is_contract_or_harness, refusal};
 
 use super::{send_freeze, ContractSite};
 
 /// How long one contract test may run.
 const CONTRACT_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// The report outcome of a run whose build failed.
+pub(crate) const BUILD_FAILED: &str = "build_failed";
 
 /// Outcome of a run whose output said nothing readable but whose exit was not 0.
 const UNVERIFIED: &str = "exit_nonzero_unverified";
@@ -99,7 +101,7 @@ pub(crate) fn judge_run(
     let id = &contract.id;
     let outcome = match adapter.map(|_| classify(&summary, exit)) {
         Some(RunOutcome::Failed) => "failed",
-        Some(RunOutcome::BuildFailed) => "build_failed",
+        Some(RunOutcome::BuildFailed) => BUILD_FAILED,
         Some(RunOutcome::Passed) => {
             return Err(format!(
                 "contract `{id}` passes before implementation, so it cannot tell right from \
@@ -306,55 +308,8 @@ fn refuse(stage_id: &str, problems: Vec<String>, fix: &str) -> Result<()> {
     Err(Refusal { problems, message }.into())
 }
 
-/// Run one contract from its run directory with the criteria executor and
-/// judge the run. The outer `Err` means the command could not be run at all;
-/// the inner one is a problem the agent must fix.
-pub(crate) fn run_contract(
-    worktree_root: &Path,
-    working_dir: &Path,
-    contract: &ContractSpec,
-    confinement: CommandConfinement,
-) -> Result<Result<ContractRunReport, String>> {
-    let adapter = resolve_adapter(contract, working_dir);
-    let resolved = resolve_run(contract, adapter, worktree_root, working_dir, None)?;
-    println!(
-        "Running contract `{}` in {}: {}",
-        contract.id, resolved.cwd, resolved.command
-    );
-    let run = run_spec_in_optional_tree(
-        &CommandSpec::shell(resolved.command),
-        Some(worktree_root),
-        Some(&resolved.dir),
-        CONTRACT_TIMEOUT,
-        confinement,
-    )?;
-    if run.timed_out {
-        return Ok(Err(format!(
-            "contract `{}` did not finish within {} s",
-            contract.id,
-            CONTRACT_TIMEOUT.as_secs()
-        )));
-    }
-    let output = RunOutput {
-        stdout: &run.stdout,
-        stderr: &run.stderr,
-        exit_code: run.exit_code,
-    };
-    let summary = adapter.map_or_else(RunSummary::default, |adapter| adapter.parse(&output));
-    let judged = judge_run(contract, adapter, summary, run.exit_code);
-    if judged
-        .as_ref()
-        .is_ok_and(|report| report.outcome == UNVERIFIED)
-    {
-        let runner = adapter.map_or("no test-runner adapter", |adapter| adapter.name());
-        eprintln!(
-            "warning: contract `{}`: {runner} could not read its output; accepted on its \
-             non-zero exit alone",
-            contract.id
-        );
-    }
-    Ok(judged)
-}
+mod prepared;
+pub(crate) use prepared::{prepare_contract, run_prepared, JudgedRun, PreparedContract};
 
 #[cfg(test)]
 #[path = "freeze_tests.rs"]
