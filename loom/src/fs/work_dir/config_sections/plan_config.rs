@@ -16,6 +16,9 @@ pub struct PlanConfig {
     document_summary_effort: Option<String>,
     overview_model: Option<String>,
     overview_effort: Option<String>,
+    summary_backend: Option<String>,
+    summary_codex_model: Option<String>,
+    summary_codex_effort: Option<String>,
     spec_authoring_model: Option<String>,
     spec_authoring_effort: Option<String>,
     plan_authoring_model: Option<String>,
@@ -62,6 +65,33 @@ impl PlanConfig {
             self.overview_effort.as_ref(),
             ALLOWED_REASONING_EFFORTS,
             "plan.overview_effort",
+        )
+    }
+
+    /// Return the summary backend if it is allowed.
+    pub fn summary_backend(&self) -> Option<&str> {
+        allowed_value(
+            self.summary_backend.as_ref(),
+            crate::user_config::SUMMARY_BACKENDS,
+            "plan.summary_backend",
+        )
+    }
+
+    /// Return the summary Codex model if it is allowed.
+    pub fn summary_codex_model(&self) -> Option<&str> {
+        allowed_value(
+            self.summary_codex_model.as_ref(),
+            crate::codex::CODEX_MODELS,
+            "plan.summary_codex_model",
+        )
+    }
+
+    /// Return the summary Codex reasoning effort if it is allowed.
+    pub fn summary_codex_effort(&self) -> Option<&str> {
+        allowed_value(
+            self.summary_codex_effort.as_ref(),
+            crate::codex::CODEX_EFFORTS,
+            "plan.summary_codex_effort",
         )
     }
 
@@ -116,6 +146,43 @@ mod tests;
 #[cfg(test)]
 mod authoring_tests {
     use super::*;
+
+    #[test]
+    fn summary_accessors_return_valid_values() {
+        let config = PlanConfig::from_section_toml(
+            "summary_backend = \"codex\"\n\
+             summary_codex_model = \"gpt-6.1-sol\"\n\
+             summary_codex_effort = \"xhigh\"\n",
+        )
+        .unwrap();
+        assert_eq!(config.summary_backend(), Some("codex"));
+        assert_eq!(config.summary_codex_model(), Some("gpt-6.1-sol"));
+        assert_eq!(config.summary_codex_effort(), Some("xhigh"));
+
+        let config = PlanConfig::from_section_toml("summary_backend = \"claude\"").unwrap();
+        assert_eq!(config.summary_backend(), Some("claude"));
+    }
+
+    #[test]
+    fn summary_accessors_drop_invalid_values() {
+        let config = PlanConfig::from_section_toml(
+            "summary_backend = \"sonnet\"\n\
+             summary_codex_model = \"sonnet\"\n\
+             summary_codex_effort = \"max\"\n",
+        )
+        .unwrap();
+        assert_eq!(config.summary_backend(), None);
+        assert_eq!(config.summary_codex_model(), None);
+        assert_eq!(config.summary_codex_effort(), None);
+    }
+
+    #[test]
+    fn summary_accessors_return_none_when_omitted() {
+        let config = PlanConfig::from_section_toml("").unwrap();
+        assert_eq!(config.summary_backend(), None);
+        assert_eq!(config.summary_codex_model(), None);
+        assert_eq!(config.summary_codex_effort(), None);
+    }
 
     #[test]
     fn authoring_accessors_return_valid_values() {
