@@ -140,7 +140,9 @@ it.each(["/f/other", "/f/other/product", "/f/other/engineering/planning"])(
           {
             ...demo,
             feature: "other",
-            steps: [{ number: 1, name: "Other vision", mark: "done" }],
+            steps: [
+              { number: 1, name: "Other vision", mark: "done", count: null, label: "Other vision" },
+            ],
             current: { kind: "ready_all_done" },
             primary: null,
             items: [],
