@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
 # Screenshot planner routes in a headless browser against a real `loom plan` server.
 #
-# Usage: scripts/plan-screens.sh [--worktree-doc] <loom-binary> <out-dir> <route>...
+# Usage: scripts/plan-screens.sh [--worktree-doc] [--themes=<id>,<id>] <loom-binary> <out-dir> <route>...
 #   e.g. scripts/plan-screens.sh loom/target/debug/loom "$LOOM_SCRATCH_DIR/screens" / /f/feat-planner
 #
 # Run from the worktree root after `cd web && bun run build` and `cargo build` (the binary embeds
 # web/dist). Serves a shallow scratch clone of HEAD's doc/ so the operator commits nothing;
 # --worktree-doc copies the worktree's current doc/ over it so uncommitted docs show. Shoots each
-# route at 1440x900 and 390x844 in Ledger and Aubergine; exits non-zero on a console error or a
-# route that does not render. Loopback is per Bash call, so the server and browser run here.
+# route at 1440x900 and 390x844 in Ledger and Aubergine, or the --themes ids (ledger, aubergine,
+# pacific, graphite); exits non-zero on a console error or a route that does not render. Loopback
+# is per Bash call, so the server and browser run here.
 set -euo pipefail
 
 worktree_doc=0
 if [[ "${1:-}" == "--worktree-doc" ]]; then
   worktree_doc=1
+  shift
+fi
+themes=()
+if [[ "${1:-}" == --themes=* ]]; then
+  themes=("$1")
   shift
 fi
 if [[ $# -lt 3 ]]; then
@@ -24,7 +30,7 @@ binary=$(realpath "$1")
 out_dir=$2
 shift 2
 
-repo=$(pwd)
+repo=$(git rev-parse --show-toplevel)
 script_dir=$(cd "$(dirname "$0")" && pwd)
 mjs="$script_dir/../web/scripts/plan-screens.mjs"
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/plan-screens.XXXXXX")
@@ -72,4 +78,4 @@ if [[ -z "$url" ]]; then
   exit 1
 fi
 
-node "$mjs" "$url" "$out_dir" "$@"
+node "$mjs" ${themes[@]+"${themes[@]}"} "$url" "$out_dir" "$@"
