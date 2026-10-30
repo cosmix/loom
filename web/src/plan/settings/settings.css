@@ -13,46 +13,46 @@
   max-height: 90dvh;
   padding: 0;
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: var(--corner-surface);
   background: var(--card);
   color: var(--foreground);
 }
 
 .planner-settings-dialog > [data-slot="dialog-close"] {
   top: 11px;
-  right: 14px;
+  right: var(--space-3);
 }
 
 .ps-head {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 9px;
+  gap: var(--space-2);
   flex: none;
-  padding: 14px 18px;
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--hairline);
 }
 
 .ps-head svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   color: var(--muted-foreground);
 }
 
 .ps-title {
   font-family: var(--font-sans, inherit);
-  font-size: 15px;
+  font-size: var(--type-title);
   font-weight: 600;
-  line-height: 1.3;
+  line-height: var(--leading-ui);
   color: var(--foreground);
 }
 
 .ps-body {
   display: grid;
-  gap: 22px;
+  gap: var(--space-5);
   flex: 1 1 auto;
   min-height: 0;
-  padding: 18px;
+  padding: var(--space-4);
   overflow-y: auto;
 }
 
@@ -64,42 +64,42 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 2px 10px;
-  margin-bottom: 12px;
+  gap: 2px var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .ps-group-title {
-  font-size: 13.5px;
+  font-size: var(--type-title);
   font-weight: 600;
   color: var(--foreground);
 }
 
 .ps-hint {
-  font-size: 12.5px;
+  font-size: var(--type-fine);
   color: var(--muted-foreground);
 }
 
-/* Theme cards come from the shared ThemePicker; only their spacing and selected ring change. */
+/* Theme cards come from the shared ThemePicker, which takes no `look`: its `optionClassName` marks
+   them, and only their spacing and the chosen edge change here. The chosen card takes the
+   foreground edge; --primary is never a border. */
 .ps-theme [role="group"] {
-  gap: 14px 12px;
+  gap: var(--space-3);
 }
 
-.ps-theme [role="group"] > button {
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--card);
+.ps-theme-option {
+  padding: var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--corner-control);
 }
 
-.ps-theme [role="group"] > button[aria-pressed="true"] {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px var(--primary);
+.ps-theme-option[aria-pressed="true"] {
+  border-color: var(--foreground);
 }
 
 .ps-faces {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 14px 12px;
+  gap: var(--space-3);
 }
 
 .ps-face {
@@ -108,16 +108,18 @@
   min-width: 0;
   flex-direction: column;
   gap: 3px;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--card);
+  padding: var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--corner-control);
   cursor: pointer;
 }
 
+.ps-face:hover {
+  background: var(--muted);
+}
+
 .ps-face:has(input:checked) {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px var(--primary);
+  border-color: var(--foreground);
 }
 
 .ps-face:has(input:focus-visible),
@@ -131,9 +133,7 @@
   height: 66px;
   place-content: center;
   justify-items: center;
-  margin-bottom: 7px;
-  border-radius: 7px;
-  background: var(--muted);
+  margin-bottom: var(--space-1);
   line-height: 1;
 }
 
@@ -148,72 +148,67 @@
 }
 
 .ps-face-name {
-  font-size: 13px;
+  font-size: var(--type-ui);
   font-weight: 600;
   color: var(--foreground);
 }
 
 .ps-face-caption {
-  font-size: 12.5px;
+  font-size: var(--type-fine);
   color: var(--muted-foreground);
 }
 
+/* "Default" is a word in the card's corner, not a filled chip. */
 .ps-flag {
   position: absolute;
-  top: -10px;
-  right: 10px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--primary);
-  color: var(--primary-foreground);
-  font-size: 10.5px;
-  font-weight: 600;
-  line-height: 14px;
+  top: var(--space-2);
+  right: var(--space-3);
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  line-height: 1;
 }
 
+/* The size choice is a row of quiet options; the chosen one gets the muted wash and full weight. */
 .ps-seg {
   display: inline-flex;
   flex-wrap: wrap;
-  padding: 2px;
-  border: 1px solid var(--hairline);
-  border-radius: 9px;
-  background: var(--card);
+  gap: var(--space-1);
 }
 
 .ps-seg-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 26px;
+  gap: var(--space-2);
+  height: var(--control-height);
   padding: 0 10px;
-  border-radius: 7px;
+  border-radius: var(--corner-control);
   color: var(--muted-foreground);
-  font-size: 12.5px;
+  font-size: var(--type-ui);
   font-weight: 500;
   cursor: pointer;
 }
 
 .ps-seg-item:hover {
+  background: var(--muted);
   color: var(--foreground);
 }
 
 .ps-seg-item:has(input:checked) {
-  background: color-mix(in oklch, var(--primary) 26%, transparent);
+  background: var(--muted);
   color: var(--foreground);
+  font-weight: 600;
 }
 
 .ps-seg-px {
-  font-size: 11.5px;
-  opacity: 0.75;
+  font-size: var(--type-fine);
   font-variant-numeric: tabular-nums;
 }
 
+/* The preview is text under a hairline, not a box. */
 .ps-preview {
-  margin-top: 14px;
-  padding: 14px 16px;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: var(--background);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--hairline);
   color: var(--foreground);
 }
 
@@ -230,8 +225,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 12px 0;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
 }
 
 .ps-row-text {
@@ -242,19 +237,19 @@
 }
 
 .ps-row-title {
-  font-size: 13.5px;
+  font-size: var(--type-ui);
   font-weight: 500;
   color: var(--foreground);
 }
 
 .ps-row-sub {
-  font-size: 12.5px;
+  font-size: var(--type-fine);
   color: var(--muted-foreground);
 }
 
 .ps-status {
-  margin: -4px 0 12px;
-  font-size: 12.5px;
+  margin: calc(var(--space-1) * -1) 0 var(--space-3);
+  font-size: var(--type-fine);
   color: var(--muted-foreground);
 }
 
@@ -268,8 +263,9 @@
   transition: background-color 120ms ease;
 }
 
+/* On is the foreground, not the accent: --primary marks only the screen's one primary action. */
 .ps-switch:has(input:checked) {
-  background: var(--primary);
+  background: var(--foreground);
 }
 
 .ps-switch:has(input:focus-visible) {
@@ -304,13 +300,12 @@
   height: 16px;
   border-radius: 50%;
   background: var(--card);
-  box-shadow: var(--control-shadow);
   transition: transform 120ms ease;
 }
 
 .ps-switch:has(input:checked) .ps-knob {
   transform: translateX(14px);
-  background: var(--primary-foreground);
+  background: var(--background);
 }
 
 @media (prefers-reduced-motion: reduce) {

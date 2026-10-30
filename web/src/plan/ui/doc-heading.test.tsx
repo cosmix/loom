@@ -64,7 +64,7 @@ it("renders the document title as the main heading", () => {
   renderHeading();
 
   const title = screen.getByRole("heading", { level: 1, name: "Execution handoff" });
-  expect(title.classList.contains("text-[22px]")).toBe(true);
+  expect(title.classList.contains("plan-page-title")).toBe(true);
   expect(title.classList.contains("font-[650]")).toBe(true);
   expect(title.classList.contains("text-balance")).toBe(true);
   expect(title.closest("header")).not.toBeNull();
@@ -107,7 +107,7 @@ it.each([
   expect(disabled.tagName).toBe("SPAN");
   expect(disabled.getAttribute("aria-disabled")).toBe("true");
   expect(active?.getAttribute("aria-disabled")).toBeNull();
-  expect(active?.className).toContain("color-mix(in_oklch,var(--primary)_26%,transparent)");
+  expect(active?.getAttribute("data-look")).toBe("quiet");
   expect(within(group).queryAllByRole("link")).toHaveLength(0);
 });
 
@@ -158,7 +158,7 @@ it("renders linked, pressed-button and plain chips in one wrapping row", () => {
   expect(link.parentElement).toBe(button.parentElement);
   expect(button.parentElement).toBe(plain.parentElement);
   expect(plain.parentElement?.classList.contains("flex-wrap")).toBe(true);
-  expect(plain.parentElement?.classList.contains("gap-1.5")).toBe(true);
+  expect(plain.parentElement?.classList.contains("gap-x-4")).toBe(true);
 
   fireEvent.click(button);
   expect(onClick).toHaveBeenCalledOnce();

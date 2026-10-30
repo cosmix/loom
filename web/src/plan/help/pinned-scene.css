@@ -1,15 +1,12 @@
-/* A scene card: head, a dotted canvas holding a lifted production component with numbered pins, notes. */
+/* A scene: head, a muted canvas holding a production component with numbered pins, notes. It
+   stands on the dialog's ground with no box of its own. */
 .planner-help-scene {
   display: grid;
-  gap: 12px;
+  gap: var(--space-3);
   min-width: 0;
   max-width: 100%;
-  padding: 14px;
   overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: 14px;
-  background: var(--card);
-  color: var(--card-foreground);
+  color: var(--foreground);
   font-family: var(--font-sans);
 }
 
@@ -23,10 +20,6 @@
 .planner-help-scene .planner-help-scene__label {
   display: inline-flex;
   align-items: center;
-  height: 22px;
-  padding: 0 9px;
-  border-radius: 99px;
-  background: var(--muted);
   color: var(--muted-foreground);
   font-size: 13px;
   font-weight: 600;
@@ -35,7 +28,7 @@
 
 .planner-help-scene .planner-help-scene__header h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--type-title);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -58,7 +51,7 @@
   max-width: 100%;
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  border-radius: 11px;
+  border-radius: var(--corner-surface);
   scrollbar-width: thin;
 }
 
@@ -67,15 +60,8 @@
   box-sizing: border-box;
   /* Keep samples readable on phones; the surrounding viewport owns scrolling. */
   min-width: 544px;
-  border-radius: 11px;
-  background:
-    radial-gradient(
-        circle at 1px 1px,
-        color-mix(in oklch, var(--muted-foreground) 26%, transparent) 1px,
-        transparent 0
-      )
-      0 0 / 14px 14px,
-    var(--background);
+  border-radius: var(--corner-surface);
+  background: var(--muted);
 }
 
 .planner-help-scene .planner-help-scene__frame {
@@ -83,18 +69,17 @@
 }
 
 /*
- * The component is lifted off the canvas. `overflow-x: clip` keeps a header that is wider than its
- * stage from growing a scrollbar in the scene, without making the stage a scroll container.
+ * The component stands on the canvas with a hairline edge and no shadow. `overflow-x: clip` keeps
+ * a header that is wider than its stage from growing a scrollbar in the scene, without making the
+ * stage a scroll container.
  */
 .planner-help-scene .planner-help-scene__stage {
   display: flow-root;
   overflow-x: clip;
   transform-origin: top left;
-  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--corner-control);
   background: var(--background);
-  box-shadow:
-    0 1px 2px color-mix(in oklch, var(--foreground) 10%, transparent),
-    0 8px 24px color-mix(in oklch, var(--foreground) 12%, transparent);
 }
 
 /* A panel-width scene: the stage hugs the panel and centres, so the canvas gutters stay free for pins. */
@@ -128,19 +113,17 @@
 .planner-help-scene .planner-help-scene__pin {
   position: absolute;
   z-index: 2;
-  background: var(--primary);
-  color: var(--primary-foreground);
+  background: var(--foreground);
+  color: var(--background);
   font-size: 11.5px;
-  box-shadow:
-    0 0 0 3px var(--background),
-    0 2px 6px color-mix(in oklch, var(--foreground) 30%, transparent);
+  box-shadow: 0 0 0 3px var(--background);
   transition: transform 140ms ease;
 }
 
 .planner-help-scene .planner-help-scene__pin::before {
   position: absolute;
   inset: -4px;
-  border: 2px solid color-mix(in oklch, var(--primary) 32%, transparent);
+  border: 2px solid var(--muted-foreground);
   border-radius: inherit;
   content: "";
 }
@@ -164,7 +147,7 @@
 .planner-help-scene .planner-help-scene__notes {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-  gap: 6px;
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -175,9 +158,9 @@
   grid-template-columns: 24px minmax(0, 1fr);
   align-items: start;
   gap: 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  transition: background-color 140ms ease;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--corner-control);
+  transition: background-color 120ms;
 }
 
 .planner-help-scene .planner-help-scene__notes li:hover,
@@ -186,7 +169,7 @@
 }
 
 .planner-help-scene .planner-help-scene__note-number {
-  background: color-mix(in oklch, var(--primary) 30%, transparent);
+  border: 1px solid var(--muted-foreground);
   color: var(--foreground);
   font-size: 13px;
 }

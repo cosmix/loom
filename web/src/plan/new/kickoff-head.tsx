@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai";
-import { MessagesSquare } from "lucide-react";
+import { CircleAlert, MessagesSquare } from "lucide-react";
 
 import type { SessionView } from "@/plan/api/schema-chat";
 import { STATE_NAME } from "@/plan/chat/chat-state-glyph";
@@ -28,6 +28,7 @@ export function KickoffHead() {
       {state && (
         <span className="kickoff-pill" data-state={state}>
           {glyph && <ActivityGlyph kind={glyph} />}
+          {state === "failed" && <CircleAlert aria-hidden="true" className="kickoff-pill__alert" />}
           {STATE_NAME[state]}
         </span>
       )}

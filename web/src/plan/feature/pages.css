@@ -1,0 +1,125 @@
+/*
+ * The Pressure test and Run pages: an eyebrow, the page title, then rows on hairlines (DESIGN.md,
+ * Page rhythm). The page keeps its own column inside the layout's scroll container, so nothing
+ * here scrolls sideways at 390px: a long slug truncates and the row's side wraps under its name.
+ */
+[data-loom-plan] .plan-page {
+  width: 100%;
+  max-width: calc(68ch + 2 * var(--page-gutter));
+  margin: 0 auto;
+  padding: var(--space-6) var(--page-gutter) var(--space-7);
+}
+
+/* Title block: eyebrow, title, one sentence of chrome prose, then --space-5 to the content. */
+[data-loom-plan] .plan-page__head {
+  display: grid;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+}
+
+[data-loom-plan] .plan-page__lede {
+  max-width: 48ch;
+  margin: var(--space-2) 0 0;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+}
+
+[data-loom-plan] .plan-page__section {
+  margin-top: var(--space-6);
+}
+
+/* The start button with its notice under it; the dashboard link sits beside, never in a box. */
+[data-loom-plan] .plan-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+[data-loom-plan] .plan-page__note {
+  max-width: 48ch;
+  margin: 0 0 var(--space-3);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .plan-page__offers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* A plan row: the slug on the left (truncated), its state, record and action on the right. */
+[data-loom-plan] .plan-page__rows > li {
+  flex-wrap: wrap;
+}
+
+[data-loom-plan] .plan-page__name {
+  flex: 1 1 12ch;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+  font-weight: 500;
+}
+
+/* The link truncates, not its wrapper: an overflow box on the span would clip the link's focus
+   ring (2px outline at 2px offset). */
+[data-loom-plan] .plan-page__name a {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-loom-plan] .plan-page__side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1) var(--space-3);
+  margin-left: auto;
+  min-width: 0;
+}
+
+/* Links in chrome underline on hover only (DESIGN.md, Focus and hover). */
+[data-loom-plan] .plan-page__name a,
+[data-loom-plan] .plan-page__link {
+  color: inherit;
+  text-decoration: none;
+}
+
+[data-loom-plan] .plan-page__link {
+  font-size: var(--type-fine);
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .plan-page__name a:hover,
+[data-loom-plan] .plan-page__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+[data-loom-plan] .plan-page__link:hover {
+  color: var(--foreground);
+}
+
+[data-loom-plan] .plan-page__name a:focus-visible,
+[data-loom-plan] .plan-page__link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* The empty page names what comes first, with a link to it, in the empty state's measure. */
+[data-loom-plan] .plan-page__empty {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+[data-loom-plan] .plan-page__empty .plan-page__link {
+  color: var(--foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+}

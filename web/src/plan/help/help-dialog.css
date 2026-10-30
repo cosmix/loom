@@ -9,7 +9,7 @@
   padding: 0;
   gap: 0;
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: var(--corner-surface);
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
@@ -27,13 +27,8 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 16px 12px;
+  padding: var(--space-4) var(--space-3);
   border-right: 1px solid var(--hairline);
-  background: linear-gradient(
-    to bottom,
-    var(--background),
-    color-mix(in oklch, var(--background) 60%, var(--card))
-  );
 }
 
 .planner-help .planner-help-brand {
@@ -50,8 +45,8 @@
 }
 
 .planner-help .planner-help-brand h2 {
-  font-size: 14px;
-  font-weight: 650;
+  font-size: var(--type-title);
+  font-weight: 600;
 }
 
 .planner-help .planner-help-search {
@@ -60,10 +55,10 @@
   flex-shrink: 0;
   gap: 8px;
   height: 34px;
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--corner-control);
   background: var(--card);
   color: var(--muted-foreground);
 }
@@ -96,7 +91,7 @@
 .planner-help .planner-help-nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   overflow-y: auto;
   padding: 3px;
   overscroll-behavior: contain;
@@ -108,8 +103,8 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 7px 8px;
-  border-radius: 10px;
+  padding: var(--space-2);
+  border-radius: var(--corner-control);
   text-align: left;
   cursor: pointer;
   transition: background-color 140ms ease;
@@ -120,11 +115,14 @@
 }
 
 .planner-help .planner-help-topic[aria-current="page"] {
-  background: var(--card);
-  box-shadow: inset 0 0 0 1px var(--hairline);
+  background: var(--muted);
 }
 
-/* The topic tile in the list and the hero badge share the hue; the hero overrides the size. */
+.planner-help .planner-help-topic[aria-current="page"] strong {
+  font-weight: 600;
+}
+
+/* The topic glyph in the list and the hero share the topic's document hue; there is no tile. */
 .planner-help .planner-help-badge {
   display: inline-flex;
   align-items: center;
@@ -132,8 +130,6 @@
   width: 32px;
   height: 32px;
   flex-shrink: 0;
-  border-radius: 9px;
-  background: color-mix(in oklch, var(--planner-help-hue) 14%, transparent);
   color: var(--planner-help-hue);
 }
 
@@ -142,13 +138,8 @@
   height: 16px;
 }
 
-.planner-help .planner-help-topic[aria-current="page"] .planner-help-badge {
-  background: var(--planner-help-hue);
-  color: var(--background);
-}
-
 .planner-help .planner-help-topic-copy,
-.planner-help .planner-help-pager button > span {
+.planner-help .planner-help-pager-card > span {
   display: grid;
   min-width: 0;
   gap: 2px;
@@ -180,30 +171,16 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 26px 30px 24px;
+  padding: var(--space-5) var(--space-6);
   overscroll-behavior: contain;
 }
 
-.planner-help .planner-help-empty button {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  gap: 8px;
-  min-height: 40px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  color: var(--foreground);
-  cursor: pointer;
-}
-
 .planner-help .planner-help-empty {
-  padding: 40px 24px;
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-5);
   text-align: center;
-}
-
-.planner-help .planner-help-empty button {
-  margin-top: 12px;
-  background: var(--muted);
 }
 
 .planner-help button:focus-visible,

@@ -1,0 +1,152 @@
+/*
+ * The chrome around a summary's reading column: the document key and the empty states. Both sit
+ * on the page ground in the chrome face with no box, no border and no fill (DESIGN.md, Surfaces).
+ */
+
+/* ── Document key ─────────────────────────────────────────────────────────── */
+
+.concept-key {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-block: var(--space-1) var(--space-5);
+  font-family: var(--font-sans);
+}
+
+.concept-key-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.concept-key-list > li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* A document: swatch, number, name. The height follows the text, so a name that wraps at 390px
+   grows the entry instead of running over its neighbour. */
+.concept-key-doc {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--control-height);
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+  text-decoration: none;
+  transition: color 120ms;
+}
+
+a.concept-key-doc:hover {
+  color: var(--foreground);
+}
+
+/* An out-of-date document is dashed, not recoloured. */
+.concept-key-doc[data-dashed="true"] {
+  border-bottom: 1px dashed var(--muted-foreground);
+}
+
+.concept-key-doc:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.concept-key-label {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+  font-weight: 400;
+}
+
+.concept-key-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.concept-key-more {
+  cursor: pointer;
+}
+
+.concept-key-more:hover {
+  color: var(--foreground);
+}
+
+/* A document's swatch: its icon in the document colour on a wash of it (`--key-colour`, set
+   inline) at 16% in light themes and 20% in dark ones. */
+.concept-key-mark {
+  display: inline-flex;
+  flex: none;
+  border-radius: 5px;
+  background-color: color-mix(in oklch, var(--key-colour) 16%, transparent);
+}
+
+.dark .concept-key-mark {
+  background-color: color-mix(in oklch, var(--key-colour) 20%, transparent);
+}
+
+/* The legend for the squares after sentences: one sample square, then one sentence. */
+.concept-key-legend {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  max-width: 68ch;
+  margin: 0;
+}
+
+.concept-key-square {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--muted-foreground);
+}
+
+/* ── Empty states ─────────────────────────────────────────────────────────── */
+
+.concept-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-block: var(--space-5);
+}
+
+.concept-empty-title {
+  display: block;
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.concept-empty-docs {
+  align-self: stretch;
+  max-width: 68ch;
+  margin-top: var(--space-2);
+}
+
+.concept-empty-docs > li {
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.concept-empty-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  font-size: var(--type-ui);
+}

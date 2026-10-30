@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai/react";
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, CircleAlert } from "lucide-react";
 import type { Nodes } from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { useEffect, useState, type JSX } from "react";
@@ -50,10 +50,11 @@ export function containsPath(entry: TreeEntry, path: string | null): boolean {
   return entry.path === path || entry.children.some((child) => containsPath(child, path));
 }
 
+// Only the glyph takes a tone; the word keeps the row's muted colour (ui/DESIGN.md, Status).
 const STATE_TONES = {
-  running: "text-(--tone-executing)",
-  done: "text-(--tone-completed)",
-  retired: "text-(--tone-dimmed)",
+  running: "tone-executing",
+  done: "tone-completed",
+  retired: "tone-dimmed",
 } as const;
 
 /** A plan's state: a fixed-width right-aligned label that stays on the name's line. */
@@ -61,13 +62,11 @@ function StateLabel({ entry }: { entry: TreeEntry }): JSX.Element | null {
   if (entry.kind !== "plan" || entry.state === null) return null;
   const Icon = PLAN_STATE_GLYPHS[entry.state];
   return (
-    <span
-      className={cn(
-        "flex w-[5.25rem] shrink-0 items-center justify-end gap-1 text-xs text-muted-foreground",
-        entry.state !== "written" && STATE_TONES[entry.state],
-      )}
-    >
-      <Icon className="size-3" aria-hidden="true" />
+    <span className="flex w-[5.25rem] shrink-0 items-center justify-end gap-1 text-xs text-muted-foreground">
+      <Icon
+        className={cn("size-3", entry.state !== "written" && STATE_TONES[entry.state])}
+        aria-hidden="true"
+      />
       {entry.state}
     </span>
   );
@@ -84,7 +83,8 @@ function PlanMeta({ entry }: { entry: TreeEntry }): JSX.Element | null {
     <span className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
       {entry.pressure_date && <span>Pressure-tested {entry.pressure_date}</span>}
       {errors > 0 && (
-        <span className="text-(--tone-blocked)">
+        <span className="inline-flex items-center gap-1">
+          <CircleAlert className="tone-blocked size-3" aria-hidden="true" />
           {errors === 1 ? "1 error" : `${errors} errors`}
         </span>
       )}
@@ -106,8 +106,8 @@ export function plainTitle(text: string): string {
 
 function Title({ entry, current }: { entry: TreeEntry; current: boolean }): JSX.Element {
   const className = cn(
-    "max-w-full min-w-[8ch] flex-1 basis-0 truncate text-[13px] font-medium",
-    current && "text-foreground",
+    "max-w-full min-w-[8ch] flex-1 basis-0 truncate text-[13px] hover:text-foreground",
+    current ? "font-semibold text-foreground" : "font-medium text-muted-foreground",
   );
   const title = (
     <span style={{ unicodeBidi: "isolate", direction: "ltr" }}>
@@ -116,10 +116,7 @@ function Title({ entry, current }: { entry: TreeEntry; current: boolean }): JSX.
   );
   if (entry.gap) {
     return (
-      <Link
-        to={gapAddress(entry.title, entry.feature, entry.target)}
-        className={cn(className, "text-muted-foreground")}
-      >
+      <Link to={gapAddress(entry.title, entry.feature, entry.target)} className={className}>
         {title}
       </Link>
     );

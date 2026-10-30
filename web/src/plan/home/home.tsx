@@ -3,7 +3,6 @@ import { MessageCircle } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { Link, Navigate, useLocation } from "react-router";
 
-import { Untrusted } from "@/plan/chat/visible-controls";
 import { useFileSocket } from "@/plan/files/api";
 import { FeatureCards } from "@/plan/home/feature-card";
 import { StandaloneShelf } from "@/plan/home/standalone-shelf";
@@ -32,24 +31,22 @@ function StartConversation() {
 
   if (canAuthor) {
     return (
-      <Link to="/new" className="invitation__cta">
-        <MessageCircle aria-hidden="true" className="size-4" />
+      <Link to="/new" data-look="primary" className="plan-button invitation__cta">
+        <MessageCircle aria-hidden="true" />
         Start a conversation
       </Link>
     );
   }
 
+  // The server's reason is the control's one explanation; no second line repeats it.
   return (
-    <div className="grid gap-1">
-      <DisabledReason reason="Authoring is unavailable" look="primary" onClick={() => {}}>
-        Start a conversation
-      </DisabledReason>
-      {blockReason && (
-        <p className="text-xs text-muted-foreground">
-          <Untrusted text={blockReason} />
-        </p>
-      )}
-    </div>
+    <DisabledReason
+      reason={blockReason ?? "Authoring is unavailable"}
+      look="primary"
+      onClick={() => {}}
+    >
+      Start a conversation
+    </DisabledReason>
   );
 }
 
@@ -62,7 +59,7 @@ export function InvitationCard({ empty }: { empty: boolean }) {
         <LoomDoodle />
       </div>
       <div className="invitation__body">
-        <h2 id={headingId} className="invitation__title">
+        <h2 id={headingId} className="plan-section-title invitation__title">
           Start something new
         </h2>
         <div className="invitation__lead">
@@ -73,7 +70,7 @@ export function InvitationCard({ empty }: { empty: boolean }) {
           </p>
         </div>
         <StartConversation />
-        <p className="invitation__note">Nothing is written until you say so.</p>
+        <p className="plan-fine">Nothing is written until you say so.</p>
       </div>
     </section>
   );
@@ -106,8 +103,8 @@ function LoadedHome() {
     <div className="home">
       {!empty && (
         <div className="home__head">
-          <p className="home__eyebrow">doc/ in this repository</p>
-          <h2 className="home__title">Features</h2>
+          <p className="plan-eyebrow">doc/ in this repository</p>
+          <h2 className="plan-page-title">Features</h2>
         </div>
       )}
       {features.length > 0 ? (

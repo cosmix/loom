@@ -16,7 +16,7 @@ it("sets the header on the card with a hairline rule and a 10px grid", () => {
   const { container } = renderHeading();
 
   const header = container.querySelector("header") as HTMLElement;
-  for (const name of ["bg-card", "border-b", "border-hairline", "gap-2.5", "grid"]) {
+  for (const name of ["bg-background", "border-b", "border-hairline", "gap-2.5", "grid"]) {
     expect(header.classList.contains(name)).toBe(true);
   }
 });
@@ -47,7 +47,7 @@ it("puts an icon in each segment of the view switch", () => {
   const group = screen.getByRole("group", { name: "View" });
   expect(group.querySelector("svg.lucide-sparkles")).not.toBeNull();
   expect(group.querySelector("svg.lucide-file-text")).not.toBeNull();
-  expect(group.className).toContain("border-hairline");
+  expect(group.className).not.toContain("border");
 });
 
 it("lets the actions wrap under the title, on their own row below 900px", () => {
@@ -64,19 +64,19 @@ it.each([
   ["accent", "--tone-executing"],
   ["warning", "--tone-warning"],
   ["danger", "--tone-blocked"],
-] as const)("washes a %s chip at 18%% and tints only its icon", (tone, variable) => {
+] as const)("tints only the icon of a %s chip and draws no fill", (tone, variable) => {
   renderHeading({
     chips: [{ key: "t", label: "Chip", tone, icon: <svg data-testid="icon" /> }],
   });
 
   const chip = screen.getByText("Chip").closest("[data-chip]") as HTMLElement;
   expect(chip.getAttribute("data-tone")).toBe(tone);
-  expect(chip.className).toContain(`color-mix(in_oklch,var(${variable})_18%,transparent)`);
+  expect(chip.className).not.toMatch(/\bbg-/);
   expect(screen.getByTestId("icon").parentElement?.className).toContain(`text-(${variable})`);
   expect(chip.className).toContain("text-foreground");
 });
 
-it("leaves neutral and ok chips on the muted fill", () => {
+it("leaves neutral and ok chips unfilled", () => {
   renderHeading({
     chips: [
       { key: "n", label: "Neutral" },
@@ -84,8 +84,8 @@ it("leaves neutral and ok chips on the muted fill", () => {
     ],
   });
 
-  expect(screen.getByText("Neutral").closest("[data-chip]")?.className).toContain("bg-muted");
-  expect(screen.getByText("Fine").closest("[data-chip]")?.className).toContain("bg-muted");
+  expect(screen.getByText("Neutral").closest("[data-chip]")?.className).not.toMatch(/\bbg-/);
+  expect(screen.getByText("Fine").closest("[data-chip]")?.className).not.toMatch(/\bbg-/);
   expect(screen.getByTestId("ok-icon").parentElement?.className).toContain(
     "text-(--tone-completed)",
   );

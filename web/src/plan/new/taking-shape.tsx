@@ -196,7 +196,7 @@ function ShapeFoot({ size, target }: { size: KickoffShape["size"]; target: strin
     );
   return (
     <div className="kickoff-shape__foot">
-      <p className="kickoff-notice">
+      <p className="plan-fine kickoff-notice">
         {`Nothing is written yet. '${plan ? "Write the plan" : "Write the vision"}' creates `}
         {created}
         {plan ? "." : " with the open questions in it."}

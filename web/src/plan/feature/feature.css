@@ -149,6 +149,9 @@
 @media (max-width: 759.98px) {
   [data-loom-plan] .plan-layout[data-spine] {
     grid-template-columns: minmax(0, 1fr);
+    /* The layout fills the height, so two auto rows would stretch and sit a short page halfway
+       down; the page row takes the spare height instead. */
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   [data-loom-plan] .plan-layout[data-spine] > .plan-layout__page {

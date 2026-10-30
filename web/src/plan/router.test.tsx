@@ -14,6 +14,8 @@ vi.mock("@/plan/feature/feature-layout", async () => {
     FeatureLanding: () => createElement("div", null, "Feature landing"),
   };
 });
+vi.mock("@/plan/feature/pressure-page", () => ({ PressurePage: () => <div>Pressure page</div> }));
+vi.mock("@/plan/feature/run-page", () => ({ RunPage: () => <div>Run page</div> }));
 vi.mock("@/plan/new/kickoff-route", () => ({ KickoffRoute: () => <div>Kickoff page</div> }));
 
 // vi.mock factories are hoisted above the JSX runtime import, so the element is built from an
@@ -62,8 +64,18 @@ describe("plan routes", () => {
     expect(within(shell!).getByText("Feature landing")).toBeTruthy();
   });
 
+  it.each([
+    ["/f/demo/pressure", "Pressure page"],
+    ["/f/demo/run", "Run page"],
+  ])("routes %s to its page inside the feature layout", (path, page) => {
+    const shell = renderRoute(path);
+    expect(within(shell!).getByText("Feature page")).toBeTruthy();
+    expect(within(shell!).getByText(page)).toBeTruthy();
+    expect(within(shell!).queryByText("No such page")).toBeNull();
+  });
+
   it("answers a feature page that has no route with an error, not a blank page", () => {
-    const shell = renderRoute("/f/demo/pressure");
+    const shell = renderRoute("/f/demo/nowhere");
     expect(within(shell!).getByText("Feature page")).toBeTruthy();
     expect(within(shell!).getByText("No such page")).toBeTruthy();
   });

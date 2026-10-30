@@ -48,7 +48,7 @@ export function SettingsDialog({
         <div className="ps-body">
           <SettingsGroup title="Theme" hint="Remembered in this browser">
             <div className="ps-theme">
-              <ThemePicker swatch={PlannerThemeSwatch} />
+              <ThemePicker swatch={PlannerThemeSwatch} optionClassName="ps-theme-option" />
             </div>
           </SettingsGroup>
           <ReadingFaceGroup />

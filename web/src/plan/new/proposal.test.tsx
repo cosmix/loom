@@ -183,8 +183,8 @@ it("offers the standalone plan label and confirms its size", async () => {
     "Proposed: a standalone plan",
   );
   expect(screen.queryByRole("button", { name: "Change sections" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Make it standalone" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Make it a feature" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Make standalone" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Make a feature" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Use this" }));
 
   expect(send).toHaveBeenCalledExactlyOnceWith({
@@ -199,8 +199,8 @@ it("offers the standalone plan label and confirms its size", async () => {
 
 it.each([
   ["feature", "Change sections", "I want to change the proposed sections."],
-  ["feature", "Make it standalone", "Make this a standalone plan instead."],
-  ["plan", "Make it a feature", "Make this a feature instead."],
+  ["feature", "Make standalone", "Make this a standalone plan instead."],
+  ["plan", "Make a feature", "Make this a feature instead."],
 ] as const)("sends the %s proposal's %s message", async (size, label, text) => {
   const { send, result } = mount({ ...featureShape, size });
 
@@ -220,7 +220,7 @@ it.each([
 
 it("keeps actions blocked when the shape changes before the command result", async () => {
   const { store, send, result, rerender } = mount();
-  fireEvent.click(screen.getByRole("button", { name: "Make it standalone" }));
+  fireEvent.click(screen.getByRole("button", { name: "Make standalone" }));
 
   rerender(
     <Provider store={store}>

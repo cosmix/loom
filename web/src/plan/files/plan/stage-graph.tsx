@@ -66,7 +66,7 @@ export function toSummary(row: StageRow): StageSummary {
 
 function PlanStageNode({ data }: NodeProps<PlanNode>) {
   return (
-    <div className="flex h-full flex-col justify-center rounded-md border border-(--hairline) bg-card px-3">
+    <div className="flex h-full flex-col justify-center rounded-md bg-card px-3">
       <Handle
         type="target"
         position={Position.Top}

@@ -101,7 +101,7 @@ function ProposalContent({ size, name, sections }: ProposalContentProps) {
   return (
     // A div, not a section: the help scene counts the panel's `section` rows.
     <div role="region" aria-label="Proposal" className="kickoff-proposal font-sans">
-      <p className="kickoff-proposal__title">
+      <p className="plan-section-title kickoff-proposal__title">
         <Sparkles aria-hidden="true" />
         Proposed: a {size === "feature" ? "feature" : "standalone plan"}
       </p>
@@ -132,12 +132,12 @@ function ProposalFeedback({ actions }: { actions: ProposalActions }) {
   return (
     <>
       {actions.blockReason !== null && (
-        <p className="text-xs text-muted-foreground">
+        <p className="plan-fine">
           <Untrusted text={actions.blockReason} />
         </p>
       )}
       {actions.status !== null && (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className="plan-fine">
           <Untrusted text={actions.status} />
         </p>
       )}
@@ -153,16 +153,18 @@ function ProposalAcceptance({
 }: ProposedTarget & { actions: ProposalActions; onRename: () => void }) {
   return (
     <div className="kickoff-proposal__actions">
-      <DisabledReason reason={actions.reason} onClick={() => actions.confirm(size, name)}>
+      <DisabledReason
+        reason={actions.reason}
+        look="primary"
+        onClick={() => actions.confirm(size, name)}
+      >
         <Check aria-hidden="true" />
         Use this
       </DisabledReason>
-      <div className="kickoff-ghost">
-        <DisabledReason reason={actions.reason} onClick={onRename}>
-          <Pencil aria-hidden="true" />
-          Rename
-        </DisabledReason>
-      </div>
+      <DisabledReason reason={actions.reason} onClick={onRename}>
+        <Pencil aria-hidden="true" />
+        Rename
+      </DisabledReason>
     </div>
   );
 }
@@ -170,7 +172,7 @@ function ProposalAcceptance({
 function ProposalAlternatives({ size, actions }: { size: KickoffSize; actions: ProposalActions }) {
   const feature = size === "feature";
   return (
-    <div className="kickoff-proposal__actions kickoff-ghost">
+    <div className="kickoff-proposal__actions">
       {feature && (
         <DisabledReason
           reason={actions.reason}
@@ -189,7 +191,7 @@ function ProposalAlternatives({ size, actions }: { size: KickoffSize; actions: P
         }
       >
         <Wrench aria-hidden="true" />
-        {feature ? "Make it standalone" : "Make it a feature"}
+        {feature ? "Make standalone" : "Make a feature"}
       </DisabledReason>
     </div>
   );
@@ -207,10 +209,10 @@ function RenameForm({ name, reason, onConfirm, onCancel }: RenameFormProps) {
         event.preventDefault();
         confirm();
       }}
-      className="space-y-2"
+      className="kickoff-proposal__form"
     >
       <RenameField value={value} onChange={setValue} disabled={reason !== null} valid={valid} />
-      <div className="flex flex-wrap gap-2">
+      <div className="kickoff-proposal__actions">
         <DisabledReason reason={reason ?? (valid ? null : "Choose a valid name")} onClick={confirm}>
           Confirm
         </DisabledReason>

@@ -7,6 +7,7 @@ import type { KeyedState } from "./flash";
 import { pageSentences, type CitedLookup } from "./open-state";
 import {
   conceptPageAtom,
+  linkedPageKey,
   loadConceptPages,
   pageKeyOfSummary,
   type ConceptPageState,
@@ -20,15 +21,21 @@ export type CitedPages = {
   citedPage: (summary: string) => ConceptPage | null;
 };
 
-/** Summary ids any sentence of `page` cites. */
-function citedSummaries(page: ConceptPage): string[] {
-  const summaries = new Set<string>();
+/**
+ * Page keys of the summaries any sentence of `page` cites that the page can name. A citation of a
+ * document with no link (a plan deleted since the overview was committed) is left out: its id is
+ * not a page the server has, and fetching it logs a 404.
+ */
+function citedKeys(page: ConceptPage): string[] {
+  const keys = new Set<string>();
   for (const sentence of pageSentences(page)) {
     for (const citation of sentence.citations) {
-      if (citation.kind === "sentence") summaries.add(citation.summary);
+      if (citation.kind !== "sentence") continue;
+      const key = linkedPageKey(page, citation.summary);
+      if (key !== null) keys.add(key);
     }
   }
-  return [...summaries];
+  return [...keys];
 }
 
 /**
@@ -38,10 +45,7 @@ function citedSummaries(page: ConceptPage): string[] {
 export function useCitedPages(pageKey: string, page: ConceptPage): CitedPages {
   const store = useStore();
   const ownState = useAtomValue(conceptPageAtom(pageKey));
-  const joined = useMemo(
-    () => [...new Set(citedSummaries(page).map((id) => pageKeyOfSummary(page, id)))].join("\n"),
-    [page],
-  );
+  const joined = useMemo(() => citedKeys(page).join("\n"), [page]);
   const keys = useMemo(() => (joined === "" ? [] : joined.split("\n")), [joined]);
   const statesAtom = useMemo(
     () => atom((get): ConceptPageState[] => keys.map((key) => get(conceptPageAtom(key)))),

@@ -14,16 +14,11 @@ import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
 
 import "./feature-card.css";
 
-const METAPLAN_STEP = 3;
 const RUN_STEP = 6;
 
-/** The two folders a feature is a pair of, or which one is missing. */
-function pathLine(checklist: ChecklistView): string {
-  const { feature, has_product, plans, steps } = checklist;
-  const metaplanDone = steps.some((s) => s.number === METAPLAN_STEP && s.mark === "done");
-  if (!has_product) return `plans/${feature}/ · no product spec`;
-  if (plans.total === 0 && !metaplanDone) return `product/${feature}/ · no plans yet`;
-  return `product/${feature}/ · plans/${feature}/`;
+/** One folder, as DESIGN.md allows: the product directory when the feature has one, else its plans. */
+function pathLine({ feature, has_product }: ChecklistView): string {
+  return has_product ? `product/${feature}/` : `plans/${feature}/`;
 }
 
 /** The step the card marks as current: the server's, or Run once everything before it is done. */
@@ -80,7 +75,7 @@ export function FeatureCard({ checklist }: { checklist: ChecklistView }) {
           <h3 id={headingId} className="feature-card__title">
             <Untrusted text={checklist.feature} />
           </h3>
-          <span className="feature-card__path">
+          <span className="feature-card__path plan-fine">
             <Untrusted text={pathLine(checklist)} />
           </span>
         </div>
@@ -97,10 +92,12 @@ export function FeatureCard({ checklist }: { checklist: ChecklistView }) {
         current={currentStep(checklist)}
         running={checklist.plans.running > 0}
       />
-      <Facts checklist={checklist} />
-      <span id={summaryId} className="sr-only">
-        {`${done} of ${plural(checklist.steps.length, "step")} done, ${gaps} with gaps`}
-      </span>
+      <div className="feature-card__meta">
+        <span id={summaryId} className="plan-fine">
+          {`${done} of ${plural(checklist.steps.length, "step")} done, ${gaps} with gaps`}
+        </span>
+        <Facts checklist={checklist} />
+      </div>
     </Link>
   );
 }

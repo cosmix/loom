@@ -194,13 +194,13 @@ function KickoffAttachments({ draft, disabled }: { draft: KickoffDraft; disabled
     <ul aria-label="Attached documents" className="kickoff-attachments">
       {draft.documents.map((document) => (
         <li key={document.id} className="kickoff-attachment">
-          <span className="min-w-0 break-words">
+          <span>
             Attached: <Untrusted text={document.label} />
           </span>
           <button
             type="button"
             disabled={disabled}
-            className="shrink-0 underline focus-visible:outline-2 focus-visible:outline-ring"
+            className="kickoff-attachment__remove"
             onClick={() => draft.remove(document.id)}
           >
             Remove
@@ -219,14 +219,15 @@ function KickoffStarters({ draft, disabled }: { draft: KickoffDraft; disabled: b
         <button
           key={starter.label}
           type="button"
-          className="kickoff-starter"
+          data-look="secondary"
+          className="plan-button kickoff-starter"
           onClick={() => draft.choose(starter)}
         >
           <starter.Icon aria-hidden="true" />
           {starter.label}
         </button>
       ))}
-      <DocumentStarter onPick={draft.attach} className="kickoff-starter">
+      <DocumentStarter onPick={draft.attach} look="secondary" className="kickoff-starter">
         <FileUp aria-hidden="true" />
         Start from a document I have
       </DocumentStarter>
@@ -252,12 +253,7 @@ function KickoffCard({
       <KickoffComposer draft={draft} disabled={disabled} start={submit} />
       <KickoffAttachments draft={draft} disabled={disabled} />
       <div className="kickoff-actions">
-        <DocumentStarter
-          onPick={draft.attach}
-          variant="ghost"
-          className="kickoff-attach"
-          disabled={disabled}
-        >
+        <DocumentStarter onPick={draft.attach} variant="ghost" look="quiet" disabled={disabled}>
           <Paperclip aria-hidden="true" />
           Attach notes or a document
         </DocumentStarter>
@@ -285,7 +281,7 @@ export function EmptyKickoff({ small = false }: { small?: boolean }) {
   const blockReason = useAtomValue(authorBlockReasonAtom);
   const disabled = !canAuthor || pending;
   const reason = !canAuthor
-    ? "Authoring is unavailable"
+    ? (blockReason ?? "Authoring is unavailable")
     : pending
       ? "Starting the conversation"
       : !draft.text.trim() && !draft.documents.length
@@ -297,7 +293,7 @@ export function EmptyKickoff({ small = false }: { small?: boolean }) {
   return (
     <section className="kickoff-empty" aria-label="Start something new">
       <LoomDoodle className="text-muted-foreground" />
-      <h1>What do you want to build?</h1>
+      <h1 className="plan-page-title">What do you want to build?</h1>
       <p className="kickoff-lead">
         Describe it the way you would to a colleague: the problem, who has it, what you have in
         mind. Loom asks questions, pushes back, and suggests a name and the sections a spec needs.
@@ -309,18 +305,13 @@ export function EmptyKickoff({ small = false }: { small?: boolean }) {
         error={error}
         submit={submit}
       />
-      {!canAuthor && blockReason && (
-        <p className="kickoff-note">
-          <Untrusted text={blockReason} />
-        </p>
-      )}
       {error && (
         <p role="status">
           <Untrusted text={error} />
         </p>
       )}
       <KickoffStarters draft={draft} disabled={disabled} />
-      <p className="kickoff-note">Nothing is written until you say so.</p>
+      <p className="plan-fine kickoff-note">Nothing is written until you say so.</p>
     </section>
   );
 }
