@@ -1,5 +1,6 @@
 //! The conversation flow: what the driver pastes into the pane (the opening, the queue, the
-//! closing message), how a paste is confirmed or times out, and the Escape press.
+//! closing message), how a paste is confirmed or times out, and the Escape press. An opening
+//! pasted but not submitted is `opening.rs`.
 
 use std::time::Instant;
 
@@ -26,6 +27,7 @@ struct Paste {
 impl Bridge {
     /// Paste the opening, the queue head or the closing message when the session can take it.
     pub(super) fn deliver_step(&self, id: &str) {
+        self.opening_step(id);
         let due = self.with_session(id, |session, _| session.closing_due());
         // The closing text is read outside the lock: the closure belongs to the server.
         let closing = (due == Some(true)).then(|| (self.config.closing_message)());
@@ -103,7 +105,7 @@ impl Session {
         }
         if let Some(opening) = self.flow.opening.take() {
             let mut delivering = self.delivery(opening.text, Vec::new(), opening.origin, step);
-            delivering.opening = true;
+            delivering.opening = Some(0);
             return Some(delivering);
         }
         let skip = std::mem::take(&mut self.flow.skip_delivery);
@@ -164,7 +166,7 @@ impl Session {
             match_text,
             sent_at: None,
             closing: false,
-            opening: false,
+            opening: None,
             compact,
         }
     }
@@ -186,20 +188,23 @@ impl Session {
                 self.set_delivery(&failed.item_id, Delivery::Undelivered, step);
                 self.flow.paused = true;
                 let why = format!("the opening message cannot be sent: {error}");
-                failed.opening.then_some(why)
+                failed.opening.is_some().then_some(why)
             }
         }
     }
 
-    /// No `UserPromptSubmit` within the timeout: undelivered, and the queue waits.
+    /// No `UserPromptSubmit` within the timeout: undelivered, and the queue waits. A Summary
+    /// session's opening fails the session instead (`Bridge::opening_step`).
     pub(super) fn time_out_delivery(
         &mut self,
         config: &BridgeConfig,
         now: Instant,
         step: &mut Step,
     ) {
-        let sent = self.flow.delivering.as_ref().and_then(|d| d.sent_at);
-        if !sent.is_some_and(|sent| now.duration_since(sent) >= config.delivery_timeout) {
+        let overdue = self
+            .waited(now)
+            .is_some_and(|waited| waited >= config.delivery_timeout);
+        if !overdue || self.opening_fails() {
             return;
         }
         if let Some(late) = self.flow.delivering.take() {
