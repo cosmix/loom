@@ -105,6 +105,13 @@ describe("the next-step sentence", () => {
 
     expect(sentence()).toBe(base.items[0]!.text);
   });
+
+  it("says nothing is next with a current step, no primary and no items", () => {
+    expect(base.current.kind).toBe("step");
+    renderAction({ ...base, primary: null, items: [] });
+
+    expect(sentence()).toBe("Nothing to do next");
+  });
 });
 
 describe("the next-step button", () => {

@@ -104,6 +104,9 @@ describe("step mark glyphs", () => {
     }
     // A gap and an out-of-date summary share the dashed circle: both are an unfinished document.
     expect(STEP_MARK_GLYPHS.gap).toBe(SUMMARY_STATE_GLYPHS.stale);
+    for (const mark of ["active", "optional"] as const) {
+      expect(Object.values(SUMMARY_STATE_GLYPHS)).not.toContain(STEP_MARK_GLYPHS[mark]);
+    }
     expect(new Set(Object.values(STEP_MARK_GLYPHS)).size).toBe(4);
   });
 });
