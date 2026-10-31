@@ -16,8 +16,6 @@ use super::model::{
     WorkerKind, WorkerSpec,
 };
 
-const MAX_PARENT_DIRS: usize = 512;
-
 pub struct IdentityScope {
     pub work_dir: PathBuf,
     pub canonical_repo: PathBuf,
@@ -202,7 +200,7 @@ fn candidate_parents(
     authorizations: &[CodexAuthorization],
 ) -> Result<BTreeSet<String>> {
     match spec.kind {
-        WorkerKind::Claude => claude_parent_candidates(scope, &spec.id, starts),
+        WorkerKind::Claude => super::parent_scan::claude_parent_candidates(scope, &spec.id, starts),
         WorkerKind::Codex => Ok(authorizations
             .iter()
             .filter(|row| authorization_matches(scope, row, &spec.id, None))
@@ -210,37 +208,6 @@ fn candidate_parents(
             .filter(|parent| validate_parent_uuid(parent).is_ok())
             .collect()),
     }
-}
-
-fn claude_parent_candidates(
-    scope: &IdentityScope,
-    agent_id: &str,
-    starts: &StartedAgentTypeIndex,
-) -> Result<BTreeSet<String>> {
-    let project = scope
-        .projects_root
-        .join(project_slug(&scope.canonical_worktree));
-    let entries = match fs::read_dir(project) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeSet::new()),
-        Err(error) => return Err(error.into()),
-    };
-    let mut parents = BTreeSet::new();
-    for entry in entries.take(MAX_PARENT_DIRS) {
-        let entry = entry?;
-        let Some(parent) = entry.file_name().to_str().map(str::to_owned) else {
-            continue;
-        };
-        if entry.file_type()?.is_dir()
-            && validate_parent_uuid(&parent).is_ok()
-            && starts
-                .resolve_exact(&scope.stage_id, &parent, &scope.loom_session_id, agent_id)
-                .is_some()
-        {
-            parents.insert(parent);
-        }
-    }
-    Ok(parents)
 }
 
 fn can_bind(
@@ -390,7 +357,7 @@ fn codex_path(scope: &IdentityScope) -> PathBuf {
         .join("codex.jsonl")
 }
 
-fn validate_parent_uuid(parent: &str) -> Result<()> {
+pub(super) fn validate_parent_uuid(parent: &str) -> Result<()> {
     let parsed = Uuid::parse_str(parent).context("Claude parent must be a UUID")?;
     ensure!(
         parsed.to_string() == parent.to_ascii_lowercase(),
@@ -398,3 +365,7 @@ fn validate_parent_uuid(parent: &str) -> Result<()> {
     );
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "identity_tests.rs"]
+mod tests;

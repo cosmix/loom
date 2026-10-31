@@ -60,6 +60,8 @@ use super::{ledger, metrics, summary};
 use crate::models::constants::DEFAULT_SUBAGENT_CEILING_TOKENS;
 
 mod entry;
+#[cfg(test)]
+pub(super) use entry::read_count;
 #[path = "classify_forward.rs"]
 pub(super) mod forward;
 pub(super) mod lifecycle;
@@ -245,7 +247,9 @@ pub(super) fn analyze_with_evidence_at_ceiling(
     lifecycle: Option<&lifecycle::Context>,
     forward_index: Option<&ForwardIndex>,
 ) -> Result<SubagentSummary> {
-    let entries = entry::read_entries(path)?;
+    let (entries, bytes, trusted) = entry::read_entries(path)?;
+    let forwarding =
+        forward_index.map(|_| super::forward_jobs_transcript::from_bytes(path, &bytes, trusted));
     let lifecycle_evidence = lifecycle.map(|context| context.evidence(path, &agent_id));
     let agent_type = lifecycle_evidence
         .as_ref()
@@ -278,7 +282,7 @@ pub(super) fn analyze_with_evidence_at_ceiling(
     Ok(apply_evidence(
         summary,
         last,
-        path,
+        forwarding.as_ref(),
         lifecycle_evidence,
         forward_index,
     ))
@@ -287,7 +291,7 @@ pub(super) fn analyze_with_evidence_at_ceiling(
 fn apply_evidence(
     mut summary: SubagentSummary,
     last: &Value,
-    path: &Path,
+    forwarding: Option<&super::forward_jobs_transcript::ForwardTranscript>,
     lifecycle_evidence: Option<lifecycle::Evidence>,
     forward_index: Option<&ForwardIndex>,
 ) -> SubagentSummary {
@@ -297,8 +301,8 @@ fn apply_evidence(
     if summary.state == SubagentState::Done && summary.final_report.is_none() {
         summary.final_report = final_report_for(summary.state, last);
     }
-    if let Some(index) = forward_index {
-        forward::apply(&mut summary, index, path);
+    if let (Some(index), Some(transcript)) = (forward_index, forwarding) {
+        forward::apply(&mut summary, index, transcript);
     }
     summary
 }
