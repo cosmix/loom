@@ -181,14 +181,14 @@ function SuggestionCard({ suggestion }: { suggestion: Suggestion }) {
     kind: suggestion.passage.summary_sentence === null ? "source" : "summary",
   });
   return (
-    <article className="min-w-0 space-y-2 rounded border border-border p-2 text-[13px]">
+    <article className="chat-suggestion">
       <p className="break-words font-medium">
         <Untrusted text={suggestion.from} /> suggests: <Untrusted text={label} />
       </p>
       <p className="whitespace-pre-wrap break-words text-sm leading-normal">
         <Untrusted text={suggestion.note} />
       </p>
-      <div className="flex gap-2">
+      <div className="chat-suggestion-actions">
         <DisabledReason
           reason={reason}
           size="sm"
@@ -236,7 +236,7 @@ export function SuggestionCards() {
       <div
         role="region"
         aria-label="Pending suggestions"
-        className="max-h-[33vh] space-y-2 overflow-y-auto overscroll-contain py-2"
+        className="chat-suggestions max-h-[33vh] overflow-y-auto overscroll-contain"
       >
         {suggestions.map((suggestion) => (
           <SuggestionCard key={suggestion.id} suggestion={suggestion} />

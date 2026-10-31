@@ -23,7 +23,7 @@ import { PanelHead } from "./panel-head";
 import { panelCollapsedAtom, panelWidthAtom } from "./prefs";
 import { RunHeader } from "./run-header";
 import { ScreenSync } from "./screen-sync";
-import { elsewhereSessionAtom, panelSessionAtom, sessionHereAtom } from "./session-home";
+import { elsewhereSessionAtom, sessionHereAtom } from "./session-home";
 import { chatSheetOpenAtom } from "./sheet-state";
 import { shownSessionAtom } from "./shown-session";
 import { StateLine } from "./state-line";
@@ -92,11 +92,11 @@ function OfferError() {
   const [error, setError] = useAtom(offerErrorAtom);
   if (!error) return null;
   return (
-    <p role="alert" className="flex items-start gap-2 px-3 text-[12px]">
+    <p role="alert" className="chat-offer-error">
       <span className="mr-auto">
         <Untrusted text={error} />
       </span>
-      <button type="button" onClick={() => setError(null)}>
+      <button type="button" className="chat-link-button" onClick={() => setError(null)}>
         Dismiss
       </button>
     </p>
@@ -231,22 +231,6 @@ function ResizeHandle() {
   );
 }
 
-/** Keeps the empty state's label and offer apart; a session's row needs no such layout. */
-function StateRowSlot() {
-  const session = useAtomValue(panelSessionAtom);
-  return (
-    <div
-      className={
-        session
-          ? undefined
-          : "[&_.chat-state-line_[aria-live=off]>.flex]:grid [&_.chat-state-line_[aria-live=off]>.flex]:grid-cols-[auto_1fr] [&_.chat-state-line_[aria-live=off]>.flex]:gap-y-3 [&_.chat-state-line_[aria-live=off]>.flex>:nth-child(n+3)]:col-span-2"
-      }
-    >
-      <StateLine />
-    </div>
-  );
-}
-
 /** A session this screen does not own: the empty state, and the way to where it is. */
 function ElsewhereBody({ sheet }: { sheet: boolean }) {
   const elsewhere = useAtomValue(elsewhereSessionAtom);
@@ -254,7 +238,7 @@ function ElsewhereBody({ sheet }: { sheet: boolean }) {
   return (
     <div className="chat-panel-top">
       <PanelHead sheet={sheet} />
-      <StateRowSlot />
+      <StateLine />
       {elsewhere ? (
         <p className="chat-elsewhere">
           <Link to={elsewhere.href}>
@@ -282,13 +266,13 @@ function SessionBody({ sheet }: { sheet: boolean }) {
     <>
       <div className="chat-panel-top">
         <PanelHead sheet={sheet} />
-        <StateRowSlot />
+        <StateLine />
         <OfferError />
         {session && <RunHeader session={session} />}
         <ConnectionBanner />
       </div>
       <div className="chat-panel-middle">
-        {dim && <p className="px-3 text-[12px] text-muted-foreground">{dim}</p>}
+        {dim && <p className="chat-last-update">{dim}</p>}
         <Transcript />
       </div>
       <ComposerArea />

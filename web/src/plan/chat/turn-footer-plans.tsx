@@ -10,8 +10,8 @@ import { getImplementedBy, type ImplementedByResponse } from "@/plan/review/api"
 import { connectionEpochAtom, featuresAtom, isHolderAtom } from "@/plan/state/atoms";
 import { pageHref, pageKeyOfSummaryId } from "@/plan/api/page-key";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
-import { LoadState } from "@/plan/ui/load-state";
 import { draftAtom } from "./drafts";
+import { ErrorLine } from "./error-line";
 import { Untrusted, visibleControls } from "./visible-controls";
 
 type Plan = ImplementedByResponse["sections"][string][number];
@@ -208,11 +208,13 @@ export function ImplementingPlans({ path, loaded }: { path: string; loaded: Impl
   const plans = id ? (sections?.[id] ?? []) : [];
   if (error)
     return (
-      <LoadState
-        state="error"
-        message={visibleControls(error)}
-        action={{ label: "Retry", onClick: retry }}
-      />
+      <ErrorLine text={error}>
+        <div>
+          <DisabledReason reason={null} onClick={retry} size="sm" look="quiet">
+            Retry
+          </DisabledReason>
+        </div>
+      </ErrorLine>
     );
   if (!sections)
     return (

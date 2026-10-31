@@ -1,0 +1,105 @@
+/* The permission decision and the turn footer. Imported by chat-surface.css; see its header
+ * for why these rules are unlayered.
+ */
+
+/* The one place with real emphasis: a band across the panel between two hairlines, with a wash
+ * behind it. It stops 4px short of each edge so its focus ring is not clipped by the scroll
+ * container. */
+.chat-decision {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+  margin-inline: calc(4px - var(--chat-gutter));
+  padding: var(--space-4) calc(var(--chat-gutter) - 4px);
+  border-block: 1px solid var(--hairline);
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: var(--type-ui);
+  line-height: var(--leading-body);
+}
+
+.chat-decision:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.chat-decision-title {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  font-weight: 600;
+}
+
+.chat-decision-title .chat-notice-glyph {
+  color: var(--tone-warning);
+}
+
+.chat-decision p {
+  margin: 0;
+}
+
+.chat-decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chat-decision-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-height);
+  margin-block-start: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: var(--type-ui);
+}
+
+.chat-decision-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* ── Turn footer ───────────────────────────────────────────────────────────── */
+
+.chat-turn-footer {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  font-weight: 400;
+  line-height: var(--leading-ui);
+}
+
+.chat-turn-footer p {
+  margin: 0;
+}
+
+.chat-turn-footer ul {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A changed file or a rebuilt summary: glyph, mono name, counts. No edge. */
+.chat-file-chip,
+.chat-rebuild-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.chat-file-counts {
+  color: var(--muted-foreground);
+}

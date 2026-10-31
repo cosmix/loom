@@ -32,7 +32,7 @@ it("user item layout and chips", () => {
   expect(text.closest('[class*="whitespace-pre-wrap"]')).not.toBeNull();
   expect(text.closest(".chat-user-body")).not.toBeNull();
   expect(text.closest(".chat-user-body")?.firstElementChild?.className).toBe("chat-user-quote");
-  expect(log.querySelector('[class*="max-w-"]')).not.toBeNull();
+  expect(log.querySelector(".chat-user")).not.toBeNull();
   expect(within(log).getByRole("button", { name: /reference-0.md/ })).toBeTruthy();
 });
 
@@ -61,9 +61,11 @@ it.each<[string, Array<number | null>]>([
 
 it("api_error notice toned blocked", () => {
   const { log } = mount([item("notice", { kind: "api_error", text: "API unavailable" })]);
-  expect(
-    within(log).getByText("API unavailable").closest('[class*="tone-blocked"]'),
-  ).not.toBeNull();
+  // Only the glyph takes the tone (DESIGN.md, Colour); the words stay in the text's colour.
+  expect(within(log).getByText("API unavailable").closest('[class*="tone-blocked"]')).toBeNull();
+  expect(within(log).getByRole("img", { name: "API error" }).className).toContain(
+    "chat-notice-glyph",
+  );
 });
 
 it("stopped notice", () => {
