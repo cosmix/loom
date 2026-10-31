@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { apiGet } from "@/plan/api/client";
 import type { AttachmentInput } from "@/plan/api/schema-chat";
 import { docViewSchema, type DocView, type TreeEntry } from "@/plan/api/schema-files";
+import { docAttachment } from "@/plan/attachments/doc-attachment";
 import { toAttachmentInput } from "@/plan/chat/commands";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { docRel } from "@/plan/files/address";
@@ -15,22 +16,8 @@ import type { ButtonLook } from "@/plan/ui/disabled-reason";
 
 export type StarterDocument = { attachment: AttachmentInput; label: string };
 
-// The matching QUOTE_CHARS in chat/format-attachments.ts is private to that module.
-const QUOTE_CHARS = 2_000;
-
 function starterDocument(doc: DocView): StarterDocument {
-  return {
-    label: doc.title,
-    attachment: toAttachmentInput({
-      kind: "source",
-      path: doc.path,
-      anchor: null,
-      lines: null,
-      stageId: null,
-      text: Array.from(doc.text).slice(0, QUOTE_CHARS).join(""),
-      hash: doc.hash,
-    }),
-  };
+  return { label: doc.title, attachment: toAttachmentInput(docAttachment(doc)) };
 }
 
 function useDocumentPick(onPick: (document: StarterDocument) => void) {

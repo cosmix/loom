@@ -47,6 +47,7 @@ function TranscriptItem({
     <div
       aria-live={item.type === "text" ? undefined : "off"}
       aria-atomic={item.type === "text" ? true : undefined}
+      className={item.type === "tool" ? "chat-tool-run" : undefined}
     >
       <ItemView
         item={item}
@@ -71,8 +72,8 @@ function FoldedTools({
   nested: ToolItem[];
 }): JSX.Element {
   return (
-    <details aria-live="off" className="min-w-0 text-[13px]">
-      <summary className="cursor-pointer rounded px-2 py-1.5 text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring">
+    <details aria-live="off" className="chat-tool-fold">
+      <summary>
         <Untrusted text={group.label} />
       </summary>
       {group.items.map((item) => (
@@ -145,7 +146,7 @@ const TranscriptTurn = memo(function TranscriptTurn({
           aria-live="off"
           aria-expanded={expanded}
           aria-controls={contentId}
-          className="w-full truncate rounded py-2 text-left text-xs text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          className="chat-turn-toggle"
           onClick={() => setExpanded((value) => !value)}
         >
           {turnLabel(turn, number)}
@@ -282,11 +283,7 @@ export function Transcript(): JSX.Element {
         </div>
       </div>
       {scroll.activity && (
-        <button
-          type="button"
-          onClick={scroll.follow}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium shadow-sm focus-visible:outline-2 focus-visible:outline-ring"
-        >
+        <button type="button" onClick={scroll.follow} className="chat-follow">
           New activity
         </button>
       )}

@@ -92,7 +92,7 @@ describe("DocumentStarter", () => {
         stage: null,
         summary_sentence: null,
         rests_on: [],
-        quote: "x".repeat(2_000),
+        quote: `${"x".repeat(2_000)}\n[…1 more characters; read the source]`,
         selected_hash: "sha256:current-vision",
       },
     });
@@ -108,7 +108,9 @@ describe("DocumentStarter", () => {
     await waitFor(() =>
       expect(onPick).toHaveBeenCalledWith(
         expect.objectContaining({
-          attachment: expect.objectContaining({ quote: "😀".repeat(2_000) }),
+          attachment: expect.objectContaining({
+            quote: `${"😀".repeat(2_000)}\n[…1 more characters; read the source]`,
+          }),
         }),
       ),
     );

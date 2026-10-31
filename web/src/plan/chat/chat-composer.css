@@ -1,0 +1,193 @@
+/* The composer: part of the panel, under its one hairline. The text box has no box of its own.
+ * Imported by chat-surface.css; see its header for why these rules are unlayered.
+ */
+
+.chat-composer {
+  display: grid;
+  min-height: 0;
+  flex-shrink: 0;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--chat-gutter) var(--space-3);
+  border-block-start: 1px solid var(--hairline);
+}
+
+.chat-composer-input {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+/* Side padding with an equal negative margin keeps the text on the gutter and gives the focus
+ * ring room around it. */
+.chat-composer-box {
+  display: block;
+  box-sizing: border-box;
+  width: calc(100% + 2 * var(--space-2));
+  min-height: 44px;
+  margin-inline: calc(-1 * var(--space-2));
+  padding: var(--space-2);
+  overflow-y: auto;
+  border: 0;
+  border-radius: var(--corner-control);
+  background: transparent;
+  color: var(--foreground);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  resize: none;
+}
+
+.chat-composer-box::placeholder {
+  color: var(--muted-foreground);
+}
+
+.chat-composer-box:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.chat-composer-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.chat-attach {
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  border-radius: var(--corner-control);
+  color: var(--muted-foreground);
+}
+
+.chat-composer-send {
+  margin-inline-start: auto;
+  min-width: 0;
+}
+
+/* DisabledReason stacks its reason under the button; at the row's end both align right. */
+.chat-composer-send > div {
+  align-items: flex-end;
+  text-align: end;
+}
+
+/* Keeps the chips off the panel edges while no chat is open. */
+.chat-pending-chips {
+  padding: 0 var(--chat-gutter) var(--space-2);
+}
+
+.chat-pending-chips:empty {
+  display: none;
+}
+
+/* Pending attachments stack as quiet rows; sent ones flow inline under the message. */
+.chat-chip-list {
+  display: grid;
+  gap: 2px;
+}
+
+.chat-chip-list[data-scroll="true"] {
+  max-height: 8rem;
+  overflow-y: auto;
+}
+
+.chat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.chat-chip {
+  position: relative;
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  line-height: var(--leading-ui);
+}
+
+.chat-chip-row {
+  display: flex;
+  min-width: 0;
+  min-height: var(--control-height-sm);
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.chat-chip-open {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chat-chip-open:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chat-chip-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chat-chip-remove:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.chat-chip-remove:focus-visible,
+.chat-chip-open:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* "△ changed" stays one text run (its tests read it whole), so it carries weight, not a tone. */
+.chat-chip-note {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+/* A suggestion is a row on the panel, set off by the hairline above it: no card and no edge
+ * around it. The list that holds them draws nothing of its own. */
+.chat-suggestions {
+  padding-block: var(--space-1);
+}
+
+.chat-suggestion {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+  padding-block: var(--space-3);
+  border-block-start: 1px solid var(--hairline);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+.chat-suggestion:first-child {
+  padding-block-start: var(--space-2);
+  border-block-start: 0;
+}
+
+.chat-suggestion-actions {
+  display: flex;
+  gap: var(--space-2);
+}

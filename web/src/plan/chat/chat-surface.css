@@ -1,31 +1,43 @@
-/* The chat's measures. Unlayered on purpose: these rules override the utility classes of the
- * shared Button. Kept apart from chat.css, whose test pins that the panel's frame carries no tone
- * or fade (a stale transcript is marked by words alone).
+/* The chat panel's look: one continuous surface where hierarchy comes from type, space and a
+ * single hairline. Chrome is Inter at --type-ui in --muted-foreground; the user's words are Inter
+ * in --foreground; the assistant's prose is the reading face. The transcript, the decision band
+ * and the composer have their own files, imported below. All of them are unlayered on purpose:
+ * they override the utility classes of the shared Button. chat.css keeps the panel's frame,
+ * whose test pins that the frame carries no tone or fade.
  */
+@import "./chat-transcript.css";
+@import "./chat-decision.css";
+@import "./chat-composer.css";
 
-/* Head */
+/* The side gutter every part of the chat keeps. Set on the transcript and composer too: the
+ * kickoff route and the help scene mount them outside a .chat-panel. */
+.chat-panel,
+.chat-transcript,
+.chat-composer {
+  --chat-gutter: var(--space-4);
+}
+
+/* ── Head ───────────────────────────────────────────────────────────────── */
+
+/* The top block (head, state row, holder row, banner) closes with the panel's one hairline. */
 .chat-panel-top {
   min-width: 0;
+  border-block-end: 1px solid var(--hairline);
 }
 
-/* Keeps the chip grid off the panel edges and clear of the resize handle; an empty wrapper (no
- * chips) takes no space. */
-.chat-pending-chips {
-  padding: 8px 16px;
-}
-
-.chat-pending-chips:empty {
-  display: none;
-}
-
+/* Two rows: the title row, then the context line (About section_05) under it. */
 .chat-head {
+  display: grid;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  padding: var(--space-3) var(--chat-gutter) var(--space-2);
+}
+
+.chat-head-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  box-sizing: border-box;
-  min-height: 53px;
-  padding: 12px 16px;
-  border-block-end: 1px solid var(--hairline);
+  gap: var(--space-2);
+  min-height: 28px;
 }
 
 .chat-head-title {
@@ -33,9 +45,12 @@
   min-width: 0;
   display: -webkit-box;
   overflow: hidden;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.3;
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--type-title);
+  font-weight: 600;
+  line-height: var(--leading-ui);
+  letter-spacing: -0.01em;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -45,52 +60,76 @@
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
-.chat-head-button {
+/* Quiet icon buttons: the window controls, the menu and the context line's dismiss. */
+.chat-head-button,
+.chat-context-dismiss {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  height: 28px;
-  min-width: 28px;
-  padding: 0 6px;
-  border-radius: 7px;
+  height: var(--control-height);
+  min-width: var(--control-height);
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: var(--corner-control);
+  background: transparent;
   color: var(--muted-foreground);
   cursor: pointer;
   list-style: none;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+
+.chat-context-dismiss {
+  height: var(--control-height-sm);
+  min-width: var(--control-height-sm);
 }
 
 .chat-head-button::-webkit-details-marker {
   display: none;
 }
 
-.chat-head-button:hover {
+.chat-head-button:hover,
+.chat-context-dismiss:hover,
+.chat-menu[open] > .chat-head-button {
   background: var(--muted);
   color: var(--foreground);
 }
 
 .chat-head-button:focus-visible,
+.chat-context-dismiss:focus-visible,
+.chat-link-button:focus-visible,
+.chat-context-prompt:focus-visible,
 .chat-elsewhere a:focus-visible {
   outline: 2px solid var(--ring);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
-.chat-state-pill {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 7px;
-  box-sizing: border-box;
-  height: 28px;
-  padding: 0 10px;
+/* The menu floats, so it is the one thing here with an edge and a shadow. */
+.chat-menu-pop {
+  position: absolute;
+  inset-inline-end: 0;
+  z-index: 10;
+  display: grid;
+  gap: 2px;
+  min-width: 10rem;
+  margin-block-start: var(--space-1);
+  padding: var(--space-1);
   border: 1px solid var(--hairline);
-  border-radius: 999px;
+  border-radius: var(--corner-surface);
   background: var(--card);
-  font-size: 12.5px;
+  box-shadow: var(--dialog-shadow);
+}
+
+/* Status in the head: a glyph and a word, no pill. The LED takes the state's tone. */
+.chat-state {
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
   font-weight: 500;
-  white-space: nowrap;
 }
 
 .chat-led {
@@ -101,21 +140,20 @@
   background: var(--muted-foreground);
 }
 
-.chat-state-pill[data-state="idle"] .chat-led {
+.chat-state[data-state="idle"] .chat-led {
   background: var(--tone-completed);
   animation: chat-led-breathe 2.4s ease-in-out infinite;
 }
 
-.chat-state-pill:is([data-state="working"], [data-state="starting"], [data-state="ending"])
-  .chat-led {
+.chat-state:is([data-state="working"], [data-state="starting"], [data-state="ending"]) .chat-led {
   background: var(--tone-executing);
 }
 
-.chat-state-pill[data-state="permission"] .chat-led {
+.chat-state[data-state="permission"] .chat-led {
   background: var(--tone-warning);
 }
 
-.chat-state-pill[data-state="failed"] .chat-led {
+.chat-state[data-state="failed"] .chat-led {
   background: var(--tone-blocked);
 }
 
@@ -125,34 +163,97 @@
   }
 }
 
-/* Queue and Stop buttons sit beside the primary Send: the shared Button's fill is overridden. */
-.chat-new-chat button,
-.chat-ghost-actions button {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: transparent;
+/* Decisions waiting, on the collapsed rail and the sheet button: a count, not a badge. */
+.chat-permission-badge {
+  font-size: var(--type-fine);
+  font-weight: 600;
+  line-height: 1;
   color: var(--foreground);
-  font-size: 12.5px;
+}
+
+/* ── Context line and prompts (components in context-line.tsx, context-prompts.tsx) ── */
+
+/* The quiet line under the title: "About section_05" with its dismiss at the end. */
+.chat-context-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height-sm);
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  line-height: var(--leading-ui);
+}
+
+.chat-context-line > :first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-context-name {
+  color: var(--foreground);
   font-weight: 500;
 }
 
-.chat-new-chat button:hover,
-.chat-ghost-actions button:hover {
-  background: var(--muted);
+/* Prompts sit on the panel as a list of quiet text buttons; no card, no edge. The list
+ * carries the gutter unless a padded block (the composer) already does. */
+.chat-context-prompts {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: var(--space-2) var(--chat-gutter);
+  list-style: none;
 }
 
-.chat-ghost-actions button[aria-disabled="true"]:hover {
+.chat-composer .chat-context-prompts {
+  padding-inline: 0;
+}
+
+.chat-context-prompt {
+  display: block;
+  width: 100%;
+  min-height: var(--control-height);
+  margin-inline: calc(-1 * var(--space-2));
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--corner-control);
   background: transparent;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+  text-align: start;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    color 120ms;
 }
 
-/* The head's pill says what these rows would repeat; each keeps its sr-only announcement. The
- * padding and rule sit on the visible row, so a state with nothing to show draws no empty line. */
+.chat-context-prompt::before {
+  content: "→ " / "";
+  color: var(--muted-foreground);
+}
+
+.chat-context-prompt:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+/* ── State rows under the head ─────────────────────────────────────────────── */
+
+/* The head's status word says what these rows would repeat; each keeps its sr-only
+ * announcement. Padding sits on the visible row, so a state with nothing to show takes no space. */
 .chat-panel .chat-holder-row,
 .chat-panel .chat-state-line > [aria-live="off"] {
-  padding: 6px 16px;
-  border-block-end: 1px solid var(--hairline);
+  padding: 0 var(--chat-gutter) var(--space-2);
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  font-weight: 400;
+  line-height: var(--leading-ui);
 }
 
 /* A pressure run's head states its own elapsed time; the row would repeat it alone. */
@@ -164,9 +265,55 @@
   display: none;
 }
 
-.chat-elsewhere {
-  padding: 8px 16px;
-  font-size: 13px;
+/* A failure or read-only notice: a toned glyph, a 600 title, body in --foreground. No box. */
+.chat-notice {
+  display: grid;
+  gap: var(--space-1);
+  max-width: 48ch;
+  padding-block: var(--space-1) var(--space-2);
+  color: var(--foreground);
+  font-size: var(--type-ui);
+  font-weight: 400;
+  line-height: var(--leading-body);
+}
+
+.chat-notice-title {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  font-weight: 600;
+}
+
+.chat-notice[data-tone="error"] .chat-notice-glyph {
+  color: var(--tone-blocked);
+}
+
+.chat-notice[data-tone="warning"] .chat-notice-glyph {
+  color: var(--tone-warning);
+}
+
+.chat-notice p,
+.chat-notice ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-notice li + li {
+  margin-block-start: var(--space-2);
+}
+
+.chat-elsewhere,
+.chat-offer-error {
+  margin: 0;
+  padding: 0 var(--chat-gutter) var(--space-2);
+  font-size: var(--type-ui);
+}
+
+.chat-offer-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
 }
 
 .chat-elsewhere a {
@@ -175,151 +322,31 @@
   text-underline-offset: 2px;
 }
 
-/* Transcript */
-.chat-panel-middle {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex-direction: column;
-}
-
-.chat-transcript {
-  padding: 16px;
-}
-
-.chat-transcript-flow {
-  display: grid;
-  min-width: 0;
-  gap: 14px;
-}
-
-.chat-turn,
-.chat-turn-items {
-  display: grid;
-  min-width: 0;
-  gap: 7px;
-}
-
-.chat-user-body {
-  display: grid;
-  gap: 6px;
-  padding: 9px 12px;
-  border-radius: 12px 12px 4px 12px;
-  background: color-mix(in oklch, var(--primary) 22%, var(--card));
-}
-
-.chat-user-quote {
-  display: -webkit-box;
-  overflow: hidden;
-  padding: 5px 9px;
-  border-radius: 6px;
-  background: var(--background);
-  color: var(--muted-foreground);
-  font-family: var(--font-reading);
-  font-size: 14px;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-}
-
-.chat-assistant-text .md {
-  font-family: var(--font-reading);
-}
-
-.chat-tool-target {
-  min-width: 0;
-  flex: 1 1 auto;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  overflow-wrap: anywhere;
-}
-
-.chat-file-chip,
-.chat-rebuild-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 400;
-  overflow-wrap: anywhere;
-}
-
-.chat-file-counts {
-  color: var(--muted-foreground);
-}
-
-/* Composer */
-.chat-composer {
-  display: grid;
-  min-height: 0;
-  flex-shrink: 0;
-  gap: 8px;
-  padding: 12px;
-  border-block-start: 1px solid var(--hairline);
-}
-
-.chat-composer-input {
-  display: grid;
-  min-width: 0;
-  gap: 8px;
-}
-
-.chat-composer-box {
-  display: block;
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 64px;
-  padding: 8px 10px;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--background);
-  font-size: 13px;
-  line-height: 1.5;
-  resize: none;
-}
-
-.chat-composer-box:focus-visible {
-  outline: 2px solid var(--ring);
-}
-
-.chat-composer-actions {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.chat-attach {
-  width: 28px;
-  height: 28px;
+/* A text action inside a line (Show, Hide, Dismiss, Show all): underlined on hover only. */
+.chat-link-button {
   padding: 0;
-  border-radius: 7px;
-  color: var(--muted-foreground);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-underline-offset: 2px;
 }
 
-.chat-composer-send {
-  margin-inline-start: auto;
-  min-width: 0;
-}
-
-.chat-composer-send > div {
-  align-items: flex-end;
-  text-align: end;
-}
-
-.chat-composer-send button {
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
+.chat-link-button:hover {
+  text-decoration: underline;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .chat-led,
-  .chat-state-pill[data-state="idle"] .chat-led {
+  .chat-state[data-state="idle"] .chat-led {
     animation: none;
+  }
+
+  .chat-head-button,
+  .chat-context-dismiss,
+  .chat-context-prompt {
+    transition: none;
   }
 }

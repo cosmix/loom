@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react
 
 import type { Item } from "@/plan/api/schema-chat";
 import { authoringAtom, isHolderAtom } from "@/plan/state/atoms";
+import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { answerPermission } from "./commands";
 import { pendingPermissionsAtom } from "./model";
 import { PatchView } from "./patch-view";
@@ -10,8 +11,6 @@ import { Untrusted, visibleControls } from "./visible-controls";
 
 type Permission = Extract<Item, { type: "permission" }>;
 type Props = { item: Permission };
-const buttonClass =
-  "min-h-7 rounded border px-2 text-xs font-medium focus-visible:outline-2 focus-visible:outline-ring";
 
 const editableSelector =
   'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
@@ -102,7 +101,7 @@ function FileEditBody({ edit }: { edit: FileEdit }): JSX.Element {
       <PatchView patch={edit.patch} />
       {hasExtras && (
         <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">Other input fields</p>
+          <p className="plan-fine">Other input fields</p>
           <Mono text={JSON.stringify(edit.extras, null, 2)} />
         </div>
       )}
@@ -147,7 +146,7 @@ function TimeLeft({ expiresAt }: { expiresAt: string }): JSX.Element {
   const remaining = Number.isFinite(seconds)
     ? `${Math.floor(seconds / 60)}m ${seconds % 60}s left before automatic deny`
     : "Automatic deny after one hour";
-  return <p className="text-xs text-muted-foreground">{remaining}</p>;
+  return <p className="plan-fine">{remaining}</p>;
 }
 
 /**
@@ -207,25 +206,22 @@ function InitialButtons({
   busy: boolean;
   onDeny: () => void;
 }): JSX.Element {
+  const reason = busy ? "Sending" : null;
   return (
-    <div className="flex gap-2">
-      <button
-        type="button"
-        className={buttonClass}
-        disabled={busy}
-        onClick={() => void answer(true)}
-      >
+    <div className="chat-decision-actions">
+      <DisabledReason reason={reason} onClick={() => void answer(true)}>
         Allow
-      </button>
-      <button type="button" className={buttonClass} disabled={busy} onClick={onDeny}>
+      </DisabledReason>
+      <DisabledReason reason={reason} onClick={onDeny}>
         Deny
-      </button>
+      </DisabledReason>
     </div>
   );
 }
 
 function DenyNoteForm({ answer, busy }: { answer: Answer; busy: boolean }): JSX.Element {
   const [note, setNote] = useState("");
+  const reason = busy ? "Sending" : null;
   return (
     <div className="space-y-2">
       <label className="block text-xs">
@@ -234,26 +230,19 @@ function DenyNoteForm({ answer, busy }: { answer: Answer; busy: boolean }): JSX.
           autoFocus
           value={note}
           onChange={(event) => setNote(event.target.value)}
-          className="mt-1 block w-full rounded border bg-background px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+          className="chat-decision-input"
         />
       </label>
-      <div className="flex gap-2">
-        <button
-          type="button"
-          className={buttonClass}
-          disabled={busy}
-          onClick={() => void answer(false)}
-        >
+      <div className="chat-decision-actions">
+        <DisabledReason reason={reason} onClick={() => void answer(false)}>
           Deny
-        </button>
-        <button
-          type="button"
-          className={buttonClass}
-          disabled={busy || !note.trim()}
+        </DisabledReason>
+        <DisabledReason
+          reason={reason ?? (note.trim() ? null : "Type a note")}
           onClick={() => void answer(false, note)}
         >
           Deny with note
-        </button>
+        </DisabledReason>
       </div>
     </div>
   );
@@ -291,7 +280,7 @@ function DecisionFooter({
       {isHolder ? (
         <DecisionControls {...controls} />
       ) : (
-        <p className="text-xs text-muted-foreground">
+        <p className="plan-fine">
           <Untrusted text={`Waiting for ${holder} to decide`} />
         </p>
       )}
@@ -340,11 +329,11 @@ function PendingPermission({ item }: Props): JSX.Element {
       aria-label={`Permission: ${visibleControls(item.tool)}`}
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className="min-w-0 space-y-2 rounded-[10px] border border-border bg-background p-3 text-[13px] leading-relaxed focus-visible:outline-2 focus-visible:outline-ring"
+      className="chat-decision"
     >
-      {pending.length > 1 && <p className="text-xs font-medium">1 of {pending.length} decisions</p>}
-      <p className="text-[13px] font-medium">
-        <span aria-hidden="true">!</span> Needs a decision: <Untrusted text={item.tool} />
+      {pending.length > 1 && <p className="plan-fine">1 of {pending.length} decisions</p>}
+      <p className="chat-decision-title">
+        Needs a decision: <Untrusted text={item.tool} />
       </p>
       <PermissionBody item={item} />
       <TimeLeft expiresAt={item.expires_at} />

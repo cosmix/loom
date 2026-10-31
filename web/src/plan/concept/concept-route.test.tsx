@@ -96,7 +96,8 @@ describe("overviews and the document key", () => {
     await openFirstRun();
     const key = storageKey(serverInfoFixture.project_key, "concept:overview/demo/engineering");
     expect(window.sessionStorage.getItem(key)).toContain("s1");
-    expect(screen.getByText("Engineering overview")).toBeTruthy();
+    const eyebrows = [...document.querySelectorAll(".plan-eyebrow")].map((el) => el.textContent);
+    expect(eyebrows).toContain("Engineering overview");
   });
   it("unlisted list links to summary pages", async () => {
     const overview = {

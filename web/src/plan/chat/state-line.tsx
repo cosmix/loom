@@ -1,7 +1,7 @@
 import { useAtomValue } from "jotai/react";
+import type { ReactNode } from "react";
 
 import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
-import { HazardPanel } from "@/aurora-ui/feedback/HazardPanel";
 import { WorkRoundel } from "@/components/activity-roundel";
 import { useNow } from "@/components/hooks/use-now";
 import { formatElapsed } from "@/lib/format";
@@ -9,7 +9,6 @@ import type { ServerInfo } from "@/plan/api/schema";
 import type { Item, SessionView, Turn } from "@/plan/api/schema-chat";
 import { serverInfoAtom } from "@/plan/state/atoms";
 import { pendingPermissionsAtom, turnsAtom } from "./model";
-import { PrimaryOffer } from "./new-chat-offers";
 import { panelSessionAtom } from "./session-home";
 import { StartingBrief } from "./start-chat";
 import { Untrusted } from "./visible-controls";
@@ -105,13 +104,36 @@ function StateGlyph({ state }: { state: SessionView["state"] | undefined }) {
   );
 }
 
+/** A failure or read-only notice: a toned glyph and a title over plain text, with no box. */
+function Notice({
+  tone,
+  title,
+  children,
+}: {
+  tone: "error" | "warning";
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="chat-notice" data-tone={tone}>
+      <p className="chat-notice-title">
+        <span aria-hidden="true" className="chat-notice-glyph">
+          ⚠
+        </span>
+        {title}
+      </p>
+      {children}
+    </div>
+  );
+}
+
 function Failure({ session, now }: { session: SessionView; now: number }) {
   const title =
     session.failure?.kind === "spawn"
       ? "The session could not start"
       : "The session stopped unexpectedly";
   return (
-    <HazardPanel tone="error" title={title}>
+    <Notice tone="error" title={title}>
       {session.failure && (
         <p>
           <Untrusted text={session.failure.message} />
@@ -126,13 +148,13 @@ function Failure({ session, now }: { session: SessionView; now: number }) {
         </p>
       )}
       <p>The documents keep what the session recorded as it went. A new chat starts fresh.</p>
-    </HazardPanel>
+    </Notice>
   );
 }
 
 function ReadOnlyHazard({ problems }: { problems: ServerInfo["read_only"] }) {
   return (
-    <HazardPanel tone="warning" title="Read-only">
+    <Notice tone="warning" title="Read-only">
       <ul>
         {problems.map((problem, index) => (
           <li key={`${problem.what}-${index}`}>
@@ -145,7 +167,7 @@ function ReadOnlyHazard({ problems }: { problems: ServerInfo["read_only"] }) {
           </li>
         ))}
       </ul>
-    </HazardPanel>
+    </Notice>
   );
 }
 
@@ -178,7 +200,6 @@ function StateRow(props: {
           )}
         </span>
       )}
-      {!session && <PrimaryOffer />}
     </div>
   );
 }

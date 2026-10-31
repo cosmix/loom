@@ -30,11 +30,11 @@ it.each([
   expect(within(log).getByText(words)).toBeTruthy();
 });
 
-it("a user message sizes to its text and sits at the right edge", () => {
+it("a user message is set apart by its rule and face, not shrink-wrapped into a bubble", () => {
   const { log } = mount([item("user", { text: "ok", origin: null, attachments: [] })]);
-  const block = within(log).getByText("ok").closest('[class*="max-w-"]')!;
-  expect(block.className).toContain("w-fit");
-  expect(block.className).toContain("ml-auto");
+  const block = within(log).getByText("ok").closest(".chat-user")!;
+  expect(block.className).not.toContain("w-fit");
+  expect(block.className).not.toContain("ml-auto");
 });
 
 it("the opening message header is inline text while its label loads", () => {
@@ -42,4 +42,34 @@ it("the opening message header is inline text while its label loads", () => {
   expect(within(log).getByText("Opening message")).toBeTruthy();
   // The skeleton block (96px tall) made the transcript jump when the label arrived.
   expect(log.querySelector('[class*="h-24"]')).toBeNull();
+});
+
+const sentWith = (fields: Record<string, unknown>) => {
+  const base = item("user").attachments[0]!;
+  const attachment = { ...base, quote: "Quoted words", ...fields };
+  return mount([item("user", { text: "Ask", origin: null, attachments: [attachment] })]).log;
+};
+
+it.each([
+  ["an anchor", { anchor: "overview", lines: null }],
+  ["a line range", { anchor: null, lines: [3, 5] }],
+])("a passage that names %s is quoted above the message", (_name, fields) => {
+  expect(sentWith(fields).querySelectorAll(".chat-user-quote")).toHaveLength(1);
+});
+
+it("a summary sentence is quoted like a passage", () => {
+  const log = sentWith({
+    kind: "summary",
+    anchor: "s-1234abcd",
+    summary_sentence: "s-1234abcd",
+    lines: null,
+  });
+  expect(within(log).getByText("Quoted words").closest(".chat-user-quote")).not.toBeNull();
+});
+
+it("a whole document shows its chip alone, with no quote of the file", () => {
+  const log = sentWith({ anchor: null, lines: null, stage: null, summary_sentence: null });
+  expect(log.querySelector(".chat-user-quote")).toBeNull();
+  expect(within(log).queryByText("Quoted words")).toBeNull();
+  expect(within(log).getByRole("button", { name: /reference-0.md/ })).toBeTruthy();
 });

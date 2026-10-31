@@ -54,7 +54,7 @@ function RowActions({ file, row, rows, turn, sessionId }: RowProps) {
   return (
     <>
       <Link
-        className="underline"
+        className="chat-link-button"
         to={openDiff("turn", docRel(file.path), `${sessionId}/${turn.id}`)}
       >
         Diff
@@ -138,7 +138,7 @@ function ChangedFiles({
       <p>
         {turn.open ? "Changing" : "Changed"} {plural(turn.changed_files.length, "file")}
       </p>
-      <ul className="space-y-2">
+      <ul>
         {turn.changed_files.map((file) => (
           <li key={file.path}>
             <ChangedRow
@@ -181,7 +181,7 @@ function TurnFooterView({ turn, sessionId }: { turn: Turn; sessionId: string }):
     <div
       role="group"
       aria-label={`Turn ${visibleControls(number)} changes`}
-      className="space-y-2 border-t border-(--hairline) py-2 text-xs font-medium"
+      className="chat-turn-footer"
       style={displayStyle}
     >
       <TurnStats turn={turn} />
