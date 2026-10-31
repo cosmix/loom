@@ -81,8 +81,8 @@ export const canAuthorAtom = atom((get) => {
 
 export const authorBlockReasonAtom = atom<string | null>((get) => {
   if (get(canAuthorAtom)) return null;
-  const problem = get(serverInfoAtom)?.read_only[0];
-  if (problem) return `loom plan is in read-only mode: ${problem.message}`;
+  // The banner carries the message and the fix; a blocked control carries this one word.
+  if (get(serverInfoAtom)?.read_only.length) return "Read-only";
   if (get(stoppingAtom)) return "loom plan is stopping";
   const holder = get(authoringAtom)?.holder;
   return holder ? `${holder.name} holds authoring` : null;

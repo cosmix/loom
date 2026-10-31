@@ -8,13 +8,11 @@ import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
 import { plural } from "@/plan/ui/plural";
 import { FeatureMark } from "@/plan/home/feature-mark";
-import { ProgressStrip } from "@/plan/home/progress-strip";
+import { ProgressStrip, RUN_STEP } from "@/plan/home/progress-strip";
 import { featuresAtom } from "@/plan/state/atoms";
 import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
 
 import "./feature-card.css";
-
-const RUN_STEP = 6;
 
 /** One folder, as DESIGN.md allows: the product directory when the feature has one, else its plans. */
 function pathLine({ feature, has_product }: ChecklistView): string {

@@ -52,7 +52,8 @@ export interface HeadingViews {
 export interface DocHeadingProps {
   breadcrumb: readonly HeadingCrumb[];
   kind: DocKind | null;
-  title: string;
+  /** A string is drawn as untrusted text; a caller whose title is Markdown phrasing passes the node. */
+  title: ReactNode;
   rebuilding?: boolean;
   views?: HeadingViews;
   actions?: ReactNode;
@@ -230,7 +231,10 @@ function ChipContent({ chip }: { chip: HeadingChip }): JSX.Element {
       {chip.icon && (
         <span
           aria-hidden="true"
-          className={cn("inline-flex shrink-0 [&_svg]:size-3.5", CHIP_ICON[chip.tone ?? "neutral"])}
+          className={cn(
+            "inline-flex h-5 shrink-0 items-center self-start [&_svg]:size-3.5",
+            CHIP_ICON[chip.tone ?? "neutral"],
+          )}
         >
           {chip.icon}
         </span>
@@ -251,8 +255,9 @@ function ChipContent({ chip }: { chip: HeadingChip }): JSX.Element {
 function Chip({ chip }: { chip: HeadingChip }): JSX.Element {
   const tone = chip.tone ?? "neutral";
   // Status is a toned glyph and a word in the text's colour: no fill, no pill (DESIGN.md, Status).
+  // The glyph sits in a box as tall as one line and stays on the first line when the words wrap.
   const className =
-    "inline-flex min-h-6 max-w-full items-center gap-1.5 text-[13px] text-foreground";
+    "inline-flex min-h-6 max-w-full items-start gap-1.5 text-[13px] leading-5 text-foreground";
   const shared = { title: hoverTitle(chip.title), "data-chip": "", "data-tone": tone };
   const content = <ChipContent chip={chip} />;
   if (chip.to !== undefined) {
@@ -353,7 +358,7 @@ function TitleRow({ kind, title, rebuilding, views, actions }: DocHeadingProps):
       <div className="flex min-w-0 flex-[1_1_max-content] items-center gap-3">
         {kind !== null && <DocMark kind={kind} size="lg" rebuilding={rebuilding} />}
         <h1 className="plan-page-title min-w-0 font-[650] text-balance [overflow-wrap:anywhere]">
-          <Untrusted text={title} />
+          {typeof title === "string" ? <Untrusted text={title} /> : title}
         </h1>
       </div>
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2 max-[900px]:basis-full max-[900px]:justify-start">

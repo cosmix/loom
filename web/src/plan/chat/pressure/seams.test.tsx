@@ -148,9 +148,7 @@ it.each([
 });
 
 it("composerBlock keeps read-only blocking when Codex is not alone", () => {
-  expect(composerBlock(pressureSession, { stopping: false, readOnly: true })).toBe(
-    "loom plan is in read-only mode",
-  );
+  expect(composerBlock(pressureSession, { stopping: false, readOnly: true })).toBe("Read-only");
 });
 
 it.each(["pressure", "authoring"])(

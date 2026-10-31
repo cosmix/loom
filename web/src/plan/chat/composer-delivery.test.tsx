@@ -149,7 +149,7 @@ it("20 suggestions, a queue of 3 and 10 chips keep the textbox outside the cappe
   expect(send().closest(".overflow-y-auto")).toBeNull();
   expect(screen.getByText("Queued (3)")).toBeTruthy();
 });
-it("read-only server mode line names the missing piece", () => {
+it("read-only server mode line says Read-only and leaves the message to the banner", () => {
   const h = setup();
   h.store.set(authoringAtom, { holder: null });
   h.store.set(serverInfoAtom, (s) => ({
@@ -157,7 +157,8 @@ it("read-only server mode line names the missing piece", () => {
     read_only: [{ what: "claude_login", message: "Claude is not logged in", fix: "Log in" }],
   }));
   mount(h.store);
-  expect(screen.getByText(/Read-only:/).textContent).toBe("Read-only: Claude is not logged in");
+  expect(screen.getByText(/Read-only/).textContent).toBe("Read-only");
+  expect(screen.queryByText(/Claude is not logged in/)).toBeNull();
   expect(screen.queryByRole("textbox")).toBeNull();
 });
 it("reasons are accessible descriptions", () => {
@@ -174,7 +175,8 @@ it("server read-only mode also hides a holder's composer", () => {
     read_only: [{ what: "tmux", message: "tmux is unavailable", fix: "Install tmux" }],
   }));
   mount(h.store);
-  expect(screen.getByText(/Read-only:/).textContent).toBe("Read-only: tmux is unavailable");
+  expect(screen.getByText(/Read-only/).textContent).toBe("Read-only");
+  expect(screen.queryByText(/tmux is unavailable/)).toBeNull();
   expect(screen.queryByRole("textbox")).toBeNull();
 });
 it("ending shows the closing reason", () => {

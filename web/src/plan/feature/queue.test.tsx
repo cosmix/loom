@@ -8,7 +8,7 @@ import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import { projectChecklistViewSchema, type ChecklistView } from "@/plan/api/schema";
 import { hasGaps, Queue, queueRows } from "@/plan/feature/queue";
 import { registerOfferAction } from "@/plan/offers/actions";
-import { draftTeamAtom } from "@/plan/state/atoms";
+import { authoringAtom, draftTeamAtom } from "@/plan/state/atoms";
 
 afterEach(cleanup);
 
@@ -119,6 +119,25 @@ describe("plan queue", () => {
       const [, gap] = rowsOf("Plan queue").map((row) => within(row));
       expect(gap!.getByText("Next")).toBeTruthy();
       expect(gap!.queryByRole("button")).toBeNull();
+    } finally {
+      unregister();
+    }
+  });
+
+  it("draws a button on a missing row, and none while authoring is blocked", () => {
+    const unregister = registerOfferAction("write_plan", () => {});
+    try {
+      renderQueue(checklist, "plan");
+      expect(within(rowsOf("Plan queue")[1]!).getByRole("button")).toBeTruthy();
+      cleanup();
+
+      // The page's primary carries the reason once; a row repeats nothing.
+      const blocked = createStore();
+      const holder = { public_id: "sam", name: "Sam", away_since: null, frees_at: null };
+      blocked.set(authoringAtom, { holder });
+      renderQueue(checklist, "plan", blocked);
+      expect(within(rowsOf("Plan queue")[1]!).queryByRole("button")).toBeNull();
+      expect(screen.queryByText(/holds authoring/)).toBeNull();
     } finally {
       unregister();
     }

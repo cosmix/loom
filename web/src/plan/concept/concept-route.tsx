@@ -19,6 +19,7 @@ import { AddToChat, addAttachmentAtom, useSelectionAttachment } from "@/plan/att
 import type { AttachmentDraft } from "@/plan/attachments/types";
 import { elsewhereSessionAtom } from "@/plan/chat/session-home";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
+import { PageHead } from "@/plan/feature/plan-page";
 import { activeFeatureAtom, canAuthorAtom, featuresAtom } from "@/plan/state/atoms";
 import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
@@ -33,6 +34,7 @@ import {
   conceptPageAtom,
   isMissing,
   loadConceptPage,
+  type ConceptPageState,
   pageKeyOfSummary,
   useConceptPage,
   useConceptSubscription,
@@ -254,17 +256,29 @@ function KeyHints() {
   );
 }
 
-function LoadedPage({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
+/** An overview's head: the eyebrow over the page title (ui/DESIGN.md, Page rhythm). */
+function OverviewHead({ pageKey }: { pageKey: string }) {
   const { pathname } = useLocation();
   const eyebrow = useOverviewEyebrow(pageKey, pathname);
+  const title = conceptPageLabel(pathname);
+  return title === null ? null : <PageHead eyebrow={eyebrow ?? title} title={title} />;
+}
+
+/** `above` (the gaps) sits between the page's head and its document key, so the head comes first. */
+function LoadedPage({
+  page,
+  pageKey,
+  above,
+}: {
+  page: ConceptPage;
+  pageKey: string;
+  above: ReactNode;
+}) {
   const summary = !isOverviewKey(pageKey);
   return (
     <>
-      {summary ? (
-        <PageHeading page={page} />
-      ) : (
-        <p className="plan-eyebrow pb-3">{eyebrow !== null && <Untrusted text={eyebrow} />}</p>
-      )}
+      {summary ? <PageHeading page={page} /> : <OverviewHead pageKey={pageKey} />}
+      {above}
       {page.key_chips.length > 0 && <DocumentKey page={page} pageKey={pageKey} />}
       {page.empty ? (
         <EmptyStates page={page} empty={page.empty} />
@@ -279,19 +293,9 @@ function LoadedPage({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   );
 }
 
-/** What the route shows for a page key and its load state. */
-function RouteBody({ pageKey }: { pageKey: string }) {
-  useConceptSubscription();
-  const feature = featureOfKey(pageKey);
-  useGoKeys(feature);
-  useEscapeKeys(pageKey);
-  const setFeature = useSetAtom(activeFeatureAtom);
-  useEffect(() => {
-    if (feature !== null) setFeature(feature);
-  }, [feature, setFeature]);
-  const state = useConceptPage(pageKey);
+/** The page is loading, missing, or failed to load. */
+function Unloaded({ pageKey, state }: { pageKey: string; state: ConceptPageState }) {
   const store = useStore();
-  if (state.page) return <LoadedPage page={state.page} pageKey={pageKey} />;
   if (state.error === null) return <LoadState state="loading" />;
   if (isMissing(state)) return <ConceptNotFound pageKey={pageKey} />;
   return (
@@ -304,10 +308,30 @@ function RouteBody({ pageKey }: { pageKey: string }) {
   );
 }
 
+/** What the route shows for a page key and its load state. */
+function RouteBody({ pageKey, above }: { pageKey: string; above: ReactNode }) {
+  useConceptSubscription();
+  const feature = featureOfKey(pageKey);
+  useGoKeys(feature);
+  useEscapeKeys(pageKey);
+  const setFeature = useSetAtom(activeFeatureAtom);
+  useEffect(() => {
+    if (feature !== null) setFeature(feature);
+  }, [feature, setFeature]);
+  const state = useConceptPage(pageKey);
+  if (state.page) return <LoadedPage page={state.page} pageKey={pageKey} above={above} />;
+  return (
+    <>
+      {above}
+      <Unloaded pageKey={pageKey} state={state} />
+    </>
+  );
+}
+
 /**
  * The overview and summary pages of Product and Engineering. `above` renders in the page's column
- * ahead of the page, so the feature screen can put its gaps there without a second column or
- * scroll container.
+ * under the page's head and ahead of its document key, so the feature screen can put its gaps
+ * there without a second column or scroll container.
  */
 export function ConceptRoute({ above }: { above?: ReactNode }) {
   const { pathname } = useLocation();
@@ -315,11 +339,13 @@ export function ConceptRoute({ above }: { above?: ReactNode }) {
   return (
     <div className="w-full px-[clamp(16px,4vw,56px)] pt-8 pb-12">
       <div className="mx-auto max-w-[68ch]">
-        {above}
         {key === null ? (
-          <ConceptNotFound pageKey={rawNameOf(pathname)} />
+          <>
+            {above}
+            <ConceptNotFound pageKey={rawNameOf(pathname)} />
+          </>
         ) : (
-          <RouteBody pageKey={key} />
+          <RouteBody pageKey={key} above={above} />
         )}
       </div>
     </div>

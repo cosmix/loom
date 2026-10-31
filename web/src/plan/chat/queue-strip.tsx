@@ -76,7 +76,7 @@ export function QueueStrip() {
     <QueueRow key={item.id} item={item} reason={reason} pending={pending} withdraw={withdraw} />
   );
   return (
-    <section aria-label="Queued messages" className="chat-ghost-actions text-xs">
+    <section aria-label="Queued messages" className="text-xs">
       <p>Queued ({queue.length})</p>
       {isHolder && (
         <>

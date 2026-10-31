@@ -269,3 +269,25 @@ describe("overview eyebrow", () => {
     expect(fetched.some((url) => url.includes("/api/concept/"))).toBe(false);
   });
 });
+
+describe("overview head", () => {
+  it("the overview eyebrow names the feature by its slug", async () => {
+    serveOverview();
+    renderAt("/f/demo/engineering", (store) =>
+      store.set(checklistAtom, checklistViewSchema.parse(checklistFixture.checklists[0]!)),
+    );
+    await readingColumn();
+    expect(screen.getByText("demo · engineering overview")).toBeTruthy();
+  });
+  it("an overview draws its eyebrow, then its page title, then the gaps above its text", async () => {
+    serveOverview();
+    renderAt("/f/demo/product", (store) =>
+      store.set(checklistAtom, checklistViewSchema.parse(checklistFixture.checklists[0]!)),
+    );
+    const column = await readingColumn();
+    const eyebrow = document.querySelector(".plan-eyebrow")!;
+    const title = screen.getByRole("heading", { level: 1, name: "Product overview" });
+    expect(eyebrow.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(title.compareDocumentPosition(column) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});

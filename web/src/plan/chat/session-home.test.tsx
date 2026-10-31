@@ -330,7 +330,7 @@ it("a pending attachment shows its chip on a screen with no open chat, not besid
   expect(within(panel()).queryByLabelText("Pending attachments")).toBeNull();
 });
 
-it("a concluded session on its own screen shows the pending chip beside its offers", () => {
+it("a concluded session on its own screen shows the pending chip beside New chat", () => {
   const { store } = setup("/f/alpha/product", session({ state: "ended" }));
   render(
     <Provider store={store}>

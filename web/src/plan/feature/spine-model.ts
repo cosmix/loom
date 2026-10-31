@@ -100,7 +100,9 @@ function planChildren(checklist: ChecklistView): SpineChild[] {
     style: "mono",
     number: null,
     note: plan.state,
-    icon: plan.state in PLAN_STATE_GLYPHS ? PLAN_STATE_GLYPHS[plan.state as PlanState] : null,
+    icon: Object.hasOwn(PLAN_STATE_GLYPHS, plan.state)
+      ? PLAN_STATE_GLYPHS[plan.state as PlanState]
+      : null,
   }));
 }
 
@@ -131,6 +133,15 @@ const MARK_WORDS: Record<Exclude<MarkView, "gap">, string> = {
   optional: "optional",
 };
 
+/**
+ * The server marks the pressure test done while no written plan waits for one, which holds with no
+ * test on record at all. That reads as optional, as the Pressure page's own count does.
+ */
+function markOf(id: GroupId, mark: MarkView, checklist: ChecklistView): MarkView {
+  const noneOnRecord = !checklist.plan_rows.some((plan) => plan.pressure_date !== null);
+  return id === "pressure" && mark === "done" && noneOnRecord ? "optional" : mark;
+}
+
 /** The word for a group's mark; a group with nothing in it yet reads "not started". */
 function wordOf(id: GroupId, mark: MarkView, checklist: ChecklistView): string {
   if (id === "product" && checklist.sections.length === 0) return "not started";
@@ -154,7 +165,7 @@ export function spineGroups(checklist: ChecklistView): SpineGroup[] {
     const server: StepView | undefined = checklist.steps.find(
       (candidate) => candidate.number === step,
     );
-    const mark = server?.mark ?? "gap";
+    const mark = markOf(id, server?.mark ?? "gap", checklist);
     const count = id === "vision" || id === "metaplan" ? null : (server?.count ?? null);
     return {
       id,

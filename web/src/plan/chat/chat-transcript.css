@@ -198,8 +198,8 @@
 
 /* ── Tool runs ─────────────────────────────────────────────────────────────── */
 
-/* A quiet run of lines beside a hairline rail. The rail separates the run from the prose; it
- * encloses nothing. Folded runs and nested tools drop the rail so rails never double. */
+/* A quiet run of lines beside a hairline rail that divides the run from the prose. Folded runs
+ * and nested tools drop the rail so rails never double. */
 .chat-tool-run,
 .chat-tool-fold {
   min-width: 0;

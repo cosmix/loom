@@ -59,7 +59,10 @@ export function appendRunOutput(store: Store, frame: RunOutput): void {
 
 // Per-store state request generation: overlapping refetches (an action, a done frame and a
 // resync) resolve in any order, so a response is applied only while it is the latest request and
-// no run_state frame arrived since.
+// no run_state frame arrived since. While no state is known, any answer is applied: it beats
+// knowing nothing, and the newer request replaces it on arrival. The server answers one request
+// at a time, so waiting for the newest alone would hold a page on "checking" for every request
+// queued ahead of it.
 const stateRequests = new WeakMap<Store, number>();
 
 function nextStateRequest(store: Store): number {
@@ -71,7 +74,10 @@ function nextStateRequest(store: Store): number {
 export async function fetchRunState(store: Store): Promise<ApiResult<RunStateView>> {
   const current = nextStateRequest(store);
   const result = await apiGet("/api/run/state", runStateSchema);
-  if (result.ok && current === stateRequests.get(store)) store.set(runStateAtom, result.value);
+  const known = store.get(runStateAtom) !== null;
+  if (result.ok && (current === stateRequests.get(store) || !known)) {
+    store.set(runStateAtom, result.value);
+  }
   return result;
 }
 

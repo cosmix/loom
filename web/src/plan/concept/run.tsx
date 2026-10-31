@@ -63,8 +63,9 @@ type RunProps = { site: SentenceSite; run: OpenRun; leading?: JSX.Element };
 
 /**
  * An opened level 0 sentence: the cited level 1 sentences, in citation order, in the same
- * paragraph and the same type, on the page ground under a hairline edge. A cited sentence opened
- * to passages breaks the paragraph inside the run.
+ * paragraph and the same type, on the page ground with a hairline under the text (concept-runs.css).
+ * A fold cap sits in the text at each end. A cited sentence opened to passages breaks the
+ * paragraph inside the run.
  */
 function InlineRun({ site, run, leading }: RunProps): JSX.Element {
   const column = useColumn();

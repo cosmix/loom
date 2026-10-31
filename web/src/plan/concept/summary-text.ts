@@ -1,6 +1,9 @@
 import type { ConceptPage, OutOfDate } from "@/plan/api/schema-concept";
 
-/** The reason a summary is out of date, in words (marks, chips and the header share it). */
+/**
+ * The reason a summary is out of date, in words (marks, chips and the header share it). A summary
+ * that cannot be rebuilt reads "Out of date" alone: the Rebuild button states why it cannot run.
+ */
 export function outOfDateText(outOfDate: OutOfDate): string {
   switch (outOfDate.reason) {
     case "source_changed":
@@ -10,7 +13,7 @@ export function outOfDateText(outOfDate: OutOfDate): string {
     case "awaiting_approval":
       return "Out of date: waiting for approval";
     case "cannot_rebuild":
-      return `Out of date: cannot rebuild${outOfDate.detail ? `: ${outOfDate.detail}` : ""}`;
+      return "Out of date";
     case "failed":
       return "Out of date: build failed";
   }
