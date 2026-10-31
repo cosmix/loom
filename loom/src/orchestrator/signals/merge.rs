@@ -3,11 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::context::untrusted::inline_safe;
-use crate::fs::session_files::load_session_exact;
 use crate::git::stage_commit::guarded_restore_command;
-use crate::models::session::{Session, SessionType};
+use crate::models::session::Session;
 use crate::models::stage::Stage;
-use crate::process::is_process_alive;
 
 use super::helpers;
 use super::types::MergeSignalContent;
@@ -36,91 +34,6 @@ pub fn generate_merge_signal(
         &format_protected_paths(stage, work_dir),
     );
     helpers::write_signal_file(&session.id, &content, work_dir)
-}
-
-/// Find a live merge resolver session for the given stage by scanning
-/// `.loom/work/signals/` for merge signals.
-///
-/// For each signal of `stage_id`, loads the session record it names and
-/// checks PID liveness. If alive -> returns `Some(session_id)`. If dead (or
-/// the record is missing) -> removes the stale signal file and continues
-/// scanning. A signal outlives its record in ordinary operation: a failed
-/// resolver spawn in `spawn_merge_resolver` leaves its signal with no record,
-/// and orphan recovery and `loom sessions kill` remove a record before its
-/// signal. A record that exists but cannot be read
-/// leaves liveness unknown, so its error is returned.
-///
-/// A signal that cannot be read is attributed through its filename, which is
-/// its session's id: a session record naming another stage, or a session that
-/// is not a merge resolver, puts it out of this stage's concern; a merge
-/// session of this stage is judged alive or dead like any other. With no
-/// readable record, the signal could belong to a live resolver of this stage,
-/// so the read error is returned.
-///
-/// Returns `Ok(None)` if no live merge session exists for the stage.
-pub fn find_live_merge_session_for_stage(
-    stage_id: &str,
-    work_dir: &Path,
-) -> Result<Option<String>> {
-    let signal_ids = super::crud::list_signals(work_dir)?;
-    for signal_id in &signal_ids {
-        let (session_id, record) = match read_merge_signal(signal_id, work_dir) {
-            Ok(Some(signal)) if signal.stage_id == stage_id => {
-                let id = signal.session_id;
-                let record = load_session_exact(work_dir, &id).with_context(|| {
-                    format!("the session record of merge resolver {id} cannot be read")
-                })?;
-                (id, record)
-            }
-            Ok(_) => continue,
-            Err(error) => {
-                match attribute_unreadable_signal(signal_id, stage_id, work_dir, error)? {
-                    Some(record) => (signal_id.clone(), Some(record)),
-                    None => continue,
-                }
-            }
-        };
-
-        let alive = record
-            .and_then(|session| session.pid)
-            .is_some_and(is_process_alive);
-        if alive {
-            return Ok(Some(session_id));
-        }
-        // Dead session: clean up the stale signal and keep scanning.
-        if let Err(e) = super::crud::remove_signal(signal_id, work_dir) {
-            tracing::warn!(
-                signal_id = %signal_id,
-                error = %e,
-                "Failed to remove stale merge signal"
-            );
-        }
-    }
-    Ok(None)
-}
-
-/// The session record of the unreadable signal `signal_id` when that record
-/// is a merge session of `stage_id` (or names no stage), `None` when it
-/// belongs elsewhere, and `error` when no readable record attributes the
-/// signal at all.
-fn attribute_unreadable_signal(
-    signal_id: &str,
-    stage_id: &str,
-    work_dir: &Path,
-    error: anyhow::Error,
-) -> Result<Option<Session>> {
-    let Some(record) = load_session_exact(work_dir, signal_id).ok().flatten() else {
-        return Err(error.context(format!(
-            "merge signal {signal_id} cannot be read, and no session record attributes it to a \
-             stage"
-        )));
-    };
-    let ours = record.session_type == SessionType::Merge
-        && record
-            .stage_id
-            .as_deref()
-            .is_none_or(|owner| owner == stage_id);
-    Ok(ours.then_some(record))
 }
 
 /// Read and parse a merge signal file.

@@ -42,6 +42,29 @@ pub enum AutoMergeResult {
     NoWorktree,
 }
 
+impl From<AutoMergeResult> for crate::stage_service::merge_outcome::MergeDisposition {
+    fn from(result: AutoMergeResult) -> Self {
+        match result {
+            AutoMergeResult::Success {
+                files_changed,
+                insertions,
+                deletions,
+                stash,
+            } => Self::Landed {
+                files: files_changed,
+                insertions,
+                deletions,
+                stash,
+            },
+            AutoMergeResult::AlreadyUpToDate => Self::AlreadyLanded,
+            AutoMergeResult::Conflict { conflicting_files } => Self::Conflict(conflicting_files),
+            AutoMergeResult::Blocked(block) => Self::Blocked(block),
+            AutoMergeResult::Held { reason } => Self::Held(reason),
+            AutoMergeResult::NoWorktree => Self::MissingWorktree,
+        }
+    }
+}
+
 /// Check if auto-merge is enabled for a stage
 ///
 /// Priority (highest to lowest):

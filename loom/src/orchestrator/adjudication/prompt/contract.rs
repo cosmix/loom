@@ -196,13 +196,14 @@ fn build_evidence(input: &KindPromptInput<'_>) -> String {
     push_content(&mut s, FROZEN_CONTENT_HEADING, &frozen);
     push_content(&mut s, CURRENT_CONTENT_HEADING, &current);
     s.push_str("## Agent's reason\n\n");
-    s.push_str(&input.request.reason);
-    s.push_str(&format!("\n\n{DIFF_HEADING}\n\n"));
+    s.push_str(&super::fenced("text", &input.request.reason));
+    s.push_str(&format!("{DIFF_HEADING}\n\n"));
     match (frozen, current, contract) {
         (Ok(before), Ok(after), Some(contract)) => {
-            s.push_str("```diff\n");
-            s.push_str(&super::diff::unified_diff(&before, &after, &contract.file));
-            s.push_str("```\n\n");
+            s.push_str(&super::fenced(
+                "diff",
+                &super::diff::unified_diff(&before, &after, &contract.file),
+            ));
         }
         _ => s.push_str("(diff unavailable because frozen or current content is unavailable)\n\n"),
     }
@@ -272,14 +273,7 @@ fn read_confined(root: &Path, path: &Path, label: &str) -> Result<String, String
 fn push_content(out: &mut String, heading: &str, content: &Result<String, String>) {
     out.push_str(&format!("{heading}\n\n"));
     match content {
-        Ok(text) => {
-            out.push_str("```text\n");
-            out.push_str(text);
-            if !text.ends_with('\n') {
-                out.push('\n');
-            }
-            out.push_str("```\n\n");
-        }
+        Ok(text) => out.push_str(&super::fenced("text", text)),
         Err(message) => out.push_str(&format!("{message}\n\n")),
     }
 }

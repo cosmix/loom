@@ -45,9 +45,9 @@ const STORE_FILES: [&str; 5] = [
 ];
 /// `progress.jsonl` takes no outcome past this size but the truncation marker.
 const PROGRESS_MAX_BYTES: u64 = 2 * 1024 * 1024;
-/// Lines `groups` holds at most; a pgid is at most ten digits and a newline.
+/// Lines `groups` holds at most, including boot and start-time evidence.
 const MAX_GROUPS: usize = 4_096;
-const GROUPS_MAX_BYTES: usize = MAX_GROUPS * 11;
+const GROUPS_MAX_BYTES: usize = MAX_GROUPS * 192;
 /// Job directories a stage keeps; older ones go when a job is queued.
 const KEPT_JOB_DIRS: usize = 3;
 const RECORD_MAX_BYTES: usize = 1024 * 1024;
@@ -233,32 +233,10 @@ pub fn load_job_file(
     )
 }
 
-/// Record a criterion's process group; `groups` takes at most 4,096 lines.
-pub fn append_group(work_dir: &Path, stage_id: &str, job_id: &str, pgid: u32) -> Result<()> {
-    let rel = job_rel(stage_id, job_id)?.join(GROUPS_FILE);
-    append_locked(&open_root(work_dir)?, &rel, |file, _| {
-        let mut held = Vec::new();
-        file.take(GROUPS_MAX_BYTES as u64)
-            .read_to_end(&mut held)
-            .context("cannot read the job's process groups")?;
-        let lines = held.iter().filter(|byte| **byte == b'\n').count();
-        Ok((lines < MAX_GROUPS).then(|| format!("{pgid}\n").into_bytes()))
-    })
-}
-
-/// The process groups the job's child recorded; a missing file is none. A
-/// value of 0 or 1 is dropped: signalling it would reach far beyond the job.
-pub fn load_groups(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<Vec<u32>> {
-    let rel = job_rel(stage_id, job_id)?.join(GROUPS_FILE);
-    let Some(bytes) = read_in(work_dir, &rel, GROUPS_MAX_BYTES)? else {
-        return Ok(Vec::new());
-    };
-    Ok(String::from_utf8_lossy(&bytes)
-        .lines()
-        .filter_map(|line| line.trim().parse::<u32>().ok())
-        .filter(|pgid| *pgid > 1)
-        .collect())
-}
+mod groups;
+pub(super) use groups::load_group_anchors;
+pub(crate) use groups::start_guarded_group;
+pub use groups::{append_group, load_groups};
 
 /// Open `<job dir>/child.log` for appending (and reading its tail), creating it.
 pub(crate) fn open_child_log(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<File> {
@@ -288,8 +266,21 @@ pub(crate) fn stage_ids(work_dir: &Path) -> Result<Vec<String>> {
     }
 }
 
-/// Remove the stage's job directories but the three newest by mtime, and
-/// never `keep`'s.
+/// Job directories under one stage, including jobs superseded as current.
+pub(crate) fn job_ids(work_dir: &Path, stage_id: &str) -> Result<Vec<String>> {
+    let root = open_root(work_dir)?;
+    let stage = stage_rel(stage_id)?;
+    let entries = list_dir_no_follow(&root, &stage)?;
+    Ok(entries
+        .into_iter()
+        .filter(|(_, kind)| *kind == EntryKind::Directory)
+        .filter_map(|(name, _)| name.into_string().ok())
+        .filter(|name| validate_job_id(name).is_ok())
+        .collect())
+}
+
+/// Remove old job directories beyond the three newest, unless `keep`, a
+/// pending retirement, or a live group guardian still needs the directory.
 pub(crate) fn prune_jobs(work_dir: &Path, stage_id: &str, keep: &str) -> Result<()> {
     let rel = stage_rel(stage_id)?;
     let root = open_root(work_dir)?;
@@ -307,7 +298,12 @@ pub(crate) fn prune_jobs(work_dir: &Path, stage_id: &str, keep: &str) -> Result<
     }
     jobs.sort_unstable_by(|a, b| b.cmp(a));
     for (_, name) in jobs.into_iter().skip(KEPT_JOB_DIRS) {
-        if name != keep && !awaiting_retire(work_dir, stage_id, &name) {
+        if name != keep
+            && !awaiting_retire(work_dir, stage_id, &name)
+            && !load_group_anchors(work_dir, stage_id, &name)?
+                .iter()
+                .any(groups::GroupAnchorAddress::is_live)
+        {
             remove_job_dir(&stage, &name)
                 .with_context(|| format!("cannot prune job directory {name}"))?;
         }

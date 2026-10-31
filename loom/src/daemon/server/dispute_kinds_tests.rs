@@ -138,7 +138,16 @@ fn finding_dispute_budget_escalates_to_human_review() {
         assert_eq!(created(file(&work_dir, findings(Vec::new()))), expected);
     }
 
-    let message = refusal(file(&work_dir, findings(Vec::new())));
+    let worker_dir = work_dir.clone();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(file(&worker_dir, findings(Vec::new())));
+    });
+    let message = refusal(
+        receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("budget refusal deadlocked on the stage lock"),
+    );
 
     assert!(message.contains("Dispute budget exhausted"), "{message}");
     assert!(!request_path(&work_dir, MAX_DISPUTES_PER_KIND + 1).exists());

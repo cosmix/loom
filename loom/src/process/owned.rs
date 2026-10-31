@@ -15,6 +15,7 @@ const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(10);
 pub(crate) struct OwnedProcess {
     child: Child,
     retired: Option<Instant>,
+    owns_group: bool,
 }
 
 impl OwnedProcess {
@@ -23,6 +24,17 @@ impl OwnedProcess {
         Self {
             child,
             retired: None,
+            owns_group: true,
+        }
+    }
+
+    /// The child joined a separately owned group whose anchor performs group
+    /// retirement; this handle may retire only the direct child.
+    pub(crate) fn child_only(child: Child) -> Self {
+        Self {
+            child,
+            retired: None,
+            owns_group: false,
         }
     }
 
@@ -58,7 +70,11 @@ impl OwnedProcess {
         let deadline = Instant::now() + CLEANUP_GRACE;
         {
             self.retired = Some(deadline);
-            kill_group(&mut self.child);
+            if self.owns_group {
+                kill_group(&mut self.child);
+            } else {
+                let _ = self.child.kill();
+            }
             let _ = self.wait(deadline.saturating_duration_since(Instant::now()));
         }
         deadline

@@ -6,7 +6,7 @@ use anyhow::anyhow;
 use tempfile::TempDir;
 
 use super::child_complete::{observe_impact, record_failed_impact};
-use crate::commands::stage::complete::complete_verification::IMPACT_TESTS_LABEL;
+use crate::verify::completion::IMPACT_TESTS_LABEL;
 use crate::verify::impact_tests::{
     load_observed, record_observed, FailureKind, ImpactFailure, ImpactTestsFailed, ObservedImpact,
 };

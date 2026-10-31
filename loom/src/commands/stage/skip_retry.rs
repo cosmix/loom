@@ -16,6 +16,9 @@ use crate::orchestrator::skip::skip_stage;
 use crate::verify::contracts::store::reset_attempts;
 use crate::verify::transitions::{load_stage, update_stage};
 
+#[path = "skip_retry_report.rs"]
+mod report;
+
 use super::recover::{
     determine_recovery_reason, extract_context_tokens, find_crash_report,
     generate_recovery_session_id, load_last_heartbeat, recovery_close_reason, with_operator_answer,
@@ -122,7 +125,10 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
     // Reset or increment for retry
     if force {
         stage.retry_count = 0;
-        stage.retire_failure("loom stage retry --force");
+        stage.retire_failure(
+            "loom stage retry --force",
+            crate::models::stage::IssueDisposition::Retried,
+        );
     } else {
         stage.retry_count += 1;
     }
@@ -219,20 +225,15 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
 
         persist_retry_delta(&stage_id, work_dir, &stage, &original_status, force)?;
 
-        println!("Recovery initiated for stage '{stage_id}'");
-        println!("  Previous session: {previous_session_id}");
-        println!("  New session: {new_session_id}");
-        println!("  Recovery reason: {reason}");
-        println!("  Attempt: #{recovery_attempt}");
-        if let Some(ref ctx_msg) = context {
-            println!("  Context: {ctx_msg}");
-        }
-        if let Some(event) = &last_event {
-            println!("  Last hook event: {event}");
-        }
-        println!();
-        println!("The stage will be picked up by the next orchestrator poll.");
-        println!("Run 'loom run' to start the orchestrator if not running.");
+        report::recovery_started(
+            &stage_id,
+            &previous_session_id,
+            &new_session_id,
+            &reason,
+            recovery_attempt,
+            context.as_deref(),
+            last_event.as_deref(),
+        );
     } else {
         // Simple retry without recovery signal. Clear the stale session pointer
         // so the executor spawns a fresh session rather than mistaking the dead
@@ -317,7 +318,10 @@ pub(super) fn apply_retry_delta(
 ) -> Result<()> {
     if force {
         current.retry_count = 0;
-        current.retire_failure("loom stage retry --force");
+        current.retire_failure(
+            "loom stage retry --force",
+            crate::models::stage::IssueDisposition::Retried,
+        );
     } else {
         current.retry_count += 1;
     }

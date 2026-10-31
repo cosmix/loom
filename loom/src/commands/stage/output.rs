@@ -126,17 +126,7 @@ fn parse_value(value: &str) -> Value {
         return json_value;
     }
 
-    // Handle special string values
     let trimmed = value.trim();
-    if trimmed == "true" {
-        return Value::Bool(true);
-    }
-    if trimmed == "false" {
-        return Value::Bool(false);
-    }
-    if trimmed == "null" {
-        return Value::Null;
-    }
 
     // Try to parse as a number
     if let Ok(n) = trimmed.parse::<i64>() {
@@ -154,15 +144,7 @@ fn parse_value(value: &str) -> Value {
 
 /// Format a JSON value for display.
 fn format_value(value: &Value) -> String {
-    match value {
-        Value::String(s) => format!("\"{s}\""),
-        Value::Null => "null".to_string(),
-        Value::Bool(b) => b.to_string(),
-        Value::Number(n) => n.to_string(),
-        Value::Array(_) | Value::Object(_) => {
-            serde_json::to_string(value).unwrap_or_else(|_| value.to_string())
-        }
-    }
+    value.to_string()
 }
 
 #[cfg(test)]
@@ -211,6 +193,24 @@ mod tests {
             format_value(&Value::String("hello".to_string())),
             "\"hello\""
         );
+    }
+
+    #[test]
+    fn formatted_values_round_trip_as_json() {
+        for value in [
+            serde_json::json!("quote \" slash \\ newline\n tab\t λ"),
+            serde_json::json!(null),
+            serde_json::json!(true),
+            serde_json::json!(42),
+            serde_json::json!(["x", {"key": "value"}]),
+        ] {
+            assert_eq!(
+                serde_json::from_str::<Value>(&format_value(&value)).unwrap(),
+                value
+            );
+        }
+        assert_eq!(parse_value("+42"), serde_json::json!(42));
+        assert_eq!(parse_value("0042"), serde_json::json!(42));
     }
 
     #[test]

@@ -19,13 +19,11 @@ use anyhow::{bail, ensure, Context, Result};
 
 use super::child::{finish, run_acceptance, JobTree, Progress, SUMMARY_MAX_BYTES};
 use super::{CriterionOutcome, JobRecord, JobResult};
-use crate::commands::stage::complete::complete_impact::observed_impact;
-use crate::commands::stage::complete::complete_verification::{
-    run_checks, VerificationChecks, IMPACT_TESTS_LABEL,
-};
 use crate::handoff::completion::content::VerificationSnapshot;
 use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::{Stage, StageType};
+use crate::verify::completion::{run_checks, OutputStream, VerificationChecks, IMPACT_TESTS_LABEL};
+use crate::verify::impact_tests::observed_impact;
 use crate::verify::impact_tests::{record_observed, ObservedImpact};
 use crate::verify::transitions::load_stage;
 
@@ -94,6 +92,7 @@ fn verify(
 ) -> Result<Option<String>> {
     let stage = load_stage(&record.stage_id, work_dir)
         .with_context(|| format!("Failed to load stage '{}'", record.stage_id))?;
+    super::child_policy::ensure_bound_stage(&stage, work_dir)?;
     if stage.plan_version == 2 && stage.stage_type == StageType::Standard {
         learned.impact = Some(ObservedImpact::default());
     }
@@ -130,6 +129,7 @@ fn run_completion_checks(
     progress: &Progress,
     learned: &mut Learned,
 ) -> Result<()> {
+    let policy = std::env::var(super::BUDGET_POLICY_ENV).ok();
     let checks = VerificationChecks {
         stage,
         stage_id: &stage.id,
@@ -137,6 +137,8 @@ fn run_completion_checks(
         worktree_root: tree.paths.worktree_root.as_deref(),
         daemon_gates: true,
         fail_closed: true,
+        expected_policy: policy.as_deref(),
+        emit: log_event,
         work_dir,
     };
     run_checks(&checks, &mut |label, checked| {
@@ -144,6 +146,13 @@ fn run_completion_checks(
         progress.record(check_outcome(label, &checked), None);
         Ok(())
     })
+}
+
+fn log_event(stream: OutputStream, line: &str) {
+    match stream {
+        OutputStream::Stdout => println!("{line}"),
+        OutputStream::Stderr => eprintln!("{line}"),
+    }
 }
 
 /// A check's outcome: a failure carries its message as the summary.

@@ -59,6 +59,7 @@ fn a_failed_spawn_that_may_have_left_a_resolver_keeps_its_attempt() {
     let work_dir = orchestrator.config.work_dir.clone();
     let attempt = ReservedAttempt::record(&work_dir, "unstopped", 0).unwrap();
     let session = resolver_for("unstopped");
+    save_session(&session, &work_dir).unwrap();
     write_pid_file(&work_dir, &session, None);
     let signal = write_signal(&orchestrator, &session.id);
     let failed = Err(anyhow::anyhow!("tmux has-session failed"));
@@ -68,7 +69,7 @@ fn a_failed_spawn_that_may_have_left_a_resolver_keeps_its_attempt() {
     let unstopped = error.downcast_ref::<UnstoppedResolver>().unwrap();
     assert_eq!(unstopped.session.id, session.id);
     assert_eq!(merge_resolver_attempts(&work_dir, "unstopped"), 1);
-    assert!(!signal.exists());
+    assert!(signal.exists(), "uncertain launch must remain discoverable");
 }
 
 #[test]
@@ -236,6 +237,8 @@ fn a_missing_stage_worktree_gives_the_attempt_back_and_removes_the_signal() {
     std::fs::remove_dir(repo.path().join(".worktrees").join("no-worktree")).unwrap();
     let attempt = ReservedAttempt::record(&work_dir, "no-worktree", 0).unwrap();
     let session = resolver_for("no-worktree");
+    save_session(&session, &work_dir).unwrap();
+    let session_id = session.id.clone();
     let signal = write_signal(&orchestrator, &session.id);
     let stage = Stage {
         id: "no-worktree".to_string(),
@@ -247,6 +250,13 @@ fn a_missing_stage_worktree_gives_the_attempt_back_and_removes_the_signal() {
     assert!(format!("{error:#}").contains("worktree"), "{error:#}");
     assert!(!attempts_file(&work_dir, "no-worktree").exists());
     assert!(!signal.exists());
+    assert_eq!(
+        load_session_exact(&work_dir, &session_id)
+            .unwrap()
+            .unwrap()
+            .status,
+        SessionStatus::Crashed
+    );
 }
 
 #[test]

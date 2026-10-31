@@ -293,8 +293,8 @@ fn a_report_without_a_stage_is_only_a_warning() {
 }
 
 /// The line a stage with two acceptance criteria gets while its pinned
-/// completion runs: one command timeout each, plus the margin for the later checks.
-const COMPLETION_LINE_SECS: u64 = 2 * 300 + 1_800;
+/// completion runs: one timeout each and one for impact selection, plus the margin.
+const COMPLETION_LINE_SECS: u64 = 3 * 300 + 1_800;
 
 /// A stalled stage whose own latest heartbeat says its pinned completion is running.
 fn completing_stage(work: &Path) -> (Session, u32) {

@@ -12,7 +12,7 @@ use crate::git::branch::branch_name_for_stage;
 use crate::git::merge::check_resolved_worktree;
 use crate::git::{merge_stage, MergeGate, MergeResult};
 use crate::models::stage::StageStatus;
-use crate::verify::transitions::{load_stage, update_stage};
+use crate::verify::transitions::load_stage;
 
 mod conflict;
 mod finish;
@@ -24,7 +24,7 @@ use landing::{
     attempt_retried_merge, complete_resolved_merge, hold_for_review, main_repo_root, record_block,
 };
 use next_step::print_fix_limit_options;
-use preflight::{retry_preflight, RetryPreflight};
+use preflight::{admit_retry, retry_preflight, RetryAdmission, RetryPreflight};
 
 use super::progressive_complete::note_merge_stash;
 
@@ -117,38 +117,25 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
     // a fix attempt on this run.
     let RetryPreflight {
         stage_id,
-        mut stage,
         repo_root,
         worktree_root: _worktree_root,
     } = retry_preflight(stage_id, work_dir)?;
 
+    let stage = match admit_retry(&stage_id, work_dir)? {
+        RetryAdmission::Admitted(stage) => stage,
+        RetryAdmission::LimitReached(stage) => {
+            println!(
+                "\nStage '{}' has reached the fix attempt limit ({}/{}).\n",
+                stage_id,
+                stage.fix_attempts,
+                stage.get_effective_max_fix_attempts()
+            );
+            print_fix_limit_options(&stage_id);
+            return Ok(());
+        }
+    };
+    let attempts = stage.fix_attempts;
     let max_attempts = stage.get_effective_max_fix_attempts();
-
-    // Check the limit BEFORE incrementing so each attempt number is consumed
-    // only when actually attempted. Checking after increment burns one extra
-    // attempt at the boundary (off-by-one: with max=3, only 2 real attempts ran).
-    if stage.is_at_fix_limit() {
-        println!();
-        println!(
-            "Stage '{}' has reached the fix attempt limit ({}/{}).",
-            stage_id, stage.fix_attempts, max_attempts
-        );
-        println!();
-        print_fix_limit_options(&stage_id);
-        return Ok(());
-    }
-
-    // Increment fix_attempts after the limit guard so the count is accurate.
-    // Persist the increment via a locked read-modify-write on the FRESH on-disk
-    // stage so a concurrent daemon/CLI write is not reverted, and so the count
-    // is incremented from the current persisted value rather than a stale
-    // in-memory one (A-5). Mirror the new value into the local copy for display.
-    let attempts = update_stage(&stage_id, work_dir, |s| {
-        s.increment_fix_attempts();
-        Ok(())
-    })?
-    .fix_attempts;
-    stage.fix_attempts = attempts;
 
     println!("Retrying merge for stage '{stage_id}' (attempt {attempts}/{max_attempts})");
 

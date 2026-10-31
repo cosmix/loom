@@ -38,6 +38,29 @@ pub enum ProgressiveMergeResult {
     NoBranch,
 }
 
+impl From<ProgressiveMergeResult> for crate::stage_service::merge_outcome::MergeDisposition {
+    fn from(result: ProgressiveMergeResult) -> Self {
+        match result {
+            ProgressiveMergeResult::Success {
+                files_changed,
+                stash,
+            } => Self::Landed {
+                files: files_changed,
+                insertions: 0,
+                deletions: 0,
+                stash,
+            },
+            ProgressiveMergeResult::AlreadyMerged => Self::AlreadyLanded,
+            ProgressiveMergeResult::Conflict { conflicting_files } => {
+                Self::Conflict(conflicting_files)
+            }
+            ProgressiveMergeResult::Blocked(block) => Self::Blocked(block),
+            ProgressiveMergeResult::Held { reason } => Self::Held(reason),
+            ProgressiveMergeResult::NoBranch => Self::MissingBranch,
+        }
+    }
+}
+
 impl ProgressiveMergeResult {
     /// Returns true if the merge succeeded (the stage's work is provably in the
     /// target branch).

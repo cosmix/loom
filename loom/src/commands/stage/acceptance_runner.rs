@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Result};
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::criterion_output::format_criterion_result;
 use crate::git::worktree::find_repo_root_from_cwd;
@@ -13,15 +13,7 @@ use crate::models::stage::Stage;
 use crate::verify::criteria::{
     plan_confinement, run_acceptance_with_config, CriteriaConfig, CriterionResult,
 };
-
-/// Resolved execution paths for a standard stage.
-#[derive(Debug, Clone)]
-pub(crate) struct StageExecutionPaths {
-    /// Worktree root used for execution context.
-    pub worktree_root: Option<PathBuf>,
-    /// Final directory where acceptance criteria should run.
-    pub acceptance_dir: Option<PathBuf>,
-}
+pub(crate) use crate::verify::execution_paths::{resolve_acceptance_dir, StageExecutionPaths};
 
 /// Display behavior for acceptance command output.
 #[derive(Debug, Clone, Copy, Default)]
@@ -30,69 +22,6 @@ pub(crate) struct AcceptanceDisplayOptions<'a> {
     pub stage_label: Option<&'a str>,
     /// Whether to print an explicit message when no acceptance criteria are defined.
     pub show_empty_message: bool,
-}
-
-/// Resolve acceptance directory from worktree root and working_dir.
-///
-/// # Arguments
-/// * `worktree_root` - The root of the worktree (e.g., ".worktrees/stage-id")
-/// * `working_dir` - The stage's working_dir setting (e.g., ".", "loom", None)
-///
-/// # Returns
-/// The resolved path for running acceptance criteria
-pub(crate) fn resolve_acceptance_dir(
-    worktree_root: Option<&Path>,
-    working_dir: Option<&str>,
-) -> Result<Option<PathBuf>> {
-    match (worktree_root, working_dir) {
-        (Some(root), Some(subdir)) => {
-            // Handle "." special case - use worktree root directly
-            if subdir == "." {
-                return Ok(Some(root.to_path_buf()));
-            }
-
-            let full_path = root.join(subdir);
-
-            // Canonicalize and check containment for path traversal defense
-            let canonical = full_path
-                .canonicalize()
-                .with_context(|| missing_acceptance_dir(root, &full_path, subdir))?;
-
-            // Defense-in-depth: verify resolved path is within worktree
-            let canonical_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-            if !canonical.starts_with(&canonical_root) {
-                anyhow::bail!(
-                    "Acceptance directory {} escapes worktree root {}",
-                    canonical.display(),
-                    canonical_root.display()
-                );
-            }
-
-            Ok(Some(canonical))
-        }
-        (Some(root), None) => {
-            // No working_dir specified, use worktree root
-            Ok(Some(root.to_path_buf()))
-        }
-        _ => Ok(None),
-    }
-}
-
-fn missing_acceptance_dir(root: &Path, full_path: &Path, subdir: &str) -> String {
-    let mut message = format!(
-        "Failed to resolve acceptance directory: {} (working_dir='{subdir}')",
-        full_path.display()
-    );
-    for build_file in ["Cargo.toml", "package.json", "go.mod", "pyproject.toml"] {
-        for candidate in [".", "loom", "app", "src", "packages"] {
-            if candidate != subdir && root.join(candidate).join(build_file).exists() {
-                message.push_str(&format!(
-                    "\n  HINT: {build_file} found at {candidate}/ — working_dir should probably be \"{candidate}\""
-                ));
-            }
-        }
-    }
-    message
 }
 
 /// Resolve both worktree root and acceptance directory for a standard stage.

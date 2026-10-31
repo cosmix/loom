@@ -18,6 +18,7 @@ use crate::verify::transitions::update_stage;
 
 #[path = "state/loop_recovery/mod.rs"]
 mod loop_recovery;
+use loop_recovery::reset_and_cancel;
 #[path = "state_relay.rs"]
 mod relay;
 
@@ -232,25 +233,6 @@ pub fn reset(stage_id: String, hard: bool, kill_session: bool) -> Result<()> {
     reset_and_cancel(&work_dir, &stage_id, hard, kill_session, &runtime)
 }
 
-/// Reset the stage, then cancel its host job: a run for the attempt the reset
-/// discarded has nobody left to report to. The host-job store's stage lock
-/// makes this write safe against the daemon's runner; a failure is reported
-/// and the reset stands.
-fn reset_and_cancel(
-    work_dir: &Path,
-    stage_id: &str,
-    hard: bool,
-    kill_session: bool,
-    runtime: &impl loop_recovery::ResetRuntime,
-) -> Result<()> {
-    loop_recovery::reset_with(work_dir, stage_id, hard, kill_session, runtime)?;
-    let cancelled = crate::host_verify::submit::cancel(work_dir, stage_id, "stage reset");
-    if let Err(error) = cancelled {
-        eprintln!("Warning: could not cancel the host job of stage '{stage_id}': {error:#}");
-    }
-    Ok(())
-}
-
 /// Mark a stage as waiting for user input (called by hooks)
 ///
 /// Every session waits the same way, a contract writer with a refused freeze
@@ -361,8 +343,14 @@ fn apply_reset(stage: &mut Stage) {
     // status recorded. For an already waiting stage it archives nothing the
     // calls below do not.
     stage.reset_to_waiting_for_deps();
-    stage.retire_failure("loom stage reset");
-    stage.retire_review_reason("loom stage reset");
+    stage.retire_failure(
+        "loom stage reset",
+        crate::models::stage::IssueDisposition::Reset,
+    );
+    stage.retire_review_reason(
+        "loom stage reset",
+        crate::models::stage::IssueDisposition::Reset,
+    );
     stage.merge_conflict = false;
     stage.merge.handbacks = 0;
     stage.merge.handback_refusal = None;
@@ -390,6 +378,10 @@ mod state_tests;
 #[cfg(test)]
 #[path = "state_host_job_tests.rs"]
 mod host_job_tests;
+
+#[cfg(test)]
+#[path = "state_reset_race_tests.rs"]
+mod reset_race_tests;
 
 #[cfg(test)]
 #[path = "state_waiting_tests.rs"]

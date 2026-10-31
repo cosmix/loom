@@ -26,6 +26,37 @@ fn a_first_auto_merge_signing_failure_routes_to_review() {
     assert_eq!(orchestrator.spawn_merge_resolution_sessions().unwrap(), 0);
 }
 
+#[test]
+fn daemon_rejects_signing_result_after_completion_proof_changes() {
+    let (_repo, mut orchestrator) = worktree_stage();
+    let mut observed = on_disk(&orchestrator);
+    crate::verify::transitions::update_stage(ID, &orchestrator.config.work_dir, |current| {
+        current.completed_commit = Some("replacement".into());
+        Ok(())
+    })
+    .unwrap();
+    let error = crate::git::signing::CommitTreeError {
+        signing: true,
+        detail: "key unavailable".into(),
+    };
+    assert!(!orchestrator.apply_auto_merge_outcome(&mut observed, ID, "main", Err(error.into())));
+    let saved = on_disk(&orchestrator);
+    assert_eq!(saved.status, StageStatus::Completed);
+    assert_eq!(saved.completed_commit.as_deref(), Some("replacement"));
+}
+
+#[test]
+fn daemon_landing_records_an_infrastructure_failure() {
+    let (_repo, mut orchestrator) = worktree_stage();
+    assert!(matches!(
+        orchestrator.land_stage_merge(ID, "missing-target"),
+        super::Landing::Failed(_)
+    ));
+    let saved = on_disk(&orchestrator);
+    assert_eq!(saved.status, StageStatus::MergeBlocked);
+    assert!(saved.failure_info.is_some());
+}
+
 /// A tracked resolver for the stage in `status`, held for signing.
 fn hold_with_resolver(status: StageStatus) {
     let (_repo, mut orchestrator) = worktree_stage();

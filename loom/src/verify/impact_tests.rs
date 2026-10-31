@@ -54,6 +54,15 @@ pub use failure::{check_failure_id, FailureKind, ImpactFailure};
 pub use observed::{load_observed, record_observed, ObservedImpact};
 pub use report::ImpactTestsFailed;
 
+/// Failures observed by the impact gate in a completion error, if any.
+pub(crate) fn observed_impact(error: &anyhow::Error) -> ObservedImpact {
+    let failures = error
+        .downcast_ref::<ImpactTestsFailed>()
+        .map(|failed| failed.failures.as_slice())
+        .unwrap_or_default();
+    ObservedImpact::of(failures)
+}
+
 use base::{BaseCriteria, BaseProbe};
 use libtest::LibtestPaths;
 use reach::{reached_test_nodes, TestNodes};

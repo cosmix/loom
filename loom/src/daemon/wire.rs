@@ -4,7 +4,8 @@ use super::protocol::{Capability, Request, Response};
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
+use std::time::{Duration, Instant};
 
 const REQUEST_PREFACE_MAGIC: [u8; 4] = *b"LOOM";
 const REQUEST_PREFACE_VERSION: u8 = 1;
@@ -46,12 +47,29 @@ impl WireMessage for Request {
 
 impl WireMessage for Response {
     fn write_wire<W: Write>(&self, stream: &mut W) -> Result<()> {
-        write_json_frame(stream, self, MAX_RESPONSE_BYTES)
+        stream
+            .write_all(&encode_response_frame(self)?)
+            .context("Failed to write response frame")
     }
 
     fn read_wire<R: Read>(stream: &mut R) -> Result<Self> {
         read_json_frame(stream, MAX_RESPONSE_BYTES)
     }
+}
+
+pub(super) fn encode_response_frame(response: &Response) -> Result<Vec<u8>> {
+    let json = serde_json::to_vec(response).context("Failed to serialize message")?;
+    if json.len() > MAX_RESPONSE_BYTES {
+        bail!(
+            "Serialized message of {} bytes exceeds the {MAX_RESPONSE_BYTES} byte frame limit",
+            json.len()
+        );
+    }
+    let length = u32::try_from(json.len()).context("Serialized message length overflow")?;
+    let mut frame = Vec::with_capacity(4 + json.len());
+    frame.extend_from_slice(&length.to_be_bytes());
+    frame.extend_from_slice(&json);
+    Ok(frame)
 }
 
 /// Allocation-free authentication metadata read before a request frame.
@@ -94,6 +112,94 @@ pub fn write_message<T: WireMessage, W: Write>(stream: &mut W, message: &T) -> R
 
 pub fn read_message<T: WireMessage, R: Read>(stream: &mut R) -> Result<T> {
     T::read_wire(stream)
+}
+
+/// Retains a response frame across socket read timeouts in a live subscriber.
+pub struct ResponseFrameReader {
+    prefix: [u8; 4],
+    prefix_read: usize,
+    body: Vec<u8>,
+    body_read: usize,
+    started: Option<Instant>,
+    frame_timeout: Duration,
+}
+
+impl ResponseFrameReader {
+    pub fn new(frame_timeout: Duration) -> Self {
+        Self {
+            prefix: [0; 4],
+            prefix_read: 0,
+            body: Vec::new(),
+            body_read: 0,
+            started: None,
+            frame_timeout,
+        }
+    }
+
+    /// Returns `None` on an idle socket, keeping any bytes already consumed.
+    pub fn poll<R: Read>(&mut self, stream: &mut R) -> Result<Option<Response>> {
+        loop {
+            self.check_deadline()?;
+            let reading_prefix = self.prefix_read < self.prefix.len();
+            let result = if reading_prefix {
+                stream.read(&mut self.prefix[self.prefix_read..])
+            } else {
+                stream.read(&mut self.body[self.body_read..])
+            };
+            match result {
+                Ok(0) => return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into()),
+                Ok(count) => {
+                    self.started.get_or_insert_with(Instant::now);
+                    if reading_prefix {
+                        self.prefix_read += count;
+                        if self.prefix_read == self.prefix.len() {
+                            let length = u32::from_be_bytes(self.prefix) as usize;
+                            if length > MAX_RESPONSE_BYTES {
+                                bail!("Message frame exceeds the configured limit");
+                            }
+                            self.body = vec![0; length];
+                        }
+                    } else {
+                        self.body_read += count;
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    self.check_deadline()?;
+                    return Ok(None);
+                }
+                Err(error) => return Err(error).context("Failed to read response frame"),
+            }
+            if self.prefix_read == self.prefix.len() && self.body_read == self.body.len() {
+                let response =
+                    serde_json::from_slice(&self.body).context("Failed to deserialize message")?;
+                self.reset();
+                return Ok(Some(response));
+            }
+        }
+    }
+
+    fn check_deadline(&self) -> Result<()> {
+        if self
+            .started
+            .is_some_and(|started| started.elapsed() >= self.frame_timeout)
+        {
+            bail!("Incomplete response frame exceeded its deadline");
+        }
+        Ok(())
+    }
+
+    fn reset(&mut self) {
+        self.prefix_read = 0;
+        self.body.clear();
+        self.body_read = 0;
+        self.started = None;
+    }
 }
 
 pub fn read_request_preface<R: Read>(stream: &mut R) -> Result<RequestPreface> {
@@ -238,3 +344,7 @@ fn constant_time_eq(left: &str, right: &str) -> bool {
 #[cfg(test)]
 #[path = "wire_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "wire_response_frame_tests.rs"]
+mod response_frame_tests;

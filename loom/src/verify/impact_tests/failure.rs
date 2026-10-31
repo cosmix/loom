@@ -41,7 +41,7 @@ impl FailureKind {
     /// adapter could not read or a missing count says nothing about whether
     /// the same thing broke. Only the base comparison asks it, of two runs
     /// the same gate made; an accepted record must match exactly
-    /// (`accepted`), since a stage session reported it.
+    /// (`accepted`), since the observed report contains stage-controlled output.
     pub fn covers(&self, later: &FailureKind) -> bool {
         matches!(
             (self, later),

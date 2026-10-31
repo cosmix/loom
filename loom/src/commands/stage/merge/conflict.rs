@@ -33,7 +33,10 @@ pub(super) fn record_conflict_and_report(
     }
     println!();
 
-    let recorded = update_stage(stage_id, work_dir, mark_conflict)?;
+    let recorded = update_stage(stage_id, work_dir, |current| {
+        crate::stage_service::merge_outcome::check_stage(current, stage)?;
+        mark_conflict(current)
+    })?;
     if recorded.status == StageStatus::MergeConflict {
         println!("Stage '{stage_id}' is now MergeConflict.");
         print_daemon_next_step(&recorded, work_dir, repo_root);
@@ -53,10 +56,10 @@ pub(super) fn record_conflict_and_report(
 /// is left untouched: no edge leads from `Completed` to `MergeConflict`, and
 /// a `MergeConflict` stage gets the daemon resolver the plan opted out of.
 fn mark_conflict(stage: &mut Stage) -> Result<()> {
-    if stage.status == StageStatus::Completed && !stage.merged {
-        return Ok(());
-    }
-    stage.try_mark_merge_conflict()
+    crate::stage_service::merge_outcome::apply_conflict(
+        stage,
+        crate::stage_service::merge_outcome::ConflictAuthority::Manual,
+    )
 }
 
 /// The manual way to resolve the conflict, by whether fix attempts remain.

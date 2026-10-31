@@ -82,8 +82,7 @@ fn build_evidence(input: &KindPromptInput<'_>) -> String {
         _ => s.push_str("(integrity evidence unavailable: dispute has another kind)\n\n"),
     }
     s.push_str("## Agent's reason\n\n");
-    s.push_str(&input.request.reason);
-    s.push_str("\n\n");
+    s.push_str(&super::fenced("text", &input.request.reason));
     push_ratchet_diffs(&mut s, input);
     s
 }
@@ -148,7 +147,7 @@ fn push_ratchet_diffs(s: &mut String, input: &KindPromptInput<'_>) {
             continue;
         };
         match ratchet_diff(input, path) {
-            Ok(diff) => s.push_str(&format!("```diff\n{diff}\n```\n\n")),
+            Ok(diff) => s.push_str(&super::fenced("diff", &diff)),
             Err(message) => s.push_str(&format!("({message})\n\n")),
         }
     }

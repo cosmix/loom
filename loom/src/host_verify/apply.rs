@@ -359,9 +359,12 @@ fn retire_session(work_dir: &Path, session: &Session) {
         return;
     }
     let completed = SessionStatus::Completed;
-    if let Err(error) =
-        crate::commands::stage::session::update_session_status(work_dir, &session.id, completed)
-    {
+    if let Err(error) = crate::fs::session_files::mark_session_terminal_reason(
+        work_dir,
+        &session.id,
+        completed,
+        crate::models::session::SessionExitReason::Completed,
+    ) {
         tracing::warn!(session_id = %session.id, error = %format!("{error:#}"), "failed to mark the completed session's record Completed");
     }
     if let Err(error) = crate::orchestrator::signals::remove_signal(&session.id, work_dir) {

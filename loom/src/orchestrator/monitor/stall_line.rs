@@ -17,7 +17,6 @@
 //! hangs is still recovered.
 
 use crate::models::stage::Stage;
-use crate::verify::DEFAULT_COMMAND_TIMEOUT;
 
 use super::heartbeat::Heartbeat;
 
@@ -60,14 +59,7 @@ pub(crate) fn is_stall_escalation(
 /// The longest silence a running completion of `stage` is allowed: every
 /// command it runs at the per-criterion timeout, plus the margin.
 pub(crate) fn completion_line_secs(stage: &Stage) -> u64 {
-    let commands = stage.acceptance.len()
-        + stage.wiring_tests.len()
-        + usize::from(stage.dead_code_check.is_some())
-        + usize::from(stage.regression_test.is_some());
-    u64::try_from(commands)
-        .unwrap_or(u64::MAX)
-        .saturating_mul(DEFAULT_COMMAND_TIMEOUT.as_secs())
-        .saturating_add(COMPLETION_MARGIN_SECS)
+    crate::verify::budget::stage_command_secs(stage).saturating_add(COMPLETION_MARGIN_SECS)
 }
 
 /// The completion line of `session_id` on `stage`, when the session's own
@@ -130,10 +122,10 @@ mod tests {
     /// The incident's stage: 31 criteria ran past 45 minutes of silence.
     #[test]
     fn the_completion_line_counts_every_command_at_its_timeout() {
-        assert_eq!(completion_line_secs(&stage_with_criteria(0)), 1_800);
+        assert_eq!(completion_line_secs(&stage_with_criteria(0)), 2_100);
         assert_eq!(
             completion_line_secs(&stage_with_criteria(31)),
-            31 * 300 + 1_800
+            31 * 300 + 2_100
         );
     }
 
@@ -143,7 +135,7 @@ mod tests {
         let running = completion_heartbeat("session-1");
         assert_eq!(
             running_completion_line(Some(&running), "session-1", Some(&stage)),
-            Some(2_400)
+            Some(2_700)
         );
         assert_eq!(
             running_completion_line(Some(&running), "session-2", Some(&stage)),

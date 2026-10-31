@@ -149,9 +149,10 @@ impl Orchestrator {
                 return;
             }
         };
-        if let Err(error) = crate::commands::stage::complete::verify_resolved_completion(
+        if let Err(error) = crate::verify::completion::resolved::verify_resolved_completion(
             &stage,
             &self.config.work_dir,
+            |_, _| {},
         ) {
             self.settle_failed_exit_verification(&stage, &error);
             return;

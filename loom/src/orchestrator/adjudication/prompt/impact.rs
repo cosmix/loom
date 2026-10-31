@@ -89,12 +89,11 @@ fn build_evidence(input: &KindPromptInput<'_>) -> String {
         _ => s.push_str("(impact-test evidence unavailable: dispute has another kind)\n\n"),
     }
     s.push_str("## Agent's reason (written by the stage agent, unverified)\n\n");
-    s.push_str(&input.request.reason);
-    s.push_str("\n\n");
+    s.push_str(&super::fenced("text", &input.request.reason));
     s.push_str(STAGE_DIFF_HEADING);
     s.push_str("\n\n");
     match stage_diff(input) {
-        Ok(diff) => s.push_str(&format!("```diff\n{diff}\n```\n\n")),
+        Ok(diff) => s.push_str(&super::fenced("diff", &diff)),
         Err(message) => s.push_str(&format!("({message})\n\n")),
     }
     s
@@ -115,10 +114,8 @@ fn push_failure(s: &mut String, failure: &ImpactSnapshot) {
         "Selected tests (reported): {}\n",
         failure.tests.join(", ")
     ));
-    s.push_str(&format!(
-        "\nOutput, its end (reported):\n\n```text\n{}\n```\n\n",
-        failure.output.trim_end()
-    ));
+    s.push_str("\nOutput, its end (reported):\n\n");
+    s.push_str(&super::fenced("text", failure.output.trim_end()));
 }
 
 /// The stage's whole diff from its base, read with git pinned to the stage's

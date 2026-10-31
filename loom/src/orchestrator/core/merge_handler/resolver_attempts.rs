@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 /// resolver session, the first included.
 ///
 /// Without this cap a resolver that fails fast and deterministically would be
-/// respawned on every ~5s poll cycle (the kept signal file is NOT a guard —
-/// `find_live_merge_session_for_stage` deletes it once the PID is dead), each
+/// respawned on every ~5s poll cycle (a proven-dead resolver's signal is
+/// retired by discovery), each
 /// spawn on `opus`/`xhigh` → unbounded token + window burn (O-3).
 pub(crate) const MAX_MERGE_RESOLVER_ATTEMPTS: u32 = 6;
 

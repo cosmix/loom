@@ -6,9 +6,11 @@
 //! An accepted failure covers a later run only when that run fails exactly
 //! as the dispute saw it: the same kind with the same count or exit code,
 //! over the same set of selected tests. Any other run, a smaller count
-//! included, is judged again. The record a dispute accepts is the stage
-//! session's unauthenticated report (`observed`), so a forged one excuses
-//! nothing beyond the failure it claims, and the adjudicator re-ran that.
+//! included, is judged again. The record a dispute accepts is the
+//! unauthenticated observed report, persisted by the host completion job or
+//! operator completion. Stage-controlled test output can still forge its
+//! contents; an acceptance excuses nothing beyond the failure the
+//! adjudicator re-ran.
 //!
 //! What a dispute accepts comes from the observed record, never from the
 //! filing agent's request: the daemon copies it into the dispute's evidence

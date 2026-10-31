@@ -31,13 +31,13 @@ use anyhow::Result;
 use chrono::Utc;
 use std::path::Path;
 
-use super::dispute_store::{escalate_to_human_review, lock_stage_disputes};
+use super::dispute_store::lock_stage_disputes;
 use super::Response;
 use crate::models::dispute::{
     truncate_to_byte_limit, CriterionField, DisputeKind, DisputeRequest, FAILURE_OUTPUT_MAX_BYTES,
 };
 use crate::models::stage::Stage;
-use crate::verify::transitions::{load_stage, update_stage};
+use crate::verify::transitions::update_stage;
 
 pub fn handle_dispute_criteria(
     work_dir: &Path,
@@ -68,6 +68,27 @@ pub(crate) fn handle_dispute_criteria_identified(
     failure_output: Option<String>,
     request_id: Option<&str>,
 ) -> Result<Response> {
+    handle_dispute_criteria_for_session(
+        work_dir,
+        stage_id,
+        criterion,
+        reason,
+        evidence_commit,
+        failure_output,
+        (request_id, None),
+    )
+}
+
+pub(crate) fn handle_dispute_criteria_for_session(
+    work_dir: &Path,
+    stage_id: &str,
+    criterion: (CriterionField, Vec<usize>),
+    reason: String,
+    evidence_commit: Option<String>,
+    failure_output: Option<String>,
+    identity: (Option<&str>, Option<&str>),
+) -> Result<Response> {
+    let (request_id, session_id) = identity;
     let (field, mut criterion_indices) = criterion;
     // The wire carries any list: the record keeps it sorted and distinct.
     criterion_indices.sort_unstable();
@@ -80,34 +101,33 @@ pub(crate) fn handle_dispute_criteria_identified(
     let locked = lock_stage_disputes(work_dir, stage_id)?;
     let work_canonical = &locked.work_dir;
 
-    let stage = load_stage(stage_id, work_canonical)?;
-    if let Some(response) = super::receipts::existing(&stage, request_id)? {
-        return Ok(response);
-    }
-    if let Some(refusal) = refusal(&stage, work_canonical, field, &criterion_indices, &reason) {
-        return Ok(refusal);
-    }
-
-    // `write_request` allocates the next sequential id and creates request.md.
-    let dispute_reason = reason.clone();
-    let kind = DisputeKind::criterion(field, criterion_indices);
-    let record = build_record(&stage, kind, reason, evidence_commit, failure_output);
-    let id = super::receipts::write_request(&locked.stage_dir, record, request_id)?;
-
-    // Re-read under the stages-dir lock and mutate only the dispute-owned
-    // fields on the fresh on-disk state, so a concurrent write to unrelated
-    // fields is not reverted (A-5). `dispute_count` grows from the persisted
-    // value; the transition helper handles Executing and CompletedWithFailures.
+    let mut response = None;
     update_stage(stage_id, work_canonical, |s| {
+        if session_id.is_some_and(|id| !super::ownership::matches_attempt(s, id)) {
+            response = Some(Response::Error {
+                message: "request belongs to a stale stage session".into(),
+            });
+            return Ok(());
+        }
+        if let Some(existing) = super::receipts::existing(s, request_id)? {
+            response = Some(existing);
+            return Ok(());
+        }
+        if let Some(refused) = refusal(s, field, &criterion_indices, &reason) {
+            response = Some(refused);
+            return Ok(());
+        }
+        let kind = DisputeKind::criterion(field, criterion_indices);
+        let record = build_record(s, kind, reason.clone(), evidence_commit, failure_output);
+        let id = super::receipts::write_request(&locked.stage_dir, record, request_id)?;
         s.dispute_count = s.dispute_count.saturating_add(1);
         super::receipts::remember(s, request_id, id);
         s.tally.evidence_rounds = 0;
-        s.try_request_adjudication(Some(dispute_reason))
+        s.try_request_adjudication(Some(reason))?;
+        response = Some(Response::DisputeCreated { id });
+        Ok(())
     })?;
-
-    // The lock releases when `locked` drops.
-    drop(locked);
-    Ok(Response::DisputeCreated { id })
+    Ok(response.expect("stage update supplies a response"))
 }
 
 /// The refusal for a malformed `stage_id`, checked BEFORE any FS touch. The
@@ -126,8 +146,7 @@ fn invalid_stage_id(stage_id: &str) -> Option<Response> {
 /// cannot move to `NeedsAdjudication`. Nothing has been written when it
 /// returns one.
 fn refusal(
-    stage: &Stage,
-    work_dir: &Path,
+    stage: &mut Stage,
     field: CriterionField,
     criterion_indices: &[usize],
     reason: &str,
@@ -152,7 +171,7 @@ fn refusal(
         });
     }
     if stage.dispute_budget_exhausted() {
-        return Some(exhausted_refusal(stage, work_dir));
+        return Some(exhausted_refusal(stage));
     }
     transition_refusal(stage, reason)
 }
@@ -170,7 +189,7 @@ pub(super) fn transition_refusal(stage: &Stage, reason: &str) -> Option<Response
 }
 
 /// Escalate the stage to human review and refuse: its dispute budget is spent.
-fn exhausted_refusal(stage: &Stage, work_dir: &Path) -> Response {
+fn exhausted_refusal(stage: &mut Stage) -> Response {
     // The state-machine permits the escalation from both
     // `CompletedWithFailures` (the typical entry point) and
     // `NeedsAdjudication`; if the stage happens to be in some other status
@@ -178,13 +197,10 @@ fn exhausted_refusal(stage: &Stage, work_dir: &Path) -> Response {
     // intervene. The count in the review reason is the fresh on-disk one.
     let count = stage.dispute_count;
     let max = stage.max_disputes_per_stage();
-    escalate_to_human_review(&stage.id, work_dir, |s| {
-        format!(
-            "Dispute budget exhausted ({} of {} disputes filed)",
-            s.dispute_count,
-            s.max_disputes_per_stage()
-        )
-    });
+    let reason = format!("Dispute budget exhausted ({count} of {max} disputes filed)");
+    if let Err(error) = stage.try_request_human_review(reason) {
+        tracing::warn!(stage = %stage.id, %error, "dispute budget exhausted but stage could not be escalated");
+    }
     Response::Error {
         message: format!("Dispute budget exhausted ({count} disputes filed; max is {max})."),
     }

@@ -166,6 +166,10 @@ impl StageExecutor for Orchestrator {
     }
 
     fn start_stage(&mut self, stage_id: &str) -> Result<StartDisposition> {
+        // Reset holds this same per-stage lock from its liveness scan through
+        // retirement and publication. Keep it through launch so reset cannot
+        // inspect a write-ahead session before its process exists.
+        let _admission = crate::fs::stage_admission::lock(&self.config.work_dir, stage_id)?;
         let mut stage = self.load_stage(stage_id)?;
 
         // The graph handed this stage over as Queued; its file decides.

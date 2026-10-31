@@ -7,6 +7,7 @@ mod contracts;
 mod control_block;
 mod core;
 mod dispute;
+#[cfg(test)]
 mod dispute_kinds;
 mod environment;
 mod launch;
@@ -27,9 +28,10 @@ mod tokens;
 mod tests;
 
 pub(crate) use contracts::handle_freeze_contracts;
-pub(crate) use control_block::{handle_agent_block_stage, handle_block_stage};
+pub(crate) use control_block::handle_block_stage;
 pub use core::{DaemonServer, DaemonStatus};
 pub use dispute::handle_dispute_criteria;
+#[cfg(test)]
 pub(crate) use dispute_kinds::handle_file_dispute;
 pub(crate) use environment::daemon_environment_pairs;
 pub use launch::{await_ready, disable_spawn_for_tests, ReadyTiming};

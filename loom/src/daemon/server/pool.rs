@@ -1,6 +1,7 @@
 //! Fixed-size, bounded worker pool for daemon client handling.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -11,6 +12,7 @@ type Job = Box<dyn FnOnce() + Send + 'static>;
 pub(super) struct WorkerPool {
     sender: Option<SyncSender<Job>>,
     workers: Vec<JoinHandle<()>>,
+    cancelling: Arc<AtomicBool>,
 }
 
 impl WorkerPool {
@@ -18,12 +20,14 @@ impl WorkerPool {
         assert!(worker_count > 0, "worker count must be positive");
         let (sender, receiver) = mpsc::sync_channel(queue_capacity);
         let receiver = Arc::new(Mutex::new(receiver));
+        let cancelling = Arc::new(AtomicBool::new(false));
         let workers = (0..worker_count)
-            .map(|index| spawn_worker(index, Arc::clone(&receiver)))
+            .map(|index| spawn_worker(index, Arc::clone(&receiver), Arc::clone(&cancelling)))
             .collect();
         Self {
             sender: Some(sender),
             workers,
+            cancelling,
         }
     }
 
@@ -42,10 +46,15 @@ impl WorkerPool {
             Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => false,
         }
     }
-}
 
-impl Drop for WorkerPool {
-    fn drop(&mut self) {
+    /// Cancel queued jobs and wait for running jobs, which retain ownership of
+    /// any state they are modifying until they finish.
+    pub(super) fn shutdown(mut self) {
+        self.cancelling.store(true, Ordering::SeqCst);
+        self.join_workers();
+    }
+
+    fn join_workers(&mut self) {
         self.sender.take();
         for worker in self.workers.drain(..) {
             let _ = worker.join();
@@ -53,14 +62,24 @@ impl Drop for WorkerPool {
     }
 }
 
-fn spawn_worker(index: usize, receiver: Arc<Mutex<Receiver<Job>>>) -> JoinHandle<()> {
+impl Drop for WorkerPool {
+    fn drop(&mut self) {
+        self.join_workers();
+    }
+}
+
+fn spawn_worker(
+    index: usize,
+    receiver: Arc<Mutex<Receiver<Job>>>,
+    cancelling: Arc<AtomicBool>,
+) -> JoinHandle<()> {
     thread::Builder::new()
         .name(format!("loom-daemon-client-{index}"))
-        .spawn(move || worker_loop(&receiver))
+        .spawn(move || worker_loop(&receiver, &cancelling))
         .expect("failed to spawn daemon client worker")
 }
 
-fn worker_loop(receiver: &Mutex<Receiver<Job>>) {
+fn worker_loop(receiver: &Mutex<Receiver<Job>>, cancelling: &AtomicBool) {
     loop {
         let result = receiver
             .lock()
@@ -69,7 +88,9 @@ fn worker_loop(receiver: &Mutex<Receiver<Job>>) {
         let Ok(job) = result else {
             break;
         };
-        let _ = catch_unwind(AssertUnwindSafe(job));
+        if !cancelling.load(Ordering::SeqCst) {
+            let _ = catch_unwind(AssertUnwindSafe(job));
+        }
     }
 }
 

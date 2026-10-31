@@ -201,7 +201,10 @@ fn apply_reason_change(stage: &mut Stage, loaded: Option<&str>, verdict: Option<
     match verdict {
         Some(reason) => stage.replace_review_reason(reason.to_owned()),
         None if stage.review_reason.as_deref() == loaded => {
-            stage.retire_review_reason("adjudicator verdict applied");
+            stage.retire_review_reason(
+                "adjudicator verdict applied",
+                crate::models::stage::IssueDisposition::Resolved,
+            );
         }
         None => {}
     }

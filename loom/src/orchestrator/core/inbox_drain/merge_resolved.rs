@@ -52,9 +52,10 @@ impl Orchestrator {
         ) {
             return Settle::Refused(reason);
         }
-        if let Err(error) = crate::commands::stage::complete::verify_resolved_completion(
+        if let Err(error) = crate::verify::completion::resolved::verify_resolved_completion(
             &stage,
             &self.config.work_dir,
+            |_, _| {},
         ) {
             return self.settle_failed_verification(&stage, stage_id, &error);
         }

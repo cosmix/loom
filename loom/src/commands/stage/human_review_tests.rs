@@ -48,6 +48,7 @@ fn test_human_review_approve_resets_an_unfrozen_stage_contract_budget() {
     let temp = TempDir::new().unwrap();
     let mut stage = contract_stage("test-stage", "writer-1");
     stage.status = StageStatus::NeedsHumanReview;
+    stage.tally.freeze_refusal_disputes = 3;
     crate::verify::transitions::save_stage(&stage, temp.path()).unwrap();
     for _ in 0..3 {
         spend_attempt(temp.path(), "test-stage").unwrap();
@@ -61,6 +62,13 @@ fn test_human_review_approve_resets_an_unfrozen_stage_contract_budget() {
         StageStatus::Queued
     );
     assert_eq!(attempts_spent(temp.path(), "test-stage").unwrap(), 0);
+    assert_eq!(
+        load_stage("test-stage", temp.path())
+            .unwrap()
+            .tally
+            .freeze_refusal_disputes,
+        0
+    );
 }
 
 /// A refused transition (on-disk status no longer `NeedsHumanReview` by

@@ -143,6 +143,35 @@ fn run_bounded_collects_large_stderr_too() {
 }
 
 #[test]
+fn run_bounded_reports_output_overflow_on_each_stream() {
+    for (redirect, expected) in [("", "stdout"), (" >&2", "stderr")] {
+        let script = format!("head -c {} /dev/zero{redirect}", OUTPUT_LIMIT + 1);
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", &script]);
+        let error = run_bounded(&mut cmd, Duration::from_secs(10)).unwrap_err();
+        let overflow = error.downcast_ref::<ProcessOutputLimitError>().unwrap();
+        assert_eq!(overflow.stream, expected);
+        assert_eq!(overflow.limit, OUTPUT_LIMIT);
+    }
+}
+
+#[test]
+fn output_overflow_takes_precedence_over_timeout_and_retires_descendants() {
+    let temp = tempfile::tempdir().unwrap();
+    let guard = super::lifecycle_tests::InheritorGuard::new(temp.path());
+    let script = format!(
+        "{} head -c {} /dev/zero; sleep 30",
+        guard.shell(),
+        OUTPUT_LIMIT + 1
+    );
+    let mut cmd = Command::new("sh");
+    cmd.args(["-c", &script]);
+    let error = run_bounded(&mut cmd, Duration::from_secs(2)).unwrap_err();
+    assert!(error.downcast_ref::<ProcessOutputLimitError>().is_some());
+    guard.assert_retired();
+}
+
+#[test]
 fn bounded_output_returns_structured_timeout() {
     let mut cmd = Command::new("sleep");
     cmd.arg("60");
