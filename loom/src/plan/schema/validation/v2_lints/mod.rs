@@ -183,18 +183,34 @@ pub(super) fn stage_touches_dir(stage: &StageDefinition, dir: &str) -> bool {
         .files
         .iter()
         .chain(&stage.artifacts)
-        .any(|entry| entry_touches_dir(entry, dir))
+        .any(|entry| entry_touches_dir(&stage.working_dir, entry, dir))
 }
 
-fn entry_touches_dir(entry: &str, dir: &str) -> bool {
+fn entry_touches_dir(working_dir: &str, entry: &str, dir: &str) -> bool {
     let (_, literal) = split_glob_entry(entry);
-    let literal = literal.trim_end_matches('/');
+    let path = std::path::Path::new(working_dir).join(literal);
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(part) => {
+                let Some(part) = part.to_str() else {
+                    return false;
+                };
+                parts.push(part);
+            }
+            std::path::Component::CurDir => {}
+            _ => return false,
+        }
+    }
+    let literal = parts.join("/");
     // A glob with no literal prefix (`**`, `*`, `**/*.rs`) can create a path
     // anywhere, so it is an ancestor of every directory.
     if literal.is_empty() {
         return true;
     }
-    literal_names_or_nests_under(literal, dir) || dir.starts_with(&format!("{literal}/"))
+    literal == dir
+        || literal.starts_with(&format!("{dir}/"))
+        || dir.starts_with(&format!("{literal}/"))
 }
 
 /// Split a `files:`/`artifacts:` entry into (the entry without a leading

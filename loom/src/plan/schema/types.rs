@@ -323,8 +323,9 @@ pub struct StageDefinition {
     /// the orchestrator flags it as silent. `None` means the built-in default
     /// (`DEFAULT_HUNG_TIMEOUT_SECS`, 300s). Raise it for stages whose subagents
     /// legitimately go quiet for long stretches — a foreground codex run or a
-    /// long mechanical sweep fires no PostToolUse hook while it works. The check
-    /// is ADVISORY: it reports a silent session, it never kills or retries one.
+    /// long mechanical sweep fires no PostToolUse hook while it works. The
+    /// monitor warns first; continued silence can trigger bounded recovery in
+    /// `orchestrator/core/event_handler/recover_hung.rs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subagent_timeout_secs: Option<u64>,
     /// Skills this stage's agents need, by catalog name; validated by `check_declared_skills`.

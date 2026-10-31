@@ -14,8 +14,8 @@ use crate::plan::schema::{SandboxConfig, StageDefinition};
 /// It first attempts to load stages from .loom/work/stages/ files, and if none are found,
 /// falls back to loading from the plan file referenced in config.toml.
 ///
-/// Returns the execution graph and the plan-level sandbox configuration. When loading
-/// from stage files (which don't carry plan-level config), `SandboxConfig::default()` is returned.
+/// Returns the execution graph and plan-level sandbox configuration. Stage
+/// files use the persisted plan sandbox snapshot, or defaults when absent.
 pub fn build_execution_graph(work_dir: impl AsWorkDir) -> Result<(ExecutionGraph, SandboxConfig)> {
     work_dir.build_graph()
 }

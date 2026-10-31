@@ -30,7 +30,9 @@ pub struct ContractSpec {
     pub id: String,
     /// Test file, relative to `working_dir`, no `..`.
     pub file: String,
-    /// Exact test name the runner adapter selects.
+    /// Runner-specific test identifier. PHPUnit and Pest require the fully
+    /// qualified `Class::method` (including any dataset suffix); Swift XCTest
+    /// requires `Module.Class/method`.
     pub test: String,
     /// Runner adapter name; `None` means detected from the project.
     #[serde(default, skip_serializing_if = "Option::is_none")]
