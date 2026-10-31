@@ -134,7 +134,7 @@ fn permission_mode_matches_each_session_kind() -> Result<()> {
 #[test]
 fn authoring_ask_rules_match_each_scope() -> Result<()> {
     let f = Fixture::new()?;
-    for (session_scope, expected_ask) in scope_cases()? {
+    for (session_scope, expected_ask) in scope_cases(&f.root)? {
         scope::write(&f.session, &session_scope)?;
         let settings = f.settings()?;
         assert_eq!(settings["permissions"]["defaultMode"], json!("auto"));

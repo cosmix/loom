@@ -200,14 +200,11 @@ fn loom_user_dir() -> Result<PathBuf> {
 /// Keep in-crate tests without an explicit home out of the operator's runtime state.
 #[cfg(test)]
 fn test_loom_user_dir() -> Result<PathBuf> {
-    static HOME: std::sync::OnceLock<std::io::Result<PathBuf>> = std::sync::OnceLock::new();
-    let home = HOME.get_or_init(|| {
-        let dir = std::env::temp_dir().join(format!("loom-test-home-{}", std::process::id()));
-        std::fs::create_dir_all(&dir)?;
-        Ok(dir)
-    });
+    static HOME: std::sync::OnceLock<std::io::Result<tempfile::TempDir>> =
+        std::sync::OnceLock::new();
+    let home = HOME.get_or_init(|| tempfile::Builder::new().prefix("loom-test-home-").tempdir());
     match home {
-        Ok(dir) => Ok(dir.clone()),
+        Ok(dir) => Ok(dir.path().to_path_buf()),
         Err(error) => Err(anyhow!("cannot create test loom user directory: {error}")),
     }
 }
