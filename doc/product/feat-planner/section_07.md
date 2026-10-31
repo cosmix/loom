@@ -408,8 +408,10 @@ only as a cache.
   section 11, "Stopping, failure, and server stops", describes.
 - **The server never returns.** Every session, summary sessions included, starts with an **owner
   watch**: its launch script runs `loom plan hook OwnerWatch <session dir>` in the background,
-  outside Claude Code's sandbox. Every 15 seconds the watch reads the project's server lock
-  record and checks that the pid in it is alive. The read takes no lock, so the watch can never
+  outside Claude Code's sandbox, and the watch moves to a session of its own, so the signals that
+  end the pane do not end it. Every 15 seconds the watch reads the project's server lock record
+  and checks that the process it names is alive: the pid exists and its start time matches the
+  record's, so a reused pid reads as no owner. The read takes no lock, so the watch can never
   make a starting server refuse. When no live owner has been seen for 15 minutes, the watch
   tears the session's tmux server down; it does the same when the session's own process is gone
   and no owner is alive, which clears the tmux server that `remain-on-exit` leaves behind. Each

@@ -19,6 +19,10 @@ fn published_record_is_visible_to_second_opener() {
         panic!("lock not held")
     };
     assert_eq!(record.pid, std::process::id());
+    assert_eq!(
+        record.start_time,
+        crate::process::process_start_time(std::process::id())
+    );
     assert_eq!(record.url.as_deref(), Some("http://127.0.0.1:7272"));
     assert_eq!(record.token.as_deref(), Some("secret"));
     drop(lock);

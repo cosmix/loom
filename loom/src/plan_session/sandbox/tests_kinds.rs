@@ -8,7 +8,7 @@ use glob::{MatchOptions, Pattern};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
-use super::tests_kinds_fixture::{expected_common, expected_common_for, kinds};
+use super::tests_kinds_fixture::{expected_common, expected_common_for, expected_edit_asks, kinds};
 use super::{
     assert_planning_settings, build_settings, ensure_runtime_grants, HookSpec, SandboxInputs,
 };
@@ -170,7 +170,10 @@ fn pressure_whole_json_snapshot() {
         "Bash(loom map *)",
         "WebSearch"
     ]);
-    expected["permissions"]["ask"] = json!(["WebFetch"]);
+    let asks = expected_edit_asks(&f.root);
+    expected["permissions"]["ask"] = json!(std::iter::once("WebFetch".to_owned())
+        .chain(asks)
+        .collect::<Vec<_>>());
     expected["permissions"]["deny"] = json!([
         "LSP",
         "RemoteTrigger",

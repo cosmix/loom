@@ -69,6 +69,7 @@ fn startup_lines_omit_optional_lines() {
 fn already_running_lines_join_url_and_handle_incomplete_record() {
     let mut record = LockRecord {
         pid: 42,
+        start_time: None,
         url: Some("http://localhost:7272".into()),
         token: Some("abc".into()),
     };

@@ -57,6 +57,7 @@ const SANCTIONED_SPAWNERS: &[&str] = &[
     "subagent_owned_wait/support.rs",
     "merge_off_checkout_cli.rs",
     "planning_check_cli_contracts.rs",
+    "plan_owner_watch_session.rs",
     "plan_server_cli.rs",
     "plan_server_contracts.rs",
     "file_mode_contracts.rs",

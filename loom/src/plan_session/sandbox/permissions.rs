@@ -6,7 +6,8 @@
 //! `Write(...)` rule and no `Read(...)` deny is ever emitted
 //! (`mistakes/sandbox-write-rules-inert.md`, `concerns/sandbox-and-confinement-gaps.md`). No
 //! `Edit` deny names `doc/loom/`: it would also be an OS write deny and block `loom knowledge`
-//! and `loom plan summary seal`.
+//! and `loom plan summary seal`. An `Edit` ask is the form `doc/loom/` takes: it prompts for a file
+//! tool and leaves the OS write set alone.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -110,7 +111,7 @@ fn authoring(build: &Build<'_>) -> Result<Rules> {
     }
     // Each top-level file by its literal path: `Edit` paths match with gitignore semantics, so
     // `doc/*` would match the directory `doc/loom` and so everything beneath it. A file created
-    // later prompts the holder, and the guard still decides it.
+    // later matches no rule: it reaches the classifier, and the guard decides it.
     for file in doc_entries(build, EntryKind::File)? {
         allow.push(path_rule("Edit", &doc.join(file), ""));
     }
@@ -127,6 +128,7 @@ fn authoring(build: &Build<'_>) -> Result<Rules> {
             ask.extend(KICKOFF_WRITER_ASKS.map(String::from));
         }
     }
+    ask.extend(file_tool_asks(build, &[])?);
     allow.extend(AUTHORING_READ_ONLY_BASH.map(String::from));
     allow.push(WEB_SEARCH.to_owned());
     let mut deny = base_denies(!build.scope.peer_tools());
@@ -167,7 +169,32 @@ fn pressure(build: &Build<'_>, plan: &Path, bundle: &Path) -> Result<Rules> {
             .map(String::from),
     );
     allow.push(WEB_SEARCH.to_owned());
-    Ok((allow, vec![WEB_FETCH.to_owned()], base_denies(false)))
+    let mut ask = vec![WEB_FETCH.to_owned()];
+    // An ask outranks an allow, so the notes file the session may write stays out of the list.
+    ask.extend(file_tool_asks(build, &[OMISSIONS])?);
+    Ok((allow, ask, base_denies(false)))
+}
+
+/// The `Edit` asks of an auto-mode session, which keep file-tool writes outside `doc/` and under
+/// `doc/loom/` with the holder when the guard does not answer: the classifier decides a path no
+/// rule lists. `doc/loom/**`, then each top-level entry but `doc` and `allowed`, enumerated now,
+/// a directory with everything beneath it. An ask outranks an allow, so none covers the root or
+/// `doc`. A name holding rule syntax gets no rule (a directory named `*` would ask for every
+/// directory): layer 1 lists it literally and the guard decides it.
+fn file_tool_asks(build: &Build<'_>, allowed: &[&str]) -> Result<Vec<String>> {
+    let root = build.inputs.project_root;
+    let mut asks = vec![path_rule("Edit", &root.join("doc/loom"), "/**")];
+    for (name, kind) in rule_safe_entries(build, Path::new(""))? {
+        if name != "doc" && !allowed.contains(&name.as_str()) {
+            let suffix = if kind == EntryKind::Directory {
+                "/**"
+            } else {
+                ""
+            };
+            asks.push(path_rule("Edit", &root.join(name), suffix));
+        }
+    }
+    Ok(asks)
 }
 
 /// `<tool>(/` + the absolute `abs` + `suffix` + `)`: the `//` comes from `abs`'s own root.
@@ -196,16 +223,23 @@ fn base_denies(peer_tools: bool) -> Vec<String> {
 /// is a name holding rule syntax (a directory named `*` would otherwise allow every directory,
 /// `doc/loom` included).
 fn doc_entries(build: &Build<'_>, kind: EntryKind) -> Result<Vec<String>> {
-    let mut names: Vec<String> = build
+    let entries = rule_safe_entries(build, Path::new("doc"))?;
+    let of_kind = entries.into_iter().filter(|(_, entry)| *entry == kind);
+    Ok(of_kind.map(|(name, _)| name).collect())
+}
+
+/// The entries of the real directory `dir` whose names can stand in a permission rule, sorted by
+/// name, listed without following a link.
+fn rule_safe_entries(build: &Build<'_>, dir: &Path) -> Result<Vec<(String, EntryKind)>> {
+    let mut entries: Vec<_> = build
         .tree
-        .real_dir_entries(Path::new("doc"))?
+        .real_dir_entries(dir)?
         .into_iter()
-        .filter(|(_, entry)| *entry == kind)
-        .filter_map(|(name, _)| name.into_string().ok())
-        .filter(|name| rule_syntax_chars(name).is_empty())
+        .filter_map(|(name, kind)| Some((name.into_string().ok()?, kind)))
+        .filter(|(name, _)| rule_syntax_chars(name).is_empty())
         .collect();
-    names.sort();
-    Ok(names)
+    entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+    Ok(entries)
 }
 
 /// The authoring `Edit` denies of the locked set: each existing locked plan file, the run
