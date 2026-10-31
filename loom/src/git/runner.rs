@@ -82,6 +82,9 @@ fn git_command(
 
 /// The argv, variables and directory of [`git_command`], set on `command`.
 fn harden(command: &mut Command, exec_args: &[&str], repo_root: &Path) {
+    for variable in REPO_REDIRECT_ENV {
+        command.env_remove(variable);
+    }
     command
         .args(exec_args)
         .env("LC_ALL", "C")
@@ -164,10 +167,14 @@ pub(crate) fn run_git_in_env_within(
 ) -> Result<Output> {
     let exec_args = global_args(args);
     let mut command = Command::new("git");
-    command
-        .env_clear()
-        .envs(env.iter().map(|pair| (&pair.0, &pair.1)));
+    command.env_clear();
     harden(&mut command, &exec_args, repo_root);
+    command.envs(env.iter().map(|pair| (&pair.0, &pair.1)));
+    command
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("GIT_NO_REPLACE_OBJECTS", "1")
+        .env("GIT_GRAFT_FILE", NO_GRAFT_FILE);
     run_bounded_git(command, &exec_args, &git_label(args), timeout)
 }
 

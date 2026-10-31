@@ -26,7 +26,7 @@ pub fn cleanup_worktree(stage_id: &str, repo_root: &Path, force: bool) -> Result
     if !worktree_directory_exists(&worktree_path)? {
         return Ok(false);
     }
-    if !force {
+    if !force && worktree_path.join(".git").try_exists()? {
         remove_worktree_scaffold(&worktree_path)?;
     }
 
@@ -83,10 +83,8 @@ pub(crate) fn worktree_directory_exists(worktree_path: &Path) -> Result<bool> {
 /// (`setup_claude_directory`, `setup_root_claude_md`), and the spool files
 /// (see `remove_drained_spool`) are runtime output creation loom never commits
 /// either — so anything git tracks under these paths was never loom's to
-/// remove. Empty when the query fails — unit tests call
-/// `remove_worktree_scaffold` on plain temp dirs with no git repository at
-/// all.
-fn tracked_scaffold_paths(worktree_path: &Path) -> HashSet<String> {
+/// remove. Failure leaves ownership unknown and must prevent mutation.
+fn tracked_scaffold_paths(worktree_path: &Path) -> Result<HashSet<String>> {
     let mut args = vec!["ls-files", "-z", "--", ".claude", "CLAUDE.md", ".loom"];
     args.extend(NAMES);
     run_git_checked(&args, worktree_path)
@@ -96,7 +94,7 @@ fn tracked_scaffold_paths(worktree_path: &Path) -> HashSet<String> {
                 .map(str::to_string)
                 .collect()
         })
-        .unwrap_or_default()
+        .context("Failed to determine tracked worktree scaffold paths")
 }
 
 /// Remove only Loom-generated scaffold before non-forced Git removal.
@@ -118,7 +116,16 @@ fn tracked_scaffold_paths(worktree_path: &Path) -> HashSet<String> {
 /// and left on disk it is exactly the kind of untracked file that makes
 /// non-forced `git worktree remove` refuse.
 pub(crate) fn remove_worktree_scaffold(worktree_path: &Path) -> Result<()> {
-    let tracked = tracked_scaffold_paths(worktree_path);
+    let tracked = tracked_scaffold_paths(worktree_path)?;
+    remove_worktree_scaffold_known(worktree_path, &tracked)
+}
+
+#[cfg(test)]
+pub(crate) fn remove_worktree_scaffold_with_known_paths(worktree_path: &Path) -> Result<()> {
+    remove_worktree_scaffold_known(worktree_path, &HashSet::new())
+}
+
+fn remove_worktree_scaffold_known(worktree_path: &Path, tracked: &HashSet<String>) -> Result<()> {
     remove_required_symlink(&worktree_path.join(".loom").join("work"))?;
     // Tidy up `.loom/` if removing `work` left it empty; harmless no-op
     // otherwise (e.g. it still holds the drained-spool check below, or the
@@ -129,19 +136,14 @@ pub(crate) fn remove_worktree_scaffold(worktree_path: &Path) -> Result<()> {
     if claude_dir.is_symlink() {
         remove_if_symlink(&claude_dir)?;
     } else if claude_dir.exists() {
-        remove_known_claude_scaffold(&claude_dir, &tracked)?;
+        remove_known_claude_scaffold(&claude_dir, tracked)?;
     }
     if !tracked.contains("CLAUDE.md") {
         remove_if_symlink(&worktree_path.join("CLAUDE.md"))?;
     }
-    remove_drained_spool(worktree_path, &tracked, MEMORY_SPOOL_RELPATH, "memory")?;
-    remove_drained_spool(
-        worktree_path,
-        &tracked,
-        TELEMETRY_SPOOL_RELPATH,
-        "telemetry",
-    )?;
-    remove_sandbox_stubs(worktree_path, &tracked)
+    remove_drained_spool(worktree_path, tracked, MEMORY_SPOOL_RELPATH, "memory")?;
+    remove_drained_spool(worktree_path, tracked, TELEMETRY_SPOOL_RELPATH, "telemetry")?;
+    remove_sandbox_stubs(worktree_path, tracked)
 }
 
 /// Remove the zero-byte regular files a sandbox leaves at the worktree root

@@ -1,11 +1,10 @@
-//! Worktree output parsing
-//!
-//! Parses git worktree list --porcelain output into structured data.
+//! Parse NUL-delimited Git worktree records.
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
+use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 
-/// Parsed worktree information from git worktree list
+/// Parsed worktree information from git worktree list.
 #[derive(Debug, Clone)]
 pub struct WorktreeInfo {
     pub path: PathBuf,
@@ -14,57 +13,45 @@ pub struct WorktreeInfo {
     pub is_bare: bool,
 }
 
-/// Parse git worktree list --porcelain output
-///
-/// Example input:
-/// ```text
-/// worktree /home/user/repo
-/// HEAD abc123def456
-/// branch main
-///
-/// worktree /home/user/repo/.worktrees/stage-1
-/// HEAD def789abc012
-/// branch loom/stage-1
-/// ```
-pub fn parse_worktree_list(output: &str) -> Result<Vec<WorktreeInfo>> {
+/// Preserve arbitrary path bytes and reject incomplete records.
+pub fn parse_worktree_list(output: &[u8]) -> Result<Vec<WorktreeInfo>> {
+    if !output.is_empty() && !output.ends_with(b"\0\0") {
+        bail!("incomplete git worktree listing");
+    }
     let mut worktrees = Vec::new();
     let mut current: Option<WorktreeInfo> = None;
-
-    for line in output.lines() {
-        if line.starts_with("worktree ") {
+    for field in output.split(|byte| *byte == 0) {
+        if field.is_empty() {
             if let Some(wt) = current.take() {
                 worktrees.push(wt);
             }
-            let path = line.strip_prefix("worktree ").unwrap_or("");
+        } else if let Some(path) = field.strip_prefix(b"worktree ") {
+            if current.is_some() || path.is_empty() {
+                bail!("invalid git worktree listing");
+            }
             current = Some(WorktreeInfo {
-                path: PathBuf::from(path),
+                path: PathBuf::from(std::ffi::OsString::from_vec(path.to_vec())),
                 head: String::new(),
                 branch: None,
                 is_bare: false,
             });
-        } else if line.starts_with("HEAD ") {
-            if let Some(ref mut wt) = current {
-                wt.head = line.strip_prefix("HEAD ").unwrap_or("").to_string();
-            }
-        } else if line.starts_with("branch ") {
-            if let Some(ref mut wt) = current {
-                let branch_line = line.strip_prefix("branch ").unwrap_or("");
-                let branch_name = branch_line
-                    .strip_prefix("refs/heads/")
-                    .unwrap_or(branch_line);
-                wt.branch = Some(branch_name.to_string());
-            }
-        } else if line == "bare" {
-            if let Some(ref mut wt) = current {
+        } else {
+            let wt = current.as_mut().context("worktree field without path")?;
+            if let Some(head) = field.strip_prefix(b"HEAD ") {
+                wt.head = std::str::from_utf8(head)?.to_string();
+            } else if let Some(branch) = field.strip_prefix(b"branch ") {
+                let branch = std::str::from_utf8(branch)?;
+                wt.branch = Some(
+                    branch
+                        .strip_prefix("refs/heads/")
+                        .unwrap_or(branch)
+                        .to_string(),
+                );
+            } else if field == b"bare" {
                 wt.is_bare = true;
             }
         }
     }
-
-    if let Some(wt) = current {
-        worktrees.push(wt);
-    }
-
     Ok(worktrees)
 }
 
@@ -73,37 +60,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_worktree_list() {
-        let output = r#"worktree /home/user/repo
-HEAD abc123def456
-branch main
-
-worktree /home/user/repo/.worktrees/stage-1
-HEAD def789abc012
-branch loom/stage-1
-"#;
-
+    fn parses_nul_records_and_rejects_incomplete_output() {
+        let output =
+            b"worktree /repo\0HEAD abc\0branch refs/heads/main\0\0worktree /repo.git\0bare\0\0";
         let worktrees = parse_worktree_list(output).unwrap();
         assert_eq!(worktrees.len(), 2);
-        assert_eq!(worktrees[0].branch, Some("main".to_string()));
-        assert_eq!(worktrees[1].branch, Some("loom/stage-1".to_string()));
-    }
-
-    #[test]
-    fn test_parse_worktree_list_with_bare() {
-        let output = r#"worktree /home/user/repo.git
-bare
-"#;
-
-        let worktrees = parse_worktree_list(output).unwrap();
-        assert_eq!(worktrees.len(), 1);
-        assert!(worktrees[0].is_bare);
-    }
-
-    #[test]
-    fn test_parse_worktree_list_empty() {
-        let output = "";
-        let worktrees = parse_worktree_list(output).unwrap();
-        assert!(worktrees.is_empty());
+        assert_eq!(worktrees[0].branch.as_deref(), Some("main"));
+        assert!(worktrees[1].is_bare);
+        assert!(parse_worktree_list(b"worktree /repo\0HEAD abc\0").is_err());
     }
 }

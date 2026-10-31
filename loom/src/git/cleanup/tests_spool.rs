@@ -7,7 +7,7 @@
 
 use super::tests::{git_ok, setup_git_repo};
 use crate::git::cleanup::cleanup_worktree;
-use crate::git::cleanup::worktree::remove_worktree_scaffold;
+use crate::git::cleanup::worktree::remove_worktree_scaffold_with_known_paths as remove_worktree_scaffold;
 use serial_test::serial;
 use std::fs;
 use tempfile::TempDir;

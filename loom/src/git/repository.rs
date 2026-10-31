@@ -2,7 +2,8 @@
 //!
 //! Loom relies on git worktrees for stage isolation, which requires a
 //! non-bare repository with at least one commit. These helpers ensure the
-//! current project is worktree-capable without staging or committing user files.
+//! current project is worktree-capable. Bootstrap stages and commits only
+//! `README.md`, including an existing user-provided README.
 
 use anyhow::{bail, Context, Result};
 use std::path::Path;

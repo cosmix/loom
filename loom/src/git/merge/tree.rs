@@ -29,8 +29,8 @@ pub enum TreeMerge {
     Conflict { tree: String, paths: Vec<String> },
 }
 
-/// Why the target branch was not advanced. Nothing in the main checkout was
-/// changed when one of these is returned.
+/// Why the target branch was not advanced. `StashNotRestored` requires the
+/// operator to restore stashed checkout changes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MergeBlock {
@@ -206,7 +206,8 @@ pub fn commit_merge(repo: &Path, tree: &str, parents: [&str; 2], message: &str) 
 }
 
 /// A computed merge whose commit is written only when an advance needs it,
-/// so a blocked attempt leaves no unreachable commit behind.
+/// so preflight blocks leave no unreachable commit behind. A later raced
+/// ref update can still be refused after the commit is written.
 pub struct PendingMerge<'a> {
     repo: &'a Path,
     tree: String,
@@ -253,8 +254,8 @@ impl<'a> PendingMerge<'a> {
 /// `repo` is the operator's main checkout. Where the target is checked out
 /// decides the mechanism: nowhere, `update-ref` guarded by the old tip; in
 /// `repo`, a fast-forward that keeps the operator's uncommitted work; in
-/// another worktree, a block. The commit is written only on the paths that
-/// can advance.
+/// another worktree, a block. A ref update can be refused after commit creation
+/// if the target moves concurrently.
 pub fn advance_target(
     repo: &Path,
     target: &str,

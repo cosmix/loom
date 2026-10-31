@@ -15,6 +15,59 @@ use serial_test::serial;
 use std::fs;
 
 #[test]
+fn corrupt_index_preserves_scaffold_and_tracked_edits() {
+    let repo = setup_git_repo();
+    fs::create_dir_all(repo.path().join(".claude")).unwrap();
+    fs::write(repo.path().join(".claude/settings.json"), "original").unwrap();
+    git_ok(repo.path(), &["add", "-f", ".claude/settings.json"]);
+    git_ok(repo.path(), &["commit", "-m", "tracked settings"]);
+    fs::create_dir_all(repo.path().join(".worktrees")).unwrap();
+    git_ok(
+        repo.path(),
+        &[
+            "worktree",
+            "add",
+            ".worktrees/stage-1",
+            "-b",
+            "loom/stage-1",
+        ],
+    );
+    let worktree = repo.path().join(".worktrees/stage-1");
+    let settings = worktree.join(".claude/settings.json");
+    fs::write(&settings, "local edits").unwrap();
+    fs::create_dir_all(worktree.join(".loom")).unwrap();
+    fs::write(worktree.join(".loom/memory-spool.jsonl"), "memory").unwrap();
+    std::os::unix::fs::symlink(repo.path(), worktree.join(".loom/work")).unwrap();
+    fs::write(
+        repo.path().join(".git/worktrees/stage-1/index"),
+        "broken index",
+    )
+    .unwrap();
+
+    let error = cleanup_worktree("stage-1", repo.path(), false).unwrap_err();
+    assert!(format!("{error:#}").contains("tracked worktree scaffold"));
+    assert_eq!(fs::read_to_string(settings).unwrap(), "local edits");
+    assert_eq!(
+        fs::read_to_string(worktree.join(".loom/memory-spool.jsonl")).unwrap(),
+        "memory"
+    );
+    assert!(fs::symlink_metadata(worktree.join(".loom/work"))
+        .unwrap()
+        .file_type()
+        .is_symlink());
+}
+
+#[test]
+fn scaffold_query_rejects_non_git_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join(".claude")).unwrap();
+    let settings = dir.path().join(".claude/settings.json");
+    fs::write(&settings, "keep").unwrap();
+    assert!(remove_worktree_scaffold(dir.path()).is_err());
+    assert_eq!(fs::read_to_string(settings).unwrap(), "keep");
+}
+
+#[test]
 #[serial]
 fn tracked_claude_settings_survive_scaffold_removal_and_cleanup_succeeds() {
     let temp_dir = setup_git_repo();
