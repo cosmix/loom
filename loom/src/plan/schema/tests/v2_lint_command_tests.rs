@@ -124,6 +124,25 @@ fn unknown_loom_subcommand_when_the_calling_stage_itself_adds_cli_files_is_a_war
 }
 
 #[test]
+fn cli_ownership_is_relative_to_the_stage_working_directory() {
+    for (working_dir, entry, warning) in [
+        (".", "loom/src/cli/**", true),
+        ("loom", "src/cli/**", true),
+        ("loom/src", "**", true),
+        ("loom", "src/other/**", false),
+        ("elsewhere", "loom/src/cli/**", false),
+        ("loom", "../loom/src/cli/**", false),
+    ] {
+        let mut calls = stage("feature", StageType::Standard, &["loom foo bar"]);
+        calls.working_dir = working_dir.to_string();
+        calls.files = vec![entry.to_string()];
+        let found = matching(&plan(vec![calls]), None, "is not a subcommand");
+        assert_eq!(found.len(), 1, "{working_dir}: {entry}: {found:?}");
+        assert_eq!(!found[0].error_in_v2, warning, "{working_dir}: {entry}");
+    }
+}
+
+#[test]
 fn protected_dash_patterns_are_clean() {
     let metadata = standard(&[
         r#"rg -qF -e "--out" src/x.rs"#,

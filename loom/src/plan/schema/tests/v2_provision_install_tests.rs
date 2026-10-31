@@ -57,3 +57,31 @@ fn a_grouped_install_and_a_cd_argument_keep_the_refusal() {
         assert!(messages.is_empty(), "{command:?}: {messages:?}");
     }
 }
+
+#[test]
+fn install_flags_cannot_be_overridden_or_hidden_after_terminator() {
+    for command in [
+        format!("{REFUSAL} && {BUN_INSTALL} --backend=hardlink"),
+        format!("{REFUSAL} && {BUN_INSTALL} --config /tmp/config"),
+        format!("{REFUSAL} && {BUN_INSTALL} --no-ignore-scripts"),
+        format!("{REFUSAL} && {BUN_INSTALL} -- --config=/tmp/config"),
+        format!("{REFUSAL} && npm ci --ignore-scripts --ignore-scripts=false"),
+        format!(
+            "{REFUSAL} && pnpm install --ignore-scripts --ignore-pnpmfile --no-ignore-pnpmfile"
+        ),
+        format!("{REFUSAL} && yarn install -- --ignore-scripts"),
+        "uv sync --no-install-project --no-install-project=false".to_string(),
+        format!("{REFUSAL} && bun --cwd web install --backend=hardlink"),
+    ] {
+        assert!(!provision_messages(&command).is_empty(), "{command}");
+    }
+    for command in [
+        format!("{REFUSAL} && bun install --ignore-scripts --backend copyfile --config /dev/null"),
+        format!("{REFUSAL} && npm ci --ignore-scripts -- package"),
+        format!("{REFUSAL} && pnpm install --ignore-scripts --ignore-pnpmfile"),
+        format!("{REFUSAL} && yarn install --ignore-scripts"),
+        "uv sync --no-install-project".to_string(),
+    ] {
+        assert!(provision_messages(&command).is_empty(), "{command}");
+    }
+}

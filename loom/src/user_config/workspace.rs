@@ -49,10 +49,11 @@ use anyhow::{anyhow, bail, Context, Result};
 use toml_edit::DocumentMut;
 
 use crate::fs::work_dir::{
-    insert_key, read_config, remove_key, update_config, ContextConfig, WorkDir,
+    insert_key, read_config, remove_key, update_config, ContextConfig, ModelsConfig, PlanConfig,
+    PressureConfig, WorkDir,
 };
 use crate::models::session::TerminalConfig;
-use crate::user_config::keys::{KeySpec, ValueKind, KEYS};
+use crate::user_config::keys::KeySpec;
 use crate::user_config::{ConfigValue, UserConfig};
 
 /// A tree's `.loom/work` and its parsed `config.toml`.
@@ -181,11 +182,8 @@ fn workspace_table(section: &str) -> &str {
 /// and a `match` that must agree drift, and the drift would land as a panic on
 /// a live request rather than as a build failure.
 ///
-/// The `_` arm matches on `spec.section` rather than `spec.name` so a key
-/// added to `[pressure]`/`[models]` in the registry picks up this fallback
-/// with no edit here — the two exact-name arms above stay name-matched so a
-/// later key added to `[context]` cannot silently inherit `ContextConfig`'s
-/// reading of a DIFFERENT field.
+/// Pressure uses the runtime's validated accessors; other table-backed keys
+/// validate their entire section through the same typed parser as runtime.
 fn resolve(spec: &KeySpec, section: Option<&toml::Value>) -> Option<Result<Option<ConfigValue>>> {
     match spec.name {
         "terminal.backend" => Some(
@@ -198,10 +196,26 @@ fn resolve(spec: &KeySpec, section: Option<&toml::Value>) -> Option<Result<Optio
             ),
         ),
         _ => match spec.section {
-            "pressure" | "models" | "plan" => Some(Ok(section_key(section, spec))),
+            "pressure" => Some(Ok(pressure_key(section, spec.field))),
+            "models" | "plan" => Some(Ok(section_key(section, spec))),
             _ => None,
         },
     }
+}
+
+fn pressure_key(section: Option<&toml::Value>, field: &str) -> Option<ConfigValue> {
+    let config: PressureConfig = section?.clone().try_into().ok()?;
+    let text = match field {
+        "claude_model" => config.claude_model(),
+        "claude_effort" => config.claude_effort(),
+        "codex_model" => config.codex_model(),
+        "codex_effort" => config.codex_effort(),
+        "address_model" => config.address_model(),
+        "address_effort" => config.address_effort(),
+        "rounds" => return config.rounds().map(ConfigValue::Number),
+        _ => None,
+    };
+    text.map(|value| ConfigValue::Text(value.to_owned()))
 }
 
 /// Whether the workspace tier resolves `spec` at all — see [`resolve`], which
@@ -233,21 +247,13 @@ fn section_key(section: Option<&toml::Value>, spec: &KeySpec) -> Option<ConfigVa
     }
 }
 
-/// Whether the daemon can deserialize the `[models]` or `[pressure]` section:
-/// a table whose entries are registered fields in `name`, each holding the
-/// shape its key accepts (an integer for number keys, else a string).
+/// Use the runtime's section types, including their unknown-field policy.
 fn section_readable(section: &toml::Value, name: &str) -> bool {
-    let Some(table) = section.as_table() else {
-        return false;
-    };
-    table.iter().all(|(field, value)| {
-        KEYS.iter()
-            .find(|spec| spec.section == name && spec.field == field)
-            .is_some_and(|spec| match spec.kind {
-                ValueKind::Number => value.is_integer(),
-                _ => value.is_str(),
-            })
-    })
+    match name {
+        "models" => section.clone().try_into::<ModelsConfig>().is_ok(),
+        "plan" => section.clone().try_into::<PlanConfig>().is_ok(),
+        _ => false,
+    }
 }
 
 fn parse(text: &str) -> Result<toml::Value> {

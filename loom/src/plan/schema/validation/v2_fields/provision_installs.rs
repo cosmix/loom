@@ -135,24 +135,55 @@ pub(super) fn push_install_problems(label: &str, command: &str, messages: &mut V
 fn install_rule(argv: &[&Word]) -> Option<(&'static InstallRule, String)> {
     let (first, rest) = argv.split_first()?;
     let tool = first.command_name();
+    let rule = INSTALL_RULES.iter().find(|rule| rule.tool == tool)?;
+    // A global option's value can precede the subcommand. Conservatively
+    // recognize an install word anywhere before the option terminator.
     let sub = rest
         .iter()
         .map(|word| word.value.as_str())
-        .find(|arg| !arg.starts_with('-'));
-    let rule = INSTALL_RULES
-        .iter()
-        .find(|rule| rule.tool == tool && rule.subcommands.contains(&sub.unwrap_or("")))?;
+        .take_while(|arg| *arg != "--")
+        .find(|arg| rule.subcommands.contains(arg));
+    if sub.is_none()
+        && (!rule.subcommands.contains(&"") || rest.iter().any(|word| !word.value.starts_with('-')))
+    {
+        return None;
+    }
     let install = sub.map_or_else(|| tool.to_string(), |sub| format!("{tool} {sub}"));
     Some((rule, install))
 }
 
-/// Whether `args` pass `flag`, either as written or, for `--name=value`, as
-/// `--name value`.
+/// Require exactly one unambiguous occurrence before the option terminator.
 fn passes(args: &[&str], flag: &str) -> bool {
-    let spaced = flag
+    let (name, value) = flag
         .split_once('=')
-        .is_some_and(|(name, value)| args.windows(2).any(|pair| pair == [name, value]));
-    spaced || args.contains(&flag)
+        .map_or((flag, None), |(n, v)| (n, Some(v)));
+    let negative = format!("--no-{}", name.trim_start_matches("--"));
+    if let Some(end) = args.iter().position(|arg| *arg == "--") {
+        if args[end + 1..].iter().any(|arg| {
+            *arg == name
+                || arg.starts_with(&format!("{name}="))
+                || *arg == negative
+                || arg.starts_with(&format!("{negative}="))
+        }) {
+            return false;
+        }
+    }
+    let mut count = 0;
+    let mut valid = false;
+    let mut args = args.iter().copied().take_while(|arg| *arg != "--");
+    while let Some(arg) = args.next() {
+        if arg == negative || arg.starts_with(&format!("{negative}=")) {
+            return false;
+        }
+        if arg == name {
+            count += 1;
+            valid = value.map_or(true, |expected| args.next() == Some(expected));
+        } else if let Some(actual) = arg.strip_prefix(name).and_then(|s| s.strip_prefix('=')) {
+            count += 1;
+            valid = value == Some(actual);
+        }
+    }
+    count == 1 && valid
 }
 
 /// Whether `command` opens with `test ! -e .npmrc` and `test ! -L .npmrc` (either

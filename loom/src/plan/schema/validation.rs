@@ -17,6 +17,7 @@ pub(super) mod acceptance_command;
 pub(crate) mod base_tree;
 pub(super) mod criterion_hazards;
 mod knowledge_recommendations;
+mod preflight_commands;
 mod search_args;
 pub(crate) mod shell_lex;
 pub(super) mod v2_fields;
@@ -628,90 +629,21 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
     }
 }
 
-/// Check if a command string uses a specific build tool at a word boundary.
-///
-/// This prevents false positives like "cargo test" matching the "go " tool pattern,
-/// since the "go " substring appears inside "cargo " but is not a standalone tool invocation.
-fn criterion_uses_build_tool(criterion: &str, tool_cmd: &str) -> bool {
-    let mut search_from = 0;
-    while search_from < criterion.len() {
-        match criterion[search_from..].find(tool_cmd) {
-            Some(relative_pos) => {
-                let abs_pos = search_from + relative_pos;
-                // Check that the character before the match is a word boundary
-                // (start of string, space, pipe, semicolon, ampersand, etc.)
-                let at_word_boundary =
-                    abs_pos == 0 || !criterion.as_bytes()[abs_pos - 1].is_ascii_alphanumeric();
-                if at_word_boundary {
-                    return true;
-                }
-                search_from = abs_pos + 1;
-            }
-            None => break,
-        }
-    }
-    false
-}
-
-/// Extract the value of a `--flag <value>` or `--flag=value` selector from an
-/// acceptance command.
-///
-/// Whitespace-split only, with no quoting/escaping support beyond what a plan
-/// author would plausibly write in a one-line acceptance command.
-fn extract_flag_value<'a>(cmd: &'a str, flag: &str) -> Option<&'a str> {
-    let mut tokens = cmd.split_whitespace();
-    while let Some(token) = tokens.next() {
-        if token == flag {
-            return tokens.next();
-        }
-        if let Some(value) = token
-            .strip_prefix(flag)
-            .and_then(|rest| rest.strip_prefix('='))
-        {
-            return Some(value);
-        }
-    }
-    None
-}
-
-/// Resolve the config file an acceptance criterion's build-tool check should
-/// look for, honoring an explicit tool selector when the criterion names one.
-///
-/// `--manifest-path <p>` (cargo) names the config file itself - the selector
-/// value IS the path, resolved against `working_dir`. `--project-dir <p>`
-/// (bun) and `-C <p>` (go) name a directory to resolve `config_file`
-/// inside, also against `working_dir` - the fallback absent any selector.
-fn resolve_build_tool_config_path(
-    cmd: &str,
-    tool_cmd: &str,
-    config_file: &str,
-    working_dir: &std::path::Path,
-) -> std::path::PathBuf {
-    let selector = match tool_cmd {
-        "cargo" => extract_flag_value(cmd, "--manifest-path").map(|p| working_dir.join(p)),
-        "bun " => {
-            extract_flag_value(cmd, "--project-dir").map(|p| working_dir.join(p).join(config_file))
-        }
-        "go " => extract_flag_value(cmd, "-C").map(|p| working_dir.join(p).join(config_file)),
-        _ => None,
-    };
-    selector.unwrap_or_else(|| working_dir.join(config_file))
-}
-
 /// Warn about ungrantable-resource acceptance criteria and warning-level command hazards, then
 /// delegate to the full-suite check.
 ///
 /// `loom map` / `loom knowledge context` resolve the shared context-store cache under the main
 /// project root (reached through the `.loom/work` symlink, which no `allow_write` entry can
-/// cover), and tmux/docker are host daemons the sandbox does not expose. `loom stage complete`
-/// runs acceptance from inside the session, so these fail for reasons the stage's diff can
-/// never fix — stranding a finished stage rather than reporting a defect.
+/// cover), and tmux/docker are host daemons the command confinement does not
+/// expose. Relayed `loom stage complete` runs acceptance in a confined host
+/// job, outside the agent session sandbox. These criteria can fail for reasons
+/// the stage's diff cannot fix, stranding a finished stage.
 fn warn_ungrantable_acceptance(stage: &super::types::StageDefinition, warnings: &mut Vec<String>) {
     for (idx, criterion) in stage.acceptance.iter().enumerate() {
         if let Some(what) = criterion_needs_ungrantable_resource(criterion.command()) {
             warnings.push(format!(
                 "Stage '{}': Acceptance criterion #{} invokes '{}', which needs a resource \
-                 the stage sandbox cannot grant (shared .loom state reached through \
+                 host command confinement cannot grant (shared .loom state reached through \
                  the worktree symlink, or a host daemon). Prove the behavior with a test \
                  that injects the root/handle, or with an artifacts/wiring check instead.",
                 stage.id,
@@ -723,17 +655,6 @@ fn warn_ungrantable_acceptance(stage: &super::types::StageDefinition, warnings: 
     criterion_hazards::push_hazard_warnings(stage, warnings);
     warn_full_suite_outside_integration_verify(stage, detect_stage_type(stage), warnings);
 }
-
-/// Build tool command patterns and their expected config files
-const BUILD_TOOL_CHECKS: &[(&str, &str)] = &[
-    ("cargo", "Cargo.toml"),
-    ("npm ", "package.json"),
-    ("bun ", "package.json"),
-    ("yarn ", "package.json"),
-    ("go ", "go.mod"),
-    ("pytest", "pyproject.toml"),
-    ("uv ", "pyproject.toml"),
-];
 
 /// Validate structural aspects of the plan before execution (pre-flight checks).
 ///
@@ -887,42 +808,19 @@ pub fn validate_structural_preflight(
                 root.join(&stage.working_dir)
             };
 
-            // Check if acceptance criteria reference build tools whose config files are missing.
-            // A criterion naming an explicit tool selector (`--manifest-path`,
-            // `--project-dir`, `-C`) is resolved against THAT selector instead
-            // of working_dir - see `resolve_build_tool_config_path`.
             for criterion in &stage.acceptance {
-                let cmd = criterion.command();
-                for &(tool_cmd, config_file) in BUILD_TOOL_CHECKS {
-                    if !criterion_uses_build_tool(cmd, tool_cmd) {
-                        continue;
-                    }
-                    // `resolve_build_tool_config_path` resolves an explicit
-                    // tool selector (--manifest-path/--project-dir/-C) against
-                    // `working_dir`, since that selector value is relative to
-                    // the acceptance command's CWD - not the repo root - and
-                    // `working_dir` is where a stage's commands actually run.
-                    let resolved =
-                        resolve_build_tool_config_path(cmd, tool_cmd, config_file, &working_dir);
-                    if !resolved.exists() {
-                        warnings.push(format!(
-                            "Stage '{}': Acceptance criterion '{}' uses '{}' but {} not found at {}",
-                            stage.id,
-                            cmd,
-                            tool_cmd.trim(),
-                            config_file,
-                            resolved.display()
-                        ));
-                    }
-                }
+                preflight_commands::warn(
+                    &stage.id,
+                    criterion.command(),
+                    &working_dir,
+                    &mut warnings,
+                );
             }
 
             // Check for double-path artifacts (working_dir prefix in artifact path)
             if !stage.working_dir.is_empty() && stage.working_dir != "." {
                 for (idx, artifact) in stage.artifacts.iter().enumerate() {
-                    if artifact.starts_with(&stage.working_dir)
-                        || artifact.starts_with(&format!("{}/", stage.working_dir))
-                    {
+                    if preflight_commands::has_working_dir_prefix(artifact, &stage.working_dir) {
                         warnings.push(format!(
                             "Stage '{}': Artifact #{} '{}' may have redundant working_dir prefix '{}'. \
                              Artifact paths are relative to working_dir.",
@@ -936,11 +834,10 @@ pub fn validate_structural_preflight(
 
                 // Check for double-path in wiring sources
                 for (idx, wiring) in stage.wiring.iter().enumerate() {
-                    if wiring.source.starts_with(&stage.working_dir)
-                        || wiring
-                            .source
-                            .starts_with(&format!("{}/", stage.working_dir))
-                    {
+                    if preflight_commands::has_working_dir_prefix(
+                        &wiring.source,
+                        &stage.working_dir,
+                    ) {
                         warnings.push(format!(
                             "Stage '{}': Wiring #{} source '{}' may have redundant working_dir prefix '{}'. \
                              Wiring paths are relative to working_dir.",
@@ -954,9 +851,7 @@ pub fn validate_structural_preflight(
 
                 // Check for double-path in regression_test file
                 if let Some(ref rt) = stage.regression_test {
-                    if rt.file.starts_with(&stage.working_dir)
-                        || rt.file.starts_with(&format!("{}/", stage.working_dir))
-                    {
+                    if preflight_commands::has_working_dir_prefix(&rt.file, &stage.working_dir) {
                         warnings.push(format!(
                             "Stage '{}': regression_test.file '{}' may have redundant working_dir prefix '{}'. \
                              Regression test paths are relative to working_dir.",
