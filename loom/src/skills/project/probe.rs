@@ -6,9 +6,9 @@
 //! or a file over `MAX_FILE_BYTES` reads as absent, so a checkout cannot
 //! redirect discovery outside itself or stall a prompt hook on a huge file.
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
+pub(super) use crate::language::evidence::{files_where, has_dependency, read_json};
 use regex::Regex;
 use serde_json::Value;
 
@@ -16,13 +16,6 @@ use super::markers::regular_file;
 use crate::fs::safe_read;
 
 const MAX_FILE_BYTES: usize = 256 * 1024;
-/// Entries examined per directory listing; discovery runs on every prompt.
-const MAX_LISTED_ENTRIES: usize = 4_096;
-
-pub(super) fn read_json(root: &Path, path: &Path) -> Option<Value> {
-    serde_json::from_slice(&read_bounded(root, path)?).ok()
-}
-
 /// Whether a line of `path` that is not a `#` comment matches `pattern`; a
 /// missing, unreadable or oversized file never matches.
 pub(super) fn has_line(root: &Path, path: &Path, pattern: &Regex) -> bool {
@@ -31,16 +24,6 @@ pub(super) fn has_line(root: &Path, path: &Path, pattern: &Regex) -> bool {
             .lines()
             .filter(|line| !line.trim_start().starts_with('#'))
             .any(|line| pattern.is_match(line))
-    })
-}
-
-/// Whether any of the manifest's `sections` (objects keyed by package name) lists `name`.
-pub(super) fn has_dependency(manifest: &Value, sections: &[&str], name: &str) -> bool {
-    sections.iter().any(|section| {
-        manifest
-            .get(section)
-            .and_then(Value::as_object)
-            .is_some_and(|deps| deps.contains_key(name))
     })
 }
 
@@ -58,22 +41,6 @@ pub(crate) fn declares_dependencies(root: &Path, package_dir: &Path) -> bool {
             .and_then(Value::as_object)
             .is_some_and(|entries| !entries.is_empty())
     })
-}
-
-/// Regular files directly inside `dir` whose name satisfies `matches`.
-pub(super) fn files_where(
-    dir: &Path,
-    matches: impl Fn(&str) -> bool,
-) -> impl Iterator<Item = PathBuf> {
-    fs::read_dir(dir)
-        .ok()
-        .into_iter()
-        .flatten()
-        .take(MAX_LISTED_ENTRIES)
-        .flatten()
-        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
-        .filter(move |entry| matches(&entry.file_name().to_string_lossy()))
-        .map(|entry| entry.path())
 }
 
 /// The bytes of `path`, which must lie beneath `root`. The `lstat` check only

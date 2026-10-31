@@ -61,6 +61,13 @@ pub struct GraphStore {
     pub(crate) view_cache: RefCell<HashMap<PathBuf, ResolvedView>>,
 }
 
+/// One overlay generation and the only base revision compatible with it.
+pub(crate) struct GraphRead<'a> {
+    pub revision: String,
+    pub address: Option<(&'a str, &'a str)>,
+    pub overlay: Option<GraphLayer>,
+}
+
 impl GraphStore {
     /// Build from the two roots directly. `context_cache_root` is
     /// [`crate::context::store::ContextStore::root`]; `work_root` is
@@ -103,6 +110,12 @@ impl GraphStore {
     /// reuse the layer test `GraphLayer::has_current_schema`.
     pub fn load_base(&self, revision: &str) -> Result<Option<GraphLayer>> {
         self.read_layer_or_memory(&self.base_path(revision))
+    }
+
+    pub(crate) fn has_base_layer(&self, revision: &str) -> bool {
+        let path = self.base_path(revision);
+        !revision.is_empty()
+            && (path.is_file() || self.memory_fallback.borrow().contains_key(&path))
     }
 
     /// Read the most recently written base layer, if any.
@@ -232,8 +245,8 @@ impl GraphStore {
         }
     }
 
-    /// The view a reader sees: base at `revision` with `plan`/`stage`'s overlay
-    /// applied on top.
+    /// Resolve a stage overlay against its recorded base, or `revision` when
+    /// no overlay exists. A legacy overlay without a revision has no base.
     ///
     /// Pass `None` for the stage to read the base layer alone. A missing base
     /// is not an error — an overlay-only view is exactly what a stage sees
@@ -252,7 +265,34 @@ impl GraphStore {
         revision: &str,
         stage: Option<(&str, &str)>,
     ) -> Result<(ResolvedGraph, bool)> {
-        let base = self.load_base(revision)?;
+        let read = self.graph_read(revision, stage)?;
+        self.resolve_read(&read)
+    }
+
+    pub(crate) fn graph_read<'a>(
+        &self,
+        revision: &str,
+        address: Option<(&'a str, &'a str)>,
+    ) -> Result<GraphRead<'a>> {
+        let overlay = match address {
+            Some((plan, stage)) => self.load_overlay(plan, stage)?,
+            None => None,
+        };
+        let revision = overlay.as_ref().map_or(revision, |layer| &layer.revision);
+        Ok(GraphRead {
+            revision: revision.to_owned(),
+            address: address.filter(|_| overlay.is_some()),
+            overlay,
+        })
+    }
+
+    pub(crate) fn resolve_read(&self, read: &GraphRead<'_>) -> Result<(ResolvedGraph, bool)> {
+        let base = if read.revision.is_empty() {
+            None
+        } else {
+            self.load_base(&read.revision)?
+                .filter(|base| base.revision == read.revision)
+        };
         let mut current = base.as_ref().is_none_or(GraphLayer::has_current_schema);
         let base = base.unwrap_or_default();
         let mut resolved = ResolvedGraph {
@@ -261,18 +301,16 @@ impl GraphStore {
             files: base.files,
         };
 
-        if let Some((plan, stage)) = stage {
-            if let Some(overlay) = self.load_overlay(plan, stage)? {
-                current &= overlay.has_current_schema();
-                for (path, entry) in overlay.files {
-                    // Wholesale replacement, never a merge: an overlay entry is
-                    // the complete truth for that file in this stage.
-                    if entry.coverage == FileCoverage::Deleted {
-                        resolved.files.remove(&path);
-                    } else {
-                        resolved.files.insert(path.clone(), entry);
-                        resolved.overlaid.insert(path);
-                    }
+        if let Some(overlay) = &read.overlay {
+            current &= overlay.has_current_schema();
+            for (path, entry) in &overlay.files {
+                // Wholesale replacement, never a merge: an overlay entry is
+                // the complete truth for that file in this stage.
+                if entry.coverage == FileCoverage::Deleted {
+                    resolved.files.remove(path);
+                } else {
+                    resolved.files.insert(path.clone(), entry.clone());
+                    resolved.overlaid.insert(path.clone());
                 }
             }
         }

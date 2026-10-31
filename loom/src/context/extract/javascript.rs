@@ -108,7 +108,7 @@ impl QueryHarness for JavaScriptExtractor {
             dialect: "javascript",
             grammar_version: "0.25.0",
             query_digest: crate::context::source_graph::body_hash(QUERY.as_bytes()),
-            extractor_version: 2,
+            extractor_version: 3,
         }
     }
 

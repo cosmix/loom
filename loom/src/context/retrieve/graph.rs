@@ -1,8 +1,5 @@
-//! Resolving the source graph for a query's overlay, and detecting the A.11
-//! degraded mode: a non-empty semantic revision whose RESOLVED graph —
-//! base layer plus whatever overlay this query is scoped to — came back
-//! with no content at all. A missing base alone is not this condition when an
-//! overlay still provides a complete usable view.
+//! Resolve a query's source graph against the overlay's base or checkout HEAD,
+//! and report missing bases and overlays whose base revision is unknown.
 //!
 //! Split out of `retrieve.rs` so the top-level pipeline in
 //! [`super::retrieve_for_stage`] stays a readable sequence of steps rather
@@ -10,10 +7,10 @@
 //! `doc/PROPOSAL-retrieval-precision.md` §A.11 for the design this
 //! implements.
 
-use crate::context::graph_store::{GraphStore, ResolvedGraph};
+use crate::context::graph_store::{GraphRead, GraphStore, ResolvedGraph};
 use crate::context::local_overlay::OverlayScope;
 use crate::context::refresh::{clean_generation, short_revision, working_tree};
-use crate::context::store::ContextStore;
+use crate::context::store::{ContextStore, StoreState};
 use crate::fs::work_dir::WorkDir;
 use std::path::{Path, PathBuf};
 
@@ -23,6 +20,7 @@ pub(super) struct GraphLoad {
     pub project_root: Option<PathBuf>,
     pub degraded: Option<String>,
     pub working_tree_stale: Option<String>,
+    pub served_revision: Option<String>,
 }
 
 impl GraphLoad {
@@ -32,50 +30,46 @@ impl GraphLoad {
             project_root: None,
             degraded: None,
             working_tree_stale: None,
+            served_revision: None,
+        }
+    }
+
+    pub(super) fn apply_freshness(&self, state: &mut StoreState) {
+        if let Some(revision) = &self.served_revision {
+            if state.semantic.revision != *revision {
+                state.semantic.revision = revision.clone();
+                state.semantic.computed_at = None;
+                state.semantic.stale = self
+                    .graph
+                    .as_ref()
+                    .is_none_or(|graph| revision.is_empty() || graph.base_revision != *revision);
+                state.semantic.unavailable = false;
+                state.semantic.detail = state
+                    .semantic
+                    .stale
+                    .then(|| "source graph base for the served snapshot is unavailable".into());
+            }
+            if !revision.is_empty()
+                && self
+                    .graph
+                    .as_ref()
+                    .is_some_and(|graph| graph.base_revision.is_empty())
+            {
+                state.semantic.stale = true;
+                state.semantic.detail =
+                    Some("source graph base for the served snapshot is unavailable".into());
+            }
+        }
+        if let Some(detail) = &self.working_tree_stale {
+            state.semantic.stale = true;
+            state.semantic.detail = Some(detail.clone());
         }
     }
 }
 
-/// Load the resolved source graph for `query`'s overlay, degrading to `None`
-/// on any error, alongside an A.11 degradation message when the base layer
-/// for a non-empty semantic revision could not be found.
-///
-/// The graph is [`GraphStore::view`]'s, so expansion sees cross-file edges. When
-/// the view cannot be built this falls back to [`GraphStore::resolved`]'s
-/// unresolved graph and says so in the degraded message.
-///
-/// `overlay.resolve` always yields a `(plan, stage)` pair, so this always asks
-/// for the overlay-applied view — never `None` for the stage. That distinction matters on its own: with `None`, `resolved`
-/// reads only the base layer, and a base miss there becomes an *empty* graph
-/// rather than a missing one, silently dropping an overlay the query should
-/// have read. [`OverlayScope::Local`] resolves to the `(plan, stage)` address
-/// `local_overlay_key` computes, written through
-/// `ensure_snapshot(SnapshotPolicy::LocalCurrent)` by `loom map`
-/// (`commands/map.rs`), `loom knowledge sync`, and the prompt hook's
-/// background reconcile (`commands/hook/reconcile_graph.rs`) — so a
-/// `Local`-scoped query is what lets a caller see working-tree changes beyond
-/// the base.
-///
-/// Retrieval itself never builds or refreshes this graph: `resolve_catalog`
-/// calls `refresh` with `structural_only = true`, which skips the semantic
-/// reconcile on every call this pipeline makes. So this function only ever
-/// reads what a prior `loom map` run, or a merge, already wrote for
-/// `semantic_revision`.
-///
-/// **Real, currently-reachable degraded mode:** a non-empty
-/// `semantic_revision` names a layer `state.json` claims was built, but
-/// NEITHER half of the resolved view can back that claim: no base file was
-/// found for the revision (`graph_store::GraphStore::resolved`'s base half is
-/// `unwrap_or_default()` over `load_base`, so a missing base file resolves to
-/// an *empty* base rather than an error) AND nothing published an overlay to
-/// cover for it either, so the resolved graph has no files at all.
-/// [`degraded_reason`] turns THAT combination into the message
-/// `super::request::build_pack_request` carries out to `ContextPack::degraded`. A
-/// missing base alone is NOT this condition — see this module's doc comment
-/// and [`degraded_reason`]'s own — so a checkout with a healthy overlay, or
-/// one with a genuinely empty published base, both read as `Semantic:
-/// current`, exactly as they should; only a checkout where the source
-/// channel has genuinely nothing to answer with gets flagged.
+/// Load the checkout source layers and resolve a derived view.
+/// Retrieval may cache the view, but does not rebuild source layers. An
+/// overlay chooses its recorded base; without one, the checkout HEAD does.
 pub(super) fn load_resolved_graph(
     work_dir_hint: &Path,
     store: &ContextStore,
@@ -90,13 +84,15 @@ pub(super) fn load_resolved_graph(
     };
     let (plan, stage) = overlay.resolve(project_root);
     let graph_store = GraphStore::new(store.root(), work_dir.root());
-    let Ok(overlay_layer) = graph_store.load_overlay(&plan, &stage) else {
+    let tree = working_tree(project_root).ok();
+    let requested = tree.as_ref().map_or(semantic_revision, |tree| &tree.head);
+    let Ok(read) = graph_store.graph_read(requested, Some((&plan, &stage))) else {
         return GraphLoad::empty();
     };
-    let (graph, view_note) = match graph_store.view(semantic_revision, Some((&plan, &stage))) {
+    let (graph, view_note) = match graph_store.view_read(&read) {
         Ok(view) => (view.graph, None),
         Err(error) => {
-            let Ok(graph) = graph_store.resolved(semantic_revision, Some((&plan, &stage))) else {
+            let Ok((graph, _)) = graph_store.resolve_read(&read) else {
                 return GraphLoad::empty();
             };
             let note =
@@ -105,52 +101,47 @@ pub(super) fn load_resolved_graph(
         }
     };
 
-    let degraded = degraded_reason(semantic_revision, &graph).or(view_note);
-    let working_tree_stale = working_tree(project_root)
-        .ok()
-        .and_then(|tree| match overlay_layer {
-            Some(layer) if layer.generation != tree.generation => {
-                Some("working tree changed since the source graph overlay was built".to_string())
-            }
-            None if tree.generation != clean_generation(&tree.head) => {
-                Some("working tree has changes but no source graph overlay exists".to_string())
-            }
-            _ => None,
-        });
+    let degraded = graph_degradation(&read, &graph, view_note);
+    let working_tree_stale = tree.and_then(|tree| match &read.overlay {
+        Some(layer) if layer.revision != tree.head || layer.generation != tree.generation => {
+            Some("working tree changed since the source graph overlay was built".to_string())
+        }
+        None if tree.generation != clean_generation(&tree.head) => {
+            Some("working tree has changes but no source graph overlay exists".to_string())
+        }
+        _ => None,
+    });
     GraphLoad {
         graph: Some(graph),
         project_root: Some(project_root.to_path_buf()),
         degraded,
         working_tree_stale,
+        served_revision: Some(read.revision),
+    }
+}
+
+fn graph_degradation(
+    read: &GraphRead<'_>,
+    graph: &ResolvedGraph,
+    view_note: Option<String>,
+) -> Option<String> {
+    if read.overlay.is_some() && read.revision.is_empty() {
+        Some("source graph overlay has no recorded base revision".to_string())
+    } else if read.overlay.is_some() && !read.revision.is_empty() && graph.base_revision.is_empty()
+    {
+        Some(format!(
+            "source graph base {} missing; serving overlay only",
+            short_revision(&read.revision)
+        ))
+    } else {
+        degraded_reason(&read.revision, graph).or(view_note)
     }
 }
 
 /// The degraded reason for a graph that was never built and holds no content.
 const NEVER_BUILT_REASON: &str = "source graph never built; run loom map to build it";
 
-/// The A.11 degradation message, or `None` when this read is honestly
-/// healthy.
-///
-/// An EMPTY `semantic_revision` means "never built": it is degraded only when
-/// the resolved view is empty too, with a fixed reason. An overlay-backed read
-/// (`files` non-empty) with no recorded revision answers queries and is not
-/// degraded. `spawn_if_needed` never rebuilds from a never-built pack
-/// (`wants_rebuild`), so this banner cannot start a background rebuild.
-///
-/// Otherwise the answer is two-part: a base was found (`base_revision`
-/// non-empty, which holds even for a genuinely empty, zero-file base: a
-/// published layer over a project with no matching source files is current,
-/// not degraded), OR the resolved view has ANY content (`files` non-empty; an
-/// overlay alone can supply this with no base present). `GraphStore::resolved`
-/// returns `base ∪ overlay`, so `base_revision` alone would flag a checkout
-/// whose overlay answers queries. Only when NEITHER holds is there nothing to
-/// answer a query with, and that is the one case surfaced.
-///
-/// The result feeds [`crate::commands::hook::reconcile_graph::spawn_if_needed`],
-/// which starts a detached full-repository rebuild according to
-/// `wants_rebuild`: a `Stale` graph is rebuilt; a `Current` graph is rebuilt
-/// only when degraded; a `NeverBuilt` or `Unavailable` graph is never rebuilt
-/// by a hook. The rebuild is throttled by the reconcile debounce lock.
+/// Report an absent base and overlay when no graph content is available.
 fn degraded_reason(semantic_revision: &str, graph: &ResolvedGraph) -> Option<String> {
     if semantic_revision.is_empty() {
         return graph

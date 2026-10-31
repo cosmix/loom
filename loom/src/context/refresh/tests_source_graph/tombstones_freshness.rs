@@ -72,6 +72,7 @@ fn rebuild_and_persist_and_persist_semantic_freshness_do_not_revert_each_others_
         &knowledge_root,
         stale_semantic,
         fingerprints,
+        false,
     )
     .unwrap();
 

@@ -103,10 +103,26 @@ fn render_span(item: &ContextItem) -> Option<String> {
     })
 }
 
-/// A fenced, escape-proof excerpt block.
+/// A fenced excerpt with terminal controls neutralized.
 pub(crate) fn render_excerpt_block(excerpt: &str) -> String {
-    let fence = fence_for(excerpt);
+    let excerpt = terminal_safe(excerpt);
+    let fence = fence_for(&excerpt);
     format!("{fence}text\n{excerpt}\n{fence}\n")
+}
+
+#[cfg(test)]
+mod excerpt_tests {
+    use super::render_excerpt_block;
+
+    #[test]
+    fn excerpt_neutralizes_terminal_controls_and_sizes_fence() {
+        let excerpt = "source\tline\n```\n\u{1b}]0;title\u{7}\u{202e}end";
+        assert_eq!(
+            render_excerpt_block(excerpt),
+            "````text\nsource\tline\n```\n\u{fffd}]0;title\u{fffd} end\n````\n"
+        );
+        assert!(excerpt.contains('\u{1b}'));
+    }
 }
 
 /// A backtick fence at least one longer than the longest backtick run already

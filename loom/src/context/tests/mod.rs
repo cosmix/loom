@@ -34,6 +34,7 @@ mod rank_stopwords;
 mod rank_stopwords_rescue;
 mod render_source_fields;
 mod retrieve;
+mod retrieve_revision;
 mod retrieve_source;
 mod retrieve_windows;
 mod schema;

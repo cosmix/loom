@@ -18,10 +18,9 @@ pub(crate) mod windows;
 use crate::context::config::RetrievalConfig;
 use crate::context::fuse::fuse;
 use crate::context::graph_store::ResolvedGraph;
-use crate::context::ingest::ingest;
 use crate::context::local_overlay::OverlayScope;
 use crate::context::pack::pack;
-use crate::context::refresh::{evaluate, refresh};
+use crate::context::refresh::{evaluate, refresh_snapshot};
 use crate::context::schema::{
     Channel, ContextPack, Freshness, LifecyclePolicy, RequiredRepresentation,
 };
@@ -175,9 +174,8 @@ pub(crate) fn resolve_roots(work_dir_hint: &Path) -> Result<(PathBuf, ContextSto
     Ok((knowledge_root, roots.store))
 }
 
-/// Bring the catalog current and return it. A read-only query must never die
-/// because the cache is unwritable: a `refresh` failure is downgraded to a
-/// warning and the catalog is built in memory instead.
+/// Return the current catalog, using the built in-memory snapshot if cache
+/// publication fails. Authoritative knowledge read failures still propagate.
 ///
 /// With no knowledge tree there is nothing to ingest, so the catalog is empty
 /// and the knowledge channel contributes no candidates. [`evaluate_state`] is
@@ -195,28 +193,13 @@ fn resolve_catalog(
         return Ok((catalog, evaluate_state(store, None)?));
     };
 
-    match refresh(store, knowledge_root, true) {
-        Ok(outcome) => {
-            let catalog = match store.load_catalog()? {
-                Some(catalog) => catalog,
-                None => ingest(knowledge_root)?.0,
-            };
-            let state = StoreState {
-                structural: outcome.structural,
-                semantic: outcome.semantic.freshness,
-                catalog_revision: catalog.revision.clone(),
-            };
-            Ok((catalog, state))
-        }
-        Err(error) => {
-            eprintln!(
-                "warning: failed to refresh the context cache ({error}); using an in-memory catalog for this query"
-            );
-            let (catalog, _report) = ingest(knowledge_root)?;
-            let state = evaluate_state(store, Some(knowledge_root))?;
-            Ok((catalog, state))
-        }
-    }
+    let (outcome, catalog) = refresh_snapshot(store, knowledge_root, true)?;
+    let state = StoreState {
+        structural: outcome.structural,
+        semantic: outcome.semantic.freshness,
+        catalog_revision: catalog.revision.clone(),
+    };
+    Ok((catalog, state))
 }
 
 /// Freshness of both derived layers for this query.
@@ -231,8 +214,18 @@ fn evaluate_state(store: &ContextStore, knowledge_root: Option<&Path>) -> Result
     EVALUATE_STATE_CALLS.with(|count| count.set(count.get() + 1));
 
     let Some(knowledge_root) = knowledge_root else {
-        let stored = store.load_state()?;
-        let semantic = if stored.semantic.revision.is_empty() {
+        let (stored, unavailable) = store
+            .load_state()
+            .map(|state| (state, false))
+            .unwrap_or_else(|error| {
+                eprintln!(
+                    "warning: context state unreadable ({error}); semantic freshness unavailable"
+                );
+                (StoreState::default(), true)
+            });
+        let semantic = if unavailable {
+            Freshness::unavailable("semantic freshness unavailable: context state unreadable")
+        } else if stored.semantic.revision.is_empty() {
             Freshness::never_built(NO_SOURCE_GRAPH_DETAIL)
         } else {
             stored.semantic
@@ -319,10 +312,7 @@ pub fn retrieve_for_stage(query: &StageQuery, budget_tokens: usize) -> Result<Co
         &state.semantic.revision,
         &query.overlay,
     );
-    if let Some(detail) = graph_load.working_tree_stale {
-        state.semantic.stale = true;
-        state.semantic.detail = Some(detail);
-    }
+    graph_load.apply_freshness(&mut state);
     let graph = graph_load.graph;
 
     request::check_require_ids(query, &catalog, graph.as_ref())?;

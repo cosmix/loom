@@ -61,6 +61,37 @@ fn a_this_call_in_a_javascript_function_stays_unbound() {
     assert_unbound_on(call(&extraction, "render"), "this");
 }
 
+#[test]
+fn ecmascript_receiver_boundaries_follow_function_syntax() {
+    use crate::context::extract::tsx::TsxExtractor;
+    use crate::context::extract::typescript::TypeScriptExtractor;
+
+    let source = b"class C { m() { function f() { this.ordinary(); } const a = () => this.arrow(); const g = function() { this.expression(); }; class Inner { m() { this.inner(); } inner() {} } } ordinary() {} arrow() {} expression() {} }";
+    let extractors: &[(&dyn SourceGraphExtractor, &str)] = &[
+        (&JavaScriptExtractor::new(), "src/w.js"),
+        (&TypeScriptExtractor::new(), "src/w.ts"),
+        (&TsxExtractor::new(), "src/w.tsx"),
+    ];
+    for (extractor, path) in extractors {
+        let extraction = extractor.extract(Path::new(path), source).unwrap();
+        for symbol in ["ordinary", "expression"] {
+            assert_unbound_on(call(&extraction, symbol), "this");
+        }
+        for (symbol, owner) in [("arrow", "C"), ("inner", "C::m::Inner")] {
+            let edge = call(&extraction, symbol);
+            assert_eq!(
+                edge.provenance,
+                EdgeProvenance::Receiver,
+                "{path}: {edge:#?}"
+            );
+            assert!(
+                edge.to.contains(&format!("{owner}::{symbol}")),
+                "{path}: {edge:#?}"
+            );
+        }
+    }
+}
+
 #[cfg(feature = "source-graph-wave-b")]
 #[test]
 fn a_ruby_top_level_self_call_binds_the_top_level_method() {

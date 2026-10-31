@@ -14,11 +14,12 @@ use crate::context::fingerprint::{fingerprint_tree, tree_revision, FileFingerpri
 use crate::context::ingest::IngestReport;
 use crate::context::schema::Freshness;
 use crate::context::store::{ContextStore, StoreState};
-use crate::fs::knowledge::catalog;
+use crate::fs::knowledge::catalog::{self, Catalog};
 
 mod semantic;
 pub mod snapshot;
 mod source_graph;
+mod structural_snapshot;
 
 pub use semantic::{SemanticLayer, SemanticOutcome, SOURCE_GRAPH_PREFIX};
 pub use snapshot::{ensure_snapshot, SnapshotAction, SnapshotOutcome, SnapshotPolicy};
@@ -33,6 +34,7 @@ pub(crate) use crate::context::extract::BoxedExtractor;
 struct Evaluated {
     state: StoreState,
     fingerprints: Vec<FileFingerprint>,
+    catalog: Option<Catalog>,
 }
 
 /// What a refresh actually did.
@@ -76,10 +78,7 @@ fn structural_freshness(stored: &Freshness, current_revision: &str) -> Freshness
 /// `structural.stale` is true when the stored structural revision differs
 /// from the freshly computed tree revision, when nothing has been built yet,
 /// or when the persisted catalog on disk does not match what `state.json`
-/// claims was built (missing, deleted, or overwritten out from under it —
-/// `save_catalog` and `save_state` are two independent writes with no
-/// cross-file transaction, so this is the only place that catches the two
-/// files disagreeing).
+/// claims was built (missing, deleted, or overwritten out from under it).
 ///
 /// The semantic layer is still owned by the source-graph stage — this
 /// function never rebuilds it, and an absent semantic revision is reported as
@@ -104,35 +103,29 @@ pub fn evaluate(store: &ContextStore, knowledge_root: &Path) -> Result<StoreStat
 }
 
 fn evaluate_inner(store: &ContextStore, knowledge_root: &Path) -> Result<Evaluated> {
-    let stored = store.load_state()?;
+    let (stored, catalog, state_unavailable) = store
+        .load_snapshot()
+        .map(|(state, catalog)| (state, catalog, false))
+        .unwrap_or_else(|error| {
+            eprintln!("warning: context cache unreadable ({error}); rebuilding cache");
+            (StoreState::default(), Ok(None), true)
+        });
+    let catalog = catalog.unwrap_or_else(|error| {
+        eprintln!("warning: context catalog unreadable ({error}); rebuilding cache");
+        None
+    });
 
     let fingerprints = fingerprint_once(knowledge_root)?;
     let current_revision = tree_revision(&fingerprints);
 
-    let mut structural = structural_freshness(&stored.structural, &current_revision);
-
-    // A structural revision was recorded, meaning a catalog was supposedly
-    // built — confirm the catalog on disk still backs that claim. Skip this
-    // when nothing has ever been built: that case already has its own detail
-    // message above, and an absent catalog there is expected, not a mismatch.
-    if !stored.structural.revision.is_empty() {
-        let catalog = store.load_catalog()?;
-        let catalog_is_missing_or_stale = match &catalog {
-            None => true,
-            Some(catalog) => catalog.revision != stored.catalog_revision,
-        };
-        if catalog_is_missing_or_stale {
-            structural.stale = true;
-            structural.detail = Some(
-                "cached catalog is missing or does not match the recorded revision".to_string(),
-            );
-        }
-    }
+    let structural = structural_snapshot::catalog_freshness(&stored, &catalog, &current_revision);
 
     // The semantic layer is populated by the source-graph stage, not this
     // one. Never invent a revision for it, and never rebuild it here — see
     // the doc comment above and on `semantic_freshness_against_head`.
-    let semantic = if stored.semantic.revision.is_empty() {
+    let semantic = if state_unavailable {
+        Freshness::unavailable("semantic freshness unavailable: context state unreadable")
+    } else if stored.semantic.revision.is_empty() {
         Freshness::never_built("source graph not built; see the source-graph stage")
     } else {
         semantic_freshness_against_head(knowledge_root, stored.semantic.clone())
@@ -145,6 +138,7 @@ fn evaluate_inner(store: &ContextStore, knowledge_root: &Path) -> Result<Evaluat
             catalog_revision: stored.catalog_revision,
         },
         fingerprints,
+        catalog,
     })
 }
 
@@ -230,6 +224,23 @@ pub fn refresh(
     knowledge_root: &Path,
     structural_only: bool,
 ) -> Result<RefreshOutcome> {
+    Ok(refresh_snapshot_inner(store, knowledge_root, structural_only, false)?.0)
+}
+
+pub(crate) fn refresh_snapshot(
+    store: &ContextStore,
+    knowledge_root: &Path,
+    structural_only: bool,
+) -> Result<(RefreshOutcome, Catalog)> {
+    refresh_snapshot_inner(store, knowledge_root, structural_only, true)
+}
+
+fn refresh_snapshot_inner(
+    store: &ContextStore,
+    knowledge_root: &Path,
+    structural_only: bool,
+    tolerate_write_failure: bool,
+) -> Result<(RefreshOutcome, Catalog)> {
     let evaluated = evaluate_inner(store, knowledge_root)?;
     let state = evaluated.state;
 
@@ -243,19 +254,24 @@ pub fn refresh(
                 state.semantic,
             )
         };
-        return Ok(RefreshOutcome {
+        let outcome = RefreshOutcome {
             rebuilt: false,
             structural: state.structural,
             semantic,
             report: None,
-        });
+        };
+        return Ok((
+            outcome,
+            evaluated.catalog.expect("current catalog is validated"),
+        ));
     }
 
-    let mut outcome = rebuild_and_persist(
+    let (mut outcome, catalog) = rebuild_and_persist(
         store,
         knowledge_root,
         state.semantic,
         evaluated.fingerprints,
+        tolerate_write_failure,
     )?;
     if !structural_only {
         let current = outcome.semantic.freshness.clone();
@@ -265,7 +281,7 @@ pub fn refresh(
             current,
         );
     }
-    Ok(outcome)
+    Ok((outcome, catalog))
 }
 
 /// Rebuild the catalog from `knowledge_root`, persist it and the derived
@@ -276,7 +292,8 @@ fn rebuild_and_persist(
     knowledge_root: &Path,
     semantic: Freshness,
     fingerprints: Vec<FileFingerprint>,
-) -> Result<RefreshOutcome> {
+    tolerate_write_failure: bool,
+) -> Result<(RefreshOutcome, Catalog)> {
     // Persist the SAME revision `evaluate` compares against — the tree revision.
     // `catalog.revision` is a different hash over a different subject (chunk ids
     // and their content hashes, not file paths and their bytes); storing it here
@@ -293,9 +310,8 @@ fn rebuild_and_persist(
         revision: catalog.revision.clone(),
         issues: catalog.issues.clone(),
     };
-    store.save_catalog(&catalog)?;
 
-    let structural = Freshness {
+    let mut structural = Freshness {
         revision: current_revision,
         computed_at: Some(Utc::now()),
         stale: false,
@@ -303,22 +319,28 @@ fn rebuild_and_persist(
         unavailable: false,
     };
 
-    // `update_state` re-reads `state.json` under the lock rather than reusing
-    // the `semantic` snapshot `evaluate` took before `ingest` ran above: a
-    // concurrent writer may have changed `semantic` in that gap, and writing
-    // the stale snapshot back would revert it. Only assign the fields owned
-    // here; `semantic` stays at its on-disk value.
-    store.update_state(|state| {
-        state.structural = structural.clone();
-        state.catalog_revision = catalog.revision.clone();
-    })?;
+    structural_snapshot::publish(store, &catalog, &mut structural, tolerate_write_failure)?;
+    #[cfg(test)]
+    AFTER_PUBLISH.with(|hook| {
+        if let Some(hook) = hook.borrow_mut().take() {
+            hook();
+        }
+    });
 
-    Ok(RefreshOutcome {
-        rebuilt: true,
-        structural,
-        semantic: SemanticOutcome::skipped(semantic, STRUCTURAL_ONLY_REASON),
-        report: Some(report),
-    })
+    Ok((
+        RefreshOutcome {
+            rebuilt: true,
+            structural,
+            semantic: SemanticOutcome::skipped(semantic, STRUCTURAL_ONLY_REASON),
+            report: Some(report),
+        },
+        catalog,
+    ))
+}
+
+#[cfg(test)]
+thread_local! {
+    static AFTER_PUBLISH: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = std::cell::RefCell::new(None);
 }
 
 #[cfg(test)]
