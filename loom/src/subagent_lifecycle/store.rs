@@ -14,6 +14,16 @@ use std::path::{Path, PathBuf};
 
 const MAX_JOURNAL_BYTES: u64 = 8 * 1024 * 1024;
 
+#[cfg(test)]
+thread_local! {
+    static REPLAY_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn replay_count() -> usize {
+    REPLAY_COUNT.with(std::cell::Cell::get)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppendOutcome {
     Appended,
@@ -32,6 +42,7 @@ pub enum ChildDisposition {
 pub struct LifecycleIndex {
     work_dir: PathBuf,
     records: Vec<LifecycleRecord>,
+    stage_evidence: HashMap<String, Vec<LifecycleRecord>>,
     conflicted: HashSet<WorkerIdentity>,
     corrupt_stages: HashMap<String, String>,
 }
@@ -44,6 +55,8 @@ pub(super) fn is_not_found(error: &anyhow::Error) -> bool {
 }
 
 pub fn replay(work_dir: &Path) -> Result<LifecycleIndex> {
+    #[cfg(test)]
+    REPLAY_COUNT.with(|count| count.set(count.get() + 1));
     let mut index = LifecycleIndex {
         work_dir: work_dir.to_path_buf(),
         ..LifecycleIndex::default()
@@ -69,6 +82,20 @@ pub fn replay(work_dir: &Path) -> Result<LifecycleIndex> {
 }
 
 impl LifecycleIndex {
+    /// Records acquired by this replay, or an error when the stage is corrupt.
+    pub(crate) fn stage_records(&self, stage_id: &str) -> Result<Vec<&LifecycleRecord>> {
+        if let Some(reason) = self.corrupt_stages.get(stage_id) {
+            anyhow::bail!("{reason}");
+        }
+        let records = self
+            .stage_evidence
+            .get(stage_id)
+            .map_or(&[][..], Vec::as_slice);
+        // Match the Codex ledger's secondary lifecycle reader (256 authorizations × 4).
+        ensure!(records.len() <= 1024, "lifecycle journal exceeds row cap");
+        Ok(records.iter().collect())
+    }
+
     pub fn session_child_disposition(
         &self,
         stage_id: &str,
@@ -254,6 +281,7 @@ fn replay_stage(
     let Some(loaded) = load_stage_records(&stage_dir, stage, index)? else {
         return Ok(());
     };
+    index.stage_evidence.insert(stage.into(), loaded.clone());
     for record in loaded {
         if record.identity.stage_id() != stage {
             index

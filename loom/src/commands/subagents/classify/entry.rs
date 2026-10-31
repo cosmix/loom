@@ -1,7 +1,8 @@
 //! JSONL-entry parsing and structural liveness classification for `classify`.
 
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -10,13 +11,44 @@ use serde_json::Value;
 
 use super::SubagentState;
 
+#[cfg(test)]
+thread_local! {
+    static READ_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(in crate::commands::subagents) fn read_count() -> usize {
+    READ_COUNT.with(std::cell::Cell::get)
+}
+
 /// Read bytes so a torn UTF-8 tail becomes a single skipped JSONL row rather
 /// than making the whole transcript unreadable.
-pub(super) fn read_entries(path: &Path) -> Result<Vec<Value>> {
-    let bytes = fs::read(path)
-        .with_context(|| format!("reading subagent transcript {}", path.display()))?;
+pub(super) fn read_entries(path: &Path) -> Result<(Vec<Value>, Vec<u8>, bool)> {
+    #[cfg(test)]
+    READ_COUNT.with(|count| count.set(count.get() + 1));
+    let opened = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path);
+    let (bytes, trusted) = match opened {
+        Ok(mut file) => {
+            let metadata = file.metadata()?;
+            let trusted = metadata.is_file()
+                && metadata.uid() == crate::models::forward_receipt::locator::effective_uid()
+                && metadata.len()
+                    <= crate::models::forward_receipt::transcript::MAX_TRANSCRIPT_BYTES as u64;
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes)?;
+            (bytes, trusted)
+        }
+        Err(error) if error.raw_os_error() == Some(libc::ELOOP) => (fs::read(path)?, false),
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("reading subagent transcript {}", path.display()))
+        }
+    };
     let content = String::from_utf8_lossy(&bytes);
-    Ok(parse_lines(&content))
+    Ok((parse_lines(&content), bytes, trusted))
 }
 
 /// Most bytes read from the end of a transcript by [`read_tail_entries`].

@@ -1,6 +1,7 @@
 //! Minimal, read-only extraction of forwarding Bash calls from a transcript.
 
 use std::collections::HashMap;
+#[cfg(test)]
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -25,6 +26,7 @@ pub(super) struct ForwardTranscript {
     pub(super) unreadable: bool,
 }
 
+#[cfg(test)]
 pub(super) fn read(path: &Path) -> ForwardTranscript {
     match fs::symlink_metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => ForwardTranscript::empty(),
@@ -33,6 +35,28 @@ pub(super) fn read(path: &Path) -> ForwardTranscript {
             .map(ForwardTranscript::from_shared)
             .unwrap_or_else(|_| ForwardTranscript::unreadable()),
     }
+}
+
+/// Decode the bytes already acquired for classification under the same strict
+/// identity, regular-file, size, UTF-8 and JSON validation as the shared reader.
+pub(super) fn from_bytes(path: &Path, bytes: &[u8], trusted: bool) -> ForwardTranscript {
+    let decoded = (|| {
+        if !trusted || bytes.len() > transcript_reader::MAX_TRANSCRIPT_BYTES {
+            return None;
+        }
+        let identity = transcript_reader::TranscriptIdentity::from_path(path).ok()?;
+        let input = match std::str::from_utf8(bytes) {
+            Ok(input) => input,
+            Err(error) if error.error_len().is_none() => {
+                std::str::from_utf8(&bytes[..error.valid_up_to()]).ok()?
+            }
+            Err(_) => return None,
+        };
+        transcript_reader::decode(input, identity).ok()
+    })();
+    decoded
+        .map(ForwardTranscript::from_shared)
+        .unwrap_or_else(ForwardTranscript::unreadable)
 }
 
 impl ForwardTranscript {

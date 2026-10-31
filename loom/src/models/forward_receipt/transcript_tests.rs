@@ -43,6 +43,28 @@ fn bash_command_that_only_mentions_forwarder_is_not_an_invocation() -> Result<()
 }
 
 #[test]
+fn transcript_recognizes_authorized_identity_flags() -> Result<()> {
+    for suffix in [
+        "",
+        " --unit-id unit-1",
+        " --unit-id unit-1 --invocation-id inv-0123456789abcdef0123456789abcdef",
+    ] {
+        let decoded = transcript(&[tool_use(&format!("{COMMAND}{suffix}"))])?;
+        assert_eq!(decoded.invocations.len(), 1, "{suffix}");
+    }
+    for suffix in [
+        " --unit-id ../bad",
+        " --unit-id unit-1 extra",
+        " --unit-id unit-1; true",
+        " --invocation-id inv-0123456789abcdef0123456789abcdef --unit-id unit-1",
+    ] {
+        let decoded = transcript(&[tool_use(&format!("{COMMAND}{suffix}"))])?;
+        assert!(decoded.invocations.is_empty(), "{suffix}");
+    }
+    Ok(())
+}
+
+#[test]
 #[serial_test::serial]
 fn duplicate_tool_use_id_is_unknown() -> Result<()> {
     let home = tempfile::tempdir()?;

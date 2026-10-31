@@ -57,7 +57,7 @@ fn decode_utf8_prefix(bytes: Vec<u8>) -> anyhow::Result<String> {
     }
 }
 
-fn effective_uid() -> u32 {
+pub(crate) fn effective_uid() -> u32 {
     // SAFETY: geteuid has no arguments and only reads process credentials.
     unsafe { libc::geteuid() }
 }

@@ -11,7 +11,9 @@ use crate::models::forward_receipt::{
     load_receipts, receipts_path, ForwardBackend, ForwardIdentity, ForwardReceipt, ForwardState,
 };
 
-use super::forward_jobs_transcript::{self, ForwardTranscript};
+#[cfg(test)]
+use super::forward_jobs_transcript;
+use super::forward_jobs_transcript::ForwardTranscript;
 use super::ledger;
 
 #[path = "forward_jobs_status.rs"]
@@ -19,6 +21,11 @@ mod status;
 pub(super) use status::*;
 
 pub(super) const FORWARDER_TYPE: &str = "loom-codex-forwarder";
+
+#[cfg(test)]
+thread_local! {
+    static RECEIPT_READ_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 /// Receipt evidence scoped to one Loom stage and, when supplied, Loom session.
 pub(super) struct ForwardIndex {
@@ -106,15 +113,30 @@ pub(super) fn load_index_with_roots(
 
 /// Overlay one forwarder's lifecycle without modifying the receipt index or
 /// the transcript.  `None` means this agent has no forwarding evidence.
+#[cfg(test)]
 pub(super) fn overlay_for_agent(
     index: &ForwardIndex,
     agent_id: &str,
     transcript: &Path,
 ) -> Option<ForwardOverlay> {
     let transcript = forward_jobs_transcript::read(transcript);
+    let receipts = matching_receipts(index, agent_id, &transcript);
+    let states = receipts
+        .iter()
+        .map(|receipt| receipt_state(index, receipt))
+        .collect::<Vec<_>>();
+    overlay_from_observation(index, agent_id, &transcript, &receipts, &states)
+}
+
+pub(super) fn overlay_from_observation(
+    index: &ForwardIndex,
+    agent_id: &str,
+    transcript: &ForwardTranscript,
+    receipts: &[&ForwardReceipt],
+    receipt_states: &[ForwardState],
+) -> Option<ForwardOverlay> {
     let known_forwarder =
         ledger::agent_type(Some(&index.work_dir), agent_id).as_deref() == Some(FORWARDER_TYPE);
-    let receipts = matching_receipts(index, agent_id, &transcript);
     let expected = known_forwarder || !receipts.is_empty() || transcript.has_forwarding_use();
     if !expected {
         return None;
@@ -123,9 +145,9 @@ pub(super) fn overlay_for_agent(
         return Some(ForwardOverlay::ForwardUnknown);
     }
 
-    let mut states: Vec<_> = receipts
+    let mut states: Vec<_> = receipt_states
         .iter()
-        .map(|receipt| overlay_from_state(receipt_state(index, receipt), transcript.done))
+        .map(|state| overlay_from_state(*state, transcript.done))
         .collect();
     for tool in transcript.forwarding_uses() {
         if receipt_for_tool(index, agent_id, &tool.id, transcript.parent_session_id()).is_none() {
@@ -207,6 +229,8 @@ fn marker_overlay(
 }
 
 pub(super) fn receipt_state(index: &ForwardIndex, receipt: &ForwardReceipt) -> ForwardState {
+    #[cfg(test)]
+    RECEIPT_READ_COUNT.with(|count| count.set(count.get() + 1));
     match receipt.backend {
         ForwardBackend::Direct => receipt.state,
         ForwardBackend::Companion => receipt

@@ -32,7 +32,8 @@ pub fn decode_payload(raw: &str, now: DateTime<Utc>) -> Result<PayloadForward> {
         .get("tool_input")
         .and_then(|input| input.get("command"))
         .and_then(Value::as_str);
-    let Some((model, effort)) = command.and_then(forward_argv) else {
+    let Some(super::transcript::ForwardArgv { model, effort, .. }) = command.and_then(forward_argv)
+    else {
         bail!("payload command is not a forward");
     };
     let tool_use_id = safe_id(&payload, "tool_use_id")?;
