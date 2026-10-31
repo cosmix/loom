@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::testrun::command::{
-    distinct_files, package_runner, regex_literal, shell_quote, shell_word, shell_words,
+    distinct_files, exact_regex_literal, package_runner, shell_quote, shell_word, shell_words,
 };
 use crate::testrun::recognize::{
     combined_output, command_args, has_flag, last_match, pattern, positionals, summary_from_counts,
@@ -99,7 +99,7 @@ impl TestRunnerAdapter for Mocha {
     fn single_test_command(&self, file: &str, test: &str, package_dir: &Path) -> String {
         let runner = package_runner(package_dir);
         let file = shell_word(file);
-        let name = shell_quote(&regex_literal(test));
+        let name = shell_quote(&exact_regex_literal(test));
         format!("{runner} mocha {file} --grep {name}")
     }
 
@@ -140,7 +140,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("temporary package directory");
         assert_eq!(
             ADAPTER.single_test_command("test/math.js", "math adds", dir.path()),
-            "npx mocha test/math.js --grep 'math adds'"
+            "npx mocha test/math.js --grep '^math adds$'"
         );
     }
 
@@ -151,7 +151,7 @@ mod tests {
             std::fs::write(dir.path().join(lock), "").expect("write bun lockfile");
             assert_eq!(
                 ADAPTER.single_test_command("test/math.js", "math adds", dir.path()),
-                "bunx mocha test/math.js --grep 'math adds'"
+                "bunx mocha test/math.js --grep '^math adds$'"
             );
         }
     }
@@ -160,7 +160,7 @@ mod tests {
     fn hostile_test_name_stays_one_escaped_pattern() {
         let dir = tempfile::tempdir().expect("temporary package directory");
         let command = ADAPTER.single_test_command("a.test.js", HOSTILE_NAME, dir.path());
-        assert_one_word(&command, &regex_literal(HOSTILE_NAME));
+        assert_one_word(&command, &exact_regex_literal(HOSTILE_NAME));
     }
 
     #[test]
