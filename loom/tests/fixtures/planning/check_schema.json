@@ -13,7 +13,6 @@
           { "step": "metaplan", "mark": "gap" },
           { "step": "plans", "mark": "gap" },
           { "step": "pressure_test", "mark": "optional" },
-          { "step": "review", "mark": "optional" },
           { "step": "run", "mark": "optional" }
         ],
         "primary": "start-vision",
@@ -31,7 +30,6 @@
           { "step": "metaplan", "mark": "gap" },
           { "step": "plans", "mark": "gap" },
           { "step": "pressure_test", "mark": "optional" },
-          { "step": "review", "mark": "optional" },
           { "step": "run", "mark": "optional" }
         ],
         "primary": "start-vision",

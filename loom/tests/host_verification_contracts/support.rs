@@ -206,10 +206,15 @@ impl Fixture {
     /// `loom stage verify-host stage-a --job <id>` as the daemon would run
     /// it: no session variables, `LOOM_WORK_DIR` set, run from `cwd`.
     pub fn verify_host(&self, job_id: &str, cwd: &Path) -> Command {
+        let stage = loom::verify::transitions::load_stage(STAGE, &self.work_dir).unwrap();
+        let policy =
+            loom::handoff::completion::policy::effective_policy_hash(&stage, &self.work_dir)
+                .unwrap();
         let mut command = helpers::loom_cmd();
         command
             .args(["stage", "verify-host", STAGE, "--job", job_id])
             .current_dir(cwd)
+            .env("LOOM_VERIFY_BUDGET_POLICY", policy)
             .env("LOOM_WORK_DIR", &self.work_dir)
             .env("HOME", &self.home);
         isolate_git(&mut command, &self.home);
