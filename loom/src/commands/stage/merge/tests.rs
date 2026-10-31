@@ -4,6 +4,7 @@ use super::*;
 use crate::git::get_conflicting_files;
 use crate::git::merge::merge_head_exists;
 use crate::models::stage::Stage;
+use crate::verify::transitions::update_stage;
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -261,6 +262,11 @@ fn the_cli_resolver_spawn_fails_when_the_diff_cannot_be_computed() {
 fn the_cli_resolver_spawn_refuses_a_typed_blocked_stage() {
     let (repo, work_dir, mut stage) = gated_repo();
     stage.block_merge(crate::git::MergeBlock::TargetMoved);
+    update_stage("gated", &work_dir, |current| {
+        current.block_merge(crate::git::MergeBlock::TargetMoved);
+        Ok(())
+    })
+    .unwrap();
 
     let result = crate::commands::stage::merge_resolver::spawn_merge_resolver(
         &stage,
@@ -349,4 +355,26 @@ fn completing_a_retried_merge_whose_recorded_commit_is_not_in_the_target_is_refu
     let on_disk = load_stage("zero", &work_dir).unwrap();
     assert!(!on_disk.merged);
     assert_eq!(on_disk.status, StageStatus::MergeBlocked);
+}
+
+#[test]
+fn completing_a_retried_merge_refuses_a_replaced_completion_proof() {
+    let (repo, work_dir, _) = zero_commit_repo(None);
+    let commit = crate::git::runner::run_git_checked(&["rev-parse", "main"], repo.path()).unwrap();
+    let observed = update_stage("zero", &work_dir, |stage| {
+        stage.completed_commit = Some(commit.clone());
+        Ok(())
+    })
+    .unwrap();
+    update_stage("zero", &work_dir, |stage| {
+        stage.completed_commit = Some("replacement".into());
+        Ok(())
+    })
+    .unwrap();
+    assert!(
+        landing::complete_retried_merge(&observed, &work_dir, repo.path(), "main", "done").is_err()
+    );
+    let current = load_stage("zero", &work_dir).unwrap();
+    assert!(!current.merged);
+    assert_eq!(current.completed_commit.as_deref(), Some("replacement"));
 }

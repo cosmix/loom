@@ -2,6 +2,7 @@
 
 use super::super::protocol::DaemonConfig;
 use super::super::SOCKET_FILE;
+use super::client::Subscriber;
 use super::lock::{inspect_lock, read_persisted_identity, LockState};
 use super::storage::remove_control_file;
 use std::os::unix::net::UnixStream;
@@ -62,8 +63,8 @@ pub struct DaemonServer {
     pub(super) work_dir: PathBuf,
     pub(super) config: DaemonConfig,
     pub(super) shutdown_flag: Arc<AtomicBool>,
-    pub(super) status_subscribers: Arc<Mutex<Vec<UnixStream>>>,
-    pub(super) log_subscribers: Arc<Mutex<Vec<UnixStream>>>,
+    pub(super) status_subscribers: Arc<Mutex<Vec<Subscriber>>>,
+    pub(super) log_subscribers: Arc<Mutex<Vec<Subscriber>>>,
     /// Set to `true` only after this process has acquired the singleton flock
     /// AND bound the socket. `Drop::cleanup()` is gated on this so a daemon that
     /// loses the singleton race (or fails before bind) never deletes the live

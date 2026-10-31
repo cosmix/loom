@@ -131,6 +131,25 @@ pub fn cancel(work_dir: &Path, stage_id: &str, reason: &str) -> Result<Option<Jo
     Ok(Some(record))
 }
 
+/// Cancel only the job observed by an earlier stage operation. A replacement
+/// job belongs to a later request and must not be retired by stale cleanup.
+pub fn cancel_if_id(
+    work_dir: &Path,
+    stage_id: &str,
+    job_id: &str,
+    reason: &str,
+) -> Result<Option<JobRecord>> {
+    let _lock = store::lock_stage(work_dir, stage_id)?;
+    let Some(mut record) = store::load_current(work_dir, stage_id)?
+        .filter(|record| record.id == job_id && !record.state.is_terminal())
+    else {
+        return Ok(None);
+    };
+    end(&mut record, reason, Utc::now());
+    store::save_current(work_dir, &record)?;
+    Ok(Some(record))
+}
+
 /// Whether the non-terminal `current` job answers `request` as well: the same
 /// tree and kind, a cached request is answered by an uncached run too, and
 /// the job runs every criterion the request selects.

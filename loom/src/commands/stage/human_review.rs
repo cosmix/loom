@@ -78,8 +78,12 @@ fn show_review_status(stage_id: &str, stage: &Stage) -> Result<()> {
     }
     println!();
     println!("Available actions:");
-    println!("  loom stage human-review {stage_id} --approve         Queue a fresh session with fresh fix attempts");
-    println!("  loom stage human-review {stage_id} --force-complete  Skip acceptance, record the branch tip and merge it");
+    println!(
+        "  loom stage human-review {stage_id} --approve         Queue a fresh session with fresh fix attempts"
+    );
+    println!(
+        "  loom stage human-review {stage_id} --force-complete  Skip acceptance, record the branch tip and merge it"
+    );
     println!(
         "  loom stage human-review {stage_id} --reject <reason> Block the stage with a reason"
     );
@@ -114,6 +118,9 @@ fn handle_approve(stage_id: &str, work_dir: &Path) -> Result<()> {
         // A fresh handback cap; the refusal stays for the session queued here.
         stage.merge.handbacks = 0;
         super::skip_retry::reset_contract_budget(stage, work_dir)?;
+        if !stage.contracts.is_empty() {
+            stage.tally.freeze_refusal_disputes = 0;
+        }
         Ok(())
     })?;
 
@@ -256,7 +263,10 @@ fn handle_reject(stage_id: &str, reason: &str, work_dir: &Path) -> Result<()> {
     update_stage(stage_id, work_dir, |stage| {
         stage.try_reject_review(reason.to_string())?;
         stage.close_reason = Some(reason.to_string());
-        stage.retire_failure("human review rejected");
+        stage.retire_failure(
+            "human review rejected",
+            crate::models::stage::IssueDisposition::Rejected,
+        );
         Ok(())
     })?;
 

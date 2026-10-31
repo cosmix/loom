@@ -7,10 +7,12 @@ use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
-use super::{find_live_merge_session_for_stage, generate_merge_signal};
+use super::generate_merge_signal;
 use crate::fs::session_files::save_session;
-use crate::models::session::{Session, SessionType};
+use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::Stage;
+use crate::orchestrator::signals::find_live_merge_session_for_stage;
+use crate::orchestrator::terminal::native::NativeBackend;
 
 /// A merge signal for `session_id` that names no stage, so it cannot be parsed.
 fn write_unreadable_signal(work_dir: &Path, session_id: &str) -> PathBuf {
@@ -31,7 +33,15 @@ fn save_record(work_dir: &Path, session_type: SessionType, stage_id: &str, pid: 
     session.session_type = session_type;
     session.assign_to_stage(stage_id.to_string());
     session.pid = Some(pid);
+    session.status = SessionStatus::Running;
     save_session(&session, work_dir).unwrap();
+    let (_, key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+    fs::create_dir_all(work_dir.join("pids")).unwrap();
+    fs::write(
+        work_dir.join("pids").join(format!("{key}.pid")),
+        format!("{pid}\n"),
+    )
+    .unwrap();
     session
 }
 
@@ -130,5 +140,43 @@ fn a_readable_signal_with_no_record_is_stale_and_retired() {
     let (_, signal) = write_readable_signal(work_dir);
     let found = find_live_merge_session_for_stage("mine", work_dir).unwrap();
     assert_eq!(found, None);
+    assert!(!signal.exists());
+}
+
+#[test]
+fn a_launching_record_without_a_pid_keeps_its_signal() {
+    let temp = TempDir::new().unwrap();
+    let work_dir = temp.path();
+    let (mut resolver, signal) = write_readable_signal(work_dir);
+    resolver.assign_to_stage("mine".to_string());
+    save_session(&resolver, work_dir).unwrap();
+    assert_eq!(
+        find_live_merge_session_for_stage("mine", work_dir).unwrap(),
+        Some(resolver.id)
+    );
+    assert!(signal.exists());
+}
+
+#[test]
+fn a_reused_pid_does_not_keep_a_dead_resolver_signal() {
+    let temp = TempDir::new().unwrap();
+    let work_dir = temp.path();
+    let (mut resolver, signal) = write_readable_signal(work_dir);
+    resolver.assign_to_stage("mine".to_string());
+    resolver.status = SessionStatus::Running;
+    resolver.pid = Some(std::process::id());
+    save_session(&resolver, work_dir).unwrap();
+    let (_, key) = NativeBackend::window_title_and_pid_key(&resolver).unwrap();
+    fs::create_dir_all(work_dir.join("pids")).unwrap();
+    let actual_start = crate::process::process_start_time(std::process::id()).unwrap();
+    fs::write(
+        work_dir.join("pids").join(format!("{key}.pid")),
+        format!("{}\n{}\n", std::process::id(), actual_start + 1),
+    )
+    .unwrap();
+    assert_eq!(
+        find_live_merge_session_for_stage("mine", work_dir).unwrap(),
+        None
+    );
     assert!(!signal.exists());
 }

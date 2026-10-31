@@ -17,6 +17,8 @@ pub mod apply;
 mod apply_rejection;
 pub mod child;
 mod child_complete;
+pub(crate) mod child_policy;
+mod child_watchdog;
 pub mod digest;
 pub mod freeze;
 mod freeze_memo;
@@ -58,6 +60,8 @@ mod tests_freeze_refusal;
 #[cfg(test)]
 mod tests_runner;
 #[cfg(test)]
+mod tests_runner_group;
+#[cfg(test)]
 mod tests_runner_recovery;
 #[cfg(test)]
 mod tests_store;
@@ -72,6 +76,9 @@ mod tests_wait_refusal;
 
 /// Most bytes a record's `detail` keeps.
 pub(crate) const DETAIL_MAX_BYTES: usize = 512;
+
+/// The daemon's policy identity for the deadline it computed before spawn.
+pub(crate) const BUDGET_POLICY_ENV: &str = "LOOM_VERIFY_BUDGET_POLICY";
 
 /// What a job runs: the stage's gate (`loom check`), the completion run
 /// whose pass lets the daemon complete the stage, or the contract run that

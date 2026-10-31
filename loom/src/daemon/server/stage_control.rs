@@ -17,21 +17,23 @@ use crate::models::dispute::{CriterionField, DisputeKind};
 fn serve_dispute_criteria(
     work_dir: &Path,
     stage_id: &str,
+    session_id: &str,
     field: CriterionField,
     criterion_indices: Vec<usize>,
     reason: String,
     evidence_commit: Option<String>,
     failure_output: Option<String>,
 ) -> Response {
-    super::dispute::handle_dispute_criteria(
+    crate::stage_service::handle_dispute_criteria_for_session(
         work_dir,
         stage_id,
-        field,
-        criterion_indices,
+        (field, criterion_indices),
         reason,
         evidence_commit,
         failure_output,
+        (None, (!session_id.is_empty()).then_some(session_id)),
     )
+    .map(Into::into)
     .unwrap_or_else(|error| Response::Error {
         message: format!("Dispute persistence failed: {error:#}"),
     })
@@ -42,14 +44,23 @@ fn serve_dispute_criteria(
 fn serve_file_dispute(
     work_dir: &Path,
     stage_id: &str,
+    session_id: &str,
     kind: DisputeKind,
     reason: String,
     evidence_commit: Option<String>,
 ) -> Response {
-    super::dispute_kinds::handle_file_dispute(work_dir, stage_id, kind, reason, evidence_commit)
-        .unwrap_or_else(|error| Response::Error {
-            message: format!("Dispute persistence failed: {error:#}"),
-        })
+    crate::stage_service::handle_file_dispute_for_session(
+        work_dir,
+        stage_id,
+        kind,
+        reason,
+        evidence_commit,
+        (None, (!session_id.is_empty()).then_some(session_id)),
+    )
+    .map(Into::into)
+    .unwrap_or_else(|error| Response::Error {
+        message: format!("Dispute persistence failed: {error:#}"),
+    })
 }
 
 /// Serve one `BlockStage`. A transition the state machine refuses comes back
@@ -61,7 +72,13 @@ fn serve_block_stage(work_dir: &Path, stage_id: &str, session_id: &str, reason: 
     let blocked = if session_id.is_empty() {
         super::control_block::handle_block_stage(work_dir, stage_id, reason)
     } else {
-        super::control_block::handle_agent_block_stage(work_dir, stage_id, reason)
+        crate::stage_service::handle_agent_block_for_session(
+            work_dir,
+            stage_id,
+            reason,
+            Some(session_id),
+        )
+        .map(Into::into)
     };
     blocked.unwrap_or_else(|error| Response::Error {
         message: format!("Block transition failed: {error:#}"),
@@ -99,6 +116,7 @@ pub(super) fn serve_stage_control(work_dir: &Path, request: Request) -> Response
     match request {
         Request::DisputeCriteria {
             stage_id,
+            session_id,
             field,
             criterion_indices,
             reason,
@@ -108,6 +126,7 @@ pub(super) fn serve_stage_control(work_dir: &Path, request: Request) -> Response
         } => serve_dispute_criteria(
             work_dir,
             &stage_id,
+            &session_id,
             field,
             criterion_indices,
             reason,
@@ -116,11 +135,25 @@ pub(super) fn serve_stage_control(work_dir: &Path, request: Request) -> Response
         ),
         Request::FileDispute {
             stage_id,
+            session_id,
             kind,
             reason,
             evidence_commit,
             ..
-        } => serve_file_dispute(work_dir, &stage_id, kind, reason, evidence_commit),
+        } => serve_file_dispute(
+            work_dir,
+            &stage_id,
+            &session_id,
+            kind,
+            reason,
+            evidence_commit,
+        ),
+        other => serve_other_control(work_dir, other),
+    }
+}
+
+fn serve_other_control(work_dir: &Path, request: Request) -> Response {
+    match request {
         Request::BlockStage {
             stage_id,
             session_id,

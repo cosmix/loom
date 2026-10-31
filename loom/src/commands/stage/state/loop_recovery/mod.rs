@@ -29,6 +29,8 @@ pub(super) trait ResetRuntime {
     fn identity_missing(&self, work_dir: &Path, agent: &LiveAgent) -> bool;
     fn is_alive(&self, work_dir: &Path, agent: &LiveAgent) -> Result<bool>;
     fn wait(&self);
+    #[cfg(test)]
+    fn after_scan(&self, _work_dir: &Path, _stage_id: &str) {}
 }
 
 pub(super) struct OsRuntime {
@@ -68,7 +70,45 @@ impl ResetRuntime for OsRuntime {
     }
 }
 
+#[cfg(test)]
 pub(super) fn reset_with(
+    work_dir: &Path,
+    stage_id: &str,
+    hard: bool,
+    kill_session: bool,
+    runtime: &impl ResetRuntime,
+) -> Result<()> {
+    let _admission = crate::fs::stage_admission::lock(work_dir, stage_id)?;
+    reset_under_admission(work_dir, stage_id, hard, kill_session, runtime)
+}
+
+/// Reset and cancel only the job observed under the stage admission lock.
+pub(super) fn reset_and_cancel(
+    work_dir: &Path,
+    stage_id: &str,
+    hard: bool,
+    kill_session: bool,
+    runtime: &impl ResetRuntime,
+) -> Result<()> {
+    let _admission = crate::fs::stage_admission::lock(work_dir, stage_id)?;
+    let job_id = crate::host_verify::store::load_current(work_dir, stage_id)?
+        .filter(|record| !record.state.is_terminal())
+        .map(|record| record.id);
+    reset_under_admission(work_dir, stage_id, hard, kill_session, runtime)?;
+    let cancelled = match job_id {
+        Some(id) => {
+            crate::host_verify::submit::cancel_if_id(work_dir, stage_id, &id, "stage reset")
+                .map(|_| ())
+        }
+        None => Ok(()),
+    };
+    if let Err(error) = cancelled {
+        eprintln!("Warning: could not cancel the host job of stage '{stage_id}': {error:#}");
+    }
+    Ok(())
+}
+
+pub(super) fn reset_under_admission(
     work_dir: &Path,
     stage_id: &str,
     hard: bool,
@@ -89,6 +129,9 @@ pub(super) fn reset_with(
             retire_targets(work_dir, stage_id, &targets, runtime)?;
         }
     }
+
+    #[cfg(test)]
+    runtime.after_scan(work_dir, stage_id);
 
     eprintln!(
         "Warning: Bypassing state machine to reset stage to initial state (was: {:?})",

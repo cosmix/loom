@@ -71,6 +71,61 @@ fn valid_proof_is_consumed_exactly_once() {
     assert!(replay.to_string().contains("already been used"));
 }
 
+#[test]
+fn noncanonical_mac_is_rejected_and_lowercase_marker_remains_valid() {
+    for request in [
+        AdminProofRequest::completion("stage-a", true, false, false),
+        AdminProofRequest::daemon_stop(),
+    ] {
+        let temp = setup();
+        let proof = mint_admin_proof(SECRET, request, NONCE);
+        let (prefix, mac) = proof.rsplit_once(':').unwrap();
+        let upper = format!("{prefix}:{}", mac.to_ascii_uppercase());
+        assert_ne!(proof, upper);
+        assert!(verify_and_consume_admin_proof(temp.path(), request, Some(&upper)).is_err());
+        verify_and_consume_admin_proof(temp.path(), request, Some(&proof)).unwrap();
+        assert!(verify_and_consume_admin_proof(temp.path(), request, Some(&proof)).is_err());
+        assert!(verify_and_consume_admin_proof(temp.path(), request, Some(&upper)).is_err());
+    }
+}
+
+#[test]
+fn concurrent_canonical_and_uppercase_proofs_admit_once() {
+    let temp = setup();
+    let request = AdminProofRequest::daemon_stop();
+    let proof = mint_admin_proof(SECRET, request, NONCE);
+    let (prefix, mac) = proof.rsplit_once(':').unwrap();
+    let upper = format!("{prefix}:{}", mac.to_ascii_uppercase());
+    let barrier = std::sync::Barrier::new(3);
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = [&proof, &upper]
+            .into_iter()
+            .map(|candidate| {
+                let barrier = &barrier;
+                let path = temp.path();
+                scope.spawn(move || {
+                    barrier.wait();
+                    verify_and_consume_admin_proof(
+                        path,
+                        AdminProofRequest::daemon_stop(),
+                        Some(candidate),
+                    )
+                    .is_ok()
+                })
+            })
+            .collect();
+        barrier.wait();
+        assert_eq!(
+            handles
+                .into_iter()
+                .map(|h| h.join().unwrap())
+                .filter(|ok| *ok)
+                .count(),
+            1
+        );
+    });
+}
+
 #[cfg(unix)]
 fn assert_replay_permissions(work_dir: &Path) {
     use std::os::unix::fs::PermissionsExt;

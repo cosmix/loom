@@ -8,14 +8,14 @@
 //! stage's commit is in the target.
 
 use crate::git::cleanup::CleanupConfig;
-use crate::git::merge::{
-    merge_stage, verify_merge_succeeded, MergeBlock, MergeGate, MergeResult, StashReapply,
-};
-use crate::git::signing::CommitTreeError;
+use crate::git::merge::{merge_stage, verify_merge_succeeded, MergeBlock, MergeGate, StashReapply};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::persistence::Persistence;
 use crate::orchestrator::core::{clear_status_line, Orchestrator};
 use crate::orchestrator::merge_lifecycle::finish_verified_merge;
+use crate::stage_service::merge_outcome::{
+    classify_failure, signing_reason, MergeDisposition, MergeFailure,
+};
 
 use super::report_deferred_cleanup;
 use super::review_route::ReviewRoute;
@@ -89,32 +89,45 @@ impl Orchestrator {
         };
         let repo_root = self.config.repo_root.clone();
         let work_dir = self.config.work_dir.clone();
-        match merge_stage(stage_id, target, &repo_root, &work_dir, MergeGate::Enforce) {
-            Ok(MergeResult::Success { stash, .. }) => {
+        match merge_stage(stage_id, target, &repo_root, &work_dir, MergeGate::Enforce)
+            .map(MergeDisposition::from)
+        {
+            Ok(MergeDisposition::Landed { stash, .. }) => {
                 self.note_merge_stash(stage_id, stash);
                 self.verify_landing(&mut stage, stage_id, target)
             }
-            Ok(MergeResult::AlreadyUpToDate) => self.verify_landing(&mut stage, stage_id, target),
-            Ok(MergeResult::Conflict { conflicting_files }) => {
-                self.record_merge_conflict(stage_id, conflicting_files.len());
+            Ok(MergeDisposition::AlreadyLanded) => {
+                self.verify_landing(&mut stage, stage_id, target)
+            }
+            Ok(MergeDisposition::Conflict(conflicting_files)) => {
+                self.record_merge_conflict_claimed(stage_id, conflicting_files.len(), Some(&stage));
                 Landing::Conflict(conflicting_files)
             }
-            Ok(MergeResult::Blocked(block)) => {
-                self.record_merge_block(stage_id, block.clone());
+            Ok(MergeDisposition::Blocked(block)) => {
+                self.record_merge_block_claimed(stage_id, block.clone(), Some(&stage));
                 Landing::Blocked(block)
             }
-            Ok(MergeResult::Held { reason }) => {
-                self.route_to_human_review(stage_id, reason, None);
-                Landing::Held
+            Ok(MergeDisposition::Held(reason)) => self.hold_claimed_landing(&stage, reason),
+            Ok(MergeDisposition::MissingBranch | MergeDisposition::MissingWorktree) => {
+                Landing::Failed("merge returned an invalid missing-input outcome".into())
             }
-            Err(error) => match signing_failure(&error) {
-                Some(failure) => {
-                    let reason = merge_signing_reason(stage_id, &failure.detail);
-                    self.route_to_human_review(stage_id, reason, None);
-                    Landing::Held
+            Err(error) => match classify_failure(stage_id, &error) {
+                MergeFailure::Signing(reason) => self.hold_claimed_landing(&stage, reason),
+                MergeFailure::Infrastructure(reason) => {
+                    self.persist_merge_blocked(&mut stage, stage_id, &reason);
+                    Landing::Failed(reason)
                 }
-                None => Landing::Failed(format!("{error:#}")),
             },
+        }
+    }
+
+    fn hold_claimed_landing(&mut self, stage: &Stage, reason: String) -> Landing {
+        match self.route_claimed_to_review(stage, reason) {
+            ReviewRoute::Routed => Landing::Held,
+            ReviewRoute::StageMovedOn => {
+                Landing::Failed("stage changed during merge handling".into())
+            }
+            ReviewRoute::NotSaved => Landing::Failed("could not save merge review hold".into()),
         }
     }
 
@@ -127,7 +140,7 @@ impl Orchestrator {
         stage_id: &str,
         detail: &str,
     ) -> String {
-        let mut reason = merge_signing_reason(stage_id, detail);
+        let mut reason = signing_reason(stage_id, detail);
         if let Some(stopped) = self.stop_gated_resolvers(stage_id) {
             clear_status_line();
             eprintln!("Stage '{stage_id}': merge commit signing failed; {stopped}");
@@ -177,6 +190,7 @@ impl Orchestrator {
             return false;
         };
         let updated = self.update_stage(stage_id, |current| {
+            crate::stage_service::merge_outcome::check_stage(current, stage)?;
             apply_finalized(current, &completed_commit)
         });
         match updated {
@@ -217,15 +231,27 @@ impl Orchestrator {
 
     /// Move `stage_id` to `MergeConflict` after a merge found `conflicts`
     /// paths in conflict; the spawn loop gives it a counted resolver.
+    #[cfg(test)]
     pub(in crate::orchestrator::core) fn record_merge_conflict(
         &mut self,
         stage_id: &str,
         conflicts: usize,
     ) {
+        self.record_merge_conflict_claimed(stage_id, conflicts, None);
+    }
+
+    pub(in crate::orchestrator::core) fn record_merge_conflict_claimed(
+        &mut self,
+        stage_id: &str,
+        conflicts: usize,
+        expected: Option<&Stage>,
+    ) {
         let saved = self.update_stage(stage_id, |current| {
-            ensure_unmerged(current)?;
-            current.enter_merge_conflict();
-            Ok(())
+            check_expected(current, expected)?;
+            crate::stage_service::merge_outcome::apply_conflict(
+                current,
+                crate::stage_service::merge_outcome::ConflictAuthority::Daemon,
+            )
         });
         if let Err(error) = saved {
             tracing::warn!(stage_id = %stage_id, %error, "Failed to save the merge conflict");
@@ -249,6 +275,15 @@ impl Orchestrator {
         stage_id: &str,
         block: MergeBlock,
     ) -> bool {
+        self.record_merge_block_claimed(stage_id, block, None)
+    }
+
+    pub(in crate::orchestrator::core) fn record_merge_block_claimed(
+        &mut self,
+        stage_id: &str,
+        block: MergeBlock,
+        expected: Option<&Stage>,
+    ) -> bool {
         if let Ok(current) = self.load_stage(stage_id) {
             if current.status == StageStatus::MergeBlocked
                 && current.merge.block.as_ref() == Some(&block)
@@ -259,8 +294,8 @@ impl Orchestrator {
         }
         let shown = block.to_string();
         let saved = self.update_stage(stage_id, |current| {
-            ensure_unmerged(current)?;
-            current.block_merge(block);
+            check_expected(current, expected)?;
+            crate::stage_service::merge_outcome::apply_block(current, block);
             Ok(())
         });
         if let Err(error) = saved {
@@ -293,23 +328,6 @@ impl Orchestrator {
     }
 }
 
-/// The signing failure of loom's own merge commit in `error`'s chain, found by
-/// downcast: a `CommitTreeError` that is not a signing failure is not one.
-pub(super) fn signing_failure(error: &anyhow::Error) -> Option<&CommitTreeError> {
-    error
-        .chain()
-        .find_map(|cause| cause.downcast_ref::<CommitTreeError>())
-        .filter(|failure| failure.signing)
-}
-
-/// The review reason of a merge held because its commit could not be signed.
-pub(super) fn merge_signing_reason(stage_id: &str, detail: &str) -> String {
-    format!(
-        "merge commit signing failed: {detail}; fix signing (gpg-agent passphrase cache, GUI \
-         pinentry or ssh-agent key), then loom stage human-review {stage_id} --approve"
-    )
-}
-
 /// A merge result may only be recorded on a stage that is not merged yet and
 /// not final: a final stage never moves to MergeConflict or MergeBlocked.
 fn ensure_unmerged(stage: &Stage) -> anyhow::Result<()> {
@@ -317,6 +335,13 @@ fn ensure_unmerged(stage: &Stage) -> anyhow::Result<()> {
         anyhow::bail!("stage '{}' is already merged", stage.id);
     }
     Ok(())
+}
+
+fn check_expected(current: &Stage, expected: Option<&Stage>) -> anyhow::Result<()> {
+    match expected {
+        Some(expected) => crate::stage_service::merge_outcome::check_stage(current, expected),
+        None => ensure_unmerged(current),
+    }
 }
 
 /// Mark `current` merged with `completed_commit`, `Completed`, and clear its
@@ -332,10 +357,7 @@ fn apply_finalized(current: &mut Stage, completed_commit: &str) -> anyhow::Resul
             current.status
         );
     }
-    anyhow::ensure!(
-        current.completed_commit.as_deref() == Some(completed_commit),
-        "completed_commit changed during merge verification"
-    );
+    crate::stage_service::merge_outcome::check_completion_commit(current, Some(completed_commit))?;
     current.merged = true;
     current.merge_conflict = false;
     current.clear_merge_block();

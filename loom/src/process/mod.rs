@@ -4,6 +4,7 @@
 
 pub mod boot_id;
 mod environment;
+mod errors;
 mod identity;
 mod owned;
 pub(crate) use owned::OwnedProcess;
@@ -17,7 +18,14 @@ use nix::unistd::Pid;
 use std::io::Read;
 use std::process::{Child, Command, ExitStatus, Output, Stdio};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::{
+    atomic::{AtomicU8, Ordering},
+    Arc,
+};
 use std::time::{Duration, Instant};
+
+use errors::OUTPUT_LIMIT;
+pub use errors::{ProcessOutputLimitError, ProcessTimeoutError};
 
 pub use environment::{
     agent_session_environment_from, apply_stage_environment, apply_stage_environment_from,
@@ -27,38 +35,6 @@ pub use identity::{
     process_is_zombie, process_start_time, terminate_verified, verify_process_identity,
     IdentityStatus, ProcessIdentity, UnverifiedProcessIdentity,
 };
-
-/// Structured wall-clock timeout returned by bounded command helpers.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProcessTimeoutError {
-    operation: String,
-    timeout: Duration,
-}
-
-impl ProcessTimeoutError {
-    pub fn new(operation: impl Into<String>, timeout: Duration) -> Self {
-        Self {
-            operation: operation.into(),
-            timeout,
-        }
-    }
-
-    pub fn operation(&self) -> &str {
-        &self.operation
-    }
-
-    pub fn timeout(&self) -> Duration {
-        self.timeout
-    }
-}
-
-impl std::fmt::Display for ProcessTimeoutError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} timed out after {:?}", self.operation, self.timeout)
-    }
-}
-
-impl std::error::Error for ProcessTimeoutError {}
 
 /// Outcome of a subprocess run under a wall-clock bound.
 #[derive(Debug)]
@@ -107,6 +83,8 @@ impl BoundedOutput {
 /// stdout/stderr are drained concurrently on dedicated threads while the main
 /// thread waits on the child, so output larger than the OS pipe buffer
 /// (~64KB) cannot make the child block on write and stall past the deadline.
+/// Each stream is captured up to 16 MiB; excess is drained and reported as
+/// `ProcessOutputLimitError`, including when the process later times out.
 ///
 /// # Deadline scope
 ///
@@ -114,6 +92,24 @@ impl BoundedOutput {
 /// group immediately; reaping and both pipes then share a one-second cleanup
 /// deadline. A successful leader retains its status after descendants are killed.
 pub fn run_bounded(command: &mut Command, timeout: Duration) -> Result<BoundedOutput> {
+    let overflow = Arc::new(AtomicU8::new(0));
+    let result = run_bounded_inner(command, timeout, &overflow);
+    let streams = overflow.load(Ordering::Relaxed);
+    if streams != 0 {
+        return Err(ProcessOutputLimitError {
+            stream: if streams & 1 != 0 { "stdout" } else { "stderr" },
+            limit: OUTPUT_LIMIT,
+        }
+        .into());
+    }
+    result
+}
+
+fn run_bounded_inner(
+    command: &mut Command,
+    timeout: Duration,
+    overflow: &Arc<AtomicU8>,
+) -> Result<BoundedOutput> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -127,7 +123,7 @@ pub fn run_bounded(command: &mut Command, timeout: Duration) -> Result<BoundedOu
         .with_context(|| format!("Failed to spawn {:?}", command.get_program()))?;
 
     let mut child = OwnedProcess::new(child);
-    let (stdout_reader, stderr_reader) = start_readers(child.child(), command)?;
+    let (stdout_reader, stderr_reader) = start_readers(child.child(), command, overflow)?;
 
     match child
         .wait(timeout)
@@ -163,12 +159,16 @@ type ReaderHandle = Option<Receiver<std::io::Result<Vec<u8>>>>;
 /// pressure), the child is already running with nothing left to drain its
 /// pipes: kill its process group before returning `Err` so the failure
 /// cannot leave an orphaned, unbounded process behind.
-fn start_readers(child: &mut Child, command: &Command) -> Result<(ReaderHandle, ReaderHandle)> {
-    let stdout = match drain(child.stdout.take()) {
+fn start_readers(
+    child: &mut Child,
+    command: &Command,
+    overflow: &Arc<AtomicU8>,
+) -> Result<(ReaderHandle, ReaderHandle)> {
+    let stdout = match drain(child.stdout.take(), Arc::clone(overflow), 1) {
         Ok(reader) => reader,
         Err(error) => return Err(reader_spawn_failed("stdout", error, command)),
     };
-    let stderr = match drain(child.stderr.take()) {
+    let stderr = match drain(child.stderr.take(), Arc::clone(overflow), 2) {
         Ok(reader) => reader,
         Err(error) => return Err(reader_spawn_failed("stderr", error, command)),
     };
@@ -185,7 +185,11 @@ fn reader_spawn_failed(stream: &str, error: std::io::Error, command: &Command) -
 /// Spawn a named thread that reads `pipe` to completion and sends the result
 /// down a channel, or return `Ok(None)` if the pipe was never attached.
 /// `Err` only when the OS refuses to create the thread.
-fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> std::io::Result<ReaderHandle> {
+fn drain<R: Read + Send + 'static>(
+    pipe: Option<R>,
+    overflow: Arc<AtomicU8>,
+    stream: u8,
+) -> std::io::Result<ReaderHandle> {
     let Some(mut pipe) = pipe else {
         return Ok(None);
     };
@@ -194,7 +198,21 @@ fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> std::io::Result<ReaderHan
         .name("loom-process-reader".to_string())
         .spawn(move || {
             let mut buf = Vec::new();
-            let result = pipe.read_to_end(&mut buf).map(|_| buf);
+            let result = (|| {
+                let mut chunk = [0u8; 8192];
+                loop {
+                    let n = pipe.read(&mut chunk)?;
+                    if n == 0 {
+                        break;
+                    }
+                    let keep = n.min(OUTPUT_LIMIT - buf.len());
+                    buf.extend_from_slice(&chunk[..keep]);
+                    if keep < n {
+                        overflow.fetch_or(stream, Ordering::Relaxed);
+                    }
+                }
+                Ok(buf)
+            })();
             let _ = tx.send(result);
         })?;
     Ok(Some(rx))

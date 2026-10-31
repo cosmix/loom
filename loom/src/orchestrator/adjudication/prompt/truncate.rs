@@ -51,29 +51,13 @@ pub(super) fn truncate_to_budget(prompt: &mut Prompt) {
     }
 }
 
-/// Find a "## Header" section in `evidence` and halve the contents of the
-/// first triple-backtick fence inside it. Returns `false` if no further
+/// Find a section outside quoted fences and halve its first fenced body.
+/// Returns `false` if no further
 /// trimming is possible (no header, no fence, or fence already empty).
 fn halve_section(evidence: &mut String, header: &str) -> bool {
-    let Some(header_pos) = evidence.find(header) else {
+    let Some((body_start, body_end)) = section_body(evidence, header) else {
         return false;
     };
-    let after_header = header_pos + header.len();
-    let fence_open_rel = match evidence[after_header..].find("```") {
-        Some(p) => p,
-        None => return false,
-    };
-    let fence_open = after_header + fence_open_rel;
-    // Skip the rest of the fence-open line.
-    let body_start = match evidence[fence_open..].find('\n') {
-        Some(p) => fence_open + p + 1,
-        None => return false,
-    };
-    let fence_close_rel = match evidence[body_start..].find("```") {
-        Some(p) => p,
-        None => return false,
-    };
-    let body_end = body_start + fence_close_rel;
     let body_len = body_end - body_start;
     // Keep the first half; replace the rest with the marker.
     let keep = body_len / 2;
@@ -92,6 +76,38 @@ fn halve_section(evidence: &mut String, header: &str) -> bool {
     }
     evidence.replace_range(body_start..body_end, &new_body);
     true
+}
+
+/// Recognize complete delimiters on their own lines and ignore headings inside them.
+fn section_body(evidence: &str, header: &str) -> Option<(usize, usize)> {
+    let mut offset = 0;
+    let mut fence = 0;
+    let mut selected = false;
+    let mut body_start = None;
+    for line in evidence.split_inclusive('\n') {
+        let content = line.trim_end_matches(['\r', '\n']);
+        let ticks = content.bytes().take_while(|b| *b == b'`').count();
+        if fence > 0 {
+            if ticks >= fence && content[ticks..].trim().is_empty() {
+                if let Some(start) = body_start {
+                    return Some((start, offset));
+                }
+                fence = 0;
+            }
+        } else if ticks >= 3 {
+            fence = ticks;
+            if selected {
+                body_start = Some(offset + line.len());
+            }
+        } else if content.starts_with("## ") {
+            if selected {
+                return None;
+            }
+            selected = content == header;
+        }
+        offset += line.len();
+    }
+    None
 }
 
 /// Hard-truncate `s` to at most `max_bytes` bytes, respecting UTF-8
@@ -142,6 +158,47 @@ mod tests {
         assert!(halve_section(&mut u, "## Evidence commit diff (git show)"));
         assert!(u.len() < before);
         assert!(u.contains(TRUNCATION_MARKER));
+    }
+
+    #[test]
+    fn quoted_headings_and_shorter_fences_do_not_redirect_truncation() {
+        let header = "## Diff (frozen vs current)";
+        let quoted = format!("{header}\n```\n{}", "quoted\n".repeat(100));
+        let target = format!(
+            "{}\n```\n{}",
+            "target\n".repeat(5000),
+            "tail\n".repeat(5000)
+        );
+        let mut prompt = Prompt {
+            instructions: "instructions".to_string(),
+            evidence: format!(
+                "## Earlier\n\n{}{header}\n\n{}## Remaining\n\npreserved\n",
+                super::super::fenced("text", &quoted),
+                super::super::fenced("diff", &target)
+            ),
+        };
+        // Force the priority pass without hard-cutting the tail.
+        prompt
+            .instructions
+            .push_str(&"i".repeat(MAX_PROMPT_BYTES - prompt.total_len() + 100));
+        let instructions = prompt.instructions.clone();
+        truncate_to_budget(&mut prompt);
+        assert!(prompt.evidence.contains(&quoted));
+        assert!(prompt.evidence.contains("## Remaining\n\npreserved"));
+        assert!(prompt.evidence.contains(TRUNCATION_MARKER));
+        assert_eq!(prompt.instructions, instructions);
+        assert!(prompt.total_len() <= MAX_PROMPT_BYTES);
+    }
+
+    #[test]
+    fn missing_section_body_does_not_trim_the_next_section() {
+        let mut evidence = format!(
+            "## Diff (frozen vs current)\n\n(unavailable)\n\n## Other\n\n```\n{}\n```\n",
+            "data".repeat(100)
+        );
+        let original = evidence.clone();
+        assert!(!halve_section(&mut evidence, "## Diff (frozen vs current)"));
+        assert_eq!(evidence, original);
     }
 
     /// The protocol half must survive any amount of evidence: it is the only

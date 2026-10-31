@@ -4,8 +4,7 @@
 use anyhow::{bail, Context, Result};
 
 use crate::commands::common::work_dir_path;
-use crate::fs::session_files::find_session_file;
-use crate::fs::worktree_files::find_sessions_for_stage;
+use crate::fs::session_files::{find_session_file, find_sessions_for_stage};
 use crate::models::session::Session;
 use crate::orchestrator::terminal::backend::SessionBackend;
 use crate::parser::frontmatter::parse_from_markdown;

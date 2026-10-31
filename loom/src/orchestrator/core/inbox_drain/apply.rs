@@ -9,10 +9,7 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 
-use crate::daemon::{
-    handle_agent_block_stage, handle_dispute_criteria, handle_file_dispute,
-    handle_freeze_contracts, Response,
-};
+use crate::daemon::Response;
 use crate::fs::memory::{append_entry, validate_spooled_entry, MemoryEntry};
 use crate::fs::stage_request::StageRequest;
 use crate::handoff::session_content::{write_session_handoff, SessionHandoff, CEILING_TRIGGER};
@@ -27,8 +24,16 @@ use crate::telemetry::{append_record, TelemetryEvent, TelemetryRecord};
 use crate::verify::transitions::{load_stage, update_stage};
 
 use super::commit::{self, CommitSite};
-use super::{check, complete, freeze};
+use super::{check, complete};
 use super::{InboxHost, Settle};
+
+#[path = "stage_request_dispatch.rs"]
+mod stage_request_dispatch;
+use stage_request_dispatch::{dispatch_stage_request, settle_freeze};
+
+#[cfg(test)]
+#[path = "tests_memory_validation.rs"]
+mod memory_validation_tests;
 
 /// An entry the matrix lets through, with its payload decoded.
 pub(super) struct Admitted {
@@ -153,41 +158,19 @@ fn stage_request(
     if let Err(reason) = require_owner(work_dir, stage_id, record) {
         return Settle::Refused(reason);
     }
-    let response = match request {
-        StageRequest::Block { reason } => handle_agent_block_stage(work_dir, stage_id, &reason),
-        StageRequest::Dispute {
-            field,
-            criterion_indices,
-            reason,
-            evidence_commit,
-            failure_output,
-        } => handle_dispute_criteria(
+    if let StageRequest::FreezeContracts { head, tree_digest } = &request {
+        return settle_freeze(
             work_dir,
             stage_id,
-            field,
-            criterion_indices,
-            reason,
-            evidence_commit,
-            failure_output,
-        ),
-        StageRequest::FreezeContracts { head, tree_digest } => {
-            let queued = handle_freeze_contracts(
-                work_dir,
-                stage_id,
-                &record.id,
-                &head,
-                &tree_digest,
-                request_id,
-            );
-            return freeze::settle(work_dir, stage_id, &record.id, request_id, queued);
-        }
-        StageRequest::FileDispute {
-            kind,
-            reason,
-            evidence_commit,
-        } => handle_file_dispute(work_dir, stage_id, kind, reason, evidence_commit),
-    };
-    settle_response(response)
+            &record.id,
+            request_id,
+            head,
+            tree_digest,
+        );
+    }
+    settle_response(dispatch_stage_request(
+        work_dir, stage_id, record, request, request_id,
+    ))
 }
 
 /// Settles a stage handler's daemon answer: an error reply refuses the request

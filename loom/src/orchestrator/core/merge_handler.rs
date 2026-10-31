@@ -1,10 +1,8 @@
 //! Merge session handling and auto-merge logic
 
 use anyhow::Result;
-use chrono::Utc;
 
 use crate::git::cleanup::CleanupConfig;
-use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::stage::StageStatus;
 use crate::orchestrator::merge_lifecycle::{self, CleanupOutcome, MergeLifecycle};
 
@@ -91,10 +89,11 @@ impl Orchestrator {
         completed_commit: &str,
     ) -> bool {
         let updated = self.update_stage(stage_id, |current| {
-            anyhow::ensure!(
-                current.completed_commit.as_deref() == Some(completed_commit),
-                "completed_commit changed during merge verification"
-            );
+            crate::stage_service::merge_outcome::check_stage(current, stage)?;
+            crate::stage_service::merge_outcome::check_completion_commit(
+                current,
+                Some(completed_commit),
+            )?;
             current.merged = true;
             current.clear_merge_block();
             Ok(())
@@ -122,25 +121,8 @@ impl Orchestrator {
     ) {
         let first_line = error.lines().next().unwrap_or(error);
         let updated = self.update_stage(stage_id, |current| {
-            // A stage that became final on disk after the caller loaded it
-            // is never moved to MergeBlocked.
-            anyhow::ensure!(
-                !current.is_final_merged(),
-                "stage '{stage_id}' is already merged"
-            );
-            current.clear_merge_block();
-            current.replace_failure(FailureInfo {
-                failure_type: FailureType::InfrastructureError,
-                detected_at: Utc::now(),
-                evidence: error.lines().map(str::to_owned).collect(),
-            });
-            if current.try_mark_merge_blocked().is_err() {
-                current.force_status_with_reason(
-                    StageStatus::MergeBlocked,
-                    &format!("auto-merge failed: {first_line}"),
-                );
-            }
-            Ok(())
+            crate::stage_service::merge_outcome::check_stage(current, stage)?;
+            crate::stage_service::merge_outcome::apply_infrastructure_failure(current, error)
         });
         match updated {
             Ok(updated) => *stage = updated,

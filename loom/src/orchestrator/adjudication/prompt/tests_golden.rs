@@ -42,7 +42,13 @@ fn criterion_briefing_matches_the_expected_instructions_and_evidence() {
     let expected = GOLDEN
         .replace("{exec}", &exec.display().to_string())
         .replace("{draft}", &draft.display().to_string())
-        .replace("{listing}", &listing);
+        .replace(
+            "{listing}\n",
+            &format!(
+                "{listing}{}",
+                if listing.ends_with('\n') { "" } else { "\n" }
+            ),
+        );
     assert_eq!(rendered, expected);
 }
 
@@ -220,7 +226,9 @@ Fix attempts before dispute: 2
 
 ## Agent's reason
 
+```text
 criterion impossible
+```
 
 ## Stage acceptance criteria (all)
 

@@ -11,9 +11,10 @@ use tempfile::TempDir;
 
 use super::store::{
     append_group, append_progress, job_dir, load_current, load_groups, load_job_record, prune_jobs,
-    read_progress, save_criterion_log, save_current, save_job_file, stage_dir,
+    read_progress, save_criterion_log, save_current, save_job_file, stage_dir, start_guarded_group,
 };
 use super::{new_job_id, CriterionOutcome, JobKind, JobRecord, JobState};
+use crate::verify::criteria::GroupAnchor;
 
 const STAGE: &str = "stage-a";
 
@@ -319,4 +320,25 @@ fn pruning_keeps_a_job_cancelled_after_its_start_before_its_pid_was_written() {
         job_dir(&work, STAGE, &started.id).unwrap().exists(),
         "the directory the runner reads to retire the job was pruned"
     );
+}
+
+#[test]
+fn pruning_keeps_an_old_job_with_a_live_group_guardian() {
+    let (_dir, work) = state_root();
+    let mut old = record(JobState::Cancelled);
+    old.started_at = Some(Utc::now() - chrono::Duration::minutes(3));
+    old.finished_at = Some(Utc::now() - chrono::Duration::minutes(2));
+    save_current(&work, &old).unwrap();
+    let (leader, address) = start_guarded_group(&work, STAGE, &old.id).unwrap();
+    let _anchor = GroupAnchor::new(leader, Box::new(move || address.signal()));
+    age(&work, &old.id, 1_000);
+    let newer: Vec<JobRecord> = (0..4).map(|_| record(JobState::Passed)).collect();
+    for (index, job) in newer.iter().enumerate() {
+        save_current(&work, job).unwrap();
+        age(&work, &job.id, 2_000 + index as u64);
+    }
+
+    prune_jobs(&work, STAGE, &newer[3].id).unwrap();
+
+    assert!(job_dir(&work, STAGE, &old.id).unwrap().exists());
 }

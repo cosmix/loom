@@ -273,15 +273,11 @@ pub(super) fn push_plan_and_listing(
     u.push_str(&format!("## {heading} (from plan file)\n\n"));
     let plan_excerpt = read_plan_excerpt(plan_path, &input.stage.id)
         .unwrap_or_else(|_| "(plan file not available)".to_string());
-    u.push_str("```yaml\n");
-    u.push_str(&plan_excerpt);
-    u.push_str("\n```\n\n");
+    u.push_str(&super::fenced("yaml", &plan_excerpt));
 
     u.push_str("## Worktree top-level files (3-deep listing)\n\n");
     let listing = run_listing(input.work_dir).unwrap_or_else(|e| format!("(listing failed: {e})"));
-    u.push_str("```\n");
-    u.push_str(&listing);
-    u.push_str("\n```\n\n");
+    u.push_str(&super::fenced("", &listing));
 }
 
 /// The dispute itself: what was disputed, why, and where it sits among the
@@ -324,8 +320,7 @@ pub(super) fn push_dispute_header(u: &mut String, input: &KindPromptInput<'_>, e
         input.request.fix_attempts_at_dispute
     ));
     u.push_str("## Agent's reason\n\n");
-    u.push_str(&input.request.reason);
-    u.push_str("\n\n");
+    u.push_str(&super::fenced("text", &input.request.reason));
 }
 
 /// `## <heading>`: one `[i] <line>` per entry of the disputed list, `→`
@@ -347,16 +342,12 @@ pub(super) fn push_failure_context(u: &mut String, dispute: &DisputeRequest, wor
         u.push_str(&format!("Commit: {commit}\n\n"));
         let diff =
             run_git_show(work_dir, commit).unwrap_or_else(|e| format!("(git show failed: {e})"));
-        u.push_str("```diff\n");
-        u.push_str(&diff);
-        u.push_str("\n```\n\n");
+        u.push_str(&super::fenced("diff", &diff));
     }
 
     if let Some(out) = dispute.failure_output.as_deref() {
         u.push_str("## Failure output (what the criterion produced)\n\n");
-        u.push_str("```\n");
-        u.push_str(out);
-        u.push_str("\n```\n\n");
+        u.push_str(&super::fenced("", out));
     }
 }
 

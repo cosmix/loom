@@ -7,6 +7,10 @@ mod generate;
 mod helpers;
 mod knowledge;
 mod merge;
+mod merge_discovery;
+mod merge_launch;
+#[cfg(test)]
+pub(crate) use merge_launch::test_backend as merge_test_backend;
 mod parse;
 mod recovery;
 mod recovery_format;
@@ -90,4 +94,8 @@ pub use generate::{
     generate_signal_with_skills, DEFAULT_MAX_SKILL_RECOMMENDATIONS,
 };
 pub use knowledge::generate_knowledge_signal;
-pub use merge::{find_live_merge_session_for_stage, generate_merge_signal, read_merge_signal};
+pub use merge::{generate_merge_signal, read_merge_signal};
+pub use merge_discovery::find_live_merge_session_for_stage;
+pub(crate) use merge_discovery::find_live_merge_session_for_stage_unlocked;
+pub(crate) use merge_launch::with_merge_resolver_lock;
+pub(crate) use merge_launch::{publish_merge_session, write_ahead_merge_session};

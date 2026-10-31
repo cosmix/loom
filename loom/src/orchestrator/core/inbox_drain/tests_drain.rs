@@ -176,6 +176,39 @@ fn an_interrupted_request_is_settled_unknown_and_never_applied() {
 }
 
 #[test]
+fn torn_outcome_is_repaired_before_restart_settlement() {
+    use std::io::Write;
+
+    for suffix in ["{\"id\":\"torn", "{\"id\":\"torn\n"] {
+        let fx = fixture();
+        let record = stage_session(&fx);
+        let entry = entry_for(&record, RequestKind::Memory, memory_payload("half applied"));
+        append_ledger(
+            &fx.work_dir,
+            &record.id,
+            &ledger_line(&entry, Some(LedgerState::Applying), None),
+        )
+        .unwrap();
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(fx.inbox(&record.id).join("ledger.jsonl"))
+            .unwrap()
+            .write_all(suffix.as_bytes())
+            .unwrap();
+        fx.plant(&record.id, &format!("{}.json", entry.id), &entry.encode());
+        let mut host = fx.host(true);
+        run_pass(&mut host, &fx.tick(Utc::now()));
+        run_pass(&mut host, &fx.tick(Utc::now()));
+        assert_eq!(
+            fx.outcome(&record.id, &entry.id),
+            Some(LedgerOutcome::UnknownAfterRestart)
+        );
+        assert_eq!(fx.ledger(&record.id).len(), 2);
+        assert_eq!(fx.journal_len(), 0);
+    }
+}
+
+#[test]
 fn entries_naming_another_session_or_stage_are_refused() {
     let fx = fixture();
     let record = stage_session(&fx);

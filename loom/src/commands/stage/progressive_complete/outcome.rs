@@ -5,7 +5,6 @@
 //! operator lands it.
 
 use anyhow::Result;
-use chrono::Utc;
 use std::path::Path;
 
 use super::landing::Claim;
@@ -13,7 +12,6 @@ use super::report::{report_merge_block, report_merge_hold};
 use super::MergeOutcome;
 use crate::git::branch::branch_name_for_stage;
 use crate::git::merge::MergeBlock;
-use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::stage::Stage;
 use crate::verify::transitions::update_stage;
 
@@ -55,14 +53,7 @@ pub(super) fn block_missing_branch(
 /// failure it replaces goes into `issue_history`; the same one re-recorded
 /// stays as it was.
 fn block_untyped(stage: &mut Stage, reason: &str) -> Result<()> {
-    stage.try_mark_merge_blocked()?;
-    stage.merge.block = None;
-    stage.replace_failure(FailureInfo {
-        failure_type: FailureType::InfrastructureError,
-        detected_at: Utc::now(),
-        evidence: reason.lines().map(str::to_owned).collect(),
-    });
-    Ok(())
+    crate::stage_service::merge_outcome::apply_infrastructure_failure(stage, reason)
 }
 
 /// Re-apply only the merge-block transition onto the fresh on-disk stage (A-5).
@@ -88,14 +79,30 @@ pub(super) fn hold_for_review(
     claim: &Claim,
     reason: &str,
 ) -> Result<MergeOutcome> {
-    stage.route_to_review(reason);
-    update_stage(&stage.id, work_dir, |s| {
-        claim.apply(s)?;
-        s.route_to_review(reason);
-        Ok(())
-    })?;
+    persist_review(stage, work_dir, claim, reason)?;
     report_merge_hold(&stage.id, reason);
     Ok(MergeOutcome::Held)
+}
+
+pub(super) fn hold_for_signing(
+    stage: &mut Stage,
+    work_dir: &Path,
+    claim: &Claim,
+    reason: &str,
+) -> Result<MergeOutcome> {
+    persist_review(stage, work_dir, claim, reason)?;
+    eprintln!("Merge held for review: {reason}");
+    Ok(MergeOutcome::SigningHeld)
+}
+
+fn persist_review(stage: &mut Stage, work_dir: &Path, claim: &Claim, reason: &str) -> Result<()> {
+    crate::stage_service::merge_outcome::apply_review(stage, reason);
+    update_stage(&stage.id, work_dir, |s| {
+        claim.apply(s)?;
+        crate::stage_service::merge_outcome::apply_review(s, reason);
+        Ok(())
+    })?;
+    Ok(())
 }
 
 /// Persist a typed merge block on the fresh on-disk stage (A-5), and report
@@ -107,11 +114,11 @@ pub(super) fn hold_blocked_merge(
     claim: &Claim,
     block: MergeBlock,
 ) -> Result<MergeOutcome> {
-    stage.block_merge(block.clone());
+    crate::stage_service::merge_outcome::apply_block(stage, block.clone());
     let persisted = block.clone();
     update_stage(&stage.id, work_dir, |s| {
         claim.apply(s)?;
-        s.block_merge(persisted.clone());
+        crate::stage_service::merge_outcome::apply_block(s, persisted.clone());
         Ok(())
     })?;
     report_merge_block(&stage.id, &block);
@@ -140,11 +147,16 @@ pub(super) fn record_conflict(
     }
     println!();
     println!("    Stage transitioning to MergeConflict status.");
-    stage.try_mark_merge_conflict()?;
+    crate::stage_service::merge_outcome::apply_conflict(
+        stage,
+        crate::stage_service::merge_outcome::ConflictAuthority::Session,
+    )?;
     update_stage(&stage.id, target.work_dir, |s| {
         claim.apply(s)?;
-        s.clear_merge_block();
-        s.try_mark_merge_conflict()
+        crate::stage_service::merge_outcome::apply_conflict(
+            s,
+            crate::stage_service::merge_outcome::ConflictAuthority::Session,
+        )
     })?;
     spawn_resolver_and_report(stage, conflicting_files, target);
     Ok(MergeOutcome::Conflict)

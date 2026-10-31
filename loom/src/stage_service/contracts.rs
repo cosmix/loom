@@ -96,12 +96,23 @@ pub(crate) fn handle_freeze_contracts(
         no_cache: false,
         criteria: None,
     };
-    Ok(match submit(&work_dir, &request, Utc::now())? {
-        Submission::Queued(_) | Submission::Joined(_) | Submission::Superseded { .. } => {
-            Response::Ok
-        }
-        Submission::Refused(message) => refused(message),
-    })
+    let mut submitted = None;
+    update_stage(stage_id, &work_dir, |stage| {
+        submitted = Some(if !super::ownership::matches_attempt(stage, session_id) {
+            Submission::Refused("request belongs to a stale stage session".into())
+        } else {
+            submit(&work_dir, &request, Utc::now())?
+        });
+        Ok(())
+    })?;
+    Ok(
+        match submitted.expect("stage update supplies a submission") {
+            Submission::Queued(_) | Submission::Joined(_) | Submission::Superseded { .. } => {
+                Response::Ok
+            }
+            Submission::Refused(message) => refused(message),
+        },
+    )
 }
 
 /// Freeze the contracts of `stage_id` from a host run's `reports`. `verified`

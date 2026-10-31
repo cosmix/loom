@@ -17,7 +17,7 @@ mod tests;
 pub use checks::{AcceptanceCriterion, PlanIdentity, TruthCheck, WiringCheck};
 pub use dispute_budgets::DisputeTally;
 pub use implementers::{Implementer, Implementers};
-pub use issue_history::{IssueKind, StageIssue};
+pub use issue_history::{legacy_disposition, IssueDisposition, IssueKind, StageIssue};
 pub use merge_block::MergeRecord;
 pub use sandbox_config::{
     CommandConfinement, FilesystemConfig, LinuxConfig, NetworkConfig, StageSandboxConfig,

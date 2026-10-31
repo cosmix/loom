@@ -4,16 +4,20 @@ mod control_block;
 mod dispute;
 mod dispute_kinds;
 mod dispute_store;
+pub(crate) mod merge_outcome;
+#[cfg(test)]
+pub(crate) mod merge_test_fixtures;
 pub(crate) mod observer;
 pub(crate) mod ownership;
 mod receipts;
 mod types;
 pub(crate) use contracts::handle_freeze_contracts;
-pub(crate) use control_block::{apply_block, handle_agent_block_stage, handle_block_stage};
+pub(crate) use control_block::{apply_block, handle_agent_block_for_session, handle_block_stage};
 pub use dispute::handle_dispute_criteria;
-pub(crate) use dispute::handle_dispute_criteria_identified;
+pub(crate) use dispute::handle_dispute_criteria_for_session;
+#[cfg(test)]
 pub(crate) use dispute_kinds::handle_file_dispute;
-pub(crate) use dispute_kinds::handle_file_dispute_identified;
+pub(crate) use dispute_kinds::handle_file_dispute_for_session;
 pub(crate) use dispute_kinds::{escalate_freeze_refusal, file_freeze_refusal, FreezeRefusalFiling};
 use serde::{Deserialize, Serialize};
 pub use types::{QueuedRequest, StageRequest};

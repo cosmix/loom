@@ -292,6 +292,12 @@ impl Orchestrator {
     /// A worktree that is gone too held work nothing can recreate, so the
     /// stage is blocked rather than handed a fresh one.
     fn spawn_on_stage_worktree(&mut self, stage: Stage, kind: AgentKind) -> Result<()> {
+        let _admission = crate::fs::stage_admission::lock(&self.config.work_dir, &stage.id)?;
+        let current = self.load_stage(&stage.id)?;
+        if current.status != StageStatus::Executing || current.session != stage.session {
+            return Ok(());
+        }
+        let stage = current;
         let worktree = match self.active_worktrees.get(&stage.id) {
             Some(worktree) => worktree.clone(),
             None => {

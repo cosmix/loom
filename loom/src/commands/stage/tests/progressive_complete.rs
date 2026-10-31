@@ -115,7 +115,12 @@ fn no_branch_does_not_mark_merged() {
                 stage.merged
             );
         }
-        Ok(MergeOutcome::Conflict | MergeOutcome::Held | MergeOutcome::NoCommits) => {
+        Ok(
+            MergeOutcome::Conflict
+            | MergeOutcome::Held
+            | MergeOutcome::SigningHeld
+            | MergeOutcome::NoCommits,
+        ) => {
             panic!("unexpected Conflict, Held or NoCommits from missing branch");
         }
         Err(_) => {

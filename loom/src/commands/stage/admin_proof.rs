@@ -172,6 +172,15 @@ fn parse_proof(proof: &str) -> Result<(&str, Vec<u8>)> {
         bail!("operator proof nonce must be 16-128 URL-safe ASCII characters");
     }
     let mac = mac.ok_or_else(|| anyhow::anyhow!("operator proof is missing its authenticator"))?;
+    // Minted v1 proofs are lowercase. Reject legacy alternate spellings so
+    // existing lowercase replay markers keep their identity across upgrades.
+    if mac.len() != 64
+        || !mac
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        bail!("operator proof authenticator must be 64 lowercase hex characters");
+    }
     let decoded = hex::decode(mac).context("operator proof authenticator is not valid hex")?;
     Ok((nonce, decoded))
 }

@@ -9,6 +9,10 @@ use serde::{Deserialize, Serialize};
 use super::types::{Stage, StageStatus};
 use crate::models::failure::{FailureInfo, FailureType};
 
+mod disposition;
+pub use disposition::legacy_disposition;
+use disposition::transition_disposition;
+
 /// What a [`StageIssue`] was.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -24,6 +28,23 @@ pub enum IssueKind {
     /// One dispute's adjudication round. Never stored on the stage: the status
     /// collector reads it from the dispute's own records.
     Adjudication,
+}
+
+/// Semantic outcome of an ended issue, independent of its explanation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum IssueDisposition {
+    Resolved,
+    Closed,
+    Superseded,
+    Reset,
+    Retried,
+    Rejected,
+    Skipped,
+    Accepted,
+    NeedsEvidence,
+    Ruled,
+    Unknown,
 }
 
 /// One ended issue. Every field is always serialized, so a reader of the
@@ -44,12 +65,20 @@ pub struct StageIssue {
     /// What ended it: the transition (`NeedsHumanReview -> Queued`), the
     /// command, or the verdict.
     pub ended_by: String,
+    /// Absent on older persisted issues; normalized when serving status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disposition: Option<IssueDisposition>,
     /// The dispute an adjudication round belongs to.
     pub dispute_id: Option<u32>,
 }
 
 impl StageIssue {
-    fn ended_now(kind: IssueKind, evidence: Vec<String>, ended_by: &str) -> Self {
+    fn ended_now(
+        kind: IssueKind,
+        evidence: Vec<String>,
+        ended_by: &str,
+        disposition: IssueDisposition,
+    ) -> Self {
         Self {
             kind,
             failure_type: None,
@@ -57,15 +86,16 @@ impl StageIssue {
             evidence,
             ended_at: Utc::now(),
             ended_by: ended_by.to_owned(),
+            disposition: Some(disposition),
             dispute_id: None,
         }
     }
 
-    fn failure(failure: FailureInfo, ended_by: &str) -> Self {
+    fn failure(failure: FailureInfo, ended_by: &str, disposition: IssueDisposition) -> Self {
         Self {
             failure_type: Some(failure.failure_type),
             detected_at: Some(failure.detected_at),
-            ..Self::ended_now(IssueKind::Failure, failure.evidence, ended_by)
+            ..Self::ended_now(IssueKind::Failure, failure.evidence, ended_by, disposition)
         }
     }
 }
@@ -86,10 +116,10 @@ fn supersedes_reasons(status: &StageStatus) -> bool {
 
 impl Stage {
     /// Archive `failure_info` into `issue_history`, ended now by `ended_by`.
-    pub fn retire_failure(&mut self, ended_by: &str) {
+    pub fn retire_failure(&mut self, ended_by: &str, disposition: IssueDisposition) {
         if let Some(failure) = self.failure_info.take() {
             self.issue_history
-                .push(StageIssue::failure(failure, ended_by));
+                .push(StageIssue::failure(failure, ended_by, disposition));
         }
     }
 
@@ -102,17 +132,21 @@ impl Stage {
             current.failure_type == failure.failure_type && current.evidence == failure.evidence
         });
         if !same {
-            self.retire_failure("replaced by a newer failure");
+            self.retire_failure("replaced by a newer failure", IssueDisposition::Superseded);
             self.failure_info = Some(failure);
         }
     }
 
     /// Archive `review_reason` into `issue_history`, ended now by `ended_by`.
-    pub fn retire_review_reason(&mut self, ended_by: &str) {
+    pub fn retire_review_reason(&mut self, ended_by: &str, disposition: IssueDisposition) {
         if let Some(reason) = self.review_reason.take() {
             let lines = reason.lines().map(str::to_owned).collect();
-            self.issue_history
-                .push(StageIssue::ended_now(IssueKind::Review, lines, ended_by));
+            self.issue_history.push(StageIssue::ended_now(
+                IssueKind::Review,
+                lines,
+                ended_by,
+                disposition,
+            ));
         }
     }
 
@@ -120,7 +154,10 @@ impl Stage {
     /// replaces.
     pub fn replace_review_reason(&mut self, reason: String) {
         if self.review_reason.as_deref() != Some(reason.as_str()) {
-            self.retire_review_reason("replaced by a newer review reason");
+            self.retire_review_reason(
+                "replaced by a newer review reason",
+                IssueDisposition::Superseded,
+            );
             self.review_reason = Some(reason);
         }
     }
@@ -149,8 +186,9 @@ impl Stage {
     /// detected when it was entered.
     pub(super) fn retire_issues_of(&mut self, from: &StageStatus) {
         let ended_by = format!("{from} -> {}", self.status);
+        let disposition = transition_disposition(from, &self.status);
         if self.status != StageStatus::MergeBlocked && self.merge.block.take().is_some() {
-            self.retire_failure(&ended_by);
+            self.retire_failure(&ended_by, disposition);
         }
         if *from == self.status {
             return;
@@ -167,7 +205,12 @@ impl Stage {
         if *from == StageStatus::MergeConflict {
             self.issue_history.push(StageIssue {
                 detected_at: self.merge.conflict_since.take(),
-                ..StageIssue::ended_now(IssueKind::MergeConflict, Vec::new(), &ended_by)
+                ..StageIssue::ended_now(
+                    IssueKind::MergeConflict,
+                    Vec::new(),
+                    &ended_by,
+                    disposition,
+                )
             });
         }
         if self.status == StageStatus::MergeConflict {
@@ -175,10 +218,10 @@ impl Stage {
         }
         let superseded = supersedes_reasons(&self.status);
         if superseded || self.status == StageStatus::MergeConflict {
-            self.retire_failure(&ended_by);
+            self.retire_failure(&ended_by, disposition);
         }
         if superseded {
-            self.retire_review_reason(&ended_by);
+            self.retire_review_reason(&ended_by, disposition);
         }
     }
 }

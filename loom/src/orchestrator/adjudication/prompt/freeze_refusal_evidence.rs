@@ -322,14 +322,7 @@ fn content_section(
 /// longer than any backtick run inside it, so no line of it closes the fence.
 fn fenced(lang: &str, text: &str) -> String {
     let text = strip_control(text, &['\n', '\t']);
-    let longest = text
-        .split(|c: char| c != '`')
-        .map(str::len)
-        .max()
-        .unwrap_or(0);
-    let fence = "`".repeat(longest.max(2) + 1);
-    let newline = if text.ends_with('\n') { "" } else { "\n" };
-    format!("{fence}{lang}\n{text}{newline}{fence}\n\n")
+    super::super::fenced(lang, &text)
 }
 
 #[cfg(test)]

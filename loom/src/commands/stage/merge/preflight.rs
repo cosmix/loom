@@ -7,14 +7,36 @@ use std::path::{Path, PathBuf};
 
 use crate::git::merge::merge_head_exists;
 use crate::models::stage::{Stage, StageStatus};
-use crate::verify::transitions::load_stage;
+use crate::verify::transitions::{load_stage, update_stage};
 
 /// Everything a merge retry needs, resolved and validated up front.
 pub(super) struct RetryPreflight {
     pub(super) stage_id: String,
-    pub(super) stage: Stage,
     pub(super) repo_root: PathBuf,
     pub(super) worktree_root: PathBuf,
+}
+
+pub(super) enum RetryAdmission {
+    Admitted(Stage),
+    LimitReached(Stage),
+}
+
+/// Recheck and charge the current stage in the same locked transaction.
+pub(super) fn admit_retry(stage_id: &str, work_dir: &Path) -> Result<RetryAdmission> {
+    let mut limited = None;
+    let updated = update_stage(stage_id, work_dir, |stage| {
+        require_merge_state(stage, stage_id)?;
+        if stage.is_at_fix_limit() {
+            limited = Some(stage.clone());
+            bail!("merge retry limit reached");
+        }
+        stage.increment_fix_attempts();
+        Ok(())
+    });
+    if let Some(stage) = limited {
+        return Ok(RetryAdmission::LimitReached(stage));
+    }
+    updated.map(RetryAdmission::Admitted)
 }
 
 /// Resolve the stage ID, load and validate the stage, confirm we're running
@@ -33,7 +55,6 @@ pub(super) fn retry_preflight(stage_id: Option<String>, work_dir: &Path) -> Resu
 
     Ok(RetryPreflight {
         stage_id,
-        stage,
         repo_root,
         worktree_root,
     })
@@ -114,6 +135,56 @@ fn resolve_worktree_paths(stage_id: &str) -> Result<(PathBuf, PathBuf)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn concurrent_retries_charge_only_the_last_available_attempt() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut stage = Stage::new("stage-a".to_string(), None);
+        stage.id = "stage-a".to_string();
+        stage.status = StageStatus::MergeConflict;
+        stage.max_fix_attempts = Some(3);
+        stage.fix_attempts = 2;
+        crate::verify::transitions::create_stage(&stage, temp.path()).unwrap();
+        let barrier = std::sync::Barrier::new(3);
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..2)
+                .map(|_| {
+                    let barrier = &barrier;
+                    let path = temp.path();
+                    scope.spawn(move || {
+                        barrier.wait();
+                        matches!(
+                            admit_retry("stage-a", path).unwrap(),
+                            RetryAdmission::Admitted(_)
+                        )
+                    })
+                })
+                .collect();
+            barrier.wait();
+            assert_eq!(
+                handles
+                    .into_iter()
+                    .map(|h| h.join().unwrap())
+                    .filter(|ok| *ok)
+                    .count(),
+                1
+            );
+        });
+        assert_eq!(load_stage("stage-a", temp.path()).unwrap().fix_attempts, 3);
+    }
+
+    #[test]
+    fn finalized_stage_is_not_charged() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut stage = Stage::new("stage-a".to_string(), None);
+        stage.id = "stage-a".to_string();
+        stage.status = StageStatus::Completed;
+        stage.merged = true;
+        stage.fix_attempts = 1;
+        crate::verify::transitions::create_stage(&stage, temp.path()).unwrap();
+        assert!(admit_retry("stage-a", temp.path()).is_err());
+        assert_eq!(load_stage("stage-a", temp.path()).unwrap().fix_attempts, 1);
+    }
 
     #[test]
     fn accepts_completed_stage_not_yet_merged() {

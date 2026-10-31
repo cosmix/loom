@@ -4,8 +4,8 @@
 //! verifies the tree the request named, records each criterion's outcome as
 //! it finishes, and writes the job's result. A check runs the stage's gate, a
 //! completion its full completion run (`child_complete`), a freeze its
-//! contracts (`freeze`). It prints nothing; the CLI wrapper prints the
-//! summary the runner captures in `child.log`.
+//! contracts (`freeze`). The CLI wrapper prints the result summary; some
+//! verification checks also print progress into the captured `child.log`.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -15,16 +15,16 @@ use anyhow::{bail, ensure, Context, Result};
 
 use super::{child_complete, digest, freeze, store};
 use super::{CriterionOutcome, JobKind, JobRecord, JobResult, JobState};
-use crate::commands::stage::acceptance_runner::{resolve_acceptance_dir, StageExecutionPaths};
-use crate::commands::stage::criterion_output::format_criterion_result;
-use crate::commands::verify::run_and_verify_stage_goal;
 use crate::git::worktree::WorktreeGit;
 use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::{Stage, StageType};
+use crate::verify::criteria::format_criterion_result;
 use crate::verify::criteria::{
     plan_confinement, run_acceptance_with_config, set_spawn_observer, CachePolicy, CriteriaConfig,
     CriterionObserver, CriterionResult, SpawnObserver, SpawnObserverGuard,
 };
+use crate::verify::execution_paths::{resolve_acceptance_dir, StageExecutionPaths};
+use crate::verify::goal_backward::plan::{self, LoadedGoal};
 use crate::verify::goal_backward::GoalBackwardResult;
 use crate::verify::transitions::load_stage;
 
@@ -38,6 +38,7 @@ const ERROR_MAX_BYTES: usize = 2 * 1024;
 /// writes nothing; any later failure is written as the result's `error`.
 pub fn run_job(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<JobResult> {
     let record = load_running(work_dir, stage_id, job_id)?;
+    let _watchdog = super::child_watchdog::start(work_dir, stage_id, job_id);
     let _groups = record_groups(work_dir, stage_id, job_id);
     let result = match record.kind {
         JobKind::Check => {
@@ -53,7 +54,7 @@ pub fn run_job(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<JobResul
     Ok(result)
 }
 
-fn load_running(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<JobRecord> {
+pub(super) fn load_running(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<JobRecord> {
     let record = store::load_current(work_dir, stage_id)?
         .with_context(|| format!("stage '{stage_id}' has no current host job"))?;
     ensure!(
@@ -75,10 +76,12 @@ fn load_running(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<JobReco
 fn record_groups(work_dir: &Path, stage_id: &str, job_id: &str) -> SpawnObserverGuard {
     let work_dir = work_dir.to_path_buf();
     let (stage_id, job_id) = (stage_id.to_string(), job_id.to_string());
-    set_spawn_observer(SpawnObserver(Box::new(move |pgid| {
-        if let Err(err) = store::append_group(&work_dir, &stage_id, &job_id, pgid) {
-            tracing::warn!("host job {job_id}: cannot record process group {pgid}: {err:#}");
-        }
+    set_spawn_observer(SpawnObserver(Box::new(move || {
+        let (child, address) = store::start_guarded_group(&work_dir, &stage_id, &job_id)?;
+        Ok(crate::verify::criteria::GroupAnchor::new(
+            child,
+            Box::new(move || address.signal()),
+        ))
     })))
 }
 
@@ -87,7 +90,9 @@ fn record_groups(work_dir: &Path, stage_id: &str, job_id: &str) -> SpawnObserver
 fn check(work_dir: &Path, record: &JobRecord, progress: &Arc<Progress>) -> Result<Option<String>> {
     let stage = load_stage(&record.stage_id, work_dir)
         .with_context(|| format!("Failed to load stage '{}'", record.stage_id))?;
-    let goal_checks = plan_has_goal_checks(work_dir, &stage.id)?;
+    super::child_policy::ensure_bound_stage(&stage, work_dir)?;
+    let expected = std::env::var(super::BUDGET_POLICY_ENV).ok();
+    let goal = plan::load(&stage.id, work_dir, expected.as_deref())?;
     let tree = JobTree::resolve(&stage, work_dir)?;
     if let Some(mismatch) = tree.differences(record)? {
         bail!("the tree does not match the request: {mismatch}");
@@ -97,26 +102,11 @@ fn check(work_dir: &Path, record: &JobRecord, progress: &Arc<Progress>) -> Resul
     run_configured(&stage, &tree, &config.with_only(only))?;
     progress.take_failure()?;
     // The goal-backward checks belong to a run of every criterion.
-    if goal_checks && record.criteria.is_none() {
-        run_goal(&stage, &tree, work_dir, progress)?;
+    if goal.has_checks() && record.criteria.is_none() {
+        run_goal(&stage, &tree, progress, &goal)?;
         progress.take_failure()?;
     }
     tree.differences(record)
-}
-
-/// Whether the stage's plan entry defines goal checks. The plan is the state
-/// root's `config.toml` source; without one the job cannot know, so it fails.
-fn plan_has_goal_checks(work_dir: &Path, stage_id: &str) -> Result<bool> {
-    let plan_path = crate::fs::resolve_source_path(work_dir)?
-        .context("No plan source path configured in config.toml")?;
-    let plan = crate::plan::parse_plan(&plan_path)
-        .with_context(|| format!("Failed to parse plan: {}", plan_path.display()))?;
-    let definition = plan
-        .stages
-        .iter()
-        .find(|definition| definition.id == stage_id)
-        .with_context(|| format!("Stage '{stage_id}' not found in plan"))?;
-    Ok(definition.has_any_goal_checks())
 }
 
 /// Run every acceptance criterion, as a completion does. A check builds the
@@ -169,17 +159,15 @@ fn run_configured(stage: &Stage, tree: &JobTree, config: &CriteriaConfig) -> Res
     Ok(())
 }
 
-fn run_goal(stage: &Stage, tree: &JobTree, work_dir: &Path, progress: &Progress) -> Result<()> {
+fn run_goal(stage: &Stage, tree: &JobTree, progress: &Progress, goal: &LoadedGoal) -> Result<()> {
     let verify_dir = tree
         .paths
         .acceptance_dir
         .as_deref()
         .context("No working directory available for goal-backward verification")?;
-    let result = run_and_verify_stage_goal(
-        &stage.id,
+    let result = goal.run(
         verify_dir,
         tree.paths.worktree_root.as_deref(),
-        work_dir,
         stage.plan_version,
     )?;
     let outcome = CriterionOutcome {

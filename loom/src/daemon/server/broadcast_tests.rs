@@ -8,6 +8,7 @@
 
 use super::*;
 use crate::daemon::protocol::read_message;
+use crate::daemon::wire::MAX_RESPONSE_BYTES;
 use std::io::Read as _;
 
 /// A response whose serialized form is comfortably past the frame limit.
@@ -25,10 +26,16 @@ fn small_response() -> Response {
 
 /// Two connected pairs; the writer ends become the subscriber list and the
 /// reader ends are kept alive by the caller.
-fn two_subscribers() -> (Vec<UnixStream>, Vec<UnixStream>) {
+fn two_subscribers() -> (Vec<Subscriber>, Vec<UnixStream>) {
     let (writer_a, reader_a) = UnixStream::pair().unwrap();
     let (writer_b, reader_b) = UnixStream::pair().unwrap();
-    (vec![writer_a, writer_b], vec![reader_a, reader_b])
+    (
+        vec![
+            Arc::new(Mutex::new(writer_a)),
+            Arc::new(Mutex::new(writer_b)),
+        ],
+        vec![reader_a, reader_b],
+    )
 }
 
 #[test]
@@ -101,7 +108,10 @@ fn a_dead_peer_is_evicted_while_a_live_one_is_kept() {
     // no matter how many forked copies of the fd exist.
     dead_reader.shutdown(std::net::Shutdown::Both).unwrap();
     drop(dead_reader);
-    let mut subscribers = vec![live_writer, dead_writer];
+    let mut subscribers = vec![
+        Arc::new(Mutex::new(live_writer)),
+        Arc::new(Mutex::new(dead_writer)),
+    ];
     let mut oversized_logged = false;
 
     broadcast_retaining_live(&mut subscribers, &small_response(), &mut oversized_logged);
@@ -120,7 +130,10 @@ fn a_dead_peer_is_evicted_even_while_the_payload_is_oversized() {
     // `drop` alone would not make the write below fail deterministically.
     dead_reader.shutdown(std::net::Shutdown::Both).unwrap();
     drop(dead_reader);
-    let mut subscribers = vec![live_writer, dead_writer];
+    let mut subscribers = vec![
+        Arc::new(Mutex::new(live_writer)),
+        Arc::new(Mutex::new(dead_writer)),
+    ];
     let mut oversized_logged = false;
 
     broadcast_retaining_live(
@@ -154,7 +167,7 @@ fn a_subscriber_that_reads_nothing_still_receives_the_next_tick() {
     // tick: an oversized payload is never written at all, so the following
     // ordinary response is the first thing on the wire.
     let (writer, mut reader) = UnixStream::pair().unwrap();
-    let mut subscribers = vec![writer];
+    let mut subscribers = vec![Arc::new(Mutex::new(writer))];
     let mut oversized_logged = false;
 
     broadcast_retaining_live(

@@ -14,8 +14,7 @@ use crate::commands::stage::acceptance_runner::{
     StageExecutionPaths,
 };
 use crate::plan::parser::parse_plan;
-use crate::verify::criteria::resolve_confinement;
-use crate::verify::goal_backward::{run_goal_backward_verification, GoalBackwardResult};
+use crate::verify::goal_backward::GoalBackwardResult;
 use crate::verify::transitions::load_stage;
 
 #[path = "verify_relay.rs"]
@@ -236,28 +235,14 @@ pub fn run_and_verify_stage_goal(
     work_dir: &Path,
     plan_version: u32,
 ) -> Result<GoalBackwardResult> {
-    let plan_path = crate::fs::resolve_source_path(work_dir)?
-        .context("No plan source path configured in config.toml")?;
-
-    // Parse plan to get stage definition
-    let plan = parse_plan(&plan_path)
-        .with_context(|| format!("Failed to parse plan: {}", plan_path.display()))?;
-
-    let stage_def = plan
-        .stages
-        .iter()
-        .find(|s| s.id == stage_id)
-        .with_context(|| format!("Stage '{stage_id}' not found in plan"))?;
-
-    // Goal checks are plan-authored commands: run them at the stage's resolved
-    // confinement level (stage override over plan default).
-    let confinement = resolve_confinement(
-        stage_def.sandbox.command_confinement,
-        Some(plan.metadata.loom.sandbox.command_confinement),
-    );
-
-    // Run goal-backward verification
-    run_goal_backward_verification(stage_def, verification_dir, tree, confinement, plan_version)
+    crate::verify::goal_backward::plan::run_from_plan(
+        stage_id,
+        verification_dir,
+        tree,
+        work_dir,
+        plan_version,
+        None,
+    )
 }
 
 #[cfg(test)]

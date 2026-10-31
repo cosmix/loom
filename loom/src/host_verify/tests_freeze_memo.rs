@@ -11,11 +11,11 @@ use super::apply::Applied;
 use super::freeze_memo::{run_memoized, Verdict};
 use super::tests_freeze::{confinement_unavailable, verdicts, Fixture};
 use super::{store, JobState};
-use crate::commands::stage::contracts::freeze::JudgedRun;
 use crate::daemon::ContractRunReport;
 use crate::plan::schema::ContractSpec;
 use crate::testrun::{registry, RunOutput};
 use crate::verify::contracts::failed_builds::BuildKey;
+use crate::verify::contracts::freeze::JudgedRun;
 use crate::verify::contracts::run_dir::resolve_run;
 use crate::verify::contracts::test_support::{contract, CONTRACT_FILE};
 

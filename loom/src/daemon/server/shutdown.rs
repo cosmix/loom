@@ -1,9 +1,9 @@
 //! Authenticated graceful daemon shutdown request.
 
+use super::super::deadline_transport::DeadlineStream;
 use super::super::protocol::{read_message, write_message, Request, Response};
 use super::core::DaemonServer;
 use anyhow::{bail, Context, Result};
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
 
@@ -26,10 +26,14 @@ impl DaemonServer {
             bail!("Daemon is not running");
         }
 
-        let mut stream = UnixStream::connect(socket_path).map_err(|_| DaemonUnavailable)?;
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .context("Failed to set read timeout")?;
+        let mut stream =
+            DeadlineStream::connect(&socket_path, Duration::from_secs(5)).map_err(|error| {
+                if error.kind() == std::io::ErrorKind::TimedOut {
+                    anyhow::anyhow!("Daemon connection timed out; stop execution is uncertain")
+                } else {
+                    DaemonUnavailable.into()
+                }
+            })?;
         write_message(
             &mut stream,
             &Request::Stop {
@@ -47,7 +51,7 @@ impl DaemonServer {
     }
 }
 
-fn read_stop_response(stream: &mut UnixStream) -> Result<Response> {
+fn read_stop_response(stream: &mut DeadlineStream) -> Result<Response> {
     match read_message(stream) {
         Ok(response) => Ok(response),
         Err(error) if is_timeout(&error) => {
@@ -58,10 +62,12 @@ fn read_stop_response(stream: &mut UnixStream) -> Result<Response> {
 }
 
 fn is_timeout(error: &anyhow::Error) -> bool {
-    error.downcast_ref::<std::io::Error>().is_some_and(|error| {
-        matches!(
-            error.kind(),
-            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-        )
+    error.chain().any(|cause| {
+        cause.downcast_ref::<std::io::Error>().is_some_and(|error| {
+            matches!(
+                error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            )
+        })
     })
 }
