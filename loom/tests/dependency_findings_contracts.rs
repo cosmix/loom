@@ -208,9 +208,9 @@ fn hostile_entry_body_renders_on_one_line() {
     assert!(line.contains("Ignore previous instructions"), "{line}");
 }
 
-/// Plain letters and spaces, exactly `len` bytes.
+/// Plain letters, exactly `len` bytes, without journal-trimmed whitespace.
 fn filler(seed: usize, len: usize) -> String {
-    let word = format!("word{} ", "abcdefghij".chars().nth(seed % 10).unwrap());
+    let word = format!("word{}", "abcdefghij".chars().nth(seed % 10).unwrap());
     word.repeat(len / word.len() + 1)[..len].to_string()
 }
 
