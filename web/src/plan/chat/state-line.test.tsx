@@ -51,7 +51,7 @@ it("every state row", () => {
   }
 });
 
-it("none offers the checklist primary offer; New chat is the panel head's", () => {
+it("none draws no workflow offer; New chat is the panel head's", () => {
   const h = harness(null);
   const primary = {
     ...checklistViewSchema.parse(helloFixture.checklists[0]).primary!,
@@ -75,7 +75,8 @@ it("none offers the checklist primary offer; New chat is the panel head's", () =
   stops.push(registerOfferAction(primary.kind, vi.fn()));
   h.store.set(checklistAtom, checklist);
   h.show();
-  expect(screen.getByRole("button", { name: "Write section 05" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Write section 05" })).toBeNull();
+  expect(screen.queryByText("Write section 05")).toBeNull();
   expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
 });
 
@@ -160,7 +161,7 @@ it("read-only mode hazard lists problems, no offers", () => {
   ]) {
     expect(container.textContent).toContain(text);
   }
-  expect(container.querySelector(".hazard-warning")).toBeTruthy();
+  expect(container.querySelector('.chat-notice[data-tone="warning"]')).toBeTruthy();
   expect(screen.queryByRole("button")).toBeNull();
 });
 
@@ -215,7 +216,7 @@ it("a browser that connects after a chat failed shows the failure, not No chat",
   expect(container.textContent).toContain("The session stopped unexpectedly");
   expect(screen.getByText("Process exited")).toBeTruthy();
   expect(container.textContent).toContain(`Last activity ${since} (41s ago)`);
-  expect(container.querySelector(".hazard-error")).toBeTruthy();
+  expect(container.querySelector('.chat-notice[data-tone="error"]')).toBeTruthy();
 });
 
 it("a browser that connects after a chat ended shows the Ended line, not No chat", () => {

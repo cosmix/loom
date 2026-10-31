@@ -108,14 +108,14 @@ function offerPrimary(store: ReturnType<typeof setup>["store"]) {
   });
   return registerOfferAction(primary.kind, vi.fn());
 }
-it("ended replaces the composer with New chat and the primary offer", () => {
+it("ended replaces the composer with New chat and no workflow offer", () => {
   const h = setup("ended");
   const unregister = offerPrimary(h.store);
   mount(h.store);
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
   expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Write section 05" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Write section 05" })).toBeNull();
   unregister();
 });
 it("failed replaces the composer with New chat alone", () => {

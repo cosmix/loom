@@ -5,6 +5,7 @@ import type { QueuedMessage } from "@/plan/api/schema-chat";
 import { authorBlockReasonAtom, isHolderAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { withdrawMessage } from "./commands";
+import { forgetGiven } from "./context-attach";
 import { draftAtom } from "./drafts";
 import { queueAtom } from "./model";
 import { Untrusted } from "./visible-controls";
@@ -18,6 +19,7 @@ function useWithdraw() {
     setPending(item.id);
     void withdrawMessage(store, item.id)
       .then(() => {
+        forgetGiven(store);
         const text = item.text;
         if (edit && text !== null) {
           store.set(draftAtom, (draft) => ({

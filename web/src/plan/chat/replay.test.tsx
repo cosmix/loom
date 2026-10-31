@@ -25,6 +25,7 @@ import {
   pendingAttachmentsAtom,
   type AttachmentDraft,
 } from "@/plan/attachments";
+import { docAttachment } from "@/plan/attachments/doc-attachment";
 import { docRel } from "@/plan/files/address";
 import { routes } from "@/plan/router";
 import { planSocketAtom } from "@/plan/state/atoms";
@@ -41,6 +42,7 @@ const recordedSend = chatCommandSchema.parse(
   commandsFixture.find((command) => command.command === "send"),
 );
 const passageInput = attachmentInputSchema.parse(commandsFixture[0]?.attachments?.[0]);
+const viewedInput = toAttachmentInput(docAttachment(docFixture));
 const passage: AttachmentDraft = {
   kind: "source",
   path: docRel(passageInput.path),
@@ -154,7 +156,8 @@ async function sendPassage(store: Store, chat: HTMLElement): Promise<void> {
   fireEvent.click(within(chat).getByRole("button", { name: "Send" }));
   await waitFor(() =>
     expect(FakeSocket.last!.sent.filter((frame) => frame.type === "chat")).toEqual([
-      { type: "chat", ...recordedSend, attachments: [passageInput] },
+      // The passage stays first; the page being read (the fixture document) follows it.
+      { type: "chat", ...recordedSend, attachments: [passageInput, viewedInput] },
     ]),
   );
 
