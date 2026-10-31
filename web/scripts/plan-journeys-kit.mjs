@@ -192,7 +192,11 @@ export function pathOf(url) {
 
 // tmux and the fake claude --------------------------------------------------------------------
 
-/** Where tmux keeps its sockets; `loom plan` names its own `loom-plan-<id>`. */
+/**
+ * Where tmux keeps its sockets; `loom plan` names its own `loom-plan-<id>`. scripts/plan-journeys.sh
+ * points TMUX_TMPDIR at a directory of this run's own, so every socket here is one it started; run
+ * without it, the directory is the operator's and `killSockets` could end a chat that is theirs.
+ */
 export function planSockets() {
   const dir = join(process.env.TMUX_TMPDIR ?? "/tmp", `tmux-${process.getuid()}`);
   try {
