@@ -11,18 +11,23 @@ use super::{git_command, git_label, git_timeout, global_args, run_bounded_git, s
 
 /// Variables that point git at a repository, work tree or index other than the
 /// ones under its working directory.
-pub(crate) const REPO_REDIRECT_ENV: [&str; 4] = [
+pub(crate) const REPO_REDIRECT_ENV: [&str; 10] = [
     "GIT_DIR",
     "GIT_WORK_TREE",
     "GIT_INDEX_FILE",
     "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+    "GIT_SHALLOW_FILE",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
 ];
 
 /// [`super::run_git`] for inspecting the checkout at `repo_root` whatever the
-/// caller's environment exports: `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`
-/// and `GIT_COMMON_DIR` are dropped, so none can point git at another
-/// repository. `stdin` is the file git reads as standard input, which needs no
-/// writer thread beside the deadline.
+/// caller's environment exports: repository-selection variables are dropped,
+/// so they cannot point git at another repository. `stdin` is the file git
+/// reads as standard input, requiring no writer thread beside the deadline.
 pub fn run_git_pinned(args: &[&str], stdin: Option<File>, repo_root: &Path) -> Result<Output> {
     run_git_pinned_within(args, stdin, repo_root, git_timeout(args))
 }

@@ -83,9 +83,8 @@ pub fn get_branch_head(branch: &str, repo_root: &Path) -> Result<String> {
 /// Count commits on `branch` that are not on `base`.
 ///
 /// Uses `git rev-list --count <base>..<branch>`. Returns 0 if the branch
-/// is fully merged into base, or if either ref is missing (treated as "no
-/// new commits" — callers that need to distinguish "no commits" from
-/// "branch missing" should check `branch_exists` first).
+/// is fully merged into base, or if the branch is missing. A missing base
+/// with a resolvable branch is an error.
 ///
 /// # Arguments
 /// * `branch` - The branch with potentially new commits (e.g., `loom/<stage>`)

@@ -31,6 +31,42 @@ fn git_runner_returns_structured_timeout() {
     assert_eq!(timeout.operation(), "git -c");
 }
 
+#[test]
+fn repository_selectors_are_removed_before_explicit_overrides() {
+    let first = tempfile::tempdir().unwrap();
+    let second = tempfile::tempdir().unwrap();
+    for root in [first.path(), second.path()] {
+        isolated_git_ok(root, &["init"]);
+    }
+    std::fs::write(first.path().join("first.txt"), "first").unwrap();
+    std::fs::write(second.path().join("second.txt"), "second").unwrap();
+
+    let mut command = Command::new("git");
+    command
+        .env("GIT_DIR", second.path().join(".git"))
+        .env("GIT_WORK_TREE", second.path())
+        .env("GIT_INDEX_FILE", second.path().join(".git/index"));
+    harden(
+        &mut command,
+        &global_args(&["add", "first.txt"]),
+        first.path(),
+    );
+    assert!(command.output().unwrap().status.success());
+    assert_eq!(
+        run_git_checked(&["ls-files"], first.path()).unwrap(),
+        "first.txt"
+    );
+    assert_eq!(run_git_checked(&["ls-files"], second.path()).unwrap(), "");
+
+    let alternate_index = first.path().join("alternate-index");
+    let env = [("GIT_INDEX_FILE", alternate_index.as_os_str())];
+    let output = run_git_with_env(&["add", "first.txt"], &env, first.path()).unwrap();
+    assert!(output.status.success());
+    assert!(alternate_index.exists());
+    let output = run_git_with_env(&["ls-files"], &env, first.path()).unwrap();
+    assert_eq!(output.stdout, b"first.txt\n");
+}
+
 /// Every hook name this fixture wires up. Each script just touches a
 /// marker file under the repo's `markers` directory when it runs.
 const HOOK_NAMES: [&str; 5] = [

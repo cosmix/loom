@@ -1,6 +1,6 @@
 //! Tests for cleanup operations
 
-use crate::git::cleanup::worktree::remove_worktree_scaffold;
+use crate::git::cleanup::worktree::remove_worktree_scaffold_with_known_paths as remove_worktree_scaffold;
 use crate::git::cleanup::{
     cleanup_after_merge, cleanup_branch, cleanup_worktree, needs_cleanup, prune_worktrees,
     CleanupConfig, CleanupResult,

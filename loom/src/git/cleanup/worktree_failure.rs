@@ -70,7 +70,7 @@ pub(super) fn recover_half_removed(
     if !half_removed(worktree_path, e) {
         return Ok(false);
     }
-    let unknown = walk(worktree_path, &|rel, meta| !is_scaffold(rel, meta));
+    let unknown = unknown_entries(worktree_path)?;
     if !unknown.is_empty() {
         anyhow::bail!(
             "git removed worktree {} but files that are not loom scaffold remain; \
@@ -87,6 +87,33 @@ pub(super) fn recover_half_removed(
     })?;
     run_git_checked(&["worktree", "prune"], repo_root)?;
     Ok(true)
+}
+
+/// Prove every remaining entry is scaffold before allowing deletion.
+fn unknown_entries(root: &Path) -> Result<Vec<String>> {
+    let mut found = Vec::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir)
+            .with_context(|| format!("Failed to inspect {}", dir.display()))?
+        {
+            let entry = entry.with_context(|| format!("Failed to inspect {}", dir.display()))?;
+            let path = entry.path();
+            let meta = std::fs::symlink_metadata(&path)
+                .with_context(|| format!("Failed to inspect {}", path.display()))?;
+            let rel = path.strip_prefix(root)?.to_string_lossy();
+            if !is_scaffold(&rel, &meta) {
+                found.push(rel.into_owned());
+                if found.len() > MAX_BLOCKING_PATHS {
+                    return Ok(found);
+                }
+            }
+            if meta.is_dir() {
+                pending.push(path);
+            }
+        }
+    }
+    Ok(found)
 }
 
 /// Whether a non-directory entry is scaffold loom or the session sandbox

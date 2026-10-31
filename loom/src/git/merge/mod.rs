@@ -21,7 +21,7 @@ use super::branch::{branch_exists, branch_name_for_stage, branch_ref, is_ancesto
 use crate::git::runner::run_git_checked;
 use crate::git::target_guard::{self, GuardState};
 use lock::MergeLock;
-use operation::operator_operation;
+pub(crate) use operation::operator_operation;
 
 // Re-export status types for use by other modules
 pub use control_paths::{

@@ -184,8 +184,7 @@ pub fn detect_in_progress_merges(stage_id: &str, repo_root: &Path) -> Vec<InProg
 }
 
 /// Run `git diff --name-only --diff-filter=U` in the given path and return
-/// its lines. Returns an empty Vec on git failure (the caller treats the
-/// "no unmerged paths" case as `ResolvedButUncommitted`).
+/// its lines. Git failures propagate; an empty result means no unmerged paths.
 fn unmerged_paths(repo_path: &Path) -> Result<Vec<String>> {
     let stdout = run_git_checked(&["diff", "--name-only", "--diff-filter=U"], repo_path)?;
     Ok(stdout
