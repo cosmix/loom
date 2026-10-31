@@ -77,7 +77,7 @@ it.each(["/f/alpha/product", "/f/alpha", "/files/product/alpha/section_01.md"])(
   (path) => {
     setup(path, session());
     expect(within(panel()).getByRole("log")).toBeTruthy();
-    expect(panel().querySelector(".chat-state-pill")?.textContent).toBe("Waiting for you");
+    expect(panel().querySelector(".chat-state")?.textContent).toBe("Waiting for you");
     expect(notice("alpha")).toBeNull();
   },
 );
@@ -150,19 +150,21 @@ it("the c key does nothing while the panel has no composer to focus", () => {
   expect(home.store.get(focusComposerAtom)).toBe(true);
 });
 
-it("the empty panel offers the checklist's next step on its own feature's screens only", async () => {
+it("the empty panel draws no workflow offer on any screen", async () => {
   const { store, router } = setup("/f/alpha", null);
   // The last visited feature: its checklist stays current on screens it does not own.
   act(() => store.set(activeFeatureAtom, "alpha"));
-  // Text or button, by whether the registration effect had run when the panel first rendered.
   const shown = () => within(panel()).queryAllByText(offer.label).length > 0;
-  expect(shown()).toBe(true);
-  for (const path of ["/plans/solo", "/files/product/beta/section_01.md", "/f/beta"]) {
+  expect(shown()).toBe(false);
+  for (const path of [
+    "/plans/solo",
+    "/files/product/beta/section_01.md",
+    "/f/beta",
+    "/f/alpha/product",
+  ]) {
     await act(() => router.navigate(path));
     expect(shown()).toBe(false);
   }
-  await act(() => router.navigate("/f/alpha/product"));
-  expect(shown()).toBe(true);
 });
 
 it.each(["/", "/new"])("the c key sets no request on %s, which mounts no panel", (path) => {
