@@ -61,6 +61,20 @@ pub enum Step {
     Run,
 }
 
+impl Step {
+    /// The step's display name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Vision => "Vision",
+            Self::ProductSpec => "Product spec",
+            Self::Metaplan => "Metaplan",
+            Self::Plans => "Plans",
+            Self::PressureTest => "Pressure test",
+            Self::Run => "Run",
+        }
+    }
+}
+
 /// How a step stands.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]

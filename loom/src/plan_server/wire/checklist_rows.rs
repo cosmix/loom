@@ -4,9 +4,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use super::{
-    offer_view, step_name, ChecklistView, CurrentView, ItemView, MarkView, PlanCountsView, StepView,
-};
+use super::{offer_view, ChecklistView, CurrentView, ItemView, MarkView, PlanCountsView, StepView};
 use crate::plan_server::concept::links::plan_state_name;
 use crate::plan_server::files::plan_view::latest_pressure_date;
 use crate::planning::checklist::{Checklist, CurrentStep, Step, StepMark};
@@ -140,7 +138,7 @@ impl From<&Checklist> for ChecklistView {
 fn step_view((step, mark): &(Step, StepMark)) -> StepView {
     StepView {
         number: *step as u8,
-        name: step_name(*step).into(),
+        name: step.name().into(),
         mark: match mark {
             StepMark::Done => MarkView::Done,
             StepMark::Gap => MarkView::Gap,
@@ -148,7 +146,7 @@ fn step_view((step, mark): &(Step, StepMark)) -> StepView {
             StepMark::Optional => MarkView::Optional,
         },
         count: None,
-        label: step_name(*step).into(),
+        label: step.name().into(),
     }
 }
 

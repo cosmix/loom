@@ -165,7 +165,7 @@ fn assert_shape(out: &Value) {
             ]
         );
         assert_eq!(checklist["feature"], feature["name"]);
-        assert_eq!(checklist["steps"].as_array().unwrap().len(), 7);
+        assert_eq!(checklist["steps"].as_array().unwrap().len(), 6);
         assert!(checklist["items"].is_array());
         assert!(checklist["state"].is_object());
     }
