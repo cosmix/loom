@@ -165,3 +165,28 @@ fn remove_loom_hooks_keeps_a_project_level_hook() {
     remove_loom_hooks(&mut hooks);
     assert_eq!(hooks, vec![user]);
 }
+
+#[test]
+fn reconciliation_preserves_user_handlers_and_distinct_registrations() {
+    let mut settings = serde_json::json!({"hooks": {"PreToolUse": [
+        {"matcher":"Bash", "extra": 42, "hooks":[
+            {"command":"/custom/check.sh"}, {"command":"~/.claude/hooks/commit-guard.sh"},
+            {"command":"~/.claude/hooks/custom.sh"}]},
+        {"matcher":"Write", "hooks":[{"command":"/custom/check.sh"}]},
+        {"matcher":"Bash", "hooks":[{"command":"/other/check.sh"}]}
+    ]}});
+    let object = settings.as_object_mut().unwrap();
+    configure_loom_hooks_with_dir(object, "/installed/loom").unwrap();
+    let first = serde_json::Value::Object(object.clone());
+    configure_loom_hooks_with_dir(object, "/installed/loom").unwrap();
+    assert_eq!(first, serde_json::Value::Object(object.clone()));
+    let rules = settings["hooks"]["PreToolUse"].as_array().unwrap();
+    assert_eq!(rules[0]["extra"], 42);
+    assert_eq!(
+        rules[0]["hooks"],
+        serde_json::json!([
+        {"command":"/custom/check.sh"}, {"command":"~/.claude/hooks/custom.sh"}])
+    );
+    assert_eq!(rules[1]["matcher"], "Write");
+    assert_eq!(rules[2]["hooks"][0]["command"], "/other/check.sh");
+}

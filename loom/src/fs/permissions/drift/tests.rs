@@ -29,7 +29,7 @@ fn hook_drift_reports_every_registration_when_hooks_are_absent() {
 
 /// Pins the GLOBAL SessionStart registration for the knowledge-orient nudge:
 /// unlike session-start.sh/pre-compact.sh/session-end.sh (written only at
-/// worktree-creation time by `crate::hooks::config::HooksConfig`),
+/// worktree-creation time by the session capsule emitter),
 /// knowledge-orient.sh must appear in the CANONICAL config every settings
 /// document is diffed against, since it is meant to run in every repository
 /// and every session, not just loom stage worktrees.
@@ -109,7 +109,7 @@ fn hook_drift_does_not_flag_worktree_session_hooks() {
     configure_loom_hooks_with_dir(&mut settings_obj, TEST_HOOKS_DIR).unwrap();
     let mut settings = Value::Object(settings_obj);
 
-    // Written by `crate::hooks::config::HooksConfig::to_settings_hooks` at
+    // Written by the session capsule emitter at
     // worktree-creation time, not by `configure_loom_hooks`.
     let hooks_obj = settings["hooks"].as_object_mut().unwrap();
     for (event, script) in [

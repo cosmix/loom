@@ -2,6 +2,8 @@
 # codex-forward.sh - trusted argv boundary for the codex companion runtime
 
 set -euo pipefail
+# This literal is also read from the embedded wrapper by the Rust preflight.
+SUPPORTED_CODEX_COMPANION_VERSION=1.0.6
 export LOOM_CODEX_FORWARD=1
 usage_error() {
 	printf '%s\n' \
@@ -313,12 +315,12 @@ if [[ -z "${HOME:-}" || ! -d "$HOME" ]]; then
 fi
 home_root=$(cd "$HOME" 2>/dev/null && pwd -P) || finish_without_end 1 '' 'HOME cannot be canonicalized'
 versions_dir=${home_root}/.claude/plugins/cache/openai-codex/codex
-companion=${versions_dir}/1.0.6/scripts/codex-companion.mjs
+companion=${versions_dir}/${SUPPORTED_CODEX_COMPANION_VERSION}/scripts/codex-companion.mjs
 if [[ ! -f "$companion" || -L "$companion" ]]; then
-	finish_without_end 1 '' "Supported codex companion 1.0.6 is missing or unsafe: $companion"
+	finish_without_end 1 '' "Supported codex companion $SUPPORTED_CODEX_COMPANION_VERSION is missing or unsafe: $companion"
 fi
 companion_dir=$(cd "$(dirname "$companion")" 2>/dev/null && pwd -P) ||
-	finish_without_end 1 '' "Supported codex companion 1.0.6 cannot be canonicalized: $companion"
+	finish_without_end 1 '' "Supported codex companion $SUPPORTED_CODEX_COMPANION_VERSION cannot be canonicalized: $companion"
 companion=$companion_dir/codex-companion.mjs
 
 CLAUDE_PLUGIN_DATA=${home_root}/.codex/plugin-data

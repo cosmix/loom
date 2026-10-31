@@ -5,7 +5,6 @@ use super::hook_commands::HookDocument;
 use super::local_settings::strip_loom_written_keys;
 use super::*;
 use crate::fs::permissions::{guard_hooks_config, install_loom_hooks_to};
-use crate::hooks::HooksConfig;
 use serde_json::{json, Map, Value};
 use std::os::unix::fs::{symlink, PermissionsExt};
 use tempfile::TempDir;
@@ -325,23 +324,16 @@ const KEPT_KEYS: [&str; 4] = [
     "Read(//repo/doc/other/**)",
 ];
 
-/// The `"hooks"` settings a session installed with `HooksConfig` merges
-/// into the guarded loom-hook stanza, as `the_loom_written_keys_...` below
-/// expects to find in a main repo's `settings.local.json`.
+/// Historical session registrations merged into the global guard fixture.
 fn session_hooks_settings() -> Value {
-    let session = HooksConfig::new(
-        "/hooks".into(),
-        "/repo/.loom/work".into(),
-        PermissionMode::Auto,
-    );
+    let session = crate::hooks::tests::session_hook_fixture(Path::new("/hooks"));
     let mut hooks = guard_hooks_config("/hooks");
-    for (event, rules) in session.to_settings_hooks() {
+    for (event, rules) in session.as_object().unwrap() {
         let slot = hooks
             .as_object_mut()
             .unwrap()
-            .entry(event)
+            .entry(event.clone())
             .or_insert_with(|| json!([]));
-        let rules = serde_json::to_value(rules).unwrap();
         slot.as_array_mut()
             .unwrap()
             .extend(rules.as_array().unwrap().iter().cloned());

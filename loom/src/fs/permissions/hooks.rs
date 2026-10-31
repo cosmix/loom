@@ -8,6 +8,9 @@ use std::os::unix::fs::PermissionsExt;
 use super::constants::LOOM_HOOKS;
 use super::drift;
 
+#[path = "hooks/ownership.rs"]
+pub(super) mod ownership;
+
 #[path = "hooks/config.rs"]
 mod config;
 
@@ -18,11 +21,8 @@ pub(super) fn loom_hooks_config_for_dir(hooks_dir: &str) -> Value {
     config::build(hooks_dir)
 }
 
-/// Generate global hooks configuration for loom
-/// Only includes hooks that should be in the main repo's settings.json
-/// Session-specific hooks (SessionStart, PostToolUse, PreCompact, etc.) are merged at worktree creation
-/// Hooks reference scripts in the installed hooks directory
-/// (`assets::install::claude_hooks_dir`, absolute: `~` may not expand in all contexts)
+/// Generate global Loom registrations installed in the main repository's
+/// settings.local.json; session capsules add session-specific registrations.
 pub fn loom_hooks_config() -> Value {
     loom_hooks_config_for_dir(&crate::assets::install::claude_hooks_dir_text())
 }
@@ -93,161 +93,18 @@ fn install_hook_script(dir: &std::path::Path, filename: &str, content: &str) -> 
     Ok(true)
 }
 
-/// Migrate old hook paths to the new loom subdirectory structure
-///
-/// Scans hooks config for paths starting with `~/.claude/hooks/` but NOT
-/// `~/.claude/hooks/loom/` and updates them to use the new loom subdirectory.
-///
-/// This handles migration from the old hook location:
-///   `~/.claude/hooks/commit-guard.sh` -> `~/.claude/hooks/loom/commit-guard.sh`
-///
-/// Returns `true` if any paths were migrated, `false` otherwise.
-fn migrate_old_hook_paths(settings_obj: &mut serde_json::Map<String, Value>) -> Result<bool> {
-    let home_dir = dirs::home_dir().context("Failed to determine home directory")?;
-    let old_prefix = home_dir.join(".claude/hooks");
-    let new_prefix = home_dir.join(".claude/hooks/loom");
-
-    // Also handle tilde-prefixed paths
-    let old_tilde_prefix = "~/.claude/hooks/";
-    let new_tilde_prefix = "~/.claude/hooks/loom/";
-
-    let mut migrated = false;
-
-    // Get or return early if no hooks
-    let hooks = match settings_obj.get_mut("hooks") {
-        Some(h) => h,
-        None => return Ok(false),
-    };
-
-    let hooks_obj = match hooks.as_object_mut() {
-        Some(obj) => obj,
-        None => return Ok(false),
-    };
-
-    // Process each hook type
-    for (_event_name, event_hooks) in hooks_obj.iter_mut() {
-        let event_arr = match event_hooks.as_array_mut() {
-            Some(arr) => arr,
-            None => continue,
-        };
-
-        for hook_entry in event_arr.iter_mut() {
-            let hooks_inner = match hook_entry.get_mut("hooks") {
-                Some(h) => h,
-                None => continue,
-            };
-
-            let hooks_arr = match hooks_inner.as_array_mut() {
-                Some(arr) => arr,
-                None => continue,
-            };
-
-            for hook in hooks_arr.iter_mut() {
-                let cmd = match hook.get("command").and_then(|c| c.as_str()) {
-                    Some(c) => c.to_string(),
-                    None => continue,
-                };
-
-                // Check if this is an old-style path that needs migration
-                // Try tilde-prefixed path first
-                let new_cmd = if let Some(rest) = cmd.strip_prefix(old_tilde_prefix) {
-                    // Only migrate if not already in loom/ subdirectory
-                    if rest.starts_with("loom/") {
-                        None
-                    } else {
-                        Some(format!("{new_tilde_prefix}{rest}"))
-                    }
-                } else if let Ok(stripped) = std::path::Path::new(&cmd).strip_prefix(&old_prefix) {
-                    // Absolute path
-                    let first_component = stripped.components().next();
-                    let needs_migration = match first_component {
-                        Some(std::path::Component::Normal(name)) => name != "loom",
-                        _ => true, // Empty path or other component type
-                    };
-                    if needs_migration {
-                        Some(new_prefix.join(stripped).display().to_string())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
-
-                if let Some(new_cmd) = new_cmd {
-                    // Update the command in place
-                    if let Some(hook_obj) = hook.as_object_mut() {
-                        hook_obj.insert("command".to_string(), json!(new_cmd));
-                        migrated = true;
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(migrated)
-}
-
 /// Extract the basename (filename) from a command path, or the original
 /// string if extraction fails. `pub(super)`: also used by [`super::drift`]
 /// to compare registrations against `LOOM_HOOKS`.
 pub(super) fn extract_command_basename(cmd: &str) -> String {
-    std::path::Path::new(cmd)
+    std::path::Path::new(ownership::executable(cmd))
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(cmd)
         .to_string()
 }
 
-/// Remove duplicate hook entries from a hooks array
-///
-/// A duplicate is identified by having the same script basename in the hooks array.
-/// This allows deduplication even when the same script exists at different paths
-/// (e.g., `~/.claude/hooks/commit-guard.sh` vs `~/.claude/hooks/loom/commit-guard.sh`).
-/// This function modifies the array in place, keeping only the first occurrence
-/// of each unique command basename.
-fn remove_duplicate_hooks(hooks_arr: &mut Vec<Value>) {
-    let mut seen_basenames: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    hooks_arr.retain(|hook_entry| {
-        // Extract basenames from this hook entry
-        let basenames: Vec<String> = hook_entry
-            .get("hooks")
-            .and_then(|h| h.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|hook| hook.get("command").and_then(|c| c.as_str()))
-                    .map(extract_command_basename)
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        // If any basename in this entry has already been seen, remove the entry
-        if basenames.iter().any(|bn| seen_basenames.contains(bn)) {
-            return false;
-        }
-
-        // Mark these basenames as seen
-        for bn in basenames {
-            seen_basenames.insert(bn);
-        }
-
-        true
-    });
-}
-
-/// Check if a hook command points to a loom hook: any spelling of
-/// `~/.claude/hooks/loom/`, its symlink-resolved form
-/// (`assets::install::claude_hooks_dir`) included. `pub(super)`: also used by
-/// [`super::drift`] to scope obsolete-registration detection to loom's own hooks.
-pub(super) fn is_loom_hook(command: &str) -> bool {
-    is_loom_hook_in(
-        command,
-        crate::assets::install::claude_hooks_dir().as_deref(),
-        dirs::home_dir().as_deref(),
-    )
-}
-
-/// [`is_loom_hook`] against an explicit `hooks_dir` and `home`. Each spelling
+/// Check ownership against an explicit `hooks_dir` and `home`. Each spelling
 /// must start the command: a project's own `<repo>/.claude/hooks/loom/` hook,
 /// or any other tree that merely holds `hooks/loom/`, is the user's.
 pub(super) fn is_loom_hook_in(
@@ -255,46 +112,25 @@ pub(super) fn is_loom_hook_in(
     hooks_dir: Option<&std::path::Path>,
     home: Option<&std::path::Path>,
 ) -> bool {
-    let command = command.trim_start();
-    let home_dir = home.map(|home| format!("{}/.claude/hooks/loom/", home.display()));
-    let installed = hooks_dir.map(|dir| format!("{}/", dir.display()));
-    ["~/.claude/hooks/loom/", "$HOME/.claude/hooks/loom/"]
-        .iter()
-        .any(|prefix| command.starts_with(prefix))
-        || home_dir.is_some_and(|prefix| command.starts_with(&prefix))
-        || installed.is_some_and(|prefix| command.starts_with(&prefix))
+    ownership::is_owned(command, hooks_dir, home)
 }
 
 /// Remove all loom hooks from a hooks array
 ///
 /// This removes any hook entries that point to scripts in ~/.claude/hooks/loom/
 /// so they can be replaced with the current loom hook configuration.
+#[cfg(test)]
 fn remove_loom_hooks(hooks_arr: &mut Vec<Value>) {
-    hooks_arr.retain(|hook_entry| {
-        // Check if any hook in this entry is a loom hook
-        let is_loom = hook_entry
-            .get("hooks")
-            .and_then(|h| h.as_array())
-            .map(|arr| {
-                arr.iter().any(|hook| {
-                    hook.get("command")
-                        .and_then(|c| c.as_str())
-                        .is_some_and(is_loom_hook)
-                })
-            })
-            .unwrap_or(false);
-
-        // Keep if NOT a loom hook
-        !is_loom
-    });
+    ownership::remove_owned(
+        hooks_arr,
+        crate::assets::install::claude_hooks_dir().as_deref(),
+    );
 }
 
 /// Apply a loom hooks config (built from `hooks_dir`) to a settings object.
 ///
 /// Shared logic for [`configure_loom_hooks`]:
-/// 1. Migrates old hook paths to the new loom/ subdirectory
-/// 2. Removes ALL existing loom hooks from settings
-/// 3. Adds fresh loom hooks from the given directory
+/// Replaces owned handlers with fresh registrations from the given directory.
 ///
 /// User's non-loom hooks are preserved. `pub(super)`: also exercised
 /// directly by [`super::drift`]'s tests against a specific `hooks_dir`.
@@ -302,8 +138,6 @@ pub(super) fn configure_loom_hooks_with_dir(
     settings_obj: &mut serde_json::Map<String, Value>,
     hooks_dir: &str,
 ) -> Result<bool> {
-    let _ = migrate_old_hook_paths(settings_obj)?;
-
     let loom_hooks = loom_hooks_config_for_dir(hooks_dir);
 
     let hooks = settings_obj.entry("hooks").or_insert_with(|| json!({}));
@@ -328,8 +162,7 @@ pub(super) fn configure_loom_hooks_with_dir(
             .as_array_mut()
             .ok_or_else(|| anyhow::anyhow!("hooks.{event_name} must be an array"))?;
 
-        remove_loom_hooks(event_arr);
-        remove_duplicate_hooks(event_arr);
+        ownership::remove_owned(event_arr, Some(std::path::Path::new(hooks_dir)));
 
         if let Some(new_hooks) = loom_hooks_obj
             .and_then(|obj| obj.get(&event_name))

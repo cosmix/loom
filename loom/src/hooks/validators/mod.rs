@@ -1,10 +1,8 @@
-//! Validation logic for worktree isolation enforcement.
+//! Legacy validation helpers retained for library compatibility.
 //!
-//! This module provides Rust implementations of the validation rules enforced
-//! by the `worktree-isolation.sh` hook. These validators can be used for:
-//! - Testing the validation logic
-//! - Pre-validation before spawning sessions
-//! - Generating detailed error messages
+//! These functions do not enforce the installed guards and their results can
+//! differ from them. Do not use them to decide whether an operation is safe;
+//! the shell hooks and operating-system sandbox own enforcement.
 //!
 //! ## Validation Rules
 //!
@@ -18,6 +16,8 @@
 //!   (or the legacy `.work/stages/` and `.work/sessions/`)
 //! - Block writes to other worktrees
 //! - Block `../../` path traversal in paths
+
+#![allow(deprecated)]
 
 mod bash;
 mod file_path;

@@ -1,9 +1,25 @@
 //! Tests for hooks infrastructure
+#![allow(deprecated)]
 
 use super::*;
 use crate::plan::schema::PermissionMode;
 use std::path::PathBuf;
 use tempfile::TempDir;
+
+/// Historical main-settings fixture used to test cleanup, not a session emitter.
+pub(crate) fn session_hook_fixture(hooks_dir: &std::path::Path) -> serde_json::Value {
+    let mut hooks = serde_json::Map::new();
+    for event in HookEvent::all() {
+        hooks.insert(
+            event.to_string(),
+            serde_json::json!([{
+                "matcher": "*", "hooks": [{"type":"command",
+                    "command": hooks_dir.join(event.script_name()).display().to_string()}]
+            }]),
+        );
+    }
+    serde_json::Value::Object(hooks)
+}
 
 fn test_config(hooks: PathBuf, work: PathBuf) -> HooksConfig {
     HooksConfig::new(hooks, work, PermissionMode::AcceptEdits)
@@ -49,7 +65,6 @@ mod config_tests {
             ]
         );
     }
-
     #[test]
     fn test_hooks_config_new() {
         let config = super::test_config(

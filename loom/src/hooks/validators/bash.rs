@@ -113,6 +113,7 @@ fn strip_embedded_content(command: &str) -> String {
 ///
 /// # Examples
 /// ```
+/// # #![allow(deprecated)]
 /// use loom::hooks::validators::validate_bash_command;
 ///
 /// // Safe command
@@ -123,6 +124,7 @@ fn strip_embedded_content(command: &str) -> String {
 /// let result = validate_bash_command("git -C ../other commit", "my-stage");
 /// assert!(result.is_blocked());
 /// ```
+#[deprecated(note = "does not enforce installed hook policy")]
 pub fn validate_bash_command(command: &str, current_stage: &str) -> ValidationResult {
     let stripped = strip_embedded_content(command);
     let command = &stripped; // Shadow command with stripped version for all checks
