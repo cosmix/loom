@@ -65,7 +65,10 @@ fn an_overlay_entry_shadows_the_base_entry_for_the_same_path() {
     base.files.insert("src/b.rs".to_string(), entry("base-b"));
     assert!(store.publish_base("rev1", &base).unwrap());
 
-    let mut overlay = GraphLayer::default();
+    let mut overlay = GraphLayer {
+        revision: "rev1".into(),
+        ..GraphLayer::default()
+    };
     overlay
         .files
         .insert("src/a.rs".to_string(), entry("overlay-a"));
@@ -135,7 +138,10 @@ fn reading_without_a_stage_sees_only_the_base() {
     let temp = TempDir::new().unwrap();
     let store = store(&temp);
 
-    let mut base = GraphLayer::default();
+    let mut base = GraphLayer {
+        revision: "rev1".into(),
+        ..GraphLayer::default()
+    };
     base.files.insert("src/a.rs".to_string(), entry("base-a"));
     store.publish_base("rev1", &base).unwrap();
 

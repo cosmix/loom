@@ -163,30 +163,9 @@ fn retrieve_for_stage_packs_source_nodes_with_no_knowledge_tree_at_all() {
     );
 }
 
-// A.11: `ContextPack::degraded` fires only when `state.json` names a
-// semantic revision AND the RESOLVED graph — base plus this query's overlay —
-// has nothing to answer with: no base was found for that revision, AND no
-// overlay covered for it either (`retrieve::graph::degraded_reason`). A
-// missing base alone is NOT degraded — older caches may still contain only a
-// `_local` overlay, and that overlay can fully cover the requested checkout;
-// "no base for the current revision, served from the overlay" remains a
-// healthy readable state. Getting this wrong is not just a display bug: `degraded` is a
-// live input to `reconcile_graph::spawn_if_needed` (`stale OR degraded`), so
-// misreporting it means every prompt against a dirty tree trips a background
-// full-repository rebuild.
-//
-// These write `state.json` directly with `ContextStore::update_state` rather
-// than running a real `reconcile_source_graph`, so each test isolates one
-// branch instead of depending on git/dirty-tree behavior neither
-// `retrieve_for_stage` nor this fixture own.
-
-/// THE regression case this predicate exists to get right: no base was ever
-/// published for the recorded revision, but a real overlay covers it — the
-/// ordinary, healthy state of a dirty working tree, not a degradation. Before
-/// the two-part fix, this read as `degraded: Some(..)` for every dirty-tree
-/// checkout, forever.
+// An overlay remains usable when its base is missing, with explicit degradation.
 #[test]
-fn retrieve_for_stage_is_not_degraded_when_an_overlay_covers_a_missing_base() {
+fn retrieve_for_stage_reports_a_missing_base_with_an_overlay() {
     let temp = project_with_knowledge();
     let root = temp.path();
     let node = distinctive_node();
@@ -206,10 +185,11 @@ fn retrieve_for_stage_is_not_degraded_when_an_overlay_covers_a_missing_base() {
     let query = StageQuery::new(root, format!("Where is {DISTINCTIVE_SYMBOL} defined?"));
     let pack = retrieve_for_stage(&query, 500).unwrap();
 
-    assert_eq!(
-        pack.degraded, None,
-        "an overlay that covers a missing base must never read as degraded"
-    );
+    assert!(pack
+        .degraded
+        .as_deref()
+        .unwrap()
+        .contains("serving overlay only"));
     assert!(
         pack.items.iter().any(|item| item.id.as_str() == node.id),
         "the overlay's own content must still be packed: {:?}",
@@ -310,10 +290,9 @@ fn retrieve_for_stage_is_not_degraded_when_the_semantic_layer_was_never_built() 
     );
 }
 
-/// An overlay supplies content while `state.json` records no semantic
-/// revision: the read answers queries, so it is not degraded.
+/// A recorded overlay base is reported missing even without semantic state.
 #[test]
-fn retrieve_for_stage_is_not_degraded_when_an_overlay_backs_an_empty_semantic_revision() {
+fn retrieve_for_stage_reports_missing_base_when_overlay_has_a_revision() {
     let temp = project_with_knowledge();
     let root = temp.path();
     write_local_overlay(root, &distinctive_node());
@@ -321,7 +300,11 @@ fn retrieve_for_stage_is_not_degraded_when_an_overlay_backs_an_empty_semantic_re
 
     let pack = retrieve_for_stage(&query, 500).unwrap();
 
-    assert_eq!(pack.degraded, None, "{:?}", pack.degraded);
+    assert!(pack
+        .degraded
+        .as_deref()
+        .unwrap()
+        .contains("serving overlay only"));
 }
 
 #[test]

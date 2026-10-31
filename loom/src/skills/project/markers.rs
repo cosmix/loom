@@ -2,30 +2,9 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use super::probe;
+use crate::language::evidence;
 
 const FILE_MARKERS: &[(&str, &[&str])] = &[
-    ("rust", &["Cargo.toml"]),
-    ("golang", &["go.mod", "go.sum"]),
-    (
-        "python",
-        &[
-            "pyproject.toml",
-            "setup.py",
-            "requirements.txt",
-            "Pipfile",
-            "poetry.lock",
-        ],
-    ),
-    ("typescript", &["tsconfig.json"]),
-    ("java", &["pom.xml", "build.gradle", "settings.gradle"]),
-    ("kotlin", &["build.gradle.kts", "settings.gradle.kts"]),
-    ("scala", &["build.sbt"]),
-    ("ruby", &["Gemfile"]),
-    ("php", &["composer.json"]),
-    ("swift", &["Package.swift"]),
-    ("elixir", &["mix.exs"]),
-    ("cpp", &["CMakeLists.txt"]),
-    ("dart", &["pubspec.yaml"]),
     (
         "react",
         &[
@@ -82,14 +61,14 @@ const FILE_MARKERS: &[(&str, &[&str])] = &[
 ];
 
 pub(super) fn detect(dir: &Path) -> BTreeSet<String> {
-    let mut types = BTreeSet::new();
+    let mut types: BTreeSet<String> = evidence::detect(dir)
+        .into_iter()
+        .map(|language| language.project_kind().to_string())
+        .collect();
     for (kind, files) in FILE_MARKERS {
         if any_file(dir, files) {
             types.insert((*kind).to_string());
         }
-    }
-    if dotnet_project(dir) {
-        types.insert("csharp".to_string());
     }
     for (kind, names) in [
         ("ci-cd", &[".github/workflows"][..]),
@@ -102,21 +81,7 @@ pub(super) fn detect(dir: &Path) -> BTreeSet<String> {
         }
     }
     detect_dependencies(dir, &mut types);
-    // A `package.json` without TypeScript evidence (a `tsconfig.json` or a
-    // `typescript` dependency) is plain JavaScript; the two kinds never co-occur.
-    if regular_file(&dir.join("package.json")) && !types.contains("typescript") {
-        types.insert("javascript".to_string());
-    }
     types
-}
-
-/// .NET project and solution names vary, so they are matched by extension.
-fn dotnet_project(dir: &Path) -> bool {
-    probe::files_where(dir, |name| {
-        name.ends_with(".csproj") || name.ends_with(".sln")
-    })
-    .next()
-    .is_some()
 }
 
 /// `scan` passes no checkout root, so the read is anchored at `dir`: a
@@ -127,9 +92,6 @@ fn detect_dependencies(dir: &Path, types: &mut BTreeSet<String>) {
     };
     let sections = ["dependencies", "devDependencies", "peerDependencies"];
     let depends_on = |name: &str| probe::has_dependency(&package, &sections, name);
-    if depends_on("typescript") {
-        types.insert("typescript".into());
-    }
     if [
         "react",
         "react-dom",
@@ -150,8 +112,7 @@ pub(super) fn any_file(dir: &Path, names: &[&str]) -> bool {
 }
 
 pub(super) fn regular_file(path: &Path) -> bool {
-    path.symlink_metadata()
-        .is_ok_and(|meta| meta.file_type().is_file())
+    evidence::regular_file(path)
 }
 
 pub(super) fn plain_directory(path: &Path) -> bool {

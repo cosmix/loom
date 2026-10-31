@@ -88,6 +88,8 @@ impl ContextStore {
 
     /// Load the persisted catalog, if it has been written.
     pub fn load_catalog(&self) -> Result<Option<Catalog>> {
+        #[cfg(test)]
+        CATALOG_READS.with(|count| count.set(count.get() + 1));
         let path = self.catalog_path();
         let content = match fs::read_to_string(&path) {
             Ok(content) => content,
@@ -104,6 +106,19 @@ impl ContextStore {
             .map(Some)
     }
 
+    /// Read the state and its catalog under the publication lock.
+    pub(crate) fn load_snapshot(&self) -> Result<(StoreState, Result<Option<Catalog>>)> {
+        crate::fs::locking::locked_dir_update(&self.root, || {
+            let state = self.load_state()?;
+            let catalog = if state.structural.revision.is_empty() {
+                Ok(None)
+            } else {
+                self.load_catalog()
+            };
+            Ok((state, catalog))
+        })
+    }
+
     /// Persist the catalog with a locked, crash-atomic replacement.
     pub fn save_catalog(&self, catalog: &Catalog) -> Result<()> {
         self.ensure()?;
@@ -111,6 +126,22 @@ impl ContextStore {
         let content = canonical_json(catalog)?;
         crate::fs::locking::locked_write(&path, &content)
             .with_context(|| format!("Failed to write context catalog: {}", path.display()))
+    }
+
+    /// Publish a structural snapshot while preserving the latest semantic state.
+    pub(crate) fn publish_catalog(&self, catalog: &Catalog, structural: &Freshness) -> Result<()> {
+        self.ensure()?;
+        let catalog_content = canonical_json(catalog)?;
+        crate::fs::locking::locked_dir_update(&self.root, || {
+            let mut state = self.load_state().unwrap_or_else(|error| {
+                tracing::warn!(%error, "context state unreadable; repairing it");
+                StoreState::default()
+            });
+            state.structural = structural.clone();
+            state.catalog_revision = catalog.revision.clone();
+            crate::fs::locking::atomic_write_locked(&self.catalog_path(), &catalog_content)?;
+            crate::fs::locking::atomic_write_locked(&self.state_path(), &canonical_json(&state)?)
+        })
     }
 
     /// Load the persisted freshness state, or the default state if absent.
@@ -182,6 +213,11 @@ impl ContextStore {
                 .with_context(|| format!("Failed to write context state: {}", path.display()))
         })
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static CATALOG_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Serialize deterministically: identical input values produce byte-identical output.

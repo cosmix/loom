@@ -178,10 +178,9 @@ fn detect_in(entries: &[&str]) -> Vec<DetectedLanguage> {
 #[test]
 fn test_detect_manifest_rules() {
     use DetectedLanguage::*;
-    let cases: [(&[&str], DetectedLanguage); 17] = [
+    let cases: [(&[&str], DetectedLanguage); 16] = [
         (&["pom.xml"], Java),
         (&["build.gradle"], Java),
-        (&["build.gradle.kts"], Java),
         (&["App.csproj"], CSharp),
         (&["App.sln"], CSharp),
         (&["App.slnx"], CSharp),
@@ -200,6 +199,8 @@ fn test_detect_manifest_rules() {
     for (entries, expected) in cases {
         assert_eq!(detect_in(entries), vec![expected], "entries {entries:?}");
     }
+    // Kotlin has no DetectedLanguage variant; project detection reports it separately.
+    assert!(detect_in(&["build.gradle.kts"]).is_empty());
 }
 
 #[test]

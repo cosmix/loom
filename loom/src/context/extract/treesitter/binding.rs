@@ -14,6 +14,30 @@ use crate::context::source_graph::{
 };
 
 use super::collect::{enclosing, Reference};
+use super::QueryHarness;
+
+/// ECMAScript ordinary functions own `this`; arrows inherit it. Inspect the
+/// syntax rather than definitions, since anonymous functions have no graph node.
+pub(super) fn receiver_shadowed(harness: &dyn QueryHarness, node: tree_sitter::Node<'_>) -> bool {
+    if !matches!(
+        harness.node_language().as_str(),
+        "javascript" | "typescript" | "tsx"
+    ) {
+        return false;
+    }
+    let mut current = node.parent();
+    while let Some(node) = current {
+        match node.kind() {
+            "function_declaration"
+            | "function_expression"
+            | "generator_function"
+            | "generator_function_declaration" => return true,
+            "method_definition" | "class_declaration" | "class" => return false,
+            _ => current = node.parent(),
+        }
+    }
+    false
+}
 
 /// What the file's dialect says about binding a call locally.
 pub(super) struct BindingRules {
@@ -73,6 +97,7 @@ pub(super) fn call_edges(calls: &[Reference], binder: &Binder, edges: &mut Vec<S
         let caller = binder.caller(call.site);
         let caller = caller.as_deref();
         let binding = match call.receiver.as_deref() {
+            Some(_) if call.receiver_shadowed => Binding::Unbound(Vec::new()),
             Some(receiver) if binder.rules.self_receivers.contains(&receiver) => binder
                 .receiver(caller, &call.symbol)
                 .unwrap_or_else(|| binder.top_level_self(caller, &call.symbol)),

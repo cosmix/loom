@@ -39,12 +39,12 @@ const RULES: &[(&[&str], Rule)] = &[
     (&["typescript", "javascript"], javascript),
     (&["java", "kotlin"], jvm),
     (&["scala"], |_, _| Some("sbt")),
-    (&["csharp"], |_, _| Some("dotnet-test")),
+    (&["csharp"], csharp),
     (&["ruby"], ruby),
     (&["php"], php),
     (&["swift"], |_, _| Some("swift-test")),
     (&["elixir"], |_, _| Some("mix-test")),
-    (&["cpp"], |_, _| Some("ctest")),
+    (&["cpp"], cmake),
     (&["dart"], dart),
 ];
 
@@ -119,9 +119,34 @@ fn jvm(dir: &Path, _: &Path) -> Option<&'static str> {
 }
 
 fn ruby(dir: &Path, root: &Path) -> Option<&'static str> {
+    if !any_file(dir, &["Gemfile"]) {
+        return None;
+    }
     let rspec =
         any_file(dir, &[".rspec"]) || probe::has_line(root, &dir.join("Gemfile"), &RSPEC_GEM);
     Some(if rspec { "rspec" } else { "minitest" })
+}
+
+fn csharp(dir: &Path, _: &Path) -> Option<&'static str> {
+    probe::files_where(dir, |name| {
+        name.ends_with(".csproj") || name.ends_with(".sln")
+    })
+    .next()
+    .map(|_| "dotnet-test")
+}
+
+fn cmake(dir: &Path, root: &Path) -> Option<&'static str> {
+    if !any_file(dir, &["CMakeLists.txt"]) {
+        return None;
+    }
+    let mut parent = dir.parent();
+    while let Some(ancestor) = parent.filter(|path| path.starts_with(root)) {
+        if any_file(ancestor, &["CMakeLists.txt"]) {
+            return None;
+        }
+        parent = ancestor.parent();
+    }
+    Some("ctest")
 }
 
 fn php(dir: &Path, root: &Path) -> Option<&'static str> {

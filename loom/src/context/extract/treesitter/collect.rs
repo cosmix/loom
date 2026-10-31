@@ -3,6 +3,7 @@
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Node, Query, QueryCursor, QueryMatch};
 
+use super::binding::receiver_shadowed;
 use super::{default_import_binding, QueryHarness};
 use crate::context::source_graph::{ImportBinding, SourceNodeKind, Span};
 
@@ -44,6 +45,7 @@ pub(super) struct Reference {
     pub(super) site: Span,
     /// Receiver text of a member call (`self`, `obj`); `None` otherwise.
     pub(super) receiver: Option<String>,
+    pub(super) receiver_shadowed: bool,
 }
 
 /// One match's captures, gathered before any is interpreted: the captures
@@ -56,7 +58,7 @@ struct MatchCaptures<'tree> {
     qualifier: Vec<String>,
     import_statement: Option<String>,
     import_paths: Vec<(String, Span)>,
-    call_names: Vec<(String, Span)>,
+    call_names: Vec<(String, Span, bool)>,
     receiver: Option<String>,
     reference_names: Vec<(String, Span)>,
     /// `@definition.*` captures whose suffix names no node kind.
@@ -144,9 +146,11 @@ fn gather<'tree>(
             "import.path" => found
                 .import_paths
                 .push((normalize_import(&text), span_of(node))),
-            "call.name" => found
-                .call_names
-                .push((normalize_call(&text), span_of(node))),
+            "call.name" => found.call_names.push((
+                normalize_call(&text),
+                span_of(node),
+                receiver_shadowed(harness, node),
+            )),
             "call.receiver" => found.receiver = Some(text.trim().to_string()),
             "reference.name" => found
                 .reference_names
@@ -193,22 +197,24 @@ fn record(
         found
             .call_names
             .into_iter()
-            .map(|(symbol, site)| Reference {
+            .map(|(symbol, site, receiver_shadowed)| Reference {
                 symbol,
                 site,
                 receiver: receiver.clone(),
+                receiver_shadowed,
             }),
     );
-    walk.references.extend(
-        found
-            .reference_names
-            .into_iter()
-            .map(|(symbol, site)| Reference {
-                symbol,
-                site,
-                receiver: None,
-            }),
-    );
+    walk.references
+        .extend(found.reference_names.into_iter().map(unqualified_reference));
+}
+
+fn unqualified_reference((symbol, site): (String, Span)) -> Reference {
+    Reference {
+        symbol,
+        site,
+        receiver: None,
+        receiver_shadowed: false,
+    }
 }
 
 /// Record each import path of a match as an `Imports` reference plus its
@@ -237,6 +243,7 @@ fn record_imports(
             symbol: path,
             site,
             receiver: None,
+            receiver_shadowed: false,
         });
     }
 }

@@ -10,6 +10,151 @@ use crate::context::graph_store::GraphStore;
 use serial_test::serial;
 use tempfile::TempDir;
 
+#[test]
+fn returned_catalog_survives_another_tree_publishing() {
+    let temp = TempDir::new().unwrap();
+    let first = temp.path().join("first");
+    let second = temp.path().join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    std::fs::write(
+        first.join("first.md"),
+        "# First\n\n## Alpha\n\nFirst tree.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        second.join("second.md"),
+        "# Second\n\n## Beta\n\nSecond tree.\n",
+    )
+    .unwrap();
+    let store = ContextStore::with_root(temp.path().join("cache"));
+    let (first_outcome, first_catalog) = refresh_snapshot(&store, &first, true).unwrap();
+    let (second_outcome, second_catalog) = refresh_snapshot(&store, &second, true).unwrap();
+    assert_ne!(
+        first_outcome.structural.revision,
+        second_outcome.structural.revision
+    );
+    assert_ne!(first_catalog.revision, second_catalog.revision);
+    assert_eq!(store.load_catalog().unwrap().unwrap(), second_catalog);
+    assert!(first_catalog
+        .chunks
+        .iter()
+        .any(|chunk| chunk.id.as_str().contains("first")));
+}
+
+#[test]
+fn cold_snapshot_does_not_reload_catalog_and_warm_snapshot_reads_once() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("knowledge");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("topic.md"), "# Topic\n\n## Section\n\nContent.\n").unwrap();
+    let store = ContextStore::with_root(temp.path().join("cache"));
+    crate::context::store::CATALOG_READS.with(|count| count.set(0));
+    refresh_snapshot(&store, &root, true).unwrap();
+    assert_eq!(
+        crate::context::store::CATALOG_READS.with(|count| count.replace(0)),
+        0
+    );
+    refresh_snapshot(&store, &root, true).unwrap();
+    assert_eq!(
+        crate::context::store::CATALOG_READS.with(|count| count.replace(0)),
+        1
+    );
+}
+
+#[test]
+fn publication_failure_keeps_the_single_fingerprint_snapshot() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("knowledge");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("topic.md"), "# Topic\n\n## Section\n\nContent.\n").unwrap();
+    let store = ContextStore::with_root(temp.path().join("cache"));
+    store.ensure().unwrap();
+    std::fs::create_dir(store.catalog_path()).unwrap();
+    take_fingerprint_pass_count();
+    let (outcome, catalog) = refresh_snapshot(&store, &root, true).unwrap();
+    assert_eq!(take_fingerprint_pass_count(), 1);
+    assert!(!catalog.chunks.is_empty());
+    assert!(outcome
+        .structural
+        .detail
+        .unwrap()
+        .contains("cache not updated"));
+}
+
+#[test]
+fn explicit_refresh_repairs_corrupt_artifacts() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("knowledge");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("topic.md"), "# Topic\n\n## Section\n\nContent.\n").unwrap();
+    let store = ContextStore::with_root(temp.path().join("cache"));
+    refresh(&store, &root, true).unwrap();
+    for path in [store.state_path(), store.catalog_path()] {
+        std::fs::write(&path, "{broken").unwrap();
+        assert!(refresh(&store, &root, true).unwrap().rebuilt);
+        store.load_state().unwrap();
+        store.load_catalog().unwrap().unwrap();
+    }
+}
+
+#[test]
+fn concurrent_publications_return_their_own_snapshots() {
+    use std::sync::mpsc;
+    let temp = TempDir::new().unwrap();
+    let first = temp.path().join("first");
+    let second = temp.path().join("second");
+    write_test_tree(&first, "alpha");
+    write_test_tree(&second, "beta");
+    let store = ContextStore::with_root(temp.path().join("cache"));
+    let first_store = store.clone();
+    let first_root = first.clone();
+    let (published, wait_published) = mpsc::channel();
+    let (resume, wait_resume) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        AFTER_PUBLISH.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move || {
+                published.send(()).unwrap();
+                wait_resume.recv().unwrap();
+            }))
+        });
+        refresh_snapshot(&first_store, &first_root, true).unwrap()
+    });
+    wait_published.recv().unwrap();
+    store
+        .update_state(|state| state.semantic.revision = "concurrent-semantic".into())
+        .unwrap();
+    let (second_outcome, second_catalog) = refresh_snapshot(&store, &second, true).unwrap();
+    resume.send(()).unwrap();
+    let (first_outcome, first_catalog) = worker.join().unwrap();
+    for (root, name, outcome, catalog) in [
+        (&first, "alpha", first_outcome, first_catalog),
+        (&second, "beta", second_outcome, second_catalog),
+    ] {
+        assert_eq!(
+            outcome.structural.revision,
+            tree_revision(&fingerprint_tree(root).unwrap())
+        );
+        assert_eq!(outcome.report.unwrap().revision, catalog.revision);
+        assert!(catalog
+            .chunks
+            .iter()
+            .any(|chunk| chunk.id.as_str().contains(name)));
+    }
+    let (state, catalog) = store.load_snapshot().unwrap();
+    assert_eq!(state.semantic.revision, "concurrent-semantic");
+    assert_eq!(state.catalog_revision, catalog.unwrap().unwrap().revision);
+}
+
+fn write_test_tree(root: &Path, name: &str) {
+    std::fs::create_dir_all(root).unwrap();
+    std::fs::write(
+        root.join(format!("{name}.md")),
+        format!("# {name}\n\n## Topic\n\n{name} content.\n"),
+    )
+    .unwrap();
+}
+
 fn stage_policy() -> SnapshotPolicy {
     SnapshotPolicy::StageOverlay {
         plan: "plan".to_string(),
