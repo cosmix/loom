@@ -333,12 +333,7 @@ function PendingPermission({ item }: Props): JSX.Element {
     >
       {pending.length > 1 && <p className="plan-fine">1 of {pending.length} decisions</p>}
       <p className="chat-decision-title">
-        <span aria-hidden="true" className="chat-notice-glyph">
-          ⚠
-        </span>
-        <span>
-          Needs a decision: <Untrusted text={item.tool} />
-        </span>
+        Needs a decision: <Untrusted text={item.tool} />
       </p>
       <PermissionBody item={item} />
       <TimeLeft expiresAt={item.expires_at} />

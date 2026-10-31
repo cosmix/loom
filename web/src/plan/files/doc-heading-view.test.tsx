@@ -358,7 +358,7 @@ describe("FileDocHeading", () => {
         anchor: null,
         lines: null,
         stageId: null,
-        text: "📝".repeat(2_000),
+        text: `${"📝".repeat(2_000)}\n[…1 more characters; read the source]`,
         hash: doc.hash,
       },
     ]);
