@@ -19,13 +19,13 @@ import { openDocAtom, treeAtom } from "@/plan/files/atoms";
 import { treeDocs } from "@/plan/files/tree";
 import { getTurnSections, type TurnSectionsResponse } from "@/plan/review/api";
 import { hashesAtom } from "@/plan/review/live";
-import { connectionEpochAtom, serverInfoAtom } from "@/plan/state/atoms";
-import { LoadState } from "@/plan/ui/load-state";
+import { connectionEpochAtom } from "@/plan/state/atoms";
 import { DocMark } from "@/plan/ui/doc-mark";
 import { DOC_KIND_GLYPHS, OTHER_GLYPHS } from "@/plan/ui/glyphs";
 import { toAttachmentInput } from "./commands";
-import { ATTACHMENT_LIMIT_NOTE, draftAtom, MAX_ATTACHMENTS, mergeAttachments } from "./drafts";
+import { ErrorLine } from "./error-line";
 import { snapshotAtom } from "./model";
+import { usePendingDraft } from "./pending-draft";
 import { usePlanFeature } from "./turn-footer-plans";
 import { summaryLink } from "./turn-footer-rebuilt";
 import { Untrusted, visibleControls } from "./visible-controls";
@@ -50,43 +50,6 @@ export function chipLabel(a: LabelInput): string {
   const passage = a.stage ? ` › stage ${a.stage}` : a.anchor ? ` › ${a.anchor}` : "";
   const lines = a.lines ? ` · lines ${a.lines[0]}–${a.lines[1]}` : "";
   return `${file}${passage}${lines}`;
-}
-
-// Both producers remain independent; synchronize synchronously so a batch of adds is capped.
-function usePendingDraft(): string | null {
-  const store = useStore();
-  const project = useAtomValue(serverInfoAtom)?.project_key;
-  const [note, setNote] = useState<string | null>(null);
-  useAtomValue(draftAtom);
-  useEffect(() => {
-    let updating = false;
-    const sync = (attachments: AttachmentDraft[]) => {
-      if (updating) return;
-      updating = true;
-      if (attachments.length > MAX_ATTACHMENTS) setNote(ATTACHMENT_LIMIT_NOTE);
-      const kept =
-        attachments.length > MAX_ATTACHMENTS ? attachments.slice(0, MAX_ATTACHMENTS) : attachments;
-      store.set(pendingAttachmentsAtom, kept);
-      if (store.get(draftAtom).attachments !== kept) {
-        store.set(draftAtom, (draft) => ({ ...draft, attachments: kept }));
-      }
-      updating = false;
-    };
-    const merged = mergeAttachments(
-      store.get(draftAtom).attachments,
-      store.get(pendingAttachmentsAtom),
-    );
-    const offPending = store.sub(pendingAttachmentsAtom, () =>
-      sync(store.get(pendingAttachmentsAtom)),
-    );
-    const offDraft = store.sub(draftAtom, () => sync(store.get(draftAtom).attachments));
-    sync(merged);
-    return () => {
-      offPending();
-      offDraft();
-    };
-  }, [store, project]);
-  return note;
 }
 
 function lockedPath(path: string, entries: TreeEntry[]): boolean {
@@ -174,7 +137,12 @@ function ChipTrailing({
         </span>
       )}
       {onRemove && (
-        <button type="button" aria-label={`Remove ${label}`} onClick={onRemove}>
+        <button
+          type="button"
+          className="chat-chip-remove"
+          aria-label={`Remove ${label}`}
+          onClick={onRemove}
+        >
           ×
         </button>
       )}
@@ -209,17 +177,17 @@ function Chip({ attachment, quote, changed, locked, onOpen, onRemove, children }
   const [preview, setPreview] = useState(false);
   const previewId = useId();
   return (
-    <div className="relative min-w-0 rounded border border-border px-2 py-1 text-xs">
-      <div className="flex min-w-0 items-center gap-1">
+    <div className="chat-chip">
+      <div className="chat-chip-row">
         <ChipMark attachment={attachment} />
         {onOpen === null ? (
-          <span>
+          <span className="truncate">
             <Untrusted text={chipLabel(attachment)} />
           </span>
         ) : (
           <button
             type="button"
-            className="min-w-0 flex-1 truncate text-left"
+            className="chat-chip-open"
             aria-label={label}
             aria-describedby={preview ? previewId : undefined}
             onClick={onOpen}
@@ -233,7 +201,7 @@ function Chip({ attachment, quote, changed, locked, onOpen, onRemove, children }
         )}
         <ChipTrailing label={label} locked={locked} onRemove={onRemove} />
       </div>
-      {changed && <span className="text-(--tone-warning)">△ changed</span>}
+      {changed && <span className="chat-chip-note">△ changed</span>}
       {children}
       {preview && <ChipTooltip id={previewId} quote={quote} />}
     </div>
@@ -252,48 +220,65 @@ function chipKeys(drafts: AttachmentDraft[]): string[] {
   });
 }
 
+function PendingChip({ draft, onRemove }: { draft: AttachmentDraft; onRemove: () => void }) {
+  const hashes = useAtomValue(hashesAtom);
+  const tree = useAtomValue(treeAtom);
+  const open = useOpenChip();
+  const a = toAttachmentInput(draft);
+  const hash = hashes?.docs[a.path];
+  const locked =
+    a.path.startsWith("doc/loom/knowledge/") ||
+    lockedPath(a.path, tree ? Object.values(tree).flat() : []);
+  return (
+    <Chip
+      attachment={a}
+      quote={draft.text}
+      locked={locked}
+      changed={draft.hash !== null && hash !== undefined && draft.hash !== hash}
+      onOpen={open(a)}
+      onRemove={onRemove}
+    />
+  );
+}
+
 export function PendingChips() {
   const note = usePendingDraft();
   const pending = useAtomValue(pendingAttachmentsAtom);
-  const hashes = useAtomValue(hashesAtom);
-  const tree = useAtomValue(treeAtom);
   const store = useStore();
-  const open = useOpenChip();
   const [expanded, setExpanded] = useState(false);
   const count = !expanded && pending.length > 4 ? 3 : pending.length;
   const keys = chipKeys(pending);
   if (!pending.length && !note) return null;
   return (
     <div aria-label="Pending attachments" className="text-xs">
-      <div className={`grid grid-cols-2 gap-1 ${expanded ? "max-h-32 overflow-y-auto" : ""}`}>
-        {pending.slice(0, count).map((draft, index) => {
-          const a = toAttachmentInput(draft);
-          const hash = hashes?.docs[a.path];
-          const locked =
-            a.path.startsWith("doc/loom/knowledge/") ||
-            lockedPath(a.path, tree ? Object.values(tree).flat() : []);
-          return (
-            <Chip
-              key={keys[index]}
-              attachment={a}
-              quote={draft.text}
-              locked={locked}
-              changed={draft.hash !== null && hash !== undefined && draft.hash !== hash}
-              onOpen={open(a)}
-              onRemove={() =>
-                store.set(pendingAttachmentsAtom, (all) => all.filter((_, at) => at !== index))
-              }
-            />
-          );
-        })}
+      <div className="chat-chip-list" data-scroll={expanded || undefined}>
+        {pending.slice(0, count).map((draft, index) => (
+          <PendingChip
+            key={keys[index]}
+            draft={draft}
+            onRemove={() =>
+              store.set(pendingAttachmentsAtom, (all) => all.filter((_, at) => at !== index))
+            }
+          />
+        ))}
         {count < pending.length && (
-          <button type="button" aria-expanded={false} onClick={() => setExpanded(true)}>
+          <button
+            type="button"
+            className="chat-link-button plan-fine"
+            aria-expanded={false}
+            onClick={() => setExpanded(true)}
+          >
             +{pending.length - count} more
           </button>
         )}
       </div>
       {expanded && pending.length > 4 && (
-        <button type="button" aria-expanded={true} onClick={() => setExpanded(false)}>
+        <button
+          type="button"
+          className="chat-link-button plan-fine"
+          aria-expanded={true}
+          onClick={() => setExpanded(false)}
+        >
           Show fewer attachments
         </button>
       )}
@@ -343,7 +328,7 @@ export function SentChips({ item, turn }: { item: Extract<Item, { type: "user" }
   const open = useOpenChip();
   if (!item.attachments.length) return null;
   return (
-    <div aria-label="Sent attachments" className="flex flex-wrap gap-1 text-xs">
+    <div aria-label="Sent attachments" className="chat-chips">
       {item.attachments.map((a, index) => {
         const changed = result?.files?.some(
           (file) => file.path === a.path && (a.anchor === null || file.anchors.includes(a.anchor)),
@@ -362,11 +347,11 @@ export function SentChips({ item, turn }: { item: Extract<Item, { type: "user" }
           >
             {result?.files &&
               (changed ? (
-                <Link to={href} className="text-(--tone-warning)">
+                <Link to={href} className="chat-chip-note chat-link-button">
                   △ changed in this turn
                 </Link>
               ) : (
-                <span className="text-muted-foreground">unchanged</span>
+                <span>unchanged</span>
               ))}
           </Chip>
         );
@@ -376,14 +361,7 @@ export function SentChips({ item, turn }: { item: Extract<Item, { type: "user" }
           Checking attached passages…
         </p>
       )}
-      {result?.error && (
-        <>
-          <LoadState state="error" />
-          <p role="status">
-            <Untrusted text={result.error} />
-          </p>
-        </>
-      )}
+      {result?.error && <ErrorLine role="status" text={result.error} />}
     </div>
   );
 }

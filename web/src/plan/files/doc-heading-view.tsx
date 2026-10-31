@@ -14,7 +14,7 @@ import { useNow } from "@/components/hooks/use-now";
 import { Button } from "@/components/ui/button";
 import { overviewKey, pageHref, summaryKey } from "@/plan/api/page-key";
 import type { DocView, EntryKind, PlanView, ValidationView } from "@/plan/api/schema-files";
-import { addAttachmentAtom } from "@/plan/attachments";
+import { addAttachmentAtom, docAttachment } from "@/plan/attachments";
 import { focusComposerAtom } from "@/plan/chat/composer-hooks";
 import { offerErrorAtom } from "@/plan/chat/offer-error";
 import { elsewhereRefusal } from "@/plan/chat/offer-flow";
@@ -191,16 +191,7 @@ function discussDoc(store: Store, doc: DocView): void {
     return;
   }
   store.set(offerErrorAtom, null);
-  store.set(addAttachmentAtom, {
-    kind: "source",
-    path: doc.path,
-    anchor: null,
-    lines: null,
-    stageId: null,
-    // As in the document starter, the bounded quote previews a reference to the whole file.
-    text: Array.from(doc.text).slice(0, 2_000).join(""),
-    hash: doc.hash,
-  });
+  store.set(addAttachmentAtom, docAttachment(doc));
   store.set(focusComposerAtom, true);
 }
 

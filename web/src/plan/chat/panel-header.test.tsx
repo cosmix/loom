@@ -32,38 +32,32 @@ vi.mock("./model", async (original) => ({
 
 installPanelLifecycle();
 
-it.each([true, false])("separates the empty label and hint (primary offer: %s)", (primary) => {
-  const store = storeFor();
-  const checklist = checklistViewSchema.parse(hello.checklists[0]);
-  const title = "Pressure-test adopt-ecc-…";
-  store.set(checklistAtom, {
-    ...checklist,
-    primary: primary ? { ...checklist.primary!, label: title } : null,
-  });
-  const { container } = mount(store);
-  const line = container.querySelector<HTMLElement>(".chat-state-line")!;
-  const row = line.querySelector<HTMLElement>('[aria-live="off"] > .flex')!;
-  const label = within(row.children[1] as HTMLElement).getByText("No chat");
-  const hint = within(row).queryByText(title);
-  expect(row.children[0].getAttribute("aria-hidden")).toBe("true");
-  expect(row.children[1].contains(label)).toBe(true);
-  expect(row.children[1].contains(hint)).toBe(false);
-  expect([...row.children].slice(2).some((child) => child.contains(hint))).toBe(primary);
-  // With no chat the head offers New chat, so the row does not repeat it.
-  expect(within(row).queryByText("New chat")).toBeNull();
-  expect(within(container.querySelector("header")!).getByText("New chat")).toBeTruthy();
-  expect(within(line).getByRole("status").textContent).toBe("No chat");
-  // jsdom has no layout: assert the scoped grid rules that keep offers below the label.
-  expect(line.parentElement?.className).toContain(
-    "[&_.chat-state-line_[aria-live=off]>.flex]:grid-cols-[auto_1fr]",
-  );
-  expect(line.parentElement?.className).toContain(
-    "[&_.chat-state-line_[aria-live=off]>.flex]:gap-y-3",
-  );
-  expect(line.parentElement?.className).toContain(
-    "[&_.chat-state-line_[aria-live=off]>.flex>:nth-child(n+3)]:col-span-2",
-  );
-});
+it.each([true, false])(
+  "the empty row holds the label and no offer (checklist primary: %s)",
+  (primary) => {
+    const store = storeFor();
+    const checklist = checklistViewSchema.parse(hello.checklists[0]);
+    const title = "Pressure-test adopt-ecc-…";
+    store.set(checklistAtom, {
+      ...checklist,
+      primary: primary ? { ...checklist.primary!, label: title } : null,
+    });
+    const { container } = mount(store);
+    const line = container.querySelector<HTMLElement>(".chat-state-line")!;
+    const row = line.querySelector<HTMLElement>('[aria-live="off"] > .flex')!;
+    const label = within(row.children[1] as HTMLElement).getByText("No chat");
+    const hint = within(row).queryByText(title);
+    expect(row.children[0].getAttribute("aria-hidden")).toBe("true");
+    expect(row.children[1].contains(label)).toBe(true);
+    expect(row.children[1].contains(hint)).toBe(false);
+    // The panel offers New chat and prompts; the workflow offer belongs to the page.
+    expect(row.children).toHaveLength(2);
+    // With no chat the head offers New chat, so the row does not repeat it.
+    expect(within(row).queryByText("New chat")).toBeNull();
+    expect(within(container.querySelector("header")!).getByText("New chat")).toBeTruthy();
+    expect(within(line).getByRole("status").textContent).toBe("No chat");
+  },
+);
 
 const headerStates: Array<[SessionView["state"], string | null]> = [
   ["starting", "drafting"],

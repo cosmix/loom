@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { authorBlockReasonAtom, isHolderAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { interruptChat } from "./commands";
+import { forgetGiven } from "./context-attach";
 import { draftAtom } from "./drafts";
 import { queueReturnedAtom, sessionAtom } from "./model";
 import { Untrusted } from "./visible-controls";
@@ -19,6 +20,7 @@ export function useQueueRefill(): void {
       const texts = store.get(queueReturnedAtom);
       if (!texts.length) return;
       store.set(queueReturnedAtom, []);
+      forgetGiven(store);
       store.set(draftAtom, (draft) => ({
         ...draft,
         text: [draft.text, ...texts].filter((text) => text.length > 0).join("\n\n"),

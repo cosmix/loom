@@ -104,9 +104,8 @@ afterEach(() => {
 
 it("sent message shows a muted Sending", () => {
   const { log } = arrive("sent");
-  expect(
-    within(log).getByText("Sending").closest('[class*="text-muted-foreground"]'),
-  ).not.toBeNull();
+  // `.plan-fine` is the muted fine-print style (ui/design.css: color: var(--muted-foreground)).
+  expect(within(log).getByText("Sending").closest(".plan-fine")).not.toBeNull();
   expect(within(log).queryByText("Not delivered")).toBeNull();
   expect(within(log).queryByRole("button", { name: "Resend" })).toBeNull();
 });
@@ -123,7 +122,9 @@ it("an undelivered item the bridge marks after an accepted send offers Resend wi
   const h = arrive("undelivered");
   expect(h.store.get(unconfirmedSendsAtom)).toEqual([]);
   const marker = within(h.log).getByText("Not delivered");
-  expect(marker.closest('[class*="tone-warning"]')).not.toBeNull();
+  // The tone colours the glyph only; the words and what holds them stay in the text colour.
+  expect(marker.querySelector('[aria-hidden="true"]')?.className).toContain("tone-warning");
+  expect(marker.closest('[class*="tone-warning"]')).toBeNull();
   fireEvent.click(within(h.log).getByRole("button", { name: "Resend" }));
   expect(h.sent[0]).toMatchObject({
     command: "send",

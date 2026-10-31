@@ -1,0 +1,314 @@
+/* The transcript's parts: turns, the user's words, the assistant's prose, notices and tool
+ * runs. Imported by chat-surface.css; see its header for why these rules are unlayered.
+ */
+
+.chat-panel-middle {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.chat-transcript {
+  padding: var(--space-4) var(--chat-gutter) var(--space-5);
+}
+
+/* Turns are set apart by space alone. */
+.chat-transcript-flow {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-5);
+}
+
+.chat-turn {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+/* Items inside a turn: consecutive tool rows touch, so their rails join into one run. */
+.chat-turn-items {
+  display: grid;
+  min-width: 0;
+}
+
+.chat-turn-items > * + * {
+  margin-block-start: var(--space-3);
+}
+
+.chat-turn-items > .chat-tool-run + .chat-tool-run {
+  margin-block-start: 0;
+}
+
+.chat-turn-toggle {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  padding: var(--space-1) 0;
+  border: 0;
+  border-radius: var(--corner-control);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chat-turn-toggle:hover {
+  color: var(--foreground);
+}
+
+.chat-turn-toggle:focus-visible,
+.chat-tool-head:focus-visible,
+.chat-tool-fold > summary:focus-visible,
+.chat-follow:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Floats over the transcript when new activity arrives below the fold. */
+.chat-follow {
+  position: absolute;
+  inset-block-end: var(--space-3);
+  inset-inline-start: 50%;
+  height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--type-fine);
+  font-weight: 500;
+  transform: translateX(-50%);
+  cursor: pointer;
+}
+
+.chat-follow:hover {
+  background: var(--muted);
+}
+
+/* ── The user's words ──────────────────────────────────────────────────────── */
+
+/* Set apart by type (Inter, 500) and a rule at its side. */
+.chat-user {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+.chat-user-body {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 60ch;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--border);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-body);
+  font-weight: 500;
+  line-height: var(--leading-body);
+}
+
+.chat-user-body > p {
+  margin: 0;
+}
+
+/* A passage the user attached: the reading face, muted, three lines at most. */
+.chat-user-quote {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-family: var(--font-reading);
+  font-size: var(--type-body);
+  font-weight: 400;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.chat-user-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  font-weight: 400;
+}
+
+.chat-message-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+}
+
+/* ── The assistant's prose ─────────────────────────────────────────────────── */
+
+/* The reading face, one size over the chrome: a serif at the chrome's 14px reads small. */
+.chat-assistant-text .md {
+  max-width: min(100%, 62ch);
+  font-family: var(--font-reading);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.chat-assistant-text .md :is(code, pre, kbd) {
+  font-family: var(--font-mono);
+}
+
+.chat-thinking {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+}
+
+/* A notice is a centred muted line. A stop (auto mode, interrupt) is drawn as a break in the
+ * transcript: the line between two rules, so it reads as "the session stopped here". */
+.chat-notice-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+}
+
+.chat-notice-item > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.chat-notice-item:is([data-kind="stopped"], [data-kind="interrupted"])::before,
+.chat-notice-item:is([data-kind="stopped"], [data-kind="interrupted"])::after {
+  content: "";
+  flex: 1 1 0;
+  border-block-start: 1px solid var(--hairline);
+}
+
+.chat-notice-item[data-kind="api_error"] .chat-notice-glyph {
+  color: var(--tone-blocked);
+}
+
+/* ── Tool runs ─────────────────────────────────────────────────────────────── */
+
+/* A quiet run of lines beside a hairline rail. The rail separates the run from the prose; it
+ * encloses nothing. Folded runs and nested tools drop the rail so rails never double. */
+.chat-tool-run,
+.chat-tool-fold {
+  min-width: 0;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 1px solid var(--hairline);
+}
+
+.chat-tool-fold .chat-tool-run,
+.chat-tool-nested .chat-tool-run {
+  padding-inline-start: 0;
+  border-inline-start: 0;
+}
+
+.chat-tool {
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  line-height: var(--leading-ui);
+}
+
+.chat-tool-head {
+  display: flex;
+  width: calc(100% + 2 * var(--space-1));
+  min-width: 0;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-inline: calc(-1 * var(--space-1));
+  padding: 3px var(--space-1);
+  border: 0;
+  border-radius: var(--corner-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color 120ms;
+}
+
+.chat-tool-head:hover {
+  background: var(--muted);
+}
+
+.chat-tool-chevron {
+  flex-shrink: 0;
+  margin-block-start: 2px;
+  transition: transform 120ms;
+}
+
+.chat-tool-head[aria-expanded="true"] .chat-tool-chevron {
+  transform: rotate(90deg);
+}
+
+.chat-tool-name {
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.chat-tool-target {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+  overflow-wrap: anywhere;
+}
+
+.chat-tool-status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.chat-tool-status[data-status="error"] svg {
+  color: var(--tone-blocked);
+}
+
+.chat-tool-note {
+  margin: 0;
+  padding-block-end: var(--space-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-tool-details {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+  padding-block: var(--space-1) var(--space-2);
+}
+
+.chat-tool-details-label {
+  margin: 0 0 var(--space-1);
+  font-weight: 500;
+}
+
+.chat-tool-fold > summary {
+  padding: 3px 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  cursor: pointer;
+}
+
+.chat-tool-fold > summary:hover {
+  color: var(--foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-tool-head,
+  .chat-tool-chevron {
+    transition: none;
+  }
+}

@@ -4,7 +4,7 @@ import type { Nodes } from "mdast";
 import { useId, useMemo, useState, type JSX } from "react";
 import { useNavigate } from "react-router";
 
-import type { Item, Turn } from "@/plan/api/schema-chat";
+import type { Attachment, Item, Turn } from "@/plan/api/schema-chat";
 import { SentChips } from "@/plan/chat/chips";
 import { snapshotAtom } from "@/plan/chat/model";
 import { PermissionCard } from "@/plan/chat/permission-card";
@@ -21,6 +21,17 @@ import { Markdown, parseMarkdown } from "@/plan/markdown/markdown";
 type ItemOf<T extends Item["type"]> = Extract<Item, { type: T }>;
 type Destination = Extract<Nodes, { type: "link" | "image" | "definition" }>;
 const CHAT_PATH = "doc/README.md";
+
+/**
+ * A passage names an anchor, a stage or a line range. A whole document (the viewed page the
+ * composer attached) shows its chip alone: its quote is a 2,000-character preview of the file.
+ */
+function isPassage(attachment: Attachment): boolean {
+  return (
+    attachment.quote !== "" &&
+    (attachment.anchor !== null || attachment.lines !== null || attachment.stage !== null)
+  );
+}
 
 function escapeLabel(text: string): string {
   return text.replace(/[\\`*_[\]<>!&]/g, (character) => `&#${character.codePointAt(0)};`);
@@ -84,7 +95,7 @@ function MessageControls({ source, turn }: { source: string; turn: Turn }): JSX.
     ? turn.started_at
     : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return (
-    <div className="flex items-center gap-2 text-xs text-muted-foreground opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100">
+    <div className="chat-message-controls opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100">
       <CopyButton text={source} label="Copy Markdown source" icon={CopyIcon} />
       <time dateTime={visibleControls(turn.started_at)} title={visibleControls(turn.started_at)}>
         <Untrusted text={time} />
@@ -111,11 +122,16 @@ function OpeningLabel({ turn }: { turn: Turn }): JSX.Element {
 function DeliveryState({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JSX.Element | null {
   if (item.delivery === "delivered") return null;
   if (item.delivery === "sent") {
-    return <p className="text-end text-xs text-muted-foreground">Sending</p>;
+    return <p className="plan-fine">Sending</p>;
   }
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs text-(--tone-warning)">
-      <span>Not delivered</span>
+    <div className="flex flex-wrap items-center gap-2 plan-fine">
+      <span>
+        <span aria-hidden="true" className="text-(--tone-warning)">
+          △
+        </span>{" "}
+        Not delivered
+      </span>
       <ResendControl item={item} turn={turn} />
     </div>
   );
@@ -127,17 +143,15 @@ function UserItem({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JSX.Ele
   const collapsed = item.origin !== null && !expanded;
   const shown = collapsed ? (item.text.split(/\r\n?|\n/, 1)[0] ?? "") : item.text;
   return (
-    <div className="group/message ml-auto w-fit max-w-[88%] space-y-1 font-sans text-[13px] leading-normal">
+    <div className="chat-user group/message">
       <div className="chat-user-body">
-        {item.attachments.map((attachment, index) =>
-          attachment.quote ? (
-            <blockquote key={index} className="chat-user-quote">
-              <Untrusted text={attachment.quote} />
-            </blockquote>
-          ) : null,
-        )}
+        {item.attachments.filter(isPassage).map((attachment, index) => (
+          <blockquote key={index} className="chat-user-quote">
+            <Untrusted text={attachment.quote} />
+          </blockquote>
+        ))}
         {item.origin !== null && (
-          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+          <div className="chat-user-meta">
             <div>
               {item.origin === "closing" ? (
                 <Untrusted text="Closing message from loom plan" />
@@ -149,7 +163,7 @@ function UserItem({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JSX.Ele
               type="button"
               aria-expanded={expanded}
               aria-controls={bodyId}
-              className="shrink-0 rounded px-1 underline underline-offset-2 focus-visible:outline focus-visible:outline-ring"
+              className="chat-link-button shrink-0"
               onClick={() => setExpanded((value) => !value)}
             >
               {expanded ? "Hide" : "Show"}
@@ -174,11 +188,8 @@ function TextItem({ item, turn }: { item: ItemOf<"text">; turn: Turn }): JSX.Ele
   const paths = useMemo(() => docPathsOf(tree, CHAT_PATH), [tree]);
   const source = useMemo(() => chatSource(item.markdown), [item.markdown]);
   return (
-    <div className="chat-assistant-text group/message w-full min-w-0 font-sans text-sm leading-normal">
-      <div
-        style={{ unicodeBidi: "plaintext", direction: "ltr" }}
-        className="[&>.md]:max-w-none! [&>.md]:text-sm! [&>.md]:leading-normal!"
-      >
+    <div className="chat-assistant-text group/message w-full min-w-0">
+      <div style={{ unicodeBidi: "plaintext", direction: "ltr" }}>
         <Markdown
           source={source}
           path="doc/README.md"
@@ -204,7 +215,7 @@ function ThinkingItem({ item }: { item: ItemOf<"thinking"> }): JSX.Element {
   // Transcript merges consecutive markers before passing the item here. A marker without a
   // duration says only that the model thought: "0s" would claim a measurement nobody made.
   return (
-    <p className="text-xs text-muted-foreground">
+    <p className="chat-thinking">
       {item.duration_ms === null
         ? "Thought"
         : `Thought for ${Number((item.duration_ms / 1000).toFixed(1))}s`}
@@ -226,16 +237,16 @@ function NoticeItem({ item }: { item: ItemOf<"notice"> }): JSX.Element {
       : item.kind === "stopped" || item.kind === "interrupted"
         ? "■"
         : "ⓘ";
+  // A stop or interrupt is drawn as a break in the transcript (chat-transcript.css). Only the
+  // glyph takes a tone: an API error is a red mark beside muted words.
   return (
-    <p
-      className={`flex justify-center gap-1.5 whitespace-pre-wrap break-words text-center text-xs ${
-        item.kind === "api_error" ? "text-(--tone-blocked)" : "text-muted-foreground"
-      }`}
-    >
-      <span role="img" aria-label={labels[item.kind]}>
-        {glyph}
+    <p className="chat-notice-item text-center" data-kind={item.kind}>
+      <span className="whitespace-pre-wrap break-words">
+        <span role="img" aria-label={labels[item.kind]} className="chat-notice-glyph">
+          {glyph}
+        </span>
+        <Untrusted text={item.text} />
       </span>
-      <Untrusted text={item.text} />
     </p>
   );
 }

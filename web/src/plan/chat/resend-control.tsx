@@ -49,7 +49,8 @@ function useMayResend(item: UserItem, turn: Turn): boolean {
   const inCurrentChat = useAtomValue(turnsAtom).some(
     (entry) => entry.id === turn.id && entry.started_at === turn.started_at,
   );
-  // An ended chat has no composer (ComposerArea), so there is nothing left to resend into.
+  // An ended chat takes no messages: its composer, when the user opens one, starts a new chat
+  // and offers no Resend (ComposerArea), so there is nothing left to resend into.
   const blocked =
     composerBlock(session, { stopping, readOnly, codexAlone }) ?? session?.state === "ended";
   return canAuthor && item.origin === null && inCurrentChat && !blocked && !resent;

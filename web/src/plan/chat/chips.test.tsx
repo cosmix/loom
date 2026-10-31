@@ -343,3 +343,16 @@ it("previous session chips use the previous session even when turn ids repeat", 
   await screen.findByText("unchanged");
   expect(String(request.mock.calls[0][0])).toContain(`session=${snapshot.previous!.session.id}`);
 });
+
+it("a failed section check is one status line in the server's words, with no box", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(JSON.stringify({ error: "unavailable", message: "Sections unavailable" }), {
+      status: 500,
+    }),
+  );
+  sent(setup(), [baseAttachment]);
+  const words = await screen.findByText("Sections unavailable");
+  const line = words.closest(".chat-notice");
+  expect(line?.getAttribute("role")).toBe("status");
+  expect(line?.getAttribute("data-tone")).toBe("error");
+});

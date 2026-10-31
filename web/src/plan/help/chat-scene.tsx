@@ -228,11 +228,11 @@ export const CHAT_SCENES: readonly PlannerHelpScene[] = [
         text: "The changes list shows the files this turn touched, and Diff becomes available when the turn ends.",
       },
       {
-        target: '[aria-label="Permission: Bash"] button:first-child',
+        target: '[aria-label="Permission: Bash"] .chat-decision-actions > :first-child button',
         text: "Allow approves the requested tool action.",
       },
       {
-        target: '[aria-label="Permission: Bash"] button:last-child',
+        target: '[aria-label="Permission: Bash"] .chat-decision-actions > :last-child button',
         text: "Deny opens the refusal controls with an optional note.",
       },
       {
