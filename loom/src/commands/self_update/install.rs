@@ -1,14 +1,21 @@
-//! Binary installation with atomic rollback mechanism.
+//! Binary installation by atomic replacement.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 use tempfile::NamedTempFile;
 
-/// Install binary with atomic rollback mechanism.
-/// Writes new binary to temp location, backs up current, installs new with rollback on failure.
+/// Stage the new binary beside the current one, then atomically replace it.
 pub(crate) fn install_binary(new_binary: &[u8], current_exe: &Path) -> Result<()> {
+    install_with_replace(new_binary, current_exe, |from, to| fs::rename(from, to))
+}
+
+pub(super) fn install_with_replace(
+    new_binary: &[u8],
+    current_exe: &Path,
+    replace: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
+) -> Result<()> {
     let parent = current_exe
         .parent()
         .context("Binary has no parent directory")?;
@@ -31,32 +38,7 @@ pub(crate) fn install_binary(new_binary: &[u8], current_exe: &Path) -> Result<()
             .context("Failed to set executable permissions on new binary")?;
     }
 
-    // Create unpredictable backup path for rollback (SEC-MED-06)
-    let backup = NamedTempFile::new_in(parent).context("Failed to create backup temp file")?;
-    let backup_path = backup.into_temp_path();
-
-    // Backup current binary (atomically replaces the empty temp file)
-    fs::rename(current_exe, &*backup_path).context("Failed to backup current binary")?;
-
-    // Install new binary - with rollback on failure
+    // The original stays at its public path until the replacement succeeds.
     let staging_path = staging.into_temp_path();
-    if let Err(e) = fs::rename(&*staging_path, current_exe) {
-        // Attempt rollback
-        if let Err(rollback_err) = fs::rename(&*backup_path, current_exe) {
-            bail!(
-                "CRITICAL: Update failed and rollback failed!\n\
-                 Update error: {}\n\
-                 Rollback error: {}\n\
-                 Manual recovery needed: copy {} to {}",
-                e,
-                rollback_err,
-                backup_path.display(),
-                current_exe.display()
-            );
-        }
-        return Err(e.into());
-    }
-
-    // Success - backup auto-deleted by TempPath drop
-    Ok(())
+    replace(&staging_path, current_exe).context("Failed to replace current binary")
 }

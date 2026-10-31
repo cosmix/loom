@@ -1,7 +1,7 @@
 //! Binary self-update functionality for the loom CLI.
 //!
 //! This module backs the `loom update` subcommand. It checks for updates,
-//! verifies signatures, and installs new binaries with rollback support.
+//! verifies signatures, and atomically replaces installed binaries.
 
 pub(crate) mod client;
 mod daemon_notice;
@@ -280,7 +280,7 @@ fn verify_and_install_binary(binary: &[u8], signature: &str) -> Result<PathBuf> 
         compute_sha256_checksum(binary).dimmed()
     );
 
-    // Capture this before the swap: Linux then points /proc/self/exe at a deleted backup inode.
+    // Capture this before the swap: Linux then points /proc/self/exe at the replaced inode.
     let current_exe = env::current_exe().context("Failed to get current executable path")?;
     install_binary(binary, &current_exe)?;
     println!("  {} Binary updated", "✓".green());
