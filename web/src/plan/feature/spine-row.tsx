@@ -21,7 +21,9 @@ function ChildRow({ child, pathname }: { child: SpineChild; pathname: string }) 
       {/* The spaces keep the spans apart in the link's accessible name ("01 Name", "slug done"). */}
       {child.number !== null && (
         <>
-          <span className="plan-spine__number">{child.number}</span>{" "}
+          <span className="plan-spine__number">
+            <Untrusted text={child.number} />
+          </span>{" "}
         </>
       )}
       <span className="plan-spine__name">

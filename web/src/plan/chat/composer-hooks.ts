@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { Attachment, AttachmentInput } from "@/plan/api/schema-chat";
 import type { TreeEntry } from "@/plan/api/schema-files";
-import type { AttachmentDraft } from "@/plan/attachments";
+import { MAX_ATTACHMENT_BYTES, type AttachmentDraft } from "@/plan/attachments";
 import { docAttachment } from "@/plan/attachments/doc-attachment";
 import { fetchDoc } from "@/plan/files/api";
 import { treeAtom } from "@/plan/files/atoms";
@@ -121,11 +121,21 @@ const problemWith = (text: string, inputs: AttachmentInput[]) =>
 type Outgoing = { text: string; attachments: AttachmentInput[]; withViewed: boolean };
 
 /**
+ * The server refuses a quote over its limit and the whole message with it. `quoteLines` leaves a
+ * document uncut when its last line already looks like the cut marker, so a viewed document can
+ * still arrive over the limit here.
+ */
+function quoteFits(viewed: AttachmentDraft): boolean {
+  return new TextEncoder().encode(viewed.text).length <= MAX_ATTACHMENT_BYTES;
+}
+
+/**
  * What a send carries, read after the viewed document was fetched: the draft is what the user
  * sees at the moment of sending, and the composer's gate ran before the wait. Null means send
  * nothing: the draft no longer passes (the user cleared the box during the wait), and it stays
- * as it is. If only the document makes the message unsendable (over the size limit), the message
- * goes without it, because an attachment the user never added must not cost them the send.
+ * as it is. If only the document makes the message unsendable (over the size limit, or a quote the
+ * server would refuse), the message goes without it, because an attachment the user never added
+ * must not cost them the send.
  * A passage the user attached stays first and the viewed document follows it; with no passage the
  * document is first, which is the attachment the server's guidance reads.
  * Synchronous on purpose: a send with nothing to fetch goes out in the press's own tick.
@@ -140,7 +150,7 @@ function outgoing(
   const { text, attachments } = store.get(draftAtom);
   const drafted = attachments.map(toAttachmentInput);
   if (problemWith(text, drafted) !== null) return null;
-  const withViewed = viewed ? [...drafted, toAttachmentInput(viewed)] : null;
+  const withViewed = viewed && quoteFits(viewed) ? [...drafted, toAttachmentInput(viewed)] : null;
   if (withViewed && problemWith(text, withViewed) === null) {
     return { text, attachments: withViewed, withViewed: true };
   }
@@ -160,18 +170,24 @@ function clearSent(store: Store, sent: Outgoing): void {
   }));
 }
 
+/**
+ * The stores with a send under way. The guard belongs to the store, not to the hook: collapsing
+ * and reopening the panel during the viewed document's fetch mounts a new hook, which must not
+ * start a second send.
+ */
+const sending = new WeakSet<Store>();
+
 export function useSendDraft() {
   const store = useStore();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const inFlight = useRef(false);
   const send = async (resendId?: string) => {
-    if (inFlight.current) return;
+    if (sending.has(store)) return;
     const retry = store.get(unconfirmedSendsAtom).find((item) => item.client_id === resendId);
     // A resend whose entry is gone (confirmed meanwhile) must not send the current draft instead.
     if (resendId !== undefined && !retry) return;
     // Held across the fetch below, so a second press of Send cannot start a second send.
-    inFlight.current = true;
+    sending.add(store);
     setPending(true);
     setError(null);
     try {
@@ -198,7 +214,7 @@ export function useSendDraft() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      inFlight.current = false;
+      sending.delete(store);
       setPending(false);
     }
   };

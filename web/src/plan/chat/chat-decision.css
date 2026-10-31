@@ -3,7 +3,7 @@
  */
 
 /* The one place with real emphasis: a band across the panel between two hairlines, with a wash
- * behind it. It stops 4px short of each edge so its focus ring is not clipped by the scroll
+ * behind it. It stops 4px short of each edge so its focus ring stays inside the scroll
  * container. */
 .chat-decision {
   display: grid;

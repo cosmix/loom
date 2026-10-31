@@ -153,6 +153,53 @@ describe("rows", () => {
   });
 });
 
+describe("hostile names and marks", () => {
+  it("renders for a feature named like an Object.prototype member", () => {
+    renderSpine("/f/constructor/product", atlas({ feature: "constructor" }));
+
+    expect(link(/\bPlans\b/)).toBeTruthy();
+    fireEvent.click(within(spine()).getByRole("button", { name: "Expand Plans" }));
+    expect(link(/atlas-01/)).toBeTruthy();
+  });
+
+  it("draws a plan whose state names an Object.prototype member with no icon", () => {
+    renderSpine("/f/atlas/engineering", atlas({ plan_rows: [plan("atlas-03", "constructor")] }));
+
+    const row = link(/atlas-03/);
+    expect(row.textContent).toContain("constructor");
+    expect(row.querySelector("svg")).toBeNull();
+  });
+});
+
+describe("the Pressure test mark", () => {
+  const pressureDone = (rows: Record<string, unknown>[]) =>
+    atlas({
+      plan_rows: rows,
+      steps: checklistFixture.checklists[0]!.steps.map((step) =>
+        step.number === 5 ? { ...step, mark: "done", count: null, label: step.name } : step,
+      ),
+    });
+  const mark = () =>
+    link(/\bPressure test\b/)
+      .closest("li")
+      ?.getAttribute("data-mark");
+
+  it("reads optional when the server says done but no plan has a test on record", () => {
+    renderSpine("/f/atlas/product", pressureDone([plan("atlas-01", "done")]));
+
+    expect(mark()).toBe("optional");
+    expect(link(/\bPressure test\b/).textContent).toContain("optional");
+  });
+
+  it("reads done once a plan has a test on record", () => {
+    const tested = { ...plan("atlas-01", "done"), pressure_date: "2026-10-20" };
+    renderSpine("/f/atlas/product", pressureDone([tested]));
+
+    expect(mark()).toBe("done");
+    expect(link(/\bPressure test\b/).textContent).toContain("done");
+  });
+});
+
 describe("the current row", () => {
   it("marks the overview with aria-current and no other row", () => {
     renderSpine("/f/atlas/product");

@@ -17,7 +17,7 @@ export function allPlansDone(checklist: ChecklistView): boolean {
  * names a written plan of this feature, else the run dialog's preselected plan when that is a
  * written plan here, else the first written plan. Null when no plan is written.
  */
-export function startTarget(checklist: ChecklistView, preselected: string | null): string | null {
+function startTarget(checklist: ChecklistView, preselected: string | null): string | null {
   const written = checklist.plan_rows.filter((row) => row.state === "written");
   const isWritten = (path: string | null | undefined): path is string =>
     written.some((row) => row.path === path);

@@ -126,7 +126,14 @@ function ToolHeader({
       <ChevronRight size={12} aria-hidden="true" className="chat-tool-chevron" />
       <span className="flex min-w-0 flex-1 items-baseline gap-2">
         <span className="chat-tool-name">
-          <Untrusted text={(item.status === "done" && DONE_VERB[item.name]) || item.name} />
+          <Untrusted
+            text={
+              (item.status === "done" &&
+                Object.hasOwn(DONE_VERB, item.name) &&
+                DONE_VERB[item.name]) ||
+              item.name
+            }
+          />
         </span>{" "}
         <span className="chat-tool-target">
           <Untrusted text={item.summary} />

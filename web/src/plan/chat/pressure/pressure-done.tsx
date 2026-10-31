@@ -3,6 +3,7 @@ import { Gauge, ScanEye } from "lucide-react";
 import type { JSX } from "react";
 import { Link } from "react-router";
 
+import { Button } from "@/components/ui/button";
 import { compactTokens } from "@/lib/tokens";
 import type { PressureRunView } from "@/plan/api/schema-pressure";
 import { openDiff } from "@/plan/diff/open-diff";
@@ -13,10 +14,6 @@ import { DisabledReason } from "@/plan/ui/disabled-reason";
 
 import { FileChip } from "./file-chip";
 import { usePressureOptions } from "./use-pressure";
-
-// DisabledReason fixes its button's look, so the ghost outline is laid over it from outside.
-const GHOST_LOOK =
-  "[&_button]:h-[30px] [&_button]:gap-1.5 [&_button]:rounded-[8px] [&_button]:border [&_button]:border-border [&_button]:bg-transparent [&_button]:px-3 [&_button]:text-[13px] [&_button]:font-medium [&_button]:text-foreground [&_button]:hover:bg-muted [&_button]:aria-disabled:hover:bg-transparent";
 
 function EditedFiles({ paths }: { paths: string[] }): JSX.Element {
   return (
@@ -37,25 +34,22 @@ function SummaryActions({ plan }: { plan: string }): JSX.Element {
   // The review link and the next-plan control are direct children of the summary box.
   return (
     <>
-      <Link
-        className="inline-flex h-[30px] items-center gap-1.5 rounded-[8px] bg-primary px-3 text-[13px] font-semibold text-primary-foreground hover:bg-primary/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        to={openDiff("head", plan)}
+      <Button asChild data-look="secondary" size="sm" className="plan-button">
+        <Link to={openDiff("head", plan)}>
+          <ScanEye aria-hidden="true" />
+          Review the changes
+        </Link>
+      </Button>
+      <DisabledReason
+        reason={nextPlan === undefined ? "There is no other plan to pressure-test." : null}
+        size="sm"
+        onClick={() => {
+          if (nextPlan !== undefined) setDialog({ open: true, plan: nextPlan });
+        }}
       >
-        <ScanEye aria-hidden="true" className="size-3.5" />
-        Review the changes
-      </Link>
-      <div className={GHOST_LOOK}>
-        <DisabledReason
-          reason={nextPlan === undefined ? "There is no other plan to pressure-test." : null}
-          size="sm"
-          onClick={() => {
-            if (nextPlan !== undefined) setDialog({ open: true, plan: nextPlan });
-          }}
-        >
-          <Gauge aria-hidden="true" />
-          Test the next plan
-        </DisabledReason>
-      </div>
+        <Gauge aria-hidden="true" />
+        Test the next plan
+      </DisabledReason>
     </>
   );
 }

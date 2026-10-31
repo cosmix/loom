@@ -7,6 +7,9 @@ export function visibleControls(text: string): string {
   });
 }
 
+/** The style that keeps server text out of the surrounding text's bidirectional reordering. */
+export const ISOLATED_LTR = { unicodeBidi: "isolate", direction: "ltr" } as const;
+
 /**
  * A left-to-right isolated block (section 12). `plaintext` would lay a paragraph that starts with
  * an RTL letter out right-to-left and ignore `direction`, so a command's segments could display in
@@ -14,9 +17,5 @@ export function visibleControls(text: string): string {
  * of the reordering.
  */
 export function Untrusted(props: { text: string }): JSX.Element {
-  return createElement(
-    "span",
-    { style: { unicodeBidi: "isolate", direction: "ltr" } },
-    visibleControls(props.text),
-  );
+  return createElement("span", { style: ISOLATED_LTR }, visibleControls(props.text));
 }

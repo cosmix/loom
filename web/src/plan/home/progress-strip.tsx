@@ -1,7 +1,8 @@
 import type { StepView } from "@/plan/api/schema";
 import { Untrusted } from "@/plan/chat/visible-controls";
 
-const RUN_STEP = 6;
+/** The server's step number for Run, the last one. */
+export const RUN_STEP = 6;
 
 type Cell = "done" | "current" | "running" | "idle";
 

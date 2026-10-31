@@ -1,4 +1,5 @@
 import type { ChecklistView, OfferKind, OfferView, StepView } from "@/plan/api/schema";
+import { allOffers } from "@/plan/feature/checklist-offers";
 import { paceChoice } from "@/plan/feature/pace";
 
 export type PlanRow = ChecklistView["plan_rows"][number];
@@ -26,9 +27,7 @@ export function gapStep(checklist: ChecklistView, scope: GapScope): StepView | u
 
 /** An offer of this kind wherever the checklist carries one: primary, secondary, then item offers. */
 export function offerOfKind(checklist: ChecklistView, kind: OfferKind): OfferView | undefined {
-  return [checklist.primary, ...checklist.secondary, ...checklist.items.map((item) => item.offer)]
-    .filter((offer) => offer !== null)
-    .find((offer) => offer.kind === kind);
+  return allOffers(checklist).find((offer) => offer.kind === kind);
 }
 
 /** The offer a missing vision or metaplan page draws for itself. */

@@ -315,6 +315,6 @@ it("blocks confirmation if authoring is lost while renaming", () => {
   fireEvent.submit(input.closest("form")!);
 
   expect(input.disabled).toBe(true);
-  expect(screen.getByText("loom plan is in read-only mode: Claude is not logged in")).toBeTruthy();
+  expect(screen.getByText("Read-only")).toBeTruthy();
   expect(send).not.toHaveBeenCalled();
 });

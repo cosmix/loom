@@ -89,7 +89,7 @@ function chatSource(markdown: string): string {
 }
 
 function MessageControls({ source, turn }: { source: string; turn: Turn }): JSX.Element {
-  // The bridge timestamps turns, not individual items.
+  // The bridge timestamps a turn; an item carries no time of its own.
   const date = new Date(turn.started_at);
   const time = Number.isNaN(date.getTime())
     ? turn.started_at

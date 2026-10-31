@@ -1,5 +1,6 @@
 import { useAtomValue } from "jotai/react";
 import { CircleCheck, CircleDashed, MessageCircleQuestion, type LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { Link } from "react-router";
 
 import type { ChecklistView, OfferView } from "@/plan/api/schema";
@@ -11,7 +12,7 @@ import { featureHref } from "@/plan/feature/use-feature";
 import { slugNumber } from "@/plan/files/heading-parts";
 import { planSlug } from "@/plan/files/tree";
 import { OfferButton } from "@/plan/offers/offer-button";
-import { draftTeamAtom } from "@/plan/state/atoms";
+import { authorBlockReasonAtom, draftTeamAtom } from "@/plan/state/atoms";
 import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
 import { PLAN_STATE_GLYPHS, type PlanState } from "@/plan/ui/glyphs";
 import { plural } from "@/plan/ui/plural";
@@ -40,7 +41,9 @@ type QueueRow = {
 };
 
 function planIcon(state: string): LucideIcon {
-  return state in PLAN_STATE_GLYPHS ? PLAN_STATE_GLYPHS[state as PlanState] : CircleCheck;
+  return Object.hasOwn(PLAN_STATE_GLYPHS, state)
+    ? PLAN_STATE_GLYPHS[state as PlanState]
+    : CircleCheck;
 }
 
 function capitalised(word: string): string {
@@ -129,7 +132,7 @@ function Status({
 }: {
   icon: LucideIcon;
   tone?: string;
-  children: string;
+  children: ReactNode;
 }) {
   return (
     <span className="plan-status plan-fine">
@@ -149,7 +152,7 @@ function RowStatus({ row, drafting }: { row: QueueRow; drafting: boolean }) {
         </span>
       ) : (
         <Status icon={row.icon} tone={row.tone}>
-          {row.state}
+          <Untrusted text={row.state} />
         </Status>
       )}
       {row.questions > 0 && (
@@ -163,11 +166,14 @@ function RowStatus({ row, drafting }: { row: QueueRow; drafting: boolean }) {
 
 /**
  * "Next" stands in for the button of a row whose offer another surface already draws: the
- * primary (the spine or the pace card owns it) and either pace card's offer.
+ * primary (the spine or the pace card owns it) and either pace card's offer. While authoring is
+ * blocked a row draws no button: the page's primary carries the reason once.
  */
 function RowAction({ row, drawn }: { row: QueueRow; drawn: string[] }) {
+  const blocked = useAtomValue(authorBlockReasonAtom) !== null;
   if (row.offer === null) return null;
   if (drawn.includes(row.offer.id)) return <span className="plan-queue__next">Next</span>;
+  if (blocked) return null;
   return <OfferButton offer={row.offer} size="sm" />;
 }
 

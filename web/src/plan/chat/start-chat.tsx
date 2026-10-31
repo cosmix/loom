@@ -71,7 +71,7 @@ export function NewChatButton() {
   const { start, pending, error } = useNewChat();
   if ((!canAuthor && !error) || (server?.read_only.length ?? 0) > 0) return null;
   return (
-    <div className="chat-new-chat text-[13px]">
+    <div className="text-[13px]">
       {canAuthor && (
         <DisabledReason
           reason={reason ?? (pending ? "Starting a new chat" : null)}

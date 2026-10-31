@@ -141,13 +141,11 @@ describe("authoring atoms", () => {
     expect(store.get(authorBlockReasonAtom)).toBeNull();
   });
 
-  it("uses the first read-only problem when free", () => {
+  it("reads Read-only alone when the server has a problem, the banner carrying the rest", () => {
     const store = readyStore();
     store.set(serverInfoAtom, hello.server);
     expect(store.get(canAuthorAtom)).toBe(false);
-    expect(store.get(authorBlockReasonAtom)).toBe(
-      `loom plan is in read-only mode: ${hello.server.read_only[0].message}`,
-    );
+    expect(store.get(authorBlockReasonAtom)).toBe("Read-only");
   });
 
   it("blocks authoring while stopping", () => {

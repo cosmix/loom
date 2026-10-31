@@ -5,9 +5,7 @@ import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 import { WorkRoundel } from "@/components/activity-roundel";
 import { useNow } from "@/components/hooks/use-now";
 import { formatElapsed } from "@/lib/format";
-import type { ServerInfo } from "@/plan/api/schema";
 import type { Item, SessionView, Turn } from "@/plan/api/schema-chat";
-import { serverInfoAtom } from "@/plan/state/atoms";
 import { pendingPermissionsAtom, turnsAtom } from "./model";
 import { panelSessionAtom } from "./session-home";
 import { StartingBrief } from "./start-chat";
@@ -104,18 +102,10 @@ function StateGlyph({ state }: { state: SessionView["state"] | undefined }) {
   );
 }
 
-/** A failure or read-only notice: a toned glyph and a title over plain text, with no box. */
-function Notice({
-  tone,
-  title,
-  children,
-}: {
-  tone: "error" | "warning";
-  title: string;
-  children: ReactNode;
-}) {
+/** A failure notice: a toned glyph and a title over plain text, with no box. */
+function Notice({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="chat-notice" data-tone={tone}>
+    <div className="chat-notice" data-tone="error">
       <p className="chat-notice-title">
         <span aria-hidden="true" className="chat-notice-glyph">
           ⚠
@@ -133,7 +123,7 @@ function Failure({ session, now }: { session: SessionView; now: number }) {
       ? "The session could not start"
       : "The session stopped unexpectedly";
   return (
-    <Notice tone="error" title={title}>
+    <Notice title={title}>
       {session.failure && (
         <p>
           <Untrusted text={session.failure.message} />
@@ -148,25 +138,6 @@ function Failure({ session, now }: { session: SessionView; now: number }) {
         </p>
       )}
       <p>The documents keep what the session recorded as it went. A new chat starts fresh.</p>
-    </Notice>
-  );
-}
-
-function ReadOnlyHazard({ problems }: { problems: ServerInfo["read_only"] }) {
-  return (
-    <Notice tone="warning" title="Read-only">
-      <ul>
-        {problems.map((problem, index) => (
-          <li key={`${problem.what}-${index}`}>
-            <p>
-              <Untrusted text={problem.message} />
-            </p>
-            <p>
-              <Untrusted text={problem.fix} />
-            </p>
-          </li>
-        ))}
-      </ul>
     </Notice>
   );
 }
@@ -206,19 +177,17 @@ function StateRow(props: {
 
 function StateBody(props: {
   session: SessionView | null;
-  problems: ServerInfo["read_only"];
   text: string;
   detail: string;
   hideWords: boolean;
   now: number;
 }) {
-  const { session, problems, text, detail, hideWords, now } = props;
-  if (problems.length > 0) return <ReadOnlyHazard problems={problems} />;
+  const { session, text, detail, hideWords, now } = props;
   if (session?.state === "failed") return <Failure session={session} now={now} />;
   if (session?.state === "ended") {
     // Plain text, exposed to browse mode but not a live region: ChatAnnouncer says it aloud once.
-    const ago = age(session.state_since, now);
-    return <p className="text-muted-foreground">{`Chat ended · ${ago} ago`}</p>;
+    // The head's status word already says the chat ended; the row gives its age.
+    return <p className="text-muted-foreground">{`${age(session.state_since, now)} ago`}</p>;
   }
   return <StateRow session={session} text={text} detail={detail} hideWords={hideWords} />;
 }
@@ -227,37 +196,25 @@ export function StateLine() {
   const session = useAtomValue(panelSessionAtom);
   const turns = useAtomValue(turnsAtom);
   const pending = useAtomValue(pendingPermissionsAtom);
-  const problems = useAtomValue(serverInfoAtom)?.read_only ?? [];
   const now = useNow();
-  const readOnly = problems.length > 0;
-  const words = readOnly
-    ? `Read-only · ${problems.map((p) => `${p.message}. ${p.fix}`).join(" · ")}`
-    : stateWords(session, pending);
-  const detail =
-    session?.state === "working" && !readOnly ? workingDetail(session, turns, now).join(" · ") : "";
+  const words = stateWords(session, pending);
+  const detail = session?.state === "working" ? workingDetail(session, turns, now).join(" · ") : "";
   // The sr-only region announces the words, so the visible copy is hidden from browse mode on the
-  // rows that hold only those words (and buttons beside them); read-only and Starting rows carry
-  // more than the announcement and stay exposed.
-  const elsewhere = !readOnly && announcedElsewhere(session);
-  const hideWords = !readOnly && !elsewhere && session?.state !== "starting";
+  // rows that hold only those words (and buttons beside them); the Starting row carries more than
+  // the announcement and stays exposed.
+  const elsewhere = announcedElsewhere(session);
+  const hideWords = !elsewhere && session?.state !== "starting";
   return (
     <div
       className="chat-state-line text-[13px] font-medium"
       data-kind={session?.kind}
-      data-state={readOnly ? "read-only" : (session?.state ?? "none")}
+      data-state={session?.state ?? "none"}
     >
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         <Untrusted text={elsewhere ? "" : words} />
       </div>
       <div aria-live="off">
-        <StateBody
-          session={session}
-          problems={problems}
-          text={words}
-          detail={detail}
-          hideWords={hideWords}
-          now={now}
-        />
+        <StateBody session={session} text={words} detail={detail} hideWords={hideWords} now={now} />
       </div>
     </div>
   );

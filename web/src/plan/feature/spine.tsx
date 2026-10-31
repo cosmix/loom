@@ -44,7 +44,8 @@ function currentRow(
 /** The reader's expanded groups for one feature, and the toggle that changes them. */
 function useExpandedGroups(feature: string): { opened: string[]; toggle: (id: GroupId) => void } {
   const [expanded, setExpanded] = useAtom(expandedAtom);
-  const opened = expanded[feature] ?? [];
+  // A feature is a server-chosen slug: `constructor` must not read Object.prototype.
+  const opened = (Object.hasOwn(expanded, feature) ? expanded[feature] : undefined) ?? [];
   const toggle = (id: GroupId) =>
     setExpanded({
       ...expanded,

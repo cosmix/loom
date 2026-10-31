@@ -207,7 +207,7 @@ it("gives a read-only browser an authoring reason instead of a working Start", a
   expect(
     screen.getByRole("button", {
       name: "Start pressure test",
-      description: "loom plan is in read-only mode: Claude is not logged in",
+      description: "Read-only",
     }),
   ).toBe(start);
   expect(

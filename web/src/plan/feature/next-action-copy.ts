@@ -44,7 +44,7 @@ const SENTENCES: Record<OfferKind, (names: Names) => string> = {
 };
 
 /** "Ready to run" / "All plans done" when no step is current, else null. */
-export function readyLabel(current: CurrentView): string | null {
+function readyLabel(current: CurrentView): string | null {
   if (current.kind === "ready") return "Ready to run";
   if (current.kind === "ready_all_done") return "All plans done";
   return null;

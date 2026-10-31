@@ -47,6 +47,21 @@ describe("Banners", () => {
     expect(banner.textContent).not.toContain("..");
   });
 
+  it("shows a message or fix carrying a bidirectional override as visible text", () => {
+    renderBanners((store) =>
+      store.set(serverInfoAtom, {
+        ...serverInfoSchema.parse(serverInfoFixture),
+        read_only: [
+          { what: "tmux", message: "tmux is unavailable\u202e", fix: "Install tmux\u202e" },
+        ],
+      }),
+    );
+    const text = screen.getByText("tmux is unavailable⟨U+202E⟩. Install tmux⟨U+202E⟩.");
+    expect(text.style.unicodeBidi).toBe("isolate");
+    expect(text.style.direction).toBe("ltr");
+    expect(screen.getByRole("status").textContent).not.toContain("\u202e");
+  });
+
   it("warns for the life of the page on a remote bind", () => {
     renderBanners((store) =>
       store.set(serverInfoAtom, {

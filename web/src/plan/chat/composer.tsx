@@ -43,19 +43,21 @@ import "./chat-surface.css";
 const HOLD_NOTE =
   "Closing this tab keeps the session for 10 minutes. After that it writes its notes into the documents and ends.";
 
-function ReadOnlyLine() {
-  const server = useAtomValue(serverInfoAtom);
-  const holder = useAtomValue(authoringAtom)?.holder;
+/** A draft the visible view cannot show: the one line that says it is still there. */
+function DraftKept() {
   const draft = useAtomValue(draftAtom);
-  const problem = server?.read_only[0];
+  if (!draft.text && draft.attachments.length === 0) return null;
+  return <p className="text-xs text-muted-foreground">Your draft is kept</p>;
+}
+
+/** The banner carries the server's message and fix; this line names the state once. */
+function ReadOnlyLine() {
+  const holder = useAtomValue(authoringAtom)?.holder;
+  const serverReadOnly = !!useAtomValue(serverInfoAtom)?.read_only.length;
   return (
-    <div className="text-xs text-muted-foreground">
-      <p>
-        {problem ? (
-          <>
-            Read-only: <Untrusted text={problem.message} />
-          </>
-        ) : holder ? (
+    <div>
+      <p className="text-xs text-muted-foreground">
+        {holder && !serverReadOnly ? (
           <>
             Read-only · <Untrusted text={holder.name} /> is authoring
           </>
@@ -63,7 +65,7 @@ function ReadOnlyLine() {
           "Read-only"
         )}
       </p>
-      {(draft.text || draft.attachments.length > 0) && <p>Your draft is kept</p>}
+      <DraftKept />
     </div>
   );
 }
@@ -173,10 +175,12 @@ function ComposerInput({ afterConcluded }: { afterConcluded: boolean }) {
   const { reason, resendBlock } = useBlockReasons(pending);
   const shown = useAtomValue(shownSessionAtom);
   const id = useId();
+  const noteId = `${id}-new-chat`;
+  const describedBy = [afterConcluded ? noteId : null, error ? id : null].filter(Boolean).join(" ");
   return (
     <div className="chat-composer-input">
       <PendingChips />
-      <MessageBox reason={reason} send={send} describedBy={error ? id : undefined} />
+      <MessageBox reason={reason} send={send} describedBy={describedBy || undefined} />
       <div className="chat-composer-actions">
         <AttachDocument />
         {afterConcluded && <NewChatBesideBox />}
@@ -186,7 +190,11 @@ function ComposerInput({ afterConcluded }: { afterConcluded: boolean }) {
           </DisabledReason>
         </div>
       </div>
-      {afterConcluded && <p className="plan-fine">Sending starts a new chat</p>}
+      {afterConcluded && (
+        <p id={noteId} className="plan-fine">
+          Sending starts a new chat
+        </p>
+      )}
       {error && (
         <p id={id} role="status" className="text-xs text-muted-foreground">
           <Untrusted text={error} />
@@ -309,6 +317,7 @@ export function ComposerArea() {
           {/* An attachment made on a concluded session's own screen waits for the next chat. */}
           {canAuthor && <PendingChips />}
           <ConcludedChat onLeave={onLeave} />
+          <DraftKept />
         </>
       ) : (
         <ComposerInput afterConcluded={concluded} />

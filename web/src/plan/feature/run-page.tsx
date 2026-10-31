@@ -95,9 +95,9 @@ function Followups({ checklist }: { checklist: ChecklistView }) {
 
 /**
  * The server pushes no run state, so the page asks for it on arrival, as the run dialog does. A
- * failed request reads as failed, never as idle. An answer dropped because a newer request
- * overtook it leaves the page waiting for that request's state, and a state that arrives by any
- * other route replaces the sentence anyway.
+ * failed request reads as failed, never as idle. An answer is applied even when a newer request
+ * overtook it while no state is known (`fetchRunState`), so an answered request always ends the
+ * wait, whatever happens to the newer one.
  */
 function useRunRead(): RunRead {
   const store = useStore();
@@ -106,8 +106,7 @@ function useRunRead(): RunRead {
     let live = true;
     void fetchRunState(store).then((result) => {
       if (!live) return;
-      if (!result.ok) setRead("failed");
-      else if (store.get(runStateAtom) !== null) setRead("read");
+      setRead(result.ok ? "read" : "failed");
     });
     return () => {
       live = false;
