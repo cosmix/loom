@@ -14,6 +14,7 @@ pub mod safe_read;
 pub mod safe_replace;
 pub mod safe_write;
 pub mod session_files;
+pub(crate) mod stage_admission;
 pub mod stage_events;
 pub mod stage_files;
 pub mod stage_loading;

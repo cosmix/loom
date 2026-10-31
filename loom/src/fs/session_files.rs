@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::locking::locked_write;
 use crate::models::session::Session;
-use crate::parser::markdown::MarkdownDocument;
+use crate::parser::markdown::parse_frontmatter_strings;
 
 mod enumerate;
 #[path = "session_files/exact.rs"]
@@ -182,11 +182,11 @@ pub fn find_session_for_stage(stage_id: &str, work_dir: &Path) -> Option<String>
             continue;
         }
 
-        // Try to read and parse session file using canonical parser
+        // Read only the session fields needed for lookup.
         if let Ok(content) = fs::read_to_string(&path) {
-            if let Ok(doc) = MarkdownDocument::parse(&content) {
-                if doc.get_frontmatter("stage_id").map(|s| s.as_str()) == Some(stage_id) {
-                    if let Some(session_id) = doc.get_frontmatter("id") {
+            if let Ok(frontmatter) = parse_frontmatter_strings(&content) {
+                if frontmatter.get("stage_id").map(|s| s.as_str()) == Some(stage_id) {
+                    if let Some(session_id) = frontmatter.get("id") {
                         return Some(session_id.clone());
                     }
                 }

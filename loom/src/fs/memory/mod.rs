@@ -335,7 +335,7 @@ mod tests {
                 let temp = Arc::clone(&temp);
                 std::thread::spawn(move || {
                     for index in 0..50 {
-                        let content = format!("{thread}:{index}:{}", "x".repeat(3000));
+                        let content = format!("{thread}:{index}:{}", "x".repeat(1900));
                         let entry = MemoryEntry::new(MemoryEntryType::Note, content);
                         append_entry(temp.path(), "concurrent", &entry).unwrap();
                     }

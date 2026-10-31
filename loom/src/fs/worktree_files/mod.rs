@@ -1,8 +1,8 @@
-//! Worktree-related file operations
+//! Legacy worktree-related file operations.
 //!
-//! This module provides utilities for managing files associated with worktrees
-//! and stages in the `.loom/work/` directory. It handles cleanup of session
-//! files, signal files, and other stage-related metadata after merge operations.
+//! Retained for compatibility. This cleanup is not Loom's stage retirement
+//! flow and does not handle process liveness, final relay drain, settings, or
+//! memory. New session lookups should use [`crate::fs::session_files`].
 //!
 //! ## File Types
 //!
@@ -18,13 +18,30 @@ mod signals;
 mod stages;
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests;
 
 // Re-export public types and functions
+#[deprecated(
+    note = "legacy cleanup does not perform stage retirement; use the current retirement flow"
+)]
 pub use cleanup::cleanup_stage_files;
+#[deprecated(
+    note = "legacy cleanup does not perform stage retirement; use the current retirement flow"
+)]
 pub use config::{StageFileCleanupConfig, StageFileCleanupResult};
-pub use sessions::{find_sessions_for_stage, remove_session_file};
+pub use sessions::find_sessions_for_stage;
+#[deprecated(
+    note = "legacy cleanup does not perform stage retirement; use the current retirement flow"
+)]
+pub use sessions::remove_session_file;
+#[deprecated(
+    note = "legacy cleanup does not perform stage retirement; use the current retirement flow"
+)]
 pub use signals::remove_signal_file;
+#[deprecated(
+    note = "legacy cleanup does not perform stage retirement; use the current retirement flow"
+)]
 pub use stages::stage_has_files;
 
 // Re-export canonical stage file finder from fs/stage_files

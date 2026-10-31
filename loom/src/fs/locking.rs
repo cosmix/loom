@@ -8,10 +8,9 @@
 //!
 //! # Crash atomicity vs. advisory-lock identity
 //!
-//! Writes are crash-atomic: content is written to a sibling `<file>.tmp`,
-//! `fsync`ed, and `rename`d over the target, then the containing directory is
-//! `fsync`ed. A crash mid-write therefore leaves either the old file intact or
-//! the fully-written new file — never a truncated/empty file.
+//! Writes use a unique sibling temporary file, `fsync` it, and rename it over
+//! the target. The directory sync is best effort after publication; failure is
+//! logged because the replacement has already happened.
 //!
 //! `flock` identity is tied to an inode, but `rename` swaps the target's inode,
 //! so a lock taken on the *data file* would not exclude a reader that opened the
@@ -23,9 +22,8 @@
 
 use anyhow::{Context, Result};
 use fs2::FileExt;
-use std::fs::{File, OpenOptions};
-use std::io::{BufReader, BufWriter, Read, Write};
-use std::os::unix::fs::OpenOptionsExt;
+use std::fs::File;
+use std::io::{BufReader, Read};
 use std::path::Path;
 
 /// Open the parent directory of `path` and acquire an advisory lock on it.
@@ -68,64 +66,18 @@ fn lock_parent_dir(path: &Path, exclusive: bool) -> Result<File> {
     Ok(dir_file)
 }
 
-/// Crash-atomically write `content` to `path` via a temp file + `rename`.
-///
-/// The caller MUST already hold the parent-directory lock (see
-/// [`lock_parent_dir`]) for the write to be serialized against readers. The
-/// sequence is: write `<file>.tmp` → `sync_all` → `rename` over `<file>` →
-/// `fsync` the directory so the rename itself is durable.
-///
-/// The temp file is opened with `O_NOFOLLOW`: a committed repository can
-/// track `<file>.tmp` as a symlink to a path outside the repo, and this
-/// write must not follow it. A symlinked temp path fails closed with an
-/// error naming the path; the symlink itself is left untouched.
+/// Crash-atomically write through a sibling temporary file. The caller holds
+/// the parent-directory lock across publication and any surrounding read.
 fn atomic_write(path: &Path, content: &str) -> Result<()> {
-    let mut tmp_os = path.as_os_str().to_os_string();
-    tmp_os.push(".tmp");
-    let tmp_path = std::path::PathBuf::from(tmp_os);
-
-    {
-        let tmp = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(&tmp_path)
-            .with_context(|| format!("Failed to open temp file: {}", tmp_path.display()))?;
-        let mut writer = BufWriter::new(&tmp);
-        writer
-            .write_all(content.as_bytes())
-            .with_context(|| format!("Failed to write temp file: {}", tmp_path.display()))?;
-        writer
-            .flush()
-            .with_context(|| format!("Failed to flush temp file: {}", tmp_path.display()))?;
-        drop(writer);
-        tmp.sync_all()
-            .with_context(|| format!("Failed to sync temp file: {}", tmp_path.display()))?;
-    }
-
-    std::fs::rename(&tmp_path, path).with_context(|| {
-        format!(
-            "Failed to rename {} to {}",
-            tmp_path.display(),
-            path.display()
-        )
-    })?;
-
-    // Fsync the directory so the rename (the metadata change that makes the new
-    // content visible) is itself durable across a crash.
-    if let Some(parent) = path.parent() {
-        let dir = if parent.as_os_str().is_empty() {
-            Path::new(".")
-        } else {
-            parent
-        };
-        if let Ok(dir_file) = File::open(dir) {
-            let _ = dir_file.sync_all();
-        }
-    }
-
-    Ok(())
+    let name = path.file_name().context("write target has no filename")?;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let dir = File::open(parent)
+        .with_context(|| format!("Failed to open directory: {}", parent.display()))?;
+    let dir = std::os::fd::OwnedFd::from(dir);
+    super::safe_replace::publish_in_dir(&dir, name, content.as_bytes(), 0o666, false)
 }
 
 /// Acquire an exclusive advisory lock on `dir` for the duration of `f`.

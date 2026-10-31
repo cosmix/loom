@@ -38,6 +38,14 @@ fn regular_file_metadata(file: &File) -> Result<Metadata> {
     Ok(metadata)
 }
 
+/// Reject files whose inode can also be modified through another name.
+pub(crate) fn single_link_regular_file(file: &File) -> Result<()> {
+    if regular_file_metadata(file)?.nlink() != 1 {
+        bail!("opened path is a hard link with more than one name");
+    }
+    Ok(())
+}
+
 /// Read at most `max_bytes` from a regular file beneath `root`.
 ///
 /// `relative` must not be absolute or contain `..`. The kernel opens every
@@ -167,10 +175,7 @@ pub(crate) fn open_regular_no_follow(
         Err(error) if is_not_found(&error) => return Ok(None),
         Err(error) => return Err(error.context("no-follow open failed")),
     };
-    let metadata = regular_file_metadata(&file)?;
-    if metadata.nlink() != 1 {
-        bail!("opened path is a hard link with more than one name");
-    }
+    single_link_regular_file(&file)?;
     Ok(Some(file))
 }
 

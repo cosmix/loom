@@ -24,10 +24,8 @@ use std::path::{Component, Path};
 #[cfg(target_os = "linux")]
 use std::sync::atomic::{AtomicU8, Ordering};
 
-/// Maximum bytes accepted by `safe_locked_write_in_workdir`, `safe_append_in_workdir`,
-/// `safe_create_new_in_workdir`, and `safe_write_with_mode_in_workdir`. Each
-/// rejects writes larger than this and returns an error so that an unbounded
-/// log capture cannot fill the `.loom/work/` filesystem.
+/// Maximum bytes accepted in one write or append call. Append callers must
+/// enforce any total-file or retention bound separately.
 pub const MAX_LOG_BYTES: usize = 4 * 1024 * 1024;
 
 // openat2 syscall number and resolve flags (Linux, kernel 5.6+).
@@ -327,16 +325,13 @@ pub fn safe_create_dir_all_in_workdir(
 }
 
 /// Write `content` to `relpath` under `dirfd` with an exclusive flock,
-/// refusing every symlink along the path. The file is truncated and rewritten
-/// atomically (within the flock).
-///
-/// Mirrors the open → lock → truncate → write → flush sequence in
-/// `fs/locking.rs::locked_write`.
+/// refusing every symlink along the path. This in-place writer locks the opened
+/// data inode before truncation; it does not provide the crash-atomic
+/// replacement semantics of `locking::locked_write`.
 pub fn safe_locked_write_in_workdir(dirfd: RawFd, relpath: &Path, content: &[u8]) -> Result<()> {
     let content = enforce_size_limit(content)?;
-    let fd = open_safely(dirfd, relpath, libc::O_WRONLY | libc::O_CREAT, 0o600)?;
-    flock_exclusive(&fd)?;
-    // Truncate AFTER the lock (TOCTOU prevention — see fs/locking.rs:88).
+    let fd = open_locked_regular(dirfd, relpath, libc::O_WRONLY | libc::O_CREAT, 0o600)?;
+    // Truncate after locking so cooperating writers do not overwrite each other.
     // SAFETY: `fd` is a live, exclusively locked descriptor opened for writing.
     if unsafe { libc::ftruncate(fd.as_raw_fd(), 0) } < 0 {
         return Err(io::Error::last_os_error())
@@ -352,20 +347,16 @@ pub fn safe_locked_write_in_workdir(dirfd: RawFd, relpath: &Path, content: &[u8]
     Ok(())
 }
 
-/// Append `content` to `relpath` under `dirfd` in a single `write(2)` call
-/// while holding an exclusive flock. On filesystems that honour atomic
-/// `O_APPEND` semantics this is also racefree against concurrent appenders
-/// from other processes; the explicit flock additionally serialises
-/// in-process concurrent appenders.
+/// Append the complete buffer while holding an exclusive flock; cooperating
+/// appenders cannot interleave its partial writes.
 pub fn safe_append_in_workdir(dirfd: RawFd, relpath: &Path, content: &[u8]) -> Result<()> {
     let content = enforce_size_limit(content)?;
-    let fd = open_safely(
+    let fd = open_locked_regular(
         dirfd,
         relpath,
         libc::O_WRONLY | libc::O_APPEND | libc::O_CREAT,
         0o600,
     )?;
-    flock_exclusive(&fd)?;
     write_all_at(&fd, content, relpath)?;
     Ok(())
 }
@@ -461,154 +452,25 @@ fn parent_dirfd_for(dirfd: RawFd, components: &[Vec<u8>]) -> Result<OwnedFd> {
     open_dir_safely(dirfd, Path::new(&parent_path))
 }
 
-/// Atomically replace a file that lives **outside** the `.loom/work/` dirfd
-/// universe — used for the live plan file in `<project_root>/doc/plans/`.
-///
-/// Validates `target.starts_with(project_root)`; opens `target.parent()` with
-/// `O_NOFOLLOW | O_DIRECTORY`; creates `<target_name>.tmp` with `O_EXCL`;
-/// writes; fsyncs the file; fsyncs the dir; `renameat(dir, ".tmp", dir,
-/// target_name)`.
-///
-/// The dirfd anchors all writes so an attacker cannot redirect the rename
-/// by swapping the parent directory mid-operation; `O_NOFOLLOW` on the parent
-/// open refuses to traverse a symlink there.
+/// Atomically replace a file beneath `project_root` through an anchored parent.
+/// Intermediate symlinks are refused and the replacement uses private mode.
 pub fn safe_replace_outside_workdir(
     target: &Path,
     project_root: &Path,
     content: &[u8],
 ) -> Result<()> {
     let content = enforce_size_limit(content)?;
-
-    let canonical_root = project_root.canonicalize().with_context(|| {
+    let relative = target.strip_prefix(project_root).with_context(|| {
         format!(
-            "safe_fs: failed to canonicalise project_root {}",
-            project_root.display()
-        )
-    })?;
-
-    let target_name_os = target
-        .file_name()
-        .ok_or_else(|| anyhow::anyhow!("safe_fs: target has no filename: {}", target.display()))?;
-    let target_name = target_name_os.as_bytes();
-
-    let parent = target
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("safe_fs: target has no parent: {}", target.display()))?;
-    let canonical_parent = parent.canonicalize().with_context(|| {
-        format!(
-            "safe_fs: failed to canonicalise target parent {}",
-            parent.display()
-        )
-    })?;
-
-    if !canonical_parent.starts_with(&canonical_root) {
-        bail!(
             "safe_fs: refusing replace — target {} not under project_root {}",
             target.display(),
             project_root.display()
-        );
-    }
-
-    // Open the parent directory with O_NOFOLLOW so we refuse to traverse
-    // a symlinked parent. The dirfd anchors both the tmp create and the
-    // final rename.
-    let parent_c = path_to_cstring(canonical_parent.as_os_str().as_bytes())?;
-    let parent_flags = libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_RDONLY;
-    // SAFETY: parent_c is NUL-terminated; flags are constants.
-    let parent_fd_raw = unsafe { libc::open(parent_c.as_ptr(), parent_flags) };
-    if parent_fd_raw < 0 {
-        return Err(io::Error::last_os_error()).with_context(|| {
-            format!(
-                "safe_fs: failed to open parent dir {}",
-                canonical_parent.display()
-            )
-        });
-    }
-    // SAFETY: parent_fd_raw is a valid fd we now own.
-    let parent_fd = unsafe { OwnedFd::from_raw_fd(parent_fd_raw) };
-
-    // Build "<target_name>.tmp".
-    let mut tmp_name_bytes: Vec<u8> = Vec::with_capacity(target_name.len() + 4);
-    tmp_name_bytes.extend_from_slice(target_name);
-    tmp_name_bytes.extend_from_slice(b".tmp");
-    let tmp_name_c = path_to_cstring(&tmp_name_bytes)?;
-    let target_name_c = path_to_cstring(target_name)?;
-
-    // Create the tmp file with O_EXCL — fail loudly if a prior write left
-    // a stale .tmp around so an operator can investigate.
-    let create_flags =
-        libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC;
-    // SAFETY: parent_fd is valid; tmp_name_c is NUL-terminated.
-    let tmp_fd_raw = unsafe {
-        libc::openat(
-            parent_fd.as_raw_fd(),
-            tmp_name_c.as_ptr(),
-            create_flags,
-            0o600,
         )
-    };
-    if tmp_fd_raw < 0 {
-        return Err(io::Error::last_os_error()).with_context(|| {
-            format!(
-                "safe_fs: failed to create temp file {}.tmp",
-                target.display()
-            )
-        });
-    }
-    // SAFETY: tmp_fd_raw is a valid fd we now own.
-    let tmp_fd = unsafe { OwnedFd::from_raw_fd(tmp_fd_raw) };
-
-    // Best-effort cleanup of the tmp on any error path below.
-    let cleanup = |err: anyhow::Error| -> anyhow::Error {
-        // SAFETY: parent_fd is valid; tmp_name_c is NUL-terminated.
-        unsafe {
-            libc::unlinkat(parent_fd.as_raw_fd(), tmp_name_c.as_ptr(), 0);
-        }
-        err
-    };
-
-    if let Err(e) = write_all_at(&tmp_fd, content, target) {
-        return Err(cleanup(e));
-    }
-    // SAFETY: tmp_fd is valid.
-    if unsafe { libc::fsync(tmp_fd.as_raw_fd()) } < 0 {
-        let err = io::Error::last_os_error();
-        return Err(cleanup(anyhow::Error::new(err).context(format!(
-            "safe_fs: fsync tmp failed on {}",
-            target.display()
-        ))));
-    }
-    drop(tmp_fd);
-
-    // SAFETY: parent_fd is valid; both names are NUL-terminated.
-    let r = unsafe {
-        libc::renameat(
-            parent_fd.as_raw_fd(),
-            tmp_name_c.as_ptr(),
-            parent_fd.as_raw_fd(),
-            target_name_c.as_ptr(),
-        )
-    };
-    if r < 0 {
-        let err = io::Error::last_os_error();
-        return Err(cleanup(anyhow::Error::new(err).context(format!(
-            "safe_fs: renameat failed for {}",
-            target.display()
-        ))));
-    }
-
-    // fsync the directory so the rename is durable before we return.
-    // SAFETY: parent_fd is valid.
-    if unsafe { libc::fsync(parent_fd.as_raw_fd()) } < 0 {
-        return Err(io::Error::last_os_error()).with_context(|| {
-            format!(
-                "safe_fs: fsync parent dir failed for {}",
-                canonical_parent.display()
-            )
-        });
-    }
-
-    Ok(())
+    })?;
+    let root = project_root
+        .canonicalize()
+        .context("cannot resolve project root")?;
+    super::safe_replace::replace_private(&root, relative, content)
 }
 
 /// Like `safe_locked_write_in_workdir` but sets the file mode via `fchmod`
@@ -622,8 +484,7 @@ pub fn safe_write_with_mode_in_workdir(
     let content = enforce_size_limit(content)?;
     #[allow(clippy::useless_conversion)] // mode_t is u32 on Linux but u16 on macOS
     let mode_u32: u32 = mode.into();
-    let fd = open_safely(dirfd, relpath, libc::O_WRONLY | libc::O_CREAT, mode_u32)?;
-    flock_exclusive(&fd)?;
+    let fd = open_locked_regular(dirfd, relpath, libc::O_WRONLY | libc::O_CREAT, mode_u32)?;
     // SAFETY: `fd` is a live, exclusively locked descriptor opened for writing.
     if unsafe { libc::ftruncate(fd.as_raw_fd(), 0) } < 0 {
         return Err(io::Error::last_os_error())
@@ -678,6 +539,17 @@ pub fn safe_remove_in_workdir(dirfd: RawFd, relpath: &Path) -> Result<()> {
             .with_context(|| format!("safe_fs: unlinkat failed on {}", relpath.display()));
     }
     Ok(())
+}
+
+fn open_locked_regular(dirfd: RawFd, path: &Path, flags: i32, mode: u32) -> Result<OwnedFd> {
+    let fd = open_safely(dirfd, path, flags | libc::O_NONBLOCK, mode)?;
+    let file = std::fs::File::from(fd);
+    super::safe_read::single_link_regular_file(&file)?;
+    let fd = OwnedFd::from(file);
+    flock_exclusive(&fd)?;
+    let file = std::fs::File::from(fd);
+    super::safe_read::single_link_regular_file(&file)?;
+    Ok(OwnedFd::from(file))
 }
 
 pub(crate) fn flock_exclusive(fd: &OwnedFd) -> Result<()> {
@@ -757,263 +629,9 @@ pub(crate) fn force_disable_openat2_for_tests() {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::os::unix::fs::PermissionsExt;
-    use tempfile::TempDir;
+#[path = "safe_fs_write_tests.rs"]
+mod write_tests;
 
-    fn read_file(path: &Path) -> Vec<u8> {
-        std::fs::read(path).unwrap()
-    }
-
-    #[test]
-    fn rejects_absolute_path() {
-        let tmp = TempDir::new().unwrap();
-        let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-        let err = safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("/etc/passwd"), b"x")
-            .unwrap_err();
-        assert!(err.to_string().contains("absolute"));
-    }
-
-    #[test]
-    fn rejects_parent_dir_traversal() {
-        let tmp = TempDir::new().unwrap();
-        let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-        let err = safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("../escape"), b"x")
-            .unwrap_err();
-        assert!(err.to_string().contains(".."));
-    }
-
-    #[test]
-    fn rejects_final_symlink() {
-        let tmp = TempDir::new().unwrap();
-        let target = tmp.path().join("target.txt");
-        std::fs::write(&target, b"original").unwrap();
-        let link = tmp.path().join("link.txt");
-        std::os::unix::fs::symlink(&target, &link).unwrap();
-        let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-        let err = safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("link.txt"), b"new")
-            .unwrap_err();
-        let s = format!("{:#}", err);
-        // ELOOP from O_NOFOLLOW or RESOLVE_NO_SYMLINKS rejection.
-        assert!(
-            s.contains("symbolic link")
-                || s.contains("Too many levels of symbolic links")
-                || s.contains("ELOOP")
-                || s.contains("loop"),
-            "expected symlink rejection, got: {s}"
-        );
-        // Target must remain untouched.
-        assert_eq!(read_file(&target), b"original");
-    }
-
-    #[test]
-    fn rejects_intermediate_symlink() {
-        let tmp = TempDir::new().unwrap();
-        let real_dir = tmp.path().join("real");
-        std::fs::create_dir(&real_dir).unwrap();
-        let link_dir = tmp.path().join("link");
-        std::os::unix::fs::symlink(&real_dir, &link_dir).unwrap();
-        let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-        let err = safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("link/file.txt"), b"x")
-            .unwrap_err();
-        let s = format!("{:#}", err).to_ascii_lowercase();
-        assert!(
-            s.contains("symbolic link")
-                || s.contains("too many levels of symbolic links")
-                || s.contains("eloop")
-                || s.contains("loop")
-                || s.contains("exdev")
-                || s.contains("not permitted")
-                // macOS: O_NOFOLLOW|O_DIRECTORY on a symlink yields ENOTDIR
-                // rather than Linux's ELOOP. The symlink is refused either
-                // way; only the errno differs. Matches the wording already
-                // accepted by rejects_intermediate_symlink_portable_path.
-                || s.contains("not a directory"),
-            "expected intermediate-symlink rejection, got: {s}"
-        );
-        // Refusal must be real: nothing may be created through the symlink.
-        assert!(!real_dir.join("file.txt").exists());
-    }
-
-    #[test]
-    fn rejects_intermediate_symlink_portable_path() {
-        // Force-disable openat2 to exercise the portable openat-walk path.
-        let tmp = TempDir::new().unwrap();
-        let real_dir = tmp.path().join("real");
-        std::fs::create_dir(&real_dir).unwrap();
-        let link_dir = tmp.path().join("link");
-        std::os::unix::fs::symlink(&real_dir, &link_dir).unwrap();
-
-        let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-        force_disable_openat2_for_tests();
-        let err = safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("link/file.txt"), b"x")
-            .unwrap_err();
-        let s = format!("{:#}", err).to_ascii_lowercase();
-        assert!(
-            s.contains("symbolic link")
-                || s.contains("too many levels of symbolic links")
-                || s.contains("eloop")
-                || s.contains("loop")
-                || s.contains("not a directory"),
-            "expected intermediate-symlink rejection (portable), got: {s}"
-        );
-    }
-
-    #[test]
-    fn safe_locked_write_then_read() {
-        let tmp = TempDir::new().unwrap();
-        let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-        safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("a.txt"), b"hello").unwrap();
-        assert_eq!(read_file(&tmp.path().join("a.txt")), b"hello");
-        safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("a.txt"), b"world!").unwrap();
-        assert_eq!(read_file(&tmp.path().join("a.txt")), b"world!");
-    }
-
-    #[test]
-    fn safe_locked_write_concurrent_serialises() {
-        use std::sync::Arc;
-        use std::thread;
-        let tmp = Arc::new(TempDir::new().unwrap());
-        let path = tmp.path().join("c.txt");
-        // Pre-create so all threads race on the same inode.
-        std::fs::write(&path, b"").unwrap();
-
-        let handles: Vec<_> = (0..8)
-            .map(|i| {
-                let tmp = Arc::clone(&tmp);
-                thread::spawn(move || {
-                    let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-                    let content = format!("payload-{i}").into_bytes();
-                    safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("c.txt"), &content)
-                        .unwrap();
-                })
-            })
-            .collect();
-        for h in handles {
-            h.join().unwrap();
-        }
-        let out = read_file(&path);
-        let s = String::from_utf8_lossy(&out);
-        assert!(s.starts_with("payload-"), "{s}");
-    }
-
-    #[test]
-    fn safe_append_preserves_order() {
-        use std::sync::Arc;
-        use std::thread;
-        let tmp = Arc::new(TempDir::new().unwrap());
-
-        let handles: Vec<_> = (0..16)
-            .map(|i| {
-                let tmp = Arc::clone(&tmp);
-                thread::spawn(move || {
-                    let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-                    let line = format!("line-{i:02}\n");
-                    safe_append_in_workdir(
-                        dirfd.as_raw_fd(),
-                        Path::new("log.txt"),
-                        line.as_bytes(),
-                    )
-                    .unwrap();
-                })
-            })
-            .collect();
-        for h in handles {
-            h.join().unwrap();
-        }
-        let out = read_file(&tmp.path().join("log.txt"));
-        let s = String::from_utf8_lossy(&out);
-        let lines: Vec<&str> = s.lines().collect();
-        assert_eq!(lines.len(), 16, "expected 16 lines, got {}", lines.len());
-        // No torn writes: every line must be of the form "line-NN".
-        for l in &lines {
-            assert!(l.starts_with("line-"), "torn line: {l:?}");
-        }
-    }
-
-    #[test]
-    fn safe_create_new_refuses_existing() {
-        let tmp = TempDir::new().unwrap();
-        let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-        safe_create_new_in_workdir(dirfd.as_raw_fd(), Path::new("h.txt"), b"first").unwrap();
-        let err = safe_create_new_in_workdir(dirfd.as_raw_fd(), Path::new("h.txt"), b"second")
-            .unwrap_err();
-        let s = format!("{:#}", err);
-        assert!(
-            s.contains("exists") || s.contains("EEXIST"),
-            "expected EEXIST, got: {s}"
-        );
-        assert_eq!(read_file(&tmp.path().join("h.txt")), b"first");
-    }
-
-    #[test]
-    fn safe_write_with_mode_sets_bits() {
-        let tmp = TempDir::new().unwrap();
-        let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-        safe_write_with_mode_in_workdir(
-            dirfd.as_raw_fd(),
-            Path::new("script.sh"),
-            b"#!/bin/sh\necho ok\n",
-            0o755,
-        )
-        .unwrap();
-        let meta = std::fs::metadata(tmp.path().join("script.sh")).unwrap();
-        let perm = meta.permissions().mode() & 0o777;
-        assert_eq!(perm, 0o755, "got mode {:o}", perm);
-    }
-
-    #[test]
-    fn safe_create_dir_all_creates_nested() {
-        let tmp = TempDir::new().unwrap();
-        let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-        safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), Path::new("a/b/c"), 0o755).unwrap();
-        assert!(tmp.path().join("a/b/c").is_dir());
-        // Idempotent.
-        safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), Path::new("a/b/c"), 0o755).unwrap();
-    }
-
-    #[test]
-    fn safe_create_dir_all_rejects_intermediate_symlink() {
-        let tmp = TempDir::new().unwrap();
-        let real_dir = tmp.path().join("real");
-        std::fs::create_dir(&real_dir).unwrap();
-        let link_dir = tmp.path().join("link");
-        std::os::unix::fs::symlink(&real_dir, &link_dir).unwrap();
-        let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-        let err = safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), Path::new("link/inner"), 0o755)
-            .unwrap_err();
-        let s = format!("{:#}", err).to_ascii_lowercase();
-        assert!(
-            s.contains("symbolic link")
-                || s.contains("too many levels of symbolic links")
-                || s.contains("eloop")
-                || s.contains("loop")
-                || s.contains("file exists")
-                || s.contains("eexist")
-                || s.contains("not a directory"),
-            "expected symlink rejection or EEXIST race, got: {s}"
-        );
-    }
-
-    #[test]
-    fn rejects_oversize_write() {
-        let tmp = TempDir::new().unwrap();
-        let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-        let too_big = vec![b'x'; MAX_LOG_BYTES + 1];
-        let err = safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("big.txt"), &too_big)
-            .unwrap_err();
-        assert!(err.to_string().contains("refusing write"));
-    }
-
-    #[test]
-    fn safe_remove_drops_file() {
-        let tmp = TempDir::new().unwrap();
-        let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-        safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("d.txt"), b"bye").unwrap();
-        safe_remove_in_workdir(dirfd.as_raw_fd(), Path::new("d.txt")).unwrap();
-        assert!(!tmp.path().join("d.txt").exists());
-        // Removing again returns Ok (idempotent for ENOENT).
-        safe_remove_in_workdir(dirfd.as_raw_fd(), Path::new("d.txt")).unwrap();
-    }
-}
+#[cfg(test)]
+#[path = "safe_fs_tests.rs"]
+mod tests;

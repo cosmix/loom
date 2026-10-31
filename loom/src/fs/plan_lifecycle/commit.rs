@@ -3,13 +3,17 @@
 
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
+use std::ffi::OsStr;
 use std::path::Path;
+use std::time::Duration;
 
-use crate::fs::work_dir::WorkDir;
+use crate::fs::{resolve_target_branch_from_config, work_dir::WorkDir};
 use crate::git::branch::{branch_ref, current_branch};
 use crate::git::merge::control_paths::changed_paths;
-use crate::git::runner::{run_git_checked, run_git_with_env_within};
-use crate::git::signing::{self, SigningEnv};
+use crate::git::merge::lock::MergeLock;
+use crate::git::merge::operator_operation;
+use crate::git::runner::{run_git_checked, run_git_with_env};
+use crate::git::signing;
 use crate::git::target_guard;
 
 /// Commit the plan's own IN_PROGRESS → DONE rename after plan completion.
@@ -26,13 +30,15 @@ pub(super) fn commit_post_completion_changes(
         .project_root()
         .context("Failed to determine project root")?;
 
-    // Stage the plan file rename: add the new DONE file and stage deletion of old
-    run_git_checked(&["add", &new_plan_path.display().to_string()], repo_root)?;
-    run_git_checked(&["add", &old_plan_path.display().to_string()], repo_root)?;
-
-    // Check if there's anything staged to commit
-    let staged = run_git_checked(&["diff", "--cached", "--name-only"], repo_root)?;
-    if staged.is_empty() {
+    let _lock = MergeLock::acquire(work_dir.root(), Duration::from_secs(10))?;
+    let target = resolve_target_branch_from_config(work_dir.root(), repo_root)?;
+    let reference = branch_ref(&target);
+    require_branch(repo_root, &reference)?;
+    let before = run_git_checked(&["rev-parse", "--verify", "HEAD"], repo_root)?;
+    let old = old_plan_path.to_str().context("plan path is not UTF-8")?;
+    let new = new_plan_path.to_str().context("plan path is not UTF-8")?;
+    let tree = completion_tree(work_dir.root(), repo_root, &before, old, new)?;
+    if tree == run_git_checked(&["rev-parse", &format!("{before}^{{tree}}")], repo_root)? {
         return Ok(());
     }
 
@@ -41,13 +47,21 @@ pub(super) fn commit_post_completion_changes(
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("plan");
-    commit_signed(
+    let message = format!("chore(loom): mark plan complete — {plan_name}");
+    let after = signing::commit_tree(repo_root, &tree, &[&before], &message)?;
+    move_completion_ref(repo_root, &reference, &before, &after, &message)?;
+    if let Err(error) = synchronize_plan_index(repo_root, old_plan_path, new_plan_path) {
+        tracing::warn!(%error, "completion commit succeeded but its index entries could not be synchronized");
+    }
+    attest_completion_commit(
+        work_dir,
         repo_root,
-        &format!("chore(loom): mark plan complete — {plan_name}"),
-        signing::installed(),
-    )?;
-
-    attest_completion_commit(work_dir, repo_root, old_plan_path, new_plan_path);
+        old_plan_path,
+        new_plan_path,
+        &reference,
+        &before,
+        &after,
+    );
 
     println!(
         "  {} Committed post-completion changes to default branch",
@@ -57,26 +71,84 @@ pub(super) fn commit_post_completion_changes(
     Ok(())
 }
 
-/// Commit what is staged in `repo_root` with `message`. The daemon's process
-/// environment no longer holds `GNUPGHOME` and `SSH_AUTH_SOCK`, so the captured
-/// signing environment `env` is handed to this one command, bounded by
-/// [`signing::SIGN_TIMEOUT`]; the runner keeps repository hooks off.
-fn commit_signed(repo_root: &Path, message: &str, env: &SigningEnv) -> Result<()> {
-    let output = run_git_with_env_within(
-        repo_root,
-        &["commit", "-m", message],
-        &env.env_pairs(),
-        signing::SIGN_TIMEOUT,
+fn synchronize_plan_index(repo: &Path, old: &Path, new: &Path) -> Result<()> {
+    let relative = |path: &Path| -> Result<String> {
+        Ok(path
+            .strip_prefix(repo)
+            .unwrap_or(path)
+            .to_str()
+            .context("plan path is not UTF-8")?
+            .to_string())
+    };
+    let (old, new) = (relative(old)?, relative(new)?);
+    let literal = [("GIT_LITERAL_PATHSPECS", OsStr::new("1"))];
+    index_git(
+        repo,
+        &["update-index", "--force-remove", "--", &old],
+        &literal,
     )?;
-    if output.status.success() {
-        return Ok(());
+    index_git(repo, &["add", "--", &new], &literal)?;
+    Ok(())
+}
+
+fn completion_tree(work: &Path, repo: &Path, before: &str, old: &str, new: &str) -> Result<String> {
+    let temporary = tempfile::Builder::new()
+        .prefix("completion-index-")
+        .tempdir_in(work)?;
+    let index = temporary.path().join("index");
+    let env = [
+        ("GIT_INDEX_FILE", index.as_os_str()),
+        ("GIT_LITERAL_PATHSPECS", OsStr::new("1")),
+    ];
+    index_git(repo, &["read-tree", before], &env)?;
+    index_git(repo, &["add", "-A", "--", old, new], &env)?;
+    index_git(repo, &["write-tree"], &env)
+}
+
+fn move_completion_ref(
+    repo_root: &Path,
+    reference: &str,
+    before: &str,
+    after: &str,
+    message: &str,
+) -> Result<()> {
+    require_branch(repo_root, reference)?;
+    run_git_checked(
+        &[
+            "update-ref",
+            "--no-deref",
+            "-m",
+            message,
+            reference,
+            after,
+            before,
+        ],
+        repo_root,
+    )
+    .map(|_| ())
+}
+
+fn require_branch(repo: &Path, reference: &str) -> Result<()> {
+    if let Some(operation) = operator_operation(repo)? {
+        bail!("cannot commit completion during operator operation {operation}");
     }
-    let code = output
-        .status
-        .code()
-        .map_or_else(|| "a signal".to_string(), |code| code.to_string());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    bail!("git commit failed (exit {code}): {}", stderr.trim())
+    let actual = run_git_checked(&["symbolic-ref", "--quiet", "HEAD"], repo)?;
+    if actual != reference {
+        bail!("completion target is {reference}, but checkout is on {actual}");
+    }
+    Ok(())
+}
+
+fn index_git(repo: &Path, args: &[&str], env: &[(&str, &OsStr)]) -> Result<String> {
+    let output = run_git_with_env(args, env, repo)?;
+    if !output.status.success() {
+        bail!(
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 /// Attest the post-completion commit when it touches only the plan's own
@@ -88,6 +160,9 @@ fn attest_completion_commit(
     repo_root: &Path,
     old_plan_path: &Path,
     new_plan_path: &Path,
+    reference: &str,
+    from: &str,
+    after: &str,
 ) {
     let plan_id = work_dir
         .load_config()
@@ -97,7 +172,9 @@ fn attest_completion_commit(
         .unwrap_or_else(|| "unknown".to_string());
     let review = Path::new("doc/plans").join(format!("REVIEW-{plan_id}.md"));
     let allowed = [old_plan_path, new_plan_path, review.as_path()];
-    if let Err(error) = attest_plan_commit(work_dir.root(), repo_root, &allowed) {
+    if let Err(error) =
+        attest_exact_commit(work_dir.root(), repo_root, &allowed, reference, from, after)
+    {
         tracing::warn!("could not attest the post-completion commit: {error:#}");
     }
 }
@@ -120,15 +197,29 @@ pub(crate) fn attest_plan_commit(
     let after = run_git_checked(&["rev-parse", "HEAD"], repo_root)?;
     let from = run_git_checked(&["rev-parse", &format!("{after}^")], repo_root)?;
     let reference = branch_ref(&current_branch(repo_root)?);
-    if !target_guard::guarded_refs(work_dir)?.contains(&reference) {
+    attest_exact_commit(work_dir, repo_root, allowed, &reference, &from, &after)
+}
+
+fn attest_exact_commit(
+    work_dir: &Path,
+    repo_root: &Path,
+    allowed: &[&Path],
+    reference: &str,
+    from: &str,
+    after: &str,
+) -> Result<()> {
+    if !target_guard::guarded_refs(work_dir)?
+        .iter()
+        .any(|item| item == reference)
+    {
         return Ok(());
     }
-    let paths = changed_paths(repo_root, &from, &after)?;
+    let paths = changed_paths(repo_root, from, after)?;
     if !paths.iter().all(|path| is_own(path, repo_root, allowed)) {
         tracing::info!("not attesting {after}: it changes more than the plan's own files");
         return Ok(());
     }
-    target_guard::append_attestation(work_dir, &reference, &from, &after)
+    target_guard::append_attestation(work_dir, reference, from, after)
 }
 
 /// Whether `path` (as git reports it) is one of `allowed` or under the
@@ -142,205 +233,5 @@ fn is_own(path: &str, repo_root: &Path, allowed: &[&Path]) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::git::signing::tests::fake_signer;
-    use crate::git::target_guard::test_support::{activate, commit_file, git, repo, Repo};
-    use crate::git::target_guard::{check, GuardState, LEDGER_FILE};
-
-    const OLD: &str = "doc/plans/IN_PROGRESS-PLAN-x.md";
-    const NEW: &str = "doc/plans/DONE-PLAN-x.md";
-    const OTHER_PLAN: &str = "doc/plans/PLAN-other.md";
-    const REVIEW: &str = "doc/plans/REVIEW-x.md";
-    const OTHER_REVIEW: &str = "doc/plans/REVIEW-other.md";
-
-    /// An attesting repository with the plan, another plan, both plans'
-    /// review documents, a knowledge file and a source file committed, and
-    /// `main` recorded.
-    fn plan_repo() -> Repo {
-        let repo = repo();
-        activate(&repo.root);
-        let paths = [OLD, OTHER_PLAN, REVIEW, OTHER_REVIEW];
-        for path in paths
-            .into_iter()
-            .chain(["doc/loom/knowledge/a.md", "src/x.rs"])
-        {
-            commit_file(&repo.root, path, "v1\n");
-        }
-        let first = check(&repo.root, &repo.work, "main").unwrap();
-        assert!(matches!(first, Some(GuardState::Clear { .. })));
-        repo
-    }
-
-    /// Rename the plan and run the post-completion commit, as
-    /// `rename_completed_plan` does.
-    fn complete(repo: &Repo) {
-        std::fs::rename(repo.root.join(OLD), repo.root.join(NEW)).unwrap();
-        let work_dir = WorkDir::new(&repo.root).unwrap();
-        let (old, new) = (repo.root.join(OLD), repo.root.join(NEW));
-        commit_post_completion_changes(&work_dir, &old, &new).unwrap();
-    }
-
-    /// Edit a committed file and stage it, so the next commit carries it.
-    fn stage_edit(repo: &Repo, path: &str) {
-        std::fs::write(repo.root.join(path), "v2\n").unwrap();
-        git(&repo.root, &["add", path]);
-    }
-
-    #[test]
-    fn unrelated_tracked_edits_stay_out_of_the_plan_done_commit() {
-        let repo = plan_repo();
-        std::fs::write(repo.root.join("src/x.rs"), "operator wip\n").unwrap();
-        std::fs::write(repo.root.join("doc/loom/knowledge/a.md"), "wip\n").unwrap();
-
-        complete(&repo);
-
-        let files = git(&repo.root, &["show", "--name-status", "--format=", "HEAD"]);
-        assert_eq!(files.lines().count(), 1, "only the rename: {files}");
-        assert!(files.contains(OLD) && files.contains(NEW), "{files}");
-        let status = git(
-            &repo.root,
-            &["status", "--porcelain", "--untracked-files=no"],
-        );
-        assert_eq!(git(&repo.root, &["diff", "--cached", "--name-only"]), "");
-        assert!(status.contains("M src/x.rs"), "{status}");
-        assert!(status.contains("M doc/loom/knowledge/a.md"), "{status}");
-        assert!(matches!(guard(&repo), GuardState::Clear { .. }));
-    }
-
-    /// Name `x` as the active plan in the state directory's `config.toml`.
-    fn configure_plan_x(repo: &Repo) {
-        std::fs::write(repo.work.join("config.toml"), "[plan]\nplan_id = \"x\"\n").unwrap();
-    }
-
-    fn ledger(repo: &Repo) -> String {
-        std::fs::read_to_string(repo.work.join(LEDGER_FILE)).unwrap_or_default()
-    }
-
-    fn guard(repo: &Repo) -> GuardState {
-        check(&repo.root, &repo.work, "main").unwrap().unwrap()
-    }
-
-    #[test]
-    fn the_plan_done_commit_signs_with_the_signing_environment() {
-        let repo = plan_repo();
-        let argv_log = fake_signer(&repo.root, false);
-
-        complete(&repo);
-
-        let commit = git(&repo.root, &["cat-file", "commit", "HEAD"]);
-        assert!(
-            commit.contains("gpgsig"),
-            "the DONE commit is signed: {commit}"
-        );
-        let calls = std::fs::read_to_string(argv_log).unwrap();
-        assert_eq!(calls.lines().count(), 1);
-    }
-
-    #[test]
-    fn the_plan_done_commit_hands_the_given_signing_environment_to_the_signer() {
-        let repo = plan_repo();
-        let log = fake_signer(&repo.root, false);
-        std::fs::write(repo.root.join("src/x.rs"), "v2\n").unwrap();
-        git(&repo.root, &["add", "src/x.rs"]);
-        let env = SigningEnv {
-            gnupghome: Some("/loom-test/gnupghome".into()),
-            ssh_auth_sock: None,
-        };
-
-        commit_signed(&repo.root, "chore: signed", &env).unwrap();
-
-        let calls = std::fs::read_to_string(log).unwrap();
-        assert_eq!(calls.lines().count(), 1, "{calls}");
-        assert!(
-            calls.trim_end().ends_with("GNUPGHOME=/loom-test/gnupghome"),
-            "the signer did not see the given GNUPGHOME: {calls}"
-        );
-    }
-
-    #[test]
-    fn a_failing_signer_fails_the_plan_done_commit() {
-        let repo = plan_repo();
-        fake_signer(&repo.root, true);
-        let head = git(&repo.root, &["rev-parse", "HEAD"]);
-        std::fs::rename(repo.root.join(OLD), repo.root.join(NEW)).unwrap();
-        let work_dir = WorkDir::new(&repo.root).unwrap();
-        let (old, new) = (repo.root.join(OLD), repo.root.join(NEW));
-
-        let error = commit_post_completion_changes(&work_dir, &old, &new).unwrap_err();
-
-        assert!(format!("{error:#}").contains("git commit"), "{error:#}");
-        assert_eq!(git(&repo.root, &["rev-parse", "HEAD"]), head);
-    }
-
-    #[test]
-    fn a_commit_of_only_the_plan_files_and_knowledge_is_attested() {
-        let repo = plan_repo();
-        stage_edit(&repo, "doc/loom/knowledge/a.md");
-
-        complete(&repo);
-
-        let after = git(&repo.root, &["rev-parse", "HEAD"]);
-        let from = git(&repo.root, &["rev-parse", "HEAD^"]);
-        assert!(ledger(&repo).contains(&format!("attest {from} {after} refs/heads/main\n")));
-        assert!(matches!(guard(&repo), GuardState::Clear { .. }));
-    }
-
-    #[test]
-    fn a_commit_that_also_carries_source_is_not_attested() {
-        let repo = plan_repo();
-        stage_edit(&repo, "src/x.rs");
-
-        complete(&repo);
-
-        assert_eq!(ledger(&repo), "");
-        assert!(matches!(guard(&repo), GuardState::Held(_)));
-    }
-
-    #[test]
-    fn a_commit_that_also_carries_another_plan_is_not_attested() {
-        let repo = plan_repo();
-        stage_edit(&repo, OTHER_PLAN);
-
-        complete(&repo);
-
-        assert_eq!(ledger(&repo), "");
-        assert!(matches!(guard(&repo), GuardState::Held(_)));
-    }
-
-    #[test]
-    fn a_commit_on_an_unguarded_branch_is_not_attested() {
-        let repo = plan_repo();
-        git(&repo.root, &["checkout", "-q", "-b", "scratch"]);
-
-        complete(&repo);
-
-        assert_eq!(ledger(&repo), "");
-    }
-
-    #[test]
-    fn a_commit_of_the_plans_own_review_document_is_attested() {
-        let repo = plan_repo();
-        configure_plan_x(&repo);
-        stage_edit(&repo, REVIEW);
-
-        complete(&repo);
-
-        let after = git(&repo.root, &["rev-parse", "HEAD"]);
-        let from = git(&repo.root, &["rev-parse", "HEAD^"]);
-        assert!(ledger(&repo).contains(&format!("attest {from} {after} refs/heads/main\n")));
-        assert!(matches!(guard(&repo), GuardState::Clear { .. }));
-    }
-
-    #[test]
-    fn a_commit_of_another_plans_review_document_is_not_attested() {
-        let repo = plan_repo();
-        configure_plan_x(&repo);
-        stage_edit(&repo, OTHER_REVIEW);
-
-        complete(&repo);
-
-        assert_eq!(ledger(&repo), "");
-        assert!(matches!(guard(&repo), GuardState::Held(_)));
-    }
-}
+#[path = "commit/tests.rs"]
+mod tests;

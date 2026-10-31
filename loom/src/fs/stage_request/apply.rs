@@ -1,7 +1,7 @@
 //! Applying drained requests through the shared stage service.
 //!
 //! Nothing here reimplements a state transition. A spooled block goes through
-//! the same `handle_agent_block_stage` an agent's `BlockStage` RPC calls, a spooled
+//! the same `handle_agent_block_for_session` an agent's `BlockStage` RPC calls, a spooled
 //! dispute through the same `handle_dispute_criteria` or `handle_file_dispute`
 //! its RPC calls, and a spooled contract freeze through the same
 //! `handle_freeze_contracts` the `FreezeContracts` RPC calls (which queues the
@@ -15,17 +15,16 @@ use std::path::Path;
 use super::spool::{drain_identified, DrainOutcome};
 use super::types::StageRequest;
 use crate::stage_service::{
-    handle_agent_block_stage, handle_dispute_criteria_identified, handle_file_dispute_identified,
-    handle_freeze_contracts, Response,
+    handle_agent_block_for_session, handle_dispute_criteria_for_session,
+    handle_file_dispute_for_session, handle_freeze_contracts, Response,
 };
-use crate::verify::transitions::load_stage;
 
 /// Apply every request pending in `worktree_root`'s spool to `stage_id`, then
 /// empty the spool.
 ///
 /// `stage_id` comes from the caller (the daemon, which derived it from the
 /// worktree it is looking at), never from the payload - see the module
-/// documentation for why that is the whole security argument.
+/// documentation. The envelope's session must still own that stage.
 ///
 /// A refusal from a handler is COUNTED, not propagated: `Err` from this sink
 /// would stop `drain_spool` truncating the file, so one request the stage
@@ -45,6 +44,7 @@ pub fn drain_requests(
             stage_id,
             &request.payload,
             &request.identity(),
+            request.session_id.as_deref(),
             &mut refused,
         )
     })?;
@@ -61,64 +61,91 @@ fn apply_request(
     stage_id: &str,
     request: &StageRequest,
     request_id: &str,
+    session_id: Option<&str>,
     refused: &mut usize,
 ) -> Result<()> {
-    let response = match request {
-        StageRequest::Block { reason } => handle_agent_block_stage(work_dir, stage_id, reason)?,
+    let Some(session_id) = session_id.filter(|id| !id.is_empty()) else {
+        *refused += 1;
+        tracing::warn!(stage_id, "discarding unscoped legacy stage request");
+        return Ok(());
+    };
+    let response = dispatch_request(work_dir, stage_id, request, request_id, session_id)?;
+    record_response(stage_id, request, response, refused);
+    Ok(())
+}
+
+fn dispatch_request(
+    work_dir: &Path,
+    stage_id: &str,
+    request: &StageRequest,
+    request_id: &str,
+    session_id: &str,
+) -> Result<Response> {
+    Ok(match request {
+        StageRequest::Block { reason } => {
+            handle_agent_block_for_session(work_dir, stage_id, reason, Some(session_id))?
+        }
         StageRequest::Dispute {
             field,
             criterion_indices,
             reason,
             evidence_commit,
             failure_output,
-        } => handle_dispute_criteria_identified(
+        } => handle_dispute_criteria_for_session(
             work_dir,
             stage_id,
             (*field, criterion_indices.clone()),
             reason.clone(),
             evidence_commit.clone(),
             failure_output.clone(),
-            Some(request_id),
+            (Some(request_id), Some(session_id)),
         )?,
-        StageRequest::FreezeContracts { head, tree_digest } => {
-            freeze_as_current_session(work_dir, stage_id, head, tree_digest)?
-        }
+        StageRequest::FreezeContracts { head, tree_digest } => dispatch_freeze(
+            work_dir,
+            stage_id,
+            session_id,
+            head,
+            tree_digest,
+            request_id,
+        )?,
         StageRequest::FileDispute {
             kind,
             reason,
             evidence_commit,
-        } => handle_file_dispute_identified(
+        } => handle_file_dispute_for_session(
             work_dir,
             stage_id,
             kind.clone(),
             reason.clone(),
             evidence_commit.clone(),
-            Some(request_id),
+            (Some(request_id), Some(session_id)),
         )?,
-    };
-    record_response(stage_id, request, response, refused);
-    Ok(())
+    })
 }
 
-/// A spool names no session, so a spooled freeze speaks for the session the
-/// stage runs now; the handler refuses it unless that is the stage's running
-/// contract session. The spool line has no relay request id, so the job is
-/// joined under a fresh one.
-fn freeze_as_current_session(
+fn dispatch_freeze(
     work_dir: &Path,
     stage_id: &str,
+    session_id: &str,
     head: &str,
     tree_digest: &str,
+    request_id: &str,
 ) -> Result<Response> {
-    let session = load_stage(stage_id, work_dir)?.session.unwrap_or_default();
-    let request_id = crate::host_verify::new_job_id();
-    handle_freeze_contracts(work_dir, stage_id, &session, head, tree_digest, &request_id)
+    // An unreadable stage is retryable rather than a permanent refusal.
+    crate::verify::transitions::load_stage(stage_id, work_dir)?;
+    handle_freeze_contracts(
+        work_dir,
+        stage_id,
+        session_id,
+        head,
+        tree_digest,
+        request_id,
+    )
 }
 
 /// Log what the daemon did with one drained request, and count the refusals.
 ///
-/// Logged at `info` because a stage changing state from a spool has no session
-/// attached to explain it: without this line an operator watching `loom status`
+/// Logged at `info` because without this line an operator watching `loom status`
 /// sees a stage go `Blocked` with nothing in the log that says why.
 fn record_response(
     stage_id: &str,

@@ -22,6 +22,11 @@ use super::safe_fs::{open_safely, safe_open_dirfd};
 #[path = "safe_replace_tests.rs"]
 mod tests;
 
+#[cfg(test)]
+thread_local! {
+    static FAIL_DIR_SYNC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// Replace the regular file `rel` (relative to `root`, no `..`) with `bytes`, keeping its
 /// permission bits. Refuses a missing target, a target that is not a regular file (a symlink
 /// included) and a path with a symlinked directory component; never creates the target. Once
@@ -32,19 +37,64 @@ pub fn replace_no_follow(root: &Path, rel: &Path, bytes: &[u8]) -> Result<()> {
         _ => bail!("{} does not name a file", rel.display()),
     };
     let parent = open_parent(root, rel)?;
-    let name = c_name(name.as_bytes())?;
-    let mode = target_mode(&parent, &name)
+    let mode = target_mode(&parent, &c_name(name.as_bytes())?)
         .with_context(|| format!("refusing to replace {}", rel.display()))?;
-    let tmp = c_name(&temp_name(name.as_bytes()))?;
-    let file = create_temp(&parent, &tmp, mode)
-        .with_context(|| format!("cannot create a temporary file beside {}", rel.display()))?;
-    publish(&parent, &tmp, &name, file, mode, bytes)
+    publish_in_dir(&parent, name, bytes, mode, true)
         .with_context(|| format!("cannot replace {}", rel.display()))?;
-    // The rename has happened and the file is replaced: a directory sync that fails now only
-    // weakens durability, and reporting it as an error would tell the caller a replaced file
-    // was not.
-    if let Err(error) = sync_dir(&parent) {
-        tracing::warn!("cannot sync the directory of {}: {error:#}", rel.display());
+    Ok(())
+}
+
+/// Atomically restore a file with an explicit mode, creating it if absent.
+/// Existing non-regular targets are refused; a swapped target is never opened
+/// for writing because publication replaces the directory entry instead.
+pub fn restore_no_follow(root: &Path, rel: &Path, bytes: &[u8], mode: u32) -> Result<()> {
+    if bytes.len() > super::safe_fs::MAX_LOG_BYTES {
+        bail!("restore exceeds the maximum file size");
+    }
+    let name = match rel.components().next_back() {
+        Some(Component::Normal(name)) => name,
+        _ => bail!("{} does not name a file", rel.display()),
+    };
+    let parent = open_parent(root, rel)?;
+    check_restore_target(&parent, &c_name(name.as_bytes())?)
+        .with_context(|| format!("refusing to restore {}", rel.display()))?;
+    publish_in_dir(&parent, name, bytes, mode, true)
+}
+
+/// Publish under an anchored root, creating or replacing the target with mode
+/// 0600 subject to the process umask. Intermediate symlinks are refused.
+pub(crate) fn replace_private(root: &Path, rel: &Path, bytes: &[u8]) -> Result<()> {
+    let name = match rel.components().next_back() {
+        Some(Component::Normal(name)) => name,
+        _ => bail!("{} does not name a file", rel.display()),
+    };
+    let parent = open_parent(root, rel)?;
+    publish_in_dir(&parent, name, bytes, 0o600, false)
+}
+
+fn check_restore_target(parent: &OwnedFd, name: &CString) -> Result<()> {
+    let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+    // SAFETY: the parent and name are valid and stat points to writable storage.
+    let rc = unsafe {
+        libc::fstatat(
+            parent.as_raw_fd(),
+            name.as_ptr(),
+            stat.as_mut_ptr(),
+            libc::AT_SYMLINK_NOFOLLOW,
+        )
+    };
+    if rc != 0 {
+        let error = io::Error::last_os_error();
+        return if error.kind() == io::ErrorKind::NotFound {
+            Ok(())
+        } else {
+            Err(error.into())
+        };
+    }
+    // SAFETY: successful fstatat initialized stat.
+    let stat = unsafe { stat.assume_init() };
+    if stat.st_mode & libc::S_IFMT != libc::S_IFREG {
+        bail!("the target is not a regular file");
     }
     Ok(())
 }
@@ -57,13 +107,33 @@ fn publish(
     name: &CString,
     file: File,
     mode: u32,
+    force_mode: bool,
     bytes: &[u8],
 ) -> Result<()> {
-    let written = fill(file, mode, bytes).and_then(|()| rename_at(parent, tmp, name));
+    let written =
+        fill_with_mode(file, mode, force_mode, bytes).and_then(|()| rename_at(parent, tmp, name));
     if written.is_err() {
         unlink_at(parent, tmp);
     }
     written
+}
+
+/// Publish bytes in an already opened directory; the caller owns any lock.
+pub(crate) fn publish_in_dir(
+    parent: &OwnedFd,
+    name: &OsStr,
+    bytes: &[u8],
+    mode: u32,
+    force_mode: bool,
+) -> Result<()> {
+    let name = c_name(name.as_bytes())?;
+    let tmp = c_name(&temp_name(name.as_bytes()))?;
+    let file = create_temp(parent, &tmp, mode)?;
+    publish(parent, &tmp, &name, file, mode, force_mode, bytes)?;
+    if let Err(error) = sync_dir(parent) {
+        tracing::warn!("cannot sync directory after publication: {error:#}");
+    }
+    Ok(())
 }
 
 /// The directory holding `rel`, opened from `root` without following any symlink.
@@ -142,11 +212,13 @@ fn create_temp(parent: &OwnedFd, tmp: &CString, mode: u32) -> Result<File> {
 }
 
 /// Write `bytes`, restore the target's mode (the umask narrowed the create), and sync.
-fn fill(mut file: File, mode: u32, bytes: &[u8]) -> Result<()> {
+fn fill_with_mode(mut file: File, mode: u32, force_mode: bool, bytes: &[u8]) -> Result<()> {
     file.write_all(bytes)
         .context("cannot write the temporary file")?;
-    file.set_permissions(Permissions::from_mode(mode))
-        .context("cannot set the temporary file's mode")?;
+    if force_mode {
+        file.set_permissions(Permissions::from_mode(mode))
+            .context("cannot set the temporary file's mode")?;
+    }
     file.sync_all().context("cannot sync the temporary file")
 }
 
@@ -174,6 +246,10 @@ fn unlink_at(parent: &OwnedFd, name: &CString) {
 }
 
 fn sync_dir(parent: &OwnedFd) -> Result<()> {
+    #[cfg(test)]
+    if FAIL_DIR_SYNC.with(|flag| flag.get()) {
+        bail!("injected directory sync failure");
+    }
     // SAFETY: `parent` is an open fd; fsync does not take ownership of it.
     if unsafe { libc::fsync(parent.as_raw_fd()) } != 0 {
         return Err(io::Error::last_os_error().into());

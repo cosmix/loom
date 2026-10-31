@@ -115,7 +115,14 @@ fn a_session_or_receipt_target_cannot_end_or_forge_an_entry() {
     let mut settled = MemoryEntry::receipt(receipt, "settled".to_string());
     settled.timestamp = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
     append_entry(temp.path(), STAGE, &noted).unwrap();
-    append_entry(temp.path(), STAGE, &settled).unwrap();
+    assert!(append_entry(temp.path(), STAGE, &settled).is_err());
+    use std::io::Write;
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(memory_file_path(temp.path(), STAGE))
+        .unwrap()
+        .write_all(super::format_entry(&settled).as_bytes())
+        .unwrap();
 
     let entries = read_journal(temp.path(), STAGE).unwrap().entries;
     assert_eq!(entries.len(), 2);
@@ -144,9 +151,19 @@ fn an_entry_id_or_receipt_event_id_cannot_forge_an_entry() {
     let mut hostile_event = MemoryEntry::receipt(receipt, "settled".to_string());
     hostile_event.timestamp = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
     let last = entry(MemoryEntryType::Decision, "last");
-    for written in [&first, &hostile_id, &hostile_event, &last] {
-        append_entry(temp.path(), STAGE, written).unwrap();
+    append_entry(temp.path(), STAGE, &first).unwrap();
+    assert!(append_entry(temp.path(), STAGE, &hostile_id).is_err());
+    assert!(append_entry(temp.path(), STAGE, &hostile_event).is_err());
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(memory_file_path(temp.path(), STAGE))
+        .unwrap();
+    for written in [&hostile_id, &hostile_event] {
+        file.write_all(super::format_entry(written).as_bytes())
+            .unwrap();
     }
+    append_entry(temp.path(), STAGE, &last).unwrap();
 
     let entries = read_journal(temp.path(), STAGE).unwrap().entries;
     assert!(entries

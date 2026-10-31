@@ -2,6 +2,10 @@ use super::*;
 use std::fs;
 use tempfile::TempDir;
 
+fn append_to_spool(root: &std::path::Path, request: &StageRequest) -> anyhow::Result<()> {
+    super::append_to_spool_for_session(root, request, "session-test")
+}
+
 fn block(reason: &str) -> StageRequest {
     StageRequest::Block {
         reason: reason.to_string(),
@@ -56,8 +60,8 @@ fn the_payload_carries_no_stage_id() {
     let raw = fs::read_to_string(spool_path(dir.path())).unwrap();
 
     assert!(
-        !raw.contains("stage_id") && !raw.contains("session_id"),
-        "the spooled payload must not claim an identity: {raw}"
+        !raw.contains("stage_id") && raw.contains("session-test"),
+        "the worktree owns stage attribution; the envelope carries its session: {raw}"
     );
 }
 

@@ -22,7 +22,7 @@ const MODELS_SECTION: &str = "models";
 /// `read_terminal_config`, `read_context_config`).
 #[derive(Debug, Clone, Default, serde::Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-struct ModelsConfig {
+pub(crate) struct ModelsConfig {
     standard_model: Option<String>,
     standard_effort: Option<String>,
     knowledge_model: Option<String>,
