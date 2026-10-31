@@ -262,23 +262,30 @@ pub fn find_codex_path() -> Result<PathBuf> {
     bail!("codex binary not found in PATH or common locations. Checked: ~/.bun/bin/codex, ~/.local/bin/codex, ~/.npm-global/bin/codex, ~/.cargo/bin/codex, /usr/local/bin/codex, /opt/homebrew/bin/codex")
 }
 
-/// Whether the codex plugin's companion runtime is installed, for any version.
-///
-/// Mirrors `agents/loom-codex-forwarder.md`'s COMPANION lookup
-/// (`~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`)
-/// with a plain directory walk instead of a glob dependency - the presence of
-/// any version's companion script is enough, so no version sorting is needed.
+/// The installed wrapper owns the version pin; preflight reads the same embedded source.
+fn companion_version() -> Option<&'static str> {
+    crate::fs::permissions::constants::HOOK_CODEX_FORWARD
+        .lines()
+        .find_map(|line| line.strip_prefix("SUPPORTED_CODEX_COMPANION_VERSION="))
+        .filter(|version| {
+            !version.is_empty() && version.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+        })
+}
+
+/// Check the exact companion that the wrapper will execute without following its leaf.
 fn codex_companion_installed() -> bool {
-    let Some(home) = dirs::home_dir() else {
+    dirs::home_dir().is_some_and(|home| codex_companion_installed_in(&home))
+}
+
+fn codex_companion_installed_in(home: &std::path::Path) -> bool {
+    let Some(version) = companion_version() else {
         return false;
     };
-    let versions_dir = home.join(".claude/plugins/cache/openai-codex/codex");
-    let Ok(entries) = std::fs::read_dir(&versions_dir) else {
-        return false;
-    };
-    entries
-        .flatten()
-        .any(|entry| entry.path().join("scripts/codex-companion.mjs").is_file())
+    let path = home
+        .join(".claude/plugins/cache/openai-codex/codex")
+        .join(version)
+        .join("scripts/codex-companion.mjs");
+    std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file())
 }
 
 /// Combined availability check for the codex implementation lanes (terra, luna).

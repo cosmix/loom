@@ -49,6 +49,7 @@ static WORKTREES_PATH_PATTERN: LazyLock<Regex> =
 ///
 /// # Examples
 /// ```
+/// # #![allow(deprecated)]
 /// use loom::hooks::validators::validate_file_path;
 ///
 /// // Safe path
@@ -59,6 +60,7 @@ static WORKTREES_PATH_PATTERN: LazyLock<Regex> =
 /// let result = validate_file_path(".loom/work/stages/01-my-stage.md", "my-stage");
 /// assert!(result.is_blocked());
 /// ```
+#[deprecated(note = "does not enforce installed hook policy")]
 pub fn validate_file_path(path: &str, current_stage: &str) -> ValidationResult {
     // Check for writes to protected state files (.loom/work/stages/ or .loom/work/sessions/)
     if PROTECTED_STATE_PATTERN.is_match(path) {
@@ -88,11 +90,13 @@ pub fn validate_file_path(path: &str, current_stage: &str) -> ValidationResult {
 /// - `.loom/work/sessions/*` (or legacy `.work/sessions/*`) - Session tracking files (managed by loom)
 ///
 /// Note: Other `.loom/work/` paths (like `.loom/work/heartbeat/`) are allowed.
+#[deprecated(note = "does not enforce installed hook policy")]
 pub fn is_protected_state_path(path: &str) -> bool {
     PROTECTED_STATE_PATTERN.is_match(path)
 }
 
 /// Check if a path contains path traversal patterns.
+#[deprecated(note = "does not enforce installed hook policy")]
 pub fn has_path_traversal(path: &str) -> bool {
     PATH_TRAVERSAL_PATTERN.is_match(path)
 }
@@ -100,6 +104,7 @@ pub fn has_path_traversal(path: &str) -> bool {
 /// Extract the worktree stage ID from a path, if present.
 ///
 /// Returns Some(stage_id) if the path is within a worktree, None otherwise.
+#[deprecated(note = "does not enforce installed hook policy")]
 pub fn extract_worktree_stage(path: &str) -> Option<String> {
     WORKTREES_PATH_PATTERN
         .captures(path)

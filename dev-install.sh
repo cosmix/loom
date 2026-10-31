@@ -67,13 +67,8 @@ echo "Running install.sh..."
 cd "$SCRIPT_DIR"
 bash ./install.sh "$@"
 
-# Stop the daemon only after the binary and hooks are both installed: a daemon
-# started while the build or install is still running keeps the old binary and
-# refuses every spawn because its embedded hooks differ from the installed ones.
-if pgrep -x loom &>/dev/null; then
-    echo "Killing loom daemon..."
-    pkill -x loom 2>/dev/null || true
-    sleep 1
-fi
+# A running daemon keeps the previous binary. Let the operator restart the
+# daemon belonging to this checkout rather than signalling unrelated processes.
+echo "If this checkout has a running Loom daemon, restart it with 'loom stop && loom run'."
 
 cleanup_backups

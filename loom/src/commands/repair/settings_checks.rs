@@ -18,7 +18,7 @@ use crate::sandbox::preflight::settings_local_loom_keys;
 pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
     let mut issues = Vec::new();
 
-    // Hooks belong in settings.local.json, not the committed settings.json.
+    // Only Loom-owned registrations belong in the local settings file.
     if settings_json_has_hooks(repo_root) {
         issues.push(RepairIssue {
             severity: Severity::Warning,

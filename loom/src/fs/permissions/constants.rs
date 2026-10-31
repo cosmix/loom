@@ -43,7 +43,7 @@ pub const HOOK_COMMIT_GUARD: &str = include_str!("../../../../loom-hooks/commit-
 /// PostToolUse hook - updates heartbeat after each tool use
 pub const HOOK_POST_TOOL_USE: &str = include_str!("../../../../loom-hooks/post-tool-use.sh");
 
-/// Trusted PostToolUse bridge from sandboxed verification to a narrow daemon transition.
+/// Trusted PreToolUse guard for daemon-owned stage completion.
 pub const HOOK_LOOM_CONTROL_COMPLETE: &str =
     include_str!("../../../../loom-hooks/loom-control-complete.sh");
 
@@ -277,30 +277,5 @@ pub const LOOM_PERMISSIONS: &[&str] = &[
     "Bash(~/.claude/hooks/loom/codex-forward.sh:*)",
 ];
 
-/// Loom permissions for WORKTREE context
-/// Worktrees are at .worktrees/stage-X/ with symlink .loom/work -> ../../../.loom/work
-pub const LOOM_PERMISSIONS_WORKTREE: &[&str] = &[
-    // Access via the symlink path (how Claude sees the paths). Same shape as
-    // LOOM_PERMISSIONS above and for the same reasons: read-only over the
-    // entire state root, no broad `Edit(<state>/**)` in either spelling that
-    // would re-expose the daemon tokens, and never a `Write(...)` rule (inert —
-    // Claude Code's file permission check consults only `Edit(path)`). Both
-    // layouts are listed for the same reason too: a worktree of a project whose
-    // workspace predates the move symlinks `.work`, not `.loom/work`.
-    "Read(.loom/work/**)",
-    "Read(.work/**)",
-    // Read access to instruction files
-    "Read(.claude/CLAUDE.md)",
-    "Read(~/.claude/CLAUDE.md)",
-    // Read access to loom hooks and catalogued skills loaded on demand
-    "Read(~/.claude/hooks/loom/**)",
-    "Read(~/.claude/loom-skill-catalog/**)",
-    // Covers the loom-skills loader's fallback read on a `--skills all`
-    // install (no catalog directory) and the installed skills themselves.
-    "Read(~/.claude/skills/**)",
-    // Loom CLI commands (use :* for prefix matching)
-    "Bash(loom *)",
-    // Loom's own codex forwarding wrapper. codex-forward-guard.sh independently
-    // pins forwarder subagents to exactly one invocation of this wrapper.
-    "Bash(~/.claude/hooks/loom/codex-forward.sh:*)",
-];
+/// Worktrees use the same grants as the main repository.
+pub const LOOM_PERMISSIONS_WORKTREE: &[&str] = LOOM_PERMISSIONS;

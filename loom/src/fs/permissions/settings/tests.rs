@@ -223,7 +223,7 @@ fn test_migrate_hooks_from_settings_json() {
             "allow": ["Bash(loom *)"]
         },
         "hooks": {
-            "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "/home/user/.claude/hooks/loom/commit-filter.sh"}]}]
+            "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "~/.claude/hooks/loom/commit-filter.sh"}]}]
         },
         "env": {
             "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
@@ -250,6 +250,34 @@ fn test_migrate_hooks_from_settings_json() {
     assert_eq!(
         local_settings["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"],
         "1"
+    );
+}
+
+#[test]
+fn project_user_hooks_survive_initialization() {
+    let temp = TempDir::new().unwrap();
+    let claude = temp.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let original = json!({"hooks":{"PreToolUse":[{"matcher":"Bash", "timeout":20,
+        "hooks":[{"command":"/custom/check.sh"}, {"command":"~/.claude/hooks/commit-guard.sh"}]}]},
+        "other":{"kept":true}});
+    fs::write(
+        claude.join("settings.json"),
+        serde_json::to_vec(&original).unwrap(),
+    )
+    .unwrap();
+    ensure_loom_permissions_to(temp.path(), Some(&temp.path().join("installed"))).unwrap();
+    let once: Value =
+        serde_json::from_slice(&fs::read(claude.join("settings.json")).unwrap()).unwrap();
+    ensure_loom_permissions_to(temp.path(), Some(&temp.path().join("installed"))).unwrap();
+    let twice: Value =
+        serde_json::from_slice(&fs::read(claude.join("settings.json")).unwrap()).unwrap();
+    assert_eq!(once, twice);
+    assert_eq!(once["other"], original["other"]);
+    assert_eq!(once["hooks"]["PreToolUse"][0]["timeout"], 20);
+    assert_eq!(
+        once["hooks"]["PreToolUse"][0]["hooks"],
+        json!([{"command":"/custom/check.sh"}])
     );
 }
 
@@ -362,28 +390,4 @@ fn test_scrub_main_repo_settings_identity_noop_cases() {
     assert!(scrub_main_repo_settings_identity(repo_root).is_empty());
 }
 
-#[test]
-fn test_settings_json_has_hooks() {
-    let temp_dir = TempDir::new().unwrap();
-    let repo_root = temp_dir.path();
-    let claude_dir = repo_root.join(".claude");
-    fs::create_dir_all(&claude_dir).unwrap();
-
-    // No hooks
-    let settings = json!({"permissions": {"allow": []}});
-    fs::write(
-        claude_dir.join("settings.json"),
-        serde_json::to_string_pretty(&settings).unwrap(),
-    )
-    .unwrap();
-    assert!(!settings_json_has_hooks(repo_root));
-
-    // With hooks
-    let settings = json!({"hooks": {"PreToolUse": []}});
-    fs::write(
-        claude_dir.join("settings.json"),
-        serde_json::to_string_pretty(&settings).unwrap(),
-    )
-    .unwrap();
-    assert!(settings_json_has_hooks(repo_root));
-}
+mod hook_detection;

@@ -57,6 +57,8 @@ jobs:
             shell:
               - "loom-hooks/**"
               - "scripts/**"
+              - "install.sh"
+              - "dev-install.sh"
               - "loom/.githooks/**"
               - ".github/workflows/ci.yml"
 
@@ -302,6 +304,9 @@ jobs:
 
       - name: Pre-commit partial-staging regression
         run: ./scripts/test-pre-commit-partial-staging.sh
+
+      - name: Development installer regression
+        run: python3 -m unittest discover -s scripts/tests -p test_dev_install.py
 
   # The hooks target macOS's bash 3.2, but the runner image puts a Homebrew
   # bash 5 first on PATH; the symlink and the version check make the job run

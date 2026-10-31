@@ -103,14 +103,16 @@ pub struct HookCommand {
     pub command: String,
 }
 
-/// Configuration for loom hooks.
+/// Legacy configuration retained for library compatibility.
 ///
-/// This structure defines all hooks that loom sets up for Claude Code sessions.
+/// Production session capsules use their own emitter, which includes guard
+/// registrations and interpreter handling absent from this structure.
 ///
 /// Deliberately carries NO per-session identity (stage ID, session ID): those
 /// env vars are exported by the session wrapper script only, never persisted
 /// in settings files, so they can never go stale across sessions.
 #[derive(Debug, Clone)]
+#[deprecated(note = "legacy emitter differs from production session capsules")]
 pub struct HooksConfig {
     /// Path to the loom hooks directory
     pub hooks_dir: PathBuf,
@@ -120,6 +122,7 @@ pub struct HooksConfig {
     pub permission_mode: PermissionMode,
 }
 
+#[allow(deprecated)]
 impl HooksConfig {
     /// Create a new hooks configuration.
     pub fn new(hooks_dir: PathBuf, work_dir: PathBuf, permission_mode: PermissionMode) -> Self {
@@ -138,12 +141,9 @@ impl HooksConfig {
         self.hooks_dir.join(event.script_name())
     }
 
-    /// Build the command string for a hook event
+    /// Build the legacy unwrapped script path for an event.
     ///
-    /// Returns just the script path. Hooks read LOOM_STAGE_ID / LOOM_SESSION_ID /
-    /// LOOM_WORK_DIR from the process environment, which the session wrapper
-    /// script exports before `exec claude` (settings files only carry the
-    /// stable LOOM_WORK_DIR — see `generate_hooks_settings`).
+    /// Production capsules may wrap this path with an interpreter.
     pub fn build_command(&self, event: HookEvent) -> String {
         let script = self.script_path(event);
         script.display().to_string()
@@ -161,33 +161,9 @@ impl HooksConfig {
         }
     }
 
-    /// Generate session-specific hooks for Claude Code settings.json (new format)
+    /// Produce the legacy session-hook map for compatibility callers.
     ///
-    /// This creates ONLY session-specific hooks that should be added to worktree settings.
-    /// Global hooks (ask-user-pre, ask-user-post, prefer-modern-tools, commit-guard, skill-trigger)
-    /// are already in the main settings.json and should NOT be duplicated here.
-    ///
-    /// Every `HookEvent` variant returned by `HookEvent::all()` is a session
-    /// hook and belongs in this map — there is currently no variant that must
-    /// be excluded. What each one does, and why:
-    /// - SessionStart: writes the initial heartbeat.
-    /// - PostToolUse: updates the heartbeat after each tool use ("*" matcher
-    ///   catches every tool).
-    /// - PreCompact: triggers a handoff before context compaction.
-    /// - SessionEnd: runs cleanup when a session ends normally.
-    /// - Stop: runs learning-validator.sh. commit-guard.sh is a separate,
-    ///   global hook already present in the main settings.json, so it must
-    ///   not be duplicated here.
-    /// - SubagentStart: records a Task-tool subagent's spawn type in the ledger.
-    /// - SubagentStop: runs in the PARENT session's own hook context when a
-    ///   Task-tool subagent finishes. Writes authoritative lifecycle evidence and
-    ///   refreshes the parent's heartbeat, since the parent runs no tools of
-    ///   its own while blocked on the subagent, so PostToolUse cannot do that.
-    /// - TeammateIdle: records nonterminal idle evidence for an agent-team
-    ///   teammate and refreshes the parent heartbeat. It always allows the
-    ///   teammate to remain idle; Loom never uses it as completion evidence.
-    ///
-    /// Returns a map of event type to hook rules.
+    /// This map omits production guard, relay and interpreter registrations.
     pub fn to_settings_hooks(&self) -> std::collections::HashMap<String, Vec<HookRule>> {
         use std::collections::HashMap;
         let mut hooks_map: HashMap<String, Vec<HookRule>> = HashMap::new();

@@ -27,7 +27,8 @@ class DevInstallTests(unittest.TestCase):
         self.bin = self.root / "bin"
         self.bin.mkdir()
         shutil.copyfile(DEV_INSTALL, self.root / "dev-install.sh")
-        self.stub("pgrep", "#!/bin/sh\nexit 1\n")
+        for name in ("pgrep", "pkill"):
+            self.stub(name, f'#!/bin/sh\nprintf "%s\\n" {name} >> "$SIGNAL_TRACE"\nexit 0\n')
         self.stub("nproc", "#!/bin/sh\necho 12\n")
         self.stub("getconf", "#!/bin/sh\necho 8\n")
         self.stub("cargo", f"#!{sys.executable}\n" + """
@@ -43,6 +44,7 @@ sys.exit(int(os.environ.get('BUILD_EXIT', '0')))
         (self.root / "install.sh").write_text(
             'printf "%s\\n" "$@" > "$INSTALL_TRACE"\n'
             'printf "%s\\n" "$CARGO_PROFILE_RELEASE_LTO" >> "$INSTALL_TRACE"\n'
+            'exit "${INSTALL_EXIT:-0}"\n'
         )
 
     def stub(self, name, content):
@@ -58,6 +60,7 @@ sys.exit(int(os.environ.get('BUILD_EXIT', '0')))
             PATH=f"{self.bin}:{env['PATH']}", HOME=str(self.root),
             BUILD_TRACE=str(self.root / "build.json"),
             INSTALL_TRACE=str(self.root / "install.trace"),
+            SIGNAL_TRACE=str(self.root / "signals.trace"),
             CARGO_PROFILE_RELEASE_LTO="fat",
             **overrides,
         )
@@ -98,6 +101,33 @@ sys.exit(int(os.environ.get('BUILD_EXIT', '0')))
         result = self.run_install(BUILD_EXIT="7")
         self.assertEqual(result.returncode, 7, result.stderr)
         self.assertFalse((self.root / "install.trace").exists())
+        self.assertFalse((self.root / "signals.trace").exists())
+
+    def test_install_reports_restart_without_signalling_processes(self):
+        repositories = [self.root / "checkout-a", self.root / "checkout-b"]
+        for repo in repositories:
+            repo.mkdir()
+        processes = [subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"], cwd=repo
+        ) for repo in repositories]
+        def cleanup():
+            for process in processes:
+                if process.poll() is None:
+                    process.terminate()
+                process.wait()
+        self.addCleanup(cleanup)
+        self.assertTrue(all(p.poll() is None for p in processes))
+        result = self.run_install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("loom stop && loom run", result.stdout)
+        self.assertFalse((self.root / "signals.trace").exists())
+        self.assertTrue(all(p.poll() is None for p in processes))
+
+    def test_failed_install_does_not_report_restart_or_signal(self):
+        result = self.run_install(INSTALL_EXIT="9")
+        self.assertEqual(result.returncode, 9, result.stderr)
+        self.assertNotIn("loom stop && loom run", result.stdout)
+        self.assertFalse((self.root / "signals.trace").exists())
 
 
 if __name__ == "__main__":

@@ -181,7 +181,7 @@ fn test_hook_event_surface_has_eight_events() {
 /// `HookEvent`'s `script_name()` must be embedded in `LOOM_HOOKS`
 /// (`fs/permissions/constants.rs`), or `install_loom_hooks_to` never writes
 /// the script to `~/.claude/hooks/loom/` even though a settings.json entry
-/// (from `HooksConfig::to_settings_hooks`) points at it.
+/// (from the session capsule emitter) points at it.
 #[test]
 fn test_hook_event_scripts_are_all_embedded() {
     let embedded: Vec<&str> = LOOM_HOOKS.iter().map(|(name, _)| *name).collect();

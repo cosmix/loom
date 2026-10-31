@@ -76,6 +76,11 @@ expect_allow "loom memory note documenting the traversal trap" "$MEMORY_NOTE_CMD
 
 expect_allow "current stage's own worktree path is not cross-worktree access" \
     "cat .worktrees/$STAGE/src/main.rs"
+expect_allow "ordinary in-tree command" "cat src/main.rs"
+expect_allow "one parent component in a Bash command" "cat ../file.txt"
+expect_allow "commit message mentioning worktree directories" 'git commit -m "Add .worktrees/ to .gitignore"'
+expect_allow "commit message describing an override" 'git commit -m "Use git -C for directory changes"'
+expect_allow "heredoc prose containing guarded patterns" $'cat <<EOF\ngit -C ../other status\n../../escape\n.worktrees/other-stage/\nEOF'
 
 # --- MUST BE BLOCKED (exit 2), no regressions -------------------------------
 

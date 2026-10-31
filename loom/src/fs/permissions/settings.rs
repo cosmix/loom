@@ -18,7 +18,6 @@
 //!
 //! - **Hooks**: Global event-triggered scripts (e.g., `commit-guard.sh`, `ask-user-pre.sh`)
 //! - **Env**: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` and other loom env vars
-//!
 //! Created/updated by `loom init`. Worktrees merge this with session-specific hooks at creation time.
 
 use anyhow::{Context, Result};
@@ -30,8 +29,11 @@ use super::hooks::{configure_loom_hooks, install_loom_hooks, install_loom_hooks_
 use super::write_rules::{heal_inert_write_denies, prune_loom_read_denies};
 use crate::fs::locking::locked_write;
 
+mod hook_detection;
 mod merge;
 mod report;
+
+pub use hook_detection::settings_json_has_hooks;
 
 /// Read a settings file into a JSON value, creating its `.claude` directory and
 /// defaulting to an empty object when the file does not exist yet.
@@ -233,7 +235,10 @@ fn ensure_loom_permissions_inner(
     // Merge loom's permission grants into permissions.allow (see merge::merge_permissions).
     let (added_permissions, removed_permissions) = merge::merge_permissions(settings_obj)?;
 
-    // Migrate: remove hooks and env from settings.json (they belong in settings.local.json)
+    // Install the destination before removing any owned project registrations.
+    ensure_loom_hooks_local_inner(repo_root, verbose)?;
+
+    // Remove owned registrations and stale Loom environment from the project file.
     let migrated = migrate_hooks_to_local(settings_obj);
     let denies_removed = super::write_rules::prune_read_denies_verbose(settings_obj, verbose);
     let attribution_added = merge::ensure_no_attribution(settings_obj);
@@ -261,17 +266,12 @@ fn ensure_loom_permissions_inner(
                 println!("  Removed {removed_permissions} retired permission grant(s)");
             }
             if migrated {
-                println!(
-                    "  Migrated hooks/env from .claude/settings.json to .claude/settings.local.json"
-                );
+                println!("  Removed migrated Loom hooks/env from .claude/settings.json");
             }
         }
     } else if verbose {
         println!("  Claude Code permissions already configured");
     }
-
-    // Write hooks and env to settings.local.json
-    ensure_loom_hooks_local_inner(repo_root, verbose)?;
 
     Ok(())
 }
@@ -352,18 +352,27 @@ fn ensure_loom_hooks_local_inner(repo_root: &Path, verbose: bool) -> Result<()> 
     report::write_settings_local_if_changed(&settings, &settings_local_path, &changes, verbose)
 }
 
-/// Migrate hooks and env from settings.json to settings.local.json
-///
-/// If settings.json contains a `hooks` key or `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`,
-/// remove them (they will be recreated in settings.local.json by `ensure_loom_hooks_local`).
+/// Remove owned hooks and environment after the local destination is written.
 ///
 /// Returns true if any migration was performed.
 fn migrate_hooks_to_local(settings_obj: &mut serde_json::Map<String, Value>) -> bool {
     let mut migrated = false;
 
-    // Remove hooks from settings.json
-    if settings_obj.remove("hooks").is_some() {
-        migrated = true;
+    if let Some(hooks) = settings_obj.get_mut("hooks").and_then(Value::as_object_mut) {
+        hooks.retain(|_, value| {
+            let Some(rules) = value.as_array_mut() else {
+                return true;
+            };
+            let changed = super::hooks::ownership::remove_owned(
+                rules,
+                crate::assets::install::claude_hooks_dir().as_deref(),
+            );
+            migrated |= changed;
+            !changed || !rules.is_empty()
+        });
+        if migrated && hooks.is_empty() {
+            settings_obj.remove("hooks");
+        }
     }
 
     // Remove CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS and stale per-session
@@ -385,26 +394,6 @@ fn migrate_hooks_to_local(settings_obj: &mut serde_json::Map<String, Value>) -> 
     }
 
     migrated
-}
-
-/// Check if settings.json still contains hooks that should be in settings.local.json
-pub fn settings_json_has_hooks(repo_root: &Path) -> bool {
-    let settings_path = repo_root.join(".claude/settings.json");
-    if !settings_path.exists() {
-        return false;
-    }
-
-    let content = match fs::read_to_string(&settings_path) {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-
-    let settings: Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => return false,
-    };
-
-    settings.get("hooks").is_some()
 }
 
 #[cfg(test)]
