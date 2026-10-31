@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::testrun::command::{
-    distinct_files, package_runner, regex_literal, shell_quote, shell_word, shell_words,
+    distinct_files, exact_regex_literal, package_runner, shell_quote, shell_word, shell_words,
 };
 use crate::testrun::recognize::{
     combined_output, command_args, has_flag, last_match, pattern, positionals, summary_from_counts,
@@ -93,7 +93,7 @@ impl TestRunnerAdapter for Jest {
     fn single_test_command(&self, file: &str, test: &str, package_dir: &Path) -> String {
         let runner = package_runner(package_dir);
         let file = shell_word(file);
-        let name = shell_quote(&regex_literal(test));
+        let name = shell_quote(&exact_regex_literal(test));
         format!("{runner} jest {file} -t {name}")
     }
 
@@ -145,18 +145,18 @@ mod tests {
         let dir = tempfile::tempdir().expect("temporary package directory");
         assert_eq!(
             ADAPTER.single_test_command("src/a.test.js", "suite passes", dir.path()),
-            "npx jest src/a.test.js -t 'suite passes'"
+            "npx jest src/a.test.js -t '^suite passes$'"
         );
         fs::write(dir.path().join("bun.lock"), "").expect("bun lockfile");
         assert_eq!(
             ADAPTER.single_test_command("src/a.test.js", "suite passes", dir.path()),
-            "bunx jest src/a.test.js -t 'suite passes'"
+            "bunx jest src/a.test.js -t '^suite passes$'"
         );
         fs::remove_file(dir.path().join("bun.lock")).expect("remove bun lockfile");
         fs::write(dir.path().join("bun.lockb"), "").expect("binary bun lockfile");
         assert_eq!(
             ADAPTER.single_test_command("src/a.test.js", "suite passes", dir.path()),
-            "bunx jest src/a.test.js -t 'suite passes'"
+            "bunx jest src/a.test.js -t '^suite passes$'"
         );
     }
 
@@ -164,7 +164,7 @@ mod tests {
     fn hostile_test_name_stays_one_escaped_pattern() {
         let dir = tempfile::tempdir().expect("temporary package directory");
         let command = ADAPTER.single_test_command("a.test.js", HOSTILE_NAME, dir.path());
-        assert_one_word(&command, &regex_literal(HOSTILE_NAME));
+        assert_one_word(&command, &exact_regex_literal(HOSTILE_NAME));
     }
 
     #[test]

@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::testrun::command::{
-    distinct_files, regex_literal, shell_quote, shell_word, shell_words,
+    distinct_files, exact_regex_literal, shell_quote, shell_word, shell_words,
 };
 use crate::testrun::recognize::{
     combined_output, command_args, has_flag, last_match, pattern, positionals, summary_from_counts,
@@ -90,7 +90,7 @@ impl TestRunnerAdapter for BunTest {
     fn single_test_command(&self, file: &str, test: &str, _package_dir: &Path) -> String {
         let file = path_filter(file);
         let file = shell_word(&file);
-        let name = shell_quote(&regex_literal(test));
+        let name = shell_quote(&exact_regex_literal(test));
         format!("bun test {file} -t {name}")
     }
 
@@ -145,8 +145,58 @@ mod tests {
         );
         assert_eq!(
             command,
-            "bun test ./tests/math.test.ts -t 'math adds two numbers'"
+            "bun test ./tests/math.test.ts -t '^math adds two numbers$'"
         );
+    }
+
+    fn collision_fixture(exact: &str) -> String {
+        format!(
+            r#"
+import {{ describe, test, expect }} from "bun:test";
+describe("suite", () => {{
+  test{exact}("value (a)+", () => expect(true).toBe(true));
+  test("value (a)+ suffix", () => expect(true).toBe(false));
+  test("prefix value (a)+", () => expect(true).toBe(false));
+}});
+"#
+        )
+    }
+
+    fn run_collision_fixture(dir: &Path, exact: &str) -> (RunSummary, Option<i32>, String) {
+        std::fs::write(dir.join("collision.test.ts"), collision_fixture(exact)).unwrap();
+        let command = ADAPTER.single_test_command("collision.test.ts", "suite value (a)+", dir);
+        let output = std::process::Command::new("sh")
+            .args(["-c", &command])
+            .current_dir(dir)
+            .output()
+            .expect("run bun");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let parsed = ADAPTER.parse(&RunOutput {
+            stdout: &stdout,
+            stderr: &stderr,
+            exit_code: output.status.code(),
+        });
+        (parsed, output.status.code(), stderr.into_owned())
+    }
+
+    #[test]
+    fn bun_selects_only_the_exact_nested_name_when_available() {
+        if std::process::Command::new("bun")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let dir = tempfile::tempdir().expect("temporary project");
+        let (parsed, exit_code, stderr) = run_collision_fixture(dir.path(), "");
+        assert_eq!(classify(&parsed, exit_code), RunOutcome::Passed, "{stderr}");
+        assert_eq!(parsed.passed, Some(1));
+
+        let (parsed, exit_code, stderr) = run_collision_fixture(dir.path(), ".skip");
+        assert_ne!(classify(&parsed, exit_code), RunOutcome::Passed, "{stderr}");
+        assert_eq!(parsed.failed, Some(0), "a sibling was selected: {stderr}");
     }
 
     #[test]
@@ -159,7 +209,7 @@ mod tests {
             ("my dir/a.test.ts", "'./my dir/a.test.ts'"),
         ] {
             let command = ADAPTER.single_test_command(file, "t", Path::new("."));
-            assert_eq!(command, format!("bun test {operand} -t 't'"), "{file}");
+            assert_eq!(command, format!("bun test {operand} -t '^t$'"), "{file}");
         }
     }
 
@@ -171,7 +221,7 @@ mod tests {
     #[test]
     fn hostile_test_name_stays_one_escaped_pattern() {
         let command = ADAPTER.single_test_command("a.test.ts", HOSTILE_NAME, Path::new("."));
-        assert_one_word(&command, &regex_literal(HOSTILE_NAME));
+        assert_one_word(&command, &exact_regex_literal(HOSTILE_NAME));
     }
 
     #[test]

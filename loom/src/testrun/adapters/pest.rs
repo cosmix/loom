@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::testrun::command::{regex_literal, shell_quote, shell_word};
+use crate::testrun::command::{exact_phpunit_regex, shell_quote, shell_word};
 use crate::testrun::recognize::{
     combined_output, command_args, has_flag, last_match, pattern, positionals, summary_from_counts,
 };
@@ -70,11 +70,7 @@ impl TestRunnerAdapter for Pest {
     /// A `composer.json` alone marks no run root: every PHP package has one,
     /// whether or not it runs its own tests.
     fn run_root_markers(&self) -> &'static [&'static str] {
-        &[
-            "phpunit.xml",
-            "phpunit.xml.dist",
-            "phpunit.dist.xml",
-        ]
+        &["phpunit.xml", "phpunit.xml.dist", "phpunit.dist.xml"]
     }
 
     fn recognizes(&self, argv: &[String]) -> bool {
@@ -91,7 +87,7 @@ impl TestRunnerAdapter for Pest {
     }
 
     fn single_test_command(&self, file: &str, test: &str, _package_dir: &Path) -> String {
-        let name = shell_quote(&regex_literal(test));
+        let name = shell_quote(&exact_phpunit_regex(test));
         format!("vendor/bin/pest --filter {name} {}", shell_word(file))
     }
 
@@ -141,22 +137,22 @@ mod tests {
     }
 
     #[test]
-    fn named_pest_test_uses_description_filter_and_file() {
+    fn named_pest_test_uses_full_identifier_filter_and_file() {
         let command = ADAPTER.single_test_command(
             "tests/Feature/ExampleTest.php",
-            "alpha passes",
+            r"P\Tests\Feature\ExampleTest::__pest_evaluable_alpha_passes",
             Path::new("."),
         );
         assert_eq!(
             command,
-            "vendor/bin/pest --filter 'alpha passes' tests/Feature/ExampleTest.php"
+            r"vendor/bin/pest --filter '~\AP\\Tests\\Feature\\ExampleTest::__pest_evaluable_alpha_passes\z~' tests/Feature/ExampleTest.php"
         );
     }
 
     #[test]
     fn hostile_test_name_stays_one_escaped_pattern() {
         let command = ADAPTER.single_test_command("ATest.php", HOSTILE_NAME, Path::new("."));
-        assert_one_word(&command, &regex_literal(HOSTILE_NAME));
+        assert_one_word(&command, &exact_phpunit_regex(HOSTILE_NAME));
     }
 
     #[test]
