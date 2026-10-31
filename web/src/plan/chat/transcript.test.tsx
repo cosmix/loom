@@ -2,6 +2,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import brief from "@/plan/api/fixtures/session-brief.json";
+import transcriptCss from "./chat-transcript.css?raw";
 import { snapshotAtom } from "./model";
 import { fixture, item, mount, turn } from "./transcript-test-kit";
 
@@ -63,8 +64,12 @@ it("api_error notice toned blocked", () => {
   const { log } = mount([item("notice", { kind: "api_error", text: "API unavailable" })]);
   // Only the glyph takes the tone (DESIGN.md, Colour); the words stay in the text's colour.
   expect(within(log).getByText("API unavailable").closest('[class*="tone-blocked"]')).toBeNull();
-  expect(within(log).getByRole("img", { name: "API error" }).className).toContain(
-    "chat-notice-glyph",
+  const glyph = within(log).getByRole("img", { name: "API error" });
+  expect(glyph.className).toContain("chat-notice-glyph");
+  // The tone reaches the glyph only through this CSS rule, so pin the attribute and the rule.
+  expect(glyph.closest(".chat-notice-item")?.getAttribute("data-kind")).toBe("api_error");
+  expect(transcriptCss).toMatch(
+    /\.chat-notice-item\[data-kind="api_error"\] \.chat-notice-glyph \{\s*color: var\(--tone-blocked\);/,
   );
 });
 
