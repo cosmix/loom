@@ -57,7 +57,13 @@ describe("AttentionBody", () => {
     const note = "the agent is waiting on a question: answer it in the stage's terminal";
     render(
       <AttentionBody
-        entry={{ ...fixtureEntry("client"), label: "NEEDS INPUT", command: null, note }}
+        entry={{
+          ...fixtureEntry("client"),
+          label: "NEEDS INPUT",
+          status: "waiting-for-input",
+          command: null,
+          note,
+        }}
       />,
     );
 
@@ -85,6 +91,7 @@ describe("AttentionBody", () => {
     renderBody({
       ...fixtureEntry("client"),
       label: "CLEANUP FAILED",
+      status: "blocked",
       command: "loom worktree remove client",
       failure_type: null,
       failure_label: null,
@@ -100,7 +107,7 @@ describe("AttentionBody", () => {
 
 describe("attentionHazard", () => {
   it("never paints an automatic entry as an error", () => {
-    const blocked = { ...fixtureEntry("client"), label: "BLOCKED" };
+    const blocked = { ...fixtureEntry("client"), label: "BLOCKED", status: "blocked" as const };
 
     expect(attentionHazard(blocked)).toBe("error");
     expect(attentionHazard({ ...blocked, automatic: true })).toBe("warning");
@@ -124,6 +131,7 @@ describe("attention labels", () => {
     const entry: Attention = {
       ...fixtureEntry("client"),
       label: "STASH NOT RESTORED",
+      status: "blocked",
       command: "git stash list",
       note: "restore them with `git stash pop`",
       automatic: false,
@@ -274,6 +282,10 @@ describe("attentionDetail", () => {
 });
 
 describe("the attention card", () => {
+  it("uses the typed status when the human label changes", () => {
+    const entry = { ...fixtureEntry("docs"), label: "new display text" };
+    expect(attentionStatus(entry)).toBe("merge-conflict");
+  });
   const archived: StageIssue = {
     kind: "failure",
     failure_type: "sandbox-setup-failure",
@@ -281,6 +293,7 @@ describe("the attention card", () => {
     evidence: ["No adjudication session could be started for this dispute"],
     ended_at: "2026-10-27T20:41:32Z",
     ended_by: "replaced by a newer failure",
+    disposition: "superseded",
     dispute_id: null,
   };
   const withHistory = (snapshot: Snapshot) => {

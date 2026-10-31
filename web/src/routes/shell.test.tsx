@@ -97,10 +97,17 @@ describe("shell chrome", () => {
   });
 
   it("treats reconnecting as stale too", () => {
-    renderShell({ phase: "reconnecting", since: Date.now() - 5_000 });
+    renderShell({
+      phase: "reconnecting",
+      since: Date.now() - 5_000,
+      message: "connection attempt timed out",
+    });
 
     expect(screen.getByText("daemon unknown")).toBeTruthy();
     expect(screen.getByText(/no data for 5s/)).toBeTruthy();
+    expect(screen.getByText("daemon unknown").parentElement?.getAttribute("title")).toBe(
+      "connection attempt timed out",
+    );
   });
 
   it("keeps a live feed distinct from a stopped daemon", () => {

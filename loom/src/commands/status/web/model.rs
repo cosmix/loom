@@ -8,6 +8,7 @@ use crate::commands::status::render::attention_model::{Alternative, AttentionEnt
 use crate::commands::status::render::failure_label;
 use crate::daemon::{DaemonServer, DaemonStatus};
 use crate::models::failure::FailureType;
+use crate::models::stage::StageStatus;
 use crate::orchestrator::scheduling_report::{self, Alert, Severity};
 use crate::orchestrator::tick;
 
@@ -71,6 +72,8 @@ pub struct WebAttention {
     pub name: String,
     /// Short attention label.
     pub label: String,
+    /// Semantic state for tone and glyph selection.
+    pub status: StageStatus,
     /// Shell command the operator should run; `None` when no single command
     /// applies or loom is handling the state.
     pub command: Option<String>,
@@ -139,6 +142,7 @@ impl From<&AttentionEntry> for WebAttention {
             id: entry.id.clone(),
             name: entry.name.clone(),
             label: entry.label.to_owned(),
+            status: entry.status.clone(),
             command: entry.command.clone(),
             command_when: entry.command_when.clone(),
             alternatives: entry.alternatives.clone(),

@@ -1,5 +1,5 @@
 use crate::fs::work_dir::WorkDir;
-use crate::parser::markdown::MarkdownDocument;
+use crate::parser::markdown::parse_frontmatter_strings;
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::fs;
@@ -19,7 +19,7 @@ pub fn validate_markdown_files(dir: &std::path::Path, entity_type: &str) -> Resu
             let content =
                 fs::read_to_string(&path).with_context(|| format!("Failed to read {path:?}"))?;
 
-            if let Err(e) = MarkdownDocument::parse(&content) {
+            if let Err(e) = parse_frontmatter_strings(&content) {
                 let file_name = path
                     .file_name()
                     .ok_or_else(|| anyhow::anyhow!("Path has no file name: {}", path.display()))?;

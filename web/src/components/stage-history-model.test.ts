@@ -1,38 +1,26 @@
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
+import fixture from "@/api/fixtures/snapshot.json";
+import { snapshotSchema, type StageIssue } from "@/api/schema";
+import { historyEvents } from "@/components/stage-history-model";
 
-import { endMark } from "@/components/stage-history-model";
-
-// Every `ended_by` loom writes: a transition label `<From> -> <To>` from
-// `retire_issues_of`, a command or path passed to `retire_failure` and
-// `retire_review_reason`, or an adjudication round's ending (`rounds.rs`).
-describe("endMark", () => {
-  it.each([
-    ["Blocked -> WaitingForDeps", "reset"],
-    ["loom stage reset", "reset"],
-    ["Blocked -> Queued", "retried"],
-    ["CompletedWithFailures -> Queued", "retried"],
-    ["Blocked -> Executing", "retried"],
-    ["loom stage retry --force", "retried"],
-    ["NeedsHumanReview -> Queued", "resolved"],
-    ["MergeBlocked -> Queued", "resolved"],
-    ["MergeConflict -> Completed", "resolved"],
-    ["NeedsHumanReview -> Completed", "resolved"],
-    ["merge block cleared", "resolved"],
-    ["adjudicator verdict applied", "resolved"],
-    ["Blocked -> Skipped", "skipped"],
-    ["MergeBlocked -> MergeConflict", "superseded"],
-    ["replaced by a newer failure", "superseded"],
-    ["replaced by a newer review reason", "superseded"],
-    ["blocked by loom stage block", "superseded"],
-    ["human review rejected", "rejected"],
-    ["adjudicator verdict: accept", "accepted"],
-    ["adjudicator verdict: reject", "rejected"],
-    ["adjudicator verdict: needs-more-evidence", "needs-evidence"],
-    ["adjudicator verdict: rulings", "ruled"],
-    ["closed without a verdict", "closed"],
-    ["closed before its verdict was applied", "closed"],
-    ["ended without a readable verdict", "closed"],
-  ])("reads %s as %s", (endedBy, mark) => {
-    expect(endMark(endedBy)).toBe(mark);
-  });
+it("uses typed outcomes even when the explanation changes", () => {
+  const stage = snapshotSchema.parse(fixture).status.stages[0];
+  const issue: StageIssue = {
+    kind: "failure",
+    failure_type: null,
+    detected_at: null,
+    evidence: [],
+    ended_at: "2026-10-01T00:00:00Z",
+    ended_by: "wording changed",
+    disposition: "retried",
+    dispute_id: null,
+  };
+  stage.history = [
+    issue,
+    { ...issue, ended_by: "future legacy explanation", disposition: "unknown" },
+  ];
+  expect(historyEvents(stage, undefined).map((event) => event.mark)).toEqual([
+    "retried",
+    "unknown",
+  ]);
 });

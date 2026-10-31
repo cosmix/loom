@@ -14,18 +14,13 @@ import {
   type PairRow,
   type SectionRows,
   type SettingsRow,
+  type SettingsTableProps,
   type SingleRow,
   type WriteStatus,
 } from "@/components/settings-model";
 import { toneClass } from "@/components/state-badge";
 
-export interface SettingsTableProps {
-  data: ConfigSnapshot;
-  sections: SectionRows[];
-  query: string;
-  statuses: Record<string, WriteStatus>;
-  onWrite: OnWrite;
-}
+export type { SettingsTableProps } from "@/components/settings-model";
 
 const COLUMN_WIDTHS = [186, 104, 78, 132, 98, 132, 98];
 

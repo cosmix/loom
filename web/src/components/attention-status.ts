@@ -2,31 +2,11 @@ import type { Attention, StageStatus } from "@/api/schema";
 import { formatElapsed, hazardTone } from "@/lib/format";
 import { failureLabel } from "@/lib/format-activity";
 
-/// The state each attention label stands for (`panels.rs` `entry_status`).
-/// Computed here because no formatter exposes it.
-///
-/// Keyed on the Rust side's literal attention-label strings
-/// (`status_guidance` in `loom/src/commands/status/render/attention_model.rs`). It omits
-/// "BLOCKED", "CLEANUP FAILED", "STASH NOT RESTORED" and the completion-blocker
-/// labels deliberately — they fall through to the `"blocked"` default below and
-/// land on the right tone and glyph anyway. A label rename on the Rust side
-/// desyncs this map with no compile-time signal, so check it there before
-/// adding new labels.
-const LABEL_STATUS: Record<string, StageStatus> = {
-  "MERGE CONFLICT": "merge-conflict",
-  "ACCEPTANCE FAILED": "completed-with-failures",
-  "MERGE ERROR": "merge-blocked",
-  "MERGE BLOCKED": "merge-blocked",
-  "NEEDS REVIEW": "needs-human-review",
-  "NEEDS INPUT": "waiting-for-input",
-  ADJUDICATING: "needs-adjudication",
-};
-
 /// The state behind an attention entry: the tone and glyph every surface
 /// showing the entry wears, the attention card, the now card and the
 /// history's current row alike.
 export function attentionStatus(entry: Attention): StageStatus {
-  return LABEL_STATUS[entry.label] ?? "blocked";
+  return entry.status;
 }
 
 /// A state loom is resolving itself is never an error for the operator.

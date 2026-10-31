@@ -33,6 +33,16 @@ export interface ThemeOption {
   palette: ThemePalette;
 }
 
+const PALETTE_VARIABLES: ThemePalette = {
+  background: "var(--background)",
+  card: "var(--card)",
+  foreground: "var(--foreground)",
+  mutedForeground: "var(--muted-foreground)",
+  border: "var(--border)",
+  primary: "var(--primary)",
+  primaryForeground: "var(--primary-foreground)",
+};
+
 export const THEME_OPTIONS: readonly ThemeOption[] = [
   {
     id: "ledger",
@@ -41,15 +51,7 @@ export const THEME_OPTIONS: readonly ThemeOption[] = [
     scheme: "light",
     lightVariant: "ledger",
     darkVariant: null,
-    palette: {
-      background: "oklch(0.925 0.009 102)",
-      card: "oklch(0.955 0.008 102)",
-      foreground: "oklch(0.21 0.012 262)",
-      mutedForeground: "oklch(0.48 0.02 250)",
-      border: "oklch(0.84 0.012 100)",
-      primary: "oklch(0.84 0.155 80)",
-      primaryForeground: "oklch(0.21 0.012 262)",
-    },
+    palette: PALETTE_VARIABLES,
   },
   {
     id: "aubergine",
@@ -58,15 +60,7 @@ export const THEME_OPTIONS: readonly ThemeOption[] = [
     scheme: "dark",
     lightVariant: null,
     darkVariant: "aubergine",
-    palette: {
-      background: "oklch(0.16 0.035 325)",
-      card: "oklch(0.195 0.04 325)",
-      foreground: "oklch(0.94 0.012 325)",
-      mutedForeground: "oklch(0.73 0.03 325)",
-      border: "oklch(0.31 0.045 325)",
-      primary: "oklch(0.83 0.165 82)",
-      primaryForeground: "oklch(0.2 0.04 325)",
-    },
+    palette: PALETTE_VARIABLES,
   },
   {
     id: "pacific",
@@ -75,15 +69,7 @@ export const THEME_OPTIONS: readonly ThemeOption[] = [
     scheme: "dark",
     lightVariant: null,
     darkVariant: "blue",
-    palette: {
-      background: "oklch(0.18 0.045 258)",
-      card: "oklch(0.225 0.045 258)",
-      foreground: "oklch(0.95 0.018 258)",
-      mutedForeground: "oklch(0.76 0.04 258)",
-      border: "oklch(0.42 0.06 258)",
-      primary: "oklch(0.78 0.135 258)",
-      primaryForeground: "oklch(0.17 0.045 258)",
-    },
+    palette: PALETTE_VARIABLES,
   },
   {
     id: "graphite",
@@ -92,15 +78,7 @@ export const THEME_OPTIONS: readonly ThemeOption[] = [
     scheme: "dark",
     lightVariant: null,
     darkVariant: "gray",
-    palette: {
-      background: "oklch(0.18 0.005 270)",
-      card: "oklch(0.225 0.005 270)",
-      foreground: "oklch(0.95 0.005 270)",
-      mutedForeground: "oklch(0.74 0.008 270)",
-      border: "oklch(0.42 0.006 270)",
-      primary: "oklch(0.78 0.015 270)",
-      primaryForeground: "oklch(0.18 0.005 270)",
-    },
+    palette: PALETTE_VARIABLES,
   },
 ];
 
@@ -277,7 +255,13 @@ export function ThemePicker({
               active ? "border-primary ring-2 ring-primary" : "border-border"
             }${optionClassName ? ` ${optionClassName}` : ""}`}
           >
-            {swatch(option.palette)}
+            <span
+              className={option.scheme === "dark" ? "theme-preview dark" : "theme-preview"}
+              data-light-theme={option.lightVariant ?? undefined}
+              data-dark-theme={option.darkVariant ?? undefined}
+            >
+              {swatch(option.palette)}
+            </span>
             <span className="mt-1 text-[13px] font-medium leading-4">{option.label}</span>
             <span className="text-xs leading-4 text-muted-foreground">{option.caption}</span>
           </button>

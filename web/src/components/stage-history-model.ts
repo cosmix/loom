@@ -17,7 +17,8 @@ export type HistoryMark =
   | "skipped"
   | "accepted"
   | "needs-evidence"
-  | "ruled";
+  | "ruled"
+  | "unknown";
 
 /// One row of the history card.
 export interface HistoryEvent {
@@ -70,49 +71,6 @@ export function currentFailure(stage: StageSummary): StageSummary["failure_info"
   return CURRENT_FAILURE_STATES.has(stage.status) ? stage.failure_info : null;
 }
 
-/// How a transition `<From> -> <To>` (`retire_issues_of` in
-/// `loom/src/models/stage/issue_history.rs`, `StageStatus`'s `Display` names)
-/// ended an issue: back to waiting is a reset, a failed stage queued or run
-/// again is a retry, a conflict replaces the failure before it, and any other
-/// way out resolved it.
-function transitionMark(from: string, to: string): HistoryMark {
-  if (to === "WaitingForDeps") return "reset";
-  if (to === "Skipped") return "skipped";
-  if (to === "MergeConflict") return "superseded";
-  const failed = from === "Blocked" || from === "CompletedWithFailures";
-  return failed && (to === "Queued" || to === "Executing") ? "retried" : "resolved";
-}
-
-/// The ruling word an applied verdict ends a dispute with
-/// (`adjudicator verdict: <ruling>`, `DisputeVerdict`'s kebab-case tags).
-const RULING_MARK: Record<string, HistoryMark> = {
-  accept: "accepted",
-  reject: "rejected",
-  "needs-more-evidence": "needs-evidence",
-  rulings: "ruled",
-};
-
-/// The `ended_by` strings loom writes besides a transition: the commands and
-/// paths that retire an issue (`retire_failure`, `retire_review_reason`) and
-/// the endings of an adjudication round (`commands/status/data/rounds.rs`).
-const ENDED_BY_MARK: [prefix: string, mark: HistoryMark][] = [
-  ["loom stage reset", "reset"],
-  ["loom stage retry", "retried"],
-  ["replaced by ", "superseded"],
-  ["blocked by loom stage block", "superseded"],
-  ["human review rejected", "rejected"],
-  ["closed ", "closed"],
-  ["ended without ", "closed"],
-];
-
-export function endMark(endedBy: string): HistoryMark {
-  const [transition, from = "", to = ""] = /^(\w+) -> (\w+)$/.exec(endedBy) ?? [];
-  if (transition) return transitionMark(from, to);
-  const [verdict, ruling = ""] = /^adjudicator verdict: (\S+)$/.exec(endedBy) ?? [];
-  if (verdict) return RULING_MARK[ruling] ?? "ruled";
-  return ENDED_BY_MARK.find(([prefix]) => endedBy.startsWith(prefix))?.[1] ?? "resolved";
-}
-
 function sentence(text: string): string {
   const lower = text.toLowerCase();
   return lower.charAt(0).toUpperCase() + lower.slice(1);
@@ -146,7 +104,7 @@ function archivedEvent(issue: StageIssue): HistoryEvent {
     detectedAt: issue.detected_at,
     evidence: issue.evidence,
     endedBy: issue.ended_by,
-    mark: endMark(issue.ended_by),
+    mark: issue.disposition,
   };
 }
 

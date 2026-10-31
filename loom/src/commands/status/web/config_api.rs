@@ -10,11 +10,10 @@
 //!
 //! # What it exposes
 //!
-//! Exactly [`crate::user_config::keys::KEYS`], projected by `entries`. Two of
-//! those keys — `terminal.backend` and `context.ceiling_tokens` — also have a
-//! workspace tier, and for them the payload reports both tiers plus the one in
-//! force. Nothing here keeps a second list of keys: adding one to the registry
-//! adds it to the dashboard.
+//! Exactly [`crate::user_config::keys::KEYS`], projected by `entries`. The
+//! shared workspace registry determines which keys also have a project tier;
+//! the payload reports available tiers and the effective value. Adding a key
+//! to the registry adds it to the dashboard.
 
 mod apply;
 mod csrf;

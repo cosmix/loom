@@ -19,10 +19,10 @@ describe("layoutStages", () => {
   const layout = layoutStages(stages);
 
   it("places every stage once, dependencies above dependents", () => {
-    expect(layout.nodes.map((node) => node.stage.id).sort()).toEqual(
+    expect(layout.nodes.map((node) => node.id).sort()).toEqual(
       stages.map((stage) => stage.id).sort(),
     );
-    const y = new Map(layout.nodes.map((node) => [node.stage.id, node.y]));
+    const y = new Map(layout.nodes.map((node) => [node.id, node.y]));
     for (const { source, target } of layout.edges) {
       expect(y.get(source)!).toBeLessThan(y.get(target)!);
     }
@@ -40,7 +40,7 @@ describe("layoutStages", () => {
   it("skips a dependency that names no stage, and a duplicate id", () => {
     const phantom = { ...byId("design"), id: "ghost", dependencies: ["nowhere", "server"] };
     const twice = layoutStages([...stages, phantom, byId("server")]);
-    expect(twice.nodes.filter((node) => node.stage.id === "server").length).toBe(1);
+    expect(twice.nodes.filter((node) => node.id === "server").length).toBe(1);
     expect(twice.edges.filter((edge) => edge.target === "ghost")).toEqual([
       expect.objectContaining({ source: "server", target: "ghost" }),
     ]);
@@ -51,7 +51,11 @@ describe("layoutStages", () => {
     const rows = layout.ranks.map((row) => row.y);
     expect([...rows].sort((a, b) => a - b)).toEqual(rows);
     expect(layout.left).toBe(Math.min(...layout.nodes.map((node) => node.x)));
-    expect(layout.nodes.every((node) => node.height === nodeHeight(node.stage))).toBe(true);
+    expect(
+      layout.nodes.every(
+        (node) => node.height === nodeHeight(stages.find((stage) => stage.id === node.id)!),
+      ),
+    ).toBe(true);
   });
 
   it("gives an empty plan an empty sheet", () => {
@@ -75,7 +79,7 @@ describe("nodeHeight", () => {
 
   it("lays out a card taller by the token line for stages in the token set", () => {
     const withTokens = layoutStages(stages, new Set(["server"]));
-    const node = withTokens.nodes.find((candidate) => candidate.stage.id === "server")!;
+    const node = withTokens.nodes.find((candidate) => candidate.id === "server")!;
     expect(node.hasTokens).toBe(true);
     expect(node.height).toBe(nodeHeight(byId("server"), true));
     expect(withTokens.nodes.filter((candidate) => candidate.hasTokens)).toHaveLength(1);

@@ -37,9 +37,8 @@ export interface BusyRoundelProps {
  * `data-busy` attribute — React owns WHEN it spins, CSS owns the animation
  * (see `busy-roundel.css`).
  *
- * This is a single GLOBAL busy instrument: mount one per app and feed it a
- * `busy` prop derived from whatever work you want it to represent (in-flight
- * requests, a job queue, …). It carries its own trailing hold so a bursty or
+ * Use it for app-wide or local work, with `busy` derived from the work it
+ * represents. It carries its own trailing hold so a bursty or
  * continuous stream of work doesn't flicker the disc between frames — a
  * continuous wave can legitimately read as idle for a frame or two between
  * one drain and the next admission, and without the hold the disc stutters

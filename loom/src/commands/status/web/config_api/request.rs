@@ -12,10 +12,12 @@
 
 use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
+use std::sync::atomic::Ordering;
 
 use crate::web_server::access::{AccessPolicy, OriginRequirement};
 use crate::web_server::connection::{drain_pending, respond};
 use crate::web_server::http::{self, RequestHead};
+use crate::web_server::ConnInfo;
 
 use super::{csrf, error_body};
 
@@ -75,16 +77,16 @@ pub(in crate::commands::status::web) fn handle_post(
     head: &RequestHead,
     prefix: Vec<u8>,
     base: &Path,
-    policy: &AccessPolicy,
-    local: SocketAddr,
+    conn: &ConnInfo<'_>,
 ) {
-    let (status, reason, body) = match gate(head, policy, local) {
+    let (status, reason, body) = match gate(head, conn.policy, conn.local) {
         Err(Rejection(status, reason, body)) => (status, reason, body),
-        Ok(length) => match http::read_body(stream, prefix, length) {
-            Ok(body) => {
+        Ok(length) => match http::read_body(stream, prefix, length, conn.running) {
+            Ok(body) if conn.running.load(Ordering::SeqCst) => {
                 let (status, body) = super::update(base, &body);
                 (status, reason_for(status), body)
             }
+            Ok(_) => (503, "Service Unavailable", error_body("server stopping")),
             Err(error) => {
                 tracing::debug!("dashboard could not read a config request body: {error}");
                 (400, "Bad Request", error_body("incomplete request body"))

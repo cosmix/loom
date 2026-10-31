@@ -18,6 +18,7 @@ function issue(overrides: Partial<StageIssue> = {}): StageIssue {
     evidence: ["No adjudication session could be started for this dispute"],
     ended_at: "2026-10-27T20:41:32Z",
     ended_by: "replaced by a newer failure",
+    disposition: "superseded",
     dispute_id: null,
     ...overrides,
   };
@@ -41,6 +42,7 @@ function reviews(count: number): StageIssue[] {
       evidence: [],
       ended_at: `2026-10-27T${String(19 - index).padStart(2, "0")}:00:00Z`,
       ended_by: "NeedsHumanReview -> Queued",
+      disposition: "resolved",
     }),
   );
 }
@@ -57,6 +59,7 @@ function stashEntry(id: string): Attention {
   return {
     ...fixtureEntry(id),
     label: "STASH NOT RESTORED",
+    status: "blocked",
     command: "git stash list",
     note: "restore them with `git stash pop`",
     failure_type: null,
@@ -182,7 +185,7 @@ describe("the history card", () => {
   it("puts the current issue on top and marks each archived one by how it ended", () => {
     const history = [
       issue(),
-      issue({ ended_by: "loom stage reset", ended_at: "2026-10-27T20:00:00Z" }),
+      issue({ ended_by: "loom stage reset", disposition: "reset", ended_at: "2026-10-27T20:00:00Z" }),
     ];
     renderModal(fixtureStage("docs", { history }), [fixtureEntry("docs")]);
 

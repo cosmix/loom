@@ -88,6 +88,19 @@ export const failingCriterionSchema = z.object({
   diagnostic: z.string().nullable(),
 });
 export const issueKindSchema = z.enum(["failure", "review", "merge-conflict", "adjudication"]);
+export const issueDispositionSchema = z.enum([
+  "resolved",
+  "closed",
+  "superseded",
+  "reset",
+  "retried",
+  "rejected",
+  "skipped",
+  "accepted",
+  "needs-evidence",
+  "ruled",
+  "unknown",
+]);
 // One issue a stage moved past (`StageIssue` in loom/src/models/stage/issue_history.rs).
 // Every key is always present; text is whole, never cut.
 export const stageIssueSchema = z
@@ -98,6 +111,7 @@ export const stageIssueSchema = z
     evidence: z.array(z.string()),
     ended_at: z.string(),
     ended_by: z.string(),
+    disposition: issueDispositionSchema,
     dispute_id: z.number().int().nonnegative().nullable(),
   })
   .strict();
@@ -282,6 +296,7 @@ export const attentionSchema = z.object({
   id: z.string(),
   name: z.string(),
   label: z.string(),
+  status: stageStatusSchema,
   command: z.string().nullable(),
   command_when: z.string().nullable(),
   alternatives: z.array(alternativeSchema),
