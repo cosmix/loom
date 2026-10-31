@@ -24,6 +24,7 @@ pub struct AttentionEntry {
     pub id: String,
     pub name: String,
     pub label: &'static str,
+    pub status: StageStatus,
     /// A shell command the operator should run. `None` when no single command
     /// applies or loom is handling the state.
     pub command: Option<String>,
@@ -125,6 +126,7 @@ impl AttentionEntry {
             id: stage.id.clone(),
             name: stage.name.clone(),
             label,
+            status: StageStatus::Blocked,
             command: guidance.command,
             command_when: guidance.command_when,
             alternatives: guidance.alternatives,
@@ -282,6 +284,7 @@ fn status_entry(stage: &StageSummary) -> Option<AttentionEntry> {
     };
 
     Some(AttentionEntry {
+        status: stage.status.clone(),
         failure_type,
         evidence,
         review_reason,

@@ -132,7 +132,7 @@ fn drain_connections(limits: &Limits) {
     }
 }
 
-/// Handle one accepted connection to completion, or until `running` clears.
+/// Handle one accepted connection; request bodies observe server shutdown.
 ///
 /// `_slot` is the connection's reservation: holding it here releases it when
 /// this thread ends, panic included. `Host` is checked ahead of the router, so

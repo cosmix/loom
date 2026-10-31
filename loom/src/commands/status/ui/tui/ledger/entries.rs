@@ -14,7 +14,6 @@ use crate::commands::status::render::attention_model::{
 };
 use crate::commands::status::render::wrap::wrap_text;
 use crate::commands::status::ui::theme::{StatusColors, Theme};
-use crate::models::stage::StageStatus;
 
 /// Indent of the lines under an entry's header line.
 const DETAIL_INDENT: &str = "                       ";
@@ -58,7 +57,7 @@ pub(super) fn entry_lines(entry: &AttentionEntry, width: u16) -> Vec<Line<'stati
 }
 
 fn header_line(entry: &AttentionEntry, width: u16) -> Line<'static> {
-    let status = entry_status(entry.label);
+    let status = entry.status.clone();
     let detail = attention_detail(entry);
     let mut spans = vec![
         Span::raw(" "),
@@ -171,18 +170,4 @@ fn command_line(command: String, width: u16) -> Line<'static> {
         ]),
         width,
     )
-}
-
-fn entry_status(label: &str) -> StageStatus {
-    match label {
-        "MERGE CONFLICT" => StageStatus::MergeConflict,
-        "ACCEPTANCE FAILED" => StageStatus::CompletedWithFailures,
-        "MERGE ERROR" | "MERGE BLOCKED" => StageStatus::MergeBlocked,
-        // Changes at risk read as the strongest state.
-        "STASH NOT RESTORED" => StageStatus::Blocked,
-        "NEEDS REVIEW" => StageStatus::NeedsHumanReview,
-        "NEEDS INPUT" => StageStatus::WaitingForInput,
-        "ADJUDICATING" => StageStatus::NeedsAdjudication,
-        _ => StageStatus::Blocked,
-    }
 }

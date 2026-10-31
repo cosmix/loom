@@ -53,7 +53,7 @@ pub(super) fn dispatch(
     match head.method.as_str() {
         "GET" | "HEAD" => handle_route(stream, head, route, broadcaster, base, policy, local),
         "POST" if route == Route::Config => {
-            config_api::handle_post(stream, head, body_prefix, base, policy, local)
+            config_api::handle_post(stream, head, body_prefix, base, conn)
         }
         _ => fail(stream, 405, "Method Not Allowed", b"GET required"),
     }

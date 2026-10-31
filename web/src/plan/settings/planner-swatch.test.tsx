@@ -52,7 +52,11 @@ describe("PlannerThemeSwatch", () => {
 
   it("changes its fills when a different palette is supplied", () => {
     const ledger = THEME_OPTIONS[0]!.palette;
-    const pacific = THEME_OPTIONS[2]!.palette;
+    const pacific = {
+      ...ledger,
+      background: "var(--custom-background)",
+      primary: "var(--custom-primary)",
+    };
     const { container, rerender } = render(PlannerThemeSwatch(ledger));
     const initialFills = Array.from(
       container.querySelectorAll<SVGRectElement>("rect"),

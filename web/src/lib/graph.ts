@@ -76,12 +76,19 @@ export function threadOf(source: StageSummary): Thread {
 }
 
 export interface LaidOutNode {
-  stage: StageSummary;
+  id: string;
   x: number;
   y: number;
   width: number;
   height: number;
   /// Whether the card carries a token line; the component reads the same flag.
+  hasTokens: boolean;
+}
+
+export interface StageGeometry {
+  id: string;
+  dependencies: string[];
+  height: number;
   hasTokens: boolean;
 }
 
@@ -127,7 +134,22 @@ export function layoutStages(
   stages: readonly StageSummary[],
   withTokens: ReadonlySet<string> = new Set(),
 ): GraphLayout {
-  const unique = uniqueStages(stages);
+  return layoutGeometry(stageGeometry(stages, withTokens));
+}
+
+export function stageGeometry(
+  stages: readonly StageSummary[],
+  withTokens: ReadonlySet<string>,
+): StageGeometry[] {
+  return uniqueStages(stages).map((stage) => ({
+    id: stage.id,
+    dependencies: stage.dependencies,
+    height: nodeHeight(stage, withTokens.has(stage.id)),
+    hasTokens: withTokens.has(stage.id),
+  }));
+}
+
+export function layoutGeometry(unique: readonly StageGeometry[]): GraphLayout {
   const ids = new Set(unique.map((stage) => stage.id));
   const graph = new dagre.graphlib.Graph();
   graph.setGraph({
@@ -142,7 +164,7 @@ export function layoutStages(
   for (const stage of unique) {
     graph.setNode(stage.id, {
       width: NODE_WIDTH,
-      height: nodeHeight(stage, withTokens.has(stage.id)),
+      height: stage.height,
     });
   }
   for (const stage of unique) {
@@ -157,12 +179,12 @@ export function layoutStages(
   const nodes: LaidOutNode[] = unique.map((stage) => {
     const { x, y, width, height } = graph.node(stage.id);
     return {
-      stage,
+      id: stage.id,
       x: x - width / 2,
       y: y - height / 2,
       width,
       height,
-      hasTokens: withTokens.has(stage.id),
+      hasTokens: stage.hasTokens,
     };
   });
   const edges = routeEdges(

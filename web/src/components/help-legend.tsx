@@ -10,7 +10,9 @@ import { LEGEND, type StageStateMeta } from "@/lib/states";
 const ACTIVITY: { word: string; tone: Tone; meaning: string }[] = [
   { word: "working", tone: "completed", meaning: "the session used a tool recently" },
   { word: "idle", tone: "dimmed", meaning: "alive, nothing happening" },
-  { word: "stale", tone: "warning", meaning: "no heartbeat for 5 min" },
+  { word: "quiet", tone: "dimmed", meaning: "no recent heartbeat" },
+  { word: "busy", tone: "completed", meaning: "a tool call is still open" },
+  { word: "stale", tone: "warning", meaning: "heartbeat budget exceeded with no tool call open" },
   { word: "orphaned", tone: "blocked", meaning: "executing with no session record" },
   { word: "crashed", tone: "blocked", meaning: "the session process died" },
   {

@@ -24,9 +24,13 @@ use super::state::{GraphState, LiveStatus, TuiActivityLog};
 use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::render::print_completion_summary;
 use crate::daemon::{
-    read_auth_token, read_message, write_message, CompletionSummary, Request, Response,
+    read_auth_token, write_message, CompletionSummary, Request, Response, ResponseFrameReader,
 };
 use crate::orchestrator::scheduling_report::{self, Alert};
+
+#[cfg(test)]
+#[path = "app_tests.rs"]
+mod tests;
 
 /// Poll timeout for event loop (100ms for responsive UI).
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
@@ -164,6 +168,7 @@ impl TuiApp {
 
     /// Main event loop - returns on quit or daemon disconnect.
     fn run_event_loop(&mut self, stream: &mut UnixStream, work_path: &Path) -> Result<()> {
+        let mut reader = ResponseFrameReader::new(Duration::from_secs(30));
         while self.running.load(Ordering::SeqCst) {
             self.refresh_alerts(work_path);
 
@@ -173,7 +178,9 @@ impl TuiApp {
                 break;
             }
 
-            if self.completion_delay_elapsed() || self.receive_response(stream, work_path)? {
+            if self.completion_delay_elapsed()
+                || self.receive_response(stream, work_path, &mut reader)?
+            {
                 break;
             }
             self.handle_input()?;
@@ -191,18 +198,16 @@ impl TuiApp {
             .is_some_and(|received_at| received_at.elapsed() >= COMPLETION_EXIT_DELAY)
     }
 
-    /// Read one daemon response and apply it. A read timeout with nothing
-    /// consumed is the normal idle case (~20x/second) and stays silent -
-    /// `is_read_timeout` is load-bearing here. It also swallows a timeout
-    /// landing mid-frame (`read_exact` cannot tell the two apart), losing one
-    /// frame; recovery happens on the *next* read, once the misaligned stream
-    /// makes `read_frame_length` (`daemon/wire.rs:190-199`) decode a length
-    /// `>= 0x20000000` from JSON body bytes - past `MAX_RESPONSE_BYTES` (2
-    /// MiB) - reaching `reconnect_after_read_error` below (pinned by
-    /// `app_tests.rs:24-32`).
-    fn receive_response(&mut self, stream: &mut UnixStream, work_path: &Path) -> Result<bool> {
-        match read_message::<Response, _>(stream) {
-            Ok(response) => self.handle_response(response),
+    /// Read one complete daemon response while preserving partial frames over idle polls.
+    fn receive_response(
+        &mut self,
+        stream: &mut UnixStream,
+        work_path: &Path,
+        reader: &mut ResponseFrameReader,
+    ) -> Result<bool> {
+        match reader.poll(stream) {
+            Ok(Some(response)) => self.handle_response(response),
+            Ok(None) => {}
             Err(error) if is_socket_disconnected(&error) => {
                 if self.completion_summary.is_some() {
                     return Ok(true);
@@ -212,8 +217,11 @@ impl TuiApp {
                 std::thread::sleep(Duration::from_millis(500));
                 return Ok(true);
             }
-            Err(error) if is_read_timeout(&error) => {}
-            Err(error) => return self.reconnect_after_read_error(&error, stream, work_path),
+            Err(error) => {
+                let recovered = self.reconnect_after_read_error(&error, stream, work_path)?;
+                *reader = ResponseFrameReader::new(Duration::from_secs(30));
+                return Ok(recovered);
+            }
         }
         Ok(false)
     }
@@ -364,31 +372,8 @@ impl TuiApp {
     }
 }
 
-/// True when `error`'s underlying `io::Error` is a read timeout
-/// (`WouldBlock`/`TimedOut`) - the kind a 50ms socket read timeout produces
-/// both for the ordinary idle case and for a timeout that landed mid-frame.
-/// `daemon_client::is_socket_disconnected` answers a different question (is
-/// this a real disconnect) and returns false for both timeout kinds too, so
-/// it cannot serve here.
-fn is_read_timeout(error: &anyhow::Error) -> bool {
-    error.chain().any(|cause| {
-        cause
-            .downcast_ref::<std::io::Error>()
-            .is_some_and(|io_error| {
-                matches!(
-                    io_error.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                )
-            })
-    })
-}
-
 impl Drop for TuiApp {
     fn drop(&mut self) {
         self.cleanup_terminal();
     }
 }
-
-#[cfg(test)]
-#[path = "app_tests.rs"]
-mod tests;

@@ -116,6 +116,7 @@ function HistoryItem({ event, last }: { event: HistoryEvent; last: boolean }) {
 
 const MARK_TONE: Record<HistoryMark, Tone | null> = {
   current: null,
+  unknown: "warning",
   resolved: "completed",
   accepted: "completed",
   ruled: "completed",

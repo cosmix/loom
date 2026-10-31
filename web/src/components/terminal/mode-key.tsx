@@ -63,15 +63,7 @@ function Sizer({ children }: { children: ReactNode }): ReactElement {
   );
 }
 
-/// One instrument for the header: a two-cell sliding toggle of fixed width.
-/// The knob is the verb tile itself and carries its own label. On a click
-/// the destination cell's word vanishes at once, the knob slides across
-/// still carrying the label the user clicked, and the cell it uncovers
-/// shows its word only once the knob has landed. The knob's own label then
-/// lingers for another beat before it flips to name the next action, so the
-/// action just taken stays readable rather than changing the instant the
-/// knob stops moving. When the phase cannot be switched it turns into a
-/// plain indicator and drops both cells.
+/// A two-cell mode switch that becomes a plain indicator when unavailable.
 export function ModeKey({
   mode,
   phase,

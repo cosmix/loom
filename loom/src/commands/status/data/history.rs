@@ -3,7 +3,7 @@
 
 use crate::context::untrusted::whole_safe;
 use crate::fs::work_dir::WorkDir;
-use crate::models::stage::{IssueKind, Stage, StageIssue};
+use crate::models::stage::{legacy_disposition, IssueKind, Stage, StageIssue};
 
 use super::rounds::{adjudication_rounds, Round};
 
@@ -43,6 +43,9 @@ fn restates_a_round(issue: &StageIssue, rounds: &[Round]) -> bool {
 /// adjudicator's reasoning, and `ended_by` can carry a verdict's own word, so
 /// each goes through [`whole_safe`]: neutralized, never cut.
 fn neutralize(issue: &mut StageIssue) {
+    if issue.disposition.is_none() {
+        issue.disposition = Some(legacy_disposition(&issue.ended_by));
+    }
     for line in &mut issue.evidence {
         *line = whole_safe(line);
     }

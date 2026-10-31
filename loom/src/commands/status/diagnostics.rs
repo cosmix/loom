@@ -1,5 +1,5 @@
 use crate::fs::work_dir::WorkDir;
-use crate::parser::markdown::MarkdownDocument;
+use crate::parser::markdown::parse_frontmatter_strings;
 use anyhow::Result;
 use colored::Colorize;
 use std::fs;
@@ -48,7 +48,7 @@ pub fn check_parsing_errors(work_dir: &WorkDir) -> Result<usize> {
 
             if path.is_file() && path.extension().is_some_and(|e| e == "md") {
                 if let Ok(content) = fs::read_to_string(&path) {
-                    if MarkdownDocument::parse(&content).is_err() {
+                    if parse_frontmatter_strings(&content).is_err() {
                         let file_name = path.file_name().ok_or_else(|| {
                             anyhow::anyhow!("Path has no file name: {}", path.display())
                         })?;
