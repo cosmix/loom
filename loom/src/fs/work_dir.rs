@@ -7,6 +7,7 @@ use crate::fs::knowledge::KnowledgeDir;
 
 pub(crate) mod config_sections;
 mod discovery;
+pub(crate) use config_sections::ModelsConfig;
 pub use config_sections::{
     insert_key, read_config, read_context_config, read_plan_config, read_plan_sandbox,
     read_pressure_config, read_remote_control_config, read_terminal_config, remove_key,
@@ -287,15 +288,11 @@ This directory is managed by loom CLI and contains:
 - `sessions/` - Active session tracking
 - `crashes/` - Crash reports and diagnostics
 - `logs/` - Per-session captured stderr (`<session-id>.stderr.log`)
-- `knowledge/` - Curated codebase knowledge (entry points, patterns, conventions)
 
 Do not manually edit these files unless you know what you're doing.
 "#;
 
-        let readme_path = self.root.join("README.md");
-        fs::write(readme_path, readme_content).context("Failed to create README.md")?;
-
-        Ok(())
+        fs::write(self.root.join("README.md"), readme_content).context("Failed to create README.md")
     }
 
     pub fn signals_dir(&self) -> PathBuf {
@@ -322,6 +319,9 @@ Do not manually edit these files unless you know what you're doing.
         self.root.join("crashes")
     }
 
+    /// Legacy path retained for compatibility; active knowledge belongs to
+    /// the project root rather than this state directory.
+    #[deprecated(note = "use KnowledgeDir with WorkDir::project_root instead")]
     pub fn knowledge_dir(&self) -> PathBuf {
         self.root.join("knowledge")
     }

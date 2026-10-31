@@ -5,10 +5,7 @@ use colored::Colorize;
 use std::path::Path;
 
 use crate::daemon::DaemonServer;
-use crate::fs::memory::{
-    append_entry, append_to_spool, validate_content, validate_evidence, MemoryEntry,
-    MemoryEntryType,
-};
+use crate::fs::memory::{append_entry, append_to_spool, MemoryEntry, MemoryEntryType};
 use crate::git::worktree::find_worktree_root_from_cwd;
 use crate::relay::emit::{mode, EnvSnapshot, RelayContext, RelayMode, RelaySink, StdSink};
 use crate::relay::RequestKind;
@@ -24,11 +21,7 @@ use super::work_dir::{get_or_create_work_dir, validate_stage_id, AD_HOC_STAGE_ID
 /// [`RelayMode`] and an in-memory sink, since tests must never mutate
 /// process-wide environment.
 pub(super) fn record(entry: MemoryEntry, stage_id: Option<String>) -> Result<()> {
-    validate_content(&entry.content)?;
-    if let Some(ref context) = entry.context {
-        validate_content(context)?;
-    }
-    validate_evidence(&entry.evidence)?;
+    entry.validate()?;
     reject_stage_forgery(&stage_id)?;
 
     let relay_mode = mode(&EnvSnapshot::from_process_env());

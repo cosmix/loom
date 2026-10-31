@@ -315,7 +315,7 @@ mod tests {
         assert_eq!(
             adopt_recorded_tmux_tmpdir(work.path()),
             TmuxTmpdirAdoption::DaemonNotRunning,
-            "the liveness gate is checked before the record is even consulted"
+            "no live daemon means no environment mutation"
         );
     }
 

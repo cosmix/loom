@@ -22,12 +22,9 @@
 //! which is exactly what the read-only mount forbids; a spooled request is
 //! still decided by the daemon, still refusable by it, just later.
 //!
-//! Deliberately absent from the payload: a stage id. Attribution of a drained
-//! request comes from *which worktree* the daemon drained it from, not from
-//! anything the request claims about itself — a sandboxed agent cannot forge
-//! the worktree it is running in, but it could trivially forge a field. That
-//! is what stands in for the peer-identity check the socket path performs when
-//! there is no connection to identify.
+//! The worktree identifies the stage. The envelope's session id is a
+//! precondition checked against the current stage attempt under its lock.
+//! Legacy entries without a session id are refused.
 //!
 //! [`drain_requests`] applies each request through the shared stage service.
 //! The RPC adapter uses that same service for transitions and policy.
@@ -37,6 +34,8 @@ mod spool;
 mod types;
 
 pub use apply::drain_requests;
+#[cfg(test)]
+pub(crate) use spool::append_to_spool_for_session;
 #[cfg(test)]
 pub(crate) use spool::read_pending;
 pub use spool::{

@@ -95,7 +95,7 @@ fn load_oversized_receipt_gives_err() {
 }
 
 #[test]
-fn save_refuses_a_symlinked_tmp_file() {
+fn save_ignores_a_symlinked_legacy_tmp_file() {
     let temp = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();
     let outside_file = outside.path().join("real.json");
@@ -109,7 +109,12 @@ fn save_refuses_a_symlinked_tmp_file() {
         digest: "sha256:aaa".to_string(),
         files: 1,
     }]);
-    assert!(receipt.save(temp.path()).is_err());
+    receipt.save(temp.path()).unwrap();
+    assert!(tmp_path
+        .symlink_metadata()
+        .unwrap()
+        .file_type()
+        .is_symlink());
     assert_eq!(
         std::fs::read_to_string(&outside_file).unwrap(),
         "outside content"
