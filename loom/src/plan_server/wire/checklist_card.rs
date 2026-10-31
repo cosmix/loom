@@ -3,21 +3,15 @@
 use std::collections::BTreeSet;
 
 use super::rows::document_rows;
-use super::{ChecklistView, MetaplanRowView, PlanCountsView, PlanRowView, SectionView};
+use super::{ChecklistView, PlanCountsView, SectionView};
 use crate::planning::checklist::{ItemStatus, ProjectState};
 use crate::planning::kinds::{section_path, vision_path};
 use crate::planning::project::{Feature, Project};
 use crate::planning::slug::PlanState;
 
-#[derive(Default)]
-pub(super) struct CardFacts {
-    pub metaplans: Vec<MetaplanRowView>,
-    pub plan_rows: Vec<PlanRowView>,
-}
-
-pub(super) fn card_facts(project: &Project, feature: &str, view: &mut ChecklistView) -> CardFacts {
+pub(super) fn card_facts(project: &Project, feature: &str, view: &mut ChecklistView) {
     let Some(data) = project.feature(feature) else {
-        return CardFacts::default();
+        return;
     };
     let state = &data.checklist.state;
     let vision = vision_path(feature);
@@ -50,11 +44,7 @@ pub(super) fn card_facts(project: &Project, feature: &str, view: &mut ChecklistV
             .count(),
     );
     step_facts(state, existing, view);
-    let (metaplans, plan_rows) = document_rows(project, data);
-    CardFacts {
-        metaplans,
-        plan_rows,
-    }
+    (view.metaplans, view.plan_rows) = document_rows(project, data);
 }
 
 fn sections(project: &Project, feature: &Feature) -> Vec<SectionView> {
