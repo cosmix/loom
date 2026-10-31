@@ -9,11 +9,12 @@ type Oklch = { lightness: number; chroma: number; hue: number };
 
 function declaration(css: string, selector: string, name: string): string | undefined {
   const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const block = withoutComments.match(
-    new RegExp(`(?:^|})\\s*${escapedSelector}\\s*\\{([^}]*)\\}`, "m"),
-  );
-  return block?.[1]?.match(new RegExp(`(?:^|;)\\s*${name}\\s*:\\s*([^;]+)`, "m"))?.[1]?.trim();
+  for (const block of withoutComments.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    if (!block[1].split(",").some((entry) => entry.trim() === selector)) continue;
+    const value = block[2].match(new RegExp(`(?:^|;)\\s*${name}\\s*:\\s*([^;]+)`, "m"));
+    if (value) return value[1].trim();
+  }
+  return undefined;
 }
 
 function parseOklch(value: string | undefined, label: string): Oklch {
