@@ -60,8 +60,7 @@
 
 .chat-connection-banner {
   flex-shrink: 0;
-  padding: 8px 12px;
-  border-block: 1px solid var(--hairline);
+  padding: 0 16px 8px;
   overflow-wrap: anywhere;
 }
 
@@ -70,7 +69,8 @@
 }
 
 .chat-last-update {
-  padding: 4px 12px;
+  margin: 0;
+  padding: 4px 16px;
   color: var(--muted-foreground);
 }
 
