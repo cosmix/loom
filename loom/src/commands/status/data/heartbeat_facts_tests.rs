@@ -166,6 +166,17 @@ fn an_open_main_tool_call_is_busy_and_names_the_tool() {
 }
 
 #[test]
+fn an_open_tool_without_worker_progress_expires_at_the_stall_line() {
+    let fixture = Fixture::new();
+    let transcript = fixture.main_transcript();
+    write_lines(&transcript, &[OPEN_CALL]);
+
+    let facts = fixture.facts(&stage(Some(300)), 901, &transcript);
+
+    assert_eq!(facts.activity_status, ActivityStatus::Stale);
+}
+
+#[test]
 fn an_open_subagent_tool_call_is_busy() {
     let fixture = Fixture::new();
     let transcript = fixture.main_transcript();

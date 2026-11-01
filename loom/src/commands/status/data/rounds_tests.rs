@@ -130,3 +130,18 @@ fn an_unchanged_dispute_is_parsed_once_and_a_changed_stamp_parses_it_again() {
     set_modified(&marker, later);
     assert_eq!(reasons(), ["second"], "a new stamp re-reads the dispute");
 }
+
+#[test]
+fn worktree_state_root_symlink_keeps_ended_rounds_readable() {
+    let real = TempDir::new().unwrap();
+    let alias = TempDir::new().unwrap();
+    let loom_dir = alias.path().join(".loom");
+    fs::create_dir(&loom_dir).unwrap();
+    std::os::unix::fs::symlink(real.path(), loom_dir.join("work")).unwrap();
+    let work = WorkDir::new(loom_dir.join("work")).unwrap();
+    dispute(&work, 1, "recorded", &[(CLOSED_MARKER, "")]);
+
+    let rounds = adjudication_rounds(&stage(), &work);
+    assert_eq!(rounds.len(), 1);
+    assert_eq!(rounds[0].reason_lines, ["recorded"]);
+}

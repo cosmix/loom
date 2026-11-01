@@ -9,6 +9,9 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::constants::STALENESS_THRESHOLD_SECS;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus, StatusBucket};
+use crate::orchestrator::monitor::foreground::{
+    foreground_forward_holds, FOREGROUND_HOLD_CEILING_SECS,
+};
 use crate::orchestrator::monitor::heartbeat::{judge_heartbeat_path, read_heartbeat, Heartbeat};
 use crate::orchestrator::monitor::progress::age_secs;
 use crate::provider_data::resolve::projects_root;
@@ -70,9 +73,9 @@ fn stale_after_secs(stage: &Stage) -> u64 {
 /// `Crashed`) is neither working nor hung, whatever the stage's own status.
 ///
 /// A running session whose heartbeat is silent past the quiet threshold is
-/// `Busy` while a tool call is open, else `Stale` past the stage's budget and
-/// `Quiet` before it. `tool_open` is only called then, so fresh stages cost no
-/// transcript reads.
+/// `Busy` while a bounded tool call is open, else `Stale` past the stage's
+/// budget and `Quiet` before it. `tool_open` is only called then, so fresh
+/// stages cost no transcript reads.
 fn determine_activity_status(
     session: Option<&Session>,
     staleness_secs: Option<u64>,
@@ -131,7 +134,7 @@ fn forward_evidence(
     now: chrono::DateTime<Utc>,
 ) -> Option<bool> {
     let session = session?;
-    crate::codex_lifecycle::foreground_forward_active(
+    let evidence = crate::codex_lifecycle::foreground_forward_active(
         work_dir.root(),
         &stage.id,
         &session.id,
@@ -140,7 +143,17 @@ fn forward_evidence(
             .map_or(session.created_at, Heartbeat::effective_progress_at),
         std::time::Duration::from_secs(stale_after_secs(stage)),
         now,
-    )
+    );
+    if evidence == Some(true) {
+        return Some(foreground_forward_holds(
+            work_dir.root(),
+            session,
+            heartbeat,
+            stale_after_secs(stage),
+            now,
+        ));
+    }
+    evidence
 }
 
 /// Heartbeat-derived facts for a stage's [`StageSummary`]: staleness, current
@@ -165,6 +178,35 @@ pub(super) fn heartbeat_facts(
     heartbeat_facts_under(stage, session, work_dir, projects_root().as_deref())
 }
 
+fn heartbeat_staleness_secs(
+    heartbeat: Option<&Heartbeat>,
+    session: Option<&Session>,
+    now: chrono::DateTime<Utc>,
+) -> Option<u64> {
+    heartbeat
+        .map(|hb| age_secs(now, hb.effective_progress_at()))
+        .or_else(|| {
+            session
+                .filter(|session| !session.status.is_terminal())
+                .map(|session| age_secs(now, session.created_at))
+        })
+}
+
+fn open_tool_within_hold(
+    stage: &Stage,
+    staleness_secs: Option<u64>,
+    open: Option<&OpenToolCall>,
+    forward: Option<bool>,
+) -> bool {
+    // An open transcript alone is an observation, not an indefinitely
+    // live worker. The monitor's foreground hold has the same wall cap.
+    let busy_until = stale_after_secs(stage)
+        .saturating_mul(3)
+        .min(FOREGROUND_HOLD_CEILING_SECS as u64)
+        .max(stale_after_secs(stage));
+    open.is_some() && staleness_secs.is_some_and(|secs| secs < busy_until) && forward != Some(false)
+}
+
 /// [`heartbeat_facts`] with the Claude projects root the transcripts must sit
 /// under; `None` when it cannot be determined, which reads as nothing open.
 pub(super) fn heartbeat_facts_under(
@@ -183,21 +225,17 @@ pub(super) fn heartbeat_facts_under(
 
     // Liveness follows useful progress; activity strings remain observational.
     let now = Utc::now();
-    let staleness_secs = heartbeat
-        .as_ref()
-        .map(|hb| age_secs(now, hb.effective_progress_at()))
-        .or_else(|| {
-            session
-                .filter(|session| !session.status.is_terminal())
-                .map(|session| age_secs(now, session.created_at))
-        });
+    let staleness_secs = heartbeat_staleness_secs(heartbeat.as_ref(), session, now);
 
     // Determine activity status based on session, heartbeat, and stage status
     let mut open = None;
     let activity_status = determine_activity_status(session, staleness_secs, stage, || {
+        let forward = forward_evidence(work_dir, stage, session, heartbeat.as_ref(), now);
+        if forward == Some(true) {
+            return true;
+        }
         open = probe_open_tool(heartbeat.as_ref(), projects_root);
-        open.is_some()
-            && forward_evidence(work_dir, stage, session, heartbeat.as_ref(), now) != Some(false)
+        open_tool_within_hold(stage, staleness_secs, open.as_ref(), forward)
     });
 
     let last_tool = match activity_status {

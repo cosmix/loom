@@ -25,7 +25,7 @@ pub(super) struct CommandProgress {
     pub(super) cpu_ticks: u64,
 }
 
-const FOREGROUND_HOLD_CEILING_SECS: i64 = 1560;
+pub(crate) const FOREGROUND_HOLD_CEILING_SECS: i64 = 1560;
 
 /// A current foreground Codex forward with a live command and bounded job
 /// evidence. The authorization must follow this attempt's last progress.
@@ -36,13 +36,15 @@ pub(crate) fn foreground_forward_holds(
     timeout_secs: u64,
     now: DateTime<Utc>,
 ) -> bool {
-    if session.session_type != SessionType::Stage
-        || timeout_secs == 0
-        || !running_command(work_dir, session)
-            .is_some_and(|command| crate::process::process_start_time(command.pid).is_some())
-    {
+    if session.session_type != SessionType::Stage || timeout_secs == 0 {
         return false;
     }
+    let Some(command) = running_command(work_dir, session) else {
+        return false;
+    };
+    let Some(started) = crate::process::process_start_time(command.pid) else {
+        return false;
+    };
     let Some(stage_id) = session.stage_id.as_deref() else {
         return false;
     };
@@ -51,14 +53,15 @@ pub(crate) fn foreground_forward_holds(
         .map_or(session.created_at, |heartbeat| {
             heartbeat.effective_progress_at()
         });
-    crate::codex_lifecycle::foreground_forward_active(
+    let active = crate::codex_lifecycle::foreground_forward_active(
         work_dir,
         stage_id,
         &session.id,
         since,
         Duration::from_secs(timeout_secs),
         now,
-    ) == Some(true)
+    ) == Some(true);
+    active && crate::process::process_start_time(command.pid) == Some(started)
 }
 
 impl Detection {
@@ -88,12 +91,17 @@ impl Detection {
             self.foreground_commands_seen.remove(&session.id);
             return false;
         };
-        let Some(cpu_ticks) = command_cpu_ticks(command.pid) else {
-            return false;
-        };
         let Some(started) = crate::process::process_start_time(command.pid) else {
             return false;
         };
+        let Some(cpu_ticks) = command_cpu_ticks(command.pid) else {
+            return false;
+        };
+        // The process table can change while its tree is sampled. Never
+        // credit CPU from a PID that was recycled during that sample.
+        if crate::process::process_start_time(command.pid) != Some(started) {
+            return false;
+        }
         self.record_command_progress(
             &session.id,
             CommandProgress {

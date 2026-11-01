@@ -66,15 +66,20 @@ pub(super) fn adjudication_rounds(stage: &Stage, work_dir: &WorkDir) -> Vec<Roun
     if !valid_stage_id(&stage.id) {
         return Vec::new();
     }
-    let stage_dir = work_dir.disputes_dir().join(&stage.id);
+    // Worktrees may spell their state root through the trusted `.loom/work`
+    // symlink. Resolve that root once, then refuse links inside it on each read.
+    let Ok(root) = fs::canonicalize(work_dir.root()) else {
+        return Vec::new();
+    };
+    let stage_dir = root.join("disputes").join(&stage.id);
     sorted_dispute_ids(&stage_dir)
         .into_iter()
-        .filter_map(|id| ended_round(&stage_dir.join(id.to_string()), id))
+        .filter_map(|id| ended_round(&root, &stage_dir.join(id.to_string()), id))
         .collect()
 }
 
 /// The dispute's round if it ended, parsed at most once per end stamp.
-fn ended_round(dir: &Path, id: u32) -> Option<Round> {
+fn ended_round(root: &Path, dir: &Path, id: u32) -> Option<Round> {
     let stamp = EndStamp::of(dir);
     if stamp.applied.is_none() && stamp.closed.is_none() {
         return None;
@@ -91,7 +96,7 @@ fn ended_round(dir: &Path, id: u32) -> Option<Round> {
     if hit.is_some() {
         return hit;
     }
-    let round = read_round(dir, id, &stamp);
+    let round = read_round(root, dir, id, &stamp);
     let mut cache = ROUNDS.lock().unwrap_or_else(PoisonError::into_inner);
     if cache.len() >= MAX_CACHED_ROUNDS {
         cache.clear();
@@ -102,10 +107,10 @@ fn ended_round(dir: &Path, id: u32) -> Option<Round> {
 
 /// The round of an ended dispute: its kind and reason, then the ruling and
 /// its reasoning when an applied verdict carries one, each in full.
-fn read_round(dir: &Path, id: u32, stamp: &EndStamp) -> Round {
-    let request = frontmatter(&dir.join("request.md"));
+fn read_round(root: &Path, dir: &Path, id: u32, stamp: &EndStamp) -> Round {
+    let request = frontmatter(root, &dir.join("request.md"));
     let verdict = match stamp.applied {
-        Some(_) => frontmatter(&dir.join("verdict.md")),
+        Some(_) => frontmatter(root, &dir.join("verdict.md")),
         None => Value::Null,
     };
     let ruling = verdict.get("verdict");
