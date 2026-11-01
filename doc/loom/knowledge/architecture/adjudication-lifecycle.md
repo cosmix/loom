@@ -164,3 +164,7 @@ the second was found.
 
 **Carried findings.** A `defer` makes the finding a carried finding of the target stage (`origin/F-1-2`); the
 target stage's review gate counts it open until a later round resolves it or a ruling closes it.
+
+## Durable attempt reservations
+
+Adjudication charges its spawn budget before handing out a session. The historical `apply_failures` file stores a durable reservation for every verdict-application attempt, including a successful one; its cap remains three. Missing counters begin at zero, while malformed or unreadable existing counters stop the operation instead of resetting the budget.

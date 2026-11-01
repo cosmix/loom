@@ -214,7 +214,8 @@ would become permanently unattributable and leak forever. `--clean` therefore re
 even when alive; the normal path stays conservative.
 
 `list_loom_sockets` skips names starting `loom-view-` so the overview viewer is not reported as
-unattributable. Nothing currently reaps that viewer socket (see `concerns.md`).
+unattributable. Explicit clean and init retire this repository's viewer through its separate
+ownership-checked path.
 
 ## macOS Terminal Detection Priority
 
