@@ -26,6 +26,7 @@ impl ProbeRunner for TwoFail {
             stderr: String::new(),
             exit_code: Some(101),
             timed_out: false,
+            output_complete: true,
             cached: None,
         })
     }

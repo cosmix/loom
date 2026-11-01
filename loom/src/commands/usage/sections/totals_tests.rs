@@ -1,7 +1,4 @@
-//! Regression test for the `<synthetic>`-request defect in `build`: the
-//! report's own `requests` count must exclude a synthetic API-error row, the
-//! same as `by_model`/`by_agent_model`, so the breakdown rows still sum back
-//! to this total. Split out to keep `totals.rs` legible (CLAUDE.md Rule 17).
+//! Tests for excluding synthetic requests from report totals.
 
 use super::*;
 use crate::commands::usage::transcript::{Entry, Request, Scope};

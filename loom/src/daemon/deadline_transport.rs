@@ -106,11 +106,13 @@ fn nonblocking_socket() -> io::Result<OwnedFd> {
     }
     // SAFETY: raw is a fresh descriptor returned by socket above.
     let fd = unsafe { OwnedFd::from_raw_fd(raw) };
-    // SAFETY: fcntl only changes this owned descriptor's file status flags.
+    // SAFETY: fcntl reads the status flags of this valid, owned descriptor.
     let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) };
-    if flags < 0
-        || unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0
-    {
+    if flags < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: fcntl changes only this valid, owned descriptor's file status flags.
+    if unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
         return Err(io::Error::last_os_error());
     }
     Ok(fd)

@@ -238,15 +238,18 @@ impl KnowledgeDir {
         let content_owned = content.to_string();
         let mut outcome = None;
 
-        crate::fs::locking::locked_read_modify_write(&path, |existing| {
+        crate::fs::locking::locked_update(&path, |existing| {
             let base = if existing.is_empty() {
                 default
             } else {
                 existing
             };
-            let (result, found) = splice::splice_section(base, &heading_owned, &content_owned);
+            let (result, found) = splice::splice_section(base, &heading_owned, &content_owned)
+                .map_err(|_| {
+                    anyhow::anyhow!("Cannot edit a document with an unclosed code fence")
+                })?;
             outcome = Some(found);
-            result
+            Ok(result)
         })
         .with_context(|| {
             format!(
@@ -256,7 +259,7 @@ impl KnowledgeDir {
         })?;
 
         self.refresh_index_if_hierarchical();
-        Ok(outcome.expect("locked_read_modify_write always invokes its closure"))
+        Ok(outcome.expect("locked_update always invokes its closure"))
     }
 
     /// Delete a `#{2,6} <heading>` section, its nested deeper headings
@@ -267,6 +270,7 @@ impl KnowledgeDir {
         let mut level = 0;
         self.edit_existing_target(target, heading, |existing| {
             let (result, matched) = splice::delete_section(&existing, heading)
+                .map_err(|_| anyhow::anyhow!("Cannot edit a document with an unclosed code fence"))?
                 .ok_or_else(|| missing_section(target, heading))?;
             level = matched;
             Ok(result)
@@ -291,6 +295,7 @@ impl KnowledgeDir {
                     "\"{heading}\" in {} is a level-{level} heading; section state applies to `## ` sections only",
                     target.display_name()
                 ),
+                SectionEditError::UnclosedFence => anyhow::anyhow!("Cannot edit a document with an unclosed code fence"),
             })
         })
     }

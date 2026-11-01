@@ -126,6 +126,25 @@ fn pending_dispute_is_offered_a_session_and_counted() {
     );
 }
 
+#[test]
+fn uncertain_session_inventory_does_not_offer_a_second_adjudicator() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    std::fs::create_dir_all(work.join("stages")).unwrap();
+    write_stage(work, &make_stage("s1"));
+    write_dispute_request(work, "s1", 1, 0);
+    let sessions = work.join("sessions");
+    std::fs::create_dir(&sessions).unwrap();
+    std::fs::write(sessions.join("broken.md"), "malformed").unwrap();
+
+    let pending = AdjudicatorRegistry::new()
+        .disputes_awaiting_session(work)
+        .unwrap();
+
+    assert!(pending.jobs.is_empty());
+    assert_eq!(attempt_count(work, "s1", 1), 0);
+}
+
 /// Two unanswered disputes on one stage (an abandoned one plus the live one)
 /// must still produce a single adjudicator.
 #[test]

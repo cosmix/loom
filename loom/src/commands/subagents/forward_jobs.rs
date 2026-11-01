@@ -151,7 +151,7 @@ pub(super) fn overlay_from_observation(
         .collect();
     for tool in transcript.forwarding_uses() {
         if receipt_for_tool(index, agent_id, &tool.id, transcript.parent_session_id()).is_none() {
-            states.push(marker_overlay(index, agent_id, tool, &transcript));
+            states.push(marker_overlay(index, agent_id, tool, transcript));
         }
     }
     if states.is_empty() {

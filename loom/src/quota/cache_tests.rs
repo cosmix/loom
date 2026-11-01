@@ -45,7 +45,7 @@ fn write_provider_refuses_a_symlinked_target_and_leaves_it_untouched() {
 }
 
 #[test]
-fn write_provider_unlinks_a_planted_symlink_at_the_tmp_path_instead_of_following_it() {
+fn write_provider_ignores_a_planted_symlink_at_the_old_tmp_path() {
     let dir = tempdir().unwrap();
     let real_target = dir.path().join("elsewhere.json");
     std::fs::write(&real_target, "untouched").unwrap();

@@ -171,6 +171,7 @@ fn completion_budget_uses_the_executable_plan_and_binds_the_child() {
 pub(super) fn running_record(stage_id: &str, pid: Option<u32>) -> JobRecord {
     JobRecord {
         id: new_job_id(),
+        submission_order: 0,
         stage_id: stage_id.to_string(),
         session_id: "session-a".to_string(),
         kind: JobKind::Check,

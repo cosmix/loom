@@ -21,9 +21,11 @@ declarations:
   - {path: tests/test_shapes.c, kind: function, scope: [test_area], line: 3}
 references:
   # shapes.c
-  - {path: src/shapes.c, line: 11, symbol: clamp, expect: {target: "src/shapes.c#function:clamp"}}
+  - {path: src/shapes.c, line: 11, symbol: clamp, site_start: 133, expect: {target: "src/shapes.c#function:clamp"}}
+  - {path: src/shapes.c, line: 11, symbol: clamp, site_start: 147, expect: {target: "src/shapes.c#function:clamp"}}
   - {path: src/shapes.c, line: 16, symbol: printf, expect: {external: true}}
-  - {path: src/shapes.c, line: 17, symbol: clamp, expect: {target: "src/shapes.c#function:clamp"}}
+  - {path: src/shapes.c, line: 17, symbol: clamp, site_start: 238, expect: {target: "src/shapes.c#function:clamp"}}
+  - {path: src/shapes.c, line: 17, symbol: clamp, site_start: 252, expect: {target: "src/shapes.c#function:clamp"}}
   # A function pointer call has no static target.
   - {path: src/shapes.c, line: 22, symbol: op, expect: {external: true}}
   # util.c: the static clamp of this file, and area defined in shapes.c.

@@ -12,7 +12,7 @@ use crate::testrun::{RunOutput, RunSummary, TestRunnerAdapter};
 use crate::verify::contracts::failed_builds::BuildKey;
 use crate::verify::contracts::resolve_adapter;
 use crate::verify::contracts::run_dir::{resolve_run, ContractRun};
-use crate::verify::criteria::{run_spec_in_optional_tree, CommandSpec};
+use crate::verify::criteria::{run_spec_in_optional_tree, CommandSpec, CriterionResult};
 
 /// A contract resolved to its adapter and run directory, ready to run.
 pub(crate) struct PreparedContract {
@@ -70,15 +70,33 @@ pub(crate) fn run_prepared(
         CONTRACT_TIMEOUT,
         confinement,
     )?;
+    Ok(judge_prepared_result(contract, adapter, &run, emit))
+}
+
+fn judge_prepared_result(
+    contract: &ContractSpec,
+    adapter: Option<&dyn TestRunnerAdapter>,
+    run: &CriterionResult,
+    emit: fn(&str),
+) -> JudgedRun {
     if run.timed_out {
-        return Ok(JudgedRun {
+        return JudgedRun {
             judged: Err(format!(
                 "contract `{}` did not finish within {} s",
                 contract.id,
                 CONTRACT_TIMEOUT.as_secs()
             )),
             compile_failed: false,
-        });
+        };
+    }
+    if !run.output_complete {
+        return JudgedRun {
+            judged: Err(format!(
+                "contract `{}` output capture was incomplete",
+                contract.id
+            )),
+            compile_failed: false,
+        };
     }
     let output = RunOutput {
         stdout: &run.stdout,
@@ -89,10 +107,10 @@ pub(crate) fn run_prepared(
     let judged = judge_run(contract, adapter, summary, run.exit_code);
     warn_if_unverified(contract, adapter, &judged, emit);
     let compile_failed = adapter.is_some_and(|adapter| adapter.compile_rejected(&output));
-    Ok(JudgedRun {
+    JudgedRun {
         judged,
         compile_failed,
-    })
+    }
 }
 
 /// Warn when the runner could not read the output and the contract was accepted
@@ -113,5 +131,41 @@ fn warn_if_unverified(
              non-zero exit alone",
             contract.id
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testrun::registry;
+    use crate::verify::contracts::test_support::contract;
+    use std::time::Duration;
+
+    #[test]
+    fn incomplete_capture_cannot_be_a_frozen_failure_or_shared_build() {
+        let contract = contract();
+        let adapter = registry::by_name("cargo-test");
+        for (stdout, stderr, exit) in [
+            ("test result: FAILED. 0 passed; 1 failed", "", Some(101)),
+            ("", "error: could not compile package", Some(101)),
+            ("test result: ok. 1 passed; 0 failed", "", Some(0)),
+        ] {
+            let mut run = CriterionResult::new(
+                "cargo test".to_string(),
+                false,
+                stdout.to_string(),
+                stderr.to_string(),
+                exit,
+                Duration::ZERO,
+                false,
+            );
+            run.output_complete = false;
+            let result = judge_prepared_result(&contract, adapter, &run, |_| {});
+            assert!(result
+                .judged
+                .unwrap_err()
+                .contains("output capture was incomplete"));
+            assert!(!result.compile_failed);
+        }
     }
 }

@@ -46,10 +46,10 @@ fn strip_whitespace(s: &str) -> String {
 /// `loom_summary`, `planning_guidance_contracts`'s
 /// `template_skeleton_carries_implements_and_verifies`,
 /// `pressure_pipeline_contracts::support`'s `run_loom`,
-/// `plan_handoff_operator`'s `loom` closure, and
-/// `plan_handoff_operator::common`'s `spawn_loom_plan`. A new test target that
-/// spawns the binary directly must scrub the same way and be added to this
-/// list.
+/// `plan_handoff_operator`'s `loom` closure,
+/// `plan_handoff_operator::common`'s `spawn_loom_plan`, and
+/// `memory_spool_query`'s `memory_cli`. A new test target that spawns the
+/// binary directly must scrub the same way and be added to this list.
 const SANCTIONED_SPAWNERS: &[&str] = &[
     "integration/helpers.rs",
     "worker_evidence/support.rs",
@@ -65,6 +65,7 @@ const SANCTIONED_SPAWNERS: &[&str] = &[
     "pressure_pipeline_contracts/support.rs",
     "plan_handoff_operator.rs",
     "plan_handoff_operator/common.rs",
+    "memory_spool_query.rs",
 ];
 
 fn rust_files_under(dir: &Path, out: &mut Vec<PathBuf>) {

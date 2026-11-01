@@ -2,8 +2,7 @@
 //! the wrapper's host exports and the spawn-time sandbox preflight, driven
 //! through `prepare_session_launch_with` against an injected [`LaunchHost`],
 //! so no test touches `PATH`, `HOME`, `LOOM_HOOKS_DIR` or the operator's
-//! runtime directory. Split out of `tests_launch.rs` to keep that file under
-//! the 400-line ceiling.
+//! runtime directory.
 
 use super::host::{hook_path_entries, LaunchHost};
 use super::*;

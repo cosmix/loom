@@ -212,6 +212,7 @@ pub fn complete_record(state: JobState, head: &str, tree_digest: &str) -> JobRec
     let terminal = state.is_terminal();
     JobRecord {
         id: new_job_id(),
+        submission_order: 0,
         stage_id: STAGE.to_string(),
         session_id: SESSION.to_string(),
         kind: JobKind::Complete,

@@ -58,6 +58,15 @@ pub struct HandoffV2 {
     /// Durable completion verification state for this exact stage session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_checkpoint: Option<CompletionCheckpoint>,
+    /// Human context persisted for semantic upsert and continuation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_id: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub goals: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_content: Option<String>,
     /// Tasks completed during this session
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub completed_tasks: Vec<CompletedTask>,
@@ -76,6 +85,8 @@ pub struct HandoffV2 {
     /// Git branch at handoff time
     #[serde(skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_branch: Option<String>,
     /// Commits made during this session
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub commits: Vec<CommitRef>,
@@ -91,6 +102,19 @@ pub struct HandoffV2 {
 }
 
 impl HandoffV2 {
+    pub fn with_context_content(
+        mut self,
+        plan_id: Option<String>,
+        goals: String,
+        test_status: Option<String>,
+        memory_content: Option<String>,
+    ) -> Self {
+        self.plan_id = plan_id;
+        self.goals = goals;
+        self.test_status = test_status;
+        self.memory_content = memory_content;
+        self
+    }
     /// Create a new HandoffV2 with required fields
     pub fn new(session_id: impl Into<String>, stage_id: impl Into<String>) -> Self {
         Self {
@@ -100,12 +124,17 @@ impl HandoffV2 {
             context_tokens: 0,
             origin: None,
             completion_checkpoint: None,
+            plan_id: None,
+            goals: String::new(),
+            test_status: None,
+            memory_content: None,
             completed_tasks: Vec::new(),
             key_decisions: Vec::new(),
             discovered_facts: Vec::new(),
             open_questions: Vec::new(),
             next_actions: Vec::new(),
             branch: None,
+            base_branch: None,
             commits: Vec::new(),
             uncommitted_files: Vec::new(),
             files_read: Vec::new(),

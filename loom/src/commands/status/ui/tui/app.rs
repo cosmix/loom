@@ -9,11 +9,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use chrono::Utc;
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use super::daemon_client::{connect, is_socket_disconnected, subscribe};
@@ -31,6 +27,10 @@ use crate::orchestrator::scheduling_report::{self, Alert};
 #[cfg(test)]
 #[path = "app_tests.rs"]
 mod tests;
+
+#[path = "app_terminal.rs"]
+mod app_terminal;
+use app_terminal::TerminalGuard;
 
 /// Poll timeout for event loop (100ms for responsive UI).
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
@@ -59,7 +59,7 @@ pub struct TuiApp {
     legend_open: bool,
     show_tokens: bool,
     tick_age_secs: Option<i64>,
-    mouse_enabled: bool,
+    terminal_guard: TerminalGuard,
     exiting: bool,
     completion_summary: Option<CompletionSummary>,
     /// Tracks when completion was received for auto-exit delay.
@@ -73,17 +73,10 @@ pub struct TuiApp {
 impl TuiApp {
     /// Create a new TUI application.
     pub fn new() -> Result<Self> {
-        enable_raw_mode().context("Failed to enable raw mode")?;
-        let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen).context("Failed to enter alternate screen")?;
-
-        crate::utils::install_crossterm_panic_hook();
-
-        let mouse_enabled =
-            crossterm::execute!(stdout, crossterm::event::EnableMouseCapture).is_ok();
-
-        let backend = CrosstermBackend::new(stdout);
-        let terminal = Terminal::new(backend).context("Failed to create terminal")?;
+        let (terminal_guard, terminal) = app_terminal::initialize(|| {
+            let backend = CrosstermBackend::new(io::stdout());
+            Terminal::new(backend).context("Failed to create terminal")
+        })?;
 
         Ok(Self {
             terminal,
@@ -96,7 +89,7 @@ impl TuiApp {
             legend_open: false,
             show_tokens: false,
             tick_age_secs: None,
-            mouse_enabled,
+            terminal_guard,
             exiting: false,
             completion_summary: None,
             completion_received_at: None,
@@ -311,14 +304,7 @@ impl TuiApp {
         }
         self.cleaned_up = true;
 
-        let _ = disable_raw_mode();
-        if self.mouse_enabled {
-            let _ = crossterm::execute!(
-                self.terminal.backend_mut(),
-                crossterm::event::DisableMouseCapture
-            );
-        }
-        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+        self.terminal_guard.cleanup();
         let _ = self.terminal.show_cursor();
     }
 

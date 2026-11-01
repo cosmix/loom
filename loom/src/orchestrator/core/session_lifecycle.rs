@@ -1,12 +1,7 @@
 //! Session lifecycle helpers for stage spawn.
 //!
-//! Extracted from `stage_executor.rs` to keep that file under the
-//! maintainability limit. Covers: writing a session's record to disk before
-//! the stage is marked Executing, and the Blocked-transition cleanup that
-//! undoes an in-flight write-ahead. Live-session adoption (refusing to spawn
-//! a duplicate agent over one a crashed daemon lost track of) lives in the
-//! sibling `session_adoption.rs`, split out to keep this file under the
-//! maintainability limit too. Behavior is unchanged from before the move.
+//! Write session records before linking stages and clean up failed pre-spawn
+//! attempts. Live-session adoption is handled by `session_adoption.rs`.
 
 use anyhow::Result;
 use chrono::Utc;
@@ -143,9 +138,9 @@ impl Orchestrator {
     /// that write-ahead and a successful spawn — invalid sandbox config, hook
     /// install, signal generation, the spawn call itself — must not leave the
     /// stage pointing at a session record for an agent that never started.
-    /// This deletes that record and clears `stage.session` in the SAME locked
-    /// update that marks the stage Blocked, so the two can never be observed
-    /// apart.
+    /// This first attempts to delete the record, then clears `stage.session`
+    /// while marking the stage Blocked. The operations are separate: deletion
+    /// or the stage update can fail, leaving inconsistent on-disk state.
     ///
     /// Only for failures BEFORE a spawn succeeds. A failure after the spawn
     /// has already produced a live agent must use [`Self::block_stranded_stage`]

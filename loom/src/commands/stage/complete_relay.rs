@@ -105,8 +105,8 @@ fn relay(context: &RelayContext, call: &SessionCall<'_>, out: &mut dyn Write) ->
         Ok(line.id)
     };
     match wait::wait_or_request(&site, &mut emit, out)? {
-        WaitOutcome::Requested => {
-            sink.print_line(out)?;
+        WaitOutcome::Requested { request_id } => {
+            sink.publish_request(&site, &request_id, out)?;
             Ok(0)
         }
         WaitOutcome::Finished(record, _) if record.state == JobState::Passed => {

@@ -83,6 +83,7 @@ fn spawning_each_attempt_updates_the_shared_pid() {
         log_path: repo.path().join("codex.log"),
         effort: "high".to_string(),
         pid: Arc::clone(&pid),
+        control: Arc::new(Mutex::new(RunControl::default())),
     };
     let mut first = job.spawn("first").unwrap();
     let first_pid = first.id();
@@ -129,15 +130,44 @@ fn join_returns_the_fallback_outcome_and_clears_the_pid() {
     assert_eq!(pid.load(Ordering::Acquire), 0);
 }
 
+#[cfg(unix)]
+#[test]
+fn dropping_a_run_stops_and_reaps_its_active_attempt() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(repo.path().join("exec"), "echo $$ > started\nsleep 30\n").unwrap();
+    let run = spawn_codex_with_fallback(
+        Path::new("/bin/sh"),
+        repo.path(),
+        "$pressure plan.md",
+        &repo.path().join("codex.log"),
+        vec!["first".into(), "fallback".into()],
+        "high",
+    )
+    .unwrap();
+    let pid = run.current_pid();
+    let started = repo.path().join("started");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while !started.exists() {
+        assert!(std::time::Instant::now() < deadline);
+        thread::sleep(std::time::Duration::from_millis(10));
+    }
+    drop(run);
+    assert!(matches!(
+        nix::sys::signal::kill(Pid::from_raw(pid as i32), None),
+        Err(Errno::ESRCH)
+    ));
+}
+
 #[test]
 fn polling_a_running_thread_and_joining_preserve_its_error() {
     let (release, wait) = std::sync::mpsc::channel();
     let run = CodexRun {
-        handle: thread::spawn(move || {
+        handle: Some(thread::spawn(move || {
             wait.recv().unwrap();
             Err(anyhow!("attempt failed"))
-        }),
+        })),
         pid: Arc::new(AtomicU32::new(123)),
+        control: Arc::new(Mutex::new(RunControl::default())),
     };
     assert_eq!(run.current_pid(), 123);
     assert!(!run.is_finished());
@@ -148,8 +178,9 @@ fn polling_a_running_thread_and_joining_preserve_its_error() {
 #[test]
 fn join_turns_a_runner_panic_into_an_error() {
     let run = CodexRun {
-        handle: thread::spawn(|| panic!("runner failed")),
+        handle: Some(thread::spawn(|| panic!("runner failed"))),
         pid: Arc::new(AtomicU32::new(0)),
+        control: Arc::new(Mutex::new(RunControl::default())),
     };
     assert_eq!(
         run.join().err().unwrap().to_string(),

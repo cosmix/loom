@@ -1,17 +1,13 @@
 //! Orchestrator loop liveness ("is the scheduler still turning?").
 //!
-//! # Why this exists
-//!
-//! The daemon is two threads: a socket server that answers `loom status`, and
-//! the orchestrator poll loop that actually schedules stages. Nothing tied the
-//! two together, so a loop that stopped turning — blocked in a subprocess,
-//! wedged on a git operation — left the daemon answering "● daemon running"
-//! while no stage would ever start again. The only visible symptom was a stage
-//! sitting in `Queued` forever, which looks identical to a dependency problem.
+//! The daemon supervises the orchestrator and host jobs alongside its socket
+//! server. An orchestrator error or panic triggers shutdown, but a loop blocked
+//! in a subprocess or git operation can leave the server responsive without
+//! scheduling stages.
 //!
 //! Session heartbeats (`monitor::heartbeat`) answer "is the *agent* alive?".
 //! This answers "is the *scheduler* alive?", which is a different question and
-//! was previously unanswerable from outside the process.
+//! can be inspected from outside the process.
 //!
 //! The loop stamps this file with a timestamp and the phase it is entering.
 //! When the file goes stale while the daemon process is up, the loop is stuck,

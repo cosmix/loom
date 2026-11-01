@@ -87,6 +87,7 @@ impl Fx {
     pub(super) fn job(&self, id: &str, state: JobState, requests: &[&str]) -> JobRecord {
         JobRecord {
             id: id.to_string(),
+            submission_order: 0,
             stage_id: STAGE.to_string(),
             session_id: SESSION.to_string(),
             kind: JobKind::Check,
@@ -119,7 +120,12 @@ impl Fx {
     /// Run a first call that relays `request_id`, leaving the state file.
     fn request(&self, request_id: &str) {
         let outcome = self.call(Duration::ZERO, false, request_id).0;
-        assert_eq!(outcome, WaitOutcome::Requested);
+        assert_eq!(
+            outcome,
+            WaitOutcome::Requested {
+                request_id: request_id.into()
+            }
+        );
     }
 
     fn call(&self, budget: Duration, no_cache: bool, request_id: &str) -> (WaitOutcome, String) {
@@ -176,7 +182,12 @@ fn with_no_state_the_request_lines_print_once_the_request_is_recorded() {
     };
     let mut sink = out.clone();
     let outcome = wait_or_request(&fx.site(Duration::ZERO, false), &mut relay, &mut sink).unwrap();
-    assert_eq!(outcome, WaitOutcome::Requested);
+    assert_eq!(
+        outcome,
+        WaitOutcome::Requested {
+            request_id: "r1".into()
+        }
+    );
     assert_eq!(exit_code(&outcome), 0);
     assert_eq!(calls, 1);
     assert!(
@@ -329,7 +340,12 @@ fn a_changed_no_cache_or_tree_starts_a_new_request() {
     let fx = fixture();
     fx.request("r1");
     let (waited, text) = fx.call(Duration::from_secs(5), true, "r2");
-    assert_eq!(waited, WaitOutcome::Requested);
+    assert_eq!(
+        waited,
+        WaitOutcome::Requested {
+            request_id: "r2".into()
+        }
+    );
     assert!(text.starts_with("Host job: requested"), "{text}");
     assert!(std::fs::read_to_string(fx.state_file())
         .unwrap()
@@ -337,7 +353,12 @@ fn a_changed_no_cache_or_tree_starts_a_new_request() {
 
     std::fs::write(fx.checkout.join("new.txt"), "x\n").unwrap();
     let (waited, _) = fx.call(Duration::from_secs(5), true, "r3");
-    assert_eq!(waited, WaitOutcome::Requested);
+    assert_eq!(
+        waited,
+        WaitOutcome::Requested {
+            request_id: "r3".into()
+        }
+    );
     assert!(std::fs::read_to_string(fx.state_file())
         .unwrap()
         .contains("r3"));

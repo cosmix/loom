@@ -5,22 +5,23 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use super::{RepairIssue, Severity};
+use super::{DetectedIssue, RepairAction, Severity};
 use crate::fs::permissions::constants::LOOM_HOOKS;
 use crate::fs::permissions::{
     ensure_loom_hooks_local, loom_hook_scripts_needing_install, main_repo_settings_identity_drift,
-    scrub_main_repo_settings_identity, settings_json_has_hooks, settings_local_has_agent_teams_env,
+    settings_json_has_hooks, settings_local_has_agent_teams_env,
     settings_local_has_worktree_isolation_disabled, settings_local_hook_drift,
 };
 use crate::sandbox::preflight::settings_local_loom_keys;
 
 /// Every settings-file issue this repo currently has.
-pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
+pub(super) fn check(repo_root: &Path) -> Vec<DetectedIssue> {
     let mut issues = Vec::new();
 
     // Only Loom-owned registrations belong in the local settings file.
     if settings_json_has_hooks(repo_root) {
-        issues.push(RepairIssue {
+        issues.push(DetectedIssue {
+            action: RepairAction::Workspace(super::workspace::WorkspaceFix::HooksAndSettings),
             severity: Severity::Warning,
             description: "Hooks found in .claude/settings.json (should be in settings.local.json)"
                 .to_string(),
@@ -34,7 +35,8 @@ pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
     issues.extend(identity_drift_issues(repo_root));
 
     if !repo_root.join(".claude/settings.local.json").exists() {
-        issues.push(RepairIssue {
+        issues.push(DetectedIssue {
+            action: RepairAction::CleanSettings,
             severity: Severity::Info,
             description: "Settings not found (.claude/settings.local.json)".to_string(),
             fix_description: "Apply loom's hooks and env".to_string(),
@@ -53,12 +55,13 @@ pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
 /// the installed hooks directory, so a missing/stale/non-executable script fails
 /// silently at runtime instead of being caught here. Checked regardless of
 /// whether settings.local.json exists.
-fn hook_scripts_issue() -> Option<RepairIssue> {
+fn hook_scripts_issue() -> Option<DetectedIssue> {
     let needing_install = loom_hook_scripts_needing_install();
     if needing_install.is_empty() {
         return None;
     }
-    Some(RepairIssue {
+    Some(DetectedIssue {
+        action: RepairAction::Workspace(super::workspace::WorkspaceFix::HookScripts),
         severity: Severity::Warning,
         description: format!(
             "Loom hook scripts missing or outdated in {} ({} of {})",
@@ -74,11 +77,12 @@ fn hook_scripts_issue() -> Option<RepairIssue> {
 /// it the blocking guards deny every tool call and the lifecycle hooks skip
 /// silently, so a missing binary is a broken install even when every hook
 /// file is present and current.
-fn jq_missing_issue() -> Option<RepairIssue> {
+fn jq_missing_issue() -> Option<DetectedIssue> {
     if which::which("jq").is_ok() {
         return None;
     }
-    Some(RepairIssue {
+    Some(DetectedIssue {
+        action: RepairAction::Manual,
         severity: Severity::Critical,
         description: "jq is not installed (every loom hook needs it to parse Claude Code payloads)"
             .to_string(),
@@ -88,10 +92,11 @@ fn jq_missing_issue() -> Option<RepairIssue> {
 
 /// Stale per-session identity / dead LOOM_WORK_DIR pin. Checked regardless of
 /// whether settings.local.json exists — it also covers settings.json.
-fn identity_drift_issues(repo_root: &Path) -> Vec<RepairIssue> {
+fn identity_drift_issues(repo_root: &Path) -> Vec<DetectedIssue> {
     main_repo_settings_identity_drift(repo_root)
         .into_iter()
-        .map(|path| RepairIssue {
+        .map(|path| DetectedIssue {
+            action: RepairAction::IdentityDrift,
             severity: Severity::Warning,
             description: format!("Stale loom session env in {}", path.display()),
             fix_description: "Remove per-session identity env and any dead LOOM_WORK_DIR pin"
@@ -104,7 +109,7 @@ fn identity_drift_issues(repo_root: &Path) -> Vec<RepairIssue> {
 /// drift from canonical into a single issue: `settings_local_has_hooks` used
 /// to only check for presence of *a* `hooks` key, so a file carrying one
 /// stale registration silently passed and `--fix` never ran.
-fn settings_local_drift_issue(repo_root: &Path) -> Option<RepairIssue> {
+fn settings_local_drift_issue(repo_root: &Path) -> Option<DetectedIssue> {
     let mut reasons: Vec<String> = Vec::new();
     let drift = settings_local_hook_drift(repo_root);
     if !drift.missing.is_empty() {
@@ -128,7 +133,8 @@ fn settings_local_drift_issue(repo_root: &Path) -> Option<RepairIssue> {
     if reasons.is_empty() {
         return None;
     }
-    Some(RepairIssue {
+    Some(DetectedIssue {
+        action: RepairAction::RewriteLocal,
         severity: Severity::Warning,
         description: format!(
             "Loom config drifted in .claude/settings.local.json ({})",
@@ -143,12 +149,13 @@ fn settings_local_drift_issue(repo_root: &Path) -> Option<RepairIssue> {
 /// capsule carries now (plan section 12): the sandbox block, state-directory
 /// and plan reads, handoff and `allowWrite` edit rules, the session hook
 /// registrations and `env.LOOM_WORK_DIR`. `loom run` warns on the same list.
-fn loom_written_keys_issue(repo_root: &Path) -> Option<RepairIssue> {
+fn loom_written_keys_issue(repo_root: &Path) -> Option<DetectedIssue> {
     let keys = settings_local_loom_keys(repo_root);
     if keys.is_empty() {
         return None;
     }
-    Some(RepairIssue {
+    Some(DetectedIssue {
+        action: RepairAction::CleanSettings,
         severity: Severity::Warning,
         description: format!(
             "Loom-written keys in .claude/settings.local.json ({})",
@@ -166,11 +173,12 @@ fn loom_written_keys_issue(repo_root: &Path) -> Option<RepairIssue> {
 /// /tmp/.git: Read-only file system` before the model runs a single command.
 /// Only checked when the lane is installed; the config is irrelevant without
 /// it. See `crate::codex` for the full story.
-fn codex_slash_tmp_issue() -> Option<RepairIssue> {
+fn codex_slash_tmp_issue() -> Option<DetectedIssue> {
     if cfg!(target_os = "linux") && crate::codex::codex_lane_status().is_ok() {
         if let Some(config_path) = crate::codex::codex_config_path() {
             if !crate::codex::codex_config_excludes_slash_tmp(&config_path) {
-                return Some(RepairIssue {
+                return Some(DetectedIssue {
+            action: RepairAction::CodexSlashTmp,
                     severity: Severity::Warning,
                     description: "codex workspace-write sandbox claims /tmp \
                          (sandbox_workspace_write.exclude_slash_tmp not set in ~/.codex/config.toml)"
@@ -200,60 +208,4 @@ pub(super) fn fix_codex_slash_tmp() -> anyhow::Result<bool> {
 pub(super) fn fix_hooks_local(repo_root: &Path) -> Result<()> {
     ensure_loom_hooks_local(repo_root)?;
     Ok(())
-}
-
-/// Claim and repair the `.claude` settings-file issues. Returns `None` if
-/// `description` names none of them, so `fix_issue` can fall through to its
-/// remaining arms.
-///
-/// The order between the arms decides which fix claims an issue:
-/// 1. "Settings not found (.claude/settings.local.json)", "Stale
-///    knowledge-directory deny in" and "Loom-written keys in" all strip the
-///    loom-written keys and the stale knowledge denies, then rewrite loom's
-///    hooks/env config, which writes none of the stripped keys — matched
-///    together, ahead of the arms below. Stripping first removes a session
-///    hook with its event array; the rewrite would leave the array behind.
-/// 2. `starts_with("Read deny rule in")` must precede the generic
-///    ".claude/settings.local.json" arm, whose needle would otherwise swallow
-///    a description naming that file; `fix_hooks_local` would leave the deny
-///    rule exactly as it is.
-/// 3. `starts_with("Operator-authored Read deny rule")` must also precede the
-///    generic arm, for the same reason, and returns `None` explicitly rather
-///    than `Some(Ok(()))` — loom never removes an operator's own deny rule,
-///    and the generic arm's `fix_hooks_local` would otherwise get credited
-///    with a fix it did not make.
-/// 4. `starts_with("Stale loom session env in")` must precede the generic
-///    ".claude/settings.local.json" arm: a settings.local.json copy's
-///    description names that file too, and the generic arm's
-///    `fix_hooks_local` never touches settings.json, so the settings.json
-///    copy would go unhealed if the generic arm claimed it first.
-/// 5. The generic ".claude/settings.local.json" arm catches everything else
-///    that names this file — missing or obsolete hook registrations, missing
-///    env or worktree config — by rewriting it. The file-absent case is
-///    claimed by arm 1, which runs first.
-pub(super) fn fix_settings_issue(repo_root: &Path, description: &str) -> Option<Result<()>> {
-    if description.contains("Settings not found (.claude/settings.local.json)")
-        || description.contains("Stale knowledge-directory deny in")
-        || description.starts_with("Loom-written keys in")
-    {
-        return Some(
-            super::sandbox_settings::fix_sandbox_settings(repo_root)
-                .and_then(|()| fix_hooks_local(repo_root)),
-        );
-    }
-    if description.starts_with("Read deny rule in") {
-        return Some(super::sandbox_settings::fix_read_denies(repo_root));
-    }
-    if description.starts_with("Operator-authored Read deny rule") {
-        // loom never removes an operator's own deny rule — nothing to fix.
-        return None;
-    }
-    if description.starts_with("Stale loom session env in") {
-        scrub_main_repo_settings_identity(repo_root);
-        return Some(Ok(()));
-    }
-    if description.contains(".claude/settings.local.json") {
-        return Some(fix_hooks_local(repo_root));
-    }
-    None
 }

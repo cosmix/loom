@@ -94,33 +94,18 @@ fn validate_filesystem_config(
     errors: &mut Vec<ValidationError>,
     stage_id: Option<&str>,
 ) {
-    // Validate deny_read paths are valid globs
-    for path in &filesystem.deny_read {
-        if let Err(e) = validate_glob_pattern(path) {
-            errors.push(ValidationError {
-                message: format!("Invalid sandbox deny_read glob pattern '{}': {}", path, e),
-                stage_id: stage_id.map(|s| s.to_string()),
-            });
-        }
-    }
-
-    // Validate deny_write paths are valid globs
-    for path in &filesystem.deny_write {
-        if let Err(e) = validate_glob_pattern(path) {
-            errors.push(ValidationError {
-                message: format!("Invalid sandbox deny_write glob pattern '{}': {}", path, e),
-                stage_id: stage_id.map(|s| s.to_string()),
-            });
-        }
-    }
-
-    // Validate allow_write paths are valid globs
-    for path in &filesystem.allow_write {
-        if let Err(e) = validate_glob_pattern(path) {
-            errors.push(ValidationError {
-                message: format!("Invalid sandbox allow_write glob pattern '{}': {}", path, e),
-                stage_id: stage_id.map(|s| s.to_string()),
-            });
+    for (label, paths) in [
+        ("deny_read", &filesystem.deny_read),
+        ("deny_write", &filesystem.deny_write),
+        ("allow_write", &filesystem.allow_write),
+    ] {
+        for path in paths {
+            if let Err(e) = validate_glob_pattern(path) {
+                errors.push(ValidationError {
+                    message: format!("Invalid sandbox {label} glob pattern '{}': {}", path, e),
+                    stage_id: stage_id.map(|s| s.to_string()),
+                });
+            }
         }
     }
 }
@@ -131,23 +116,17 @@ fn validate_network_config(
     errors: &mut Vec<ValidationError>,
     stage_id: Option<&str>,
 ) {
-    // Validate allowed_domains
-    for domain in &network.allowed_domains {
-        if let Err(e) = validate_domain_pattern(domain) {
-            errors.push(ValidationError {
-                message: format!("Invalid sandbox allowed_domain '{}': {}", domain, e),
-                stage_id: stage_id.map(|s| s.to_string()),
-            });
-        }
-    }
-
-    // Validate additional_domains
-    for domain in &network.additional_domains {
-        if let Err(e) = validate_domain_pattern(domain) {
-            errors.push(ValidationError {
-                message: format!("Invalid sandbox additional_domain '{}': {}", domain, e),
-                stage_id: stage_id.map(|s| s.to_string()),
-            });
+    for (label, domains) in [
+        ("allowed_domain", &network.allowed_domains),
+        ("additional_domain", &network.additional_domains),
+    ] {
+        for domain in domains {
+            if let Err(e) = validate_domain_pattern(domain) {
+                errors.push(ValidationError {
+                    message: format!("Invalid sandbox {label} '{}': {}", domain, e),
+                    stage_id: stage_id.map(|s| s.to_string()),
+                });
+            }
         }
     }
 }

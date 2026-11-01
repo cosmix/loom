@@ -83,6 +83,35 @@ pub(super) fn install_hooks(hooks: &Path) {
             loom::fs::permissions::constants::HOOK_BOUNDED,
         ),
         ("_common.sh", HOOK_COMMON),
+        ("_parser.sh", loom::fs::permissions::constants::HOOK_PARSER),
+        (
+            "_parser_expand.sh",
+            loom::fs::permissions::constants::HOOK_PARSER_EXPAND,
+        ),
+        (
+            "_parser_scan.sh",
+            loom::fs::permissions::constants::HOOK_PARSER_SCAN,
+        ),
+        (
+            "_identity.sh",
+            loom::fs::permissions::constants::HOOK_IDENTITY,
+        ),
+        (
+            "_stage_lookup.sh",
+            loom::fs::permissions::constants::HOOK_STAGE_LOOKUP,
+        ),
+        (
+            "_containment.sh",
+            loom::fs::permissions::constants::HOOK_CONTAINMENT,
+        ),
+        (
+            "_heartbeat.sh",
+            loom::fs::permissions::constants::HOOK_HEARTBEAT,
+        ),
+        (
+            "_spawn_policy.sh",
+            loom::fs::permissions::constants::HOOK_SPAWN_POLICY,
+        ),
         ("_lifecycle.sh", HOOK_LIFECYCLE),
         ("_read_ledger.sh", HOOK_READ_LEDGER),
         ("subagent-start.sh", HOOK_SUBAGENT_START),

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::confine::{CommandSpec, PreparedCommand};
+use crate::plan::schema::validation::shell_lex::{lex, Token, Word};
 
 /// Where `env` finds its command once the environment it passes on has no
 /// `PATH` (`-i`, `-u PATH`): the C library's default search path, which
@@ -87,34 +88,46 @@ enum Expect {
 }
 
 fn shell_command_names(line: &str) -> Option<Vec<CommandName>> {
-    if has_dynamic_dispatch(line) {
-        return None;
-    }
     let mut names = Vec::new();
     let mut expect = Expect::Command;
-    for raw in line.split_whitespace() {
-        let token = normalized_token(raw);
-        if !is_operator(raw) && !token.is_empty() {
-            expect = match expect {
-                Expect::Command => command_word(token, &mut names)?,
-                Expect::Env(args) => args.next(token, &mut names)?,
-                Expect::Arguments => Expect::Arguments,
-            };
-        }
-        if is_operator(raw) || ends_command(raw) {
-            // `env` with no command prints the environment: never cached.
-            if matches!(expect, Expect::Env(_)) {
-                return None;
+    let mut redirect_target = false;
+    let mut completed = false;
+    for token in lex(line) {
+        match token {
+            Token::Word(word) => {
+                if word.expands || !word.substitutions.is_empty() {
+                    return None;
+                }
+                if std::mem::take(&mut redirect_target) {
+                    continue;
+                }
+                expect = match expect {
+                    Expect::Command => command_word(&word, &mut names)?,
+                    Expect::Env(args) => args.next(&word.value, &mut names)?,
+                    Expect::Arguments => Expect::Arguments,
+                };
+                completed |= matches!(expect, Expect::Arguments);
             }
-            expect = Expect::Command;
+            Token::Redirect("<<" | "<<-" | "<<<") => return None,
+            Token::Redirect(_) if !redirect_target => redirect_target = true,
+            Token::Redirect(_) => return None,
+            Token::Control(";" | "&&" | "||" | "|") if !redirect_target => {
+                // `env` with no command prints the environment: never cached.
+                if matches!(expect, Expect::Env(_)) {
+                    return None;
+                }
+                expect = Expect::Command;
+            }
+            Token::Control(_) => return None,
         }
     }
-    matches!(expect, Expect::Arguments).then_some(names)
+    (!redirect_target && !matches!(expect, Expect::Env(_)) && completed).then_some(names)
 }
 
 /// The first word of a simple command, past assignments and `!`.
-fn command_word(token: &str, names: &mut Vec<CommandName>) -> Option<Expect> {
-    if shell_assignment(token) || token == "!" {
+fn command_word(word: &Word, names: &mut Vec<CommandName>) -> Option<Expect> {
+    let token = word.value.as_str();
+    if word.assignment_name().is_some() || token == "!" {
         return Some(Expect::Command);
     }
     if token == "env" {
@@ -199,33 +212,11 @@ impl EnvArgs {
     }
 }
 
-fn has_dynamic_dispatch(line: &str) -> bool {
-    line.contains("$(") || line.contains('`') || line.contains("<(") || line.contains(">(")
-}
-
-fn normalized_token(token: &str) -> &str {
-    token
-        .trim_matches(is_shell_syntax)
-        .trim_matches(|value| value == '\'' || value == '"')
-}
-
 fn unresolved_command_token(token: &str) -> bool {
     token.contains('$')
         || token
             .chars()
             .any(|value| matches!(value, '*' | '?' | '[' | ']'))
-}
-
-fn is_operator(token: &str) -> bool {
-    matches!(token, "&&" | "||" | "|" | ";")
-}
-
-fn ends_command(token: &str) -> bool {
-    token.ends_with(';') || token.ends_with('|') || token.ends_with("&&") || token.ends_with("||")
-}
-
-fn is_shell_syntax(value: char) -> bool {
-    matches!(value, '(' | ')' | ';' | '|' | '&')
 }
 
 fn shell_assignment(token: &str) -> bool {

@@ -184,6 +184,7 @@ impl Fixture {
         let now = Utc::now();
         let record = JobRecord {
             id: new_job_id(),
+            submission_order: 0,
             stage_id: STAGE.to_string(),
             session_id: SESSION.to_string(),
             kind,

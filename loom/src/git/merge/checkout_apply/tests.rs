@@ -2,11 +2,30 @@
 //! points git does not fail at by itself.
 
 use super::*;
+use crate::git::merge::checkout_files::inject_before_restore;
 use crate::git::merge::fast_forward::failpoint::{inject, Failures};
 use crate::git::merge::test_support::{
     commit_file, git_ok, git_out, init_repo, lock_dir, rev, stage_branch,
 };
 use crate::git::merge::{merge_stage, MergeGate, MergeResult};
+use std::cell::RefCell;
+
+type BeforeStashPush = Box<dyn FnOnce(&Path)>;
+
+thread_local! {
+    static BEFORE_STASH_PUSH: RefCell<Option<BeforeStashPush>> = RefCell::new(None);
+}
+
+pub(super) fn before_stash_push(repo: &Path) -> bool {
+    BEFORE_STASH_PUSH.with(|hook| {
+        if let Some(hook) = hook.borrow_mut().take() {
+            hook(repo);
+            true
+        } else {
+            false
+        }
+    })
+}
 
 const LINES: &str = "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n";
 
@@ -75,6 +94,74 @@ fn a_refused_fast_forward_with_a_working_pop_puts_everything_back() {
     assert_eq!(rev(root, "main"), head);
     assert_eq!(read(root), edited);
     assert_eq!(git_out(root, &["stash", "list"]), "");
+}
+
+#[test]
+fn stash_failure_reports_a_recreated_untracked_file_and_keeps_the_backup() {
+    let repo = init_repo();
+    let root = repo.path();
+    commit_file(root, "f.txt", LINES, "f");
+    let branch_text = LINES.replace("l1\n", "l1b\n");
+    stage_branch(
+        root,
+        "s1",
+        &[("f.txt", &branch_text), ("new.txt", "branch")],
+    );
+    let edited = LINES.replace("l10\n", "l10b\n");
+    std::fs::write(root.join("f.txt"), &edited).unwrap();
+    std::fs::write(root.join("new.txt"), "branch").unwrap();
+    BEFORE_STASH_PUSH.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(|repo| {
+            std::fs::write(repo.join("new.txt"), "operator").unwrap();
+        }));
+    });
+
+    let result = merge(root);
+
+    let MergeResult::Blocked(MergeBlock::CheckoutRestoreIncomplete {
+        failures,
+        backup_ref: Some(backup_ref),
+        ..
+    }) = result
+    else {
+        panic!("expected incomplete rollback, got {result:?}");
+    };
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].path, "new.txt");
+    assert_eq!(std::fs::read(root.join("new.txt")).unwrap(), b"operator");
+    assert_eq!(read(root), edited);
+    git_out(root, &["rev-parse", "--verify", &backup_ref]);
+}
+
+#[test]
+fn partial_removal_reports_an_incomplete_rollback() {
+    let repo = init_repo();
+    let root = repo.path();
+    stage_branch(root, "s1", &[("first.txt", "original")]);
+    let old = rev(root, "main");
+    let branch = rev(root, "loom/s1");
+    let tree = git_out(root, &["rev-parse", "loom/s1^{tree}"]);
+    std::fs::write(root.join("first.txt"), "original").unwrap();
+    std::fs::create_dir(root.join("cannot-remove")).unwrap();
+    inject_before_restore(|repo| {
+        std::fs::write(repo.join("first.txt"), "operator").unwrap();
+    });
+    let mut pending = PendingMerge::new(root, &tree, [&old, &branch], "merge");
+
+    let advance = land_removing(
+        root,
+        &mut pending,
+        vec!["first.txt".into(), "cannot-remove".into()],
+    )
+    .unwrap();
+
+    let Advance::Blocked(MergeBlock::CheckoutRestoreIncomplete { failures, .. }) = advance else {
+        panic!("expected incomplete rollback, got {advance:?}");
+    };
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].path, "first.txt");
+    assert_eq!(std::fs::read(root.join("first.txt")).unwrap(), b"operator");
+    assert_eq!(rev(root, "main"), old);
 }
 
 #[test]
@@ -216,10 +303,17 @@ fn an_errored_fast_forward_writes_removed_files_back_only_where_absent() {
     )
     .unwrap();
 
-    assert!(matches!(
-        advance,
-        Advance::Blocked(MergeBlock::StashNotRestored { .. })
-    ));
+    let Advance::Blocked(MergeBlock::CheckoutRestoreIncomplete {
+        failures,
+        backup_ref,
+        ..
+    }) = advance
+    else {
+        panic!("expected incomplete rollback, got {advance:?}");
+    };
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].path, "a.txt");
+    assert_eq!(backup_ref.as_deref(), Some("refs/loom/autostash/s1-1-abc"));
     assert_eq!(
         std::fs::read(root.join("a.txt")).unwrap(),
         b"operator's a\n",

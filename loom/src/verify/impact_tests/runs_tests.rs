@@ -162,6 +162,7 @@ fn cached_zero_test_tail(tests_executed: Option<u64>) -> ProbeRun {
         stderr: String::new(),
         exit_code: Some(0),
         timed_out: false,
+        output_complete: true,
         cached: Some(CachedRun { tests_executed }),
     }
 }
@@ -171,6 +172,24 @@ fn a_cached_pass_is_judged_by_its_recorded_count() {
     let run = cached_zero_test_tail(Some(3));
     let verdict = judge("cargo test x".to_string(), cargo(), &run);
     assert!(matches!(verdict, Run::Passed { note: None, .. }));
+}
+
+#[test]
+fn incomplete_capture_is_inconclusive_even_with_a_pass_or_cached_count() {
+    for cached in [
+        None,
+        Some(CachedRun {
+            tests_executed: Some(3),
+        }),
+    ] {
+        let mut run = cached_zero_test_tail(Some(3));
+        run.cached = cached;
+        run.output_complete = false;
+        let Run::Inconclusive(why) = judge("cargo test x".to_string(), cargo(), &run) else {
+            panic!("incomplete output must be inconclusive");
+        };
+        assert!(why.contains("output capture was incomplete"), "{why}");
+    }
 }
 
 #[test]

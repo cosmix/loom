@@ -118,13 +118,9 @@ pub fn ensure_daemon_stopped(work_root: &std::path::Path) -> Result<()> {
     );
     stop_daemon(work_root, false).context("failed to stop the daemon before removing state")?;
 
-    // 30s, not a "brief window": `DaemonServer::stop` returns as soon as the
-    // daemon acks the stop request, after which `run_server` still has to
-    // join five threads sequentially with a 5s timeout each
-    // (`daemon/server/lifecycle.rs`) before it releases the flock, and even
-    // then release is not always observable on the very next probe (see the
-    // `poll_until_free` comment in `daemon/server/lock.rs`). A shorter
-    // deadline spuriously refuses a daemon that is shutting down cleanly.
+    // The acknowledgement precedes daemon cleanup and lock release. Allow
+    // time for its sequential timed joins and lock visibility; client pool
+    // teardown can also block, so this deadline is not a shutdown bound.
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
     loop {
         if DaemonServer::check_status(work_root) == DaemonStatus::NotRunning {

@@ -234,9 +234,11 @@ pub fn load_job_file(
 }
 
 mod groups;
+mod order;
 pub(super) use groups::load_group_anchors;
 pub(crate) use groups::start_guarded_group;
 pub use groups::{append_group, load_groups};
+pub(crate) use order::next_submission_order;
 
 /// Open `<job dir>/child.log` for appending (and reading its tail), creating it.
 pub(crate) fn open_child_log(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<File> {
@@ -279,8 +281,8 @@ pub(crate) fn job_ids(work_dir: &Path, stage_id: &str) -> Result<Vec<String>> {
         .collect())
 }
 
-/// Remove old job directories beyond the three newest, unless `keep`, a
-/// pending retirement, or a live group guardian still needs the directory.
+/// Remove old applied job directories beyond the three newest. An unmarked
+/// job may still need application after `current.json` advances or a restart.
 pub(crate) fn prune_jobs(work_dir: &Path, stage_id: &str, keep: &str) -> Result<()> {
     let rel = stage_rel(stage_id)?;
     let root = open_root(work_dir)?;
@@ -299,6 +301,7 @@ pub(crate) fn prune_jobs(work_dir: &Path, stage_id: &str, keep: &str) -> Result<
     jobs.sort_unstable_by(|a, b| b.cmp(a));
     for (_, name) in jobs.into_iter().skip(KEPT_JOB_DIRS) {
         if name != keep
+            && load_job_file(work_dir, stage_id, &name, "applied")?.is_some()
             && !awaiting_retire(work_dir, stage_id, &name)
             && !load_group_anchors(work_dir, stage_id, &name)?
                 .iter()

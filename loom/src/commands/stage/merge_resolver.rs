@@ -166,14 +166,15 @@ fn launch_resolver(
     signal_path: &Path,
     work_dir: &Path,
 ) -> Result<Session> {
+    let spawn =
+        || backend.spawn_merge_session_in_worktree(stage, worktree, session.clone(), signal_path);
     #[cfg(test)]
-    let injected =
-        crate::orchestrator::signals::merge_test_backend::spawn(work_dir, session.clone());
+    let spawned =
+        crate::orchestrator::signals::merge_test_backend::spawn(work_dir, session.clone())
+            .unwrap_or_else(spawn);
     #[cfg(not(test))]
-    let injected: Option<Result<Session>> = None;
-    match injected.unwrap_or_else(|| {
-        backend.spawn_merge_session_in_worktree(stage, worktree, session.clone(), signal_path)
-    }) {
+    let spawned = spawn();
+    match spawned {
         Ok(spawned) => Ok(spawned),
         Err(error) => {
             let killed = backend.kill_session(&session).is_ok();
@@ -189,11 +190,11 @@ fn launch_resolver(
                 ),
             };
             settle_failed_launch(work_dir, &session, gone)?;
-            return Err(error.context(if gone {
+            Err(error.context(if gone {
                 "Failed to spawn merge resolver session"
             } else {
                 "Failed to spawn merge resolver session; it may still be running"
-            }));
+            }))
         }
     }
 }

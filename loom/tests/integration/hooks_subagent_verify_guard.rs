@@ -76,6 +76,38 @@ fn install_hook(dir: &Path) -> PathBuf {
         loom::fs::permissions::constants::HOOK_BOUNDED,
     );
     write_exec(&dir.join("_common.sh"), HOOK_COMMON);
+    write_exec(
+        &dir.join("_parser.sh"),
+        loom::fs::permissions::constants::HOOK_PARSER,
+    );
+    write_exec(
+        &dir.join("_parser_expand.sh"),
+        loom::fs::permissions::constants::HOOK_PARSER_EXPAND,
+    );
+    write_exec(
+        &dir.join("_parser_scan.sh"),
+        loom::fs::permissions::constants::HOOK_PARSER_SCAN,
+    );
+    write_exec(
+        &dir.join("_identity.sh"),
+        loom::fs::permissions::constants::HOOK_IDENTITY,
+    );
+    write_exec(
+        &dir.join("_stage_lookup.sh"),
+        loom::fs::permissions::constants::HOOK_STAGE_LOOKUP,
+    );
+    write_exec(
+        &dir.join("_containment.sh"),
+        loom::fs::permissions::constants::HOOK_CONTAINMENT,
+    );
+    write_exec(
+        &dir.join("_heartbeat.sh"),
+        loom::fs::permissions::constants::HOOK_HEARTBEAT,
+    );
+    write_exec(
+        &dir.join("_spawn_policy.sh"),
+        loom::fs::permissions::constants::HOOK_SPAWN_POLICY,
+    );
     let hook_path = dir.join("subagent-verify-guard.sh");
     write_exec(&hook_path, HOOK_SUBAGENT_VERIFY_GUARD);
     hook_path

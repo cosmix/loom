@@ -184,11 +184,11 @@ fn test_completion_instruction_workspace_preserves_original_text() {
     let expected = format!(
         "AUTONOMOUS RUN: this Claude session was launched by `loom pressure`; no human will end it for you. \
          When the task is FULLY complete and the plan file is fully updated (after every subagent has finished), \
-         your FINAL action MUST be to run exactly this shell command and nothing after it: touch {}. \
+         your FINAL action MUST be to run exactly this shell command and nothing after it: {}. \
          Do not run it earlier. That path is inside the repo's gitignored `.loom/work/` because the agent sandbox \
          mounts /tmp read-only; creating this one marker is the sanctioned exception to the rule against \
          writing under `.loom/work/` directly. Once that file exists the driver closes this session.",
-        marker.display()
+        crate::pressure::instruction::marker_command(marker)
     );
 
     let instruction = completion_instruction(marker, MarkerHome::Workspace);

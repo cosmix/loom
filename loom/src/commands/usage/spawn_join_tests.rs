@@ -2,6 +2,27 @@ use std::fs;
 
 use super::{RequestedModels, AMBIGUOUS_MODEL};
 
+#[test]
+fn requested_model_ledger_refuses_oversize_fifo_and_parent_symlink() {
+    use std::os::unix::ffi::OsStrExt;
+    let root = tempfile::tempdir().unwrap();
+    let stage = root.path().join("subagents/stage");
+    std::fs::create_dir_all(&stage).unwrap();
+    let path = stage.join("spawns.jsonl");
+    std::fs::write(&path, vec![b' '; super::MAX_LEDGER_BYTES + 1]).unwrap();
+    assert!(super::json_lines(&path).is_empty());
+    std::fs::remove_file(&path).unwrap();
+    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    // SAFETY: c_path is a valid NUL-terminated pathname.
+    assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+    assert!(super::json_lines(&path).is_empty());
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("spawns.jsonl"), "{}\n").unwrap();
+    let link = root.path().join("subagents/link");
+    std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+    assert!(super::json_lines(&link.join("spawns.jsonl")).is_empty());
+}
+
 fn write_ledger(work_dir: &tempfile::TempDir, name: &str, rows: &str) {
     let stage_dir = work_dir.path().join("subagents/stage-a");
     fs::create_dir_all(&stage_dir).unwrap();

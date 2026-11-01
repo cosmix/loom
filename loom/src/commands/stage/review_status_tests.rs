@@ -49,18 +49,15 @@ fn freshness_reports_exempt_paths_using_the_gate_predicate() {
     let after = crate::verify::review::fingerprint::fingerprint_from(
         "base",
         &[
-            ("a.rs".into(), Some(b"// note\nfn a() {}\n".to_vec())),
+            ("a.rs".into(), Some(b"fn a() {}\n".to_vec())),
             ("doc/x.md".into(), Some(b"new".to_vec())),
         ],
     );
     let report = freshness_report(&[round(1, &before, None)], &after).join("\n");
     assert!(report.contains("current fingerprint: yes"), "{report}");
+    assert!(report.contains("prose changes alone"), "{report}");
     assert!(
-        report.contains("comment or prose changes alone"),
-        "{report}"
-    );
-    assert!(
-        report.contains("a.rs") && report.contains("doc/x.md"),
+        !report.contains("a.rs") && report.contains("doc/x.md"),
         "{report}"
     );
     let mut changed_base = after;
@@ -68,6 +65,24 @@ fn freshness_reports_exempt_paths_using_the_gate_predicate() {
     let report = freshness_report(&[round(1, &before, None)], &changed_base).join("\n");
     assert!(report.contains("current fingerprint: no"), "{report}");
     assert!(!report.contains("changes alone"), "{report}");
+}
+
+#[test]
+fn freshness_requires_review_after_source_comment_changes() {
+    let before = crate::verify::review::fingerprint::fingerprint_from(
+        "base",
+        &[("a.rs".into(), Some(b"fn a() {}\n".to_vec()))],
+    );
+    let after = crate::verify::review::fingerprint::fingerprint_from(
+        "base",
+        &[("a.rs".into(), Some(b"// note\nfn a() {}\n".to_vec()))],
+    );
+
+    let report = freshness_report(&[round(1, &before, None)], &after).join("\n");
+
+    assert!(report.contains("current fingerprint: no"), "{report}");
+    assert!(!report.contains("changes alone"), "{report}");
+    assert!(report.contains("a.rs"), "{report}");
 }
 
 #[test]

@@ -357,10 +357,6 @@ mod tests {
         assert!(!wrapper_script_path(work_dir, pid_key).exists());
     }
 
-    /// `LOOM_MERGE_SESSION` follows the session KIND, not a `merge-` prefix on
-    /// the stage id. The stage id handed to the wrapper is now the plain plan
-    /// stage id for every kind, so a prefix sniff would both miss real merge
-
     #[test]
     fn test_read_pid_entry_pid_only() {
         let temp_dir = TempDir::new().unwrap();

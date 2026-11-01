@@ -101,4 +101,6 @@ pub fn render_footer(graph: &ResolvedGraph, stats: &ResolutionStats) -> String {
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_identity_impact;
+#[cfg(test)]
 mod tests_rows;

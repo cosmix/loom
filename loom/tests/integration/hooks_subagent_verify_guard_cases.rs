@@ -32,6 +32,14 @@ pub const BLOCK_CASES: &[(&str, &str)] = &[
     ),
     ("pytest", "bare pytest"),
     ("go test ./...", "go test walks the whole module"),
+    (
+        "go test -bench . -benchtime 1s",
+        "benchmarks still run regular tests",
+    ),
+    (
+        "go test ./... -bench=. -benchtime=1s",
+        "benchmarks across the module",
+    ),
     ("make test", "make test"),
     ("npm run build", "npm run build with no path"),
     // --- Regressions: tokenizer edge cases (do not weaken) ---
@@ -329,8 +337,8 @@ pub const ALLOW_CASES: &[(&str, &str)] = &[
     ("go test -v ./pkg", "go test of one package with flags"),
     ("go test -run TestLogin", "go test -run without a package"),
     (
-        "go test -bench . -benchtime 1s",
-        "go test -bench selects benchmarks",
+        "go test -bench . -run TestLogin",
+        "benchmarks with test filter",
     ),
     ("bun test src/a.test.ts", "bun test path"),
     (

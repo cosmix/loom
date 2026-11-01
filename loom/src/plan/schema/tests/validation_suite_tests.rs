@@ -159,6 +159,19 @@ fn test_preflight_warns_on_full_suite_run_for_standard_stage() {
 }
 
 #[test]
+fn go_benchmarks_warn_on_standard_stages() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.acceptance = vec![AcceptanceCriterion::Simple(
+        "go test ./... -bench . -benchtime 1s".to_string(),
+    )];
+    stage.artifacts = vec!["README.md".to_string()];
+    let warnings = validate_structural_preflight(&[stage], None);
+    assert!(warnings
+        .iter()
+        .any(|w| w.contains("runs the whole test suite")));
+}
+
+#[test]
 fn test_preflight_no_warning_for_full_suite_run_on_integration_verify_stage() {
     let mut stage = make_stage("stage-1", "Stage One");
     stage.stage_type = Some(StageType::IntegrationVerify);

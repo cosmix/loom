@@ -256,7 +256,8 @@ fn claude_command(
 /// Returns `(session, title, pid_key, wrapper_path_abs)`:
 /// * `session` — the input session with `session_type` and the stage
 ///   assignment (and therefore `tracking_key`) applied.
-/// * `title` — the window title / tmux session name (`session.tracking_key`).
+/// * `title` — the tmux session name (`session.tracking_key`); native spawn
+///   adds project and session identity to make its window title.
 /// * `pid_key` — the per-session PID-file key (`title + "-" + session.id`).
 /// * `wrapper_path_abs` — the absolute path to the wrapper script that
 ///   `exec`s claude.
@@ -311,7 +312,7 @@ fn write_capsule(
 /// tests supply directly.
 ///
 /// The stage is assigned first so `tracking_key` is set for the (stage, kind)
-/// pair: the window title IS the tracking_key, and the per-session PID-file
+/// pair: the tmux title is the tracking_key, and the per-session PID-file
 /// key (tracking_key + session.id, so two consecutive sessions for one stage
 /// never share a PID file, O-14) derives from it. The kind prefix stops at OS
 /// resources and never reaches `LOOM_STAGE_ID`, which is why the wrapper gets

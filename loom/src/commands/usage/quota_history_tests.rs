@@ -40,6 +40,8 @@ fn normalized(
         codex_unreadable_directories: 0,
         codex_scope: &UNSCOPED,
         receipts_root,
+        selected_stages: None,
+        selection_unavailable: false,
     })
 }
 

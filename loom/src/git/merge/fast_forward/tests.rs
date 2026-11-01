@@ -1,5 +1,6 @@
 use super::*;
 use crate::git::merge::test_support::{commit_file, git_ok, init_repo, rev, stage_branch};
+use std::os::unix::fs::symlink;
 
 fn overlap(paths: &[&str]) -> MergeBlock {
     MergeBlock::UncommittedOverlap {
@@ -94,4 +95,43 @@ fn a_refusal_without_paths_is_fast_forward_refused() {
     };
     assert!(detail.contains("fast-forward"), "{detail}");
     git_ok(root, &["status", "--porcelain"]);
+}
+
+#[test]
+fn a_refused_fast_forward_reports_occupied_rollback_paths() {
+    let repo = init_repo();
+    let root = repo.path();
+    stage_branch(root, "s1", &[("a.txt", "branch a"), ("b.txt", "branch b")]);
+    let (old, new) = (rev(root, "main"), rev(root, "loom/s1"));
+    std::fs::write(root.join("a.txt"), "operator").unwrap();
+    std::fs::write(root.join("outside.txt"), "outside").unwrap();
+    symlink("outside.txt", root.join("b.txt")).unwrap();
+    let _guard = failpoint::inject(failpoint::Failures {
+        fast_forward: true,
+        ..Default::default()
+    });
+
+    let advance =
+        fast_forward(root, (&old, &new), &["a.txt".into(), "b.txt".into()], None).unwrap();
+
+    let Advance::Blocked(MergeBlock::CheckoutRestoreIncomplete {
+        source_rev,
+        failures,
+        backup_ref,
+    }) = advance
+    else {
+        panic!("expected incomplete rollback, got {advance:?}");
+    };
+    assert_eq!(source_rev, new);
+    assert_eq!(
+        failures
+            .iter()
+            .map(|failure| failure.path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["a.txt", "b.txt"]
+    );
+    assert_eq!(backup_ref, None);
+    assert_eq!(std::fs::read(root.join("a.txt")).unwrap(), b"operator");
+    assert_eq!(std::fs::read(root.join("outside.txt")).unwrap(), b"outside");
+    assert_eq!(rev(root, "main"), old);
 }

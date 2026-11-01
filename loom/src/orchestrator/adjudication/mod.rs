@@ -215,9 +215,17 @@ impl AdjudicatorRegistry {
         dispute_id: u32,
         escalations: &mut Vec<Escalation>,
     ) -> bool {
-        if let Some(session_id) = session::live_adjudication_session(work_dir, stage_id) {
-            tracing::debug!(target: "loom::adjudication", stage = %stage_id, session = %session_id, "adjudication session already live");
-            return false;
+        match session::live_adjudication_session(work_dir, stage_id) {
+            Ok(Some(session_id)) => {
+                tracing::debug!(target: "loom::adjudication", stage = %stage_id, session = %session_id, "adjudication session already live");
+                return false;
+            }
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(target: "loom::adjudication", stage = %stage_id, %error,
+                    "Session ownership is uncertain; deferring adjudication spawn");
+                return false;
+            }
         }
         let attempts = session::attempt_count(work_dir, stage_id, dispute_id);
         if attempts >= MAX_ADJUDICATION_ATTEMPTS {

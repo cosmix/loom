@@ -1,57 +1,11 @@
 use super::pending::{pending_report, strict_should_fail};
+use super::test_isolation::{init_git_repo, run_isolated_test};
 use super::{change, note, resolve};
 use crate::fs::memory::{
     append_entry, append_to_spool, archive_run_state, read_journal, MemoryEntry, MemoryEntryType,
 };
-use serial_test::serial;
 use std::env;
-use std::process::Command;
 use tempfile::TempDir;
-
-fn init_git_repo() -> TempDir {
-    let temp_dir = TempDir::new().unwrap();
-    let run_git = |args: &[&str]| {
-        Command::new("git")
-            .args(args)
-            .current_dir(temp_dir.path())
-            .output()
-            .unwrap()
-    };
-    run_git(&["init", "--initial-branch=main"]);
-    run_git(&["config", "user.email", "test@test.com"]);
-    run_git(&["config", "user.name", "Test"]);
-    temp_dir
-}
-
-struct EnvGuard {
-    original_dir: std::path::PathBuf,
-    original_stage_id: Option<String>,
-    original_session_id: Option<String>,
-}
-
-impl EnvGuard {
-    fn new() -> Self {
-        Self {
-            original_dir: env::current_dir().unwrap(),
-            original_stage_id: env::var("LOOM_STAGE_ID").ok(),
-            original_session_id: env::var("LOOM_SESSION_ID").ok(),
-        }
-    }
-}
-
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        env::set_current_dir(&self.original_dir).unwrap();
-        match &self.original_stage_id {
-            Some(value) => env::set_var("LOOM_STAGE_ID", value),
-            None => env::remove_var("LOOM_STAGE_ID"),
-        }
-        match &self.original_session_id {
-            Some(value) => env::set_var("LOOM_SESSION_ID", value),
-            None => env::remove_var("LOOM_SESSION_ID"),
-        }
-    }
-}
 
 fn record_note_and_id(repo: &TempDir, stage: &str, text: &str) -> String {
     env::set_var("LOOM_STAGE_ID", stage);
@@ -64,9 +18,10 @@ fn record_note_and_id(repo: &TempDir, stage: &str, text: &str) -> String {
 }
 
 #[test]
-#[serial]
 fn resolve_records_a_receipt_referencing_the_event() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
     let event_id = record_note_and_id(&repo, "resolve-stage", "remember me");
@@ -90,9 +45,10 @@ fn resolve_records_a_receipt_referencing_the_event() {
 }
 
 #[test]
-#[serial]
 fn resolve_refuses_an_unknown_event_id() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
     std::fs::create_dir_all(repo.path().join(".loom/work")).unwrap();
@@ -111,9 +67,10 @@ fn resolve_refuses_an_unknown_event_id() {
 }
 
 #[test]
-#[serial]
 fn promoted_requires_a_target_and_discarded_requires_a_reason() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
     let event_id = record_note_and_id(&repo, "requirements-stage", "requirements");
@@ -126,9 +83,10 @@ fn promoted_requires_a_target_and_discarded_requires_a_reason() {
 }
 
 #[test]
-#[serial]
 fn pending_lists_unreceipted_notes_and_omits_changes_and_receipted_entries() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
     let stage = "pending-stage";
@@ -160,9 +118,10 @@ fn pending_strict_exits_non_zero_only_when_something_is_pending() {
 }
 
 #[test]
-#[serial]
 fn pending_merges_the_current_worktrees_spool() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     let repo = init_git_repo();
     let stage = "spool-stage";
     let worktree_root = repo.path().join(".worktrees").join(stage);
@@ -184,7 +143,6 @@ fn pending_merges_the_current_worktrees_spool() {
 }
 
 #[test]
-#[serial]
 fn archived_journals_copied_into_a_new_state_dir_are_pending() {
     let temp = TempDir::new().unwrap();
     let old_work = temp.path().join("old/.loom/work");

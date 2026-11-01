@@ -288,3 +288,99 @@ fn parsed_merged_artifact_preserves_repeat_count() {
         2
     );
 }
+
+#[test]
+fn checkpoint_merge_preserves_full_structured_context() {
+    use crate::handoff::schema::{CompletedTask, FileRef};
+    let (temp, session, stage) = fixture();
+    let dir = temp.path().join("handoffs");
+    fs::create_dir_all(&dir).unwrap();
+    let mut prior = HandoffV2::new(&session.id, &stage.id);
+    prior.completed_tasks = vec![CompletedTask::with_files(
+        "implemented",
+        vec!["src/lib.rs".into()],
+    )];
+    prior.discovered_facts = vec!["fact".into()];
+    prior.open_questions = vec!["question".into()];
+    prior.files_read = vec![FileRef::with_lines("src/lib.rs", 4, 9, "context")];
+    prior.goals = "goal".into();
+    prior.memory_content = Some("journal".into());
+    write_v2(dir.join("stage-merge-handoff-001.md"), &prior);
+    let attempt = evidence(
+        &session,
+        &stage,
+        'a',
+        "nonce_attempt_0000000001",
+        "ACK_REJECTED",
+    );
+    let (path, _) = merge_session_handoff(
+        &session,
+        &stage,
+        Some(HandoffOrigin::CompletionEvidence),
+        completion_content(&session, &stage, checkpoint(&attempt)),
+        temp.path(),
+    )
+    .unwrap();
+    let merged = parse(&path);
+    assert_eq!(merged.completed_tasks, prior.completed_tasks);
+    assert_eq!(merged.discovered_facts, prior.discovered_facts);
+    assert_eq!(merged.open_questions, prior.open_questions);
+    assert_eq!(merged.files_read, prior.files_read);
+    assert_eq!(merged.goals, prior.goals);
+    assert_eq!(merged.memory_content, prior.memory_content);
+}
+
+#[test]
+fn memory_branch_and_clean_snapshot_are_semantic_changes() {
+    let (temp, session, stage) = fixture();
+    let first = snapshot_content(&session, &stage, "old", "first", true);
+    let (_, created) = merge_session_handoff(&session, &stage, None, first, temp.path()).unwrap();
+    assert_eq!(created, MergeOutcome::Created);
+    let memory_only = snapshot_content(&session, &stage, "old", "second", true);
+    let (memory_path, outcome) =
+        merge_session_handoff(&session, &stage, None, memory_only, temp.path()).unwrap();
+    assert_eq!(outcome, MergeOutcome::Created);
+    assert_eq!(
+        parse(&memory_path).memory_content.as_deref(),
+        Some("second")
+    );
+    let update = snapshot_content(&session, &stage, "new", "second", true);
+    let (path, outcome) =
+        merge_session_handoff(&session, &stage, None, update.clone(), temp.path()).unwrap();
+    assert_eq!(outcome, MergeOutcome::Created);
+    let merged = parse(&path);
+    assert_eq!(merged.branch.as_deref(), Some("new"));
+    assert_eq!(merged.memory_content.as_deref(), Some("second"));
+    assert_eq!(merged.uncommitted_files, vec!["dirty.rs"]);
+    let clean = snapshot_content(&session, &stage, "new", "second", false);
+    let (path, outcome) =
+        merge_session_handoff(&session, &stage, None, clean.clone(), temp.path()).unwrap();
+    assert_eq!(outcome, MergeOutcome::Created);
+    assert!(parse(&path).uncommitted_files.is_empty());
+    let (again, outcome) =
+        merge_session_handoff(&session, &stage, None, clean, temp.path()).unwrap();
+    assert_eq!((again, outcome), (path, MergeOutcome::Unchanged));
+}
+
+fn snapshot_content(
+    session: &Session,
+    stage: &Stage,
+    branch: &str,
+    memory: &str,
+    dirty: bool,
+) -> HandoffContent {
+    use crate::handoff::git_handoff::GitHistory;
+    content(session, stage)
+        .with_current_branch(Some(branch.into()))
+        .with_memory_content(Some(memory.into()))
+        .with_git_history(Some(GitHistory {
+            branch: branch.into(),
+            base_branch: String::new(),
+            commits: Vec::new(),
+            uncommitted_changes: if dirty {
+                vec!["dirty.rs".into()]
+            } else {
+                Vec::new()
+            },
+        }))
+}

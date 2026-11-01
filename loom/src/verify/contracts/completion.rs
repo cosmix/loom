@@ -146,6 +146,7 @@ fn run_contract(
 /// certified pass, and a timed-out one has no output to read.
 fn compile_rejected(adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> bool {
     !run.timed_out
+        && run.output_complete
         && run.cached.is_none()
         && adapter.compile_rejected(&RunOutput {
             stdout: &run.stdout,
@@ -241,6 +242,11 @@ fn judge(
     let id = &contract.id;
     if run.timed_out {
         return Some(format!("contract '{id}' timed out running `{command}`"));
+    }
+    if !run.output_complete {
+        return Some(format!(
+            "contract '{id}' output capture was incomplete: `{command}`"
+        ));
     }
     if let Some(cached) = &run.cached {
         return judge_cached(contract, adapter, command, run.exit_code, cached);

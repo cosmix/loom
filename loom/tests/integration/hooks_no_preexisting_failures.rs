@@ -17,14 +17,23 @@ use tempfile::TempDir;
 
 fn setup_hook() -> (TempDir, std::path::PathBuf) {
     let temp = TempDir::new().expect("create temp dir");
-    fs::write(
-        temp.path().join("_bounded.sh"),
-        loom::fs::permissions::constants::HOOK_BOUNDED,
-    )
-    .expect("write _bounded.sh");
-
+    use loom::fs::permissions::constants as hooks;
+    for (name, content) in [
+        ("_bounded.sh", hooks::HOOK_BOUNDED),
+        ("_common.sh", HOOK_COMMON),
+        ("_parser.sh", hooks::HOOK_PARSER),
+        ("_parser_expand.sh", hooks::HOOK_PARSER_EXPAND),
+        ("_parser_scan.sh", hooks::HOOK_PARSER_SCAN),
+        ("_identity.sh", hooks::HOOK_IDENTITY),
+        ("_stage_lookup.sh", hooks::HOOK_STAGE_LOOKUP),
+        ("_containment.sh", hooks::HOOK_CONTAINMENT),
+        ("_heartbeat.sh", hooks::HOOK_HEARTBEAT),
+        ("_spawn_policy.sh", hooks::HOOK_SPAWN_POLICY),
+    ] {
+        fs::write(temp.path().join(name), content)
+            .unwrap_or_else(|error| panic!("write {name}: {error}"));
+    }
     let common_path = temp.path().join("_common.sh");
-    fs::write(&common_path, HOOK_COMMON).expect("write _common.sh");
     let mut perms = fs::metadata(&common_path).unwrap().permissions();
     perms.set_mode(0o755);
     fs::set_permissions(&common_path, perms).expect("chmod _common.sh");

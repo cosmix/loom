@@ -23,6 +23,35 @@ pub fn install_hooks(hooks: &Path) -> Result<()> {
             loom::fs::permissions::constants::HOOK_BOUNDED,
         ),
         ("_common.sh", HOOK_COMMON),
+        ("_parser.sh", loom::fs::permissions::constants::HOOK_PARSER),
+        (
+            "_parser_expand.sh",
+            loom::fs::permissions::constants::HOOK_PARSER_EXPAND,
+        ),
+        (
+            "_parser_scan.sh",
+            loom::fs::permissions::constants::HOOK_PARSER_SCAN,
+        ),
+        (
+            "_identity.sh",
+            loom::fs::permissions::constants::HOOK_IDENTITY,
+        ),
+        (
+            "_stage_lookup.sh",
+            loom::fs::permissions::constants::HOOK_STAGE_LOOKUP,
+        ),
+        (
+            "_containment.sh",
+            loom::fs::permissions::constants::HOOK_CONTAINMENT,
+        ),
+        (
+            "_heartbeat.sh",
+            loom::fs::permissions::constants::HOOK_HEARTBEAT,
+        ),
+        (
+            "_spawn_policy.sh",
+            loom::fs::permissions::constants::HOOK_SPAWN_POLICY,
+        ),
         ("_codex_forward.sh", HOOK_CODEX_FORWARD_COMMON),
         ("_lifecycle.sh", HOOK_LIFECYCLE),
         ("codex-forward-guard.sh", HOOK_CODEX_FORWARD_GUARD),

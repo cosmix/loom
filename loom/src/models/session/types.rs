@@ -151,12 +151,15 @@ pub struct Session {
     pub merge_target_branch: Option<String>,
 
     // ----- Runtime identity -----
-    /// Stable identifier used to find OS-level resources (terminal title)
-    /// belonging to this session. Derived from
+    /// Stable stage label used for tmux names and PID-file keys. Derived from
     /// `(stage_id, session_type)` via [`Session::derive_tracking_key`].
     /// May be empty for legacy sessions or sessions created before assignment.
     #[serde(default)]
     pub tracking_key: String,
+    /// Exact native window title assigned at launch. Legacy sessions have no
+    /// attributable window and use verified PID teardown only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_window_title: Option<String>,
     /// Which backend actually hosts this session's process. Set at spawn time
     /// to the lane actually used (not the configured preference), so kill and
     /// liveness dispatch correctly after a daemon restart.

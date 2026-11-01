@@ -35,7 +35,9 @@ const MAX_CLOSE_REASON_CHARS: usize = 4000;
 const CLOSE_REASON_TRUNCATED_MARKER: &str =
     "... reason truncated; see the stage file for the full text";
 
-/// Flatten every untrusted display string on a stage summary, in place.
+/// Sanitize display fields on a stage summary, in place. When adding a display
+/// field, choose its whole, multiline, or bounded presentation here. Identity
+/// fields such as IDs, dependencies and branch names must remain unchanged.
 ///
 /// Structured, enumerated and numeric fields are left alone: they cannot carry
 /// a control character in the first place. `incoherence` is included because it
@@ -48,6 +50,14 @@ const CLOSE_REASON_TRUNCATED_MARKER: &str =
 /// criteria, failure evidence and the block detail are read in full on the
 /// dashboard, so they go through [`neutralize`], which cuts nothing.
 pub(super) fn sanitize_stage_summary(summary: &mut StageSummary) {
+    neutralize(&mut summary.name);
+    if let Some(description) = summary.description.as_mut() {
+        *description = description
+            .split('\n')
+            .map(whole_safe)
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
     flatten(&mut summary.model);
     summary.execution_models.iter_mut().for_each(flatten);
     summary.last_tool.iter_mut().for_each(flatten);
@@ -104,7 +114,7 @@ fn flatten(value: &mut String) {
 /// Evidence lists are shipped whole as well. Revisit with a cap that leaves a
 /// visible marker if one stage's evidence makes the status frame too large for
 /// the dashboard's refresh.
-fn neutralize(value: &mut String) {
+pub(super) fn neutralize(value: &mut String) {
     *value = whole_safe(value);
 }
 
@@ -286,6 +296,20 @@ mod tests {
             stage.cleanup_warning.as_deref(),
             Some("worktree still on disk")
         );
+    }
+
+    #[test]
+    fn stage_name_is_safe_and_keeps_identity_and_unicode() {
+        let mut stage = summary();
+        stage.id = "stage-1".into();
+        stage.name = "Δοκιμή \u{1b}]52;c;payload\u{7} \u{1b}[31m\u{202e}終".into();
+        stage.description = Some("Description \u{1b}[31m".into());
+        sanitize_stage_summary(&mut stage);
+        assert_eq!(stage.id, "stage-1");
+        assert!(stage.name.contains("Δοκιμή"));
+        assert!(stage.name.contains('終'));
+        assert!(!stage.name.contains(['\u{1b}', '\u{7}', '\u{202e}']));
+        assert!(!stage.description.unwrap().contains('\u{1b}'));
     }
 
     #[test]

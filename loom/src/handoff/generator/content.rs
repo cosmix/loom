@@ -137,18 +137,6 @@ impl HandoffContent {
             .map(|(decision, rationale)| KeyDecision::new(decision.clone(), rationale.clone()))
             .collect();
 
-        // Convert git history commits if available
-        let commits: Vec<CommitRef> = self
-            .git_history
-            .as_ref()
-            .map(|h| {
-                h.commits
-                    .iter()
-                    .map(|c| CommitRef::new(c.hash.clone(), c.message.clone()))
-                    .collect()
-            })
-            .unwrap_or_default();
-
         // Get uncommitted files from git history
         let uncommitted_files: Vec<String> = self
             .git_history
@@ -156,7 +144,7 @@ impl HandoffContent {
             .map(|h| h.uncommitted_changes.clone())
             .unwrap_or_default();
 
-        HandoffV2::new(&self.session_id, &self.stage_id)
+        let mut document = HandoffV2::new(&self.session_id, &self.stage_id)
             .with_context_tokens(self.context_tokens)
             .with_origin_opt(self.origin)
             .with_completion_checkpoint(self.completion_checkpoint.clone())
@@ -168,8 +156,78 @@ impl HandoffContent {
                     .clone()
                     .unwrap_or_else(|| "unknown".to_string()),
             )
-            .with_commits(commits)
+            .with_commits(self.commit_refs())
             .with_uncommitted_files(uncommitted_files)
             .with_files_modified(self.files_modified.clone())
+            .with_context_content(
+                self.plan_id.clone(),
+                self.goals.clone(),
+                self.test_status.clone(),
+                self.memory_content.clone(),
+            );
+        document.base_branch = self
+            .git_history
+            .as_ref()
+            .map(|history| history.base_branch.clone())
+            .filter(|branch| !branch.is_empty());
+        document
+    }
+
+    fn commit_refs(&self) -> Vec<CommitRef> {
+        self.git_history
+            .as_ref()
+            .map(|history| {
+                history
+                    .commits
+                    .iter()
+                    .map(|commit| CommitRef::new(commit.hash.clone(), commit.message.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub(super) fn from_v2(document: HandoffV2) -> Self {
+        let history = GitHistory {
+            branch: document.branch.clone().unwrap_or_else(|| "unknown".into()),
+            base_branch: document.base_branch.clone().unwrap_or_default(),
+            commits: document
+                .commits
+                .iter()
+                .map(|commit| crate::handoff::git_handoff::CommitInfo {
+                    hash: commit.hash.clone(),
+                    message: commit.message.clone(),
+                })
+                .collect(),
+            uncommitted_changes: document.uncommitted_files.clone(),
+        };
+        let git_history = (!history.commits.is_empty()
+            || !history.uncommitted_changes.is_empty()
+            || !history.base_branch.is_empty())
+        .then_some(history);
+        Self {
+            session_id: document.session_id.clone(),
+            stage_id: document.stage_id.clone(),
+            plan_id: document.plan_id.clone(),
+            context_tokens: document.context_tokens,
+            origin: document.origin,
+            completion_checkpoint: document.completion_checkpoint.clone(),
+            goals: document.goals.clone(),
+            completed_work: document
+                .completed_tasks
+                .iter()
+                .map(|task| task.description.clone())
+                .collect(),
+            decisions: document
+                .key_decisions
+                .iter()
+                .map(|decision| (decision.decision.clone(), decision.rationale.clone()))
+                .collect(),
+            current_branch: document.branch.clone(),
+            test_status: document.test_status.clone(),
+            files_modified: document.files_modified.clone(),
+            next_steps: document.next_actions.clone(),
+            git_history,
+            memory_content: document.memory_content.clone(),
+        }
     }
 }

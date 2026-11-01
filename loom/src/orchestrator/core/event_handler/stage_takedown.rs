@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 
-use crate::fs::session_files::{load_session_exact, mark_session_terminal_reason};
+use crate::fs::session_files::mark_session_terminal_reason;
 use crate::handoff::HandoffOrigin;
 use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
@@ -341,19 +341,7 @@ impl Orchestrator {
                 .filter(|session| !tracked.contains(&session.id)),
         );
         if let Some(assigned_id) = stage.session.as_deref() {
-            if !agents.iter().any(|s| s.id == assigned_id) {
-                match load_session_exact(&self.config.work_dir, assigned_id)? {
-                    Some(assigned) if assigned.stage_id.as_deref() == Some(stage_id) => {
-                        agents.push(assigned);
-                    }
-                    Some(_) => {}
-                    None => tracing::warn!(
-                        stage = %stage_id,
-                        session = %assigned_id,
-                        "stage names a session with no record; continuing without it",
-                    ),
-                }
-            }
+            include_assigned_session(&mut agents, stage_id, assigned_id, &self.config.work_dir)?;
         }
         Ok(agents
             .into_iter()

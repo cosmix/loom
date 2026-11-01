@@ -82,7 +82,7 @@ fn run_window_command(command: &mut Command, description: &str) -> Option<Output
 #[cfg(target_os = "linux")]
 pub fn close_window_by_title(title: &str) -> bool {
     // Try wmctrl first (most reliable for window management)
-    if which::which("wmctrl").is_ok() {
+    if window_tool_available("wmctrl") {
         // `-F` makes `-c` match the FULL window name exactly (not a substring),
         // so closing `loom-auth` never closes `loom-auth-tests`.
         let mut command = Command::new("wmctrl");
@@ -96,7 +96,7 @@ pub fn close_window_by_title(title: &str) -> bool {
     }
 
     // Try xdotool as fallback
-    if which::which("xdotool").is_ok() {
+    if window_tool_available("xdotool") {
         // xdotool `search --name` treats the argument as a regex; anchor it so
         // only the exact title matches (`^loom-auth$` won't match
         // `loom-auth-tests`). The title is regex-escaped first.
@@ -115,7 +115,9 @@ pub fn close_window_by_title(title: &str) -> bool {
                         let mut close = Command::new("xdotool");
                         close.args(["windowclose", window_id]);
 
-                        if bounded_window_command(&mut close, "xdotool windowclose").is_some() {
+                        if bounded_window_command(&mut close, "xdotool windowclose")
+                            .is_some_and(|out| out.status.success())
+                        {
                             return true;
                         }
                     }
@@ -125,6 +127,15 @@ pub fn close_window_by_title(title: &str) -> bool {
     }
 
     false
+}
+
+#[cfg(target_os = "linux")]
+fn window_tool_available(binary: &str) -> bool {
+    #[cfg(test)]
+    if test_commands::is_capturing() {
+        return true;
+    }
+    which::which(binary).is_ok()
 }
 
 /// Escape a literal string for use inside an extended regular expression.

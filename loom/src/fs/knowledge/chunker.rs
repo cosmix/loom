@@ -136,18 +136,13 @@ struct Section<'a> {
 
 fn split_sections(content: &str) -> Vec<Section<'_>> {
     let mut split_points = Vec::new();
-    let mut fence = None;
+    let mut scanner = super::scanner::Scanner::default();
     let mut offset = 0;
 
     while let Some((line_end, line)) = line_at(content, offset) {
-        let fence_marker = fence_marker(line);
-        if let Some(open_fence) = fence {
-            if fence_marker == Some(open_fence) {
-                fence = None;
-            }
-        } else if let Some(marker) = fence_marker {
-            fence = Some(marker);
-        } else if line.starts_with("## ") {
+        if !scanner.fenced(line)
+            && super::scanner::atx_heading(line).is_some_and(|(level, _)| level == 2)
+        {
             split_points.push(offset);
         }
         offset = line_end;
@@ -176,7 +171,7 @@ fn split_sections(content: &str) -> Vec<Section<'_>> {
         let (_, line) = line_at(content, *start).unwrap_or((end, ""));
         sections.push(Section {
             body: &content[*start..end],
-            heading: line.strip_prefix("## ").unwrap_or_default(),
+            heading: super::scanner::atx_heading(line).map_or("", |(_, heading)| heading),
         });
     }
     sections
@@ -247,17 +242,6 @@ fn line_at(text: &str, start: usize) -> Option<(usize, &str)> {
         .unwrap_or(text.len());
     let line = text[start..end].trim_end_matches(['\n', '\r']);
     Some((end, line))
-}
-
-pub(crate) fn fence_marker(line: &str) -> Option<char> {
-    let trimmed = line.trim_start();
-    if trimmed.starts_with("```") {
-        Some('`')
-    } else if trimmed.starts_with("~~~") {
-        Some('~')
-    } else {
-        None
-    }
 }
 
 fn trim_trailing_blank_lines(body: &str) -> String {

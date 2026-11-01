@@ -77,11 +77,14 @@ fn land(
 }
 
 /// Remove the untracked files the merge replaces with identical bytes, then
-/// land. A file that cannot be removed leaves the checkout as it was.
+/// land. An incomplete rollback is reported with the paths left to recover.
 fn land_removing(repo: &Path, pending: &mut PendingMerge, paths: Vec<String>) -> Result<Advance> {
     pending.commit()?;
     if let Err(error) = remove_files(repo, pending.tree(), &paths) {
         tracing::warn!(%error, "Cannot remove untracked files the merge replaces");
+        if !error.restore.failures.is_empty() {
+            return Ok(Advance::Blocked(error.restore.block(pending.tree(), None)));
+        }
         return Ok(overlap(paths));
     }
     land(repo, pending, &paths, None)
@@ -89,8 +92,8 @@ fn land_removing(repo: &Path, pending: &mut PendingMerge, paths: Vec<String>) ->
 
 /// Dry run, then stash, fast-forward and pop. `S` is `git stash create`, a
 /// commit of the tracked changes that touches nothing in the working tree.
-/// A git failure before the fast-forward leaves the checkout untouched and
-/// blocks on the tracked paths.
+/// A git failure before the fast-forward blocks on the tracked paths unless
+/// rollback needs operator recovery, which is reported separately.
 fn reapply(
     repo: &Path,
     stage_id: &str,
@@ -122,18 +125,48 @@ fn reapply(
     let tree = pending.tree().to_string();
     if let Err(error) = remove_files(repo, &tree, &remove_untracked) {
         tracing::warn!(%error, "Cannot remove untracked files the merge replaces");
+        if !error.restore.failures.is_empty() {
+            return Ok(Advance::Blocked(
+                error.restore.block(&tree, Some(backup_ref)),
+            ));
+        }
         drop_backup(repo, &backup_ref);
         return Ok(overlap(tracked));
     }
-    if let Err(error) = run_git_checked(&["stash", "push", "--quiet"], repo) {
+    stash_and_land(repo, pending, &new, tracked, remove_untracked, backup_ref)
+}
+
+/// Stash only after the rollback backup exists and untracked overlaps are removed.
+fn stash_and_land(
+    repo: &Path,
+    pending: &PendingMerge,
+    new: &str,
+    tracked: Vec<String>,
+    remove_untracked: Vec<String>,
+    backup_ref: String,
+) -> Result<Advance> {
+    let tree = pending.tree();
+    #[cfg(test)]
+    let force_stash_failure = tests::before_stash_push(repo);
+    #[cfg(not(test))]
+    let force_stash_failure = false;
+    let stash_result = if force_stash_failure {
+        Err(anyhow::anyhow!("simulated stash failure"))
+    } else {
+        run_git_checked(&["stash", "push", "--quiet"], repo)
+    };
+    if let Err(error) = stash_result {
         tracing::warn!(%error, "Cannot stash the local changes of the main checkout");
-        restore_files(repo, &tree, &remove_untracked);
+        let restore = restore_files(repo, tree, &remove_untracked);
+        if !restore.failures.is_empty() {
+            return Ok(Advance::Blocked(restore.block(tree, Some(backup_ref))));
+        }
         drop_backup(repo, &backup_ref);
         return Ok(overlap(tracked));
     }
     fast_forward(
         repo,
-        (pending.old(), &new),
+        (pending.old(), new),
         &remove_untracked,
         Some(backup_ref),
     )

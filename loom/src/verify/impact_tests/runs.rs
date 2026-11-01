@@ -80,6 +80,9 @@ impl Site<'_> {
 
 /// A finished run, shown as `command`: passed, inconclusive, or how it failed.
 fn judge(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Run {
+    if !run.output_complete {
+        return Run::Inconclusive(format!("`{command}` output capture was incomplete"));
+    }
     if run.exit_code == Some(127) {
         return Run::Inconclusive(format!("`{command}` could not start (exit 127)"));
     }

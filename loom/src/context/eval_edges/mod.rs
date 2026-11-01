@@ -23,6 +23,8 @@ mod tests;
 #[cfg(test)]
 mod tests_build;
 #[cfg(test)]
+mod tests_evidence;
+#[cfg(test)]
 mod tests_floors;
 #[cfg(test)]
 mod tests_unknown_ids;
@@ -64,6 +66,8 @@ pub struct EdgeQualityReport {
     pub ambiguous_rate: f64,
     /// Bound edges at confidence 0.8 or more whose target differs from the label.
     pub false_high_confidence: usize,
+    /// Ambiguous labels whose candidate sets or binding do not match.
+    pub ambiguous_mismatches: usize,
     /// Expected ids `impact_with` missed, by labelled depth.
     pub impact_false_negatives: BTreeMap<usize, usize>,
     pub labels: LabelCounts,
@@ -81,7 +85,7 @@ pub fn evaluate_dir(dir: &Path) -> Result<EdgeQualityReport> {
     let labels = labels::load_labels(dir)?;
     let graph = build::build_graph(dir, &labels)
         .with_context(|| format!("build the graph of {}", dir.display()))?;
-    Ok(metrics::score(&labels, &graph))
+    metrics::score(&labels, &graph)
 }
 
 /// The corpora under `dir`: `dir` itself when it holds a `labels.yaml`,
@@ -180,6 +184,12 @@ impl Thresholds {
     }
 
     fn check_scores(&self, report: &EdgeQualityReport, violations: &mut Vec<String>) {
+        if report.ambiguous_mismatches > 0 {
+            violations.push(format!(
+                "ambiguous_mismatches: {}",
+                report.ambiguous_mismatches
+            ));
+        }
         let floors = [
             (
                 "declaration_recall",

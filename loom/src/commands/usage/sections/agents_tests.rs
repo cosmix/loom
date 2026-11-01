@@ -1,6 +1,4 @@
-//! Tests for the spawn-prompt agent-type classifier and for the `<synthetic>`
-//! model-sentinel filtering used when selecting a parent model and grouping
-//! by agent/model. Split out to keep `agents.rs` legible (CLAUDE.md Rule 17).
+//! Tests for agent-type inference and synthetic-model filtering.
 
 use super::*;
 use crate::commands::usage::transcript::{Entry, Request, TokenUsage, UserEntry};

@@ -102,5 +102,16 @@ fn persist_verdict_writes_a_parseable_record() {
 #[test]
 fn no_live_session_when_none_recorded() {
     let tmp = tempfile::tempdir().unwrap();
-    assert!(live_adjudication_session(tmp.path(), "s1").is_none());
+    assert!(live_adjudication_session(tmp.path(), "s1")
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn malformed_inventory_defers_adjudication_session_lookup() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sessions = tmp.path().join("sessions");
+    std::fs::create_dir(&sessions).unwrap();
+    std::fs::write(sessions.join("unknown.md"), "malformed").unwrap();
+    assert!(live_adjudication_session(tmp.path(), "s1").is_err());
 }

@@ -102,6 +102,25 @@ fn run(fixture: &InputFixture, stage: &Stage) -> crate::verify::criteria::Accept
 
 #[test]
 #[serial]
+fn quoted_ignored_input_with_stdout_assertion_reexecutes_after_change() {
+    let fixture = InputFixture::new("true");
+    std::fs::write(fixture.repo.path().join(".gitignore"), "ignored data.txt\n").unwrap();
+    let ignored = fixture.repo.path().join("ignored data.txt");
+    std::fs::write(&ignored, "expected\n").unwrap();
+    let stage = extended("cat 'ignored data.txt'", "expected");
+
+    let first = run(&fixture, &stage);
+    std::fs::write(&ignored, "changed\n").unwrap();
+    let changed = run(&fixture, &stage);
+
+    assert!(first.all_passed());
+    assert!(!changed.all_passed());
+    assert!(!first.results()[0].cached && !changed.results()[0].cached);
+    assert_eq!(fixture.cache_records(), 0);
+}
+
+#[test]
+#[serial]
 fn command_changing_its_tracked_input_never_publishes() {
     let fixture = InputFixture::new("printf x >> source.txt");
     let stage = extended("sh scripts/probe.sh", "");

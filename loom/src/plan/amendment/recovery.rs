@@ -15,6 +15,7 @@ pub fn verify_plan_versions_consistency(plan_path: &Path, work_dir: &Path) -> Re
     } else {
         resolve_plan_path(work_dir).unwrap_or_else(|_| plan_path.to_path_buf())
     };
+    let _plan_lock = crate::fs::locking::lock_plan(&plan_path)?;
     actions += super::transaction::finish_pending(&plan_path, work_dir)?;
     let latest = rows
         .iter()

@@ -1,7 +1,6 @@
 //! Per-pid-file orphan candidate evaluation for `stage_candidates`.
 //!
-//! Split out of `session_registry.rs` to keep that file at its 400-line
-//! ceiling. Behavior is unchanged from before the move.
+//! Match session identity and process evidence before adopting an orphan.
 
 use std::collections::HashSet;
 use std::path::Path;

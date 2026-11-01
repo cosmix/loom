@@ -15,6 +15,9 @@ use std::path::Path;
 
 use super::safe_fs::{open_safely, safe_open_dirfd};
 
+mod tail;
+pub(crate) use tail::read_tail;
+
 /// Whether any cause in `error`'s chain is `ENOENT`: an absent file, an
 /// absent parent directory, or an absent dirfd root. Shared by every no-follow
 /// open that treats a missing path as `Ok(None)` rather than an error.
@@ -55,6 +58,15 @@ pub(crate) fn single_link_regular_file(file: &File) -> Result<()> {
 /// it; it has no effect on reading a regular file.
 pub fn read_bounded(root: &Path, relative: &Path, max_bytes: usize) -> Result<Vec<u8>> {
     let root_fd = safe_open_dirfd(root)?;
+    read_bounded_at(&root_fd, relative, max_bytes)
+}
+
+/// Bounded read anchored to an already-open directory, without taking a lock.
+pub(crate) fn read_bounded_at(
+    root_fd: &OwnedFd,
+    relative: &Path,
+    max_bytes: usize,
+) -> Result<Vec<u8>> {
     let flags = libc::O_RDONLY | libc::O_NONBLOCK;
     let file_fd = open_safely(root_fd.as_raw_fd(), relative, flags, 0)
         .with_context(|| format!("Refusing unsafe read of {}", relative.display()))?;

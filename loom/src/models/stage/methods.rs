@@ -328,8 +328,7 @@ impl Stage {
     ///
     /// Transitions to NeedsAdjudication. From `Executing` this is a
     /// direct transition; from `CompletedWithFailures` the stage steps
-    /// through `Executing` first (the same two-step pattern the
-    /// pre-Stage 2 `dispute_criteria` used for human review).
+    /// through `Executing` first, as required by the state machine.
     ///
     /// `reason` is recorded in `review_reason` for now — the
     /// authoritative copy lives in `request.md` written by the daemon.

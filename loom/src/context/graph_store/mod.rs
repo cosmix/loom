@@ -206,8 +206,8 @@ impl GraphStore {
 
     /// Write a stage's overlay, replacing any previous one.
     ///
-    /// Overlays are mutable — a stage rewrites its own as it edits — but they
-    /// are private to that stage, so no other reader can observe a torn write.
+    /// Each stage owns its overlay writes. Atomic replacement protects
+    /// concurrent readers from observing a torn write.
     pub fn save_overlay(&self, plan: &str, stage: &str, layer: &GraphLayer) -> Result<()> {
         let mut persisted = layer.clone();
         let base = self.load_base(&layer.revision)?;
@@ -236,13 +236,17 @@ impl GraphStore {
     /// does not accumulate across plans.
     pub fn discard_overlay(&self, plan: &str, stage: &str) -> Result<()> {
         let path = self.overlay_path(plan, stage);
-        self.discard_overlay_view(plan, stage);
         match fs::remove_file(&path) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error)
-                .with_context(|| format!("Failed to remove overlay layer: {}", path.display())),
+            Ok(()) => (),
+            Err(error) if error.kind() == ErrorKind::NotFound => (),
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("Failed to remove overlay layer: {}", path.display()))
+            }
         }
+        self.memory_fallback.borrow_mut().remove(&path);
+        self.discard_overlay_view(plan, stage);
+        Ok(())
     }
 
     /// Resolve a stage overlay against its recorded base, or `revision` when

@@ -69,6 +69,7 @@ fn a_one_label_per_kind_corpus_fails_the_published_thresholds() {
         unresolved_rate: 0.0,
         ambiguous_rate: 0.0,
         false_high_confidence: 0,
+        ambiguous_mismatches: 0,
         impact_false_negatives: BTreeMap::from([(1, 0)]),
         labels: LabelCounts {
             declarations: 1,

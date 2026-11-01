@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod apply;
 mod apply_rejection;
+pub(crate) mod apply_retry;
 pub mod child;
 mod child_complete;
 pub(crate) mod child_policy;
@@ -136,6 +137,9 @@ pub fn new_job_id() -> String {
 #[serde(deny_unknown_fields)]
 pub struct JobRecord {
     pub id: String,
+    /// Monotonic within this stage; zero means a record from before ordering.
+    #[serde(default)]
+    pub submission_order: u64,
     pub stage_id: String,
     /// The session whose request created the job.
     pub session_id: String,

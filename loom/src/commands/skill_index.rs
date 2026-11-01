@@ -13,6 +13,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::parser::frontmatter::extract_frontmatter_raw as canonical_extract_frontmatter_raw;
+use crate::skills::after_ascii_marker;
 
 /// YAML frontmatter structure for SKILL.md files
 #[derive(Deserialize, Default)]
@@ -300,7 +301,6 @@ fn is_skill_name_match(keyword: &str, skill_name: &str) -> bool {
 fn extract_description_keywords(description: &str) -> Vec<String> {
     // Join all lines into a single string for multi-line descriptions
     let text = description.lines().collect::<Vec<_>>().join(" ");
-    let lower = text.to_lowercase();
 
     // Try markers in order of specificity. Several shipped skills use
     // phrasings like "Triggers for this skill -" instead of a bare
@@ -317,8 +317,7 @@ fn extract_description_keywords(description: &str) -> Vec<String> {
     ];
 
     for marker in &markers {
-        if let Some(pos) = lower.find(marker) {
-            let after = &text[pos + marker.len()..];
+        if let Some(after) = after_ascii_marker(&text, marker) {
             // Find the end: ". " followed by uppercase letter, or end of string
             let end = find_sentence_boundary(after);
             let keywords_str = &after[..end];

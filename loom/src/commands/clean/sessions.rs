@@ -10,106 +10,18 @@ use std::{fs, path::Path};
 
 use crate::models::stage::StageStatus;
 use crate::orchestrator::terminal::native::{cleanup_stage_files, NativeBackend};
-use crate::orchestrator::terminal::tmux::{
-    kill_socket_server, list_loom_sockets, socket_session_is_alive, LoomSocket,
-};
+use crate::orchestrator::terminal::tmux::reap_sockets;
+pub(super) use crate::orchestrator::terminal::tmux::SessionReapMode;
 
-/// Controls whether [`clean_sessions`] reaps only dead sessions or also live
-/// ones. Mirrors `commands::init::cleanup::SessionReapMode`, which runs the
-/// identical two-mode sweep at `loom init` — kept as a separate type here
-/// because that module is private to `commands::init`, so it cannot be
-/// imported directly without widening that module's visibility (out of
-/// scope for this fix).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum SessionReapMode {
-    /// Reap only attributed sockets whose session is no longer alive.
-    OrphansOnly,
-    /// Reap every attributed socket, alive or not. Selected by `execute`
-    /// whenever this invocation is about to delete the state directory, which is the
-    /// only thing that makes a socket attributable back to this repo in the
-    /// first place — reaping must happen before that record is destroyed, or
-    /// a live tmux-hosted session leaks forever with no way to find it again.
-    IncludeLiveBeforeClean,
-}
-
-/// Outcome of [`handle_socket`] deciding what to do with a single socket.
-enum SocketOutcome {
-    /// Not attributed to this work dir — never touched.
-    Unattributed,
-    /// Attributed but left alone (an `OrphansOnly` sweep skipping a live one).
-    Kept,
-    /// Attributed and reaped; `was_alive` distinguishes a genuinely dead
-    /// (orphaned) session from a live one reaped early by
-    /// `IncludeLiveBeforeClean`.
-    Reaped { was_alive: bool },
-}
-
-/// Decide what to do with one socket found by `list_loom_sockets`, and act on
-/// that decision. Split out of [`clean_sessions`] so the sweep/report loop
-/// there stays small; this owns the per-socket policy. Mirrors
-/// `commands::init::cleanup::cleanup_orphaned_sessions`'s per-socket handling
-/// (kept separate rather than shared — see [`SessionReapMode`]'s docs).
-///
-/// If `kill_socket_server` fails while the session still appeared alive, the
-/// socket is still removed (a failed kill against an already-dead socket is
-/// the COMMON case for a genuinely orphaned session, so unconditional removal
-/// is what actually reaps stale sockets) but the operator is warned, since
-/// discarding the file in that specific case may be the only handle to a
-/// server that is genuinely still running.
-fn handle_socket(work_dir: &Path, socket: &LoomSocket, mode: SessionReapMode) -> SocketOutcome {
-    if !socket.attributed {
-        return SocketOutcome::Unattributed;
-    }
-
-    let alive = socket_session_is_alive(work_dir, &socket.session_id);
-    if alive && mode == SessionReapMode::OrphansOnly {
-        return SocketOutcome::Kept;
-    }
-
-    let killed = kill_socket_server(&socket.path);
-    if alive && !killed {
-        println!(
-            "  {} kill-server failed for session {} while its process still appears alive; \
-             removing the socket anyway — it may leak. Try `tmux -S {} kill-server` manually.",
-            "⚠".yellow().bold(),
-            socket.session_id,
-            socket.path.display()
-        );
-    }
-    let _ = fs::remove_file(&socket.path);
-    SocketOutcome::Reaped { was_alive: alive }
-}
-
-/// Reaps loom tmux sessions attributed to this work dir, per `mode`.
-///
-/// LIVE session termination normally stays the exclusive domain of `loom
-/// sessions kill` — with [`SessionReapMode::OrphansOnly`] (used for a bare
-/// `--sessions`), this only reaps sockets whose session is no longer alive.
-/// With [`SessionReapMode::IncludeLiveBeforeClean`] (selected by `execute`
-/// whenever this invocation is about to delete the state directory), an attributed
-/// socket is reaped even if its session is still alive — deleting the state directory
-/// destroys the only record that lets that socket ever be attributed again,
-/// so it must be reaped NOW or it leaks forever. Unattributable sockets
-/// (which may belong to another checkout or user, since the tmux socket
-/// directory is per-user, not per-repo) are reported but left untouched in
-/// EITHER mode. Mirrors `commands::init::cleanup::cleanup_orphaned_sessions`,
-/// which runs the identical two-mode sweep at `loom init`.
+/// Reap attributed sockets and clean eligible terminal tombstones.
 pub(super) fn clean_sessions(repo_root: &Path, mode: SessionReapMode) -> Result<usize> {
     print_sessions_header(mode);
 
     let work_dir = super::resolve_state_dir(repo_root);
-    let mut orphaned_reaped = 0;
-    let mut live_reaped = 0;
-    let mut unattributed = 0;
-
-    for socket in list_loom_sockets(&work_dir) {
-        match handle_socket(&work_dir, &socket, mode) {
-            SocketOutcome::Unattributed => unattributed += 1,
-            SocketOutcome::Kept => {}
-            SocketOutcome::Reaped { was_alive: true } => live_reaped += 1,
-            SocketOutcome::Reaped { was_alive: false } => orphaned_reaped += 1,
-        }
-    }
+    let stats = reap_sockets(&work_dir, mode)?;
+    let orphaned_reaped = stats.orphaned;
+    let live_reaped = stats.live;
+    let unattributed = stats.unattributed;
 
     cleanup_terminal_tombstones(&work_dir, mode)?;
 
@@ -267,15 +179,32 @@ mod tests {
         }
     }
 
-    /// Mirrors `commands::init::tests::test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode`:
-    /// a live ATTRIBUTED socket must be reaped once `loom clean` is about to
-    /// destroy the state directory (FIX 1's `IncludeLiveBeforeClean` mode), but
-    /// preserved when the state directory is not being destroyed; an UNATTRIBUTED
-    /// socket must be preserved in BOTH modes since the tmux socket
-    /// directory is per-user and it may belong to another checkout entirely.
+    fn live_socket(work_dir: &Path, sessions_dir: &Path, socket_dir: &Path) -> std::path::PathBuf {
+        let mut live_session = Session::new();
+        live_session.id = "session-cleanlive000".to_string();
+        live_session.assign_to_stage("stage-cleanlive000".to_string());
+        live_session.pid = Some(std::process::id());
+        fs::write(
+            sessions_dir.join(format!("{}.md", live_session.id)),
+            session_to_markdown(&live_session),
+        )
+        .unwrap();
+        crate::orchestrator::terminal::native::write_test_pid_identity(
+            work_dir,
+            &live_session,
+            std::process::id(),
+        )
+        .unwrap();
+        let live_socket = socket_dir.join(format!("loom-{}", live_session.id));
+        fs::write(&live_socket, "").unwrap();
+
+        live_socket
+    }
+
+    /// Failed live kills preserve sockets and stop state removal.
     #[test]
     #[serial]
-    fn test_clean_sessions_reaps_live_only_when_destroying_state() {
+    fn test_clean_sessions_preserves_live_socket_on_kill_failure() {
         let tmux_tmpdir = TempDir::new().unwrap();
         let _guard = TmuxTmpDirGuard::set(tmux_tmpdir.path());
         // SAFETY: `getuid` has no preconditions and cannot fail.
@@ -289,23 +218,11 @@ mod tests {
         let sessions_dir = repo_root.path().join(".loom").join("work").join("sessions");
         fs::create_dir_all(&sessions_dir).unwrap();
 
-        let mut live_session = Session::new();
-        live_session.id = "session-cleanlive000".to_string();
-        live_session.assign_to_stage("stage-cleanlive000".to_string());
-        live_session.pid = Some(std::process::id());
-        fs::write(
-            sessions_dir.join(format!("{}.md", live_session.id)),
-            session_to_markdown(&live_session),
-        )
-        .unwrap();
-        crate::orchestrator::terminal::native::write_test_pid_identity(
-            &repo_root.path().join(".loom").join("work"),
-            &live_session,
-            std::process::id(),
-        )
-        .unwrap();
-        let live_socket = socket_dir.join(format!("loom-{}", live_session.id));
-        fs::write(&live_socket, "").unwrap();
+        let live_socket = live_socket(
+            &repo_root.path().join(".loom/work"),
+            &sessions_dir,
+            &socket_dir,
+        );
 
         let unattributed_socket = socket_dir.join("loom-session-strangercase1");
         fs::write(&unattributed_socket, "").unwrap();
@@ -321,10 +238,10 @@ mod tests {
             "an unattributed socket must never be touched"
         );
 
-        clean_sessions(repo_root.path(), SessionReapMode::IncludeLiveBeforeClean).unwrap();
+        assert!(clean_sessions(repo_root.path(), SessionReapMode::IncludeLiveBeforeClean).is_err());
         assert!(
-            !live_socket.exists(),
-            "a live session must be reaped before the state directory destroys its attribution"
+            live_socket.exists(),
+            "failed live kill must retain the socket"
         );
         assert!(
             unattributed_socket.exists(),

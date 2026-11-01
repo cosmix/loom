@@ -16,7 +16,10 @@ use serial_test::serial;
 use tempfile::TempDir;
 
 use crate::models::stage::{StageStatus, StageType};
-use crate::verify::transitions::{are_all_dependencies_satisfied, save_stage};
+use crate::verify::transitions::{
+    are_all_dependencies_satisfied, are_all_dependencies_satisfied_cached,
+    describe_dependency_block, save_stage,
+};
 
 use super::create_test_stage;
 
@@ -195,6 +198,60 @@ fn real_merge_commit_in_target_returns_true() {
         satisfied,
         "Dependency with commit actually merged into main must be satisfied"
     );
+}
+
+#[test]
+#[serial]
+fn ancestry_error_is_retried_and_not_cached_as_a_block() {
+    let repo = init_repo_with_main();
+    let root = repo.path();
+    let commit = String::from_utf8(
+        Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(root)
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap()
+    .trim()
+    .to_string();
+    let mut dep = create_test_stage("dep", "Dep", StageStatus::Completed);
+    dep.merged = true;
+    dep.completed_commit = Some(commit);
+    save_stage(&dep, root).unwrap();
+    let mut dependent = create_test_stage("dependent", "Dependent", StageStatus::WaitingForDeps);
+    dependent.add_dependency("dep".to_string());
+
+    assert!(are_all_dependencies_satisfied_cached(&dependent, root, root, "later").is_err());
+    let block = describe_dependency_block(&dependent, root, root, "later")
+        .unwrap()
+        .unwrap();
+    assert!(block.detail.contains("ancestry check failed"), "{block:?}");
+    let created = Command::new("git")
+        .args(["branch", "later", "main"])
+        .current_dir(root)
+        .output()
+        .unwrap();
+    assert!(created.status.success(), "{created:?}");
+    assert!(are_all_dependencies_satisfied_cached(&dependent, root, root, "later").unwrap());
+}
+
+#[test]
+#[serial]
+fn dependency_cache_does_not_reuse_another_target_branch() {
+    let repo = init_repo_with_main();
+    let root = repo.path();
+    let commit = create_branch_with_commit("loom/dep", "dep.txt", "change", root);
+    let mut dep = create_test_stage("dep", "Dep", StageStatus::Completed);
+    dep.merged = true;
+    dep.completed_commit = Some(commit);
+    save_stage(&dep, root).unwrap();
+    let mut dependent = create_test_stage("dependent", "Dependent", StageStatus::WaitingForDeps);
+    dependent.add_dependency("dep".to_string());
+
+    assert!(are_all_dependencies_satisfied_cached(&dependent, root, root, "loom/dep").unwrap());
+    assert!(!are_all_dependencies_satisfied_cached(&dependent, root, root, "main").unwrap());
 }
 
 /// Fix 9 exemption: knowledge-stage dependencies never need ancestry proof.

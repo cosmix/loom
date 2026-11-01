@@ -64,17 +64,10 @@ fn test_pid_one_behavior() {
 }
 
 #[test]
-fn test_pid_zero_kernel_process() {
-    // PID 0 is the kernel scheduler process. We don't have permission to
-    // signal it, so kill returns EPERM. The function should return true
-    // because the process exists (EPERM means "exists but no permission").
+fn test_pid_zero_checks_current_process_group() {
+    // Signal target zero selects the caller's process group, which includes us.
     let result = is_process_alive(0);
-    // On macOS and Linux, PID 0 exists (kernel) but we get EPERM.
-    // With our EPERM handling, this should return true.
-    assert!(
-        result,
-        "PID 0 (kernel) should be detected as alive via EPERM"
-    );
+    assert!(result, "the current process group should be alive");
 }
 
 #[test]

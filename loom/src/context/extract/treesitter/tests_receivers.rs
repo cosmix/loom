@@ -62,6 +62,46 @@ fn a_this_call_in_a_javascript_function_stays_unbound() {
 }
 
 #[test]
+fn deep_dynamic_receivers_remain_bounded_and_unresolved() {
+    let source = format!("function f() {{ root{}; }}", ".step()".repeat(300));
+    let extraction = JavaScriptExtractor::new()
+        .extract(Path::new("src/w.js"), source.as_bytes())
+        .unwrap();
+    let calls: Vec<_> = extraction
+        .edges
+        .iter()
+        .filter(|edge| edge.kind == SourceEdgeKind::Calls)
+        .collect();
+    assert!(!calls.is_empty());
+    assert!(calls.iter().all(|edge| edge.is_unresolved()));
+    assert!(
+        calls
+            .iter()
+            .filter_map(|edge| edge.receiver.as_ref())
+            .map(String::len)
+            .sum::<usize>()
+            <= 256
+    );
+}
+
+#[test]
+fn long_identifier_receiver_keeps_its_spelling() {
+    let name = "a".repeat(300);
+    let source = format!("function f() {{ {name}.run(); }}");
+    let extraction = JavaScriptExtractor::new()
+        .extract(Path::new("src/w.js"), source.as_bytes())
+        .unwrap();
+    assert_unbound_on(call(&extraction, "run"), &name);
+
+    let path = format!("{name}.nested");
+    let source = format!("function f() {{ {path}.run(); }}");
+    let extraction = JavaScriptExtractor::new()
+        .extract(Path::new("src/w.js"), source.as_bytes())
+        .unwrap();
+    assert_unbound_on(call(&extraction, "run"), &path);
+}
+
+#[test]
 fn ecmascript_receiver_boundaries_follow_function_syntax() {
     use crate::context::extract::tsx::TsxExtractor;
     use crate::context::extract::typescript::TypeScriptExtractor;

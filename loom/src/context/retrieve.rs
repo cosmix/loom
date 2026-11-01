@@ -248,15 +248,10 @@ fn evaluate_state(store: &ContextStore, knowledge_root: Option<&Path>) -> Result
 /// gets a successful pack with no signal that the requested id was never
 /// included.
 ///
-/// `graph` is consulted only when the caller passes `Some` — which
-/// `retrieve_for_stage` does only when `Channel::Source` is in the query's
-/// scope. A source-node id accepted while the source channel is out of scope
-/// would pass this check and then never be ranked (`rank_source` is the only
-/// reader of `graph`, and it never runs for a channel outside `scope`): the
-/// exact silent no-op this function exists to prevent, just moved one step
-/// later.
+/// Callers pass only the corpora belonging to channels in scope. Lifecycle
+/// eligibility and packing budget are evaluated separately after validation.
 pub(crate) fn reject_unknown_require_ids(
-    catalog: &Catalog,
+    catalog: Option<&Catalog>,
     graph: Option<&ResolvedGraph>,
     require_id: &[String],
 ) -> Result<()> {
@@ -264,8 +259,8 @@ pub(crate) fn reject_unknown_require_ids(
         return Ok(());
     }
     let mut known_ids: BTreeSet<&str> = catalog
-        .chunks
-        .iter()
+        .into_iter()
+        .flat_map(|catalog| &catalog.chunks)
         .map(|chunk| chunk.id.as_str())
         .collect();
     if let Some(graph) = graph {
@@ -293,7 +288,7 @@ pub(crate) fn reject_unknown_require_ids(
 /// The result is a pure function of the bytes on disk and `query`.
 ///
 /// Returns `Err` when the catalog cannot be built or `query.required_ids` names
-/// an id the catalog does not hold. An ABSENT knowledge directory is not an
+/// an id absent from the requested scope. An ABSENT knowledge directory is not an
 /// error: retrieval runs source-only, over the resolved graph alone, and the
 /// pack says the structural layer was never built. Callers on a hot path —
 /// signal generation, the prompt hook — must degrade rather than propagate: log

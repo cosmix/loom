@@ -87,6 +87,50 @@ fn a_group_wrapped_over_several_lines_reads_like_one_line() {
     );
 }
 
+#[test]
+fn comments_in_use_trees_preserve_bindings() {
+    assert_eq!(
+        bindings("use external::{parse, nested::{item as alias, self}};"),
+        bindings("use external::{/* outer /* nested */ comment */ parse, // comment\n nested::{item /*x*/ as /*y*/ alias, self}};")
+    );
+}
+
+#[test]
+fn commented_external_use_refuses_cross_file_namesake() {
+    use crate::context::graph_store::{FileEntry, ResolvedGraph};
+    use crate::context::resolve_graph;
+    use crate::context::source_graph::SourceEdgeKind;
+    for import in ["use external::parse;", "use external::{/* why */ parse};"] {
+        let source = format!("{import} fn run() {{ parse(); }}");
+        let extractor = RustExtractor::new();
+        let entry = |path, bytes: &[u8]| {
+            let value = extractor.extract(Path::new(path), bytes).unwrap();
+            FileEntry {
+                nodes: value.nodes,
+                edges: value.edges,
+                coverage: value.coverage,
+                imports: value.imports,
+                ..FileEntry::default()
+            }
+        };
+        let mut graph = ResolvedGraph::default();
+        graph
+            .files
+            .insert("src/lib.rs".into(), entry("src/lib.rs", source.as_bytes()));
+        graph.files.insert(
+            "src/other.rs".into(),
+            entry("src/other.rs", b"pub fn parse() {}"),
+        );
+        resolve_graph(&mut graph);
+        let call = graph.files["src/lib.rs"]
+            .edges
+            .iter()
+            .find(|edge| edge.kind == SourceEdgeKind::Calls && edge.symbol == "parse")
+            .unwrap();
+        assert!(call.is_unresolved(), "{call:#?}");
+    }
+}
+
 /// `use external_crate::helper;` binds `helper` locally, so a call to `helper`
 /// is not claimed by a same-named definition in a module the caller cannot see.
 #[test]

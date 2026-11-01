@@ -130,11 +130,7 @@ fn stop_daemon_before_destroying_state(
     Ok(())
 }
 
-/// Runs the `--sessions` step and, if the state directory is about to be destroyed, the
-/// `--state` step right after it. Split out of [`execute`] to keep it under
-/// the line-count cap; kept as one function (rather than two standalone
-/// helpers) because [`SessionReapMode`] selection genuinely depends on
-/// `will_destroy_state`, the same flag that gates the state step.
+/// Reap sessions before state removal; the reap mode depends on whether state will be destroyed.
 fn clean_sessions_and_state(
     repo_root: &Path,
     sessions: bool,

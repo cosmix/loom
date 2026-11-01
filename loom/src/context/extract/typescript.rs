@@ -36,7 +36,7 @@ const QUERY: &str = r#"
 
 (variable_declarator
   name: (identifier) @name
-  value: (arrow_function)) @definition.function
+  value: [(arrow_function) (function_expression) (generator_function)]) @definition.function
 
 (class_declaration
   name: (type_identifier) @name) @definition.type
@@ -61,8 +61,10 @@ const QUERY: &str = r#"
     declaration: (lexical_declaration
       "const"
       (variable_declarator
-        name: (identifier) @name) @definition.constant))
+        name: (identifier) @name
+        value: (_) @_value) @definition.constant))
   (#not-match? @definition.constant "=>")
+  (#not-match? @_value "^(async\\b\\s*)?function\\b")
 )
 
 (import_statement
@@ -104,7 +106,7 @@ impl QueryHarness for TypeScriptExtractor {
             dialect: "typescript",
             grammar_version: "0.23.2",
             query_digest: crate::context::source_graph::body_hash(QUERY.as_bytes()),
-            extractor_version: 4,
+            extractor_version: 6,
         }
     }
 

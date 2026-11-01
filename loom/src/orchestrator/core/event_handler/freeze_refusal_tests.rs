@@ -306,6 +306,26 @@ fn a_declined_filing_is_marked_and_never_retried() {
 
 #[test]
 #[serial]
+fn an_admission_read_error_after_the_initial_read_retries() {
+    let mut fx = fixture();
+    fx.record(&fx.writer.id);
+    let (stage, _) = fx.orchestrator.refusing_writer(STAGE).unwrap().unwrap();
+    let refusal = daemon_refusal(&fx.work, STAGE).unwrap().unwrap();
+    let path = fx.work.join("contracts").join(STAGE).join("freeze.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    assert!(fx.orchestrator.file_refusal(&stage, &refusal).is_err());
+    let pending = daemon_refusal(&fx.work, STAGE).unwrap().unwrap();
+    assert_eq!(pending.declined, None);
+    fx.assert_nothing_filed();
+    std::fs::remove_dir(path).unwrap();
+    fx.tick();
+    fx.assert_filed_once();
+    assert_eq!(fx.stage().tally.freeze_refusal_disputes, 1);
+}
+
+#[test]
+#[serial]
 fn a_tick_retried_after_a_failed_filing_writes_one_request() {
     // SAFETY: `geteuid` has no preconditions.
     if unsafe { libc::geteuid() } == 0 {

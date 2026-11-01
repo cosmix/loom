@@ -170,49 +170,20 @@ fn test_create_worktree_settings_adds_resolved_work_permissions_legacy_layout() 
         "Should contain Read(//resolved/handoffs/**)"
     );
 
-    // Trust is set; defaultMode is intentionally NOT written here —
-    // it lives in settings.local.json via sandbox::apply_default_mode.
+    // Trust is set; the session capsule owns the resolved defaultMode.
     assert_eq!(settings["hasTrustDialogAccepted"], json!(true));
     assert!(
         settings["permissions"].get("defaultMode").is_none(),
-        "Base settings.json must not write defaultMode (finding #5)"
+        "Base settings.json must not write defaultMode"
     );
 }
 
 #[test]
 fn test_create_worktree_settings_adds_resolved_work_permissions_nested_layout() {
-    let temp_dir = TempDir::new().unwrap();
-    let repo_root = temp_dir.path().join("repo");
-    let worktree = temp_dir.path().join("worktree");
-
-    // Create the main .loom/work directory (simulates the nested state dir).
-    let main_work = repo_root.join(".loom").join("work");
-    std::fs::create_dir_all(&main_work).unwrap();
-
-    // Create the worktree's real .loom/ dir and its work symlink pointing at
-    // the main repo's .loom/work — the shape `ensure_work_symlink` plants.
-    let worktree_loom = worktree.join(".loom");
-    std::fs::create_dir_all(&worktree_loom).unwrap();
-    let worktree_work_link = worktree_loom.join("work");
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(&main_work, &worktree_work_link).unwrap();
-
-    let main_claude = repo_root.join(".claude");
-    std::fs::create_dir_all(&main_claude).unwrap();
-    let main_settings_path = main_claude.join("settings.json");
-    std::fs::write(&main_settings_path, "{}").unwrap();
-
-    let worktree_settings_path = worktree.join("settings.json");
-    create_worktree_settings(&main_settings_path, &worktree_settings_path, &worktree).unwrap();
-
-    let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
-    let settings: Value = serde_json::from_str(&content).unwrap();
-    let (allow, _deny) = extract_permissions(&settings);
+    let (resolved_str, allow, _deny) = run_create_worktree_settings_with_main_json("{}");
 
     // The nested `.loom/work` link must be the one resolved — never the
     // absent legacy `.work` — and grant the same narrow permission set.
-    let resolved_work = worktree_work_link.canonicalize().unwrap();
-    let resolved_str = resolved_work.to_string_lossy();
     assert!(
         !allow.contains(&format!("Read(/{}/**)", resolved_str)),
         "Should NOT contain a blanket Read(//resolved/**)"
@@ -225,41 +196,14 @@ fn test_create_worktree_settings_adds_resolved_work_permissions_nested_layout() 
 
 #[test]
 fn create_worktree_settings_never_grants_a_blanket_read_over_the_state_root() {
-    let temp_dir = TempDir::new().unwrap();
-    let repo_root = temp_dir.path().join("repo");
-    let worktree = temp_dir.path().join("worktree");
-
-    // Nested layout: worktree/.loom/work -> repo/.loom/work.
-    let main_work = repo_root.join(".loom").join("work");
-    std::fs::create_dir_all(&main_work).unwrap();
-    let worktree_loom = worktree.join(".loom");
-    std::fs::create_dir_all(&worktree_loom).unwrap();
-    let worktree_work_link = worktree_loom.join("work");
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(&main_work, &worktree_work_link).unwrap();
-
-    let main_claude = repo_root.join(".claude");
-    std::fs::create_dir_all(&main_claude).unwrap();
-    let main_settings_path = main_claude.join("settings.json");
-    std::fs::write(&main_settings_path, "{}").unwrap();
-
-    let worktree_settings_path = worktree.join("settings.json");
-    create_worktree_settings(&main_settings_path, &worktree_settings_path, &worktree).unwrap();
-
-    let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
-    let settings: Value = serde_json::from_str(&content).unwrap();
-    let (allow, deny) = extract_permissions(&settings);
-
-    let resolved = worktree_work_link.canonicalize().unwrap();
-    let resolved_str = resolved.to_string_lossy();
+    let (resolved_str, allow, deny) = run_create_worktree_settings_with_main_json("{}");
     assert!(
         !allow.contains(&format!("Read(/{}/**)", resolved_str)),
         "create_worktree_settings must never grant a blanket read over the state root \
          (S-1: exposes admin.token / user.token)"
     );
 
-    // Written by a different code path than settings.local.json, so this file
-    // must carry no read deny either; the narrow allow below is the whole grant.
+    // The base file carries no read deny; the capsule owns token deny policy.
     assert_no_read_deny(&deny, "the worktree settings.json");
     assert_narrow_state_root_allows(&allow, &resolved_str);
 }

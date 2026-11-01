@@ -3,14 +3,12 @@
 //! this read-only command remains useful before hooks have created a ledger.
 
 use std::collections::{HashMap, HashSet};
-use std::fs::{self, OpenOptions};
-use std::io::Read;
-use std::os::unix::fs::OpenOptionsExt;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-const MAX_LEDGER_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_LEDGER_BYTES: usize = 4 * 1024 * 1024;
 
 /// Return the agent type recorded for `agent_id`, if the hook-side ledgers
 /// can establish one without guessing. Stage ids are unknown to this command,
@@ -350,32 +348,18 @@ fn spawns_agent_type(stage_dirs: &[PathBuf]) -> Option<String> {
 /// valid ledger records before it. Missing or unreadable ledgers simply have
 /// no usable rows.
 fn json_lines(path: &Path) -> Vec<Value> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_file() && !metadata.file_type().is_symlink() => {
-            metadata
-        }
-        _ => return Vec::new(),
-    };
-    if metadata.len() > MAX_LEDGER_BYTES {
+    // The path is <work_dir>/subagents/<stage>/<ledger>.
+    let Some(root) = path.parent().and_then(Path::parent).and_then(Path::parent) else {
         return Vec::new();
-    }
-    let mut file = match OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-    {
-        Ok(file) => file,
-        Err(_) => return Vec::new(),
     };
-    let mut content = String::new();
-    if file
-        .by_ref()
-        .take(MAX_LEDGER_BYTES + 1)
-        .read_to_string(&mut content)
-        .is_err()
-    {
+    let Ok(relative) = path.strip_prefix(root) else {
         return Vec::new();
-    }
+    };
+    let Ok(mut content) =
+        crate::fs::safe_read::read_to_string_bounded(root, relative, MAX_LEDGER_BYTES)
+    else {
+        return Vec::new();
+    };
     if !content.ends_with('\n') {
         content.truncate(content.rfind('\n').map_or(0, |index| index + 1));
     }

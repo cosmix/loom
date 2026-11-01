@@ -91,21 +91,22 @@ impl Orchestrator {
                 return Err(error);
             }
         };
-        #[cfg(test)]
-        let injected = crate::orchestrator::signals::merge_test_backend::spawn(
-            &self.config.work_dir,
-            session.clone(),
-        );
-        #[cfg(not(test))]
-        let injected: Option<Result<Session>> = None;
-        let spawned = injected.unwrap_or_else(|| {
+        let spawn = || {
             self.backend.spawn_merge_session_in_worktree(
                 stage,
                 &worktree,
                 session.clone(),
                 signal_path,
             )
-        });
+        };
+        #[cfg(test)]
+        let spawned = crate::orchestrator::signals::merge_test_backend::spawn(
+            &self.config.work_dir,
+            session.clone(),
+        )
+        .unwrap_or_else(spawn);
+        #[cfg(not(test))]
+        let spawned = spawn();
         self.settle_resolver_spawn(&stage.id, session, spawned, attempt)
     }
 

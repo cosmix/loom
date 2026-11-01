@@ -66,10 +66,7 @@ pub fn has_merge_commit_since(
         )
     })?;
     let range = format!("{commit}..HEAD");
-    let (ok, merges) = query(&git, &["rev-list", "--merges", "--max-count=1", &range])?;
-    if !ok {
-        return Err(format!("git rev-list {range} failed in the stage worktree"));
-    }
+    let merges = query(&git, &["rev-list", "--merges", "--max-count=1", &range])?;
     Ok(!merges.is_empty())
 }
 
@@ -77,7 +74,7 @@ pub fn has_merge_commit_since(
 /// tracked change.
 fn check_branch_and_index(git: &WorktreeGit, stage_id: &str) -> Result<(), String> {
     let branch = branch_name_for_stage(stage_id);
-    let (_, head_ref) = query(git, &["symbolic-ref", "-q", "HEAD"])?;
+    let head_ref = query_optional(git, &["symbolic-ref", "-q", "HEAD"])?.unwrap_or_default();
     if head_ref != format!("refs/heads/{branch}") {
         return Err(format!(
             "the worktree is not on {branch} (HEAD is {}); switch back to it",
@@ -88,12 +85,12 @@ fn check_branch_and_index(git: &WorktreeGit, stage_id: &str) -> Result<(), Strin
             }
         ));
     }
-    if query(git, &["rev-parse", "-q", "--verify", "MERGE_HEAD"])?.0 {
+    if query_optional(git, &["rev-parse", "-q", "--verify", "MERGE_HEAD"])?.is_some() {
         return Err(
             "a merge is still in progress (MERGE_HEAD exists); commit it first".to_string(),
         );
     }
-    let (_, unmerged) = query(git, &["ls-files", "-u"])?;
+    let unmerged = query(git, &["ls-files", "-u"])?;
     if !unmerged.is_empty() {
         return Err(format!(
             "unmerged paths remain: {}",
@@ -102,7 +99,7 @@ fn check_branch_and_index(git: &WorktreeGit, stage_id: &str) -> Result<(), Strin
     }
     // `--no-optional-locks`: the resolver may be working in this worktree, and
     // the daemon must not take its index lock for a refresh.
-    let (_, changes) = query(
+    let changes = query(
         git,
         &[
             "--no-optional-locks",
@@ -144,16 +141,39 @@ fn check_work_survived(git: &WorktreeGit, commit: &str) -> Result<(), String> {
     }
 }
 
-/// Run `args` in the worktree: whether git exited 0, and its trimmed stdout.
-fn query(git: &WorktreeGit, args: &[&str]) -> Result<(bool, String), String> {
+/// Run a mandatory inspection, rejecting any unsuccessful exit.
+fn query(git: &WorktreeGit, args: &[&str]) -> Result<String, String> {
+    run_query(git, args, false).map(|value| value.expect("successful query has output"))
+}
+
+/// Git uses exit 1 for an absent symbolic ref or verified ref with `-q`.
+fn query_optional(git: &WorktreeGit, args: &[&str]) -> Result<Option<String>, String> {
+    run_query(git, args, true)
+}
+
+fn run_query(
+    git: &WorktreeGit,
+    args: &[&str],
+    allow_absent: bool,
+) -> Result<Option<String>, String> {
     let output = git.run(args).map_err(|error| {
         format!(
             "git {} failed in the stage worktree: {error:#}",
             args.join(" ")
         )
     })?;
-    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok((output.status.success(), text))
+    match output.status.code() {
+        Some(0) => Ok(Some(
+            String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        )),
+        Some(1) if allow_absent && output.stderr.is_empty() => Ok(None),
+        _ => Err(format!(
+            "git {} failed in the stage worktree ({}): {}",
+            args.join(" "),
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )),
+    }
 }
 
 /// The paths of `git ls-files -u` output, once each.
@@ -314,5 +334,15 @@ mod tests {
         let (repo, wt, commit) = repo_with_worktree();
         std::fs::write(wt.join("a.txt"), "edited").unwrap();
         assert!(refusal(&repo, &commit).contains("uncommitted changes"));
+    }
+
+    #[test]
+    fn a_corrupt_index_is_refused_with_git_error() {
+        let (repo, wt, commit) = repo_with_worktree();
+        let admin = git_out(&wt, &["rev-parse", "--absolute-git-dir"]);
+        std::fs::write(Path::new(&admin).join("index"), b"corrupt index").unwrap();
+        let reason = refusal(&repo, &commit);
+        assert!(reason.contains("git ls-files -u failed"), "{reason}");
+        assert!(reason.contains("index"), "{reason}");
     }
 }

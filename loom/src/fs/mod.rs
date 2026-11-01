@@ -1,3 +1,4 @@
+pub(crate) mod cache_io;
 pub(crate) mod daemon_state;
 pub(crate) mod dispute_lock;
 pub(crate) mod git_marker;

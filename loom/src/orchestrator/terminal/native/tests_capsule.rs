@@ -1,6 +1,5 @@
 //! Capsule-focused unit tests for `native/capsule.rs` and the capsule half of
-//! `build_claude_command`, split out of `native/tests.rs` to keep both files
-//! under the 400-line ceiling (CLAUDE.md Rule 17), and for the write denies a
+//! `build_claude_command`, and for the write denies a
 //! session's settings capsule carries (`session_settings.rs`), on the fixture
 //! `tests_session_settings.rs` builds.
 

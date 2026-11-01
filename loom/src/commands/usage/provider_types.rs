@@ -229,6 +229,13 @@ pub(crate) struct ProviderDiagnostics {
     pub(crate) unthreaded_forward_receipts: usize,
     /// 1 when the receipts could not be read, so the Codex scope is unknown.
     pub(crate) codex_scope_unavailable: usize,
+    /// Rollout files whose thread could not be established for this selection.
+    pub(crate) codex_unknown_file_identity: usize,
+    /// Threads claimed by more than one stage in a stage selection.
+    pub(crate) ambiguous_forward_threads: usize,
+    /// Execution receipts without stage identity excluded from a stage selection.
+    pub(crate) unscoped_execution_receipts: usize,
+    pub(crate) selection_unavailable: usize,
 }
 
 impl ProviderDiagnostics {
@@ -270,6 +277,10 @@ impl ProviderDiagnostics {
         self.missing_forward_threads += other.missing_forward_threads;
         self.unthreaded_forward_receipts += other.unthreaded_forward_receipts;
         self.codex_scope_unavailable += other.codex_scope_unavailable;
+        self.codex_unknown_file_identity += other.codex_unknown_file_identity;
+        self.ambiguous_forward_threads += other.ambiguous_forward_threads;
+        self.unscoped_execution_receipts += other.unscoped_execution_receipts;
+        self.selection_unavailable += other.selection_unavailable;
     }
 }
 

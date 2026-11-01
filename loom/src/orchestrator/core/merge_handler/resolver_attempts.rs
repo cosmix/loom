@@ -1,8 +1,30 @@
 //! The per-stage merge-resolver attempt counter: written by the daemon's spawn
 //! loop, read by it, by `loom status`, and by `loom stage merge`.
 
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+
+#[cfg(test)]
+std::thread_local! {
+    static REFUSED_RECORDING: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Exercise reservation failure after a readable counter, without relying on
+/// filesystem permissions that privileged test runners can bypass.
+#[cfg(test)]
+pub(in crate::orchestrator::core) fn with_recording_failure<R>(
+    work_dir: &Path,
+    run: impl FnOnce() -> R,
+) -> R {
+    struct Restore(Option<PathBuf>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            REFUSED_RECORDING.with(|refused| refused.replace(self.0.take()));
+        }
+    }
+    let _restore =
+        Restore(REFUSED_RECORDING.with(|refused| refused.replace(Some(work_dir.into()))));
+    run()
+}
 
 /// Maximum number of merge-resolver sessions the daemon will spawn for a single
 /// stage before giving up and routing it to `NeedsHumanReview`. It counts every
@@ -34,28 +56,18 @@ pub(in crate::orchestrator::core) fn attempts_file(work_dir: &Path, stage_id: &s
 /// nobody can read must never reopen the budget. Reads only, so status
 /// collection may call it.
 pub(crate) fn merge_resolver_attempts(work_dir: &Path, stage_id: &str) -> u32 {
-    recorded_attempts(&attempts_file(work_dir, stage_id)).unwrap_or(MAX_MERGE_RESOLVER_ATTEMPTS)
+    recorded_attempts(work_dir, stage_id).unwrap_or(MAX_MERGE_RESOLVER_ATTEMPTS)
 }
 
-/// The count recorded at `path`: `Some(0)` when no counter exists there,
-/// `None` when one exists but cannot be read as a count. The metadata check
-/// comes first so a FIFO or directory at `path` is never opened.
-fn recorded_attempts(path: &Path) -> Option<u32> {
-    match std::fs::metadata(path) {
-        Ok(metadata) if metadata.is_file() => {}
-        Ok(_) => return None,
-        Err(error) => return counter_absent(&error).then_some(0),
-    }
-    match std::fs::read_to_string(path) {
+/// An absent counter starts at zero; an unreadable counter exhausts the budget.
+fn recorded_attempts(work_dir: &Path, stage_id: &str) -> Option<u32> {
+    let root = work_dir.canonicalize().ok()?;
+    let relative = Path::new("merge-resolver-attempts").join(format!("{stage_id}.count"));
+    match crate::fs::safe_read::read_to_string_bounded(&root, &relative, 128) {
         Ok(count) => count.trim().parse().ok(),
-        Err(error) => counter_absent(&error).then_some(0),
+        Err(error) if crate::fs::safe_read::is_not_found(&error) => Some(0),
+        Err(_) => None,
     }
-}
-
-/// Whether `error` says no counter exists at the path (nothing there, or a
-/// parent that is not a directory), as opposed to one that cannot be read.
-fn counter_absent(error: &std::io::Error) -> bool {
-    matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory)
 }
 
 /// A merge-resolver attempt recorded before its session spawns, so no resolver
@@ -74,6 +86,13 @@ impl ReservedAttempt {
     /// `replaced`. An error means the attempt is not recorded, and the caller
     /// must not spawn.
     pub(super) fn record(work_dir: &Path, stage_id: &str, replaced: u32) -> std::io::Result<Self> {
+        #[cfg(test)]
+        if REFUSED_RECORDING.with(|refused| refused.borrow().as_deref() == Some(work_dir)) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "injected resolver attempt write failure",
+            ));
+        }
         std::fs::create_dir_all(attempts_dir(work_dir))?;
         let path = attempts_file(work_dir, stage_id);
         std::fs::write(&path, replaced.saturating_add(1).to_string())?;
@@ -161,10 +180,47 @@ mod tests {
     }
 
     #[test]
-    fn a_file_in_place_of_the_counter_dir_reads_as_zero_and_refuses_a_reservation() {
+    fn counter_refuses_links_fifo_and_oversized_input() {
+        use std::os::unix::fs::symlink;
+        let work = tempfile::tempdir().unwrap();
+        let dir = attempts_dir(work.path());
+        std::fs::create_dir(&dir).unwrap();
+        let counter = attempts_file(work.path(), "s");
+        let outside = work.path().join("outside");
+        std::fs::write(&outside, "1").unwrap();
+        symlink(&outside, &counter).unwrap();
+        assert_eq!(
+            merge_resolver_attempts(work.path(), "s"),
+            MAX_MERGE_RESOLVER_ATTEMPTS
+        );
+        std::fs::remove_file(&counter).unwrap();
+        nix::unistd::mkfifo(&counter, nix::sys::stat::Mode::S_IRUSR).unwrap();
+        assert_eq!(
+            merge_resolver_attempts(work.path(), "s"),
+            MAX_MERGE_RESOLVER_ATTEMPTS
+        );
+        std::fs::remove_file(&counter).unwrap();
+        std::fs::write(&counter, "1".repeat(129)).unwrap();
+        assert_eq!(
+            merge_resolver_attempts(work.path(), "s"),
+            MAX_MERGE_RESOLVER_ATTEMPTS
+        );
+        std::fs::rename(&dir, work.path().join("real-dir")).unwrap();
+        symlink(work.path().join("real-dir"), &dir).unwrap();
+        assert_eq!(
+            merge_resolver_attempts(work.path(), "s"),
+            MAX_MERGE_RESOLVER_ATTEMPTS
+        );
+    }
+
+    #[test]
+    fn a_file_in_place_of_the_counter_dir_exhausts_budget_and_refuses_reservation() {
         let work_dir = tempfile::tempdir().unwrap();
         std::fs::write(attempts_dir(work_dir.path()), "not a directory").unwrap();
-        assert_eq!(merge_resolver_attempts(work_dir.path(), "s"), 0);
+        assert_eq!(
+            merge_resolver_attempts(work_dir.path(), "s"),
+            MAX_MERGE_RESOLVER_ATTEMPTS
+        );
         assert!(ReservedAttempt::record(work_dir.path(), "s", 0).is_err());
     }
 

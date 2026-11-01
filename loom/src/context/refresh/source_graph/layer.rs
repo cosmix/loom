@@ -76,7 +76,8 @@ pub(super) fn build_layer(
 
 /// Wrap the resolved per-file entries into a [`GraphLayer`], deriving
 /// `generation` from the scope (an overlay tracks its tree's generation, a
-/// base layer has none) and copying the enumeration's blob index.
+/// base layer has none). An overlay's dirty files came from the worktree, not
+/// necessarily the index, so their index OIDs cannot identify their bytes.
 fn assemble_layer(
     scope: &SourceGraphScope,
     tree: &WorkingTree,
@@ -84,6 +85,17 @@ fn assemble_layer(
     enumeration: &Enumeration,
     files: BTreeMap<String, FileEntry>,
 ) -> GraphLayer {
+    let blob_index = enumeration
+        .known
+        .iter()
+        .filter(|(path, _)| {
+            (matches!(scope, SourceGraphScope::Base { .. }) || !tree.dirty.contains_key(*path))
+                && files
+                    .get(*path)
+                    .is_some_and(|entry| !entry.content_hash.is_empty())
+        })
+        .map(|(path, oid)| (path.clone(), oid.clone()))
+        .collect();
     GraphLayer {
         revision,
         generation: match scope {
@@ -92,7 +104,7 @@ fn assemble_layer(
         },
         built_at: Some(Utc::now()),
         files,
-        blob_index: enumeration.known.clone(),
+        blob_index,
         schema_version: GRAPH_SCHEMA_VERSION,
     }
 }

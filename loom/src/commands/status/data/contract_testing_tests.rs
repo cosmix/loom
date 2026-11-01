@@ -10,6 +10,7 @@ const SESSION: &str = "session-1";
 fn record(kind: JobKind, state: JobState, now: DateTime<Utc>) -> JobRecord {
     JobRecord {
         id: new_job_id(),
+        submission_order: 0,
         stage_id: STAGE.to_string(),
         session_id: SESSION.to_string(),
         kind,

@@ -17,21 +17,17 @@
 //!
 //! # Cost
 //!
-//! This runs on every poll tick (5 s) for every running session, so no handoff
-//! document is ever parsed twice: [`HandoffWatch`] caches the answer per
-//! filename and only reads names it has not examined before. Handoff artifacts
-//! are allocated under a directory lock with a fresh number and written
-//! atomically, never rewritten in place, so a cached answer cannot go stale.
-//! Each refresh costs one `read_dir` over a directory holding a handful of
-//! files; only the head of each NEW file is read, not its whole body.
+//! This runs once per poll tick (5 s). Successfully inspected artifacts are
+//! immutable and cached by filename. Failed or incomplete reads retry with
+//! bounded backoff; a failed read cannot become a permanent negative result.
 
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::Read;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
+use crate::fs::safe_read::read_bounded;
 use crate::handoff::HandoffOrigin;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
@@ -44,7 +40,9 @@ use super::events::MonitorEvent;
 /// frontmatter can run to tens of kilobytes, so reading the whole file to
 /// learn two strings is waste. A document whose frontmatter does not close
 /// within this budget is not evidence of anything and is skipped.
-const FRONTMATTER_SCAN_BYTES: u64 = 8 * 1024;
+const FRONTMATTER_SCAN_BYTES: usize = 8 * 1024;
+const MAX_HANDOFF_BYTES: usize = 1024 * 1024;
+const MAX_RETRY_BACKOFF_EXPONENT: u32 = 4;
 
 /// The takedown a handoff document asks for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,14 +62,21 @@ struct HandoffFrontmatter {
     origin: Option<HandoffOrigin>,
 }
 
-/// Per-filename memory of which documents ask for a takedown.
+/// A successfully inspected immutable document, or a read to retry.
+enum DocumentState {
+    NonRequest,
+    Request,
+    Retry { failures: u32, next_poll: u64 },
+}
+
+/// Per-filename memory of handoff documents and their takedown requests.
 #[derive(Default)]
 pub(super) struct HandoffWatch {
-    /// Every handoff filename examined so far, mapped to the request it
-    /// carries — `None` for the documents that are not takedown requests,
-    /// which is most of them. Kept so an unreadable or routine document is
-    /// dismissed once rather than re-read every tick.
-    examined: HashMap<String, Option<TakedownRequest>>,
+    examined: HashMap<String, DocumentState>,
+    requests: HashSet<(String, String)>,
+    poll: u64,
+    #[cfg(test)]
+    directory_reads: u64,
 }
 
 impl HandoffWatch {
@@ -86,22 +91,18 @@ impl HandoffWatch {
     /// `NeedsHandoff` after a failed takedown is exactly how the existing
     /// retry works — a suppression latch here would swallow that retry.
     pub(super) fn needs_handoff_from_document(
-        &mut self,
+        &self,
         session: &Session,
         stages: &[Stage],
-        work_dir: &Path,
     ) -> Option<MonitorEvent> {
         let stage_id = session.stage_id.as_deref()?;
         if !stage_is_executing_for(stages, stage_id, &session.id) {
             return None;
         }
 
-        self.refresh(work_dir);
         let requested = self
-            .examined
-            .values()
-            .flatten()
-            .any(|request| request.stage_id == stage_id && request.session_id == session.id);
+            .requests
+            .contains(&(stage_id.to_string(), session.id.clone()));
 
         requested.then(|| MonitorEvent::SessionNeedsHandoff {
             session_id: session.id.clone(),
@@ -109,23 +110,82 @@ impl HandoffWatch {
         })
     }
 
-    /// Examine handoff filenames not seen before. A directory that cannot be
-    /// listed, or a file that cannot be read or parsed, is simply no evidence:
-    /// nothing here may abort the poll.
-    fn refresh(&mut self, work_dir: &Path) {
+    /// Inspect new documents and retry uncertain reads once their backoff ends.
+    /// The caller invokes this once per poll, before inspecting any session.
+    pub(super) fn refresh(&mut self, work_dir: &Path) {
+        self.poll = self.poll.saturating_add(1);
         let handoffs_dir = work_dir.join("handoffs");
-        let Ok(entries) = std::fs::read_dir(&handoffs_dir) else {
-            return;
+        #[cfg(test)]
+        {
+            self.directory_reads += 1;
+        }
+        let entries = match std::fs::read_dir(&handoffs_dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(error) => {
+                tracing::warn!(path = %handoffs_dir.display(), %error, "Cannot list handoffs");
+                return;
+            }
+        };
+        let root = match std::fs::canonicalize(work_dir) {
+            Ok(root) => root,
+            Err(error) => {
+                tracing::warn!(path = %work_dir.display(), %error, "Cannot resolve work directory for handoff read");
+                return;
+            }
         };
 
-        for entry in entries.flatten() {
-            let filename = entry.file_name().to_string_lossy().into_owned();
-            if !filename.ends_with(".md") || self.examined.contains_key(&filename) {
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => {
+                    tracing::warn!(%error, "Cannot list a handoff entry");
+                    continue;
+                }
+            };
+            let Some(filename) = entry.file_name().to_str().map(str::to_string) else {
                 continue;
-            }
-            self.examined
-                .insert(filename, takedown_request(&entry.path()));
+            };
+            self.inspect_filename(&root, filename);
         }
+    }
+
+    fn inspect_filename(&mut self, root: &Path, filename: String) {
+        if !filename.ends_with(".md") {
+            return;
+        }
+        let failures = match self.examined.get(&filename) {
+            Some(DocumentState::NonRequest | DocumentState::Request) => return,
+            Some(DocumentState::Retry { next_poll, .. }) if *next_poll > self.poll => return,
+            Some(DocumentState::Retry { failures, .. }) => *failures,
+            None => 0,
+        };
+        match takedown_request(root, &filename) {
+            Ok(Some(request)) => {
+                self.requests.insert((request.stage_id, request.session_id));
+                self.examined.insert(filename, DocumentState::Request);
+            }
+            Ok(None) => {
+                self.examined.insert(filename, DocumentState::NonRequest);
+            }
+            Err(error) => {
+                let failures = failures.saturating_add(1);
+                let delay = 1_u64 << (failures - 1).min(MAX_RETRY_BACKOFF_EXPONENT);
+                self.examined.insert(
+                    filename.clone(),
+                    DocumentState::Retry {
+                        failures,
+                        next_poll: self.poll.saturating_add(delay),
+                    },
+                );
+                tracing::warn!(%filename, %error, delay_polls = delay, "Cannot inspect handoff; will retry");
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn directory_read_count(&self) -> u64 {
+        self.directory_reads
     }
 }
 
@@ -138,250 +198,50 @@ fn stage_is_executing_for(stages: &[Stage], stage_id: &str, session_id: &str) ->
     })
 }
 
-/// The takedown request a document carries, or `None` for anything that is not
-/// one: an unreadable file, a document without frontmatter, and every origin
-/// other than an agent's own ceiling handoff.
-fn takedown_request(path: &Path) -> Option<TakedownRequest> {
-    let frontmatter: HandoffFrontmatter = crate::yaml::from_str(&frontmatter_head(path)?).ok()?;
+/// The takedown request a fully inspected document carries, if any.
+fn takedown_request(root: &Path, filename: &str) -> Result<Option<TakedownRequest>> {
+    let Some(frontmatter) = frontmatter_head(root, filename)? else {
+        return Ok(None);
+    };
+    let Ok(frontmatter) = crate::yaml::from_str::<HandoffFrontmatter>(&frontmatter) else {
+        return Ok(None);
+    };
     if frontmatter.origin != Some(HandoffOrigin::AgentCeiling) {
-        return None;
+        return Ok(None);
     }
-    Some(TakedownRequest {
+    Ok(Some(TakedownRequest {
         session_id: frontmatter.session_id,
         stage_id: frontmatter.stage_id,
-    })
+    }))
 }
 
 /// The YAML frontmatter at the head of a handoff document.
 ///
-/// Reads at most [`FRONTMATTER_SCAN_BYTES`], so the markdown body a handoff
-/// carries is never paid for. Lossy UTF-8 conversion is deliberate: the cut
-/// can land inside a multi-byte character, and that character is always well
-/// past the identity fields.
-fn frontmatter_head(path: &Path) -> Option<String> {
-    let mut head = Vec::new();
-    File::open(path)
-        .ok()?
-        .take(FRONTMATTER_SCAN_BYTES)
-        .read_to_end(&mut head)
-        .ok()?;
-    let head = String::from_utf8_lossy(&head);
-    let body = head.trim_start().strip_prefix("---")?;
-    let end = body.find("---")?;
-    Some(body[..end].to_string())
+/// Safely bounds the entire artifact before inspecting its head. A partial
+/// frontmatter or oversized document remains uncertain and is retried.
+fn frontmatter_head(root: &Path, filename: &str) -> Result<Option<String>> {
+    let relative = Path::new("handoffs").join(filename);
+    let document = read_bounded(root, &relative, MAX_HANDOFF_BYTES)
+        .with_context(|| format!("Cannot read handoff: {filename}"))?;
+    if document.is_empty() {
+        bail!("Handoff document is empty");
+    }
+    let head = String::from_utf8_lossy(&document[..document.len().min(FRONTMATTER_SCAN_BYTES + 1)]);
+    let trimmed = head.trim_start();
+    let Some(body) = trimmed.strip_prefix("---\n") else {
+        if trimmed.starts_with("---") {
+            bail!("Handoff frontmatter is incomplete");
+        }
+        return Ok(None);
+    };
+    let Some(end) = body
+        .find("\n---\n")
+        .or_else(|| body.strip_suffix("\n---").map(|s| s.len()))
+    else {
+        bail!("Handoff frontmatter is incomplete or exceeds {FRONTMATTER_SCAN_BYTES} bytes");
+    };
+    Ok(Some(body[..end].to_string()))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::session::SessionStatus;
-    use std::path::PathBuf;
-    use tempfile::TempDir;
-
-    /// A stage as the executor leaves it: executing, naming its agent.
-    fn executing_stage(session_id: &str) -> Stage {
-        let mut stage = Stage::new("Climate".to_string(), None);
-        stage.id = "climate-timezone-data".to_string();
-        stage.status = StageStatus::Executing;
-        stage.assign_session(session_id.to_string());
-        stage
-    }
-
-    fn running_session(stage_id: &str) -> Session {
-        let mut session = Session::new();
-        session.assign_to_stage(stage_id.to_string());
-        session.status = SessionStatus::Running;
-        session
-    }
-
-    /// A handoff document with the frontmatter shape the generator writes,
-    /// followed by a body long enough that a whole-file read would be waste.
-    fn write_handoff(work_dir: &Path, number: u32, stage_id: &str, session_id: &str, origin: &str) {
-        let dir = work_dir.join("handoffs");
-        std::fs::create_dir_all(&dir).unwrap();
-        let origin_line = if origin.is_empty() {
-            String::new()
-        } else {
-            format!("origin: {origin}\n")
-        };
-        let document = format!(
-            "---\nversion: 2\nsession_id: {session_id}\nstage_id: {stage_id}\n\
-             context_tokens: 153518\n{origin_line}branch: loom/{stage_id}\n---\n\n\
-             # Handoff: {stage_id}\n\n{}",
-            "Body text that the watch must never need to read.\n".repeat(400)
-        );
-        std::fs::write(
-            dir.join(format!("{stage_id}-handoff-{number:03}.md")),
-            document,
-        )
-        .unwrap();
-    }
-
-    fn work_dir() -> (TempDir, PathBuf) {
-        let temp = TempDir::new().unwrap();
-        let path = temp.path().to_path_buf();
-        (temp, path)
-    }
-
-    /// The incident itself: the agent's ceiling handoff landed, the stage
-    /// transition did not, and the daemon had nothing to react to.
-    #[test]
-    fn a_ceiling_document_asks_for_the_takedown_the_stage_file_never_recorded() {
-        let (_temp, work) = work_dir();
-        let session = running_session("climate-timezone-data");
-        let stages = vec![executing_stage(&session.id)];
-        write_handoff(
-            &work,
-            2,
-            "climate-timezone-data",
-            &session.id,
-            "agent_ceiling",
-        );
-
-        let event = HandoffWatch::default().needs_handoff_from_document(&session, &stages, &work);
-
-        assert_eq!(
-            event,
-            Some(MonitorEvent::SessionNeedsHandoff {
-                session_id: session.id.clone(),
-                stage_id: "climate-timezone-data".to_string(),
-            })
-        );
-    }
-
-    /// A document from a previous attempt names a session the stage has moved
-    /// past. Acting on it would take down the successor now doing the work.
-    #[test]
-    fn a_document_from_another_session_is_not_this_sessions_request() {
-        let (_temp, work) = work_dir();
-        let session = running_session("climate-timezone-data");
-        let stages = vec![executing_stage(&session.id)];
-        write_handoff(
-            &work,
-            1,
-            "climate-timezone-data",
-            "session-from-a-previous-attempt",
-            "agent_ceiling",
-        );
-
-        assert_eq!(
-            HandoffWatch::default().needs_handoff_from_document(&session, &stages, &work),
-            None
-        );
-    }
-
-    /// A stage that reached `NeedsHandoff` is the status-triggered path's to
-    /// recover; this one must not double-emit behind it.
-    #[test]
-    fn a_stage_already_needing_handoff_does_not_emit_again() {
-        let (_temp, work) = work_dir();
-        let session = running_session("climate-timezone-data");
-        let mut stage = executing_stage(&session.id);
-        stage.status = StageStatus::NeedsHandoff;
-        write_handoff(
-            &work,
-            1,
-            "climate-timezone-data",
-            &session.id,
-            "agent_ceiling",
-        );
-
-        assert_eq!(
-            HandoffWatch::default().needs_handoff_from_document(&session, &[stage], &work),
-            None
-        );
-    }
-
-    /// The regression this origin gate exists to prevent: a session at 90%
-    /// context has an advisory snapshot written for it by the daemon and is
-    /// expected to keep working. Reading that as a takedown request would kill
-    /// every session that ever entered the Red band, or compacted.
-    #[test]
-    fn routine_documents_are_not_takedown_requests() {
-        let (_temp, work) = work_dir();
-        let session = running_session("climate-timezone-data");
-        let stages = vec![executing_stage(&session.id)];
-        for (number, origin) in [(1, "red_band"), (2, "budget_exceeded"), (3, "")] {
-            write_handoff(&work, number, "climate-timezone-data", &session.id, origin);
-        }
-
-        assert_eq!(
-            HandoffWatch::default().needs_handoff_from_document(&session, &stages, &work),
-            None
-        );
-    }
-
-    /// A truncated, malformed or bodyless file is no evidence — and above all
-    /// must not abort the tick for every other session.
-    #[test]
-    fn malformed_documents_are_skipped_silently() {
-        let (_temp, work) = work_dir();
-        let session = running_session("climate-timezone-data");
-        let stages = vec![executing_stage(&session.id)];
-        let dir = work.join("handoffs");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("climate-timezone-data-handoff-001.md"), "").unwrap();
-        std::fs::write(
-            dir.join("climate-timezone-data-handoff-002.md"),
-            "---\nversion: 2\nsession_id: [broken\n",
-        )
-        .unwrap();
-        std::fs::write(
-            dir.join("climate-timezone-data-handoff-003.md"),
-            "# Prose handoff with no frontmatter at all\n",
-        )
-        .unwrap();
-
-        assert_eq!(
-            HandoffWatch::default().needs_handoff_from_document(&session, &stages, &work),
-            None
-        );
-    }
-
-    /// A missing handoffs directory is the normal state of a fresh plan.
-    #[test]
-    fn a_missing_handoffs_directory_is_not_an_error() {
-        let (_temp, work) = work_dir();
-        let session = running_session("climate-timezone-data");
-        let stages = vec![executing_stage(&session.id)];
-
-        assert_eq!(
-            HandoffWatch::default().needs_handoff_from_document(&session, &stages, &work),
-            None
-        );
-    }
-
-    /// The cost control: a document is parsed once, ever. A later tick answers
-    /// from the cache even if the file has since become unreadable.
-    #[test]
-    fn a_document_is_parsed_once_and_answered_from_cache() {
-        let (_temp, work) = work_dir();
-        let session = running_session("climate-timezone-data");
-        let stages = vec![executing_stage(&session.id)];
-        write_handoff(
-            &work,
-            2,
-            "climate-timezone-data",
-            &session.id,
-            "agent_ceiling",
-        );
-
-        let mut watch = HandoffWatch::default();
-        assert!(watch
-            .needs_handoff_from_document(&session, &stages, &work)
-            .is_some());
-
-        std::fs::remove_file(
-            work.join("handoffs")
-                .join("climate-timezone-data-handoff-002.md"),
-        )
-        .unwrap();
-
-        assert!(
-            watch
-                .needs_handoff_from_document(&session, &stages, &work)
-                .is_some(),
-            "the second tick must not re-read the file it already examined"
-        );
-    }
-}
+mod tests;

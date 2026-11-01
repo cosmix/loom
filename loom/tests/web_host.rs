@@ -81,10 +81,7 @@ fn capture_output(mut output: impl Read + Send + 'static) -> (Arc<Mutex<Vec<u8>>
     let (done, finished) = mpsc::channel();
     thread::spawn(move || {
         let mut chunk = [0; 1024];
-        loop {
-            let Ok(count) = output.read(&mut chunk) else {
-                break;
-            };
+        while let Ok(count) = output.read(&mut chunk) {
             if count == 0 {
                 break;
             }

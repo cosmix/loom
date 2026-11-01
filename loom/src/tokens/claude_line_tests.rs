@@ -121,16 +121,16 @@ fn test_parse_line_missing_or_invalid_timestamp_returns_unreadable() {
 }
 
 #[test]
-fn test_parse_line_timestamp_offset_is_converted_to_unix_seconds() {
+fn test_parse_line_timestamp_offset_is_converted_to_utc() {
     let mut line = assistant_usage();
     line["timestamp"] = json!("2026-10-01T00:09:35.379+03:00");
 
     assert!(matches!(
         parse_line(&line.to_string()),
         ClaudeLine::Usage {
-            timestamp: 1_790_802_575,
+            timestamp,
             ..
-        }
+        } if timestamp == 1_790_802_575
     ));
 }
 

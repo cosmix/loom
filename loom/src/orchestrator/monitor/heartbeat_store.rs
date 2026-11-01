@@ -8,7 +8,15 @@ use super::heartbeat::{Heartbeat, JUDGE_STEM_SUFFIX};
 
 /// Read a heartbeat file.
 pub fn read_heartbeat(path: &Path) -> Result<Heartbeat> {
-    let content = std::fs::read_to_string(path)
+    let root = path
+        .parent()
+        .and_then(Path::parent)
+        .context("Invalid heartbeat path")?;
+    let relative = path.strip_prefix(root)?;
+    let root = root
+        .canonicalize()
+        .context("Failed to resolve heartbeat workspace")?;
+    let content = crate::fs::safe_read::read_to_string_bounded(&root, relative, 64 * 1024)
         .with_context(|| format!("Failed to read heartbeat file: {}", path.display()))?;
     serde_json::from_str(&content)
         .with_context(|| format!("Failed to parse heartbeat file: {}", path.display()))

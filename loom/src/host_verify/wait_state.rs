@@ -3,10 +3,12 @@
 //! became (`wait` drives them).
 
 use std::io::Write;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
 use super::store::{load_current, load_job_record};
@@ -39,6 +41,7 @@ pub(super) fn read_state(path: &Path) -> Option<RequestState> {
 pub(super) fn write_state(path: &Path, state: &RequestState) -> Result<()> {
     let dir = path.parent().context("request state has no directory")?;
     std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    let _lock = lock_state(path)?;
     let mut file = tempfile::NamedTempFile::new_in(dir)?;
     file.write_all(&serde_json::to_vec(state)?)?;
     file.persist(path)
@@ -51,11 +54,51 @@ pub(super) fn write_state(path: &Path, state: &RequestState) -> Result<()> {
 /// no-cache flag or criteria differ (a `--criterion` check beside a full one,
 /// a rerun after an edit) replaces the request, so one waiter's end must not
 /// discard a newer request another wrote.
-pub(super) fn remove_state_if_owned(path: &Path, request_id: &str) {
-    if read_state(path).is_some_and(|state| state.request_id == request_id) {
-        let _ = std::fs::remove_file(path);
-    }
+pub(super) fn remove_state_if_owned(path: &Path, request_id: &str) -> Result<()> {
+    remove_state_if_owned_inner(path, request_id, || {})
 }
+
+fn remove_state_if_owned_inner(
+    path: &Path,
+    request_id: &str,
+    after_match: impl FnOnce(),
+) -> Result<()> {
+    let _lock = lock_state(path)?;
+    if read_state(path).is_some_and(|state| state.request_id == request_id) {
+        after_match();
+        std::fs::remove_file(path).with_context(|| format!("cannot remove {}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn lock_state(path: &Path) -> Result<std::fs::File> {
+    let mut name = path.as_os_str().to_os_string();
+    name.push(".lock");
+    let lock_path = PathBuf::from(name);
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(&lock_path)
+        .with_context(|| format!("cannot open request state lock {}", lock_path.display()))?;
+    let metadata = file.metadata()?;
+    // SAFETY: geteuid has no preconditions and only reads the process identity.
+    let uid = unsafe { libc::geteuid() };
+    anyhow::ensure!(
+        metadata.is_file() && metadata.uid() == uid,
+        "request state lock {} is not an owned regular file",
+        lock_path.display()
+    );
+    file.lock_exclusive()
+        .with_context(|| format!("cannot lock request state {}", lock_path.display()))?;
+    Ok(file)
+}
+
+#[cfg(test)]
+#[path = "wait_state_tests.rs"]
+mod tests;
 
 /// The session's ledger outcome for `request_id`, with its note or reason.
 pub(super) fn ledger_outcome(
@@ -118,6 +161,7 @@ pub(super) fn find_job(
 fn pruned(site: &WaitSite<'_>, state: &RequestState, job_id: &str) -> JobRecord {
     JobRecord {
         id: job_id.to_string(),
+        submission_order: 0,
         stage_id: site.stage_id.to_string(),
         session_id: site.session_id.to_string(),
         kind: site.kind,

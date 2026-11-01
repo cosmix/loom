@@ -172,20 +172,28 @@ fn normalize_usage(
     range: time_range::TimeRange,
     work_dir: Option<&Path>,
 ) -> Result<provider::NormalizedProviderEvents> {
-    let forward_root = forward_receipts_root(
-        args.all,
-        args.forward_receipts_root.as_deref(),
-        args.project.as_deref(),
+    let forward_join = load_forward_join(args, work_dir)?;
+    let (selected_stages, selection_unavailable) = session_stage_filter(args, work_dir)?;
+    let claude = discover_claude(
+        args,
+        selection,
+        range,
         work_dir,
+        &forward_join,
+        selected_stages.as_ref(),
     )?;
-    let forward_join = forward_join::ForwardJoin::load(forward_root);
-    let claude = discover_claude(args, selection, range, work_dir, &forward_join)?;
     let codex = if selection.includes(provider_types::Provider::Codex) {
         codex_discovery::discover(args.codex_root.as_deref())
     } else {
         codex_discovery::CodexDiscovery::default()
     };
-    let scope = codex_scope::CodexScope::for_selection(args.all, &forward_join, &range);
+    // An unresolved plan has no trustworthy thread set to claim Codex rows.
+    let scope = codex_scope::CodexScope::for_selection(
+        args.all || selection_unavailable,
+        &forward_join,
+        &range,
+        selected_stages.as_ref(),
+    );
     let mut normalized = provider::normalize_provider_events(provider::ProviderEventInput {
         selection,
         range,
@@ -198,15 +206,36 @@ fn normalize_usage(
         codex_unreadable_directories: codex.unreadable_directories,
         codex_scope: &scope,
         receipts_root: args.receipts_root.as_deref(),
+        selected_stages: selected_stages.as_ref(),
+        selection_unavailable,
     });
-    forward_join.join_ledger(&mut normalized.ledger);
-    // `join_ledger` merges the receipt-load diagnostics after the reports were
-    // built, so their assessment is stale until repeated.
-    for report in &mut normalized.ledger.providers {
+    attach_forward_diagnostics(&forward_join, &mut normalized.ledger);
+    Ok(normalized)
+}
+
+fn load_forward_join(
+    args: &UsageArgs,
+    work_dir: Option<&Path>,
+) -> Result<forward_join::ForwardJoin> {
+    let root = forward_receipts_root(
+        args.all,
+        args.forward_receipts_root.as_deref(),
+        args.project.as_deref(),
+        work_dir,
+    )?;
+    Ok(forward_join::ForwardJoin::load(root))
+}
+
+fn attach_forward_diagnostics(
+    forward_join: &forward_join::ForwardJoin,
+    ledger: &mut provider_types::ProviderLedger,
+) {
+    forward_join.join_ledger(ledger);
+    // Receipt-load diagnostics arrive after report construction.
+    for report in &mut ledger.providers {
         report.completeness =
             completeness::assess(report.provider, &report.coverage, &report.diagnostics);
     }
-    Ok(normalized)
 }
 
 struct ClaudeInput {
@@ -222,6 +251,7 @@ fn discover_claude(
     range: time_range::TimeRange,
     work_dir: Option<&Path>,
     forward_join: &forward_join::ForwardJoin,
+    selected_stages: Option<&HashSet<String>>,
 ) -> Result<ClaudeInput> {
     let included = selection.includes(provider_types::Provider::Claude);
     let options = discovery::DiscoveryOptions {
@@ -229,8 +259,7 @@ fn discover_claude(
         claude_root: args.claude_root.clone(),
         project: args.project.clone(),
         all: args.all,
-        stage: args.stage.clone(),
-        plan: args.plan.clone(),
+        selected_stages: selected_stages.cloned(),
     };
     let missing_roots = usize::from(included && discovery::root_is_missing(&options));
     let files = if included {
@@ -240,8 +269,7 @@ fn discover_claude(
     };
     let sessions = if included && !args.all {
         let read: Vec<PathBuf> = files.iter().map(|file| file.path.clone()).collect();
-        let stages = session_stage_filter(args);
-        completeness::missed_claude_transcripts(work_dir, &read, &range, stages.as_ref())
+        completeness::missed_claude_transcripts(work_dir, &read, &range, selected_stages)
     } else {
         completeness::SessionInventory::default()
     };
@@ -256,17 +284,25 @@ fn discover_claude(
 /// The stages whose session records count toward missed transcripts: the
 /// `--stage`, the `--plan`'s stages (none when the plan cannot be resolved),
 /// or every stage.
-fn session_stage_filter(args: &UsageArgs) -> Option<HashSet<String>> {
-    if let Some(stage) = &args.stage {
-        return Some(HashSet::from([stage.clone()]));
+fn session_stage_filter(
+    args: &UsageArgs,
+    work_dir: Option<&Path>,
+) -> Result<(Option<HashSet<String>>, bool)> {
+    let plan_stages = args
+        .plan
+        .as_deref()
+        .map(|plan| discovery::plan_stage_ids(plan, work_dir))
+        .transpose()?;
+    let unavailable = matches!(plan_stages, Some(None));
+    let plan_stages = plan_stages.map(|stages| stages.unwrap_or_default());
+    match (&args.stage, plan_stages) {
+        (Some(stage), Some(stages)) => Ok((
+            Some(stages.into_iter().filter(|id| id == stage).collect()),
+            unavailable,
+        )),
+        (Some(stage), None) => Ok((Some(HashSet::from([stage.clone()])), false)),
+        (None, stages) => Ok((stages, unavailable)),
     }
-    let plan = args.plan.as_deref()?;
-    Some(
-        discovery::plan_stage_ids(plan)
-            .ok()
-            .flatten()
-            .unwrap_or_default(),
-    )
 }
 
 fn forward_receipts_root<'a>(

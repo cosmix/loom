@@ -12,9 +12,9 @@ pub(crate) const PID_FILE: &str = "orchestrator.pid";
 const MAX_IDENTITY_BYTES: usize = 128;
 
 pub(crate) enum LockState {
-    /// Acquiring the flock proves no daemon owns this state.
+    /// `Some` holds a shared absence probe; `None` means no lock file existed.
     Free(Option<File>),
-    /// Another open file description owns the flock.
+    /// Another open file description owns the exclusive flock.
     Held(Option<crate::process::ProcessIdentity>),
     /// The lock could not be inspected safely; callers must fail closed.
     Indeterminate,
@@ -37,8 +37,10 @@ pub(crate) fn inspect_lock(work_dir: &Path) -> LockState {
     };
 
     // SAFETY: `file` owns a live descriptor for the lock inode, and the flock
-    // flags are valid for a non-blocking exclusive ownership probe.
-    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    // flags are valid for a non-blocking shared absence probe. Keeping this
+    // descriptor alive excludes an exclusive daemon while allowing other
+    // absence readers to prove the same state concurrently.
+    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) };
     if result == 0 {
         LockState::Free(Some(file))
     } else {

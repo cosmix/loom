@@ -13,7 +13,7 @@ fn read_settings_local(root: &Path) -> Value {
     serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
 }
 
-fn find_issue(root: &Path, starts_with: &str) -> RepairIssue {
+fn find_issue(root: &Path, starts_with: &str) -> DetectedIssue {
     check_all_issues(root)
         .into_iter()
         .find(|issue| issue.description.starts_with(starts_with))

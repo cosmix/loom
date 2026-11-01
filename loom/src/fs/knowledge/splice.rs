@@ -23,25 +23,26 @@ pub enum SectionOutcome {
 /// Splice `content` into the first heading (any level 2-6) matching
 /// `heading` in `base`, replacing everything up to (but excluding) the next
 /// heading of the same or shallower level, or EOF. Appends a new `##
-/// <heading>` section at EOF when no heading matches. Shared by
+/// <heading>` section at EOF when no heading matches and all fences close.
+/// An unmatched fence rejects the edit. Shared by
 /// [`super::dir::KnowledgeDir::replace_section`] and
 /// [`super::dir::KnowledgeDir::replace_section_target`].
 pub(crate) fn splice_section(
     base: String,
     heading: &str,
     content: &str,
-) -> (String, SectionOutcome) {
+) -> Result<(String, SectionOutcome), SectionEditError> {
     let lines: Vec<&str> = base.lines().collect();
-    match find_section(&lines, heading) {
+    Ok(match find_section(&lines, heading)? {
         Some(SectionSpan { start, end, level }) => {
-            let replaced = assemble_replacement(&base, &lines, start, end, level, heading, content);
+            let replaced = assemble_replacement(&base, &lines, start, end, content);
             (replaced, SectionOutcome::Replaced { level })
         }
         None => (
             append_new_section(base, heading, content),
             SectionOutcome::Appended,
         ),
-    }
+    })
 }
 
 /// Why a section edit that requires an existing heading did not happen.
@@ -52,15 +53,22 @@ pub enum SectionEditError {
     /// The heading matched at this level, but the edit only applies to `## `
     /// sections (the unit the chunker splits on).
     NotLevelTwo { level: usize },
+    /// The document contains an unmatched fence, so its edit span is ambiguous.
+    UnclosedFence,
 }
 
 /// Remove the first heading (any level 2-6) matching `heading` together with
 /// its body and nested deeper headings, using the same span rules as
 /// [`splice_section`]. Returns the new text and the level that matched, or
-/// `None` when no heading matches: a delete never falls back to anything.
-pub(crate) fn delete_section(base: &str, heading: &str) -> Option<(String, usize)> {
+/// `None` when no heading matches; an unmatched fence rejects the edit.
+pub(crate) fn delete_section(
+    base: &str,
+    heading: &str,
+) -> Result<Option<(String, usize)>, SectionEditError> {
     let lines: Vec<&str> = base.lines().collect();
-    let SectionSpan { start, end, level } = find_section(&lines, heading)?;
+    let Some(SectionSpan { start, end, level }) = find_section(&lines, heading)? else {
+        return Ok(None);
+    };
     let mut kept: Vec<&str> = lines[..start].to_vec();
     while kept.last().is_some_and(|line| line.trim().is_empty()) {
         kept.pop();
@@ -69,7 +77,7 @@ pub(crate) fn delete_section(base: &str, heading: &str) -> Option<(String, usize
         kept.push("");
     }
     kept.extend_from_slice(&lines[end..]);
-    Some((join_lines(&kept, base), level))
+    Ok(Some((join_lines(&kept, base), level)))
 }
 
 /// Write `marker` as the first line under the `## <heading>` section,
@@ -81,7 +89,7 @@ pub(crate) fn set_section_marker(
     marker: &str,
 ) -> Result<String, SectionEditError> {
     let lines: Vec<&str> = base.lines().collect();
-    let span = find_section(&lines, heading).ok_or(SectionEditError::NotFound)?;
+    let span = find_section(&lines, heading)?.ok_or(SectionEditError::NotFound)?;
     if span.level != 2 {
         return Err(SectionEditError::NotLevelTwo { level: span.level });
     }
@@ -105,15 +113,21 @@ struct SectionSpan {
 
 /// The first non-fenced heading (level 2-6) whose text is exactly `heading`,
 /// spanning up to the next heading of the same or shallower level, or EOF.
-fn find_section(lines: &[&str], heading: &str) -> Option<SectionSpan> {
-    let in_fence = fence_mask(lines);
-    let (start, level) = lines
+fn find_section(lines: &[&str], heading: &str) -> Result<Option<SectionSpan>, SectionEditError> {
+    let (in_fence, unclosed) = scan_fences(lines);
+    if unclosed {
+        return Err(SectionEditError::UnclosedFence);
+    }
+    let Some((start, level)) = lines
         .iter()
         .enumerate()
         .filter(|(i, _)| !in_fence[*i])
-        .find_map(|(i, line)| heading_level_of(line, heading).map(|level| (i, level)))?;
+        .find_map(|(i, line)| heading_level_of(line, heading).map(|level| (i, level)))
+    else {
+        return Ok(None);
+    };
     let end = section_end(lines, &in_fence, start, level);
-    Some(SectionSpan { start, end, level })
+    Ok(Some(SectionSpan { start, end, level }))
 }
 
 /// Join `lines` with `\n`, ending with a newline when `base` did.
@@ -131,17 +145,7 @@ fn join_lines(lines: &[&str], base: &str) -> String {
 /// `None` for a non-heading line, including `###Foo` (no space - not a valid
 /// ATX heading) and a run of 7+ hashes (past the ATX heading limit).
 pub(crate) fn atx_heading(line: &str) -> Option<(usize, &str)> {
-    let trimmed = line.trim_end();
-    let hashes = trimmed.bytes().take_while(|&b| b == b'#').count();
-    if !(1..=6).contains(&hashes) {
-        return None;
-    }
-    let rest = &trimmed[hashes..];
-    match rest.as_bytes().first() {
-        None => Some((hashes, "")),
-        Some(b' ') | Some(b'\t') => Some((hashes, rest.trim_start_matches([' ', '\t']))),
-        _ => None,
-    }
+    super::scanner::atx_heading(line)
 }
 
 /// Level (2-6) of `line` if it is an ATX heading whose text exactly matches
@@ -177,17 +181,14 @@ fn assemble_replacement(
     lines: &[&str],
     start: usize,
     end: usize,
-    level: usize,
-    heading: &str,
     content: &str,
 ) -> String {
-    let hashes = "#".repeat(level);
     let mut result = String::new();
     for line in &lines[..start] {
         result.push_str(line);
         result.push('\n');
     }
-    result.push_str(&format!("{hashes} {heading}\n\n{content}\n"));
+    result.push_str(&format!("{}\n\n{content}\n", lines[start]));
     if end < lines.len() {
         result.push('\n');
         for (i, line) in lines[end..].iter().enumerate() {
@@ -218,52 +219,13 @@ fn append_new_section(base: String, heading: &str, content: &str) -> String {
 /// block" mask, so heading detection never mistakes a `#`-prefixed line
 /// inside a ` ``` ` or `~~~` fence for a real section heading.
 pub(crate) fn fence_mask(lines: &[&str]) -> Vec<bool> {
-    let mut mask = vec![false; lines.len()];
-    let mut open: Option<(u8, usize)> = None;
-
-    for (i, line) in lines.iter().enumerate() {
-        match (open, fence_delimiter(line)) {
-            (None, Some(delim)) => {
-                mask[i] = true;
-                open = Some(delim);
-            }
-            (Some((ch, len)), Some((close_ch, close_len)))
-                if close_ch == ch && close_len >= len =>
-            {
-                mask[i] = true;
-                open = None;
-            }
-            (Some(_), _) => mask[i] = true,
-            (None, None) => {}
-        }
-    }
-
-    // An unclosed fence at EOF: treating every line from the opener onward
-    // as "inside a fence" would make `section_end` find no terminator and
-    // report the entire rest of the file as the matched section's body -
-    // silent knowledge loss, made worse by `splice_section` still reporting
-    // `SectionOutcome::Replaced` as if the correction succeeded. Degrade to
-    // fence-unaware instead (the behaviour before fence tracking existed): a
-    // heading inside the unclosed "fence" text might now match when it
-    // shouldn't, but the worst case is a wrong, still-bounded span - never a
-    // truncate-to-EOF deletion.
-    if open.is_some() {
-        return vec![false; lines.len()];
-    }
-
-    mask
+    scan_fences(lines).0
 }
 
-/// `(delimiter byte, run length)` if `line`, once its leading whitespace is
-/// trimmed, opens or closes a fenced code block (3+ backticks or tildes).
-fn fence_delimiter(line: &str) -> Option<(u8, usize)> {
-    let trimmed = line.trim_start();
-    let byte = *trimmed.as_bytes().first()?;
-    if byte != b'`' && byte != b'~' {
-        return None;
-    }
-    let len = trimmed.bytes().take_while(|&b| b == byte).count();
-    (len >= 3).then_some((byte, len))
+fn scan_fences(lines: &[&str]) -> (Vec<bool>, bool) {
+    let mut scanner = super::scanner::Scanner::default();
+    let mask = lines.iter().map(|line| scanner.fenced(line)).collect();
+    (mask, scanner.unclosed())
 }
 
 #[cfg(test)]
@@ -273,7 +235,7 @@ mod tests {
     #[test]
     fn replaces_h3_nested_under_h2_group_heading() {
         let base = "## Group heading\n\n### Individual finding\n\nstale text\n".to_string();
-        let (result, outcome) = splice_section(base, "Individual finding", "fixed text");
+        let (result, outcome) = splice_section(base, "Individual finding", "fixed text").unwrap();
         assert_eq!(outcome, SectionOutcome::Replaced { level: 3 });
         assert_eq!(
             result,
@@ -284,7 +246,7 @@ mod tests {
     #[test]
     fn h3_section_ends_at_next_shallower_h2() {
         let base = "### A\n\nold a\n\n## B\n\nkeep b\n".to_string();
-        let (result, outcome) = splice_section(base, "A", "new a");
+        let (result, outcome) = splice_section(base, "A", "new a").unwrap();
         assert_eq!(outcome, SectionOutcome::Replaced { level: 3 });
         assert_eq!(result, "### A\n\nnew a\n\n## B\n\nkeep b\n");
     }
@@ -292,7 +254,7 @@ mod tests {
     #[test]
     fn h3_section_ends_at_sibling_h3() {
         let base = "### A\n\nold a\n\n### B\n\nkeep b\n".to_string();
-        let (result, outcome) = splice_section(base, "A", "new a");
+        let (result, outcome) = splice_section(base, "A", "new a").unwrap();
         assert_eq!(outcome, SectionOutcome::Replaced { level: 3 });
         assert_eq!(result, "### A\n\nnew a\n\n### B\n\nkeep b\n");
     }
@@ -300,7 +262,7 @@ mod tests {
     #[test]
     fn h3_section_swallows_deeper_h4() {
         let base = "### A\n\n#### Nested\n\nold a\n\n### B\n\nkeep b\n".to_string();
-        let (result, outcome) = splice_section(base, "A", "new a");
+        let (result, outcome) = splice_section(base, "A", "new a").unwrap();
         assert_eq!(outcome, SectionOutcome::Replaced { level: 3 });
         assert_eq!(result, "### A\n\nnew a\n\n### B\n\nkeep b\n");
     }
@@ -308,7 +270,7 @@ mod tests {
     #[test]
     fn fenced_code_block_heading_is_not_a_section() {
         let base = "# T\n\n```markdown\n## Real\n```\n\n## Real\n\nold\n".to_string();
-        let (result, outcome) = splice_section(base, "Real", "new");
+        let (result, outcome) = splice_section(base, "Real", "new").unwrap();
         assert_eq!(outcome, SectionOutcome::Replaced { level: 2 });
         assert_eq!(
             result,
@@ -319,7 +281,7 @@ mod tests {
     #[test]
     fn absent_heading_appends_and_reports_appended() {
         let base = "# T\n".to_string();
-        let (result, outcome) = splice_section(base, "New", "body");
+        let (result, outcome) = splice_section(base, "New", "body").unwrap();
         assert_eq!(outcome, SectionOutcome::Appended);
         assert_eq!(result, "# T\n\n## New\n\nbody\n");
     }
@@ -327,18 +289,24 @@ mod tests {
     #[test]
     fn h1_is_never_a_target_even_with_exact_text_match() {
         let base = "# Title\n\nbody\n".to_string();
-        let (_, outcome) = splice_section(base, "Title", "new body");
+        let (_, outcome) = splice_section(base, "Title", "new body").unwrap();
         assert_eq!(outcome, SectionOutcome::Appended);
     }
 
     #[test]
-    fn unclosed_fence_degrades_to_fence_unaware_instead_of_deleting_to_eof() {
-        // No closing ``` - a naive fence tracker would mask every line from
-        // the opener to EOF, find no terminator for "## Real", and replace
-        // the entire tail of the file (reporting `Replaced` while doing it).
-        let base = "# T\n\n```\nsome code\n\n## Real\n\nold\n".to_string();
-        let (result, outcome) = splice_section(base, "Real", "new");
-        assert_eq!(outcome, SectionOutcome::Replaced { level: 2 });
-        assert_eq!(result, "# T\n\n```\nsome code\n\n## Real\n\nnew\n");
+    fn unclosed_fence_rejects_edits() {
+        let base = "# T\n\n```\n## Real\n```\n\n## Real\n\nold\n\n~~~\nunclosed\n";
+        assert_eq!(
+            splice_section(base.to_string(), "Real", "new"),
+            Err(SectionEditError::UnclosedFence)
+        );
+        assert_eq!(
+            delete_section(base, "Real"),
+            Err(SectionEditError::UnclosedFence)
+        );
+        assert_eq!(
+            set_section_marker(base, "Real", "marker"),
+            Err(SectionEditError::UnclosedFence)
+        );
     }
 }

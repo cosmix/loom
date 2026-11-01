@@ -102,13 +102,12 @@ pub const DEFAULT_PRESSURE_CODEX_EFFORT: &str = "xhigh";
 ///
 /// Codex is a subprocess, not a Claude tool, and it keeps its state outside the
 /// worktree: the CLI initialises a sqlite state runtime plus session logs under
-/// `~/.codex`, and the plugin's companion runtime records each job under
-/// `~/.claude/plugins/data/codex-openai-codex/state/<cwd>-<hash>/jobs/`. The
+/// `~/.codex`, and the wrapper sets the companion data root to
+/// `~/.codex/plugin-data`, where it records jobs under `state/<cwd>-<hash>/jobs/`. The
 /// sandbox's write set is otherwise the working directory and the session temp
-/// dir only, so without these two entries every forward dies before the model
-/// is ever reached — `Read-only file system (os error 30)` from codex, `ENOENT:
-/// ... mkdir` from the companion. This bit on Linux first: the native
-/// bubblewrap sandbox enforces the write allowlist that macOS Seatbelt let pass.
+/// dir only, so the `~/.codex` grant is required for the wrapper and CLI.
+/// The separate legacy plugin-data grant remains for compatibility with other
+/// companion consumers and historical records.
 ///
 /// This is emitted as `sandbox.filesystem.allowWrite`, which is ADDITIVE
 /// ("additional paths to allow writing within the sandbox") and OS-enforced for
@@ -118,9 +117,8 @@ pub const DEFAULT_PRESSURE_CODEX_EFFORT: &str = "xhigh";
 /// the lane ends up unusable rather than merely sandboxed.
 pub const CODEX_SANDBOX_WRITE_PATHS: [&str; 2] = ["~/.codex", CODEX_PLUGIN_DATA_GRANT];
 
-/// The plugin companion's state directory: the one path under
-/// `~/.claude/plugins` the codex lane may write. Every capsule that licenses
-/// the lane denies each other entry on the way down to it.
+/// Legacy plugin data grant retained for companion compatibility. The loom
+/// wrapper uses `~/.codex/plugin-data` instead. Capsules deny other plugin paths.
 pub const CODEX_PLUGIN_DATA_GRANT: &str = "~/.claude/plugins/data/codex-openai-codex";
 
 /// Domains the codex CLI reaches to run a task (ChatGPT-login and API auth).

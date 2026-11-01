@@ -5,12 +5,79 @@
 use serial_test::serial;
 use tempfile::TempDir;
 
-use super::{capture, ExecutionIdentity};
+use super::{capture, digest_bounded, digest_regular_file, Digest, ExecutionIdentity, Sha256};
 use crate::git::worktree::WorktreeGit;
 use crate::models::stage::CommandConfinement;
 use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
 use crate::verify::contracts::test_support::{contract_worktree, plant_foreign_git_dir};
 use crate::verify::criteria::confine::{prepare_confined, CommandSpec};
+
+struct GrowingReader {
+    read: usize,
+}
+
+impl std::io::Read for GrowingReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        buf.fill(b'x');
+        self.read += buf.len();
+        Ok(buf.len())
+    }
+}
+
+#[test]
+fn growing_stream_stops_after_one_detection_byte() {
+    let mut reader = GrowingReader { read: 0 };
+    assert!(digest_bounded(&mut reader, 65_536, Sha256::new()).is_none());
+    assert_eq!(reader.read, 65_537);
+}
+
+#[test]
+fn regular_file_digest_preserves_blob_header_and_budget() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("blob");
+    std::fs::write(&path, b"hello").unwrap();
+    let metadata = path.metadata().unwrap();
+    let mut hasher = sha1::Sha1::new();
+    hasher.update(b"blob 5\0");
+    let mut remaining = 8;
+    let digest = digest_regular_file(&path, &metadata, &mut remaining, hasher).unwrap();
+    assert_eq!(
+        hex::encode(digest),
+        "b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0"
+    );
+    assert_eq!(remaining, 3);
+    let digest = digest_regular_file(&path, &metadata, &mut 5, Sha256::new()).unwrap();
+    assert_eq!(digest, Sha256::digest(b"hello"));
+    let mut hasher = Sha256::new();
+    hasher.update(b"blob 5\0");
+    let digest = digest_regular_file(&path, &metadata, &mut 5, hasher).unwrap();
+    assert_eq!(
+        hex::encode(digest),
+        "8aec4e4876f854f688d0ebfc8f37598f38e5fd6903cccc850ca36591175aeb60"
+    );
+}
+
+#[test]
+fn file_grown_after_snapshot_is_rejected() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("blob");
+    std::fs::write(&path, b"hello").unwrap();
+    let metadata = path.metadata().unwrap();
+    std::fs::write(&path, b"hello world").unwrap();
+    assert!(digest_regular_file(&path, &metadata, &mut 5, Sha256::new()).is_none());
+}
+
+#[test]
+fn replaced_file_is_rejected_even_with_equal_length() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("blob");
+    let replacement = dir.path().join("replacement");
+    std::fs::write(&path, b"hello").unwrap();
+    let metadata = path.metadata().unwrap();
+    std::fs::write(&replacement, b"world").unwrap();
+    std::fs::rename(replacement, &path).unwrap();
+    assert!(digest_regular_file(&path, &metadata, &mut 5, Sha256::new()).is_none());
+}
 
 /// The positive control runs last: git that follows the repointed `.git`
 /// file does run the filter, so its absence before comes from the pin.

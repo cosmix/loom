@@ -1,5 +1,4 @@
-//! Tests for `native/launch.rs`, split out to keep that module under the
-//! 400-line ceiling (CLAUDE.md Rule 17), matching `native/tests.rs`.
+//! Tests for `native/launch.rs`.
 
 use super::*;
 use crate::models::stage::StageType;

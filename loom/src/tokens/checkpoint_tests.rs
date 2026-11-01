@@ -66,6 +66,28 @@ fn other_version_loads_empty() {
 }
 
 #[test]
+fn version_three_message_tuples_trigger_a_rebuild() {
+    let fx = Fixture::new();
+    let dir = fx.tokens_dir();
+    let mut body = serde_json::to_value(populated()).unwrap();
+    body["version"] = serde_json::json!(3);
+    for agents in body["stages"].as_object_mut().unwrap().values_mut() {
+        for agent in agents.as_object_mut().unwrap().values_mut() {
+            for message in agent["file"]["messages"].as_array_mut().unwrap() {
+                let pair = message.as_array_mut().unwrap();
+                let observation = pair[1].clone();
+                pair[1] = observation["usage"].clone();
+                pair.push(observation);
+            }
+        }
+    }
+    fs::write(dir.join(CHECKPOINT_FILE), body.to_string()).unwrap();
+    let (loaded, warning) = Checkpoint::load_reporting(&dir);
+    assert_eq!(loaded, Checkpoint::empty());
+    assert!(warning.unwrap().starts_with("checkpoint is version 3;"));
+}
+
+#[test]
 fn version_two_maxima_are_rebuilt_instead_of_migrated_without_attribution() {
     let fx = Fixture::new();
     let dir = fx.tokens_dir();
@@ -185,7 +207,13 @@ const BULKY_ID_LEN: usize = 1200;
 fn fill_table(agent: &mut AgentState) {
     for n in 0..MESSAGE_TABLE_CAP {
         let id = format!("{n:0>width$}", width = BULKY_ID_LEN);
-        agent.file.messages.increase(&id, &usage(1, 0, 0, 0));
+        let observation = super::super::messages::Observation::new(
+            chrono::DateTime::from_timestamp(0, 0).unwrap(),
+            usage(1, 0, 0, 0),
+            &None,
+            &None,
+        );
+        agent.file.messages.replace(id, observation);
     }
 }
 

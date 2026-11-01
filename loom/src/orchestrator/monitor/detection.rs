@@ -6,11 +6,6 @@ use std::path::Path;
 use crate::fs::work_dir::ContextConfig;
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
-// `check_session_alive` below routes through the `LivenessService`
-// attached to the monitor's handlers. Imported for documentation and
-// to make the wiring discoverable via grep.
-#[allow(unused_imports)]
-use crate::orchestrator::liveness::LivenessService;
 use crate::verify::contracts::store::load_freeze;
 
 use super::ceiling::resolve_ceiling_tokens;
@@ -136,6 +131,7 @@ impl Detection {
 
         self.clear_inactive_latches(sessions);
         self.clear_finished_judge_latches(sessions);
+        self.handoff_watch.refresh(handlers.work_dir());
 
         for session in sessions {
             let status = self.detect_session_status(session, stages, handlers);
@@ -148,9 +144,9 @@ impl Detection {
             // leaves the request in the document alone. Checked before the
             // ceiling resolves: this recovery is about a stopped agent, not
             // about how much context it had.
-            if let Some(event) =
-                self.handoff_watch
-                    .needs_handoff_from_document(session, stages, handlers.work_dir())
+            if let Some(event) = self
+                .handoff_watch
+                .needs_handoff_from_document(session, stages)
             {
                 events.push(event);
             }
@@ -169,6 +165,11 @@ impl Detection {
         }
 
         events
+    }
+
+    #[cfg(test)]
+    pub(super) fn handoff_directory_reads(&self) -> u64 {
+        self.handoff_watch.directory_read_count()
     }
 
     /// Emit Yellow/Red band transitions for one session, and generate a handoff
@@ -267,9 +268,10 @@ impl Detection {
 
     /// Detect heartbeat-based events (heartbeat updates, silent sessions).
     ///
-    /// The silence check is deterministic: it compares the poll loop's own tick
-    /// against the timestamp recorded in the heartbeat file. Nothing sleeps here
-    /// and nothing shells out, so the check cannot itself wedge the loop.
+    /// Silence timing compares the poll loop's tick against the heartbeat
+    /// timestamp. Subsequent liveness and parked-stage checks may run probes,
+    /// including git commands, through the configured handlers and their
+    /// [`liveness service`](crate::orchestrator::liveness::LivenessService).
     ///
     /// `stages` supplies the per-stage response budget
     /// ([`Stage::effective_subagent_timeout_secs`]); a session whose stage is not

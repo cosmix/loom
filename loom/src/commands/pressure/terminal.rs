@@ -45,14 +45,16 @@ impl crate::pressure::PressureDriver for TerminalDriver<'_> {
             "→".cyan().bold(),
             self.codex_log.display()
         );
-        let claude_outcome = run_claude_foreground(
-            self.claude_path,
-            self.repo_root,
-            claude,
-            self.marker,
-            &self.models.claude,
-            &self.models.claude_effort,
-        )?;
+        let (claude_outcome, codex_run) = run_foreground_with_codex(codex_run, || {
+            run_claude_foreground(
+                self.claude_path,
+                self.repo_root,
+                claude,
+                self.marker,
+                &self.models.claude,
+                &self.models.claude_effort,
+            )
+        })?;
         let claude_reason = claude_should_stop(claude_outcome);
         let outcome = wait_codex(codex_run, self.codex_log)?;
         print_fallbacks(&outcome);
@@ -76,6 +78,23 @@ impl crate::pressure::PressureDriver for TerminalDriver<'_> {
             &self.models.address_effort,
         )?;
         Ok(step_verdict(round, "/address", claude_should_stop(outcome)))
+    }
+}
+
+/// Keep the foreground failure intact after stopping the concurrent worker.
+/// The pipeline deletes the report once this returns, after the worker is gone.
+fn run_foreground_with_codex(
+    codex_run: CodexRun,
+    foreground: impl FnOnce() -> Result<crate::claude::ClaudeOutcome>,
+) -> Result<(crate::claude::ClaudeOutcome, CodexRun)> {
+    match foreground() {
+        Ok(outcome) => Ok((outcome, codex_run)),
+        Err(error) => {
+            if let Err(cancel) = codex_run.cancel_and_join() {
+                tracing::warn!(error = %cancel, "failed to stop codex after foreground error");
+            }
+            Err(error)
+        }
     }
 }
 
@@ -143,6 +162,9 @@ fn print_fallbacks(outcome: &CodexOutcome) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pressure::codex_run::spawn_codex_with_fallback;
+    use std::fs;
+    use std::time::Instant;
 
     #[test]
     fn stop_verdict_identifies_the_round_and_step_and_preserves_the_reason() {
@@ -157,5 +179,98 @@ mod tests {
             );
         }
         assert_eq!(step_verdict(2, "/address", None), StepVerdict::Continue);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn foreground_error_stops_codex_descendants_before_report_cleanup() {
+        let repo = tempfile::tempdir().unwrap();
+        let run = active_fake_codex(repo.path());
+        let leader = run.current_pid();
+        let error = run_foreground_with_codex(run, || {
+            wait_for_file(&repo.path().join("descendant.pid"));
+            run_claude_foreground(
+                &repo.path().join("missing-claude"),
+                repo.path(),
+                "/pressure plan.md",
+                &repo.path().join("marker"),
+                "test",
+                "high",
+            )
+        })
+        .err()
+        .unwrap();
+        assert_eq!(error.to_string(), "failed to spawn claude");
+        let descendant: u32 = fs::read_to_string(repo.path().join("descendant.pid"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        wait_for_exit(leader);
+        wait_for_exit(descendant);
+        assert_eq!(
+            fs::read_to_string(repo.path().join("attempts")).unwrap(),
+            "first\n"
+        );
+        crate::claude::remove_if_exists(&repo.path().join("review.md")).unwrap();
+        fs::write(repo.path().join("release"), "go").unwrap();
+        assert!(!repo.path().join("review.md").exists());
+    }
+
+    #[cfg(target_os = "linux")]
+    fn active_fake_codex(repo: &Path) -> CodexRun {
+        let script = "for arg in \"$@\"; do\n\
+                      if [ \"$prev\" = -m ]; then model=$arg; fi\n\
+                      prev=$arg\n\
+                      done\n\
+                      echo \"$model\" >> attempts\n\
+                      sh -c 'echo $$ > descendant.pid; while [ ! -e release ]; do sleep 0.05; done; echo review > review.md' &\n\
+                      echo $! > child.pid\n\
+                      echo \"ERROR: model not found: $model\" >&2\n\
+                      wait\n";
+        fs::write(repo.join("exec"), script).unwrap();
+        spawn_codex_with_fallback(
+            Path::new("/bin/sh"),
+            repo,
+            "$pressure plan.md",
+            &repo.join("codex.log"),
+            vec!["first".into(), "fallback".into()],
+            "high",
+        )
+        .unwrap()
+    }
+
+    #[cfg(target_os = "linux")]
+    fn wait_for_file(path: &Path) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !path.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "{} never appeared",
+                path.display()
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn process_running(pid: u32) -> bool {
+        let path = format!("/proc/{pid}/stat");
+        fs::read_to_string(path).ok().is_some_and(|stat| {
+            stat.rsplit_once(") ")
+                .is_some_and(|(_, tail)| !tail.starts_with('Z'))
+        })
+    }
+
+    #[cfg(target_os = "linux")]
+    fn wait_for_exit(pid: u32) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while process_running(pid) {
+            assert!(
+                Instant::now() < deadline,
+                "process {pid} outlived cancellation"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 }

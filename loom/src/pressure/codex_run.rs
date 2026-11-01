@@ -3,11 +3,15 @@
 //! Account-level model unavailability advances to the next candidate. The
 //! runner returns fallback notes and never prints; callers own presentation.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
+use nix::errno::Errno;
+use nix::sys::signal::{killpg, Signal};
+use nix::unistd::Pid;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use crate::codex::codex_model_candidates;
@@ -50,8 +54,37 @@ pub struct CodexOutcome {
 
 /// A background Codex run working through its candidate models.
 pub struct CodexRun {
-    handle: JoinHandle<Result<CodexOutcome>>,
+    handle: Option<JoinHandle<Result<CodexOutcome>>>,
     pid: Arc<AtomicU32>,
+    control: Arc<Mutex<RunControl>>,
+}
+
+#[derive(Default)]
+struct RunControl {
+    cancelled: bool,
+    // Keep every attempt's group until the worker ends: a child can outlive
+    // its leader, including after an unavailable-model fallback.
+    groups: Vec<Pid>,
+}
+
+fn cancel_groups(control: &Mutex<RunControl>) -> Result<()> {
+    let mut state = control
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    state.cancelled = true;
+    let mut failure = None;
+    for &group in &state.groups {
+        match killpg(group, Signal::SIGKILL) {
+            Ok(()) | Err(Errno::ESRCH) => {}
+            Err(error) => {
+                failure.get_or_insert(error);
+            }
+        };
+    }
+    if let Some(error) = failure {
+        return Err(anyhow!("failed to stop codex process group: {error}"));
+    }
+    Ok(())
 }
 
 impl CodexRun {
@@ -62,14 +95,41 @@ impl CodexRun {
 
     /// Whether the runner has finished all its attempts.
     pub fn is_finished(&self) -> bool {
-        self.handle.is_finished()
+        self.handle.as_ref().is_none_or(JoinHandle::is_finished)
     }
 
     /// Wait for the outcome, turning a runner-thread panic into an error.
-    pub fn join(self) -> Result<CodexOutcome> {
-        self.handle
+    pub fn join(mut self) -> Result<CodexOutcome> {
+        self.take_handle()
             .join()
             .map_err(|_| anyhow!("codex runner thread panicked"))?
+    }
+
+    /// Stop every attempt's process group and wait for the worker to finish.
+    pub fn cancel_and_join(mut self) -> Result<()> {
+        let cancelled = cancel_groups(&self.control);
+        let joined = self
+            .take_handle()
+            .join()
+            .map_err(|_| anyhow!("codex runner thread panicked"));
+        cancelled?;
+        let _ = joined?;
+        Ok(())
+    }
+
+    fn take_handle(&mut self) -> JoinHandle<Result<CodexOutcome>> {
+        self.handle
+            .take()
+            .expect("codex runner handle already joined")
+    }
+}
+
+impl Drop for CodexRun {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            let _ = cancel_groups(&self.control);
+            let _ = handle.join();
+        }
     }
 }
 
@@ -81,11 +141,19 @@ pub struct CodexJob {
     log_path: PathBuf,
     effort: String,
     pid: Arc<AtomicU32>,
+    control: Arc<Mutex<RunControl>>,
 }
 
 impl CodexJob {
     /// Spawn one attempt with `model`; the log file is re-created.
     fn spawn(&self, model: &str) -> Result<Child> {
+        let mut state = self
+            .control
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if state.cancelled {
+            bail!("codex run cancelled");
+        }
         let child = spawn_codex_background(
             &self.codex_path,
             &self.repo_root,
@@ -94,6 +162,7 @@ impl CodexJob {
             model,
             &self.effort,
         )?;
+        state.groups.push(Pid::from_raw(child.id() as i32));
         self.pid.store(child.id(), Ordering::Release);
         Ok(child)
     }
@@ -119,6 +188,7 @@ pub fn spawn_codex_with_fallback(
     effort: &str,
 ) -> Result<CodexRun> {
     let pid = Arc::new(AtomicU32::new(0));
+    let control = Arc::new(Mutex::new(RunControl::default()));
     let job = CodexJob {
         codex_path: codex_path.to_path_buf(),
         repo_root: repo_root.to_path_buf(),
@@ -126,11 +196,16 @@ pub fn spawn_codex_with_fallback(
         log_path: log_path.to_path_buf(),
         effort: effort.to_string(),
         pid: Arc::clone(&pid),
+        control: Arc::clone(&control),
     };
     let first = candidates.first().context("no codex model to run")?;
     let child = job.spawn(first)?;
     let handle = thread::spawn(move || run_attempts(&job, child, &candidates));
-    Ok(CodexRun { handle, pid })
+    Ok(CodexRun {
+        handle: Some(handle),
+        pid,
+        control,
+    })
 }
 
 /// Wait on each attempt, retrying only when the account lacks its model.
@@ -238,7 +313,9 @@ pub fn spawn_codex_background(
         codex_args(repo_root, skill, model, effort),
         repo_root,
         log_path,
-        |_| {},
+        |command| {
+            command.process_group(0);
+        },
     )
 }
 

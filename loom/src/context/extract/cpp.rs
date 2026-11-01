@@ -154,7 +154,7 @@ impl QueryHarness for CppExtractor {
             dialect: "cpp",
             grammar_version: "0.23.4",
             query_digest: crate::context::source_graph::body_hash(QUERY.as_bytes()),
-            extractor_version: 3,
+            extractor_version: 4,
         }
     }
 

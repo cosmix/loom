@@ -14,6 +14,15 @@ use crate::fs::knowledge::splice::fence_mask;
 const MAX_PLAN_BYTES: u64 = 8 * 1024 * 1024;
 const END_METADATA: &str = "<!-- END loom METADATA";
 
+#[cfg(test)]
+type BeforePublication = Box<dyn FnOnce(&Path)>;
+
+#[cfg(test)]
+thread_local! {
+    static BEFORE_PUBLICATION: std::cell::RefCell<Option<BeforePublication>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 /// The models, rounds, and review outcome of one pressure-test run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordLine {
@@ -99,7 +108,12 @@ fn record_offset(text: &str) -> Option<usize> {
     let lines: Vec<&str> = text.split_inclusive('\n').collect();
     // Headings inside fenced code are not headings to the reader
     // (`planning::pressure::records`), so they must not place the record either.
-    let fenced = fence_mask(&lines);
+    // The shared scanner expects lines without their terminators.
+    let scan_lines: Vec<&str> = lines
+        .iter()
+        .map(|line| line.trim_end_matches(['\n', '\r']))
+        .collect();
+    let fenced = fence_mask(&scan_lines);
     let mut starts = Vec::with_capacity(lines.len());
     let mut position = 0;
     for line in &lines {
@@ -129,8 +143,12 @@ fn record_offset(text: &str) -> Option<usize> {
 }
 
 /// Append a record through a synced sibling temp file, retaining the plan mode.
-/// Missing, replaced, and symlinked plans return [`RecordWrite::PlanMoved`].
+/// Missing, changed, replaced, and symlinked plans return [`RecordWrite::PlanMoved`].
 pub fn append_record(plan_path: &Path, line: &RecordLine) -> Result<RecordWrite> {
+    if regular_metadata(plan_path)?.is_none() {
+        return Ok(RecordWrite::PlanMoved);
+    }
+    let _plan_lock = crate::fs::locking::lock_plan(plan_path)?;
     let Some(original) = regular_metadata(plan_path)? else {
         return Ok(RecordWrite::PlanMoved);
     };
@@ -147,7 +165,7 @@ pub fn append_record(plan_path: &Path, line: &RecordLine) -> Result<RecordWrite>
         .mode(original.permissions().mode() & 0o7777)
         .open(&temp_path)
         .with_context(|| format!("Failed to create record temp file: {}", temp_path.display()))?;
-    let result = replace_plan(plan_path, &temp_path, &mut temp, &original, &updated);
+    let result = replace_plan(plan_path, &temp_path, &mut temp, &original, &text, &updated);
     drop(temp);
     if !matches!(&result, Ok(RecordWrite::Written)) {
         // Only remove a temp file we successfully created, never a colliding path.
@@ -175,6 +193,15 @@ fn same_file(current: &Metadata, original: &Metadata) -> bool {
     current.is_file() && current.ino() == original.ino() && current.dev() == original.dev()
 }
 
+fn same_revision(current: &Metadata, original: &Metadata) -> bool {
+    same_file(current, original)
+        && current.len() == original.len()
+        && current.mtime() == original.mtime()
+        && current.mtime_nsec() == original.mtime_nsec()
+        && current.ctime() == original.ctime()
+        && current.ctime_nsec() == original.ctime_nsec()
+}
+
 fn read_plan(path: &Path, original: &Metadata) -> Result<Option<(File, String)>> {
     let mut file = match OpenOptions::new()
         .read(true)
@@ -194,7 +221,7 @@ fn read_plan(path: &Path, original: &Metadata) -> Result<Option<(File, String)>>
         }
     };
     let current = file.metadata().context("Failed to inspect open plan")?;
-    if !same_file(&current, original) {
+    if !same_revision(&current, original) {
         return Ok(None);
     }
     ensure!(
@@ -210,6 +237,12 @@ fn read_plan(path: &Path, original: &Metadata) -> Result<Option<(File, String)>>
         text.len() as u64 <= MAX_PLAN_BYTES,
         "Plan exceeds the 8 MiB read limit"
     );
+    if !same_revision(
+        &file.metadata().context("Failed to re-inspect open plan")?,
+        original,
+    ) {
+        return Ok(None);
+    }
     Ok(Some((file, text)))
 }
 
@@ -233,6 +266,7 @@ fn replace_plan(
     temp_path: &Path,
     temp: &mut File,
     original: &Metadata,
+    snapshot: &str,
     text: &str,
 ) -> Result<RecordWrite> {
     temp.write_all(text.as_bytes())
@@ -243,10 +277,13 @@ fn replace_plan(
     ))
     .context("Failed to preserve plan permissions")?;
     temp.sync_all().context("Failed to sync record temp file")?;
-    let Some(current) = regular_metadata(plan_path)? else {
-        return Ok(RecordWrite::PlanMoved);
-    };
-    if !same_file(&current, original) {
+    #[cfg(test)]
+    BEFORE_PUBLICATION.with(|hook| {
+        if let Some(hook) = hook.borrow_mut().take() {
+            hook(plan_path);
+        }
+    });
+    if !still_matches(plan_path, original, snapshot)? {
         return Ok(RecordWrite::PlanMoved);
     }
     fs::rename(temp_path, plan_path)
@@ -262,6 +299,21 @@ fn replace_plan(
         let _ = directory.sync_all();
     }
     Ok(RecordWrite::Written)
+}
+
+/// This detects changed bytes but cannot make the later rename conditional.
+/// External editors do not take Loom's advisory lock.
+fn still_matches(plan_path: &Path, original: &Metadata, snapshot: &str) -> Result<bool> {
+    let Some(current) = regular_metadata(plan_path)? else {
+        return Ok(false);
+    };
+    if !same_file(&current, original) {
+        return Ok(false);
+    }
+    let Some((_source, live)) = read_plan(plan_path, original)? else {
+        return Ok(false);
+    };
+    Ok(live == snapshot)
 }
 
 #[cfg(test)]
