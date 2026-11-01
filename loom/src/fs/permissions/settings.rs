@@ -15,9 +15,9 @@
 //!
 //! Contains hooks and environment variables that reference user-specific paths
 //! (e.g., `~/.claude/hooks/loom/`). This file is NOT committed to the repository.
-//!
 //! - **Hooks**: Global event-triggered scripts (e.g., `commit-guard.sh`, `ask-user-pre.sh`)
 //! - **Env**: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` and other loom env vars
+//!
 //! Created/updated by `loom init`. Worktrees merge this with session-specific hooks at creation time.
 
 use anyhow::{Context, Result};

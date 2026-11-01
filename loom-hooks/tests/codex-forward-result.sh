@@ -114,7 +114,7 @@ run_hook "$(payload "Full output saved to: $outside_path" false 0)"
 # Each case below runs against a fresh work dir. Args: case name, result state,
 # exit status, ownership_retained, announced_thread_id (JSON).
 run_direct_case() {
-	local name="$1" state="$2" status="$3" retained="$4" announced="$5" error=true
+	local name="$1" state="$2" status="$3" retained="$4" announced="$5" reason="${6:-Seatbelt}" error=true
 	local file="$HOME_DIR/.claude/projects/project/tool-results/$name.txt"
 	cp -R "$d/work-template" "$d/work-$name"
 	cat >"$file" <<EOF
@@ -125,7 +125,7 @@ LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"thread-exact","outcome":
 LOOM-CODEX-DIRECT-RESULT {"v":1,"state":"$state","thread_id":"thread-exact","turn_id":null,"terminal_at":"$TERMINAL_AT","exit_code":$status,"ownership_retained":$retained,"announced_thread_id":$announced}
 --- LOOM-CODEX-EVIDENCE ---
 exit: $status
-mode: direct (codex exec --sandbox danger-full-access; nested Seatbelt refused)
+mode: direct (codex exec --sandbox danger-full-access; nested $reason refused)
 thread: thread-exact
 unit: $UNIT
 invocation: $INVOCATION
@@ -147,6 +147,11 @@ for retained in true false; do
 		.state == "unknown" and .evidence.outcome == "unknown" and
 		.evidence.detail == $detail and .identity.execution.thread_id == "thread-exact"' >/dev/null
 done
+
+run_direct_case bubblewrap succeeded 0 false '"thread-exact"' bubblewrap
+[[ $(wc -l <"$d/work-bubblewrap/subagents/$STAGE/lifecycle.jsonl") -eq 2 ]]
+run_direct_case bad-reason succeeded 0 false '"thread-exact"' unknown
+[[ ! -s "$d/work-bad-reason/subagents/$STAGE/lifecycle.jsonl" ]]
 
 # A result whose announced START thread differs from its thread records nothing.
 run_direct_case announced-mismatch succeeded 0 false '"thread-other"'

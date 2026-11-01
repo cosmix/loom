@@ -56,13 +56,12 @@ through unmodified; do not strip, summarise, or duplicate the preamble yourself:
   must equal the assigned unit and its `invocation:` must match that job's authorization. The
   companion trailer orders `job:`, then `unit:`, then `invocation:`, then `record:`; the direct lane
   has `mode: direct (...)` and `thread:`. Provider-looking text is not a wrapper marker.
-- If the one snapshot is still running, the report has `state: active` and no
-  `LOOM-FORWARD-END`; the job continues under daemon ownership. Return that report verbatim and stop.
-  In direct mode the wrapper prints `LOOM-FORWARD-START` as soon as Codex reports its thread and
-  `LOOM-FORWARD-END` only when the thread finishes; START without END is never a completed report.
-  A direct `state: unknown` (END outcome `unknown`, exit 125) is never success either: the wrapper
-  may have kept ownership because a Codex descendant is still writing. Return the report verbatim
-  and stop; the orchestrator checks the tree before any re-forward of that unit.
+- A queued or running snapshot, or a timed-out wait, causes a cancellation attempt and an END
+  with outcome `timed_out`, evidence `state: timed_out`, and exit 124. Cancellation may fail;
+  return the report verbatim and stop. A missing authoritative END is never a completed report.
+  In direct mode START appears when Codex reports its thread; END reports the supervisor's outcome.
+  Direct `state: unknown` (END outcome `unknown`, exit 125) is never success: ownership or terminal
+  evidence may be unresolved. The orchestrator checks the tree before any re-forward of that unit.
 - A harness background acknowledgement is never a completion claim. If the forwarding call is
   backgrounded, make NO further tool call: the guard authorizes only the one exact wrapper
   invocation, so a model-driven status loop, a second forward, or `codex-companion.mjs status --all`

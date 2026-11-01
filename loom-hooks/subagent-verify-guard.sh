@@ -349,8 +349,8 @@ check_eslint() {
 
 # go test/build/vet ./... walks the whole module; ./pkg/... is scoped. A bare
 # `go test` or `go test .` runs the current package's whole suite.
-GO_FILTER_FLAGS="-run -run=* -skip -skip=* -bench -bench=* -fuzz -fuzz=* -list -list=* -test.run -test.run=* -test.skip -test.skip=*"
-GO_VALUE_FLAGS="-run -skip -bench -fuzz -list -count -timeout -parallel -cpu -tags -mod -modfile -vet -exec -coverprofile -coverpkg -covermode -coverdir -gcflags -ldflags"
+GO_FILTER_FLAGS="-run -run=* -skip -skip=* -fuzz -fuzz=* -list -list=* -test.run -test.run=* -test.skip -test.skip=*"
+GO_VALUE_FLAGS="-run -skip -bench -benchtime -test.bench -test.benchtime -fuzz -list -count -timeout -parallel -cpu -tags -mod -modfile -vet -exec -coverprofile -coverpkg -covermode -coverdir -gcflags -ldflags"
 check_go() {
 	local sub="${TOKENS[$1]:-}"
 	case "$sub" in

@@ -132,6 +132,7 @@ command_log=
 output_log=
 plugin_probe=
 mode=companion
+direct_reason=
 deferred_notes=
 state_root=
 cleanup() {
@@ -186,7 +187,7 @@ print_evidence() {
 		fi
 		printf 'record: %s\n' "${record_path:-not found}"
 	else
-		printf 'mode: direct (codex exec --sandbox danger-full-access; nested Seatbelt refused)\n'
+		printf 'mode: direct (codex exec --sandbox danger-full-access; nested %s refused)\n' "$direct_reason"
 		printf 'thread: %s\n' "${backend_id:-none observed}"
 		printf 'unit: %s\n' "$unit_id"
 		printf 'invocation: %s\n' "$invocation_id"
@@ -248,9 +249,11 @@ if ! provider_log=$(make_private_temp) || ! command_log=$(make_private_temp) ||
 fi
 if nested_seatbelt_refused; then
 	mode=direct
+	direct_reason=Seatbelt
 	deferred_notes='note: the outer sandbox refuses a nested Seatbelt profile; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)'
 elif nested_bubblewrap_refused; then
 	mode=direct
+	direct_reason=bubblewrap
 	deferred_notes='note: the outer sandbox refuses a nested bubblewrap sandbox; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)'
 fi
 if ! command -v jq >/dev/null 2>&1; then
