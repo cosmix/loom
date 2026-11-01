@@ -1,37 +1,10 @@
-//! Tests for the curated-knowledge-over-prose scoring prior (A.15), which is
-//! implemented as a DEMOTION of prose rather than a bonus to curated — see
-//! [`super::prose_demotion`] for why the direction matters and why the caller
-//! clamps the result at zero.
-//!
-//! Fixtures are hand-built here rather than pulled from
-//! `crate::context::tests::rank_fixtures` deliberately: that module is owned
-//! by a sibling worker landing alongside this one. The shape mirrors
-//! `rank_fixtures::chunk` (`context/tests/rank_fixtures.rs`).
+//! Tests for the curated-knowledge-over-prose scoring prior.
 
-use super::*;
-use crate::context::schema::LifecycleState;
-
-/// Build a `KnowledgeChunk` with every field explicit but `body`/`id`, mirroring
-/// `context/tests/rank_fixtures.rs::chunk` so the two stay easy to compare —
-/// including its punctuation-only heading, which keeps the chunk from being a
-/// stub (`candidacy.rs`) without adding a term to the arithmetic pinned here.
-fn chunk(id: &str, body: &str) -> KnowledgeChunk {
-    KnowledgeChunk {
-        id: id.to_string(),
-        file: PathBuf::from(format!("{id}.md")),
-        anchor: String::new(),
-        heading: "—".to_string(),
-        body: body.to_string(),
-        content_hash: String::new(),
-        estimated_tokens: 1,
-        aliases: Vec::new(),
-        category: None,
-        source_paths: Vec::new(),
-        symbols: Vec::new(),
-        links: Vec::new(),
-        state: LifecycleState::Active,
-    }
-}
+use super::rank_fixtures::chunk;
+use crate::context::config::RetrievalConfig;
+use crate::context::rank::*;
+use crate::context::schema::{Channel, KnowledgeChunk};
+use crate::fs::knowledge::catalog::prose::PROSE_ID_PREFIX;
 
 fn rank_text(
     text: &str,
@@ -65,8 +38,8 @@ fn score_of(candidates: &[RankedCandidate], id: &str) -> f32 {
 fn curated_and_prose() -> (KnowledgeChunk, KnowledgeChunk) {
     let prose_id = format!("{PROSE_ID_PREFIX}doc/design.md#topic#0");
     (
-        chunk("zeta.md#topic#0", "alpha beta"),
-        chunk(&prose_id, "alpha beta"),
+        chunk("zeta.md#topic#0", "alpha beta", 1),
+        chunk(&prose_id, "alpha beta", 1),
     )
 }
 
@@ -142,7 +115,7 @@ fn a_saturating_prior_clamps_the_prose_score_at_zero() {
     // It must clamp: `fuse::normalized_score` divides by the channel maximum
     // and guards a zero or non-finite divisor but NOT a negative one, so a
     // negative prose score on a prose-only query would invert the entire list
-    // (`super::prose_demotion`'s doc comment carries the arithmetic).
+    // (the demotion clamps before fusion).
     let (curated, prose) = curated_and_prose();
 
     let config = RetrievalConfig {

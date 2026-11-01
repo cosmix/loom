@@ -58,7 +58,7 @@ fn streamed_usage_uses_last_whole_vector_and_merges_content() -> Result<()> {
         ),
         assistant(
             Some("same"),
-            "2026-08-02T00:00:00Z",
+            "2026-08-02T00:00:00.001Z",
             json!([{"type":"tool_use","id":"t","name":"Bash","input":{}}]),
             json!({"input_tokens": 999})
         ),
@@ -299,7 +299,7 @@ fn duplicate_line_zero_usage_defers_to_a_later_nonzero_duplicate() -> Result<()>
         ),
         assistant(
             Some("same"),
-            "2026-08-02T00:00:00Z",
+            "2026-08-02T00:00:00.001Z",
             json!([]),
             json!({"input_tokens": 10, "output_tokens": 4})
         ),

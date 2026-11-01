@@ -30,30 +30,26 @@
 //!   distinction [`crate::context::schema::LifecycleState`] draws for staleness,
 //!   drawn here for provenance instead.
 //!
-//! ## Why resolution is derived here, not threaded as a parameter
-//!
-//! `catalog::build(root)`, `ingest(knowledge_root)`,
-//! `fingerprint_tree(knowledge_root)`, `evaluate(store, knowledge_root)` and
-//! `refresh(store, knowledge_root, bool)` all take only the knowledge root.
-//! `loom/src/commands/knowledge/sync.rs:26` calls `refresh(&store,
-//! &knowledge_root, structural_only)` and is not part of this change, so no
-//! signature in that chain may grow a `project_root` or `prose_roots`
-//! parameter without touching a call site outside this module's ownership.
-//! [`sources_for_knowledge_root`] instead re-derives everything a prose scan
-//! needs — project root, config, which roots exist — from the one value
-//! every caller already has. Both `catalog::build` (structural chunks) and
-//! `crate::context::fingerprint::fingerprint_tree` (structural revision) call
-//! it, so the two can never disagree about what is indexed: there is exactly
-//! one function that decides "what counts as prose for this knowledge root",
-//! and both sides of the freshness contract call it.
+//! Catalog building and structural fingerprinting resolve prose roots through
+//! [`sources_for_knowledge_root`]. Keep their configuration and exclusion
+//! policy consistent.
 
 use crate::context::config::RetrievalConfig;
 use crate::context::schema::LifecycleState;
 use crate::context::source_graph::MAX_EXTRACTED_FILE_BYTES;
 use crate::fs::knowledge::chunker::{chunk_file, KnowledgeChunk};
+use crate::fs::safe_fs::{open_safely, safe_open_dirfd};
+use crate::fs::safe_read::read_bounded_at;
 use crate::fs::work_dir::WorkDir;
-use std::fs;
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::path::{Path, PathBuf};
+
+#[path = "prose_walk.rs"]
+mod walk;
+
+#[cfg(test)]
+#[path = "tests_prose_safety.rs"]
+mod tests_safety;
 
 /// Prefix on every prose chunk id, and on every prose entry in
 /// `tree_revision`'s fingerprint list. See the module doc for why this must
@@ -74,9 +70,9 @@ pub(crate) struct ProseSources {
     /// equal to this is skipped entirely during the walk — see
     /// [`ProseSources::files`].
     knowledge_root: PathBuf,
-    /// Configured prose roots, already resolved to existing directories
-    /// under `project_root`.
+    /// Configured prose roots relative to the anchored project directory.
     roots: Vec<PathBuf>,
+    project_fd: OwnedFd,
 }
 
 /// The project root a `doc/loom/knowledge` path belongs to. Moved here from
@@ -97,21 +93,43 @@ pub(crate) fn project_root_of(knowledge_root: &Path) -> Option<PathBuf> {
 ///
 /// Returns `None` when no project root can be derived from `knowledge_root`
 /// (see [`project_root_of`]), or when every configured `prose_roots` entry
-/// is absent from disk — including the documented opt-out `prose_roots =
-/// []`, which must cost nothing downstream: no `ProseSources`, no walk, no
-/// fingerprints.
+/// is absent or unsafe — including the documented opt-out `prose_roots = []`,
+/// which performs no walk or fingerprinting.
 pub(crate) fn sources_for_knowledge_root(knowledge_root: &Path) -> Option<ProseSources> {
     let project_root = project_root_of(knowledge_root)?;
     let config = RetrievalConfig::load(&config_root(&project_root));
-    // `RetrievalConfig` already rejects absolute and `..` entries when it
-    // parses `prose_roots` (`context/config.rs:278-300`); the only check left
-    // to do here is "does this configured root actually exist as a
-    // directory right now".
+    if config.prose_roots.is_empty() {
+        return None;
+    }
+    let project_fd = match safe_open_dirfd(&project_root) {
+        Ok(fd) => fd,
+        Err(error) => {
+            tracing::debug!(path = %project_root.display(), %error, "skipping unreadable prose project root");
+            return None;
+        }
+    };
+    // Check every root component from the project descriptor. A configured
+    // symlink must not bypass the descendant traversal's no-follow policy.
     let roots: Vec<PathBuf> = config
         .prose_roots
         .iter()
-        .map(|relative| project_root.join(relative))
-        .filter(|absolute| fs::metadata(absolute).is_ok_and(|metadata| metadata.is_dir()))
+        .map(|relative| {
+            let path = Path::new(relative);
+            if path == Path::new(".") { PathBuf::new() } else { path.to_path_buf() }
+        })
+        .filter(|relative| {
+            if relative.as_os_str().is_empty() {
+                return true;
+            }
+            let flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NONBLOCK;
+            match open_safely(project_fd.as_raw_fd(), relative, flags, 0) {
+                Ok(_) => true,
+                Err(error) => {
+                    tracing::debug!(path = %relative.display(), %error, "skipping unsafe prose root");
+                    false
+                }
+            }
+        })
         .collect();
     if roots.is_empty() {
         return None;
@@ -120,6 +138,7 @@ pub(crate) fn sources_for_knowledge_root(knowledge_root: &Path) -> Option<ProseS
         project_root,
         knowledge_root: knowledge_root.to_path_buf(),
         roots,
+        project_fd,
     })
 }
 
@@ -159,32 +178,33 @@ fn config_root(project_root: &Path) -> PathBuf {
 }
 
 impl ProseSources {
-    /// Project root the relative paths in [`ProseSources::files`] are
-    /// resolved against.
-    pub(crate) fn project_root(&self) -> &Path {
-        &self.project_root
-    }
-
-    /// Indexable prose files, PROJECT-relative, `/`-separated, sorted and
-    /// deduped — configured roots may nest (e.g. `["doc", "doc/design"]`),
-    /// so the same file can otherwise be walked and returned twice.
+    /// Candidate prose files, project-relative, sorted and deduplicated.
+    /// The descriptor read is the authoritative size and type check.
     pub(crate) fn files(&self) -> Vec<PathBuf> {
         let mut collected = Vec::new();
+        let knowledge_relative = self.knowledge_root.strip_prefix(&self.project_root).ok();
         for root in &self.roots {
-            collect_prose_files(
-                &self.project_root,
-                root,
-                &self.knowledge_root,
-                &mut collected,
-            );
+            walk::collect_prose_files(&self.project_fd, root, knowledge_relative, &mut collected);
         }
-        collected.retain(|relative| prose_lifecycle(relative, None).is_some());
         collected.sort();
         collected.dedup();
         collected
     }
 
-    /// Chunks for every file in [`ProseSources::files`], ids already
+    /// Acquire discovered files through the same project descriptor. The
+    /// callback consumes one bounded file at a time.
+    pub(crate) fn for_each_file(&self, mut consume: impl FnMut(PathBuf, Vec<u8>)) {
+        for relative in self.files() {
+            match read_bounded_at(&self.project_fd, &relative, MAX_EXTRACTED_FILE_BYTES) {
+                Ok(bytes) => consume(relative, bytes),
+                Err(error) => {
+                    tracing::debug!(path = %relative.display(), %error, "skipping unreadable prose file");
+                }
+            }
+        }
+    }
+
+    /// Chunks for each readable file in [`ProseSources::files`], ids already
     /// prefixed with [`PROSE_ID_PREFIX`] and lifecycle derived from its path
     /// plus an explicit frontmatter `state:` override.
     ///
@@ -202,24 +222,16 @@ impl ProseSources {
     /// against the same root.
     pub(crate) fn chunks(&self) -> Vec<KnowledgeChunk> {
         let mut chunks = Vec::new();
-        for relative in self.files() {
-            let absolute = self.project_root.join(&relative);
-            let bytes = match fs::read(&absolute) {
-                Ok(bytes) => bytes,
-                Err(error) => {
-                    tracing::debug!(path = %absolute.display(), %error, "skipping unreadable prose file");
-                    continue;
-                }
-            };
+        self.for_each_file(|relative, bytes| {
             let explicit = crate::fs::knowledge::frontmatter::file_state(&bytes);
             let Some(lifecycle) = prose_lifecycle(&relative, explicit) else {
-                continue;
+                return;
             };
             let file_chunks = match chunk_file(&relative, &bytes) {
                 Ok(file_chunks) => file_chunks,
                 Err(error) => {
                     tracing::debug!(path = %relative.display(), %error, "skipping prose file that failed to chunk");
-                    continue;
+                    return;
                 }
             };
             for mut chunk in file_chunks {
@@ -227,114 +239,9 @@ impl ProseSources {
                 chunk.state = lifecycle;
                 chunks.push(chunk);
             }
-        }
+        });
         chunks
     }
-}
-
-/// Recursively collect indexable prose `*.md` files under `dir` into `out`,
-/// each already made PROJECT-relative with `/` separators.
-///
-/// Every I/O failure on any entry is a skip (`tracing::debug!`), never a
-/// propagated error: prose indexing is a best-effort enhancement layered
-/// onto a catalog build and a tree fingerprint that both worked before prose
-/// existed, and neither may be made able to fail by it.
-fn collect_prose_files(
-    project_root: &Path,
-    dir: &Path,
-    knowledge_root: &Path,
-    out: &mut Vec<PathBuf>,
-) {
-    // The curated tree lives under a configured prose root by default
-    // (`prose_roots = ["doc"]`, knowledge at `doc/loom/knowledge`), so
-    // without this exact-match skip every curated chunk would be indexed a
-    // second time as prose: duplicate bodies in the pack, a doubled corpus,
-    // and a curated/prose pair competing for the same slot.
-    if dir == knowledge_root {
-        return;
-    }
-    let entries = match fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(error) => {
-            tracing::debug!(dir = %dir.display(), %error, "skipping unreadable prose directory");
-            return;
-        }
-    };
-    for entry in entries {
-        match entry {
-            Ok(entry) => visit_prose_entry(project_root, &entry, knowledge_root, out),
-            Err(error) => {
-                tracing::debug!(dir = %dir.display(), %error, "skipping unreadable prose directory entry");
-            }
-        }
-    }
-}
-
-/// Handle one directory entry: recurse into a subdirectory, or filter a file
-/// through [`push_prose_file`]. Dotfiles and dot-directories are skipped
-/// outright, matching the curated-tree walk's convention
-/// (`catalog.rs`'s `collect_markdown_files`).
-///
-/// `file_type()` does NOT follow symlinks (unlike `fs::metadata`), so a
-/// symlinked directory reports neither `is_dir()` nor `is_file()` here and
-/// falls through both arms below — this is what stops a symlink under a
-/// prose root from aiming the indexer outside the project.
-fn visit_prose_entry(
-    project_root: &Path,
-    entry: &fs::DirEntry,
-    knowledge_root: &Path,
-    out: &mut Vec<PathBuf>,
-) {
-    let name = entry.file_name();
-    let name = name.to_string_lossy();
-    if name.starts_with('.') {
-        return;
-    }
-    let path = entry.path();
-    let file_type = match entry.file_type() {
-        Ok(file_type) => file_type,
-        Err(error) => {
-            tracing::debug!(path = %path.display(), %error, "skipping prose entry of unknown type");
-            return;
-        }
-    };
-    if file_type.is_dir() {
-        collect_prose_files(project_root, &path, knowledge_root, out);
-    } else if file_type.is_file() {
-        push_prose_file(project_root, &path, &name, entry, out);
-    }
-}
-
-/// Apply the file-level filters (`*.md`, size cap, lifecycle path exclusions)
-/// to one candidate file and push its project-relative path onto `out` when
-/// it survives all of them.
-fn push_prose_file(
-    project_root: &Path,
-    path: &Path,
-    name: &str,
-    entry: &fs::DirEntry,
-    out: &mut Vec<PathBuf>,
-) {
-    if !name.ends_with(".md") {
-        return;
-    }
-    let metadata = match entry.metadata() {
-        Ok(metadata) => metadata,
-        Err(error) => {
-            tracing::debug!(path = %path.display(), %error, "skipping prose file with unreadable metadata");
-            return;
-        }
-    };
-    if metadata.len() as usize > MAX_EXTRACTED_FILE_BYTES {
-        return;
-    }
-    let Ok(relative) = path.strip_prefix(project_root) else {
-        return;
-    };
-    if prose_lifecycle(relative, None).is_none() {
-        return;
-    }
-    out.push(normalize_relative(relative));
 }
 
 /// Derive prose authority from a PROJECT-relative path. `None` means the file
@@ -379,17 +286,4 @@ pub(crate) fn prose_lifecycle(
         return Some(LifecycleState::Historical);
     }
     Some(LifecycleState::Active)
-}
-
-/// Rejoin `relative`'s components with `/`, matching the normalization idiom
-/// at `crate::context::fingerprint::collect_markdown_files` — so
-/// `KnowledgeChunk::file` never carries a platform-specific separator
-/// regardless of which OS built the catalog.
-fn normalize_relative(relative: &Path) -> PathBuf {
-    relative
-        .components()
-        .map(|component| component.as_os_str().to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join("/")
-        .into()
 }

@@ -57,46 +57,8 @@ pub const BOOST_LINKED_FROM: f32 = 40.0;
 /// Additive score for a stage dependency id.
 pub const BOOST_STAGE_DEPENDENCY: f32 = 30.0;
 
-/// How much to subtract from an indexed-prose candidate so that curated
-/// knowledge outranks it at equal evidence (A.15).
-///
-/// Curated knowledge is hand-written, reviewed, and cannot be re-derived from
-/// the code; an indexed design doc under `doc/` is none of those, so at equal
-/// evidence the curated section is the better answer and must rank first. The
-/// magnitude is `RetrievalConfig::knowledge_curated_prior` (5.0 by default,
-/// `loom/src/context/config.rs:106`) - an increment, not a multiplier, and
-/// deliberately far below the exact-match rungs: it settles ties and near-ties
-/// between the two corpora without ever outranking real evidence.
-///
-/// Applied as a demotion of prose rather than a bonus to curated: the two are
-/// equivalent for curated-vs-prose ordering, but adding a constant to every
-/// curated candidate would also inflate the knowledge channel against the
-/// source channel and compress the within-channel normalized scores that
-/// `fuse`'s tier-2 tie-break depends on (see `context/fuse.rs`). It also leaves
-/// curated scores at exactly the arithmetic the BM25 and rung-ladder tests pin
-/// (`context/tests/rank.rs`, `context/tests/rank_ladder.rs`), so those keep
-/// measuring what they were written to measure instead of this constant.
-///
-/// The caller CLAMPS the difference at zero, and that clamp is load-bearing,
-/// not defensive. [`crate::context::fuse`]'s tier-2 tie-break divides a
-/// candidate's raw score by its channel's maximum (`fuse.rs:133`), guarding
-/// only a zero or non-finite divisor — never a negative one. Let a prose score
-/// go negative on a query that ONLY prose answers and the channel maximum is
-/// itself negative, at which point `-3.0 / -1.0 = 3.0` outranks
-/// `-1.0 / -1.0 = 1.0` and the whole list INVERTS: the worst match sorts first.
-/// The clamp costs only discrimination among prose that scored below the
-/// prior — weak matches, whose tie then breaks deterministically by id in
-/// [`by_score_then_id`] — which is far cheaper than an inverted list. Do not
-/// "simplify" it away.
-///
-/// Applied HERE rather than inside [`score_exact_match_ladder`] for one
-/// load-bearing reason: `score_chunk` returns `None` when no rung fired
-/// (`rank.rs`, "a chunk nothing in the query pointed at is not a candidate at
-/// all"), and a prior settled inside the ladder would give EVERY curated chunk
-/// a non-empty score, turning the whole knowledge tree into candidates on every
-/// query and undoing A.2's candidacy floor. Adjusting only a chunk that already
-/// earned a reason keeps the prior an ORDERING signal and never an admission
-/// one.
+/// Demote already admitted prose without inflating curated scores across channels.
+/// The caller clamps at zero before fusion so normalized scores remain ordered.
 fn prose_demotion(chunk: &KnowledgeChunk, config: &RetrievalConfig) -> f32 {
     if chunk.id.starts_with(PROSE_ID_PREFIX) {
         config.knowledge_curated_prior
@@ -311,7 +273,3 @@ pub fn rank(
 ) -> Vec<RankedCandidate> {
     rank_channel(query, chunks, channel, config).candidates
 }
-
-#[cfg(test)]
-#[path = "rank/tests_prior.rs"]
-mod tests_prior;

@@ -23,6 +23,25 @@ const AT_THE_FLOORS: LabelCounts = LabelCounts {
     syntax_error_files: MIN_SYNTAX_ERROR_FILES,
 };
 
+#[test]
+fn yaml_ratio_floors_are_validated() {
+    for field in ["declaration_recall", "target_precision", "target_recall"] {
+        for value in ["-0.1", "1.1", ".nan", ".inf", "-.inf", "0", "1"] {
+            let thresholds = "declaration_recall: 0\ntarget_precision: 0\ntarget_recall: 0\nfalse_high_confidence: 0\nimpact_false_negatives_depth_1: 0\n";
+            let thresholds =
+                thresholds.replace(&format!("{field}: 0\n"), &format!("{field}: {value}\n"));
+            let result = Thresholds::from_yaml(&thresholds);
+            if value == "0" || value == "1" {
+                result.unwrap();
+            } else {
+                let error = result.unwrap_err().to_string();
+                assert!(error.contains(field), "{field}={value}: {error}");
+            }
+        }
+    }
+    Thresholds::published().unwrap();
+}
+
 fn violations_of(counts: &LabelCounts) -> Vec<String> {
     let mut violations = Vec::new();
     check_coverage(counts, &mut violations);

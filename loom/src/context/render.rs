@@ -363,16 +363,5 @@ pub(crate) fn rendered_chrome_tokens<'a>(
 }
 
 #[cfg(test)]
-mod excerpt_tests {
-    use super::render_excerpt_block;
-
-    #[test]
-    fn excerpt_neutralizes_terminal_controls_and_sizes_fence() {
-        let excerpt = "source\tline\n```\n\u{1b}]0;title\u{7}\u{202e}end";
-        assert_eq!(
-            render_excerpt_block(excerpt),
-            "````text\nsource\tline\n```\n\u{fffd}]0;title\u{fffd} end\n````\n"
-        );
-        assert!(excerpt.contains('\u{1b}'));
-    }
-}
+#[path = "render_tests.rs"]
+mod excerpt_tests;

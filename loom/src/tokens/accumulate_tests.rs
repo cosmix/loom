@@ -63,10 +63,9 @@ fn revisions_order_subseconds_and_retract_original_attribution() {
     agent.ingest(&line("2026-09-30T21:09:35.100Z", "stale", 100));
     assert_eq!(agent.model.as_deref(), Some("old"));
     assert_eq!(agent.total.input, 10);
-    // The shared provider policy resolves equal timestamps by input order.
+    let selected = agent.clone();
     agent.ingest(&line("2026-09-30T21:09:35.200Z", "equal", 8));
-    assert_eq!(agent.model.as_deref(), Some("equal"));
-    assert_eq!(agent.total.input, 8);
+    assert_eq!(agent, selected);
     agent.ingest(&line("2026-09-30T21:09:35.300Z", "new", 3));
     assert_eq!(agent.total.input, 3);
     assert_eq!(agent.buckets.values().map(|u| u.input).sum::<u64>(), 3);
@@ -74,7 +73,7 @@ fn revisions_order_subseconds_and_retract_original_attribution() {
         agent
             .by_model
             .iter()
-            .find(|m| m.model == "equal")
+            .find(|m| m.model == "old")
             .unwrap()
             .total
             .input,
@@ -90,6 +89,70 @@ fn revisions_order_subseconds_and_retract_original_attribution() {
             .input,
         3
     );
+}
+
+#[test]
+fn revisions_retract_every_usage_field_from_original_bucket_and_model() {
+    let mut agent = claude_agent();
+    agent.ingest(&claude_line_effort(
+        "revision",
+        NOW - 90,
+        "old",
+        "high",
+        &usage(10, 20, 30, 40),
+    ));
+    let selected = agent.clone();
+    agent.ingest(&claude_line_effort(
+        "revision",
+        NOW - 90,
+        "equal",
+        "low",
+        &usage(100, 200, 300, 400),
+    ));
+    assert_eq!(agent, selected);
+    agent.ingest(&claude_line_effort(
+        "revision",
+        NOW - 91,
+        "older",
+        "low",
+        &usage(100, 200, 300, 400),
+    ));
+    assert_eq!(agent, selected);
+    agent.ingest(&claude_line_effort(
+        "revision",
+        NOW,
+        "new",
+        "low",
+        &usage(1, 2, 3, 4),
+    ));
+
+    assert_revised_attribution(&agent);
+}
+
+fn assert_revised_attribution(agent: &AgentState) {
+    assert_eq!(agent.total, usage(1, 2, 3, 4));
+    assert_eq!(
+        agent.buckets[&((NOW - 90).div_euclid(BUCKET_SECS))],
+        TokenUsage::default()
+    );
+    assert_eq!(
+        agent.buckets[&NOW.div_euclid(BUCKET_SECS)],
+        usage(1, 2, 3, 4)
+    );
+    let old = agent
+        .by_model
+        .iter()
+        .find(|entry| entry.model == "old")
+        .unwrap();
+    assert_eq!(old.effort.as_deref(), Some("high"));
+    assert_eq!(old.total, TokenUsage::default());
+    let new = agent
+        .by_model
+        .iter()
+        .find(|entry| entry.model == "new")
+        .unwrap();
+    assert_eq!(new.effort.as_deref(), Some("low"));
+    assert_eq!(new.total, usage(1, 2, 3, 4));
 }
 
 #[test]

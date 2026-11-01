@@ -6,10 +6,8 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Read-only inputs needed to validate a chunk's backticked repository
-/// source references against the project tree. Bundled so
-/// `collect_chunk_issues` and `process_file` stay under clippy's
-/// `too_many_arguments` threshold.
+/// Shared read-only project roots and lazy file index for source-reference
+/// diagnostics.
 pub(super) struct SourceRefContext<'a> {
     pub(super) project_root: Option<&'a Path>,
     pub(super) cargo_source_roots: &'a [PathBuf],
@@ -72,9 +70,9 @@ impl<'a> SourceRefContext<'a> {
 /// fall through to `project_files`, which knows every file in the project.
 ///
 /// A module-relative path must match **exactly one** declared package source
-/// root; a suffix path must match **exactly one** project file. Multiple
-/// matches are ambiguous and remain a `MissingSourceRef`, rather than
-/// silently choosing a candidate by traversal order.
+/// root; a path suffix must match **exactly one** project file. A bare basename
+/// is accepted when any project file has that name, even if several do.
+/// Ambiguous path suffixes remain a `MissingSourceRef`.
 ///
 /// Callers have already rejected absolute and parent-relative paths, so no
 /// candidate can escape its root.
