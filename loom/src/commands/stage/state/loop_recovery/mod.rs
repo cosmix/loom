@@ -7,7 +7,9 @@ use std::time::Duration;
 
 use crate::fs::session_files::{load_session_exact, mark_session_terminal_reason};
 use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
-use crate::orchestrator::adjudication::close_open_disputes;
+use crate::orchestrator::adjudication::{
+    close_open_disputes_except_locked, lock_stage_dispute_dir,
+};
 use crate::orchestrator::session_registry::in_progress_sessions_for_stage;
 use crate::orchestrator::terminal::backend::SessionBackend;
 use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
@@ -137,13 +139,12 @@ pub(super) fn reset_under_admission(
         "Warning: Bypassing state machine to reset stage to initial state (was: {:?})",
         stage.status
     );
+    let _lifecycle = lock_stage_dispute_dir(&work_dir.join("disputes").join(stage_id))?;
     update_stage(stage_id, work_dir, |current| {
         apply_reset(current);
         Ok(())
     })?;
-    // After the stage lock is released: a dispute filing takes the dispute
-    // lock, then the stage lock, and closing takes them in that order too.
-    close_open_disputes(work_dir, stage_id);
+    close_open_disputes_except_locked(work_dir, stage_id, None)?;
     let mode = if hard { "hard" } else { "soft" };
     println!("Stage '{stage_id}' reset to pending ({mode} reset)");
     Ok(())

@@ -14,7 +14,9 @@ use crate::git::worktree::find_repo_root_from_cwd;
 use crate::handoff::completion::content::VerificationSnapshot;
 use crate::models::session::SessionType;
 use crate::models::stage::{Stage, StageStatus, StageType};
-use crate::orchestrator::adjudication::close_open_disputes;
+use crate::orchestrator::adjudication::{
+    close_open_disputes_except_locked, lock_stage_dispute_dir,
+};
 use crate::orchestrator::coherence::live_worker_sessions;
 use crate::orchestrator::session_registry::live_sessions_for_stage_of_type;
 use crate::verify::transitions::{load_stage, update_stage};
@@ -104,12 +106,13 @@ fn show_review_status(stage_id: &str, stage: &Stage) -> Result<()> {
 /// transition instead of leaving it approved with a still-spent budget.
 fn handle_approve(stage_id: &str, work_dir: &Path) -> Result<()> {
     refuse_live_writer(stage_id, work_dir)?;
+    let _lifecycle = lock_stage_dispute_dir(&work_dir.join("disputes").join(stage_id))?;
     // Disputes left open when the stage escalated would shadow the one the
     // fresh session files. Closing here also repairs a crash between an
     // escalation's status write and its own close. Before the transition, so
     // a crash after it cannot leave a queued stage with stale disputes.
     if load_stage(stage_id, work_dir)?.status == StageStatus::NeedsHumanReview {
-        close_open_disputes(work_dir, stage_id);
+        close_open_disputes_except_locked(work_dir, stage_id, None)?;
     }
     update_stage(stage_id, work_dir, |stage| {
         stage.try_approve_review()?;

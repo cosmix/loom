@@ -39,17 +39,17 @@ loom:
 <!-- END loom METADATA -->
 "#;
 
-struct Fixture {
+pub(super) struct Fixture {
     _tmp: tempfile::TempDir,
-    work: PathBuf,
+    pub(super) work: PathBuf,
     worktree: PathBuf,
-    stage: Stage,
+    pub(super) stage: Stage,
 }
 
 /// A refused stage `s1` with one contract, one harness glob and a
 /// format-check criterion, its worktree beside the state directory and its
 /// plan named in the state directory's config.
-fn fixture() -> Fixture {
+pub(super) fn fixture() -> Fixture {
     let tmp = tempfile::TempDir::new().unwrap();
     let repo = tmp.path().join("repo");
     let worktree = contract_worktree(&repo, "s1");
