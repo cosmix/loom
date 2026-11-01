@@ -23,6 +23,8 @@ impl Detection {
             .retain(|session_id, _| running_session_ids.contains(session_id.as_str()));
         self.red_handoff_ready
             .retain(|session_id| running_session_ids.contains(session_id.as_str()));
+        self.foreground_commands_seen
+            .retain(|session_id, _| running_session_ids.contains(session_id.as_str()));
     }
 
     /// Whether this session may be judged against a ceiling on this tick, and
@@ -80,4 +82,32 @@ fn needs_handoff_event(stage: &Stage) -> Option<MonitorEvent> {
             session_id: session_id.clone(),
             stage_id: stage.id.clone(),
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::orchestrator::monitor::foreground::CommandProgress;
+
+    #[test]
+    fn finished_sessions_release_foreground_observations() {
+        let mut detection = Detection::new();
+        let now = chrono::Utc::now();
+        detection.record_command_progress(
+            "finished",
+            CommandProgress {
+                pid: 42,
+                started: Some(7),
+                cpu_ticks: 1,
+            },
+            now,
+            300,
+            now,
+        );
+        assert!(detection.foreground_commands_seen.contains_key("finished"));
+
+        detection.clear_inactive_latches(&[]);
+
+        assert!(detection.foreground_commands_seen.is_empty());
+    }
 }

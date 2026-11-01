@@ -3,7 +3,6 @@
 //! attribution; companion v1.0.6 does not provide a provider-observed model.
 
 use std::collections::HashSet;
-use std::fs;
 use std::io::Read;
 use std::path::Path;
 
@@ -11,6 +10,7 @@ use serde_json::Value;
 
 use super::sanitize::valid_stage_id;
 use crate::context::untrusted::inline_safe;
+use crate::fs::safe_read::open_regular_no_follow;
 use crate::fs::work_dir::WorkDir;
 
 /// Most of one ledger the collector reads.
@@ -34,17 +34,23 @@ pub fn execution_models_for_stage(work_dir: &WorkDir, stage_id: &str) -> Vec<Str
         return Vec::new();
     }
 
-    let stage_dir = work_dir.root().join("subagents").join(stage_id);
+    // A linked worktree can use a trusted symlink for `.loom/work`; every
+    // ledger beneath its resolved root is still opened without following links.
+    let Ok(root) = std::fs::canonicalize(work_dir.root()) else {
+        return Vec::new();
+    };
+    let stage_dir = root.join("subagents").join(stage_id);
     let mut models = Vec::new();
     let mut seen = HashSet::new();
     append_models(
+        &root,
         &stage_dir.join("spawns.jsonl"),
         true,
         &mut seen,
         &mut models,
     );
     append_codex_models(
-        work_dir.root(),
+        &root,
         stage_id,
         &stage_dir.join("codex.jsonl"),
         &mut seen,
@@ -60,7 +66,7 @@ fn append_codex_models(
     seen: &mut HashSet<String>,
     models: &mut Vec<String>,
 ) {
-    for row in json_lines(path) {
+    for row in json_lines(work_dir, path) {
         if models.len() >= MAX_EXECUTION_MODELS {
             return;
         }
@@ -93,12 +99,13 @@ fn correlated_requested_model(work_dir: &Path, stage_id: &str, row: &Value) -> O
 }
 
 fn append_models(
+    root: &Path,
     path: &Path,
     skip_forwarders: bool,
     seen: &mut HashSet<String>,
     models: &mut Vec<String>,
 ) {
-    for row in json_lines(path) {
+    for row in json_lines(root, path) {
         if models.len() >= MAX_EXECUTION_MODELS {
             return;
         }
@@ -138,8 +145,14 @@ fn append_model(display_name: &str, seen: &mut HashSet<String>, models: &mut Vec
 /// fails to parse and is dropped like any other malformed one; the bytes are
 /// decoded lossily so a cut multi-byte character costs that row alone and not
 /// the whole read.
-fn json_lines(path: &Path) -> Vec<Value> {
-    let Ok(file) = fs::File::open(path) else {
+fn json_lines(root: &Path, path: &Path) -> Vec<Value> {
+    let Ok(relative) = path.strip_prefix(root) else {
+        return Vec::new();
+    };
+    let Some(relative) = relative.to_str() else {
+        return Vec::new();
+    };
+    let Ok(Some(file)) = open_regular_no_follow(root, relative, libc::O_RDONLY) else {
         return Vec::new();
     };
     let mut bytes = Vec::new();
@@ -324,5 +337,55 @@ mod tests {
             execution_models_for_stage(&work_dir, "s1"),
             ["aãaaaaaaaa", "haiku-4-5"]
         );
+    }
+
+    #[test]
+    fn fifo_ledgers_return_without_a_writer() {
+        let (_temp, work_dir) = test_work_dir();
+        let stage_dir = work_dir.root().join("subagents/s1");
+        std::fs::create_dir_all(&stage_dir).unwrap();
+        for name in ["spawns.jsonl", "codex.jsonl"] {
+            nix::unistd::mkfifo(&stage_dir.join(name), nix::sys::stat::Mode::S_IRUSR).unwrap();
+        }
+        assert!(execution_models_for_stage(&work_dir, "s1").is_empty());
+    }
+
+    #[test]
+    fn worktree_state_root_symlink_keeps_models_readable() {
+        let (_temp, work_dir) = test_work_dir();
+        let alias = tempfile::tempdir().unwrap();
+        let loom_dir = alias.path().join(".loom");
+        std::fs::create_dir(&loom_dir).unwrap();
+        std::os::unix::fs::symlink(work_dir.root(), loom_dir.join("work")).unwrap();
+        let linked_work = WorkDir::new(loom_dir.join("work")).unwrap();
+        let stage_dir = work_dir.root().join("subagents/s1");
+        std::fs::create_dir_all(&stage_dir).unwrap();
+        std::fs::write(stage_dir.join("spawns.jsonl"), "{\"model\":\"sonnet\"}\n").unwrap();
+
+        assert_eq!(execution_models_for_stage(&linked_work, "s1"), ["sonnet"]);
+    }
+
+    #[test]
+    fn symlinked_stage_is_refused_and_regular_ledgers_keep_the_byte_cap() {
+        let (_temp, work_dir) = test_work_dir();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(
+            outside.path().join("spawns.jsonl"),
+            "{\"model\":\"unsafe\"}\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(work_dir.root().join("subagents")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), work_dir.root().join("subagents/s1")).unwrap();
+        assert!(execution_models_for_stage(&work_dir, "s1").is_empty());
+
+        std::fs::remove_file(work_dir.root().join("subagents/s1")).unwrap();
+        let stage_dir = work_dir.root().join("subagents/s1");
+        std::fs::create_dir(&stage_dir).unwrap();
+        let ledger = format!(
+            "{{\"model\":\"sonnet\"}}\n{}",
+            " ".repeat(super::MAX_LEDGER_BYTES as usize)
+        );
+        std::fs::write(stage_dir.join("spawns.jsonl"), ledger).unwrap();
+        assert_eq!(execution_models_for_stage(&work_dir, "s1"), ["sonnet"]);
     }
 }
