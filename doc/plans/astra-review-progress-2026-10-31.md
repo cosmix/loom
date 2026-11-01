@@ -22,6 +22,8 @@ Tally at 2026-11-01 08:51:14 UTC: unchanged at 116 done, none in progress, 20 im
 
 Tally at 2026-11-01 09:36:08 UTC: unchanged at 116 done, none in progress, 20 implemented with verification pending, 9 partial, and 82 unassigned. The full Rust run passed; a lint gate exposed additional issues which were repaired, with lint and full Rust verification being rerun. No new findings have been assigned.
 
+Tally at 2026-11-01 09:51:29 UTC: unchanged at 116 done, none in progress, 20 implemented with verification pending, 9 partial, and 82 unassigned. Final Linux all-target Rust, doctest, Clippy, formatting, web, hook, installer and pre-commit checks passed. The 20 previously implemented findings still need finding-specific acceptance reconciliation; the full suite alone does not establish it.
+
 Integration verification: Linux web tests passed 4,111/4,111, hooks 107/107, installer tests 15/15 and isolated pre-commit cases 6/6. After repairs, the final Rust all-target run passed 12,301 tests with 0 failures and 20 ignored across 92 targets; nine duplicate handoff test registrations were removed while retaining all unique cases. Rust doctests passed 6 with 7 ignored, Clippy and formatting passed, and web typecheck, lint and build passed. Native macOS verification is left to CI.
 
 | Finding                                          | Status                                                                                                                                                                                                                                                 |
@@ -160,3 +162,5 @@ Integration verification: Linux web tests passed 4,111/4,111, hooks 107/107, ins
 Additional scoped work: provision-option validation, NUL-delimited worktree listing, and four Git comment corrections are implemented; verification is pending. CON-B-01 retains a legacy bare-PGID cleanup limitation. VER-01 has runner-specific verification outstanding.
 
 Active independent repairs: none.
+
+Mixed curated knowledge edits, including this session's corrections, remain in the working tree with the pre-existing edits. The pre-commit guard rejects partial staging of those files; they were not swept into the review commits.
