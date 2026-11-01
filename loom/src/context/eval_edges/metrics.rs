@@ -1,5 +1,6 @@
 //! Design 14.2's metrics: labels scored against the graph loom built.
 
+use anyhow::{anyhow, bail, Result};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::ids::unknown_label_ids;
@@ -21,11 +22,11 @@ const SEMANTIC_KINDS: [SourceEdgeKind; 4] = [
 ];
 
 /// Score `labels` against `graph`.
-pub(super) fn score(labels: &Labels, graph: &ResolvedGraph) -> EdgeQualityReport {
+pub(super) fn score(labels: &Labels, graph: &ResolvedGraph) -> Result<EdgeQualityReport> {
     let mut failures = Vec::new();
     let mut undefined_ratios = Vec::new();
-    let matched = count_declarations(labels, graph, &mut failures);
-    let tally = tally_references(labels, graph, &mut failures);
+    let matched = count_declarations(labels, graph, &mut failures)?;
+    let tally = tally_references(labels, graph, &mut failures)?;
     let counts = LabelCounts::of(labels);
     let references = labels.references.len();
     let mut rate = |n, d, name| ratio(n, d, name, &mut undefined_ratios);
@@ -35,7 +36,7 @@ pub(super) fn score(labels: &Labels, graph: &ResolvedGraph) -> EdgeQualityReport
     let unresolved_rate = rate(tally.unresolved, references, "unresolved_rate");
     let ambiguous_rate = rate(tally.ambiguous, references, "ambiguous_rate");
     let impact_false_negatives = count_impact_misses(labels, graph, &mut failures);
-    EdgeQualityReport {
+    Ok(EdgeQualityReport {
         dialect: labels.dialect.clone(),
         declaration_recall,
         target_precision,
@@ -43,12 +44,13 @@ pub(super) fn score(labels: &Labels, graph: &ResolvedGraph) -> EdgeQualityReport
         unresolved_rate,
         ambiguous_rate,
         false_high_confidence: tally.false_high_confidence,
+        ambiguous_mismatches: tally.ambiguous_mismatches,
         impact_false_negatives,
         labels: counts,
         undefined_ratios,
         unknown_label_ids: unknown_label_ids(labels, graph),
         failures,
-    }
+    })
 }
 
 /// `numerator / denominator`; a zero denominator records `name` as undefined
@@ -66,17 +68,38 @@ fn ratio(
     numerator as f64 / denominator as f64
 }
 
-/// Declarations matched on `(path, kind, scope)`.
-fn count_declarations(labels: &Labels, graph: &ResolvedGraph, failures: &mut Vec<String>) -> usize {
+/// Match each declaration's labelled line to a node's source span.
+fn count_declarations(
+    labels: &Labels,
+    graph: &ResolvedGraph,
+    failures: &mut Vec<String>,
+) -> Result<usize> {
     let mut matched = 0;
+    let mut sites = BTreeSet::new();
     for label in &labels.declarations {
-        let found = graph.files.get(&label.path).is_some_and(|entry| {
-            entry
-                .nodes
-                .iter()
-                .any(|node| node.kind.as_str() == label.kind && node.scope == label.scope)
+        let found = graph.files.get(&label.path).and_then(|entry| {
+            entry.nodes.iter().find(|node| {
+                node.kind.as_str() == label.kind
+                    && node.scope == label.scope
+                    && node.span.line_start <= label.line
+                    && label.line <= node.span.line_end
+            })
         });
-        if found {
+        if let Some(node) = found {
+            if !sites.insert((
+                &label.path,
+                &label.kind,
+                &label.scope,
+                node.span.start_byte,
+                node.span.end_byte,
+            )) {
+                bail!(
+                    "{}:{} declaration {} duplicates a declaration site",
+                    label.path,
+                    label.line,
+                    label.scope.join("::")
+                );
+            }
             matched += 1;
         } else {
             failures.push(format!(
@@ -88,7 +111,7 @@ fn count_declarations(labels: &Labels, graph: &ResolvedGraph, failures: &mut Vec
             ));
         }
     }
-    matched
+    Ok(matched)
 }
 
 #[derive(Default)]
@@ -98,17 +121,30 @@ struct ReferenceTally {
     unresolved: usize,
     ambiguous: usize,
     false_high_confidence: usize,
+    ambiguous_mismatches: usize,
 }
 
 fn tally_references(
     labels: &Labels,
     graph: &ResolvedGraph,
     failures: &mut Vec<String>,
-) -> ReferenceTally {
+) -> Result<ReferenceTally> {
     let mut tally = ReferenceTally::default();
+    let mut sites = BTreeSet::new();
     for label in &labels.references {
         let expectation = label.expect.expectation();
-        let edge = find_edge(graph, label, &expectation);
+        let observation = find_edge(graph, label)?;
+        if let Some((_, start, end)) = observation {
+            if !sites.insert((&label.path, start, end)) {
+                bail!(
+                    "{}:{} {} duplicates a reference site",
+                    label.path,
+                    label.line,
+                    label.symbol
+                );
+            }
+        }
+        let edge = observation.map(|(edge, _, _)| edge);
         let is_bound = edge.is_some_and(|edge| !edge.is_unresolved());
         match edge {
             Some(edge) if is_bound => {
@@ -126,10 +162,13 @@ fn tally_references(
                 tally.correct_targets += 1;
             }
         } else {
+            if matches!(expectation, Expectation::Ambiguous(_)) {
+                tally.ambiguous_mismatches += 1;
+            }
             failures.push(describe_miss(label, &expectation, edge));
         }
     }
-    tally
+    Ok(tally)
 }
 
 /// Whether `edge` (a missing edge counts as unbound) satisfies `expectation`.
@@ -149,30 +188,57 @@ fn is_correct(expectation: &Expectation<'_>, edge: Option<&SourceEdge>) -> bool 
 }
 
 /// The edge a label names: from its path, at its line, for its symbol.
-/// Several matches prefer the one already bound to a labelled target.
+/// Multiple sites require an explicit byte offset, independent of expectation.
 fn find_edge<'a>(
     graph: &'a ResolvedGraph,
     label: &ReferenceLabel,
-    expectation: &Expectation<'_>,
-) -> Option<&'a SourceEdge> {
-    let entry = graph.files.get(&label.path)?;
-    let matches: Vec<&SourceEdge> = entry
+) -> Result<Option<(&'a SourceEdge, usize, usize)>> {
+    let Some(entry) = graph.files.get(&label.path) else {
+        if label.site_start.is_some() {
+            return Err(missing_reference_site(label));
+        }
+        return Ok(None);
+    };
+    let matches: Vec<(&SourceEdge, usize, usize)> = entry
         .edges
         .iter()
         .filter(|edge| {
-            SEMANTIC_KINDS.contains(&edge.kind)
-                && edge
-                    .sites
-                    .iter()
-                    .any(|site| site.line_start <= label.line && label.line <= site.line_end)
-                && symbol_matches(&edge.symbol, &label.symbol)
+            SEMANTIC_KINDS.contains(&edge.kind) && symbol_matches(&edge.symbol, &label.symbol)
+        })
+        .flat_map(|edge| {
+            edge.sites
+                .iter()
+                .filter(move |site| {
+                    site.line_start <= label.line
+                        && label.line <= site.line_end
+                        && label
+                            .site_start
+                            .is_none_or(|start| start == site.start_byte)
+                })
+                .map(move |site| (edge, site.start_byte, site.end_byte))
         })
         .collect();
-    let on_target = match expectation {
-        Expectation::Target(target) => matches.iter().find(|edge| edge.to == *target),
-        _ => None,
-    };
-    on_target.or(matches.first()).copied()
+    if matches.len() > 1 {
+        bail!(
+            "{}:{} {} matches multiple reference sites; specify site_start",
+            label.path,
+            label.line,
+            label.symbol
+        );
+    }
+    if matches.is_empty() && label.site_start.is_some() {
+        return Err(missing_reference_site(label));
+    }
+    Ok(matches.first().copied())
+}
+
+fn missing_reference_site(label: &ReferenceLabel) -> anyhow::Error {
+    anyhow!(
+        "{}:{} {} has no reference site at site_start",
+        label.path,
+        label.line,
+        label.symbol
+    )
 }
 
 /// `written` equals `label`, or ends with it after a `::` or `.` separator.

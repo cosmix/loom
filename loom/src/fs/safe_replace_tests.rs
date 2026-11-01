@@ -92,6 +92,32 @@ fn sync_failure_after_rename_still_reports_publication() {
 }
 
 #[test]
+fn reporting_publisher_distinguishes_sync_warning_from_failure() {
+    let root = root_with("original");
+    let parent = open_parent(root.path(), Path::new("dir/a.md")).unwrap();
+    FAIL_DIR_SYNC.with(|flag| flag.set(true));
+    let result = super::publish_in_dir_reporting(
+        &parent,
+        std::ffi::OsStr::new("a.md"),
+        b"new",
+        0o666,
+        false,
+    );
+    FAIL_DIR_SYNC.with(|flag| flag.set(false));
+    assert!(result.unwrap().is_some());
+    assert_eq!(read(&root, "dir/a.md"), "new");
+    assert!(super::publish_in_dir_reporting(
+        &parent,
+        std::ffi::OsStr::new("bad\0name"),
+        b"x",
+        0o666,
+        false
+    )
+    .is_err());
+    assert_eq!(read(&root, "dir/a.md"), "new");
+}
+
+#[test]
 fn private_replacement_creates_missing_file_and_refuses_symlinked_parent() {
     let root = root_with("original");
     let outside = tempfile::tempdir().unwrap();

@@ -254,7 +254,7 @@ fn json_view(
     let found = collect(graph, project_root, arg, opts, relation);
     json!({
         "match": found.resolved.mode.as_str(),
-        "start_ids": found.per_start.iter().map(|start| safe(&start.id)).collect::<Vec<_>>(),
+        "start_ids": found.per_start.iter().map(|start| &start.id).collect::<Vec<_>>(),
         "neighbors": found.per_start.iter().flat_map(|start| start.rows.iter().map(neighbor_json)).collect::<Vec<_>>(),
         "suppressed_starts": found.resolved.suppressed(),
         "suppressed": found.suppressed(),
@@ -264,15 +264,15 @@ fn json_view(
 
 fn neighbor_json(neighbor: &Neighbor) -> Value {
     json!({
-        "id": safe(&neighbor.id),
+        "id": neighbor.id,
         "kind": neighbor.kind.as_str(),
-        "path": safe(&neighbor.path),
+        "path": neighbor.path,
         "edge_kind": neighbor.edge_kind.as_str(),
         "confidence": neighbor.confidence,
         "provenance": neighbor.provenance.as_str(),
         "line_start": neighbor.line_start,
         "symbol": safe(&neighbor.symbol),
-        "site_path": safe(&neighbor.site_path),
+        "site_path": neighbor.site_path,
         "sites": neighbor.sites.iter().map(site_json).collect::<Vec<_>>(),
         "candidate_of": neighbor.candidate_of,
     })

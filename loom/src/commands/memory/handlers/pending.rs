@@ -4,11 +4,9 @@ use anyhow::Result;
 use serde::Serialize;
 use std::path::Path;
 
-use crate::fs::memory::{
-    list_journals, read_staged_entries, settled_ids, MemoryEntry, MemoryEntryType,
-};
+use crate::fs::memory::{read_staged_entries, settled_ids, MemoryEntry, MemoryEntryType};
 
-use super::read::{read_journal_with_pending, spool_only_stage_with_pending};
+use super::read::{memory_stages, read_journal_with_pending};
 use super::work_dir::{readonly_work_dir, validate_stage_id};
 
 #[path = "pending_groups.rs"]
@@ -180,8 +178,7 @@ pub(super) fn pending_report(work_dir: &Path, stage_id: Option<&str>) -> Result<
 
 /// Read every journal once, adding only the current worktree's undrained spool.
 pub(super) fn staged_entries(work_dir: &Path) -> Result<(Vec<StagedMemoryEntry>, Vec<String>)> {
-    let mut journals = list_journals(work_dir)?;
-    journals.extend(spool_only_stage_with_pending(&journals));
+    let journals = memory_stages(work_dir, None)?;
     let (entries, journals) = read_staged_entries(work_dir, journals, read_journal_with_pending)?;
     let entries = entries
         .into_iter()

@@ -2,28 +2,10 @@
 //!
 //! Both look identical from the heartbeat alone — a live PID that has stopped
 //! writing `.loom/work/heartbeat/<stage-id>.json` — but they need opposite
-//! responses from the operator:
-//!
-//! - **Hung**: the session is stuck partway through its work. Go look at it.
-//! - **Parked**: the session finished, committed, and ended its turn without
-//!   running `loom stage complete`. The work is done and gate-passing; the
-//!   stage just needs the transition, and every dependent stage is blocked
-//!   behind it until someone notices.
-//!
-//! Parking is not hypothetical and it is not rare. `loom-hooks/commit-guard.sh` used
-//! to refuse a stop that left a stage in `Executing` (`exit 2`), but was
-//! downgraded to an advisory that returns 0, because Claude Code fires `Stop`
-//! hooks during Task/subagent waits and blocking there killed sessions
-//! mid-work. An advisory Stop hook's stderr is not fed back to the model, so
-//! the reminder now reaches nobody: the agent ends its turn and the stage sits
-//! in `Executing` indefinitely. Observed twice on one eight-stage plan
-//! (2026-08-24 and 2026-08-25), the second time parked overnight for 12h45m
-//! with every acceptance criterion already passing.
-//!
-//! This module does not change that policy — hung detection stays advisory,
-//! nothing here kills, retries, or transitions anything. It only lets the
-//! warning say which of the two situations the operator is looking at, and
-//! name the command that resolves the recoverable one.
+//! responses: a session may be stuck, or may have committed and ended its
+//! turn without completing the stage. This module supplies a heuristic for
+//! the warning; the evidence does not prove the work is complete or passes
+//! its gates. Hung-session recovery is handled elsewhere.
 //!
 //! # What "finished" means here
 //!

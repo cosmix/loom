@@ -1,61 +1,15 @@
-use super::read::{list_json_output, read_journal_with_pending, spool_only_stage_with_pending};
+use super::read::{list_json_output, memory_stages, read_journal_with_pending};
+use super::test_isolation::{init_git_repo, isolated_temp_dir, run_isolated_test, CwdRestorer};
 use super::{list, note, show};
 use crate::commands::memory::formatters::format_record_success;
 use crate::fs::memory::{append_to_spool, read_journal, MemoryEntry, MemoryEntryType};
-use serial_test::serial;
 use std::env;
-use std::process::Command;
-use tempfile::TempDir;
-
-pub(super) fn init_git_repo() -> TempDir {
-    let temp_dir = TempDir::new().unwrap();
-    let run_git = |args: &[&str]| {
-        Command::new("git")
-            .args(args)
-            .current_dir(temp_dir.path())
-            .output()
-            .unwrap()
-    };
-    run_git(&["init", "--initial-branch=main"]);
-    run_git(&["config", "user.email", "test@test.com"]);
-    run_git(&["config", "user.name", "Test"]);
-    temp_dir
-}
-
-pub(super) struct EnvGuard {
-    original_dir: std::path::PathBuf,
-    original_stage_id: Option<String>,
-    original_session_id: Option<String>,
-}
-
-impl EnvGuard {
-    pub(super) fn new() -> Self {
-        Self {
-            original_dir: env::current_dir().unwrap(),
-            original_stage_id: env::var("LOOM_STAGE_ID").ok(),
-            original_session_id: env::var("LOOM_SESSION_ID").ok(),
-        }
-    }
-}
-
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        env::set_current_dir(&self.original_dir).unwrap();
-        match &self.original_stage_id {
-            Some(v) => env::set_var("LOOM_STAGE_ID", v),
-            None => env::remove_var("LOOM_STAGE_ID"),
-        }
-        match &self.original_session_id {
-            Some(v) => env::set_var("LOOM_SESSION_ID", v),
-            None => env::remove_var("LOOM_SESSION_ID"),
-        }
-    }
-}
 
 #[test]
-#[serial]
 fn note_creates_work_dir_when_missing_using_ad_hoc_stage() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     env::remove_var("LOOM_STAGE_ID");
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
@@ -73,9 +27,10 @@ fn note_creates_work_dir_when_missing_using_ad_hoc_stage() {
 }
 
 #[test]
-#[serial]
 fn note_uses_loom_stage_id_env_var_over_sentinel() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
     env::set_var("LOOM_STAGE_ID", "env-stage");
@@ -93,9 +48,10 @@ fn note_uses_loom_stage_id_env_var_over_sentinel() {
 /// takes. This replaces the old "explicit stage silently overrides env"
 /// behavior, which was exactly the forged-attribution hole this closes.
 #[test]
-#[serial]
 fn note_explicit_stage_mismatch_is_refused_direct_path() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
     env::set_var("LOOM_STAGE_ID", "env-stage");
@@ -115,9 +71,10 @@ fn note_explicit_stage_mismatch_is_refused_direct_path() {
 }
 
 #[test]
-#[serial]
 fn note_explicit_stage_allowed_when_loom_stage_id_unset() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     env::remove_var("LOOM_STAGE_ID");
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
@@ -132,21 +89,21 @@ fn note_explicit_stage_allowed_when_loom_stage_id_unset() {
     assert!(repo.path().join(".loom/work/memory/cli-stage.md").exists());
 }
 
-// `AmbientTempRootGuard` and its regression test
-// (`note_does_not_adopt_an_impostor_git_dir_at_the_temp_root`) live in
-// `impostor_git_dir_tests.rs`, split out to keep this file under the
-// maintainability limit.
+// The impostor `.git` regression lives in a separate file to keep this one
+// under the maintainability limit.
 #[path = "impostor_git_dir_tests.rs"]
 mod impostor_git_dir_tests;
 
 #[test]
-#[serial]
 fn note_outside_git_repo_still_fails() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     env::remove_var("LOOM_STAGE_ID");
     // A plain temp dir (no `git init`) has no `.git` anywhere in its
     // ancestry, so this must fail exactly like the pre-existing behavior.
-    let plain_dir = TempDir::new().unwrap();
+    let plain_dir = isolated_temp_dir();
+    let _cwd = CwdRestorer::new();
     env::set_current_dir(plain_dir.path()).unwrap();
 
     let result = note("should not be recorded".to_string(), Vec::new(), None);
@@ -160,9 +117,10 @@ fn note_outside_git_repo_still_fails() {
 }
 
 #[test]
-#[serial]
 fn list_and_show_degrade_without_creating_work_dir() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
 
@@ -180,9 +138,10 @@ fn list_and_show_degrade_without_creating_work_dir() {
 }
 
 #[test]
-#[serial]
 fn note_reuses_existing_work_dir_without_recreating() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     env::remove_var("LOOM_STAGE_ID");
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
@@ -199,9 +158,10 @@ fn note_reuses_existing_work_dir_without_recreating() {
 }
 
 #[test]
-#[serial]
 fn note_success_takes_direct_path_and_writes_no_spool_file() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     env::remove_var("LOOM_STAGE_ID");
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
@@ -220,9 +180,10 @@ fn note_success_takes_direct_path_and_writes_no_spool_file() {
 /// no write-denial simulation needed, since the check now runs up front
 /// regardless of which write path a call would otherwise take.
 #[test]
-#[serial]
 fn note_explicit_stage_mismatch_is_refused_inside_worktree() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     let repo = init_git_repo();
     let worktree_stage = "real-stage";
     let worktree_root = repo.path().join(".worktrees").join(worktree_stage);
@@ -252,9 +213,10 @@ fn note_explicit_stage_mismatch_is_refused_inside_worktree() {
 }
 
 #[test]
-#[serial]
 fn read_journal_with_pending_surfaces_a_pending_entry() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     let repo = init_git_repo();
     let stage = "pending-stage";
     let worktree_root = repo.path().join(".worktrees").join(stage);
@@ -279,9 +241,10 @@ fn read_journal_with_pending_surfaces_a_pending_entry() {
 
 /// `show --all` includes a stage whose entries are still only in its spool.
 #[test]
-#[serial]
 fn show_all_surfaces_a_spool_only_stage() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     let repo = init_git_repo();
     let stage = "spool-only-stage";
     let worktree_root = repo.path().join(".worktrees").join(stage);
@@ -298,18 +261,17 @@ fn show_all_surfaces_a_spool_only_stage() {
     .unwrap();
     assert!(!work_dir.join("memory").join(format!("{stage}.md")).exists());
 
-    let journals: Vec<String> = Vec::new();
-    let surfaced = spool_only_stage_with_pending(&journals);
-    assert_eq!(surfaced, Some(stage.to_string()));
+    assert_eq!(memory_stages(&work_dir, None).unwrap(), vec![stage]);
 
     assert!(show(None, true, false).is_ok());
 }
 
 /// `loom memory list` also includes a stage whose entries are spool-only.
 #[test]
-#[serial]
 fn list_surfaces_a_spool_only_stage() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     let repo = init_git_repo();
     let stage = "spool-only-list-stage";
     let worktree_root = repo.path().join(".worktrees").join(stage);
@@ -325,19 +287,16 @@ fn list_surfaces_a_spool_only_stage() {
     .unwrap();
     assert!(!work_dir.join("memory").join(format!("{stage}.md")).exists());
 
-    let journals: Vec<String> = Vec::new();
-    assert_eq!(
-        spool_only_stage_with_pending(&journals),
-        Some(stage.to_string())
-    );
+    assert_eq!(memory_stages(&work_dir, None).unwrap(), vec![stage]);
 
     assert!(list(None, None, false).is_ok());
 }
 
 #[test]
-#[serial]
 fn note_records_evidence_and_session_and_prints_the_id() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
     env::set_var("LOOM_STAGE_ID", "identity-stage");
@@ -365,9 +324,10 @@ fn note_records_evidence_and_session_and_prints_the_id() {
 }
 
 #[test]
-#[serial]
 fn list_json_prints_entries_with_ids() {
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
     env::set_var("LOOM_STAGE_ID", "json-stage");

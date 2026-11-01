@@ -64,6 +64,12 @@ pub(crate) enum FreezeRefusalFiling {
     Declined(String),
 }
 
+/// Admission decisions are durable; errors reading their evidence are not.
+enum Admission {
+    Accepted(DisputeKind),
+    Rejected(String),
+}
+
 #[cfg(test)]
 pub(crate) fn handle_file_dispute(
     work_dir: &Path,
@@ -124,15 +130,13 @@ pub(crate) fn file_freeze_refusal(
     let reason = format!("contract freeze refused: {first}");
     let kind = DisputeKind::FreezeRefusal { problems };
     let key = receipt_key(request_key);
-    Ok(
-        match file_dispute_inner(work_dir, stage_id, kind, reason, None, (Some(&key), None))? {
-            Response::DisputeCreated { id } => {
-                FreezeRefusalFiling::Filed(format!("freeze-refusal dispute {id} filed"))
-            }
-            Response::Error { message } => FreezeRefusalFiling::Declined(message),
-            other => FreezeRefusalFiling::Declined(format!("unexpected filing outcome {other:?}")),
-        },
-    )
+    match file_dispute_inner(work_dir, stage_id, kind, reason, None, (Some(&key), None))? {
+        Response::DisputeCreated { id } => Ok(FreezeRefusalFiling::Filed(format!(
+            "freeze-refusal dispute {id} filed"
+        ))),
+        Response::Error { message } => Ok(FreezeRefusalFiling::Declined(message)),
+        other => bail!("unexpected freeze-refusal filing outcome {other:?}"),
+    }
 }
 
 /// Send `stage_id` to a human once its refused freezes have spent the
@@ -236,8 +240,8 @@ fn file_on_locked_stage(
         return Ok(existing);
     }
     let kind = match confirm(&locked.work_dir, stage, kind)? {
-        Ok(kind) => kind,
-        Err(reason) => return Ok(refused(reason)),
+        Admission::Accepted(kind) => kind,
+        Admission::Rejected(reason) => return Ok(refused(reason)),
     };
     if dispute_budgets::exhausted(stage, &kind) {
         return Ok(exhausted_response(stage, &kind));
@@ -291,28 +295,27 @@ fn escalate_exhausted(stage: &mut Stage, kind: &DisputeKind) -> Response {
 
 /// The dispute to record: `kind` with every id checked against what exists
 /// now and its evidence re-derived by the daemon.
-fn confirm(
-    work_dir: &Path,
-    stage: &Stage,
-    kind: DisputeKind,
-) -> Result<Result<DisputeKind, String>> {
+fn confirm(work_dir: &Path, stage: &Stage, kind: DisputeKind) -> Result<Admission> {
     if stage.plan_version != 2 {
-        return Ok(Err(format!(
+        return Ok(Admission::Rejected(format!(
             "stage '{}' is not a plan version 2 stage; only its acceptance criteria, wiring \
              checks and wiring tests can be disputed, with `loom stage dispute-criteria --field`",
             stage.id
         )));
     }
     if let Some(reason) = check_filer(work_dir, stage, &kind)? {
-        return Ok(Err(reason));
+        return Ok(Admission::Rejected(reason));
     }
     if let DisputeKind::FreezeRefusal { problems } = kind {
         return Ok(match check_unfrozen(work_dir, stage)? {
-            Some(reason) => Err(reason),
-            None => Ok(DisputeKind::FreezeRefusal { problems }),
+            Some(reason) => Admission::Rejected(reason),
+            None => Admission::Accepted(DisputeKind::FreezeRefusal { problems }),
         });
     }
-    Ok(confirm_evidence(work_dir, stage, kind).map_err(|error| format!("{error:#}")))
+    Ok(match confirm_evidence(work_dir, stage, kind) {
+        Ok(kind) => Admission::Accepted(kind),
+        Err(error) => Admission::Rejected(format!("{error:#}")),
+    })
 }
 
 fn confirm_evidence(work_dir: &Path, stage: &Stage, kind: DisputeKind) -> Result<DisputeKind> {

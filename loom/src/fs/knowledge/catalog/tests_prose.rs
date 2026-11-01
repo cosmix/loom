@@ -388,7 +388,7 @@ fn a_prose_chunk_id_is_accepted_by_require_id() {
         .id
         .clone();
 
-    let result = reject_unknown_require_ids(&catalog, None, &[prose_id]);
+    let result = reject_unknown_require_ids(Some(&catalog), None, &[prose_id]);
 
     assert!(result.is_ok());
 }

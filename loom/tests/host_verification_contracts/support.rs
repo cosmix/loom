@@ -239,6 +239,7 @@ pub fn record(stage_id: &str, state: JobState, head: &str, tree_digest: &str) ->
     let now = Utc::now();
     JobRecord {
         id: new_job_id(),
+        submission_order: 0,
         stage_id: stage_id.to_string(),
         session_id: SESSION.to_string(),
         kind: JobKind::Check,

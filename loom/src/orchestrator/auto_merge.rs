@@ -91,10 +91,8 @@ pub fn is_auto_merge_enabled(
 ///
 /// Cleanup is deliberately NOT done here. It belongs to the caller, via
 /// `crate::orchestrator::merge_lifecycle`, and runs only after the merge has
-/// been verified by git ancestry. Removing the worktree and branch inside this
-/// function destroyed the very evidence the caller needs: the daemon derives a
-/// missing `completed_commit` from the stage branch HEAD, which cleanup had
-/// already deleted.
+/// been verified against certified completion proof by git ancestry. A missing
+/// `completed_commit` is refused rather than inferred from the branch head.
 ///
 /// Note: This function does not print any output. The caller is responsible
 /// for logging or displaying results based on the returned `AutoMergeResult`.

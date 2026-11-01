@@ -9,7 +9,6 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 pub(super) const CLIENT_WORKERS: usize = 8;
 pub(super) const CLIENT_QUEUE_CAPACITY: usize = 16;
@@ -20,9 +19,9 @@ pub(super) const MAX_IN_FLIGHT_REQUEST_BYTES: usize = 512 * 1024;
 pub enum DaemonStatus {
     /// Daemon process not found
     NotRunning,
-    /// Daemon process running and socket responsive
+    /// Singleton lock held and socket connection accepted (no health probe).
     Running,
-    /// Daemon process exists but socket unreachable or unresponsive (hung state)
+    /// Socket connection failed under a held lock, or lock state is indeterminate.
     ProcessOnly,
     /// The singleton flock proves a daemon owns this `.loom/work/`, but this
     /// process could not `connect()` to its socket because AF_UNIX socket
@@ -115,15 +114,12 @@ impl DaemonServer {
     /// * `work_dir` - The .loom/work/ directory path
     ///
     /// # Returns
-    /// `DaemonStatus` indicating whether the daemon is running and responsive
+    /// `DaemonStatus` describing singleton ownership and socket connectivity.
     pub fn check_status(work_dir: &Path) -> DaemonStatus {
         let socket_path = crate::daemon::socket_path(work_dir);
         match inspect_lock(work_dir) {
             LockState::Held(_) => match UnixStream::connect(&socket_path) {
-                Ok(stream) => {
-                    let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
-                    DaemonStatus::Running
-                }
+                Ok(_) => DaemonStatus::Running,
                 Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
                     // Sandboxed callers (e.g. this process running inside
                     // Claude Code's Bash tool) have AF_UNIX socket syscalls
@@ -172,7 +168,7 @@ impl DaemonServer {
     /// * `work_dir` - The .loom/work/ directory path
     ///
     /// # Returns
-    /// `true` if a daemon is running (either responsive or hung), `false` otherwise
+    /// `true` if a daemon may own the singleton lock, `false` otherwise.
     pub fn is_running(work_dir: &Path) -> bool {
         daemon_running_from_status(Self::check_status(work_dir))
     }

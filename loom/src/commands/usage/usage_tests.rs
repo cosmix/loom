@@ -1,6 +1,7 @@
 use std::fs;
 
 use chrono::{TimeZone, Utc};
+use clap::Parser;
 use serde_json::json;
 
 use super::*;
@@ -10,6 +11,20 @@ use crate::commands::usage::transcript::Scope;
 
 // A `static` because a scope with a set inside cannot be promoted to `'static`.
 static UNSCOPED: CodexScope = CodexScope::Unscoped;
+
+#[derive(Parser)]
+struct SelectionHarness {
+    #[command(flatten)]
+    args: UsageArgs,
+}
+
+#[test]
+fn unresolved_plan_selection_is_explicitly_unavailable() {
+    let parsed = SelectionHarness::try_parse_from(["usage", "--plan", "missing"]).unwrap();
+    let (stages, unavailable) = session_stage_filter(&parsed.args, None).unwrap();
+    assert!(unavailable);
+    assert_eq!(stages, Some(HashSet::new()));
+}
 
 fn write_start(stage_dir: &std::path::Path, parent_session_id: &str, agent_type: &str) {
     fs::create_dir_all(stage_dir).unwrap();
@@ -287,6 +302,8 @@ fn provider_input(selection: ProviderSelection) -> provider::ProviderEventInput<
         codex_unreadable_directories: 0,
         codex_scope: &UNSCOPED,
         receipts_root: None,
+        selected_stages: None,
+        selection_unavailable: false,
     }
 }
 

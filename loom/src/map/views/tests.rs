@@ -270,7 +270,7 @@ fn empty_impact_names_what_was_not_traversed() {
         &view_options(Vec::new()),
     );
 
-    assert!(rendered.contains("no resolved edge reaches this node"));
+    assert!(rendered.contains("no matching hits under these bounds"));
     assert!(rendered.contains("3 unresolved edges"));
     assert!(!rendered.contains("nothing in the graph reaches this node"));
 }

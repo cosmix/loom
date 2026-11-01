@@ -211,22 +211,35 @@ fn a_run_ending_tells_every_tab_to_fetch_the_options_once_the_slot_is_free() {
     f.finished();
 }
 
-/// SIGKILLs a fake Codex that ignores TERM when dropped, so a failed assertion cannot leak it.
+/// Stops a fake Codex group on assertion failure, including its TERM-ignoring child.
 struct KillOnDrop(u32);
 
 impl Drop for KillOnDrop {
     fn drop(&mut self) {
         let pid = nix::unistd::Pid::from_raw(self.0 as i32);
-        let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGKILL);
+        let _ = nix::sys::signal::killpg(pid, nix::sys::signal::Signal::SIGKILL);
     }
 }
 
-/// The stopped run left Codex running: the block is persisted and every start refuses on it.
-fn assert_not_exited_blocks(f: &Fixture, viewer: &BrowserId, codex_pid: u32) {
+fn stubborn_child(f: &Fixture) -> u32 {
+    let child = wait_for("TERM-ignoring Codex child", || {
+        fs::read_to_string(f.bin.join("stubborn-child"))
+            .ok()?
+            .trim()
+            .parse()
+            .ok()
+    });
+    assert!(is_process_alive(child), "Codex child exited before Stop");
+    child
+}
+
+/// Outliving the TERM grace persists a block even after owned-process cleanup kills Codex.
+fn assert_grace_blocks(f: &Fixture, viewer: &BrowserId, codex_pid: u32, child: u32) {
     assert!(
-        is_process_alive(codex_pid),
-        "Codex exited despite ignoring TERM"
+        !is_process_alive(codex_pid),
+        "Codex outlived owned-process cleanup"
     );
+    wait_until("Codex descendant cleanup", || !is_process_alive(child));
     let block = f.ctx.runtime().dir.join("config-block.json");
     assert!(block.is_file(), "no config-block.json");
     let (_, options) = f.call("/api/pressure/options", viewer, None);
@@ -248,11 +261,12 @@ fn a_codex_still_running_after_its_grace_blocks_launches_until_confirmed() {
     f.start(1);
     let codex = wait_for("Codex recorded", || f.fake.children("s-1").first().copied());
     let _kill = KillOnDrop(codex.pid);
+    let child = stubborn_child(&f);
     let (status, _) = f.call("/api/pressure/stop", &f.holder, None);
     assert_eq!(status, 202);
     assert_eq!(f.ended().kind, RunEndKind::Stopped);
     let viewer = BrowserId::mint().unwrap();
-    assert_not_exited_blocks(&f, &viewer, codex.pid);
+    assert_grace_blocks(&f, &viewer, codex.pid, child);
     let frames = frames_on(&f.ctx, &viewer);
     let (status, body) = f.call("/api/pressure/confirm-config", &f.holder, None);
     assert_eq!(status, 200, "{body}");
@@ -275,6 +289,7 @@ fn a_codex_outliving_its_grace_after_the_marker_blocks_launches() {
     f.start(1);
     let codex = wait_for("Codex recorded", || f.fake.children("s-1").first().copied());
     let _kill = KillOnDrop(codex.pid);
+    let child = stubborn_child(&f);
     let runs = f.runs();
     wait_until("Codex running alone after the marker", || {
         let view = runs.last_view();
@@ -284,7 +299,7 @@ fn a_codex_outliving_its_grace_after_the_marker_blocks_launches() {
     assert_eq!(status, 202);
     assert_eq!(f.ended().kind, RunEndKind::Stopped);
     let viewer = BrowserId::mint().unwrap();
-    assert_not_exited_blocks(&f, &viewer, codex.pid);
+    assert_grace_blocks(&f, &viewer, codex.pid, child);
 }
 
 fn pressure_session(plan: &str) -> RecoveredSession {

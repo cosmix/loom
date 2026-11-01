@@ -70,6 +70,48 @@ fn session_meta(id: &str) -> Value {
 }
 
 #[test]
+fn foreign_exact_copy_cannot_suppress_selected_response() -> Result<()> {
+    let (_foreign_root, foreign) = write(&[session_meta("foreign"), direct("same", 100, 40, 20)])?;
+    let (_selected_root, selected) =
+        write(&[session_meta("selected"), direct("same", 100, 40, 20)])?;
+    let scope = CodexScope::Threads {
+        threads: ["selected".to_owned()].into_iter().collect(),
+        in_window: Default::default(),
+        unthreaded: 0,
+        ambiguous: 0,
+    };
+    let mut normalized = normalize_unclassified(&[foreign, selected], &range(), &scope);
+    super::super::codex_scope::apply(&scope, &mut normalized.rows);
+    classify_response_ids(&mut normalized.rows);
+    assert_eq!(normalized.rows.len(), 1);
+    assert_eq!(
+        normalized.rows[0].provenance,
+        ProvenanceStatus::MeasuredCanonical
+    );
+    assert_eq!(normalized.rows[0].tokens.fresh_input_tokens, Some(60));
+    Ok(())
+}
+
+#[test]
+fn malformed_foreign_file_does_not_damage_selected_diagnostics() -> Result<()> {
+    let (_foreign_root, foreign) =
+        write(&[session_meta("foreign"), direct("foreign-id", 1, 0, 1)])?;
+    std::fs::write(&foreign, format!("{}\n{{bad\n", session_meta("foreign")))?;
+    let (_selected_root, selected) =
+        write(&[session_meta("selected"), direct("selected-id", 1, 0, 1)])?;
+    let scope = CodexScope::Threads {
+        threads: ["selected".to_owned()].into_iter().collect(),
+        in_window: Default::default(),
+        unthreaded: 0,
+        ambiguous: 0,
+    };
+    let normalized = normalize_unclassified(&[foreign, selected], &range(), &scope);
+    assert_eq!(normalized.diagnostics.malformed_rows, 0);
+    assert_eq!(normalized.diagnostics.codex_unknown_file_identity, 0);
+    Ok(())
+}
+
+#[test]
 fn unsafe_session_meta_thread_id_leaves_row_unattributed() -> Result<()> {
     let (_root, path) = write(&[session_meta("../unsafe"), direct("response-1", 100, 40, 20)])?;
 

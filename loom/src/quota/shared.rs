@@ -22,10 +22,11 @@ use std::time::{Duration, SystemTime};
 /// Consecutive 429s for one account before `rate limited` is shown.
 pub(super) const RATE_LIMIT_CONFIRMATIONS: u32 = 3;
 
-/// Files for keys other than the current one are pruned once this old.
+/// State files for keys other than the current one are pruned once this old.
 const STALE_KEY_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
 const RATE_LIMITED: &str = "rate limited";
+const MAX_STATE_BYTES: usize = 64 * 1024;
 
 /// One account's shared poll state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -133,7 +134,7 @@ pub(super) fn poll_shared(
     now: i64,
     fetch: impl FnOnce() -> Result<ProviderQuota>,
 ) -> Result<AccountState> {
-    cache::create_quota_dir(dir)?;
+    crate::fs::cache_io::create_dir(dir)?;
     let lock = open_lock(&dir.join(format!("claude-{key}.lock")))?;
     lock.lock_exclusive()
         .context("failed to lock quota state")?;
@@ -151,19 +152,24 @@ pub(super) fn poll_shared(
             None => apply_error(state, &e.to_string(), now),
         },
     };
-    cache::reject_symlink(&path)?;
+    crate::fs::cache_io::reject_symlink(&path)?;
     let body = serde_json::to_string(&next).context("failed to serialize quota state")?;
-    cache::atomic_write(&path, &body)?;
+    crate::fs::cache_io::atomic_write(&path, &body)?;
     prune_stale(dir, key);
     Ok(next)
 }
 
 /// Missing, unreadable, symlinked, or unparsable state is the default (poll now).
 fn read_state(path: &Path) -> AccountState {
-    if cache::reject_symlink(path).is_err() {
+    // Anchor above the quota directory so a replacement is refused as well.
+    let Some(root) = path.parent().and_then(Path::parent).and_then(Path::parent) else {
         return AccountState::default();
-    }
-    let Ok(body) = std::fs::read_to_string(path) else {
+    };
+    let Ok(relative) = path.strip_prefix(root) else {
+        return AccountState::default();
+    };
+    let Ok(body) = crate::fs::safe_read::read_to_string_bounded(root, relative, MAX_STATE_BYTES)
+    else {
         return AccountState::default();
     };
     let mut state: AccountState = serde_json::from_str(&body).unwrap_or_default();
@@ -172,7 +178,7 @@ fn read_state(path: &Path) -> AccountState {
 }
 
 fn open_lock(path: &Path) -> Result<File> {
-    cache::reject_symlink(path)?;
+    crate::fs::cache_io::reject_symlink(path)?;
     let mut options = OpenOptions::new();
     options.read(true).write(true).create(true).truncate(false);
     #[cfg(unix)]
@@ -185,8 +191,9 @@ fn open_lock(path: &Path) -> Result<File> {
         .with_context(|| format!("failed to open quota lock: {}", path.display()))
 }
 
-/// Best effort: token rotation leaves other keys' files behind, so drop
-/// `claude-*.json` / `claude-*.lock` of other keys untouched for a day.
+/// Best effort: token rotation leaves other keys' state behind, so drop
+/// `claude-*.json` of other keys untouched for a day. Lock files must keep
+/// their inode: a process may still hold or be waiting on an open descriptor.
 fn prune_stale(dir: &Path, key: &str) {
     let own = format!("claude-{key}.");
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -194,9 +201,8 @@ fn prune_stale(dir: &Path, key: &str) {
     };
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        let is_state = name.starts_with("claude-")
-            && (name.ends_with(".json") || name.ends_with(".lock"))
-            && !name.starts_with(&own);
+        let is_state =
+            name.starts_with("claude-") && name.ends_with(".json") && !name.starts_with(&own);
         let age = entry
             .metadata()
             .and_then(|m| m.modified())

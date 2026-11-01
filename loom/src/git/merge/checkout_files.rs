@@ -4,11 +4,18 @@
 //! replaces.
 
 use anyhow::{bail, Context, Result};
-use std::ffi::OsStr;
+use std::ffi::{CString, OsStr};
+use std::fmt;
+use std::fs::File;
+use std::io::{self, Write};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Component, Path};
 
 use super::checkout_state::{CheckoutProbe, DiskEntry};
+use super::tree::{MergeBlock, RestoreFailure};
+use crate::fs::safe_fs::{open_safely, safe_open_dirfd};
 use crate::git::runner::{run_git, run_git_with_env};
 
 /// Stdout of a git command that must succeed, untrimmed (`-z` output).
@@ -99,34 +106,142 @@ fn read_blob(repo: &Path, rev: &str, path: &str) -> Option<Vec<u8>> {
     blob.status.success().then_some(blob.stdout)
 }
 
-/// Remove `paths`, whose bytes equal their blobs in `rev`. When a removal
-/// fails, the files already removed are written back and the error returned.
-pub(super) fn remove_files(repo: &Path, rev: &str, paths: &[String]) -> Result<()> {
+/// Failure to remove a checkout file, including any rollback failures.
+#[derive(Debug)]
+pub(super) struct RemoveFailure {
+    pub path: String,
+    pub error: io::Error,
+    pub restore: RestoreReport,
+}
+
+impl fmt::Display for RemoveFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "cannot remove {}: {}", self.path, self.error)?;
+        if !self.restore.failures.is_empty() {
+            write!(f, "; rollback incomplete: {:?}", self.restore.failures)?;
+        }
+        Ok(())
+    }
+}
+
+/// Every failed path is retained so callers can report incomplete recovery.
+#[derive(Debug, Default)]
+pub(super) struct RestoreReport {
+    pub failures: Vec<RestoreFailure>,
+}
+
+impl RestoreReport {
+    pub fn block(self, rev: &str, backup_ref: Option<String>) -> MergeBlock {
+        MergeBlock::CheckoutRestoreIncomplete {
+            source_rev: rev.to_string(),
+            failures: self.failures,
+            backup_ref,
+        }
+    }
+}
+
+/// Remove `paths`, whose bytes equal their blobs in `rev`. On failure,
+/// restore earlier removals and retain any recovery failures in the result.
+pub(super) fn remove_files(
+    repo: &Path,
+    rev: &str,
+    paths: &[String],
+) -> std::result::Result<(), RemoveFailure> {
     for (index, path) in paths.iter().enumerate() {
         if let Err(error) = std::fs::remove_file(repo.join(path)) {
-            restore_files(repo, rev, &paths[..index]);
-            return Err(error).with_context(|| format!("Cannot remove {path}"));
+            #[cfg(test)]
+            tests::before_restore(repo);
+            return Err(RemoveFailure {
+                path: path.clone(),
+                error,
+                restore: restore_files(repo, rev, &paths[..index]),
+            });
         }
     }
     Ok(())
 }
 
-/// Write back untracked files removed before a refused fast-forward: the
-/// bytes and the exec bit of the blob in `rev`.
-pub(super) fn restore_files(repo: &Path, rev: &str, paths: &[String]) {
+/// Restore removed untracked files without replacing any occupied pathname.
+pub(super) fn restore_files(repo: &Path, rev: &str, paths: &[String]) -> RestoreReport {
+    let mut report = RestoreReport::default();
     for path in paths {
-        let Some(blob) = read_blob(repo, rev, path) else {
-            continue;
-        };
-        let full = repo.join(path);
-        if std::fs::write(&full, blob).is_err() {
-            continue;
-        }
-        if tree_entry_mode(repo, rev, path).is_some_and(|mode| mode == "100755") {
-            let _ = std::fs::set_permissions(&full, std::fs::Permissions::from_mode(0o755));
+        if let Err(error) = restore_one(repo, rev, path) {
+            report.failures.push(RestoreFailure {
+                path: path.clone(),
+                reason: format!("{error:#}"),
+            });
         }
     }
+    report
+}
+
+fn restore_one(repo: &Path, rev: &str, path: &str) -> Result<()> {
+    let mode = tree_entry_mode(repo, rev, path)
+        .filter(|mode| mode == "100644" || mode == "100755")
+        .with_context(|| format!("regular blob mode unavailable at {rev}:{path}"))?;
+    let blob =
+        read_blob(repo, rev, path).with_context(|| format!("blob unavailable at {rev}:{path}"))?;
+    let rel = Path::new(path);
+    if !rel
+        .components()
+        .all(|part| matches!(part, Component::Normal(_)))
+    {
+        bail!("invalid checkout-relative path");
+    }
+    let parent = open_parent(repo, rel)?;
+    let name = CString::new(rel.file_name().unwrap().as_bytes())?;
+    // SAFETY: `parent` is an open directory and `name` is a NUL-terminated
+    // basename. O_EXCL reserves only a missing entry; O_NOFOLLOW rejects links.
+    let fd = unsafe {
+        libc::openat(
+            parent.as_raw_fd(),
+            name.as_ptr(),
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            0o666,
+        )
+    };
+    if fd < 0 {
+        return Err(io::Error::last_os_error()).context("destination is occupied or unavailable");
+    }
+    // SAFETY: successful openat returned a fresh fd owned by this function.
+    let mut file = unsafe { File::from_raw_fd(fd) };
+    if mode == "100755" {
+        file.set_permissions(std::fs::Permissions::from_mode(0o755))?;
+    }
+    #[cfg(test)]
+    if tests::fail_restored_write() {
+        bail!("simulated restored-file write failure");
+    }
+    file.write_all(&blob)
+        .context("cannot write restored blob")?;
+    file.sync_all().context("cannot sync restored blob")?;
+    Ok(())
+}
+
+fn open_parent(repo: &Path, rel: &Path) -> Result<OwnedFd> {
+    let root = safe_open_dirfd(repo)?;
+    let parent = rel.parent().unwrap_or(Path::new(""));
+    if parent.as_os_str().is_empty() {
+        return Ok(root);
+    }
+    open_safely(
+        root.as_raw_fd(),
+        parent,
+        libc::O_DIRECTORY | libc::O_RDONLY,
+        0,
+    )
+    .with_context(|| {
+        format!(
+            "cannot open parent {} without following symlinks",
+            parent.display()
+        )
+    })
 }
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(super) fn inject_before_restore(hook: impl FnOnce(&Path) + 'static) {
+    tests::inject_before_restore(Box::new(hook));
+}

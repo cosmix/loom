@@ -25,17 +25,17 @@ fn only_unprotected_markdown_is_prose() {
 }
 
 #[test]
-fn ordinary_comments_and_blank_lines_are_exempt() {
+fn comments_and_blank_lines_are_hashed() {
     for path in [
         "a.rs", "a.ts", "a.tsx", "a.js", "a.jsx", "a.mjs", "a.cjs", "a.go",
     ] {
-        assert_eq!(
+        assert_ne!(
             digest(path, "  run();\n"),
             digest(path, "// note\n\n  run();\n"),
             "{path}"
         );
     }
-    assert_eq!(
+    assert_ne!(
         digest("a.py", "  run()\n"),
         digest("a.py", " # note\n\n  run()\n")
     );
@@ -106,11 +106,17 @@ fn other_formats_and_invalid_utf8_keep_the_plain_hash() {
             digest(path, "# comment\nrun\n"),
             "{path}"
         );
-        assert_eq!(digest(path, "run\n"), Some(hash(b"run\n")));
+        assert_eq!(
+            digest(path, "run\n"),
+            Some(format!("v2:{}", hash(b"run\n")))
+        );
     }
     assert_eq!(
         behaviour_digest("a.rs", Some(b"//\xff\n")),
-        Some(hash(b"//\xff\n"))
+        Some(format!("v2:{}", hash(b"//\xff\n")))
     );
-    assert_eq!(behaviour_digest("a.rs", None).as_deref(), Some("deleted"));
+    assert_eq!(
+        behaviour_digest("a.rs", None).as_deref(),
+        Some("v2:deleted")
+    );
 }

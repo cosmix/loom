@@ -258,6 +258,26 @@ fn an_unchanged_oversized_file_returns_its_window() {
 }
 
 #[test]
+fn oversized_window_hashes_the_tail_and_preserves_final_lines() {
+    let body = format!("head\n{}\ntail", "x".repeat(MAX_EXTRACTED_FILE_BYTES * 2));
+    let (temp, graph) = fixture(&[("big.txt", &body)]);
+    let tail = body.len() - 4;
+    let result = window(&temp, &graph, &format!("big.txt@{tail}-{}", body.len())).unwrap();
+    assert_eq!(result.text, "tail");
+    assert_eq!((result.span.line_start, result.span.line_end), (3, 3));
+    let huge = window(&temp, &graph, "big.txt@5-6").unwrap();
+    assert_eq!(huge.text.len(), MAX_EXTRACTED_FILE_BYTES * 2 + 1);
+    assert!(!huge.truncated);
+    let mut changed = body.into_bytes();
+    *changed.last_mut().unwrap() = b'X';
+    fs::write(temp.path().join("big.txt"), changed).unwrap();
+    assert!(matches!(
+        window(&temp, &graph, "big.txt@0-4"),
+        Err(WindowError::ChangedSinceSnapshot { .. })
+    ));
+}
+
+#[test]
 fn error_text_never_carries_a_control_character_from_the_id_or_path() {
     let hostile = "a\u{1b}]0;x\u{7}.rs";
     let errors = [

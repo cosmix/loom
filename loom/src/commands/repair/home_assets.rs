@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
-use super::{RepairIssue, Severity};
+use super::{DetectedIssue, RepairAction, Severity};
 
 /// Loom-specific skill names referenced in settings.json that may need prefix migration.
 const LOOM_SKILL_NAMES: &[&str] = &[
@@ -74,7 +74,7 @@ const LOOM_SKILL_NAMES: &[&str] = &[
 
 /// Check 7: old unprefixed skills. Check 8: old unprefixed agents. Check 10:
 /// settings.json references to old-style skill names.
-pub(super) fn check() -> Vec<RepairIssue> {
+pub(super) fn check() -> Vec<DetectedIssue> {
     let mut issues = Vec::new();
     issues.extend(check_old_skills());
     issues.extend(check_old_agents());
@@ -91,12 +91,16 @@ fn installed_dir(subdir: &str) -> Result<PathBuf> {
 }
 
 /// Check 7: old unprefixed skills that have a loom- counterpart.
-fn check_old_skills() -> Vec<RepairIssue> {
-    let mut issues = Vec::new();
+fn check_old_skills() -> Vec<DetectedIssue> {
     let Ok(skills_dir) = installed_dir("skills") else {
-        return issues;
+        return Vec::new();
     };
-    let Ok(entries) = fs::read_dir(&skills_dir) else {
+    check_old_skills_at(&skills_dir)
+}
+
+pub(super) fn check_old_skills_at(skills_dir: &std::path::Path) -> Vec<DetectedIssue> {
+    let mut issues = Vec::new();
+    let Ok(entries) = fs::read_dir(skills_dir) else {
         return issues;
     };
     for entry in entries.flatten() {
@@ -106,7 +110,8 @@ fn check_old_skills() -> Vec<RepairIssue> {
         }
         let prefixed = skills_dir.join(format!("loom-{}", name));
         if prefixed.is_dir() {
-            issues.push(RepairIssue {
+            issues.push(DetectedIssue {
+                action: RepairAction::OldSkill(name.clone()),
                 severity: Severity::Warning,
                 description: format!(
                     "Old unprefixed skill '{}' found (superseded by 'loom-{}')",
@@ -124,12 +129,16 @@ fn check_old_skills() -> Vec<RepairIssue> {
 }
 
 /// Check 8: old unprefixed agents that have a loom- counterpart.
-fn check_old_agents() -> Vec<RepairIssue> {
-    let mut issues = Vec::new();
+fn check_old_agents() -> Vec<DetectedIssue> {
     let Ok(agents_dir) = installed_dir("agents") else {
-        return issues;
+        return Vec::new();
     };
-    let Ok(entries) = fs::read_dir(&agents_dir) else {
+    check_old_agents_at(&agents_dir)
+}
+
+pub(super) fn check_old_agents_at(agents_dir: &std::path::Path) -> Vec<DetectedIssue> {
+    let mut issues = Vec::new();
+    let Ok(entries) = fs::read_dir(agents_dir) else {
         return issues;
     };
     for entry in entries.flatten() {
@@ -140,7 +149,8 @@ fn check_old_agents() -> Vec<RepairIssue> {
         let prefixed = agents_dir.join(format!("loom-{}", name));
         if prefixed.exists() {
             let bare = name.trim_end_matches(".md");
-            issues.push(RepairIssue {
+            issues.push(DetectedIssue {
+                action: RepairAction::OldAgent(bare.to_string()),
                 severity: Severity::Warning,
                 description: format!(
                     "Old unprefixed agent '{}' found (superseded by 'loom-{}')",
@@ -158,20 +168,24 @@ fn check_old_agents() -> Vec<RepairIssue> {
 }
 
 /// Check 10: settings.json references old-style skill names.
-fn check_old_skill_refs() -> Vec<RepairIssue> {
-    let mut issues = Vec::new();
+fn check_old_skill_refs() -> Vec<DetectedIssue> {
     let Some(home) = dirs::home_dir() else {
-        return issues;
+        return Vec::new();
     };
-    let settings_path = home.join(".claude/settings.json");
-    let Ok(content) = fs::read_to_string(&settings_path) else {
+    check_old_skill_refs_at(&home.join(".claude/settings.json"))
+}
+
+pub(super) fn check_old_skill_refs_at(settings_path: &std::path::Path) -> Vec<DetectedIssue> {
+    let mut issues = Vec::new();
+    let Ok(content) = fs::read_to_string(settings_path) else {
         return issues;
     };
     let has_old_refs = LOOM_SKILL_NAMES
         .iter()
         .any(|name| content.contains(&format!("Skill({}", name)));
     if has_old_refs {
-        issues.push(RepairIssue {
+        issues.push(DetectedIssue {
+            action: RepairAction::SkillRefs,
             severity: Severity::Info,
             description: "Settings.json references old-style skill names".to_string(),
             fix_description: "Update skill references from 'name' to 'loom-name' in settings"
@@ -182,12 +196,7 @@ fn check_old_skill_refs() -> Vec<RepairIssue> {
 }
 
 /// Remove an old unprefixed skill directory (loom- version already installed).
-pub(super) fn fix_old_skill(description: &str) -> Result<()> {
-    let name = description
-        .strip_prefix("Old unprefixed skill '")
-        .and_then(|s| s.split('\'').next())
-        .with_context(|| format!("Cannot parse skill name from: {}", description))?;
-
+pub(super) fn fix_old_skill(name: &str) -> Result<()> {
     let old_path = installed_dir("skills")?.join(name);
     fs::remove_dir_all(&old_path)
         .with_context(|| format!("Failed to remove {}", old_path.display()))?;
@@ -195,12 +204,7 @@ pub(super) fn fix_old_skill(description: &str) -> Result<()> {
 }
 
 /// Remove an old unprefixed agent file (loom- version already installed).
-pub(super) fn fix_old_agent(description: &str) -> Result<()> {
-    let name = description
-        .strip_prefix("Old unprefixed agent '")
-        .and_then(|s| s.split('\'').next())
-        .with_context(|| format!("Cannot parse agent name from: {}", description))?;
-
+pub(super) fn fix_old_agent(name: &str) -> Result<()> {
     let old_path = installed_dir("agents")?.join(format!("{}.md", name));
     fs::remove_file(&old_path)
         .with_context(|| format!("Failed to remove {}", old_path.display()))?;

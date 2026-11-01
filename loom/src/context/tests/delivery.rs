@@ -387,4 +387,5 @@ fn an_ordinary_recipient_id_is_accepted() {
 // maintainability line limit — the standard `<name>.rs` + `<name>/` layout
 // (as `context/rank.rs` + `context/rank/` do), which needs no edit to
 // `context/tests/mod.rs`: this `mod` declaration lives here, not there.
+mod safety;
 mod session;

@@ -4,8 +4,13 @@ use serde::{Deserialize, Serialize};
 
 use super::types_v2::{deserialize_reasoning_effort, deserialize_stage_model, ProvisionEntry};
 
-/// Claude Code permission mode; defined in [`crate::models::stage::PermissionMode`].
-pub use crate::models::stage::PermissionMode;
+/// Shared stage and sandbox types used by the plan schema.
+pub use crate::models::stage::{
+    AcceptanceCriterion, CommandConfinement, DeadCodeCheck, FilesystemConfig, Implementer,
+    Implementers, LinuxConfig, NetworkConfig, PermissionMode, RegressionTest, StageSandboxConfig,
+    SuccessCriteria, TruthCheck, WiringCheck, WiringTest,
+};
+pub use crate::plan::schema::types_v2::{ContractSpec, ReachableCheck};
 
 /// Plan-level sandbox configuration (defaults for all stages)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,36 +71,6 @@ impl Default for SandboxConfig {
         }
     }
 }
-
-/// Per-stage sandbox configuration (overrides plan-level defaults)
-///
-/// Re-exported from models::stage for backward compatibility.
-/// The canonical definition is in crate::models::stage::StageSandboxConfig.
-pub use crate::models::stage::StageSandboxConfig;
-
-/// Filesystem access configuration
-///
-/// Re-exported from models::stage for backward compatibility.
-/// The canonical definition is in crate::models::stage::FilesystemConfig.
-pub use crate::models::stage::FilesystemConfig;
-
-/// Network access configuration
-///
-/// Re-exported from models::stage for backward compatibility.
-/// The canonical definition is in crate::models::stage::NetworkConfig.
-pub use crate::models::stage::NetworkConfig;
-
-/// Linux-specific sandbox configuration
-///
-/// Re-exported from models::stage for backward compatibility.
-/// The canonical definition is in crate::models::stage::LinuxConfig.
-pub use crate::models::stage::LinuxConfig;
-
-/// Confinement level for plan-authored commands.
-///
-/// Re-exported from models::stage for backward compatibility.
-/// The canonical definition is in crate::models::stage::CommandConfinement.
-pub use crate::models::stage::CommandConfinement;
 
 // Default value functions for serde (used by SandboxConfig below)
 fn default_sandbox_enabled() -> bool {
@@ -353,12 +328,6 @@ impl StageDefinition {
             || !self.reachable.is_empty()
     }
 }
-
-mod stage_reexports;
-pub use stage_reexports::{
-    AcceptanceCriterion, ContractSpec, DeadCodeCheck, Implementer, Implementers, ReachableCheck,
-    RegressionTest, SuccessCriteria, TruthCheck, WiringCheck, WiringTest,
-};
 
 /// Allowed values for `reasoning_effort` on a stage.
 ///

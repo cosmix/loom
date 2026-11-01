@@ -50,25 +50,10 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
     let mut stage = load_stage(&stage_id, work_dir)?;
     let original_status = stage.status.clone();
 
-    // Defense-in-depth: refuse to spawn a parallel session only if the recorded
-    // session is genuinely still alive. A stale session *file* left behind by a
-    // crashed/orphaned session must not force `--force` (C-22): probe liveness
-    // via the configured session backend, not file existence.
+    // A confirmed dead session does not block retry. Unknown ownership does,
+    // unless the operator explicitly requests the force override.
     if let Some(ref session_id) = stage.session {
-        if session_is_live(work_dir, session_id) {
-            eprintln!(
-                "WARNING: Stage '{}' has an active (live) session ({})",
-                stage_id, session_id
-            );
-            eprintln!("  If the session is still running, retry will create a parallel session.");
-            eprintln!(
-                "  Fix issues in the current session and run 'loom stage complete {stage_id}'."
-            );
-            if !force {
-                bail!("Stage has a live session. Use --force to override.");
-            }
-            eprintln!("  --force used, proceeding with retry despite live session.");
-        }
+        ensure_retry_session_safe(work_dir, &stage_id, session_id, force)?;
     }
 
     // Allow retry for Blocked, CompletedWithFailures, MergeBlocked, NeedsHandoff,
@@ -251,6 +236,36 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
     Ok(())
 }
 
+fn ensure_retry_session_safe(
+    work_dir: &Path,
+    stage_id: &str,
+    session_id: &str,
+    force: bool,
+) -> Result<()> {
+    match crate::orchestrator::session_registry::assigned_session_is_live(
+        work_dir, stage_id, session_id,
+    ) {
+        Ok(false) => Ok(()),
+        Ok(true) => {
+            eprintln!("WARNING: Stage '{stage_id}' has an active (live) session ({session_id})");
+            eprintln!("  If the session is still running, retry will create a parallel session.");
+            eprintln!("  Fix issues in the current session and run 'loom stage complete {stage_id}'.");
+            if !force {
+                bail!("Stage has a live session. Use --force to override.");
+            }
+            eprintln!("  --force used, proceeding with retry despite live session.");
+            Ok(())
+        }
+        Err(error) if !force => bail!(
+            "Cannot establish whether session '{session_id}' is live: {error:#}. Use --force to override."
+        ),
+        Err(error) => {
+            eprintln!("WARNING: Session '{session_id}' liveness is unknown: {error:#}");
+            Ok(())
+        }
+    }
+}
+
 fn persist_retry_delta(
     stage_id: &str,
     work_dir: &Path,
@@ -356,32 +371,6 @@ pub(super) fn reset_contract_budget(
         return Ok(());
     }
     reset_attempts(work_dir, &stage.id)
-}
-
-/// Probe whether a recorded session is genuinely still running.
-///
-/// Returns `true` only if the session file parses AND the configured session backend
-/// reports the session alive (PID-based). A missing/unparseable file or a dead
-/// process returns `false` — a stale session file must not block retry (C-22).
-fn session_is_live(work_dir: &Path, session_id: &str) -> bool {
-    use crate::models::session::Session;
-    use crate::orchestrator::terminal::backend::SessionBackend;
-    use crate::parser::frontmatter::parse_from_markdown;
-
-    let session_path = work_dir.join("sessions").join(format!("{session_id}.md"));
-    let Ok(content) = std::fs::read_to_string(&session_path) else {
-        return false;
-    };
-    let Ok(session) = parse_from_markdown::<Session>(&content, "Session") else {
-        return false;
-    };
-    let Ok(backend) = SessionBackend::from_config(work_dir.to_path_buf()) else {
-        return false;
-    };
-    // A probe error is treated as "not live": the worst case is creating a
-    // parallel session, which `--force` already guards, and stale files (the
-    // common case) must not require `--force`.
-    backend.is_session_alive(&session).unwrap_or(false)
 }
 
 #[cfg(test)]

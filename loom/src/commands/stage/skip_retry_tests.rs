@@ -7,6 +7,36 @@ use crate::verify::contracts::store::{attempts_spent, spend_attempt};
 use crate::verify::contracts::test_support::{contract_stage, write_test_freeze};
 use crate::verify::transitions::create_stage;
 
+#[test]
+fn retry_refuses_unknown_assigned_session_without_force() {
+    let temp = TempDir::new().unwrap();
+    let sessions = temp.path().join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    std::fs::write(sessions.join("session-1.md"), "malformed").unwrap();
+
+    let error = ensure_retry_session_safe(temp.path(), "s1", "session-1", false).unwrap_err();
+    assert!(format!("{error:#}").contains("Cannot establish whether"));
+    assert!(ensure_retry_session_safe(temp.path(), "s1", "session-1", true).is_ok());
+}
+
+#[test]
+fn retry_refuses_a_verified_live_session_without_force() {
+    let temp = TempDir::new().unwrap();
+    let mut session = crate::models::session::Session::new();
+    session.assign_to_stage("s1".to_string());
+    session.status = crate::models::session::SessionStatus::Running;
+    crate::fs::session_files::save_session(&session, temp.path()).unwrap();
+    crate::orchestrator::terminal::native::write_test_pid_identity(
+        temp.path(),
+        &session,
+        std::process::id(),
+    )
+    .unwrap();
+
+    assert!(ensure_retry_session_safe(temp.path(), "s1", &session.id, false).is_err());
+    assert!(ensure_retry_session_safe(temp.path(), "s1", &session.id, true).is_ok());
+}
+
 /// A blocked v2 stage whose contract writers spent the whole budget, and the
 /// state `retry` plans for it.
 fn spent_contract_stage(work_dir: &Path) -> crate::models::stage::Stage {

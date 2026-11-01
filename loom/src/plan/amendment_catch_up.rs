@@ -93,10 +93,6 @@ fn find_stage_def(content: &str, stage_id: &str) -> Option<StageDefinition> {
 }
 
 /// True when `field` holds the same value on both stage definitions.
-/// `WiringCheck`/`WiringTest` don't derive `PartialEq`, so wiring fields are
-/// compared by serialised form — the same approach `stage_field_matches`
-/// (in the sibling `amendment_fields` module) uses for `Stage` vs
-/// `StageDefinition`.
 fn stage_def_field_matches(
     live: &StageDefinition,
     snap: &StageDefinition,
@@ -104,14 +100,8 @@ fn stage_def_field_matches(
 ) -> bool {
     match field {
         AmendmentField::Acceptance => live.acceptance == snap.acceptance,
-        AmendmentField::Wiring => {
-            crate::yaml::to_string(&live.wiring).unwrap_or_default()
-                == crate::yaml::to_string(&snap.wiring).unwrap_or_default()
-        }
-        AmendmentField::WiringTests => {
-            crate::yaml::to_string(&live.wiring_tests).unwrap_or_default()
-                == crate::yaml::to_string(&snap.wiring_tests).unwrap_or_default()
-        }
+        AmendmentField::Wiring => live.wiring == snap.wiring,
+        AmendmentField::WiringTests => live.wiring_tests == snap.wiring_tests,
         AmendmentField::Contracts => live.contracts == snap.contracts,
         AmendmentField::Harness => live.harness == snap.harness,
         AmendmentField::Reachable => live.reachable == snap.reachable,

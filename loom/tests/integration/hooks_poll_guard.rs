@@ -53,6 +53,7 @@ fn setup_hook() -> (TempDir, PathBuf) {
         loom::fs::permissions::constants::HOOK_BOUNDED,
     );
     write_exec(&temp.path().join("_common.sh"), HOOK_COMMON);
+    install_parser_dependencies(temp.path());
     write_exec(
         &temp.path().join("_read_discipline.sh"),
         HOOK_READ_DISCIPLINE,
@@ -65,6 +66,41 @@ fn setup_hook() -> (TempDir, PathBuf) {
     let hook_path = temp.path().join("poll-guard.sh");
     write_exec(&hook_path, HOOK_POLL_GUARD);
     (temp, hook_path)
+}
+
+fn install_parser_dependencies(root: &Path) {
+    write_exec(
+        &root.join("_parser.sh"),
+        loom::fs::permissions::constants::HOOK_PARSER,
+    );
+    write_exec(
+        &root.join("_parser_expand.sh"),
+        loom::fs::permissions::constants::HOOK_PARSER_EXPAND,
+    );
+    write_exec(
+        &root.join("_parser_scan.sh"),
+        loom::fs::permissions::constants::HOOK_PARSER_SCAN,
+    );
+    write_exec(
+        &root.join("_identity.sh"),
+        loom::fs::permissions::constants::HOOK_IDENTITY,
+    );
+    write_exec(
+        &root.join("_stage_lookup.sh"),
+        loom::fs::permissions::constants::HOOK_STAGE_LOOKUP,
+    );
+    write_exec(
+        &root.join("_containment.sh"),
+        loom::fs::permissions::constants::HOOK_CONTAINMENT,
+    );
+    write_exec(
+        &root.join("_heartbeat.sh"),
+        loom::fs::permissions::constants::HOOK_HEARTBEAT,
+    );
+    write_exec(
+        &root.join("_spawn_policy.sh"),
+        loom::fs::permissions::constants::HOOK_SPAWN_POLICY,
+    );
 }
 
 /// Additionally install read-guard.sh alongside poll-guard.sh, for the one
@@ -241,100 +277,11 @@ fn warn_context(stdout: &str) -> String {
         .to_string()
 }
 
-// 1. `sleep N >= 30s` warns and names `loom subagents watch`; short sleeps do
-//    not - the threshold is `>=`, tested at its boundary.
-#[test]
-fn long_sleep_warns_short_sleep_does_not() {
-    let (_hook_dir, hook) = setup_hook();
-    let session = Session::new();
-
-    let out = run_bash_hook(&hook, "sleep 300", &session, None);
-    assert_eq!(out.code, 0, "stderr={}", out.stderr);
-    assert!(
-        warn_context(&out.stdout).contains("loom subagents watch"),
-        "stdout={}",
-        out.stdout
-    );
-
-    let out = run_bash_hook(&hook, "sleep 5", &session, None);
-    assert_eq!(out.code, 0, "stderr={}", out.stderr);
-    assert!(out.stdout.trim().is_empty(), "stdout={}", out.stdout);
-
-    let out = run_bash_hook(&hook, "sleep 29", &session, None);
-    assert_eq!(out.code, 0, "stderr={}", out.stderr);
-    assert!(
-        out.stdout.trim().is_empty(),
-        "sleep 29 must not warn: {}",
-        out.stdout
-    );
-
-    let out = run_bash_hook(&hook, "sleep 30", &session, None);
-    assert_eq!(out.code, 0, "stderr={}", out.stderr);
-    assert!(
-        !out.stdout.trim().is_empty(),
-        "sleep 30 must warn: {}",
-        out.stdout
-    );
-}
-
 // 2. Build/test/lint runner exemption and the "echo is never counted" case
 // live in `hooks_poll_guard_gate.rs`, split out purely for size, alongside
 // the live-session deny gate regression - see its module docs.
 #[path = "hooks_poll_guard_gate.rs"]
 mod gate;
-
-// 3. A repeated read-only poll (`git status`) escalates: clean at 1-2, warns
-//    at 3-4, denies at 5 (switch on) / warns at 5 (switch off).
-#[test]
-fn repeated_git_status_escalates_to_deny_only_with_switch_on() {
-    if skip_unless_gate_visible("repeated_git_status_escalates_to_deny_only_with_switch_on") {
-        return;
-    }
-    let (_hook_dir, hook) = setup_hook();
-    let on = Session::new().with_live_main_agent();
-    on.enable_deny();
-    for n in 1..=2 {
-        let out = run_bash_hook(&hook, "git status", &on, None);
-        assert_eq!(out.code, 0, "run {n}: stderr={}", out.stderr);
-        assert!(
-            out.stdout.trim().is_empty(),
-            "run {n} must be clean: {}",
-            out.stdout
-        );
-    }
-    for n in 3..=4 {
-        let out = run_bash_hook(&hook, "git status", &on, None);
-        assert_eq!(out.code, 0, "run {n}: stderr={}", out.stderr);
-        assert!(
-            warn_context(&out.stdout).contains(&format!("run {n} times")),
-            "run {n}: {}",
-            out.stdout
-        );
-    }
-    let out = run_bash_hook(&hook, "git status", &on, None);
-    assert_eq!(
-        out.code, 2,
-        "5th run must deny with the switch on: stderr={}",
-        out.stderr
-    );
-    assert!(out.stderr.contains("run 5 times"), "stderr={}", out.stderr);
-
-    let off = Session::new();
-    for _ in 1..=4 {
-        run_bash_hook(&hook, "git status", &off, None);
-    }
-    let out = run_bash_hook(&hook, "git status", &off, None);
-    assert_eq!(
-        out.code, 0,
-        "switch off must never deny: stderr={}",
-        out.stderr
-    );
-    assert!(
-        warn_context(&out.stdout).contains("run 5 times"),
-        "stdout={}",
-        out.stdout
-    );
-}
 
 // 4, 4b and 5. The Bash-side cat/sed/head/tail read cases (rule 1 reuse,
 // the shared read ledger, and the head/tail bounded-vs-bare distinction)
@@ -356,27 +303,6 @@ mod subagents;
 #[path = "hooks_poll_guard_git.rs"]
 mod git;
 
-// 7. A non-Bash tool and a command with no matching rule both exit 0 silently.
-#[test]
-fn non_bash_tool_and_unmatched_command_are_silently_ignored() {
-    let (_hook_dir, hook) = setup_hook();
-    let session = Session::new();
-
-    let wrong_tool = json!({
-        "tool_name": "Read",
-        "tool_input": {"file_path": "/tmp/whatever"},
-        "agent_id": session.agent_id,
-    });
-    let out = run_payload(&hook, &wrong_tool, &session, None);
-    assert_eq!(out.code, 0, "stderr={}", out.stderr);
-    assert!(
-        out.stdout.trim().is_empty() && out.stderr.trim().is_empty(),
-        "stdout={} stderr={}",
-        out.stdout,
-        out.stderr
-    );
-
-    let out = run_bash_hook(&hook, "rg -n foo src/", &session, None);
-    assert_eq!(out.code, 0, "stderr={}", out.stderr);
-    assert!(out.stdout.trim().is_empty(), "stdout={}", out.stdout);
-}
+// Sleep thresholds, repeated-poll escalation, and ignored tools share this harness.
+#[path = "hooks_poll_guard_cases.rs"]
+mod cases;

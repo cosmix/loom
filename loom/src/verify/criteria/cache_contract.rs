@@ -12,7 +12,7 @@ use super::result::CriterionResult;
 use crate::models::stage::CommandConfinement;
 use crate::plan::schema::AcceptanceCriterion;
 
-pub(super) const CACHE_RECORD_VERSION: u32 = 4;
+pub(super) const CACHE_RECORD_VERSION: u32 = 5;
 pub(super) const DIAGNOSTIC_TAIL_BYTES: usize = 4 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

@@ -129,6 +129,30 @@ fn an_executing_stage_with_no_live_worker_is_blocked() {
 }
 
 #[test]
+fn uncertain_worker_inventory_keeps_the_executing_assignment() {
+    let temp = work_dir();
+    let work = temp.path().join(".work");
+    let mut adjudication = Session::new_adjudication("alpha");
+    adjudication.status = SessionStatus::Running;
+    spawn_a_live_agent(&work, &adjudication);
+    save_session(&adjudication, &work).unwrap();
+    std::fs::write(work.join("sessions").join("broken.md"), "malformed").unwrap();
+    stage_at(&work, "alpha", StageStatus::Executing);
+    crate::verify::transitions::update_stage("alpha", &work, |stage| {
+        stage.session = Some(adjudication.id.clone());
+        Ok(())
+    })
+    .unwrap();
+
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    orchestrator.reconcile_executing_stages();
+
+    let after = load_stage("alpha", &work).unwrap();
+    assert_eq!(after.status, StageStatus::Executing);
+    assert_eq!(after.session.as_deref(), Some(adjudication.id.as_str()));
+}
+
+#[test]
 fn a_coherent_executing_stage_is_left_alone() {
     let temp = work_dir();
     let work = temp.path().join(".work");

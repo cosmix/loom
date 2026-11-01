@@ -24,6 +24,7 @@
 
 mod capture;
 mod history;
+mod reap;
 mod reconcile;
 pub(crate) mod socket;
 /// `pub` (not `pub(crate)`) rather than re-exported piecemeal: `commands/attach`
@@ -47,6 +48,7 @@ pub(crate) use capture::capture_pane_tail;
 pub use history::{
     has_history, history_dir, history_relpath, read_history, write_history, MAX_HISTORY_BYTES,
 };
+pub use reap::{reap_sockets, SessionReapMode};
 pub(crate) use socket::loom_socket_dir;
 pub use socket::{
     kill_socket_server, list_loom_sockets, socket_path_for, socket_session_is_alive, LoomSocket,

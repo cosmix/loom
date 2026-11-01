@@ -276,6 +276,56 @@ fn append_record_keeps_mode_0640_and_writes_record() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn in_place_edit_after_read_skips_record_without_losing_edit() -> anyhow::Result<()> {
+    let (dir, plan) = plan_file(END);
+    BEFORE_PUBLICATION.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(|path| {
+            fs::write(path, format!("{END}An editor changed this plan.\n")).unwrap();
+        }));
+    });
+    let result = append_record(&plan, &record_line(&["a"], 1, &[]))?;
+    assert_eq!(result, RecordWrite::PlanMoved);
+    assert_eq!(
+        fs::read_to_string(&plan)?,
+        format!("{END}An editor changed this plan.\n")
+    );
+    assert_eq!(fs::read_dir(dir.path())?.count(), 1);
+    Ok(())
+}
+
+#[test]
+fn replacement_before_publication_skips_record_without_losing_edit() -> anyhow::Result<()> {
+    let (dir, plan) = plan_file(END);
+    BEFORE_PUBLICATION.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(|path| {
+            let replacement = path.with_extension("replacement");
+            fs::write(&replacement, format!("{END}A newer plan.\n")).unwrap();
+            fs::rename(replacement, path).unwrap();
+        }));
+    });
+    let result = append_record(&plan, &record_line(&["a"], 1, &[]))?;
+    assert_eq!(result, RecordWrite::PlanMoved);
+    assert_eq!(fs::read_to_string(&plan)?, format!("{END}A newer plan.\n"));
+    assert_eq!(fs::read_dir(dir.path())?.count(), 1);
+    Ok(())
+}
+
+#[test]
+fn concurrent_loom_record_writers_preserve_both_records() -> anyhow::Result<()> {
+    let (_dir, plan) = plan_file(END);
+    let first = plan.clone();
+    let second = plan.clone();
+    let one = std::thread::spawn(move || append_record(&first, &record_line(&["one"], 1, &[])));
+    let two = std::thread::spawn(move || append_record(&second, &record_line(&["two"], 1, &[])));
+    assert_eq!(one.join().unwrap()?, RecordWrite::Written);
+    assert_eq!(two.join().unwrap()?, RecordWrite::Written);
+    let content = fs::read_to_string(&plan)?;
+    assert!(content.contains("Codex one"));
+    assert!(content.contains("Codex two"));
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn append_record_symlink_returns_plan_moved_without_changing_target() -> anyhow::Result<()> {

@@ -237,19 +237,16 @@ fn resolve_backend_flag_with_probe(
     Ok(())
 }
 
-/// Builds the daemon-desync hint text for [`resolve_backend_flag`], isolated
-/// from the `println!` so the FIX-critical part — re-running the SAME
-/// command shape the operator actually invoked, not a different one — is
-/// unit-testable without a live daemon (see `backend_flag_tests` below for
-/// why the branch that calls this is not).
+/// Builds a restart hint preserving the operator's invocation, including
+/// `--foreground` when present.
 fn backend_restart_hint(invocation: &str, value: &str) -> String {
     format!(
         "backend change requires a daemon restart: run `loom stop`, then `{invocation} --backend {value}`"
     )
 }
 
-/// Tests for [`resolve_backend_flag`] — the shared `--backend` resolution and
-/// marker-clearing logic used by both `loom run` and `loom run --foreground`.
+/// Tests for shared `--backend` resolution, persistence and restart hints for
+/// both `loom run` and `loom run --foreground`.
 ///
 /// Kept inline (rather than in `run/tests.rs`) since these exercise a
 /// module-private function; none of these need a live daemon, so the
@@ -375,11 +372,7 @@ mod backend_flag_tests {
 
     #[test]
     fn backend_restart_hint_uses_the_callers_invocation_text() {
-        // The daemon-desync branch itself needs a live daemon (see the
-        // module doc comment above), but the text it prints is a pure
-        // function of `invocation` and is exactly what FIX 3 is about: a
-        // foreground caller must be told to re-run `loom run --foreground
-        // --backend <x>`, not `loom run --backend <x>`.
+        // Preserve the foreground flag in the command suggested to the user.
         assert_eq!(
             super::backend_restart_hint("loom run", "tmux"),
             "backend change requires a daemon restart: run `loom stop`, then `loom run --backend tmux`"

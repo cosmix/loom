@@ -24,16 +24,9 @@ pub use exact::{
 
 /// Persist a session to `.loom/work/sessions/{id}.md`.
 ///
-/// This is the single canonical session-persistence routine: it serializes the
-/// session via [`session_to_markdown`] and writes through
-/// [`crate::fs::locking::locked_write`] so the write is crash-atomic and
-/// serialized against the monitor/CLI/daemon readers that read the same files
-/// under locks. All call sites (orchestrator persistence, monitor handlers,
-/// continuation, merge-resolver, CLI session updates) route through here so the
-/// locking discipline cannot diverge.
-///
-/// The public signature `(session, work_dir)` is stable — external callers
-/// depend on it.
+/// Creates or replaces the full record under the parent-directory lock using
+/// atomic replacement. For field mutations, use the exact locked delta APIs
+/// to avoid overwriting newer fields with a stale snapshot.
 pub fn save_session(session: &Session, work_dir: &Path) -> Result<()> {
     validate_session_file_id(&session.id).context("Invalid session file id")?;
     let sessions_dir = work_dir.join("sessions");

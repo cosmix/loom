@@ -20,6 +20,7 @@ fn save_job(work_dir: &Path, state: JobState, started_secs_ago: i64) {
     let started = Utc::now() - ChronoDuration::seconds(started_secs_ago);
     let record = JobRecord {
         id: new_job_id(),
+        submission_order: 0,
         stage_id: "stage-1".to_string(),
         session_id: "session-1".to_string(),
         kind: JobKind::Complete,

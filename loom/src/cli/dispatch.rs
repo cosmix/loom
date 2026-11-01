@@ -22,9 +22,6 @@ use super::types::{
 pub(super) use dispatch_admin::{print_minted_proof, resolve_completion_proof};
 
 /// `loom knowledge <subcommand>` dispatch.
-///
-/// Broken out of `dispatch` because this stage's new context/sync
-/// subcommands pushed the parent match past the line limit.
 fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
     match command {
         KnowledgeCommands::Update { file, content } => knowledge::update(file, content),
@@ -67,13 +64,12 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
     }
 }
 
-/// `loom knowledge context` dispatch, broken out to keep `dispatch_knowledge`
-/// under the line ceiling.
+/// Dispatch the knowledge context query.
 fn dispatch_knowledge_context(command: KnowledgeCommands) -> Result<()> {
     let KnowledgeCommands::Context {
         stage,
         query,
-        budget_tokens: budget, // bound short so the call below stays compact
+        budget_tokens: budget,
         scope,
         require_id,
         history,
@@ -98,10 +94,6 @@ fn dispatch_knowledge_context(command: KnowledgeCommands) -> Result<()> {
 }
 
 /// `loom plan [<subcommand>]` dispatch: bare `loom plan` serves the planning app.
-///
-/// Broken out for the same reason as `dispatch_knowledge`: the top-level match
-/// sits at its line ceiling, so every new top-level arm has to buy its line back
-/// from an existing one.
 fn dispatch_plan(command: Option<PlanCommands>, serve: PlanServeArgs) -> Result<()> {
     match command {
         None => plan::serve::execute(&serve),
@@ -161,10 +153,6 @@ fn dispatch_request(command: RequestCommands) -> Result<()> {
 }
 
 /// `loom completions` dispatch.
-///
-/// Broken out for the same reason as `dispatch_knowledge`: the top-level
-/// match sits at its line ceiling, so every new arm has to buy its line back
-/// from an existing one.
 fn dispatch_completions(shell: Option<String>, install: bool, migrate: bool) -> Result<()> {
     if migrate {
         return crate::completions::install::check_migration();
@@ -186,15 +174,12 @@ fn dispatch_completions(shell: Option<String>, install: bool, migrate: bool) -> 
     Ok(())
 }
 
-/// `loom complete` dispatch, extracted so the `loom project` arm fits in the
-/// top-level match without growing its ledgered line count.
+/// `loom complete` dispatch.
 fn dispatch_complete(shell: &str, args: &[String]) -> Result<()> {
     complete_dynamic(&CompletionContext::from_args(shell, args))
 }
 
-/// `loom check` dispatch, extracted so `--no-cache` can toggle the acceptance
-/// pass cache before running verification without growing the already
-/// oversized `dispatch` match arm.
+/// Apply the cache option before running `loom check`.
 fn run_check(stage_id: String, suggest: bool, args: verify::CheckArgs) -> Result<()> {
     if args.no_cache {
         // Single-threaded at this point in a one-shot CLI invocation — no
@@ -206,34 +191,27 @@ fn run_check(stage_id: String, suggest: bool, args: verify::CheckArgs) -> Result
     verify::execute(&stage_id, suggest, &args.criterion)
 }
 
-/// `loom {sessions,worktree} <subcommand>` dispatch.
-///
-/// Extracted for the same reason as `dispatch_knowledge`: grouping these two
-/// small, self-contained command groups keeps the top-level `dispatch` match
-/// under its line ceiling as new commands are added elsewhere.
-fn dispatch_tools(command: Commands) -> Result<()> {
+/// `loom sessions <subcommand>` dispatch.
+fn dispatch_sessions(command: SessionsCommands) -> Result<()> {
     match command {
-        Commands::Sessions { command } => match command {
-            SessionsCommands::List => sessions::list(),
-            SessionsCommands::Kill { session_ids, stage } => sessions::kill(session_ids, stage),
-        },
-        Commands::Worktree { command } => match command {
-            WorktreeCommands::List => worktree_cmd::list(),
-            WorktreeCommands::Remove {
-                stage_id,
-                force,
-                confirmation,
-            } => worktree_cmd::remove(stage_id, force, confirmation),
-        },
-        _ => unreachable!("dispatch routes only the sessions/worktree group here"),
+        SessionsCommands::List => sessions::list(),
+        SessionsCommands::Kill { session_ids, stage } => sessions::kill(session_ids, stage),
+    }
+}
+
+/// `loom worktree <subcommand>` dispatch.
+fn dispatch_worktree(command: WorktreeCommands) -> Result<()> {
+    match command {
+        WorktreeCommands::List => worktree_cmd::list(),
+        WorktreeCommands::Remove {
+            stage_id,
+            force,
+            confirmation,
+        } => worktree_cmd::remove(stage_id, force, confirmation),
     }
 }
 
 /// `loom memory <subcommand>` dispatch.
-///
-/// Broken out for the same reason as `dispatch_knowledge`: the top-level match
-/// sits at its line ceiling, so every new subcommand has to buy its line back
-/// from an existing one.
 fn dispatch_memory(command: MemoryCommands) -> Result<()> {
     match command {
         MemoryCommands::Note {
@@ -280,8 +258,7 @@ fn dispatch_memory(command: MemoryCommands) -> Result<()> {
     }
 }
 
-/// `loom run` dispatch, extracted so the `loom target` arm fits in the
-/// top-level match without growing its ledgered line count.
+/// Start the orchestrator in the foreground or as a daemon.
 fn dispatch_run(command: Commands) -> Result<()> {
     let Commands::Run {
         manual,
@@ -312,15 +289,8 @@ fn dispatch_target(command: TargetCommands) -> Result<()> {
     }
 }
 
-pub fn dispatch(command: Commands) -> Result<()> {
+fn dispatch_status(command: Commands) -> Result<()> {
     match command {
-        Commands::Init {
-            plan_path,
-            clean,
-            backend,
-            no_repair,
-        } => init::execute(Some(PathBuf::from(plan_path)), clean, backend, no_repair),
-        cmd @ Commands::Run { .. } => dispatch_run(cmd),
         Commands::Status {
             live,
             compact,
@@ -330,8 +300,23 @@ pub fn dispatch(command: Commands) -> Result<()> {
             Some(port) => status::web::execute(port, web_args.terminals, web_args.resolved_host()),
             None => status::execute(live, compact, verbose),
         },
+        _ => unreachable!("dispatch routes only Status here"),
+    }
+}
+
+pub fn dispatch(command: Commands) -> Result<()> {
+    match command {
+        Commands::Init {
+            plan_path,
+            clean,
+            backend,
+            no_repair,
+        } => init::execute(Some(PathBuf::from(plan_path)), clean, backend, no_repair),
+        cmd @ Commands::Run { .. } => dispatch_run(cmd),
+        cmd @ Commands::Status { .. } => dispatch_status(cmd),
         Commands::Resume { stage_id } => resume::execute(stage_id),
-        cmd @ (Commands::Sessions { .. } | Commands::Worktree { .. }) => dispatch_tools(cmd),
+        Commands::Sessions { command } => dispatch_sessions(command),
+        Commands::Worktree { command } => dispatch_worktree(command),
         Commands::Attach { stage_id } => attach::execute(stage_id),
         Commands::Target { command } => dispatch_target(command),
         Commands::Graph => graph::show(),

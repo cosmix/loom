@@ -2,9 +2,10 @@
 
 use crate::tokens::model::{optional_count, TokenUsage};
 use chrono::DateTime;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CodexTotals {
     pub input: u64,
     pub cached_input: u64,

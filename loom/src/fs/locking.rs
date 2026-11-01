@@ -22,9 +22,81 @@
 
 use anyhow::{Context, Result};
 use fs2::FileExt;
+use sha2::Digest;
 use std::fs::File;
 use std::io::{BufReader, Read};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
+
+/// Serialize Loom plan writers across inode-replacing publication.
+///
+/// The lock file is keyed by canonical parent and basename, so replacing the
+/// plan inode does not change lock identity. Callers that also hold the
+/// plan-versions lock must acquire this lock second. External editors do not
+/// participate in this advisory lock.
+pub fn lock_plan(path: &Path) -> Result<File> {
+    let name = path.file_name().context("plan path has no filename")?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .canonicalize()
+        .context("Failed to resolve plan parent for lock")?;
+    let mut identity = parent.as_os_str().as_encoded_bytes().to_vec();
+    identity.push(0);
+    identity.extend_from_slice(name.as_encoded_bytes());
+    let digest = hex::encode(sha2::Sha256::digest(identity));
+    let lock_path = plan_lock_dir()?.join(format!("{digest}.lock"));
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(&lock_path)
+        .with_context(|| format!("Failed to open plan lock: {}", lock_path.display()))?;
+    let metadata = file.metadata()?;
+    anyhow::ensure!(metadata.is_file(), "Plan lock is not a regular file");
+    // SAFETY: geteuid has no preconditions and does not access caller memory.
+    let uid = unsafe { libc::geteuid() };
+    anyhow::ensure!(metadata.uid() == uid, "Plan lock has another owner");
+    anyhow::ensure!(
+        metadata.permissions().mode() & 0o022 == 0,
+        "Plan lock is writable by others"
+    );
+    file.lock_exclusive()
+        .with_context(|| format!("Failed to lock plan: {}", path.display()))?;
+    Ok(file)
+}
+
+/// A fixed per-user location avoids per-process TMPDIR differences and does
+/// not leave an untracked lock file beside the plan. The mode checks reject a
+/// pre-existing directory another user could manipulate.
+fn plan_lock_dir() -> Result<std::path::PathBuf> {
+    use std::os::unix::fs::DirBuilderExt;
+
+    // SAFETY: geteuid has no preconditions and does not access caller memory.
+    let uid = unsafe { libc::geteuid() };
+    let dir = Path::new("/tmp").join(format!("loom-plan-locks-{uid}"));
+    let mut builder = std::fs::DirBuilder::new();
+    builder.mode(0o700);
+    match builder.create(&dir) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error).context("Failed to create plan lock directory"),
+    }
+    let metadata = std::fs::symlink_metadata(&dir)?;
+    anyhow::ensure!(
+        metadata.is_dir() && metadata.uid() == uid,
+        "Unsafe plan lock directory"
+    );
+    anyhow::ensure!(
+        metadata.permissions().mode() & 0o077 == 0,
+        "Plan lock directory is shared"
+    );
+    Ok(dir)
+}
 
 /// Open the parent directory of `path` and acquire an advisory lock on it.
 ///

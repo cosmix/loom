@@ -42,7 +42,7 @@ use super::heartbeat::{Heartbeat, HeartbeatWatcher};
 /// written by a subagent rather than the main agent, a lifecycle heartbeat
 /// that names no tool, an in-flight question the post hook still owns, or a
 /// heartbeat no newer than the wait itself.
-fn stale_wait_progress<'a>(
+pub(super) fn stale_wait_progress<'a>(
     stage: &Stage,
     heartbeats: &'a HeartbeatWatcher,
 ) -> Option<(&'a Heartbeat, DateTime<Utc>)> {
@@ -78,21 +78,43 @@ fn stale_wait_progress<'a>(
     Some((heartbeat, progress_at))
 }
 
-/// Move `stage` back to `Executing` because `heartbeat` shows it never
-/// actually stopped for a person. Returns whether the stage was resumed.
-fn resume_stale_wait(
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum ResumeResult {
+    Applied,
+    Stale,
+}
+
+#[derive(Debug)]
+struct StaleWait;
+
+impl std::fmt::Display for StaleWait {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("input wait changed before reconciliation")
+    }
+}
+
+impl std::error::Error for StaleWait {}
+
+/// Move the observed wait back to `Executing` only if the locked record still
+/// belongs to the same session and wait, and the progress follows that wait.
+pub(super) fn resume_stale_wait(
     work_dir: &Path,
     stage: &Stage,
     session_id: &str,
     heartbeat: &Heartbeat,
     progress_at: DateTime<Utc>,
-) -> bool {
+) -> anyhow::Result<ResumeResult> {
+    let expected_wait_at = stage.updated_at;
     match crate::verify::transitions::update_stage(&stage.id, work_dir, |stage| {
-        if stage.status == StageStatus::WaitingForInput {
-            end_wait(stage)
-        } else {
-            Ok(())
+        if stage.status != StageStatus::WaitingForInput
+            || stage.session.as_deref() != Some(session_id)
+            || stage.updated_at != expected_wait_at
+            || progress_at <= stage.updated_at
+        {
+            // update_stage writes on Ok, so an aborted transition must use Err.
+            return Err(StaleWait.into());
         }
+        end_wait(stage)
     }) {
         Ok(_) => {
             tracing::warn!(
@@ -104,17 +126,10 @@ fn resume_stale_wait(
                 "Stage left waiting-for-input: its session kept executing tools after \
                  the transition, so nothing was waiting on the user"
             );
-            true
+            Ok(ResumeResult::Applied)
         }
-        Err(error) => {
-            tracing::warn!(
-                stage_id = %stage.id,
-                session_id = %session_id,
-                error = %error,
-                "Failed to auto-resume a stale waiting-for-input stage"
-            );
-            false
-        }
+        Err(error) if error.is::<StaleWait>() => Ok(ResumeResult::Stale),
+        Err(error) => Err(error),
     }
 }
 
@@ -136,8 +151,15 @@ pub(super) fn reconcile_stale_input_waits(
             .as_deref()
             .expect("checked by stale_wait_progress");
 
-        if resume_stale_wait(work_dir, stage, session_id, heartbeat, progress_at) {
-            resumed.push(stage.id.clone());
+        match resume_stale_wait(work_dir, stage, session_id, heartbeat, progress_at) {
+            Ok(ResumeResult::Applied) => resumed.push(stage.id.clone()),
+            Ok(ResumeResult::Stale) => {}
+            Err(error) => tracing::warn!(
+                stage_id = %stage.id,
+                session_id = %session_id,
+                error = %error,
+                "Failed to auto-resume a stale waiting-for-input stage"
+            ),
         }
     }
 

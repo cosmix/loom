@@ -75,6 +75,7 @@ fn record(head: String, tree_digest: String) -> JobRecord {
     let now = Utc::now();
     JobRecord {
         id: new_job_id(),
+        submission_order: 0,
         stage_id: STAGE.to_string(),
         session_id: "session-a".to_string(),
         kind: JobKind::Check,

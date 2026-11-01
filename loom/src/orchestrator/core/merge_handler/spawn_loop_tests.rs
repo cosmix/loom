@@ -6,7 +6,10 @@
 use chrono::{Duration, Utc};
 
 use super::super::merge_gate::stale_merge_retirement_blocks_spawn;
-use super::super::resolver_attempts::{attempts_dir, attempts_file, MAX_MERGE_RESOLVER_ATTEMPTS};
+use super::super::resolver_attempts::{
+    attempts_dir, attempts_file, merge_resolver_attempts, with_recording_failure,
+    MAX_MERGE_RESOLVER_ATTEMPTS,
+};
 use super::test_fixtures::{
     commit_on_stage_branch, git_ok, orchestrator_with_conflict, repo_with_clean_stage_branch,
     repo_with_conflicting_stage_branches, repo_with_stage_branches, use_real_worktree,
@@ -73,11 +76,22 @@ fn a_spent_resolver_budget_escalates_the_stage_to_review() {
 fn an_attempt_the_counter_cannot_record_routes_the_stage_to_review() {
     let repo = repo_with_conflicting_stage_branches(&["unrecorded"]);
     let mut orchestrator = orchestrator_with_conflict(repo.path(), "unrecorded");
-    // A file where the counter directory belongs: the counter reads 0, but no
-    // attempt can be written, so no resolver may spawn.
-    std::fs::write(attempts_dir(&orchestrator.config.work_dir), "not a dir").unwrap();
-    let reason = review_reason_after_one_pass(&mut orchestrator, "unrecorded");
+    let work_dir = orchestrator.config.work_dir.clone();
+    assert_eq!(merge_resolver_attempts(&work_dir, "unrecorded"), 0);
+    let reason = with_recording_failure(&work_dir, || {
+        review_reason_after_one_pass(&mut orchestrator, "unrecorded")
+    });
     assert!(reason.contains("could not be recorded"), "{reason}");
+}
+
+#[test]
+fn an_unreadable_counter_directory_exhausts_the_budget_without_spawning() {
+    let repo = repo_with_conflicting_stage_branches(&["unreadable"]);
+    let mut orchestrator = orchestrator_with_conflict(repo.path(), "unreadable");
+    std::fs::write(attempts_dir(&orchestrator.config.work_dir), "not a dir").unwrap();
+    let reason = review_reason_after_one_pass(&mut orchestrator, "unreadable");
+    let gave_up = format!("gave up after {MAX_MERGE_RESOLVER_ATTEMPTS} attempt(s)");
+    assert!(reason.contains(&gave_up), "{reason}");
 }
 
 #[test]

@@ -155,7 +155,7 @@ fn finish_pipeline(
         record::RecordWrite::Written => PipelineOutcome::Recorded { line: rendered },
         record::RecordWrite::PlanMoved => PipelineOutcome::RecordSkipped {
             line: rendered,
-            why: "plan is no longer at the path the run started with".to_string(),
+            why: "plan moved or changed while saving the record".to_string(),
         },
     };
     deleted?;

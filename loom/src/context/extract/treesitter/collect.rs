@@ -3,9 +3,13 @@
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Node, Query, QueryCursor, QueryMatch};
 
+#[path = "collect_text.rs"]
+mod text;
+
 use super::binding::receiver_shadowed;
 use super::{default_import_binding, QueryHarness};
-use crate::context::source_graph::{ImportBinding, SourceNodeKind, Span};
+use crate::context::source_graph::{body_hash, ImportBinding, SourceNodeKind, Span};
+use text::{import_text, receiver_text};
 
 /// A definition captured by the query, before scoping.
 struct RawDefinition<'tree> {
@@ -35,7 +39,7 @@ pub(super) struct Definition {
     pub(super) qualifier: Vec<String>,
     pub(super) kind: SourceNodeKind,
     pub(super) span: Span,
-    pub(super) body: Vec<u8>,
+    pub(super) body_hash: String,
     pub(super) signature: String,
 }
 
@@ -137,24 +141,25 @@ fn gather<'tree>(
             .copied()
             .unwrap_or("");
         let node = capture.node;
-        let text = node_text(node, bytes);
-
         match capture_name {
-            "name" => found.name = Some(text),
-            "definition.qualifier" => found.qualifier.extend(qualifier_segments(&text)),
-            "import.statement" => found.import_statement = Some(text),
-            "import.path" => found
-                .import_paths
-                .push((normalize_import(&text), span_of(node))),
+            "name" => found.name = Some(node_text(node, bytes)),
+            "definition.qualifier" => found
+                .qualifier
+                .extend(qualifier_segments(&node_text(node, bytes))),
+            "import.statement" => found.import_statement = Some(import_text(harness, node, bytes)),
+            "import.path" => found.import_paths.push((
+                normalize_import(&import_text(harness, node, bytes)),
+                span_of(node),
+            )),
             "call.name" => found.call_names.push((
-                normalize_call(&text),
+                normalize_call(&node_text(node, bytes)),
                 span_of(node),
                 receiver_shadowed(harness, node),
             )),
-            "call.receiver" => found.receiver = Some(text.trim().to_string()),
+            "call.receiver" => found.receiver = Some(receiver_text(node, bytes)),
             "reference.name" => found
                 .reference_names
-                .push((normalize_call(&text), span_of(node))),
+                .push((normalize_call(&node_text(node, bytes)), span_of(node))),
             other => found.definition_capture(harness, other, node),
         }
     }
@@ -256,14 +261,14 @@ fn materialize(
     bytes: &[u8],
 ) -> Definition {
     let range = raw.node.byte_range();
-    let body = bytes[range.start..range.end].to_vec();
+    let body = &bytes[range.start..range.end];
     Definition {
         name,
         qualifier,
         kind: raw.kind,
         span: span_of(raw.node),
-        signature: first_line(&body),
-        body,
+        signature: first_line(body),
+        body_hash: body_hash(body),
     }
 }
 
@@ -340,7 +345,11 @@ fn normalize_import(text: &str) -> String {
 
 /// First line of a definition, trimmed — a stable, language-agnostic signature.
 fn first_line(body: &[u8]) -> String {
-    let text = String::from_utf8_lossy(body);
+    let end = body
+        .iter()
+        .position(|&byte| byte == b'\n')
+        .unwrap_or(body.len());
+    let text = String::from_utf8_lossy(&body[..end]);
     text.lines().next().unwrap_or("").trim().to_string()
 }
 

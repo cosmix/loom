@@ -5,8 +5,10 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::monitor::heartbeat::{write_heartbeat, Heartbeat, HeartbeatWatcher};
-use crate::orchestrator::monitor::input_wait::reconcile_stale_input_waits;
-use crate::verify::transitions::{load_stage, save_stage};
+use crate::orchestrator::monitor::input_wait::{
+    reconcile_stale_input_waits, resume_stale_wait, stale_wait_progress, ResumeResult,
+};
+use crate::verify::transitions::{load_stage, save_stage, update_stage};
 
 fn waiting_stage(id: &str, session_id: &str, updated_at: DateTime<Utc>) -> Stage {
     Stage {
@@ -267,4 +269,69 @@ fn leaves_an_executing_stage_untouched() {
         load_stage("stage-1", work_dir).unwrap().status,
         StageStatus::Executing
     );
+}
+
+/// Classify a snapshot first, change the on-disk record, then enter the locked
+/// transition. This fixes the interleaving without relying on scheduler timing.
+fn changed_after_classification_is_stale(change: impl FnOnce(&mut Stage)) {
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path();
+    let wait_at = Utc::now() - Duration::seconds(60);
+    let stage = waiting_stage("stage-1", "session-1", wait_at);
+    save_stage(&stage, work_dir).unwrap();
+    write_heartbeat(
+        work_dir,
+        &heartbeat_with_progress(
+            "stage-1",
+            "session-1",
+            wait_at + Duration::seconds(30),
+            Some("Bash"),
+        ),
+    )
+    .unwrap();
+    let watcher = watcher_after_poll(work_dir);
+    let (heartbeat, progress_at) = stale_wait_progress(&stage, &watcher).unwrap();
+
+    let current = update_stage("stage-1", work_dir, |fresh| {
+        change(fresh);
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(
+        resume_stale_wait(work_dir, &stage, "session-1", heartbeat, progress_at).unwrap(),
+        ResumeResult::Stale
+    );
+    let after = load_stage("stage-1", work_dir).unwrap();
+    assert_eq!(after.status, current.status);
+    assert_eq!(after.session, current.session);
+    assert_eq!(after.updated_at, current.updated_at);
+    assert!(reconcile_stale_input_waits(work_dir, &[stage], &watcher).is_empty());
+}
+
+#[test]
+fn does_not_resume_a_wait_reassigned_to_another_session_after_classification() {
+    changed_after_classification_is_stale(|stage| {
+        stage.session = Some("session-2".to_string());
+    });
+}
+
+#[test]
+fn does_not_resume_a_newer_question_after_classification() {
+    changed_after_classification_is_stale(|stage| {
+        stage.updated_at += Duration::seconds(40);
+    });
+}
+
+#[test]
+fn does_not_resume_a_changed_wait_revision_even_with_later_progress() {
+    changed_after_classification_is_stale(|stage| {
+        stage.updated_at += Duration::seconds(1);
+    });
+}
+
+#[test]
+fn does_not_report_a_status_changed_after_classification_as_resumed() {
+    changed_after_classification_is_stale(|stage| {
+        stage.status = StageStatus::Executing;
+    });
 }

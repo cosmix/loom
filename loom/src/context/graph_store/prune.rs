@@ -76,12 +76,7 @@ impl GraphStore {
         }
     }
 
-    /// Called from [`Self::publish_base`] after every successful (newly
-    /// written) publish. Resolves `keep` and the protected `state.json`
-    /// revision itself, rather than taking them as parameters, so
-    /// `publish_base`'s public signature never has to change for callers
-    /// that only pass `revision` and `layer` — `commands/run/tests.rs` is
-    /// one such caller outside this module's ownership.
+    /// Prune after publishing, protecting the new and current semantic revisions.
     pub(super) fn prune_after_publish(&self, just_written_revision: &str) {
         let config = self.retrieval_config();
         let current = self.current_semantic_revision();

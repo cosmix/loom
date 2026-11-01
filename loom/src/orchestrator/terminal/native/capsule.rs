@@ -1,9 +1,7 @@
 //! The session capsule: the `claude` flags loom pins a spawned session to.
 //!
-//! Split out of `native/mod.rs` to keep that module under its line ceiling.
-//! The flag-emitting code (`build_claude_command`) deliberately stays in
-//! `native/mod.rs`; only the capsule's construction and its support probe live
-//! here.
+//! Construction and support probing live here; `native::build_claude_command`
+//! emits the flags.
 
 use std::path::Path;
 use std::sync::OnceLock;

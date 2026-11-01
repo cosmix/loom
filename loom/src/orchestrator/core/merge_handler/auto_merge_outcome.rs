@@ -24,9 +24,7 @@ impl Orchestrator {
     /// judges the target without the lock, and an error holds the target.
     ///
     /// Phantom-merge guard: an existing branch with zero commits beyond the
-    /// target would "merge" as a no-op, `completed_commit` would be filled from
-    /// the branch HEAD (equal to the target HEAD), ancestry would pass, and
-    /// `merged: true` would stand for work that was never committed. Such a
+    /// target would "merge" as a no-op without proving new work landed. Such a
     /// stage goes to human review, so dependents do not unblock. A missing
     /// branch skips the branch guards: the merge attempt reports it with its
     /// own recovery handling.

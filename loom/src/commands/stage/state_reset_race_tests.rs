@@ -50,6 +50,7 @@ impl loop_recovery::ResetRuntime for RacingAssignment {
             .write(true)
             .open(path)
             .unwrap();
+        // SAFETY: `probe` owns the open descriptor and remains alive throughout the call.
         let result = unsafe { libc::flock(probe.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
         assert_eq!(result, -1, "reset released admission during its scan");
 

@@ -16,13 +16,24 @@ use super::crash_classification::{
 use super::persistence::Persistence;
 use super::{clear_status_line, Orchestrator};
 
+enum CrashTransition {
+    Applied(Box<Stage>),
+    Stale,
+    RetryableFailure,
+}
+
+fn crash_applicable(stage: &Stage, session_id: &str) -> bool {
+    crate::stage_service::ownership::matches_attempt(stage, session_id)
+        && stage.status == StageStatus::Executing
+}
+
 impl Orchestrator {
     /// The stage this crash may act on, or `None` when it must be ignored.
     ///
     /// Three refusals, in order:
     ///
     /// 1. A corrupt/unparseable stage file must not abort the whole daemon
-    ///    (O-4) — log and skip; other stages keep running.
+    ///    (O-4) — return an error for the event loop to isolate and log.
     /// 2. A stage that already reached `Completed` keeps its terminal state;
     ///    the session may simply have died after finishing its work.
     /// 3. **The crash must come from the stage's CURRENT session.** Session
@@ -38,7 +49,7 @@ impl Orchestrator {
     ///
     /// A crash whose session IS the active one still passes after a restart,
     /// which is what lets a genuinely stranded stage recover.
-    fn stage_answerable_for_crash(&self, sid: &str, session_id: &str) -> Option<Stage> {
+    fn stage_answerable_for_crash(&self, sid: &str, session_id: &str) -> Result<Option<Stage>> {
         let stage = match self.load_stage(sid) {
             Ok(stage) => stage,
             Err(e) => {
@@ -53,27 +64,23 @@ impl Orchestrator {
                     stage_id = %sid,
                     path = ?path,
                     error = %e,
-                    "Failed to load stage during crash handling; skipping (corrupt stage file?)"
+                    "Failed to load stage during crash handling; event remains retryable"
                 );
-                return None;
+                return Err(e);
             }
         };
 
-        if matches!(stage.status, StageStatus::Completed) {
-            return None;
-        }
-
-        if stage.session.as_deref() != Some(session_id) {
+        if !crash_applicable(&stage, session_id) {
             tracing::debug!(
                 stage_id = %sid,
                 crashed_session = %session_id,
                 active_session = ?stage.session,
-                "Ignoring crash from a session that is not the stage's active session"
+                "Ignoring crash outside the stage's current crash-applicable attempt"
             );
-            return None;
+            return Ok(None);
         }
 
-        Some(stage)
+        Ok(Some(stage))
     }
 
     /// Remove only the in-memory handle that belongs to this crash event.
@@ -170,9 +177,8 @@ impl Orchestrator {
         if self.reported_crashes.contains(session_id) {
             return Ok(());
         }
-        self.reported_crashes.insert(session_id.to_string());
-
         let Some(sid) = stage_id else {
+            self.reported_crashes.insert(session_id.to_string());
             clear_status_line();
             eprintln!("Session '{session_id}' crashed (no stage association)");
             if let Some(path) = crash_report_path {
@@ -181,32 +187,53 @@ impl Orchestrator {
             return Ok(());
         };
 
-        let Some(stage) = self.stage_answerable_for_crash(&sid, session_id) else {
+        if self.stage_answerable_for_crash(&sid, session_id)?.is_none() {
+            self.reported_crashes.insert(session_id.to_string());
             return Ok(());
-        };
-        let crashed_session = self.take_matching_active_session(&sid, session_id);
+        }
+        self.handle_answerable_crash(&sid, session_id, crash_report_path);
+        Ok(())
+    }
+
+    fn handle_answerable_crash(
+        &mut self,
+        sid: &str,
+        session_id: &str,
+        crash_report_path: Option<PathBuf>,
+    ) {
+        let crashed_session = self
+            .active_sessions
+            .get(sid)
+            .filter(|session| session.id == session_id)
+            .cloned();
 
         // A fast, verified-pid crash while Remote Control is active looks
         // like a rejected `--remote-control` flag; latch it off for this
         // process (see `maybe_disable_remote_control`) so the retry drops it.
         let remote_control_suspected = self.remote_control_suspected(crashed_session.as_ref());
-        maybe_disable_remote_control(remote_control_suspected);
-
-        clear_status_line();
-        eprintln!("Session '{session_id}' crashed for stage '{sid}'");
-
         let mut classification = self.classify_crash(
             crashed_session.as_ref(),
             crash_report_path.as_deref(),
             remote_control_suspected,
         );
-        note_remote_control_disabled(remote_control_suspected, &sid, &mut classification);
-        if let Some(path) = crash_report_path {
-            eprintln!("Crash report generated: {}", path.display());
+        note_remote_control_disabled(remote_control_suspected, sid, &mut classification);
+        match self.finish_crash_transition(sid, session_id, classification) {
+            CrashTransition::Applied(updated) => {
+                self.take_matching_active_session(sid, session_id);
+                self.reported_crashes.insert(session_id.to_string());
+                maybe_disable_remote_control(remote_control_suspected);
+                self.sync_crashed_session_permissions(sid, &updated);
+                clear_status_line();
+                eprintln!("Session '{session_id}' crashed for stage '{sid}'");
+                if let Some(path) = crash_report_path {
+                    eprintln!("Crash report generated: {}", path.display());
+                }
+            }
+            CrashTransition::Stale => {
+                self.reported_crashes.insert(session_id.to_string());
+            }
+            CrashTransition::RetryableFailure => {}
         }
-
-        self.sync_crashed_session_permissions(&sid, &stage);
-        self.finish_crash_transition(&sid, classification)
     }
 
     /// Persist the stage transition to `Blocked` for a classified crash, then
@@ -214,8 +241,9 @@ impl Orchestrator {
     fn finish_crash_transition(
         &mut self,
         sid: &str,
+        session_id: &str,
         classification: CrashClassification,
-    ) -> Result<()> {
+    ) -> CrashTransition {
         let CrashClassification {
             failure_type,
             reason,
@@ -223,9 +251,9 @@ impl Orchestrator {
             console_note,
         } = classification;
 
-        let Some(updated) = self.persist_blocked_crash(sid, &failure_type, reason, evidence)?
-        else {
-            return Ok(());
+        let outcome = self.persist_blocked_crash(sid, session_id, &failure_type, reason, evidence);
+        let CrashTransition::Applied(updated) = outcome else {
+            return outcome;
         };
 
         announce_crash_outcome(sid, &failure_type, &updated, console_note);
@@ -237,26 +265,26 @@ impl Orchestrator {
                 "Failed to sync graph status to Blocked after crash"
             );
         }
-        Ok(())
+        CrashTransition::Applied(updated)
     }
 
     /// Record the crash on the stage and transition it to `Blocked`.
     ///
-    /// `Ok(None)` means nothing further to do: the stage already reached
-    /// `Completed` (a race with the crash), or persisting the update failed
-    /// (logged here; the next tick retries).
+    /// A fresh owner and crash-applicable status are checked under the stage
+    /// lock. A failed read or write leaves the event and active handle retryable.
     fn persist_blocked_crash(
         &mut self,
         sid: &str,
+        session_id: &str,
         failure_type: &FailureType,
         reason: String,
         evidence: Vec<String>,
-    ) -> Result<Option<Stage>> {
+    ) -> CrashTransition {
         let detected_at = Utc::now();
-        let mut became_terminal = false;
+        let mut stale = false;
         let updated = self.update_stage(sid, |current| {
-            if current.status == StageStatus::Completed {
-                became_terminal = true;
+            if !crash_applicable(current, session_id) {
+                stale = true;
                 return Ok(());
             }
             current.accumulate_attempt_time(detected_at);
@@ -271,15 +299,15 @@ impl Orchestrator {
             current.try_mark_blocked()
         });
         match updated {
-            Ok(_) if became_terminal => Ok(None),
-            Ok(updated) => Ok(Some(updated)),
+            Ok(_) if stale => CrashTransition::Stale,
+            Ok(updated) => CrashTransition::Applied(Box::new(updated)),
             Err(e) => {
                 tracing::error!(
                     stage_id = %sid,
                     error = %e,
-                    "Failed to persist Blocked stage after crash; skipping (will retry next tick)"
+                    "Failed to persist Blocked stage after crash; retryable on next delivery"
                 );
-                Ok(None)
+                CrashTransition::RetryableFailure
             }
         }
     }

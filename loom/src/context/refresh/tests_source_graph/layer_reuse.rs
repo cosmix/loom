@@ -50,6 +50,7 @@ fn base_scope_publishes_once_and_a_republish_is_refused_without_erroring() {
     let second = reconcile_source_graph(&store, &graph_store, root, scope()).unwrap();
     assert_eq!(second.counters.files_parsed, 0);
     assert_eq!(second.counters.files_reused, 2);
+    assert_eq!(second.counters.bytes_read, 0);
 
     let published = graph_store.load_base(&revision).unwrap().unwrap();
     assert_eq!(published.files.len(), 2);

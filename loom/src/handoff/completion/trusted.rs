@@ -1,11 +1,12 @@
 use crate::handoff::completion::AttestationKey;
 use crate::handoff::schema::{
-    CompletionBlocker, CompletionCheckpoint, NonceObservation, MAX_EVIDENCE_NONCES,
+    CompletionAttemptEvidence, CompletionBlocker, CompletionCheckpoint, NonceObservation,
+    MAX_EVIDENCE_NONCES,
 };
 
 impl CompletionCheckpoint {
     pub fn trusted(&self, key: &AttestationKey) -> CompletionCheckpoint {
-        let observations: Vec<_> = self
+        let mut observations: Vec<_> = self
             .observations
             .iter()
             .filter(|observation| {
@@ -24,6 +25,13 @@ impl CompletionCheckpoint {
             .filter(|evidence| evidence.is_actionable())
             .and_then(|evidence| CompletionBlocker::from_attempt(evidence).ok());
         let trusted_observed_at = latest.map(|evidence| evidence.observed_at.clone());
+        normalize_observation_bounds(&mut observations, latest);
+        let conflict = latest.is_some_and(|evidence| {
+            observations.iter().any(|observation| {
+                observation.evidence_nonce == evidence.evidence_nonce
+                    && observation.identity_digest != evidence.identity_digest()
+            })
+        });
 
         CompletionCheckpoint {
             stage_id: self.stage_id.clone(),
@@ -32,12 +40,28 @@ impl CompletionCheckpoint {
             blocker,
             first_observed_at: trusted_observed_at.clone(),
             last_observed_at: trusted_observed_at,
-            capacity_exhausted: self.capacity_exhausted
-                && observations.len() >= MAX_EVIDENCE_NONCES,
+            capacity_exhausted: observations.len() >= MAX_EVIDENCE_NONCES,
             observations,
-            conflict: self.conflict,
+            conflict,
             accepted: accepted.cloned(),
         }
+    }
+}
+
+fn normalize_observation_bounds(
+    observations: &mut [NonceObservation],
+    latest: Option<&CompletionAttemptEvidence>,
+) {
+    // Observation bounds are not covered by the MAC. Only signed evidence
+    // supplies an ordering timestamp; other observations get a neutral bound.
+    for observation in observations {
+        let observed_at = latest
+            .filter(|evidence| evidence.evidence_nonce == observation.evidence_nonce)
+            .map_or("1970-01-01T00:00:00Z", |evidence| {
+                evidence.observed_at.as_str()
+            });
+        observation.first_observed_at = observed_at.to_owned();
+        observation.last_observed_at = observed_at.to_owned();
     }
 }
 

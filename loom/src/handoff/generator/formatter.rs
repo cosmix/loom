@@ -5,7 +5,7 @@ use chrono::Utc;
 
 use super::content::HandoffContent;
 use crate::handoff::git_handoff::format_git_history_markdown;
-use crate::handoff::schema::{CompletionCheckpoint, CompletionPhase};
+use crate::handoff::schema::{CompletionCheckpoint, CompletionPhase, HandoffV2};
 use crate::utils::format_thousands;
 
 /// Format HandoffContent into V2 format with YAML frontmatter and markdown body.
@@ -14,12 +14,19 @@ use crate::utils::format_thousands;
 /// - YAML frontmatter (between --- markers) with structured data for machine parsing
 /// - Human-readable markdown body for context
 pub fn format_handoff_markdown(content: &HandoffContent) -> Result<String> {
+    format_handoff_document(content, &content.to_v2())
+}
+
+pub(super) fn format_handoff_document(
+    content: &HandoffContent,
+    document: &HandoffV2,
+) -> Result<String> {
     let date = Utc::now().format("%Y-%m-%d").to_string();
 
     let mut md = String::new();
 
     // V2 YAML frontmatter
-    let yaml = content.to_v2().to_yaml()?;
+    let yaml = document.to_yaml()?;
     md.push_str("---\n");
     md.push_str(&yaml);
     md.push_str("---\n\n");
@@ -27,6 +34,28 @@ pub fn format_handoff_markdown(content: &HandoffContent) -> Result<String> {
     // Title
     md.push_str(&format!("# Handoff: {}\n\n", content.stage_id));
 
+    format_metadata_and_goals(&mut md, content, &date);
+    format_work_and_decisions(&mut md, content);
+    format_completion_checkpoint(&mut md, content.completion_checkpoint.as_ref());
+    format_current_state(&mut md, content);
+
+    // Git History (if available)
+    if let Some(history) = &content.git_history {
+        md.push_str(&format_git_history_markdown(history));
+        md.push('\n');
+    }
+
+    format_next_steps(&mut md, content);
+
+    // Stage Memory (if available)
+    if let Some(memory) = &content.memory_content {
+        md.push_str(memory);
+    }
+
+    Ok(md)
+}
+
+fn format_metadata_and_goals(md: &mut String, content: &HandoffContent, date: &str) {
     // Metadata (human-readable summary)
     md.push_str("## Metadata\n\n");
     md.push_str(&format!("- **Date**: {date}\n"));
@@ -49,7 +78,9 @@ pub fn format_handoff_markdown(content: &HandoffContent) -> Result<String> {
         md.push_str(&content.goals);
         md.push_str("\n\n");
     }
+}
 
+fn format_work_and_decisions(md: &mut String, content: &HandoffContent) {
     // Completed Work
     md.push_str("## Completed Work\n\n");
     if content.completed_work.is_empty() {
@@ -76,9 +107,9 @@ pub fn format_handoff_markdown(content: &HandoffContent) -> Result<String> {
         }
         md.push('\n');
     }
+}
 
-    format_completion_checkpoint(&mut md, content.completion_checkpoint.as_ref());
-
+fn format_current_state(md: &mut String, content: &HandoffContent) {
     // Current State
     md.push_str("## Current State\n\n");
     if let Some(branch) = &content.current_branch {
@@ -100,13 +131,9 @@ pub fn format_handoff_markdown(content: &HandoffContent) -> Result<String> {
         }
     }
     md.push('\n');
+}
 
-    // Git History (if available)
-    if let Some(history) = &content.git_history {
-        md.push_str(&format_git_history_markdown(history));
-        md.push('\n');
-    }
-
+fn format_next_steps(md: &mut String, content: &HandoffContent) {
     // Next Steps
     md.push_str("## Next Steps (Prioritized)\n\n");
     if content.next_steps.is_empty() {
@@ -117,13 +144,6 @@ pub fn format_handoff_markdown(content: &HandoffContent) -> Result<String> {
         }
         md.push('\n');
     }
-
-    // Stage Memory (if available)
-    if let Some(memory) = &content.memory_content {
-        md.push_str(memory);
-    }
-
-    Ok(md)
 }
 
 fn format_completion_checkpoint(md: &mut String, checkpoint: Option<&CompletionCheckpoint>) {

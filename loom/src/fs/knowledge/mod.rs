@@ -15,6 +15,7 @@ pub mod dir;
 pub(crate) mod frontmatter;
 pub mod index;
 mod scaffold;
+mod scanner;
 pub mod splice;
 pub mod templates;
 pub mod types;

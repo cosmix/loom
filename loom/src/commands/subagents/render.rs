@@ -38,7 +38,7 @@ fn find_work_dir_quietly() -> Option<PathBuf> {
 /// transcript that fails to read (not "fails to parse" -- that degrades to
 /// `Unknown` inside `classify::analyze`) is reported and skipped rather
 /// than aborting the whole listing. The configured ceiling is resolved once
-/// by the command and reused across all transcripts (and every watch poll).
+/// by the command and reused across all transcripts in that invocation.
 fn gather(
     session: &Option<String>,
     dir: &Option<PathBuf>,
@@ -46,7 +46,7 @@ fn gather(
     work_dir: Option<&Path>,
     subagent_ceiling_tokens: u64,
 ) -> Gathered {
-    // Each index is replayed once for this complete list/watch gather cycle.
+    // Each index is replayed once for this list/harvest invocation.
     let lifecycle = classify::lifecycle::load_active(work_dir);
     let forward_index = work_dir.and_then(load_forward_index);
     gather_with_index(

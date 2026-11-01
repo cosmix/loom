@@ -127,19 +127,11 @@ fn is_runtime_path(path: &str) -> bool {
 pub(crate) fn references_in(body: &str) -> (Vec<EvidenceReference>, Vec<String>) {
     let mut references = Vec::new();
     let mut symbols = Vec::new();
-    let mut fence = None;
+    let mut scanner = super::super::scanner::Scanner::default();
 
     for raw_line in body.split_inclusive('\n') {
         let line = raw_line.trim_end_matches(['\n', '\r']);
-        let marker = super::fence_marker(line);
-        if let Some(open_fence) = fence {
-            if marker == Some(open_fence) {
-                fence = None;
-            }
-            continue;
-        }
-        if let Some(marker) = marker {
-            fence = Some(marker);
+        if scanner.fenced(line) {
             continue;
         }
         references_in_line(line, &mut references, &mut symbols);

@@ -2,12 +2,8 @@
 //! of death rather than a warning.
 //!
 //! A hung report is suppressed after the first one so a stuck session does not
-//! reprint its warning every five seconds. That suppression used to be
-//! absolute, which left the report purely advisory: the one event a silence
-//! ever produced arrived the moment the budget was first crossed, when a slow
-//! agent and a dead one still look identical, and nothing could act on it.
-//!
-//! So exactly one further report is allowed, once the silence reaches the
+//! reprint its warning every five seconds. One further report is allowed when
+//! the silence reaches the
 //! line [`is_stall_escalation`] draws: three response budgets, or longer while
 //! the session's pinned completion runs. A
 //! session that wakes up clears both latches on its next heartbeat, which is

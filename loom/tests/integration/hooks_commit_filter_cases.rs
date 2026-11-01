@@ -1,0 +1,317 @@
+use super::*;
+
+// =============================================================================
+// Tests: Hook BLOCKS commits with Claude attribution (exit code 2)
+// =============================================================================
+
+#[test]
+fn blocks_git_commit_in_a_stage_session() {
+    let (_temp, hook) = setup_hook();
+    let env = [("LOOM_STAGE_ID", "s1"), ("LOOM_SESSION_ID", "sess")];
+    let command = r#"git commit -m "Fix bug in parser""#;
+
+    assert_eq!(run_hook_with_env(&hook, "Bash", command, &env), 2);
+}
+
+#[test]
+fn blocks_coauthored_by_claude_simple() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit -m "Fix bug
+
+Co-Authored-By: Claude <noreply@anthropic.com>""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_coauthored_by_claude_opus() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit -m "Add feature
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_claude_with_anthropic_email() {
+    let (_temp, hook) = setup_hook();
+    // Use a proper Co-Authored-By trailer line with anthropic email
+    let input = r#"git commit -m "Feature
+
+Co-Authored-By: claude <noreply@anthropic.com>""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_case_insensitive() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit -m "Fix
+
+CO-AUTHORED-BY: CLAUDE <NOREPLY@ANTHROPIC.COM>""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_heredoc_format() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit -m "$(cat <<'EOF'
+Fix parser
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+EOF
+)""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+// =============================================================================
+// Tests: Hook BLOCKS --trailer flag with attribution (bypass vector)
+// =============================================================================
+
+#[test]
+fn blocks_trailer_flag_coauthored_by() {
+    let (_temp, hook) = setup_hook();
+    let input =
+        r#"git commit --trailer "Co-Authored-By: Claude <noreply@anthropic.com>" -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_trailer_flag_equals_syntax() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit --trailer="Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>" -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_trailer_flag_signed_off_by() {
+    let (_temp, hook) = setup_hook();
+    let input =
+        r#"git commit --trailer "Signed-off-by: Claude <noreply@anthropic.com>" -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+// =============================================================================
+// Tests: Hook BLOCKS --author flag with attribution (bypass vector)
+// =============================================================================
+
+#[test]
+fn blocks_author_flag_claude() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit --author="Claude <noreply@anthropic.com>" -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_author_flag_anthropic_email() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit --author "Bot <bot@anthropic.com>" -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+// =============================================================================
+// Tests: Hook BLOCKS GIT_AUTHOR env var attribution (bypass vector)
+// =============================================================================
+
+#[test]
+fn blocks_git_author_name_claude_with_anthropic_email() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"GIT_AUTHOR_NAME="Claude" GIT_AUTHOR_EMAIL="noreply@anthropic.com" git commit -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn allows_git_author_name_claude_without_anthropic_email() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"GIT_AUTHOR_NAME="Claude" git commit -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 0);
+}
+
+#[test]
+fn blocks_git_author_email_anthropic() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"GIT_AUTHOR_EMAIL="noreply@anthropic.com" git commit -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+// =============================================================================
+// Tests: Hook BLOCKS Signed-off-by attribution
+// =============================================================================
+
+#[test]
+fn blocks_signed_off_by_claude() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit -m "Fix bug
+
+Signed-off-by: Claude <noreply@anthropic.com>""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+// =============================================================================
+// Tests: Hook BLOCKS attribution text patterns
+// =============================================================================
+
+#[test]
+fn blocks_generated_with_claude_code() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit -m "Fix bug
+
+Generated with [Claude Code](https://claude.com/claude-code)""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_generated_with_claude_ai() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit -m "Fix bug
+
+Generated with Claude Code (claude.ai/code)""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+// =============================================================================
+// Tests: Hook ALLOWS commits without Claude attribution
+// =============================================================================
+
+#[test]
+fn allows_clean_commit() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit -m "Fix bug in parser""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 0);
+}
+
+#[test]
+fn allows_human_coauthor() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit -m "Feature
+
+Co-Authored-By: Jane Doe <jane@example.com>""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 0);
+}
+
+#[test]
+fn allows_claude_in_message_not_coauthor() {
+    let (_temp, hook) = setup_hook();
+    // "Claude" in message body without co-author pattern should pass
+    let input = r#"git commit -m "Rename Claude class to Assistant""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 0);
+}
+
+#[test]
+fn allows_non_bash_tool() {
+    let (_temp, hook) = setup_hook();
+    // Non-Bash tools bypass the check entirely
+    let input = r#"git commit -m "Fix
+
+Co-Authored-By: Claude <noreply@anthropic.com>""#;
+
+    assert_eq!(run_hook(&hook, "Write", input), 0);
+}
+
+#[test]
+fn allows_non_commit_git_commands() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git log --author="Claude""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 0);
+}
+
+#[test]
+fn allows_empty_input() {
+    let (_temp, hook) = setup_hook();
+    assert_eq!(run_hook(&hook, "Bash", ""), 0);
+}
+
+// =============================================================================
+// Tests: Hook ALLOWS legitimate uses of similar patterns (false positive prevention)
+// =============================================================================
+
+#[test]
+fn allows_human_author_named_claude() {
+    let (_temp, hook) = setup_hook();
+    // A real person named Claude with a non-Anthropic email should be allowed
+    let input = r#"git commit --author="Claude Shannon <cshannon@example.com>" -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 0);
+}
+
+#[test]
+fn allows_trailer_with_human_coauthor() {
+    let (_temp, hook) = setup_hook();
+    let input =
+        r#"git commit --trailer "Co-Authored-By: Jane Doe <jane@example.com>" -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 0);
+}
+
+#[test]
+fn allows_git_log_author_claude() {
+    let (_temp, hook) = setup_hook();
+    // git log with author filter should never be blocked
+    let input = r#"git log --author="Claude""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 0);
+}
+
+#[test]
+fn allows_message_mentioning_generated() {
+    let (_temp, hook) = setup_hook();
+    // Mentioning "generated" in a commit message without Claude Code context is fine
+    let input = r#"git commit -m "Fix generated code output formatting""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 0);
+}
+
+// =============================================================================
+// Tests: Hook BLOCKS previously-bypassed vectors (multi-flag, -c trailer, committer)
+// =============================================================================
+
+#[test]
+fn blocks_multi_m_flag_coauthored_by() {
+    let (_temp, hook) = setup_hook();
+    // Multiple -m flags put Co-Authored-By on the same command line (no newline)
+    let input = r#"git commit -m "feat: change" -m "Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_multi_m_flag_with_blank_separator() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit -m "feat: change" -m "" -m "Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_git_c_trailer_config() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git -c trailer.co-authored-by.value="Claude <noreply@anthropic.com>" commit -m "feat: change""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_git_committer_email_anthropic() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"GIT_COMMITTER_EMAIL="noreply@anthropic.com" git commit -m "feat: change""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}

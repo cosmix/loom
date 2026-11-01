@@ -17,6 +17,8 @@
 
 mod hook_commands;
 mod local_settings;
+#[cfg(test)]
+mod spawn_policy_tests;
 mod unix_sockets;
 
 pub(crate) use hook_commands::{hook_documents, scan_hook_registrations, HookFindings, HookScan};
@@ -30,6 +32,18 @@ use std::path::{Path, PathBuf};
 use super::{merge_config, validate_config, MergedSandboxConfig};
 use crate::models::stage::Stage;
 use crate::plan::schema::{PermissionMode, SandboxConfig, StageSandboxConfig};
+
+/// Resolve the policy used by spawn preflight. Launch resolves and validates
+/// again so environment-dependent paths are fresh at the security boundary.
+pub(crate) fn resolve_spawn_policy(
+    plan: &SandboxConfig,
+    stage: &Stage,
+) -> anyhow::Result<MergedSandboxConfig> {
+    let mut merged = merge_config(plan, &stage.sandbox, stage.stage_type, &stage.implementers);
+    validate_config(&merged)?;
+    super::expand_paths(&mut merged);
+    Ok(merged)
+}
 
 /// The shell every loom hook runs under.
 const HOOK_SHELL: &str = "/bin/bash";

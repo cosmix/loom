@@ -42,7 +42,7 @@ pub fn render_outline(graph: &ResolvedGraph, project_root: &Path, arg: &str) -> 
 
 pub fn outline_json(graph: &ResolvedGraph, project_root: &Path, arg: &str) -> Value {
     let rel = project_relative(project_root, arg).unwrap_or_else(|| arg.to_string());
-    let path = safe(&rel);
+    let path = &rel;
     let Some(entry) = graph.files.get(&rel) else {
         return json!({"path": path, "error": "no indexed file", "match": MatchMode::Id.as_str()});
     };
@@ -110,7 +110,7 @@ fn file_coverage_line(coverage: &FileCoverage) -> String {
 
 fn symbol_json(node: &SourceNode) -> Value {
     json!({
-        "id": safe(&node.id),
+        "id": node.id,
         "kind": node.kind.as_str(),
         "scope": node.scope.iter().map(|segment| safe(segment)).collect::<Vec<_>>(),
         "line_start": node.span.line_start,

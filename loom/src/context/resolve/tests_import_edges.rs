@@ -35,6 +35,7 @@ fn an_import_resolves_only_when_exactly_one_file_matches() {
 #[test]
 fn a_crate_rooted_import_drops_the_segment_no_file_starts_with() {
     let mut graph = graph_from(vec![
+        ("loom/src/lib.rs", &[], vec![]),
         (
             "loom/src/app.rs",
             &[],
@@ -59,6 +60,7 @@ fn a_crate_rooted_import_drops_the_segment_no_file_starts_with() {
 #[test]
 fn an_item_path_import_resolves_to_the_file_holding_the_item() {
     let mut graph = graph_from(vec![
+        ("src/lib.rs", &[], vec![]),
         (
             "src/app.rs",
             &[],
@@ -81,7 +83,7 @@ fn an_item_path_import_resolves_to_the_file_holding_the_item() {
 }
 
 #[test]
-fn a_truncated_import_path_matching_two_files_stays_unresolved() {
+fn a_crate_import_without_root_evidence_stays_unresolved() {
     let mut graph = graph_from(vec![
         (
             "src/app.rs",
@@ -97,8 +99,8 @@ fn a_truncated_import_path_matching_two_files_stays_unresolved() {
     assert_eq!(graph.files["src/app.rs"].edges[0].to, UNRESOLVED_TARGET);
     assert_eq!(
         stats,
-        expected_stats(0, 1, 1),
-        "shortening the path may only widen the candidate set, never decide"
+        expected_stats(0, 0, 1),
+        "a missing crate root cannot select a suffix match"
     );
 }
 

@@ -19,27 +19,10 @@ const SPOOL_RELPATHS: [&str; 3] = [
 
 /// Whether a repo-relative path is worktree scaffolding loom itself creates.
 ///
-/// `create_worktree` plants the state-root symlink (`.loom/work` under a real
-/// `.loom/` on the nested layout, `.work` on a legacy workspace — see
-/// [`crate::fs::work_dir`]), `.claude/` (dir with a CLAUDE.md symlink and
-/// generated settings) and — when the checkout has none — a root `CLAUDE.md`
-/// symlink. Repos that gitignore these see nothing; repos that do not see
-/// them as untracked. Callers reading `git status` to judge whether a
-/// worktree holds *agent work* must discount them either way.
-///
-/// Also discounted: the memory, telemetry and stage-request spools, plus
-/// `.loom/cache/`, loom's own runtime paths, written lazily during a
-/// stage's execution rather than planted by `create_worktree` — but just as
-/// much loom's own output, so they discount the same way. The bare `.loom`
-/// entry is discounted too, for a worktree whose whole `.loom/` (holding only
-/// the `work` symlink, `cache/` and the two spools) is entirely untracked, so
-/// `git status` reports it as one line rather than enumerating its children.
-/// This is still narrower than `.loom/` as a whole: a project may
-/// legitimately track `.loom/config.toml`, which git then reports as its own
-/// individual entry once anything else under `.loom/` is tracked, and that
-/// entry is NOT matched by any arm below.
-///
-/// Keep this in sync with the scaffold `create_worktree` writes.
+/// Includes the state-root symlink, generated Claude settings and instruction
+/// symlinks, runtime spools and cache. A bare `.loom` status entry is included
+/// when Git collapses an entirely untracked directory; tracked project files
+/// such as `.loom/config.toml` are not. Keep this in sync with worktree setup.
 pub fn is_worktree_scaffold_path(path: &str) -> bool {
     let path = path.trim_end_matches('/');
     path == ".work"
@@ -159,9 +142,7 @@ pub fn setup_root_claude_md(worktree_path: &Path, repo_root: &Path) -> Result<()
 
 /// Extract allow and deny permission arrays from settings.
 ///
-/// Production code no longer copies permissions out of a parsed settings
-/// value (the capsule owns that, per `native/session_settings.rs`); this
-/// survives only as a `tests_settings.rs` assertion helper.
+/// Assertion helper for `tests_settings.rs`; session policy is capsule-owned.
 #[cfg(test)]
 fn extract_permissions(settings: &Value) -> (Vec<String>, Vec<String>) {
     let permissions = settings.get("permissions");
@@ -199,14 +180,9 @@ fn extract_permissions(settings: &Value) -> (Vec<String>, Vec<String>) {
 ///    from the inherited `env` block
 /// 4. Writes the merged result to the worktree
 ///
-/// Note: We deliberately do NOT write `permissions.defaultMode` here. The
-/// resolved permission mode (stage-type default + plan override + stage
-/// override) lives in the per-session capsule (`native/session_settings.rs`),
-/// not in a file this function touches. Writing it here would race that
-/// resolution and undercut the resolved value. See finding #5 (option 2).
-///
-/// This creates the base settings.json. Session-specific hooks are carried
-/// by the capsule instead of being merged in here.
+/// The session capsule (`native/session_settings.rs`) owns resolved permission
+/// mode, sandbox policy and session hooks. This base file inherits project
+/// settings and adds only narrow state-root grants.
 fn create_worktree_settings(
     main_settings: &Path,
     worktree_settings: &Path,
@@ -245,55 +221,25 @@ fn create_worktree_settings(
     crate::fs::permissions::scrub_session_identity_env(&mut settings);
     crate::fs::permissions::scrub_stale_work_dir_env(&mut settings);
 
-    // Resolve the state-root symlink to its absolute target path and add
-    // permissions. Claude Code resolves symlinks before checking permission
-    // patterns, so the relative Read(.loom/work/**) pattern from the main
-    // repo's settings doesn't match the resolved absolute path. Adding the
-    // resolved path here ensures agents can read/write state files without
-    // permission prompts. See `fs::permissions::state_root` for the shared
-    // resolution and the S-1 rationale (blanket read/write over this path
-    // exposes `admin.token` / `user.token` — a daemon RPC privilege
-    // escalation).
-    //
-    // IMPORTANT: Claude Code requires the // prefix for absolute filesystem paths.
-    // A single / means "relative to project root", NOT absolute. See:
-    // https://code.claude.com/docs/en/permissions.md
+    add_state_root_grants(&mut settings, worktree_path);
+
+    let content =
+        serde_json::to_string_pretty(&settings).with_context(|| "Failed to serialize settings")?;
+    std::fs::write(worktree_settings, content)
+        .with_context(|| "Failed to write worktree settings.json")?;
+
+    Ok(())
+}
+
+/// Grant only the state paths needed by worktree sessions. Claude resolves
+/// symlinks before permission checks and requires `//` for absolute paths.
+/// Broad access would expose daemon tokens. Token deny policy belongs to the
+/// session capsule; native file tools also use `credential-guard.sh`.
+fn add_state_root_grants(settings: &mut Value, worktree_path: &Path) {
     if let Some(resolved) = crate::fs::permissions::state_root::resolve_state_root(worktree_path) {
         let resolved_str = resolved.to_string_lossy();
-
-        // Collect the permissions to add
-        // Use / prefix on absolute paths for Claude Code's // convention
-        //
-        // There is deliberately NO broad write grant over the resolved
-        // `.work` root here, in either spelling. `Edit(/{resolved}/**)`
-        // would restore the grant narrowed elsewhere (S-1, see
-        // `sandbox/settings.rs`) because it exposed `.work/admin.token`
-        // and `.work/user.token` to a sandboxed worktree agent — a daemon
-        // RPC privilege escalation. `Write(/{resolved}/**)` sat here as
-        // its inert stand-in until it was REMOVED rather than converted:
-        // Claude Code's permission check consults only `Edit(path)`, so it
-        // granted nothing and warned every session start.
-        //
-        // For the same S-1 reason, there is also no blanket
-        // `Read(/{resolved}/**)` grant: it exposed `admin.token` and
-        // `user.token` to read just as readily as a broad `Edit` would
-        // have exposed them to write. The three narrow entries below are
-        // the whole read grant.
-        //
-        // This file (`.claude/settings.json`) is part of the capsule built
-        // by `sandbox::settings::build_settings`, so it must be safe
-        // standalone and correct on its own. (settings.json is the
-        // team-shareable file per `fs/permissions/settings.rs`'s module
-        // doc, though `.claude/` is gitignored in this repo.)
-        //
-        // It carries no `Read(...)` deny either, in any shape: Claude Code reads
-        // EVERY settings file when deciding whether a Bash command touches a
-        // denied path, and one `Read(` deny rule anywhere makes every
-        // relative-path `rg`/`grep`/`diff`/`git`/`cp`/`mv` after a `cd` prompt the
-        // operator. The token files are protected instead by the OS-level
-        // `sandbox.filesystem.denyRead` list written into `settings.local.json`
-        // and by `loom-hooks/credential-guard.sh` for the native file tools. The narrow
-        // entries below are the whole read grant.
+        // Read denies in settings can prompt on relative shell paths after cd;
+        // the capsule's filesystem denyRead policy protects tokens instead.
         let work_perms = vec![
             format!("Read(/{}/signals/**)", resolved_str),
             format!("Read(/{}/config.toml)", resolved_str),
@@ -313,14 +259,6 @@ fn create_worktree_settings(
             push_unique_perms(array_entry(perms_obj, "allow"), work_perms);
         }
     }
-
-    // Write the merged settings
-    let content =
-        serde_json::to_string_pretty(&settings).with_context(|| "Failed to serialize settings")?;
-    std::fs::write(worktree_settings, content)
-        .with_context(|| "Failed to write worktree settings.json")?;
-
-    Ok(())
 }
 
 /// Return `key`'s array within `obj`, replacing a missing or wrong-typed

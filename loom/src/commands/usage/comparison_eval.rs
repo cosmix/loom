@@ -150,25 +150,23 @@ fn assignments_comparable(
         return false;
     }
     let allowed = &artifact.intervention.changed_dimensions;
-    let providers_match = dimensions(baseline, |assignment| assignment.provider)
-        == dimensions(candidate, |assignment| assignment.provider)
-        || allowed.contains(&Change::ProviderAssignment);
-    let models_match = dimensions(baseline, |assignment| assignment.model.clone())
-        == dimensions(candidate, |assignment| assignment.model.clone())
-        || allowed.contains(&Change::ModelAssignment);
-    let efforts_match = dimensions(baseline, |assignment| assignment.effort.clone())
-        == dimensions(candidate, |assignment| assignment.effort.clone())
-        || allowed.contains(&Change::EffortAssignment);
-    providers_match && models_match && efforts_match
-}
-
-fn dimensions<T: Ord>(
-    assignments: &[ProviderAssignment],
-    value: impl Fn(&ProviderAssignment) -> T,
-) -> Vec<T> {
-    let mut values = assignments.iter().map(value).collect::<Vec<_>>();
-    values.sort();
-    values
+    let fixed = |assignments: &[ProviderAssignment]| {
+        let mut tuples = assignments
+            .iter()
+            .map(|assignment| {
+                (
+                    (!allowed.contains(&Change::ProviderAssignment)).then_some(assignment.provider),
+                    (!allowed.contains(&Change::ModelAssignment))
+                        .then_some(assignment.model.clone()),
+                    (!allowed.contains(&Change::EffortAssignment))
+                        .then_some(assignment.effort.clone()),
+                )
+            })
+            .collect::<Vec<_>>();
+        tuples.sort();
+        tuples
+    };
+    fixed(baseline) == fixed(candidate)
 }
 
 fn compare_identity(equal: bool, reason: &'static str, reasons: &mut Vec<&'static str>) {

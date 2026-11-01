@@ -163,7 +163,8 @@ impl HooksConfig {
 
     /// Produce the legacy session-hook map for compatibility callers.
     ///
-    /// This map omits production guard, relay and interpreter registrations.
+    /// This map omits production guard, relay and interpreter registrations;
+    /// session capsules are built by `orchestrator::terminal::native::session_settings`.
     pub fn to_settings_hooks(&self) -> std::collections::HashMap<String, Vec<HookRule>> {
         use std::collections::HashMap;
         let mut hooks_map: HashMap<String, Vec<HookRule>> = HashMap::new();

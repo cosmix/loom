@@ -78,7 +78,7 @@ pub fn submit(
     if request.kind == JobKind::Check && current.kind != JobKind::Check {
         return Ok(Submission::Refused(CHECK_BEHIND_RUN.to_string()));
     }
-    let queued = new_record(request, now);
+    let queued = new_record(work_dir, request, now)?;
     end(&mut current, &format!("superseded by {}", queued.id), now);
     store::save_current(work_dir, &current)?;
     persist_queued(work_dir, &queued)?;
@@ -176,9 +176,14 @@ fn runs_selection(job: Option<&[usize]>, request: Option<&[usize]>) -> bool {
     }
 }
 
-fn new_record(request: &SubmitRequest<'_>, now: DateTime<Utc>) -> JobRecord {
-    JobRecord {
+fn new_record(
+    work_dir: &Path,
+    request: &SubmitRequest<'_>,
+    now: DateTime<Utc>,
+) -> Result<JobRecord> {
+    Ok(JobRecord {
         id: new_job_id(),
+        submission_order: store::next_submission_order(work_dir, request.stage_id)?,
         stage_id: request.stage_id.to_string(),
         session_id: request.session_id.to_string(),
         kind: request.kind,
@@ -193,11 +198,11 @@ fn new_record(request: &SubmitRequest<'_>, now: DateTime<Utc>) -> JobRecord {
         finished_at: None,
         pid: None,
         detail: None,
-    }
+    })
 }
 
 fn queue(work_dir: &Path, request: &SubmitRequest<'_>, now: DateTime<Utc>) -> Result<JobRecord> {
-    let queued = new_record(request, now);
+    let queued = new_record(work_dir, request, now)?;
     persist_queued(work_dir, &queued)?;
     Ok(queued)
 }

@@ -252,22 +252,13 @@ pub(super) fn record_attempt(work_dir: &Path, stage_id: &str, dispute_id: u32) -
 /// stage per pass, so one live session per STAGE is still the right
 /// granularity: two adjudicators in the same main repository, judging the
 /// same stage at once, is exactly what must not happen.
-pub(super) fn live_adjudication_session(work_dir: &Path, stage_id: &str) -> Option<String> {
+pub(super) fn live_adjudication_session(work_dir: &Path, stage_id: &str) -> Result<Option<String>> {
     let sessions =
-        crate::orchestrator::session_registry::live_sessions_for_stage(work_dir, stage_id)
-            .unwrap_or_else(|error| {
-                tracing::warn!(
-                    target: "loom::adjudication",
-                    stage = %stage_id,
-                    %error,
-                    "could not list live sessions; assuming no adjudication session is running",
-                );
-                Vec::new()
-            });
-    sessions
+        crate::orchestrator::session_registry::live_sessions_for_stage(work_dir, stage_id)?;
+    Ok(sessions
         .into_iter()
         .find(|session| session.session_type == SessionType::Adjudication)
-        .map(|session| session.id)
+        .map(|session| session.id))
 }
 
 /// Write `verdict.md` for a dispute.

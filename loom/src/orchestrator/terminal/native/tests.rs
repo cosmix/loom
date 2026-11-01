@@ -1,6 +1,4 @@
-//! Unit tests for `native/mod.rs`, split out to keep the module under the
-//! 400-line ceiling (CLAUDE.md Rule 17), matching `tmux/tests.rs` and
-//! `backend/tests.rs`.
+//! Unit tests for `native/mod.rs`.
 
 use super::*;
 use crate::orchestrator::terminal::emulator::TerminalEmulator;
@@ -124,7 +122,6 @@ fn window_title_and_pid_key_for_stage_session() {
     let mut session = Session::new();
     session.assign_to_stage("worker-pool".to_string());
     let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
-    // Title is the tracking_key, matched exactly against window titles.
     assert_eq!(title, "loom-worker-pool");
     // PID-file key is per-session: tracking_key + session.id (O-14).
     assert_eq!(pid_key, format!("loom-worker-pool-{}", session.id));
@@ -191,14 +188,13 @@ fn pid_key_distinct_per_session_for_same_stage() {
 
     let (title1, key1) = NativeBackend::window_title_and_pid_key(&s1).unwrap();
     let (title2, key2) = NativeBackend::window_title_and_pid_key(&s2).unwrap();
-    assert_eq!(title1, title2, "same stage → same window title");
+    assert_eq!(title1, title2, "tmux keeps the friendly stage title");
     assert_ne!(key1, key2, "different session → different PID-file key");
 }
 
 #[test]
 fn prefix_sharing_stage_ids_get_distinct_titles() {
-    // O-5: `auth` and `auth-tests` must resolve to distinct window titles
-    // so kill/liveness for one never targets the other.
+    // The stage labels remain distinct; native titles add session identity.
     let mut auth = Session::new();
     auth.assign_to_stage("auth".to_string());
     let mut auth_tests = Session::new();
@@ -209,8 +205,7 @@ fn prefix_sharing_stage_ids_get_distinct_titles() {
     assert_eq!(auth_title, "loom-auth");
     assert_eq!(auth_tests_title, "loom-auth-tests");
     assert_ne!(auth_title, auth_tests_title);
-    // The exact-match window ops (tested in window_ops.rs) ensure
-    // `loom-auth` never matches `loom-auth-tests`.
+    // Exact-match window ops reject prefix matches for the derived native title.
 }
 
 #[test]

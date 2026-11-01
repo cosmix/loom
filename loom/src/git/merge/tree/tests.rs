@@ -200,13 +200,27 @@ fn the_new_blocks_serialize_and_explain_themselves() {
     let not_restored = MergeBlock::StashNotRestored {
         backup_ref: "refs/loom/autostash/s1-1".to_string(),
     };
-    for block in [&refused, &not_restored] {
+    let incomplete = MergeBlock::CheckoutRestoreIncomplete {
+        source_rev: "abc123".to_string(),
+        failures: vec![RestoreFailure {
+            path: "path.txt".to_string(),
+            reason: "destination occupied".to_string(),
+        }],
+        backup_ref: Some("refs/loom/autostash/s1-1".to_string()),
+    };
+    for block in [&refused, &not_restored, &incomplete] {
         let json = serde_json::to_string(block).unwrap();
         assert_eq!(&serde_json::from_str::<MergeBlock>(&json).unwrap(), block);
     }
     assert!(refused.to_string().contains("odd"));
     let text = not_restored.to_string();
     assert!(text.contains("git stash pop") && text.contains("refs/loom/autostash/s1-1"));
+    let text = incomplete.to_string();
+    assert!(
+        text.contains("path.txt")
+            && text.contains("abc123")
+            && text.contains("refs/loom/autostash/s1-1")
+    );
 }
 
 #[test]

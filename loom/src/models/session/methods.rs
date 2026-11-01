@@ -24,6 +24,7 @@ impl Session {
             merge_source_branch: None,
             merge_target_branch: None,
             tracking_key: String::new(),
+            native_window_title: None,
             backend: SessionBackendKind::default(),
         }
     }
@@ -79,9 +80,8 @@ impl Session {
 
     /// Derive the canonical tracking key for a session.
     ///
-    /// The tracking key is used to find OS-level resources owned by this
-    /// session (terminal window titles, etc.) without having to thread the
-    /// session ID through every spawn/kill code path.
+    /// The tracking key names the stage in tmux and prefixes native windows
+    /// and PID-file keys. Native windows add project and session identity.
     ///
     /// Format: `loom-[<kind>-]<stage_id>` where `<kind>` is omitted for
     /// regular stage sessions.
@@ -114,8 +114,7 @@ impl Session {
 
     pub fn assign_to_stage(&mut self, stage_id: String) {
         // Derive the tracking key from the (stage_id, session_type) pair so
-        // OS-level resource lookups (terminal titles) have a stable handle
-        // even before the session has a PID.
+        // OS-level resource names have a stable stage prefix before spawn.
         self.tracking_key = Self::derive_tracking_key(&stage_id, self.session_type);
         self.stage_id = Some(stage_id);
         self.last_active = Utc::now();

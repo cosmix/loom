@@ -29,9 +29,7 @@ impl Default for TsxExtractor {
 /// TSX declaration, import and call patterns, then the JSX patterns. The
 /// TypeScript-only constructs (interfaces, type aliases, enums, namespaces,
 /// abstract classes, `type_identifier` class names) match the TypeScript query;
-/// function-valued declarations follow the JavaScript query, so `@definition`
-/// always covers the whole declaration and a `.tsx` component spans the same
-/// text a `.jsx` one does.
+/// function-valued declarators match the JavaScript and TypeScript queries.
 const QUERY: &str = concat!(
     r#"
 (function_declaration
@@ -43,16 +41,9 @@ const QUERY: &str = concat!(
 (method_definition
   name: (property_identifier) @name) @definition.function
 
-[
-  (lexical_declaration
-    (variable_declarator
-      name: (identifier) @name
-      value: [(arrow_function) (function_expression) (generator_function)]))
-  (variable_declaration
-    (variable_declarator
-      name: (identifier) @name
-      value: [(arrow_function) (function_expression) (generator_function)]))
-] @definition.function
+(variable_declarator
+  name: (identifier) @name
+  value: [(arrow_function) (function_expression) (generator_function)]) @definition.function
 
 (class_declaration
   name: (type_identifier) @name) @definition.type
@@ -115,7 +106,7 @@ impl QueryHarness for TsxExtractor {
             dialect: "tsx",
             grammar_version: "0.23.2",
             query_digest: crate::context::source_graph::body_hash(QUERY.as_bytes()),
-            extractor_version: 3,
+            extractor_version: 5,
         }
     }
 

@@ -29,8 +29,7 @@ pub struct DiscoveryOptions {
     pub claude_root: Option<std::path::PathBuf>,
     pub project: Option<std::path::PathBuf>,
     pub all: bool,
-    pub stage: Option<String>,
-    pub plan: Option<String>,
+    pub selected_stages: Option<HashSet<String>>,
 }
 
 /// Parse `--since`: a duration (`7d`, `24h`, `30m`), an ISO date
@@ -55,11 +54,8 @@ pub fn discover(options: &DiscoveryOptions) -> anyhow::Result<Vec<DiscoveredFile
         return Ok(Vec::new());
     }
     let mut files = collect_projects(&projects_root, options)?;
-    if let Some(stage) = options.stage.as_deref() {
-        files = filter_stage(files, stage);
-    }
-    if let Some(plan) = options.plan.as_deref() {
-        files = filter_plan(files, plan)?;
+    if let Some(stages) = options.selected_stages.as_ref() {
+        files = filter_stages(files, stages);
     }
     files.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(files)
@@ -187,16 +183,9 @@ fn repository_root() -> Result<PathBuf> {
     Ok(ancestor.to_path_buf())
 }
 
-/// Inside a git worktree (loom's own `.worktrees/<stage>` included), `.git`
-/// is a FILE, not a directory, and still satisfies `exists()` — so without
-/// this, `repository_root` would stop at the worktree and report it as the
-/// whole repository, silently narrowing `loom usage` to one worktree instead
-/// of the repository plus all of its worktrees.
-///
-/// The file's single line is `gitdir: <repo>/.git/worktrees/<name>`; walk
-/// back up three components (`<name>`, `worktrees`, `.git`) to recover
-/// `<repo>`. `None` when the file can't be read or doesn't match that shape,
-/// so the caller falls back to treating the worktree itself as the root.
+/// Reads a `gitdir:` file and takes three parents of its path. Relative paths
+/// remain relative and nonstandard paths are not validated. If reading or
+/// traversal fails, the caller falls back to the worktree root.
 fn worktree_repository_root(git_file: &Path) -> Option<PathBuf> {
     let contents = fs::read_to_string(git_file).ok()?;
     let gitdir = contents.trim().strip_prefix("gitdir:")?.trim();
@@ -260,37 +249,26 @@ fn add_subagents(files: &mut Vec<DiscoveredFile>, session: &Path, slug: &str) {
     }
 }
 
-fn filter_stage(files: Vec<DiscoveredFile>, stage: &str) -> Vec<DiscoveredFile> {
-    let suffix = format!("-worktrees-{stage}");
+fn filter_stages(files: Vec<DiscoveredFile>, stages: &HashSet<String>) -> Vec<DiscoveredFile> {
     files
-        .into_iter()
-        .filter(|file| file.project_slug.ends_with(&suffix))
-        .collect()
-}
-
-fn filter_plan(files: Vec<DiscoveredFile>, plan: &str) -> Result<Vec<DiscoveredFile>> {
-    let Some(stages) = plan_stage_ids(plan)? else {
-        return Ok(Vec::new());
-    };
-    Ok(files
         .into_iter()
         .filter(|file| {
             stages
                 .iter()
                 .any(|stage| file.project_slug.ends_with(&format!("-worktrees-{stage}")))
         })
-        .collect())
+        .collect()
 }
 
-pub(crate) fn plan_stage_ids(plan: &str) -> Result<Option<HashSet<String>>> {
-    let work_dir = match crate::commands::common::work_dir_path() {
-        Ok(work_dir) => work_dir,
-        Err(error) => {
-            eprintln!("plan could not be resolved: no state directory ({error})");
-            return Ok(None);
-        }
+pub(crate) fn plan_stage_ids(
+    plan: &str,
+    work_dir: Option<&Path>,
+) -> Result<Option<HashSet<String>>> {
+    let Some(work_dir) = work_dir else {
+        eprintln!("plan could not be resolved: no selected state directory");
+        return Ok(None);
     };
-    let Some(config) = crate::fs::work_dir::load_config(&work_dir)? else {
+    let Some(config) = crate::fs::work_dir::load_config(work_dir)? else {
         eprintln!("plan could not be resolved: config.toml is missing");
         return Ok(None);
     };
@@ -302,7 +280,7 @@ pub(crate) fn plan_stage_ids(plan: &str) -> Result<Option<HashSet<String>>> {
         eprintln!("plan could not be resolved: requested plan does not match the active plan");
         return Ok(None);
     }
-    stage_ids(&work_dir)
+    stage_ids(work_dir)
 }
 
 /// Strip the status prefix (`IN_PROGRESS-`/`DONE-`/`RETIRED-`) FIRST, then strip

@@ -27,7 +27,7 @@ static RSPEC_GEM: LazyLock<Regex> =
 static FLUTTER_SDK: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*sdk:\s*flutter\b").expect("Invalid regex"));
 
-/// `(package_dir, checkout_root)`; files are read beneath the checkout root.
+/// `(package_dir, checkout_root)`; content reads are anchored at the checkout root.
 type Rule = fn(&Path, &Path) -> Option<&'static str>;
 
 /// In table order: the first row that matches one of the package's kinds and
@@ -49,8 +49,8 @@ const RULES: &[(&[&str], Rule)] = &[
 ];
 
 /// The adapter that runs `package_dir`'s tests, or `None` when no adapter applies.
-/// `package_dir` lies beneath `checkout_root`; a file reached through a symlink
-/// anywhere below the checkout root reads as absent.
+/// Content probes reject symlinks beneath `checkout_root`. Marker probes reject
+/// a symlink at the final component but can traverse intermediate symlinks.
 pub fn detect_runner(
     package_dir: &Path,
     checkout_root: &Path,

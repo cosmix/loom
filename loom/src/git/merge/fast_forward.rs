@@ -1,7 +1,6 @@
 //! `merge --ff-only` in the operator's checkout, and the stash restore around
-//! it. A refused fast-forward is always a typed block: everything this call
-//! changed is put back first, and the operator's work is never left only in
-//! the stash without saying so.
+//! it. A refused fast-forward is always a typed block: rollback failures
+//! name each path left to recover, and stashed changes retain a backup ref.
 
 use anyhow::Result;
 use std::path::Path;
@@ -23,8 +22,9 @@ const OVERLAP_HEADERS: [&str; 4] = [
 
 /// `merge --ff-only` from `old` to `new`, then restore a stash made for it
 /// (when `backup_ref` is set). After a clean refusal (git exited non-zero
-/// having changed nothing) the stash is popped and `removed` is written back;
-/// a pop that fails is a [`MergeBlock::StashNotRestored`], never an `Err`.
+/// having changed nothing) the stash is popped and `removed` is restored where
+/// absent. Incomplete restoration names each path; a failed stash pop is a
+/// [`MergeBlock::StashNotRestored`], never an `Err`.
 /// A fast-forward that errors (git did not start, or timed out mid-checkout)
 /// leaves the checkout in an unknown state, so see [`after_errored_fast_forward`].
 pub(super) fn fast_forward(
@@ -56,7 +56,10 @@ pub(super) fn fast_forward(
         Some(_) => pop_stash(repo),
         None => true,
     };
-    restore_files(repo, new, removed);
+    let restore = restore_files(repo, new, removed);
+    if !restore.failures.is_empty() {
+        return Ok(Advance::Blocked(restore.block(new, backup_ref)));
+    }
     if let (false, Some(backup_ref)) = (stash_restored, backup_ref) {
         return Ok(Advance::Blocked(MergeBlock::StashNotRestored {
             backup_ref,
@@ -70,9 +73,9 @@ pub(super) fn fast_forward(
 
 /// The block after a fast-forward that errored. A killed checkout may have
 /// left the working tree half updated, so the stash is not popped onto it: it
-/// stays, named by [`MergeBlock::StashNotRestored`]. Removed untracked files
-/// are written back only where nothing exists now. With no stash made, the
-/// error is reported as a refusal.
+/// stays, named by [`MergeBlock::StashNotRestored`]. Rollback attempts every
+/// removed path with exclusive creation; occupied paths are reported as
+/// incomplete recovery. With no stash made, the error is a refusal.
 fn after_errored_fast_forward(
     repo: &Path,
     new: &str,
@@ -80,12 +83,10 @@ fn after_errored_fast_forward(
     backup_ref: Option<String>,
     error: &str,
 ) -> Advance {
-    let absent: Vec<String> = removed
-        .iter()
-        .filter(|path| repo.join(path).symlink_metadata().is_err())
-        .cloned()
-        .collect();
-    restore_files(repo, new, &absent);
+    let restore = restore_files(repo, new, removed);
+    if !restore.failures.is_empty() {
+        return Advance::Blocked(restore.block(new, backup_ref));
+    }
     match backup_ref {
         Some(backup_ref) => Advance::Blocked(MergeBlock::StashNotRestored { backup_ref }),
         None => Advance::Blocked(refused_block(error)),

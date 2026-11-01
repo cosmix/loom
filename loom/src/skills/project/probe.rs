@@ -43,8 +43,8 @@ pub(crate) fn declares_dependencies(root: &Path, package_dir: &Path) -> bool {
     })
 }
 
-/// The bytes of `path`, which must lie beneath `root`. The `lstat` check only
-/// keeps a FIFO from blocking the open; `safe_read` is what refuses symlinks.
+/// Filter obvious non-files early; the anchored reader enforces the actual
+/// symlink and non-regular-file checks even if the path changes after this filter.
 fn read_bounded(root: &Path, path: &Path) -> Option<Vec<u8>> {
     let relative = path.strip_prefix(root).ok()?;
     if !regular_file(path) {

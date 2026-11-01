@@ -119,9 +119,9 @@ pub trait TestRunnerAdapter: Sync {
     fn is_full_run(&self, argv: &[String]) -> bool;
 
     /// The shell command that runs test `test` declared in `file`, run with
-    /// `package_dir` as its cwd. For JavaScript runners, `test` is the full
-    /// runner-visible name, including enclosing suite names. PHPUnit expects
-    /// the fully qualified `Class::method` identifier, including any data set.
+    /// `package_dir` as its cwd. For JavaScript, Dart and Flutter runners,
+    /// `test` is the full runner-visible name, including enclosing suite names.
+    /// PHPUnit expects the fully qualified `Class::method` identifier, including any data set.
     /// Pest expects its generated PHPUnit identifier in the same form;
     /// Swift XCTest expects `Module.Case/method`.
     fn single_test_command(&self, file: &str, test: &str, package_dir: &Path) -> String;

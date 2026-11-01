@@ -4,14 +4,14 @@
 use super::accumulate::{AgentState, MessageTable, StageAgents};
 use super::discover::{Source, ThreadLookup};
 use super::tracker::CHECKPOINT_FILE;
+use crate::fs::cache_io::atomic_write;
 use crate::fs::safe_read::{is_not_found, read_bounded, OverLimit};
-use crate::quota::cache::atomic_write;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
-pub(super) const CHECKPOINT_VERSION: u32 = 3;
+pub(super) const CHECKPOINT_VERSION: u32 = 4;
 pub(super) const MAX_CHECKPOINT_BYTES: usize = 8 * 1024 * 1024;
 
 /// What [`Checkpoint::save`] did.

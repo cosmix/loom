@@ -11,6 +11,7 @@
 
 use std::path::Path;
 
+use crate::plan::schema::validation::shell_lex::{lex, Token};
 use crate::verify::review::fingerprint::checkout_git;
 
 /// True when `command` names at least one path-like token that `git`
@@ -20,57 +21,57 @@ use crate::verify::review::fingerprint::checkout_git;
 /// outside the tree digest the cache key is built from, and a failed check
 /// cannot rule out that the command depends on one.
 ///
-/// A command with no path-like tokens (e.g. `cargo test`) never invokes
-/// `git` at all. Repository and digest capability are checked separately by
-/// the input-fingerprint path.
+/// Every static bare word is queried, including a path absent at the first
+/// run. Repository and digest capability are checked separately by the
+/// input-fingerprint path.
 pub(super) fn references_ignored_path(command: &str, acceptance_dir: &Path) -> bool {
-    let tokens = path_like_tokens(command, acceptance_dir);
+    let Some(tokens) = path_like_tokens(command) else {
+        return true;
+    };
     if tokens.is_empty() {
         return false;
     }
     check_ignore(&tokens, acceptance_dir).unwrap_or(true)
 }
 
-/// Extract every whitespace-separated token of `command` that looks like a
-/// filesystem path. Existing bare names and names containing a dot are
-/// included so `cat ignored.txt` cannot evade the ignored-input guard.
-fn path_like_tokens(command: &str, acceptance_dir: &Path) -> Vec<String> {
-    command
-        .split_whitespace()
-        .filter_map(|token| {
-            let token = token.trim_matches(is_shell_punctuation);
-            let token = strip_quotes(token).trim_matches(is_shell_punctuation);
-            if token.starts_with('-')
-                || token.starts_with("http://")
-                || token.starts_with("https://")
-                || token.contains('$')
-                || token.is_empty()
-            {
-                return None;
+/// Use the shared shell lexer so quoted and escaped spaces remain one path.
+/// Check bare words too: an ignored file need not exist when the command runs.
+/// Unknown expansions, heredocs and option-attached paths are uncacheable.
+fn path_like_tokens(command: &str) -> Option<Vec<String>> {
+    let mut paths = Vec::new();
+    for token in lex(command) {
+        match token {
+            Token::Redirect("<<" | "<<-" | "<<<") => return None,
+            Token::Word(word) => {
+                if word.expands || !word.substitutions.is_empty() {
+                    return None;
+                }
+                let value = word.value;
+                // A glob can read an ignored match omitted from the manifest.
+                if value.chars().any(|ch| matches!(ch, '*' | '?' | '[' | ']')) {
+                    return None;
+                }
+                if value.is_empty() || value.starts_with("http://") || value.starts_with("https://")
+                {
+                    continue;
+                }
+                if value.starts_with('-') {
+                    if value.contains('/')
+                        || value.contains('.')
+                        || value.contains('=')
+                        || (!value.starts_with("--") && value.len() > 2)
+                    {
+                        return None;
+                    }
+                    continue;
+                }
+                let path = value.strip_prefix("./").unwrap_or(&value);
+                paths.push(path.to_string());
             }
-            let token = token.strip_prefix("./").unwrap_or(token);
-            let looks_like_path =
-                token.contains('/') || token.contains('.') || acceptance_dir.join(token).exists();
-            looks_like_path.then(|| token.to_string())
-        })
-        .collect()
-}
-
-fn is_shell_punctuation(value: char) -> bool {
-    matches!(value, ';' | '|' | '&' | '(' | ')' | '<' | '>')
-}
-
-/// Strip one layer of matching leading/trailing quotes (`'...'` or
-/// `"..."`), if present.
-fn strip_quotes(token: &str) -> &str {
-    let bytes = token.as_bytes();
-    if bytes.len() >= 2 {
-        let (first, last) = (bytes[0], bytes[bytes.len() - 1]);
-        if first == last && (first == b'\'' || first == b'"') {
-            return &token[1..token.len() - 1];
+            _ => {}
         }
     }
-    token
+    Some(paths)
 }
 
 /// Run `git check-ignore` once over every candidate, through the git of the
@@ -108,28 +109,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn skips_tokens_that_are_not_path_like() {
-        let temp = tempfile::tempdir().unwrap();
-        assert!(path_like_tokens("cargo test --lib", temp.path()).is_empty());
-        assert!(path_like_tokens("echo $H/.loom/x", temp.path()).is_empty());
-        assert!(path_like_tokens("curl https://example.com/a", temp.path()).is_empty());
+    fn extracts_static_words_and_rejects_expansion() {
+        assert_eq!(
+            path_like_tokens("cargo test --lib"),
+            Some(vec!["cargo".into(), "test".into()])
+        );
+        assert!(path_like_tokens("echo $H/.loom/x").is_none());
+        assert_eq!(
+            path_like_tokens("curl https://example.com/a"),
+            Some(vec!["curl".into()])
+        );
     }
 
     #[test]
     fn extracts_a_relative_path_token() {
-        let temp = tempfile::tempdir().unwrap();
         assert_eq!(
-            path_like_tokens("./target/debug/loom --version", temp.path()),
-            vec!["target/debug/loom".to_string()]
+            path_like_tokens("./target/debug/loom --version"),
+            Some(vec!["target/debug/loom".to_string()])
         );
     }
 
     #[test]
     fn extracts_a_quoted_path_token() {
-        let temp = tempfile::tempdir().unwrap();
         assert_eq!(
-            path_like_tokens(r#"cat "src/main.rs""#, temp.path()),
-            vec!["src/main.rs".to_string()]
+            path_like_tokens(r#"cat "src/main.rs""#),
+            Some(vec!["cat".into(), "src/main.rs".to_string()])
+        );
+    }
+
+    #[test]
+    fn decodes_quoted_and_escaped_paths_and_keeps_operators_distinct() {
+        for command in ["cat 'ignored data.txt'", "cat ignored\\ data.txt"] {
+            assert_eq!(
+                path_like_tokens(command),
+                Some(vec!["cat".into(), "ignored data.txt".into()])
+            );
+        }
+        assert_eq!(
+            path_like_tokens("printf 'a; b'"),
+            Some(vec!["printf".into(), "a; b".into()])
         );
     }
 }

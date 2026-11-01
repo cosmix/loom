@@ -86,7 +86,12 @@ fn test_create_stage_from_definition_no_dependencies() {
     assert_eq!(stage.dependencies.len(), 0);
     assert_eq!(stage.acceptance.len(), 1);
     assert!(!stage.ultracode, "ultracode defaults to false");
+}
 
+#[test]
+fn stage_definition_preserves_runtime_options() {
+    let stage_def = minimal_stage_definition("stage-1", "Stage 1");
+    let stage = create_stage_from_definition(&stage_def, &v1_plan("plan-001"));
     // The ultracode license propagates from the definition to the stage model
     let ultracode_def = StageDefinition {
         ultracode: true,
@@ -330,91 +335,8 @@ fn test_cleanup_orphaned_sessions_does_not_fail() {
     assert!(result.is_ok());
 }
 
-/// A "socket" here is any file dropped in the tmux socket directory named
-/// `loom-<session-id>` — `list_loom_sockets` does not shell out to tmux, it
-/// just reads directory entries, so a plain empty file is enough to exercise
-/// attribution and reap-mode logic without a real tmux server. `kill_socket_server`
-/// still shells out to a real (possibly absent) `tmux` binary, but treats any
-/// failure as best-effort, so the fake socket file is always removed by
-/// `cleanup_orphaned_sessions` regardless of whether tmux is installed here.
-#[test]
-#[serial]
-fn test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode() {
-    use super::cleanup::{cleanup_orphaned_sessions, SessionReapMode};
-    use crate::fs::session_files::session_to_markdown;
-    use crate::models::session::Session;
-
-    struct TmuxTmpDirGuard {
-        original: Option<std::ffi::OsString>,
-    }
-    impl TmuxTmpDirGuard {
-        fn set(dir: &Path) -> Self {
-            let original = std::env::var_os("TMUX_TMPDIR");
-            std::env::set_var("TMUX_TMPDIR", dir);
-            Self { original }
-        }
-    }
-    impl Drop for TmuxTmpDirGuard {
-        fn drop(&mut self) {
-            match &self.original {
-                Some(value) => std::env::set_var("TMUX_TMPDIR", value),
-                None => std::env::remove_var("TMUX_TMPDIR"),
-            }
-        }
-    }
-
-    let tmux_tmpdir = TempDir::new().unwrap();
-    let _guard = TmuxTmpDirGuard::set(tmux_tmpdir.path());
-    // SAFETY: `getuid` has no preconditions and cannot fail.
-    let uid = unsafe { libc::getuid() };
-    let socket_dir = tmux_tmpdir.path().join(format!("tmux-{uid}"));
-    fs::create_dir_all(&socket_dir).unwrap();
-
-    let repo_root = TempDir::new().unwrap();
-    let sessions_dir = repo_root.path().join(".loom").join("work").join("sessions");
-    fs::create_dir_all(&sessions_dir).unwrap();
-
-    let mut live_session = Session::new();
-    live_session.id = "session-livecase00".to_string();
-    live_session.assign_to_stage("stage-livecase00".to_string());
-    live_session.pid = Some(std::process::id());
-    fs::write(
-        sessions_dir.join(format!("{}.md", live_session.id)),
-        session_to_markdown(&live_session),
-    )
-    .unwrap();
-    crate::orchestrator::terminal::native::write_test_pid_identity(
-        &repo_root.path().join(".loom").join("work"),
-        &live_session,
-        std::process::id(),
-    )
-    .unwrap();
-    let live_socket = socket_dir.join(format!("loom-{}", live_session.id));
-    fs::write(&live_socket, "").unwrap();
-
-    let unattributed_socket = socket_dir.join("loom-session-strangercase0");
-    fs::write(&unattributed_socket, "").unwrap();
-
-    cleanup_orphaned_sessions(repo_root.path(), SessionReapMode::OrphansOnly).unwrap();
-    assert!(
-        live_socket.exists(),
-        "a live attributed session must never be reaped outside --clean"
-    );
-    assert!(
-        unattributed_socket.exists(),
-        "an unattributed socket must never be touched"
-    );
-
-    cleanup_orphaned_sessions(repo_root.path(), SessionReapMode::IncludeLiveBeforeClean).unwrap();
-    assert!(
-        !live_socket.exists(),
-        "clean mode must reap a live session before attribution is destroyed"
-    );
-    assert!(
-        unattributed_socket.exists(),
-        "an unattributed socket must never be touched, even in clean mode"
-    );
-}
+#[path = "session_cleanup_tests.rs"]
+mod session_cleanup_tests;
 
 #[test]
 fn test_remove_work_directory_on_failure_removes_directory() {

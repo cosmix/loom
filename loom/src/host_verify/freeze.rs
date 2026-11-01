@@ -37,7 +37,7 @@ use crate::verify::contracts::freeze::{
     check_site_changes, prepare_contract, run_prepared, PreparedContract,
 };
 use crate::verify::contracts::refusal::{
-    problem_lines, record_daemon_refusal, run_output_line, RefusalSource, INFRASTRUCTURE_PREFIX,
+    problem_lines, record_job_refusal, run_output_line, JobRefusalOrigin, INFRASTRUCTURE_PREFIX,
 };
 use crate::verify::contracts::site::ContractSite;
 use crate::verify::contracts::store::load_freeze;
@@ -343,14 +343,23 @@ fn load_reports(work_dir: &Path, record: &JobRecord) -> Result<ContractReports> 
 /// stage's contract writer, and drops it otherwise.
 fn refuse(work_dir: &Path, record: &JobRecord, message: &str) -> Result<Applied> {
     let message = truncate_to_byte_limit(message, REFUSAL_MAX_BYTES);
-    record_daemon_refusal(
+    let recorded = record_job_refusal(
         work_dir,
         &record.stage_id,
         &record.session_id,
+        JobRefusalOrigin {
+            job_id: record.id.clone(),
+            submission_order: record.submission_order,
+        },
         &problem_lines(&message),
-        RefusalSource::Daemon,
     )?;
-    Ok(Applied::FreezeRefused(message))
+    if recorded {
+        Ok(Applied::FreezeRefused(message))
+    } else {
+        Ok(Applied::Ignored(
+            "a newer freeze refusal is recorded".to_string(),
+        ))
+    }
 }
 
 /// [`refuse`] a run that failed through no one's change.

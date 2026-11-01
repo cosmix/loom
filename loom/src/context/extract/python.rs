@@ -70,7 +70,7 @@ impl QueryHarness for PythonExtractor {
             dialect: "python",
             grammar_version: "0.25.0",
             query_digest: crate::context::source_graph::body_hash(QUERY.as_bytes()),
-            extractor_version: 3,
+            extractor_version: 4,
         }
     }
 

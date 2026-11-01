@@ -11,7 +11,7 @@ use super::model::{
 use super::pass_memo::PassMemo;
 use super::tail::{self, Line};
 use crate::context::untrusted::inline_safe;
-use crate::quota::cache::{atomic_write, create_quota_dir, reject_symlink};
+use crate::fs::cache_io::{atomic_write, create_dir, reject_symlink};
 use anyhow::{bail, Context, Result};
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -217,12 +217,12 @@ fn writes_outcome(saved: Result<Option<String>>, written: Result<bool>) -> Resul
 }
 
 /// `<work_root>/tokens`, created with mode 0700. A symlink there is refused
-/// before anything is created: `create_quota_dir` alone would accept a symlink
+/// before anything is created: `create_dir` alone would accept a symlink
 /// to a directory, and `reject_symlink` checks only the last component.
 fn ensure_tokens_dir(work_root: &Path) -> Result<PathBuf> {
     let dir = work_root.join(TOKENS_DIR);
     reject_symlink(&dir)?;
-    create_quota_dir(&dir)?;
+    create_dir(&dir)?;
     let metadata =
         std::fs::symlink_metadata(&dir).with_context(|| format!("inspecting {}", dir.display()))?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {

@@ -2,7 +2,6 @@
 //! 5), keyed by session type and request kind.
 
 use super::kind::RequestKind;
-use super::matrix_host::HOST_JOB_MATRIX;
 use crate::models::session::SessionType;
 
 /// What the daemon does with a relayed request of a given kind from a given
@@ -42,309 +41,134 @@ pub enum MatrixVerdict {
 /// sessions that write a branch relay it: `Stage` (its stage branch),
 /// `Knowledge` (the target branch, knowledge prefix only) and `Merge` (the
 /// resolved merge). A contract, judge or base-conflict session never commits.
-const MATRIX: &[(SessionType, RequestKind, MatrixVerdict)] = &[
-    (
-        SessionType::Stage,
-        RequestKind::Memory,
-        MatrixVerdict::Apply,
-    ),
-    (SessionType::Stage, RequestKind::Block, MatrixVerdict::Apply),
-    (
-        SessionType::Stage,
-        RequestKind::Dispute,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Stage,
-        RequestKind::Handoff,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Stage,
-        RequestKind::MergeResolved,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Stage,
-        RequestKind::Verdict,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Stage,
-        RequestKind::Telemetry,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Knowledge,
-        RequestKind::Memory,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Knowledge,
-        RequestKind::Block,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Knowledge,
-        RequestKind::Dispute,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Knowledge,
-        RequestKind::Handoff,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Knowledge,
-        RequestKind::MergeResolved,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Knowledge,
-        RequestKind::Verdict,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Knowledge,
-        RequestKind::Telemetry,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Merge,
-        RequestKind::Memory,
-        MatrixVerdict::Apply,
-    ),
-    (SessionType::Merge, RequestKind::Block, MatrixVerdict::Apply),
-    (
-        SessionType::Merge,
-        RequestKind::Dispute,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Merge,
-        RequestKind::Handoff,
-        MatrixVerdict::DocumentOnly,
-    ),
-    (
-        SessionType::Merge,
-        RequestKind::MergeResolved,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Merge,
-        RequestKind::Verdict,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Merge,
-        RequestKind::Telemetry,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::BaseConflict,
-        RequestKind::Memory,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::BaseConflict,
-        RequestKind::Block,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::BaseConflict,
-        RequestKind::Dispute,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::BaseConflict,
-        RequestKind::Handoff,
-        MatrixVerdict::DocumentOnly,
-    ),
-    (
-        SessionType::BaseConflict,
-        RequestKind::MergeResolved,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::BaseConflict,
-        RequestKind::Verdict,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::BaseConflict,
-        RequestKind::Telemetry,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Adjudication,
-        RequestKind::Memory,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Adjudication,
-        RequestKind::Block,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Adjudication,
-        RequestKind::Dispute,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Adjudication,
-        RequestKind::Handoff,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Adjudication,
-        RequestKind::MergeResolved,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Adjudication,
-        RequestKind::Verdict,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Adjudication,
-        RequestKind::Telemetry,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Stage,
-        RequestKind::FreezeContracts,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Knowledge,
-        RequestKind::FreezeContracts,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Merge,
-        RequestKind::FreezeContracts,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::BaseConflict,
-        RequestKind::FreezeContracts,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Adjudication,
-        RequestKind::FreezeContracts,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Contract,
-        RequestKind::Memory,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Contract,
-        RequestKind::Block,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Contract,
-        RequestKind::Dispute,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Contract,
-        RequestKind::Handoff,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Contract,
-        RequestKind::MergeResolved,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Contract,
-        RequestKind::Verdict,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Contract,
-        RequestKind::Telemetry,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Contract,
-        RequestKind::FreezeContracts,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Stage,
-        RequestKind::FileDispute,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Knowledge,
-        RequestKind::FileDispute,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Merge,
-        RequestKind::FileDispute,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::BaseConflict,
-        RequestKind::FileDispute,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Adjudication,
-        RequestKind::FileDispute,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Contract,
-        RequestKind::FileDispute,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Stage,
-        RequestKind::Commit,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Knowledge,
-        RequestKind::Commit,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::Merge,
-        RequestKind::Commit,
-        MatrixVerdict::Apply,
-    ),
-    (
-        SessionType::BaseConflict,
-        RequestKind::Commit,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Adjudication,
-        RequestKind::Commit,
-        MatrixVerdict::Refuse,
-    ),
-    (
-        SessionType::Contract,
-        RequestKind::Commit,
-        MatrixVerdict::Refuse,
-    ),
-];
-
-/// Look up the matrix verdict for one (session type, request kind) pair.
 pub fn verdict(session: SessionType, kind: RequestKind) -> MatrixVerdict {
-    MATRIX
-        .iter()
-        .chain(HOST_JOB_MATRIX)
-        .find(|(s, k, _)| *s == session && *k == kind)
-        .map(|(_, _, verdict)| *verdict)
-        .expect("MATRIX covers every SessionType x RequestKind pair")
+    match kind {
+        RequestKind::Memory => policy_memory(session),
+        RequestKind::Block => policy_block(session),
+        RequestKind::Dispute | RequestKind::Complete => policy_dispute_and_complete(session),
+        RequestKind::Handoff => policy_handoff(session),
+        RequestKind::MergeResolved => policy_merge_resolved(session),
+        RequestKind::Verdict => policy_verdict(session),
+        RequestKind::Telemetry => policy_telemetry(session),
+        RequestKind::FreezeContracts => policy_freeze_contracts(session),
+        RequestKind::FileDispute => policy_file_dispute(session),
+        RequestKind::Commit => policy_commit(session),
+        RequestKind::Check => policy_check(session),
+    }
+}
+
+fn policy_memory(session: SessionType) -> MatrixVerdict {
+    match session {
+        SessionType::Stage
+        | SessionType::Knowledge
+        | SessionType::Merge
+        | SessionType::BaseConflict
+        | SessionType::Contract => MatrixVerdict::Apply,
+        SessionType::Adjudication => MatrixVerdict::Refuse,
+    }
+}
+
+fn policy_block(session: SessionType) -> MatrixVerdict {
+    match session {
+        SessionType::Stage
+        | SessionType::Knowledge
+        | SessionType::Merge
+        | SessionType::Contract => MatrixVerdict::Apply,
+        SessionType::BaseConflict | SessionType::Adjudication => MatrixVerdict::Refuse,
+    }
+}
+
+fn policy_dispute_and_complete(session: SessionType) -> MatrixVerdict {
+    match session {
+        SessionType::Stage | SessionType::Knowledge => MatrixVerdict::Apply,
+        SessionType::Merge
+        | SessionType::BaseConflict
+        | SessionType::Adjudication
+        | SessionType::Contract => MatrixVerdict::Refuse,
+    }
+}
+
+fn policy_handoff(session: SessionType) -> MatrixVerdict {
+    match session {
+        SessionType::Stage | SessionType::Knowledge | SessionType::Contract => MatrixVerdict::Apply,
+        SessionType::Merge | SessionType::BaseConflict => MatrixVerdict::DocumentOnly,
+        SessionType::Adjudication => MatrixVerdict::Refuse,
+    }
+}
+
+fn policy_merge_resolved(session: SessionType) -> MatrixVerdict {
+    match session {
+        SessionType::Stage
+        | SessionType::Knowledge
+        | SessionType::BaseConflict
+        | SessionType::Adjudication
+        | SessionType::Contract => MatrixVerdict::Refuse,
+        SessionType::Merge => MatrixVerdict::Apply,
+    }
+}
+
+fn policy_verdict(session: SessionType) -> MatrixVerdict {
+    match session {
+        SessionType::Stage
+        | SessionType::Knowledge
+        | SessionType::Merge
+        | SessionType::BaseConflict
+        | SessionType::Contract => MatrixVerdict::Refuse,
+        SessionType::Adjudication => MatrixVerdict::Apply,
+    }
+}
+
+fn policy_telemetry(session: SessionType) -> MatrixVerdict {
+    match session {
+        SessionType::Stage
+        | SessionType::Knowledge
+        | SessionType::Merge
+        | SessionType::BaseConflict
+        | SessionType::Adjudication
+        | SessionType::Contract => MatrixVerdict::Apply,
+    }
+}
+
+fn policy_freeze_contracts(session: SessionType) -> MatrixVerdict {
+    match session {
+        SessionType::Stage
+        | SessionType::Knowledge
+        | SessionType::Merge
+        | SessionType::BaseConflict
+        | SessionType::Adjudication => MatrixVerdict::Refuse,
+        SessionType::Contract => MatrixVerdict::Apply,
+    }
+}
+
+fn policy_file_dispute(session: SessionType) -> MatrixVerdict {
+    match session {
+        SessionType::Stage => MatrixVerdict::Apply,
+        SessionType::Knowledge
+        | SessionType::Merge
+        | SessionType::BaseConflict
+        | SessionType::Adjudication
+        | SessionType::Contract => MatrixVerdict::Refuse,
+    }
+}
+
+fn policy_commit(session: SessionType) -> MatrixVerdict {
+    match session {
+        SessionType::Stage | SessionType::Knowledge | SessionType::Merge => MatrixVerdict::Apply,
+        SessionType::BaseConflict | SessionType::Adjudication | SessionType::Contract => {
+            MatrixVerdict::Refuse
+        }
+    }
+}
+
+fn policy_check(session: SessionType) -> MatrixVerdict {
+    match session {
+        SessionType::Stage | SessionType::Knowledge | SessionType::Adjudication => {
+            MatrixVerdict::Apply
+        }
+        SessionType::Merge | SessionType::BaseConflict | SessionType::Contract => {
+            MatrixVerdict::Refuse
+        }
+    }
 }
 
 #[cfg(test)]

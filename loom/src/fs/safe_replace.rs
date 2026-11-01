@@ -126,14 +126,26 @@ pub(crate) fn publish_in_dir(
     mode: u32,
     force_mode: bool,
 ) -> Result<()> {
+    if let Some(error) = publish_in_dir_reporting(parent, name, bytes, mode, force_mode)? {
+        tracing::warn!("cannot sync directory after publication: {error:#}");
+    }
+    Ok(())
+}
+
+/// Returns a sync warning separately after a successful rename; an error means
+/// publication did not occur. The caller owns any synchronization lock.
+pub(crate) fn publish_in_dir_reporting(
+    parent: &OwnedFd,
+    name: &OsStr,
+    bytes: &[u8],
+    mode: u32,
+    force_mode: bool,
+) -> Result<Option<anyhow::Error>> {
     let name = c_name(name.as_bytes())?;
     let tmp = c_name(&temp_name(name.as_bytes()))?;
     let file = create_temp(parent, &tmp, mode)?;
     publish(parent, &tmp, &name, file, mode, force_mode, bytes)?;
-    if let Err(error) = sync_dir(parent) {
-        tracing::warn!("cannot sync directory after publication: {error:#}");
-    }
-    Ok(())
+    Ok(sync_dir(parent).err())
 }
 
 /// The directory holding `rel`, opened from `root` without following any symlink.

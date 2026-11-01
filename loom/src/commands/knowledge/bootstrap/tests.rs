@@ -85,8 +85,16 @@ fn claude_args_keep_disallowed_tools_before_the_prompt() {
 fn system_prompt_names_the_marker_touch() {
     let marker = Path::new("/repo/.loom/work/bootstrap/claude-7.done");
     let text = prompt::system_prompt(marker);
-    assert!(text.contains("touch /repo/.loom/work/bootstrap/claude-7.done"));
+    assert!(text.contains("touch -- /repo/.loom/work/bootstrap/claude-7.done"));
     assert!(text.contains("Write knowledge ONLY with `loom knowledge update`"));
+}
+
+#[test]
+fn system_prompt_uses_the_shared_quoted_marker_command() {
+    let marker = Path::new("/repo with 'quotes' and $(shell)/.loom/work/bootstrap/done");
+    let command = crate::pressure::instruction::marker_command(marker);
+    assert!(prompt::system_prompt(marker)
+        .contains(&format!("after it: {command}. Do not run it earlier")));
 }
 
 #[test]

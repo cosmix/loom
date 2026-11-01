@@ -103,6 +103,16 @@ pub(super) fn orchestrator(fx: &Fixture) -> Orchestrator {
 /// A Merge session relays `merge-resolved`; one pass settles it.
 pub(super) fn resolve(fx: &Fixture, orchestrator: &mut Orchestrator) -> Option<LedgerOutcome> {
     let record = fx.record(SessionType::Merge, SessionStatus::Running);
+    // The relay can be drained after its resolver exits. Give this synthetic
+    // record a proven stale PID identity so ownership checks can confirm that
+    // no resolver still writes the worktree before a handback.
+    let pids = fx.work_dir.join("pids");
+    std::fs::create_dir_all(&pids).unwrap();
+    std::fs::write(
+        pids.join(format!("{}-{}.pid", record.tracking_key, record.id)),
+        format!("{}\n{}\n", std::process::id(), u64::MAX),
+    )
+    .unwrap();
     let kind = RequestKind::MergeResolved;
     let entry = fx.relay(&record, kind, payload_for(kind));
     let tick = Tick {

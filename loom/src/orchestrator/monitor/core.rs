@@ -98,9 +98,9 @@ impl Monitor {
         }
     }
 
-    /// Attach the session liveness service. The orchestrator calls this
+    /// Attach the [`LivenessService`] to the monitor. The orchestrator calls this
     /// once the `NativeBackend` is constructed; until then,
-    /// `check_session_alive` falls back to the legacy host-PID probe.
+    /// `check_session_alive` returns an unknown result.
     pub fn set_liveness(&mut self, liveness: LivenessService) {
         self.handlers.set_liveness(liveness);
     }
@@ -214,7 +214,7 @@ impl Monitor {
             let path = entry.path();
 
             if path.extension().and_then(|s| s.to_str()) == Some("md") {
-                match load_session_from_file(&path) {
+                match load_session_from_file(&self.config.work_dir, &path) {
                     Ok(session) => sessions.push(session),
                     Err(e) => {
                         eprintln!(
@@ -232,8 +232,10 @@ impl Monitor {
 }
 
 /// Load a single session from a markdown file
-fn load_session_from_file(path: &std::path::Path) -> Result<Session> {
-    let content = std::fs::read_to_string(path)
+fn load_session_from_file(work_dir: &std::path::Path, path: &std::path::Path) -> Result<Session> {
+    let relative = path.strip_prefix(work_dir)?;
+    let root = work_dir.canonicalize()?;
+    let content = crate::fs::safe_read::read_to_string_bounded(&root, relative, 1024 * 1024)
         .with_context(|| format!("Failed to read session file: {}", path.display()))?;
 
     parse_session_from_markdown(&content)
@@ -242,4 +244,30 @@ fn load_session_from_file(path: &std::path::Path) -> Result<Session> {
 /// Parse a Session from markdown with YAML frontmatter
 pub fn parse_session_from_markdown(content: &str) -> Result<Session> {
     parse_from_markdown(content, "Session")
+}
+
+#[cfg(test)]
+mod bounded_session_tests {
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn refuses_special_files_links_and_oversized_sessions() {
+        let work = tempfile::tempdir().unwrap();
+        let dir = work.path().join("sessions");
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("s.md");
+        let outside = work.path().join("outside");
+        std::fs::write(&outside, "outside").unwrap();
+        symlink(&outside, &path).unwrap();
+        assert!(super::load_session_from_file(work.path(), &path).is_err());
+        std::fs::remove_file(&path).unwrap();
+        nix::unistd::mkfifo(&path, nix::sys::stat::Mode::S_IRUSR).unwrap();
+        assert!(super::load_session_from_file(work.path(), &path).is_err());
+        std::fs::remove_file(&path).unwrap();
+        std::fs::write(&path, vec![b'x'; 1024 * 1024 + 1]).unwrap();
+        assert!(super::load_session_from_file(work.path(), &path).is_err());
+        std::fs::rename(&dir, work.path().join("real-sessions")).unwrap();
+        symlink(work.path().join("real-sessions"), &dir).unwrap();
+        assert!(super::load_session_from_file(work.path(), &path).is_err());
+    }
 }

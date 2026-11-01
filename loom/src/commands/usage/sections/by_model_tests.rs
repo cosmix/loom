@@ -1,5 +1,4 @@
-//! Tests for `<synthetic>`-model filtering in the by-model breakdown. Split
-//! out to keep `by_model.rs` legible (CLAUDE.md Rule 17).
+//! Tests for synthetic-model filtering in the model breakdown.
 
 use super::*;
 use crate::commands::usage::transcript::{Entry, Request, TokenUsage};
@@ -50,4 +49,30 @@ fn synthetic_rows_are_excluded_from_the_model_breakdown() {
     assert_eq!(report.rows.len(), 1);
     assert_eq!(report.rows[0].model, "claude-sonnet-5");
     assert_eq!(report.rows[0].requests, 1);
+}
+
+#[test]
+fn mixed_models_accumulate_and_keep_flat_json_fields() {
+    let mut first = transcript(&["sonnet", "sonnet", "haiku"]);
+    for (index, entry) in first.entries.iter_mut().enumerate() {
+        let Entry::Assistant(request) = entry else {
+            panic!("request fixture")
+        };
+        request.usage.input = (index as u64 + 1) * 10;
+        request.usage.output = index as u64 + 1;
+    }
+    let report = build(&[first]);
+    let sonnet = report
+        .rows
+        .iter()
+        .find(|row| row.model == "sonnet")
+        .unwrap();
+    assert_eq!(sonnet.requests, 2);
+    assert_eq!(sonnet.summary.usage.input, 30);
+    assert_eq!(sonnet.summary.accounting.s1, 33);
+    assert_eq!(sonnet.summary.accounting.s2, 45.0);
+    let json = serde_json::to_value(sonnet).unwrap();
+    assert_eq!(json["fresh_input"], 30);
+    assert_eq!(json["s2"], 45.0);
+    assert!(json.get("summary").is_none());
 }

@@ -30,94 +30,36 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
 /// # Returns
 /// A CompletionSummary with all stage completion information
 pub fn collect_completion_summary(work_dir: &Path) -> Result<CompletionSummary> {
-    let stages_dir = work_dir.join("stages");
-    let config_path = work_dir.join("config.toml");
-
-    // Read plan path from config.toml
-    let plan_path = if config_path.exists() {
-        let config_content = fs::read_to_string(&config_path)?;
-        let config: toml::Value = toml::from_str(&config_content)?;
-        config
-            .get("plan")
-            .and_then(|p| p.get("source_path"))
-            .and_then(|s| s.as_str())
-            .unwrap_or("unknown")
-            .to_string()
-    } else {
-        "unknown".to_string()
-    };
-
-    let mut stages: Vec<StageCompletionInfo> = Vec::new();
-    let mut earliest_start: Option<DateTime<Utc>> = None;
-    let mut latest_completion: Option<DateTime<Utc>> = None;
+    let plan_path = completion_plan_path(work_dir)?;
+    let mut stages = Vec::new();
+    let mut earliest_start = None;
+    let mut latest_completion = None;
     let mut success_count = 0;
     let mut failure_count = 0;
 
-    // Read all stage files
-    if stages_dir.exists() {
-        if let Ok(entries) = fs::read_dir(&stages_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().and_then(|s| s.to_str()) == Some("md") {
-                    if let Ok(content) = fs::read_to_string(&path) {
-                        if let Ok(stage) = parse_from_markdown::<Stage>(&content, "Stage") {
-                            let started_at = stage.started_at.unwrap_or_else(chrono::Utc::now);
-                            let completed_at = stage.completed_at;
-
-                            // Track earliest start and latest completion
-                            if earliest_start.is_none() || started_at < earliest_start.unwrap() {
-                                earliest_start = Some(started_at);
-                            }
-                            if let Some(completed) = completed_at {
-                                if latest_completion.is_none()
-                                    || completed > latest_completion.unwrap()
-                                {
-                                    latest_completion = Some(completed);
-                                }
-                            }
-
-                            // Count successes and failures via the canonical
-                            // StageStatus::bucket() (D-5). Completed/Skipped count
-                            // as success; all blocked/merge-failure/review states
-                            // count as failure; in-flight (Executing/Pending) are
-                            // ignored — a completion summary is produced once
-                            // orchestration is terminal, so those are not expected.
-                            match stage.status.bucket() {
-                                StatusBucket::Completed => success_count += 1,
-                                StatusBucket::Blocked => failure_count += 1,
-                                StatusBucket::Executing | StatusBucket::Pending => {}
-                            }
-
-                            // Calculate duration if both timestamps exist
-                            let duration_secs = completed_at
-                                .map(|completed| (completed - started_at).num_seconds());
-
-                            stages.push(StageCompletionInfo {
-                                id: stage.id,
-                                name: stage.name,
-                                status: stage.status,
-                                duration_secs,
-                                execution_secs: stage.execution_secs,
-                                retry_count: stage.retry_count,
-                                merged: stage.merged,
-                                dependencies: stage.dependencies,
-                            });
-                        }
-                    }
-                }
-            }
+    for stage in completion_stages(&work_dir.join("stages")) {
+        if let Some(start) = stage.started_at {
+            earliest_start = Some(earliest_start.map_or(start, |previous| start.min(previous)));
         }
+        if let Some(completed) = stage.completed_at {
+            latest_completion =
+                Some(latest_completion.map_or(completed, |previous| completed.max(previous)));
+        }
+        // The canonical bucket counts skipped stages as success and blocked,
+        // merge-failure and review states as failure. In-flight stages do not count.
+        match stage.status.bucket() {
+            StatusBucket::Completed => success_count += 1,
+            StatusBucket::Blocked => failure_count += 1,
+            StatusBucket::Executing | StatusBucket::Pending => {}
+        }
+        stages.push(completion_info(stage));
     }
-
-    // Sort stages by ID for consistent ordering
     stages.sort_by(|a, b| a.id.cmp(&b.id));
-
-    // Calculate total duration
-    let total_duration_secs = match (earliest_start, latest_completion) {
-        (Some(start), Some(end)) => (end - start).num_seconds(),
-        _ => 0,
-    };
-
+    let total_duration_secs = earliest_start
+        .zip(latest_completion)
+        .map_or(0, |(start, end): (DateTime<Utc>, DateTime<Utc>)| {
+            (end - start).num_seconds()
+        });
     Ok(CompletionSummary {
         total_duration_secs,
         stages,
@@ -125,6 +67,51 @@ pub fn collect_completion_summary(work_dir: &Path) -> Result<CompletionSummary> 
         failure_count,
         plan_path,
     })
+}
+
+fn completion_plan_path(work_dir: &Path) -> Result<String> {
+    let config_path = work_dir.join("config.toml");
+    if !config_path.exists() {
+        return Ok("unknown".to_string());
+    }
+    let config_content = fs::read_to_string(config_path)?;
+    let config: toml::Value = toml::from_str(&config_content)?;
+    Ok(config
+        .get("plan")
+        .and_then(|plan| plan.get("source_path"))
+        .and_then(|source| source.as_str())
+        .unwrap_or("unknown")
+        .to_string())
+}
+
+fn completion_stages(stages_dir: &Path) -> Vec<Stage> {
+    let Ok(entries) = fs::read_dir(stages_dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|s| s.to_str()) == Some("md"))
+        .filter_map(|path| fs::read_to_string(path).ok())
+        .filter_map(|content| parse_from_markdown::<Stage>(&content, "Stage").ok())
+        .collect()
+}
+
+fn completion_info(stage: Stage) -> StageCompletionInfo {
+    let duration_secs = stage
+        .started_at
+        .zip(stage.completed_at)
+        .map(|(start, completed)| (completed - start).num_seconds());
+    StageCompletionInfo {
+        id: stage.id,
+        name: stage.name,
+        status: stage.status,
+        duration_secs,
+        execution_secs: stage.execution_secs,
+        retry_count: stage.retry_count,
+        merged: stage.merged,
+        dependencies: stage.dependencies,
+    }
 }
 
 #[cfg(test)]
@@ -137,6 +124,37 @@ mod tests {
     fn write_stage_file(stages_dir: &Path, stage: &Stage) {
         let content = serialize_stage_to_markdown(stage).unwrap();
         std::fs::write(stages_dir.join(format!("{}.md", stage.id)), content).unwrap();
+    }
+
+    #[test]
+    fn completion_durations_require_real_starts() {
+        let temp = tempfile::tempdir().unwrap();
+        let stages_dir = temp.path().join("stages");
+        std::fs::create_dir_all(&stages_dir).unwrap();
+        let time = |s: &str| DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc);
+
+        let mut normal = Stage::new("Normal".to_string(), None);
+        normal.id = "normal".to_string();
+        normal.status = StageStatus::Completed;
+        normal.started_at = Some(time("2026-01-01T00:00:00Z"));
+        normal.completed_at = Some(time("2026-01-01T00:01:00Z"));
+        write_stage_file(&stages_dir, &normal);
+
+        let mut skipped = Stage::new("Skipped".to_string(), None);
+        skipped.id = "skipped".to_string();
+        skipped.status = StageStatus::Skipped;
+        skipped.completed_at = Some(time("2026-01-01T00:02:00Z"));
+        write_stage_file(&stages_dir, &skipped);
+
+        let summary = collect_completion_summary(temp.path()).unwrap();
+        assert_eq!(summary.stages[0].duration_secs, Some(60));
+        assert_eq!(summary.stages[1].duration_secs, None);
+        assert_eq!(summary.total_duration_secs, 120);
+
+        std::fs::remove_file(stages_dir.join("normal.md")).unwrap();
+        let summary = collect_completion_summary(temp.path()).unwrap();
+        assert_eq!(summary.stages[0].duration_secs, None);
+        assert_eq!(summary.total_duration_secs, 0);
     }
 
     #[test]

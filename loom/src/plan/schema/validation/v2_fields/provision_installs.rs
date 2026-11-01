@@ -177,7 +177,7 @@ fn passes(args: &[&str], flag: &str) -> bool {
         }
         if arg == name {
             count += 1;
-            valid = value.map_or(true, |expected| args.next() == Some(expected));
+            valid = value.is_none_or(|expected| args.next() == Some(expected));
         } else if let Some(actual) = arg.strip_prefix(name).and_then(|s| s.strip_prefix('=')) {
             count += 1;
             valid = value == Some(actual);

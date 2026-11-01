@@ -108,7 +108,7 @@ fn bash_tool_wait_survives_every_measured_real_call() {
     let hung = tool_call(&temp, 2_000, "Bash");
     let detail = reason(&temp, &hung, BUDGET).unwrap();
     assert!(detail.contains("Bash call outstanding"), "{detail}");
-    assert!(detail.contains("past the 1800s ceiling"), "{detail}");
+    assert!(detail.contains("stall threshold of 1800s"), "{detail}");
 }
 
 /// A budget above the Bash floor raises the Bash threshold with it, so a

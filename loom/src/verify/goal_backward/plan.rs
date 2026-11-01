@@ -80,7 +80,7 @@ fn load_at_path(
     expected_policy: Option<&str>,
     plan_path: &Path,
 ) -> Result<Option<LoadedGoal>> {
-    let plan = parse_plan(&plan_path)
+    let plan = parse_plan(plan_path)
         .with_context(|| format!("Failed to parse plan: {}", plan_path.display()))?;
     let Some(stage_def) = plan.stages.iter().find(|stage| stage.id == stage_id) else {
         return Ok(None);

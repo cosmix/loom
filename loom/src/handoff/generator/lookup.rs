@@ -1,12 +1,13 @@
 use std::cmp::Reverse;
-use std::fs::{self, File};
-use std::io::{ErrorKind, Read};
+use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::fs::safe_read::{read_bounded, OverLimit};
 use crate::handoff::completion::attestation_key;
-use crate::handoff::schema::CompletionCheckpoint;
+use crate::handoff::schema::{CompletionCheckpoint, MAX_EVIDENCE_NONCES};
 use crate::handoff::{HandoffOrigin, HandoffV2, ParsedHandoff};
 
 use super::numbering::find_latest_handoff;
@@ -22,6 +23,25 @@ pub fn find_matching_handoff(
             && handoff.session_id == session_id
             && handoff.origin == Some(origin)
     })
+}
+pub(super) fn find_matching_handoff_with_context(
+    stage_id: &str,
+    session_id: &str,
+    origin: HandoffOrigin,
+    context_tokens: u32,
+    work_dir: &Path,
+) -> Result<bool> {
+    let mut has_context = false;
+    let found = find_handoff_where(stage_id, work_dir, |handoff| {
+        let matches = handoff.stage_id == stage_id
+            && handoff.session_id == session_id
+            && handoff.origin == Some(origin);
+        if matches {
+            has_context = handoff.context_tokens == context_tokens;
+        }
+        matches
+    })?;
+    Ok(found.is_some() && has_context)
 }
 pub fn find_latest_session_handoff(
     stage_id: &str,
@@ -45,6 +65,7 @@ pub fn find_continuation_handoff(
         None => find_latest_handoff(stage_id, work_dir),
     }
 }
+/// Fold syntactically valid checkpoints without authenticating them; diagnostics only.
 pub fn load_session_checkpoint(
     stage_id: &str,
     session_id: &str,
@@ -63,14 +84,26 @@ pub fn load_trusted_session_checkpoint(
     work_dir: &Path,
 ) -> Result<Option<CompletionCheckpoint>> {
     let key = attestation_key(work_dir)?;
-    let Some(checkpoint) = load_session_checkpoint(stage_id, session_id, work_dir)? else {
-        return Ok(None);
-    };
-    let trusted = checkpoint.trusted(&key);
-    if trusted.observations.is_empty() && trusted.accepted.is_none() {
-        return Ok(None);
+    let handoffs = session_handoffs(stage_id, session_id, work_dir)?;
+    // Authentication must precede the lossy merge of latest evidence and nonce state.
+    let trusted: Vec<_> = handoffs
+        .iter()
+        .filter_map(|(_, handoff)| {
+            handoff
+                .completion_checkpoint
+                .as_ref()
+                .and_then(|checkpoint| {
+                    let trusted = checkpoint.trusted(&key);
+                    (!trusted.observations.is_empty() || trusted.accepted.is_some())
+                        .then_some(trusted)
+                })
+        })
+        .collect();
+    let mut merged = fold_checkpoints(trusted.iter())?;
+    if let Some(checkpoint) = &mut merged {
+        checkpoint.capacity_exhausted = checkpoint.observations.len() >= MAX_EVIDENCE_NONCES;
     }
-    Ok(Some(trusted))
+    Ok(merged)
 }
 pub(super) fn fold_checkpoints<'a, I>(checkpoints: I) -> Result<Option<CompletionCheckpoint>>
 where
@@ -102,10 +135,10 @@ pub fn find_continuation_handoff_name(
 fn find_handoff_where(
     stage_id: &str,
     work_dir: &Path,
-    matches: impl Fn(&HandoffV2) -> bool,
+    mut matches: impl FnMut(&HandoffV2) -> bool,
 ) -> Result<Option<PathBuf>> {
     for path in numbered_handoff_paths(stage_id, work_dir)? {
-        let Some(content) = read_handoff_artifact(&path)? else {
+        let Some(content) = read_handoff_artifact(work_dir, &path)? else {
             continue;
         };
         let parsed = ParsedHandoff::parse(&content);
@@ -128,7 +161,7 @@ pub(super) fn session_handoffs(
         .into_iter()
         .rev()
     {
-        let Some(content) = read_handoff_artifact(&path)? else {
+        let Some(content) = read_handoff_artifact(work_dir, &path)? else {
             continue;
         };
         let parsed = ParsedHandoff::parse(&content);
@@ -145,16 +178,21 @@ pub(super) fn session_handoffs(
     Ok(handoffs)
 }
 
-fn read_handoff_artifact(path: &Path) -> Result<Option<String>> {
-    let file = File::open(path)
-        .with_context(|| format!("Failed to read handoff file: {}", path.display()))?;
-    let mut bytes = Vec::with_capacity(MAX_HANDOFF_BYTES + 1);
-    file.take((MAX_HANDOFF_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
-        .with_context(|| format!("Failed to read handoff file: {}", path.display()))?;
-    if bytes.len() > MAX_HANDOFF_BYTES {
-        return Ok(None);
-    }
+fn read_handoff_artifact(work_dir: &Path, path: &Path) -> Result<Option<String>> {
+    let read = || -> Result<Vec<u8>> {
+        // The work directory itself may be the intentional .loom/work symlink.
+        let root = fs::canonicalize(work_dir)?;
+        let relative = path.strip_prefix(work_dir)?;
+        read_bounded(&root, relative, MAX_HANDOFF_BYTES)
+    };
+    let bytes = match read() {
+        Ok(bytes) => bytes,
+        Err(error) if error.downcast_ref::<OverLimit>().is_some() => return Ok(None),
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("Failed to read handoff file: {}", path.display()))
+        }
+    };
     Ok(String::from_utf8(bytes).ok())
 }
 

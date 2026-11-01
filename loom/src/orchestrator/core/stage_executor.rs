@@ -9,6 +9,7 @@ use crate::orchestrator::scheduling_report::{self, BlockReason, BlockedStage, Sc
 use crate::orchestrator::signals::DependencyStatus;
 
 use super::persistence::Persistence;
+use super::session_adoption::AdoptionResult;
 use super::Orchestrator;
 
 impl Orchestrator {
@@ -28,6 +29,14 @@ impl Orchestrator {
             Ok(())
         })?;
         Ok(())
+    }
+
+    fn adoption_disposition(&mut self, stage_id: &str) -> Result<Option<StartDisposition>> {
+        Ok(match self.adopt_live_session_if_present(stage_id)? {
+            AdoptionResult::Adopted => Some(StartDisposition::Adopted),
+            AdoptionResult::Unknown => Some(StartDisposition::Deferred),
+            AdoptionResult::Absent => None,
+        })
     }
 
     fn start_worktree_stage(&mut self, stage: Stage) -> Result<StartDisposition> {
@@ -190,8 +199,10 @@ impl StageExecutor for Orchestrator {
         // Adopt a still-live agent instead of spawning a duplicate into its
         // worktree. Only a Queued stage adopts; a WaitingForDeps one is
         // offered adoption once the dependency check below has queued it.
-        if stage.status == StageStatus::Queued && self.adopt_live_session_if_present(stage_id)? {
-            return Ok(StartDisposition::Adopted);
+        if stage.status == StageStatus::Queued {
+            if let Some(disposition) = self.adoption_disposition(stage_id)? {
+                return Ok(disposition);
+            }
         }
 
         if !self.spawn_dependencies_satisfied(&stage) {
@@ -201,8 +212,8 @@ impl StageExecutor for Orchestrator {
         // Transition through Queued if currently WaitingForDeps to reduce race window
         if stage.status == StageStatus::WaitingForDeps {
             stage = self.update_stage(stage_id, |current| current.try_mark_queued())?;
-            if self.adopt_live_session_if_present(stage_id)? {
-                return Ok(StartDisposition::Adopted);
+            if let Some(disposition) = self.adoption_disposition(stage_id)? {
+                return Ok(disposition);
             }
         }
 

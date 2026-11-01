@@ -48,6 +48,13 @@ pub enum MergeBlock {
     /// The merge did not land and the operator's stashed changes could not
     /// be put back: they are in the top stash entry and in `backup_ref`.
     StashNotRestored { backup_ref: String },
+    /// Rollback could not restore every removed untracked file. The blob in
+    /// `source_rev` remains available for manual recovery.
+    CheckoutRestoreIncomplete {
+        source_rev: String,
+        failures: Vec<RestoreFailure>,
+        backup_ref: Option<String>,
+    },
     /// The target guard holds the target: it moved outside loom from
     /// `accepted` to `observed`, and merges into it wait for the operator.
     /// `accepted` is empty when the guard record could not be read, and
@@ -88,6 +95,13 @@ impl fmt::Display for MergeBlock {
                 f,
                 "the merge did not land and your uncommitted changes could not be put back: they are in the top `git stash list` entry and in {backup_ref}; restore them with `git stash pop`"
             ),
+            Self::CheckoutRestoreIncomplete { source_rev, failures, backup_ref } => {
+                write!(f, "the merge did not land and checkout rollback is incomplete ({}); recover the removed files from git revision {source_rev} after inspecting the listed paths", failures.iter().map(|failure| format!("{}: {}", failure.path, failure.reason)).collect::<Vec<_>>().join(", "))?;
+                if let Some(backup_ref) = backup_ref {
+                    write!(f, "; stashed changes remain in {backup_ref}")?;
+                }
+                Ok(())
+            }
             Self::TargetHeld {
                 target,
                 accepted,
@@ -95,6 +109,13 @@ impl fmt::Display for MergeBlock {
             } => fmt_target_held(f, target, accepted, observed),
         }
     }
+}
+
+/// One checkout path that rollback could not restore.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RestoreFailure {
+    pub path: String,
+    pub reason: String,
 }
 
 /// The operator text of [`MergeBlock::TargetHeld`]; an empty tip prints as

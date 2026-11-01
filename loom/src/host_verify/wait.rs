@@ -50,7 +50,7 @@ pub struct WaitSite<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WaitOutcome {
-    Requested,
+    Requested { request_id: String },
     Pending { done: usize },
     Finished(Box<JobRecord>, Option<JobResult>),
     Refused(String),
@@ -84,13 +84,31 @@ impl TicketSink {
         out.flush()?;
         Ok(())
     }
+
+    /// Retire only this request when its relay line could not be written.
+    /// Once the line is written, a later flush error cannot prove it was
+    /// unsubmitted, so the request remains available to the daemon.
+    pub fn publish_request(
+        &mut self,
+        site: &WaitSite<'_>,
+        request_id: &str,
+        out: &mut dyn Write,
+    ) -> Result<()> {
+        if let Err(error) = out.write_all(&self.line) {
+            remove_state_if_owned(&state_path(site)?, request_id)?;
+            return Err(error.into());
+        }
+        self.line.clear();
+        out.flush()?;
+        Ok(())
+    }
 }
 
 /// The process exit code of an outcome: 0 while undecided or passed, 1 for a
 /// failure or refusal, 4 for a stopped job.
 pub fn exit_code(outcome: &WaitOutcome) -> i32 {
     match outcome {
-        WaitOutcome::Requested | WaitOutcome::Pending { .. } => 0,
+        WaitOutcome::Requested { .. } | WaitOutcome::Pending { .. } => 0,
         WaitOutcome::Refused(_) => 1,
         WaitOutcome::Finished(record, _) => match record.state {
             JobState::Failed => 1,
@@ -161,7 +179,7 @@ fn drive(
         return Ok(outcome);
     }
     if !matches!(outcome, WaitOutcome::Pending { .. }) {
-        remove_state_if_owned(&path, &state.request_id);
+        remove_state_if_owned(&path, &state.request_id)?;
     }
     report(site, &head, &outcome, out)?;
     Ok(outcome)
@@ -180,7 +198,7 @@ pub fn release(site: &WaitSite<'_>, record: &JobRecord) -> Result<()> {
     let path = state_path(site)?;
     let owned = read_state(&path).filter(|state| record.requests.contains(&state.request_id));
     if let Some(state) = owned {
-        remove_state_if_owned(&path, &state.request_id);
+        remove_state_if_owned(&path, &state.request_id)?;
     }
     Ok(())
 }
@@ -213,13 +231,22 @@ fn request(
         submitted_at: Utc::now(),
     };
     write_state(path, &state).context("the request was not sent")?;
-    writeln!(out, "{}", heading(site.kind, "requested", &head))?;
-    writeln!(
-        out,
-        "This is not a result. Run the same command again in your next Bash call to wait for it."
-    )?;
-    out.flush()?;
-    Ok(WaitOutcome::Requested)
+    let printed = (|| -> Result<()> {
+        writeln!(out, "{}", heading(site.kind, "requested", &head))?;
+        writeln!(
+            out,
+            "This is not a result. Run the same command again in your next Bash call to wait for it."
+        )?;
+        out.flush()?;
+        Ok(())
+    })();
+    if let Err(error) = printed {
+        remove_state_if_owned(path, &state.request_id)?;
+        return Err(error);
+    }
+    Ok(WaitOutcome::Requested {
+        request_id: state.request_id,
+    })
 }
 
 /// Poll until the job is decided or the budget ends.

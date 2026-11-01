@@ -1,7 +1,7 @@
 //! Tests for sharing a rejected build between the contracts of one completion
 //! check, over a runner that counts its calls.
 
-use super::tests::{fixture_with, frozen_at, run_check, Fixture, ONE_PASS};
+use super::tests::{fixture_with, frozen_at, run_check, Fixture, Replay, ONE_PASS};
 use super::*;
 use crate::verify::contracts::test_support::{contract, write_files, CONTRACT_FILE};
 use std::cell::Cell;
@@ -15,6 +15,7 @@ struct Counting {
     stderr: &'static str,
     exit: i32,
     calls: Cell<usize>,
+    output_complete: bool,
 }
 
 impl Counting {
@@ -24,6 +25,7 @@ impl Counting {
             stderr,
             exit,
             calls: Cell::new(0),
+            output_complete: true,
         }
     }
 }
@@ -36,8 +38,28 @@ impl ProbeRunner for Counting {
             stderr: self.stderr.to_string(),
             exit_code: Some(self.exit),
             timed_out: false,
+            output_complete: self.output_complete,
             cached: None,
         })
+    }
+}
+
+struct Incomplete(&'static str);
+
+impl ProbeRunner for Incomplete {
+    fn run(&self, command: &str, package_dir: &Path) -> Result<ProbeRun> {
+        let mut run = Replay(self.0).run(command, package_dir)?;
+        run.output_complete = false;
+        Ok(run)
+    }
+}
+
+#[test]
+fn incomplete_capture_cannot_pass_a_contract() {
+    let fx = fixture_with(Vec::new());
+    for output in [ONE_PASS, ""] {
+        let error = run_check(&fx, &Incomplete(output)).unwrap_err().to_string();
+        assert!(error.contains("output capture was incomplete"), "{error}");
     }
 }
 
@@ -81,6 +103,19 @@ fn contracts_of_one_build_run_it_once() {
         assert!(error.contains(&not_run(id, "c0")), "{error}");
     }
     assert_eq!(error.matches("does not build").count(), 1, "{error}");
+}
+
+#[test]
+fn incomplete_compiler_output_is_not_shared_as_a_failed_build() {
+    let fx = fixture_of(&["tests/x_contract.rs"; 2]);
+    let mut runner = Counting::new("", REJECTED, 101);
+    runner.output_complete = false;
+
+    let error = check(&fx, &runner);
+
+    assert_eq!(runner.calls.get(), 2);
+    assert_eq!(error.matches("output capture was incomplete").count(), 2);
+    assert!(!error.contains("was not run"), "{error}");
 }
 
 #[test]

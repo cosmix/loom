@@ -2,14 +2,12 @@
 //!
 //! Every other consumer of session state — `loom attach`, orphan recovery,
 //! `loom status` — discovers sessions by reading `.loom/work/sessions/*.md`, so the
-//! session RECORD is the sole source of truth and it is written AFTER the
-//! agent is spawned. A daemon that dies inside that window leaves a live agent
-//! with no record: invisible to attach, invisible to recovery, unkillable
-//! through loom, and unnoticed by the executor, which will spawn a second
-//! agent into the same worktree.
+//! session record is their discovery source. Current spawn paths write a
+//! Spawning record before linking the stage and launching the agent, but the
+//! post-launch PID/status update can fail, and older state may lack a record.
 //!
 //! The agent's OS-level evidence outlives the daemon, in two places the spawn
-//! path writes BEFORE the record: `.loom/work/pids/<tracking_key>-<session_id>.pid`
+//! path writes: `.loom/work/pids/<tracking_key>-<session_id>.pid`
 //! from the wrapper script (`read_pid_entry`), and, on the tmux lane, a
 //! socket named `loom-<session_id>` (`socket_path_for`).
 //!
@@ -18,18 +16,17 @@
 //! missed, and [`adopt_orphan`] rebuilds the missing record so every other
 //! call site can see the agent again.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::models::session::{Session, SessionBackendKind, SessionStatus, SessionType};
 use crate::models::stage::StageStatus;
-use crate::parser::frontmatter::parse_from_markdown;
 use crate::verify::transitions::parse_stage_from_markdown;
 
 use super::terminal::backend::SessionBackend;
-use super::terminal::native::pid_only_is_alive;
+use super::terminal::native::{pid_only_is_alive, session_process_status, SessionProcessStatus};
 
 #[path = "session_registry/in_progress.rs"]
 mod in_progress;
@@ -53,6 +50,8 @@ const SESSION_KINDS: [SessionType; 5] = [
 enum LivenessProbe {
     Backend(SessionBackend),
     PidOnly,
+    #[cfg(test)]
+    Error,
 }
 
 impl LivenessProbe {
@@ -86,10 +85,16 @@ impl LivenessProbe {
     }
 
     fn is_alive(&self, work_dir: &Path, session: &Session) -> Result<bool> {
-        match self {
+        let alive = match self {
             Self::Backend(backend) => backend.is_session_alive(session),
             Self::PidOnly => Ok(pid_only_is_alive(work_dir, session)),
+            #[cfg(test)]
+            Self::Error => anyhow::bail!("injected liveness failure"),
+        }?;
+        if !alive && session_process_status(work_dir, session) == SessionProcessStatus::Missing {
+            anyhow::bail!("session '{}' has no PID identity evidence", session.id);
         }
+        Ok(alive)
     }
 }
 
@@ -97,12 +102,12 @@ impl LivenessProbe {
 ///
 /// This is the question the executor must ask before spawning and recovery
 /// must ask before rewriting a stage: not "does a session file exist" but "is
-/// something actually running". An unreadable session file, a failed liveness
-/// probe, or an unbuildable terminal backend all degrade rather than fail —
-/// nothing about a missing terminal must make loom believe a stage is idle.
+/// something actually running". An unreadable session file or failed liveness
+/// probe makes ownership uncertain and returns an error. An unbuildable
+/// terminal backend uses the PID-only probe instead.
 pub fn live_sessions_for_stage(work_dir: &Path, stage_id: &str) -> Result<Vec<Session>> {
     let probe = LivenessProbe::resolve(work_dir);
-    Ok(live_sessions_with_probe(&probe, work_dir, stage_id))
+    live_sessions_with_probe(&probe, work_dir, stage_id)
 }
 
 /// [`live_sessions_for_stage`] narrowed to one session kind. Adoption of a
@@ -120,32 +125,39 @@ pub fn live_sessions_for_stage_of_type(
         .collect())
 }
 
+/// Check one assigned session through the validated inventory. A missing
+/// record or confirmed dead process is false; malformed inventory, a
+/// mismatched owner, or a failed probe leaves ownership unknown.
+pub fn assigned_session_is_live(work_dir: &Path, stage_id: &str, session_id: &str) -> Result<bool> {
+    let sessions = in_progress::session_inventory(work_dir)?.strict_records()?;
+    let Some(session) = sessions
+        .into_iter()
+        .find(|session| session.id == session_id)
+    else {
+        return Ok(false);
+    };
+    anyhow::ensure!(
+        session.stage_id.as_deref() == Some(stage_id),
+        "assigned session '{}' belongs to {:?}, not '{}'",
+        session_id,
+        session.stage_id,
+        stage_id
+    );
+    LivenessProbe::resolve(work_dir)
+        .is_alive(work_dir, &session)
+        .with_context(|| format!("probing assigned session '{session_id}'"))
+}
+
 /// [`live_sessions_for_stage`] against an already-resolved probe, so a scan
 /// over many stages pays terminal detection at most once.
 fn live_sessions_with_probe(
     probe: &LivenessProbe,
     work_dir: &Path,
     stage_id: &str,
-) -> Vec<Session> {
-    let Ok(entries) = std::fs::read_dir(work_dir.join("sessions")) else {
-        return Vec::new();
-    };
-
+) -> Result<Vec<Session>> {
+    let sessions = in_progress::session_inventory(work_dir)?.strict_records()?;
     let mut live = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().is_none_or(|ext| ext != "md") {
-            continue;
-        }
-        // Same tolerance as `viewer::load_live_tmux_session`: a file read
-        // mid-write by the daemon is skipped, never fatal.
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(session) = parse_from_markdown::<Session>(&content, "Session") else {
-            continue;
-        };
-
+    for session in sessions {
         if session.stage_id.as_deref() != Some(stage_id) {
             continue;
         }
@@ -155,18 +167,14 @@ fn live_sessions_with_probe(
         ) {
             continue;
         }
-        match probe.is_alive(work_dir, &session) {
-            Ok(true) => live.push(session),
-            Ok(false) => {}
-            Err(error) => tracing::warn!(
-                session_id = %session.id,
-                %error,
-                "Liveness probe errored while listing live sessions for a stage; skipping this session"
-            ),
+        if probe
+            .is_alive(work_dir, &session)
+            .with_context(|| format!("probing session '{}'", session.id))?
+        {
+            live.push(session);
         }
     }
-
-    live
+    Ok(live)
 }
 
 /// A live agent for which no session record exists.
@@ -220,7 +228,14 @@ pub fn orphan_evidence(work_dir: &Path) -> Vec<OrphanEvidence> {
     for stage_id in executing_stage_ids(work_dir) {
         // A stage with a live RECORD is either healthy or the duplicate-agent
         // case; neither is an orphan, and neither is this pass's to resolve.
-        if !live_sessions_with_probe(&probe, work_dir, &stage_id).is_empty() {
+        let live = match live_sessions_with_probe(&probe, work_dir, &stage_id) {
+            Ok(live) => live,
+            Err(error) => {
+                tracing::warn!(stage_id = %stage_id, %error, "Cannot establish orphan ownership");
+                continue;
+            }
+        };
+        if !live.is_empty() {
             continue;
         }
 

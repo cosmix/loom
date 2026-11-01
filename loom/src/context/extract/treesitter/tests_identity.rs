@@ -26,6 +26,47 @@ fn nodes_of(extraction: &FileExtraction, kind: SourceNodeKind) -> Vec<&SourceNod
 }
 
 #[test]
+fn definition_hash_uses_original_bytes_even_with_invalid_utf8() {
+    use crate::context::extract::{rust::RustExtractor, SourceGraphExtractor};
+    use crate::context::source_graph::body_hash;
+    let body = b"fn f() { /* \xff */ }";
+    let extraction = RustExtractor::new()
+        .extract(std::path::Path::new("src/lib.rs"), body)
+        .unwrap();
+    let node = nodes_of(&extraction, SourceNodeKind::Function)[0];
+    assert_eq!(node.id, function("f"));
+    assert_eq!(node.body_hash, body_hash(body));
+    assert_eq!(node.signature.as_str(), &*String::from_utf8_lossy(body));
+}
+
+#[test]
+fn nested_definition_payload_is_bounded() {
+    let source = format!(
+        "{}/* {} */{}",
+        "mod m {\n".repeat(60),
+        "x".repeat(100_000),
+        "}\n".repeat(60)
+    );
+    let extraction = rust(&source);
+    let definitions: Vec<_> = extraction
+        .nodes
+        .iter()
+        .filter(|node| node.kind != SourceNodeKind::File)
+        .collect();
+    assert_eq!(definitions.len(), 60);
+    let old_body_bytes: usize = definitions
+        .iter()
+        .map(|node| node.span.end_byte - node.span.start_byte)
+        .sum();
+    let retained_bytes: usize = definitions
+        .iter()
+        .map(|node| node.signature.len() + node.body_hash.len())
+        .sum();
+    eprintln!("definition payload: old body copies {old_body_bytes} bytes; retained signatures and hashes {retained_bytes} bytes");
+    assert!(retained_bytes * 100 < old_body_bytes);
+}
+
+#[test]
 fn duplicate_impl_blocks_get_suffixed_ids_and_suffixed_parents() {
     let extraction = rust(
         "struct W;\nimpl From<u8> for W { fn from(v: u8) -> Self { W } }\n\

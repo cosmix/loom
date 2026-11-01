@@ -4,9 +4,9 @@
 //! and the daemon's own accepted binary and filtered PATH, which the wrapper
 //! exports as `LOOM_BIN` and `LOOM_HOOK_PATH`.
 //!
-//! [`LaunchHost::from_env`], and `run_host_facts` for `loom run`, are the only
-//! readers of the process environment; everything downstream takes these
-//! facts as fields, which tests set directly.
+//! [`LaunchHost::from_env`] and `run_host_facts` resolve these facts for
+//! spawning and preflight. Wrapper, build-cache and host-socket code also
+//! reads process environment for its own inputs.
 
 use anyhow::{bail, Context, Result};
 use std::ffi::OsStr;
