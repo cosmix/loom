@@ -1,5 +1,4 @@
-//! Spawn-abort tests for `tmux/mod.rs`, split from `tests.rs` to keep both
-//! modules under the 400-line ceiling (CLAUDE.md Rule 17).
+//! Spawn-abort tests for the tmux backend.
 
 use super::socket::tests::{TmuxServerGuard, TmuxTmpDirGuard};
 use super::*;
@@ -38,12 +37,9 @@ fn aborting_a_spawn_removes_the_pid_file_and_wrapper_it_created() {
     let socket_dir = tempfile::TempDir::new().unwrap();
     let _tmux_tmpdir = TmuxTmpDirGuard::set(socket_dir.path());
 
-    // THE REGRESSION THIS PINS: without this cleanup, a tmux spawn that failed
-    // AFTER the wrapper ran leaves `.loom/work/pids/<pid_key>.pid` behind. The
-    // native retry reuses the same `Session`, so `prepare_session_launch`
-    // derives the SAME pid_key, `create_wrapper_script` does not truncate the
-    // file, and `await_session_pid` returns the first LIVE pid it reads there
-    // — the orphaned tmux claude — while stamping `backend = Native`.
+    // A failure after the wrapper ran can leave a live tmux process and PID
+    // file. The configured tmux lane reports the failure; cleanup prevents
+    // later liveness checks from adopting that abandoned process.
     //
     // No tmux server is needed: `kill_socket_server` against an absent socket
     // is a harmless no-op, so the file half of the teardown is what is under
@@ -58,7 +54,7 @@ fn aborting_a_spawn_removes_the_pid_file_and_wrapper_it_created() {
 
     assert!(
         !pid_file.exists(),
-        "the stale PID file must not survive for the native retry to adopt"
+        "the stale PID file must not survive an aborted spawn"
     );
     assert!(
         !work
@@ -138,9 +134,9 @@ impl Drop for UnwritableDirGuard {
 ///    A real claude there would launch an unsupervised agent from a unit test;
 ///    the stub exits instead, so the spawn still fails and still aborts.
 ///
-/// The stub is never executed on the ordinary path — the caller also pins
-/// `[remote_control] mode = "off"`, so the preflight `claude --version` (whose
-/// verdict is memoized process-wide) never fires either.
+/// The stub advertises the mandatory capsule flags on `--help` and exits
+/// when the wrapper runs it. Remote control is off, so its separate
+/// `claude --version` preflight does not run.
 struct ClaudeOnPathGuard {
     _dir: tempfile::TempDir,
     original: Option<std::ffi::OsString>,
@@ -151,7 +147,7 @@ impl ClaudeOnPathGuard {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::TempDir::new().unwrap();
         let stub = dir.path().join("claude");
-        std::fs::write(&stub, "#!/bin/sh\nexit 1\n").unwrap();
+        std::fs::write(&stub, "#!/bin/sh\nif [ \"$1\" = --help ]; then echo '--settings --setting-sources --strict-mcp-config'; exit 0; fi\nexit 1\n").unwrap();
         std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
 
         let original = std::env::var_os("PATH");
@@ -275,16 +271,7 @@ fn host_ready_for_real_launch() -> (LoomHooksDirGuard, LoomBinModeGuard) {
 
 #[test]
 #[serial]
-fn a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt() {
-    // THE WIRING THIS PINS: `abort_tmux_spawn` was tested in ISOLATION only,
-    // so nothing asserted that `TmuxBackend::spawn` actually CALLS it. Deleting
-    // `abort();` from an error arm left the whole suite green while
-    // reintroducing the two-claude-agents-in-one-worktree bug the abort exists
-    // to prevent: `dispatch_spawn` retries on the native lane, which reuses
-    // this same `Session` and therefore derives the same pid_key, so a
-    // surviving PID file makes `await_session_pid` adopt the orphaned tmux
-    // claude while stamping `backend = Native`.
-    //
+fn a_failed_spawn_aborts_and_leaves_no_pid_file() {
     // This normally drives the FIRST of `spawn`'s three abort arms, the
     // `spawn_in_tmux` failure. A runner that can write into a 0o500 directory
     // anyway (root) gets a server, then a wrapper that `exec`s the
@@ -330,22 +317,32 @@ fn a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt() 
     std::fs::create_dir_all(work.path().join("pids")).unwrap();
     let pid_file = work.path().join("pids").join(format!("{pid_key}.pid"));
     std::fs::write(&pid_file, "424242\n").unwrap();
+    let (socket, err) = failed_spawn(work.path(), &stage, session);
+    assert_abort_cleanup(&err, &socket, &pid_file, work.path(), &pid_key);
+}
+
+fn failed_spawn(work: &Path, stage: &Stage, session: Session) -> (String, anyhow::Error) {
     let worktree = Worktree::new(
         stage.id.clone(),
-        work.path().to_path_buf(),
+        work.to_path_buf(),
         format!("loom/{}", stage.id),
     );
     let socket = socket_name(&session);
-    let _server = TmuxServerGuard::new(&socket); // a root runner starts a real server; end it
-    let signal = work.path().join("signal.md");
-    let err = TmuxBackend::new(work.path().to_path_buf())
-        .spawn_session(SessionType::Stage, &stage, &worktree, session, &signal)
-        .expect_err(
-            "the spawn must fail: tmux cannot create its socket directory under a mode-0500 \
-             TMUX_TMPDIR, and where it can (root) the claude stub exits immediately, so no \
-             live PID is ever discovered",
-        );
+    let _server = TmuxServerGuard::new(&socket);
+    let signal = work.join("signal.md");
+    let err = TmuxBackend::new(work.to_path_buf())
+        .spawn_session(SessionType::Stage, stage, &worktree, session, &signal)
+        .expect_err("tmux spawn or PID discovery must fail");
+    (socket, err)
+}
 
+fn assert_abort_cleanup(
+    err: &anyhow::Error,
+    socket: &str,
+    pid_file: &Path,
+    work: &Path,
+    pid_key: &str,
+) {
     // POSITIVE CONTROL. Both assertions below would also hold if the spawn had
     // died inside `prepare_session_launch` — before any abort was owed. These
     // are the two post-preparation shapes: every `spawn_in_tmux` error names
@@ -354,18 +351,17 @@ fn a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt() 
     // report a missing claude binary or an unwritable wrapper path.
     let message = err.to_string();
     assert!(
-        message.contains(&socket) || message.contains("No PID discovered"),
+        message.contains(socket) || message.contains("No PID discovered"),
         "the spawn must have failed at or after the tmux step, not before it: {err}"
     );
 
     assert!(
         !pid_file.exists(),
-        "the failed spawn must delete the PID file under its own pid_key, or the native \
-         retry adopts the tmux attempt's process (spawn error was: {err})"
+        "the failed spawn must delete the PID file under its own pid_key \
+         (spawn error was: {err})"
     );
     assert!(
         !work
-            .path()
             .join("wrappers")
             .join(format!("{pid_key}-wrapper.sh"))
             .exists(),

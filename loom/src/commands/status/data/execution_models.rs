@@ -121,7 +121,7 @@ fn append_models(
         // display name; deduping on the raw name let both through and drew two
         // rows reading `sonnet`. Flattening first also trims, and keeps a
         // trailing zero-width character from hiding a `-YYYYMMDD` date stamp
-        // from `strip_date_suffix`.
+        // from model-name normalization.
         append_model(&normalize_model(&inline_safe(model)), seen, models);
     }
 }
@@ -155,22 +155,7 @@ fn json_lines(path: &Path) -> Vec<Value> {
 }
 
 fn normalize_model(model: &str) -> String {
-    let display_name = model.strip_prefix("claude-").unwrap_or(model);
-    strip_date_suffix(display_name).to_string()
-}
-
-/// Strip a trailing `-YYYYMMDD` date stamp. `rsplit_once` splits on a char,
-/// so this can never land inside a multi-byte character the way byte-index
-/// arithmetic can.
-fn strip_date_suffix(name: &str) -> &str {
-    match name.rsplit_once('-') {
-        Some((head, tail))
-            if !head.is_empty() && tail.len() == 8 && tail.bytes().all(|b| b.is_ascii_digit()) =>
-        {
-            head
-        }
-        _ => name,
-    }
+    crate::commands::common::model_display::normalize_model(model).to_string()
 }
 
 #[cfg(test)]

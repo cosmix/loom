@@ -19,6 +19,7 @@
 
 use anyhow::{Context, Result};
 use chrono::Utc;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::models::dispute::{
@@ -203,10 +204,21 @@ fn attempts_file(work_dir: &Path, stage_id: &str, dispute_id: u32) -> PathBuf {
 
 /// How many adjudication sessions this dispute has already been given.
 pub fn attempt_count(work_dir: &Path, stage_id: &str, dispute_id: u32) -> u32 {
-    std::fs::read_to_string(attempts_file(work_dir, stage_id, dispute_id))
-        .ok()
-        .and_then(|raw| raw.trim().parse::<u32>().ok())
-        .unwrap_or(0)
+    // Compatibility accessor for status callers. Lifecycle decisions use the
+    // fallible form below; an unknown count is never presented as unspent.
+    checked_attempt_count(work_dir, stage_id, dispute_id).unwrap_or(MAX_ADJUDICATION_ATTEMPTS)
+}
+
+/// Fallible count for lifecycle decisions; malformed existing state cannot
+/// grant another session or be recorded as a fresh attempt.
+pub(super) fn checked_attempt_count(
+    work_dir: &Path,
+    stage_id: &str,
+    dispute_id: u32,
+) -> Result<u32> {
+    Ok(super::counter::read(&attempts_file(
+        work_dir, stage_id, dispute_id,
+    ))?)
 }
 
 /// Count one more adjudication attempt and return the new total.
@@ -215,31 +227,9 @@ pub fn attempt_count(work_dir: &Path, stage_id: &str, dispute_id: u32) -> u32 {
 /// that session succeeds: a spawn that fails escalates the stage (see
 /// `Escalation::adjudicator_unavailable`), so the budget only ever has to
 /// bound sessions that started and then died without writing a verdict.
-pub(super) fn record_attempt(work_dir: &Path, stage_id: &str, dispute_id: u32) -> u32 {
+pub(super) fn record_attempt(work_dir: &Path, stage_id: &str, dispute_id: u32) -> Result<u32> {
     let path = attempts_file(work_dir, stage_id, dispute_id);
-    let next = attempt_count(work_dir, stage_id, dispute_id).saturating_add(1);
-    if let Some(parent) = path.parent() {
-        if let Err(error) = std::fs::create_dir_all(parent) {
-            tracing::warn!(
-                target: "loom::adjudication",
-                stage = %stage_id,
-                dispute = dispute_id,
-                %error,
-                "could not create the dispute directory; adjudication attempts are not being counted",
-            );
-            return next;
-        }
-    }
-    if let Err(error) = std::fs::write(&path, next.to_string()) {
-        tracing::warn!(
-            target: "loom::adjudication",
-            stage = %stage_id,
-            dispute = dispute_id,
-            %error,
-            "could not persist the adjudication attempt count",
-        );
-    }
-    next
+    Ok(super::counter::charge(&path)?)
 }
 
 /// The id of a live adjudication session already working on `stage_id`, if any.
@@ -292,7 +282,19 @@ pub fn persist_verdict(
     }
     let yaml = crate::yaml::to_string(&record).context("serialize verdict record")?;
     let body = format!("---\n{yaml}---\n\n# Verdict for {stage_id} dispute {dispute_id}\n");
-    std::fs::write(&path, body).with_context(|| format!("Failed to write {}", path.display()))?;
+    let parent = path.parent().context("verdict path has no parent")?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("Failed to create temporary verdict in {}", parent.display()))?;
+    temporary
+        .write_all(body.as_bytes())
+        .context("write verdict record")?;
+    temporary.persist_noclobber(&path).map_err(|error| {
+        if error.error.kind() == std::io::ErrorKind::AlreadyExists {
+            anyhow::anyhow!("A verdict for stage '{stage_id}' dispute {dispute_id} has already been recorded; it cannot be replaced.")
+        } else {
+            anyhow::anyhow!(error.error).context(format!("Failed to publish {}", path.display()))
+        }
+    })?;
     Ok(())
 }
 

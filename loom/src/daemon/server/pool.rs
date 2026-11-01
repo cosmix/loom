@@ -99,7 +99,7 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{mpsc, Arc, Condvar};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn queue_saturation_rejects_immediately_and_accepted_jobs_run() {
@@ -129,5 +129,43 @@ mod tests {
         wake.notify_one();
         drop(pool);
         assert_eq!(completed.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn shutdown_waits_for_running_work_and_cancels_queued_work() {
+        let pool = WorkerPool::new(1, 1);
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        assert!(pool.try_execute(move || {
+            started_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+        }));
+        started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+
+        let queued_runs = Arc::new(AtomicUsize::new(0));
+        let queued_counter = Arc::clone(&queued_runs);
+        assert!(pool.try_execute(move || {
+            queued_counter.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        let cancelling = Arc::clone(&pool.cancelling);
+        let (stopped_tx, stopped_rx) = mpsc::channel();
+        let shutdown = thread::spawn(move || {
+            pool.shutdown();
+            stopped_tx.send(()).unwrap();
+        });
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !cancelling.load(Ordering::SeqCst) {
+            assert!(Instant::now() < deadline, "shutdown did not start");
+            thread::yield_now();
+        }
+        let returned_early = stopped_rx.try_recv().is_ok();
+        release_tx.send(()).unwrap();
+        if !returned_early {
+            stopped_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        }
+        shutdown.join().unwrap();
+        assert!(!returned_early, "shutdown released a running worker");
+        assert_eq!(queued_runs.load(Ordering::SeqCst), 0);
     }
 }

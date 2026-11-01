@@ -51,6 +51,8 @@ mod tests_rebuilding;
 #[cfg(test)]
 mod tests_recovery;
 #[cfg(test)]
+mod tests_stopping;
+#[cfg(test)]
 mod tests_team;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};

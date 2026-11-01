@@ -187,7 +187,8 @@ pub(super) fn stage_touches_dir(stage: &StageDefinition, dir: &str) -> bool {
 }
 
 fn entry_touches_dir(working_dir: &str, entry: &str, dir: &str) -> bool {
-    let (_, literal) = split_glob_entry(entry);
+    let (entry, literal) = split_glob_entry(entry);
+    let partial_component = literal.len() < entry.len() && !literal.ends_with('/');
     let path = std::path::Path::new(working_dir).join(literal);
     let mut parts = Vec::new();
     for component in path.components() {
@@ -211,6 +212,9 @@ fn entry_touches_dir(working_dir: &str, entry: &str, dir: &str) -> bool {
     literal == dir
         || literal.starts_with(&format!("{dir}/"))
         || dir.starts_with(&format!("{literal}/"))
+        // The first wildcard may complete a directory component, as in
+        // `src/cl*/**`. Conservatively count any compatible literal prefix.
+        || (partial_component && dir.starts_with(&literal))
 }
 
 /// Split a `files:`/`artifacts:` entry into (the entry without a leading

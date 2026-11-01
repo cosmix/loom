@@ -24,8 +24,8 @@ use toml_edit::{value, Item, Table};
 // Plan / config writes go through the centralized `fs::work_dir` API using
 // `toml_edit`, which preserves comments and unknown keys across edits.
 
-/// A plan that has been parsed and had every check that can FAIL run against
-/// it, before `loom init` creates or edits anything on disk. Produced by
+/// A plan parsed and preflighted before `loom init` creates or edits anything.
+/// Checked-out-branch validation runs later during initialization. Produced by
 /// `preflight_plan` and consumed by `initialize_with_plan`.
 #[derive(Debug)]
 pub struct PreflightedPlan {
@@ -33,8 +33,8 @@ pub struct PreflightedPlan {
     parsed_plan: ParsedPlan,
 }
 
-/// Parse a plan and run every check on it that can fail, without printing or
-/// writing anything. `execute()` calls this before it bootstraps the repo or
+/// Parse a plan and run preflight checks without printing or writing anything.
+/// `execute()` calls this before it bootstraps the repo or
 /// creates the state directory, so a rejected plan never leaves behind a
 /// half-initialized state directory, an installed pre-commit hook, or an
 /// operator-answered backend prompt that then has to be answered again.

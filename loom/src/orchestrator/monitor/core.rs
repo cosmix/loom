@@ -78,6 +78,29 @@ pub struct Monitor {
 }
 
 impl Monitor {
+    /// Recheck foreground work immediately before a stall takedown. A CPU
+    /// delta since the monitor event may make the earlier report obsolete.
+    pub(crate) fn foreground_command_holds(
+        &mut self,
+        session: &Session,
+        heartbeat: Option<&super::heartbeat::Heartbeat>,
+        timeout_secs: u64,
+    ) -> bool {
+        self.detection.foreground_command_holds(
+            &self.config.work_dir,
+            session,
+            heartbeat,
+            timeout_secs,
+            chrono::Utc::now(),
+        )
+    }
+
+    pub(crate) fn observed_foreground_command(&self, session_id: &str) -> bool {
+        self.detection
+            .foreground_commands_seen
+            .contains_key(session_id)
+    }
+
     pub fn new(mut config: MonitorConfig) -> Self {
         // Resolve the plan-wide ceilings once, here, rather than re-reading
         // `.loom/work/config.toml` for every session on every tick. Operators edit

@@ -262,6 +262,30 @@ fn tracked_hooks_dir_change_is_held() {
 }
 
 #[test]
+fn normalized_hook_paths_are_held_at_the_target_boundary() {
+    for spelling in [".", "././.githooks", "x/../.githooks", "absolute"] {
+        let (_dir, root, work) = fixture();
+        std::fs::create_dir_all(root.join("x")).unwrap();
+        let absolute = root.join("x/../.githooks");
+        let configured = if spelling == "absolute" {
+            absolute.to_str().unwrap()
+        } else {
+            spelling
+        };
+        git(&root, &["config", "core.hooksPath", configured]);
+        record(&root, &work);
+        let path = if spelling == "." {
+            "pre-commit"
+        } else {
+            ".githooks/pre-commit"
+        };
+        commit(&root, path, false);
+        let held = reasons(check_now(&root, &work));
+        assert!(has_control_path(&held, path), "{spelling}: {held:?}");
+    }
+}
+
+#[test]
 fn merge_stage_refuses_a_held_target() {
     let (_dir, root, work) = fixture();
     stage_branch(&root, &["a.txt"]);

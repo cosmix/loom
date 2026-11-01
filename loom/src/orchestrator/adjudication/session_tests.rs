@@ -5,8 +5,8 @@ fn attempts_start_at_zero_and_accumulate() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     assert_eq!(attempt_count(work, "s1", 1), 0);
-    assert_eq!(record_attempt(work, "s1", 1), 1);
-    assert_eq!(record_attempt(work, "s1", 1), 2);
+    assert_eq!(record_attempt(work, "s1", 1).unwrap(), 1);
+    assert_eq!(record_attempt(work, "s1", 1).unwrap(), 2);
     assert_eq!(attempt_count(work, "s1", 1), 2);
     // Counted per dispute, not per stage.
     assert_eq!(attempt_count(work, "s1", 2), 0);
@@ -16,7 +16,7 @@ fn attempts_start_at_zero_and_accumulate() {
 fn attempt_count_survives_a_reread() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
-    record_attempt(work, "s1", 1);
+    record_attempt(work, "s1", 1).unwrap();
     // A fresh read is what a restarted daemon does.
     assert_eq!(attempt_count(work, "s1", 1), 1);
 }
@@ -114,4 +114,26 @@ fn malformed_inventory_defers_adjudication_session_lookup() {
     std::fs::create_dir(&sessions).unwrap();
     std::fs::write(sessions.join("unknown.md"), "malformed").unwrap();
     assert!(live_adjudication_session(tmp.path(), "s1").is_err());
+}
+
+#[test]
+fn corrupt_attempt_counter_cannot_grant_a_session() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    let path = attempts_file(work, "s1", 1);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "truncated").unwrap();
+    assert!(checked_attempt_count(work, "s1", 1).is_err());
+    assert!(record_attempt(work, "s1", 1).is_err());
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "truncated");
+}
+
+#[test]
+fn failed_attempt_charge_cannot_hand_out_a_free_slot() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    let error = super::super::counter::with_write_failure(|| record_attempt(work, "s1", 1));
+    assert!(error.is_err());
+    assert!(!attempts_file(work, "s1", 1).exists());
+    assert_eq!(record_attempt(work, "s1", 1).unwrap(), 1);
 }

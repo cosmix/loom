@@ -1,23 +1,22 @@
 //! Identity and discovery for the tiled overview viewer.
 //!
-//! This module owns the IDENTITY half of the per-repo overview viewer (its
-//! socket name, its tmux session name, the argv for a single pane's nested
-//! attach command) and the DISCOVERY half (which sessions are live and
-//! attachable, in what order). It is shared by two callers with different
+//! This module owns the per-repo viewer identity, session discovery, and
+//! verified retirement during explicit state cleanup. It is shared by callers with different
 //! lifecycles over the same viewer: `commands::attach` builds the viewer once
 //! and `exec`s into it, while `tmux::reconcile` keeps an already-built viewer
 //! in sync while the daemon runs. The ARGV BUILDER that assembles the initial
 //! `tmux` invocation sequence (`build_overview_argv` and friends) stays in
 //! `commands/attach/overview.rs` — it runs once, at build time, and has no
-//! reconciliation counterpart. Only identity and discovery are shared here,
-//! so the two surfaces cannot drift on who is attachable or what socket to
-//! use.
+//! reconciliation counterpart. Shared identity keeps attach, reconciliation,
+//! and cleanup on the same repository socket.
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
+use std::{fs, io};
 
 use crate::fs::work_dir::WorkDir;
 use crate::models::session::{Session, SessionBackendKind, SessionStatus};
@@ -65,6 +64,46 @@ pub fn viewer_socket_name(work_dir: &Path) -> String {
     // `/tmp/tmux-<uid>/loom-view-xxxxxxxx` is ~31 bytes, far inside the
     // 104-byte AF_UNIX `sun_path` limit.
     format!("loom-view-{}", &hex[..8])
+}
+
+/// Retire this repository's overview after explicit state cleanup has stopped
+/// its daemon. A detached viewer remains available until that cleanup.
+/// The deterministic socket name alone is insufficient authority to kill a
+/// server in the per-user socket directory: verify the socket owner, type,
+/// and sole tmux session before teardown.
+pub(crate) fn retire_viewer(work_dir: &Path) -> Result<bool> {
+    let name = viewer_socket_name(work_dir);
+    let path = socket_path_for(&name);
+    let metadata = match fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    // SAFETY: getuid() is always safe to call and cannot fail.
+    let uid = unsafe { libc::getuid() };
+    if !metadata.file_type().is_socket() || metadata.uid() != uid {
+        bail!("viewer socket is not an owned socket: {}", path.display());
+    }
+    let path_arg = path.to_string_lossy();
+    let output = super::run_tmux_control(
+        &["-S", &path_arg, "list-sessions", "-F", "#{session_name}"],
+        super::TMUX_PROBE_TIMEOUT,
+        format!("tmux list-sessions ({})", path.display()),
+    )?;
+    if !output.status.success()
+        || String::from_utf8_lossy(&output.stdout).trim() != OVERVIEW_SESSION
+    {
+        bail!("viewer ownership could not be verified: {}", path.display());
+    }
+    let current = fs::symlink_metadata(&path)?;
+    if current.dev() != metadata.dev() || current.ino() != metadata.ino() {
+        bail!(
+            "viewer socket changed during ownership check: {}",
+            path.display()
+        );
+    }
+    super::teardown_socket(&name)?;
+    Ok(true)
 }
 
 /// Identity for loom's alphanumeric/dash ids; defence in depth because the
@@ -314,3 +353,6 @@ pub(crate) mod tests;
 #[cfg(test)]
 #[path = "tests_discovery.rs"]
 mod tests_discovery;
+#[cfg(test)]
+#[path = "tests_retire.rs"]
+mod tests_retire;

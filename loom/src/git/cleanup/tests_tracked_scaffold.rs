@@ -55,6 +55,10 @@ fn corrupt_index_preserves_scaffold_and_tracked_edits() {
         .unwrap()
         .file_type()
         .is_symlink());
+    assert_eq!(
+        fs::read_link(worktree.join(".loom/work")).unwrap(),
+        repo.path()
+    );
 }
 
 #[test]

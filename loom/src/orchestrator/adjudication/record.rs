@@ -37,8 +37,7 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::verify::transitions::{load_stage, update_stage};
 
 use super::{
-    attempt_count, close_open_disputes, is_closed, persist_verdict, read_request, resolve_model,
-    verdict,
+    close_open_disputes, is_closed, persist_verdict, read_request, resolve_model, verdict,
 };
 
 /// What recording the verdict did.
@@ -129,7 +128,8 @@ fn record_outcome(
 ) -> Result<AdjudicateOutcome> {
     match outcome {
         verdict::ValidationOutcome::Verdict(v) => {
-            let attempt = attempt_count(work_dir, stage_id, dispute_id).max(1);
+            let attempt =
+                super::session::checked_attempt_count(work_dir, stage_id, dispute_id)?.max(1);
             persist_verdict(
                 work_dir,
                 stage_id,

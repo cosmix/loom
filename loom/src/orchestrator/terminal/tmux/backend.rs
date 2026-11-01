@@ -1,5 +1,4 @@
-//! The `TmuxBackend` type, split out of `tmux/mod.rs` to keep that module
-//! under the 400-line ceiling (CLAUDE.md Rule 17).
+//! The tmux backend's session lifecycle.
 //!
 //! The free functions this drives — the argv builder, the spawn, the abort and
 //! teardown helpers — stay in the parent module, which owns the tmux protocol
@@ -44,13 +43,10 @@ impl TmuxBackend {
     /// `evaluate_new_session` rejects an exit-0 spawn whose stderr carried
     /// nothing worse than a `~/.tmux.conf` warning.
     ///
-    /// Returning without tearing that down is not a leak of a stray process,
-    /// it is a CORRECTNESS bug: `SessionBackend::dispatch_spawn` retries on the
-    /// native lane, so the stage ends up with TWO claude agents editing the
-    /// same worktree. The stale PID file is the second half of the same bug —
-    /// `await_session_pid` returns the first live PID it reads under this
-    /// session's `pid_key`, which would be the orphaned tmux claude, so the
-    /// native retry would adopt it while stamping `backend = Native`.
+    /// Returning without teardown leaves a Claude process editing the
+    /// worktree after the configured tmux lane has reported failure. A stale
+    /// PID file can then make later liveness checks mistake it for the active
+    /// session.
     ///
     /// Hence one `abort` closure (`abort_tmux_spawn`), used by every error
     /// path below.

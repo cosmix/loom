@@ -211,43 +211,13 @@ pub fn locked_read(path: &Path) -> Result<String> {
 
 /// Read-modify-write with an exclusive lock held throughout.
 ///
-/// Opens the file (creating if needed), acquires exclusive lock, reads content,
-/// calls the modifier function, writes the result, and releases the lock.
+/// Acquires the exclusive parent-directory lock, treats a missing file as empty,
+/// calls the modifier function, and atomically publishes the result.
 pub fn locked_read_modify_write<F>(path: &Path, modify: F) -> Result<()>
 where
     F: FnOnce(String) -> String,
 {
-    // Hold the parent-directory lock across the whole read-modify-write so no
-    // other reader/writer observes an intermediate state.
-    let _dir_lock = lock_parent_dir(path, true)?;
-
-    let content = match File::open(path) {
-        Ok(file) => {
-            let mut buf = String::new();
-            BufReader::new(&file)
-                .read_to_string(&mut buf)
-                .with_context(|| format!("Failed to read file: {}", path.display()))?;
-            buf
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // File does not exist yet — treat as empty so callers can create it.
-            String::new()
-        }
-        Err(e) => {
-            return Err(e).with_context(|| {
-                format!(
-                    "Failed to open file for read-modify-write: {}",
-                    path.display()
-                )
-            });
-        }
-    };
-
-    let new_content = modify(content);
-
-    // Crash-atomic replace (temp + rename). The directory lock above already
-    // serializes this against concurrent readers/writers.
-    atomic_write(path, &new_content)
+    locked_update(path, |content| Ok(modify(content)))
 }
 
 /// Fallible read-modify-write with an exclusive lock held throughout.

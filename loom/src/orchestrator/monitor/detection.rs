@@ -34,6 +34,8 @@ pub struct Detection {
     /// counts as activity until its hold ceiling. See
     /// [`super::judge_watchdog`].
     pub(super) judge_commands_seen: HashMap<String, chrono::DateTime<chrono::Utc>>,
+    /// Last observed CPU progress of a verified foreground stage command.
+    pub(super) foreground_commands_seen: HashMap<String, super::foreground::ForegroundObservation>,
     /// Red handoffs successfully written or found during this daemon run.
     /// A failed write remains absent so an unchanged-Red poll retries it.
     pub red_handoff_ready: HashSet<String>,
@@ -56,6 +58,7 @@ impl Detection {
             escalated_hung_sessions: HashSet::new(),
             reported_stalled_judges: HashSet::new(),
             judge_commands_seen: HashMap::new(),
+            foreground_commands_seen: HashMap::new(),
             red_handoff_ready: HashSet::new(),
             last_budget_exceeded: HashMap::new(),
             handoff_watch: HandoffWatch::default(),

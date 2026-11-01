@@ -225,3 +225,10 @@ fn the_session_wrapper_reads_as_a_command_only_while_a_tool_call_runs() {
     let command = running_command(dir, &session).expect("the tool call's shell is a command");
     assert!(is_command_launcher(&command.name), "{command:?}");
 }
+
+#[test]
+fn portable_cpu_time_parser_rejects_unknown_and_counts_days() {
+    assert_eq!(parse_ps_cpu_time("1-02:03:04.25"), Some(93_784));
+    assert_eq!(parse_ps_cpu_time("03:04"), Some(184));
+    assert_eq!(parse_ps_cpu_time("unavailable"), None);
+}

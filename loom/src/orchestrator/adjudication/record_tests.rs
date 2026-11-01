@@ -121,6 +121,46 @@ fn refuses_to_replace_a_recorded_verdict() {
 }
 
 #[test]
+fn concurrent_recorders_publish_one_complete_verdict() {
+    let (_tmp, work) = setup(StageStatus::NeedsAdjudication);
+    write_request(&work, 1);
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let workers: Vec<_> = ["first", "second"]
+        .into_iter()
+        .map(|id| {
+            let work = work.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                let mut verdict = reject_json();
+                verdict["reasoning"] = id.into();
+                barrier.wait();
+                (
+                    id,
+                    record_verdict_text(&work, "s1", 1, &verdict.to_string(), Some(id.into())),
+                )
+            })
+        })
+        .collect();
+    let results: Vec<_> = workers
+        .into_iter()
+        .map(|worker| worker.join().unwrap())
+        .collect();
+    let winners: Vec<_> = results
+        .iter()
+        .filter(|(_, result)| result.is_ok())
+        .collect();
+    assert_eq!(winners.len(), 1);
+    let error = results
+        .iter()
+        .find_map(|(_, result)| result.as_ref().err())
+        .unwrap();
+    assert!(format!("{error:#}").contains("already been recorded"));
+    let path = verdict_file(&work.join("disputes"), "s1", 1);
+    let record = super::super::scan::read_verdict_record(&path).unwrap();
+    assert_eq!(record.session_id.as_deref(), Some(winners[0].0));
+}
+
+#[test]
 fn degenerate_verdict_escalates_instead_of_recording() {
     let (_tmp, work) = setup(StageStatus::NeedsAdjudication);
     write_request(&work, 1);

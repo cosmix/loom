@@ -55,7 +55,7 @@ impl LaunchHost {
         let scratch_root = host_scratch_root(work_dir)?;
         let facts = host_facts(work_dir, &repo_root, &scratch_root, uid, home.as_deref())?;
         Ok(Self {
-            capsule_support: probed_capsule_support(&claude_path),
+            capsule_support: probed_capsule_support(&claude_path)?,
             claude_path,
             repo_root,
             facts,

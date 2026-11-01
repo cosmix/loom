@@ -56,26 +56,13 @@ fn stop_daemon(stop: &mut UnixStream) {
     ));
 }
 
-#[test]
-fn stop_cancels_queued_clients_and_bounds_active_reads() {
-    let dir = TempDir::new().unwrap();
-    std::fs::write(dir.path().join(USER_TOKEN_FILE), "user-secret").unwrap();
-    std::fs::write(admin_token_path(dir.path()), "admin-secret").unwrap();
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let pool = WorkerPool::new(3, 1);
-    let mut active = submit_client(&pool, &shutdown, dir.path());
-    for _ in 0..3 {
-        assert!(ping(&mut active));
-    }
-    let mut partial = submit_client(&pool, &shutdown, dir.path());
-    partial.write_all(&[0]).unwrap();
-    let mut stop = submit_client(&pool, &shutdown, dir.path());
+fn queue_ping(pool: &WorkerPool, shutdown: &Arc<AtomicBool>, dir: &Path) -> UnixStream {
     let (queued_server, mut queued) = UnixStream::pair().unwrap();
     queued
         .set_read_timeout(Some(Duration::from_secs(7)))
         .unwrap();
-    let queued_shutdown = Arc::clone(&shutdown);
-    let queued_dir = dir.path().to_path_buf();
+    let queued_shutdown = Arc::clone(shutdown);
+    let queued_dir = dir.to_path_buf();
     assert!(pool.try_execute(move || {
         handle_client_connection(
             queued_server,
@@ -87,6 +74,45 @@ fn stop_cancels_queued_clients_and_bounds_active_reads() {
         )
         .unwrap();
     }));
+    write_message(
+        &mut queued,
+        &Request::Ping {
+            auth_token: "user-secret".into(),
+        },
+    )
+    .unwrap();
+    queued
+}
+
+#[test]
+fn stop_cancels_queued_clients_and_bounds_active_reads() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join(USER_TOKEN_FILE), "user-secret").unwrap();
+    std::fs::write(admin_token_path(dir.path()), "admin-secret").unwrap();
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let pool = WorkerPool::new(3, 1);
+    let mut active = submit_client(&pool, &shutdown, dir.path());
+    let (ping_started, first_pings) = mpsc::channel();
+    let pinging = thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(6);
+        let mut successful = 0;
+        while Instant::now() < deadline {
+            if !ping(&mut active) {
+                return (successful, true);
+            }
+            successful += 1;
+            if successful == 3 {
+                ping_started.send(()).unwrap();
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        (successful, false)
+    });
+    first_pings.recv_timeout(Duration::from_secs(1)).unwrap();
+    let mut partial = submit_client(&pool, &shutdown, dir.path());
+    partial.write_all(&[0]).unwrap();
+    let mut stop = submit_client(&pool, &shutdown, dir.path());
+    let mut queued = queue_ping(&pool, &shutdown, dir.path());
     stop_daemon(&mut stop);
     let start = Instant::now();
     while !shutdown.load(Ordering::SeqCst) {
@@ -94,8 +120,11 @@ fn stop_cancels_queued_clients_and_bounds_active_reads() {
         thread::yield_now();
     }
     let joining = thread::spawn(move || pool.shutdown());
-    assert!(!ping(&mut active));
+    let (successful, stopped) = pinging.join().unwrap();
+    assert!(successful >= 3, "the active client must ping before Stop");
+    assert!(stopped, "the active client kept receiving Pong after Stop");
     joining.join().unwrap();
     assert!(start.elapsed() < Duration::from_secs(7));
-    assert!(!ping(&mut queued));
+    assert!(read_message::<Response, _>(&mut queued).is_err());
+    assert!(read_message::<Response, _>(&mut partial).is_err());
 }

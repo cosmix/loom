@@ -71,6 +71,46 @@ fn test_human_review_approve_resets_an_unfrozen_stage_contract_budget() {
     );
 }
 
+#[test]
+fn approval_allows_a_new_freeze_refusal_without_resetting_other_budgets() {
+    use crate::models::stage::dispute_budgets::MAX_DISPUTES_PER_KIND;
+    use crate::stage_service::{file_freeze_refusal, FreezeRefusalFiling};
+
+    let temp = TempDir::new().unwrap();
+    let mut stage = contract_stage("test-stage", "old-writer");
+    stage.status = StageStatus::NeedsHumanReview;
+    stage.session = None;
+    stage.tally.freeze_refusal_disputes = MAX_DISPUTES_PER_KIND;
+    stage.tally.contract_disputes = 2;
+    crate::verify::transitions::save_stage(&stage, temp.path()).unwrap();
+
+    handle_approve("test-stage", temp.path()).unwrap();
+    let writer = Session::new_contract("test-stage");
+    save_session(&writer, temp.path()).unwrap();
+    update_stage("test-stage", temp.path(), |stage| {
+        stage.status = StageStatus::Executing;
+        stage.session = Some(writer.id);
+        Ok(())
+    })
+    .unwrap();
+
+    let result = file_freeze_refusal(
+        temp.path(),
+        "test-stage",
+        vec!["freeze failed".into()],
+        "fresh-refusal",
+    )
+    .unwrap();
+    assert!(
+        matches!(result, FreezeRefusalFiling::Filed(_)),
+        "{result:?}"
+    );
+    let stage = load_stage("test-stage", temp.path()).unwrap();
+    assert_eq!(stage.status, StageStatus::NeedsAdjudication);
+    assert_eq!(stage.tally.freeze_refusal_disputes, 1);
+    assert_eq!(stage.tally.contract_disputes, 2);
+}
+
 /// A refused transition (on-disk status no longer `NeedsHumanReview` by
 /// the time the locked closure re-reads it) must not reset the budget:
 /// the reset lives inside the same closure, after `try_approve_review`

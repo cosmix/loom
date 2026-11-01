@@ -18,6 +18,10 @@ use crate::web_server::hub::Hub;
 
 use super::model::{collect_snapshot, SnapshotSource, WebSnapshot};
 
+#[cfg(test)]
+#[path = "broadcast_tests.rs"]
+mod tests;
+
 const RECONNECT_ATTEMPTS: usize = 3;
 const FILE_POLL_COUNT: usize = 5;
 const FILE_POLL_INTERVAL: Duration = Duration::from_secs(2);

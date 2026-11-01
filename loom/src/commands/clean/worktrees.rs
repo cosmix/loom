@@ -114,7 +114,13 @@ pub(crate) fn unmerged_loom_branches(repo_root: &Path) -> UnmergedBranches {
 /// Returns `Ok(false)` to abort (user declined, or non-interactive stdin with
 /// unmerged work and no `LOOM_CLEAN_YES`).
 pub(super) fn confirm_branch_deletion(repo_root: &Path) -> Result<bool> {
-    let listing = unmerged_loom_branches(repo_root);
+    confirm_branch_deletion_listing(unmerged_loom_branches(repo_root))
+}
+
+fn confirm_branch_deletion_listing(listing: UnmergedBranches) -> Result<bool> {
+    if let Some(error) = listing.listing_error {
+        anyhow::bail!("cannot inspect loom branches before cleanup: {error}");
+    }
     let (target_branch, unmerged) = (listing.target_branch, listing.branches);
 
     if unmerged.is_empty() {
@@ -122,13 +128,38 @@ pub(super) fn confirm_branch_deletion(repo_root: &Path) -> Result<bool> {
         return Ok(true);
     }
 
+    print_unmerged_branches(&target_branch, &unmerged);
+    if std::env::var("LOOM_CLEAN_YES").is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true")) {
+        println!(
+            "  {} LOOM_CLEAN_YES set — proceeding without prompt.",
+            "─".dimmed()
+        );
+        return Ok(true);
+    }
+    if !std::io::stdin().is_terminal() {
+        println!();
+        println!(
+            "{} Refusing to delete unmerged branches non-interactively. \
+             Re-run with LOOM_CLEAN_YES=1 to override.",
+            "✗".red().bold()
+        );
+        return Ok(false);
+    }
+    print!("\nDelete these unmerged branches and their worktrees? (y/N): ");
+    std::io::stdout().flush().ok();
+    let mut response = String::new();
+    std::io::stdin().read_line(&mut response)?;
+    Ok(response.trim().eq_ignore_ascii_case("y"))
+}
+
+fn print_unmerged_branches(target_branch: &str, unmerged: &[(String, usize)]) {
     println!();
     println!(
         "{} The following {} loom branch(es) have UNMERGED commits and will be deleted:",
         "⚠".yellow().bold(),
         unmerged.len()
     );
-    for (branch, ahead) in &unmerged {
+    for (branch, ahead) in unmerged {
         println!(
             "    {} {} ({} commit{} ahead of {})",
             "•".yellow(),
@@ -143,31 +174,6 @@ pub(super) fn confirm_branch_deletion(repo_root: &Path) -> Result<bool> {
         "─".dimmed(),
         target_branch.dimmed()
     );
-
-    // Non-interactive escape hatch (CI / scripts).
-    if std::env::var("LOOM_CLEAN_YES").is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true")) {
-        println!(
-            "  {} LOOM_CLEAN_YES set — proceeding without prompt.",
-            "─".dimmed()
-        );
-        return Ok(true);
-    }
-
-    if !std::io::stdin().is_terminal() {
-        println!();
-        println!(
-            "{} Refusing to delete unmerged branches non-interactively. \
-             Re-run with LOOM_CLEAN_YES=1 to override.",
-            "✗".red().bold()
-        );
-        return Ok(false);
-    }
-
-    print!("\nDelete these unmerged branches and their worktrees? (y/N): ");
-    std::io::stdout().flush().ok();
-    let mut response = String::new();
-    std::io::stdin().read_line(&mut response)?;
-    Ok(response.trim().eq_ignore_ascii_case("y"))
 }
 
 /// Clean up all loom worktrees and their branches
@@ -305,5 +311,28 @@ mod tests {
         assert!(result.is_ok());
         // Returns (0, 0) when no .worktrees directory exists
         assert_eq!(result.unwrap(), (0, 0));
+    }
+
+    #[test]
+    fn failed_branch_listing_never_authorizes_cleanup() {
+        for branches in [Vec::new(), vec![("loom/unfinished".into(), 2)]] {
+            let listing = UnmergedBranches {
+                target_branch: "main".into(),
+                branches,
+                listing_error: Some("git branch --list failed".into()),
+            };
+            let error = confirm_branch_deletion_listing(listing).unwrap_err();
+            assert!(error.to_string().contains("cannot inspect loom branches"));
+        }
+    }
+
+    #[test]
+    fn successful_empty_branch_listing_authorizes_cleanup() {
+        let listing = UnmergedBranches {
+            target_branch: "main".into(),
+            branches: Vec::new(),
+            listing_error: None,
+        };
+        assert!(confirm_branch_deletion_listing(listing).unwrap());
     }
 }

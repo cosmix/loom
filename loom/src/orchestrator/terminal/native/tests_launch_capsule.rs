@@ -1,8 +1,5 @@
-//! End-to-end launch tests for the settings capsule, the scratch directory,
-//! the wrapper's host exports and the spawn-time sandbox preflight, driven
-//! through `prepare_session_launch_with` against an injected [`LaunchHost`],
-//! so no test touches `PATH`, `HOME`, `LOOM_HOOKS_DIR` or the operator's
-//! runtime directory.
+//! Launch tests for the capsule, scratch directory, host exports, and sandbox
+//! preflight, driven through an injected [`LaunchHost`].
 
 use super::host::{hook_path_entries, LaunchHost};
 use super::*;
@@ -136,6 +133,9 @@ fn capsule_of(fixture: &Fixture, session: &Session) -> Value {
     let path = session_settings_path(&fixture.work_dir, &session.id);
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
+
+#[path = "tests_launch_capsule_refusal.rs"]
+mod refusal_tests;
 
 #[test]
 fn an_ultracode_stage_session_launches_with_the_workflow_tool_and_no_other_kind_does() {
@@ -284,7 +284,7 @@ fn a_merge_session_drops_the_plans_worktree_deny_write_and_a_stage_session_keeps
         "{merge_capsule}"
     );
     assert!(
-        rules.contains("Edit(/data/shared/prod/**)"),
+        rules.contains("Edit(//data/shared/prod/**)"),
         "{merge_capsule}"
     );
     assert!(rules.contains("Edit(.loom/**)"), "{merge_capsule}");

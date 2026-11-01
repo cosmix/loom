@@ -3,8 +3,12 @@
 //! Construction and support probing live here; `native::build_claude_command`
 //! emits the flags.
 
-use std::path::Path;
-use std::sync::OnceLock;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
+
+use anyhow::{bail, Context, Result};
 
 /// The configuration a loom-spawned session is pinned to, expressed as
 /// `claude` CLI flags rather than trusted to ambient settings discovery.
@@ -49,32 +53,91 @@ pub(crate) struct CapsuleSupport {
     pub append_system_prompt_file: bool,
 }
 
-/// Probe `claude --help` once per process for the capsule flags it supports.
-/// A claude that fails to run supports none of them.
-pub(super) fn probed_capsule_support(claude_path: &Path) -> CapsuleSupport {
-    static CACHE: OnceLock<CapsuleSupport> = OnceLock::new();
-    *CACHE.get_or_init(|| {
-        let output = match std::process::Command::new(claude_path)
-            .arg("--help")
-            .output()
-        {
-            Ok(output) if output.status.success() => output,
-            Ok(_) | Err(_) => return CapsuleSupport::default(),
-        };
-        let help = String::from_utf8_lossy(&output.stdout);
-        CapsuleSupport {
-            settings: help.contains("--settings"),
-            setting_sources: help.contains("--setting-sources"),
-            strict_mcp_config: help.contains("--strict-mcp-config"),
-            append_system_prompt_file: help.contains("--append-system-prompt-file"),
+/// Probe once after success. Failed probes are retried on the next launch.
+pub(super) fn probed_capsule_support(claude_path: &Path) -> Result<CapsuleSupport> {
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, CapsuleSupport>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(entries) = cache.lock() {
+        if let Some(support) = entries.get(claude_path) {
+            return Ok(*support);
         }
-    })
+    }
+    let support = probe_capsule_support(claude_path)?;
+    if let Ok(mut entries) = cache.lock() {
+        entries.insert(claude_path.to_path_buf(), support);
+    }
+    Ok(support)
+}
+
+pub(super) fn probe_capsule_support(claude_path: &Path) -> Result<CapsuleSupport> {
+    let output = crate::process::run_bounded_output(
+        std::process::Command::new(claude_path).arg("--help"),
+        Duration::from_secs(5),
+        "Claude capsule capability probe",
+    )
+    .with_context(|| {
+        format!(
+            "cannot probe Claude capsule flags at {}",
+            claude_path.display()
+        )
+    })?;
+    if !output.status.success() {
+        bail!(
+            "Claude capsule capability probe at {} exited with {}; stderr: {}",
+            claude_path.display(),
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let help = String::from_utf8_lossy(&output.stdout);
+    let support = CapsuleSupport {
+        settings: help.contains("--settings"),
+        setting_sources: help.contains("--setting-sources"),
+        strict_mcp_config: help.contains("--strict-mcp-config"),
+        append_system_prompt_file: help.contains("--append-system-prompt-file"),
+    };
+    support.require_isolation()?;
+    Ok(support)
+}
+
+impl CapsuleSupport {
+    pub(super) fn require_isolation(self) -> Result<()> {
+        let mut missing = Vec::new();
+        if !self.settings {
+            missing.push("--settings");
+        }
+        if !self.setting_sources {
+            missing.push("--setting-sources");
+        }
+        if !self.strict_mcp_config {
+            missing.push("--strict-mcp-config");
+        }
+        if !missing.is_empty() {
+            bail!(
+                "Claude lacks required session isolation flags: {}; update the Claude executable before launching a session",
+                missing.join(", ")
+            );
+        }
+        Ok(())
+    }
+}
+
+impl SessionCapsule {
+    pub(super) fn require_isolation(&self, expected_settings: &str) -> Result<()> {
+        if self.settings_path.as_deref() != Some(expected_settings)
+            || self.setting_sources.as_deref() != Some("user,project")
+            || !self.strict_mcp_config
+        {
+            bail!("Claude session invocation lacks the generated settings capsule or required isolation flags; refusing to spawn");
+        }
+        Ok(())
+    }
 }
 
 /// Assemble a [`SessionCapsule`] from already-resolved probe/filesystem
-/// facts. Pure and total, so the security-critical interlock below is
-/// directly unit-testable without a subprocess `--help` probe or a real
-/// filesystem (see `native/tests_capsule.rs`).
+/// facts. Pure and total for command-rendering tests; launch preparation
+/// independently requires all isolation flags before calling this and checks
+/// the resulting capsule before creating a wrapper.
 ///
 /// The interlock: `setting_sources` is `Some` ONLY when `settings_path` is
 /// also `Some`. Emitting `--setting-sources` without `--settings` would

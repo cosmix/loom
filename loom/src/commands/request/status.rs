@@ -82,22 +82,23 @@ fn resolve_status(
 ) -> Result<ReportedStatus> {
     inbox::validate_request_id(id)?;
 
-    if let Some(scratch) = scratch {
-        if scratch.join(format!("{id}.req")).is_file() {
-            return Ok(ReportedStatus::PendingRelay);
+    if let Some(session) = session {
+        let status = inbox::request_status(work_dir, session, id)?;
+        if status != RequestStatus::NotFound {
+            return Ok(ReportedStatus::Inbox(status));
+        }
+    } else {
+        for session_id in list_inbox_sessions(work_dir)? {
+            let status = inbox::request_status(work_dir, &session_id, id)?;
+            if status != RequestStatus::NotFound {
+                return Ok(ReportedStatus::Inbox(status));
+            }
         }
     }
 
-    if let Some(session) = session {
-        return Ok(ReportedStatus::Inbox(inbox::request_status(
-            work_dir, session, id,
-        )?));
-    }
-
-    for session_id in list_inbox_sessions(work_dir)? {
-        let status = inbox::request_status(work_dir, &session_id, id)?;
-        if status != RequestStatus::NotFound {
-            return Ok(ReportedStatus::Inbox(status));
+    if let Some(scratch) = scratch {
+        if scratch.join(format!("{id}.req")).is_file() {
+            return Ok(ReportedStatus::PendingRelay);
         }
     }
     Ok(ReportedStatus::Inbox(RequestStatus::NotFound))
@@ -144,9 +145,11 @@ fn outcome_line(id: &str, waited: Waited, secs: u64, note: Option<String>) -> Re
         Waited::Settled(ReportedStatus::PendingRelay) => anyhow::bail!(
             "request {id} is not relayed yet: the relay hook relays its ticket only after the Bash call that created it ends, so a wait chained into that call cannot see it; run `loom request status {id} --wait 90` again as its own Bash call and do not run the command that created the request again, which would create a second ticket the daemon refuses"
         ),
-        Waited::Settled(ReportedStatus::Inbox(RequestStatus::UnknownAfterRestart)) => anyhow::bail!(
-            "request {id} is unknown after a daemon restart: check the repository state, then run the command again if the change is missing"
-        ),
+        Waited::Settled(ReportedStatus::Inbox(RequestStatus::UnknownAfterRestart)) => {
+            anyhow::bail!(
+                "request {id} is unknown after a daemon restart: check the repository state, then run the command again if the change is missing"
+            )
+        }
         Waited::TimedOut(_) => anyhow::bail!("request {id} still pending after {secs}s"),
         // `wait_for` keeps polling these two, so they settle only if its
         // loop condition changes; naming them keeps the match exhaustive.
@@ -181,7 +184,7 @@ fn list_inbox_sessions(work_dir: &Path) -> Result<Vec<String>> {
         Ok(read_dir) => read_dir,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => {
-            return Err(error).with_context(|| format!("failed to list {}", root.display()))
+            return Err(error).with_context(|| format!("failed to list {}", root.display()));
         }
     };
     let mut sessions = Vec::new();
@@ -219,10 +222,12 @@ fn format_status(status: &ReportedStatus) -> (String, bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::relay::new_request_id;
+    use crate::fs::inbox::{append_ledger, LedgerRecord, LedgerState};
+    use crate::relay::{new_request_id, RequestKind};
+    use chrono::Utc;
 
     #[test]
-    fn a_pending_ticket_wins_over_the_inbox() {
+    fn a_ticket_without_inbox_evidence_is_pending_relay() {
         let work_dir = tempfile::tempdir().unwrap();
         let scratch = tempfile::tempdir().unwrap();
         let id = new_request_id();
@@ -239,14 +244,76 @@ mod tests {
     }
 
     #[test]
+    fn accepted_inbox_evidence_wins_over_a_leftover_ticket() {
+        for (state, outcome, expected) in [
+            (Some(LedgerState::Applying), None, RequestStatus::Applying),
+            (None, Some(LedgerOutcome::Applied), RequestStatus::Applied),
+            (
+                None,
+                Some(LedgerOutcome::Refused),
+                RequestStatus::Refused {
+                    reason: "rejected".into(),
+                },
+            ),
+        ] {
+            let work_dir = tempfile::tempdir().unwrap();
+            let scratch = tempfile::tempdir().unwrap();
+            let id = new_request_id();
+            std::fs::write(scratch.path().join(format!("{id}.req")), b"{}").unwrap();
+            append_ledger(
+                work_dir.path(),
+                "session-1",
+                &LedgerRecord {
+                    id: id.clone(),
+                    kind: RequestKind::Memory,
+                    state,
+                    outcome,
+                    reason: Some("rejected".into()),
+                    at: Utc::now(),
+                },
+            )
+            .unwrap();
+            for session in [Some("session-1"), None] {
+                assert_eq!(
+                    resolve_status(work_dir.path(), session, Some(scratch.path()), &id).unwrap(),
+                    ReportedStatus::Inbox(expected.clone())
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_ticket_does_not_bypass_explicit_session_validation() {
+        let work_dir = tempfile::tempdir().unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let id = new_request_id();
+        std::fs::write(scratch.path().join(format!("{id}.req")), b"{}").unwrap();
+        assert!(resolve_status(
+            work_dir.path(),
+            Some("../invalid"),
+            Some(scratch.path()),
+            &id
+        )
+        .is_err());
+    }
+
+    #[test]
     fn an_explicit_session_is_looked_up_directly() {
         let work_dir = tempfile::tempdir().unwrap();
+        let scratch = tempfile::tempdir().unwrap();
         let id = new_request_id();
         let dir = work_dir.path().join("inbox").join("session-1");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(format!("{id}.json")), b"{}").unwrap();
+        std::fs::write(scratch.path().join(format!("{id}.req")), b"{}").unwrap();
 
-        let status = resolve_status(work_dir.path(), Some("session-1"), None, &id).unwrap();
+        let status = resolve_status(
+            work_dir.path(),
+            Some("session-1"),
+            Some(scratch.path()),
+            &id,
+        )
+        .unwrap();
         assert_eq!(
             status,
             ReportedStatus::Inbox(RequestStatus::RelayedAwaitingDaemon)

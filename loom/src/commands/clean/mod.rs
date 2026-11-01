@@ -19,6 +19,8 @@ pub(crate) use worktrees::{unmerged_loom_branches, UnmergedBranches};
 use crate::commands::common::resolve_state_dir;
 use crate::daemon::{DaemonServer, DaemonStatus};
 use crate::fs::memory::archive_state_dir;
+use crate::fs::tmux_tmpdir::adopt_recorded_tmux_tmpdir;
+use crate::orchestrator::terminal::tmux::viewer::retire_viewer;
 
 /// Statistics for cleanup operations
 #[derive(Default)]
@@ -58,13 +60,13 @@ pub fn execute(all: bool, worktrees: bool, sessions: bool, state: bool) -> Resul
     // If we are about to delete worktree branches, surface any unmerged work and
     // require confirmation. This guards a user who typed `loom clean --all`
     // mid-plan from silently losing committed-but-unmerged branches.
-    if (clean_all || worktrees) && !confirm_branch_deletion(&repo_root)? {
+    if (all || worktrees) && !confirm_branch_deletion(&repo_root)? {
         println!();
         println!("{} Aborted — nothing was deleted.", "✗".red().bold());
         return Ok(());
     }
 
-    stop_daemon_before_destroying_state(&repo_root, clean_all, state)?;
+    prepare_state_cleanup(&repo_root, all || state)?;
 
     let mut stats = CleanStats::default();
 
@@ -89,6 +91,13 @@ pub fn execute(all: bool, worktrees: bool, sessions: bool, state: bool) -> Resul
     print_summary(&stats);
 
     Ok(())
+}
+
+fn prepare_state_cleanup(repo_root: &Path, destroys_state: bool) -> Result<()> {
+    if destroys_state {
+        adopt_recorded_tmux_tmpdir(&resolve_state_dir(repo_root));
+    }
+    stop_daemon_before_destroying_state(repo_root, destroys_state, false)
 }
 
 /// The first steps of every `loom clean`. A run that will destroy the state
@@ -157,6 +166,10 @@ fn clean_sessions_and_state(
     }
 
     if will_destroy_state {
+        let work_dir = resolve_state_dir(repo_root);
+        if retire_viewer(&work_dir)? {
+            println!("  {} Retired overview viewer", "✓".green().bold());
+        }
         println!("\n{}", "State".bold());
         println!("{}", "─".repeat(40).dimmed());
         stats.state_removed = clean_state_directory(repo_root)?;

@@ -10,7 +10,7 @@ use super::attestation::{ledger_steps, LedgerStep};
 use super::record::knowledge_prefix;
 use super::HoldReason;
 use crate::git::branch::{branch_ref, is_ancestor_of};
-use crate::git::merge::control_paths::{changed_paths, hooks_dir_prefix, is_control_path};
+use crate::git::merge::control_paths::{changed_paths, hooks_dir_prefix_checked, is_control_path};
 use crate::git::runner::{run_git, run_git_checked};
 
 /// Most paths an `Unattested` reason names.
@@ -58,7 +58,7 @@ fn reasons(scope: &Scope, accepted: &str, tip: &str, required: bool) -> Result<V
     if !fast_forward {
         reasons.push(HoldReason::NotFastForward);
     }
-    let hooks_prefix = hooks_dir_prefix(repo);
+    let hooks_prefix = hooks_dir_prefix_checked(repo)?;
     let paths: Vec<String> = changed_paths(repo, accepted, tip)?
         .into_iter()
         .filter(|path| is_control_path(path, hooks_prefix.as_deref()))

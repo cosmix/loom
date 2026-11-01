@@ -33,13 +33,20 @@ fn plan_file(text: &str) -> (TempDir, PathBuf) {
 }
 
 #[test]
-fn placement_uses_last_end_marker() {
-    let prefix = format!("{END}\n## Pressure tests\n\n- earlier block\n\n{END}");
-    let text = format!("{prefix}\n## Pressure tests\n\n- latest block\n");
+fn placement_uses_parsed_boundary_before_later_marker_like_prose() {
+    let text = format!(
+        "<!-- loom METADATA -->\n```yaml\nloom: {{}}\n```\n{END}\n## Pressure tests\n\n- first\n\n## Notes\n\n{END}\n## Pressure tests\n\n- later\n"
+    );
+    let expected = text.replacen("- first\n", "- first\n- new review\n", 1);
 
-    assert_eq!(
-        append_to_text(&text, "- new review"),
-        format!("{prefix}\n## Pressure tests\n\n- latest block\n- new review\n")
+    assert_eq!(append_to_text(&text, "- new review"), expected);
+}
+
+#[test]
+fn placement_uses_shared_atx_heading_and_section_boundary() {
+    assert_placement(
+        "\n##\tPressure tests\n\n- old\n\n##\tNotes\nLeave this.\n",
+        "\n##\tPressure tests\n\n- old\n- new review\n\n##\tNotes\nLeave this.\n",
     );
 }
 

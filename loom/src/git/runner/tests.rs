@@ -58,6 +58,17 @@ fn repository_selectors_are_removed_before_explicit_overrides() {
     );
     assert_eq!(run_git_checked(&["ls-files"], second.path()).unwrap(), "");
 
+    let mut read = Command::new("git");
+    read.env("GIT_DIR", second.path().join(".git"))
+        .env("GIT_WORK_TREE", second.path())
+        .env("GIT_INDEX_FILE", second.path().join(".git/index"));
+    harden(&mut read, &global_args(&["ls-files"]), first.path());
+    let output = read.output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"first.txt\n");
+
+    assert_repository_selectors_removed(first.path());
+
     let alternate_index = first.path().join("alternate-index");
     let env = [("GIT_INDEX_FILE", alternate_index.as_os_str())];
     let output = run_git_with_env(&["add", "first.txt"], &env, first.path()).unwrap();
@@ -65,6 +76,22 @@ fn repository_selectors_are_removed_before_explicit_overrides() {
     assert!(alternate_index.exists());
     let output = run_git_with_env(&["ls-files"], &env, first.path()).unwrap();
     assert_eq!(output.stdout, b"first.txt\n");
+}
+
+fn assert_repository_selectors_removed(repo: &Path) {
+    let mut selectors = Command::new("git");
+    for variable in REPO_REDIRECT_ENV {
+        selectors.env(variable, "ambient");
+    }
+    harden(&mut selectors, &[], repo);
+    for variable in REPO_REDIRECT_ENV {
+        assert!(
+            selectors
+                .get_envs()
+                .any(|(key, value)| key == OsStr::new(variable) && value.is_none()),
+            "{variable} must be removed"
+        );
+    }
 }
 
 /// Every hook name this fixture wires up. Each script just touches a

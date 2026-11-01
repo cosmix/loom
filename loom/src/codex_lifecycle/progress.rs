@@ -20,6 +20,42 @@ use crate::subagent_lifecycle::CodexEvidenceOutcome;
 
 use super::jobs::classify_job;
 
+/// Positive evidence for a foreground companion forward. Require its bound
+/// worker and a fresh log in the expected jobs directory; a record timestamp
+/// alone can be refreshed without the worker doing useful work.
+pub(super) fn fresh_companion_log(
+    job: &CompanionJob,
+    state_root: &Path,
+    budget: Duration,
+    now: SystemTime,
+) -> bool {
+    if job.status.as_deref() != Some("running")
+        || !job.pid.is_some_and(crate::process::is_process_alive)
+    {
+        return false;
+    }
+    let Some(log) = job.log_file.as_deref() else {
+        return false;
+    };
+    let Some(workspace) = job.workspace_root.as_deref() else {
+        return false;
+    };
+    let Ok(directory) = super::jobs::workspace_state_dir(state_root, workspace) else {
+        return false;
+    };
+    if log != directory.join("jobs").join(format!("{}.log", job.id)) {
+        return false;
+    }
+    let Ok(metadata) = std::fs::symlink_metadata(log) else {
+        return false;
+    };
+    metadata.file_type().is_file()
+        && metadata
+            .modified()
+            .ok()
+            .is_some_and(|modified| now.duration_since(modified).unwrap_or_default() <= budget)
+}
+
 /// What direct observation says about a job the ledger calls running.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CompanionProgress {

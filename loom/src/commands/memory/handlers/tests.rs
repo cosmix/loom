@@ -41,12 +41,7 @@ fn note_uses_loom_stage_id_env_var_over_sentinel() {
     assert!(!repo.path().join(".loom/work/memory/ad-hoc.md").exists());
 }
 
-/// A stage that can write the state directory directly (no sandbox, e.g. a main-repo
-/// knowledge stage) must be refused just as firmly as the spool path when
-/// its explicit `--stage` disagrees with `LOOM_STAGE_ID` - attribution must
-/// not be spoofable via CLI flag regardless of which write path a call
-/// takes. This replaces the old "explicit stage silently overrides env"
-/// behavior, which was exactly the forged-attribution hole this closes.
+/// Direct writes must reject an explicit stage that differs from the session.
 #[test]
 fn note_explicit_stage_mismatch_is_refused_direct_path() {
     if run_isolated_test() {
@@ -89,8 +84,6 @@ fn note_explicit_stage_allowed_when_loom_stage_id_unset() {
     assert!(repo.path().join(".loom/work/memory/cli-stage.md").exists());
 }
 
-// The impostor `.git` regression lives in a separate file to keep this one
-// under the maintainability limit.
 #[path = "impostor_git_dir_tests.rs"]
 mod impostor_git_dir_tests;
 

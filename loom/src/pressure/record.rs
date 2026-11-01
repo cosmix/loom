@@ -1,4 +1,4 @@
-//! Render and atomically append the pressure-test record to a plan.
+//! Render a pressure-test record and publish a replacement plan.
 
 use std::ffi::OsString;
 use std::fs::{self, File, Metadata, OpenOptions, Permissions};
@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{ensure, Context, Result};
 
 use crate::fs::knowledge::splice::fence_mask;
+use crate::planning::sections::sections_of;
 
 const MAX_PLAN_BYTES: u64 = 8 * 1024 * 1024;
 const END_METADATA: &str = "<!-- END loom METADATA";
@@ -69,7 +70,7 @@ impl RecordLine {
     }
 }
 
-/// Whether the record was saved or the plan no longer occupies its path.
+/// Whether the record was saved or a conflict was observed before publication.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordWrite {
     Written,
@@ -106,44 +107,38 @@ pub fn append_to_text(text: &str, rendered: &str) -> String {
 
 fn record_offset(text: &str) -> Option<usize> {
     let lines: Vec<&str> = text.split_inclusive('\n').collect();
-    // Headings inside fenced code are not headings to the reader
-    // (`planning::pressure::records`), so they must not place the record either.
-    // The shared scanner expects lines without their terminators.
     let scan_lines: Vec<&str> = lines
         .iter()
         .map(|line| line.trim_end_matches(['\n', '\r']))
         .collect();
     let fenced = fence_mask(&scan_lines);
-    let mut starts = Vec::with_capacity(lines.len());
-    let mut position = 0;
-    for line in &lines {
-        starts.push(position);
-        position += line.len();
-    }
-    // A fenced example of the marker is not the marker either.
-    let marker = (0..lines.len())
-        .rposition(|index| !fenced[index] && lines[index].starts_with(END_METADATA))?;
-    let mut insertion = None;
-    for (index, line) in lines.iter().enumerate().skip(marker + 1) {
-        let is_heading = !fenced[index];
-        if insertion.is_some() && is_heading && (line.starts_with("# ") || line.starts_with("## "))
-        {
-            break;
-        }
-        let content = line.trim_end();
-        if insertion.is_some() {
-            if !content.is_empty() {
-                insertion = Some(starts[index] + line.len());
-            }
-        } else if is_heading && content == "## Pressure tests" {
-            insertion = Some(starts[index] + line.len());
-        }
-    }
-    insertion
+    let document = sections_of(text);
+    // Use the parsed metadata boundary when present. A marker inside a
+    // fenced example cannot define the boundary, even if extraction saw it.
+    let marker = document
+        .metadata
+        .as_ref()
+        .and_then(|span| span.end_line.checked_sub(1))
+        .filter(|&index| !fenced[index] && scan_lines[index].starts_with(END_METADATA))
+        .or_else(|| {
+            scan_lines
+                .iter()
+                .enumerate()
+                .position(|(index, line)| !fenced[index] && line.starts_with(END_METADATA))
+        })?;
+    let section = document.headings.iter().find(|heading| {
+        heading.level == 2 && heading.title == "Pressure tests" && heading.span.start_line > marker
+    })?;
+    let last = (section.span.start_line..section.span.end_line)
+        .rev()
+        .find(|&index| !scan_lines[index].trim().is_empty())?;
+    Some(lines.iter().take(last + 1).map(|line| line.len()).sum())
 }
 
 /// Append a record through a synced sibling temp file, retaining the plan mode.
-/// Missing, changed, replaced, and symlinked plans return [`RecordWrite::PlanMoved`].
+/// Missing, changed, replaced, and symlinked plans observed before publication
+/// return [`RecordWrite::PlanMoved`]. External editors do not take Loom's lock:
+/// an edit between the last comparison and rename can still be overwritten.
 pub fn append_record(plan_path: &Path, line: &RecordLine) -> Result<RecordWrite> {
     if regular_metadata(plan_path)?.is_none() {
         return Ok(RecordWrite::PlanMoved);

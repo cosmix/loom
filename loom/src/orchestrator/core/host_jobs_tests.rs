@@ -62,6 +62,16 @@ fn shell_runner(work: &Path, script: &str) -> HostJobRunner {
     HostJobRunner::new(work.to_path_buf(), config)
 }
 
+fn another_orchestrator(work: &Path, repo_root: &Path) -> Orchestrator {
+    let config = OrchestratorConfig {
+        work_dir: work.to_path_buf(),
+        repo_root: repo_root.to_path_buf(),
+        enable_skill_routing: false,
+        ..Default::default()
+    };
+    Orchestrator::new(config, ExecutionGraph::build(Vec::new()).unwrap()).unwrap()
+}
+
 fn queue(work: &Path, kind: JobKind) -> JobRecord {
     let request = SubmitRequest {
         stage_id: STAGE,
@@ -213,6 +223,30 @@ fn restart_applies_an_old_terminal_job_after_current_advances() {
     assert_eq!(daemon_refusal(&work, STAGE).unwrap(), Some(refusal));
     assert_eq!(
         load_job_file(&work, STAGE, &old.id, "apply-attempts").unwrap(),
+        Some(b"2".to_vec())
+    );
+}
+
+#[test]
+fn a_second_orchestrator_recovers_only_the_durable_unapplied_job() {
+    let (temp, work, first) = orchestrator();
+    let job = terminal_freeze(&work);
+    std::fs::write(work.join("sessions/session-a.md"), "not a session record").unwrap();
+
+    first.report_host_job_recovery(Ok(Vec::new()));
+    assert_eq!(marker(&work, &job), None);
+    assert_eq!(
+        load_job_file(&work, STAGE, &job.id, "apply-attempts").unwrap(),
+        Some(b"1".to_vec())
+    );
+    drop(first);
+
+    contract_writer(&work);
+    let second = another_orchestrator(&work, temp.path());
+    second.report_host_job_recovery(Ok(Vec::new()));
+    assert!(marker(&work, &job).is_some());
+    assert_eq!(
+        load_job_file(&work, STAGE, &job.id, "apply-attempts").unwrap(),
         Some(b"2".to_vec())
     );
 }

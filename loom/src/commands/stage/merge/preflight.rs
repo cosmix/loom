@@ -45,13 +45,22 @@ pub(super) fn admit_retry(stage_id: &str, work_dir: &Path) -> Result<RetryAdmiss
 /// This runs BEFORE the fix_attempts increment so a refused retry does not
 /// burn an attempt.
 pub(super) fn retry_preflight(stage_id: Option<String>, work_dir: &Path) -> Result<RetryPreflight> {
+    let cwd = std::env::current_dir().context("Failed to get current directory")?;
+    retry_preflight_from(stage_id, work_dir, &cwd)
+}
+
+fn retry_preflight_from(
+    stage_id: Option<String>,
+    work_dir: &Path,
+    cwd: &Path,
+) -> Result<RetryPreflight> {
     // Resolve stage ID: use provided or detect from current worktree branch
     let stage_id = super::resolve_stage_id(stage_id, "merge <stage-id>")?;
 
     let stage = load_stage(&stage_id, work_dir)?;
     require_merge_state(&stage, &stage_id)?;
 
-    let (repo_root, worktree_root) = resolve_worktree_paths(&stage_id)?;
+    let (repo_root, worktree_root) = resolve_worktree_paths(&stage_id, cwd)?;
 
     Ok(RetryPreflight {
         stage_id,
@@ -92,9 +101,8 @@ fn require_merge_state(stage: &Stage, stage_id: &str) -> Result<()> {
 ///
 /// Run BEFORE incrementing fix_attempts so a refused retry does not burn an
 /// attempt.
-fn resolve_worktree_paths(stage_id: &str) -> Result<(PathBuf, PathBuf)> {
+fn resolve_worktree_paths(stage_id: &str, cwd: &Path) -> Result<(PathBuf, PathBuf)> {
     // Verify we're in a worktree (cwd should contain .worktrees in its path)
-    let cwd = std::env::current_dir().context("Failed to get current directory")?;
     let cwd_str = cwd.to_string_lossy();
     if !cwd_str.contains(".worktrees") {
         bail!(
@@ -109,13 +117,13 @@ fn resolve_worktree_paths(stage_id: &str) -> Result<(PathBuf, PathBuf)> {
     }
 
     // Find repo root (parent of .worktrees)
-    let repo_root = super::find_repo_root(&cwd)?;
+    let repo_root = super::find_repo_root(cwd)?;
 
     // Resolve worktree root from cwd. `git rev-parse --show-toplevel` returns
     // the top of the working tree, which for a worktree is its root.
-    let worktree_root = crate::git::run_git_checked(&["rev-parse", "--show-toplevel"], &cwd)
+    let worktree_root = crate::git::run_git_checked(&["rev-parse", "--show-toplevel"], cwd)
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| cwd.clone());
+        .unwrap_or_else(|_| cwd.to_path_buf());
 
     // Refuse if either main repo or the worktree has an active merge — running
     // a programmatic merge over an in-progress resolution would clobber the
@@ -135,6 +143,46 @@ fn resolve_worktree_paths(stage_id: &str) -> Result<(PathBuf, PathBuf)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn git(root: &Path, args: &[&str]) {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn retry_fixture() -> (tempfile::TempDir, PathBuf) {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        git(root, &["init", "-b", "main"]);
+        git(root, &["config", "user.email", "test@example.com"]);
+        git(root, &["config", "user.name", "Test"]);
+        std::fs::write(root.join("seed"), "seed").unwrap();
+        git(root, &["add", "seed"]);
+        git(root, &["commit", "-m", "seed"]);
+        git(
+            root,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "loom/stage-a",
+                ".worktrees/stage-a",
+            ],
+        );
+        let work_dir = root.join(".loom/work");
+        let mut stage = Stage::new("stage-a".to_string(), None);
+        stage.id = "stage-a".to_string();
+        stage.status = StageStatus::MergeConflict;
+        crate::verify::transitions::create_stage(&stage, &work_dir).unwrap();
+        (temp, work_dir)
+    }
 
     #[test]
     fn concurrent_retries_charge_only_the_last_available_attempt() {
@@ -184,6 +232,89 @@ mod tests {
         crate::verify::transitions::create_stage(&stage, temp.path()).unwrap();
         assert!(admit_retry("stage-a", temp.path()).is_err());
         assert_eq!(load_stage("stage-a", temp.path()).unwrap().fix_attempts, 1);
+    }
+
+    #[test]
+    fn final_transition_after_preflight_refuses_admission_without_charging() {
+        let (repo, work_dir) = retry_fixture();
+        let worktree = repo.path().join(".worktrees/stage-a");
+        retry_preflight_from(Some("stage-a".to_string()), &work_dir, &worktree).unwrap();
+
+        update_stage("stage-a", &work_dir, |stage| {
+            stage.status = StageStatus::Completed;
+            stage.merged = true;
+            Ok(())
+        })
+        .unwrap();
+
+        let error = admit_retry("stage-a", &work_dir)
+            .err()
+            .expect("a final stage must be refused");
+        assert!(error.to_string().contains("Only MergeConflict"));
+        let stage = load_stage("stage-a", &work_dir).unwrap();
+        assert!(stage.is_final_merged());
+        assert_eq!(stage.fix_attempts, 0);
+    }
+
+    #[test]
+    fn changed_limit_after_preflight_controls_admission() {
+        let (repo, work_dir) = retry_fixture();
+        let worktree = repo.path().join(".worktrees/stage-a");
+        retry_preflight_from(Some("stage-a".to_string()), &work_dir, &worktree).unwrap();
+
+        update_stage("stage-a", &work_dir, |stage| {
+            stage.fix_attempts = 1;
+            stage.max_fix_attempts = Some(1);
+            Ok(())
+        })
+        .unwrap();
+        let RetryAdmission::LimitReached(limited) = admit_retry("stage-a", &work_dir).unwrap()
+        else {
+            panic!("the current cap must refuse admission");
+        };
+        assert_eq!(limited.get_effective_max_fix_attempts(), 1);
+        assert_eq!(load_stage("stage-a", &work_dir).unwrap().fix_attempts, 1);
+
+        update_stage("stage-a", &work_dir, |stage| {
+            stage.max_fix_attempts = Some(3);
+            Ok(())
+        })
+        .unwrap();
+        let RetryAdmission::Admitted(admitted) = admit_retry("stage-a", &work_dir).unwrap() else {
+            panic!("the current cap must permit admission");
+        };
+        assert_eq!(admitted.fix_attempts, 2);
+        assert_eq!(admitted.get_effective_max_fix_attempts(), 3);
+    }
+
+    #[test]
+    fn rejected_filesystem_preflight_does_not_charge() {
+        let (repo, work_dir) = retry_fixture();
+        let error = retry_preflight_from(Some("stage-a".to_string()), &work_dir, repo.path())
+            .err()
+            .expect("a main checkout is not a stage worktree");
+        assert!(error.to_string().contains("worktree"));
+        assert_eq!(load_stage("stage-a", &work_dir).unwrap().fix_attempts, 0);
+    }
+
+    #[test]
+    fn admission_preserves_allowed_merge_states() {
+        let temp = tempfile::tempdir().unwrap();
+        for (id, status) in [
+            ("conflict", StageStatus::MergeConflict),
+            ("blocked", StageStatus::MergeBlocked),
+            ("unmerged", StageStatus::Completed),
+        ] {
+            let mut stage = Stage::new(id.to_string(), None);
+            stage.id = id.to_string();
+            stage.status = status.clone();
+            crate::verify::transitions::create_stage(&stage, temp.path()).unwrap();
+            let RetryAdmission::Admitted(admitted) = admit_retry(id, temp.path()).unwrap() else {
+                panic!("{id} should be admitted");
+            };
+            assert_eq!(admitted.status, status);
+            assert_eq!(admitted.fix_attempts, 1);
+        }
     }
 
     #[test]

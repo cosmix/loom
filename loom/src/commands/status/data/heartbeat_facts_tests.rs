@@ -81,6 +81,52 @@ fn write_lines(path: &Path, lines: &[&str]) {
 }
 
 #[test]
+fn first_call_without_heartbeat_ages_from_current_session_spawn() {
+    let fixture = Fixture::new();
+    let stage = stage(Some(60));
+    let mut session = Session::new();
+    session.id = "current".into();
+    session.stage_id = Some(stage.id.clone());
+    session.status = SessionStatus::Running;
+    session.created_at = Utc::now() - chrono::Duration::seconds(120);
+
+    let facts = heartbeat_facts_under(
+        &stage,
+        Some(&session),
+        &fixture.work_dir,
+        Some(&fixture.projects),
+    );
+
+    assert_eq!(facts.activity_status, ActivityStatus::Stale);
+    assert!(facts.staleness_secs.unwrap() >= 120);
+}
+
+#[test]
+fn previous_attempts_heartbeat_does_not_mask_current_silence() {
+    let fixture = Fixture::new();
+    let stage = stage(Some(60));
+    let mut session = Session::new();
+    session.id = "current".into();
+    session.stage_id = Some(stage.id.clone());
+    session.status = SessionStatus::Running;
+    session.created_at = Utc::now() - chrono::Duration::seconds(120);
+    write_heartbeat(
+        fixture.work_dir.root(),
+        &Heartbeat::new(stage.id.clone(), "previous".into()),
+    )
+    .unwrap();
+
+    let facts = heartbeat_facts_under(
+        &stage,
+        Some(&session),
+        &fixture.work_dir,
+        Some(&fixture.projects),
+    );
+
+    assert_eq!(facts.activity_status, ActivityStatus::Stale);
+}
+
+#[test]
 fn a_larger_budget_makes_the_same_silence_quiet_not_stale() {
     let fixture = Fixture::new();
     let transcript = fixture.main_transcript();

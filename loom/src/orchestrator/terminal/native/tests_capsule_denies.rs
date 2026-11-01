@@ -12,6 +12,30 @@ use crate::orchestrator::terminal::native::tests_session_settings::{
 const DENY_WRITE: &str = "/sandbox/filesystem/denyWrite";
 const DENY_RULES: &str = "/permissions/deny";
 
+#[test]
+fn stage_capsule_preserves_absolute_plan_write_deny_in_both_layers() {
+    let checkout = checkout();
+    register_worktrees(&checkout.repo);
+    let protected = checkout.worktree.join("src/protected.rs");
+    let mut sandbox = sandbox_with(vec![]);
+    sandbox
+        .filesystem
+        .deny_write
+        .push(protected.display().to_string());
+    let path = write_capsule(
+        &checkout,
+        "session-plan-deny",
+        SessionType::Stage,
+        &checkout.worktree,
+        &sandbox,
+        Some(&checkout.hooks_dir),
+    )
+    .unwrap();
+    let capsule = read_capsule(&path);
+    assert!(strings(&capsule, DENY_WRITE).contains(protected.to_str().unwrap()));
+    assert!(strings(&capsule, DENY_RULES).contains(&format!("Edit(/{})", protected.display())));
+}
+
 /// Every session kind with the directory it runs in: stage, contract and
 /// merge sessions in the stage worktree, knowledge and base-conflict sessions
 /// in the checkout. The adjudication row is a judge whose stage worktree is
