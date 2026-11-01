@@ -8,7 +8,7 @@
 //! negative: live, valid, and not us.
 
 use super::*;
-use crate::daemon::protocol::read_message;
+use crate::daemon::protocol::{read_message, write_message};
 use crate::daemon::server::tokens::USER_TOKEN_FILE;
 use crate::fs::session_files::save_session;
 use crate::models::session::{Session, SessionStatus};

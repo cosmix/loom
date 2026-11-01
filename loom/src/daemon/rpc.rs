@@ -159,6 +159,14 @@ pub enum DaemonReach {
 /// - A failure after the connection is established (write, read, timeout) is
 ///   also always an `Err`, never `NotListening` — something was listening.
 pub fn try_send_request(work_dir: &Path, request: &Request) -> Result<DaemonReach> {
+    try_send_request_with_timeout(work_dir, request, EXCHANGE_TIMEOUT)
+}
+
+fn try_send_request_with_timeout(
+    work_dir: &Path,
+    request: &Request,
+    timeout: Duration,
+) -> Result<DaemonReach> {
     let socket_path = socket_path(work_dir);
     match std::fs::symlink_metadata(&socket_path) {
         Ok(_) => {}
@@ -168,7 +176,7 @@ pub fn try_send_request(work_dir: &Path, request: &Request) -> Result<DaemonReac
     if !socket_path_fits(&socket_path) {
         return Ok(DaemonReach::Unreachable);
     }
-    let mut stream = match DeadlineStream::connect(&socket_path, EXCHANGE_TIMEOUT) {
+    let mut stream = match DeadlineStream::connect(&socket_path, timeout) {
         Ok(stream) => stream,
         Err(e) if e.kind() == ErrorKind::PermissionDenied || refused_by_mask(&e, &socket_path) => {
             return Ok(DaemonReach::Unreachable);

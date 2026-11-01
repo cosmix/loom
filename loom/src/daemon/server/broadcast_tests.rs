@@ -8,7 +8,7 @@
 
 use super::*;
 use crate::daemon::protocol::read_message;
-use crate::daemon::wire::MAX_RESPONSE_BYTES;
+use crate::daemon::wire::{response_serialization_count, MAX_RESPONSE_BYTES};
 use std::io::Read as _;
 
 /// A response whose serialized form is comfortably past the frame limit.
@@ -36,6 +36,58 @@ fn two_subscribers() -> (Vec<Subscriber>, Vec<UnixStream>) {
         ],
         vec![reader_a, reader_b],
     )
+}
+
+fn counted_broadcast(
+    subscribers: Arc<Mutex<Vec<Subscriber>>>,
+    response: Response,
+    attempted: std::sync::mpsc::Sender<()>,
+) -> std::thread::JoinHandle<usize> {
+    std::thread::spawn(move || {
+        let before = response_serialization_count();
+        broadcast_to_subscribers_with_hook(&subscribers, &response, &mut false, &mut || {
+            attempted.send(()).unwrap()
+        });
+        response_serialization_count() - before
+    })
+}
+
+#[test]
+fn simultaneous_broadcasts_encode_once_each_and_keep_both_streams_framed() {
+    let (writers, mut readers) = two_subscribers();
+    for reader in &mut readers {
+        reader
+            .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+            .unwrap();
+    }
+    let blocked_writer = Arc::clone(&writers[0]);
+    let held = blocked_writer.lock().unwrap();
+    let subscribers = Arc::new(Mutex::new(writers));
+    let (attempted, ready) = std::sync::mpsc::channel();
+    let first = counted_broadcast(Arc::clone(&subscribers), Response::Pong, attempted.clone());
+    let second = counted_broadcast(
+        Arc::clone(&subscribers),
+        Response::LogLine { line: "two".into() },
+        attempted,
+    );
+    for _ in 0..2 {
+        ready
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+    }
+    drop(held);
+    assert_eq!(first.join().unwrap(), 1);
+    assert_eq!(second.join().unwrap(), 1);
+
+    for reader in &mut readers {
+        let first: Response = read_message(&mut *reader).unwrap();
+        let second: Response = read_message(&mut *reader).unwrap();
+        assert!(matches!(
+            (&first, &second),
+            (Response::Pong, Response::LogLine { line })
+                | (Response::LogLine { line }, Response::Pong) if line == "two"
+        ));
+    }
 }
 
 #[test]
@@ -143,6 +195,67 @@ fn a_dead_peer_is_evicted_even_while_the_payload_is_oversized() {
     );
 
     assert_eq!(subscribers.len(), 1);
+}
+
+#[test]
+fn a_slow_reader_is_evicted_within_the_frame_deadline() {
+    let (writer, _reader) = UnixStream::pair().unwrap();
+    let mut subscribers = vec![Arc::new(Mutex::new(writer))];
+    let response = Response::LogLine {
+        line: "x".repeat(MAX_RESPONSE_BYTES / 2),
+    };
+
+    let started = std::time::Instant::now();
+    broadcast_retaining_live(&mut subscribers, &response, &mut false);
+
+    assert!(subscribers.is_empty());
+    assert!(started.elapsed() < std::time::Duration::from_secs(6));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_trickle_reader_cannot_extend_the_whole_frame_deadline() {
+    use std::os::fd::AsRawFd;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let (mut writer, mut reader) = UnixStream::pair().unwrap();
+    let buffer_size: libc::c_int = 8192;
+    assert_eq!(
+        // SAFETY: writer owns a valid socket descriptor; buffer_size remains live and
+        // points to an initialized c_int for the duration of this call.
+        unsafe {
+            libc::setsockopt(
+                writer.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_SNDBUF,
+                (&raw const buffer_size).cast(),
+                std::mem::size_of_val(&buffer_size) as libc::socklen_t,
+            )
+        },
+        0
+    );
+    let done = Arc::new(AtomicBool::new(false));
+    let draining = {
+        let done = Arc::clone(&done);
+        std::thread::spawn(move || {
+            let mut buffer = [0; 4096];
+            while !done.load(Ordering::Relaxed) && reader.read(&mut buffer).unwrap_or(0) != 0 {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        })
+    };
+
+    let started = std::time::Instant::now();
+    let error = super::super::client::write_bounded_frame_with_timeout(
+        &mut writer,
+        &vec![b'x'; 1024 * 1024],
+        std::time::Duration::from_millis(120),
+    )
+    .unwrap_err();
+    done.store(true, Ordering::Relaxed);
+    let _ = writer.shutdown(std::net::Shutdown::Both);
+    draining.join().unwrap();
+    assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+    assert!(started.elapsed() < std::time::Duration::from_millis(300));
 }
 
 #[test]

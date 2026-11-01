@@ -57,7 +57,19 @@ impl WireMessage for Response {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static RESPONSE_SERIALIZATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(super) fn response_serialization_count() -> usize {
+    RESPONSE_SERIALIZATIONS.with(|count| count.get())
+}
+
 pub(super) fn encode_response_frame(response: &Response) -> Result<Vec<u8>> {
+    #[cfg(test)]
+    RESPONSE_SERIALIZATIONS.with(|count| count.set(count.get() + 1));
     let json = serde_json::to_vec(response).context("Failed to serialize message")?;
     if json.len() > MAX_RESPONSE_BYTES {
         bail!(

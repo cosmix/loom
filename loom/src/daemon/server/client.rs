@@ -1,9 +1,10 @@
 //! Client connection handling.
 
 use super::super::protocol::{
-    read_request_body, read_request_length, read_request_preface, write_message, Capability,
-    Request, RequestPreface, Response,
+    read_request_body, read_request_length, read_request_preface, Capability, Request,
+    RequestPreface, Response,
 };
+use super::super::wire::encode_response_frame;
 use super::admission::{ByteBudget, DeadlineReader};
 use super::self_service;
 use super::stage_control::serve_stage_control;
@@ -33,11 +34,23 @@ const MAX_SUBSCRIBERS_PER_STREAM: usize = 32;
 
 pub(super) type Subscriber = Arc<Mutex<UnixStream>>;
 
+#[path = "client_write.rs"]
+mod writer;
+pub(super) use writer::write_bounded_frame;
+#[cfg(test)]
+pub(super) use writer::write_bounded_frame_with_timeout;
+
 fn send_response(writer: &Subscriber, response: &Response) -> Result<()> {
     let mut stream = writer
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    write_message(&mut *stream, response)
+    write_bounded_response(&mut stream, response)
+}
+
+fn write_bounded_response(stream: &mut UnixStream, response: &Response) -> Result<()> {
+    let frame = encode_response_frame(response)?;
+    write_bounded_frame(stream, &frame)?;
+    Ok(())
 }
 
 /// Outcome of checking a request's credential, before its body is read.
@@ -256,33 +269,57 @@ pub fn handle_client_connection(
 }
 
 fn subscribe(writer: &Subscriber, subscribers: &Mutex<Vec<Subscriber>>, label: &str) -> Result<()> {
-    let mut subscribers = subscribers
+    subscribe_with_ack(writer, subscribers, label, |stream, response| {
+        write_bounded_response(stream, response)
+    })
+}
+
+fn subscribe_with_ack(
+    writer: &Subscriber,
+    subscribers: &Mutex<Vec<Subscriber>>,
+    label: &str,
+    mut acknowledge: impl FnMut(&mut UnixStream, &Response) -> Result<()>,
+) -> Result<()> {
+    // Holding this connection's writer across publication keeps its acknowledgement
+    // ahead of broadcasts, without blocking acknowledgements on other connections.
+    let mut stream = writer
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if subscribers
-        .iter()
-        .any(|existing| Arc::ptr_eq(existing, writer))
-    {
-        return send_response(writer, &Response::Ok);
+    let mut list = subscribers
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if list.iter().any(|existing| Arc::ptr_eq(existing, writer)) {
+        drop(list);
+        return acknowledge(&mut stream, &Response::Ok);
     }
-    if subscribers.len() >= MAX_SUBSCRIBERS_PER_STREAM {
-        drop(subscribers);
-        return send_response(
-            writer,
+    if list.len() >= MAX_SUBSCRIBERS_PER_STREAM {
+        drop(list);
+        return acknowledge(
+            &mut stream,
             &Response::Error {
                 message: format!("{label} subscriber capacity is exhausted"),
             },
         );
     }
-    // The list lock prevents publication until the acknowledgement is complete.
-    send_response(writer, &Response::Ok)?;
-    subscribers.push(Arc::clone(writer));
+    list.push(Arc::clone(writer));
+    drop(list);
+    if let Err(error) = acknowledge(&mut stream, &Response::Ok) {
+        let mut list = subscribers
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        list.retain(|existing| !Arc::ptr_eq(existing, writer));
+        return Err(error);
+    }
     Ok(())
 }
 
 #[cfg(test)]
 #[path = "client_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "client_writer_failure_tests.rs"]
+mod writer_failure_tests;
 
 #[cfg(test)]
 #[path = "client_unsubscribe_tests.rs"]

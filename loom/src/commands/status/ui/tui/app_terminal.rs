@@ -77,6 +77,18 @@ impl<M: TerminalModes> TerminalGuard<M> {
     }
 }
 
+#[cfg(test)]
+impl TerminalGuard<CrosstermModes> {
+    pub(super) fn inactive_for_test() -> Self {
+        Self {
+            modes: CrosstermModes,
+            raw: false,
+            alternate: false,
+            mouse: false,
+        }
+    }
+}
+
 fn with_modes<M: TerminalModes, T>(
     modes: M,
     create: impl FnOnce() -> Result<T>,

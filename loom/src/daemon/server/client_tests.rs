@@ -1,9 +1,12 @@
 use super::*;
 use crate::commands::stage::admin_proof::{mint_admin_proof, AdminProofRequest};
-use crate::daemon::protocol::read_message;
-use crate::daemon::server::broadcast::broadcast_to_subscribers;
+use crate::daemon::protocol::{read_message, write_message};
+use crate::daemon::server::broadcast::{
+    broadcast_to_subscribers, broadcast_to_subscribers_with_hook,
+};
 use crate::daemon::server::tokens::{admin_token_path, verify_user_token, USER_TOKEN_FILE};
-use std::io::Cursor;
+use crate::daemon::wire::encode_response_frame;
+use std::io::{Cursor, Write};
 use std::sync::atomic::AtomicBool;
 use std::thread;
 use tempfile::TempDir;
@@ -29,6 +32,78 @@ fn subscription_acknowledges_before_first_broadcast() {
     ));
     assert!(matches!(
         read_message::<Response, _>(&mut client).unwrap(),
+        Response::Pong
+    ));
+}
+
+#[test]
+fn failed_subscription_acknowledgement_removes_pending_writer() {
+    let (server, client) = UnixStream::pair().unwrap();
+    client.shutdown(std::net::Shutdown::Both).unwrap();
+    let writer = Arc::new(Mutex::new(server));
+    let subscribers = Mutex::new(Vec::new());
+
+    assert!(subscribe(&writer, &subscribers, "Status").is_err());
+    assert!(subscribers.lock().unwrap().is_empty());
+}
+
+fn broadcast_after_writer_attempt(
+    subscribers: Arc<Mutex<Vec<Subscriber>>>,
+) -> thread::JoinHandle<()> {
+    let (attempted, ready) = std::sync::mpsc::channel();
+    let handle = thread::spawn(move || {
+        broadcast_to_subscribers_with_hook(&subscribers, &Response::Pong, &mut false, &mut || {
+            attempted.send(()).unwrap()
+        });
+    });
+    ready.recv_timeout(Duration::from_secs(2)).unwrap();
+    handle
+}
+
+#[test]
+fn partial_acknowledgement_orders_broadcast_without_holding_subscriber_list() {
+    let (slow_server, mut slow_client) = UnixStream::pair().unwrap();
+    slow_client
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    let slow_writer = Arc::new(Mutex::new(slow_server));
+    let subscribers = Arc::new(Mutex::new(Vec::new()));
+    let (prefix_sent, prefix_ready) = std::sync::mpsc::channel();
+    let (release, continue_ack) = std::sync::mpsc::channel();
+    let subscribe_thread = {
+        let writer = Arc::clone(&slow_writer);
+        let subscribers = Arc::clone(&subscribers);
+        thread::spawn(move || {
+            subscribe_with_ack(&writer, &subscribers, "Status", |stream, response| {
+                let frame = encode_response_frame(response)?;
+                stream.write_all(&frame[..4])?;
+                prefix_sent.send(()).unwrap();
+                continue_ack.recv_timeout(Duration::from_secs(2)).unwrap();
+                stream.write_all(&frame[4..])?;
+                Ok(())
+            })
+        })
+    };
+    prefix_ready.recv_timeout(Duration::from_secs(2)).unwrap();
+
+    let (fast_server, mut fast_client) = UnixStream::pair().unwrap();
+    let fast_writer = Arc::new(Mutex::new(fast_server));
+    subscribe(&fast_writer, &subscribers, "Status").unwrap();
+    assert!(matches!(
+        read_message::<Response, _>(&mut fast_client).unwrap(),
+        Response::Ok
+    ));
+    let broadcaster = broadcast_after_writer_attempt(Arc::clone(&subscribers));
+    release.send(()).unwrap();
+    subscribe_thread.join().unwrap().unwrap();
+    broadcaster.join().unwrap();
+
+    assert!(matches!(
+        read_message::<Response, _>(&mut slow_client).unwrap(),
+        Response::Ok
+    ));
+    assert!(matches!(
+        read_message::<Response, _>(&mut slow_client).unwrap(),
         Response::Pong
     ));
 }
