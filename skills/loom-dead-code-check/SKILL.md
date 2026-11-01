@@ -116,7 +116,7 @@ Real code that looks unused. Handle via the tool's own mechanism first, `ignore_
 | Test code | `#[cfg(test)]` auto-excluded | exclude test dirs in config | ignore `test_*`/`setUp`/`tearDown` | `*_test.go` handled |
 | Framework magic (derives/decorators) | `#[allow(dead_code)]` on the item | tool ignore for decorators | vulture respects `__all__` | — |
 | Public API in a lib | `pub` items excluded by default | ignore lib entry in `.tsprunerc` | `__all__` | exported (capitalized) excluded |
-| Feature-gated / build-tagged | run with `--features=all` | enable during check | enable during check | build tags to include variants |
+| Feature-gated / build-tagged | run with `--all-features` | enable during check | enable during check | build tags to include variants |
 | Reflection / dynamic load | document + integration test | — | — | assigned-to-var for reflection |
 
 **Golden rule:** prefer a language-native suppression (`#[allow(dead_code)]`, `__all__`, tool config) that lives WITH the code over a broad `ignore_patterns` entry that can mask real regressions later.
