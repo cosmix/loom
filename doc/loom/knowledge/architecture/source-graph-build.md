@@ -40,7 +40,7 @@ drives the same builder.
 - **`GraphLayer`**: `revision` (a base's commit; for an overlay, the `HEAD` it was
   cut from), `generation` (the tree generation for an overlay, empty for a base),
   `built_at`, `files` (path → `FileEntry`), and `blob_index` (path → the git blob id
-  whose bytes produced that entry). An overlay write is skipped when revision,
+  whose bytes produced that entry). Overlay indexes omit dirty working-tree entries, tombstones and unreadable entries so OID reuse only uses proven content. An overlay write is skipped when revision,
   generation, files and `blob_index` all equal the previous overlay's;
   `GraphStore::publish_base` never overwrites a revision already published.
 - **`SourceGraphOutcome { nodes, edges, freshness, counters }`** describes the layer

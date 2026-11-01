@@ -23,7 +23,7 @@
 
 ## Maintainability Baseline
 
-- `loom/maintainability-baseline.txt` rows are exact: `tests/maintainability/baseline.rs` fails when a recorded function grows and when it shrinks. The file is a `ratchet_files` entry in v2 plans, so editing a recorded function must keep its length or raise a TI-ratchet integrity event.
+`loom/maintainability-baseline.txt` records exact sizes for existing violations. `tests/maintainability/baseline.rs` rejects growth, requires a reduced entry when an existing violation shrinks, and requires removal once it is under the limit. Version 2 plans may also declare this file as a `ratchet_files` entry, so follow the applicable plan integrity rules when updating it.
 
 ## Data Flow
 
