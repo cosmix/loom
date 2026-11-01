@@ -2,21 +2,24 @@
 //! error text and recovery of a worktree git already half-removed.
 
 use anyhow::{Context, Result};
+use nix::dir::Dir;
+use nix::errno::Errno;
+use nix::fcntl::{OFlag, AT_FDCWD};
+use nix::sys::stat::Mode;
+use nix::unistd::{unlinkat, UnlinkatFlags};
 use std::ffi::OsStr;
+use std::os::fd::AsFd;
 use std::path::Path;
 
 use crate::git::runner::{run_git_checked, run_git_with_env};
-use crate::verify::tool_artifacts::NAMES;
 
 /// Cap on how many paths an error lists verbatim. The message is persisted
 /// into stage frontmatter and shipped in every status frame (2 MiB IPC cap),
 /// so it must be bounded.
 const MAX_BLOCKING_PATHS: usize = 20;
 
-/// Symlinks loom plants in a worktree (worktree-relative).
-const SCAFFOLD_SYMLINKS: [&str; 4] = [".loom/work", ".work", "CLAUDE.md", ".claude/CLAUDE.md"];
-/// Generated regular files under `.claude/`.
-const SCAFFOLD_CLAUDE_FILES: [&str; 2] = [".claude/settings.json", ".claude/settings.local.json"];
+/// Empty directories left by the worktree scaffold or its runtime writers.
+const SCAFFOLD_DIRS: [&str; 4] = [".claude", ".claude/.cc-writes", ".loom", ".loom/cache"];
 
 /// Build the failure error for a non-forced removal. Only git's dirty-tree
 /// refusal is described as a refusal; any other failure carries git's own
@@ -57,11 +60,10 @@ fn half_removed(worktree_path: &Path, e: &anyhow::Error) -> bool {
 /// Recover a worktree git half-removed (tracked files and admin dir gone,
 /// directory left behind by a late write from the stage's session).
 ///
-/// Returns `Ok(true)` once the leftover tree held only scaffold, was removed
+/// Returns `Ok(true)` once only known empty scaffold directories were removed
 /// and the registry pruned; `Ok(false)` when the failure is not that state.
-/// Any other regular file left makes this fail naming those files and deletes
-/// nothing. The caller has already vetted `worktree_path` with
-/// `worktree_directory_exists`; removal never follows a symlink.
+/// Files and symlinks have no provable ownership once Git's admin dir is gone.
+/// Directory-only removal refuses late files and never follows a symlink.
 pub(super) fn recover_half_removed(
     worktree_path: &Path,
     repo_root: &Path,
@@ -79,7 +81,7 @@ pub(super) fn recover_half_removed(
             cap_lines(&unknown)
         );
     }
-    std::fs::remove_dir_all(worktree_path).with_context(|| {
+    remove_empty_scaffold_dirs(worktree_path).with_context(|| {
         format!(
             "Failed to remove leftover scaffold in {}",
             worktree_path.display()
@@ -89,7 +91,35 @@ pub(super) fn recover_half_removed(
     Ok(true)
 }
 
-/// Prove every remaining entry is scaffold before allowing deletion.
+/// Remove only empty known directories, relative to pinned directory handles.
+/// A file created after inspection makes `unlinkat(RemoveDir)` fail closed.
+fn remove_empty_scaffold_dirs(root: &Path) -> Result<()> {
+    let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
+    let parent_path = root.parent().context("Worktree has no parent directory")?;
+    let name = root.file_name().context("Worktree has no directory name")?;
+    let parent = Dir::openat(AT_FDCWD, parent_path, flags, Mode::empty())?;
+    let directory = Dir::openat(parent.as_fd(), name, flags, Mode::empty())?;
+
+    for (outer, inner) in [(".claude", ".cc-writes"), (".loom", "cache")] {
+        match Dir::openat(directory.as_fd(), outer, flags, Mode::empty()) {
+            Ok(child) => remove_empty_dir(&child, inner)?,
+            Err(Errno::ENOENT) => {}
+            Err(error) => return Err(error.into()),
+        }
+        remove_empty_dir(&directory, outer)?;
+    }
+    unlinkat(parent.as_fd(), name, UnlinkatFlags::RemoveDir)?;
+    Ok(())
+}
+
+fn remove_empty_dir(parent: &Dir, name: &str) -> Result<()> {
+    match unlinkat(parent.as_fd(), name, UnlinkatFlags::RemoveDir) {
+        Ok(()) | Err(Errno::ENOENT) => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// List entries whose ownership cannot be established after Git removed its admin dir.
 fn unknown_entries(root: &Path) -> Result<Vec<String>> {
     let mut found = Vec::new();
     let mut pending = vec![root.to_path_buf()];
@@ -116,17 +146,9 @@ fn unknown_entries(root: &Path) -> Result<Vec<String>> {
     Ok(found)
 }
 
-/// Whether a non-directory entry is scaffold loom or the session sandbox
-/// creates; directories are always acceptable (only files make them matter).
+/// Only the known empty scaffold directories can be removed safely here.
 fn is_scaffold(rel: &str, meta: &std::fs::Metadata) -> bool {
-    if meta.is_dir() {
-        return true;
-    }
-    if meta.file_type().is_symlink() {
-        return SCAFFOLD_SYMLINKS.contains(&rel);
-    }
-    meta.is_file()
-        && (SCAFFOLD_CLAUDE_FILES.contains(&rel) || (NAMES.contains(&rel) && meta.len() == 0))
+    meta.is_dir() && SCAFFOLD_DIRS.contains(&rel)
 }
 
 /// Entries under `root` (relative paths) selected by `pick`, found without

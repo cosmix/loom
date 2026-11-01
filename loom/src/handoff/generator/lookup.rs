@@ -1,6 +1,4 @@
-use std::cmp::Reverse;
 use std::fs;
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -10,7 +8,7 @@ use crate::handoff::completion::attestation_key;
 use crate::handoff::schema::{CompletionCheckpoint, MAX_EVIDENCE_NONCES};
 use crate::handoff::{HandoffOrigin, HandoffV2, ParsedHandoff};
 
-use super::numbering::find_latest_handoff;
+use super::numbering::{find_latest_handoff, numbered_handoffs};
 const MAX_HANDOFF_BYTES: usize = 1024 * 1024;
 pub fn find_matching_handoff(
     stage_id: &str,
@@ -137,7 +135,7 @@ fn find_handoff_where(
     work_dir: &Path,
     mut matches: impl FnMut(&HandoffV2) -> bool,
 ) -> Result<Option<PathBuf>> {
-    for path in numbered_handoff_paths(stage_id, work_dir)? {
+    for (_, path) in numbered_handoffs(stage_id, work_dir)? {
         let Some(content) = read_handoff_artifact(work_dir, &path)? else {
             continue;
         };
@@ -157,10 +155,7 @@ pub(super) fn session_handoffs(
     work_dir: &Path,
 ) -> Result<Vec<(PathBuf, HandoffV2)>> {
     let mut handoffs = Vec::new();
-    for path in numbered_handoff_paths(stage_id, work_dir)?
-        .into_iter()
-        .rev()
-    {
+    for (_, path) in numbered_handoffs(stage_id, work_dir)?.into_iter().rev() {
         let Some(content) = read_handoff_artifact(work_dir, &path)? else {
             continue;
         };
@@ -212,40 +207,6 @@ fn handoff_number(path: &Path) -> u32 {
         .and_then(|stem| stem.rsplit('-').next())
         .and_then(|number| number.parse().ok())
         .unwrap_or_default()
-}
-
-fn numbered_handoff_paths(stage_id: &str, work_dir: &Path) -> Result<Vec<PathBuf>> {
-    let handoffs_dir = work_dir.join("handoffs");
-    let entries = match fs::read_dir(&handoffs_dir) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => {
-            return Err(error).with_context(|| {
-                format!(
-                    "Failed to read handoffs directory: {}",
-                    handoffs_dir.display()
-                )
-            });
-        }
-    };
-
-    let prefix = format!("{stage_id}-handoff-");
-    let mut candidates = Vec::new();
-    for entry in entries {
-        let entry = entry.context("Failed to read handoff directory entry")?;
-        let filename = entry.file_name();
-        let filename = filename.to_string_lossy();
-        let Some(number) = filename
-            .strip_prefix(&prefix)
-            .and_then(|rest| rest.strip_suffix(".md"))
-            .and_then(|number| number.parse::<u32>().ok())
-        else {
-            continue;
-        };
-        candidates.push((number, entry.path()));
-    }
-    candidates.sort_unstable_by_key(|(number, _)| Reverse(*number));
-    Ok(candidates.into_iter().map(|(_, path)| path).collect())
 }
 
 #[cfg(test)]

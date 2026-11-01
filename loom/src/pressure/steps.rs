@@ -20,6 +20,8 @@ pub enum Step {
     },
     /// Run Claude `/address` in the foreground to fold the review into the plan.
     Address(String),
+    /// Save the run record before final report cleanup.
+    Record,
 }
 
 /// Build the ordered list of steps for `rounds` rounds.
@@ -27,7 +29,7 @@ pub enum Step {
 /// Each round: delete the report (so a failed Codex write can't leave
 /// `/address` reading the previous round's report) → run Claude `/pressure` and
 /// Codex `$pressure` concurrently → Claude `/address`. After all rounds, one
-/// final report deletion as cleanup.
+/// record writing, then final report deletion as cleanup.
 pub fn plan_steps(rounds: u32, invocation: &str, report: &Path) -> Vec<Step> {
     let mut steps = Vec::new();
     for _ in 0..rounds {
@@ -38,6 +40,7 @@ pub fn plan_steps(rounds: u32, invocation: &str, report: &Path) -> Vec<Step> {
         });
         steps.push(Step::Address(format!("/address {invocation}")));
     }
+    steps.push(Step::Record);
     steps.push(Step::DeleteReport(report.to_path_buf()));
     steps
 }

@@ -169,8 +169,8 @@ fn test_format_handoff_markdown() {
 fn test_format_handoff_markdown_escapes_pipes() {
     let content = HandoffContent::new("session-1".to_string(), "stage-1".to_string())
         .with_decisions(vec![(
-            "Choice with | pipe".to_string(),
-            "Reason with | pipe".to_string(),
+            "Choice with | pipe\nand newline".to_string(),
+            "Reason with | pipe\r\nand newline".to_string(),
         )]);
 
     let markdown = format_handoff_markdown(&content).unwrap();
@@ -178,6 +178,8 @@ fn test_format_handoff_markdown_escapes_pipes() {
     // Should escape pipes in table cells
     assert!(markdown.contains(r"Choice with \| pipe"));
     assert!(markdown.contains(r"Reason with \| pipe"));
+    assert!(markdown.contains(r"Choice with \| pipe<br>and newline"));
+    assert!(markdown.contains(r"Reason with \| pipe<br>and newline"));
 }
 
 #[test]

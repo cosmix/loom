@@ -1,25 +1,7 @@
-//! When a silent session is reported, and when that report becomes evidence
-//! of death rather than a warning.
-//!
-//! A hung report is suppressed after the first one so a stuck session does not
-//! reprint its warning every five seconds. One further report is allowed when
-//! the silence reaches the
-//! line [`is_stall_escalation`] draws: three response budgets, or longer while
-//! the session's pinned completion runs. A
-//! session that wakes up clears both latches on its next heartbeat, which is
-//! what keeps a blip from ever reaching the second report: the elapsed time
-//! restarts from zero with it.
-//!
-//! While the stage has a host job that has not ended (a check, the
-//! completion or the contract run the session relayed), the session is
-//! waiting on the daemon, not hung: the warning may still be reported, but
-//! the escalating report is held until the job ends or passes its deadline
-//! ([`host_job_holds_session`]). Only the session that relayed the job is
-//! held: a crashed or replaced session's job may outlive it, and must not
-//! hide its successor's stall.
-//!
-//! Judges are silent in the same observable way and are dispatched from here
-//! to [`super::judge_watchdog`], which measures and reports them differently.
+//! Latches stage silence warnings and escalation reports. A new heartbeat
+//! clears both latches. A running host job holds escalation for the session
+//! that relayed it until the job ends or passes its deadline.
+//! Judges use [`super::judge_watchdog`] and their own heartbeat semantics.
 
 use std::path::Path;
 use std::time::Duration;
@@ -34,6 +16,7 @@ use crate::models::stage::Stage;
 use super::config::MonitorConfig;
 use super::detection::Detection;
 use super::events::MonitorEvent;
+use super::foreground::foreground_forward_holds;
 use super::handlers::Handlers;
 use super::heartbeat::{HeartbeatStatus, HeartbeatWatcher};
 use super::never_worked::silence_without_heartbeat;
@@ -41,13 +24,8 @@ use super::parked::stage_looks_finished;
 use super::stall_line::{is_stall_escalation, running_completion_line};
 
 impl Detection {
-    /// What one running session's silence is worth on this tick, if anything.
-    ///
-    /// The two kinds part company immediately: a judge is measured against its
-    /// own heartbeat file and its own running commands, reported as
-    /// [`MonitorEvent::AdjudicatorStalled`], and never falls through to the
-    /// stage-agent path, whose heartbeat it does not write and whose
-    /// recovery — handing the stage off to a successor — would be wrong for it.
+    /// Reports a running session's silence. Judges use their own heartbeat
+    /// and recovery path, so they never enter stage-agent recovery.
     pub(super) fn session_silence_event(
         &mut self,
         session: &Session,
@@ -61,9 +39,7 @@ impl Detection {
         }
         let stage_id = session.stage_id.as_deref()?;
 
-        // Resolve this stage's response budget. One watcher serves every
-        // stage, so the threshold is passed per check rather than held on
-        // the watcher.
+        // Resolve this stage's response budget for the shared watcher.
         let timeout_secs = stages
             .iter()
             .find(|s| s.id == *stage_id)
@@ -106,15 +82,8 @@ impl Detection {
         let stale_duration_secs =
             self.stage_silence_secs(session, stage_id, heartbeat_watcher, timeout_secs)?;
         let stage = stages.iter().find(|stage| stage.id == stage_id);
-        let held = stage.is_some_and(|stage| {
-            host_job_holds_session(work_dir, stage, &session.id, heartbeat_watcher.now())
-        });
-        let completion_line = if held {
-            Some(HELD_LINE)
-        } else {
-            let heartbeat = heartbeat_watcher.get_heartbeat(stage_id);
-            running_completion_line(heartbeat, &session.id, stage)
-        };
+        let completion_line =
+            self.silence_completion_line(session, stage, heartbeat_watcher, timeout_secs, work_dir);
         // A dead PID is a crash, and crash detection in
         // `detect_session_changes` owns it, so only a live one is reported hung.
         if !self.hung_report_due(
@@ -141,6 +110,40 @@ impl Detection {
             completion_line,
         );
         Some(event)
+    }
+
+    fn silence_completion_line(
+        &mut self,
+        session: &Session,
+        stage: Option<&Stage>,
+        heartbeat_watcher: &HeartbeatWatcher,
+        timeout_secs: u64,
+        work_dir: &Path,
+    ) -> Option<u64> {
+        let held = stage.is_some_and(|stage| {
+            host_job_holds_session(work_dir, stage, &session.id, heartbeat_watcher.now())
+        });
+        let stage_id = session.stage_id.as_deref()?;
+        let heartbeat = heartbeat_watcher.get_heartbeat(stage_id);
+        let forward_held = foreground_forward_holds(
+            work_dir,
+            session,
+            heartbeat,
+            timeout_secs,
+            heartbeat_watcher.now(),
+        );
+        let foreground_held = self.foreground_command_holds(
+            work_dir,
+            session,
+            heartbeat,
+            timeout_secs,
+            heartbeat_watcher.now(),
+        );
+        if held || forward_held || foreground_held {
+            Some(HELD_LINE)
+        } else {
+            running_completion_line(heartbeat, &session.id, stage)
+        }
     }
 
     /// Silence of a stage session, or `None` when it answers (resetting its latch).
@@ -210,6 +213,7 @@ impl Detection {
     pub(super) fn clear_hung_report(&mut self, session_id: &str) {
         self.reported_hung_sessions.remove(session_id);
         self.escalated_hung_sessions.remove(session_id);
+        self.foreground_commands_seen.remove(session_id);
     }
 
     /// Both latches, so a test can say which line a session has crossed.

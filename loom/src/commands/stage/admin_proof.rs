@@ -20,7 +20,9 @@ pub const ADMIN_PROOF_ENV: &str = "LOOM_ADMIN_PROOF";
 /// Environment variable used only by the trusted proof-minting command.
 pub const ADMIN_SECRET_ENV: &str = "LOOM_ADMIN_TOKEN";
 
-const PROOF_VERSION: &str = "v1";
+// v1 accepted multiple spellings of the same MAC. Reject all v1 grants so a
+// previously consumed mixed-case proof cannot be replayed in lowercase.
+const PROOF_VERSION: &str = "v2";
 const COMPLETION_ACTION: &str = "stage.complete";
 const DAEMON_STOP_ACTION: &str = "daemon.stop";
 const DAEMON_TARGET: &str = "daemon";
@@ -127,7 +129,7 @@ pub(crate) fn strip_privileged_env_for_runtime() {
 
 /// Verify and consume a proof for one exact privileged request.
 ///
-/// Proof format: `v1:<nonce>:<hex HMAC-SHA256>`. The HMAC input includes the
+/// Proof format: `v2:<nonce>:<hex HMAC-SHA256>`. The HMAC input includes the
 /// stage ID, action, and every privileged flag. A successfully verified proof
 /// is consumed with an atomic `create_new` marker, so concurrent or later replay
 /// fails before the requested action runs.
@@ -172,8 +174,7 @@ fn parse_proof(proof: &str) -> Result<(&str, Vec<u8>)> {
         bail!("operator proof nonce must be 16-128 URL-safe ASCII characters");
     }
     let mac = mac.ok_or_else(|| anyhow::anyhow!("operator proof is missing its authenticator"))?;
-    // Minted v1 proofs are lowercase. Reject legacy alternate spellings so
-    // existing lowercase replay markers keep their identity across upgrades.
+    // Canonical encoding makes the authenticated proof's replay identity unique.
     if mac.len() != 64
         || !mac
             .bytes()
@@ -221,7 +222,7 @@ fn consume_replay_marker(work_dir: &Path, message: &str, proof: &str) -> Result<
     digest.update(proof.as_bytes());
     let marker_path = replay_dir.join(hex::encode(digest.finalize()));
 
-    match crate::fs::safe_fs::safe_create_new(work_dir, &marker_path, b"v1\n") {
+    match crate::fs::safe_fs::safe_create_new(work_dir, &marker_path, b"v2\n") {
         Ok(()) => Ok(()),
         Err(error) if is_already_exists(&error) => {
             bail!("operator proof has already been used")

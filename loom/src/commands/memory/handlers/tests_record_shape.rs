@@ -1,6 +1,5 @@
 //! Record-shape tests: confirm `note` accepts the `mistake:`/`stale-knowledge:`
-//! conventions end to end, split out of `tests.rs` to keep it under the
-//! maintainability line limit.
+//! conventions end to end.
 
 use super::note;
 use super::test_isolation::{init_git_repo, run_isolated_test};

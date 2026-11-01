@@ -23,8 +23,8 @@ pub enum HandoffOrigin {
     BudgetExceeded,
     /// The agent hit its own context ceiling and ran `loom handoff --trigger
     /// ceiling` to end its turn. The daemon watches for this origin: it is the
-    /// only signal a sandboxed worktree session can leave, since it may write
-    /// `.loom/work/handoffs` but not `.loom/work/stages`.
+    /// signal relayed by a sandboxed worktree session; the daemon owns writes
+    /// to the handoff and stage directories.
     AgentCeiling,
     /// The daemon gave up on a session whose heartbeat went stale far past its
     /// response budget and recovered the stage without the agent's help.

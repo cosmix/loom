@@ -78,13 +78,27 @@ pub fn run_pipeline(
         "pressure pipeline needs at least one round"
     );
     let mut results = RoundResults::default();
-    let mut steps = plan_steps(input.rounds, input.invocation, input.report)
-        .into_iter()
-        .peekable();
-    while let Some(step) = steps.next() {
+    let mut record_result = None;
+    for step in plan_steps(input.rounds, input.invocation, input.report) {
         let verdict = match step {
-            Step::DeleteReport(report) if steps.peek().is_none() => {
-                return finish_pipeline(driver, input, results, &report);
+            Step::Record => {
+                record_result = Some(write_record(input, std::mem::take(&mut results)));
+                continue;
+            }
+            Step::DeleteReport(report) if record_result.is_some() => {
+                let deleted = driver.delete_report(&report);
+                return match record_result.expect("record result was checked") {
+                    Ok(outcome) => {
+                        deleted?;
+                        Ok(outcome)
+                    }
+                    Err(error) => {
+                        if let Err(cleanup) = deleted {
+                            tracing::warn!(error = %cleanup, "cannot delete the Codex report");
+                        }
+                        Err(error)
+                    }
+                };
             }
             step => match run_step(driver, input.report, &mut results, step) {
                 Ok(verdict) => verdict,
@@ -130,15 +144,11 @@ fn run_step(
             }
             driver.run_address(results.round, &slash)
         }
+        Step::Record => unreachable!("record is handled by run_pipeline"),
     }
 }
 
-fn finish_pipeline(
-    driver: &mut dyn PressureDriver,
-    input: &PipelineInput<'_>,
-    results: RoundResults,
-    report: &Path,
-) -> Result<PipelineOutcome> {
+fn write_record(input: &PipelineInput<'_>, results: RoundResults) -> Result<PipelineOutcome> {
     let line = record::RecordLine {
         date: input.today,
         claude_model: input.claude_model.to_string(),
@@ -147,18 +157,13 @@ fn finish_pipeline(
         missing_rounds: results.missing_rounds,
     };
     let rendered = line.render();
-    let written = record::append_record(input.plan_path, &line);
-    // The report is removed whether or not the record was saved; a record
-    // failure takes precedence over a cleanup failure.
-    let deleted = driver.delete_report(report);
-    let outcome = match written? {
+    let outcome = match record::append_record(input.plan_path, &line)? {
         record::RecordWrite::Written => PipelineOutcome::Recorded { line: rendered },
         record::RecordWrite::PlanMoved => PipelineOutcome::RecordSkipped {
             line: rendered,
             why: "plan moved or changed while saving the record".to_string(),
         },
     };
-    deleted?;
     Ok(outcome)
 }
 

@@ -126,7 +126,8 @@ fn test_render_dry_run_shows_real_argv() {
         &default_models(),
     );
     assert!(out.contains("Dry run: 1 round"));
-    assert!(out.ends_with("  5. write the ## Pressure tests record in doc/plans/PLAN-foo.md\n"));
+    assert!(out.contains("  4. write the ## Pressure tests record in doc/plans/PLAN-foo.md\n"));
+    assert!(out.ends_with("  5. delete report /repo/doc/plans/codex-PLAN-foo.md\n"));
     assert!(out.contains("--permission-mode auto --model opus --effort xhigh"));
     assert!(out.contains("--append-system-prompt"));
     assert!(out.contains("/pressure doc/plans/PLAN-foo.md"));

@@ -1,7 +1,5 @@
-//! Unit tests for `native/session_settings.rs`: the capsule file, its
-//! lifecycle, and what `write_session_capsule` renders into it. Declared as a
-//! sibling module the way `tests_capsule.rs` and `tests_wrapper_env.rs` are
-//! (CLAUDE.md Rule 17 keeps test files split out of the module they cover).
+//! Unit tests for the session settings capsule: its file lifecycle and
+//! rendered policy across launch kinds.
 //! The fixture below is shared with `tests_capsule.rs`, which checks the
 //! capsule's write denies.
 

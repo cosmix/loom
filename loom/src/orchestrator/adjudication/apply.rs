@@ -42,6 +42,9 @@ impl AdjudicatorRegistry {
     pub fn apply_pending_verdicts(&self, work_dir: &Path) -> Result<()> {
         for (stage_id, dispute_id) in self.pending_verdicts(work_dir)? {
             if let Err(e) = self.apply_verdict(work_dir, &stage_id, dispute_id) {
+                if e.downcast_ref::<super::counter::CounterError>().is_some() {
+                    return Err(e).context("adjudication apply budget unavailable");
+                }
                 tracing::warn!(
                     target: "loom::adjudication",
                     stage = %stage_id,
@@ -59,12 +62,33 @@ impl AdjudicatorRegistry {
     /// bounded retry: after [`super::MAX_APPLY_ATTEMPTS`] failures the
     /// verdict is a wedge, not a transient, and gets escalated instead.
     pub fn apply_verdict(&self, work_dir: &Path, stage_id: &str, dispute_id: u32) -> Result<()> {
+        let dir = dispute_dir(&work_dir.join("disputes"), stage_id, dispute_id);
+        if applied_marker(&work_dir.join("disputes"), stage_id, dispute_id).exists()
+            || is_closed(&dir)
+        {
+            return Ok(());
+        }
+        let spent = super::apply_failure_count(work_dir, stage_id, dispute_id)?;
+        if spent >= super::MAX_APPLY_ATTEMPTS {
+            let error = anyhow::anyhow!("apply attempt budget was exhausted before recovery");
+            super::escalate_apply_cap(work_dir, stage_id, dispute_id, spent, &error);
+            write_applied_marker_after_apply_cap(work_dir, stage_id, dispute_id);
+            return Ok(());
+        }
+        // Reserve durably before any verdict effect. A failed counter write
+        // leaves the stage untouched and cannot grant a free retry next tick.
+        let attempts = super::reserve_apply_attempt(work_dir, stage_id, dispute_id)?;
+        if attempts > super::MAX_APPLY_ATTEMPTS {
+            let error = anyhow::anyhow!("apply attempt budget was exhausted concurrently");
+            super::escalate_apply_cap(work_dir, stage_id, dispute_id, attempts, &error);
+            write_applied_marker_after_apply_cap(work_dir, stage_id, dispute_id);
+            return Ok(());
+        }
         match self.apply_verdict_once(work_dir, stage_id, dispute_id) {
             Ok(()) => Ok(()),
             Err(e) => {
-                let failures = super::record_apply_failure(work_dir, stage_id, dispute_id);
-                if failures >= super::MAX_APPLY_ATTEMPTS {
-                    super::escalate_apply_cap(work_dir, stage_id, dispute_id, failures, &e);
+                if attempts >= super::MAX_APPLY_ATTEMPTS {
+                    super::escalate_apply_cap(work_dir, stage_id, dispute_id, attempts, &e);
                     // Write applied.marker so pending_verdicts stops
                     // returning this dispute: that is what stops both the
                     // retry loop AND the retire_disputing_agents kill that
@@ -92,6 +116,8 @@ impl AdjudicatorRegistry {
         let applying = dir.join(".applying");
 
         let record = read_verdict_record(&verdict_path)?;
+        let request = super::read_request(work_dir, stage_id, dispute_id)
+            .with_context(|| format!("read request for stage {stage_id} dispute {dispute_id}"))?;
         let mut stage = load_stage(stage_id, work_dir)?;
         let loaded_reason = stage.review_reason.clone();
 
@@ -103,7 +129,7 @@ impl AdjudicatorRegistry {
         }
         let _ = std::fs::write(&applying, b"");
 
-        let result = apply_by_kind(work_dir, &mut stage, &record);
+        let result = apply_by_kind(work_dir, &mut stage, &record, &request.kind);
         let final_result = persist_verdict_result(
             work_dir,
             stage_id,
@@ -275,6 +301,7 @@ pub(super) fn apply_reject(
     dispute_id: u32,
     reasoning: &str,
     citations: &[crate::models::dispute::Citation],
+    kind: &DisputeKind,
 ) -> Result<()> {
     // The reasoning and citations are what a human needs to arbitrate, so they
     // are still written for the record.
@@ -286,7 +313,7 @@ pub(super) fn apply_reject(
          it stands and the implementation is what must change. The stage \
          agent judged it impossible, so it cannot make progress unaided — read \
          {} — then decide with: loom stage human-review {}",
-        disputed_entry(work_dir, &stage.id, dispute_id),
+        disputed_entry(kind),
         verdict_path.display(),
         stage.id
     );
@@ -308,11 +335,10 @@ pub(super) fn apply_reject(
     Ok(())
 }
 
-/// What a criterion dispute contested, as `apply_reject`'s review reason
-/// names it: `criterion` when its request cannot be read.
-fn disputed_entry(work_dir: &Path, stage_id: &str, dispute_id: u32) -> &'static str {
-    match super::read_request(work_dir, stage_id, dispute_id).map(|request| request.kind) {
-        Ok(DisputeKind::Criterion { field, .. }) => match field {
+/// What a criterion dispute contested, as `apply_reject`'s review reason names it.
+fn disputed_entry(kind: &DisputeKind) -> &'static str {
+    match kind {
+        DisputeKind::Criterion { field, .. } => match field {
             CriterionField::Acceptance => "acceptance criterion",
             CriterionField::Wiring => "wiring check",
             CriterionField::WiringTests => "wiring test",

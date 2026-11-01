@@ -26,6 +26,14 @@ pub struct GitHistory {
     pub uncommitted_changes: Vec<String>,
 }
 
+/// Render a table cell without introducing columns or rows.
+pub(super) fn table_cell(value: &str) -> String {
+    value
+        .replace('|', "\\|")
+        .replace("\r\n", "<br>")
+        .replace(['\r', '\n'], "<br>")
+}
+
 /// Format git history as markdown for inclusion in handoff/signal files.
 pub fn format_git_history_markdown(history: &GitHistory) -> String {
     let mut output = String::new();
@@ -48,7 +56,11 @@ pub fn format_git_history_markdown(history: &GitHistory) -> String {
         output.push_str("| Hash | Message |\n");
         output.push_str("|------|---------|");
         for commit in &history.commits {
-            output.push_str(&format!("\n| {} | {} |", commit.hash, commit.message));
+            output.push_str(&format!(
+                "\n| {} | {} |",
+                table_cell(&commit.hash),
+                table_cell(&commit.message)
+            ));
         }
         output.push('\n');
     }
@@ -70,6 +82,18 @@ pub fn format_git_history_markdown(history: &GitHistory) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn commit_table_escapes_pipes_and_newlines() {
+        let history = GitHistory {
+            commits: vec![CommitInfo {
+                hash: "abc".into(),
+                message: "one|two\r\nthree".into(),
+            }],
+            ..GitHistory::default()
+        };
+        assert!(format_git_history_markdown(&history).contains("| abc | one\\|two<br>three |"));
+    }
 
     #[test]
     fn test_commit_info_creation() {

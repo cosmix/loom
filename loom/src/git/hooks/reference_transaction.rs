@@ -4,10 +4,9 @@
 
 use anyhow::{bail, Context, Result};
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
-use super::make_executable;
+use super::{has_installed_mode, make_executable};
 use crate::git::target_guard::HOOK_MARKER;
 
 /// The hook script, embedded from `loom-hooks/git-reference-transaction-hook.sh`.
@@ -78,12 +77,6 @@ fn read_existing(hook_path: &Path) -> Result<Option<Vec<u8>>> {
 
 /// Whether the hook has the mode [`write_script`] gives it (git skips a hook
 /// without the executable bit).
-fn has_installed_mode(hook_path: &Path) -> Result<bool> {
-    let metadata = fs::metadata(hook_path)
-        .with_context(|| format!("Failed to get metadata for hook: {}", hook_path.display()))?;
-    Ok(metadata.permissions().mode() & 0o777 == 0o755)
-}
-
 /// Write [`SCRIPT`] beside `hook_path`, make it executable, then rename it
 /// into place: git never runs a partly written or non-executable hook. A
 /// failure removes the staged file.

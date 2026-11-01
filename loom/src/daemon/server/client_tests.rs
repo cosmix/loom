@@ -36,6 +36,9 @@ fn subscription_acknowledges_before_first_broadcast() {
 #[test]
 fn simultaneous_connection_writers_emit_complete_frames() {
     let (server, mut client) = UnixStream::pair().unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(7)))
+        .unwrap();
     let writer = Arc::new(Mutex::new(server));
     let held = writer.lock().unwrap();
     let barrier = Arc::new(std::sync::Barrier::new(3));

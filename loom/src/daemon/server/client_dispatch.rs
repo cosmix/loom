@@ -17,6 +17,16 @@ impl ClientDispatch<'_> {
                 subscribe(writer, self.status_subscribers, "Status")?
             }
             Request::SubscribeLogs { .. } => subscribe(writer, self.log_subscribers, "Log")?,
+            Request::Unsubscribe { .. } => {
+                for subscribers in [self.status_subscribers, self.log_subscribers] {
+                    subscribers
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .retain(|existing| !Arc::ptr_eq(existing, writer));
+                }
+                send_response(writer, &Response::Ok)?;
+                return Ok(false);
+            }
             Request::Stop { .. } => {
                 send_response(writer, &Response::Ok)?;
                 self.shutdown_flag.store(true, Ordering::SeqCst);
@@ -33,13 +43,13 @@ impl ClientDispatch<'_> {
 
     fn control(&self, request: Request) -> Response {
         match request {
-            Request::Unsubscribe { .. } => Response::Ok,
             request @ (Request::DisputeCriteria { .. }
             | Request::FileDispute { .. }
             | Request::BlockStage { .. }
             | Request::FreezeContracts { .. }
             | Request::ObserveChanges { .. }) => serve_stage_control(self.work_dir, request),
             Request::Ping { .. }
+            | Request::Unsubscribe { .. }
             | Request::Stop { .. }
             | Request::SubscribeStatus { .. }
             | Request::SubscribeLogs { .. } => {

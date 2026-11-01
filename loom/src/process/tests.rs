@@ -136,6 +136,40 @@ fn run_bounded_collects_large_stderr_too() {
 }
 
 #[test]
+fn reader_caps_capture_at_exact_limit_and_drains_overflow() {
+    struct CountingReader {
+        input: std::io::Cursor<Vec<u8>>,
+        consumed: Arc<std::sync::atomic::AtomicUsize>,
+    }
+    impl Read for CountingReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let n = self.input.read(buf)?;
+            self.consumed.fetch_add(n, Ordering::Relaxed);
+            Ok(n)
+        }
+    }
+    for extra in [0, 16_384] {
+        let overflow = Arc::new(AtomicU8::new(0));
+        let consumed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let input = CountingReader {
+            input: std::io::Cursor::new(vec![b'x'; OUTPUT_LIMIT + extra]),
+            consumed: Arc::clone(&consumed),
+        };
+        let receiver = drain(Some(input), Arc::clone(&overflow), 1)
+            .unwrap()
+            .unwrap();
+        let captured = receiver
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap();
+        assert_eq!(captured.len(), OUTPUT_LIMIT);
+        assert!(captured.iter().all(|byte| *byte == b'x'));
+        assert_eq!(consumed.load(Ordering::Relaxed), OUTPUT_LIMIT + extra);
+        assert_eq!(overflow.load(Ordering::Relaxed), u8::from(extra > 0));
+    }
+}
+
+#[test]
 fn run_bounded_reports_output_overflow_on_each_stream() {
     for (redirect, expected) in [("", "stdout"), (" >&2", "stderr")] {
         let script = format!("head -c {} /dev/zero{redirect}", OUTPUT_LIMIT + 1);

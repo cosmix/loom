@@ -108,18 +108,7 @@ fn text_cell(value: Option<&str>, width: usize) -> String {
 /// and left in place it consumes most of `MODEL_WIDTH` before truncation
 /// even runs (`claude-haiku-4-5-20251001` -> `haiku-4-5-2025` unstripped).
 fn display_model(model: Option<&str>) -> Option<String> {
-    model.map(|model| {
-        let stripped = model.strip_prefix("claude-").unwrap_or(model);
-        strip_date_suffix(stripped).to_string()
-    })
-}
-
-fn strip_date_suffix(model: &str) -> &str {
-    let is_date = |suffix: &str| suffix.len() == 8 && suffix.bytes().all(|b| b.is_ascii_digit());
-    match model.rsplit_once('-') {
-        Some((prefix, suffix)) if is_date(suffix) => prefix,
-        _ => model,
-    }
+    model.map(|model| crate::commands::common::model_display::normalize_model(model).to_string())
 }
 
 /// `-` when the transcript had no parseable entry at all; a genuine zero

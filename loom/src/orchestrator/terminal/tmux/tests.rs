@@ -1,5 +1,4 @@
-//! Unit tests for `tmux/mod.rs`, split out to keep the module under the
-//! 400-line ceiling (CLAUDE.md Rule 17).
+//! Unit tests for tmux spawn evaluation and teardown.
 
 use super::socket::tests::TmuxTmpDirGuard;
 use super::*;

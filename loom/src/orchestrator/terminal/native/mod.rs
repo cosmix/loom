@@ -16,6 +16,10 @@ mod window_identity;
 mod window_ops;
 mod wrapper;
 
+#[cfg(test)]
+#[path = "tests_capsule_probe.rs"]
+mod tests_capsule_probe;
+
 use anyhow::Result;
 use shell_escape::escape;
 use std::borrow::Cow;
@@ -196,18 +200,15 @@ impl NativeBackend {
         // it is not operator-facing news. `tracing::debug!` (the level the rest
         // of this cluster uses — see `window_ops`) keeps it off stderr unless
         // it was asked for; `eprintln!` here printed a line on every
-        // construction, which after a tmux fallback meant once per session per
-        // monitor tick.
+        // construction, which would otherwise print on repeated lane checks.
         tracing::debug!(terminal = %terminal.display_name(), "Detected terminal");
         Ok(Self { terminal, work_dir })
     }
 
     /// Build a backend around an already-chosen terminal, bypassing detection.
     ///
-    /// Test-only: sibling modules need a deterministically AVAILABLE native
-    /// lane to exercise the tmux-fallback decision, and a headless test runner
-    /// (where [`Self::new`] bails in `detect_terminal`) would otherwise make
-    /// that path untestable exactly where it matters most.
+    /// Test-only: sibling modules need an available native lane even on a
+    /// headless runner, where [`Self::new`] cannot detect a terminal.
     #[cfg(test)]
     pub(crate) fn with_terminal(
         terminal: super::emulator::TerminalEmulator,

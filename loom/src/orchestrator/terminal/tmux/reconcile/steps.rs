@@ -1,10 +1,5 @@
-//! The PURE decision half of viewer reconciliation — no tmux, no filesystem,
-//! no session model, which is what makes every reconcile rule unit-testable
-//! without a tmux server. This mirrors the split `tmux/mod.rs` already draws
-//! between `evaluate_new_session` (pure decision) and `spawn_in_tmux` (the
-//! tmux-calling executor), for exactly the same testability reason. The
-//! executor half — probing, listing panes, and applying the steps computed
-//! here — lives in the parent module, [`super`].
+//! Pure viewer reconciliation decisions. The parent module probes tmux and
+//! applies the steps computed here.
 
 use std::collections::{HashMap, HashSet};
 
@@ -13,9 +8,7 @@ pub(super) struct PaneInfo {
     pub(super) id: String,
     pub(super) dead: bool,
     /// The inner session socket this pane's attach client targets, parsed by
-    /// [`parse_pane_socket`]. `None` means this pane is not attributable to
-    /// loom at all — the operator's own split (see [`reconcile_steps`]'s
-    /// Rule 5).
+    /// [`parse_pane_socket`]. `None` means this is an operator-owned pane.
     pub(super) session_socket: Option<String>,
 }
 
@@ -23,39 +16,27 @@ pub(super) struct PaneInfo {
 /// command (`#{pane_start_command}`), so this module can tell a loom pane
 /// from the operator's own split.
 ///
-/// Verified on tmux 3.6a: `#{pane_start_command}` survives for panes made by
-/// both `new-session` and `split-window`, rendering the launched argv
-/// shell-quoted, e.g.:
+/// `#{pane_start_command}` preserves the launched command, e.g.:
 ///
 /// ```text
 /// sh -c "unset TMUX; exec tmux -L loom-session-abc12345-1754900000 attach-session -t some-key"
 /// ```
 ///
-/// Parsed DEFENSIVELY — a token search, not a regex pinned to that exact
-/// template, because [`super::super::viewer::pane_command`]'s exact shape is
-/// that module's implementation detail, not a contract this one should
-/// re-derive:
+/// Parse tokens without depending on the exact command template:
 ///
 /// 1. The string must contain `attach-session`, or this is not a loom pane.
 /// 2. Split on whitespace and find the first `-L` token; take the token
 ///    right after it. No `-L`, or nothing after it, means this is not a
 ///    loom pane.
-/// 3. The token must be quote-SYMMETRIC — quoted at both ends or neither.
-///    A quoted value containing whitespace splits at step 2, handing back a
-///    one-sided fragment like `'loom-a`; misattributing it would make Rule 1
-///    re-add the "missing" real socket on every tick, growing the viewer by
-///    one pane per tick until `split-window` runs out of room.
+/// 3. The token must be quoted at both ends or neither. A partial quoted
+///    token must not be attributed to a Loom socket.
 /// 4. Strip any surrounding `"` or `'` from that token.
 /// 5. The result must start with `loom-` and contain only `[A-Za-z0-9_-]`
 ///    (the id charset `validate_id` enforces, and session sockets are
 ///    `loom-<session.id>` — see `super::super::socket_name`).
 ///
-/// Rule 5 is a deliberate SAFETY TIGHTENING, not decoration. Without it, an
-/// operator who split their own pane and ran a plain `tmux attach-session`
-/// there would be attributed as a loom pane by the earlier rules and then
-/// killed by [`reconcile_steps`]'s duplicate/removal logic. Loom session ids
-/// (`session-<uuid8>-<unixts>`, `[A-Za-z0-9-]` only) need no unescaping, so
-/// the stripped token is unambiguous once rule 5 passes.
+/// The socket-name check keeps an operator's own `tmux attach-session` pane
+/// outside Loom's duplicate and removal rules.
 fn parse_pane_socket(start_command: &str) -> Option<String> {
     if !start_command.contains("attach-session") {
         return None;
@@ -101,13 +82,8 @@ pub(super) fn parse_pane_list(stdout: &str) -> Vec<PaneInfo> {
         .collect()
 }
 
-/// Keeper selection (duplicate panes): a `loom attach` rebuild racing a
-/// reconcile tick can leave two panes carrying the same socket. Group
-/// attributed panes (`session_socket == Some(_)`) by socket in pane order;
-/// the KEEPER of a group is its first non-dead pane, or its first pane if
-/// every pane in the group is dead. Every OTHER pane in the group is a
-/// duplicate and [`reconcile_steps`] kills it regardless of its own
-/// dead/alive state.
+/// Keep the first live pane for each socket, or the first dead pane if none
+/// is live. Other panes carrying that socket are duplicates.
 fn select_keepers(panes: &[PaneInfo]) -> HashSet<usize> {
     let mut keeper_by_socket: HashMap<&str, usize> = HashMap::new();
     for (index, pane) in panes.iter().enumerate() {
@@ -128,17 +104,9 @@ fn select_keepers(panes: &[PaneInfo]) -> HashSet<usize> {
     keeper_by_socket.values().copied().collect()
 }
 
-/// Rule 1 — Add: for each `(socket, key)` in `desired`, in order, with NO
-/// attributed pane (dead or alive) carrying that socket, emit a
-/// `split-window` immediately followed by a `select-layout … tiled`.
-/// Re-tiling after EVERY split, never once at the end, is load-bearing, not
-/// a preference: `split-window -t <session>` targets the session's CURRENT
-/// pane — the one the previous split just made — so pane heights halve
-/// 50 → 25 → 12 → 5 → 2 and a sixth split fails outright with "no space for
-/// a new pane" (verified on tmux 3.7b; see
-/// `doc/loom/knowledge/mistakes/tmux-backend.md`, "tmux Layout and Option
-/// Traps"). Called from [`reconcile_steps`], which uses the returned step
-/// count to compute `add_count` for Rule 3's floor.
+/// Add missing sockets in desired order. Re-tile after each split because
+/// tmux targets the current pane and repeated un-tiled splits can run out of
+/// room. The step count also determines the survivor floor below.
 fn add_steps(panes: &[PaneInfo], desired: &[(String, String)]) -> Vec<Vec<String>> {
     let attributed: HashSet<&str> = panes
         .iter()
@@ -175,13 +143,8 @@ fn add_steps(panes: &[PaneInfo], desired: &[(String, String)]) -> Vec<Vec<String
     steps
 }
 
-/// Classifies each pane per Rules 2 (respawn), 3 (remove candidate), 4
-/// (duplicate), and 5 (untouchable) of [`reconcile_steps`], in tmux pane
-/// order — the order that rule set relies on for "the first kill in pane
-/// order" (its floor rule). Returns `(respawns, kill_candidates)`:
-/// `respawns` are ready-to-emit `respawn-pane` steps; `kill_candidates` are
-/// pane INDICES still subject to the floor rule before becoming `kill-pane`
-/// steps.
+/// Classify panes in tmux order. Kill candidates remain subject to the
+/// survivor floor before they become `kill-pane` steps.
 fn classify_panes(
     panes: &[PaneInfo],
     keepers: &HashSet<usize>,
@@ -213,8 +176,7 @@ fn classify_panes(
     (respawns, kill_candidates)
 }
 
-/// Rule 7's trailing step: re-tile the survivors once, after every kill in
-/// the pass — see [`reconcile_steps`]'s "# Rule 7" doc.
+/// Re-tile survivors once after the last kill.
 fn retile_step() -> Vec<String> {
     [
         "select-layout",

@@ -2,7 +2,7 @@
 //! purely to keep that file under the line-count ceiling.
 
 use super::make_stage;
-use crate::plan::schema::types::AcceptanceCriterion;
+use crate::plan::schema::types::{AcceptanceCriterion, RegressionTest, WiringCheck};
 use crate::plan::schema::validation::validate_structural_preflight;
 
 #[test]
@@ -70,4 +70,43 @@ fn redundant_working_directory_requires_a_component_boundary() {
         .collect();
     assert_eq!(found.len(), 1, "{warnings:?}");
     assert!(found[0].contains("src/file"));
+}
+
+#[test]
+fn wiring_and_regression_paths_require_a_component_boundary() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.working_dir = "src".to_string();
+    stage.wiring = ["src_extra/file", "src/file"]
+        .into_iter()
+        .map(|source| WiringCheck {
+            source: source.to_string(),
+            pattern: "feature_function".to_string(),
+            description: "Feature is wired".to_string(),
+            literal: false,
+        })
+        .collect();
+    for (path, expected) in [("src_extra/test.rs", false), ("src/test.rs", true)] {
+        stage.regression_test = Some(RegressionTest {
+            file: path.to_string(),
+            must_contain: vec!["test_bug_fixed".to_string()],
+        });
+        let warnings = validate_structural_preflight(&[stage.clone()], Some(dir.path()));
+        let prefix_warnings: Vec<_> = warnings
+            .iter()
+            .filter(|warning| warning.contains("redundant working_dir prefix"))
+            .collect();
+        assert_eq!(
+            prefix_warnings.len(),
+            1 + usize::from(expected),
+            "{warnings:?}"
+        );
+        assert!(prefix_warnings
+            .iter()
+            .any(|warning| warning.contains("src/file")));
+        assert_eq!(
+            prefix_warnings.iter().any(|warning| warning.contains(path)),
+            expected
+        );
+    }
 }

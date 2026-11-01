@@ -56,6 +56,76 @@ pub(super) struct RunningCommand {
     pub(super) name: String,
 }
 
+/// CPU ticks in the command's live process tree. A positive delta between
+/// polls is observed work; merely retaining an open shell is not.
+pub(super) fn command_cpu_ticks(command_pid: u32) -> Option<u64> {
+    let rows = process_rows();
+    let mut pending = vec![command_pid];
+    let mut total = 0u64;
+    while let Some(pid) = pending.pop() {
+        let row = rows.iter().find(|row| row.pid == pid && !row.zombie)?;
+        total = total.checked_add(process_cpu_ticks(pid)?)?;
+        pending.extend(
+            rows.iter()
+                .filter(|child| child.ppid == row.pid && !child.zombie)
+                .map(|child| child.pid),
+        );
+    }
+    Some(total)
+}
+
+#[cfg(target_os = "linux")]
+fn process_cpu_ticks(pid: u32) -> Option<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    parse_cpu_ticks(&stat)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn process_cpu_ticks(pid: u32) -> Option<u64> {
+    let mut ps = std::process::Command::new("ps");
+    ps.args(["-o", "time=", "-p", &pid.to_string()]);
+    let output = run_bounded_output(&mut ps, PS_TIMEOUT, "process CPU time").ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = std::str::from_utf8(&output.stdout).ok()?;
+    parse_ps_cpu_time(text.trim())
+}
+
+#[cfg(any(not(target_os = "linux"), test))]
+fn parse_ps_cpu_time(text: &str) -> Option<u64> {
+    let (days, clock) = text.split_once('-').map_or((0, text), |(days, clock)| {
+        (days.parse::<u64>().ok().unwrap_or(u64::MAX), clock)
+    });
+    let parts: Vec<_> = clock.split(':').collect();
+    let seconds = match parts.as_slice() {
+        [minutes, seconds] => minutes
+            .parse::<u64>()
+            .ok()?
+            .checked_mul(60)?
+            .checked_add(seconds.split('.').next()?.parse::<u64>().ok()?)?,
+        [hours, minutes, seconds] => hours
+            .parse::<u64>()
+            .ok()?
+            .checked_mul(3600)?
+            .checked_add(minutes.parse::<u64>().ok()?.checked_mul(60)?)?
+            .checked_add(seconds.split('.').next()?.parse::<u64>().ok()?)?,
+        _ => return None,
+    };
+    days.checked_mul(86_400)?.checked_add(seconds)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn parse_cpu_ticks(stat: &str) -> Option<u64> {
+    let (_, fields) = stat.rsplit_once(") ")?;
+    let fields: Vec<_> = fields.split_whitespace().collect();
+    fields
+        .get(11)?
+        .parse::<u64>()
+        .ok()?
+        .checked_add(fields.get(12)?.parse::<u64>().ok()?)
+}
+
 /// One row of the process table, as much of it as this module reads.
 #[derive(Debug, PartialEq, Eq)]
 struct ProcessRow {
@@ -76,7 +146,7 @@ struct ProcessRow {
 pub(super) fn running_command(work_dir: &Path, session: &Session) -> Option<RunningCommand> {
     let (_, pid_key) = NativeBackend::window_title_and_pid_key(session)?;
     let identity = read_pid_entry(work_dir, &pid_key)?;
-    if verify_process_identity(identity) == IdentityStatus::Dead {
+    if verify_process_identity(identity) != IdentityStatus::VerifiedAlive {
         return None;
     }
     let rows = process_rows();

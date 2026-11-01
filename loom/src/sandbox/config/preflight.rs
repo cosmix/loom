@@ -19,6 +19,8 @@ mod hook_commands;
 mod local_settings;
 #[cfg(test)]
 mod spawn_policy_tests;
+#[cfg(test)]
+mod tests_hook_commands;
 mod unix_sockets;
 
 pub(crate) use hook_commands::{hook_documents, scan_hook_registrations, HookFindings, HookScan};

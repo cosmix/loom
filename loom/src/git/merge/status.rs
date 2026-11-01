@@ -235,19 +235,27 @@ mod tests {
     #[test]
     fn report_counts_conflicts_and_retains_completed_warnings() {
         let temp = tempfile::tempdir().unwrap();
-        let completed = make_test_stage("completed");
+        let mut completed = make_test_stage("completed");
+        completed.stage_type = StageType::Knowledge;
+        completed.merged = true;
+        let unknown = make_test_stage("unknown");
         let mut conflict = make_test_stage("conflict");
         conflict.status = StageStatus::MergeConflict;
-        conflict.merge_conflict = true;
         let mut executing = make_test_stage("executing");
         executing.status = StageStatus::Executing;
 
-        let report =
-            build_merge_report(&[completed, conflict, executing], "main", temp.path()).unwrap();
+        let report = build_merge_report(
+            &[completed, unknown, conflict, executing],
+            "main",
+            temp.path(),
+        )
+        .unwrap();
+        assert_eq!(report.merged, ["completed"]);
+        assert!(report.pending.is_empty());
         assert_eq!(report.conflicts, ["conflict"]);
         assert_eq!(report.warnings.len(), 1);
-        assert!(report.warnings[0].contains("completed"));
-        assert_eq!(report.total(), 1);
+        assert!(report.warnings[0].contains("unknown"));
+        assert_eq!(report.total(), 2);
     }
 
     #[test]

@@ -143,24 +143,7 @@ fn bound_close_reason(value: &mut Option<String>) {
     }
 }
 
-/// Whether a stage id may be joined into a path.
-///
-/// Stage ids reach the filesystem in several collectors — a heartbeat file, a
-/// subagent ledger — and every one of them reads an id straight out of a stage
-/// file's frontmatter. An id carrying `../` would make the daemon read an
-/// arbitrary file and surface its strings in the payload.
-///
-/// `.` is rejected alongside `..`: joined onto the subagents directory it names
-/// that directory itself, which is not a stage, and both shell spawn guards
-/// (`loom-hooks/spawn-guard.sh`, `loom-hooks/codex-forward.sh`) reject it explicitly.
-pub(super) fn valid_stage_id(stage_id: &str) -> bool {
-    !stage_id.is_empty()
-        && stage_id != "."
-        && !stage_id.contains("..")
-        && stage_id
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || ".-_".contains(character))
-}
+pub(super) use crate::validation::valid_stage_path_component as valid_stage_id;
 
 #[cfg(test)]
 mod tests {
@@ -321,6 +304,9 @@ mod tests {
         assert!(!valid_stage_id("a/../b"));
         assert!(!valid_stage_id("a..b"));
         assert!(!valid_stage_id("bad/stage"));
+        assert!(!valid_stage_id("bad\\stage"));
+        assert!(!valid_stage_id("with space"));
+        assert!(!valid_stage_id("é"));
     }
 }
 

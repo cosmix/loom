@@ -1,5 +1,5 @@
-//! Static shell text for `build_wrapper_script`, split out to keep
-//! `wrapper.rs` under its line cap.
+//! Static shell text for `build_wrapper_script`: environment allowlist and
+//! PID capture text shared by wrapper rendering.
 
 use crate::process::AGENT_SESSION_ENV_NAMES;
 

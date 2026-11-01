@@ -7,7 +7,7 @@ use chrono::Utc;
 use crate::commands::subagents::OpenToolCall;
 use crate::fs::work_dir::WorkDir;
 use crate::models::constants::STALENESS_THRESHOLD_SECS;
-use crate::models::session::{Session, SessionStatus, SessionType};
+use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus, StatusBucket};
 use crate::orchestrator::monitor::heartbeat::{judge_heartbeat_path, read_heartbeat, Heartbeat};
 use crate::orchestrator::monitor::progress::age_secs;
@@ -123,6 +123,26 @@ fn probe_open_tool(
     )
 }
 
+fn forward_evidence(
+    work_dir: &WorkDir,
+    stage: &Stage,
+    session: Option<&Session>,
+    heartbeat: Option<&Heartbeat>,
+    now: chrono::DateTime<Utc>,
+) -> Option<bool> {
+    let session = session?;
+    crate::codex_lifecycle::foreground_forward_active(
+        work_dir.root(),
+        &stage.id,
+        &session.id,
+        heartbeat
+            .filter(|heartbeat| heartbeat.session_id == session.id)
+            .map_or(session.created_at, Heartbeat::effective_progress_at),
+        std::time::Duration::from_secs(stale_after_secs(stage)),
+        now,
+    )
+}
+
 /// Heartbeat-derived facts for a stage's [`StageSummary`]: staleness, current
 /// activity, the last recorded tool and activity strings, and the judge
 /// heartbeat's age. Extracted from `build_stage_summary` to keep that function
@@ -154,12 +174,10 @@ pub(super) fn heartbeat_facts_under(
     projects_root: Option<&Path>,
 ) -> HeartbeatFacts {
     let heartbeat = read_heartbeat_for_stage(&stage.id, work_dir);
-    // A merge resolver writes the stage's heartbeat file after the worker that
-    // finished before it. Only the resolver's own heartbeat describes it, and
-    // until it makes a tool call its silence runs from its spawn.
-    let resolver = session.filter(|s| s.session_type == SessionType::Merge);
-    let heartbeat = match resolver {
-        Some(resolver) => heartbeat.filter(|hb| hb.session_id == resolver.id),
+    // The heartbeat path is shared across attempts, so an older session's
+    // heartbeat cannot describe the current one, whatever its session type.
+    let heartbeat = match session {
+        Some(session) => heartbeat.filter(|hb| hb.session_id == session.id),
         None => heartbeat,
     };
 
@@ -169,9 +187,9 @@ pub(super) fn heartbeat_facts_under(
         .as_ref()
         .map(|hb| age_secs(now, hb.effective_progress_at()))
         .or_else(|| {
-            resolver
-                .filter(|resolver| !resolver.status.is_terminal())
-                .map(|resolver| age_secs(now, resolver.created_at))
+            session
+                .filter(|session| !session.status.is_terminal())
+                .map(|session| age_secs(now, session.created_at))
         });
 
     // Determine activity status based on session, heartbeat, and stage status
@@ -179,6 +197,7 @@ pub(super) fn heartbeat_facts_under(
     let activity_status = determine_activity_status(session, staleness_secs, stage, || {
         open = probe_open_tool(heartbeat.as_ref(), projects_root);
         open.is_some()
+            && forward_evidence(work_dir, stage, session, heartbeat.as_ref(), now) != Some(false)
     });
 
     let last_tool = match activity_status {

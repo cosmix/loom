@@ -1,7 +1,6 @@
 //! Authoring of the per-session wrapper script that `exec`s claude.
 //!
-//! Split out of `pid_tracking`, which owns PID files and process discovery.
-//! This module owns the other half of the contract: the exact environment a
+//! This module owns the exact environment a
 //! stage session is born with. That environment is a security boundary (the
 //! script rebuilds it from an allowlist rather than inheriting the host's) and
 //! a correctness boundary (`LOOM_STAGE_ID` and `LOOM_WORKTREE_PATH` are read by
@@ -59,11 +58,7 @@ const CONTINUATION: &str = "\\\n";
 /// # Returns
 /// The path to the created wrapper script
 ///
-/// Delegates to `create_session_wrapper_script` with `rustc_wrapper_allowed = false` and no
-/// host exports — no merged sandbox config or launch host to ask here — which keeps
-/// `wrapper/tests.rs`'s byte-pinned assertions independent of the host's own sccache install.
-// Mirrors `create_session_wrapper_script`'s first eight params positionally; a struct would
-// force editing every call site, including `wrapper/tests.rs`'s byte-exact assertions.
+/// Delegates to `create_session_wrapper_script` without build-cache or host exports.
 #[allow(clippy::too_many_arguments)]
 pub fn create_wrapper_script(
     work_dir: &Path,
@@ -93,9 +88,6 @@ pub fn create_wrapper_script(
 /// whether this session's merged sandbox config permits sccache; see `sccache_env` — and
 /// `host_env`, the `LOOM_SCRATCH_DIR` / `LOOM_BIN` / `LOOM_HOOK_PATH` exports the launch
 /// resolved for this session.
-// Flat like `create_wrapper_script`, which this mirrors one-for-one plus the trailing gates;
-// collapsing into a struct would force editing every call site, including
-// `wrapper/tests.rs`'s byte-exact assertions, which must stay untouched.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn create_session_wrapper_script(
     work_dir: &Path,
@@ -114,9 +106,10 @@ pub(crate) fn create_session_wrapper_script(
     create_pid_dir(work_dir)?;
 
     let wrapper_path = wrapper_script_path(work_dir, pid_key);
-    let script = build_wrapper_script(
+    let host_pid_file = pid_file_path(work_dir, pid_key);
+    let script = build_wrapper_script(&WrapperInput {
         work_dir,
-        &pid_file_path(work_dir, pid_key),
+        host_pid_file: &host_pid_file,
         stage_id,
         session_id,
         claude_cmd,
@@ -125,7 +118,7 @@ pub(crate) fn create_session_wrapper_script(
         context_ceiling_tokens,
         rustc_wrapper_allowed,
         host_env,
-    );
+    });
 
     fs::write(&wrapper_path, &script)
         .with_context(|| format!("Failed to write wrapper script: {}", wrapper_path.display()))?;
@@ -317,23 +310,33 @@ fn sccache_env(rustc_wrapper_allowed: bool) -> String {
     format!("    {assignment} {CONTINUATION}")
 }
 
-/// Render the wrapper script text. Pure: every path is resolved by the caller
-/// or by `absolute*`, and nothing is written.
-// Mirrors `create_session_wrapper_script`'s parameter list one-for-one; see
-// that function's `#[allow(clippy::too_many_arguments)]` for why it stays flat.
-#[allow(clippy::too_many_arguments)]
-fn build_wrapper_script(
-    work_dir: &Path,
-    host_pid_file: &Path,
-    stage_id: &str,
-    session_id: &str,
-    claude_cmd: &str,
-    working_dir: Option<&Path>,
+struct WrapperInput<'a> {
+    work_dir: &'a Path,
+    host_pid_file: &'a Path,
+    stage_id: &'a str,
+    session_id: &'a str,
+    claude_cmd: &'a str,
+    working_dir: Option<&'a Path>,
     kind: SessionType,
     context_ceiling_tokens: u32,
     rustc_wrapper_allowed: bool,
-    host_env: &WrapperHostEnv,
-) -> String {
+    host_env: &'a WrapperHostEnv,
+}
+
+/// Render the wrapper script text without filesystem writes.
+fn build_wrapper_script(input: &WrapperInput<'_>) -> String {
+    let WrapperInput {
+        work_dir,
+        host_pid_file,
+        stage_id,
+        session_id,
+        claude_cmd,
+        working_dir,
+        kind,
+        context_ceiling_tokens,
+        rustc_wrapper_allowed,
+        host_env,
+    } = *input;
     let cd_section = cd_section(working_dir);
     let (merge_session_env, worktree_path_env) = kind_env(kind, working_dir);
     let session_env = escape(format!("LOOM_SESSION_ID={session_id}").into());

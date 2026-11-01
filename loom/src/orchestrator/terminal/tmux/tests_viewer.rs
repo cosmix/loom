@@ -1,8 +1,4 @@
-//! Pins the identity half of `viewer.rs` — socket/session naming, the pane
-//! command builder, and `attachable_panes`'s selection rule. Split from
-//! `tests_discovery.rs` only to keep both files under the 400-line ceiling
-//! (CLAUDE.md Rule 17); the discovery half (`live_tmux_sessions` and its
-//! filters) lives there.
+//! Viewer socket and pane identity tests.
 
 use super::*;
 use chrono::{DateTime, Utc};

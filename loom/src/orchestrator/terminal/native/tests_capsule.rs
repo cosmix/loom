@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 
 #[test]
 fn build_claude_command_empty_capsule_matches_legacy_argv() {
-    // An unsupported or unprobed capsule must never change the command line.
+    // The command builder is pure; launch preparation rejects this capsule.
     let cmd = build_claude_command(
         "/usr/bin/claude",
         "opus",

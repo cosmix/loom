@@ -285,6 +285,10 @@ fn subscribe(writer: &Subscriber, subscribers: &Mutex<Vec<Subscriber>>, label: &
 mod tests;
 
 #[cfg(test)]
+#[path = "client_unsubscribe_tests.rs"]
+mod unsubscribe_tests;
+
+#[cfg(test)]
 #[path = "client_shutdown_tests.rs"]
 mod shutdown_tests;
 

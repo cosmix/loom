@@ -175,6 +175,7 @@ impl ResponseFrameReader {
                 }
                 Err(error) => return Err(error).context("Failed to read response frame"),
             }
+            self.check_deadline()?;
             if self.prefix_read == self.prefix.len() && self.body_read == self.body.len() {
                 let response =
                     serde_json::from_slice(&self.body).context("Failed to deserialize message")?;

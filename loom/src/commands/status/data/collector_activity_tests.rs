@@ -14,6 +14,7 @@ fn test_build_stage_summary_with_session() {
     stage.started_at = Some(Utc::now());
     let mut session = Session::new();
     session.assign_to_stage("test-stage".to_string());
+    session.created_at = Utc::now() - chrono::Duration::seconds(30);
     session.context_tokens = 50000;
 
     let summary = build_stage_summary(&stage, &[session], &work_dir);
@@ -31,7 +32,8 @@ fn test_build_stage_summary_with_session() {
     assert!(summary.elapsed_secs.is_some());
     // New fields
     assert_eq!(summary.activity_status, ActivityStatus::Working);
-    assert!(summary.staleness_secs.is_none()); // No heartbeat file
+    // Without a heartbeat, silence starts at this session's spawn.
+    assert!(summary.staleness_secs.is_some_and(|secs| secs >= 30));
 }
 
 #[test]

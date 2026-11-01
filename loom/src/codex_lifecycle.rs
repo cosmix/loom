@@ -4,6 +4,8 @@
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
+use chrono::{DateTime, Utc};
+
 use anyhow::Result;
 
 use crate::models::session::Session;
@@ -22,6 +24,102 @@ pub use authorization::CodexAuthorization;
 pub(crate) use direct::receipt_matches_authorization;
 pub(crate) use ledger::{read_authorization_rows, read_lifecycle_records, LedgerRow};
 pub(crate) use token_threads::authorized_threads;
+
+/// An authorized forward from this exact stage attempt. `Some(false)` means
+/// the worker existed but has no fresh evidence to hold stall recovery.
+pub(crate) fn foreground_forward_active(
+    work_dir: &Path,
+    stage_id: &str,
+    session_id: &str,
+    since: DateTime<Utc>,
+    budget: Duration,
+    now: DateTime<Utc>,
+) -> Option<bool> {
+    let state_root = authorization::canonical_daemon_state_root().ok()?;
+    forward_active_at(
+        work_dir,
+        stage_id,
+        session_id,
+        since,
+        budget,
+        now,
+        &state_root,
+    )
+}
+
+fn forward_active_at(
+    work_dir: &Path,
+    stage_id: &str,
+    session_id: &str,
+    since: DateTime<Utc>,
+    budget: Duration,
+    now: DateTime<Utc>,
+    state_root: &Path,
+) -> Option<bool> {
+    if !crate::models::forward_receipt::is_safe_id(stage_id)
+        || !crate::models::forward_receipt::is_safe_id(session_id)
+    {
+        return None;
+    }
+    let path = work_dir
+        .join("subagents")
+        .join(stage_id)
+        .join("codex.jsonl");
+    let rows = ledger::read_authorization_rows(&path).ok()?;
+    let mut found = false;
+    for row in rows {
+        let LedgerRow::Authorization(auth) = row else {
+            continue;
+        };
+        if auth.stage_id != stage_id
+            || auth.loom_session_id != session_id
+            || auth.authorized_at < since
+            || auth.authorized_at > now
+            || auth.validate_state_root(state_root).is_err()
+        {
+            continue;
+        }
+        found = true;
+        if forward_is_fresh(work_dir, &auth, state_root, budget, now) {
+            return Some(true);
+        }
+    }
+    found.then_some(false)
+}
+
+fn forward_is_fresh(
+    work_dir: &Path,
+    auth: &CodexAuthorization,
+    state_root: &Path,
+    budget: Duration,
+    now: DateTime<Utc>,
+) -> bool {
+    use direct::DirectOutcome;
+    let receipts = direct::StageReceipts::load(work_dir, &auth.stage_id, now);
+    let routed = receipts
+        .receipts()
+        .map(|load| direct::receipt_outcome(auth, load));
+    let elapsed = now.signed_duration_since(auth.authorized_at);
+    let within_wrapper =
+        elapsed.num_seconds() >= 0 && elapsed.num_seconds() <= direct::RECEIPT_WINDOW_SECS;
+    let no_receipt = matches!(&routed, Ok(DirectOutcome::NoReceipt));
+    match routed {
+        Ok(DirectOutcome::Direct(_, observation)) => {
+            observation.state == crate::subagent_lifecycle::LifecycleState::Running
+                && within_wrapper
+        }
+        Ok(DirectOutcome::Companion) | Ok(DirectOutcome::NoReceipt) => {
+            match jobs::locate_job(auth, state_root) {
+                Ok(job) => {
+                    within_wrapper
+                        && progress::fresh_companion_log(&job, state_root, budget, now.into())
+                }
+                Err(_) => no_receipt && within_wrapper,
+            }
+        }
+        _ => false,
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct ReconcileReport {
@@ -153,6 +251,9 @@ pub(crate) fn has_correlated_lifecycle(work_dir: &Path, identity: &CodexAuthoriz
     reconcile::has_correlated_lifecycle(work_dir, identity)
 }
 
+#[cfg(test)]
+#[path = "codex_lifecycle/foreground_tests.rs"]
+mod foreground_tests;
 #[cfg(test)]
 pub(crate) mod test_support;
 #[cfg(test)]

@@ -71,7 +71,8 @@ pub fn list_loom_sockets(work_dir: &Path) -> Vec<LoomSocket> {
         // never has a session file, so `loom clean`/`loom init` would report
         // it as an "unattributable tmux socket left untouched" — a warning
         // meant for another checkout's live session, not loom's own viewer.
-        // Nothing currently reaps this socket; that is a known limitation.
+        // Explicit state cleanup retires it through `viewer::retire_viewer`
+        // after checking this repo's viewer identity.
         // A planning socket (`loom-plan-<id>`) belongs to `loom plan`'s own session records.
         if session_id.starts_with("view-") || session_id.starts_with("plan-") {
             continue;

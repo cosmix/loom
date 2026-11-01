@@ -42,44 +42,45 @@ use crate::verify::transitions::list_all_stages;
 use super::apply::{apply_needs_more_evidence, apply_reject};
 use super::apply_accept::apply_accept;
 use super::requeue::requeue_or_hold_for_remaining_disputes;
-use super::{apply_contract, apply_freeze_refusal, apply_impact, feedback, read_request};
+use super::{apply_contract, apply_freeze_refusal, apply_impact, feedback};
 
 /// Apply `record` to `stage` by the kind of the dispute it answers.
 pub(super) fn apply_by_kind(
     work_dir: &Path,
     stage: &mut Stage,
     record: &DisputeVerdictRecord,
+    kind: &DisputeKind,
 ) -> Result<()> {
     let dispute = record.id;
     match &record.verdict {
-        DisputeVerdict::NeedsMoreEvidence { questions } => {
-            match dispute_kind(work_dir, stage, dispute) {
-                Some(DisputeKind::FreezeRefusal { .. }) => {
-                    apply_freeze_refusal::needs_more_evidence(work_dir, stage, questions)
-                }
-                _ => apply_needs_more_evidence(work_dir, stage, questions),
+        DisputeVerdict::NeedsMoreEvidence { questions } => match kind {
+            DisputeKind::FreezeRefusal { .. } => {
+                apply_freeze_refusal::needs_more_evidence(work_dir, stage, questions)
             }
+            _ => apply_needs_more_evidence(work_dir, stage, questions),
+        },
+        DisputeVerdict::Rulings { rulings } => {
+            apply_rulings(work_dir, stage, dispute, rulings, kind)
         }
-        DisputeVerdict::Rulings { rulings } => apply_rulings(work_dir, stage, dispute, rulings),
         DisputeVerdict::Accept {
             plan_patch,
             reasoning,
             ..
-        } => match dispute_kind(work_dir, stage, dispute) {
-            Some(DisputeKind::Contract { contract_id }) => {
+        } => match kind {
+            DisputeKind::Contract { contract_id } => {
                 let accepted =
-                    apply_contract::accept(work_dir, stage, dispute, &contract_id, plan_patch)?;
+                    apply_contract::accept(work_dir, stage, dispute, contract_id, plan_patch)?;
                 accepted.map_or(Ok(()), |body| notify_and_requeue(work_dir, stage, &body))
             }
-            Some(DisputeKind::Integrity {
+            DisputeKind::Integrity {
                 event_ids,
                 evidence,
-            }) => apply_integrity_accept(work_dir, stage, dispute, &event_ids, &evidence),
-            Some(DisputeKind::ImpactTests { test_ids, evidence }) => {
-                let body = apply_impact::accept(work_dir, stage, dispute, &test_ids, &evidence)?;
+            } => apply_integrity_accept(work_dir, stage, dispute, event_ids, evidence),
+            DisputeKind::ImpactTests { test_ids, evidence } => {
+                let body = apply_impact::accept(work_dir, stage, dispute, test_ids, evidence)?;
                 notify_and_requeue(work_dir, stage, &body)
             }
-            Some(DisputeKind::FreezeRefusal { .. }) => {
+            DisputeKind::FreezeRefusal { .. } => {
                 apply_freeze_refusal::accept(work_dir, stage, dispute, plan_patch, reasoning)
             }
             _ => apply_accept(work_dir, stage, plan_patch, dispute, reasoning),
@@ -87,7 +88,7 @@ pub(super) fn apply_by_kind(
         DisputeVerdict::Reject {
             reasoning,
             citations,
-        } => apply_rejection(work_dir, stage, dispute, reasoning, citations),
+        } => apply_rejection(work_dir, stage, dispute, reasoning, citations, kind),
     }
 }
 
@@ -98,43 +99,26 @@ fn apply_rejection(
     dispute: u32,
     reasoning: &str,
     citations: &[crate::models::dispute::Citation],
+    kind: &DisputeKind,
 ) -> Result<()> {
-    match dispute_kind(work_dir, stage, dispute) {
-        Some(DisputeKind::Contract { contract_id }) => {
-            let body = apply_contract::reject_notice(&stage.id, &contract_id, reasoning);
+    match kind {
+        DisputeKind::Contract { contract_id } => {
+            let body = apply_contract::reject_notice(&stage.id, contract_id, reasoning);
             notify_and_requeue(work_dir, stage, &body)
         }
-        Some(DisputeKind::Integrity { event_ids, .. }) => {
-            let body = integrity_reject_notice(&stage.id, &event_ids, reasoning);
+        DisputeKind::Integrity { event_ids, .. } => {
+            let body = integrity_reject_notice(&stage.id, event_ids, reasoning);
             notify_and_requeue(work_dir, stage, &body)
         }
-        Some(DisputeKind::ImpactTests { test_ids, .. }) => {
-            let body = apply_impact::reject_notice(&test_ids, reasoning);
+        DisputeKind::ImpactTests { test_ids, .. } => {
+            let body = apply_impact::reject_notice(test_ids, reasoning);
             notify_and_requeue(work_dir, stage, &body)
         }
-        Some(DisputeKind::FreezeRefusal { .. }) => {
+        DisputeKind::FreezeRefusal { .. } => {
             let body = apply_freeze_refusal::reject_notice(&stage.id, reasoning);
             notify_and_requeue(work_dir, stage, &body)
         }
-        _ => apply_reject(work_dir, stage, dispute, reasoning, citations),
-    }
-}
-
-/// The kind of the dispute a verdict answers. An unreadable `request.md`
-/// keeps the criterion handling, which never needed the request to apply.
-fn dispute_kind(work_dir: &Path, stage: &Stage, dispute: u32) -> Option<DisputeKind> {
-    match read_request(work_dir, &stage.id, dispute) {
-        Ok(request) => Some(request.kind),
-        Err(error) => {
-            tracing::warn!(
-                target: "loom::adjudication",
-                stage = %stage.id,
-                dispute,
-                error = %format!("{error:#}"),
-                "dispute request unreadable; applying the verdict as a criterion verdict",
-            );
-            None
-        }
+        _ => apply_reject(work_dir, stage, dispute, reasoning, citations, kind),
     }
 }
 
@@ -148,9 +132,9 @@ fn apply_rulings(
     stage: &mut Stage,
     dispute: u32,
     rulings: &[FindingRuling],
+    kind: &DisputeKind,
 ) -> Result<()> {
-    let request = read_request(work_dir, &stage.id, dispute)?;
-    let DisputeKind::Findings { evidence, .. } = request.kind else {
+    let DisputeKind::Findings { evidence, .. } = kind else {
         bail!(
             "dispute {dispute} of stage '{}' is not a findings dispute, so it takes no rulings",
             stage.id
@@ -159,7 +143,7 @@ fn apply_rulings(
     if let Some(question) = refused_defer(work_dir, stage, rulings)? {
         return apply_needs_more_evidence(work_dir, stage, &[question]);
     }
-    for (target, carried) in carried_by_target(&stage.id, dispute, rulings, &evidence)? {
+    for (target, carried) in carried_by_target(&stage.id, dispute, rulings, evidence)? {
         verdict_records::append_carried(work_dir, &target, &carried)?;
     }
     let recorded: Vec<Ruling> = rulings

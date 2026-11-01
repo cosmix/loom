@@ -4,7 +4,7 @@ use anyhow::Result;
 use chrono::Utc;
 
 use super::content::HandoffContent;
-use crate::handoff::git_handoff::format_git_history_markdown;
+use crate::handoff::git_handoff::{format_git_history_markdown, table_cell};
 use crate::handoff::schema::{CompletionCheckpoint, CompletionPhase, HandoffV2};
 use crate::utils::format_thousands;
 
@@ -25,13 +25,11 @@ pub(super) fn format_handoff_document(
 
     let mut md = String::new();
 
-    // V2 YAML frontmatter
     let yaml = document.to_yaml()?;
     md.push_str("---\n");
     md.push_str(&yaml);
     md.push_str("---\n\n");
 
-    // Title
     md.push_str(&format!("# Handoff: {}\n\n", content.stage_id));
 
     format_metadata_and_goals(&mut md, content, &date);
@@ -39,7 +37,6 @@ pub(super) fn format_handoff_document(
     format_completion_checkpoint(&mut md, content.completion_checkpoint.as_ref());
     format_current_state(&mut md, content);
 
-    // Git History (if available)
     if let Some(history) = &content.git_history {
         md.push_str(&format_git_history_markdown(history));
         md.push('\n');
@@ -47,7 +44,6 @@ pub(super) fn format_handoff_document(
 
     format_next_steps(&mut md, content);
 
-    // Stage Memory (if available)
     if let Some(memory) = &content.memory_content {
         md.push_str(memory);
     }
@@ -56,7 +52,6 @@ pub(super) fn format_handoff_document(
 }
 
 fn format_metadata_and_goals(md: &mut String, content: &HandoffContent, date: &str) {
-    // Metadata (human-readable summary)
     md.push_str("## Metadata\n\n");
     md.push_str(&format!("- **Date**: {date}\n"));
     md.push_str(&format!("- **From**: {}\n", content.session_id));
@@ -70,7 +65,6 @@ fn format_metadata_and_goals(md: &mut String, content: &HandoffContent, date: &s
         format_thousands(content.context_tokens)
     ));
 
-    // Goals
     md.push_str("## Goals (What We're Building)\n\n");
     if content.goals.is_empty() {
         md.push_str("No goals specified.\n\n");
@@ -81,7 +75,6 @@ fn format_metadata_and_goals(md: &mut String, content: &HandoffContent, date: &s
 }
 
 fn format_work_and_decisions(md: &mut String, content: &HandoffContent) {
-    // Completed Work
     md.push_str("## Completed Work\n\n");
     if content.completed_work.is_empty() {
         md.push_str("- No work completed yet\n\n");
@@ -92,7 +85,6 @@ fn format_work_and_decisions(md: &mut String, content: &HandoffContent) {
         md.push('\n');
     }
 
-    // Key Decisions Made
     md.push_str("## Key Decisions Made\n\n");
     if content.decisions.is_empty() {
         md.push_str("No decisions documented.\n\n");
@@ -100,9 +92,8 @@ fn format_work_and_decisions(md: &mut String, content: &HandoffContent) {
         md.push_str("| Decision | Rationale |\n");
         md.push_str("|----------|----------|\n");
         for (decision, rationale) in &content.decisions {
-            // Escape pipe characters in table cells
-            let decision_escaped = decision.replace('|', "\\|");
-            let rationale_escaped = rationale.replace('|', "\\|");
+            let decision_escaped = table_cell(decision);
+            let rationale_escaped = table_cell(rationale);
             md.push_str(&format!("| {decision_escaped} | {rationale_escaped} |\n"));
         }
         md.push('\n');
@@ -110,7 +101,6 @@ fn format_work_and_decisions(md: &mut String, content: &HandoffContent) {
 }
 
 fn format_current_state(md: &mut String, content: &HandoffContent) {
-    // Current State
     md.push_str("## Current State\n\n");
     if let Some(branch) = &content.current_branch {
         md.push_str(&format!("- **Branch**: {branch}\n"));
@@ -134,7 +124,6 @@ fn format_current_state(md: &mut String, content: &HandoffContent) {
 }
 
 fn format_next_steps(md: &mut String, content: &HandoffContent) {
-    // Next Steps
     md.push_str("## Next Steps (Prioritized)\n\n");
     if content.next_steps.is_empty() {
         md.push_str("1. Review current state and determine next actions\n\n");

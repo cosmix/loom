@@ -2,12 +2,8 @@
 //! the hooks a user or project registers run unsandboxed in every session,
 //! so none may run a file a session can write.
 //!
-//! A registration's command runs through a shell, so it is read the way that
-//! shell starts it: leading `NAME=value` assignments and an `exec` are
-//! skipped, the first word is the program (a bare name resolves through
-//! PATH), and for an interpreter such as `bash` or `python3` the first
-//! argument that is not a flag is the script it runs, unless a flag like `-c`
-//! makes it run inline code instead.
+//! Commands use the shared shell lexer and a deliberately bounded grammar.
+//! Unverified syntax refuses preflight rather than implying a safe target.
 
 use serde_json::Value;
 use std::os::unix::fs::MetadataExt;
@@ -15,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use super::{find_executable, resolved, WritableRoots};
 use crate::fs::permissions::constants::LOOM_HOOKS;
+use crate::plan::schema::validation::shell_lex::{lex, simple_commands, Token, Word};
 
 /// Programs whose first non-flag argument is the file they run.
 const INTERPRETERS: [&str; 11] = [
@@ -77,7 +74,17 @@ pub(crate) fn scan_hook_registrations(scan: &HookScan<'_>) -> HookFindings {
     let mut findings = HookFindings::default();
     for document in scan.documents {
         for (event, command) in hook_commands(&document.settings) {
-            for target in command_targets(&command, scan) {
+            let targets = match command_targets(&command, scan) {
+                Ok(targets) => targets,
+                Err(reason) => {
+                    findings.refusals.push(format!(
+                        "hook `{event}` in {} cannot be verified: {reason}. Use a literal executable and script path or move the logic into a protected script.",
+                        document.label
+                    ));
+                    continue;
+                }
+            };
+            for target in targets {
                 let target = resolved(&target);
                 let hook = format!(
                     "hook `{event}` in {} runs {}",
@@ -133,23 +140,169 @@ fn hook_commands(settings: &Value) -> Vec<(String, String)> {
 
 /// The files a hook command runs: its program and, for an interpreter, the
 /// script it is given.
-fn command_targets(command: &str, scan: &HookScan<'_>) -> Vec<PathBuf> {
-    let mut words = command
-        .split_whitespace()
-        .map(|word| word.trim_matches(|c| c == '"' || c == '\''))
-        .skip_while(|word| *word == "exec" || is_assignment(word));
-    let Some(program) = words.next() else {
-        return Vec::new();
-    };
-    let mut targets: Vec<PathBuf> = locate(program, scan, true).into_iter().collect();
-    let name = program.rsplit('/').next().unwrap_or(program);
-    if INTERPRETERS.contains(&name) {
-        let script = words
-            .take_while(|word| !runs_inline_code(name, word))
-            .find(|word| !word.starts_with('-'));
-        targets.extend(script.and_then(|word| locate(word, scan, false)));
+fn command_targets(command: &str, scan: &HookScan<'_>) -> Result<Vec<PathBuf>, &'static str> {
+    let tokens = lex(command);
+    if tokens
+        .iter()
+        .any(|token| matches!(token, Token::Redirect(_) | Token::Control("(" | ")" | ";;")))
+    {
+        return Err("unsupported shell operator");
     }
-    targets
+    let commands = simple_commands(&tokens);
+    if commands.is_empty() {
+        return Err("no executable");
+    }
+    let mut targets = Vec::new();
+    for command in commands {
+        targets.extend(simple_targets(&command.words, scan)?);
+    }
+    Ok(targets)
+}
+
+fn simple_targets(words: &[&Word], scan: &HookScan<'_>) -> Result<Vec<PathBuf>, &'static str> {
+    let mut index = program_index(words)?;
+    let mut targets = Vec::new();
+    let mut program = *words.get(index).ok_or("no executable")?;
+    if program.value.rsplit('/').next() == Some("env") {
+        targets.push(locate_word(program, scan, true)?);
+        index += 1;
+        while let Some(word) = words.get(index) {
+            if word.value == "-i" || word.value == "--ignore-environment" {
+                index += 1;
+                continue;
+            }
+            if word.assignment_name().is_some() {
+                check_assignment(word)?;
+                index += 1;
+                continue;
+            }
+            break;
+        }
+        program = *words.get(index).ok_or("env has no executable")?;
+    }
+    targets.push(locate_word(program, scan, true)?);
+    let name = checked_program_name(program)?;
+    for word in &words[index + 1..] {
+        if !word.substitutions.is_empty() || (word.expands && !known_path_expansion(word)) {
+            return Err("dynamic shell expansion");
+        }
+    }
+    if INTERPRETERS.contains(&name) {
+        targets.extend(interpreter_target(name, &words[index + 1..], scan)?);
+    }
+    Ok(targets)
+}
+
+fn checked_program_name(program: &Word) -> Result<&str, &'static str> {
+    let name = program.value.rsplit('/').next().unwrap_or(&program.value);
+    if matches!(
+        name,
+        "eval"
+            | "source"
+            | "."
+            | "command"
+            | "builtin"
+            | "sudo"
+            | "env"
+            | "if"
+            | "then"
+            | "for"
+            | "while"
+            | "case"
+            | "function"
+    ) {
+        return Err("unsupported shell command or wrapper");
+    }
+    Ok(name)
+}
+
+fn program_index(words: &[&Word]) -> Result<usize, &'static str> {
+    let mut index = 0;
+    while words
+        .get(index)
+        .is_some_and(|w| w.assignment_name().is_some())
+    {
+        check_assignment(words[index])?;
+        index += 1;
+    }
+    if words
+        .get(index)
+        .is_some_and(|w| w.value == "exec" && !w.quoted)
+    {
+        index += 1;
+    }
+    Ok(index)
+}
+
+fn interpreter_target(
+    name: &str,
+    words: &[&Word],
+    scan: &HookScan<'_>,
+) -> Result<Option<PathBuf>, &'static str> {
+    for word in words {
+        if runs_inline_code(name, &word.value) {
+            return Ok(None);
+        }
+        if word.value.starts_with('-') {
+            if !matches!(word.value.as_str(), "-x" | "-v" | "-u" | "-E" | "-I") {
+                return Err("unsupported interpreter option");
+            }
+        } else {
+            return locate_word(word, scan, false).map(Some);
+        }
+    }
+    Ok(None)
+}
+
+fn check_assignment(word: &Word) -> Result<(), &'static str> {
+    if word.expands
+        || !word.substitutions.is_empty()
+        || matches!(
+            word.assignment_name(),
+            Some("PATH" | "HOME" | "CLAUDE_PROJECT_DIR")
+        )
+    {
+        Err("dynamic assignment or path environment override")
+    } else {
+        Ok(())
+    }
+}
+
+fn locate_word(word: &Word, scan: &HookScan<'_>, program: bool) -> Result<PathBuf, &'static str> {
+    if !word.substitutions.is_empty() || (word.expands && !known_path_expansion(word)) {
+        return Err("dynamic executable or script path");
+    }
+    if !word.expands && word.value.starts_with('$') {
+        return Err("literal dollar-prefixed path cannot be verified");
+    }
+    if word.quoted && word.value.starts_with('~') {
+        return Err("quoted tilde path cannot be verified");
+    }
+    if word.value.chars().any(|c| matches!(c, '*' | '?' | '['))
+        || (!word.expands && word.value.contains('{'))
+    {
+        return Err("shell pattern in executable or script path");
+    }
+    if (word.value.starts_with("$HOME/")
+        || word.value.starts_with("${HOME}/")
+        || word.value.starts_with("~/"))
+        && scan.home.is_none()
+    {
+        return Err("home directory is unavailable");
+    }
+    locate(&word.value, scan, program).ok_or("executable was not found on PATH")
+}
+
+fn known_path_expansion(word: &Word) -> bool {
+    [
+        "$HOME/",
+        "${HOME}/",
+        "$CLAUDE_PROJECT_DIR/",
+        "${CLAUDE_PROJECT_DIR}/",
+    ]
+    .iter()
+    .any(|prefix| word.value.starts_with(prefix))
+        && word.value.matches('$').count() == 1
 }
 
 /// Whether `flag` makes `interpreter` run the code that follows it.
@@ -158,13 +311,6 @@ fn runs_inline_code(interpreter: &str, flag: &str) -> bool {
         "sh" | "bash" | "zsh" | "dash" | "python" | "python3" => flag == "-c",
         _ => flag == "-e" || flag == "--eval",
     }
-}
-
-fn is_assignment(word: &str) -> bool {
-    word.split_once('=').is_some_and(|(name, _)| {
-        name.starts_with(|c: char| c == '_' || c.is_ascii_alphabetic())
-            && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric())
-    })
 }
 
 /// Where `word` points: expanded against the home directory and the project,

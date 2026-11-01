@@ -37,6 +37,7 @@ mod apply_freeze_refusal;
 mod apply_impact;
 mod apply_kinds;
 mod closed_disputes;
+mod counter;
 mod escalation;
 pub mod feedback;
 mod plan_patch;
@@ -61,6 +62,8 @@ mod escalation_tests;
 mod tests;
 #[cfg(test)]
 mod tests_criterion_field;
+#[cfg(test)]
+mod tests_retry_budget;
 #[cfg(test)]
 mod tests_verdicts;
 
@@ -146,7 +149,7 @@ impl AdjudicatorRegistry {
                 continue;
             }
             if let Some(job) =
-                self.job_for_dispute(work_dir, &stage_id, dispute_id, &mut pending.escalations)
+                self.job_for_dispute(work_dir, &stage_id, dispute_id, &mut pending.escalations)?
             {
                 pending.jobs.push(job);
             }
@@ -163,38 +166,42 @@ impl AdjudicatorRegistry {
         stage_id: &str,
         dispute_id: u32,
         escalations: &mut Vec<Escalation>,
-    ) -> Option<AdjudicationJob> {
+    ) -> Result<Option<AdjudicationJob>> {
         let disputes_root = work_dir.join("disputes");
         if verdict_file(&disputes_root, stage_id, dispute_id).exists() {
-            return None;
+            return Ok(None);
         }
         let request = read_dispute_request(&request_file(&disputes_root, stage_id, dispute_id))
             .map_err(|error| {
                 tracing::warn!(target: "loom::adjudication", stage = %stage_id, dispute = dispute_id, %error, "skipping unparseable dispute request");
             })
-            .ok()?;
+            .ok();
+        let Some(request) = request else {
+            return Ok(None);
+        };
 
         let stage = load_stage(stage_id, work_dir)
             .map_err(|error| {
                 tracing::warn!(target: "loom::adjudication", stage = %stage_id, %error, "could not load stage; skipping dispute");
             })
-            .ok()?;
+            .ok();
+        let Some(stage) = stage else { return Ok(None) };
         if stage.status != StageStatus::NeedsAdjudication {
-            return None;
+            return Ok(None);
         }
         if stage.tally.evidence_rounds >= MAX_EVIDENCE_ROUNDS {
             escalations.push(Escalation::evidence_cap(stage_id));
-            return None;
+            return Ok(None);
         }
-        if !self.claim_session_slot(work_dir, stage_id, dispute_id, escalations) {
-            return None;
+        if !self.claim_session_slot(work_dir, stage_id, dispute_id, escalations)? {
+            return Ok(None);
         }
 
-        Some(AdjudicationJob {
+        Ok(Some(AdjudicationJob {
             stage,
             request,
             plan_path: resolve_plan_path(work_dir).unwrap_or_else(|| PathBuf::from("PLAN.md")),
-        })
+        }))
     }
 }
 
@@ -214,26 +221,26 @@ impl AdjudicatorRegistry {
         stage_id: &str,
         dispute_id: u32,
         escalations: &mut Vec<Escalation>,
-    ) -> bool {
+    ) -> Result<bool> {
         match session::live_adjudication_session(work_dir, stage_id) {
             Ok(Some(session_id)) => {
                 tracing::debug!(target: "loom::adjudication", stage = %stage_id, session = %session_id, "adjudication session already live");
-                return false;
+                return Ok(false);
             }
             Ok(None) => {}
             Err(error) => {
                 tracing::warn!(target: "loom::adjudication", stage = %stage_id, %error,
                     "Session ownership is uncertain; deferring adjudication spawn");
-                return false;
+                return Ok(false);
             }
         }
-        let attempts = session::attempt_count(work_dir, stage_id, dispute_id);
+        let attempts = session::checked_attempt_count(work_dir, stage_id, dispute_id)?;
         if attempts >= MAX_ADJUDICATION_ATTEMPTS {
             escalations.push(Escalation::attempt_cap(stage_id, dispute_id, attempts));
-            return false;
+            return Ok(false);
         }
-        session::record_attempt(work_dir, stage_id, dispute_id);
-        true
+        session::record_attempt(work_dir, stage_id, dispute_id)?;
+        Ok(true)
     }
 }
 
@@ -274,53 +281,33 @@ fn escalate_apply_cap(
     Escalation::apply_cap(stage_id, dispute_id, failures, error).write(work_dir);
 }
 
-/// File name for the per-dispute apply-failure counter, mirroring
-/// `session.rs`'s `attempts` file for adjudication spawn attempts.
+/// Historical file name for the per-dispute apply-attempt counter.
+/// A charge precedes each apply so a failed counter write cannot allow a
+/// free retry. The name remains stable across daemon restarts.
 const APPLY_FAILURES_FILENAME: &str = "apply_failures";
 
 fn apply_failures_file(work_dir: &Path, stage_id: &str, dispute_id: u32) -> PathBuf {
     dispute_dir(&work_dir.join("disputes"), stage_id, dispute_id).join(APPLY_FAILURES_FILENAME)
 }
 
-/// How many times applying this dispute's verdict has already failed.
-fn apply_failure_count(work_dir: &Path, stage_id: &str, dispute_id: u32) -> u32 {
-    std::fs::read_to_string(apply_failures_file(work_dir, stage_id, dispute_id))
-        .ok()
-        .and_then(|raw| raw.trim().parse::<u32>().ok())
-        .unwrap_or(0)
+/// How many apply attempts this dispute's verdict has already consumed.
+fn apply_failure_count(
+    work_dir: &Path,
+    stage_id: &str,
+    dispute_id: u32,
+) -> std::result::Result<u32, counter::CounterError> {
+    counter::read(&apply_failures_file(work_dir, stage_id, dispute_id))
 }
 
-/// Count one more apply failure and return the new total.
+/// Reserve one apply attempt durably and return the new total.
 ///
-/// Best-effort like [`session::record_attempt`]: a directory that cannot be
-/// created or written is warned about, never fatal — the caller still gets a
-/// count to compare against [`MAX_APPLY_ATTEMPTS`] even when it could not be
-/// persisted.
-fn record_apply_failure(work_dir: &Path, stage_id: &str, dispute_id: u32) -> u32 {
+fn reserve_apply_attempt(
+    work_dir: &Path,
+    stage_id: &str,
+    dispute_id: u32,
+) -> std::result::Result<u32, counter::CounterError> {
     let path = apply_failures_file(work_dir, stage_id, dispute_id);
-    let next = apply_failure_count(work_dir, stage_id, dispute_id).saturating_add(1);
-    if let Some(parent) = path.parent() {
-        if let Err(error) = std::fs::create_dir_all(parent) {
-            tracing::warn!(
-                target: "loom::adjudication",
-                stage = %stage_id,
-                dispute = dispute_id,
-                %error,
-                "could not create the dispute directory; apply failures are not being counted",
-            );
-            return next;
-        }
-    }
-    if let Err(error) = std::fs::write(&path, next.to_string()) {
-        tracing::warn!(
-            target: "loom::adjudication",
-            stage = %stage_id,
-            dispute = dispute_id,
-            %error,
-            "could not persist the apply failure count",
-        );
-    }
-    next
+    counter::charge(&path)
 }
 
 /// The stage's worktree, located the way the freeze handler

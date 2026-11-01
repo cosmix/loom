@@ -259,6 +259,68 @@ fn contract_reject_requeues_with_restore_feedback() {
 }
 
 #[test]
+fn unreadable_request_never_changes_noncriterion_verdict_policy() {
+    let kinds = [
+        DisputeKind::Contract {
+            contract_id: "c".into(),
+        },
+        DisputeKind::Integrity {
+            event_ids: vec![],
+            evidence: vec![],
+        },
+        DisputeKind::ImpactTests {
+            test_ids: vec![],
+            evidence: vec![],
+        },
+        DisputeKind::FreezeRefusal {
+            problems: vec!["freeze refused".into()],
+        },
+        DisputeKind::Findings {
+            finding_ids: vec![],
+            evidence: vec![],
+        },
+    ];
+    for kind in kinds {
+        assert_unreadable_request_preserves_policy(kind);
+    }
+}
+
+fn assert_unreadable_request_preserves_policy(kind: DisputeKind) {
+    let tmp = work_dir();
+    let work = tmp.path();
+    write_stage(work, &make_stage("s1"));
+    write_request(work, "s1", 1, kind.clone());
+    let verdict = if matches!(kind, DisputeKind::Findings { .. }) {
+        DisputeVerdict::Rulings { rulings: vec![] }
+    } else {
+        reject_verdict()
+    };
+    write_verdict(work, "s1", 1, verdict, 1);
+    let request = work.join("disputes/s1/1/request.md");
+    std::fs::write(&request, "invalid request").unwrap();
+
+    let registry = AdjudicatorRegistry::new();
+    assert!(registry.apply_verdict(work, "s1", 1).is_err(), "{kind:?}");
+    assert_eq!(
+        status(work, "s1"),
+        StageStatus::NeedsAdjudication,
+        "{kind:?}"
+    );
+    assert!(
+        feedback::read_feedback(work, "s1").unwrap().is_none(),
+        "{kind:?}"
+    );
+    assert!(
+        !work.join("disputes/s1/1/applied.marker").exists(),
+        "{kind:?}"
+    );
+
+    write_request(work, "s1", 1, kind.clone());
+    registry.apply_verdict(work, "s1", 1).unwrap();
+    assert_eq!(status(work, "s1"), StageStatus::Queued, "{kind:?}");
+}
+
+#[test]
 fn integrity_accept_records_counts() {
     let tmp = work_dir();
     let work = tmp.path();

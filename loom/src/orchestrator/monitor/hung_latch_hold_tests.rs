@@ -3,8 +3,51 @@
 use chrono::{Duration as ChronoDuration, Utc};
 use tempfile::TempDir;
 
+use super::super::foreground::CommandProgress;
 use super::*;
 use crate::host_verify::{new_job_id, store, JobKind, JobState};
+
+#[test]
+fn foreground_cpu_growth_holds_but_an_idle_command_expires() {
+    let now = Utc::now();
+    let baseline = now - ChronoDuration::seconds(300);
+    let mut detection = Detection::new();
+    assert!(detection.record_command_progress(
+        "session-1",
+        CommandProgress {
+            pid: 42,
+            started: Some(7),
+            cpu_ticks: 10,
+        },
+        baseline,
+        300,
+        now,
+    ));
+    assert!(!detection.record_command_progress(
+        "session-1",
+        CommandProgress {
+            pid: 42,
+            started: Some(7),
+            cpu_ticks: 10,
+        },
+        baseline,
+        300,
+        now + ChronoDuration::seconds(300),
+    ));
+    assert!(detection.record_command_progress(
+        "session-1",
+        CommandProgress {
+            pid: 42,
+            started: Some(7),
+            cpu_ticks: 11,
+        },
+        baseline,
+        300,
+        now + ChronoDuration::seconds(300),
+    ));
+    detection.clear_hung_report("session-1");
+    assert!(!detection.foreground_commands_seen.contains_key("session-1"));
+}
 
 /// Stage-1, owned by session-1.
 fn stage() -> Stage {

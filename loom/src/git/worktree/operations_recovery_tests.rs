@@ -73,10 +73,12 @@ fn prune_and_listing_errors_preserve_directory() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join(".worktrees/s");
     std::fs::create_dir_all(&path).unwrap();
-    assert!(get_or_create_worktree("s", root.path(), None, None).is_err());
+    let prune_error = get_or_create_worktree("s", root.path(), None, None).unwrap_err();
+    assert!(format!("{prune_error:#}").contains("Failed to prune stale worktree registrations"));
     assert!(path.is_dir());
     std::fs::write(path.join(".git"), "invalid").unwrap();
-    assert!(get_or_create_worktree("s", root.path(), None, None).is_err());
+    let listing_error = get_or_create_worktree("s", root.path(), None, None).unwrap_err();
+    assert!(!format!("{listing_error:#}").contains("Failed to prune"));
     assert!(path.join(".git").exists());
 }
 
