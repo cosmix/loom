@@ -132,6 +132,83 @@ fn live_judge(work: &std::path::Path) -> (Session, u32) {
     (session, pid)
 }
 
+#[test]
+fn receipt_replay_publishes_marker_without_retiring_a_later_session() {
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".work");
+    stage_needing_adjudication(&work);
+    write_dispute_request(&work, "test-stage", 1);
+    write_verdict(&work, "test-stage", 1, None);
+    update_stage("test-stage", &work, |stage| {
+        stage.tally.evidence_rounds = 1;
+        stage
+            .tally
+            .request_receipts
+            .insert("adjudication-verdict:1".into(), 1);
+        stage.session = Some("later-session".into());
+        Ok(())
+    })
+    .unwrap();
+
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    orchestrator.apply_pending_verdicts().unwrap();
+
+    assert!(applied_marker(&work.join("disputes"), "test-stage", 1).exists());
+    let stage = load_stage("test-stage", &work).unwrap();
+    assert_eq!(stage.session.as_deref(), Some("later-session"));
+    assert_eq!(stage.tally.evidence_rounds, 1);
+}
+
+#[test]
+fn reset_between_scan_and_claim_cannot_retire_fresh_agent() {
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".work");
+    stage_needing_adjudication(&work);
+    write_dispute_request(&work, "test-stage", 1);
+    write_verdict(&work, "test-stage", 1, None);
+    let mut fresh = Session::new();
+    fresh.assign_to_stage("test-stage".into());
+    fresh.status = SessionStatus::Running;
+    fresh.backend = SessionBackendKind::Tmux;
+    save_session(&fresh, &work).unwrap();
+    let pid = spawn_orphan_process();
+    write_test_pid_identity(&work, &fresh, pid).unwrap();
+
+    let hook_work = work.clone();
+    let fresh_id = fresh.id.clone();
+    after_pending_scan_once(move || {
+        let _claim = crate::orchestrator::adjudication::lock_stage_dispute_dir(
+            &hook_work.join("disputes/test-stage"),
+        )
+        .unwrap();
+        update_stage("test-stage", &hook_work, |stage| {
+            stage.force_status_with_reason(StageStatus::WaitingForDeps, "reset");
+            stage.session = None;
+            Ok(())
+        })
+        .unwrap();
+        crate::orchestrator::adjudication::close_open_disputes_locked(&hook_work, "test-stage");
+        update_stage("test-stage", &hook_work, |stage| {
+            stage.force_status_with_reason(StageStatus::NeedsAdjudication, "fresh dispute");
+            stage.session = Some(fresh_id);
+            Ok(())
+        })
+        .unwrap();
+    });
+
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    orchestrator.apply_pending_verdicts().unwrap();
+    assert!(crate::process::is_process_alive(pid));
+    assert_eq!(
+        load_stage("test-stage", &work).unwrap().session.as_deref(),
+        Some(fresh.id.as_str())
+    );
+    assert!(work.join("disputes/test-stage/1/closed.marker").exists());
+    let _ = std::process::Command::new("kill")
+        .arg(pid.to_string())
+        .status();
+}
+
 /// The daemon must close the judge named by the applied verdict: a Claude
 /// Code session does not exit on its own once its turn ends, and an idle one
 /// left alive blocks the next dispute on the stage (`claim_session_slot`).

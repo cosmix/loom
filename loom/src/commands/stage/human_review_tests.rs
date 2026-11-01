@@ -153,6 +153,28 @@ fn test_human_review_approve_closes_an_open_dispute() {
     assert!(dispute.join("closed.marker").exists());
 }
 
+#[test]
+fn approval_waits_for_dispute_closure_before_requeue() {
+    let temp = TempDir::new().unwrap();
+    setup_stage(&temp, StageStatus::NeedsHumanReview, Some("Escalated"));
+    let dispute = dispute_dir(&temp.path().join("disputes"), "test-stage", 1);
+    std::fs::create_dir_all(&dispute).unwrap();
+    crate::orchestrator::adjudication::fail_close_once(1);
+
+    let error = handle_approve("test-stage", temp.path()).unwrap_err();
+    assert!(format!("{error:#}").contains("injected dispute closure failure"));
+    assert_eq!(
+        crate::verify::transitions::load_stage("test-stage", temp.path())
+            .unwrap()
+            .status,
+        StageStatus::NeedsHumanReview
+    );
+    assert!(!dispute.join("closed.marker").exists());
+
+    handle_approve("test-stage", temp.path()).unwrap();
+    assert!(dispute.join("closed.marker").exists());
+}
+
 /// A stage not awaiting review keeps its disputes open: a refused approve
 /// must not settle anything.
 #[test]

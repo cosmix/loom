@@ -4,8 +4,29 @@ use anyhow::Result;
 use std::path::Path;
 
 use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
+use crate::orchestrator::adjudication::lock_stage_dispute_dir;
 
 use super::{clear_status_line, Orchestrator};
+
+#[cfg(test)]
+thread_local! {
+    static AFTER_PENDING_SCAN: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        std::cell::RefCell::new(None);
+}
+
+#[cfg(test)]
+fn after_pending_scan_once(hook: impl FnOnce() + 'static) {
+    AFTER_PENDING_SCAN.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+}
+
+#[cfg(test)]
+fn run_after_pending_scan_hook() {
+    AFTER_PENDING_SCAN.with(|slot| {
+        if let Some(hook) = slot.borrow_mut().take() {
+            hook();
+        }
+    });
+}
 
 #[cfg(test)]
 #[path = "verdict_apply_tests.rs"]
@@ -23,27 +44,26 @@ impl Orchestrator {
     /// than re-queueing the stage onto a live writer.
     pub(crate) fn apply_pending_verdicts(&mut self) -> Result<()> {
         let work_dir = self.config.work_dir.clone();
-        for (stage_id, dispute_id) in self.adjudicators.pending_verdicts(&work_dir)? {
-            match self.retire_disputing_agents(&stage_id) {
-                Ok(survivors) if survivors.is_empty() => {}
-                Ok(survivors) => {
-                    clear_status_line();
-                    eprintln!(
-                        "Deferring the verdict for stage '{stage_id}' dispute {dispute_id}: \
-                         session(s) {} survived the retirement kill; take them down with \
-                         'loom stage reset {stage_id} --kill-session'",
-                        survivors.join(", ")
-                    );
-                    continue;
-                }
+        let pending = self.adjudicators.pending_verdicts(&work_dir)?;
+        #[cfg(test)]
+        run_after_pending_scan_hook();
+        for (stage_id, dispute_id) in pending {
+            let claim = lock_stage_dispute_dir(&work_dir.join("disputes").join(&stage_id))?;
+            let retire = match self
+                .adjudicators
+                .verdict_needs_retirement(&work_dir, &stage_id, dispute_id, &claim)
+            {
+                Ok(retire) => retire,
                 Err(error) => {
-                    clear_status_line();
-                    eprintln!(
-                        "Deferring the verdict for stage '{stage_id}' dispute {dispute_id}: \
-                         could not retire its agents: {error:#}"
-                    );
+                    tracing::warn!(stage = %stage_id, dispute = dispute_id, %error,
+                        "could not check verdict claim before agent retirement");
                     continue;
                 }
+            };
+            // Keep the claim across retirement and application. Reset cannot
+            // close an old verdict and expose a fresh session between them.
+            if retire && !self.retire_agents_for_verdict(&stage_id, dispute_id) {
+                continue;
             }
             // Read who wrote the verdict before applying it — the record is
             // read either way, so there is no reason to delay this past the
@@ -53,7 +73,7 @@ impl Orchestrator {
                 .verdict_session_id(&work_dir, &stage_id, dispute_id);
             match self
                 .adjudicators
-                .apply_verdict(&work_dir, &stage_id, dispute_id)
+                .apply_verdict_claimed(&work_dir, &stage_id, dispute_id, claim)
             {
                 Ok(()) => self.retire_adjudicator(&stage_id, dispute_id, judge.as_deref()),
                 Err(error) => {
@@ -68,6 +88,30 @@ impl Orchestrator {
             }
         }
         Ok(())
+    }
+
+    fn retire_agents_for_verdict(&mut self, stage_id: &str, dispute_id: u32) -> bool {
+        match self.retire_disputing_agents(stage_id) {
+            Ok(survivors) if survivors.is_empty() => true,
+            Ok(survivors) => {
+                clear_status_line();
+                eprintln!(
+                    "Deferring the verdict for stage '{stage_id}' dispute {dispute_id}: \
+                     session(s) {} survived the retirement kill; take them down with \
+                     'loom stage reset {stage_id} --kill-session'",
+                    survivors.join(", ")
+                );
+                false
+            }
+            Err(error) => {
+                clear_status_line();
+                eprintln!(
+                    "Deferring the verdict for stage '{stage_id}' dispute {dispute_id}: \
+                     could not retire its agents: {error:#}"
+                );
+                false
+            }
+        }
     }
 
     /// Close the judge whose verdict was just applied. A judge's exit is
