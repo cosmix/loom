@@ -68,10 +68,12 @@ loom_stage_work_dir() {
     done
 }
 
-# Reject incomplete frontmatter and duplicate statuses, including body prose.
-loom_stage_status() {
-    local file="$1" line="" value="" status="" count=0 closed=0 first=1
+# Read exactly one top-level frontmatter field. Bodies and incomplete or
+# duplicate fields cannot supply stage metadata to any hook.
+loom_stage_frontmatter_field() {
+    local file="$1" field="$2" line="" value="" count=0 closed=0 first=1
     [[ -f "$file" && ! -L "$file" ]] || return 1
+    [[ "$field" =~ ^[a-z][a-z0-9_-]*$ ]] || return 1
     while IFS= read -r line || [[ -n "$line" ]]; do
         if ((first)); then
             [[ "$line" == --- ]] || return 1
@@ -79,18 +81,27 @@ loom_stage_status() {
         fi
         if [[ "$line" == --- ]]; then closed=1; break; fi
         case "$line" in
-        status:*)
-            count=$((count + 1)); value=${line#status:}; value=${value%%#*}
+        "$field":*)
+            count=$((count + 1)); value=${line#*:}
             value="${value#"${value%%[![:space:]]*}"}"
             value="${value%"${value##*[![:space:]]}"}"
-            case "$value" in
-            \"*\") value=${value#\"}; value=${value%\"} ;;
-            \'*\') value=${value#\'}; value=${value%\'} ;;
-            esac
-            status=$value
             ;;
         esac
     done <"$file"
-    [[ $closed -eq 1 && $count -eq 1 && "$status" =~ ^[A-Za-z][A-Za-z0-9-]*$ ]] || return 1
+    [[ $closed -eq 1 && $count -eq 1 ]] || return 1
+    printf '%s\n' "$value"
+}
+
+# Reject incomplete frontmatter and duplicate statuses, including body prose.
+loom_stage_status() {
+    local status=""
+    status=$(loom_stage_frontmatter_field "$1" status) || return 1
+    status=${status%%#*}
+    status="${status%"${status##*[![:space:]]}"}"
+    case "$status" in
+    \"*\") status=${status#\"}; status=${status%\"} ;;
+    \'*\') status=${status#\'}; status=${status%\'} ;;
+    esac
+    [[ "$status" =~ ^[A-Za-z][A-Za-z0-9-]*$ ]] || return 1
     printf '%s\n' "$status"
 }

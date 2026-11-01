@@ -136,4 +136,30 @@ run_hook || { echo "FAIL: unclosed frontmatter"; exit 1; }
 printf '%s\n' '---' 'status: completed' 'status: executing' '---' >"$STAGES_DIR/01-$STAGE_ID.md"
 run_hook || { echo "FAIL: duplicate status"; exit 1; }
 
+# Lifecycle binding and terminal decisions use the same stage lookup and
+# frontmatter boundary, while applying their own field requirements.
+source "$ROOT/loom-hooks/_lifecycle.sh"
+printf '%s\n' '---' "id: $STAGE_ID" 'session: owner-1' 'status: completed' '---' >"$STAGES_DIR/01-$STAGE_ID.md"
+loom_lifecycle_stage_binding "$PROJECT_ROOT/.work" "$STAGE_ID" owner-1 || {
+	echo "FAIL: lifecycle rejected valid shared metadata"; exit 1;
+}
+cp "$STAGES_DIR/01-$STAGE_ID.md" "$STAGES_DIR/$STAGE_ID.md"
+if loom_lifecycle_stage_binding "$PROJECT_ROOT/.work" "$STAGE_ID" owner-1; then
+	echo "FAIL: lifecycle accepted duplicate canonical and legacy stage files"; exit 1
+fi
+rm "$STAGES_DIR/$STAGE_ID.md"
+printf '%s\n' '---' "id: $STAGE_ID" 'session: owner-1' 'session: owner-2' '---' >"$STAGES_DIR/01-$STAGE_ID.md"
+if loom_lifecycle_stage_binding "$PROJECT_ROOT/.work" "$STAGE_ID" owner-1; then
+	echo "FAIL: lifecycle accepted duplicate session metadata"; exit 1
+fi
+printf '%s\n' '---' "id: $STAGE_ID" 'session: owner-1' >"$STAGES_DIR/01-$STAGE_ID.md"
+if loom_lifecycle_stage_binding "$PROJECT_ROOT/.work" "$STAGE_ID" owner-1; then
+	echo "FAIL: lifecycle accepted unclosed frontmatter"; exit 1
+fi
+mv "$STAGES_DIR/01-$STAGE_ID.md" "$TMP/lifecycle-target"
+ln -s "$TMP/lifecycle-target" "$STAGES_DIR/01-$STAGE_ID.md"
+if loom_lifecycle_stage_binding "$PROJECT_ROOT/.work" "$STAGE_ID" owner-1; then
+	echo "FAIL: lifecycle accepted a symlinked stage file"; exit 1
+fi
+
 echo "PASS"

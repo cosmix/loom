@@ -186,21 +186,8 @@ loom_heartbeat_owner_is_current() {
     fi
 
     if [[ -n "$stage_file" && -r "$stage_file" && ! -L "$stage_file" ]]; then
-        # Only the top-level FRONTMATTER field is authoritative. Stage bodies
-        # contain the raw description, which may itself include an unindented
-        # `session:` line or fenced example. Stop at the second exact delimiter
-        # so prose can never impersonate ownership.
-        stage_session=$(awk '
-            NR == 1 && $0 == "---" { in_frontmatter = 1; next }
-            in_frontmatter && $0 == "---" { exit }
-            in_frontmatter && $0 ~ /^session:[[:space:]]*[A-Za-z0-9._-]+[[:space:]]*$/ {
-                value = $0
-                sub(/^session:[[:space:]]*/, "", value)
-                sub(/[[:space:]]*$/, "", value)
-                print value
-                exit
-            }
-        ' "$stage_file" 2>/dev/null || true)
+        stage_session=$(loom_stage_frontmatter_field "$stage_file" session || true)
+        [[ "$stage_session" =~ ^[A-Za-z0-9._-]+$ ]] || stage_session=""
         if [[ -n "$stage_session" ]]; then
             if [[ "$stage_session" != "$session_id" ]]; then
                 loom_debug "heartbeat: session $session_id no longer owns stage $stage_id"
