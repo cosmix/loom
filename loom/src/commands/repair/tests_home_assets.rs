@@ -25,6 +25,7 @@ fn shipped_legacy_assets_are_backed_up_and_custom_assets_survive() {
         .iter()
         .find(|issue| matches!(&issue.action, RepairAction::OldSkill(_)))
         .unwrap();
+    assert!(matches!(&skill.action, RepairAction::OldSkill(path) if path == &skills.join("rust")));
     let custom = skills_issues
         .iter()
         .find(|issue| issue.action == RepairAction::Manual)
@@ -68,7 +69,9 @@ fn shipped_legacy_agent_is_backed_up() {
     .unwrap();
     fs::write(agents.join("loom-software-engineer.md"), body).unwrap();
     let agent_issue = home_assets::check_old_agents_at(&agents).pop().unwrap();
-    assert!(matches!(&agent_issue.action, RepairAction::OldAgent(_)));
+    assert!(
+        matches!(&agent_issue.action, RepairAction::OldAgent(path) if path == &agents.join("software-engineer.md"))
+    );
     assert!(fix_issue(root.path(), &agent_issue).unwrap());
     let backups: Vec<_> = fs::read_dir(&agents)
         .unwrap()

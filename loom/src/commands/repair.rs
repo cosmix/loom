@@ -37,7 +37,7 @@ enum RepairAction {
     OldSkill(std::path::PathBuf),
     OldAgent(std::path::PathBuf),
     SkillRefs,
-    CodexSlashTmp,
+    CodexSlashTmp(std::path::PathBuf),
     PhantomMerge(String),
     IncoherentStage { stage_id: String, reason: String },
 }
@@ -250,7 +250,7 @@ fn fix_issue(repo_root: &Path, issue: &DetectedIssue) -> Result<bool> {
         RepairAction::OldSkill(path) => home_assets::fix_old_skill(path).map(|()| true),
         RepairAction::OldAgent(path) => home_assets::fix_old_agent(path).map(|()| true),
         RepairAction::SkillRefs => home_assets::fix_settings_skill_refs().map(|()| true),
-        RepairAction::CodexSlashTmp => settings_checks::fix_codex_slash_tmp(),
+        RepairAction::CodexSlashTmp(path) => settings_checks::fix_codex_slash_tmp(path),
         RepairAction::PhantomMerge(stage) => {
             merge_state::fix_phantom_merge(repo_root, stage).map(|()| true)
         }

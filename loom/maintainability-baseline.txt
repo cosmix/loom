@@ -30,7 +30,7 @@ file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 414
 file tests/integration/plan_verify.rs 1027
 
-function src/cli/dispatch.rs dispatch 62
+function src/cli/dispatch.rs dispatch 59
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/worktrees.rs clean_worktrees 110
 function src/commands/graph/display.rs build_graph_display 52

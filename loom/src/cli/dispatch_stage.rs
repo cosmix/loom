@@ -5,33 +5,34 @@
 use anyhow::Result;
 
 use super::dispatch::{print_minted_proof, resolve_completion_proof};
+use super::dispatch_args::narrow_family;
+use super::dispatch_stage_args::{
+    AdminProofArgs, CompleteArgs, CriteriaCommand, TransitionCommand,
+};
 use super::types::{OutputCommands, StageCommands};
 use super::types_stage::{ContractsCommands, CriteriaDispute, ReviewCommands};
 use crate::commands::stage;
 use crate::commands::stage::commit;
 
 /// `loom stage {block,reset,waiting,resume,hold,release,skip}` dispatch.
-fn dispatch_stage_transitions(command: StageCommands) -> Result<()> {
+fn dispatch_stage_transitions(command: TransitionCommand) -> Result<()> {
     match command {
-        StageCommands::Block { stage_id, reason } => stage::block(stage_id, reason),
-        StageCommands::Reset {
-            stage_id,
-            hard,
-            kill_session,
-        } => stage::reset(stage_id, hard, kill_session),
-        StageCommands::Waiting { stage_id } => stage::waiting(stage_id),
-        StageCommands::Resume { stage_id } => stage::resume_from_waiting(stage_id),
-        StageCommands::Hold { stage_id } => stage::hold(stage_id),
-        StageCommands::Release { stage_id } => stage::release(stage_id),
-        StageCommands::Skip { stage_id, reason } => stage::skip(stage_id, reason),
-        _ => unreachable!("dispatch_stage routes only the transition group here"),
+        TransitionCommand::Block(stage_id, reason) => stage::block(stage_id, reason),
+        TransitionCommand::Reset(stage_id, hard, kill_session) => {
+            stage::reset(stage_id, hard, kill_session)
+        }
+        TransitionCommand::Waiting(stage_id) => stage::waiting(stage_id),
+        TransitionCommand::Resume(stage_id) => stage::resume_from_waiting(stage_id),
+        TransitionCommand::Hold(stage_id) => stage::hold(stage_id),
+        TransitionCommand::Release(stage_id) => stage::release(stage_id),
+        TransitionCommand::Skip(stage_id, reason) => stage::skip(stage_id, reason),
     }
 }
 
 /// `loom stage {dispute-criteria,adjudicate,amend}` dispatch.
-fn dispatch_stage_criteria(command: StageCommands) -> Result<()> {
+fn dispatch_stage_criteria(command: CriteriaCommand) -> Result<()> {
     match command {
-        StageCommands::DisputeCriteria(args) => match CriteriaDispute::try_from(args)? {
+        CriteriaCommand::Dispute(args) => match CriteriaDispute::try_from(args)? {
             CriteriaDispute::Entry {
                 stage_id,
                 field,
@@ -49,50 +50,44 @@ fn dispatch_stage_criteria(command: StageCommands) -> Result<()> {
             ),
             CriteriaDispute::ImpactTests(filing) => stage::file_dispute(filing),
         },
-        StageCommands::Adjudicate {
-            stage,
-            dispute,
-            verdict_file,
-        } => stage::adjudicate(stage, dispute, verdict_file),
-        StageCommands::Amend {
-            stage_id,
-            field,
-            op,
-            index,
-            value,
-            reason,
-        } => stage::amend(
+        CriteriaCommand::Adjudicate(stage, dispute, verdict_file) => {
+            stage::adjudicate(stage, dispute, verdict_file)
+        }
+        CriteriaCommand::Amend(stage_id, field, op, index, value, reason) => stage::amend(
             stage_id,
             field.to_field(),
             op.to_patch(index, value)?,
             reason,
         ),
-        _ => unreachable!("dispatch_stage routes only the criteria-adjudication group here"),
     }
 }
 
 /// Resolve the completion proof before completing the stage.
-fn dispatch_complete(command: StageCommands) -> Result<()> {
-    let StageCommands::Complete {
-        stage_id,
-        session,
-        no_verify,
-        force_unsafe,
-        assume_merged,
-        no_cache,
-    } = command
-    else {
-        unreachable!("dispatch_stage routes only Complete here");
-    };
-    let admin_proof = resolve_completion_proof(&stage_id, no_verify, force_unsafe, assume_merged)?;
+fn dispatch_complete(args: CompleteArgs) -> Result<()> {
+    let admin_proof = resolve_completion_proof(
+        &args.stage_id,
+        args.no_verify,
+        args.force_unsafe,
+        args.assume_merged,
+    )?;
     stage::complete(
-        stage_id,
-        session,
-        no_verify,
-        force_unsafe,
-        assume_merged,
-        no_cache,
+        args.stage_id,
+        args.session,
+        args.no_verify,
+        args.force_unsafe,
+        args.assume_merged,
+        args.no_cache,
         admin_proof,
+    )
+}
+
+fn dispatch_admin_proof(args: AdminProofArgs) -> Result<()> {
+    print_minted_proof(
+        args.stage_id,
+        args.daemon_stop,
+        args.no_verify,
+        args.force_unsafe,
+        args.assume_merged,
     )
 }
 
@@ -105,27 +100,15 @@ fn join_commit_message(parts: &[String]) -> String {
 /// `loom stage <subcommand>` dispatch.
 pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
     match command {
-        cmd @ StageCommands::Complete { .. } => dispatch_complete(cmd),
-        StageCommands::AdminProof {
-            stage_id,
-            daemon_stop,
-            no_verify,
-            force_unsafe,
-            assume_merged,
-        } => print_minted_proof(
-            stage_id,
-            daemon_stop,
-            no_verify,
-            force_unsafe,
-            assume_merged,
-        ),
+        cmd @ StageCommands::Complete { .. } => dispatch_complete(narrow_family(cmd)?),
+        cmd @ StageCommands::AdminProof { .. } => dispatch_admin_proof(narrow_family(cmd)?),
         cmd @ (StageCommands::Block { .. }
         | StageCommands::Reset { .. }
         | StageCommands::Waiting { .. }
         | StageCommands::Resume { .. }
         | StageCommands::Hold { .. }
         | StageCommands::Release { .. }
-        | StageCommands::Skip { .. }) => dispatch_stage_transitions(cmd),
+        | StageCommands::Skip { .. }) => dispatch_stage_transitions(narrow_family(cmd)?),
         StageCommands::Retry {
             stage_id,
             force,
@@ -143,7 +126,7 @@ pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
         } => stage::human_review(stage_id, approve, force_complete, reject),
         cmd @ (StageCommands::DisputeCriteria(_)
         | StageCommands::Adjudicate { .. }
-        | StageCommands::Amend { .. }) => dispatch_stage_criteria(cmd),
+        | StageCommands::Amend { .. }) => dispatch_stage_criteria(narrow_family(cmd)?),
         StageCommands::DisputeFindings(args) => stage::file_dispute(args.into()),
         StageCommands::DisputeContract(args) => stage::file_dispute(args.into()),
         StageCommands::DisputeIntegrity(args) => stage::file_dispute(args.into()),
@@ -154,8 +137,7 @@ pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
     }
 }
 
-/// `loom stage output <subcommand>` dispatch, broken out of `dispatch_stage`
-/// to pay for the `contracts` arm without growing the parent match.
+/// `loom stage output <subcommand>` dispatch.
 fn dispatch_stage_output(command: OutputCommands) -> Result<()> {
     match command {
         OutputCommands::Set {

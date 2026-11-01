@@ -56,8 +56,17 @@ pub(super) fn check(repo_root: &Path) -> Vec<DetectedIssue> {
 /// silently at runtime instead of being caught here. Checked regardless of
 /// whether settings.local.json exists.
 fn hook_scripts_issue() -> Option<DetectedIssue> {
-    let needing_install = loom_hook_scripts_needing_install();
-    if needing_install.is_empty() {
+    hook_scripts_issue_for(
+        loom_hook_scripts_needing_install().len(),
+        &crate::assets::install::claude_hooks_dir_text(),
+    )
+}
+
+pub(super) fn hook_scripts_issue_for(
+    needing_install: usize,
+    hooks_dir: &str,
+) -> Option<DetectedIssue> {
+    if needing_install == 0 {
         return None;
     }
     Some(DetectedIssue {
@@ -65,8 +74,8 @@ fn hook_scripts_issue() -> Option<DetectedIssue> {
         severity: Severity::Warning,
         description: format!(
             "Loom hook scripts missing or outdated in {} ({} of {})",
-            crate::assets::install::claude_hooks_dir_text(),
-            needing_install.len(),
+            hooks_dir,
+            needing_install,
             LOOM_HOOKS.len()
         ),
         fix_description: "Reinstall loom hook scripts".to_string(),
@@ -78,7 +87,11 @@ fn hook_scripts_issue() -> Option<DetectedIssue> {
 /// silently, so a missing binary is a broken install even when every hook
 /// file is present and current.
 fn jq_missing_issue() -> Option<DetectedIssue> {
-    if which::which("jq").is_ok() {
+    jq_missing_issue_for(which::which("jq").is_ok())
+}
+
+pub(super) fn jq_missing_issue_for(installed: bool) -> Option<DetectedIssue> {
+    if installed {
         return None;
     }
     Some(DetectedIssue {
@@ -175,33 +188,32 @@ fn loom_written_keys_issue(repo_root: &Path) -> Option<DetectedIssue> {
 /// it. See `crate::codex` for the full story.
 fn codex_slash_tmp_issue() -> Option<DetectedIssue> {
     if cfg!(target_os = "linux") && crate::codex::codex_lane_status().is_ok() {
-        if let Some(config_path) = crate::codex::codex_config_path() {
-            if !crate::codex::codex_config_excludes_slash_tmp(&config_path) {
-                return Some(DetectedIssue {
-            action: RepairAction::CodexSlashTmp,
-                    severity: Severity::Warning,
-                    description: "codex workspace-write sandbox claims /tmp \
-                         (sandbox_workspace_write.exclude_slash_tmp not set in ~/.codex/config.toml)"
-                        .to_string(),
-                    fix_description:
-                        "Set sandbox_workspace_write.exclude_slash_tmp = true in ~/.codex/config.toml"
-                            .to_string(),
-                });
-            }
-        }
+        return codex_slash_tmp_issue_for(crate::codex::codex_config_path().as_deref());
     }
     None
 }
 
-/// Set `sandbox_workspace_write.exclude_slash_tmp = true` in `~/.codex/config.toml`.
-pub(super) fn fix_codex_slash_tmp() -> anyhow::Result<bool> {
-    match crate::codex::codex_config_path() {
-        Some(config_path) => {
-            crate::codex::ensure_codex_config_excludes_slash_tmp(&config_path)?;
-            Ok(true)
-        }
-        None => Ok(false),
+pub(super) fn codex_slash_tmp_issue_for(config_path: Option<&Path>) -> Option<DetectedIssue> {
+    let config_path = config_path?;
+    if crate::codex::codex_config_excludes_slash_tmp(config_path) {
+        return None;
     }
+    Some(DetectedIssue {
+        action: RepairAction::CodexSlashTmp(config_path.to_path_buf()),
+        severity: Severity::Warning,
+        description: "codex workspace-write sandbox claims /tmp \
+             (sandbox_workspace_write.exclude_slash_tmp not set in ~/.codex/config.toml)"
+            .to_string(),
+        fix_description:
+            "Set sandbox_workspace_write.exclude_slash_tmp = true in ~/.codex/config.toml"
+                .to_string(),
+    })
+}
+
+/// Set `sandbox_workspace_write.exclude_slash_tmp = true` in `~/.codex/config.toml`.
+pub(super) fn fix_codex_slash_tmp(config_path: &Path) -> anyhow::Result<bool> {
+    crate::codex::ensure_codex_config_excludes_slash_tmp(config_path)?;
+    Ok(true)
 }
 
 /// Configure hooks and env in settings.local.json
