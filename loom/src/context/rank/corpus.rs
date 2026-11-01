@@ -2,13 +2,7 @@
 //! per-document weighted tokens, document frequencies, query-term stopwording,
 //! and BM25.
 //!
-//! Split out of `rank.rs` so the knowledge ranker's chunk-specific ladder and
-//! the statistics it scores against stay under the file line limit
-//! independently. Nothing here knows whether a document came from a knowledge
-//! chunk or a source-graph node, which is the point:
-//! [`crate::context::rank_source`] builds its own `(term, weight)` documents and
-//! then scores through exactly these statistics, so the two rankers cannot
-//! drift apart in how they weigh a term.
+//! Both the knowledge and source rankers use these statistics.
 //!
 //! ## Two representations, one arithmetic
 //!

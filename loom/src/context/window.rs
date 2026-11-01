@@ -1,10 +1,9 @@
 //! Source windows: the exact lines of a graph node or call site.
 //!
-//! A window is served only for ids the graph itself names, and only while the
-//! file on disk still hashes to the snapshot's `content_hash`. The path that is
-//! opened is always a key of `ResolvedGraph::files`, never text the caller
-//! supplied, so an id such as `../outside.txt@0-5` cannot reach past the
-//! graph.
+//! Node and call-site IDs resolve through the graph. Numeric `path@start-end`
+//! ranges are also accepted for graph-backed files and clamped to the file.
+//! The file on disk must still match the snapshot's `content_hash`; only paths
+//! in `ResolvedGraph::files` can be opened.
 
 use std::fmt;
 use std::path::Path;

@@ -1,7 +1,7 @@
 //! Reads Claude Code transcripts without treating their JSONL framing as a
 //! transaction log. Assistant responses are flushed in several lines, and
 //! each line can repeat usage. Select the whole usage vector with the latest timestamp
-//! for each `message.id`, breaking ties by arrival order, while merging every
+//! for each `message.id`, keeping the first on ties, while merging every
 //! line's content blocks into one request. Absent counters in a partial vector
 //! are zero, as in the live tracker.
 //!

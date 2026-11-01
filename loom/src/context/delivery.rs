@@ -30,8 +30,10 @@ use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+mod observe;
 /// Session identity, delivery deduplication, and compaction reset.
 mod session;
+pub(crate) use observe::observe_deliveries;
 pub use session::{
     delivered_to_session, discard_session_delivery, hook_recipient_id, worker_recipient_id,
 };

@@ -153,7 +153,18 @@ pub fn load_thresholds(path: &Path) -> Result<Thresholds> {
 impl Thresholds {
     /// Parse a thresholds document.
     pub fn from_yaml(text: &str) -> Result<Self> {
-        Ok(crate::yaml::from_str(text)?)
+        let thresholds: Self = crate::yaml::from_str(text)?;
+        for (name, value) in [
+            ("declaration_recall", thresholds.declaration_recall),
+            ("target_precision", thresholds.target_precision),
+            ("target_recall", thresholds.target_recall),
+        ] {
+            anyhow::ensure!(
+                value.is_finite() && (0.0..=1.0).contains(&value),
+                "{name} must be finite and within [0, 1]"
+            );
+        }
+        Ok(thresholds)
     }
 
     /// The thresholds compiled into this binary.

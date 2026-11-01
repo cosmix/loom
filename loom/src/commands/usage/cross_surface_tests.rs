@@ -79,13 +79,51 @@ fn partial_observations_replace_the_whole_vector_on_both_surfaces() {
                 "2026-08-02T00:00:00Z",
                 json!({"input_tokens":10,"output_tokens":4}),
             ),
-            row("2026-08-02T00:00:00Z", json!({"output_tokens":8})),
+            row("2026-08-02T00:00:00.001Z", json!({"output_tokens":8})),
         ],
         TokenUsage {
             output: 8,
             ..TokenUsage::default()
         },
     );
+}
+
+#[test]
+fn equal_timestamps_keep_first_usage_and_model_on_both_surfaces() {
+    let first = row(
+        "2026-08-02T00:00:00.100Z",
+        json!({"input_tokens":10,"output_tokens":4}),
+    );
+    let equal = row(
+        "2026-08-02T00:00:00.100Z",
+        json!({"input_tokens":99,"output_tokens":8}),
+    )
+    .replace("\"model\":\"model\"", "\"model\":\"other\"");
+    let expected = TokenUsage {
+        input: 10,
+        output: 4,
+        ..TokenUsage::default()
+    };
+    let live = compare(&[first.clone(), equal.clone()], expected);
+    assert_eq!(serde_json::to_value(&live).unwrap()["model"], "model");
+    assert_eq!(live.by_model[0].model, "model");
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("session.jsonl");
+    std::fs::write(&path, [first, equal].join("\n") + "\n").unwrap();
+    let file = DiscoveredFile {
+        path,
+        project_slug: "project".into(),
+        scope: transcript::Scope::Main,
+        session_id: "session".into(),
+        agent_id: None,
+    };
+    let range = TimeRange {
+        since: "2026-08-01T00:00:00Z".parse().unwrap(),
+        until: None,
+    };
+    let offline = transcript::parse(&file, &range).unwrap();
+    assert_eq!(offline.requests().next().unwrap().model, "model");
 }
 
 #[test]

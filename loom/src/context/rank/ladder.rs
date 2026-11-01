@@ -1,14 +1,8 @@
 //! The knowledge channel's exact-match ladder: the rungs a curated chunk can
 //! earn before BM25 is added on top.
 //!
-//! Split out of `rank.rs` so that file stays under the line limit while the
-//! persistent lexical index (A.13) threads a cache through it. Nothing moved
-//! here changed: this is `rank.rs`'s ladder verbatim, and it stays SEPARATE
-//! from [`super::corpus`] for the same reason the two rankers share that module
-//! — the statistics are document-agnostic, while these rungs read
-//! `KnowledgeChunk` fields (`source_paths`, `symbols`, `links`) that a source
-//! node does not have. [`crate::context::rank_source`] keeps its own mirror of
-//! this ladder for exactly that reason.
+//! These rungs inspect `KnowledgeChunk` fields; the source ranker has its own
+//! ladder, while both channels share document-agnostic corpus statistics.
 
 use super::{
     RankQuery, RungScore, BOOST_EXACT_PATH, BOOST_EXACT_SYMBOL, BOOST_EXPLICIT_ID,

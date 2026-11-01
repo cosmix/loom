@@ -106,7 +106,7 @@ impl QueryHarness for TsxExtractor {
             dialect: "tsx",
             grammar_version: "0.23.2",
             query_digest: crate::context::source_graph::body_hash(QUERY.as_bytes()),
-            extractor_version: 5,
+            extractor_version: 6,
         }
     }
 

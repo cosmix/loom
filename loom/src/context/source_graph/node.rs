@@ -125,7 +125,7 @@ impl FileCoverage {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceNode {
     /// Stable id: the bare relative path for a file node, and
-    /// `<relative-path>#<scope-path>` for a symbol node (see
+    /// `<relative-path>#<kind>:<scope-path>` for a symbol node (see
     /// [`crate::context::source_graph::node_id`]).
     pub id: String,
     pub kind: SourceNodeKind,
@@ -135,7 +135,8 @@ pub struct SourceNode {
     #[serde(default)]
     pub scope: Vec<String>,
     pub span: Span,
-    /// Declaration text as written, without the body. Empty for a file node.
+    /// Trimmed first source line of the declaration; it may include a body or
+    /// be an incomplete multiline declaration. Empty for a file node.
     #[serde(default)]
     pub signature: String,
     /// `sha256:<hex>` over the node's exact source bytes.

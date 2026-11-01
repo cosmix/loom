@@ -76,6 +76,14 @@ pub(super) fn load_cases_file(path: &Path) -> Result<CasesFile> {
 
 /// Reject case definitions that are ambiguous or can never exercise a gate.
 pub(super) fn validate_cases(file: &CasesFile) -> Result<()> {
+    for (name, value) in [
+        ("pass_floor", file.pass_floor),
+        ("precision_floor", file.precision_floor),
+    ] {
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            bail!("{name} must be finite and within [0, 1]");
+        }
+    }
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     for case in &file.cases {
         if !seen.insert(case.name.as_str()) {
@@ -118,4 +126,28 @@ pub(super) fn resolve_budget(case: &EvalCase, cli_override: Option<usize>) -> us
             EvalMode::Prompt => DEFAULT_PROMPT_BUDGET_TOKENS,
             EvalMode::Stage => DEFAULT_STAGE_BUDGET_TOKENS,
         })
+}
+
+#[cfg(test)]
+mod floor_tests {
+    use super::*;
+
+    #[test]
+    fn yaml_ratio_floors_are_validated() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cases.yaml");
+        for field in ["pass_floor", "precision_floor"] {
+            for value in ["-0.1", "1.1", ".nan", ".inf", "-.inf"] {
+                std::fs::write(&path, format!("{field}: {value}\n")).unwrap();
+                let error = format!("{:#}", load_cases_file(&path).unwrap_err());
+                assert!(error.contains(field), "{field}={value}: {error}");
+            }
+            for value in ["0", "1"] {
+                std::fs::write(&path, format!("{field}: {value}\n")).unwrap();
+                load_cases_file(&path).unwrap();
+            }
+        }
+        std::fs::write(&path, "cases: []\n").unwrap();
+        load_cases_file(&path).unwrap();
+    }
 }
