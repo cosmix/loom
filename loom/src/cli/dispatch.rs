@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use super::dispatch_admin;
+use super::dispatch_args::{narrow_family, CompletionsArgs, KnowledgeContextArgs, RuntimeCommand};
 use super::dispatch_stage;
 use super::types::{
     Commands, ContextCommands, HookCommands, KnowledgeCommands, MemoryCommands, PlanCommands,
@@ -34,7 +35,9 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
             knowledge::delete_section(file, heading)
         }
         KnowledgeCommands::Annotate(args) => knowledge::annotate::annotate(args),
-        context @ KnowledgeCommands::Context { .. } => dispatch_knowledge_context(context),
+        context @ KnowledgeCommands::Context { .. } => {
+            dispatch_knowledge_context(narrow_family(context)?)
+        }
         KnowledgeCommands::Eval {
             cases,
             budget_tokens,
@@ -64,32 +67,17 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
     }
 }
 
-/// Dispatch the knowledge context query.
-fn dispatch_knowledge_context(command: KnowledgeCommands) -> Result<()> {
-    let KnowledgeCommands::Context {
-        stage,
-        query,
-        budget_tokens: budget,
-        scope,
-        require_id,
-        history,
-        require_compact,
-        explain,
-        json,
-    } = command
-    else {
-        unreachable!("dispatch_knowledge routes only Context here");
-    };
+fn dispatch_knowledge_context(args: KnowledgeContextArgs) -> Result<()> {
     knowledge::context::context(
-        stage,
-        query,
-        budget,
-        scope,
-        require_id,
-        history,
-        require_compact,
-        explain,
-        json,
+        args.stage,
+        args.query,
+        args.budget_tokens,
+        args.scope,
+        args.require_id,
+        args.history,
+        args.require_compact,
+        args.explain,
+        args.json,
     )
 }
 
@@ -154,20 +142,20 @@ fn dispatch_request(command: RequestCommands) -> Result<()> {
 }
 
 /// `loom completions` dispatch.
-fn dispatch_completions(shell: Option<String>, install: bool, migrate: bool) -> Result<()> {
-    if migrate {
+fn dispatch_completions(args: CompletionsArgs) -> Result<()> {
+    if args.migrate {
         return crate::completions::install::check_migration();
     }
 
-    if install {
-        let shell = match shell {
+    if args.install {
+        let shell = match args.shell {
             Some(s) => Shell::from_str(&s)?,
             None => crate::completions::install::detect_shell()?,
         };
         return crate::completions::install::install(shell);
     }
 
-    let shell = shell.ok_or_else(|| {
+    let shell = args.shell.ok_or_else(|| {
         anyhow::anyhow!("Shell argument required. Usage: loom completions <bash|zsh|fish>")
     })?;
     let shell = Shell::from_str(&shell)?;
@@ -259,29 +247,6 @@ fn dispatch_memory(command: MemoryCommands) -> Result<()> {
     }
 }
 
-/// Start the orchestrator in the foreground or as a daemon.
-fn dispatch_run(command: Commands) -> Result<()> {
-    let Commands::Run {
-        manual,
-        max_parallel,
-        foreground,
-        watch,
-        no_merge,
-        backend,
-        accept_unix_socket_risk: accept,
-        daemon_child: child,
-    } = command
-    else {
-        unreachable!("dispatch routes only Run here");
-    };
-    let auto_merge = !no_merge;
-    if foreground {
-        run::execute(manual, max_parallel, watch, auto_merge, backend, accept)
-    } else {
-        run::execute_background(manual, max_parallel, auto_merge, backend, accept, child)
-    }
-}
-
 /// `loom target <subcommand>` dispatch.
 fn dispatch_target(command: TargetCommands) -> Result<()> {
     match command {
@@ -290,9 +255,40 @@ fn dispatch_target(command: TargetCommands) -> Result<()> {
     }
 }
 
-fn dispatch_status(command: Commands) -> Result<()> {
+fn dispatch_runtime(command: RuntimeCommand) -> Result<()> {
     match command {
-        Commands::Status {
+        RuntimeCommand::Run {
+            manual,
+            max_parallel,
+            foreground,
+            watch,
+            no_merge,
+            backend,
+            accept_unix_socket_risk,
+            daemon_child,
+        } => {
+            let auto_merge = !no_merge;
+            if foreground {
+                run::execute(
+                    manual,
+                    max_parallel,
+                    watch,
+                    auto_merge,
+                    backend,
+                    accept_unix_socket_risk,
+                )
+            } else {
+                run::execute_background(
+                    manual,
+                    max_parallel,
+                    auto_merge,
+                    backend,
+                    accept_unix_socket_risk,
+                    daemon_child,
+                )
+            }
+        }
+        RuntimeCommand::Status {
             live,
             compact,
             verbose,
@@ -301,7 +297,6 @@ fn dispatch_status(command: Commands) -> Result<()> {
             Some(port) => status::web::execute(port, web_args.terminals, web_args.resolved_host()),
             None => status::execute(live, compact, verbose),
         },
-        _ => unreachable!("dispatch routes only Status here"),
     }
 }
 
@@ -313,8 +308,9 @@ pub fn dispatch(command: Commands) -> Result<()> {
             backend,
             no_repair,
         } => init::execute(Some(PathBuf::from(plan_path)), clean, backend, no_repair),
-        cmd @ Commands::Run { .. } => dispatch_run(cmd),
-        cmd @ Commands::Status { .. } => dispatch_status(cmd),
+        cmd @ (Commands::Run { .. } | Commands::Status { .. }) => {
+            narrow_family(cmd).and_then(dispatch_runtime)
+        }
         Commands::Resume { stage_id } => resume::execute(stage_id),
         Commands::Sessions { command } => dispatch_sessions(command),
         Commands::Worktree { command } => dispatch_worktree(command),
@@ -357,11 +353,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
             args,
         } => run_check(stage_id, suggest, args),
         Commands::SkillIndex => skill_index::execute(),
-        Commands::Completions {
-            shell,
-            install,
-            migrate,
-        } => dispatch_completions(shell, install, migrate),
+        cmd @ Commands::Completions { .. } => dispatch_completions(narrow_family(cmd)?),
         Commands::Context { command } => dispatch_context(command),
         Commands::Hook { command } => dispatch_hook(command),
         Commands::Complete { shell, args } => dispatch_complete(&shell, &args),

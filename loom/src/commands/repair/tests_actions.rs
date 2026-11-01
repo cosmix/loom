@@ -232,6 +232,23 @@ fn detected_read_denies_dispatch_by_action_and_preserve_operator_rules() {
 }
 
 #[test]
+fn codex_config_action_retains_detected_path_after_wording_changes() {
+    let root = tempfile::tempdir().unwrap();
+    let config_path = root.path().join("config.toml");
+    std::fs::write(&config_path, "[sandbox_workspace_write]\n").unwrap();
+
+    let mut issue = settings_checks::codex_slash_tmp_issue_for(Some(&config_path)).unwrap();
+    assert_eq!(
+        issue.action,
+        RepairAction::CodexSlashTmp(config_path.clone())
+    );
+    issue.description = "Changed diagnostic wording".into();
+    assert!(fix_issue(root.path(), &issue).unwrap());
+    assert!(crate::codex::codex_config_excludes_slash_tmp(&config_path));
+    assert!(settings_checks::codex_slash_tmp_issue_for(Some(&config_path)).is_none());
+}
+
+#[test]
 fn damaged_workspace_shapes_select_their_own_actions() {
     let root = tempfile::tempdir().unwrap();
     let nested = root.path().join(".loom");
@@ -263,6 +280,28 @@ fn missing_pre_commit_hook_selects_hook_installation() {
         "Git pre-commit hook not installed",
         RepairAction::Workspace(workspace::WorkspaceFix::PreCommitHook),
     );
+}
+
+#[test]
+fn host_dependent_hook_and_jq_detectors_select_actions() {
+    let root = tempfile::tempdir().unwrap();
+    let expected = RepairAction::Workspace(workspace::WorkspaceFix::HookScripts);
+    for mut issue in [
+        hooks::codex_hooks_issue_for(true).unwrap(),
+        settings_checks::hook_scripts_issue_for(1, "fixture hooks").unwrap(),
+    ] {
+        assert_eq!(issue.action, expected);
+        issue.description = "Changed diagnostic wording".into();
+        assert_eq!(issue.action, expected);
+    }
+    assert!(hooks::codex_hooks_issue_for(false).is_none());
+    assert!(settings_checks::hook_scripts_issue_for(0, "fixture hooks").is_none());
+
+    let mut jq = settings_checks::jq_missing_issue_for(false).unwrap();
+    assert_eq!(jq.action, RepairAction::Manual);
+    jq.description = "Hook scripts need reinstalling".into();
+    assert!(!fix_issue(root.path(), &jq).unwrap());
+    assert!(settings_checks::jq_missing_issue_for(true).is_none());
 }
 
 #[test]

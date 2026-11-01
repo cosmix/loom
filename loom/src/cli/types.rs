@@ -14,7 +14,7 @@ pub use super::types_stage::{OutputCommands, StageCommands};
 #[path = "types_status_web.rs"]
 mod status_web;
 pub(super) use status_web::parse_web_host;
-use status_web::StatusWebArgs;
+pub(super) use status_web::StatusWebArgs;
 
 #[path = "types_project.rs"]
 mod project;

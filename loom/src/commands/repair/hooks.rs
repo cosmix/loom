@@ -37,16 +37,20 @@ pub(super) fn check(repo_root: &Path) -> Vec<DetectedIssue> {
     if let Some(issue) = settings_permissions_issue(repo_root) {
         issues.push(issue);
     }
-    if crate::fs::permissions::codex_hooks_need_install() {
-        issues.push(DetectedIssue {
-            action: RepairAction::Workspace(super::workspace::WorkspaceFix::HookScripts),
-            severity: Severity::Info,
-            description: "Codex hook installation incomplete or outdated".to_string(),
-            fix_description: "Install Loom's Codex-native hooks".to_string(),
-        });
+    if let Some(issue) = codex_hooks_issue_for(crate::fs::permissions::codex_hooks_need_install()) {
+        issues.push(issue);
     }
 
     issues
+}
+
+pub(super) fn codex_hooks_issue_for(needs_install: bool) -> Option<DetectedIssue> {
+    needs_install.then(|| DetectedIssue {
+        action: RepairAction::Workspace(super::workspace::WorkspaceFix::HookScripts),
+        severity: Severity::Info,
+        description: "Codex hook installation incomplete or outdated".to_string(),
+        fix_description: "Install Loom's Codex-native hooks".to_string(),
+    })
 }
 
 /// Description prefix of the reference-transaction hook issues.
