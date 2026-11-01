@@ -34,8 +34,8 @@ enum RepairAction {
     CleanSettings,
     ReadDenies,
     IdentityDrift,
-    OldSkill(String),
-    OldAgent(String),
+    OldSkill(std::path::PathBuf),
+    OldAgent(std::path::PathBuf),
     SkillRefs,
     CodexSlashTmp,
     PhantomMerge(String),
@@ -247,8 +247,8 @@ fn fix_issue(repo_root: &Path, issue: &DetectedIssue) -> Result<bool> {
             crate::fs::permissions::scrub_main_repo_settings_identity(repo_root);
             Ok(true)
         }
-        RepairAction::OldSkill(name) => home_assets::fix_old_skill(name).map(|()| true),
-        RepairAction::OldAgent(name) => home_assets::fix_old_agent(name).map(|()| true),
+        RepairAction::OldSkill(path) => home_assets::fix_old_skill(path).map(|()| true),
+        RepairAction::OldAgent(path) => home_assets::fix_old_agent(path).map(|()| true),
         RepairAction::SkillRefs => home_assets::fix_settings_skill_refs().map(|()| true),
         RepairAction::CodexSlashTmp => settings_checks::fix_codex_slash_tmp(),
         RepairAction::PhantomMerge(stage) => {
@@ -273,6 +273,8 @@ pub mod workspace;
 mod tests;
 #[cfg(test)]
 mod tests_actions;
+#[cfg(test)]
+mod tests_home_assets;
 #[cfg(test)]
 mod tests_hook_drift;
 #[cfg(test)]

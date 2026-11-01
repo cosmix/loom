@@ -124,7 +124,9 @@ Channels decouple producers from consumers. The single most important decision: 
 | --- | --- | --- |
 | Rust tokio | `mpsc::channel(N)` — `send().await` | `mpsc::unbounded_channel()` — ⚠ OOM risk |
 | Python | `asyncio.Queue(maxsize=N)` | `asyncio.Queue()` (maxsize=0) — ⚠ |
-| Go | `make(chan T, N)` | `make(chan T)` (unbuffered = rendezvous, or `N` too small = stall) |
+| Go | `make(chan T, N)` for N > 0 | No built-in unbounded channel |
+
+Go's `make(chan T)` is an unbuffered rendezvous: each send waits for a receiver.
 
 Per-language gotchas:
 
@@ -150,7 +152,7 @@ async with asyncio.TaskGroup() as tg:
 let mut set = tokio::task::JoinSet::new();
 for url in urls { set.spawn(fetch(url)); }
 while let Some(res) = set.join_next().await {
-    let _ = res?;   // JoinError on panic/abort
+    res??;          // propagate both JoinError and the error returned by fetch
 }
 ```
 

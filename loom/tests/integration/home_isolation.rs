@@ -45,8 +45,21 @@ fn repair_fix_installs_hooks_into_the_redirected_home_only() {
         codex_hook.display()
     );
 
-    // Real content, not an empty stub: the same marker `install_tests.rs`
-    // checks for the `_to` variant of this writer.
-    let content = fs::read_to_string(&claude_hook).unwrap();
-    assert!(content.contains("detect_loom_worktree"));
+    for hook in [&claude_hook, &codex_hook] {
+        let dir = hook.parent().unwrap();
+        let guard = fs::read_to_string(hook).unwrap();
+        assert!(guard.contains("/_common.sh"));
+        assert!(guard.contains("loom_current_worktree"));
+        assert!(guard.contains("loom_find_stage_file"));
+        assert!(guard.contains("loom_stage_status"));
+        assert!(guard.contains("LOOM WORKTREE COMPLETION CHECKLIST"));
+        let common = fs::read_to_string(dir.join("_common.sh")).unwrap();
+        assert!(common.contains("/_containment.sh"));
+        assert!(common.contains("/_stage_lookup.sh"));
+        let containment = fs::read_to_string(dir.join("_containment.sh")).unwrap();
+        assert!(containment.contains("loom_current_worktree()"));
+        let lookup = fs::read_to_string(dir.join("_stage_lookup.sh")).unwrap();
+        assert!(lookup.contains("loom_find_stage_file()"));
+        assert!(lookup.contains("loom_stage_status()"));
+    }
 }

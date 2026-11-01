@@ -31,10 +31,10 @@ trap 'kill "$pid" 2>/dev/null || true; rm -f "$out" "$headers"; rm -rf "$work"' 
 # `-K -` config on stdin rather than as a command-line argument: argv is
 # visible to any local user through /proc/<pid>/cmdline for the life of the
 # request, stdin is not.
-code=$(curl -s -D "$headers" -o /dev/null -w '%{http_code}' -K - <<<"url = \"$base/?token=$token\"")
+code=$(curl -s --max-time 2 -D "$headers" -o /dev/null -w '%{http_code}' -K - <<<"url = \"$base/?token=$token\"")
 [ "$code" = "302" ] || { echo "expected token bootstrap 302, got $code"; exit 1; }
 rg -qi "^set-cookie: loom_dashboard_${port}=" "$headers"
-code=$(curl -s -o /dev/null -w '%{http_code}' "$base/?token=wrong")
+code=$(curl -s --max-time 2 -o /dev/null -w '%{http_code}' "$base/?token=wrong")
 [ "$code" = "403" ] || { echo "expected wrong token 403, got $code"; exit 1; }
 
 # Renders a `header = "Cookie: ..."` config line for `curl -K`, or nothing for
@@ -85,6 +85,7 @@ fi
 python3 <(cat <<'PY'
 import socket
 import sys
+import time
 
 port, origin = sys.argv[1:]
 cookie = sys.stdin.readline().rstrip("\n")
@@ -99,38 +100,50 @@ request = (
     f"Origin: {origin}\r\n\r\n"
 ).encode()
 sock = socket.create_connection(("127.0.0.1", int(port)), timeout=2)
+deadline = time.monotonic() + 2
+
+def receive():
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("terminal response deadline exceeded")
+    sock.settimeout(remaining)
+    chunk = sock.recv(4096)
+    if not chunk:
+        raise EOFError("terminal response ended early")
+    return chunk
+
 sock.sendall(request)
 data = b""
 while b"\r\n\r\n" not in data:
-    data += sock.recv(4096)
+    data += receive()
 head, frame = data.split(b"\r\n\r\n", 1)
 assert head.startswith(b"HTTP/1.1 101"), head
 while len(frame) < 2:
-    frame += sock.recv(4096)
+    frame += receive()
 assert frame[0] & 0x0f == 0x8, frame
 length = frame[1] & 0x7f
 if length == 126:
     while len(frame) < 4:
-        frame += sock.recv(4096)
+        frame += receive()
     length = int.from_bytes(frame[2:4], "big")
     offset = 4
 else:
     offset = 2
 while len(frame) < offset + length:
-    frame += sock.recv(4096)
+    frame += receive()
 assert int.from_bytes(frame[offset:offset + 2], "big") == 4004, frame
 sock.close()
 PY
 ) "$port" "$origin" <<<"$cookie"
 
-curl -fsS "$base/api/status" | jq -e '.terminals == true' >/dev/null
-page=$(curl -fsS "$base/")
+curl -fsS --max-time 2 "$base/api/status" | jq -e '.terminals == true' >/dev/null
+page=$(curl -fsS --max-time 2 "$base/")
 printf '%s' "$page" | rg -qF 'assets/index.js'
 found=false
 for asset in web/dist/assets/*.js; do
   name=${asset##*/}
   [ "$name" = "index.js" ] && continue
-  if curl -fsS "$base/assets/$name" | rg -qF 'xterm-screen'; then
+  if curl -fsS --max-time 2 "$base/assets/$name" | rg -qF 'xterm-screen'; then
     found=true
     break
   fi

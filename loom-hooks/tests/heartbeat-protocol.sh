@@ -144,6 +144,65 @@ if [[ ! -f "$RECOVER_WORK/heartbeat/test-stage.json" ]] || [[ -d "$RECOVER_LOCK"
 	exit 1
 fi
 
+# A creator can die between mkdir and publishing owner metadata.
+EMPTY_LOCK="$RECOVER_WORK/heartbeat/empty.json.lock"
+mkdir -m 700 "$EMPTY_LOCK"
+touch -t 200001010000 "$EMPTY_LOCK"
+LOOM_HEARTBEAT_LOCK_STALE_SECONDS=1 bash -c 'source "$1"; loom_heartbeat_lock_recover_if_abandoned "$2"' _ "$COMMON" "$EMPTY_LOCK"
+[[ ! -d "$EMPTY_LOCK" ]] || { echo "FAIL: abandoned empty lock was not recovered"; exit 1; }
+
+# Pause a second reclaimer after it has read the old owner. The first one
+# retires that generation, then a live successor enters before the second
+# resumes. A stale decision must not remove the successor's owner.
+RACE_LOCK="$RECOVER_WORK/heartbeat/race.json.lock"
+mkdir -m 700 "$RACE_LOCK"
+printf 'pid=999999\ncreated=1\n' >"$RACE_LOCK/owner"
+bash -c '
+    source "$1"
+    race_tmp="$3"
+    kill() {
+        if [[ "$1" == -0 && "$2" == 999999 ]]; then
+            : >"$race_tmp/second-paused"
+            while [[ ! -e "$race_tmp/resume-second" ]]; do sleep 0.01; done
+        fi
+        builtin kill "$1" "$2"
+    }
+    loom_heartbeat_lock_recover_if_abandoned "$2" || true
+' _ "$COMMON" "$RACE_LOCK" "$TMP" &
+SECOND_PID=$!
+for ((n = 0; n < 200; n++)); do
+	[[ -e "$TMP/second-paused" ]] && break
+	sleep 0.01
+done
+[[ -e "$TMP/second-paused" ]] || { echo "FAIL: second reclaimer did not pause"; exit 1; }
+LOOM_HEARTBEAT_LOCK_STALE_SECONDS=1 bash -c 'source "$1"; loom_heartbeat_lock_recover_if_abandoned "$2"' _ "$COMMON" "$RACE_LOCK"
+bash -c '
+    source "$1"
+    loom_heartbeat_lock_acquire "$2" || exit 1
+    : >"$3/successor-entered"
+    while [[ ! -e "$3/release-successor" ]]; do sleep 0.01; done
+    loom_heartbeat_lock_release "$2"
+' _ "$COMMON" "$RACE_LOCK" "$TMP" &
+SUCCESSOR_PID=$!
+for ((n = 0; n < 200; n++)); do
+	[[ -e "$TMP/successor-entered" ]] && break
+	sleep 0.01
+done
+[[ -e "$TMP/successor-entered" ]] || { echo "FAIL: successor did not acquire"; exit 1; }
+: >"$TMP/resume-second"
+wait "$SECOND_PID"
+bash -c 'source "$1"; loom_heartbeat_lock_acquire "$2" || exit 1; : >"$3/third-entered"; loom_heartbeat_lock_release "$2"' _ "$COMMON" "$RACE_LOCK" "$TMP" &
+THIRD_PID=$!
+sleep 0.1
+if [[ -e "$TMP/third-entered" || ! -f "$RACE_LOCK/owner" ]]; then
+	echo "FAIL: delayed reclaimer removed a live successor's lock"
+	exit 1
+fi
+: >"$TMP/release-successor"
+wait "$SUCCESSOR_PID"
+wait "$THIRD_PID"
+[[ -e "$TMP/third-entered" ]] || { echo "FAIL: third writer never acquired after release"; exit 1; }
+
 # A delayed former owner must never remove a successor's lock. Release checks
 # the published PID instead of deleting whichever owner happens to be there.
 FOREIGN_LOCK="$RECOVER_WORK/heartbeat/foreign.json.lock"

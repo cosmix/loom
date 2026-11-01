@@ -8,7 +8,11 @@ trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/work" "$TMP/bin" "$TMP/parent/subagents"
 LOOM_CALLS="$TMP/loom-calls"
 cat >"$TMP/bin/loom" <<'SH'
+#!/usr/bin/env bash
 printf '%s\n' "$*" >>"$LOOM_CALLS"
+if [[ "$*" == "hook review-start" ]]; then
+	cat >"$LOOM_REVIEW_INPUT"
+fi
 exit 0
 SH
 chmod +x "$TMP/bin/loom"
@@ -39,6 +43,26 @@ fi
 if [[ -f "$LOOM_CALLS" ]] && grep -q 'worker-brief' "$LOOM_CALLS"; then
 	echo "FAIL: SubagentStart called loom hook worker-brief"
 	cat "$LOOM_CALLS"
+	exit 1
+fi
+
+REVIEW_INPUT_FILE="$TMP/review-input"
+REVIEW_EVENT=$(jq -nc --arg transcript "$TRANSCRIPT" \
+	'{agent_id:"agent-1",agent_type:"loom-code-reviewer",
+	  session_id:"claude-parent-uuid",transcript_path:$transcript}')
+printf '%s' "$REVIEW_EVENT" |
+	env PATH="$TMP/bin:/usr/bin:/bin" LOOM_CALLS="$LOOM_CALLS" \
+		LOOM_REVIEW_INPUT="$REVIEW_INPUT_FILE" LOOM_WORK_DIR="$TMP/work" \
+		LOOM_STAGE_ID="stage-a" LOOM_SESSION_ID="parent-session" bash "$HOOK"
+if ! jq -e --arg transcript "$TRANSCRIPT" '
+    .stage_id == "stage-a" and .session_id == "claude-parent-uuid" and
+    .agent_id == "agent-1" and .transcript_path == $transcript
+' "$REVIEW_INPUT_FILE" >/dev/null; then
+	echo "FAIL: reviewer start did not capture the exact invocation"
+	exit 1
+fi
+if [[ $(grep -c '^hook review-start$' "$LOOM_CALLS") != 1 ]]; then
+	echo "FAIL: reviewer start was not captured exactly once"
 	exit 1
 fi
 

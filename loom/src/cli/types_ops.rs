@@ -227,6 +227,11 @@ pub enum HookCommands {
     /// user-facing command.
     #[command(hide = true)]
     ReviewHarvest,
+
+    /// SubagentStart helper: capture the reviewer's immutable worktree
+    /// fingerprint before it begins. Not a user-facing command.
+    #[command(hide = true)]
+    ReviewStart,
 }
 
 #[derive(Subcommand)]

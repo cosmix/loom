@@ -140,6 +140,7 @@ fn dispatch_hook(command: HookCommands) -> Result<()> {
         HookCommands::ProjectTypes => hook::project_types::execute(),
         HookCommands::Relay { allowed_kinds } => hook::relay::relay(&allowed_kinds),
         HookCommands::ReviewHarvest => hook::review_harvest::review_harvest(),
+        HookCommands::ReviewStart => hook::review_start::review_start(),
     }
 }
 

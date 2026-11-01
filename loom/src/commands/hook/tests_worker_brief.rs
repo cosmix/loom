@@ -162,6 +162,39 @@ fn direct_plan_document_is_excluded_from_worker_scope() {
 }
 
 #[test]
+fn worker_scope_updates_coverage_for_retained_items() {
+    let mut pack = pack("rev-a", "kept", "sha256:kept", "src/kept.rs");
+    pack.items[0].score = 4.0;
+    let mut removed = item(
+        "plan",
+        "sha256:plan",
+        "doc/plans/DONE-PLAN-example.md",
+        "plan",
+    );
+    removed.token_count = 20;
+    removed.score = 2.0;
+    pack.items.push(removed);
+    pack.omitted.coverage.candidates = 2;
+    pack.omitted.coverage.included = 2;
+    pack.omitted.coverage.candidate_tokens = 30;
+    pack.omitted.coverage.included_tokens = 30;
+    pack.omitted.weakest_included_score = 2.0;
+
+    scope_pack(&mut pack, &[]);
+
+    assert_eq!(pack.items.len(), 1);
+    assert_eq!(pack.omitted.omitted, 1);
+    assert_eq!(pack.omitted.coverage.included, 1);
+    assert_eq!(pack.omitted.coverage.included_tokens, 10);
+    assert_eq!(pack.omitted.coverage.candidates, 2);
+    assert_eq!(pack.omitted.coverage.candidate_tokens, 30);
+    assert_eq!(pack.omitted.weakest_included_score, 4.0);
+    let estimate = pack.estimated_tokens;
+    pack.recompute_estimate();
+    assert_eq!(pack.estimated_tokens, estimate);
+}
+
+#[test]
 fn scoped_required_plan_document_is_reported_unmet() {
     let mut pack = pack(
         "rev-a",

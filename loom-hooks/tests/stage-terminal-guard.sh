@@ -116,4 +116,24 @@ if [[ $CODE -ne 2 ]]; then
 	exit 1
 fi
 
+
+# Exercise the source-only owner directly as well as the guard decision.
+source "$ROOT/loom-hooks/_common.sh"
+write_stage_status '"completed" # terminal'
+[[ $(loom_stage_status "$STAGES_DIR/01-$STAGE_ID.md") == completed ]]
+
+# Ambiguous, symlinked and malformed records cannot establish terminal state.
+write_stage_status completed
+cp "$STAGES_DIR/01-$STAGE_ID.md" "$STAGES_DIR/$STAGE_ID.md"
+run_hook || { echo "FAIL: ambiguous stage"; exit 1; }
+rm "$STAGES_DIR/$STAGE_ID.md"
+mv "$STAGES_DIR/01-$STAGE_ID.md" "$TMP/stage-target"
+ln -s "$TMP/stage-target" "$STAGES_DIR/01-$STAGE_ID.md"
+run_hook || { echo "FAIL: symlink stage"; exit 1; }
+rm "$STAGES_DIR/01-$STAGE_ID.md"
+printf '%s\n' '---' 'status: completed' >"$STAGES_DIR/01-$STAGE_ID.md"
+run_hook || { echo "FAIL: unclosed frontmatter"; exit 1; }
+printf '%s\n' '---' 'status: completed' 'status: executing' '---' >"$STAGES_DIR/01-$STAGE_ID.md"
+run_hook || { echo "FAIL: duplicate status"; exit 1; }
+
 echo "PASS"

@@ -2,10 +2,6 @@
 //! weakest units until it fits, or — with nothing left to shed — emits
 //! nothing at all.
 //!
-//! Split out of `tests_user_prompt.rs` itself so that file stays under the
-//! maintainability line limit — same idiom `tests_user_prompt.rs` uses for its
-//! own `tests_user_prompt_e2e.rs` child: no repeated `#[cfg(test)]`, since this
-//! whole file is already gated by it.
 
 use super::super::compose::compose;
 use super::ContextItem;

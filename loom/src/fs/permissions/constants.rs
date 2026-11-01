@@ -11,6 +11,7 @@ pub const HOOK_IDENTITY: &str = include_str!("../../../../loom-hooks/_identity.s
 pub const HOOK_HEARTBEAT: &str = include_str!("../../../../loom-hooks/_heartbeat.sh");
 pub const HOOK_SPAWN_POLICY: &str = include_str!("../../../../loom-hooks/_spawn_policy.sh");
 pub const HOOK_COMMON: &str = include_str!("../../../../loom-hooks/_common.sh");
+pub const HOOK_GIT_COMMAND: &str = include_str!("../../../../loom-hooks/_git-command.sh");
 
 /// Claude worker lifecycle evidence utilities shared by lifecycle hooks
 pub const HOOK_LIFECYCLE: &str = include_str!("../../../../loom-hooks/_lifecycle.sh");
@@ -194,6 +195,7 @@ pub const HOOK_LOOM_RELAY: &str = include_str!("../../../../loom-hooks/loom-rela
 pub const LOOM_HOOKS: &[(&str, &str)] = &[
     // Common utilities (sourced by other hooks)
     ("_common.sh", HOOK_COMMON),
+    ("_git-command.sh", HOOK_GIT_COMMAND),
     ("_parser.sh", HOOK_PARSER),
     ("_stage_lookup.sh", HOOK_STAGE_LOOKUP),
     ("_parser_expand.sh", HOOK_PARSER_EXPAND),

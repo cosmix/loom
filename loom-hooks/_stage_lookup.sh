@@ -54,3 +54,43 @@ loom_find_stage_file() {
     fi
     return 1
 }
+
+# Resolve the nearest workspace state directory from a given directory.
+loom_stage_work_dir() {
+    local dir
+    dir="${1:-$PWD}"
+    dir=${dir%/}; [[ -n "$dir" ]] || dir=/
+    while :; do
+        if [[ -d "$dir/.loom/work" ]]; then printf '%s\n' "$dir/.loom/work"; return 0; fi
+        if [[ -d "$dir/.work" ]]; then printf '%s\n' "$dir/.work"; return 0; fi
+        [[ "$dir" != / ]] || return 1
+        dir=${dir%/*}; [[ -n "$dir" ]] || dir=/
+    done
+}
+
+# Reject incomplete frontmatter and duplicate statuses, including body prose.
+loom_stage_status() {
+    local file="$1" line="" value="" status="" count=0 closed=0 first=1
+    [[ -f "$file" && ! -L "$file" ]] || return 1
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if ((first)); then
+            [[ "$line" == --- ]] || return 1
+            first=0; continue
+        fi
+        if [[ "$line" == --- ]]; then closed=1; break; fi
+        case "$line" in
+        status:*)
+            count=$((count + 1)); value=${line#status:}; value=${value%%#*}
+            value="${value#"${value%%[![:space:]]*}"}"
+            value="${value%"${value##*[![:space:]]}"}"
+            case "$value" in
+            \"*\") value=${value#\"}; value=${value%\"} ;;
+            \'*\') value=${value#\'}; value=${value%\'} ;;
+            esac
+            status=$value
+            ;;
+        esac
+    done <"$file"
+    [[ $closed -eq 1 && $count -eq 1 && "$status" =~ ^[A-Za-z][A-Za-z0-9-]*$ ]] || return 1
+    printf '%s\n' "$status"
+}

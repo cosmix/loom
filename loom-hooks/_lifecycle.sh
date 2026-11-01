@@ -13,6 +13,12 @@ loom_lifecycle_safe_id() {
 	[[ "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]
 }
 
+# Agent types are serialized values, not path components; plugin names use ':'.
+loom_lifecycle_safe_agent_type() {
+	local value="$1"
+	[[ "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]]
+}
+
 loom_lifecycle_resolve_work_root() {
 	local root="$1" resolved=""
 	[[ -n "$root" && -d "$root" ]] || return 1

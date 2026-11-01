@@ -24,6 +24,7 @@ fn a_plain_lock_file_reads_back() {
             pid: 0,
             failures: 0,
             pending: false,
+            claim: 0,
         })
     );
 }

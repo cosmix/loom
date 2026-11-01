@@ -18,6 +18,7 @@ fn setup_hook() -> (TempDir, std::path::PathBuf) {
     for (name, content) in [
         ("_bounded.sh", hooks::HOOK_BOUNDED),
         ("_common.sh", HOOK_COMMON),
+        ("_git-command.sh", hooks::HOOK_GIT_COMMAND),
         ("_parser.sh", hooks::HOOK_PARSER),
         ("_parser_expand.sh", hooks::HOOK_PARSER_EXPAND),
         ("_parser_scan.sh", hooks::HOOK_PARSER_SCAN),

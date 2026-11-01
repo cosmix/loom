@@ -18,7 +18,7 @@ LOOM_SESSION_ID="session-test-abc"
 mkdir -p "${LOOM_WORK_DIR}/hooks" "${LOOM_WORK_DIR}/stages"
 # A depth-prefixed, non-completed stage file, matching what `loom run` writes
 # before any session spawns (session-end.sh globs "*-${LOOM_STAGE_ID}.md").
-printf 'status: Executing\n' >"${LOOM_WORK_DIR}/stages/01-${LOOM_STAGE_ID}.md"
+printf '%s\n' '---' 'status: Executing' '---' 'status: Completed' 'status: Verified' >"${LOOM_WORK_DIR}/stages/01-${LOOM_STAGE_ID}.md"
 
 EVENTS_FILE="${LOOM_WORK_DIR}/hooks/events.jsonl"
 
@@ -76,5 +76,29 @@ if [[ "$REASON2" != "" ]]; then
 	echo "FAIL: expected .payload.reason == '' for empty stdin, got '$REASON2'"
 	exit 1
 fi
+
+
+# Exercise the real handoff path for body prose, terminal status and ambiguity.
+STUB="$TMPDIR_TEST/loom-stub"
+printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\n" handoff >>"$HANDOFF_LOG"' >"$STUB"
+chmod +x "$STUB"
+export HANDOFF_LOG="$TMPDIR_TEST/handoffs"
+run_handoff_case() {
+    printf '{}' | LOOM_BIN="$STUB" LOOM_WORK_DIR="$LOOM_WORK_DIR" \
+        LOOM_STAGE_ID="$LOOM_STAGE_ID" LOOM_SESSION_ID="$LOOM_SESSION_ID" bash "$HOOK"
+}
+run_handoff_case
+[[ $(jq -r '.payload.completed' "$EVENTS_FILE" | tail -n 1) == false ]]
+[[ $(wc -l <"$HANDOFF_LOG" | tr -d ' ') == 1 ]]
+for terminal in Completed Verified; do
+    printf '%s\n' '---' "status: $terminal" '---' >"$LOOM_WORK_DIR/stages/01-$LOOM_STAGE_ID.md"
+    run_handoff_case
+    [[ $(jq -r '.payload.completed' "$EVENTS_FILE" | tail -n 1) == true ]]
+    [[ $(wc -l <"$HANDOFF_LOG" | tr -d ' ') == 1 ]]
+done
+printf '%s\n' '---' 'status: Completed' '---' >"$LOOM_WORK_DIR/stages/$LOOM_STAGE_ID.md"
+run_handoff_case
+[[ $(jq -r '.payload.completed' "$EVENTS_FILE" | tail -n 1) == false ]]
+[[ $(wc -l <"$HANDOFF_LOG" | tr -d ' ') == 2 ]]
 
 echo "PASS: session-end records the SessionEnd reason from stdin"

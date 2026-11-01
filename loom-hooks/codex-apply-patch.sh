@@ -94,12 +94,6 @@ for path in "${TARGETS[@]}"; do
 	ARGS+=(--path "$path")
 done
 
-if command -v gtimeout &>/dev/null; then
-	LOOM_HOOK_CONTEXT=1 gtimeout 3 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" "${ARGS[@]}" >/dev/null 2>&1 || true
-elif command -v timeout &>/dev/null; then
-	LOOM_HOOK_CONTEXT=1 timeout 3 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" "${ARGS[@]}" >/dev/null 2>&1 || true
-else
-	LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" "${ARGS[@]}" >/dev/null 2>&1 || true
-fi
+LOOM_HOOK_CONTEXT=1 loom_run_bounded 3 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" "${ARGS[@]}" >/dev/null 2>&1 || true
 
 exit 0

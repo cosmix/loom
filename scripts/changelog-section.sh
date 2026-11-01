@@ -6,8 +6,8 @@
 # Usage: changelog-section.sh <changelog-path> <version>
 #   <version> must look like X.Y.Z (e.g. 0.8.1).
 #
-# Matches, in order: an exact `## [X.Y.Z]` heading, else the minor-group
-# heading `## [X.Y.x]`. Prints the section body (everything between the
+# Matches the first exact `## [X.Y.Z]` or minor-group `## [X.Y.x]`
+# heading in the file. Prints the section body (everything between the
 # heading and the next `## ` heading or EOF) with leading/trailing blank
 # lines stripped. Exits 1 with no output if nothing matches.
 set -euo pipefail

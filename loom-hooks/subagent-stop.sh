@@ -107,7 +107,7 @@ WORKER_TRANSCRIPT=$(loom_lifecycle_jq_value "$INPUT_JSON" '.agent_transcript_pat
 
 if ! loom_lifecycle_safe_id "$PARENT_SESSION_ID" ||
 	! loom_lifecycle_safe_id "$AGENT_ID" ||
-	! loom_lifecycle_safe_id "$AGENT_TYPE"; then
+	! loom_lifecycle_safe_agent_type "$AGENT_TYPE"; then
 	loom_debug "$HOOK_NAME: skipping - unsafe parent, agent, or type identity"
 	exit 0
 fi

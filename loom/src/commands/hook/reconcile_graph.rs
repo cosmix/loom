@@ -45,8 +45,8 @@ use super::target::{non_empty_env, HookTarget};
 mod cancel;
 mod lock;
 use lock::{
-    begin_run, decide, end_pass, held_by, mark_pending, rebind_claim, reconcile_lock_path,
-    release_failed, unix_now, update_lock, LockDecision, PassEnd,
+    begin_run, decide, end_pass, held_by, mark_pending, read_lock, rebind_claim,
+    reconcile_lock_path, release_failed, unix_now, update_lock, LockDecision, PassEnd,
 };
 
 /// The `loom hook reconcile-graph` subcommand body: a best-effort, one-shot
@@ -92,7 +92,12 @@ fn try_reconcile() -> Result<()> {
         return Ok(());
     };
     let lock_path = reconcile_lock_path(&store);
-    run_passes(&lock_path, || {
+    let config = RetrievalConfig::load(&target.project_root);
+    let claim = std::env::var("LOOM_RECONCILE_CLAIM")
+        .ok()
+        .map(|value| value.parse::<u128>())
+        .transpose()?;
+    run_passes(&lock_path, claim, &config, || {
         reconcile(&target, &store).state() != GraphState::Current
     });
     Ok(())
@@ -106,21 +111,43 @@ fn try_cancel() -> Result<()> {
     Ok(())
 }
 
-/// The holder protocol. The first write re-stamps the lease with this
-/// process's own pid: [`try_spawn`] claims it with the SPAWNING hook's pid,
-/// which does not know the child's pid before `Command::spawn` returns, and
-/// that hook is short-lived — leaving its pid on record would make
-/// `lock::decide` read a running reconcile as "owner dead" and take it over
-/// with a duplicate. After every pass, `lock::end_pass` either keeps the lease
+/// The holder protocol. A spawned child takes over only its parent's exact
+/// claim; a direct invocation first competes through the normal policy.
+/// After every pass, `lock::end_pass` either keeps the lease
 /// (a request queued meanwhile: one more pass) or releases it with the run's
 /// failure count, and a holder whose line another pid took over stops without
 /// writing. `pass` returns whether the pass failed.
-fn run_passes(lock_path: &Path, mut pass: impl FnMut() -> bool) {
+fn run_passes(
+    lock_path: &Path,
+    claim: Option<u128>,
+    config: &RetrievalConfig,
+    mut pass: impl FnMut() -> bool,
+) {
     let pid = std::process::id();
-    begin_run(lock_path, unix_now(), pid);
+    let acquired_claim = match claim {
+        Some(claim) if begin_run(lock_path, pid, claim) => Some(claim),
+        Some(_) => None,
+        None => {
+            let now = unix_now();
+            (try_claim(
+                lock_path,
+                now,
+                config.reconcile_debounce_secs,
+                config.reconcile_stale_lock_secs,
+                crate::process::is_process_alive,
+                pid,
+            ) == Claim::Won)
+                .then(|| read_lock(lock_path).filter(|held| held.pid == pid && held.epoch == now))
+                .flatten()
+                .map(|held| held.claim)
+        }
+    };
+    let Some(acquired_claim) = acquired_claim else {
+        return;
+    };
     loop {
         let failed = pass();
-        if end_pass(lock_path, unix_now(), pid, failed) != PassEnd::Again {
+        if end_pass(lock_path, unix_now(), pid, acquired_claim, failed) != PassEnd::Again {
             break;
         }
     }
@@ -174,29 +201,8 @@ pub fn spawn_if_needed(pack: &ContextPack, project_root: &Path) {
     }
 }
 
-/// Whether `store` — `project_root` as resolved by [`try_spawn`]'s caller —
-/// is a legitimate target for a detached, full-repo reconcile, independent
-/// of the debounce lock decided below. A `loom hook reconcile-graph` run
-/// walks every tracked file through tree-sitter and rewrites a
-/// multi-megabyte graph; that is too expensive to launch against a checkout
-/// the caller reached only by an upward directory search from an unrelated
-/// working directory (`WorkDir::new`'s state-directory-search fallback — the
-/// same path [`HookTarget::from_environment`] takes when `LOOM_WORK_DIR` is
-/// unset).
-///
-/// Allowed when EITHER:
-/// - `LOOM_WORK_DIR` was set in the environment: the caller named its
-///   target explicitly, so nothing here was inferred, or
-/// - `store.root()` (`<main project root>/.loom/cache/context-v1` —
-///   `context::store::CACHE_RELATIVE_DIR`) already exists on disk, meaning
-///   loom already maintains a context cache for this checkout. This is
-///   exactly what a `loom map`'d repository has (the first layer
-///   `commands::map`'s `load_graph` persists creates the directory), so an
-///   ordinary interactive session in a mapped repository — A.12's own target
-///   use case — is unaffected by this gate.
-///
-/// Reading an index reached by an inferred root is fine (`loom map` itself
-/// does exactly that); starting a job that rewrites one is not.
+/// A full-tree rebuild needs an explicit `LOOM_WORK_DIR` or an existing cache.
+/// An inferred checkout without a cache can come from an unrelated cwd.
 fn allowed_to_spawn(store: &ContextStore) -> bool {
     non_empty_env("LOOM_WORK_DIR").is_some() || store.root().is_dir()
 }
@@ -271,8 +277,8 @@ fn try_spawn(project_root: &Path, now: u64) -> Result<()> {
         return Ok(());
     }
 
-    spawn_claimed(&lock_path, now, std::process::id(), || {
-        spawn_detached(project_root)
+    spawn_claimed(&lock_path, now, std::process::id(), |claim| {
+        spawn_detached(project_root, claim)
     })
 }
 
@@ -285,57 +291,31 @@ fn spawn_claimed(
     lock_path: &Path,
     now: u64,
     pid: u32,
-    spawn: impl FnOnce() -> Result<Option<u32>>,
+    spawn: impl FnOnce(u128) -> Result<Option<u32>>,
 ) -> Result<()> {
-    let child = spawn().inspect_err(|_| release_failed(lock_path, now, pid))?;
+    let claim = read_lock(lock_path)
+        .filter(|held| held.pid == pid && held.epoch == now)
+        .map(|held| held.claim)
+        .ok_or_else(|| anyhow::anyhow!("reconcile claim changed before spawn"))?;
+    let child = spawn(claim).inspect_err(|_| release_failed(lock_path, now, pid, claim))?;
     if let Some(child_pid) = child {
-        rebind_claim(lock_path, now, pid, child_pid);
+        rebind_claim(lock_path, now, pid, child_pid, claim);
     }
     Ok(())
 }
 
-/// Set false to suppress every detached spawn for the remainder of this
-/// process. [`spawn_detached`] is the ONLY place this is read — everything
-/// above it in the call chain ([`spawn_if_needed`]'s staleness check,
-/// [`allowed_to_spawn`]'s inferred-root gate, [`try_claim`]'s
-/// throttle and lease) keeps running and stays
-/// exercisable by tests exactly as before; only the actual
-/// `Command::spawn()` call is suppressed. A process-group-leading child that
-/// outlives the test harness is not something a test build may create: the
-/// harness exits, the child does not, and a full source-graph reconcile
-/// over a real repository is expensive enough that a handful of leaked ones
-/// can exhaust a machine — exactly the incident this guard exists to
-/// prevent (a real reconcile was launched from `tests_user_prompt_e2e.rs`
-/// before this guard existed, against a genuinely stale checkout its
-/// `WorkDir` upward search resolved to by accident).
-///
-/// Defaults to disabled whenever THIS CRATE is itself compiled with
-/// `--cfg test`, which is true for every `#[cfg(test)]` unit test in this
-/// crate (including the one above) with no extra wiring required. It does
-/// NOT cover the integration targets under `loom/tests/*.rs`: those link
-/// this crate compiled WITHOUT `--cfg test`, so `cfg!(test)` reads `false`
-/// there too, the same as a real binary. An integration test that reaches
-/// [`spawn_if_needed`] must call [`disable_spawn_for_tests`] itself before
-/// doing so.
+/// Suppress detached children in unit tests. Integration tests link a normal
+/// library build and must call [`disable_spawn_for_tests`] before invoking
+/// [`spawn_if_needed`]. The lease path remains exercised with spawning off.
 static SPAWN_ENABLED: AtomicBool = AtomicBool::new(!cfg!(test));
 
-/// How many times [`spawn_detached`] was called while [`SPAWN_ENABLED`] was
-/// false. Exists purely so a test can assert the guard actually fired
-/// without needing to observe (or fail to observe) a real child process,
-/// which is exactly what the guard exists to prevent creating.
+/// Counts suppressed spawns without creating detached children.
 #[cfg(test)]
 static SUPPRESSED_SPAWNS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Disable `spawn_detached` for the remainder of this process. Idempotent.
 ///
-/// Deliberately `pub`, not `pub(crate)`, and NOT `#[cfg(test)]`-gated, even
-/// though it exists only for tests: each file under `loom/tests/*.rs` is its
-/// own crate that merely depends on this one (`pub(crate)` would be invisible
-/// to it, and `#[cfg(test)]` would not exist in a build without `--cfg
-/// test`), so reaching it from there requires both a real, external-visible
-/// item and one that exists in every build. Call this before exercising any
-/// path that reaches [`spawn_if_needed`] from outside this crate's own unit
-/// tests, which get it for free — see `SPAWN_ENABLED`'s doc.
+/// Public because integration tests use the normal library build.
 pub fn disable_spawn_for_tests() {
     SPAWN_ENABLED.store(false, Ordering::SeqCst);
 }
@@ -346,7 +326,7 @@ pub fn disable_spawn_for_tests() {
 /// a foreground stall on the hook's own latency budget.
 ///
 /// Returns the child's pid; `None` when the test guard suppressed the spawn.
-fn spawn_detached(project_root: &Path) -> Result<Option<u32>> {
+fn spawn_detached(project_root: &Path, claim: u128) -> Result<Option<u32>> {
     if !SPAWN_ENABLED.load(Ordering::SeqCst) {
         // See `SPAWN_ENABLED`'s doc: a test build must never create a real,
         // process-group-leading child that survives the test harness.
@@ -359,6 +339,7 @@ fn spawn_detached(project_root: &Path) -> Result<Option<u32>> {
     let mut command = Command::new(program);
     command
         .args(["hook", "reconcile-graph"])
+        .env("LOOM_RECONCILE_CLAIM", claim.to_string())
         .current_dir(project_root)
         .stdin(Stdio::null())
         .stdout(Stdio::null())

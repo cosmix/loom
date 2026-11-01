@@ -8,9 +8,7 @@
 //! returned alongside the parsed review.
 
 use std::ffi::OsStr;
-use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path};
 
 use anyhow::{ensure, Context, Result};
@@ -18,6 +16,7 @@ use serde_json::Value;
 
 use crate::commands::hook::review_harvest::HarvestInput;
 use crate::commands::subagents::{is_assistant, text_blocks};
+use crate::fs::safe_read::open_regular_no_follow;
 use crate::models::forward_receipt::transcript::TranscriptIdentity;
 use crate::subagent_lifecycle::reject_symlink_components;
 use crate::verify::review::report::{parse_review, ParsedReview};
@@ -39,6 +38,11 @@ pub(super) fn reviewer_review(
 /// stop event's own: an absolute, normalized, symlink-free regular file at
 /// `<project>/<session_id>/subagents/agent-<agent_id>.jsonl`.
 fn reviewer_report(input: &HarvestInput) -> Result<(Option<String>, Option<String>)> {
+    validate_transcript_identity(input)?;
+    Ok(review_candidates(&read_tail(&input.transcript_path)?))
+}
+
+pub(super) fn validate_transcript_identity(input: &HarvestInput) -> Result<()> {
     let path = input.transcript_path.as_path();
     ensure_plain_path(path)?;
     let identity = TranscriptIdentity::from_path(path)?;
@@ -48,7 +52,7 @@ fn reviewer_report(input: &HarvestInput) -> Result<(Option<String>, Option<Strin
             && identity.agent_id == input.agent_id,
         "the transcript path does not belong to the stop event's session and agent"
     );
-    Ok(review_candidates(&read_tail(path)?))
+    Ok(())
 }
 
 /// The parsed review, preferring the hand-back candidate's block over the
@@ -96,11 +100,16 @@ fn ensure_plain_path(path: &Path) -> Result<()> {
 
 /// The complete rows in the last `TRANSCRIPT_TAIL_BYTES` of `path`.
 fn read_tail(path: &Path) -> Result<String> {
-    let mut file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-        .with_context(|| format!("opening {}", path.display()))?;
+    let parent = path
+        .parent()
+        .context("the transcript has no parent directory")?;
+    let name = path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .context("the transcript has no valid file name")?;
+    let mut file = open_regular_no_follow(parent, name, libc::O_RDONLY)
+        .with_context(|| format!("opening {}", path.display()))?
+        .with_context(|| format!("the transcript {} is missing", path.display()))?;
     let metadata = file
         .metadata()
         .context("reading the transcript's metadata")?;

@@ -73,10 +73,47 @@ fn the_same_agent_with_different_findings_records_a_new_round() {
 }
 
 #[test]
-fn the_same_agent_at_a_different_fingerprint_records_a_new_round() {
+fn a_replayed_stop_cannot_certify_edits_after_the_review() {
     let fixture = fixture(2, REVIEW);
     harvest(&fixture.work_dir, &fixture.input).unwrap();
     fs::write(fixture.worktree.join("changed.txt"), "after the review\n").unwrap();
+
+    assert!(harvest(&fixture.work_dir, &fixture.input).is_err());
+    assert_eq!(round_count(&fixture), 1);
+    let rounds = store::load_rounds(&fixture.work_dir, STAGE).unwrap();
+    assert_ne!(
+        rounds[0].fingerprint,
+        fingerprint::compute(&fixture.worktree, "main")
+            .unwrap()
+            .value
+    );
+}
+
+#[test]
+fn a_repeated_start_cannot_rebind_an_agent_after_edits() {
+    let fixture = fixture(2, REVIEW);
+    fs::write(fixture.worktree.join("changed.txt"), "after the start\n").unwrap();
+
+    assert!(
+        crate::commands::hook::review_start::capture(&fixture.work_dir, &fixture.input).is_err()
+    );
+    assert!(harvest(&fixture.work_dir, &fixture.input).is_err());
+    assert_eq!(round_count(&fixture), 0);
+}
+
+#[test]
+fn a_new_reviewer_invocation_can_review_the_edited_tree() {
+    let mut fixture = fixture(2, REVIEW);
+    harvest(&fixture.work_dir, &fixture.input).unwrap();
+    fs::write(fixture.worktree.join("changed.txt"), "after the review\n").unwrap();
+    let other = fixture
+        .input
+        .transcript_path
+        .with_file_name("agent-other.jsonl");
+    fs::copy(&fixture.input.transcript_path, &other).unwrap();
+    fixture.input.agent_id = "other".to_string();
+    fixture.input.transcript_path = other;
+    crate::commands::hook::review_start::capture(&fixture.work_dir, &fixture.input).unwrap();
 
     let outcome = harvest(&fixture.work_dir, &fixture.input).unwrap();
 
@@ -95,6 +132,7 @@ fn different_agents_with_the_same_report_record_two_rounds() {
     fs::copy(&fixture.input.transcript_path, &other).unwrap();
     fixture.input.agent_id = "other".to_string();
     fixture.input.transcript_path = other;
+    crate::commands::hook::review_start::capture(&fixture.work_dir, &fixture.input).unwrap();
 
     let outcome = harvest(&fixture.work_dir, &fixture.input).unwrap();
 

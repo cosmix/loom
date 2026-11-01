@@ -5,7 +5,7 @@
 //! here once it has validated the stop event. For a v2 stage this reads the
 //! reviewer's report from the transcript tail, parses its last `loom-review`
 //! block, and writes `reviews/<stage>/round-<n>.json` at the worktree's
-//! current change fingerprint; each suggestion becomes a `suggestion` entry in
+//! reviewer-start change fingerprint; each suggestion becomes a `suggestion` entry in
 //! the stage's memory journal. The report is read two ways, since a reviewer
 //! may hand its report back through a tool call instead of ending its turn
 //! with the report as plain text: the `message` input of the last
@@ -19,13 +19,15 @@
 //! One round is recorded per reviewer agent per reviewed state. A reviewer's
 //! SubagentStop can fire twice (the lifecycle journal shows two stops for one
 //! agent id seconds apart, the second with a longer transcript), so a harvest
-//! first looks for a recorded round with the same agent id, change fingerprint
+//! first checks the immutable start snapshot, then looks for a recorded round
+//! with the same agent id, change fingerprint
 //! and parsed review: the same findings (their ids aside), `resolved` and
 //! `unresolved`, or both malformed. Finding one, it writes and journals
 //! nothing. Suggestions are not stored in the round and are not compared. The
 //! check, the round number and the write share the store's review lock, so two
 //! concurrent harvests of one report record it once. A different report, or
-//! the same agent at another fingerprint, is a new round.
+//! from the same start snapshot, is a new round. An edit since the start
+//! snapshot requires a new reviewer invocation.
 //!
 //! Suggestions are journaled before the round is written, because the round
 //! is immutable and may only name entries that exist. If `write_round` then
@@ -38,6 +40,7 @@ use anyhow::{ensure, Context, Result};
 use chrono::Utc;
 use serde::Deserialize;
 
+use crate::commands::hook::review_start;
 use crate::commands::hook::review_transcript::reviewer_review;
 use crate::fs::memory::{
     append_entry, validate_content, validate_evidence, MemoryEntry, MemoryEntryType,
@@ -138,18 +141,23 @@ pub(crate) fn harvest(work_dir: &Path, input: &HarvestInput) -> Result<Harvest> 
         return Ok(Harvest::Skipped);
     }
     let (parsed, discrepancy) = reviewer_review(input)?;
+    let reviewed = review_start::load(work_dir, input)?;
     let worktree = stage_worktree(work_dir, &stage)?;
     let target = crate::fs::resolve_target_branch_from_config(work_dir, &worktree)?;
     let current = fingerprint::compute(&worktree, &target)?;
+    ensure!(
+        current == reviewed,
+        "the worktree changed since this reviewer started; launch a new review"
+    );
     let mut unjournaled = None;
     let decision = store::record_round(work_dir, &stage.id, |number, recorded| {
         let repeats = |round: &&ReviewRound| {
-            records_same_review(round, &input.agent_id, &current.value, &parsed)
+            records_same_review(round, &input.agent_id, &reviewed.value, &parsed)
         };
         if let Some(existing) = recorded.iter().find(repeats) {
             return Ok(RoundDecision::Duplicate(existing.round));
         }
-        let (mut round, suggestions) = build_round(number, &input.agent_id, current, parsed)?;
+        let (mut round, suggestions) = build_round(number, &input.agent_id, reviewed, parsed)?;
         // Journal first: the round is immutable once written, so it may only
         // name the suggestion entries that exist.
         let (journaled, missing) = journal_suggestions(work_dir, &stage.id, &suggestions);
@@ -217,7 +225,7 @@ fn journal_suggestions(
     (ids, None)
 }
 
-fn read_input() -> Result<HarvestInput> {
+pub(super) fn read_input() -> Result<HarvestInput> {
     let mut input = String::new();
     io::stdin()
         .take(MAX_INPUT_BYTES + 1)
@@ -230,7 +238,7 @@ fn read_input() -> Result<HarvestInput> {
     serde_json::from_str(&input).context("parsing the stop event")
 }
 
-fn work_dir_from_env() -> Result<PathBuf> {
+pub(super) fn work_dir_from_env() -> Result<PathBuf> {
     let work_dir = std::env::var_os("LOOM_WORK_DIR").context("LOOM_WORK_DIR is unset")?;
     let work_dir = PathBuf::from(work_dir);
     ensure!(work_dir.is_dir(), "LOOM_WORK_DIR is not a directory");
@@ -318,7 +326,7 @@ fn clip(mut text: String, max: usize) -> String {
 }
 
 /// The stage's worktree in the project that holds `work_dir`.
-fn stage_worktree(work_dir: &Path, stage: &Stage) -> Result<PathBuf> {
+pub(super) fn stage_worktree(work_dir: &Path, stage: &Stage) -> Result<PathBuf> {
     let id = stage
         .worktree
         .as_deref()

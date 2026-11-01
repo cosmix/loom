@@ -251,6 +251,8 @@ fi
 # Tool results are not persisted: a shell hook cannot append race-free without
 # following paths, and even redacted previews risk retaining private source.
 
+source "$(dirname "$0")/_git-command.sh"
+
 # === POST-COMMIT MEMORY REMINDER ===
 # After a `git commit` or `loom stage commit`, print a non-blocking memory reminder.
 
@@ -278,7 +280,7 @@ if [[ "$TOOL_NAME" == "Bash" ]] && [[ -n "$COMMAND" ]]; then
 	# safely does not.
 	STRIPPED_COMMAND=$(strip_embedded_content "$COMMAND")
 	if loom_tokenize_command "$STRIPPED_COMMAND" &&
-		{ loom_tokens_cmd_has_arg 'git' 'commit' || loom_tokens_cmd_has_arg_pair 'loom' 'stage' 'commit'; }; then
+		{ loom_git_runs_commit || loom_tokens_cmd_has_arg_pair 'loom' 'stage' 'commit'; }; then
 		remind_memory_capture
 	fi
 fi

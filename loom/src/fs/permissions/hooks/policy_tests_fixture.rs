@@ -109,6 +109,10 @@ fn install_helpers(hooks: &Path) {
             crate::fs::permissions::constants::HOOK_HEARTBEAT,
         ),
         ("_bounded.sh", HOOK_BOUNDED),
+        (
+            "_git-command.sh",
+            crate::fs::permissions::constants::HOOK_GIT_COMMAND,
+        ),
         ("_lifecycle.sh", HOOK_LIFECYCLE),
         ("_codex_forward.sh", HOOK_CODEX_FORWARD_COMMON),
         ("_progress-classification.sh", HOOK_PROGRESS_CLASSIFICATION),

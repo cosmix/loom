@@ -78,13 +78,10 @@ pub use refresh::refresh_existing_in;
 
 /// Check if a directory is writable by attempting to create a temp file.
 fn is_writable(dir: &Path) -> bool {
-    let probe = dir.join(".loom_write_probe");
-    if std::fs::write(&probe, b"").is_ok() {
-        let _ = std::fs::remove_file(&probe);
-        true
-    } else {
-        false
-    }
+    tempfile::Builder::new()
+        .prefix(".loom_write_probe-")
+        .tempfile_in(dir)
+        .is_ok()
 }
 
 /// Install completions to the system location

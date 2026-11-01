@@ -3,11 +3,13 @@
 //! `$HOME/.claude/settings.json`, left behind by a pre-`loom-` install.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
 use super::{DetectedIssue, RepairAction, Severity};
+
+mod ownership;
 
 /// Loom-specific skill names referenced in settings.json that may need prefix migration.
 const LOOM_SKILL_NAMES: &[&str] = &[
@@ -110,18 +112,24 @@ pub(super) fn check_old_skills_at(skills_dir: &std::path::Path) -> Vec<DetectedI
         }
         let prefixed = skills_dir.join(format!("loom-{}", name));
         if prefixed.is_dir() {
+            let owned = ownership::skill(&entry.path(), &name);
             issues.push(DetectedIssue {
-                action: RepairAction::OldSkill(name.clone()),
+                action: if owned {
+                    RepairAction::OldSkill(entry.path())
+                } else {
+                    RepairAction::Manual
+                },
                 severity: Severity::Warning,
-                description: format!(
-                    "Old unprefixed skill '{}' found (superseded by 'loom-{}')",
-                    name, name
-                ),
-                fix_description: format!(
-                    "Remove {} (loom-{} already installed)",
-                    skills_dir.join(&name).display(),
-                    name
-                ),
+                description: if owned {
+                    format!("Shipped unprefixed skill '{}' found", name)
+                } else {
+                    format!("Ambiguous unprefixed skill '{}' found", name)
+                },
+                fix_description: if owned {
+                    format!("Back up {} before migration", entry.path().display())
+                } else {
+                    "Preserve this skill; its content does not prove Loom ownership".into()
+                },
             });
         }
     }
@@ -149,18 +157,24 @@ pub(super) fn check_old_agents_at(agents_dir: &std::path::Path) -> Vec<DetectedI
         let prefixed = agents_dir.join(format!("loom-{}", name));
         if prefixed.exists() {
             let bare = name.trim_end_matches(".md");
+            let owned = ownership::agent(&entry.path(), bare);
             issues.push(DetectedIssue {
-                action: RepairAction::OldAgent(bare.to_string()),
+                action: if owned {
+                    RepairAction::OldAgent(entry.path())
+                } else {
+                    RepairAction::Manual
+                },
                 severity: Severity::Warning,
-                description: format!(
-                    "Old unprefixed agent '{}' found (superseded by 'loom-{}')",
-                    bare, bare
-                ),
-                fix_description: format!(
-                    "Remove {} (loom-{} already installed)",
-                    agents_dir.join(&name).display(),
-                    name
-                ),
+                description: if owned {
+                    format!("Shipped unprefixed agent '{}' found", bare)
+                } else {
+                    format!("Ambiguous unprefixed agent '{}' found", bare)
+                },
+                fix_description: if owned {
+                    format!("Back up {} before migration", entry.path().display())
+                } else {
+                    "Preserve this agent; its content does not prove Loom ownership".into()
+                },
             });
         }
     }
@@ -180,9 +194,10 @@ pub(super) fn check_old_skill_refs_at(settings_path: &std::path::Path) -> Vec<De
     let Ok(content) = fs::read_to_string(settings_path) else {
         return issues;
     };
-    let has_old_refs = LOOM_SKILL_NAMES
-        .iter()
-        .any(|name| content.contains(&format!("Skill({}", name)));
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return issues;
+    };
+    let has_old_refs = migrate_skill_refs(&mut value);
     if has_old_refs {
         issues.push(DetectedIssue {
             action: RepairAction::SkillRefs,
@@ -195,39 +210,104 @@ pub(super) fn check_old_skill_refs_at(settings_path: &std::path::Path) -> Vec<De
     issues
 }
 
-/// Remove an old unprefixed skill directory (loom- version already installed).
-pub(super) fn fix_old_skill(name: &str) -> Result<()> {
-    let old_path = installed_dir("skills")?.join(name);
-    fs::remove_dir_all(&old_path)
-        .with_context(|| format!("Failed to remove {}", old_path.display()))?;
-    Ok(())
+/// Move a demonstrably shipped old skill to a unique, recoverable backup.
+pub(super) fn fix_old_skill(path: &Path) -> Result<()> {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("Invalid skill path")?;
+    anyhow::ensure!(
+        ownership::skill(path, name),
+        "{} is not a shipped Loom skill",
+        path.display()
+    );
+    back_up_legacy_asset(path)
 }
 
-/// Remove an old unprefixed agent file (loom- version already installed).
-pub(super) fn fix_old_agent(name: &str) -> Result<()> {
-    let old_path = installed_dir("agents")?.join(format!("{}.md", name));
-    fs::remove_file(&old_path)
-        .with_context(|| format!("Failed to remove {}", old_path.display()))?;
-    Ok(())
+/// Move a demonstrably shipped old agent to a unique, recoverable backup.
+pub(super) fn fix_old_agent(path: &Path) -> Result<()> {
+    let name = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .context("Invalid agent path")?;
+    anyhow::ensure!(
+        ownership::agent(path, name),
+        "{} is not a shipped Loom agent",
+        path.display()
+    );
+    back_up_legacy_asset(path)
+}
+
+fn back_up_legacy_asset(path: &Path) -> Result<()> {
+    let name = path
+        .file_name()
+        .context("Invalid asset path")?
+        .to_string_lossy();
+    let backup = path.with_file_name(format!(
+        "{name}.loom-backup-{}",
+        crate::relay::new_request_id()
+    ));
+    anyhow::ensure!(
+        fs::symlink_metadata(&backup)
+            .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound),
+        "Backup path {} already exists or cannot be inspected",
+        backup.display()
+    );
+    fs::rename(path, &backup).with_context(|| {
+        format!(
+            "Failed to back up {} to {}",
+            path.display(),
+            backup.display()
+        )
+    })
 }
 
 /// Update old-style skill references in the global settings.json.
 ///
-/// Replaces `Skill({name}` with `Skill(loom-{name}` for each loom-specific
-/// skill that does not already have the `loom-` prefix.
 pub(super) fn fix_settings_skill_refs() -> Result<()> {
     let home = dirs::home_dir().context("Cannot determine home directory")?;
     let settings_path = home.join(".claude/settings.json");
-    let mut content = fs::read_to_string(&settings_path)
+    fix_settings_skill_refs_at(&settings_path)
+}
+
+pub(super) fn fix_settings_skill_refs_at(settings_path: &Path) -> Result<()> {
+    let content = fs::read_to_string(settings_path)
         .with_context(|| format!("Failed to read {}", settings_path.display()))?;
-
-    for name in LOOM_SKILL_NAMES {
-        let old_ref = format!("Skill({}", name);
-        let new_ref = format!("Skill(loom-{}", name);
-        content = content.replace(&old_ref, &new_ref);
+    let mut value: serde_json::Value = serde_json::from_str(&content)
+        .with_context(|| format!("Failed to parse {}", settings_path.display()))?;
+    if migrate_skill_refs(&mut value) {
+        fs::write(settings_path, serde_json::to_vec_pretty(&value)?)
+            .with_context(|| format!("Failed to write {}", settings_path.display()))?;
     }
-
-    fs::write(&settings_path, &content)
-        .with_context(|| format!("Failed to write {}", settings_path.display()))?;
     Ok(())
+}
+
+fn migrate_skill_refs(value: &mut serde_json::Value) -> bool {
+    let Some(permissions) = value.get_mut("permissions") else {
+        return false;
+    };
+    let mut changed = false;
+    for field in ["allow", "ask", "deny"] {
+        let Some(rules) = permissions
+            .get_mut(field)
+            .and_then(serde_json::Value::as_array_mut)
+        else {
+            continue;
+        };
+        for rule in rules {
+            let Some(text) = rule.as_str() else { continue };
+            let Some(inner) = text
+                .strip_prefix("Skill(")
+                .and_then(|rest| rest.strip_suffix(')'))
+            else {
+                continue;
+            };
+            let (name, argument) = inner.find(':').map_or((inner, ""), |at| inner.split_at(at));
+            if LOOM_SKILL_NAMES.contains(&name) {
+                *rule = serde_json::Value::String(format!("Skill(loom-{name}{argument})"));
+                changed = true;
+            }
+        }
+    }
+    changed
 }

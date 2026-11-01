@@ -7,9 +7,6 @@
 //! target at all. They mutate process environment and are therefore
 //! `#[serial]`.
 //!
-//! Split out of `tests_user_prompt.rs` itself so that file stays under the
-//! maintainability line limit; wired back in via `#[path =
-//! "tests_user_prompt_e2e.rs"] mod e2e;` at the bottom of that file.
 
 use super::super::{retrieve_for_prompt, Emission};
 use crate::context::graph_store::{FileEntry, GraphLayer, GraphStore};
