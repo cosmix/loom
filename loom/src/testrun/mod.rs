@@ -121,6 +121,7 @@ pub trait TestRunnerAdapter: Sync {
     /// The shell command that runs test `test` declared in `file`, run with
     /// `package_dir` as its cwd. For JavaScript, Dart and Flutter runners,
     /// `test` is the full runner-visible name, including enclosing suite names.
+    /// Vitest joins nested titles with ` > `; Bun, Jest and Mocha use spaces.
     /// PHPUnit expects the fully qualified `Class::method` identifier, including any data set.
     /// Pest expects its generated PHPUnit identifier in the same form;
     /// Swift XCTest expects `Module.Case/method`.
