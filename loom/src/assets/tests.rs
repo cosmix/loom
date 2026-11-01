@@ -65,20 +65,6 @@ fn backup_count(dir: &Path, name: &str) -> usize {
     backup_paths(dir, name).len()
 }
 
-/// The single backup file for `name` under `dir`. Panics unless exactly one
-/// exists, since every caller of this helper is asserting that a prior
-/// install already created the one backup it expects to find.
-fn the_backup(dir: &Path, name: &str) -> PathBuf {
-    let mut found = backup_paths(dir, name);
-    assert_eq!(
-        found.len(),
-        1,
-        "expected exactly one backup of {name} under {}",
-        dir.display()
-    );
-    found.remove(0)
-}
-
 fn backup_paths(dir: &Path, name: &str) -> Vec<PathBuf> {
     fs::read_dir(dir)
         .unwrap()

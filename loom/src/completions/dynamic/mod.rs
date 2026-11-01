@@ -201,9 +201,11 @@ fn complete_flag_value(
     cmd_path: &[&str],
     cmdline: &str,
 ) -> Result<Option<Vec<String>>> {
+    if let Some(values) = commands::finite_flag_choices(cmd_path, prev_word, prefix) {
+        return Ok(Some(values));
+    }
     match prev_word {
         "--port" | "--host" if cmd_path == ["plan"] => Ok(Some(Vec::new())),
-        "--field" => Ok(Some(complete_flag_choices(cmd_path, "field", prefix)?)),
         "--stage" => {
             let results = complete_stage_ids(cwd, prefix)?;
             Ok(Some(results))

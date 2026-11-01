@@ -4,7 +4,8 @@
 //!
 //! ## Encoding
 //!
-//! One line, `"<epoch_secs> <pid> <failures> <pending>"`. `pid != 0` means an
+//! One line, `"<epoch_secs> <pid> <failures> <pending> <claim>"`. Older
+//! four-field lines parse with a zero claim. `pid != 0` means an
 //! attempt STARTED at that epoch and is (as far as the lock says) still
 //! running; `pid == 0` means an attempt FINISHED at that epoch. `0` is a safe
 //! sentinel: never a real user process's pid on Linux or macOS. `failures` is
@@ -72,6 +73,7 @@ pub(super) struct LockState {
     pub pid: u32,
     pub failures: u32,
     pub pending: bool,
+    pub claim: u128,
 }
 
 impl LockState {
@@ -85,21 +87,33 @@ impl LockState {
             "1" => true,
             _ => return None,
         };
+        let claim = parts.next().map(str::parse).transpose().ok()?.unwrap_or(0);
         parts.next().is_none().then_some(LockState {
             epoch,
             pid,
             failures,
             pending,
+            claim,
         })
     }
 
     fn render(&self) -> String {
+        if self.claim == 0 {
+            return format!(
+                "{} {} {} {}\n",
+                self.epoch,
+                self.pid,
+                self.failures,
+                u8::from(self.pending)
+            );
+        }
         format!(
-            "{} {} {} {}\n",
+            "{} {} {} {} {}\n",
             self.epoch,
             self.pid,
             self.failures,
-            u8::from(self.pending)
+            u8::from(self.pending),
+            self.claim
         )
     }
 }
@@ -210,6 +224,7 @@ pub(super) fn held_by(state: Option<LockState>, now: u64, pid: u32) -> LockState
     LockState {
         epoch: now,
         pid,
+        claim: uuid::Uuid::new_v4().as_u128(),
         ..state.unwrap_or_default()
     }
 }
@@ -226,11 +241,16 @@ pub(super) fn mark_pending(holder: LockState) -> Option<LockState> {
     })
 }
 
-/// A reconciler's first write: record `pid` as the holder, correcting the pid
-/// [`super::try_claim`] recorded (the spawning hook's, since the child's own
-/// pid is unknown until it runs). Also covers a direct invocation with no claim.
-pub(super) fn begin_run(lock_path: &Path, now: u64, pid: u32) {
-    update_lock(lock_path, |state| (Some(held_by(state, now, pid)), ()));
+/// A spawned child takes over only the exact claim passed by its parent. A
+/// direct invocation must first win the normal claim policy in its caller.
+pub(super) fn begin_run(lock_path: &Path, pid: u32, claim: u128) -> bool {
+    update_lock(lock_path, |state| match state {
+        Some(held) if held.pid != 0 && held.claim == claim && claim != 0 => {
+            (Some(LockState { pid, ..held }), true)
+        }
+        _ => (None, false),
+    })
+    .unwrap_or(false)
 }
 
 /// Hand the lease [`super::try_claim`] granted `from_pid` at `epoch` to the
@@ -238,9 +258,9 @@ pub(super) fn begin_run(lock_path: &Path, now: u64, pid: u32) {
 /// window before the child's own [`begin_run`]. Nothing is written when the
 /// line no longer carries that claim (the child already re-stamped it, or it
 /// moved to another holder).
-pub(super) fn rebind_claim(lock_path: &Path, epoch: u64, from_pid: u32, to_pid: u32) {
+pub(super) fn rebind_claim(lock_path: &Path, epoch: u64, from_pid: u32, to_pid: u32, claim: u128) {
     update_lock(lock_path, |state| match state {
-        Some(held) if held.pid == from_pid && held.epoch == epoch => (
+        Some(held) if held.pid == from_pid && held.epoch == epoch && held.claim == claim => (
             Some(LockState {
                 pid: to_pid,
                 ..held
@@ -256,9 +276,9 @@ pub(super) fn rebind_claim(lock_path: &Path, epoch: u64, from_pid: u32, to_pid: 
 /// every pass, so a concurrent [`super::try_claim`] never sees a released lease while
 /// a pass is running. A failed pass counts one failure on top of the carried
 /// count, a successful one resets it.
-pub(super) fn end_pass(lock_path: &Path, now: u64, pid: u32, failed: bool) -> PassEnd {
+pub(super) fn end_pass(lock_path: &Path, now: u64, pid: u32, claim: u128, failed: bool) -> PassEnd {
     update_lock(lock_path, |state| match state {
-        Some(held) if held.pid == pid => {
+        Some(held) if held.pid == pid && held.claim == claim => {
             let failures = if failed {
                 held.failures.saturating_add(1)
             } else {
@@ -270,6 +290,7 @@ pub(super) fn end_pass(lock_path: &Path, now: u64, pid: u32, failed: bool) -> Pa
                 pid: if again { pid } else { 0 },
                 failures,
                 pending: false,
+                claim: held.claim,
             };
             (
                 Some(next),
@@ -285,14 +306,15 @@ pub(super) fn end_pass(lock_path: &Path, now: u64, pid: u32, failed: bool) -> Pa
 /// could not be started: finished at `now`, one failure counted, `pending`
 /// carried forward so a queued request is not lost. Nothing is written when the
 /// line has since moved to another holder.
-pub(super) fn release_failed(lock_path: &Path, now: u64, pid: u32) {
+pub(super) fn release_failed(lock_path: &Path, now: u64, pid: u32, claim: u128) {
     update_lock(lock_path, |state| match state {
-        Some(held) if held.pid == pid => (
+        Some(held) if held.pid == pid && held.claim == claim => (
             Some(LockState {
                 epoch: now,
                 pid: 0,
                 failures: held.failures.saturating_add(1),
                 pending: held.pending,
+                claim: held.claim,
             }),
             (),
         ),
@@ -302,9 +324,9 @@ pub(super) fn release_failed(lock_path: &Path, now: u64, pid: u32) {
 
 /// Record the run `pid` held as finished at `now` with `failures` unchanged,
 /// unless the line has since moved to another holder. `--cancel` uses this.
-pub(super) fn release_lease(lock_path: &Path, now: u64, pid: u32) {
+pub(super) fn release_lease(lock_path: &Path, now: u64, pid: u32, claim: u128) {
     update_lock(lock_path, |state| match state {
-        Some(held) if held.pid == pid => (
+        Some(held) if held.pid == pid && held.claim == claim => (
             Some(LockState {
                 epoch: now,
                 pid: 0,

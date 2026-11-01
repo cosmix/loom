@@ -86,6 +86,12 @@ expect_exit "loom stage commit with an attribution trailer is blocked" \
 	2 "$(plain_payload 'loom stage commit s1 -m "feat(x): y" -m "Co-Authored-By: Claude <noreply@anthropic.com>"')" "${SESSION[@]}"
 
 # --- a subagent never commits, with either command --------------------------
+expect_exit "git -C commit by a subagent is blocked" \
+	2 "$(subagent_payload 'git -C . commit -m x')" LOOM_MAIN_AGENT_PID=$$
+for command in 'git cat-file commit HEAD' 'git log --grep commit'; do
+	expect_exit "subagent read $command is allowed" \
+		0 "$(subagent_payload "$command")" LOOM_MAIN_AGENT_PID=$$
+done
 expect_exit "loom stage commit by a subagent is blocked" \
 	2 "$(subagent_payload 'loom stage commit s1 -m "feat(x): y"')" LOOM_MAIN_AGENT_PID=$$
 expect_stderr_has "subagent block" 'loom stage commit'

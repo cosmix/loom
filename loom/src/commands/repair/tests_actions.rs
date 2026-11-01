@@ -118,18 +118,19 @@ fn home_asset_detectors_retain_names_and_select_actions() {
         &claude.join("settings.json"),
     ));
     for (prefix, action) in [
-        (
-            "Old unprefixed skill",
-            RepairAction::OldSkill("rust's".into()),
-        ),
-        (
-            "Old unprefixed agent",
-            RepairAction::OldAgent("worker's".into()),
-        ),
+        ("Ambiguous unprefixed skill", RepairAction::Manual),
+        ("Ambiguous unprefixed agent", RepairAction::Manual),
         ("Settings.json references", RepairAction::SkillRefs),
     ] {
         assert_action(&issues, prefix, action);
     }
+    for issue in &issues {
+        if issue.action == RepairAction::Manual {
+            assert!(!fix_issue(home.path(), issue).unwrap());
+        }
+    }
+    assert!(claude.join("skills/rust's").exists());
+    assert!(claude.join("agents/worker's.md").exists());
 }
 
 #[test]
@@ -181,6 +182,53 @@ fn settings_detectors_select_distinct_actions() {
     ] {
         assert_action(&issues, prefix, action);
     }
+}
+
+#[test]
+fn detected_read_denies_dispatch_by_action_and_preserve_operator_rules() {
+    let root = tempfile::tempdir().unwrap();
+    let claude = root.path().join(".claude");
+    std::fs::create_dir_all(&claude).unwrap();
+    let path = claude.join("settings.local.json");
+    std::fs::write(
+        &path,
+        r#"{"permissions":{"deny":["Read(.loom/work/admin.token)","Read(~/private/**)"]}}"#,
+    )
+    .unwrap();
+    let issues = sandbox_settings::check_read_denies(root.path());
+    let mut local: Vec<_> = issues
+        .into_iter()
+        .filter(|issue| issue.description.contains(path.to_str().unwrap()))
+        .collect();
+    assert_eq!(local.len(), 2);
+    assert_eq!(
+        local
+            .iter()
+            .filter(|issue| issue.action == RepairAction::ReadDenies)
+            .count(),
+        1
+    );
+    assert_eq!(
+        local
+            .iter()
+            .filter(|issue| issue.action == RepairAction::Manual)
+            .count(),
+        1
+    );
+    for issue in &mut local {
+        issue.description = "Changed diagnostic wording".into();
+        match issue.action {
+            RepairAction::ReadDenies => assert!(fix_issue(root.path(), issue).unwrap()),
+            RepairAction::Manual => assert!(!fix_issue(root.path(), issue).unwrap()),
+            ref other => panic!("unexpected action: {other:?}"),
+        }
+    }
+    let settings: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    assert_eq!(
+        settings["permissions"]["deny"],
+        serde_json::json!(["Read(~/private/**)"])
+    );
 }
 
 #[test]

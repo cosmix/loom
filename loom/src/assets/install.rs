@@ -160,34 +160,42 @@ fn back_up_and_replace(dest: &Path, body: &str) -> Result<PathBuf> {
     Ok(backup)
 }
 
-/// Back up `dest`, unless an earlier install already preserved whatever was
-/// there.
-///
-/// `back_up_existing`'s rotation (delete every prior `.bak.`, keep only the
-/// newest) is right for the doctrine files: they carry a banner, so a stale
-/// one is rewritten in place with no backup at all, and the only time this
-/// runs is when the content differs from what loom itself last wrote there -
-/// in which case the prior backup holds a now-superseded copy of loom's own
-/// output. Agent and command assets carry no banner (frontmatter leaves no
-/// room for one), so `write_assets` cannot tell "operator's file" from
-/// "loom's own previous release" apart the same way; it can only tell "no
-/// backup exists yet" from "one already does". The first backup beside a
-/// destination is therefore the only one that can hold a file loom did not
-/// write - every later divergence is loom's own prior output - so it is the
-/// one worth keeping, and once it exists, `write_assets` overwrites `dest`
-/// without ever touching it.
-fn back_up_existing_once(dest: &Path) -> Result<Option<PathBuf>> {
-    if has_existing_backup(dest)? {
-        return Ok(None);
+/// Preserve every differing unmarked asset. Its previous installed bytes are
+/// unknown, so even a later divergence may be an operator edit.
+fn back_up_asset(dest: &Path) -> Result<PathBuf> {
+    let base = backup_path(dest)?;
+    for suffix in 0_u64.. {
+        let backup = if suffix == 0 {
+            base.clone()
+        } else {
+            let mut name = base.as_os_str().to_os_string();
+            name.push(format!(".{suffix}"));
+            PathBuf::from(name)
+        };
+        let mut output = match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&backup)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(error).with_context(|| format!("Failed to create {}", backup.display()))
+            }
+        };
+        let result =
+            fs::File::open(dest).and_then(|mut input| std::io::copy(&mut input, &mut output));
+        if let Err(error) = result {
+            let _ = fs::remove_file(&backup);
+            return Err(error).with_context(|| format!("Failed to back up {}", dest.display()));
+        }
+        return Ok(backup);
     }
-    back_up_existing(dest).map(Some)
+    unreachable!()
 }
 
 /// Move whatever is at `dest` to a fresh backup path, so a caller can then
-/// write new content without destroying it. Shared by the doctrine files and
-/// by `claude::write_assets`, so the one-backup-per-file cap and the
-/// `<name>.bak.<8 digits>-<6 digits>` naming stay identical everywhere loom
-/// preserves a file it did not write.
+/// write new content without destroying it. Doctrine files rotate their backup.
 ///
 /// A symlinked destination is copied rather than renamed, and written through:
 /// `~/.claude/CLAUDE.md` is commonly a link into a dotfiles repository, and
@@ -291,16 +299,7 @@ fn remove_old_backups(dest: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Whether `dest` already has a loom-made backup beside it, from an earlier
-/// install. See `back_up_existing_once` for why that is the question that
-/// matters for agent and command assets.
-fn has_existing_backup(dest: &Path) -> Result<bool> {
-    Ok(!existing_backups(dest)?.is_empty())
-}
-
-/// Every loom-made backup file currently sitting beside `dest`, shared by
-/// `remove_old_backups` (which deletes them) and `has_existing_backup` (which
-/// only asks whether any exist).
+/// Doctrine backup files eligible for rotation.
 fn existing_backups(dest: &Path) -> Result<Vec<PathBuf>> {
     let parent = dest
         .parent()

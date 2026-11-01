@@ -6,7 +6,7 @@
 
 use std::fs;
 
-use super::{asset_content, backup_count, paths, snapshot, the_backup};
+use super::{asset_content, backup_count, paths, snapshot};
 use crate::assets::install::install_all;
 use crate::skills::SkillLayout;
 use tempfile::TempDir;
@@ -41,45 +41,50 @@ fn changed_command_asset_is_backed_up_once_then_left_alone() {
     assert_eq!(snapshot(temp.path()), before);
 }
 
-/// A later loom release that ships an edited `address.md` must not rotate the
-/// existing backup out from under the operator: `back_up_existing`'s rotation
-/// (right for the banner-carrying doctrine files) would otherwise delete the
-/// operator's own preserved original the moment loom's own output changes
-/// underneath it. `back_up_existing_once` is the fix under test here - it
-/// must see a backup already exists and leave it alone.
+/// Every differing version is preserved, including an edit after an upgrade.
 #[test]
-fn a_second_diverging_install_does_not_rotate_the_operators_backup() {
+fn later_edits_and_original_backup_are_both_preserved() {
     let temp = TempDir::new().unwrap();
     let paths = paths(&temp);
     install_all(&paths, Some(SkillLayout::Core), false).unwrap();
     let dest = paths.claude_dir.join("commands/address.md");
-    fs::write(&dest, "operator's own /address command").unwrap();
+    fs::write(&dest, "original operator command").unwrap();
+    let first = install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+    fs::write(&dest, "later operator edit").unwrap();
+    let second = install_all(&paths, Some(SkillLayout::Core), false).unwrap();
 
-    // First divergence: backs up the operator's file, writes loom's content.
+    assert_eq!(
+        fs::read_to_string(&first.backups[0]).unwrap(),
+        "original operator command"
+    );
+    assert_eq!(
+        fs::read_to_string(&second.backups[0]).unwrap(),
+        "later operator edit"
+    );
+    assert_ne!(first.backups[0], second.backups[0]);
+    assert_eq!(
+        fs::read_to_string(dest).unwrap(),
+        asset_content(crate::assets::CLAUDE_COMMANDS, "address.md")
+    );
+}
+
+#[test]
+fn operator_edit_after_first_upgrade_is_preserved() {
+    let temp = TempDir::new().unwrap();
+    let paths = paths(&temp);
     install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+    let dest = paths.claude_dir.join("commands/address.md");
+    fs::write(&dest, "previous shipped version").unwrap();
+    let upgrade = install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+    fs::write(&dest, "operator edit").unwrap();
+    let edit = install_all(&paths, Some(SkillLayout::Core), false).unwrap();
     assert_eq!(
-        backup_count(&paths.claude_dir.join("commands"), "address.md"),
-        1
-    );
-
-    // Simulate the next loom release shipping a different `address.md`: the
-    // destination must differ from the ASSET on the next install, not merely
-    // from what a naive test would write, so overwrite `dest` with a third,
-    // distinct string rather than reusing either prior value.
-    fs::write(&dest, "loom's own next-release content, not yet installed").unwrap();
-    let report = install_all(&paths, Some(SkillLayout::Core), false).unwrap();
-
-    assert!(report.backups.is_empty());
-    let commands_dir = paths.claude_dir.join("commands");
-    assert_eq!(
-        backup_count(&commands_dir, "address.md"),
-        1,
-        "a second backup must not have been created"
+        fs::read_to_string(&upgrade.backups[0]).unwrap(),
+        "previous shipped version"
     );
     assert_eq!(
-        fs::read_to_string(the_backup(&commands_dir, "address.md")).unwrap(),
-        "operator's own /address command",
-        "the backup must still hold the operator's original text"
+        fs::read_to_string(&edit.backups[0]).unwrap(),
+        "operator edit"
     );
 }
 

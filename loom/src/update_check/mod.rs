@@ -28,8 +28,8 @@
 //! # Exactly one fetcher
 //!
 //! Two invocations of loom racing this module is the common case, since loom
-//! runs from every hook. `schedule_refresh` publishes a lock file before
-//! spawning so at most one detached fetcher is in flight per stale interval;
+//! runs from every hook. Each worker takes an OS lock and rechecks freshness
+//! before fetching;
 //! a fetch that fails still stamps `last_checked` so a network outage backs
 //! off instead of respawning on every invocation.
 
@@ -38,7 +38,8 @@ mod decide;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
+use fs2::FileExt;
 use semver::Version;
 
 use decide::decide;
@@ -83,116 +84,22 @@ fn read_state(dir: &Path) -> Option<UpdateState> {
     serde_json::from_str(&text).ok()
 }
 
-/// The floor for two different things: (1) how often a fetch may actually
-/// happen, applied to `decide`'s interval — `update.check_interval_hours`
-/// may legitimately be `0` ("check as often as possible"), and without this
-/// floor that would mean "on every process start", i.e. one forked fetcher
-/// plus one unauthenticated GitHub request per loom invocation; and (2) the
-/// minimum lifetime of a held refresh lock, applied to `schedule_refresh`'s
-/// takeover check — otherwise that same `interval = 0` would make every lock
-/// stale the instant it is written, so two racing invocations would each
-/// take over the other's lock and both spawn a fetcher, exactly the
-/// concurrency the lock exists to prevent. So `check_interval_hours = 0`
-/// means "as often as this floor allows", never "on every process start".
+/// The minimum interval between refresh attempts, including failed attempts.
 const MIN_REFRESH_INTERVAL_MINUTES: i64 = 15;
 
-/// Take the refresh lock for `dir`, or report that another invocation
-/// already holds a live one. `true` means the caller should spawn a fetcher
-/// and, eventually, [`release_lock`]. A lock whose owner is dead, or whose
-/// stamp is missing/unreadable/unparseable, is presumed abandoned and taken
-/// over once; a live owner's lock is taken over only past `interval` (floored
-/// at [`MIN_REFRESH_INTERVAL_MINUTES`]); a second race loss after either
-/// backs off.
-///
-/// Residual race: two invocations can both read the same stale, dead-owner
-/// stamp and both take over — an atomic lock publish alone cannot close that
-/// TOCTOU window, since `lock_is_stale` must read-then-decide before either
-/// side publishes. Bounded at one redundant HTTPS GET plus one extra atomic
-/// state write (see [`perform_refresh`]); never corruption.
-fn schedule_refresh(dir: &Path, now: DateTime<Utc>, interval: Duration) -> bool {
-    let _ = std::fs::create_dir_all(dir);
-    let path = lock_path(dir);
-
-    if try_create_lock(&path, now) {
-        return true;
-    }
-
-    let lock_lifetime = interval.max(Duration::minutes(MIN_REFRESH_INTERVAL_MINUTES));
-    if lock_is_stale(&path, now, lock_lifetime) {
-        let _ = std::fs::remove_file(&path);
-        return try_create_lock(&path, now);
-    }
-
-    false
-}
-
-/// Publish the refresh lock at `path`, stamped `"<rfc3339 now> <pid>"` so
-/// staleness can be judged by content and owner liveness, not mtime.
-///
-/// Invariant: **the lock path existing must imply the lock is fully
-/// stamped.** `create_new` then a separate `write_all` publishes the path
-/// before the stamp lands, so a racer that loses `create_new` can read an
-/// empty file in that window, have `parse_lock_stamp` fail, and have
-/// `lock_is_stale` call it abandoned and take over — two winners. Writing the
-/// stamp to a temp file beside `path` and publishing with
-/// [`std::fs::hard_link`] (atomic, fails `AlreadyExists` if held) closes that
-/// window. The temp name adds a per-process counter to the pid so this
-/// module's own multi-threaded tests never collide, and is removed on every
-/// path, success or failure.
-fn try_create_lock(path: &Path, now: DateTime<Utc>) -> bool {
-    let Some(dir) = path.parent() else {
-        return false;
-    };
-    static TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let unique = TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let pid = std::process::id();
-    let temp_path = dir.join(format!(".update-check.lock.{unique}.{pid}.tmp"));
-    let stamp = format!("{} {pid}", now.to_rfc3339());
-    let published =
-        std::fs::write(&temp_path, stamp).is_ok() && std::fs::hard_link(&temp_path, path).is_ok();
-    let _ = std::fs::remove_file(&temp_path);
-    published
-}
-
-/// Parse `"<rfc3339> <pid>"` out of a lock file's contents. `None` for
-/// anything short of both fields parsing cleanly — [`lock_is_stale`] treats
-/// that identically to a corrupt lock (stale), never as "someone is on it,
-/// forever".
-fn parse_lock_stamp(text: &str) -> Option<(DateTime<Utc>, u32)> {
-    let mut parts = text.trim().splitn(2, ' ');
-    let stamp = DateTime::parse_from_rfc3339(parts.next()?).ok()?;
-    let pid: u32 = parts.next()?.trim().parse().ok()?;
-    Some((stamp.with_timezone(&Utc), pid))
-}
-
-/// Whether the lock at `path` should be treated as abandoned, per the policy
-/// on [`schedule_refresh`]'s doc: missing means the owner completed cleanly
-/// (not stale); an unreadable or unparseable stamp is stale (corrupt must not
-/// block forever); a dead owner is stale at any age; a live owner is stale
-/// only past `interval`, the ceiling for a hung fetcher.
-fn lock_is_stale(path: &Path, now: DateTime<Utc>, interval: Duration) -> bool {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        // The previous owner released the lock; there is nothing to take
-        // over, and reporting "stale" here is exactly the bug that let a
-        // second invocation spawn a fetcher milliseconds after a completed
-        // one.
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return false,
-        Err(_) => return true,
-    };
-    let Some((stamp, pid)) = parse_lock_stamp(&text) else {
-        return true;
-    };
-    if !crate::process::is_process_alive(pid) {
-        return true;
-    }
-    now - stamp >= interval
-}
-
-/// Release the refresh lock. Errors ignored — a missing lock is not this
-/// caller's problem.
-fn release_lock(dir: &Path) {
-    let _ = std::fs::remove_file(lock_path(dir));
+/// The worker holds this advisory lock until it exits. Never unlink the file:
+/// another worker could otherwise acquire a lock on a different inode.
+fn acquire_refresh_lock(dir: &Path) -> Option<std::fs::File> {
+    std::fs::create_dir_all(dir).ok()?;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(lock_path(dir))
+        .ok()?;
+    FileExt::try_lock_exclusive(&file).ok()?;
+    Some(file)
 }
 
 /// Hidden argv token for the detached refresh child. Not a clap subcommand —
@@ -258,7 +165,7 @@ fn fetch_latest_version() -> anyhow::Result<Version> {
 
 /// The detached child's worker, factored over an injected clock and fetch so
 /// it is testable without network access or a real spawn. A failed fetch
-/// still stamps `last_checked`: the exclusive lock in [`schedule_refresh`]
+/// still stamps `last_checked`: the worker-held lock
 /// stops two fetchers running at once, but if a failed attempt left
 /// `last_checked` untouched, every subsequent loom invocation — loom runs
 /// from every hook — would spawn another fetcher for as long as the network
@@ -278,22 +185,32 @@ where
     if let Ok(text) = serde_json::to_string(&state) {
         // Outside a held directory lock, which `atomic_write_locked`'s own
         // doc flags as reintroducing lost-update/torn-read races — safe here
-        // because writers are serialized by the exclusive refresh lock
-        // (modulo `schedule_refresh`'s residual race), and readers use a
-        // plain `read_to_string` against a path this helper only ever
+        // because writers are serialized by the worker-held lock, and readers
+        // use a plain `read_to_string` against a path this helper only ever
         // `rename`s into place, so the worst case is a redundant whole-file
         // write, never a torn read.
         let _ = crate::fs::locking::atomic_write_locked(&state_path(dir), &text);
     }
-
-    release_lock(dir);
 }
 
 /// Entry point for the detached child. Fetches, rewrites the state file,
 /// releases the lock, and exits. Never prints — its stdio is `/dev/null`.
 pub fn run_refresh() {
     let Some(dir) = resolve_dir() else { return };
-    perform_refresh(&dir, Utc::now(), fetch_latest_version);
+    let Some(_lock) = acquire_refresh_lock(&dir) else {
+        return;
+    };
+    let now = Utc::now();
+    let config = crate::user_config::UserConfig::load();
+    if config.update_check()
+        && decide::refresh_due(
+            read_state(&dir).as_ref(),
+            config.update_check_interval_hours(),
+            now,
+        )
+    {
+        perform_refresh(&dir, now, fetch_latest_version);
+    }
 }
 
 /// Entry point for every ordinary foreground invocation: reads the state
@@ -323,9 +240,18 @@ pub fn notify_and_maybe_refresh() {
     }
 
     if action.refresh {
-        let interval = Duration::hours(i64::from(config.update_check_interval_hours()));
-        if schedule_refresh(&dir, now, interval) && spawn_refresh(&dir).is_err() {
-            release_lock(&dir);
+        // Avoid spawning while a worker is active. The worker must reacquire
+        // the lock and recheck freshness because another launcher can race us.
+        if let Some(lock) = acquire_refresh_lock(&dir) {
+            let due = decide::refresh_due(
+                read_state(&dir).as_ref(),
+                config.update_check_interval_hours(),
+                Utc::now(),
+            );
+            drop(lock);
+            if due {
+                let _ = spawn_refresh(&dir);
+            }
         }
     }
 }

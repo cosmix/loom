@@ -127,4 +127,24 @@ else
 	loom_debug "subagent-start: skipping - jq -n failed for agent $AGENT_ID"
 fi
 
+# The exact reviewer invocation gets a worktree fingerprint before its first
+# turn. A missing snapshot makes the later harvest fail closed; it never
+# substitutes the tree seen at SubagentStop for the tree at review start.
+if [[ "$AGENT_TYPE" == "loom-code-reviewer" && -n "$TRANSCRIPT_PATH" &&
+	-n "$START_JSON" ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null; then
+	REVIEW_INPUT=$(jq -nc --arg stage_id "$LOOM_STAGE_ID" \
+		--arg session_id "$PARENT_SESSION_ID" --arg agent_id "$AGENT_ID" \
+		--arg transcript_path "$TRANSCRIPT_PATH" \
+		'{stage_id:$stage_id,session_id:$session_id,agent_id:$agent_id,
+		  transcript_path:$transcript_path}' 2>/dev/null || true)
+	if [[ -n "$REVIEW_INPUT" ]]; then
+		REVIEW_STATUS=0
+		REVIEW_OUTPUT=$(printf '%s' "$REVIEW_INPUT" | LOOM_HOOK_CONTEXT=1 \
+			loom_run_bounded 10 "${LOOM_BIN:-loom}" hook review-start 2>&1) || REVIEW_STATUS=$?
+		if ((REVIEW_STATUS != 0)); then
+			loom_debug "subagent-start: review start capture failed (exit $REVIEW_STATUS): $REVIEW_OUTPUT"
+		fi
+	fi
+fi
+
 exit 0

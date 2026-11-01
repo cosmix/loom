@@ -106,7 +106,7 @@ fn workspace_repair_leaves_home_and_state_fixes_to_an_explicit_repair() {
     let root = tempfile::tempdir().unwrap();
     let issues = vec![
         DetectedIssue {
-            action: RepairAction::OldSkill("rust".into()),
+            action: RepairAction::OldSkill(root.path().join(".claude/skills/rust")),
             severity: Severity::Warning,
             description: "Old unprefixed skill 'rust' found (superseded by 'loom-rust')"
                 .to_string(),

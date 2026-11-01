@@ -187,7 +187,7 @@ CI (`.github/workflows/ci.yml`) runs when a push to `main` or a pull request tou
 
 ### Releases
 
-Maintainers cut a release by pushing a `v*.*.*` tag. `.github/workflows/release.yml` builds the Linux x86_64 and macOS ARM64 binaries, runs tests and flake checks, verifies `loom -v` against the tag without its leading `v`, signs each binary, generates `SHA256SUMS.txt`, and publishes the release. Do not sign or upload assets by hand.
+Maintainers cut a release by pushing a `v*.*.*` tag. `.github/workflows/release.yml` builds the Linux x86_64 and macOS ARM64 binaries, runs tests, verifies `loom -v` against the tag without its leading `v`, signs each binary, generates `SHA256SUMS.txt`, and publishes the release. Main CI runs flake checks. Do not sign or upload assets by hand.
 
 ```bash
 git tag -a vX.Y.Z -m "loom X.Y.Z"
@@ -198,7 +198,7 @@ A release that changes the session capsule (`loom/src/orchestrator/terminal/nati
 
 `loom/Cargo.toml`'s version is a placeholder. `loom/build.rs` derives the binary version from the tag, using `loom/src/version/derive.rs`; never bump the manifest version. To exercise build, signing, and signature verification without publishing, dispatch the Release workflow with `dry_run: true` (or `gh workflow run release.yml -f dry_run=true`). Release creation requires a tag ref.
 
-Published assets are `loom-linux-x86_64` for `x86_64-unknown-linux-gnu` and `loom-darwin-arm64` for `aarch64-apple-darwin`; each has a `.minisig`, and `SHA256SUMS.txt` covers them both. Adding a platform requires matching changes to the release workflow's build matrix and `files:` list, `install.sh`, and `RELEASE_ASSETS` in `loom/src/commands/self_update/mod.rs`. For an unpublished platform, `loom update` reports the unsupported target triple.
+Published assets are `loom-linux-x86_64` for `x86_64-unknown-linux-gnu` and `loom-darwin-arm64` for `aarch64-apple-darwin`; each has a `.minisig`, and `SHA256SUMS.txt` covers them both. Adding a platform requires matching changes to the release workflow's build matrix and `files:` list and the canonical release contract in `install.sh`. For an unpublished platform, `loom update` reports the unsupported target triple.
 
 #### Signing and Key Rotation
 
@@ -208,7 +208,7 @@ Binaries use [minisign](https://jedisct1.github.io/minisign/) with the `MINISIGN
 minisign -G -W -p loom.pub -s loom.key
 ```
 
-The matching public key is `MINISIGN_PUBLIC_KEY` in `loom/src/commands/self_update/signature.rs`. The workflow reads that source, verifies every signature against it, and includes it in the release notes; a secret from another keypair fails before publishing.
+The matching public key is `MINISIGN_PUBLIC_KEY` in `install.sh`. The workflow reads that source and verifies every signature against it; release notes link to installation guidance. A secret from another keypair fails before publishing.
 
 The public key is compiled into released binaries, so rotating it prevents existing installations from accepting updates until users reinstall. Rotate only when the private key is lost or compromised, and change the repository secret and `MINISIGN_PUBLIC_KEY` together.
 
@@ -220,7 +220,7 @@ Anyone can verify a release with minisign:
 
 curl -LO https://github.com/cosmix/loom/releases/download/vX.Y.Z/loom-linux-x86_64
 curl -LO https://github.com/cosmix/loom/releases/download/vX.Y.Z/loom-linux-x86_64.minisig
-minisign -Vm loom-linux-x86_64 -P <public-key-from-release-notes>
+minisign -Vm loom-linux-x86_64 -P <public-key-from-install.sh>
 ```
 
 `loom update` performs the same check against the public key embedded in the running binary.

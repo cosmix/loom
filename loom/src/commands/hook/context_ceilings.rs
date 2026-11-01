@@ -14,7 +14,8 @@ use crate::validation::validate_id;
 
 /// Print `<main>:<subagent>` or nothing when this is not a live Loom session.
 ///
-/// A malformed config resolves to both built-in defaults, matching the daemon.
+/// Malformed workspace context falls back to the user main ceiling, then its
+/// built-in default; the subagent ceiling falls back to its built-in default.
 /// A missing, malformed, or mismatched stage record resolves the main ceiling
 /// to zero (disabled): a hook must not judge a session against a ceiling whose
 /// stage-specific tier it could not verify. The independent subagent ceiling

@@ -119,6 +119,7 @@ run_test "user-prompt-context: no LOOM_WORK_DIR exits silently" "$SCRIPT_DIR/use
 run_test "user-prompt-context: malformed JSON fails open" "$SCRIPT_DIR/user-prompt-context-malformed-json.sh"
 run_test "user-prompt-context: output is a single JSON object" "$SCRIPT_DIR/user-prompt-context-single-json-line.sh"
 run_test "user-prompt-context: oversized delegate output is suppressed" "$SCRIPT_DIR/user-prompt-context-oversized-output.sh"
+run_test "retrieval and edit recording: bounded fallback and failed output suppression" "$SCRIPT_DIR/retrieval-wrapper-bounds.sh"
 run_test "post-tool-use: records Write/Edit path via loom context record-edit" "$SCRIPT_DIR/post-tool-use-write-edit-record.sh"
 run_test "post-tool-use: exits 0 when loom is absent from PATH" "$SCRIPT_DIR/post-tool-use-no-loom-binary.sh"
 run_test "post-tool-use: symlinked heartbeat skips only the heartbeat write" "$SCRIPT_DIR/post-tool-use-symlinked-heartbeat.sh"

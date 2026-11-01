@@ -97,14 +97,9 @@ fn settings_local_has_stale_knowledge_deny(path: &Path) -> bool {
 /// `permissions`, a `sandbox` block, plugin keys, anything else) is left
 /// exactly as it was.
 ///
-/// A worktree's settings file is the sandbox of a possibly LIVE stage
-/// session, and it legitimately differs from the default: a codex-licensed
-/// stage carries `~/.codex` write grants and the codex domains, and any
-/// stage carries its plan's own `allow_write` entries. Regenerating it would
-/// silently narrow a running stage's sandbox mid-session — a bigger hazard
-/// than the stale deny being healed, and one the stage would not recover
-/// from until its next respawn. So only the offending entries are stripped,
-/// in every file.
+/// Sessions launch from capsules, but worktree settings may contain user or
+/// stage-specific permissions. Regenerating them could discard those settings,
+/// so only the offending entries are stripped.
 fn strip_stale_knowledge_denies(path: &Path) -> Result<()> {
     let content =
         fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;

@@ -105,17 +105,17 @@ fn reconcile_graph_leaves_a_finished_marker_after_a_successful_run() {
     let work_dir = WorkDir::new(root).unwrap();
     let store = ContextStore::open(&work_dir).unwrap();
     let lock_path = reconcile_lock_path(&store);
-    // A pre-existing in-progress claim, as `spawn_if_needed` would have left
-    // before spawning this same process.
-    seed(&lock_path, unix_now(), std::process::id(), 0, false);
 
     enter_checkout(root);
+    std::env::remove_var("LOOM_RECONCILE_CLAIM");
     reconcile_graph(false).unwrap();
     leave();
 
     let marker = read_lock(&lock_path)
         .expect("reconcile_graph must leave a marker behind, never unlink the lock");
     assert_eq!(marker.pid, 0, "a completed run's marker must carry pid 0");
+    assert_eq!(marker.failures, 0, "the successful pass resets failures");
+    assert_ne!(marker.claim, 0, "the direct run must own its lease");
 }
 
 #[test]
@@ -380,7 +380,7 @@ fn spawn_is_allowed_when_loom_work_dir_was_explicitly_set() {
 fn spawn_detached_is_suppressed_in_a_test_build() {
     let before = SUPPRESSED_SPAWNS.load(Ordering::SeqCst);
 
-    let result = spawn_detached(Path::new("/nonexistent-reconcile-graph-test-target"));
+    let result = spawn_detached(Path::new("/nonexistent-reconcile-graph-test-target"), 1);
 
     assert!(
         result.is_ok(),

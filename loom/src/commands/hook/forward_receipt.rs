@@ -282,8 +282,8 @@ fn encode_new_observations(
     Ok(append)
 }
 
-/// Whether two observations record the same fact: every field but
-/// `observed_at`, so a hook retry at a later instant adds nothing. `backend`
+/// Whether two observations record the same fact, ignoring `observed_at`,
+/// model and effort. Identity is represented by `receipt_id`. `backend`
 /// and `backend_id` are the fields `ForwardReceipt::apply` reads as conflicts,
 /// so observations differing only there are both kept and fold to Unknown.
 fn same_fact(old: &ForwardObservation, new: &ForwardObservation) -> bool {

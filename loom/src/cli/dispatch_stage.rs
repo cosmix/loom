@@ -1,11 +1,6 @@
 //! `loom stage <subcommand>` dispatch.
 //!
-//! Split out of `dispatch.rs` because the stage command group — completion,
-//! admin-proof minting, the transition lifecycle, and the
-//! criteria-adjudication lifecycle — is loom's largest dispatch surface, and
-//! it was crowding every other command group toward `dispatch.rs`'s own line
-//! ceiling. Giving the group its own file gives it a seam to grow into
-//! without pushing the top-level match over the limit again.
+//! Routes stage completion, admin proof, transitions, and adjudication.
 
 use anyhow::Result;
 
@@ -16,11 +11,6 @@ use crate::commands::stage;
 use crate::commands::stage::commit;
 
 /// `loom stage {block,reset,waiting,resume,hold,release,skip}` dispatch.
-///
-/// Split out of `dispatch_stage`, which — like `dispatch_knowledge` before
-/// it — sits at its own line ceiling: this state-transition group is a
-/// coherent seam a new stage subcommand can grow into without pushing the
-/// parent match over the limit again.
 fn dispatch_stage_transitions(command: StageCommands) -> Result<()> {
     match command {
         StageCommands::Block { stage_id, reason } => stage::block(stage_id, reason),
@@ -39,13 +29,6 @@ fn dispatch_stage_transitions(command: StageCommands) -> Result<()> {
 }
 
 /// `loom stage {dispute-criteria,adjudicate,amend}` dispatch.
-///
-/// Split out of `dispatch_stage` for the same reason as
-/// `dispatch_stage_transitions`: these three commands are the
-/// criteria-adjudication lifecycle — dispute a criterion, adjudicate the
-/// dispute, then amend the stage with the verdict — and grouping them gives
-/// that lifecycle a seam to grow into without pushing the parent match over
-/// its line ceiling again.
 fn dispatch_stage_criteria(command: StageCommands) -> Result<()> {
     match command {
         StageCommands::DisputeCriteria(args) => match CriteriaDispute::try_from(args)? {
@@ -88,9 +71,7 @@ fn dispatch_stage_criteria(command: StageCommands) -> Result<()> {
     }
 }
 
-/// `loom stage complete` dispatch, broken out of `dispatch_stage` so its
-/// seven-field destructure doesn't grow the parent match past its line
-/// ceiling.
+/// Resolve the completion proof before completing the stage.
 fn dispatch_complete(command: StageCommands) -> Result<()> {
     let StageCommands::Complete {
         stage_id,
@@ -122,9 +103,6 @@ fn join_commit_message(parts: &[String]) -> String {
 }
 
 /// `loom stage <subcommand>` dispatch.
-///
-/// Extracted for the same reason as `dispatch_knowledge`: the stage group is
-/// the largest arm in the top-level match, which sits at its line ceiling.
 pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
     match command {
         cmd @ StageCommands::Complete { .. } => dispatch_complete(cmd),

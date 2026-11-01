@@ -120,6 +120,11 @@ fn install_guard(dir: &Path) -> PathBuf {
     )
     .unwrap();
     fs::write(dir.join("_bounded.sh"), HOOK_BOUNDED).unwrap();
+    fs::write(
+        dir.join("_git-command.sh"),
+        crate::fs::permissions::constants::HOOK_GIT_COMMAND,
+    )
+    .unwrap();
     fs::write(dir.join("_lifecycle.sh"), HOOK_LIFECYCLE).unwrap();
     fs::write(dir.join("_codex_forward.sh"), HOOK_CODEX_FORWARD_COMMON).unwrap();
     let script = dir.join("codex-forward-guard.sh");

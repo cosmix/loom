@@ -28,7 +28,16 @@ loom_heartbeat_lock_epoch() {
     [[ "$epoch" =~ ^[0-9]+$ ]] && printf '%s\n' "$epoch"
 }
 
-loom_heartbeat_lock_recover_if_abandoned() {
+loom_heartbeat_lock_identity() {
+    local identity=""
+    identity=$(stat -f '%d:%i' "$1" 2>/dev/null || true)
+    if [[ ! "$identity" =~ ^[0-9]+:[0-9]+$ ]]; then
+        identity=$(stat -c '%d:%i' "$1" 2>/dev/null || true)
+    fi
+    [[ "$identity" =~ ^[0-9]+:[0-9]+$ ]] && printf '%s\n' "$identity"
+}
+
+loom_heartbeat_lock_is_abandoned() {
     local lock_dir="$1" stale_after="${LOOM_HEARTBEAT_LOCK_STALE_SECONDS:-30}"
     local owner_file="${lock_dir}/owner" now="" created="" pid=""
     [[ "$stale_after" =~ ^[0-9]+$ ]] || stale_after=30
@@ -54,13 +63,48 @@ loom_heartbeat_lock_recover_if_abandoned() {
         return 1
     fi
 
-    # No compliant writer can replace this directory while it exists. Remove
-    # only its known metadata then rmdir; a contender can acquire only after
-    # rmdir, and the outer acquisition loop will contend normally again.
-    if [[ -e "$owner_file" ]]; then
-        rm -f "$owner_file" 2>/dev/null || return 1
+    return 0
+}
+
+loom_heartbeat_lock_recover_if_abandoned() {
+    local lock_dir="$1" claim_file="" reclaim_file="${1}/reclaimer"
+    local retirement="" retired="" generation=""
+    generation=$(loom_heartbeat_lock_identity "$lock_dir")
+    [[ -n "$generation" ]] || return 1
+    loom_heartbeat_lock_is_abandoned "$lock_dir" || return 1
+    claim_file=$(mktemp "${lock_dir}.reclaim.XXXXXX" 2>/dev/null) || return 1
+    if ! ln "$claim_file" "$reclaim_file" 2>/dev/null; then
+        # A killed reclaimer can leave this claim behind. Do not steal it by
+        # pathname: two cleaners could otherwise remove a live new claim.
+        rm -f "$claim_file" 2>/dev/null || true
+        return 1
     fi
-    rmdir "$lock_dir" 2>/dev/null || return 1
+    rm -f "$claim_file" 2>/dev/null || true
+    # A second reclaimer can have inspected this generation already. Its claim
+    # will fail here; if it claims a successor instead, this check sees that
+    # successor's live owner. The marker also tells a paused mkdir winner not
+    # to enter while an empty old directory is being retired.
+    # Adding the claim updates an empty directory's mtime, so retain the
+    # original age decision for that case. A published owner is checked again.
+    if [[ "$(loom_heartbeat_lock_identity "$lock_dir")" != "$generation" ]] ||
+        { [[ -e "$lock_dir/owner" || -L "$lock_dir/owner" ]] &&
+            ! loom_heartbeat_lock_is_abandoned "$lock_dir"; }; then
+        rm -f "$reclaim_file" 2>/dev/null || true
+        rmdir "$lock_dir" 2>/dev/null || true
+        return 1
+    fi
+    retirement=$(mktemp -d "${lock_dir}.retired.XXXXXX" 2>/dev/null) || {
+        rm -f "$reclaim_file" 2>/dev/null || true
+        return 1
+    }
+    retired="$retirement/lock"
+    if ! mv "$lock_dir" "$retired" 2>/dev/null; then
+        rm -f "$reclaim_file" 2>/dev/null || true
+        rmdir "$retirement" 2>/dev/null || true
+        return 1
+    fi
+    rm -f "$retired/owner" "$retired/reclaimer" 2>/dev/null || true
+    rmdir "$retired" "$retirement" 2>/dev/null || true
     loom_debug "heartbeat: recovered abandoned lock $lock_dir"
     return 0
 }
@@ -95,6 +139,12 @@ loom_heartbeat_lock_acquire() {
         return 1
     fi
     rm -f "$claim_file" 2>/dev/null || true
+    if [[ -e "${lock_dir}/reclaimer" ]]; then
+        # A stale empty directory can be claimed by a creator paused after
+        # mkdir. The reclaimer owns its generation until the rename completes.
+        loom_heartbeat_lock_release "$lock_dir"
+        return 1
+    fi
     return 0
 }
 
