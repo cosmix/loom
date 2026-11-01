@@ -2,18 +2,18 @@
 
 use super::super::protocol::Response;
 use super::super::wire::encode_response_frame;
-use super::client::Subscriber;
+use super::client::{write_bounded_frame, Subscriber};
 use super::core::DaemonServer;
 use super::status::{collect_completion_summary, collect_status};
 use anyhow::{Context, Result};
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::os::unix::fs::MetadataExt;
 #[cfg(test)]
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, TryLockError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -265,9 +265,18 @@ pub(super) fn broadcast_to_subscribers(
     response: &Response,
     oversized_logged: &mut bool,
 ) {
+    broadcast_to_subscribers_with_hook(subscribers, response, oversized_logged, &mut || {});
+}
+
+pub(super) fn broadcast_to_subscribers_with_hook(
+    subscribers: &Arc<Mutex<Vec<Subscriber>>>,
+    response: &Response,
+    oversized_logged: &mut bool,
+    on_writer_contention: &mut impl FnMut(),
+) {
     let original = lock_or_recover(subscribers).clone();
     let mut live = original.clone();
-    broadcast_retaining_live(&mut live, response, oversized_logged);
+    broadcast_retaining_live_with_hook(&mut live, response, oversized_logged, on_writer_contention);
     if live.len() == original.len() {
         return;
     }
@@ -292,10 +301,20 @@ pub(super) fn broadcast_to_subscribers(
 /// skipped tick otherwise leaves the header reporting a healthy daemon above
 /// rows that have stopped moving. The TUI routes `Response::Error` into the
 /// footer. The notice is short and bounded by construction.
+#[cfg(test)]
 fn broadcast_retaining_live(
     subscribers: &mut Vec<Subscriber>,
     response: &Response,
     oversized_logged: &mut bool,
+) {
+    broadcast_retaining_live_with_hook(subscribers, response, oversized_logged, &mut || {});
+}
+
+fn broadcast_retaining_live_with_hook(
+    subscribers: &mut Vec<Subscriber>,
+    response: &Response,
+    oversized_logged: &mut bool,
+    on_writer_contention: &mut impl FnMut(),
 ) {
     let frame = match encode_response_frame(response) {
         Ok(frame) => {
@@ -313,10 +332,17 @@ fn broadcast_retaining_live(
         }
     };
     subscribers.retain(|subscriber| {
-        let mut writer = subscriber
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        writer.write_all(&frame).is_ok()
+        let mut writer = match subscriber.try_lock() {
+            Ok(writer) => writer,
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(TryLockError::WouldBlock) => {
+                on_writer_contention();
+                subscriber
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+            }
+        };
+        write_bounded_frame(&mut writer, &frame).is_ok()
     });
 }
 

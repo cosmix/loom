@@ -7,36 +7,68 @@ use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+#[derive(Debug)]
 pub(super) struct DeadlineStream {
     stream: UnixStream,
     deadline: Instant,
 }
 
 impl DeadlineStream {
+    #[cfg(test)]
+    pub(super) fn connected_for_test(stream: UnixStream, timeout: Duration) -> io::Result<Self> {
+        stream.set_nonblocking(true)?;
+        Ok(Self {
+            stream,
+            deadline: Instant::now() + timeout,
+        })
+    }
+
     pub(super) fn connect(path: &Path, timeout: Duration) -> io::Result<Self> {
         let deadline = Instant::now() + timeout;
         let address = socket_address(path)?;
-        let fd = nonblocking_socket()?;
-        // SAFETY: address is fully initialized and the descriptor is an AF_UNIX socket.
-        let connected = unsafe {
+        loop {
+            let stream = UnixStream::from(nonblocking_socket()?);
+            let transport = Self { stream, deadline };
+            transport.remaining()?;
+            if transport.connect_once(&address)? {
+                return Ok(transport);
+            }
+            // A failed connect leaves the descriptor's state unspecified.
+            // Drop it before the next attempt, retaining the original deadline.
+            let pause = transport.remaining()?.min(Duration::from_millis(1));
+            drop(transport);
+            std::thread::sleep(pause);
+        }
+    }
+
+    fn connect_once(&self, address: &libc::sockaddr_un) -> io::Result<bool> {
+        // SAFETY: address is initialized and this descriptor is an AF_UNIX socket.
+        let result = unsafe {
             libc::connect(
-                fd.as_raw_fd(),
-                (&raw const address).cast::<libc::sockaddr>(),
+                self.stream.as_raw_fd(),
+                (&raw const *address).cast::<libc::sockaddr>(),
                 std::mem::size_of::<libc::sockaddr_un>() as libc::socklen_t,
             )
         };
-        let stream = UnixStream::from(fd);
-        let transport = Self { stream, deadline };
-        if connected == 0 {
-            return Ok(transport);
+        if result == 0 {
+            return Ok(true);
         }
         let error = io::Error::last_os_error();
-        if !matches!(error.raw_os_error(), Some(libc::EINPROGRESS | libc::EAGAIN)) {
-            return Err(error);
+        match error.raw_os_error() {
+            Some(libc::EISCONN) => Ok(true),
+            Some(libc::EINTR) => Ok(false),
+            Some(libc::EAGAIN) => Ok(false),
+            Some(libc::EINPROGRESS | libc::EALREADY) => {
+                self.wait(libc::POLLOUT)?;
+                self.finish_connect()?;
+                match self.stream.peer_addr() {
+                    Ok(_) => Ok(true),
+                    Err(error) if error.kind() == io::ErrorKind::NotConnected => Ok(false),
+                    Err(error) => Err(error),
+                }
+            }
+            _ => Err(error),
         }
-        transport.wait(libc::POLLOUT)?;
-        transport.finish_connect()?;
-        Ok(transport)
     }
 
     fn finish_connect(&self) -> io::Result<()> {
@@ -166,6 +198,8 @@ fn socket_address(path: &Path) -> io::Result<libc::sockaddr_un> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
+    use std::os::unix::net::UnixListener;
     use std::thread;
 
     #[test]
@@ -201,5 +235,37 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
         assert!(started.elapsed() < Duration::from_secs(1));
         writer.join().unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn saturated_accept_backlog_observes_connect_deadline() {
+        let temp = tempfile::TempDir::new().unwrap();
+        if !crate::process::sandbox_probe::unix_socket_bindable(temp.path()) {
+            return;
+        }
+        let path = temp.path().join("daemon.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        // The exact number of pending sockets admitted with backlog zero is
+        // kernel-dependent. Keep them open until one connect reaches its bound.
+        assert_eq!(
+            // SAFETY: listener owns a valid socket descriptor for the duration of this call.
+            unsafe { libc::listen(listener.as_raw_fd(), 0) },
+            0
+        );
+        let mut pending = Vec::new();
+        for _ in 0..32 {
+            let started = Instant::now();
+            match DeadlineStream::connect(&path, Duration::from_millis(50)) {
+                Ok(stream) => pending.push(stream),
+                Err(error) if error.kind() == io::ErrorKind::TimedOut => {
+                    assert!(!pending.is_empty());
+                    assert!(started.elapsed() < Duration::from_secs(1));
+                    return;
+                }
+                Err(error) => panic!("unexpected connect failure: {error}"),
+            }
+        }
+        panic!("accept backlog did not saturate within 32 pending connections");
     }
 }

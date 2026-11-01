@@ -1,6 +1,6 @@
 use super::*;
 use crate::commands::stage::admin_proof::{mint_admin_proof, AdminProofRequest};
-use crate::daemon::protocol::read_message;
+use crate::daemon::protocol::{read_message, write_message};
 use crate::daemon::server::pool::WorkerPool;
 use crate::daemon::server::tokens::{admin_token_path, USER_TOKEN_FILE};
 use std::io::Write;
@@ -127,4 +127,48 @@ fn stop_cancels_queued_clients_and_bounds_active_reads() {
     assert!(start.elapsed() < Duration::from_secs(7));
     assert!(read_message::<Response, _>(&mut queued).is_err());
     assert!(read_message::<Response, _>(&mut partial).is_err());
+}
+
+#[test]
+fn a_subscribed_client_handler_exits_after_shutdown() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join(USER_TOKEN_FILE), "user-secret").unwrap();
+    let (server, mut client) = UnixStream::pair().unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(7)))
+        .unwrap();
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let status = Arc::new(Mutex::new(Vec::new()));
+    let handler = {
+        let shutdown = Arc::clone(&shutdown);
+        let status = Arc::clone(&status);
+        let dir = dir.path().to_path_buf();
+        thread::spawn(move || {
+            handle_client_connection(
+                server,
+                shutdown,
+                status,
+                Arc::new(Mutex::new(Vec::new())),
+                &dir,
+                ByteBudget::new(2 * crate::daemon::wire::MAX_REQUEST_BYTES),
+            )
+        })
+    };
+    write_message(
+        &mut client,
+        &Request::SubscribeStatus {
+            auth_token: "user-secret".into(),
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        read_message::<Response, _>(&mut client),
+        Ok(Response::Ok)
+    ));
+    assert_eq!(status.lock().unwrap().len(), 1);
+
+    let started = Instant::now();
+    shutdown.store(true, Ordering::SeqCst);
+    handler.join().unwrap().unwrap();
+    assert!(started.elapsed() < Duration::from_secs(6));
 }

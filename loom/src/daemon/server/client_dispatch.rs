@@ -18,13 +18,20 @@ impl ClientDispatch<'_> {
             }
             Request::SubscribeLogs { .. } => subscribe(writer, self.log_subscribers, "Log")?,
             Request::Unsubscribe { .. } => {
+                let mut stream = writer
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 for subscribers in [self.status_subscribers, self.log_subscribers] {
                     subscribers
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner())
                         .retain(|existing| !Arc::ptr_eq(existing, writer));
                 }
-                send_response(writer, &Response::Ok)?;
+                write_bounded_response(&mut stream, &Response::Ok)?;
+                // A broadcaster may already hold a snapshot of either list.
+                // Closing the write half makes that stale snapshot fail after
+                // the acknowledgement, so no event can follow Unsubscribe.
+                let _ = stream.shutdown(std::net::Shutdown::Write);
                 return Ok(false);
             }
             Request::Stop { .. } => {

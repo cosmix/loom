@@ -1,5 +1,5 @@
 use super::*;
-use crate::daemon::protocol::read_message;
+use crate::daemon::protocol::{read_message, write_message};
 use crate::daemon::server::broadcast::broadcast_to_subscribers;
 use crate::daemon::server::tokens::USER_TOKEN_FILE;
 use std::io::Read;
@@ -105,4 +105,37 @@ fn unsubscribe_removes_only_its_connection_from_both_streams() {
     drop(second);
     first_handler.join().unwrap().unwrap();
     second_handler.join().unwrap().unwrap();
+}
+
+#[test]
+fn stale_broadcast_snapshots_cannot_follow_unsubscribe_acknowledgement() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join(USER_TOKEN_FILE), "user-secret").unwrap();
+    let status = Arc::new(Mutex::new(Vec::new()));
+    let logs = Arc::new(Mutex::new(Vec::new()));
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let (mut client, handler) = spawn_client(dir.path(), &status, &logs, &shutdown);
+    subscribe_both(&mut client);
+    let stale_status = Arc::new(Mutex::new(status.lock().unwrap().clone()));
+    let stale_logs = Arc::new(Mutex::new(logs.lock().unwrap().clone()));
+
+    send_expect_ok(
+        &mut client,
+        Request::Unsubscribe {
+            auth_token: "user-secret".into(),
+        },
+    );
+    broadcast_to_subscribers(&stale_status, &Response::Pong, &mut false);
+    broadcast_to_subscribers(
+        &stale_logs,
+        &Response::LogLine {
+            line: "late".into(),
+        },
+        &mut false,
+    );
+
+    assert!(stale_status.lock().unwrap().is_empty());
+    assert!(stale_logs.lock().unwrap().is_empty());
+    assert_eq!(client.read(&mut [0u8; 1]).unwrap(), 0);
+    handler.join().unwrap().unwrap();
 }

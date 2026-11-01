@@ -177,6 +177,52 @@ fn a_live_listener_is_answered() {
 }
 
 #[test]
+fn a_live_refusal_is_an_authoritative_answer() {
+    let temp = TempDir::new().unwrap();
+    if !crate::process::sandbox_probe::unix_socket_bindable(temp.path()) {
+        return;
+    }
+    let listener = std::os::unix::net::UnixListener::bind(socket_path(temp.path())).unwrap();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let _: Request = read_message(&mut stream).unwrap();
+        write_message(&mut stream, &Response::AuthenticationFailed).unwrap();
+    });
+
+    assert!(matches!(
+        try_send_request_with_timeout(temp.path(), &ping(), Duration::from_secs(1)).unwrap(),
+        DaemonReach::Answered(Response::AuthenticationFailed)
+    ));
+    handle.join().unwrap();
+}
+
+#[test]
+fn a_live_peer_that_does_not_answer_is_never_treated_as_absent() {
+    let temp = TempDir::new().unwrap();
+    if !crate::process::sandbox_probe::unix_socket_bindable(temp.path()) {
+        return;
+    }
+    let listener = std::os::unix::net::UnixListener::bind(socket_path(temp.path())).unwrap();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let _: Request = read_message(&mut stream).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+    });
+
+    let started = std::time::Instant::now();
+    let error = match try_send_request_with_timeout(temp.path(), &ping(), Duration::from_millis(40))
+    {
+        Err(error) => error,
+        Ok(_) => panic!("a silent live peer must not be treated as absent or answered"),
+    };
+    assert!(error.chain().any(|cause| cause
+        .downcast_ref::<std::io::Error>()
+        .is_some_and(|error| error.kind() == ErrorKind::TimedOut)));
+    assert!(started.elapsed() < Duration::from_secs(1));
+    handle.join().unwrap();
+}
+
+#[test]
 fn a_work_dir_symlink_past_the_socket_path_limit_still_reaches_the_daemon() {
     let temp = TempDir::new().unwrap();
     if crate::process::sandbox_probe::skip_unless(

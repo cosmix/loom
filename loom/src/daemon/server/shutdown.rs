@@ -34,13 +34,17 @@ impl DaemonServer {
                     DaemonUnavailable.into()
                 }
             })?;
-        write_message(
+        if let Err(error) = write_message(
             &mut stream,
             &Request::Stop {
                 auth_token: operator_proof.to_string(),
             },
-        )
-        .context("Failed to send stop request")?;
+        ) {
+            if is_timeout(&error) {
+                bail!("Daemon stop request timed out; stop execution is uncertain");
+            }
+            return Err(error).context("Failed to send stop request");
+        }
 
         match read_stop_response(&mut stream)? {
             Response::Ok => Ok(()),
@@ -55,7 +59,7 @@ fn read_stop_response(stream: &mut DeadlineStream) -> Result<Response> {
     match read_message(stream) {
         Ok(response) => Ok(response),
         Err(error) if is_timeout(&error) => {
-            bail!("Daemon did not respond within 5 seconds; its state may be hung")
+            bail!("Daemon did not respond within 5 seconds; stop execution is uncertain")
         }
         Err(error) => Err(error).context("Failed to read stop response"),
     }
@@ -70,4 +74,24 @@ fn is_timeout(error: &anyhow::Error) -> bool {
             )
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::net::UnixStream;
+    use std::time::Instant;
+
+    #[test]
+    fn a_silent_stop_peer_reports_uncertain_execution_at_the_deadline() {
+        let (stream, _silent_peer) = UnixStream::pair().unwrap();
+        let mut transport =
+            DeadlineStream::connected_for_test(stream, Duration::from_millis(50)).unwrap();
+
+        let started = Instant::now();
+        let error = read_stop_response(&mut transport).unwrap_err();
+
+        assert!(error.to_string().contains("stop execution is uncertain"));
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
 }
