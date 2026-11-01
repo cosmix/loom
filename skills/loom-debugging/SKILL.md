@@ -119,8 +119,9 @@ Flaky = non-deterministic pass/fail with no code change. Classify the cause, the
 | **Unordered collections** | assertion on set/map/dict iteration order     | sort before asserting; use ordered structures             |
 
 ```bash
-# Reproduce flakiness: loop until it fails, capture the run
-for i in $(seq 1 200); do cargo test flaky_name -- --nocapture 2>&1 | tee /tmp/run || break; done
+# Reproduce flakiness: stop on the first failing run and keep that run's output
+set -o pipefail
+for i in $(seq 1 200); do cargo test flaky_name -- --nocapture 2>&1 | tee "/tmp/flaky-run-$i.log" || break; done
 
 cargo test -- --test-threads=1     # if this fixes it → shared-state/ordering isolation bug
 RUST_LOG=debug cargo test flaky    # expose timing/ordering

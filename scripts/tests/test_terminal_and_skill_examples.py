@@ -1,3 +1,4 @@
+import os
 import pathlib
 import socket
 import subprocess
@@ -72,6 +73,37 @@ fn main() {
             src.write_text(source)
             subprocess.run(["rustc", "--edition=2021", str(src), "-o", str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
+
+    def test_joinset_with_real_tokio_propagates_child_error(self):
+        example = block("skills/loom-concurrency/SKILL.md", "```rust\n// Rust tokio: JoinSet", "\n```")
+        source = """
+use std::error::Error;
+use std::io;
+
+async fn fetch(_: ()) -> io::Result<()> {
+    Err(io::Error::other("child failed"))
+}
+
+async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let urls = [()];
+""" + "\n// Rust tokio: JoinSet" + example + """
+    Ok(())
+}
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    assert_eq!(run().await.unwrap_err().to_string(), "child failed");
+}
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            project = pathlib.Path(tmp) / "joinset_example"
+            subprocess.run(["cargo", "new", "--bin", "--quiet", str(project)], check=True)
+            subprocess.run(["cargo", "add", "tokio@1", "--features", "rt,macros", "--offline"],
+                           cwd=project, check=True)
+            (project / "src/main.rs").write_text(source)
+            env = {**os.environ, "TMPDIR": str(project)}
+            subprocess.run(["cargo", "run", "--offline", "--quiet"],
+                           cwd=project, env=env, check=True)
 
     def test_c_growth_rejects_overflow_before_realloc(self):
         example = block("skills/loom-c/SKILL.md", "```c\n#include <stdint.h>\n#include <stdlib.h>\n\nint *grow", "\n```")
