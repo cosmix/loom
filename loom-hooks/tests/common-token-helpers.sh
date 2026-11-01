@@ -13,6 +13,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # shellcheck source=../_common.sh
 source "$SCRIPT_DIR/../_common.sh"
+source "$SCRIPT_DIR/../_common.sh"
+
+# Spawn policy stays private to the spawn guard.
+if declare -F loom_worker_brief >/dev/null || declare -F loom_reviewer_model_override >/dev/null; then
+    echo "FAIL: spawn policy leaked into common helpers"
+    exit 1
+fi
 
 FAILED=0
 

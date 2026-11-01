@@ -99,6 +99,32 @@ expect_blocked Write "/tmp/claude-424242/project/$SESSION/scratchpad/x.txt"
 expect_blocked Write "$OUTSIDE/new.txt"
 expect_blocked Read "$OUTSIDE/secret"
 
+# The state directory is a real external directory linked into the stage, as
+# in an installed worktree. Reads are allowed, while only handoffs are writable.
+SHARED="$TMP/repo/.loom/work"
+mkdir -p "$WORKTREE/.loom" "$SHARED/stages" "$SHARED/sessions" \
+	"$SHARED/heartbeat" "$SHARED/signals" "$SHARED/handoffs"
+ln -s "$SHARED" "$WORKTREE/.loom/work"
+for path in src/main.rs Cargo.toml tests/integration/test_foo.rs; do
+	expect_allowed Write "$path"
+done
+for path in stages/01-bootstrap.md sessions/session-abc123.md \
+	heartbeat/stage.json signals/session-123.md; do
+	expect_allowed Read ".loom/work/$path"
+	expect_blocked Write ".loom/work/$path"
+done
+expect_allowed Write .loom/work/handoffs/handoff-001.md
+expect_blocked Write ../sibling/file.txt
+expect_blocked Write ../../main-repo/file.txt
+expect_blocked Write "$TMP/repo/.worktrees/other-stage/src/main.rs"
+expect_allowed Write "$WORKTREE/src/main.rs"
+mv "$WORKTREE/.loom/work" "$WORKTREE/.work"
+expect_allowed Read .work/stages/01-bootstrap.md
+expect_blocked Write .work/stages/01-bootstrap.md
+expect_blocked Write .work/sessions/session-abc123.md
+expect_blocked Write .work/heartbeat/stage.json
+expect_allowed Write .work/handoffs/handoff-001.md
+
 # 3. A scratchpad whose components belong to another uid stays blocked: a stat
 # shim reports a foreign owner for every path under the scratchpad.
 REAL_STAT=$(command -v stat)
