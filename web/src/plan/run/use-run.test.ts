@@ -272,6 +272,27 @@ describe("overlapping state fetches", () => {
     expect(store.get(runStateAtom)).toEqual(newer);
   });
 
+  it("applies an overtaken response while no state is known, and keeps it if the newer fails", async () => {
+    const older = { ...initialState(), workspace: "absent", offer: "start" } as const;
+    const first = deferred();
+    const second = deferred();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise),
+    );
+    const store = createStore();
+
+    const olderFetch = fetchRunState(store);
+    const newerFetch = fetchRunState(store);
+    first.resolve(response(older));
+    await olderFetch;
+    expect(store.get(runStateAtom)).toEqual(older);
+
+    second.resolve(new Response("{}", { status: 500 }));
+    expect(await newerFetch).toMatchObject({ ok: false });
+    expect(store.get(runStateAtom)).toEqual(older);
+  });
+
   it("drops a response that a run_state frame overtook", async () => {
     const pending = deferred();
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockReturnValueOnce(pending.promise));

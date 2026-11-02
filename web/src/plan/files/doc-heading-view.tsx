@@ -22,6 +22,7 @@ import { panelCollapsedAtom } from "@/plan/chat/prefs";
 import { usePressureRun } from "@/plan/chat/pressure/use-pressure";
 import { elsewhereSessionAtom } from "@/plan/chat/session-home";
 import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
+import { IsolatedSentence } from "@/plan/concept/sentence-text";
 import { openDiff } from "@/plan/diff/open-diff";
 import { canAuthorAtom } from "@/plan/state/atoms";
 import {
@@ -80,7 +81,8 @@ function documentCrumb(doc: DocView, sections: number | null): HeadingCrumb {
   if (doc.plan !== null) return { label: doc.plan.slug, mono: true };
   const stem = stemOf(doc.path);
   const section = doc.kind === "section" && stem ? sectionLabel(stem, sections) : null;
-  return { label: section ?? doc.title };
+  // The crumb is plain text, so the title's code-span backticks go.
+  return { label: section ?? doc.title.replaceAll("`", "") };
 }
 
 function summaryTarget(doc: DocView): string | null {
@@ -264,7 +266,7 @@ export function FileDocHeading({ doc }: { doc: DocView }): JSX.Element {
     <DocHeading
       breadcrumb={breadcrumb}
       kind={docKind(doc.kind)}
-      title={doc.title}
+      title={<IsolatedSentence text={doc.title} />}
       path={doc.path}
       changes={{ to: openDiff("head", doc.path) }}
       views={{

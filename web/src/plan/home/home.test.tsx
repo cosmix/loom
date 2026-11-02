@@ -311,7 +311,8 @@ it("explains read-only authoring and offers no kickoff link", () => {
 
   const start = screen.getByRole("button", { name: "Start a conversation" });
   expect(start.getAttribute("aria-disabled")).toBe("true");
-  expect(screen.getByText("loom plan is in read-only mode: tmux is unavailable")).toBeTruthy();
+  expect(screen.getByText("Read-only")).toBeTruthy();
+  expect(screen.queryByText(/tmux is unavailable/)).toBeNull();
   expect(screen.queryByRole("link", { name: "Start a conversation" })).toBeNull();
   expect(container.querySelector('a[href="/new"]')).toBeNull();
 

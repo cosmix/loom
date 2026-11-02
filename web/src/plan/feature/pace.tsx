@@ -1,6 +1,7 @@
 import { Footprints, Users, type LucideIcon } from "lucide-react";
 
 import type { ChecklistView, OfferView, StepView } from "@/plan/api/schema";
+import { allOffers } from "@/plan/feature/checklist-offers";
 import { OfferButton } from "@/plan/offers/offer-button";
 import type { ButtonLook } from "@/plan/ui/disabled-reason";
 import { plural } from "@/plan/ui/plural";
@@ -15,18 +16,16 @@ export function paceOffers(
   )?.offer;
   if (!first) return null;
 
-  const offers = [checklist.primary, ...checklist.secondary, ...items.map((item) => item.offer)];
-  const candidates = offers
-    .filter((offer) => offer !== null)
-    .filter(
-      (offer) => offer.kind === first.kind && items.some((item) => item.offer?.id === offer.id),
-    );
+  const offers = allOffers(checklist);
+  const candidates = offers.filter(
+    (offer) => offer.kind === first.kind && items.some((item) => item.offer?.id === offer.id),
+  );
   if (first.kind === "write_section") {
     candidates.sort((left, right) => (left.number ?? Infinity) - (right.number ?? Infinity));
   }
   const guided = candidates[0];
   const teamKind = first.kind === "write_section" ? "draft_all_sections" : "draft_all_plans";
-  const team = offers.find((offer) => offer?.kind === teamKind);
+  const team = offers.find((offer) => offer.kind === teamKind);
   return guided && team ? { guided, team } : null;
 }
 

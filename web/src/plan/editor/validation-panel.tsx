@@ -2,6 +2,7 @@ import type { JSX } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { ValidationItem, ValidationView } from "@/plan/api/schema-files";
+import { Untrusted } from "@/plan/chat/visible-controls";
 
 const BUCKETS = [
   ["structural", "Structure"],
@@ -39,7 +40,9 @@ function ErrorItem({ item, onJump }: { item: ValidationItem; onJump(line: number
   const { line } = item;
   return (
     <li className="flex flex-wrap items-baseline gap-x-2">
-      <span>{item.message}</span>
+      <span>
+        <Untrusted text={item.message} />
+      </span>
       {line !== null && (
         <button
           type="button"
@@ -60,7 +63,9 @@ function Group({ title, items }: { title: string; items: string[] }): JSX.Elemen
       <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
       <ul className="list-disc space-y-0.5 pl-5">
         {items.map((item, index) => (
-          <li key={index}>{item}</li>
+          <li key={index}>
+            <Untrusted text={item} />
+          </li>
         ))}
       </ul>
     </section>

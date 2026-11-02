@@ -29,6 +29,16 @@ describe("LoadState", () => {
   });
 
   it.each(["loading", "empty", "not_found", "error"] as const)(
+    "shows a bidirectional override in the message of %s as visible text",
+    (state) => {
+      render(<LoadState state={state} message={"file\u202egnp.md"} />);
+      const text = screen.getByText("file⟨U+202E⟩gnp.md");
+      expect(text.style.unicodeBidi).toBe("isolate");
+      expect(document.body.textContent).not.toContain("\u202e");
+    },
+  );
+
+  it.each(["loading", "empty", "not_found", "error"] as const)(
     "calls the action for %s",
     (state) => {
       const onClick = vi.fn();

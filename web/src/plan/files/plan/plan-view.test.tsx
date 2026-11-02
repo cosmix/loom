@@ -92,6 +92,11 @@ describe("PlanView", () => {
     expect(screen.getByText("stages: [oops")).toBeTruthy();
   });
 
+  it("shows the parse error as visible text when it carries a bidirectional override", () => {
+    renderPlan(makeDoc({ yaml: "stages: [oops", yaml_error: "bad\u202e yaml" }));
+    expect(screen.getByRole("alert").textContent).toBe("bad⟨U+202E⟩ yaml");
+  });
+
   it("toggles Show YAML", () => {
     renderPlan(makeDoc());
     expect(screen.queryByText(/- id: build/)).toBeNull();

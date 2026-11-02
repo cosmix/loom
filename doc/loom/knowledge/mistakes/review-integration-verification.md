@@ -1,4 +1,5 @@
 # Review Integration Verification
+>
 > Integrated review test failures and verification discipline
 
 Integration failures and verification discipline for the Astra review repairs.
@@ -156,7 +157,6 @@ Integration failures and verification discipline for the Astra review repairs.
 
 **Fix:** Correct the wrappers before compilation.
 
-
 ## Project detection tests require external writable temp
 
 **What happened:** Running the compiled project-detection tests in a sandbox failed because /tmp was read-only; placing TMPDIR inside the repository made fixtures discover the enclosing checkout and fail unrelated assertions.
@@ -166,4 +166,3 @@ Integration failures and verification discipline for the Astra review repairs.
 **Prevention:** Run project-discovery tests with writable temporary storage outside the checkout, using the approved Cargo test environment.
 
 **Fix:** Rerun the focused tests in that environment and report the initial fixture failures separately.
-

@@ -2,7 +2,7 @@ import type { PhrasingContent } from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { type JSX, useMemo } from "react";
 
-import { visibleControls } from "@/plan/chat/visible-controls";
+import { ISOLATED_LTR, visibleControls } from "@/plan/chat/visible-controls";
 import { renderSummaryInlines } from "@/plan/markdown/inline";
 
 /**
@@ -44,4 +44,13 @@ function summaryInlines(raw: string): PhrasingContent[] {
 export function SentenceText({ text }: { text: string }): JSX.Element {
   const nodes = useMemo(() => summaryInlines(text), [text]);
   return <>{nodes.length > 0 ? renderSummaryInlines(nodes) : visibleControls(text)}</>;
+}
+
+/** Markdown phrasing from the server, isolated from the text around it as `Untrusted` is. */
+export function IsolatedSentence({ text }: { text: string }): JSX.Element {
+  return (
+    <span style={ISOLATED_LTR}>
+      <SentenceText text={text} />
+    </span>
+  );
 }

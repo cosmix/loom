@@ -13,15 +13,18 @@ export function docColour(colour: number): string {
   return `var(--doc-${((colour + 7) % 8) + 1})`;
 }
 
-/** Why a summary is out of date, in the words the mark's tooltip uses. */
-export function reasonText(outOfDate: OutOfDate): string {
+/**
+ * Why a summary is out of date, in the words the mark's tooltip uses. A summary that cannot be
+ * rebuilt has no reason here: the Rebuild button states why it cannot run.
+ */
+export function reasonText(outOfDate: OutOfDate): string | null {
   switch (outOfDate.reason) {
     case "rebuilding":
       return "rebuilding";
     case "awaiting_approval":
       return "waiting for approval";
     case "cannot_rebuild":
-      return outOfDate.detail ? `cannot rebuild: ${outOfDate.detail}` : "cannot rebuild";
+      return null;
     case "failed":
       return "build failed";
     case "source_changed":
@@ -29,10 +32,17 @@ export function reasonText(outOfDate: OutOfDate): string {
   }
 }
 
+/** `Out of date`, then `: <reason>` when there is one. */
+function outOfDateWords(outOfDate: OutOfDate, capital: boolean): string {
+  const reason = reasonText(outOfDate);
+  const lead = capital ? "Out of date" : "out of date";
+  return reason === null ? lead : `${lead}: ${reason}`;
+}
+
 /** `<title>: <path>`, plus `, out of date: <reason>` for a dashed mark. */
 export function markLabel(mark: Mark): string {
   const base = `${mark.doc.title}: ${mark.doc.path}`;
-  return mark.out_of_date ? `${base}, out of date: ${reasonText(mark.out_of_date)}` : base;
+  return mark.out_of_date ? `${base}, ${outOfDateWords(mark.out_of_date, false)}` : base;
 }
 
 function MarkSquare({ mark, onOpen }: { mark: Mark; onOpen: (page: string) => void }): JSX.Element {
@@ -56,7 +66,7 @@ function MarkSquare({ mark, onOpen }: { mark: Mark; onOpen: (page: string) => vo
       <TooltipContent>
         <span className="flex flex-col">
           <Untrusted text={`${mark.doc.title}: ${mark.doc.path}`} />
-          {mark.out_of_date && <Untrusted text={`Out of date: ${reasonText(mark.out_of_date)}`} />}
+          {mark.out_of_date && <Untrusted text={outOfDateWords(mark.out_of_date, true)} />}
         </span>
       </TooltipContent>
     </Tooltip>

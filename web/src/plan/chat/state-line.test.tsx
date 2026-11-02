@@ -31,7 +31,7 @@ it("every state row", () => {
     ["working", "Working · 41s"],
     ["permission", "Needs a decision: Bash"],
     ["ending", "Writing final notes into the documents"],
-    ["ended", "Chat ended · 41s ago"],
+    ["ended", "41s ago"],
     ["failed", "The session could not start"],
   ];
   for (const [state, words] of cases) {
@@ -142,7 +142,7 @@ it("failed died text with last activity", () => {
   expect(container.textContent).toContain(`Last activity ${since} (41s ago)`);
 });
 
-it("read-only mode hazard lists problems, no offers", () => {
+it("a read-only server leaves the state row as it is: the banner carries the problems", () => {
   const h = harness(null);
   h.store.set(serverInfoAtom, {
     ...server,
@@ -152,16 +152,12 @@ it("read-only mode hazard lists problems, no offers", () => {
     ],
   });
   const { container } = h.show();
-  for (const text of [
-    "Read-only",
-    "tmux missing",
-    "Install tmux",
-    "Claude logged out",
-    "Log in to Claude",
-  ]) {
-    expect(container.textContent).toContain(text);
+  expect(container.textContent).toContain("No chat");
+  for (const text of ["Read-only", "tmux missing", "Install tmux", "Claude logged out"]) {
+    expect(container.textContent).not.toContain(text);
   }
-  expect(container.querySelector('.chat-notice[data-tone="warning"]')).toBeTruthy();
+  expect(container.querySelector(".chat-notice")).toBeNull();
+  expect(container.querySelector(".chat-state-line")?.getAttribute("data-state")).toBe("none");
   expect(screen.queryByRole("button")).toBeNull();
 });
 
@@ -225,7 +221,7 @@ it("a browser that connects after a chat ended shows the Ended line, not No chat
   const { container } = h.show();
   expect(container.textContent).not.toContain("No chat");
   // Exposed to browse mode and no status region of its own: ChatAnnouncer does the announcing.
-  const line = screen.getByText("Chat ended · 41s ago");
+  const line = screen.getByText("41s ago");
   expect(line.closest("[aria-hidden='true'], [role='status']")).toBeNull();
 });
 

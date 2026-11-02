@@ -2,6 +2,7 @@ import { useAtomValue } from "jotai/react";
 import { TriangleAlertIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { serverInfoAtom, stoppingAtom } from "@/plan/state/atoms";
 
 function Banner({ children }: { children: ReactNode }) {
@@ -26,7 +27,11 @@ function withoutTrailingStop(message: string): string {
   return message.replace(/[.!?\s]+$/, "");
 }
 
-/** Remote bind, read-only mode (one banner listing each prerequisite) and stopping. */
+/**
+ * Remote bind, read-only mode (one banner listing each prerequisite) and stopping. The read-only
+ * banner is the one place the server's message and fix are drawn; a blocked control says
+ * "Read-only" and nothing more.
+ */
 export function Banners() {
   const server = useAtomValue(serverInfoAtom);
   const stopping = useAtomValue(stoppingAtom) || server?.stopping === true;
@@ -43,7 +48,9 @@ export function Banners() {
           loom plan is read-only.{" "}
           {server.read_only.map((problem) => (
             <span key={problem.what}>
-              {withoutTrailingStop(problem.message)}. {withoutTrailingStop(problem.fix)}.{" "}
+              <Untrusted
+                text={`${withoutTrailingStop(problem.message)}. ${withoutTrailingStop(problem.fix)}.`}
+              />{" "}
             </span>
           ))}
         </Banner>

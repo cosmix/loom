@@ -14,6 +14,7 @@ import {
 import { RunPage } from "@/plan/feature/run-page";
 import { registerOfferAction } from "@/plan/offers/actions";
 import { runDialogAtom } from "@/plan/offers/actions-run";
+import { fetchRunState } from "@/plan/run/use-run";
 
 const PATH = "/f/atlas/run";
 const ONE = "doc/plans/atlas/PLAN-one.md";
@@ -158,6 +159,28 @@ it("says it is checking while the run state request is out, with Start enabled",
 
   expect(screen.getByRole("status").textContent).toBe("Checking for a run.");
   expect(start()[0]!.getAttribute("aria-disabled")).toBeNull();
+});
+
+it("leaves the checking line when the first of two overlapping requests answers", async () => {
+  const answers: ((response: Response) => void)[] = [];
+  vi.stubGlobal(
+    "fetch",
+    () =>
+      new Promise<Response>((resolve) => {
+        answers.push(resolve);
+      }),
+  );
+  const { store } = renderPage(<RunPage />, PATH, written, { holder: "me" });
+  // The shell's own fetch on arrival goes out after the page's, and overtakes it.
+  void fetchRunState(store);
+  expect(answers).toHaveLength(2);
+  expect(screen.getByRole("status").textContent).toBe("Checking for a run.");
+
+  act(() => answers[0]!(json(runState({ workspace: "done", active_plan: null }))));
+
+  expect((await screen.findByRole("status")).textContent).toBe("Nothing is running.");
+  act(() => answers[1]!(json({ error: "internal", message: "boom" }, 500)));
+  expect(screen.getByRole("status").textContent).toBe("Nothing is running.");
 });
 
 it("follows the run state when the strip's plan changes under an open page", async () => {

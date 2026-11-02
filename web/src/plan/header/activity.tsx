@@ -51,8 +51,8 @@ function ActivityList({ activities }: { activities: Activity[] }) {
         <li key={activity.id} className="activity-row">
           <ActivityTile kind={activity.kind} />
           <div className="activity-row__body">
-            <p className="activity-row__title" title={activity.title}>
-              {activity.title}
+            <p className="activity-row__title" title={visibleControls(activity.title)}>
+              <Untrusted text={activity.title} />
             </p>
             {activity.subject !== null && (
               <p className="activity-row__sub" title={visibleControls(activity.subject)}>

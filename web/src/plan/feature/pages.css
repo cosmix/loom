@@ -73,21 +73,9 @@
   white-space: nowrap;
 }
 
+/* The row's side (design.css) also shrinks below its content here. */
 [data-loom-plan] .plan-page__side {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-1) var(--space-3);
-  margin-left: auto;
   min-width: 0;
-}
-
-/* Links in chrome underline on hover only (DESIGN.md, Focus and hover). */
-[data-loom-plan] .plan-page__name a,
-[data-loom-plan] .plan-page__link {
-  color: inherit;
-  text-decoration: none;
 }
 
 [data-loom-plan] .plan-page__link {
@@ -95,20 +83,8 @@
   color: var(--muted-foreground);
 }
 
-[data-loom-plan] .plan-page__name a:hover,
-[data-loom-plan] .plan-page__link:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
 [data-loom-plan] .plan-page__link:hover {
   color: var(--foreground);
-}
-
-[data-loom-plan] .plan-page__name a:focus-visible,
-[data-loom-plan] .plan-page__link:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
 }
 
 /* The empty page names what comes first, with a link to it, in the empty state's measure. */

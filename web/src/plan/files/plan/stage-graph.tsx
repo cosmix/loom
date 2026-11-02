@@ -19,6 +19,7 @@ import { stageTypeSchema, type StageSummary } from "@/api/schema";
 import { ThreadEdge, type ThreadEdgeType } from "@/components/graph/thread-edge";
 import { layoutStages, threadOf } from "@/lib/graph";
 import type { StageRow } from "@/plan/api/schema-files";
+import { Untrusted } from "@/plan/chat/visible-controls";
 
 type PlanNode = Node<{ stage: StageSummary }, "plan-stage">;
 
@@ -73,8 +74,12 @@ function PlanStageNode({ data }: NodeProps<PlanNode>) {
         isConnectable={false}
         className="stage-handle"
       />
-      <div className="truncate text-[13px] font-medium">{data.stage.name}</div>
-      <div className="truncate font-mono text-xs text-muted-foreground">{data.stage.id}</div>
+      <div className="truncate text-[13px] font-medium">
+        <Untrusted text={data.stage.name} />
+      </div>
+      <div className="truncate font-mono text-xs text-muted-foreground">
+        <Untrusted text={data.stage.id} />
+      </div>
       <Handle
         type="source"
         position={Position.Bottom}

@@ -23,7 +23,8 @@
   display: block;
   box-sizing: border-box;
   width: calc(100% + 2 * var(--space-2));
-  min-height: 44px;
+  /* Two lines of body text and the padding: the longest placeholder shows in full. */
+  min-height: calc(2 * var(--type-body) * var(--leading-body) + 2 * var(--space-2));
   margin-inline: calc(-1 * var(--space-2));
   padding: var(--space-2);
   overflow-y: auto;

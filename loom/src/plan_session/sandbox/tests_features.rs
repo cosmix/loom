@@ -5,9 +5,11 @@ use std::os::unix::fs::symlink;
 use std::path::Path;
 
 use anyhow::Result;
+use glob::{MatchOptions, Pattern};
 use serde_json::{json, Value};
 
 use super::tests_kinds::Fixture;
+use super::tests_kinds_fixture::kinds;
 use crate::plan_session::kind::SessionKind;
 
 fn seed_home(root: &Path, home: &str) -> Result<()> {
@@ -199,5 +201,120 @@ fn feature_pressure_denies_a_symlinked_home_by_its_own_path() -> Result<()> {
     assert!(os.contains(&json!(link)));
     assert!(!os.contains(&json!(external)));
     assert!(!os.contains(&json!(link.join("briefs"))));
+    Ok(())
+}
+
+fn asks(settings: &Value) -> Vec<&str> {
+    let asks = settings["permissions"]["ask"].as_array().unwrap();
+    asks.iter().map(|rule| rule.as_str().unwrap()).collect()
+}
+
+/// Whether the `Edit` rule covers `path`: gitignore semantics, so a match on an ancestor counts.
+fn edit_rule_covers(rule: &str, path: &Path) -> bool {
+    let inner = rule
+        .strip_prefix("Edit(/")
+        .and_then(|r| r.strip_suffix(')'));
+    let Some(inner) = inner else {
+        return false;
+    };
+    let pattern = Pattern::new(inner).unwrap();
+    let options = MatchOptions {
+        require_literal_separator: true,
+        ..MatchOptions::new()
+    };
+    path.ancestors()
+        .any(|ancestor| pattern.matches_path_with(ancestor, options))
+}
+
+#[test]
+fn auto_mode_kinds_ask_for_file_tool_writes_outside_their_write_set() -> Result<()> {
+    let f = Fixture::new();
+    for kind in [&kinds()[0], &kinds()[2]] {
+        let settings = f.build(kind, &[])?;
+        let asks = asks(&settings);
+        for rel in [
+            "doc/loom/knowledge/x.md",
+            "doc/loom/summaries/x.md",
+            "loom/src/main.rs",
+            ".git/config",
+            ".claude/settings.json",
+            ".loom/work/x",
+            "README.md",
+        ] {
+            let path = f.root.join(rel);
+            assert!(
+                asks.iter().any(|rule| edit_rule_covers(rule, &path)),
+                "{kind:?}: no ask covers {rel}: {asks:?}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn edit_asks_do_not_shadow_what_the_session_may_write() -> Result<()> {
+    let f = Fixture::new();
+    fs::write(f.root.join("doc/index.md"), "# Fixture\n")?;
+    let kinds = kinds();
+    let writable = [
+        (
+            &kinds[0],
+            vec![
+                "doc/index.md",
+                "doc/notes/x.md",
+                "doc/product/x.md",
+                "doc/plans/PLAN-n.md",
+            ],
+        ),
+        (
+            &kinds[2],
+            vec![
+                "doc/plans/PLAN-a.md",
+                "doc/plans/briefs/a/x.md",
+                "planning-omissions.md",
+            ],
+        ),
+    ];
+    for (kind, paths) in writable {
+        let settings = f.build(kind, &[])?;
+        let allow = settings["permissions"]["allow"].as_array().unwrap();
+        for rel in paths {
+            let path = f.root.join(rel);
+            let allowed = allow
+                .iter()
+                .any(|rule| edit_rule_covers(rule.as_str().unwrap(), &path));
+            assert!(allowed, "{kind:?}: no allow covers {rel}");
+            let shadow = asks(&settings)
+                .into_iter()
+                .find(|rule| edit_rule_covers(rule, &path));
+            assert_eq!(shadow, None, "{kind:?}: an ask shadows the allow of {rel}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn edit_asks_skip_rule_syntax_and_take_a_symlink_by_its_own_path() -> Result<()> {
+    let f = Fixture::new();
+    fs::create_dir(f.root.join("*"))?;
+    symlink(&f.home, f.root.join("linked-home"))?;
+
+    let settings = f.build(&SessionKind::Authoring, &[])?;
+
+    let asks = asks(&settings);
+    let root = f.root.display();
+    let starred = format!("Edit(/{root}/*");
+    assert!(
+        !asks.iter().any(|rule| rule.starts_with(&starred)),
+        "{asks:?}"
+    );
+    assert!(asks.contains(&format!("Edit(/{root}/linked-home)").as_str()));
+    Ok(())
+}
+
+#[test]
+fn a_summary_session_carries_no_ask_rule() -> Result<()> {
+    let settings = Fixture::new().build(&kinds()[1], &[])?;
+    assert!(asks(&settings).is_empty());
     Ok(())
 }

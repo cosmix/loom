@@ -61,13 +61,8 @@ it.each([
   ["source_changed", null, "Out of date: the source changed", "circle-dashed"],
   ["rebuilding", null, "Out of date: rebuilding", "refresh-cw"],
   ["awaiting_approval", null, "Out of date: waiting for approval", "circle-dashed"],
-  ["cannot_rebuild", null, "Out of date: cannot rebuild", "circle-dashed"],
-  [
-    "cannot_rebuild",
-    "missing source",
-    "Out of date: cannot rebuild: missing source",
-    "circle-dashed",
-  ],
+  ["cannot_rebuild", null, "Out of date", "circle-dashed"],
+  ["cannot_rebuild", "missing source", "Out of date", "circle-dashed"],
   ["failed", null, "Out of date: build failed", "circle-dashed"],
 ] as const)("renders a warning for %s (%s)", (reason, detail, label, glyph) => {
   show({ state: { state: "current", out_of_date: { reason, detail } } });
@@ -340,9 +335,9 @@ it.each([
   ["source_changed", null, "Out of date: the source changed"],
   ["rebuilding", null, "Out of date: rebuilding"],
   ["awaiting_approval", null, "Out of date: waiting for approval"],
-  ["cannot_rebuild", null, "Out of date: cannot rebuild"],
-  ["cannot_rebuild", "", "Out of date: cannot rebuild"],
-  ["cannot_rebuild", "missing source", "Out of date: cannot rebuild: missing source"],
+  ["cannot_rebuild", null, "Out of date"],
+  ["cannot_rebuild", "", "Out of date"],
+  ["cannot_rebuild", "missing source", "Out of date"],
   ["failed", null, "Out of date: build failed"],
 ] satisfies [OutOfDate["reason"], string | null, string][])(
   "preserves the extracted wording for %s (%s)",

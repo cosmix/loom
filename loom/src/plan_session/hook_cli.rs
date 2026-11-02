@@ -37,6 +37,11 @@ pub fn run(event: &str, session_dir: &Path, stdin: impl Read, mut stdout: impl W
 
 fn owner_watch(session_dir: &Path) {
     if let Some((lock, socket)) = watch_target(session_dir) {
+        // The launch script starts the watch in the pane's process group, which the pane leader's
+        // exit and a tmux kill-server both signal. It must outlive them: clearing the tmux server
+        // of a dead leader is its job. The only failure is a process already leading a group,
+        // which a background job of the script never is, and the watch then runs where it is.
+        let _ = nix::unistd::setsid();
         SessionOwnerProbe::new(&lock, &socket).watch();
     }
 }

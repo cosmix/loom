@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::files::PlanStateView;
-use crate::planning::checklist::{Offer, Step};
+use crate::planning::checklist::Offer;
 use crate::planning::project::Project;
 use crate::planning::slug::PlanState;
 
@@ -70,7 +70,7 @@ pub struct ChecklistView {
     pub primary: Option<OfferView>,
     /// Other available actions.
     pub secondary: Vec<OfferView>,
-    /// Documents and gaps displayed under the steps.
+    /// The feature's documents and gaps, each naming its step.
     pub items: Vec<ItemView>,
 }
 
@@ -84,9 +84,10 @@ pub struct StepView {
     pub name: String,
     /// Its completion or availability mark.
     pub mark: MarkView,
-    /// The rail's counter text, absent when no count is available.
+    /// The step's count as display text, such as `2/5`, absent when no count is available.
     pub count: Option<String>,
-    /// The rail label displayed below the counter.
+    /// What the count counts when that differs from the step, such as `Untested`; otherwise the
+    /// step's name.
     pub label: String,
 }
 
@@ -283,9 +284,7 @@ impl From<&Project> for ProjectChecklistView {
             .map(|feature| {
                 let mut view = ChecklistView::from(&feature.checklist);
                 view.pitch = pitch::feature_pitch(project, &feature.name);
-                let facts = card::card_facts(project, &feature.name, &mut view);
-                view.metaplans = facts.metaplans;
-                view.plan_rows = facts.plan_rows;
+                card::card_facts(project, &feature.name, &mut view);
                 view
             })
             .collect();
@@ -314,17 +313,6 @@ impl From<&Project> for ProjectChecklistView {
             standalone,
             moves: project.moves.iter().map(offer_view).collect(),
         }
-    }
-}
-
-fn step_name(step: Step) -> &'static str {
-    match step {
-        Step::Vision => "Vision",
-        Step::ProductSpec => "Product spec",
-        Step::Metaplan => "Metaplan",
-        Step::Plans => "Plans",
-        Step::PressureTest => "Pressure test",
-        Step::Run => "Run",
     }
 }
 

@@ -233,6 +233,7 @@
     color 120ms;
 }
 
+/* The empty alternative text keeps the arrow out of the prompt's accessible name. */
 .chat-context-prompt::before {
   content: "→ " / "";
   color: var(--muted-foreground);
@@ -265,7 +266,7 @@
   display: none;
 }
 
-/* A failure or read-only notice: a toned glyph, a 600 title, body in --foreground. No box. */
+/* A failure notice: a toned glyph, a 600 title, body in --foreground. No box. */
 .chat-notice {
   display: grid;
   gap: var(--space-1);
@@ -286,10 +287,6 @@
 
 .chat-notice[data-tone="error"] .chat-notice-glyph {
   color: var(--tone-blocked);
-}
-
-.chat-notice[data-tone="warning"] .chat-notice-glyph {
-  color: var(--tone-warning);
 }
 
 .chat-notice p,

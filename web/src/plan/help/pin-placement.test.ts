@@ -53,17 +53,18 @@ describe("placePins side selection", () => {
 });
 
 describe("placePins bars and stacked targets", () => {
-  // Getting around, pin 2: the step rail is a bar under a busy row, and its pin hung off the far
-  // left end of it. A bar takes the side below it before left or right.
+  // A bar is a wide, short target under a busy row; its pin hung off the far left end of it. A bar
+  // takes the side below it before left or right. The pins of the Getting around topic
+  // (help/topics.ts) are placed by the same rule.
   it("centres a bar's pin below it instead of at its far left end", () => {
     const tall = { width: 300, height: 260 };
-    const rail = { x: 20, y: 150, w: 260, h: 30 };
+    const bar = { x: 20, y: 150, w: 260, h: 30 };
     const row = { x: 100, y: 100, w: 100, h: 44 };
-    const [pin] = placePins([rail, row], tall);
+    const [pin] = placePins([bar, row], tall);
 
     expect(pin).toEqual({ x: 139, y: 186, w: 22, h: 22 });
-    expect(pin!.x + pin!.w / 2).toBe(rail.x + rail.w / 2);
-    expect(overlaps(pin!, rail)).toBe(false);
+    expect(pin!.x + pin!.w / 2).toBe(bar.x + bar.w / 2);
+    expect(overlaps(pin!, bar)).toBe(false);
   });
 
   it("keeps the side order for a target that is not a bar", () => {

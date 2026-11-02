@@ -43,7 +43,7 @@ function isFilesRoute(pathname: string): boolean {
 }
 
 /** What the app bar names: the route's feature (by slug), the new-work draft, or the project. */
-export function useIdentity(): Identity {
+function useIdentity(): Identity {
   const { pathname } = useLocation();
   const featureRoute = useMatch("/f/:feature/*");
   const serverInfo = useAtomValue(serverInfoAtom);
