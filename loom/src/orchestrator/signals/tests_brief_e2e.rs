@@ -55,7 +55,7 @@ fn project_with_matching_knowledge() -> TempDir {
 }
 
 #[test]
-fn delivery_record_exists_before_the_signal_and_lists_every_selected_id() {
+fn delivery_record_lists_every_published_id() {
     let temp = project_with_matching_knowledge();
     let work_dir = temp.path().join(".loom").join("work");
 
@@ -77,9 +77,7 @@ fn delivery_record_exists_before_the_signal_and_lists_every_selected_id() {
     let record_path =
         delivery_dir(&work_dir, plan_id, &stage.id).join(format!("{}.json", session.id));
 
-    // The simplest honest form of "the record exists before the signal": both
-    // files exist once generation returns, because `persist_delivery` runs
-    // ahead of `write_signal_file` inside the same call (see generate.rs).
+    // Both files exist after successful publication.
     assert!(
         record_path.exists(),
         "delivery record must exist at {}",
@@ -105,6 +103,9 @@ fn delivery_record_exists_before_the_signal_and_lists_every_selected_id() {
         .collect();
     assert_eq!(delivered_ids, expected_ids);
 }
+
+#[path = "tests_signal_publication.rs"]
+mod publication;
 
 #[test]
 fn no_delivery_record_is_written_when_the_stage_has_no_brief() {
@@ -260,6 +261,7 @@ fn write_stage_overlay(root: &Path, stage_id: &str, node: &SourceNode) {
         files,
         blob_index: BTreeMap::new(),
         schema_version: crate::context::source_graph::GRAPH_SCHEMA_VERSION,
+        complete: false,
     };
     graph_store
         .save_overlay("default", stage_id, &layer)

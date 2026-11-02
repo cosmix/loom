@@ -110,10 +110,7 @@ pub fn generate_contract_signal(
         feedback.as_deref(),
     );
 
-    // Record before writing, as every stage signal path does: a session that
-    // was briefed must never read back as having received nothing.
-    super::helpers::persist_delivery(work_dir, stage, &session.id, &embedded_context);
-    super::helpers::write_signal_file(&session.id, &content, work_dir)
+    super::helpers::publish_signal(&session.id, &content, work_dir, stage, &embedded_context)
 }
 
 /// `value` as the text of one markdown table cell: a `|` would end the cell

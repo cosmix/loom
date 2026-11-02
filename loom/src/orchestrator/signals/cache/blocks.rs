@@ -1,23 +1,7 @@
-//! Self-contained "append a block of static prose to the signal" helpers,
-//! split out of `cache.rs` to keep that file under its line budget. Each
-//! function here takes `&mut String` and appends one cohesive block; the
-//! `generate_*_stable_prefix` assemblers in the parent module call these in
-//! sequence to build a stage's stable prefix.
-//!
-//! Several of these blocks are pinned byte-for-byte against other guidance
-//! surfaces (`CLAUDE.md.template`, `loom-hooks/_subagent-preamble.txt`,
-//! `loom-hooks/subagent-verify-guard.sh`) by
-//! `tests_doctrine.rs` — moving text between functions here is safe, but
-//! changing a single character inside one is not.
+//! Shared prose blocks for stage signal prefixes.
+//! Cross-surface doctrine is pinned byte-for-byte by doctrine tests.
 
-/// The one sentence that replaces every block of `~/.claude/CLAUDE.md` doctrine
-/// the prefixes used to restate.
-///
-/// The session already has that file resident when it opens the signal, so a
-/// second copy of the git-staging rules and the rest was paid for on every
-/// stage and read twice. The delegation playbook and the subagent-waiting
-/// doctrine live in the `loom-orchestration` skill, which the standard prefix
-/// names instead. The prefixes carry only what is stage-specific or computed.
+/// Pointer to the session-wide binding rules.
 const BINDING_RULES_POINTER: &str =
     "Binding rules: ~/.claude/CLAUDE.md. This signal overrides none of them.\n\n";
 
@@ -87,7 +71,7 @@ pub(super) fn append_subagent_ceiling_block(content: &mut String) {
 
 /// Where a standard stage's gate runs, stated as the opening line of its
 /// completion rules.
-const ORCHESTRATOR_GATE: &str = "**The gate is `loom check`**: once every implementer has returned, run the formatter, then `loom check <stage-id>` once plus the steps this stage lists outside acceptance, while the final review round runs. A fix round runs `loom check <stage-id> --criterion <n>` for each failed criterion plus the lint and format criteria. Never re-run a test, build or lint command the check covers.\n\n";
+const ORCHESTRATOR_GATE: &str = "**The gate is `loom check`**: once every implementer has returned, run the formatter, then `loom check <stage-id>` once plus the steps this stage lists outside acceptance, while the final review round runs. A fix round runs one `loom check <stage-id> --criterion <n> --criterion <n> ...` with every failed criterion plus the lint and format criteria. Never re-run a test, build or lint command the check covers.\n\n";
 
 /// Open a STANDARD stage's `**Completion:**` list with `ORCHESTRATOR_GATE`. The
 /// integration-verify prefix opens its list without it: that stage keeps its
@@ -126,15 +110,11 @@ pub(crate) fn append_adversarial_review(content: &mut String) {
 /// Append the four integration-verify review dimensions, each meant to become
 /// its own parallel subagent. `loom-code-reviewer` is READ-ONLY, so its
 /// findings go to an engineer to fix.
-///
-/// Split out of `generate_integration_verify_stable_prefix` purely to keep
-/// that function under the line budget — it is IV-specific and has exactly
-/// one caller, unlike the other blocks in this module.
 pub(super) fn append_review_dimension_details(content: &mut String) {
     content.push_str("**Review Dimension Details** — spawn these as PARALLEL subagents; `loom-code-reviewer` is READ-ONLY, so hand its findings to an engineer to fix:\n\n");
     content.push_str(&format!("1. **Security** — invoke {}: OWASP Top 10, hardcoded secrets, dependency CVEs, boundary sanitization, error-message leakage.\n", crate::skills::skill_invocation("loom-security-audit")));
     content.push_str("2. **Architecture** — module coupling, swallowed errors, over/under-abstraction, naming consistency, dead code and unreachable paths.\n");
-    content.push_str("3. **Build/test/sandbox** — `loom check` output plus ALL stderr, warnings even when tests pass; any \"blocked\", \"denied\", \"connection refused\" or \"failed to download\" is a BLOCKER, not a workaround. Exit code 0 does NOT mean success.\n");
+    content.push_str("3. **Build/test/sandbox** — inspect the `loom check` summaries and log pointers supplied by the orchestrator, including ALL stderr and warnings even when tests pass; any \"blocked\", \"denied\", \"connection refused\" or \"failed to download\" is a BLOCKER, not a workaround. Exit code 0 does NOT mean success.\n");
     content.push_str("4. **Functional** — RUN the feature end-to-end on realistic inputs; confirm the output is correct and the feature is registered, mounted, and callable.\n\n");
 }
 

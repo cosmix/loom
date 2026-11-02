@@ -25,13 +25,34 @@ pub fn generate_merge_signal(
     conflicting_files: &[String],
     work_dir: &Path,
 ) -> Result<PathBuf> {
-    let content = format_merge_signal_content(
+    generate_merge_snapshot_signal(
+        session,
+        stage,
+        source_branch,
+        target_branch,
+        conflicting_files,
+        work_dir,
+        target_branch,
+    )
+}
+
+pub(crate) fn generate_merge_snapshot_signal(
+    session: &Session,
+    stage: &Stage,
+    source_branch: &str,
+    target_branch: &str,
+    conflicting_files: &[String],
+    work_dir: &Path,
+    snapshot: &str,
+) -> Result<PathBuf> {
+    let content = format_merge_snapshot_content(
         session,
         stage,
         source_branch,
         target_branch,
         conflicting_files,
         &format_protected_paths(stage, work_dir),
+        snapshot,
     );
     helpers::write_signal_file(&session.id, &content, work_dir)
 }
@@ -49,7 +70,11 @@ pub fn read_merge_signal(session_id: &str, work_dir: &Path) -> Result<Option<Mer
     let content = fs::read_to_string(&signal_path).context("Failed to read signal file")?;
 
     // Check if this is a merge signal by looking for the merge-specific header
-    if !content.contains("# Merge Signal:") {
+    if !content
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .is_some_and(|line| line.starts_with("# Merge Signal:"))
+    {
         return Ok(None);
     }
 
@@ -60,6 +85,7 @@ pub fn read_merge_signal(session_id: &str, work_dir: &Path) -> Result<Option<Mer
 /// The whole signal. `protected_paths` is [`format_protected_paths`]'s section,
 /// empty when the plan protects nothing; the Task cross-references it only
 /// when it is there.
+#[cfg(test)]
 pub(super) fn format_merge_signal_content(
     session: &Session,
     stage: &Stage,
@@ -67,6 +93,26 @@ pub(super) fn format_merge_signal_content(
     target_branch: &str,
     conflicting_files: &[String],
     protected_paths: &str,
+) -> String {
+    format_merge_snapshot_content(
+        session,
+        stage,
+        source_branch,
+        target_branch,
+        conflicting_files,
+        protected_paths,
+        target_branch,
+    )
+}
+
+fn format_merge_snapshot_content(
+    session: &Session,
+    stage: &Stage,
+    source_branch: &str,
+    target_branch: &str,
+    conflicting_files: &[String],
+    protected_paths: &str,
+    snapshot: &str,
 ) -> String {
     let mut content = format!("# Merge Signal: {}\n\n", session.id);
     content.push_str(&format_merge_context(stage, source_branch, target_branch));
@@ -81,14 +127,10 @@ pub(super) fn format_merge_signal_content(
     content.push_str(&helpers::format_conflicting_files_section(
         conflicting_files,
     ));
-    content.push_str(&format_failure_section(
-        stage,
-        target_branch,
-        conflicting_files,
-    ));
+    content.push_str(&format_failure_section(stage, snapshot, conflicting_files));
     content.push_str(&format_merge_task(
         stage,
-        target_branch,
+        snapshot,
         !protected_paths.is_empty(),
     ));
     content.push_str(&format_acceptance_section(stage));
@@ -129,8 +171,10 @@ fn format_merge_task(stage: &Stage, target_branch: &str, has_protected_paths: bo
     };
     format!(
         "## Your Task\n\n\
-         1. If `git status` shows a merge already in progress in this worktree, continue it; \
-         do not start a new `git merge`. Otherwise merge the target WITHOUT committing: \
+         1. If `git status` shows a merge already in progress, continue it only when \
+         `git rev-parse MERGE_HEAD` equals `{target_branch}`. Otherwise preserve your staged \
+         changes and seek manual recovery. If no merge is in progress, merge the authorized \
+         target snapshot WITHOUT committing: \
          `git merge --no-commit --no-ff {target_branch}` (a bare `git merge {target_branch}` \
          commits by itself and cannot be signed in this sandbox) (stage the resolution; never \
          run `git merge --continue`, which commits)\n\
@@ -189,7 +233,7 @@ fn format_acceptance_section(stage: &Stage) -> String {
     }
     let mut content = String::from("## Acceptance Criteria\n\n");
     for criterion in &stage.acceptance {
-        content.push_str(&format!("- [ ] {criterion}\n"));
+        content.push_str(&super::format::format_criterion(criterion));
     }
     content.push('\n');
     content

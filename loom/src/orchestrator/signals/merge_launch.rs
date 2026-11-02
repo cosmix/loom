@@ -124,6 +124,31 @@ mod tests {
     use crate::orchestrator::signals::{find_live_merge_session_for_stage, generate_merge_signal};
 
     #[test]
+    fn target_snapshot_survives_session_publication_and_target_movement() {
+        use crate::git::signing::tests::git_in;
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        git_in(root, &["init", "-b", "main"]);
+        git_in(root, &["config", "user.name", "test"]);
+        git_in(root, &["config", "user.email", "test@example.com"]);
+        git_in(root, &["commit", "--allow-empty", "-m", "first"]);
+        let mut session = Session::new_merge("loom/s".into(), "main".into());
+        let snapshot =
+            crate::orchestrator::signals::publish_merge_snapshot(root, root, &session.id, "main")
+                .unwrap();
+        write_ahead_merge_session(&mut session, "s", SessionBackendKind::Tmux, root).unwrap();
+        git_in(root, &["commit", "--allow-empty", "-m", "later"]);
+        publish_merge_session(&session, root).unwrap();
+        let saved = load_session_exact(root, &session.id).unwrap().unwrap();
+        assert_eq!(
+            crate::orchestrator::signals::load_merge_snapshot(root, &saved.id).unwrap(),
+            snapshot
+        );
+        assert_ne!(git_in(root, &["rev-parse", "main"]), snapshot);
+    }
+
+    #[test]
     fn discovery_waits_for_signal_and_write_ahead_publication() {
         let temp = tempfile::tempdir().unwrap();
         let work_dir = temp.path();

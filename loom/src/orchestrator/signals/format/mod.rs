@@ -27,6 +27,8 @@ pub(crate) use helpers::format_subagent_timeout_section;
 // Re-export for external use
 #[allow(unused_imports)]
 pub use helpers::extract_tasks_from_description;
+pub(super) use helpers::extract_tasks_from_stage;
+pub(super) use sections::format_criterion;
 
 /// Result of formatting a signal with structured sections
 pub struct FormattedSignal {
@@ -43,6 +45,7 @@ pub struct FormattedSignal {
 /// 2. SEMI-STABLE - Changes per stage (knowledge map, facts, learnings)
 /// 3. DYNAMIC - Changes per session (current task, handoff, dependencies)
 /// 4. RECITATION - At end for maximum attention (memory, immediate tasks)
+#[cfg(test)]
 pub fn format_signal_content(
     session: &Session,
     stage: &Stage,
