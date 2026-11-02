@@ -105,6 +105,69 @@ fn bash_side_cat_and_read_tool_share_the_same_read_ledger() {
     );
 }
 
+fn run_read_tool(hook: &Path, file: &Path, session: &Session, stub_dir: &Path) -> HookOutput {
+    let payload = json!({
+        "tool_name": "Read",
+        "tool_input": {"file_path": file},
+        "agent_id": session.agent_id,
+        "session_id": session.session_id,
+    });
+    run_payload(hook, &payload, session, Some(stub_dir))
+}
+
+#[track_caller]
+fn assert_denied_once(out: &HookOutput, what: &str) {
+    assert_eq!(
+        out.code, 2,
+        "{what}: stdout={} stderr={}",
+        out.stdout, out.stderr
+    );
+    assert!(
+        out.stderr.contains("Repeating this read is allowed"),
+        "{what}: stderr={}",
+        out.stderr
+    );
+}
+
+#[track_caller]
+fn assert_silently_allowed(out: &HookOutput, what: &str) {
+    assert_eq!(out.code, 0, "{what}: stderr={}", out.stderr);
+    assert!(
+        out.stdout.trim().is_empty(),
+        "{what}: stdout={}",
+        out.stdout
+    );
+}
+
+// 4c. Rule 1 denies an agent's first whole read of a large file in a live stage, with no
+//     deny_enabled switch, and keys the denial by agent and path across both hooks: a `cat`
+//     denied once lets the Read through, and a Read denied once lets the `cat` through.
+#[test]
+fn cat_denied_once_then_read_allowed() {
+    if skip_unless_gate_visible("reads::cat_denied_once_then_read_allowed") {
+        return;
+    }
+    let (_temp, poll_hook, read_hook) = setup_both_hooks();
+    let files = TempDir::new().expect("files dir");
+    let stubs = TempDir::new().expect("stubs dir");
+    let stub_dir = covered_stub_dir(stubs.path());
+    let session = Session::new().with_live_main_agent();
+
+    let cat_first = write_file_with_lines(files.path(), "cat-first.rs", 500);
+    let cat = format!("cat {}", cat_first.display());
+    let out = run_bash_hook(&poll_hook, &cat, &session, Some(&stub_dir));
+    assert_denied_once(&out, "cat first");
+    let out = run_read_tool(&read_hook, &cat_first, &session, &stub_dir);
+    assert_silently_allowed(&out, "Read after the denied cat");
+
+    let read_first = write_file_with_lines(files.path(), "read-first.rs", 500);
+    let out = run_read_tool(&read_hook, &read_first, &session, &stub_dir);
+    assert_denied_once(&out, "Read first");
+    let cat = format!("cat {}", read_first.display());
+    let out = run_bash_hook(&poll_hook, &cat, &session, Some(&stub_dir));
+    assert_silently_allowed(&out, "cat after the denied Read");
+}
+
 // 5. `head -n 20`/`tail -n 20` are bounded range reads; a bare `head`/`tail`
 //    with no count is an unbounded full read, subject to rule 1 exactly like
 //    `cat`.
