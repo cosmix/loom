@@ -10,8 +10,9 @@
 use super::*;
 
 // 4. Bash-side reads get the same rules as the Read tool: `cat` of a big,
-//    graph-covered file denies with the outline inline (switch on) / warns
-//    with it off; `sed -n` of the same file as a bounded range is allowed.
+//    graph-covered file denies with the outline inline in a live stage and
+//    warns with it outside one; `sed -n` of the same file as a bounded range is
+//    allowed.
 #[test]
 fn bash_side_cat_gets_read_rules_sed_range_is_allowed() {
     if skip_unless_gate_visible("reads::bash_side_cat_gets_read_rules_sed_range_is_allowed") {
@@ -116,7 +117,7 @@ fn run_read_tool(hook: &Path, file: &Path, session: &Session, stub_dir: &Path) -
 }
 
 #[track_caller]
-fn assert_denied_once(out: &HookOutput, what: &str) {
+pub(super) fn assert_denied_once(out: &HookOutput, what: &str) {
     assert_eq!(
         out.code, 2,
         "{what}: stdout={} stderr={}",
@@ -130,7 +131,7 @@ fn assert_denied_once(out: &HookOutput, what: &str) {
 }
 
 #[track_caller]
-fn assert_silently_allowed(out: &HookOutput, what: &str) {
+pub(super) fn assert_silently_allowed(out: &HookOutput, what: &str) {
     assert_eq!(out.code, 0, "{what}: stderr={}", out.stderr);
     assert!(
         out.stdout.trim().is_empty(),
@@ -168,12 +169,11 @@ fn cat_denied_once_then_read_allowed() {
     assert_silently_allowed(&out, "cat after the denied Read");
 }
 
-// 5. `head -n 20`/`tail -n 20` are bounded range reads; a bare `head`/`tail`
-//    with no count is an unbounded full read, subject to rule 1 exactly like
-//    `cat`.
+// 5. `head -n 20`/`tail -n 20` are bounded range reads; `cat` and `sed -n '1,$p'`
+//    of the same file are whole reads, subject to rule 1.
 #[test]
-fn head_tail_with_count_is_range_bare_is_full() {
-    if skip_unless_gate_visible("reads::head_tail_with_count_is_range_bare_is_full") {
+fn head_tail_with_count_is_range_cat_and_sed_are_full() {
+    if skip_unless_gate_visible("reads::head_tail_with_count_is_range_cat_and_sed_are_full") {
         return;
     }
     let (_hook_dir, hook) = setup_hook();
@@ -183,9 +183,12 @@ fn head_tail_with_count_is_range_bare_is_full() {
     let file = write_file_with_lines(files.path(), "big.rs", 500);
     let path = file.to_string_lossy();
 
-    for (bounded_cmd, bare_cmd) in [
-        (format!("head -n 20 {path}"), format!("head {path}")),
-        (format!("tail -n 20 {path}"), format!("tail {path}")),
+    for (bounded_cmd, whole_cmd) in [
+        (format!("head -n 20 {path}"), format!("cat {path}")),
+        (
+            format!("tail -n 20 {path}"),
+            format!("sed -n '1,$p' {path}"),
+        ),
     ] {
         let ranged = Session::new();
         ranged.enable_deny();
@@ -199,12 +202,43 @@ fn head_tail_with_count_is_range_bare_is_full() {
 
         let full = Session::new().with_live_main_agent();
         full.enable_deny();
-        let out = run_bash_hook(&hook, &bare_cmd, &full, Some(&stub_dir));
+        let out = run_bash_hook(&hook, &whole_cmd, &full, Some(&stub_dir));
         assert_eq!(
             out.code, 2,
-            "{bare_cmd} must be treated as a full read: stderr={}",
+            "{whole_cmd} must be treated as a full read: stderr={}",
             out.stderr
         );
+    }
+}
+
+// 5b. Every other bounded or endless head/tail form is allowed in a live stage:
+//     the bare form stops at 10 lines, `--lines` counts, and a follow never ends.
+#[test]
+fn bare_lines_and_follow_forms_of_head_and_tail_are_not_denied() {
+    let (_hook_dir, hook) = setup_hook();
+    let files = TempDir::new().expect("files dir");
+    let stubs = TempDir::new().expect("stubs dir");
+    let stub_dir = covered_stub_dir(stubs.path());
+    let file = write_file_with_lines(files.path(), "big.rs", 500);
+    let path = file.to_string_lossy();
+
+    let forms = [
+        "head",
+        "tail",
+        "head --lines 20",
+        "head --lines=20",
+        "tail --lines 20",
+        "tail --lines=20",
+        "tail -F",
+        "tail -fn 20",
+        "tail -nf",
+        "tail -qF",
+        "tail -Fn20",
+    ];
+    for form in forms {
+        let session = Session::new().with_live_main_agent();
+        let out = run_bash_hook(&hook, &format!("{form} {path}"), &session, Some(&stub_dir));
+        assert_silently_allowed(&out, form);
     }
 }
 
@@ -235,8 +269,7 @@ fn head_byte_count_and_tail_follow_skip_line_discipline() {
 }
 
 // New. `sed -n '1,$p'` is a range ending at the LAST line - a "full" read of the whole file, not
-// a bounded range. It gets the same large-file treatment `cat`/bare `head` get; before the fix it
-// escaped rule 1 entirely by superficially looking like a bounded range.
+// a bounded range. It gets the same large-file treatment `cat` gets.
 #[test]
 fn sed_dollar_range_is_treated_as_a_full_read() {
     if skip_unless_gate_visible("reads::sed_dollar_range_is_treated_as_a_full_read") {

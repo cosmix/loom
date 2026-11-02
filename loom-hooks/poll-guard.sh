@@ -115,30 +115,29 @@ _loom_poll_rule_repeat() {
 }
 
 # Byte counts and follow flags skip line discipline: they are bounded or endless.
+# With no count, head and tail stop at 10 lines. The follow arm matches single-dash
+# bundles too (`-fn 20`, `-nf`, `-qF`).
 _loom_read_bound_for_head_tail() {
-	local base="$1" tok k=""
+	local base="$1" tok k=10
 	shift
 	while [[ $# -gt 0 ]]; do
 		tok="$1"
 		shift
 		case "$tok" in
-		-c | -c[0-9]* | --bytes | --bytes=* | -f | --follow | --follow=*)
+		-c | -c[0-9]* | --bytes | --bytes=* | -[!-]*[fF]* | --follow | --follow=*)
 			printf 'skip '
 			return 0
 			;;
-		-n)
-			k="${1:-}"
+		-n | --lines)
+			k="${1:-10}"
 			shift || true
 			;;
 		-n[0-9]*) k="${tok#-n}" ;;
+		--lines=*) k="${tok#--lines=}" ;;
 		-[0-9]*) k="${tok#-}" ;;
 		esac
 	done
-	if [[ -n "$k" ]]; then
-		[[ "$base" == "head" ]] && printf 'range 1-%s' "$k" || printf 'range -%s' "$k"
-	else
-		printf 'full '
-	fi
+	[[ "$base" == "head" ]] && printf 'range 1-%s' "$k" || printf 'range -%s' "$k"
 }
 
 # A sed range ending in `$` is full; other non-range forms can rewrite, so skip.
@@ -159,8 +158,38 @@ _loom_read_bound_for_sed() {
 	[[ -n "$range" ]] && printf 'range %s' "$range" || printf 'skip '
 }
 
+# Return 0 when the simple command at token <cmd_idx> sends stdout to a pipe or a
+# file, so its output never reaches the agent. A redirect splits a command into
+# several token segments, so the walk crosses those and stops at a control operator.
+# A descriptor word before `>` (`2>x`) or a duplicate after it (`>&2`) leaves stdout
+# where it was, and a closing `)` hands the subshell's stdout to what follows.
+_loom_read_stdout_captured() {
+	local i=$(($1 + 1)) n=${#LOOM_TOKENS[@]} run
+	while ((i < n)); do
+		if [[ "${LOOM_TOKENS[$i]}" == "%%SEP%%" ]]; then
+			run="${LOOM_TOKEN_SEPS[$i]:-}"
+			case "${run#)}" in
+			'||'* | '&&'*) return 1 ;;
+			'|'* | '&>'*) return 0 ;;
+			'>'*)
+				if ! [[ "${LOOM_TOKENS[$((i - 1))]}" =~ ^[0-9]+$ && "${LOOM_TOKENS[$((i - 1))]}" != 1 ]] &&
+					! [[ "$run" == *'>&' && "${LOOM_TOKENS[$((i + 1))]:-}" =~ ^[0-9]+$ ]]; then
+					return 0
+				fi
+				;;
+			'<'*) ;;
+			*) return 1 ;;
+			esac
+		fi
+		i=$((i + 1))
+	done
+	return 1
+}
+
+# Once the command has changed directory, a relative argument no longer names what
+# the hook's own working directory holds, so only absolute arguments are checked.
 _loom_bash_read_check() {
-	local cmd_idx="$1" base="$2" agent_id="$3" fallback_sid="$4"
+	local cmd_idx="$1" base="$2" agent_id="$3" fallback_sid="$4" cwd_moved="$5"
 	local n=${#LOOM_TOKENS[@]} i=$((cmd_idx + 1))
 	local -a args=()
 	while ((i < n)) && [[ "${LOOM_TOKENS[$i]}" != "%%SEP%%" ]]; do
@@ -187,12 +216,14 @@ _loom_bash_read_check() {
 	elif [[ "$base" == "sed" ]]; then
 		return 0 # `sed` with no arguments reads nothing
 	fi
+	[[ "$kind" == "full" ]] && _loom_read_stdout_captured "$cmd_idx" && return 0
 
 	# Full-read line counts are path-specific (`cat a b` names two files).
 	local tok read_lines
 	if ((${#args[@]} > 0)); then
 		for tok in "${args[@]}"; do
 			case "$tok" in -*) continue ;; esac
+			[[ "$cwd_moved" == 1 && "$tok" != /* ]] && continue
 			[[ -f "$tok" ]] || continue
 			read_lines="$lines"
 			[[ "$kind" == "full" ]] && read_lines=$(_loom_read_full_lines "$tok")
@@ -205,11 +236,12 @@ _loom_bash_read_check() {
 # Check every cat/head/tail/sed segment.
 loom_bash_reads_scan() {
 	local agent_id="$1" fallback_sid="$2"
-	local j base
+	local j base cwd_moved=0
 	while IFS= read -r j; do
 		base="${LOOM_TOKENS[$j]##*/}"
 		case "$base" in
-		cat | head | tail | sed) _loom_bash_read_check "$j" "$base" "$agent_id" "$fallback_sid" ;;
+		cd | pushd | popd) cwd_moved=1 ;;
+		cat | head | tail | sed) _loom_bash_read_check "$j" "$base" "$agent_id" "$fallback_sid" "$cwd_moved" ;;
 		esac
 	done < <(_loom_poll_command_indices)
 	return 0
