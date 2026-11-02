@@ -172,6 +172,12 @@ describe("Markdown title suppression", () => {
     expect(container.querySelector("h1")).toBeNull();
   });
 
+  it("drops the first H1 when the title holds a code span", () => {
+    const { container } = renderWithTitle("# `docs` plan\n\nBody.\n", "`docs` plan");
+    expect(container.querySelector("h1")).toBeNull();
+    expect(container.querySelector("p")?.textContent).toBe("Body.");
+  });
+
   it.each(["> # Title", "- # Title"])("keeps nested headings in %s", (nested) => {
     const { container } = renderWithTitle(`${nested}\n\n# Title\n\n${nested}\n`, "Title");
     expect(container.querySelectorAll("h1")).toHaveLength(2);
