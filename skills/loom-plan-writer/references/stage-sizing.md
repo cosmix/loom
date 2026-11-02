@@ -8,7 +8,7 @@ Optional, seconds, default **300**. It is how long a stage may go without a hear
 orchestrator flags it, and the same number is written into the stage's signal so the session knows
 the idle budget it is being measured against. It is NOT the `--timeout` handed to `loom subagents
 watch`: that stays long (3600) so one background watch covers the whole wait, while this budget is
-only the idle threshold death is judged against.
+only the idle threshold for reporting a stall, not proof of death.
 
 Set it from how long the work legitimately goes quiet, not from how long you hope it takes. A wide
 mechanical sweep, a large test run, or a FOREGROUND codex run is one long tool call that emits
@@ -36,7 +36,7 @@ Elapsed time alone is still never evidence of death.
 Consequences for how you write a plan:
 
 - **A stage OMITS `model`/`reasoning_effort` in its YAML by default, so the stage type's configured default applies** (sonnet for `standard`/`knowledge-distill`, opus for `knowledge`/`integration-verify` — `SKILL.md` Section 4); knowledge-distill also runs single-agent with no subagents. There is no per-stage subagent-model choice separate from this — the orchestrator's own model is this default/override chain; subagent model choice happens at spawn time, below.
-- **The fable/opus/sonnet-or-codex-terra/haiku decision MOVES DOWN to the subagent level**, made by the orchestrator AT SPAWN TIME — not by the plan author in YAML. The orchestrator picks per subagent assignment, cheapest tier first: haiku for mechanical edits, boilerplate, scaffolding, and simple unit tests (codex gpt-6-luna does that work only when the user or plan asks for it); sonnet or codex gpt-6.1-terra for common implementation and integration tests, the tier most work belongs to (which lane: `codex-implementers.md`); opus (effort high) for mainstream architecture and algorithm implementation, spawned with `effort: xhigh` for hard debugging, core algorithmic or architectural work, distributed systems, heavily multithreaded or parallel code, and systems engineering; fable only for visual/UI design, a bug that survived a delegated fix attempt, or extremely challenging algorithmic design (BLOCK-B rule 3; fable mechanics follow the block).
+- **Worker tier is chosen at spawn**, following `../../loom-orchestration/SKILL.md#rule-7--model-allocation`; quote applicable rules in the worker brief.
 - **"Keep sonnet stages small" becomes "keep each subagent's assignment small."** A stage can be as large as the work genuinely requires; what must stay small is each individual subagent's task — that is what earns it a cheap model and keeps it inside its own context budget.
 - **ESCALATION RULE: two failures on the same task ⇒ spawn a `loom-advisor` (fable) subagent, NOT a blind retry.** This replaces any earlier guidance to retry a failing subagent with a bigger model — diagnose first (narrow scope, full detail, advice returned), then re-dispatch with whatever the advisor recommends.
 

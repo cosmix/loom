@@ -677,7 +677,7 @@ loom run                                 # Git branches preserve prior work
 
 ## Operator Gotchas
 
-- **The daemon loads the plan ONCE at startup.** Editing the plan file (or a `.loom/work/stages/*.md`) while `loom run` is live has NO effect on the running graph — no reload mechanism exists. To apply plan changes, `loom stop` → edit → `loom init --clean` (or `loom clean --state && loom init`) → `loom run`. (Exception: the adjudicator may amend only a single stage's `acceptance`/`wiring` in place.)
+- **Plan definitions and lifecycle state have different lifetimes.** The running graph starts from the initialized plan definition; changing the plan file does not redefine it. The daemon reloads stage and session lifecycle state each poll. Use the appropriate `loom stage` CLI command for a lifecycle update; do not edit state files directly or reinitialize merely to apply that update.
 - **Exit code 0 ≠ success.** Sandbox blocks, dep-fetch failures, and write denials all exit 0. Read stderr; "blocked / denied / connection refused / failed to download" means investigate, not proceed.
 - **`fix_attempts` caps at 3 by default.** After repeated acceptance failures a stage stops auto-retrying and escalates (Blocked / NeedsHumanReview). Don't loop `loom stage retry` blindly — read the block reason and fix root cause, or `loom stage dispute-criteria` if the criteria themselves are wrong.
 - **All four stage types default to `permission_mode: auto`** (resolves stage > plan > stage-type default). Loom stages run unattended, so the agent auto-accepts actions its heuristics deem safe; the sandbox deny/allow rules are the real boundary. Override to `accept-edits`/`plan` at plan or stage level to tighten.
