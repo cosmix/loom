@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse:Bash hook for long sleeps, repeated polls, Bash-side reads, and pathless `git show`/`git diff`.
-# Warnings collect; only a configured live stage can deny via loom_hook_deny_or_warn in _read_discipline.sh.
+# Warnings collect. Only a live stage can deny: a first whole read of a large file (loom_read_deny_once),
+# or a repeated poll or watch when deny_enabled is also set (loom_hook_deny_or_warn in _read_discipline.sh).
 
 set -euo pipefail
 

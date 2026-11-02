@@ -15,10 +15,11 @@
 # "session_id": ..., "cwd": ...}
 # Exit codes: 0 = allow (optionally with a LOOM_HOOK_WARN additionalContext),
 # 1 = jq not installed (non-blocking error),
-# 2 = deny with guidance on stderr (only when the deny switch is enabled AND
-# a live loom session is running above this process - see
-# loom_hook_deny_or_warn in _read_discipline.sh; absent either, every
-# decision below is a warning).
+# 2 = deny with guidance on stderr: the first whole read of a large file by
+# one agent inside a live loom stage (LOOM_STAGE_ID set and the main agent a
+# live ancestor of this process), unless `[hooks] read_gate = false`. That
+# agent's next whole read of the file is allowed. Outside a live stage every
+# decision is a warning - see loom_read_deny_once in _read_ledger.sh.
 
 set -euo pipefail
 
