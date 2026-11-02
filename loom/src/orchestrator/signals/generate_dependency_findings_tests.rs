@@ -223,3 +223,27 @@ fn the_recovery_signal_carries_the_same_section_once() {
     assert_eq!(section(&fresh), section(&recovered));
     assert!(section(&recovered).join("\n").contains(&decision));
 }
+
+/// One build's dependency snapshot is authoritative for prose: the section reads
+/// the supplied change, never a record re-resolved from disk during the build.
+#[test]
+fn findings_render_the_supplied_snapshot_over_the_record_on_disk() {
+    let temp = TempDir::new().unwrap();
+    let wd = work_dir(&temp);
+    accepted_dependency(&wd);
+    let recipient = save_recipient(&wd, "b-next", &["a-dep"], &["src/b.rs"]);
+    let mut stage = crate::verify::transitions::load_stage("a-dep", &wd).unwrap();
+    stage.completed_commit = Some("ffffffffffffffff".to_string());
+    let snapshot = [crate::orchestrator::signals::retrieval::DependencyChange {
+        stage,
+        range: None,
+        paths: Vec::new(),
+    }];
+    let rendered =
+        super::build_dependency_findings_with_changes(&wd, &recipient, None, &snapshot).unwrap();
+    assert!(
+        rendered.contains("a-dep accepted at ffffffff"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains(&COMMIT[..8]), "{rendered}");
+}

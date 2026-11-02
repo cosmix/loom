@@ -1,7 +1,6 @@
 //! Pins the commit-timing doctrine (`append_commit_timing_rules`, `helpers.rs`):
-//! commits are the ORCHESTRATOR's, made ONLY as the final step of the stage,
-//! after every subagent has returned and all verification is green — never
-//! mid-stage. The doctrine text is shared across all four stable prefixes and
+//! commits are the ORCHESTRATOR's, made at completion after verification or
+//! before filing a block or dispute. The doctrine is shared across prefixes and
 //! `CLAUDE.md.template`; these tests pin the sentinel phrases across every
 //! surface so a reword in one place cannot silently drift from the others.
 
@@ -58,6 +57,13 @@ fn commit_timing_doctrine_present_in_all_stable_prefixes() {
             prefix.contains("never mid-stage"),
             "{name} must forbid mid-stage commits"
         );
+        let exception =
+            "Exception: commit before filing a block or dispute when the stage cannot finish.";
+        assert!(
+            prefix.contains(exception),
+            "{name} must state the filing exception"
+        );
+        assert!(CLAUDE_MD_TEMPLATE.contains(exception));
     }
 }
 
@@ -98,12 +104,11 @@ fn commit_timing_sentinels_agree_with_claude_md_template() {
         "CLAUDE.md.template must forbid mid-stage commits"
     );
     assert!(
-        CLAUDE_MD_TEMPLATE
-            .contains("When to commit — at the END, after ALL verification, never before."),
+        CLAUDE_MD_TEMPLATE.contains("When to commit — at exit."),
         "CLAUDE.md.template's Rule 4 must carry the When-to-commit header"
     );
 
-    let sentinel = "Commits happen ONLY as the final step of the stage";
+    let sentinel = "commits happen ONLY as the final step of the stage";
     let occurrences = CLAUDE_MD_TEMPLATE.matches(sentinel).count();
     assert_eq!(
         occurrences, 1,

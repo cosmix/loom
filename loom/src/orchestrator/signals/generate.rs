@@ -7,7 +7,10 @@ pub use context::build_embedded_context_with_stage;
 #[cfg(test)]
 pub(super) use context::{extract_plan_overview, extract_plan_overview_from};
 use enrichment::{build_cross_stage_summary, wants_stage_enrichment};
-pub(super) use findings::{build_dependency_findings, DEPENDENCY_FINDINGS_HEADING};
+#[cfg(test)]
+pub(super) use findings::build_dependency_findings;
+pub(super) use findings::build_dependency_findings_with_changes;
+pub(super) use findings::DEPENDENCY_FINDINGS_HEADING;
 // Read only by tests (this crate's and the dependency harness), so the lib
 // build would flag an unconditional re-export as unused.
 #[cfg(test)]
@@ -23,10 +26,11 @@ use crate::models::session::Session;
 use crate::models::stage::{Stage, StageType};
 use crate::models::worktree::Worktree;
 use crate::plan::schema::CodeReviewConfig;
+use crate::sandbox::PathEscapeAttempt;
 use crate::skills::{SkillIndex, SkillMatch};
 
 use super::cache::SignalMetrics;
-use super::format::{format_signal_content, format_signal_with_metrics};
+use super::format::{format_signal_with_metrics, FormattedSignal};
 use super::types::{DependencyStatus, EmbeddedContext, SandboxSummary};
 
 /// Default maximum number of skill recommendations to include in signals
@@ -49,8 +53,8 @@ pub fn generate_signal(
         handoff_file,
         git_history,
         work_dir,
-        None, // No skill index - backward compatible
-        &[],  // No detected languages - backward compatible
+        None,
+        &[],
     )
 }
 
@@ -67,28 +71,18 @@ pub fn generate_signal_with_skills(
     skill_index: Option<&SkillIndex>,
     detected_languages: &[DetectedLanguage],
 ) -> Result<PathBuf> {
-    let mut embedded_context = build_signal_context(session, stage, work_dir, handoff_file);
-
-    if let Some(index) = skill_index {
-        embedded_context.skill_recommendations =
-            declared_and_recommended_skills(index, stage, worktree, detected_languages);
-    }
-
-    let mut content = format_signal_content(
+    let (formatted, context) = assemble_signal(
         session,
         stage,
         worktree,
         dependencies_status,
         handoff_file,
         git_history,
-        &embedded_context,
+        work_dir,
+        skill_index,
+        detected_languages,
     );
-
-    super::v2_section::append_v2_section(&mut content, stage, work_dir);
-    append_stage_feedback(&mut content, stage, work_dir);
-
-    super::helpers::persist_delivery(work_dir, stage, &session.id, &embedded_context);
-    super::helpers::write_signal_file(&session.id, &content, work_dir)
+    super::helpers::publish_signal(&session.id, &formatted.content, work_dir, stage, &context)
 }
 
 /// Render the "## Review Dimensions" checklist for an integration-verify signal,
@@ -185,26 +179,62 @@ pub fn generate_signal_with_metrics(
     git_history: Option<&GitHistory>,
     work_dir: &Path,
 ) -> Result<(PathBuf, SignalMetrics)> {
-    let embedded_context = build_signal_context(session, stage, work_dir, handoff_file);
-
-    let formatted = format_signal_with_metrics(
+    let (formatted, context) = assemble_signal(
         session,
         stage,
         worktree,
         dependencies_status,
         handoff_file,
         git_history,
-        &embedded_context,
+        work_dir,
+        None,
+        &[],
     );
-
-    super::helpers::persist_delivery(work_dir, stage, &session.id, &embedded_context);
-    let signal_path = super::helpers::write_signal_file(&session.id, &formatted.content, work_dir)?;
+    let signal_path =
+        super::helpers::publish_signal(&session.id, &formatted.content, work_dir, stage, &context)?;
 
     Ok((signal_path, formatted.metrics))
 }
 
-/// Build signal context with all shared setup logic, consolidating context,
-/// budget, usage, and sandbox setup duplicated across the two signal generators.
+#[allow(clippy::too_many_arguments)]
+fn assemble_signal(
+    session: &Session,
+    stage: &Stage,
+    worktree: &Worktree,
+    dependencies_status: &[DependencyStatus],
+    handoff_file: Option<&str>,
+    git_history: Option<&GitHistory>,
+    work_dir: &Path,
+    skill_index: Option<&SkillIndex>,
+    detected_languages: &[DetectedLanguage],
+) -> (FormattedSignal, EmbeddedContext) {
+    let mut context = build_signal_context(session, stage, work_dir, handoff_file);
+    if let Some(index) = skill_index {
+        context.skill_recommendations =
+            declared_and_recommended_skills(index, stage, worktree, detected_languages);
+    }
+    let mut formatted = format_signal_with_metrics(
+        session,
+        stage,
+        worktree,
+        dependencies_status,
+        handoff_file,
+        git_history,
+        &context,
+    );
+    let original_len = formatted.content.len();
+    super::v2_section::append_v2_section(&mut formatted.content, stage, work_dir);
+    append_stage_feedback(&mut formatted.content, stage, work_dir);
+    // Stage-specific suffixes belong to the dynamic stage content bucket.
+    formatted.metrics.dynamic_bytes += formatted.content.len() - original_len;
+    formatted.metrics.signal_size_bytes = formatted.content.len();
+    formatted.metrics.estimated_tokens = formatted.content.len() / 4;
+    (formatted, context)
+}
+
+/// Build a stage signal's context. One dependency snapshot feeds source boosts,
+/// dependency findings and cross-stage enrichment, so the three sections cannot
+/// observe different dependency states during one build.
 fn build_signal_context(
     session: &Session,
     stage: &Stage,
@@ -234,83 +264,74 @@ fn build_signal_context(
     // the agent about it only when there's a value worth acting on.
     embedded_context.subagent_timeout_secs = stage.subagent_timeout_secs;
 
+    let changes = super::retrieval::dependency_changes(work_dir, stage);
     if wants_stage_enrichment(stage) {
-        embedded_context.cross_stage_summary = build_cross_stage_summary(work_dir, stage);
+        embedded_context.cross_stage_summary = build_cross_stage_summary(stage, &changes);
     }
 
-    embedded_context.context_pack = super::helpers::retrieve_stage_pack(work_dir, stage);
+    embedded_context.context_pack =
+        super::retrieval::retrieve_stage_pack_with_changes(work_dir, stage, &changes);
     // After retrieval: relevance reads the brief's paths. Every stage type; the
     // selector decides. Rebuilt from the journals at every generation, so a
     // continuation picks up entries relayed after the first signal.
-    embedded_context.dependency_findings =
-        build_dependency_findings(work_dir, stage, embedded_context.context_pack.as_ref());
+    embedded_context.dependency_findings = build_dependency_findings_with_changes(
+        work_dir,
+        stage,
+        embedded_context.context_pack.as_ref(),
+        &changes,
+    );
     embedded_context.knowledge_tree_empty = super::helpers::knowledge_tree_is_empty(work_dir);
     embedded_context
 }
 
-/// Build sandbox summary from stage configuration
+/// Project the display summary from the effective launcher configuration: the
+/// stage's overrides merged over the plan, plus the licensed codex lane's grants.
 fn build_sandbox_summary(stage: &Stage, work_dir: &Path) -> SandboxSummary {
-    let allow_write: Vec<String> = stage
-        .sandbox
+    let merged = crate::sandbox::stage_sandbox(work_dir, stage);
+    let mut expanded = merged.clone();
+    crate::sandbox::expand_paths(&mut expanded);
+    let missing_allow_write = crate::sandbox::missing_grant_paths(
+        &expanded.filesystem.allow_write,
+        dirs::home_dir().as_deref(),
+    );
+    let mut allow_write: Vec<String> = merged
         .filesystem
-        .as_ref()
-        .map(|f| f.allow_write.clone())
-        .unwrap_or_default();
-    let missing_allow_write = missing_allow_write_from_merged(work_dir, stage);
+        .allow_write
+        .iter()
+        // This grant is for the privileged knowledge command, not direct edits.
+        .filter(|path| {
+            let path = path.trim();
+            path != "doc/loom/knowledge" && !path.starts_with("doc/loom/knowledge/")
+        })
+        // Settings emission drops these, so they grant nothing.
+        .filter(|path| crate::sandbox::detect_path_escape(path.trim()) == PathEscapeAttempt::Safe)
+        .cloned()
+        .collect();
+    let mut allowed_domains = merged.network.allowed_domains.clone();
+    allowed_domains.extend(merged.network.additional_domains.clone());
+    if merged.implementers.includes_codex() {
+        extend_unique(&mut allowed_domains, &crate::codex::CODEX_SANDBOX_DOMAINS);
+        extend_unique(&mut allow_write, &crate::codex::CODEX_SANDBOX_WRITE_PATHS);
+    }
 
     SandboxSummary {
-        enabled: stage.sandbox.enabled.unwrap_or(true),
-        deny_read: stage
-            .sandbox
-            .filesystem
-            .as_ref()
-            .map(|f| f.deny_read.clone())
-            .unwrap_or_default(),
-        deny_write: stage
-            .sandbox
-            .filesystem
-            .as_ref()
-            .map(|f| f.deny_write.clone())
-            .unwrap_or_default(),
+        enabled: merged.enabled,
+        deny_read: merged.filesystem.deny_read.clone(),
+        deny_write: merged.filesystem.deny_write.clone(),
         allow_write,
         missing_allow_write,
-        allowed_domains: stage
-            .sandbox
-            .network
-            .as_ref()
-            .map(|n| {
-                let mut domains = n.allowed_domains.clone();
-                domains.extend(n.additional_domains.clone());
-                domains
-            })
-            .unwrap_or_default(),
-        unix_sockets_allowed: crate::sandbox::grants_all_unix_sockets(
-            &crate::sandbox::stage_sandbox(work_dir, stage),
-        ),
-        excluded_commands: stage.sandbox.excluded_commands.clone(),
+        allowed_domains,
+        unix_sockets_allowed: crate::sandbox::grants_all_unix_sockets(&merged),
+        excluded_commands: merged.excluded_commands.clone(),
     }
 }
 
-/// Compute `missing_allow_write` from the MERGED plan+stage sandbox grants,
-/// mirroring the merge the spawn path performs
-/// (`orchestrator::core::stage_executor`: `sandbox::merge_config` then
-/// `sandbox::expand_paths`) — a plan-level `allow_write` grant (declared in
-/// `sandbox.filesystem.allow_write` at the top of the plan, not under a
-/// stage) is invisible to `stage.sandbox` alone, so checking only the stage
-/// config misses it.
-///
-/// The displayed `allow_write` list in `build_sandbox_summary` stays
-/// stage-only; only this "missing on host" check needs the wider merged set.
-/// That set also carries the knowledge write grant
-/// (`doc/loom/knowledge/**`, added by `merge_config`'s
-/// `apply_knowledge_write_grant`), which stage agents must not see
-/// advertised as a plain filesystem path — it never leaks into this list
-/// because it is a relative glob, and `missing_grant_paths` only checks
-/// absolute or `~/` entries for existence.
-fn missing_allow_write_from_merged(work_dir: &Path, stage: &Stage) -> Vec<String> {
-    let mut merged = crate::sandbox::stage_sandbox(work_dir, stage);
-    crate::sandbox::expand_paths(&mut merged);
-    crate::sandbox::missing_grant_paths(&merged.filesystem.allow_write, dirs::home_dir().as_deref())
+fn extend_unique(into: &mut Vec<String>, values: &[&str]) {
+    for value in values {
+        if !into.iter().any(|existing| existing == value) {
+            into.push((*value).to_string());
+        }
+    }
 }
 
 fn append_stage_feedback(content: &mut String, stage: &Stage, work_dir: &Path) {

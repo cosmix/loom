@@ -2,7 +2,7 @@
 
 use crate::skills::{is_core_skill, skill_invocation, SkillMatch};
 
-/// Format task progression information for inclusion in signals
+/// Format skill recommendations for inclusion in signals.
 pub fn format_skill_recommendations(skills: &[SkillMatch]) -> String {
     let mut content = String::new();
 

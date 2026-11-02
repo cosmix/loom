@@ -24,7 +24,7 @@ pub fn build_embedded_context_with_stage(
     build_embedded_context_with_stage_and_session(work_dir, handoff_file, stage_id)
 }
 
-/// Build embedded context with both stage and session info for full recitation
+/// Build embedded context with optional stage state for recitation.
 pub fn build_embedded_context_with_stage_and_session(
     work_dir: &Path,
     handoff_file: Option<&str>,

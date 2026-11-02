@@ -83,7 +83,7 @@ fn agent_definitions() -> Vec<(String, String)> {
 
 #[path = "tests_doctrine_blocks.rs"]
 mod blocks;
-use blocks::{BLOCK_A, BLOCK_B, BLOCK_D, RETIRED_PHRASES};
+use blocks::{BLOCK_A, BLOCK_B, BLOCK_D};
 
 /// Every static guidance surface pasted into a subagent prompt, as (label, text).
 fn guidance_surfaces() -> Vec<(String, String)> {
@@ -134,16 +134,18 @@ fn block_a_agrees_across_every_surface() {
 
 #[test]
 fn block_b_agrees_across_every_surface() {
-    for (label, text) in [
-        ("skills/loom-orchestration/SKILL.md", ORCHESTRATION_SKILL),
-        ("skills/loom-plan-writer/SKILL.md", PLAN_WRITER_SKILL),
-    ] {
-        assert!(
-            text.contains(BLOCK_B),
-            "{label} does not carry BLOCK-B verbatim. The model playbook must be \
-             byte-identical wherever it appears. Expected to find:\n{BLOCK_B}"
-        );
-    }
+    assert!(
+        ORCHESTRATION_SKILL.contains(BLOCK_B),
+        "orchestration must own the model playbook"
+    );
+    assert!(
+        PLAN_WRITER_SKILL.contains("../loom-orchestration/SKILL.md#rule-7--model-allocation"),
+        "plan writer must reference the model policy owner"
+    );
+    assert!(
+        !PLAN_WRITER_SKILL.contains(BLOCK_B),
+        "plan writer must not duplicate the model playbook"
+    );
 
     // BLOCK-B names the codex lane's model and effort as prose literals, so
     // equality with the surfaces above is not enough: editing the constants in
@@ -359,40 +361,8 @@ fn codex_navigation_kit_signal_doctrine_names_the_kit() {
     }
 }
 
-#[test]
-fn no_guidance_surface_still_tells_a_subagent_to_verify() {
-    let mut surfaces = guidance_surfaces();
-    surfaces.push(("signal stable prefix".to_string(), generate_stable_prefix()));
-    surfaces.push((
-        "signal integration-verify prefix".to_string(),
-        generate_integration_verify_stable_prefix(),
-    ));
-    surfaces.push((
-        "signal knowledge prefix".to_string(),
-        generate_knowledge_stable_prefix(),
-    ));
-    surfaces.push((
-        "signal knowledge-distill prefix".to_string(),
-        generate_knowledge_distill_stable_prefix(),
-    ));
-
-    let mut leftovers = Vec::new();
-    for (label, text) in surfaces {
-        for phrase in RETIRED_PHRASES {
-            if text.contains(phrase) {
-                leftovers.push(format!("{label} still contains {phrase:?}"));
-            }
-        }
-    }
-
-    assert!(
-        leftovers.is_empty(),
-        "guidance surfaces still carry phrasing the no-verify rule retired, so a \
-         subagent obeying them would be blocked by loom-hooks/subagent-verify-guard.sh \
-         with no allowed alternative:\n  {}",
-        leftovers.join("\n  ")
-    );
-}
+#[path = "tests_doctrine/verify_guidance.rs"]
+mod verify_guidance;
 
 // STABLE-PREFIX / emitted-signal doctrine tests (settled-completion, the subagent-budget
 // cadence framing, KNOWLEDGE_CONSUMPTION_CONTRACT) live in tests_doctrine_prefixes.rs;

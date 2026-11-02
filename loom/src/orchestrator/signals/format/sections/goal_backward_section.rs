@@ -4,8 +4,7 @@ use crate::models::stage::Stage;
 /// criteria (artifacts, wiring, wiring tests, dead code, regression test,
 /// reachable units).
 ///
-/// Split out of `sections.rs` to keep it under its maintainability
-/// line-count baseline. Call only when `stage.has_any_goal_checks()` is true.
+/// Call only when `stage.has_any_goal_checks()` is true.
 pub(super) fn format_goal_backward_verification_section(stage: &Stage) -> String {
     let mut content = String::new();
     content.push_str("\n## Goal-Backward Verification\n\n");

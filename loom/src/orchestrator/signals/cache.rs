@@ -116,8 +116,8 @@ const INTEGRATION_VERIFY_OVERRIDE: &str = "⚠️ **INTEGRATION-VERIFY OVERRIDE 
          The IV orchestrator runs `loom check integration-verify` ONCE; it carries the COMPLETE suite \
          (e.g. `cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt --check`) \
          and the orchestrator reads all stderr for each immutable tree, environment, and criterion \
-         contract. That check is the complete-suite run Rule 5's complete-suite \
-         instruction means. Reviewers inspect independently and run only targeted \
+         contract. Give reviewers the check summaries and evidence pointers. \
+         Reviewers inspect independently and run only targeted \
          discriminating security/functional checks; targeted checks are additional evidence, never \
          a substitute for the canonical gate. Each check summary records command, real exit, \
          criterion verdict, input/contract identity, elapsed time, and an evidence pointer when \

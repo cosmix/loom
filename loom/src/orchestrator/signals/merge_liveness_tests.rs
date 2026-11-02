@@ -158,6 +158,49 @@ fn a_launching_record_without_a_pid_keeps_its_signal() {
 }
 
 #[test]
+fn readable_signal_requires_matching_merge_record() {
+    let temp = TempDir::new().unwrap();
+    for (kind, owner) in [(SessionType::Stage, "mine"), (SessionType::Merge, "other")] {
+        let record = save_record(temp.path(), kind, owner, std::process::id());
+        let stage = Stage {
+            id: "mine".into(),
+            ..Stage::default()
+        };
+        let path =
+            generate_merge_signal(&record, &stage, "source", "main", &[], temp.path()).unwrap();
+        assert_eq!(
+            find_live_merge_session_for_stage("mine", temp.path()).unwrap(),
+            None
+        );
+        assert!(path.exists());
+    }
+}
+
+#[test]
+fn quoted_merge_header_is_not_a_merge_signal() {
+    let temp = TempDir::new().unwrap();
+    let record = save_record(temp.path(), SessionType::Stage, "mine", std::process::id());
+    let dir = temp.path().join("signals");
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(format!("{}.md", record.id));
+    for quoted in [
+        "# Merge Signal: example",
+        "```\n# Merge Signal: example\n```",
+    ] {
+        fs::write(
+            &path,
+            format!("# Stage Signal\n\n## Target\n- **Stage**: mine\n\n## Assignment\n{quoted}\n"),
+        )
+        .unwrap();
+        assert_eq!(
+            find_live_merge_session_for_stage("mine", temp.path()).unwrap(),
+            None
+        );
+        assert!(path.exists(), "a stage session's signal is not retired");
+    }
+}
+
+#[test]
 fn a_reused_pid_does_not_keep_a_dead_resolver_signal() {
     let temp = TempDir::new().unwrap();
     let work_dir = temp.path();
