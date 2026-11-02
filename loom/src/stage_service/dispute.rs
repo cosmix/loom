@@ -23,20 +23,24 @@
 //!    transitions the stage to `NeedsAdjudication`, saves the stage
 //! 9. responds `Response::DisputeCreated { id }`
 //!
+//! Steps 3 to 8 run under the stage lock, on the stage as it is on disk then,
+//! and a failed stage write withdraws the request step 7 wrote.
+//!
 //! See `models/dispute.rs` for the on-disk schema; `dispute_store.rs` holds
-//! the lock, id allocation, `request.md` write and escalation every dispute
+//! the locks, id allocation, `request.md` write and escalation every dispute
 //! kind shares, and `dispute_kinds.rs` files the plan v2 kinds.
 
 use anyhow::Result;
 use chrono::Utc;
 use std::path::Path;
 
-use super::dispute_store::lock_stage_disputes;
+use super::dispute_store::{file_under_stage_lock, lock_stage_disputes};
 use super::Response;
 use crate::models::dispute::{
     truncate_to_byte_limit, CriterionField, DisputeKind, DisputeRequest, FAILURE_OUTPUT_MAX_BYTES,
 };
 use crate::models::stage::Stage;
+#[cfg(test)]
 use crate::verify::transitions::update_stage;
 
 pub fn handle_dispute_criteria(
@@ -99,35 +103,34 @@ pub(crate) fn handle_dispute_criteria_for_session(
 
     // Per-stage lock: serialises concurrent filings (id allocation + transition).
     let locked = lock_stage_disputes(work_dir, stage_id)?;
-    let work_canonical = &locked.work_dir;
 
-    let mut response = None;
-    update_stage(stage_id, work_canonical, |s| {
+    #[cfg(test)]
+    super::dispute_race_tests::before_stage_update();
+    file_under_stage_lock(&locked, stage_id, request_id, |s, publication| {
         if session_id.is_some_and(|id| !super::ownership::matches_attempt(s, id)) {
-            response = Some(Response::Error {
+            return Ok(Response::Error {
                 message: "request belongs to a stale stage session".into(),
             });
-            return Ok(());
         }
         if let Some(existing) = super::receipts::existing(s, request_id)? {
-            response = Some(existing);
-            return Ok(());
+            return Ok(existing);
         }
         if let Some(refused) = refusal(s, field, &criterion_indices, &reason) {
-            response = Some(refused);
-            return Ok(());
+            return Ok(refused);
         }
+        #[cfg(test)]
+        super::dispute_race_tests::after_admission();
         let kind = DisputeKind::criterion(field, criterion_indices);
         let record = build_record(s, kind, reason.clone(), evidence_commit, failure_output);
-        let id = super::receipts::write_request(&locked.stage_dir, record, request_id)?;
+        let id = publication.write(record)?;
         s.dispute_count = s.dispute_count.saturating_add(1);
         super::receipts::remember(s, request_id, id);
         s.tally.evidence_rounds = 0;
         s.try_request_adjudication(Some(reason))?;
-        response = Some(Response::DisputeCreated { id });
-        Ok(())
-    })?;
-    Ok(response.expect("stage update supplies a response"))
+        #[cfg(test)]
+        super::dispute_race_tests::after_publication();
+        Ok(Response::DisputeCreated { id })
+    })
 }
 
 /// The refusal for a malformed `stage_id`, checked BEFORE any FS touch. The

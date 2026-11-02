@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use crate::git::{merge_stage, MergeBlock, MergeGate};
 use crate::models::stage::Stage;
 use crate::stage_service::merge_outcome::{
-    apply_infrastructure_failure, check_stage, classify_failure, MergeDisposition, MergeFailure,
+    apply_retry_failure, check_stage, classify_failure, MergeDisposition, MergeFailure,
 };
 use crate::verify::transitions::{trigger_dependents, update_stage};
 
@@ -149,7 +149,7 @@ fn persist_merge_error(stage: &Stage, work_dir: &Path, error: &anyhow::Error) ->
                 crate::stage_service::merge_outcome::apply_review(current, reason);
                 Ok(())
             }
-            MergeFailure::Infrastructure(reason) => apply_infrastructure_failure(current, reason),
+            MergeFailure::Infrastructure(reason) => apply_retry_failure(current, reason),
         }
     })?;
     Ok(())

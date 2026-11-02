@@ -5,6 +5,9 @@
 //! backstop's test does it: every proxy for "the agent was taken down" lies in
 //! at least one lane.
 
+#[path = "recover_hung_latch_tests.rs"]
+mod latch_tests;
+
 use super::governor_tests::assign_stage_session;
 use super::recover_hung::{checkpoint_has_current_blocker, HungReport};
 use super::tests::{

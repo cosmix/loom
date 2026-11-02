@@ -88,3 +88,60 @@ fn unreadable_request_retry_budget_survives_registry_restart() {
         StageStatus::NeedsHumanReview
     );
 }
+
+fn leave_adjudication(work: &std::path::Path) {
+    crate::verify::transitions::update_stage("s1", work, |stage| {
+        stage.status = StageStatus::Queued;
+        Ok(())
+    })
+    .unwrap();
+}
+
+/// Reading the verdict again can never change a stage that left adjudication,
+/// whatever the budget says: without a closure it stays pending every tick and
+/// its judge is never retired.
+#[test]
+fn a_verdict_for_a_stage_that_left_adjudication_closes_uncharged() {
+    for spent in [None, Some(super::MAX_APPLY_ATTEMPTS)] {
+        let tmp = ready_verdict();
+        let work = tmp.path();
+        leave_adjudication(work);
+        let counter = work.join("disputes/s1/1/apply_failures");
+        if let Some(spent) = spent {
+            std::fs::write(&counter, spent.to_string()).unwrap();
+        }
+        let before = std::fs::read(&counter).ok();
+        let registry = AdjudicatorRegistry::new();
+
+        registry.apply_verdict(work, "s1", 1).unwrap();
+
+        assert!(work.join("disputes/s1/1/closed.marker").exists());
+        assert!(!work.join("disputes/s1/1/applied.marker").exists());
+        assert_eq!(
+            std::fs::read(&counter).ok(),
+            before,
+            "no attempt is charged"
+        );
+        let after = crate::verify::transitions::load_stage("s1", work).unwrap();
+        assert_eq!(after.status, StageStatus::Queued);
+        assert!(after.tally.request_receipts.is_empty());
+        assert!(registry.pending_verdicts(work).unwrap().is_empty());
+    }
+}
+
+/// A sibling dispute keeps its own lifecycle: only the dispute being applied
+/// is closed.
+#[test]
+fn closing_a_stale_verdict_leaves_sibling_disputes_open() {
+    let tmp = ready_verdict();
+    let work = tmp.path();
+    write_dispute_request(work, "s1", 2, 0);
+    leave_adjudication(work);
+
+    AdjudicatorRegistry::new()
+        .apply_verdict(work, "s1", 1)
+        .unwrap();
+
+    assert!(work.join("disputes/s1/1/closed.marker").exists());
+    assert!(!work.join("disputes/s1/2/closed.marker").exists());
+}

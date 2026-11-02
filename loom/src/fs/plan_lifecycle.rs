@@ -229,6 +229,16 @@ pub fn mark_plan_done_if_all_merged(work_dir: &WorkDir) -> Result<Option<PathBuf
 }
 
 fn rename_completed_plan(work_dir: &WorkDir, current_path: &Path, new_path: &Path) -> Result<()> {
+    match fs::symlink_metadata(new_path) {
+        Ok(_) => anyhow::bail!(
+            "refusing to overwrite completed plan {}",
+            new_path.display()
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(error).with_context(|| format!("checking {}", new_path.display()))
+        }
+    }
     fs::rename(current_path, new_path).with_context(|| {
         format!(
             "Failed to rename plan file from {} to {}",
@@ -236,7 +246,15 @@ fn rename_completed_plan(work_dir: &WorkDir, current_path: &Path, new_path: &Pat
             new_path.display()
         )
     })?;
-    update_plan_source_path(work_dir, new_path)?;
+    if let Err(error) = update_plan_source_path(work_dir, new_path) {
+        return match fs::rename(new_path, current_path) {
+            Ok(()) => Err(error.context("Plan rename rolled back after config update failed")),
+            Err(rollback) => Err(error.context(format!(
+                "Plan moved to {} but rollback failed: {rollback}; repair the configured source path before retrying",
+                new_path.display()
+            ))),
+        };
+    }
     println!(
         "  {} Plan marked as done: {}",
         "✓".green().bold(),

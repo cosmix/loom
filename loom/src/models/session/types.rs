@@ -16,15 +16,15 @@ pub enum SessionType {
     /// Retained only so older session files remain deserializable.
     BaseConflict,
     /// Knowledge-gathering session (runs in main repo, no worktree).
-    /// Tracking key: `loom-knowledge-{stage_id}`.
+    /// Tracking key encodes the session type and stage ID.
     Knowledge,
     /// Adjudication session for one disputed criterion (acceptance
     /// criterion, wiring check, or wiring test; runs in main repo,
-    /// no worktree). Tracking key: `loom-adjudication-{stage_id}`.
+    /// no worktree).
     Adjudication,
     /// Contract test writer that runs in the stage worktree before the
     /// `Stage` session of a v2 stage with contracts. It is the stage's agent
-    /// while it runs. Tracking key: `loom-contract-{stage_id}`.
+    /// while it runs.
     Contract,
 }
 

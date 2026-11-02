@@ -247,12 +247,46 @@ fn stale_session(session_type: SessionType, age_secs: i64) -> Session {
 /// identity whose kill fails and whose liveness probe answers `alive`.
 fn identityless_blocks(session: &Session, alive: bool) -> bool {
     stale_merge_retirement_blocks_spawn(
+        std::path::Path::new("/nonexistent/work"),
         session,
         false,
         |_| Ok(alive),
         |_| Err(anyhow::anyhow!("no PID identity to signal")),
         |_| panic!("death is never confirmed by PID without a PID identity"),
     )
+}
+
+/// A slow launch writes its wrapper long after its record: an old record with a
+/// wrapper written just now can still become a process, so it keeps ownership.
+#[test]
+fn an_identityless_writer_keeps_ownership_inside_the_grace_of_its_wrapper_script() {
+    use crate::orchestrator::terminal::native::{wrapper_script_path, NativeBackend};
+    let session = stale_session(SessionType::Stage, ORPHAN_PROBE_GRACE_SECS + 300);
+    let work = tempfile::tempdir().unwrap();
+    let (_, key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+    let wrapper = wrapper_script_path(work.path(), &key);
+    std::fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
+    std::fs::write(&wrapper, "#!/bin/sh\n").unwrap();
+    let retirement_blocks = || {
+        stale_merge_retirement_blocks_spawn(
+            work.path(),
+            &session,
+            false,
+            |_| Ok(false),
+            |_| Err(anyhow::anyhow!("no PID identity to signal")),
+            |_| panic!("death is never confirmed by PID without a PID identity"),
+        )
+    };
+    assert!(retirement_blocks());
+
+    let aged = std::time::SystemTime::now() - std::time::Duration::from_secs(300);
+    std::fs::File::options()
+        .write(true)
+        .open(&wrapper)
+        .unwrap()
+        .set_modified(aged)
+        .unwrap();
+    assert!(!retirement_blocks());
 }
 
 #[test]

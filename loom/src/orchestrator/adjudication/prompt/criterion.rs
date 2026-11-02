@@ -276,7 +276,8 @@ pub(super) fn push_plan_and_listing(
     u.push_str(&super::fenced("yaml", &plan_excerpt));
 
     u.push_str("## Worktree top-level files (3-deep listing)\n\n");
-    let listing = run_listing(input.work_dir).unwrap_or_else(|e| format!("(listing failed: {e})"));
+    let listing =
+        run_listing(&input.site.root).unwrap_or_else(|e| format!("(listing failed: {e})"));
     u.push_str(&super::fenced("", &listing));
 }
 

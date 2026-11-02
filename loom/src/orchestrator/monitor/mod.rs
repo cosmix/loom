@@ -16,10 +16,12 @@ pub(crate) mod completion_blockers;
 mod config;
 mod context;
 pub mod core;
+mod crash_redelivery;
 pub(crate) mod detection;
+pub(crate) mod direct_worker;
 pub mod events;
-pub mod failure_tracking;
 pub(crate) mod foreground;
+mod foreground_progress;
 pub(crate) mod handlers;
 mod handoff_watch;
 pub mod heartbeat;
@@ -41,10 +43,6 @@ pub use config::MonitorConfig;
 pub use context::{context_health, ContextHealth};
 pub use core::Monitor;
 pub use events::MonitorEvent;
-pub use failure_tracking::{
-    build_failure_info, failure_state_path, FailureRecord, FailureTracker, StageFailureState,
-    DEFAULT_MAX_FAILURES,
-};
 pub use heartbeat::{
     heartbeat_path, read_heartbeat, remove_heartbeat, stage_context_tokens, write_heartbeat,
     Heartbeat, HeartbeatStatus, HeartbeatWatcher, DEFAULT_HEARTBEAT_POLL_SECS,

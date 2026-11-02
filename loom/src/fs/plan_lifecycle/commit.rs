@@ -8,8 +8,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::fs::{resolve_target_branch_from_config, work_dir::WorkDir};
-use crate::git::branch::{branch_ref, current_branch};
-use crate::git::merge::control_paths::changed_paths;
+use crate::git::branch::branch_ref;
 use crate::git::merge::lock::MergeLock;
 use crate::git::merge::operator_operation;
 use crate::git::runner::{run_git_checked, run_git_with_env};
@@ -193,14 +192,34 @@ pub(crate) fn attest_plan_commit(
     repo_root: &Path,
     allowed: &[&Path],
 ) -> Result<()> {
+    crate::git::worktree::require_main_identity(repo_root)?;
+    let git = crate::git::worktree::WorktreeGit::pinned_main(repo_root)?;
     // `HEAD` is read after the commit: a read before it can be stale.
-    let after = run_git_checked(&["rev-parse", "HEAD"], repo_root)?;
-    let from = run_git_checked(&["rev-parse", &format!("{after}^")], repo_root)?;
-    let reference = branch_ref(&current_branch(repo_root)?);
-    attest_exact_commit(work_dir, repo_root, allowed, &reference, &from, &after)
+    let after = git.run_checked(&["rev-parse", "HEAD"])?.trim().to_string();
+    let from = git
+        .run_checked(&["rev-parse", &format!("{after}^")])?
+        .trim()
+        .to_string();
+    let reference = branch_ref(&crate::git::branch::current_branch_with(&git)?);
+    attest_exact_commit_with(
+        &git, work_dir, repo_root, allowed, &reference, &from, &after,
+    )
 }
 
 fn attest_exact_commit(
+    work_dir: &Path,
+    repo_root: &Path,
+    allowed: &[&Path],
+    reference: &str,
+    from: &str,
+    after: &str,
+) -> Result<()> {
+    let git = crate::git::worktree::WorktreeGit::discovered(repo_root);
+    attest_exact_commit_with(&git, work_dir, repo_root, allowed, reference, from, after)
+}
+
+fn attest_exact_commit_with(
+    git: &crate::git::worktree::WorktreeGit,
     work_dir: &Path,
     repo_root: &Path,
     allowed: &[&Path],
@@ -214,7 +233,7 @@ fn attest_exact_commit(
     {
         return Ok(());
     }
-    let paths = changed_paths(repo_root, from, after)?;
+    let paths = crate::git::merge::control_paths::changed_paths_with(git, from, after)?;
     if !paths.iter().all(|path| is_own(path, repo_root, allowed)) {
         tracing::info!("not attesting {after}: it changes more than the plan's own files");
         return Ok(());

@@ -8,27 +8,13 @@ use chrono::{DateTime, Utc};
 use crate::models::session::{Session, SessionType};
 
 use super::detection::Detection;
+use super::direct_worker::argv_names_invocation;
+use super::foreground_progress::{record, recorded, within_window};
+pub(super) use super::foreground_progress::{CommandProgress, ForegroundObservation};
 use super::heartbeat::Heartbeat;
-use super::running_command::{command_cpu_ticks, running_command};
+use super::running_command::{command_cpu_ticks, process_argv, running_command, running_commands};
 
-/// One command identity and its last measured CPU progress.
-pub(super) struct ForegroundObservation {
-    pid: u32,
-    started: Option<u64>,
-    cpu_ticks: u64,
-    progress_at: DateTime<Utc>,
-}
-
-pub(super) struct CommandProgress {
-    pub(super) pid: u32,
-    pub(super) started: Option<u64>,
-    pub(super) cpu_ticks: u64,
-}
-
-pub(crate) const FOREGROUND_HOLD_CEILING_SECS: i64 = 1560;
-
-/// A current foreground Codex forward with a live command and bounded job
-/// evidence. The authorization must follow this attempt's last progress.
+/// A current foreground forward, with its process identity rechecked.
 pub(crate) fn foreground_forward_holds(
     work_dir: &Path,
     session: &Session,
@@ -48,26 +34,127 @@ pub(crate) fn foreground_forward_holds(
     let Some(stage_id) = session.stage_id.as_deref() else {
         return false;
     };
-    let since = heartbeat
-        .filter(|heartbeat| heartbeat.session_id == session.id)
-        .map_or(session.created_at, |heartbeat| {
-            heartbeat.effective_progress_at()
-        });
     let active = crate::codex_lifecycle::foreground_forward_active(
         work_dir,
         stage_id,
         &session.id,
-        since,
+        baseline(session, heartbeat),
         Duration::from_secs(timeout_secs),
         now,
     ) == Some(true);
     active && crate::process::process_start_time(command.pid) == Some(started)
 }
 
+/// Both status and the monitor sample the same protected checkpoint.
+pub(crate) fn foreground_command_active(
+    work_dir: &Path,
+    session: &Session,
+    heartbeat: Option<&Heartbeat>,
+    timeout_secs: u64,
+    now: DateTime<Utc>,
+) -> bool {
+    command_observation(work_dir, session, heartbeat, timeout_secs, now).is_some_and(
+        |observation| observation.holds(baseline(session, heartbeat), timeout_secs, now),
+    )
+}
+
+fn baseline(session: &Session, heartbeat: Option<&Heartbeat>) -> DateTime<Utc> {
+    heartbeat
+        .filter(|heartbeat| heartbeat.session_id == session.id)
+        .map_or(session.created_at, Heartbeat::effective_progress_at)
+}
+
+fn command_observation(
+    work_dir: &Path,
+    session: &Session,
+    heartbeat: Option<&Heartbeat>,
+    timeout_secs: u64,
+    now: DateTime<Utc>,
+) -> Option<ForegroundObservation> {
+    let baseline = baseline(session, heartbeat);
+    if session.session_type != SessionType::Stage
+        || session.status.is_terminal()
+        || !within_window(baseline, timeout_secs, now)
+    {
+        return None;
+    }
+    // A forward with fresh evidence holds the stage itself. One without leaves a
+    // command running beside it free to earn credit.
+    let forward_fresh = session.stage_id.as_deref().is_some_and(|stage| {
+        crate::codex_lifecycle::foreground_forward_active(
+            work_dir,
+            stage,
+            &session.id,
+            baseline,
+            Duration::from_secs(timeout_secs),
+            now,
+        ) == Some(true)
+    });
+    if forward_fresh {
+        return None;
+    }
+    let commands = creditable_commands(work_dir, session);
+    observe_commands(
+        work_dir,
+        &session.id,
+        &commands,
+        baseline,
+        timeout_secs,
+        now,
+    )
+}
+
+/// What can earn CPU credit: every running command, oldest first, except the
+/// launch of an authorized forward, whose supervisor polls whether or not its
+/// worker does anything.
+fn creditable_commands(work_dir: &Path, session: &Session) -> Vec<u32> {
+    let invocations = session.stage_id.as_deref().map_or_else(Vec::new, |stage| {
+        crate::codex_lifecycle::session_invocation_ids(work_dir, stage, &session.id)
+    });
+    let is_forward = |pid: u32| {
+        !invocations.is_empty()
+            && process_argv(pid).is_some_and(|argv| {
+                invocations
+                    .iter()
+                    .any(|invocation| argv_names_invocation(&argv, invocation))
+            })
+    };
+    running_commands(work_dir, session)
+        .into_iter()
+        .map(|command| command.pid)
+        .filter(|pid| !is_forward(*pid))
+        .collect()
+}
+
+/// Sample `commands` and record the sum under the oldest one, the identity that
+/// stays the same while the agent starts and ends others beside it. A command
+/// that exits between being found and being sampled leaves no sample, and that
+/// says nothing about the work seen so far: what is on record stands, and its
+/// idle grace still runs out. When the oldest ends, the next one starts a new
+/// observation with the first-sight grace any new command gets, bounded by the
+/// wall window.
+pub(super) fn observe_commands(
+    work_dir: &Path,
+    session_id: &str,
+    commands: &[u32],
+    baseline: DateTime<Utc>,
+    timeout_secs: u64,
+    now: DateTime<Utc>,
+) -> Option<ForegroundObservation> {
+    let pid = *commands.first()?;
+    let sampled = crate::process::process_start_time(pid).and_then(|started| {
+        let progress = CommandProgress {
+            pid,
+            started: Some(started),
+            cpu_ticks: command_cpu_ticks(commands)?,
+        };
+        record(work_dir, session_id, progress, baseline, timeout_secs, now).ok()
+    });
+    sampled.or_else(|| recorded(work_dir, session_id, pid))
+}
+
 impl Detection {
-    /// A live command earns only one budget since measured CPU growth, and
-    /// no longer than the wrapper's absolute deadline since last heartbeat.
-    pub(super) fn foreground_command_holds(
+    pub(crate) fn foreground_command_holds(
         &mut self,
         work_dir: &Path,
         session: &Session,
@@ -75,46 +162,18 @@ impl Detection {
         timeout_secs: u64,
         now: DateTime<Utc>,
     ) -> bool {
-        if session.session_type != SessionType::Stage || timeout_secs == 0 {
-            return false;
-        }
-        let baseline = heartbeat
-            .filter(|heartbeat| heartbeat.session_id == session.id)
-            .map_or(session.created_at, |heartbeat| {
-                heartbeat.effective_progress_at()
-            });
-        let elapsed = now.signed_duration_since(baseline).num_seconds();
-        if !(0..=FOREGROUND_HOLD_CEILING_SECS).contains(&elapsed) {
-            return false;
-        }
-        let Some(command) = running_command(work_dir, session) else {
-            self.foreground_commands_seen.remove(&session.id);
+        let Some(observation) =
+            command_observation(work_dir, session, heartbeat, timeout_secs, now)
+        else {
             return false;
         };
-        let Some(started) = crate::process::process_start_time(command.pid) else {
-            return false;
-        };
-        let Some(cpu_ticks) = command_cpu_ticks(command.pid) else {
-            return false;
-        };
-        // The process table can change while its tree is sampled. Never
-        // credit CPU from a PID that was recycled during that sample.
-        if crate::process::process_start_time(command.pid) != Some(started) {
-            return false;
-        }
-        self.record_command_progress(
-            &session.id,
-            CommandProgress {
-                pid: command.pid,
-                started: Some(started),
-                cpu_ticks,
-            },
-            baseline,
-            timeout_secs,
-            now,
-        )
+        let holds = observation.holds(baseline(session, heartbeat), timeout_secs, now);
+        self.foreground_commands_seen
+            .insert(session.id.clone(), observation);
+        holds
     }
 
+    #[cfg(test)]
     pub(super) fn record_command_progress(
         &mut self,
         session_id: &str,
@@ -123,37 +182,19 @@ impl Detection {
         timeout_secs: u64,
         now: DateTime<Utc>,
     ) -> bool {
-        let Ok(timeout) = i64::try_from(timeout_secs) else {
+        let previous = self.foreground_commands_seen.remove(session_id);
+        let Some(observation) =
+            ForegroundObservation::advance(previous, progress, baseline, timeout_secs, now)
+        else {
             return false;
         };
-        let Some(duration) = chrono::Duration::try_seconds(timeout) else {
-            return false;
-        };
-        let Some(first_at) = baseline.checked_add_signed(duration) else {
-            return false;
-        };
-        let observation = self
-            .foreground_commands_seen
-            .entry(session_id.to_owned())
-            .or_insert(ForegroundObservation {
-                pid: progress.pid,
-                started: progress.started,
-                cpu_ticks: progress.cpu_ticks,
-                progress_at: now.min(first_at),
-            });
-        if observation.pid != progress.pid || observation.started != progress.started {
-            *observation = ForegroundObservation {
-                pid: progress.pid,
-                started: progress.started,
-                cpu_ticks: progress.cpu_ticks,
-                progress_at: now.min(first_at),
-            };
-        } else if progress.cpu_ticks > observation.cpu_ticks {
-            observation.cpu_ticks = progress.cpu_ticks;
-            observation.progress_at = now;
-        }
-        now.signed_duration_since(observation.progress_at)
-            .num_seconds()
-            < timeout
+        let holds = observation.holds(baseline, timeout_secs, now);
+        self.foreground_commands_seen
+            .insert(session_id.to_owned(), observation);
+        holds
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "foreground_parallel_tests.rs"]
+mod parallel_tests;

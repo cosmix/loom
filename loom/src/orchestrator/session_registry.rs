@@ -16,7 +16,8 @@
 //! missed, and [`adopt_orphan`] rebuilds the missing record so every other
 //! call site can see the agent again.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+use chrono::Utc;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -28,6 +29,16 @@ use crate::verify::transitions::parse_stage_from_markdown;
 use super::terminal::backend::SessionBackend;
 use super::terminal::native::{pid_only_is_alive, session_process_status, SessionProcessStatus};
 
+#[path = "session_registry/identityless.rs"]
+mod identityless;
+#[cfg(test)]
+pub(crate) use identityless::{
+    assigned_session_is_live, too_young_to_judge, ORPHAN_PROBE_GRACE_SECS,
+};
+pub(crate) use identityless::{
+    assigned_session_is_live_admitted, identityless_record_is_dead, launch_too_young_to_judge,
+    live_sessions_for_stage_admitted, record_may_be_running, Admission,
+};
 #[path = "session_registry/in_progress.rs"]
 mod in_progress;
 pub use in_progress::in_progress_sessions_for_stage;
@@ -36,12 +47,13 @@ pub use in_progress::in_progress_sessions_for_stage;
 /// tracking key from the same stage id ([`Session::derive_tracking_key`]), so
 /// a scan keyed on the stage alone has to try every one. `Contract` is here
 /// because it is the stage's agent while it runs.
-const SESSION_KINDS: [SessionType; 5] = [
+const SESSION_KINDS: [SessionType; 6] = [
     SessionType::Stage,
     SessionType::Contract,
     SessionType::Merge,
     SessionType::Knowledge,
     SessionType::BaseConflict,
+    SessionType::Adjudication,
 ];
 
 /// How a scan answers "is this session's process alive?": through the
@@ -84,17 +96,23 @@ impl LivenessProbe {
         }
     }
 
-    fn is_alive(&self, work_dir: &Path, session: &Session) -> Result<bool> {
+    fn is_alive(&self, work_dir: &Path, session: &Session, admission: Admission) -> Result<bool> {
         let alive = match self {
             Self::Backend(backend) => backend.is_session_alive(session),
             Self::PidOnly => Ok(pid_only_is_alive(work_dir, session)),
             #[cfg(test)]
             Self::Error => anyhow::bail!("injected liveness failure"),
         }?;
-        if !alive && session_process_status(work_dir, session) == SessionProcessStatus::Missing {
-            anyhow::bail!("session '{}' has no PID identity evidence", session.id);
+        if alive
+            || session_process_status(work_dir, session) != SessionProcessStatus::Missing
+            || identityless_record_is_dead(work_dir, session, admission, Utc::now())
+        {
+            return Ok(alive);
         }
-        Ok(alive)
+        anyhow::bail!(
+            "session '{}' has no PID identity evidence yet, and its launch may still start it",
+            session.id
+        );
     }
 }
 
@@ -125,29 +143,6 @@ pub fn live_sessions_for_stage_of_type(
         .collect())
 }
 
-/// Check one assigned session through the validated inventory. A missing
-/// record or confirmed dead process is false; malformed inventory, a
-/// mismatched owner, or a failed probe leaves ownership unknown.
-pub fn assigned_session_is_live(work_dir: &Path, stage_id: &str, session_id: &str) -> Result<bool> {
-    let sessions = in_progress::session_inventory(work_dir)?.strict_records()?;
-    let Some(session) = sessions
-        .into_iter()
-        .find(|session| session.id == session_id)
-    else {
-        return Ok(false);
-    };
-    anyhow::ensure!(
-        session.stage_id.as_deref() == Some(stage_id),
-        "assigned session '{}' belongs to {:?}, not '{}'",
-        session_id,
-        session.stage_id,
-        stage_id
-    );
-    LivenessProbe::resolve(work_dir)
-        .is_alive(work_dir, &session)
-        .with_context(|| format!("probing assigned session '{session_id}'"))
-}
-
 /// [`live_sessions_for_stage`] against an already-resolved probe, so a scan
 /// over many stages pays terminal detection at most once.
 fn live_sessions_with_probe(
@@ -155,26 +150,7 @@ fn live_sessions_with_probe(
     work_dir: &Path,
     stage_id: &str,
 ) -> Result<Vec<Session>> {
-    let sessions = in_progress::session_inventory(work_dir)?.strict_records()?;
-    let mut live = Vec::new();
-    for session in sessions {
-        if session.stage_id.as_deref() != Some(stage_id) {
-            continue;
-        }
-        if !matches!(
-            session.status,
-            SessionStatus::Running | SessionStatus::Spawning
-        ) {
-            continue;
-        }
-        if probe
-            .is_alive(work_dir, &session)
-            .with_context(|| format!("probing session '{}'", session.id))?
-        {
-            live.push(session);
-        }
-    }
-    Ok(live)
+    identityless::live_sessions_judged(probe, work_dir, stage_id, Admission::Open)
 }
 
 /// A live agent for which no session record exists.
@@ -220,15 +196,14 @@ pub fn orphan_evidence(work_dir: &Path) -> Vec<OrphanEvidence> {
     let probe = LivenessProbe::resolve(work_dir);
 
     let mut evidence = Vec::new();
-    // One session id can only be adopted once, even if two stages' tracking
-    // keys both claim it (possible for pathological stage ids such as `a` and
-    // `a-b`). First stage in sorted order wins, deterministically.
+    // One session id can only be adopted once.
     let mut claimed: HashSet<String> = HashSet::new();
+    let stage_ids = executing_stage_ids(work_dir);
 
-    for stage_id in executing_stage_ids(work_dir) {
+    for stage_id in &stage_ids {
         // A stage with a live RECORD is either healthy or the duplicate-agent
         // case; neither is an orphan, and neither is this pass's to resolve.
-        let live = match live_sessions_with_probe(&probe, work_dir, &stage_id) {
+        let live = match live_sessions_with_probe(&probe, work_dir, stage_id) {
             Ok(live) => live,
             Err(error) => {
                 tracing::warn!(stage_id = %stage_id, %error, "Cannot establish orphan ownership");
@@ -239,7 +214,7 @@ pub fn orphan_evidence(work_dir: &Path) -> Vec<OrphanEvidence> {
             continue;
         }
 
-        let mut candidates = stage_candidates(work_dir, &stage_id, &pid_files, &claimed);
+        let mut candidates = stage_candidates(work_dir, stage_id, &pid_files, &claimed);
         // Newest pid file last, so `pop` takes the most recent attempt.
         candidates.sort_by_key(|(_, mtime)| *mtime);
         let Some((chosen, _)) = candidates.pop() else {
@@ -273,10 +248,12 @@ fn stage_candidates(
     let mut candidates = Vec::new();
     for kind in SESSION_KINDS {
         for (stem, mtime) in pid_files {
-            if let Some(candidate) =
-                orphan_candidates::orphan_candidate(work_dir, stage_id, kind, stem, *mtime, claimed)
-            {
-                candidates.push(candidate);
+            for legacy in [false, true] {
+                if let Some(candidate) = orphan_candidates::orphan_candidate(
+                    work_dir, stage_id, kind, stem, *mtime, claimed, legacy,
+                ) {
+                    candidates.push(candidate);
+                }
             }
         }
     }

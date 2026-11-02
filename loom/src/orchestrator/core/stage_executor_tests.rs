@@ -364,3 +364,6 @@ fn insert_active_session_refuses_to_evict_an_existing_entry() {
         "the first-tracked session must survive a second insert for the same stage"
     );
 }
+
+#[path = "stage_executor_pass_tests.rs"]
+mod pass_tests;

@@ -14,7 +14,9 @@ use crate::fs::safe_read::read_bounded;
 use crate::fs::safe_replace::restore_no_follow;
 use crate::relay::sha256_hex;
 use crate::verify::contracts::normalize;
-use crate::verify::contracts::store::{frozen_file_path, load_freeze, MAX_FROZEN_FILE_BYTES};
+use crate::verify::contracts::store::{
+    frozen_file_path_for_record, load_freeze, FreezeRecord, MAX_FROZEN_FILE_BYTES,
+};
 
 use super::ContractSite;
 
@@ -48,7 +50,7 @@ fn restore_at(site: &ContractSite, stage_id: &str, contract: Option<&str>) -> Re
     let prefix = site.working_dir_prefix();
     let root = safe_open_dirfd(&site.worktree_root)?;
     for file in files {
-        let content = read_frozen(&site.work_dir, stage_id, &file.path, &file.sha256)?;
+        let content = read_frozen(&site.work_dir, &record, &file.path, &file.sha256)?;
         let target = prefix.join(&file.path);
         if let Some(parent) = target
             .parent()
@@ -79,15 +81,13 @@ fn contract_file(site: &ContractSite, id: &str) -> Result<String> {
 
 /// Read the frozen copy of `rel` and confirm it still hashes to what the
 /// freeze recorded.
-fn read_frozen(work_dir: &Path, stage_id: &str, rel: &str, sha256: &str) -> Result<Vec<u8>> {
-    let copy = frozen_file_path(work_dir, stage_id, rel);
-    // The copy sits at `<files root>/<rel>`; read it relative to that root so
-    // no component of `rel` may be a symlink.
-    let files_root = copy
-        .ancestors()
-        .nth(Path::new(rel).components().count())
+fn read_frozen(work_dir: &Path, record: &FreezeRecord, rel: &str, sha256: &str) -> Result<Vec<u8>> {
+    let copy = frozen_file_path_for_record(work_dir, record, rel);
+    let relative = copy
+        .strip_prefix(work_dir)
         .with_context(|| format!("Frozen copy path {} is malformed", copy.display()))?;
-    let content = read_bounded(files_root, Path::new(rel), MAX_FROZEN_FILE_BYTES)
+    let root = work_dir.canonicalize()?;
+    let content = read_bounded(&root, relative, MAX_FROZEN_FILE_BYTES)
         .with_context(|| format!("Failed to read the frozen copy {}", copy.display()))?;
     if sha256_hex(&content) != sha256 {
         bail!(

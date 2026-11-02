@@ -194,8 +194,44 @@ fn an_operator_merge_in_progress_is_not_overwritten() {
     assert_eq!(git(&repo.root, &["rev-parse", "HEAD"]), before);
 }
 
+/// Rename the plan and commit that with `extra` edits, then attest the commit
+/// the way the completion path does. `true` when the ledger names it.
+fn commit_and_attest(repo: &Repo, extra: &[&str]) -> bool {
+    std::fs::rename(repo.root.join(OLD), repo.root.join(NEW)).unwrap();
+    git(&repo.root, &["add", "-A", "--", OLD, NEW]);
+    for path in extra {
+        stage_edit(repo, path);
+    }
+    let from = git(&repo.root, &["rev-parse", "HEAD"]);
+    git(&repo.root, &["commit", "-q", "-m", "complete"]);
+    let after = git(&repo.root, &["rev-parse", "HEAD"]);
+    let changed = git(&repo.root, &["show", "--name-only", "--format=", "HEAD"]);
+    for path in extra {
+        assert!(changed.lines().any(|line| line == *path), "{changed}");
+    }
+    let work_dir = WorkDir::new(&repo.root).unwrap();
+    let (old, new) = (repo.root.join(OLD), repo.root.join(NEW));
+    let reference = "refs/heads/main";
+    attest_completion_commit(&work_dir, &repo.root, &old, &new, reference, &from, &after);
+    ledger(repo).contains(&format!("attest {from} {after} {reference}\n"))
+}
+
 #[test]
 fn a_commit_of_only_the_plan_files_and_knowledge_is_attested() {
+    let repo = plan_repo();
+    assert!(commit_and_attest(&repo, &["doc/loom/knowledge/a.md"]));
+    assert!(matches!(guard(&repo), GuardState::Clear { .. }));
+}
+
+#[test]
+fn a_commit_of_the_plan_files_and_a_source_is_not_attested() {
+    let repo = plan_repo();
+    assert!(!commit_and_attest(&repo, &["src/x.rs"]));
+    assert_eq!(ledger(&repo), "");
+}
+
+#[test]
+fn staged_knowledge_stays_out_of_the_attested_done_commit() {
     let repo = plan_repo();
     stage_edit(&repo, "doc/loom/knowledge/a.md");
 
@@ -204,6 +240,10 @@ fn a_commit_of_only_the_plan_files_and_knowledge_is_attested() {
     let after = git(&repo.root, &["rev-parse", "HEAD"]);
     let from = git(&repo.root, &["rev-parse", "HEAD^"]);
     assert!(ledger(&repo).contains(&format!("attest {from} {after} refs/heads/main\n")));
+    assert_eq!(
+        git(&repo.root, &["diff", "--cached", "--name-only"]),
+        "doc/loom/knowledge/a.md"
+    );
     assert!(matches!(guard(&repo), GuardState::Clear { .. }));
 }
 
@@ -255,6 +295,22 @@ fn a_commit_on_an_unguarded_branch_is_not_attested() {
 fn a_commit_of_the_plans_own_review_document_is_attested() {
     let repo = plan_repo();
     configure_plan_x(&repo);
+    assert!(commit_and_attest(&repo, &[REVIEW]));
+    assert!(matches!(guard(&repo), GuardState::Clear { .. }));
+}
+
+#[test]
+fn a_commit_of_another_plans_review_document_is_not_attested() {
+    let repo = plan_repo();
+    configure_plan_x(&repo);
+    assert!(!commit_and_attest(&repo, &[OTHER_REVIEW]));
+    assert_eq!(ledger(&repo), "");
+}
+
+#[test]
+fn a_staged_review_document_stays_out_of_the_attested_done_commit() {
+    let repo = plan_repo();
+    configure_plan_x(&repo);
     stage_edit(&repo, REVIEW);
 
     complete(&repo);
@@ -262,11 +318,15 @@ fn a_commit_of_the_plans_own_review_document_is_attested() {
     let after = git(&repo.root, &["rev-parse", "HEAD"]);
     let from = git(&repo.root, &["rev-parse", "HEAD^"]);
     assert!(ledger(&repo).contains(&format!("attest {from} {after} refs/heads/main\n")));
+    assert_eq!(
+        git(&repo.root, &["diff", "--cached", "--name-only"]),
+        REVIEW
+    );
     assert!(matches!(guard(&repo), GuardState::Clear { .. }));
 }
 
 #[test]
-fn a_commit_of_another_plans_review_document_is_not_attested() {
+fn another_staged_review_document_stays_out_of_the_done_commit() {
     let repo = plan_repo();
     configure_plan_x(&repo);
     stage_edit(&repo, OTHER_REVIEW);

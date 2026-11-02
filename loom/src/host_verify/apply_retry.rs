@@ -147,7 +147,11 @@ fn give_up(work_dir: &Path, record: &JobRecord, reason: &str) -> Result<()> {
     )
 }
 
-fn record_freeze_failure(work_dir: &Path, record: &JobRecord, reason: &str) -> Result<()> {
+pub(super) fn record_freeze_failure(
+    work_dir: &Path,
+    record: &JobRecord,
+    reason: &str,
+) -> Result<()> {
     let stage = load_stage(&record.stage_id, work_dir)?;
     let session = load_session_exact(work_dir, &record.session_id)?;
     let owns = session.is_some_and(|session| {
@@ -159,10 +163,11 @@ fn record_freeze_failure(work_dir: &Path, record: &JobRecord, reason: &str) -> R
             &[SessionType::Contract],
         )
     });
-    if !owns
-        || stage.status != StageStatus::Executing
-        || load_freeze(work_dir, &record.stage_id)?.is_some()
-    {
+    let running = matches!(
+        stage.status,
+        StageStatus::Executing | StageStatus::WaitingForInput
+    );
+    if !owns || !running || load_freeze(work_dir, &record.stage_id)?.is_some() {
         return Ok(());
     }
     let detail = format!(

@@ -111,8 +111,11 @@ fn is_merged(node: Option<&StageNode>) -> bool {
 /// finds still on disk. A deferral is silent: a later attempt finishes it.
 pub(super) fn report_deferred_cleanup(stage_id: &str, outcome: &CleanupOutcome) {
     let (verb, detail) = match outcome {
-        CleanupOutcome::Failed(error) => ("failed", error),
-        CleanupOutcome::Refused { reason } => ("refused", reason),
+        CleanupOutcome::Failed(error) => ("failed", error.clone()),
+        CleanupOutcome::Refused { reason } => ("refused", reason.clone()),
+        CleanupOutcome::Done(result) if !result.warnings.is_empty() => {
+            ("retained a path", result.warnings.join("; "))
+        }
         CleanupOutcome::Done(_) | CleanupOutcome::NothingToDo | CleanupOutcome::Deferred { .. } => {
             return
         }

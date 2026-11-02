@@ -383,3 +383,6 @@ fn handoff_does_not_kill_an_assignment_that_changed_after_begin() {
 
     let _ = crate::process::terminate(successor_pid);
 }
+
+#[path = "governor_identityless_tests.rs"]
+mod identityless_tests;

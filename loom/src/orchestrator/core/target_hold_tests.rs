@@ -71,6 +71,9 @@ pub(super) fn repo() -> TempDir {
     git(root, &["config", "user.name", "t"]);
     std::fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n").unwrap();
     commit(root, "seed.txt", "seed");
+    let work_dir = root.join(".loom").join("work");
+    std::fs::create_dir_all(&work_dir).unwrap();
+    crate::git::worktree::capture_main_identity(root, &work_dir).unwrap();
     repo
 }
 

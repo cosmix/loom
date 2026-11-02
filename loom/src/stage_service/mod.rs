@@ -2,7 +2,11 @@
 pub(crate) mod contracts;
 mod control_block;
 mod dispute;
+#[cfg(test)]
+mod dispute_filing_tests;
 mod dispute_kinds;
+#[cfg(test)]
+mod dispute_race_tests;
 mod dispute_store;
 pub(crate) mod merge_outcome;
 #[cfg(test)]
@@ -19,6 +23,7 @@ pub(crate) use dispute::handle_dispute_criteria_for_session;
 pub(crate) use dispute_kinds::handle_file_dispute;
 pub(crate) use dispute_kinds::handle_file_dispute_for_session;
 pub(crate) use dispute_kinds::{escalate_freeze_refusal, file_freeze_refusal, FreezeRefusalFiling};
+pub(crate) use receipts::is_orphaned as dispute_is_orphaned;
 use serde::{Deserialize, Serialize};
 pub use types::{QueuedRequest, StageRequest};
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;

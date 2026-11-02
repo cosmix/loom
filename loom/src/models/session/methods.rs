@@ -83,9 +83,13 @@ impl Session {
     /// The tracking key names the stage in tmux and prefixes native windows
     /// and PID-file keys. Native windows add project and session identity.
     ///
-    /// Format: `loom-[<kind>-]<stage_id>` where `<kind>` is omitted for
-    /// regular stage sessions.
+    /// The version and explicit kind distinguish every stage/type pair.
     pub fn derive_tracking_key(stage_id: &str, kind: SessionType) -> String {
+        format!("loom-v2-{kind}-{stage_id}")
+    }
+
+    /// Key used by sessions created before tuple encoding was introduced.
+    pub(crate) fn legacy_tracking_key(stage_id: &str, kind: SessionType) -> String {
         match kind {
             SessionType::Stage => format!("loom-{stage_id}"),
             SessionType::Merge => format!("loom-merge-{stage_id}"),

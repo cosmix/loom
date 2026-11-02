@@ -7,6 +7,57 @@ use crate::plan::schema::AcceptanceCriterion;
 use chrono::Utc;
 
 #[test]
+fn briefing_lists_the_stage_worktree() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path().join(".loom/work");
+    let tree = tmp.path().join(".worktrees/demo");
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::create_dir_all(&tree).unwrap();
+    std::fs::write(tree.join("only-in-worktree"), "present").unwrap();
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        String::from_utf8(output.stdout).unwrap()
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "test@example.com"]);
+    git(&["config", "user.name", "Test"]);
+    std::fs::write(tmp.path().join("tracked"), "requested-content\n").unwrap();
+    git(&["add", "tracked"]);
+    git(&["commit", "-qm", "first"]);
+    let revision = git(&["rev-parse", "HEAD"]);
+    std::fs::write(tmp.path().join("tracked"), "head-content\n").unwrap();
+    git(&["commit", "-qam", "second"]);
+    let plan = tmp.path().join("PLAN.md");
+    std::fs::write(&plan, "```yaml\nwrong: fence\n```\n<!-- loom METADATA\n```yaml\nloom:\n  stages:\n    - id: demo10\n      name: wrong-stage\n    - id: 'demo'\n      name: selected-stage\n```\n<!-- END loom METADATA -->\n").unwrap();
+    let stage = Stage {
+        id: "demo".into(),
+        ..Stage::default()
+    };
+    let request = DisputeRequest {
+        id: 1,
+        stage_id: "demo".into(),
+        kind: DisputeKind::criterion(CriterionField::Acceptance, vec![0]),
+        reason: "disputed".into(),
+        evidence_commit: Some(revision.trim().into()),
+        failure_output: None,
+        fix_attempts_at_dispute: 0,
+        created_at: Utc::now(),
+    };
+    let rendered = build(&plan, &stage, &request, &work).render();
+    assert!(rendered.contains("./only-in-worktree"));
+    assert!(rendered.contains("selected-stage"));
+    assert!(!rendered.contains("wrong-stage"));
+    assert!(!rendered.contains("wrong: fence"));
+    assert!(rendered.contains("+requested-content"));
+    assert!(!rendered.contains("+head-content"));
+}
+
+#[test]
 fn criterion_briefing_matches_the_expected_instructions_and_evidence() {
     let tmp = tempfile::tempdir().unwrap();
     let plan = tmp.path().join("PLAN.md");
@@ -37,8 +88,8 @@ fn criterion_briefing_matches_the_expected_instructions_and_evidence() {
 
     let exec = ExecutionSite::resolve(&work, &stage).path;
     let draft = crate::orchestrator::adjudication::verdict_draft_file(&work, "demo", 1);
-    let listing =
-        super::sources::run_listing(&work).unwrap_or_else(|e| format!("(listing failed: {e})"));
+    let listing = super::sources::run_listing(tmp.path())
+        .unwrap_or_else(|e| format!("(listing failed: {e})"));
     let expected = GOLDEN
         .replace("{exec}", &exec.display().to_string())
         .replace("{draft}", &draft.display().to_string())

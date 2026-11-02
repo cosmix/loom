@@ -97,6 +97,7 @@ pub(super) fn fixture(repeats: u32) -> Fixture {
     let root = temp.path().canonicalize().unwrap();
     let commit = init_repo(&root);
     let work = root.join(".loom/work");
+    crate::git::worktree::capture_main_identity(&root, &work).unwrap();
     executing_stage(&work);
     let session = recorded_session(&work);
     update_stage("test-stage", &work, |stage| {

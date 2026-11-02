@@ -127,6 +127,8 @@ impl Orchestrator {
         if !self.retire_contract_writer(stage_id, contract)? {
             return Ok(());
         }
+        let _admission =
+            crate::fs::stage_admission::lock_for_daemon(&self.config.work_dir, stage_id)?;
         println!("  Contracts frozen: {stage_id}");
         self.spawn_on_stage_worktree(stage, AgentKind::Implementation)
     }
@@ -193,10 +195,13 @@ impl Orchestrator {
         stage_id: &str,
         session_id: &str,
     ) -> Result<()> {
+        // A busy lock defers this report to the next poll, so it comes before
+        // the charge: a replacement that did not start must not spend budget.
+        let work_dir = self.config.work_dir.clone();
+        let _admission = crate::fs::stage_admission::lock_for_daemon(&work_dir, stage_id)?;
         let Some((stage, _)) = self.current_contract_session(stage_id, session_id)? else {
             return Ok(());
         };
-        let work_dir = self.config.work_dir.clone();
         if load_freeze(&work_dir, stage_id)?.is_some() {
             // Frozen after all: `ContractPhaseFinished` owns this stage.
             return Ok(());
@@ -290,9 +295,9 @@ impl Orchestrator {
     /// Spawn `kind`'s agent into the stage's existing worktree. The daemon's
     /// handle on it is gone after a restart, but the worktree on disk is not.
     /// A worktree that is gone too held work nothing can recreate, so the
-    /// stage is blocked rather than handed a fresh one.
+    /// stage is blocked rather than handed a fresh one. The caller holds the
+    /// stage's admission lock.
     fn spawn_on_stage_worktree(&mut self, stage: Stage, kind: AgentKind) -> Result<()> {
-        let _admission = crate::fs::stage_admission::lock(&self.config.work_dir, &stage.id)?;
         let current = self.load_stage(&stage.id)?;
         if current.status != StageStatus::Executing || current.session != stage.session {
             return Ok(());

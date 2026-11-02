@@ -10,17 +10,19 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use crate::fs::{plan_lifecycle, work_dir::WorkDir};
-use crate::git::runner::{run_git, run_git_checked};
-use crate::plan::inputs::{collect_inputs, uncommitted_reason};
+use crate::git::worktree::WorktreeGit;
+use crate::plan::inputs::{collect_inputs, uncommitted_reason_pinned};
 
 /// Unrelated scratch files are allowed, but every plan input must be committed.
 pub(super) fn require_committed_plan(work_dir: &WorkDir) -> Result<()> {
     let root = work_dir
         .project_root()
         .context("Cannot determine project root")?;
+    crate::git::worktree::require_main_identity(root)?;
+    let git = WorktreeGit::pinned_main(root)?;
     let configured_base = crate::fs::parse_base_branch_from_config(work_dir.root())?;
-    let base = crate::git::branch::resolve_target_branch(&configured_base, root);
-    let branch = crate::git::current_branch(root)?;
+    let base = crate::git::branch::resolve_target_branch_with(&configured_base, &git)?;
+    let branch = crate::git::branch::current_branch_with(&git)?;
     if branch != base {
         bail!(
             "Cannot start loom run from '{branch}': the plan's base branch is '{base}'. \
@@ -36,7 +38,7 @@ pub(super) fn require_committed_plan(work_dir: &WorkDir) -> Result<()> {
         .map(|reference| format!("  {reference}"))
         .collect();
     for path in inputs.files.keys() {
-        if let Some(reason) = uncommitted_reason(root, path)? {
+        if let Some(reason) = uncommitted_reason_pinned(&git, path)? {
             problems.push(format!("  {}: {reason}", path.display()));
         }
     }
@@ -59,6 +61,7 @@ pub(super) fn mark_plan_in_progress(work_dir: &WorkDir) -> Result<()> {
     let root = work_dir
         .project_root()
         .context("Cannot determine project root")?;
+    crate::git::worktree::require_main_identity(root)?;
     if !plan_lifecycle::has_prefix(&old, plan_lifecycle::IN_PROGRESS_PREFIX)
         && !plan_lifecycle::has_prefix(&old, plan_lifecycle::DONE_PREFIX)
     {
@@ -80,26 +83,37 @@ pub(super) fn mark_plan_in_progress(work_dir: &WorkDir) -> Result<()> {
     })
 }
 
+/// Commit `paths` alone. A pinned commit moves the branch before it publishes the
+/// index, so a failure with the branch moved lost only that publication, to a
+/// concurrent git: the commit stands and still needs its attestation.
+fn commit_paths(git: &WorktreeGit, paths: &[String; 2]) -> Result<()> {
+    let before = git.run_checked(&["rev-parse", "HEAD"])?;
+    let committed = git.run_checked(&[
+        "commit",
+        "--only",
+        "-m",
+        "chore(loom): mark plan in progress",
+        "--",
+        &paths[0],
+        &paths[1],
+    ]);
+    let Err(error) = committed else {
+        return Ok(());
+    };
+    if git.run_checked(&["rev-parse", "HEAD"])? == before {
+        return Err(error);
+    }
+    tracing::warn!("the plan rename committed, but its index update was lost: {error:#}");
+    Ok(())
+}
+
 fn commit_rename(work_dir: &WorkDir, root: &Path, old: &str, new: &str) -> Result<()> {
+    let git = WorktreeGit::pinned_main(root)?;
     let paths = [format!(":(literal){old}"), format!(":(literal){new}")];
-    run_git_checked(&["add", "--", &paths[0], &paths[1]], root)?;
-    run_git_checked(
-        &[
-            "commit",
-            "--only",
-            "-m",
-            "chore(loom): mark plan in progress",
-            "--",
-            &paths[0],
-            &paths[1],
-        ],
-        root,
-    )?;
+    git.run_checked(&["add", "--", &paths[0], &paths[1]])?;
+    commit_paths(&git, &paths)?;
     // A hook must not silently leave the committed input different from the checkout.
-    let status = run_git(
-        &["diff", "--exit-code", "HEAD", "--", &paths[0], &paths[1]],
-        root,
-    )?;
+    let status = git.run(&["diff", "--exit-code", "HEAD", "--", &paths[0], &paths[1]])?;
     if !status.status.success() {
         bail!("Plan rename still differs from HEAD after committing");
     }

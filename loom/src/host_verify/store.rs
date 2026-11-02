@@ -235,9 +235,11 @@ pub fn load_job_file(
 
 mod groups;
 mod order;
-pub(super) use groups::load_group_anchors;
+#[cfg(test)]
+pub(crate) use groups::append_group;
+pub use groups::load_groups;
 pub(crate) use groups::start_guarded_group;
-pub use groups::{append_group, load_groups};
+pub(super) use groups::{load_group_anchors, load_uncontrolled_groups};
 pub(crate) use order::next_submission_order;
 
 /// Open `<job dir>/child.log` for appending (and reading its tail), creating it.
@@ -303,6 +305,7 @@ pub(crate) fn prune_jobs(work_dir: &Path, stage_id: &str, keep: &str) -> Result<
         if name != keep
             && load_job_file(work_dir, stage_id, &name, "applied")?.is_some()
             && !awaiting_retire(work_dir, stage_id, &name)
+            && load_uncontrolled_groups(work_dir, stage_id, &name)?.is_empty()
             && !load_group_anchors(work_dir, stage_id, &name)?
                 .iter()
                 .any(groups::GroupAnchorAddress::is_live)

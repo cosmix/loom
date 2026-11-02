@@ -110,6 +110,15 @@ fn verify(
     learned.policy = Some(snapshot.policy.clone());
     run_acceptance(&stage, &tree, work_dir, record.no_cache, progress)?;
     progress.take_failure()?;
+    if tree.knowledge && !progress.any_failed() {
+        let session = stage.session.as_deref().with_context(|| {
+            crate::verify::completion::knowledge::no_session_recovery(&stage.id)
+        })?;
+        let repo = crate::fs::work_dir::WorkDir::new(work_dir)?
+            .main_project_root()
+            .context("completion repository is unavailable")?;
+        crate::verify::completion::knowledge::check_session(&repo, work_dir, session)?;
+    }
     if !tree.knowledge && !progress.any_failed() {
         run_completion_checks(&stage, &tree, work_dir, progress, learned)?;
         progress.take_failure()?;

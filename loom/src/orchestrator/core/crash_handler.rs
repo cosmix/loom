@@ -232,7 +232,14 @@ impl Orchestrator {
             CrashTransition::Stale => {
                 self.reported_crashes.insert(session_id.to_string());
             }
-            CrashTransition::RetryableFailure => {}
+            // The monitor spaces out the redeliveries, which bounds this line.
+            CrashTransition::RetryableFailure => {
+                clear_status_line();
+                eprintln!(
+                    "Stage '{sid}': cannot record the crash of session '{session_id}'; the stage \
+                     keeps its slot until its file can be written"
+                );
+            }
         }
     }
 
@@ -383,3 +390,7 @@ fn announce_crash_outcome(
 #[cfg(test)]
 #[path = "crash_handler_identity_tests.rs"]
 mod crash_handler_identity_tests;
+
+#[cfg(test)]
+#[path = "crash_redelivery_tests.rs"]
+mod crash_redelivery_tests;

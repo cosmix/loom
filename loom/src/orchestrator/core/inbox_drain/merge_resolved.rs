@@ -16,7 +16,7 @@ use crate::git::merge::check_resolved_worktree;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 
-use super::super::merge_handler::Landing;
+use super::super::merge_handler::{trace_verification_output, Landing};
 use super::super::persistence::Persistence;
 use super::super::Orchestrator;
 use super::Settle;
@@ -55,7 +55,7 @@ impl Orchestrator {
         if let Err(error) = crate::verify::completion::resolved::verify_resolved_completion(
             &stage,
             &self.config.work_dir,
-            |_, _| {},
+            trace_verification_output,
         ) {
             return self.settle_failed_verification(&stage, stage_id, &error);
         }

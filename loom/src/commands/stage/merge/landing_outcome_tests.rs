@@ -65,7 +65,7 @@ fn manual_retry_propagates_git_failure_and_records_it() {
 
 #[test]
 fn manual_retry_signing_failure_returns_error_and_routes_to_review() {
-    let (repo, work, commit) = crate::stage_service::merge_test_fixtures::failing_signer_repo();
+    let (repo, work, commit) = crate::commands::stage::tests::failing_signer_repo();
     let root = repo.path();
     let stage = Stage {
         id: "s".into(),

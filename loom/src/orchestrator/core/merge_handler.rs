@@ -19,6 +19,7 @@ pub(super) mod resolver_attempts;
 mod resolver_exit;
 mod resolver_give_up;
 mod resolver_handback;
+mod resolver_recovery;
 mod resolver_spawn;
 mod resolver_stop;
 mod review_route;
@@ -27,6 +28,9 @@ mod spawn_failure;
 pub(super) use landing::Landing;
 use leftover_sweep::report_deferred_cleanup;
 use resolver_attempts::attempts_file;
+pub(super) use resolver_exit::trace_verification_output;
+#[cfg(test)]
+pub(super) use resolver_spawn::test_fixtures::with_read_only_stages;
 use review_route::awaits_merge;
 
 impl Orchestrator {

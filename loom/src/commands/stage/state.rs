@@ -8,7 +8,7 @@ use crate::fs::stage_request::{append_to_spool, spool_path, spool_target_from_cw
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::session_registry::{
-    live_sessions_for_stage, orphan_evidence, OrphanEvidence,
+    live_sessions_for_stage_admitted, orphan_evidence, OrphanEvidence,
 };
 use crate::orchestrator::terminal::backend::SessionBackend;
 use crate::orchestrator::terminal::native;
@@ -137,9 +137,10 @@ impl LiveAgent {
 
 /// Every live agent process associated with `stage_id`: sessions the
 /// registry can account for, plus orphans it can only see via PID evidence
-/// (e.g. after a daemon crash severed `stage.session`).
+/// (e.g. after a daemon crash severed `stage.session`). The caller holds the
+/// stage's admission lock.
 fn live_agents_for(work_dir: &Path, stage_id: &str) -> Result<Vec<LiveAgent>> {
-    let mut agents: Vec<LiveAgent> = live_sessions_for_stage(work_dir, stage_id)?
+    let mut agents: Vec<LiveAgent> = live_sessions_for_stage_admitted(work_dir, stage_id)?
         .into_iter()
         // The judge is not an agent working the stage: it must neither block
         // a reset nor be killed by one, and this is also what lets an

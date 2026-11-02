@@ -59,7 +59,7 @@ fn progressive_failure_refuses_changed_completion_proof() {
 
 #[test]
 fn progressive_merge_signing_failure_from_git_routes_to_review() {
-    let (repo, work, commit) = crate::stage_service::merge_test_fixtures::failing_signer_repo();
+    let (repo, work, commit) = crate::commands::stage::tests::failing_signer_repo();
     let root = repo.path();
     let mut stage = executing();
     stage.completed_commit = Some(commit);
@@ -75,7 +75,7 @@ fn progressive_merge_signing_failure_from_git_routes_to_review() {
 
 #[test]
 fn signing_hold_reports_the_signing_remedy_to_the_session() {
-    let (repo, work, commit) = crate::stage_service::merge_test_fixtures::failing_signer_repo();
+    let (repo, work, commit) = crate::commands::stage::tests::failing_signer_repo();
     let mut stage = executing();
     stage.completed_commit = Some(commit);
     save_stage(&stage, &work).unwrap();

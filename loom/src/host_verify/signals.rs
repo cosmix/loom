@@ -30,9 +30,9 @@ pub(super) fn kill_groups(work_dir: &Path, stage_id: &str, job_id: &str) {
             return;
         }
     };
-    if store::load_groups(work_dir, stage_id, job_id).is_ok_and(|all| all.len() > groups.len()) {
+    if let Err(error) = report_uncontrolled_groups(work_dir, stage_id, job_id) {
         tracing::warn!(stage = %stage_id, job = %job_id,
-            "criterion groups without guardian controls were left untouched");
+            error = %format!("{error:#}"), "could not persist unresolved criterion retirement");
     }
     for group in groups {
         if let Err(error) = group.signal() {
@@ -40,6 +40,31 @@ pub(super) fn kill_groups(work_dir: &Path, stage_id: &str, job_id: &str) {
                 error = %format!("{error:#}"), "criterion group may survive retirement");
         }
     }
+}
+
+/// Old records contain no capability for identifying their surviving commands.
+/// Persist that uncertainty across restarts and keep the original job evidence.
+fn report_uncontrolled_groups(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<()> {
+    let groups = store::load_uncontrolled_groups(work_dir, stage_id, job_id)?;
+    if groups.is_empty() {
+        return Ok(());
+    }
+    let report = serde_json::json!({
+        "unverified_process_groups": groups,
+        "reason": "legacy group records have no identity-bound guardian control",
+        "action": "inspect the retained job logs and establish live process ownership before stopping any process; recorded PGIDs alone are unsafe to signal",
+    });
+    store::save_job_file(
+        work_dir,
+        stage_id,
+        job_id,
+        "retirement-pending.json",
+        &serde_json::to_vec_pretty(&report)?,
+    )?;
+    let path = store::job_dir(work_dir, stage_id, job_id)?.join("retirement-pending.json");
+    tracing::warn!(stage = %stage_id, job = %job_id, report = %path.display(),
+        "legacy criterion retirement requires ownership review; processes and evidence retained");
+    Ok(())
 }
 
 enum Found {
@@ -84,8 +109,8 @@ fn retire_historical_groups(work_dir: &Path, stage_id: &str, current: Option<&st
         if Some(job_id.as_str()) == current {
             continue;
         }
-        match store::load_group_anchors(work_dir, stage_id, &job_id) {
-            Ok(groups) if groups.iter().any(|group| group.is_live()) => {
+        match store::load_groups(work_dir, stage_id, &job_id) {
+            Ok(groups) if !groups.is_empty() => {
                 kill_groups(work_dir, stage_id, &job_id);
             }
             Ok(_) => {}
@@ -104,7 +129,10 @@ fn interrupt(work_dir: &Path, stage_id: &str) -> Result<Option<Found>> {
     if store::cancelled_after_start(&record) {
         return Ok(Some(Found::Cancelled(record)));
     }
-    if record.state == JobState::Interrupted {
+    if matches!(
+        record.state,
+        JobState::Interrupted | JobState::Passed | JobState::Failed
+    ) {
         return Ok(Some(Found::Retry(record)));
     }
     if record.state != JobState::Running {

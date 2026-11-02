@@ -9,13 +9,15 @@
 //! `gate_holds_merge_stage` (for a stage that reached `MergeConflict` or
 //! `MergeBlocked` some other way, e.g. `loom stage complete`).
 
+use std::path::Path;
+
 use anyhow::Result;
 use chrono::Utc;
 
 use crate::fs::session_files::mark_session_terminal_reason;
 use crate::git::merge::control_path_violation;
 use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
-use crate::orchestrator::core::recovery_guards::too_young_to_judge;
+use crate::orchestrator::core::recovery_guards::launch_too_young_to_judge;
 use crate::orchestrator::core::Orchestrator;
 use crate::orchestrator::signals::remove_signal;
 use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
@@ -109,10 +111,18 @@ impl Orchestrator {
         let probe = |tracked: &Session| self.backend.is_session_alive(tracked);
         let kill = |stale: &Session| self.backend.kill_session(stale);
         let confirm_gone = |stale: &Session| self.confirm_session_gone(stale);
+        let work_dir = &self.config.work_dir;
         if spare_live_resolver {
-            stale_merge_retirement_blocks_spawn(session, has_identity, probe, kill, confirm_gone)
+            stale_merge_retirement_blocks_spawn(
+                work_dir,
+                session,
+                has_identity,
+                probe,
+                kill,
+                confirm_gone,
+            )
         } else {
-            retirement_unproven(session, has_identity, probe, kill, confirm_gone)
+            retirement_unproven(work_dir, session, has_identity, probe, kill, confirm_gone)
         }
     }
 
@@ -151,6 +161,7 @@ impl Orchestrator {
 }
 
 pub(super) fn stale_merge_retirement_blocks_spawn(
+    work_dir: &Path,
     session: &Session,
     has_pid_identity: bool,
     probe: impl Fn(&Session) -> Result<bool>,
@@ -171,12 +182,20 @@ pub(super) fn stale_merge_retirement_blocks_spawn(
             Ok(false) => {}
         }
     }
-    retirement_unproven(session, has_pid_identity, probe, kill, confirm_gone)
+    retirement_unproven(
+        work_dir,
+        session,
+        has_pid_identity,
+        probe,
+        kill,
+        confirm_gone,
+    )
 }
 
 /// Kill `session` and return whether its death is still not proven: by PID
 /// identity when it has one, else by the orphan rule.
 fn retirement_unproven(
+    work_dir: &Path,
     session: &Session,
     has_pid_identity: bool,
     probe: impl Fn(&Session) -> Result<bool>,
@@ -185,7 +204,7 @@ fn retirement_unproven(
 ) -> bool {
     let kill_error = kill(session).err();
     if !has_pid_identity {
-        return identityless_writer_blocks_spawn(session, probe, kill_error.as_ref());
+        return identityless_writer_blocks_spawn(work_dir, session, probe, kill_error.as_ref());
     }
     match confirm_gone(session) {
         Ok(true) => false,
@@ -196,16 +215,19 @@ fn retirement_unproven(
 
 /// A stale writer with no verified PID identity can be neither signalled nor
 /// confirmed gone by PID, so orphan recovery's rule judges it instead: older
-/// than `ORPHAN_PROBE_GRACE_SECS`, a liveness probe that finds it not running
-/// proves it dead and it is retired. It keeps ownership while younger (the
-/// grace period bounds that), while the backend still sees it running, or
+/// than `ORPHAN_PROBE_GRACE_SECS`, counted from the later of its record and its
+/// wrapper script, a liveness probe that finds it not running proves it dead and
+/// it is retired. It keeps ownership while younger (the grace period bounds
+/// that), while the backend still sees it running, or
 /// while the probe errors, which orphan recovery likewise retries next pass.
 fn identityless_writer_blocks_spawn(
+    work_dir: &Path,
     session: &Session,
     probe: impl Fn(&Session) -> Result<bool>,
     kill_error: Option<&anyhow::Error>,
 ) -> bool {
-    let probed = (!too_young_to_judge(session, Utc::now())).then(|| probe(session));
+    let too_young = launch_too_young_to_judge(work_dir, session, Utc::now());
+    let probed = (!too_young).then(|| probe(session));
     if matches!(probed, Some(Ok(false))) {
         return false;
     }

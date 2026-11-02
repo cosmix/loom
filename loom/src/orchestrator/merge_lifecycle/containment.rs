@@ -85,6 +85,11 @@ fn uncontained_worktree_head(
         // No branch and no worktree: there is nothing left to lose.
         return None;
     }
+    match worktree.join(".git").try_exists() {
+        Ok(false) => return None, // Unregistered remnants are retained by cleanup.
+        Ok(true) => {}
+        Err(error) => return Some(format!("cannot inspect worktree Git metadata ({error})")),
+    }
     match is_ancestor_of("HEAD", &branch_ref(target_branch), &worktree) {
         Ok(true) => None,
         Ok(false) => Some(format!(

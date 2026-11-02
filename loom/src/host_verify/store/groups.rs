@@ -217,8 +217,11 @@ fn is_no_reader(error: &anyhow::Error) -> bool {
         == Some(libc::ENXIO)
 }
 
-/// Legacy group records remain readable but never authorize a raw PGID signal.
-pub fn append_group(work_dir: &Path, stage_id: &str, job_id: &str, pgid: u32) -> Result<()> {
+/// Write a legacy group record, the shape a job from before guardians left on
+/// disk. No production path writes one: every criterion gets
+/// [`start_guarded_group`]. Reading it never authorizes a raw PGID signal.
+#[cfg(test)]
+pub(crate) fn append_group(work_dir: &Path, stage_id: &str, job_id: &str, pgid: u32) -> Result<()> {
     let rel = job_rel(stage_id, job_id)?.join(GROUPS_FILE);
     let identity =
         crate::process::process_start_time(pgid).zip(crate::process::boot_id::os_boot_id().ok());
@@ -247,6 +250,28 @@ pub fn load_groups(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<Vec<
         .collect())
 }
 
+/// Legacy identifiers cannot establish which processes still belong to a job.
+/// Keep them as unresolved evidence rather than quietly pruning their records.
+pub(crate) fn load_uncontrolled_groups(
+    work_dir: &Path,
+    stage_id: &str,
+    job_id: &str,
+) -> Result<Vec<u32>> {
+    let job = job_rel(stage_id, job_id)?;
+    let Some(bytes) = read_in(work_dir, &job.join(GROUPS_FILE), GROUPS_MAX_BYTES)? else {
+        return Ok(Vec::new());
+    };
+    let mut groups: Vec<_> = String::from_utf8_lossy(&bytes)
+        .lines()
+        .filter(|line| parse_anchor(work_dir, &job, line).is_none())
+        .filter_map(|line| line.split_whitespace().next()?.parse::<u32>().ok())
+        .filter(|pgid| *pgid > 1)
+        .collect();
+    groups.sort_unstable();
+    groups.dedup();
+    Ok(groups)
+}
+
 pub(crate) fn load_group_anchors(
     work_dir: &Path,
     stage_id: &str,
@@ -259,31 +284,33 @@ pub(crate) fn load_group_anchors(
     let job = job_rel(stage_id, job_id)?;
     Ok(String::from_utf8_lossy(&bytes)
         .lines()
-        .filter_map(|line| {
-            let mut fields = line.split_whitespace();
-            let pgid = fields.next()?.parse::<u32>().ok()?;
-            let start = fields.next()?.parse::<u64>().ok()?;
-            let boot = fields.next()?;
-            let name = fields.next()?;
-            let token = fields.next()?;
-            if pgid <= 1
-                || fields.next().is_some()
-                || name != format!("guard-{token}")
-                || !token
-                    .bytes()
-                    .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
-            {
-                return None;
-            }
-            Some(GroupAnchorAddress {
-                work_dir: work_dir.to_path_buf(),
-                rel: job.join(name),
-                token: token.to_owned(),
-                pgid,
-                start,
-                boot: boot.to_owned(),
-                _parent_life: None,
-            })
-        })
+        .filter_map(|line| parse_anchor(work_dir, &job, line))
         .collect())
+}
+
+fn parse_anchor(work_dir: &Path, job: &Path, line: &str) -> Option<GroupAnchorAddress> {
+    let mut fields = line.split_whitespace();
+    let pgid = fields.next()?.parse::<u32>().ok()?;
+    let start = fields.next()?.parse::<u64>().ok()?;
+    let boot = fields.next()?;
+    let name = fields.next()?;
+    let token = fields.next()?;
+    if pgid <= 1
+        || fields.next().is_some()
+        || name != format!("guard-{token}")
+        || !token
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
+    {
+        return None;
+    }
+    Some(GroupAnchorAddress {
+        work_dir: work_dir.to_path_buf(),
+        rel: job.join(name),
+        token: token.to_owned(),
+        pgid,
+        start,
+        boot: boot.to_owned(),
+        _parent_life: None,
+    })
 }

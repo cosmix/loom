@@ -57,6 +57,16 @@ pub fn complete_knowledge_stage(
     };
     if !no_verify {
         verify_knowledge_acceptance(&stage, work_dir)?;
+        let Some(session) = stage.session.as_deref() else {
+            bail!(
+                "{}",
+                crate::verify::completion::knowledge::no_session_recovery(stage_id)
+            );
+        };
+        let repo = crate::fs::work_dir::WorkDir::new(work_dir)?
+            .main_project_root()
+            .context("completion repository is unavailable")?;
+        crate::verify::completion::knowledge::check_session(&repo, work_dir, session)?;
     }
 
     finish_knowledge_stage(&stage, session_id, snapshot.as_ref(), work_dir)
@@ -179,6 +189,39 @@ mod tests {
     use super::*;
     use crate::models::failure::{FailureInfo, FailureType};
     use crate::models::stage::IssueKind;
+
+    /// Each recovery the no-session error names, against what the code allows.
+    #[test]
+    fn the_no_session_error_names_recoveries_the_status_rules_allow() {
+        let message = crate::verify::completion::knowledge::no_session_recovery("k");
+        assert!(
+            message.contains("`loom stage retry k` for a Blocked stage"),
+            "{message}"
+        );
+        assert!(
+            message.contains("`loom stage complete k --no-verify` from a status"),
+            "{message}"
+        );
+        assert!(
+            message.contains("`loom stage complete k --force-unsafe` from any"),
+            "{message}"
+        );
+
+        assert!(StageStatus::Blocked.can_transition_to(&StageStatus::Queued));
+        let mut no_verify = Stage {
+            status: StageStatus::NeedsHumanReview,
+            ..Stage::default()
+        };
+        no_verify.try_complete(None).unwrap();
+        assert_eq!(no_verify.status, StageStatus::Completed);
+        let mut refused = Stage {
+            status: StageStatus::Blocked,
+            ..Stage::default()
+        };
+        refused.try_complete(None).unwrap_err();
+        mark_force_completed(&mut refused);
+        assert_eq!(refused.status, StageStatus::Completed);
+    }
 
     #[test]
     fn a_forced_completion_archives_the_review_reason_and_failure() {

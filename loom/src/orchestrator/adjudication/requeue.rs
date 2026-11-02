@@ -35,6 +35,8 @@ fn transition_to_queued(stage: &mut Stage) -> Result<()> {
 /// unapplied dispute is judged; only that verdict re-queues it. This includes
 /// siblings whose verdicts were recorded before the current one was applied.
 /// The current dispute is the one open, unapplied entry excluded from count.
+/// A request no filing published is not counted: `job_for_dispute` will never
+/// judge it, so holding for it would leave the stage waiting with nothing open.
 pub(super) fn requeue_or_hold_for_remaining_disputes(
     work_dir: &Path,
     stage: &mut Stage,
@@ -60,6 +62,7 @@ pub(super) fn requeue_or_hold_for_remaining_disputes(
                     .tally
                     .request_receipts
                     .contains_key(&verdict_receipt(*id))
+                && !crate::stage_service::dispute_is_orphaned(stage, *id)
         })
         .count();
     anyhow::ensure!(

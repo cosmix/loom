@@ -48,6 +48,7 @@ pub(super) fn git(root: &Path, args: &[&str]) -> String {
 pub(super) fn repository(fx: &Fixture) {
     let root = &fx.repo_root;
     git(root, &["init", "-q", "-b", "main"]);
+    crate::git::worktree::capture_main_identity(root, &fx.work_dir).unwrap();
     git(root, &["config", "user.name", "loom-test"]);
     git(root, &["config", "user.email", "loom-test@example.com"]);
     std::fs::write(root.join(".gitignore"), ".loom/\n.worktrees/\n").unwrap();

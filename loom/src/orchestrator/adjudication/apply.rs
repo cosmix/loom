@@ -17,6 +17,7 @@ use super::apply_receipt::{
     apply_reason_change, cap_receipt, finish_apply_cap, publish_applied_marker, verdict_receipt,
     write_marker,
 };
+use super::closed_disputes::close_dispute_locked;
 use super::requeue::requeue_or_hold_for_remaining_disputes;
 use super::scan::read_verdict_record;
 use super::{
@@ -96,23 +97,21 @@ impl AdjudicatorRegistry {
         }
         let receipt = verdict_receipt(dispute_id);
         let current = load_stage(stage_id, work_dir)?;
-        if current
-            .tally
-            .request_receipts
-            .contains_key(&cap_receipt(dispute_id))
-        {
+        let receipts = &current.tally.request_receipts;
+        if receipts.contains_key(&cap_receipt(dispute_id)) || receipts.contains_key(&receipt) {
             if current.status == StageStatus::NeedsHumanReview {
                 close_open_disputes_except_locked(work_dir, stage_id, Some(dispute_id))?;
             }
             publish_applied_marker(work_dir, stage_id, dispute_id)?;
             return Ok(());
         }
-        if current.tally.request_receipts.contains_key(&receipt) {
-            if current.status == StageStatus::NeedsHumanReview {
-                close_open_disputes_except_locked(work_dir, stage_id, Some(dispute_id))?;
-            }
-            publish_applied_marker(work_dir, stage_id, dispute_id)?;
-            return Ok(());
+        // No receipt and no adjudication left to answer: an operator or a reset
+        // moved the stage, and no later tick can apply this verdict. Closing it
+        // ends the retries, charges nothing, and lets the caller retire its judge.
+        if current.status != StageStatus::NeedsAdjudication {
+            tracing::warn!(target: "loom::adjudication", stage = %stage_id, dispute = dispute_id,
+                status = %current.status, "closing a verdict uncharged; the stage moved on");
+            return close_dispute_locked(work_dir, stage_id, dispute_id);
         }
         let spent = super::apply_failure_count(work_dir, stage_id, dispute_id)?;
         if spent >= super::MAX_APPLY_ATTEMPTS {
