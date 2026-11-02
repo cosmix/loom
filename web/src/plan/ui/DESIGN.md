@@ -20,7 +20,7 @@ Chrome is Inter (`--font-sans`); reading prose keeps `--font-reading`; paths, id
 | `--type-ui`    | 13px/500                        | buttons, rows, tabs, labels, the spine                           |
 | `--type-fine`  | 12px/400, `.plan-fine`          | a reason under a control, a count, a timestamp                   |
 
-Hierarchy is made with size, weight and space, in that order. Two weights per surface at most (500 and 600, or 400 and 600). Muted text (`--muted-foreground`) marks what is secondary; it never marks what is disabled.
+Hierarchy is made with size, weight and space, in that order. A surface uses the weights the scale above names (400, 500, 600, and 650 for the page title) and no others. Muted text (`--muted-foreground`) marks what is secondary; it never marks what is disabled.
 
 ## Space
 

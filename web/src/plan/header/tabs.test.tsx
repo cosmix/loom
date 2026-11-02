@@ -33,7 +33,7 @@ describe("Tabs", () => {
       pathname: "/files",
       tabs: [
         { id: "files", label: "Files", path: "/files", element },
-        { id: "notes", label: "Notes", path: "/notes" },
+        { id: "notes", label: "Notes", path: "/notes", element },
       ],
     });
     const files = screen.getByRole("link", { name: /Files/ });
@@ -88,7 +88,10 @@ describe("Tabs", () => {
   it.each(["custom", "constructor", "toString", "__proto__"])(
     "renders an unrecognized tab id %s without an icon",
     (id) => {
-      show({ pathname: "/custom", tabs: [{ id, label: "Custom", path: "/custom" }] });
+      show({
+        pathname: "/custom",
+        tabs: [{ id, label: "Custom", path: "/custom", element: () => <p /> }],
+      });
       const custom = screen.getByRole("link", { name: /Custom/ });
       expect(custom.getAttribute("href")).toBe("/custom");
       expect(custom.getAttribute("aria-current")).toBe("page");

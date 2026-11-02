@@ -129,6 +129,20 @@ it("opens help with its callback", () => {
 });
 
 const NO_PROGRESS = '.plan-next-step, .plan-header-rail, [class*="plan-step"]';
+const STEP_ROUTE = /^\/f\/[^/]+\/(vision|product|metaplan|engineering|pressure|run)(\/|$)/;
+
+/**
+ * The class selector above misses a rail under any other class name. A rail is a list of steps or
+ * links to the step routes whatever it is called, so the header must hold neither.
+ */
+function expectNoStepNavigation(): void {
+  const header = screen.getByRole("banner");
+  const toSteps = within(header)
+    .queryAllByRole("link")
+    .filter((link) => STEP_ROUTE.test(link.getAttribute("href") ?? ""));
+  expect(toSteps).toEqual([]);
+  expect(within(header).queryAllByRole("list")).toEqual([]);
+}
 
 it.each(["/f/demo", "/f/demo/product", "/f/demo/engineering/planning"])(
   "draws no step rail or next-step card on feature route %s",
@@ -138,6 +152,7 @@ it.each(["/f/demo", "/f/demo/product", "/f/demo/engineering/planning"])(
     expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
     expect(screen.queryByTitle(NEXT_STEP)).toBeNull();
     expect(container.querySelector(NO_PROGRESS)).toBeNull();
+    expectNoStepNavigation();
   },
 );
 
@@ -181,6 +196,7 @@ it("uses the overflow control below 1024px and draws no rail or card", () => {
   expect(screen.queryByRole("button", { name: /Step \d of 6/ })).toBeNull();
   expect(screen.queryByText(OFFER_LABEL)).toBeNull();
   expect(container.querySelector(NO_PROGRESS)).toBeNull();
+  expectNoStepNavigation();
 });
 
 it("keeps one row of logo, identity, activity and overflow on phones", () => {

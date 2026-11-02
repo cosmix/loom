@@ -1,10 +1,12 @@
 import type { ChecklistView, OfferKind, OfferView, StepView } from "@/plan/api/schema";
+import { allOffers } from "@/plan/feature/checklist-offers";
 import { paceChoice } from "@/plan/feature/pace";
+import { STEP } from "@/plan/feature/steps";
 
 export type PlanRow = ChecklistView["plan_rows"][number];
 
 /** The two overview pages that carry gaps above their text, and the step each one's gaps belong to. */
-const GAP_STEP = { product: 2, engineering: 4 } as const;
+const GAP_STEP = { product: STEP.product, engineering: STEP.plans } as const;
 export type GapScope = keyof typeof GAP_STEP;
 
 /** The feature page a pathname shows: `/f/<feature>/<page>[/<doc>]` gives `[page, doc]`. */
@@ -26,9 +28,7 @@ export function gapStep(checklist: ChecklistView, scope: GapScope): StepView | u
 
 /** An offer of this kind wherever the checklist carries one: primary, secondary, then item offers. */
 export function offerOfKind(checklist: ChecklistView, kind: OfferKind): OfferView | undefined {
-  return [checklist.primary, ...checklist.secondary, ...checklist.items.map((item) => item.offer)]
-    .filter((offer) => offer !== null)
-    .find((offer) => offer.kind === kind);
+  return allOffers(checklist).find((offer) => offer.kind === kind);
 }
 
 /** The offer a missing vision or metaplan page draws for itself. */
@@ -44,13 +44,13 @@ export function missingDocumentOffer(
 }
 
 /**
- * The step-5 offer that pressure-tests this plan: only a written plan with no pressure test on
+ * The pressure-test step's offer for this plan: only a written plan with no pressure test on
  * record has one. The Pressure page draws it on the plan's row.
  */
 export function pressureOffer(checklist: ChecklistView, row: PlanRow): OfferView | null {
   if (row.state !== "written" || row.pressure_date !== null) return null;
   const item = checklist.items.find(
-    (candidate) => candidate.step === 5 && candidate.path === row.path,
+    (candidate) => candidate.step === STEP.pressure && candidate.path === row.path,
   );
   return item?.offer?.kind === "pressure_test" ? item.offer : null;
 }

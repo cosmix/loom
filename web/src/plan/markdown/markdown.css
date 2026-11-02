@@ -281,6 +281,13 @@
 .md-table td:last-child {
   padding-right: 0;
 }
+/* A long path or `fn::name` in a cell may break anywhere, so no column's min-content width pushes
+   the table past the reading column. `anywhere` (not `break-word`) also lowers the min-content
+   size. Scoped to code: on the whole cell a short label column shrinks until its words break
+   mid-word. Headers keep `nowrap`; fenced code still scrolls. */
+.md-table td code {
+  overflow-wrap: anywhere;
+}
 .md-table th {
   font-family: var(--font-sans);
   font-size: 0.92em;

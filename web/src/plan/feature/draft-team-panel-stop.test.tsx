@@ -118,9 +118,7 @@ describe("DraftTeamPanel", () => {
 
     expect(button.getAttribute("aria-disabled")).toBe("true");
     expect(screen.getByText("Stopping the team requires authoring")).toBeTruthy();
-    expect(
-      screen.getByText("loom plan is in read-only mode: Claude is not logged in"),
-    ).toBeTruthy();
+    expect(screen.getByText("Read-only")).toBeTruthy();
     expect(confirm).not.toHaveBeenCalled();
     expect(socket.send).not.toHaveBeenCalled();
   });

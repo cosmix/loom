@@ -1,12 +1,11 @@
 import type { StepView } from "@/plan/api/schema";
 import { Untrusted } from "@/plan/chat/visible-controls";
-
-const RUN_STEP = 6;
+import { STEP } from "@/plan/feature/steps";
 
 type Cell = "done" | "current" | "running" | "idle";
 
 function cellOf(step: StepView, current: number | null, running: boolean): Cell {
-  if (step.number === RUN_STEP && running) return "running";
+  if (step.number === STEP.run && running) return "running";
   if (step.mark === "done") return "done";
   return step.number === current ? "current" : "idle";
 }

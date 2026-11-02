@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 
 import type { ChecklistView, MarkView, StepView } from "@/plan/api/schema";
 import { featurePage } from "@/plan/feature/page-offer";
+import { STEP } from "@/plan/feature/steps";
 import { featureHref } from "@/plan/feature/use-feature";
 import { PLAN_STATE_GLYPHS, type PlanState } from "@/plan/ui/glyphs";
 
@@ -41,12 +42,12 @@ export interface SpineGroup {
 
 /** The server's step number behind each group; the labels are the groups', not the server's. */
 const GROUPS: { id: GroupId; label: string; step: number; page: string }[] = [
-  { id: "vision", label: "Vision", step: 1, page: "vision" },
-  { id: "product", label: "Product spec", step: 2, page: "product" },
-  { id: "metaplan", label: "Metaplan", step: 3, page: "metaplan" },
-  { id: "plans", label: "Plans", step: 4, page: "engineering" },
-  { id: "pressure", label: "Pressure test", step: 5, page: "pressure" },
-  { id: "run", label: "Run", step: 6, page: "run" },
+  { id: "vision", label: "Vision", step: STEP.vision, page: "vision" },
+  { id: "product", label: "Product spec", step: STEP.product, page: "product" },
+  { id: "metaplan", label: "Metaplan", step: STEP.metaplan, page: "metaplan" },
+  { id: "plans", label: "Plans", step: STEP.plans, page: "engineering" },
+  { id: "pressure", label: "Pressure test", step: STEP.pressure, page: "pressure" },
+  { id: "run", label: "Run", step: STEP.run, page: "run" },
 ];
 
 /** The server labels a count's unit ("Untested", "Done"); a label equal to the name names no unit. */
@@ -100,7 +101,9 @@ function planChildren(checklist: ChecklistView): SpineChild[] {
     style: "mono",
     number: null,
     note: plan.state,
-    icon: plan.state in PLAN_STATE_GLYPHS ? PLAN_STATE_GLYPHS[plan.state as PlanState] : null,
+    icon: Object.hasOwn(PLAN_STATE_GLYPHS, plan.state)
+      ? PLAN_STATE_GLYPHS[plan.state as PlanState]
+      : null,
   }));
 }
 
@@ -131,6 +134,15 @@ const MARK_WORDS: Record<Exclude<MarkView, "gap">, string> = {
   optional: "optional",
 };
 
+/**
+ * The server marks the pressure test done while no written plan waits for one, which holds with no
+ * test on record at all. That reads as optional, as the Pressure page's own count does.
+ */
+function markOf(id: GroupId, mark: MarkView, checklist: ChecklistView): MarkView {
+  const noneOnRecord = !checklist.plan_rows.some((plan) => plan.pressure_date !== null);
+  return id === "pressure" && mark === "done" && noneOnRecord ? "optional" : mark;
+}
+
 /** The word for a group's mark; a group with nothing in it yet reads "not started". */
 function wordOf(id: GroupId, mark: MarkView, checklist: ChecklistView): string {
   if (id === "product" && checklist.sections.length === 0) return "not started";
@@ -154,7 +166,7 @@ export function spineGroups(checklist: ChecklistView): SpineGroup[] {
     const server: StepView | undefined = checklist.steps.find(
       (candidate) => candidate.number === step,
     );
-    const mark = server?.mark ?? "gap";
+    const mark = markOf(id, server?.mark ?? "gap", checklist);
     const count = id === "vision" || id === "metaplan" ? null : (server?.count ?? null);
     return {
       id,

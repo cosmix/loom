@@ -15,6 +15,6 @@ export function composerBlock(
   if (stopping) return "loom plan is stopping";
   if (session?.state === "ending") return "the chat is closing";
   if (codexAlone) return "Codex is reviewing; send when the next Claude step starts";
-  if (readOnly) return "loom plan is in read-only mode";
+  if (readOnly) return "Read-only";
   return null;
 }

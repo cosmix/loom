@@ -9,11 +9,17 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::sync::Mutex;
 
+use crate::process::process_start_time;
+
 const MAX_RECORD_BYTES: u64 = 4096;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct LockRecord {
     pub pid: u32,
+    /// The holder's kernel start-time token, so a reader of a record that outlived its holder can
+    /// tell a reused pid from the holder (`plan_session::owner_watch`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -77,12 +83,19 @@ pub fn acquire(path: &Path) -> Result<Acquired> {
         return Ok(Acquired::Running(read_record(&mut file)?));
     }
     let mut lock = ServerLock { file };
-    lock.write_record(&LockRecord {
-        pid: std::process::id(),
-        url: None,
-        token: None,
-    })?;
+    lock.write_record(&own_record(None, None))?;
     Ok(Acquired::Held(lock))
+}
+
+/// The record of this process as the holder.
+fn own_record(url: Option<String>, token: Option<String>) -> LockRecord {
+    let pid = std::process::id();
+    LockRecord {
+        pid,
+        start_time: process_start_time(pid),
+        url,
+        token,
+    }
 }
 
 fn read_record(file: &mut File) -> Result<LockRecord> {
@@ -96,6 +109,7 @@ fn read_record(file: &mut File) -> Result<LockRecord> {
     };
     Ok(record.unwrap_or(LockRecord {
         pid: 0,
+        start_time: None,
         url: None,
         token: None,
     }))
@@ -103,11 +117,7 @@ fn read_record(file: &mut File) -> Result<LockRecord> {
 
 impl ServerLock {
     pub fn publish(&mut self, url: &str, token: &str) -> Result<()> {
-        self.write_record(&LockRecord {
-            pid: std::process::id(),
-            url: Some(url.to_owned()),
-            token: Some(token.to_owned()),
-        })
+        self.write_record(&own_record(Some(url.to_owned()), Some(token.to_owned())))
     }
 
     fn write_record(&mut self, record: &LockRecord) -> Result<()> {

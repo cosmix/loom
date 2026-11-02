@@ -14,7 +14,7 @@ plans, use those paths for each selected slug. Never stage, commit, or branch,
 and never run `loom init`, `loom run`, or `loom pressure`.
 
 For a standalone plan, write `doc/plans/PLAN-<slug>.md` with `Implements: none`
-and briefs under `doc/plans/briefs/<slug>/`. It has no metaplan or seven-step
+and briefs under `doc/plans/briefs/<slug>/`. It has no metaplan or six-step
 checklist. The top level of `doc/plans/` holds standalone plans only.
 
 Keep plans with an `IN_PROGRESS-`, `DONE-`, or `RETIRED-` prefix, their brief

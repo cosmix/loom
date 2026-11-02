@@ -1,4 +1,5 @@
 import type { ValidationView } from "@/plan/api/schema-files";
+import { Untrusted } from "@/plan/chat/visible-controls";
 
 const BUCKETS = ["structural", "knowledge", "sandbox", "baseline"] as const;
 
@@ -23,10 +24,10 @@ export function ValidationList({ validation }: { validation: ValidationView }) {
               )}
               {item.stage_id !== null && (
                 <a href={`#stage:${item.stage_id}`} className="mr-1.5 font-mono text-xs underline">
-                  {item.stage_id}
+                  <Untrusted text={item.stage_id} />
                 </a>
               )}
-              {item.message}
+              <Untrusted text={item.message} />
             </li>
           ))}
         </ul>
@@ -38,7 +39,7 @@ export function ValidationList({ validation }: { validation: ValidationView }) {
             <ul aria-label={`Warnings, ${bucket}`} className="space-y-1">
               {validation.warnings[bucket].map((message, index) => (
                 <li key={`${index}:${message}`} className="text-[color:var(--tone-warning)]">
-                  {message}
+                  <Untrusted text={message} />
                 </li>
               ))}
             </ul>
@@ -48,7 +49,9 @@ export function ValidationList({ validation }: { validation: ValidationView }) {
       {validation.notes.length > 0 && (
         <ul aria-label="Notes" className="space-y-1 text-muted-foreground">
           {validation.notes.map((note, index) => (
-            <li key={`${index}:${note}`}>{note}</li>
+            <li key={`${index}:${note}`}>
+              <Untrusted text={note} />
+            </li>
           ))}
         </ul>
       )}

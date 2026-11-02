@@ -83,7 +83,7 @@ it("posts the requested ids for the holder", async () => {
 
 it.each([
   ["other", "Dana holds authoring"],
-  ["read_only", "loom plan is in read-only mode: tmux is not installed"],
+  ["read_only", "Read-only"],
 ] as const)("shows the reason and never posts for a %s browser", (who, reason) => {
   show(who);
   const button = screen.getByRole("button", { name: "Rebuild", description: reason });

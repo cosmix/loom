@@ -46,12 +46,19 @@ function alreadyGiven(store: Store, path: string): boolean {
 }
 
 /**
+ * The server refuses an attachment path holding whitespace or `#` (its header cannot carry them),
+ * and the refusal fails the whole message. A viewed document the user never added must not cost
+ * the send, so such a page is never offered.
+ */
+const REFUSED_PATH = /[\p{White_Space}#]/u;
+
+/**
  * The viewed document a message sent now should carry: the page's source when it has one, the
- * user has not dismissed it, and the chat was not given it already.
+ * server accepts its path, the user has not dismissed it, and the chat was not given it already.
  */
 export function contextWish(store: Store): ContextWish | null {
   const { path } = store.get(contextDocumentAtom);
-  if (path === null || alreadyGiven(store, path)) return null;
+  if (path === null || REFUSED_PATH.test(path) || alreadyGiven(store, path)) return null;
   const drafts = store.get(draftAtom).attachments;
   const held = holdsSource(drafts, path);
   if (!held && drafts.length >= MAX_ATTACHMENTS) return null;

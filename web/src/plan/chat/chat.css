@@ -43,8 +43,7 @@
 }
 
 .chat-panel [role="log"],
-.chat-sheet [role="log"],
-.chat-message {
+.chat-sheet [role="log"] {
   min-width: 0;
   font-family: var(--font-sans), Inter, sans-serif;
   font-size: 13px;

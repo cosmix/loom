@@ -93,7 +93,21 @@ pub(super) fn expected_filesystem(root: &Path, home: &Path, rt: &RuntimePaths) -
     })
 }
 
+/// The `Edit` asks over the top-level entries both fixtures share.
+pub(super) fn expected_edit_asks(root: &Path) -> [String; 6] {
+    let root = root.display();
+    [
+        format!("Edit(/{root}/doc/loom/**)"),
+        format!("Edit(/{root}/.claude/**)"),
+        format!("Edit(/{root}/.git/**)"),
+        format!("Edit(/{root}/.loom/**)"),
+        format!("Edit(/{root}/README.md)"),
+        format!("Edit(/{root}/loom/**)"),
+    ]
+}
+
 pub(super) fn expected_permissions(root: &Path, rt: &RuntimePaths) -> Value {
+    let asks = expected_edit_asks(root);
     let root = root.display();
     json!({
         "defaultMode": "auto",
@@ -110,7 +124,7 @@ pub(super) fn expected_permissions(root: &Path, rt: &RuntimePaths) -> Value {
             "Bash(loom plan verify *)", "Bash(loom plan check*)", "Bash(loom map *)",
             "WebSearch",
         ],
-        "ask": ["WebFetch"],
+        "ask": std::iter::once("WebFetch".to_owned()).chain(asks).collect::<Vec<_>>(),
         "deny": [
             "LSP", "RemoteTrigger", "CronCreate", "PushNotification", "Monitor", "PowerShell",
             "Workflow",
@@ -125,19 +139,23 @@ pub(super) fn expected_permissions(root: &Path, rt: &RuntimePaths) -> Value {
     })
 }
 
-pub(super) fn scope_cases() -> anyhow::Result<Vec<(SessionScope, Value)>> {
+pub(super) fn scope_cases(root: &Path) -> anyhow::Result<Vec<(SessionScope, Value)>> {
+    let asks = |bash: &[&str]| {
+        let bash = bash.iter().map(|rule| (*rule).to_owned());
+        json!(bash.chain(expected_edit_asks(root)).collect::<Vec<_>>())
+    };
     Ok(vec![
-        (SessionScope::Open, json!(["WebFetch"])),
+        (SessionScope::Open, asks(&["WebFetch"])),
         (
             SessionScope::team(vec!["doc/product/new/section_1.md".into()], Vec::new())?,
-            json!(["WebFetch", "Bash(loom knowledge *)"]),
+            asks(&["WebFetch", "Bash(loom knowledge *)"]),
         ),
         (
             SessionScope::Kickoff(KickoffScope {
                 existing: Vec::new(),
                 grant: None,
             }),
-            json!([
+            asks(&[
                 "WebFetch",
                 "Bash(loom knowledge *)",
                 "Bash(loom plan summary seal*)",

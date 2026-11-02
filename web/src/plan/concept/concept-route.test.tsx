@@ -183,14 +183,6 @@ describe("overviews and the document key", () => {
     expect(Array.from(hints.querySelectorAll("kbd"), (kbd) => kbd.textContent)).not.toContain("a");
     expect(hints.textContent).not.toContain("adds the sentence to chat");
   });
-  it("the overview eyebrow names the feature by its slug", async () => {
-    serveOverview();
-    renderAt("/f/demo/engineering", (store) =>
-      store.set(checklistAtom, checklistViewSchema.parse(checklistFixture.checklists[0]!)),
-    );
-    await readingColumn();
-    expect(screen.getByText("demo · engineering overview")).toBeTruthy();
-  });
   it("opening a run changes no URL and sends no request", async () => {
     serveOverview();
     const { router } = renderAt("/f/demo/product");
@@ -215,10 +207,12 @@ describe("overviews and the document key", () => {
     // The header tabs are gone and no checklist is loaded here, so the spine has no rows: the
     // switch between the two overviews goes through the router, as a spine link would.
     await router.navigate("/f/demo/engineering");
-    await screen.findByText("Engineering overview");
+    await screen.findByRole("heading", { level: 1, name: "Engineering overview" });
     await router.navigate("/f/demo/product");
     // Wait for the engineering page to leave, or readingColumn() resolves with its stale column.
-    await waitFor(() => expect(screen.queryByText("Engineering overview")).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { level: 1, name: "Engineering overview" })).toBeNull(),
+    );
     const column = await readingColumn();
     expect(await within(column).findByRole("group", { name: OVERVIEW_RUN })).toBeTruthy();
   });

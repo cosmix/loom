@@ -6,19 +6,17 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use nix::errno::Errno;
-use nix::sys::signal::kill;
-use nix::unistd::Pid;
 use serde::Deserialize;
 
 use crate::orchestrator::terminal::tmux::{socket_path_for, teardown_socket};
+use crate::process::{verify_process_identity, IdentityStatus, ProcessIdentity};
 
 pub const OWNER_GRACE: Duration = Duration::from_secs(15 * 60);
 pub const OWNER_POLL: Duration = Duration::from_secs(15);
 
 /// What the watch asks of the world; a test supplies a fake.
 pub trait OwnerProbe {
-    /// A server holds the project: the lock record names a live pid.
+    /// A server holds the project: the lock record names a live process.
     fn owner_alive(&mut self) -> bool;
     /// The session's tmux server still exists, even if Claude has exited.
     fn session_alive(&mut self) -> bool;
@@ -46,9 +44,16 @@ pub fn run(probe: &mut dyn OwnerProbe, grace: Duration, poll: Duration) {
 
 /// Read the server's JSON pid without taking its singleton lock or following a symlink.
 pub fn read_holder_pid(path: &Path) -> Option<u32> {
+    read_holder(path).map(|holder| holder.pid)
+}
+
+/// The identity in the server's lock record, read as [`read_holder_pid`] says.
+fn read_holder(path: &Path) -> Option<ProcessIdentity> {
     #[derive(Deserialize)]
     struct Holder {
         pid: u32,
+        #[serde(default)]
+        start_time: Option<u64>,
     }
 
     let file = OpenOptions::new()
@@ -63,7 +68,10 @@ pub fn read_holder_pid(path: &Path) -> Option<u32> {
     let mut bytes = Vec::new();
     file.take(4096).read_to_end(&mut bytes).ok()?;
     let holder: Holder = serde_json::from_slice(&bytes).ok()?;
-    (holder.pid != 0).then_some(holder.pid)
+    (holder.pid != 0).then_some(ProcessIdentity {
+        pid: holder.pid,
+        start_time: holder.start_time,
+    })
 }
 
 /// Production owner and tmux probes for a single planning session.
@@ -88,11 +96,10 @@ impl SessionOwnerProbe {
 
 impl OwnerProbe for SessionOwnerProbe {
     fn owner_alive(&mut self) -> bool {
-        let Some(pid) = read_holder_pid(&self.lock_path).and_then(|pid| i32::try_from(pid).ok())
-        else {
-            return false;
-        };
-        matches!(kill(Pid::from_raw(pid), None), Ok(()) | Err(Errno::EPERM))
+        // The record outlives a killed server, and its pid can come back as another process.
+        // Without a start time on both sides only the pid's existence can be checked.
+        read_holder(&self.lock_path)
+            .is_some_and(|holder| verify_process_identity(holder) != IdentityStatus::Dead)
     }
 
     fn session_alive(&mut self) -> bool {
@@ -274,5 +281,36 @@ mod tests {
         std::fs::write(&path, content).unwrap();
 
         assert_eq!(read_holder_pid(&path), None);
+    }
+
+    /// What the production probe answers for a record naming this live process.
+    fn owner_alive_with_record(record: serde_json::Value) -> bool {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("server.lock");
+        std::fs::write(&path, record.to_string()).unwrap();
+        SessionOwnerProbe::new(&path, "unused-socket").owner_alive()
+    }
+
+    #[test]
+    fn a_reused_pid_reads_as_no_owner() {
+        let pid = std::process::id();
+        let started = crate::process::process_start_time(pid).expect("this process's start time");
+
+        let reused = serde_json::json!({"pid": pid, "start_time": started + 1});
+        assert!(!owner_alive_with_record(reused));
+
+        let same = serde_json::json!({"pid": pid, "start_time": started});
+        assert!(owner_alive_with_record(same));
+    }
+
+    #[test]
+    fn a_record_without_a_start_time_falls_back_to_the_pid() {
+        let live = serde_json::json!({"pid": std::process::id()});
+        assert!(owner_alive_with_record(live));
+
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let dead = child.id();
+        child.wait().unwrap();
+        assert!(!owner_alive_with_record(serde_json::json!({"pid": dead})));
     }
 }

@@ -15,7 +15,7 @@ import {
   sentAt,
   view,
 } from "./composer-context-kit";
-import { bindAttachedSession } from "./context-attach";
+import { bindAttachedSession, contextWish } from "./context-attach";
 import { draftAtom } from "./drafts";
 import { snapshotAtom } from "./model";
 import { screenAtom } from "./session-home";
@@ -154,6 +154,51 @@ it("pressing Send again while the document is being fetched sends once", async (
   await waitFor(() => expect(hook.result.current.pending).toBe(false));
   expect(h.sent).toHaveLength(1);
   expect(docServer.asked).toEqual([pathOf("05")]);
+});
+
+it("pressing Send on a second mounted composer while the document is fetched sends once", async () => {
+  const h = setup("idle");
+  view(h, "05");
+  const first = sender(h);
+  const second = sender(h);
+  let release = () => {};
+  docServer.gate = new Promise<void>((resolve) => (release = resolve));
+  act(() => h.store.set(draftAtom, { text: "Once", attachments: [] }));
+  await act(async () => {
+    void first.result.current.send();
+    void second.result.current.send();
+  });
+  await act(async () => release());
+  await waitFor(() => expect(h.sent).toHaveLength(1));
+  await h.result();
+  await waitFor(() => expect(first.result.current.pending).toBe(false));
+  expect(h.sent).toHaveLength(1);
+  expect(docServer.asked).toEqual([pathOf("05")]);
+});
+
+it.each(["doc/notes/meeting notes.md", "doc/notes/plan#2.md", "doc/notes/tab\there.md"])(
+  "a viewed document whose path the server refuses (%j) is not offered, and the message still goes",
+  async (path) => {
+    const h = setup("idle");
+    act(() => h.store.set(viewedDocumentAtom, { kind: "file", path, name: "notes" }));
+    expect(contextWish(h.store)).toBeNull();
+    await deliver(h, sender(h));
+    expect(pathsAt(h, 0)).toEqual([]);
+    expect(docServer.asked).toEqual([]);
+  },
+);
+
+it("a viewed document the server would refuse for size goes unattached, and the message still goes", async () => {
+  const h = setup("idle");
+  view(h, "05");
+  // A last line shaped like the cut marker leaves the quote uncut, over the server's 16 KiB.
+  docServer.text = `${"a".repeat(17_000)}\n[…12 more characters; read the source]`;
+  const hook = sender(h);
+  await deliver(h, hook);
+  expect(sentAt(h, 0).command).toBe("send");
+  expect(pathsAt(h, 0)).toEqual([]);
+  expect(hook.result.current.error).toBeNull();
+  expect(h.store.get(draftAtom).text).toBe("");
 });
 
 it("a refused message keeps the draft and its passage, and does not count the document as told", async () => {

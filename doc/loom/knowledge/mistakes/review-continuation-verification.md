@@ -260,7 +260,6 @@
 
 **Fix:** Use invalid TOML to make the update fail after rename and assert rollback.
 
-
 ## Module visibility and patch context need verification
 
 **What happened:** One test helper was initially referenced through a private module and a formatting-sensitive patch failed to match the current test text.

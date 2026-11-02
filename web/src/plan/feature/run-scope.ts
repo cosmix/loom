@@ -17,7 +17,7 @@ export function allPlansDone(checklist: ChecklistView): boolean {
  * names a written plan of this feature, else the run dialog's preselected plan when that is a
  * written plan here, else the first written plan. Null when no plan is written.
  */
-export function startTarget(checklist: ChecklistView, preselected: string | null): string | null {
+function startTarget(checklist: ChecklistView, preselected: string | null): string | null {
   const written = checklist.plan_rows.filter((row) => row.state === "written");
   const isWritten = (path: string | null | undefined): path is string =>
     written.some((row) => row.path === path);
@@ -27,7 +27,7 @@ export function startTarget(checklist: ChecklistView, preselected: string | null
   return written[0]?.path ?? null;
 }
 
-export type RunScope = "idle" | "own" | "foreign";
+type RunScope = "idle" | "own" | "foreign";
 
 /**
  * The run state covers only the workspace's one active plan, so a run in flight for another
@@ -48,7 +48,7 @@ const HELD = "A run holds the workspace.";
 const UNREAD = "Run state unavailable.";
 
 /** The page's one Start a run button: the plan it opens the run dialog on, and why it is blocked. */
-export type StartControl = { path: string | null; reason: string | null };
+type StartControl = { path: string | null; reason: string | null };
 
 /**
  * The page's Start a run button. A run of this feature that stopped resumes through it, targeting

@@ -319,7 +319,7 @@ it("the header has no rail or view tabs", () => {
   expect(wide.querySelector(rail)).toBeNull();
   cleanup();
 
-  // Below the wide query the rail and the card take their compact forms, on other code paths.
+  // Below the wide query the narrow header is checked too, on its other code path.
   stubMedia(false);
   const narrow = renderHeader(gapsChecklist());
   expect(within(narrow).queryByRole("link", { name: /\b(Product|Engineering)\b/ })).toBeNull();

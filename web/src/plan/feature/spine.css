@@ -1,7 +1,8 @@
 /*
  * The feature spine: the documents of one feature in workflow order, with the next step at its
  * head. Chrome set in --type-ui and --muted-foreground, the current row in --foreground; the
- * accent marks the current row's glyph and nothing else (ui/DESIGN.md). Groups divide by
+ * accent marks the current group's glyph and the current document's dot, and nothing else
+ * (ui/DESIGN.md). Groups divide by
  * hairlines, children sit under their group with no rule of their own.
  */
 [data-loom-plan] .plan-spine {
@@ -127,9 +128,26 @@
   color: var(--tone-completed);
 }
 
-/* The accent marks the group the route is in, whether its head or one of its documents is current. */
+/* The accent marks the group the route is in, and the current document inside it with a dot set in
+   the gutter under the group's mark, so no row's text moves. */
 [data-loom-plan] .plan-spine__group[data-here] > .plan-spine__row .plan-spine__mark {
   color: var(--primary);
+}
+
+[data-loom-plan] a.plan-spine__child[aria-current="page"] {
+  position: relative;
+}
+
+[data-loom-plan] a.plan-spine__child[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: calc(-1 * var(--space-2) - 2px);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  transform: translateY(-50%);
 }
 
 [data-loom-plan] .plan-spine__name {

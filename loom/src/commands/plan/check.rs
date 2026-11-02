@@ -7,7 +7,7 @@ use anyhow::Result;
 use serde::Serialize;
 
 use crate::context::untrusted::inline_safe;
-use crate::planning::checklist::{Checklist, CurrentStep, Offer, Step};
+use crate::planning::checklist::{Checklist, CurrentStep, Offer};
 use crate::planning::problems::Problem;
 use crate::planning::project::Project;
 use crate::planning::slug::PlanState;
@@ -68,26 +68,15 @@ pub(crate) fn report(project: &Project) -> CheckReport<'_> {
     }
 }
 
-fn step_name(step: Step) -> &'static str {
-    match step {
-        Step::Vision => "Vision",
-        Step::ProductSpec => "Product spec",
-        Step::Metaplan => "Metaplan",
-        Step::Plans => "Plans",
-        Step::PressureTest => "Pressure test",
-        Step::Run => "Run",
-    }
-}
-
 fn human_checklist(out: &mut String, checklist: &Checklist) {
     for (step, mark) in &checklist.steps {
-        let _ = writeln!(out, "{} {}: {mark:?}", *step as u8, step_name(*step));
+        let _ = writeln!(out, "{} {}: {mark:?}", *step as u8, step.name());
     }
     for item in &checklist.items {
         let _ = writeln!(out, "  {:?}: {}", item.status, inline_safe(&item.label));
     }
     let current = match &checklist.current {
-        CurrentStep::Step(step) => step_name(*step),
+        CurrentStep::Step(step) => step.name(),
         CurrentStep::Ready => "Ready",
         CurrentStep::ReadyAllDone => "Ready (all done)",
     };

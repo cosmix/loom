@@ -6,7 +6,9 @@
 // (J8 belongs to scripts/plan-journeys.sh, which also starts the server). A screenshot per step
 // lands in <out-dir>. Exit 1 on any FAIL, console error or page error; --strict makes PENDING fail
 // too. --no-tmux says tmux cannot create a socket here, so a journey that needs a session stops
-// at that step with PENDING. <clone-path> is the scratch clone the server serves; J3 edits it.
+// at that step with PENDING. Without --no-tmux, TMUX_TMPDIR must name a directory of this run's
+// own (the script sets it) or the run refuses to start. <clone-path> is the scratch clone the
+// server serves; J3 edits it.
 //
 // J4 and J5 are in plan-journeys-chat.mjs, which lists the selectors chat-redesign must honour.
 
@@ -367,6 +369,13 @@ async function main() {
   ) {
     console.error(
       "usage: node web/scripts/plan-journeys.mjs [--strict] [--no-tmux] <token-url> <out-dir> <clone-path>",
+    );
+    process.exit(2);
+  }
+  // Without it the sockets directory is the operator's, and `killSockets` could end their chat.
+  if (!flags.has("--no-tmux") && !process.env.TMUX_TMPDIR) {
+    console.error(
+      "TMUX_TMPDIR is unset: run scripts/plan-journeys.sh, set TMUX_TMPDIR to a directory of this run's own, or pass --no-tmux",
     );
     process.exit(2);
   }

@@ -1,6 +1,7 @@
 import { useAtomValue } from "jotai/react";
 
 import type { SummaryQuestion } from "@/plan/api/schema-summaries";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { authorBlockReasonAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 
@@ -36,7 +37,9 @@ export function RebuildQuestion({
         className="max-h-48 min-w-0 space-y-1 overflow-y-auto font-mono text-xs [overflow-wrap:anywhere]"
       >
         {question.ids.map((id) => (
-          <li key={id}>{id}</li>
+          <li key={id}>
+            <Untrusted text={id} />
+          </li>
         ))}
       </ul>
       <p className="text-muted-foreground">

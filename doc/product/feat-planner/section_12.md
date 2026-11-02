@@ -271,10 +271,18 @@ bind file writes; `Write(...)` rules are inert (`mistakes/sandbox-write-rules-in
 - `allow`: `Edit` on each directory directly under `doc/` except `loom`, enumerated at spawn,
   plus `doc/product/**` and `doc/plans/**` whether or not they exist yet, plus `Edit` on
   each existing top-level regular file of `doc/` by its literal path; `Edit` and `Read` on
-  `drafts/**`; `Read` on `claims/**`. No allow rule covers `doc/loom/`, so a file-tool write
-  there can never pass silently. `Edit` rule paths match with gitignore semantics, where a
+  `drafts/**`; `Read` on `claims/**`. `Edit` rule paths match with gitignore semantics, where a
   pattern matching a directory covers everything beneath it, so no wildcard over `doc/`'s
-  entries is written: `doc/*` would match `doc/loom`. A top-level file created later prompts.
+  entries is written: `doc/*` would match `doc/loom`. A top-level `doc/` file created after spawn
+  matches no rule: it reaches the classifier, and the guard decides it.
+- `ask`, in authoring and pressure sessions: `Edit` on `doc/loom/**`, and on each top-level entry
+  of the project root except `doc`, enumerated at spawn, a directory with `/**` and anything else
+  by its literal path. A pressure session leaves out the `planning-omissions.md` it may write. So
+  a file-tool write to `doc/loom/` or to one of those entries prompts the holder even if the guard
+  does not answer. An ask rule outranks an allow rule, so none covers the root or `doc`, and it
+  does not become an OS write deny, so `loom knowledge` and `loom plan summary seal` still write.
+  An entry whose name holds permission-rule syntax gets no rule, as in `allow`; an entry created
+  after spawn matches none either. Summary sessions run in `default` mode and need no such rule.
 - `deny`: `Edit` on each locked plan file, on `<home>/REVIEW-*.md`, on
   `<home>/archive/**`, and on each locked plan's brief bundle, in the standalone home and
   every existing feature home. Deny rules on
@@ -304,9 +312,11 @@ The hook fails closed: any error, an unreadable record, or an unparsable payload
 deny with the reason. The same path predicate backs the server's save route (below), so
 the editor and the sessions cannot disagree on what a locked plan is.
 
-Layer 3 is the precise one; layers 1 and 2 hold if the hook times out, which Claude Code
-treats as a non-blocking error. The Kickoff and Team file-tool scope restrictions depend on
-layer 3; the other layers retain the broader authoring write set.
+Layer 3 is the precise one. Claude Code treats a hook timeout as a non-blocking error, and then
+layers 1 and 2 hold: Bash stays inside the OS sandbox, a file-tool write that a deny rule names is
+refused, one that an ask rule names prompts the holder, and one that no rule names goes to the
+classifier in auto mode with no guard decision. The Kickoff and Team file-tool scope restrictions
+depend on layer 3; the other layers retain the broader authoring write set.
 
 ### Commands
 
@@ -335,7 +345,7 @@ would decide them, so each gets an explicit ask rule. The rules sit in the `ask`
 `WebFetch` and reach the holder through section 07's permission flow (the allow lists are
 `AUTHORING_READ_ONLY_BASH` and `AUTHORING_DOC_WRITER_BASH` in `sandbox/permissions.rs`):
 
-| Scope   | Ask rules                                                                                                                       |
+| Scope   | Bash ask rules                                                                                                                  |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | Open    | none added                                                                                                                      |
 | Team    | `Bash(loom knowledge *)`                                                                                                        |

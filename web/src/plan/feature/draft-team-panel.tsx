@@ -9,6 +9,7 @@ import { endChat } from "@/plan/chat/commands";
 import { sessionAtom } from "@/plan/chat/model";
 import { isActiveSession } from "@/plan/chat/session-home";
 import { Untrusted } from "@/plan/chat/visible-controls";
+import { allOffers } from "@/plan/feature/checklist-offers";
 import { plural } from "@/plan/ui/plural";
 import { TeammateCard, totalTokens } from "@/plan/feature/team-card";
 import { docRel, toAddress } from "@/plan/files/address";
@@ -120,9 +121,7 @@ export function DraftTeamPanel({ feature }: { feature: string }) {
   if (team === null) return null;
   const activeSession = isActiveSession(session) && team.session === session.id;
   const offeredBy = features.filter((checklist) =>
-    [checklist.primary, ...checklist.secondary, ...checklist.items.map((item) => item.offer)].some(
-      (offer) => session?.offer != null && offer?.id === session.offer,
-    ),
+    allOffers(checklist).some((offer) => session?.offer != null && offer.id === session.offer),
   );
   // Offer IDs can be shared across features; an ambiguous offer cannot identify the owner.
   const inFeature =

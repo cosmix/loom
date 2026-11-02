@@ -7,8 +7,8 @@ export type PlanTab = {
   id: string;
   label: string;
   path: string;
-  /** Absent when the tab only links to routes that `router.tsx` registers itself. */
-  element?: () => JSX.Element;
+  /** The route the tab opens; `PLAN_TAB_ROUTES` registers it under `path`. */
+  element: () => JSX.Element;
 };
 
 /**
@@ -19,9 +19,10 @@ export const PLAN_TABS: PlanTab[] = [
   { id: "files", label: "Files", path: "/files", element: FileMode },
 ];
 
-export const PLAN_TAB_ROUTES = PLAN_TABS.flatMap(({ element, path }) =>
-  element ? [{ path: `${path}/*`, element: createElement(element) }] : [],
-);
+export const PLAN_TAB_ROUTES = PLAN_TABS.map(({ element, path }) => ({
+  path: `${path}/*`,
+  element: createElement(element),
+}));
 
 export function isPlanTabActive(tab: PlanTab, pathname: string): boolean {
   return matchPath(`${tab.path}/*`, pathname) !== null;

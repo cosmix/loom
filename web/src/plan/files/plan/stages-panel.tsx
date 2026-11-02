@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { PlanView, StageRow as StageRowData } from "@/plan/api/schema-files";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { StageGraph } from "@/plan/files/plan/stage-graph";
 import { StageRow } from "@/plan/files/plan/stage-row";
 import { HEADING_BUTTON } from "@/plan/ui/doc-heading";
@@ -32,7 +33,7 @@ export function StagesPanel({ plan }: { plan: PlanView }) {
     return (
       <section aria-label="Stages" className="my-4 space-y-2">
         <p role="alert" className="text-[13px] text-destructive">
-          {plan.yaml_error}
+          <Untrusted text={plan.yaml_error} />
         </p>
         {plan.yaml !== null && <pre className="overflow-x-auto font-mono text-xs">{plan.yaml}</pre>}
       </section>

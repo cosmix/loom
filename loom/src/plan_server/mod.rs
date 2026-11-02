@@ -279,8 +279,13 @@ fn announce(server: &RunningServer, root: &Path, no_open: bool) {
     }
 }
 
-/// Install the Ctrl-C handler; the first signal sends its drains down the returned channel. A
+/// Install the Ctrl-C handler and return the channel the first signal's drains arrive on. A
 /// second signal exits at once.
+///
+/// It runs before the URL exists because whoever reads the URL may signal at once, and without
+/// the handler that signal kills the server with no drain. A signal that arrives while the
+/// startup lines print only queues its drains on the channel, which [`serve_until_stopped`]
+/// reads once it starts.
 fn install_stop_handler(server: &RunningServer) -> Result<mpsc::Receiver<JoinHandle<()>>> {
     let (drains_tx, drains_rx) = mpsc::channel();
     let ctx = Arc::clone(&server.ctx);
