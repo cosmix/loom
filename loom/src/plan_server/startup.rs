@@ -35,11 +35,17 @@ pub fn startup_lines(s: &Startup<'_>) -> Vec<String> {
     if s.remote {
         lines.push("warning: plain HTTP; anyone who can see the traffic can read the token, then read every document and write through sessions. An SSH tunnel is the safer way to share.".into());
     }
-    for problem in s.read_only {
-        lines.push(format!("read-only: {}. {}", problem.message, problem.fix));
-    }
+    lines.extend(read_only_lines(s.read_only));
     lines.push("Ctrl-C to stop; a second Ctrl-C exits at once".into());
     lines
+}
+
+/// One line per missing prerequisite.
+pub fn read_only_lines(problems: &[MissingPrereq]) -> Vec<String> {
+    problems
+        .iter()
+        .map(|problem| format!("read-only: {}. {}", problem.message, problem.fix))
+        .collect()
 }
 
 pub fn already_running_lines(record: &LockRecord) -> Vec<String> {

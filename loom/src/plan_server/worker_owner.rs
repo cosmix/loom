@@ -35,6 +35,8 @@ pub(super) struct Workers {
     result: mpsc::Receiver<Result<()>>,
 }
 
+/// A handle for registering workers. The owner joins nothing until every clone has dropped.
+#[derive(Clone)]
 pub(super) struct Registration(mpsc::Sender<Worker>);
 
 impl Registration {
@@ -195,7 +197,10 @@ fn reap(incoming: mpsc::Receiver<Worker>, state: &State, context: &PlanContext) 
     if result.is_ok() {
         result = modules;
     }
-    result
+    match context.loading().failure() {
+        Some(message) if result.is_ok() => Err(anyhow!(message)),
+        _ => result,
+    }
 }
 
 #[cfg(test)]

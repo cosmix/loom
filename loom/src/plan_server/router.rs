@@ -9,6 +9,7 @@ use std::sync::Arc;
 use super::context::PlanContext;
 use super::gate::{self, Admitted, Denied, WS_PATH};
 use super::ids::{BrowserId, ConnCtx, PublicId};
+use super::loading::{LoadState, LOAD_WAIT};
 use super::request::{self, ApiRequest, ApiResponse, QueryParams, REFERRER_POLICY};
 use super::routes::{self, Lookup, Method, RouteSpec};
 use super::wire::message::{ClientMessage, PlanMessage};
@@ -51,7 +52,7 @@ impl PlanRouter {
 
     /// Admit and serve one `/ws` connection on the thread it arrived on.
     fn serve_websocket(&self, mut stream: TcpStream, peeked: &RequestHead, conn: &ConnInfo<'_>) {
-        let admitted = match gate::admit(peeked, conn.local, conn.policy, &self.ctx, None) {
+        let admitted = match gate::admit(peeked, conn.local, conn.policy) {
             Ok(admitted) => admitted,
             Err(denial) => return refuse(&mut stream, peeked, &denial),
         };
@@ -68,6 +69,9 @@ impl PlanRouter {
         };
         if stream.set_read_timeout(None).is_err() {
             return;
+        }
+        if let Err(response) = self.hold_until_loaded(conn) {
+            return response.write(&mut stream, peeked, None);
         }
         let ctx = &self.ctx;
         let on_message = |conn: &ConnCtx, msg: ClientMessage| dispatch(ctx, conn, msg);
@@ -166,10 +170,19 @@ impl PlanRouter {
             Lookup::Found(spec) => Some(spec),
             Lookup::WrongMethod | Lookup::Missing => None,
         };
-        let admitted = match gate::admit(head, conn.local, conn.policy, &self.ctx, spec) {
+        let admitted = match gate::admit(head, conn.local, conn.policy) {
             Ok(admitted) => admitted,
             Err(denial) => return refuse(stream, head, &denial),
         };
+        if let Err(response) = self.hold_until_loaded(conn) {
+            return response.write(stream, head, admitted.set_cookie.as_deref());
+        }
+        // After the hold: the role check can take authoring, whose subscribers the load registers.
+        if let Some(spec) = spec {
+            if let Err(denial) = gate::check_route(head, &self.ctx, &admitted, spec) {
+                return refuse(stream, head, &denial);
+            }
+        }
         let response = match lookup {
             Lookup::Found(spec) => self.call(stream, head, body, &admitted, spec, conn.running),
             Lookup::WrongMethod => {
@@ -178,6 +191,43 @@ impl PlanRouter {
             Lookup::Missing => ApiResponse::error(404, "not_found", "no such API route"),
         };
         response.write(stream, head, admitted.set_cookie.as_deref());
+    }
+
+    /// Hold an admitted request until the background load ends (`loading` says why). No handler
+    /// or WebSocket runs before that, so none has to know a load exists.
+    ///
+    /// A held request keeps its connection slot for up to [`LOAD_WAIT`], so each takes one slot
+    /// of [`Lane::Held`] as well, and a full lane answers `loading` at once. That keeps a
+    /// reserve of connection slots for the page shell, which needs no load. The slot is
+    /// released when the hold ends, before the request is served.
+    fn hold_until_loaded(&self, conn: &ConnInfo<'_>) -> Result<(), ApiResponse> {
+        let running = conn.running;
+        let stopping = || self.ctx.is_stopping() || !running.load(Ordering::SeqCst);
+        let loading = self.ctx.loading();
+        let slot = match loading.state() {
+            LoadState::Loading => match Slot::acquire(conn.limits, Lane::Held) {
+                Some(slot) => Some(slot),
+                None => return Err(still_loading()),
+            },
+            _ => None,
+        };
+        let state = loading.wait(LOAD_WAIT, stopping);
+        drop(slot);
+        match state {
+            LoadState::Ready => Ok(()),
+            // The terminal gets the message; this one has no host paths for a remote viewer.
+            LoadState::Failed(_) => Err(ApiResponse::error(
+                500,
+                "load_failed",
+                "the project could not be loaded; see the loom plan terminal",
+            )),
+            LoadState::Loading if stopping() => Err(ApiResponse::error(
+                503,
+                "stopping",
+                "the server is stopping",
+            )),
+            LoadState::Loading => Err(still_loading()),
+        }
     }
 
     fn call(
@@ -237,6 +287,10 @@ fn read_request_body(
             ApiResponse::error(503, "stopping", "the server is stopping")
         }
     })
+}
+
+fn still_loading() -> ApiResponse {
+    ApiResponse::error(503, "loading", "the project is still loading; try again")
 }
 
 fn refuse(stream: &mut TcpStream, head: &RequestHead, denial: &Denied) {

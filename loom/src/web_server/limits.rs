@@ -22,6 +22,16 @@ pub(crate) const MAX_CONNECTIONS: usize = 64;
 /// reserve that non-upgrade requests always draw on.
 pub(crate) const MAX_WEBSOCKETS: usize = 48;
 
+/// How many of [`MAX_CONNECTIONS`] may be requests a router holds back for a
+/// slow startup at once.
+///
+/// A held request keeps its connection slot for as long as the hold lasts (up
+/// to a minute for the planning server), so it is not one of the slots that
+/// turn over in milliseconds. Capping the hold at the same figure as
+/// [`MAX_WEBSOCKETS`] leaves the same reserve for requests that need nothing
+/// loaded: the page shell and its assets.
+pub(crate) const MAX_HELD: usize = 48;
+
 /// Browser terminals allowed in flight at once.
 pub(crate) const MAX_TERMINALS: usize = 8;
 
@@ -34,6 +44,8 @@ pub(crate) enum Lane {
     WebSocket,
     /// Held additionally by one browser terminal.
     Terminal,
+    /// Held additionally, while a router keeps the request waiting.
+    Held,
 }
 
 impl Lane {
@@ -42,6 +54,7 @@ impl Lane {
             Self::Connection => MAX_CONNECTIONS,
             Self::WebSocket => MAX_WEBSOCKETS,
             Self::Terminal => MAX_TERMINALS,
+            Self::Held => MAX_HELD,
         }
     }
 
@@ -50,6 +63,7 @@ impl Lane {
             Self::Connection => &limits.connections,
             Self::WebSocket => &limits.websockets,
             Self::Terminal => &limits.terminals,
+            Self::Held => &limits.held,
         }
     }
 }
@@ -61,6 +75,7 @@ pub struct Limits {
     connections: AtomicUsize,
     websockets: AtomicUsize,
     terminals: AtomicUsize,
+    held: AtomicUsize,
     max_inbound_bytes: usize,
 }
 
@@ -75,6 +90,7 @@ impl Limits {
             connections: AtomicUsize::new(0),
             websockets: AtomicUsize::new(0),
             terminals: AtomicUsize::new(0),
+            held: AtomicUsize::new(0),
             max_inbound_bytes,
         })
     }

@@ -8,7 +8,9 @@ use tempfile::TempDir;
 
 use super::context::{BindInfo, PlanContext};
 use super::extensions::Extensions;
-use super::gate::{access_cookie_name, admit, browser_cookie_name, origin_matches, Denied};
+use super::gate::{
+    access_cookie_name, admit, browser_cookie_name, check_route, origin_matches, Admitted, Denied,
+};
 use super::ids::BrowserId;
 use super::prereq::ReadOnly;
 use super::request::{ApiRequest, ApiResponse, QueryParams};
@@ -21,6 +23,17 @@ use crate::web_server::http::RequestHead;
 
 const PORT: u16 = 7272;
 const HOST: &str = "127.0.0.1:7272";
+
+/// `admit`, then the route's own checks, in the order the router runs them.
+fn admit_route(
+    head: &RequestHead,
+    ctx: &PlanContext,
+    spec: &RouteSpec,
+) -> Result<Admitted, Denied> {
+    let admitted = admit(head, local(), &policy())?;
+    check_route(head, ctx, &admitted, spec)?;
+    Ok(admitted)
+}
 
 fn token() -> String {
     "ab".repeat(32)
@@ -111,31 +124,25 @@ fn origin_must_equal_http_host_byte_for_byte() {
 
 #[test]
 fn checks_run_in_order_host_origin_cookie() {
-    let (_dir, ctx) = context(Vec::new());
     let browser = BrowserId::mint().expect("browser");
     let mut evil_host = admitted_head("GET", "/api/server", &browser);
     evil_host.host = Some("evil.example".to_owned());
-    assert_eq!(
-        status(admit(&evil_host, local(), &policy(), &ctx, None)),
-        403
-    );
+    assert_eq!(status(admit(&evil_host, local(), &policy())), 403);
     // A foreign Origin is refused before the missing cookie is noticed.
     let mut foreign = head("POST", "/api/x");
     foreign.origin = Some("http://evil.example".to_owned());
-    assert_eq!(status(admit(&foreign, local(), &policy(), &ctx, None)), 403);
+    assert_eq!(status(admit(&foreign, local(), &policy())), 403);
     let mut no_cookie = admitted_head("POST", "/api/x", &browser);
     no_cookie.cookie = None;
-    let denied = admit(&no_cookie, local(), &policy(), &ctx, None).expect_err("401");
+    let denied = admit(&no_cookie, local(), &policy()).expect_err("401");
     assert_eq!((denied.status, denied.code), (401, "unauthenticated"));
     let mut wrong = admitted_head("GET", "/api/server", &browser);
     wrong.cookie = Some(format!("{}={}", access_cookie_name(PORT), "cd".repeat(32)));
-    assert_eq!(status(admit(&wrong, local(), &policy(), &ctx, None)), 401);
+    assert_eq!(status(admit(&wrong, local(), &policy())), 401);
     let admitted = admit(
         &admitted_head("GET", "/api/server", &browser),
         local(),
         &policy(),
-        &ctx,
-        None,
     )
     .expect("admitted");
     assert_eq!(admitted.browser, browser);
@@ -144,11 +151,10 @@ fn checks_run_in_order_host_origin_cookie() {
 
 #[test]
 fn a_missing_browser_cookie_is_minted_for_http_and_refused_for_websockets() {
-    let (_dir, ctx) = context(Vec::new());
     let browser = BrowserId::mint().expect("browser");
     let mut http = admitted_head("GET", "/api/server", &browser);
     http.cookie = Some(format!("{}={}", access_cookie_name(PORT), token()));
-    let admitted = admit(&http, local(), &policy(), &ctx, None).expect("admitted");
+    let admitted = admit(&http, local(), &policy()).expect("admitted");
     let cookie = admitted.set_cookie.expect("a new browser cookie");
     assert!(cookie.starts_with(&format!(
         "{}={}",
@@ -158,20 +164,15 @@ fn a_missing_browser_cookie_is_minted_for_http_and_refused_for_websockets() {
     assert!(cookie.ends_with("; Path=/; HttpOnly; SameSite=Strict"));
     let mut ws = admitted_head("GET", "/ws", &browser);
     ws.cookie = http.cookie.clone();
-    assert_eq!(status(admit(&ws, local(), &policy(), &ctx, None)), 401);
+    assert_eq!(status(admit(&ws, local(), &policy())), 401);
     let mut ws_no_origin = admitted_head("GET", "/ws", &browser);
     ws_no_origin.origin = None;
-    assert_eq!(
-        status(admit(&ws_no_origin, local(), &policy(), &ctx, None)),
-        403
-    );
+    assert_eq!(status(admit(&ws_no_origin, local(), &policy())), 403);
     assert_eq!(
         status(admit(
             &admitted_head("GET", "/ws", &browser),
             local(),
-            &policy(),
-            &ctx,
-            None
+            &policy()
         )),
         200
     );
@@ -193,7 +194,7 @@ fn bodies_are_checked_by_type_then_length() {
         let mut head = admitted_head("POST", spec.path, &browser);
         head.content_type = content_type.map(str::to_owned);
         head.content_length = length.map(str::to_owned);
-        status(admit(&head, local(), &policy(), &ctx, Some(spec)))
+        status(admit_route(&head, &ctx, spec))
     };
     assert_eq!(check(&json, Some("text/plain"), Some("2")), 415);
     assert_eq!(check(&json, Some("application/json"), Some("8193")), 413);
@@ -224,7 +225,7 @@ fn content_length_is_digits_only() {
         let mut head = admitted_head("POST", json.path, &browser);
         head.content_type = Some("application/json".to_owned());
         head.content_length = Some(length.to_owned());
-        status(admit(&head, local(), &policy(), &ctx, Some(&json)))
+        status(admit_route(&head, &ctx, &json))
     };
     // Digits only (RFC 9110 section 8.6), as the dashboard reads it: a sign or an empty value is
     // refused, surrounding whitespace is the same count.
@@ -249,13 +250,7 @@ fn roles_refuse_with_the_authoring_text() {
         Role::HolderOrTake,
     );
     let run = |spec: &RouteSpec, browser: &BrowserId| {
-        admit(
-            &admitted_head("POST", spec.path, browser),
-            local(),
-            &policy(),
-            &ctx,
-            Some(spec),
-        )
+        admit_route(&admitted_head("POST", spec.path, browser), &ctx, spec)
     };
     let nobody = run(&hold, &holder).expect_err("nobody holds");
     assert_eq!(nobody.message, "Nobody holds authoring");
@@ -272,12 +267,10 @@ fn roles_refuse_with_the_authoring_text() {
         fix: "Install tmux".to_owned(),
     };
     let (_dir, read_only) = context(vec![problem]);
-    let denied = admit(
+    let denied = admit_route(
         &admitted_head("POST", "/api/take", &other),
-        local(),
-        &policy(),
         &read_only,
-        Some(&take),
+        &take,
     )
     .expect_err("read-only");
     assert_eq!(denied.message, "loom plan is in read-only mode");

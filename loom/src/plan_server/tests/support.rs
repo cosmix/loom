@@ -206,9 +206,18 @@ pub(crate) fn connect_ws(
     cookie: &str,
     origin: Option<&str>,
 ) -> Result<Socket, u16> {
-    let stream = TcpStream::connect(server.local).expect("connect");
+    connect_ws_at(server.local, cookie, origin)
+}
+
+/// [`connect_ws`] by address, for a thread that does not hold the server.
+pub(crate) fn connect_ws_at(
+    addr: SocketAddr,
+    cookie: &str,
+    origin: Option<&str>,
+) -> Result<Socket, u16> {
+    let stream = TcpStream::connect(addr).expect("connect");
     stream.set_read_timeout(Some(WAIT)).expect("read timeout");
-    let mut request = format!("ws://{}/ws", host(server))
+    let mut request = format!("ws://127.0.0.1:{}/ws", addr.port())
         .into_client_request()
         .expect("client request");
     let headers = request.headers_mut();

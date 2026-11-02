@@ -1,9 +1,10 @@
 //! Planning server: the local web app behind bare `loom plan`.
 //!
-//! [`start`] binds, takes the `doc/` watcher's baseline, builds the [`context::PlanContext`],
-//! runs every route module's `install`, then starts the watcher, the 1 s tick and the accept
-//! loop. [`run()`] is the command: project root, runtime directory, lock, [`start`], startup
-//! lines, browser, signals.
+//! `launch` binds, builds the [`context::PlanContext`] and starts the accept loop, then leaves
+//! the rest to the `loading` thread: the prerequisite checks, the `doc/` watcher's baseline, the
+//! project, every route module's `install`, the watcher and the 1 s tick. [`run()`] is the
+//! command: project root, runtime directory, lock, `launch`, startup lines, browser, signals; none
+//! of it waits for the load. [`start`] waits for it.
 
 pub mod authoring;
 mod background;
@@ -17,7 +18,9 @@ pub mod files;
 pub mod gate;
 pub mod guidance;
 pub mod ids;
+mod launch;
 pub mod lifecycle;
+mod loading;
 pub mod lock;
 pub mod prereq;
 pub mod presence;
@@ -66,26 +69,22 @@ mod startup_tests;
 mod tests;
 
 use std::fmt;
-use std::net::{IpAddr, SocketAddr, TcpListener};
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Arc;
-use std::thread::{self, JoinHandle};
+use std::thread::JoinHandle;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 use crate::cli::PlanServeArgs;
 use crate::planning::runtime::{create_runtime_dir, server_runtime_paths};
-use crate::planning::watch::{OwnWrites, Watcher};
-use crate::web_server::access::AccessPolicy;
-use crate::web_server::auth::Auth;
-use crate::web_server::limits::Limits;
-use crate::web_server::listener::bind_listener;
-use crate::web_server::{self, token, ServeConfig};
 use browser::{EnvView, OpenDecision};
-use context::{display_addrs, BindInfo, PlanContext};
+use context::{display_addrs, PlanContext};
+use launch::{start_owned, Launch};
+use loading::{LoadState, LOAD_WAIT};
 use lock::Acquired;
 use prereq::ReadOnly;
 use routes::RouteSpec;
@@ -120,7 +119,7 @@ pub struct RunningServer {
 impl RunningServer {
     /// Stop accepting and ask the watcher and tick to end. Wait up to three
     /// seconds for their owner to reap them and drain every request; otherwise
-    /// return [`web_server::ShutdownPending`]. The cleanup owner retains all
+    /// return [`crate::web_server::ShutdownPending`]. The cleanup owner retains all
     /// handles, the listener reservation and singleton through context disposal.
     /// Context references cloned by callers remain their own responsibility.
     pub fn stop(self) -> Result<()> {
@@ -145,104 +144,38 @@ impl RunningServer {
     fn is_serving(&self) -> bool {
         self.workers.is_serving()
     }
+
+    /// Wait for the background load; a load that failed or never ended stops the server.
+    fn loaded(self) -> Result<Self> {
+        let error = match self.ctx.loading().wait(LOAD_WAIT, || false) {
+            LoadState::Ready => return Ok(self),
+            LoadState::Failed(message) => anyhow!(message),
+            LoadState::Loading => anyhow!("the project did not load within {LOAD_WAIT:?}"),
+        };
+        // The load's own error names the cause; a failed load always makes the stop report one.
+        let _ = self.stop();
+        Err(error)
+    }
 }
 
-/// Bind, mint the token, take the watcher's baseline, load the project, build the context and
-/// run every module's `install`, then start the watcher, the tick and the accept loop. Touches neither the lock
-/// nor the runtime directory.
+/// Bind, mint the token and start the accept loop and the background load, and wait for the load.
+/// Touches neither the lock nor the runtime directory.
 pub fn start(opts: ServerOptions) -> Result<RunningServer> {
     start_with_routes(opts, routes::all_routes())
 }
 
 /// [`start`] with an explicit route table; tests serve routes of their own with it.
 fn start_with_routes(opts: ServerOptions, routes: Vec<RouteSpec>) -> Result<RunningServer> {
-    start_owned(opts, routes, Arc::new(lock::Ownership::default()))
-}
-
-fn start_owned(
-    opts: ServerOptions,
-    routes: Vec<RouteSpec>,
-    ownership: Arc<lock::Ownership>,
-) -> Result<RunningServer> {
-    let listener = bind_listener(opts.host, opts.port, DEFAULT_PORT)?;
-    let local = listener.local_addr()?;
-    let token = token::mint().context("failed to mint the loom plan access token")?;
-    let bind = BindInfo::new(local, &token);
-    let (ctx, watcher) = load(opts.root, opts.read_only, bind)?;
-    let running = Arc::new(AtomicBool::new(true));
-    let stop = Arc::new(AtomicBool::new(false));
-    let workers = worker_owner::Workers::launch(
-        listener,
-        Arc::clone(&ownership),
-        Arc::clone(&ctx),
-        &running,
-        &stop,
-        |listener, registration| {
-            routes::install_all(&ctx);
-            spawn_workers(&ctx, watcher, &stop, registration)?;
-            let serve = spawn_accept_loop(listener, &ctx, routes, &token, &running, &ownership)?;
-            registration.accept(serve);
-            Ok(())
-        },
-    )?;
-    Ok(RunningServer {
-        local,
-        token,
-        ctx,
-        running,
-        stop,
-        workers,
-        ownership,
-    })
-}
-
-/// Take the watcher's baseline, then load the context before module workers
-/// start under the cleanup owner. The baseline keeps intervening edits in the
-/// watcher's first batch.
-fn load(root: PathBuf, read_only: ReadOnly, bind: BindInfo) -> Result<(Arc<PlanContext>, Watcher)> {
-    let own_writes = OwnWrites::default();
-    let watcher = watch::baseline(root.clone(), own_writes.clone());
-    let ctx = Arc::new(PlanContext::new(root, read_only, bind, own_writes)?);
-    Ok((ctx, watcher))
-}
-
-fn spawn_workers(
-    ctx: &Arc<PlanContext>,
-    watcher: Watcher,
-    stop: &Arc<AtomicBool>,
-    registration: &worker_owner::Registration,
-) -> Result<()> {
-    let (watcher, errors) = watch::spawn_watcher(Arc::clone(ctx), watcher, Arc::clone(stop))?;
-    registration.background(watcher);
-    let tick = watch::spawn_tick(Arc::clone(ctx), errors, Arc::clone(stop));
-    let tick = tick.inspect_err(|_| stop.store(true, Ordering::SeqCst))?;
-    registration.background(tick);
-    Ok(())
-}
-
-fn spawn_accept_loop(
-    listener: TcpListener,
-    ctx: &Arc<PlanContext>,
-    routes: Vec<RouteSpec>,
-    token: &str,
-    running: &Arc<AtomicBool>,
-    ownership: &Arc<lock::Ownership>,
-) -> Result<JoinHandle<Result<()>>> {
-    let local = listener.local_addr()?;
-    let auth = Auth::new(token.to_owned(), gate::access_cookie_name(local.port()));
-    let config = ServeConfig {
-        policy: AccessPolicy::new(local, Some(auth)),
-        limits: Limits::new(ws::MAX_INBOUND_BYTES),
-        thread_name: "loom-plan-conn",
-    };
-    let router = Arc::new(
-        router::PlanRouter::new(Arc::clone(ctx), routes).with_ownership(Arc::clone(ownership)),
-    );
-    let running = Arc::clone(running);
-    thread::Builder::new()
-        .name("loom-plan-accept".into())
-        .spawn(move || web_server::serve(listener, router, running, config))
-        .context("cannot start the loom plan accept loop")
+    start_owned(Launch {
+        root: opts.root,
+        host: opts.host,
+        port: opts.port,
+        read_only: Box::new(move || opts.read_only),
+        install: Box::new(routes::install_all),
+        routes,
+        ownership: Arc::default(),
+    })?
+    .loaded()
 }
 
 /// `loom plan` refused to start because a server already runs for this project. The lines
@@ -276,15 +209,17 @@ pub fn run(args: &PlanServeArgs) -> Result<()> {
             return Err(AlreadyRunning.into());
         }
     };
-    let options = ServerOptions {
-        root: root.clone(),
-        host: args.host,
-        port: args.port,
-        read_only: ReadOnly::detect(),
-    };
     let ownership = Arc::new(lock::Ownership::default());
     ownership.retain(lock);
-    let server = start_owned(options, routes::all_routes(), ownership)?;
+    let server = launch_command(&root, args, ownership)?;
+    // Before the URL exists: a SIGINT right after it must drain, not kill the server.
+    let drains_rx = match install_stop_handler(&server) {
+        Ok(drains_rx) => drains_rx,
+        Err(error) => {
+            let _ = server.stop();
+            return Err(error);
+        }
+    };
     let base = display_addrs(server.local).first().map_or_else(
         || format!("http://{}", server.local),
         |addr| format!("http://{addr}"),
@@ -297,10 +232,33 @@ pub fn run(args: &PlanServeArgs) -> Result<()> {
         return Err(error);
     }
     announce(&server, &root, args.no_open);
-    serve_until_stopped(server)
+    serve_until_stopped(server, drains_rx)
 }
 
-/// Print the startup lines, then open the first URL unless `--no-open`, SSH or no display.
+/// Start the command's server, whose load prints the read-only lines once the checks have run.
+fn launch_command(
+    root: &Path,
+    args: &PlanServeArgs,
+    ownership: Arc<lock::Ownership>,
+) -> Result<RunningServer> {
+    start_owned(Launch {
+        root: root.to_path_buf(),
+        host: args.host,
+        port: args.port,
+        read_only: Box::new(ReadOnly::detect),
+        install: Box::new(|ctx| {
+            for line in startup::read_only_lines(ctx.read_only().problems()) {
+                println!("{line}");
+            }
+            routes::install_all(ctx);
+        }),
+        routes: routes::all_routes(),
+        ownership,
+    })
+}
+
+/// Print the startup lines, then open the first URL unless `--no-open`, SSH or no display. The
+/// read-only lines follow from the load, when the checks have run.
 fn announce(server: &RunningServer, root: &Path, no_open: bool) {
     let env = EnvView::current();
     let bind = server.ctx.bind();
@@ -311,7 +269,7 @@ fn announce(server: &RunningServer, root: &Path, no_open: bool) {
         remote: bind.remote,
         ssh: env.ssh_connection || env.ssh_tty,
         hostname: hostname(),
-        read_only: server.ctx.read_only().problems(),
+        read_only: &[],
     });
     for line in lines {
         println!("{line}");
@@ -321,24 +279,29 @@ fn announce(server: &RunningServer, root: &Path, no_open: bool) {
     }
 }
 
-/// Block until the first stop signal's drains finish (then return the stop result), or until the
-/// accept loop ends by itself (then return its result). A second signal exits at once.
-fn serve_until_stopped(server: RunningServer) -> Result<()> {
+/// Install the Ctrl-C handler; the first signal sends its drains down the returned channel. A
+/// second signal exits at once.
+fn install_stop_handler(server: &RunningServer) -> Result<mpsc::Receiver<JoinHandle<()>>> {
     let (drains_tx, drains_rx) = mpsc::channel();
     let ctx = Arc::clone(&server.ctx);
     let on_first = move || {
         let _ = drains_tx.send(begin_shutdown(&ctx));
     };
-    let installed = shutdown::install_signal_handler(
+    shutdown::install_signal_handler(
         server.ctx.shutdown_handle(),
         Box::new(on_first),
         std::process::exit,
     )
-    .context("failed to install the Ctrl-C handler");
-    if let Err(error) = installed {
-        server.stop().with_context(|| error.to_string())?;
-        return Err(error);
-    }
+    .context("failed to install the Ctrl-C handler")?;
+    Ok(drains_rx)
+}
+
+/// Block until the first stop signal's drains finish (then return the stop result), or until the
+/// accept loop ends by itself (then return its result).
+fn serve_until_stopped(
+    server: RunningServer,
+    drains_rx: mpsc::Receiver<JoinHandle<()>>,
+) -> Result<()> {
     loop {
         match drains_rx.recv_timeout(Duration::from_millis(200)) {
             Ok(drains) => return server.stop_when_drained(drains),
