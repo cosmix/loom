@@ -11,8 +11,17 @@ const ACTIVITY: { word: string; tone: Tone; meaning: string }[] = [
   { word: "working", tone: "completed", meaning: "the session used a tool recently" },
   { word: "idle", tone: "dimmed", meaning: "alive, nothing happening" },
   { word: "quiet", tone: "dimmed", meaning: "no recent heartbeat" },
-  { word: "busy", tone: "completed", meaning: "a tool call is still open" },
-  { word: "stale", tone: "warning", meaning: "heartbeat budget exceeded with no tool call open" },
+  {
+    word: "busy",
+    tone: "completed",
+    meaning: "a foreground command is still making progress, within a bounded hold",
+  },
+  {
+    word: "stale",
+    tone: "warning",
+    meaning:
+      "heartbeat budget exceeded with no verified progress; a long tool call can still read stale",
+  },
   { word: "orphaned", tone: "blocked", meaning: "executing with no session record" },
   { word: "crashed", tone: "blocked", meaning: "the session process died" },
   {
