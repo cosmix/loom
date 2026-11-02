@@ -13,6 +13,7 @@ import {
   ROOT,
   SECTION_5,
   blockedBy,
+  chatEnded,
   chatFrames,
   clickSpineRow,
   fakeClaudePids,
@@ -129,6 +130,7 @@ export async function j4(env) {
   await j4Prompts(env);
   const before = planSockets();
   const claudes = fakeClaudePids().length;
+  const sent = chatFrames(env.frames).length;
   try {
     await j4Send(env, before, claudes);
     if (!env.tmuxOk) {
@@ -139,10 +141,17 @@ export async function j4(env) {
     await j4Dismiss(env);
   } finally {
     // J5 starts its own chat, which a running one would refuse, so end this one: kill its tmux.
-    killSockets(newSockets(before));
+    // Without tmux no session started, and an unscoped scan would reach the operator's sockets.
+    if (env.tmuxOk) killSockets(newSockets(before));
     await until("the fake claude to exit", () => fakeClaudePids().length <= claudes).catch(
       () => {},
     );
+    // /new refuses a start until the server reports this chat over; a dead tmux is not enough.
+    // A chat that never ends must not replace the Pending or the real error thrown above: J5's
+    // own refused start reports it.
+    if (chatFrames(env.frames).length > sent) {
+      await until("the server to end the chat", chatEnded, 20_000).catch(() => {});
+    }
   }
   return "context, prompts, attachment and dismissal";
 }

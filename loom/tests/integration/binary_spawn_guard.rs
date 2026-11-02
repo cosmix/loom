@@ -46,8 +46,10 @@ fn strip_whitespace(s: &str) -> String {
 /// `loom_summary`, `planning_guidance_contracts`'s
 /// `template_skeleton_carries_implements_and_verifies`,
 /// `pressure_pipeline_contracts::support`'s `run_loom`,
-/// `plan_handoff_operator`'s `loom` closure, and
-/// `plan_handoff_operator::common`'s `spawn_loom_plan`. A new test target that
+/// `plan_handoff_operator`'s `loom` closure,
+/// `plan_handoff_operator::common`'s `spawn_loom_plan`, and
+/// `plan_owner_watch_session`, which has no helper and scrubs inline in its
+/// test body before it spawns the `OwnerWatch` hook. A new test target that
 /// spawns the binary directly must scrub the same way and be added to this
 /// list.
 const SANCTIONED_SPAWNERS: &[&str] = &[

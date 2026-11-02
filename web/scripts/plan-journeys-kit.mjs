@@ -65,9 +65,24 @@ export function shooter(outDir, id) {
   };
 }
 
+let lastSession = null;
+
+/** The server reported a chat session and that session is over (`isActiveSession` in session-home.ts). */
+export const chatEnded = () => ["ended", "failed"].includes(lastSession?.state);
+
+function noteSession(payload) {
+  try {
+    const frame = JSON.parse(payload);
+    if (frame?.type === "chat" && frame.session) lastSession = frame.session;
+  } catch {
+    // A frame that is not JSON carries no session.
+  }
+}
+
 /**
- * Collect console and page errors, and every frame the page sends over a websocket.
- * Nothing is filtered: an error that fires on a clean page is a finding to report.
+ * Collect console and page errors, every frame the page sends over a websocket, and the chat
+ * session the server last reported. Nothing is filtered: an error that fires on a clean page is a
+ * finding to report.
  */
 export function watchPage(page, errors, frames) {
   page.on("console", (msg) => {
@@ -77,6 +92,9 @@ export function watchPage(page, errors, frames) {
   page.on("websocket", (ws) => {
     ws.on("framesent", (frame) => {
       if (typeof frame.payload === "string") frames.push(frame.payload);
+    });
+    ws.on("framereceived", (frame) => {
+      if (typeof frame.payload === "string") noteSession(frame.payload);
     });
   });
 }
