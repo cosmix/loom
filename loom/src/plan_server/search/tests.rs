@@ -165,3 +165,19 @@ fn install_without_a_text_store_installs_nothing() {
     super::install(&ctx);
     assert!(ctx.extensions().get::<SearchIndex>().is_none());
 }
+
+/// A document with one huge line goes through the chunker like any other and stays searchable.
+#[test]
+fn a_document_with_one_huge_line_is_chunked_and_found() {
+    let line = "`a.md` needle in a sentence. ".repeat(17_000);
+    let start = std::time::Instant::now();
+    let (_, _, _, index) = setup(&[("doc/data.json", &line)]);
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(5),
+        "indexing took {:?}",
+        start.elapsed()
+    );
+    let results = index.query("needle", Scope::All);
+    assert_eq!(results.hits.len(), 1);
+    assert_eq!(results.hits[0].path, "doc/data.json");
+}
