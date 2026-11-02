@@ -1,9 +1,9 @@
 use super::tests::{make_test_stage, temp_work_dir};
 use super::*;
-use crate::commands::status::data::ActivityStatus;
 use crate::models::constants::{DEFAULT_CONTEXT_CEILING_TOKENS, STALENESS_THRESHOLD_SECS};
 use crate::models::session::SessionStatus;
 use crate::orchestrator::monitor::heartbeat::{write_heartbeat, ActivityKind, Heartbeat};
+use crate::status::data::ActivityStatus;
 
 #[test]
 fn test_build_stage_summary_with_session() {

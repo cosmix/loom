@@ -33,6 +33,34 @@ fn headless_app() -> TuiApp {
     }
 }
 
+#[test]
+fn completion_retains_scheduler_error_after_following_status_update() {
+    let mut app = headless_app();
+    app.handle_response(Response::Error {
+        message: "Orchestration: Scheduler failure: panic".into(),
+    });
+    app.handle_response(Response::StatusUpdate {
+        data: Box::default(),
+    });
+    app.handle_response(Response::OrchestrationComplete {
+        summary: CompletionSummary {
+            total_duration_secs: 0,
+            stages: vec![],
+            success_count: 0,
+            failure_count: 1,
+            plan_path: "plan".into(),
+        },
+    });
+    app.handle_response(Response::StatusUpdate {
+        data: Box::default(),
+    });
+    assert_eq!(
+        app.last_error.as_deref(),
+        Some("Orchestration: Scheduler failure: panic")
+    );
+    assert_eq!(app.completion_summary.as_ref().unwrap().failure_count, 1);
+}
+
 struct ReadError(io::ErrorKind);
 
 impl Read for ReadError {

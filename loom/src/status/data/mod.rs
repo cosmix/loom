@@ -44,14 +44,16 @@ pub enum ActivityStatus {
     Error,
     /// Session may be hung: its heartbeat has been silent past the stage's
     /// `subagent_timeout_secs` budget (the threshold the monitor acts on) and
-    /// no tool call is open.
+    /// no verified foreground progress holds it `Busy`. A tool call can still
+    /// be open: the hold is bounded, and only stage sessions earn it.
     Stale,
-    /// A tool call is open (the main agent's or a subagent's transcript ends
-    /// in a `tool_use` with no result), so a silent heartbeat is expected. The
-    /// silence is still reported so a stuck command stays visible.
+    /// A foreground command or Codex forward is verifiably progressing, within
+    /// the bounded hold `foreground_command_active` and
+    /// `foreground_forward_holds` decide, so a silent heartbeat is expected.
+    /// The silence is still reported so a stuck command stays visible.
     Busy,
     /// Heartbeat silent past the default staleness threshold but within the
-    /// stage's larger budget, with no tool call open. Neutral, not a warning.
+    /// stage's larger budget, with no such progress. Neutral, not a warning.
     Quiet,
     /// Stage status claims Executing but no session record exists for it —
     /// e.g. the daemon was killed and restarted while the file that would

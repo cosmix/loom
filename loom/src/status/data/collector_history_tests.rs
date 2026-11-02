@@ -3,9 +3,9 @@
 
 use super::tests::{make_test_stage, temp_work_dir};
 use super::*;
-use crate::commands::status::render::attention_entries;
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::stage::IssueKind;
+use crate::status::attention_model::attention_entries;
 
 const STAGE: &str = "integration-verify";
 

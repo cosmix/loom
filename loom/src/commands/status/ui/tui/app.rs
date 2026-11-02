@@ -108,6 +108,9 @@ impl TuiApp {
         self.unsubscribe(&mut stream, work_path);
         self.cleanup_terminal();
         if let Some(summary) = self.completion_summary.take() {
+            if let Some(ref error) = self.last_error {
+                eprintln!("{error}");
+            }
             print_completion_summary(&summary);
         }
         result
@@ -282,12 +285,21 @@ impl TuiApp {
                 self.status = LiveStatus { data: *data };
                 let all_stages = self.status.all_stages();
                 self.activity_log.update(&all_stages);
-                self.last_error = None;
+                if self.completion_summary.is_none()
+                    && !self
+                        .last_error
+                        .as_deref()
+                        .is_some_and(|message| message.starts_with("Orchestration: "))
+                {
+                    self.last_error = None;
+                }
             }
             Response::OrchestrationComplete { summary } => {
+                if summary.failure_count == 0 {
+                    self.last_error = None;
+                }
                 self.completion_summary = Some(summary);
                 self.completion_received_at = Some(Instant::now());
-                self.last_error = None;
             }
             Response::Error { message } => {
                 self.last_error = Some(message);
@@ -313,8 +325,15 @@ impl TuiApp {
         // If orchestration completed, render completion screen
         if let Some(ref summary) = self.completion_summary {
             let summary_clone = summary.clone();
+            let last_error = self.last_error.clone();
             self.terminal.draw(|frame| {
                 render_completion(frame, frame.area(), &summary_clone);
+                if let Some(ref error) = last_error {
+                    let area = frame.area();
+                    let line =
+                        ratatui::layout::Rect::new(area.x, area.y.saturating_add(2), area.width, 1);
+                    frame.render_widget(ratatui::widgets::Paragraph::new(error.as_str()), line);
+                }
             })?;
             return Ok(());
         }

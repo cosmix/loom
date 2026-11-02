@@ -148,9 +148,9 @@ pub(super) use crate::validation::valid_stage_path_component as valid_stage_id;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::status::data::{ActivityStatus, StageStatus};
     use crate::context::untrusted::MAX_INLINE_CHARS;
     use crate::models::failure::{FailureInfo, FailureType};
+    use crate::status::data::{ActivityStatus, StageStatus};
     use chrono::Utc;
 
     pub(super) fn summary() -> StageSummary {

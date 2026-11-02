@@ -2,8 +2,8 @@
 //! block detail arrive neutralized but never cut.
 use super::tests::{failure_with, summary};
 use super::*;
-use crate::commands::status::data::FailingCriterion;
 use crate::context::untrusted::MAX_INLINE_CHARS;
+use crate::status::data::FailingCriterion;
 
 /// A line well past the inline limit, with an ESC and a bidi override in it.
 fn long_hostile_line() -> String {

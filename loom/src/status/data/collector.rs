@@ -2,13 +2,13 @@ use anyhow::Result;
 use chrono::Utc;
 use std::fs;
 
-use crate::commands::status::merge_status::build_merge_report;
 use crate::fs::work_dir::{load_config, resolve_context_ceiling_tokens, WorkDir};
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::{Stage, StageStatus, StageType, StatusBucket};
 use crate::orchestrator::coherence::executing_stage_incoherence;
 use crate::orchestrator::get_merge_point;
 use crate::plan::parser::extract_plan_name;
+use crate::status::merge_status::build_merge_report;
 use crate::verify::transitions::list_all_stages;
 
 use super::completion_view::collect_completion_view;
@@ -297,7 +297,7 @@ fn calculate_progress(stages: &[Stage]) -> ProgressSummary {
 
 /// Build a MergeSummary from merge report
 fn build_merge_summary_from_report(
-    report: &crate::commands::status::merge_status::MergeStatusReport,
+    report: &crate::status::merge_status::MergeStatusReport,
 ) -> MergeSummary {
     MergeSummary {
         merged: report.merged.clone(),

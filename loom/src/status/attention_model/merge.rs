@@ -1,9 +1,9 @@
 //! Guidance for a stage whose merge needs attention: a conflict, an error, or
 //! a typed merge block.
 
-use crate::commands::status::data::{ActivityStatus, StageSummary};
 use crate::models::session::SessionBackendKind;
 use crate::orchestrator::core::MAX_MERGE_RESOLVER_ATTEMPTS;
+use crate::status::data::{ActivityStatus, StageSummary};
 
 use super::Guidance;
 
@@ -11,16 +11,16 @@ use super::Guidance;
 /// without a typed block, up to [`MAX_MERGE_RESOLVER_ATTEMPTS`], then routes
 /// the stage to human review.
 ///
-/// A live resolver is told apart from one whose turn ended by its tool calls:
-/// `Stale` is no tool call for the stage's `subagent_timeout_secs` budget with
-/// no call open, measured from its own heartbeat or from its spawn. A resolver
-/// that ended its turn without running `loom stage merge --resolved` stays
-/// alive and waits at its prompt forever, so that state is the operator's to
-/// act on, not the daemon's. One command running past the budget (an
-/// acceptance rerun) reads `Busy` while its transcript shows the call open, and
-/// `Quiet` inside the budget; neither is an entry. Stale can still be a long
-/// call the transcript did not show, so the note sends the operator to look
-/// before it offers the kill, which spends a resolver attempt.
+/// A live resolver is told apart from one whose turn ended by its progress:
+/// `Stale` is no heartbeat for the stage's `subagent_timeout_secs` budget,
+/// measured from its own heartbeat or from its spawn. A resolver that ended its
+/// turn without running `loom stage merge --resolved` stays alive and waits at
+/// its prompt forever, so that state is the operator's to act on, not the
+/// daemon's. Stale says nothing about an open tool call: the foreground hold
+/// that reads `Busy` (`foreground_command_active`) is for stage sessions, so a
+/// resolver inside one long command (an acceptance rerun) reads `Stale` too.
+/// The note therefore sends the operator to look before it offers the kill,
+/// which spends a resolver attempt. `Busy` and `Quiet` are not entries.
 pub(super) fn merge_guidance(stage: &StageSummary) -> Guidance {
     let used = stage.merge_resolver_attempts.unwrap_or(0);
     let max = MAX_MERGE_RESOLVER_ATTEMPTS;
@@ -39,7 +39,7 @@ pub(super) fn merge_guidance(stage: &StageSummary) -> Guidance {
     let minutes = stage.staleness_secs.unwrap_or(0) / 60;
     let look = view.map_or_else(String::new, |view| format!(" Look first: {view}."));
     Guidance::manual(format!(
-        "merge resolver {session} made no tool call for {minutes} min and has not run loom stage \
+        "merge resolver {session} has shown no progress for {minutes} min and has not run loom stage \
          merge {} --resolved: it may be inside one long command or may have stopped (attempt \
          {used} of {max}).{look} Only if it is stuck, loom sessions kill {session} ends it and \
          the daemon starts the next attempt",
@@ -58,8 +58,8 @@ fn resolver_view(stage: &StageSummary) -> Option<String> {
         ),
         SessionBackendKind::Native => {
             format!(
-                "it runs in the terminal window titled loom-merge-{}",
-                stage.id
+                "look for terminal window loom-v2-merge-{} (or loom-merge-{} for an older session)",
+                stage.id, stage.id
             )
         }
     })

@@ -1,6 +1,5 @@
 //! How a running session's heartbeat silence classifies: Working, Quiet,
-//! Busy (a tool call is open in a transcript) or Stale (past the stage's
-//! budget with nothing open).
+//! Busy requires verified foreground progress; transcript calls supply names.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -46,6 +45,11 @@ impl Fixture {
         let dir = self.projects.join("proj").join(SESSION).join("subagents");
         fs::create_dir_all(&dir).unwrap();
         dir.join("agent-a1.jsonl")
+    }
+
+    fn open_call(&self) -> Option<OpenToolCall> {
+        let heartbeat = read_heartbeat_for_stage("stage-1", &self.work_dir);
+        probe_open_tool(heartbeat.as_ref(), Some(&self.projects))
     }
 
     /// A running session on `stage` whose heartbeat is `silence_secs` old and
@@ -147,12 +151,13 @@ fn silence_past_the_budget_with_nothing_open_is_stale() {
 
     let facts = fixture.facts(&stage(Some(900)), 1000, &transcript);
 
+    assert!(fixture.open_call().is_none());
     assert_eq!(facts.activity_status, ActivityStatus::Stale);
     assert_eq!(facts.last_tool.as_deref(), Some("Read"));
 }
 
 #[test]
-fn an_open_main_tool_call_is_busy_and_names_the_tool() {
+fn an_open_main_tool_names_the_call_but_needs_verified_progress() {
     let fixture = Fixture::new();
     let transcript = fixture.main_transcript();
     // Bookkeeping rows after the call do not close it.
@@ -160,8 +165,9 @@ fn an_open_main_tool_call_is_busy_and_names_the_tool() {
 
     let facts = fixture.facts(&stage(None), 400, &transcript);
 
-    assert_eq!(facts.activity_status, ActivityStatus::Busy);
-    assert_eq!(facts.last_tool.as_deref(), Some("Bash"));
+    assert_eq!(fixture.open_call().unwrap().name.as_deref(), Some("Bash"));
+    assert_eq!(facts.activity_status, ActivityStatus::Stale);
+    assert_eq!(facts.last_tool.as_deref(), Some("Read"));
     assert_eq!(facts.staleness_secs, Some(400));
 }
 
@@ -177,7 +183,7 @@ fn an_open_tool_without_worker_progress_expires_at_the_stall_line() {
 }
 
 #[test]
-fn an_open_subagent_tool_call_is_busy() {
+fn an_open_subagent_tool_call_needs_verified_progress() {
     let fixture = Fixture::new();
     let transcript = fixture.main_transcript();
     write_lines(&transcript, &[OPEN_CALL, CALL_RESULT]);
@@ -185,7 +191,8 @@ fn an_open_subagent_tool_call_is_busy() {
 
     let facts = fixture.facts(&stage(None), 400, &transcript);
 
-    assert_eq!(facts.activity_status, ActivityStatus::Busy);
+    assert!(fixture.open_call().is_some());
+    assert_eq!(facts.activity_status, ActivityStatus::Stale);
 }
 
 #[test]
@@ -205,6 +212,7 @@ fn a_subagent_last_written_before_the_last_progress_is_finished() {
 
     let facts = fixture.facts(&stage(None), 400, &transcript);
 
+    assert!(fixture.open_call().is_none());
     assert_eq!(facts.activity_status, ActivityStatus::Stale);
 }
 
@@ -252,6 +260,7 @@ fn a_transcript_outside_the_projects_root_is_not_followed() {
 
     let facts = fixture.facts(&stage(None), 400, &outside);
 
+    assert!(fixture.open_call().is_none());
     assert_eq!(facts.activity_status, ActivityStatus::Stale);
 }
 
@@ -270,6 +279,7 @@ fn a_dot_dot_path_that_escapes_the_projects_root_is_not_followed() {
 
     let facts = fixture.facts(&stage(None), 400, &sneaky);
 
+    assert!(fixture.open_call().is_none());
     assert_eq!(facts.activity_status, ActivityStatus::Stale);
 }
 
@@ -283,6 +293,7 @@ fn a_symlinked_transcript_is_not_followed() {
 
     let facts = fixture.facts(&stage(None), 400, &link);
 
+    assert!(fixture.open_call().is_none());
     assert_eq!(facts.activity_status, ActivityStatus::Stale);
 }
 
@@ -297,6 +308,7 @@ fn a_symlinked_subagent_transcript_is_not_followed() {
 
     let facts = fixture.facts(&stage(None), 400, &transcript);
 
+    assert!(fixture.open_call().is_none());
     assert_eq!(facts.activity_status, ActivityStatus::Stale);
 }
 
@@ -308,6 +320,7 @@ fn a_transcript_without_the_jsonl_extension_is_not_read() {
 
     let facts = fixture.facts(&stage(None), 400, &other);
 
+    assert!(fixture.open_call().is_none());
     assert_eq!(facts.activity_status, ActivityStatus::Stale);
 }
 
@@ -325,5 +338,6 @@ fn a_long_transcript_is_judged_by_its_tail() {
 
     let facts = fixture.facts(&stage(None), 400, &transcript);
 
-    assert_eq!(facts.activity_status, ActivityStatus::Busy);
+    assert!(fixture.open_call().is_some());
+    assert_eq!(facts.activity_status, ActivityStatus::Stale);
 }

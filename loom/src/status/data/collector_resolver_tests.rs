@@ -3,10 +3,10 @@
 
 use super::tests::{make_test_stage, temp_work_dir};
 use super::*;
-use crate::commands::status::data::ActivityStatus;
 use crate::models::constants::STALENESS_THRESHOLD_SECS;
 use crate::models::session::{SessionBackendKind, SessionStatus};
 use crate::orchestrator::monitor::heartbeat::{write_heartbeat, Heartbeat};
+use crate::status::data::ActivityStatus;
 
 /// A merge stage whose worker `worker-1` finished (`Completed`, pid gone) and
 /// is still the one `stage.session` names.
