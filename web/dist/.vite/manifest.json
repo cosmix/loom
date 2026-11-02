@@ -1,4 +1,30 @@
 {
+  "_cm-lang.js": {
+    "file": "assets/cm-lang.js",
+    "name": "cm-lang",
+    "imports": [
+      "_cm-view.js"
+    ]
+  },
+  "_cm-view.js": {
+    "file": "assets/cm-view.js",
+    "name": "cm-view"
+  },
+  "_flow.js": {
+    "file": "assets/flow.js",
+    "name": "flow",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js"
+    ]
+  },
+  "_markdown.js": {
+    "file": "assets/markdown.js",
+    "name": "markdown",
+    "imports": [
+      "_rolldown-runtime.js"
+    ]
+  },
   "_react.js": {
     "file": "assets/react.js",
     "name": "react",
@@ -10,6 +36,14 @@
     "file": "assets/rolldown-runtime.js",
     "name": "rolldown-runtime"
   },
+  "_router.js": {
+    "file": "assets/router.js",
+    "name": "router",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js"
+    ]
+  },
   "_store.css": {
     "file": "assets/store.css",
     "src": "_store.css"
@@ -19,7 +53,10 @@
     "name": "store",
     "imports": [
       "_rolldown-runtime.js",
-      "_react.js"
+      "_react.js",
+      "_router.js",
+      "_zod.js",
+      "_flow.js"
     ],
     "css": [
       "assets/store.css"
@@ -27,6 +64,10 @@
     "assets": [
       "assets/inter-latin-wght-normal.woff2"
     ]
+  },
+  "_zod.js": {
+    "file": "assets/zod.js",
+    "name": "zod"
   },
   "index.html": {
     "file": "assets/index.js",
@@ -36,7 +77,10 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_store.js"
+      "_store.js",
+      "_router.js",
+      "_zod.js",
+      "_flow.js"
     ],
     "dynamicImports": [
       "node_modules/@xterm/xterm/lib/xterm.mjs",
@@ -164,7 +208,11 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_store.js"
+      "_store.js",
+      "_router.js",
+      "_zod.js",
+      "_flow.js",
+      "_markdown.js"
     ],
     "dynamicImports": [
       "src/plan/editor/codemirror.ts"
@@ -199,6 +247,10 @@
     "file": "assets/codemirror.js",
     "name": "codemirror",
     "src": "src/plan/editor/codemirror.ts",
-    "isDynamicEntry": true
+    "isDynamicEntry": true,
+    "imports": [
+      "_cm-view.js",
+      "_cm-lang.js"
+    ]
   }
 }
