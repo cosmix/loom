@@ -1,0 +1,260 @@
+commit 954b401cded5e4e433bb1cfa519ecfaf6090590e
+Author: Loom Developer <dev@example.com>
+Date:   Sun Nov 1 21:30:22 2026 +0200
+
+    fix(hooks): share lifecycle metadata lookup
+
+diff --git a/loom-hooks/_heartbeat.sh b/loom-hooks/_heartbeat.sh
+index 3709dfc1..8140ed18 100644
+--- a/loom-hooks/_heartbeat.sh
++++ b/loom-hooks/_heartbeat.sh
+@@ -186,21 +186,8 @@ loom_heartbeat_owner_is_current() {
+     fi
+ 
+     if [[ -n "$stage_file" && -r "$stage_file" && ! -L "$stage_file" ]]; then
+-        # Only the top-level FRONTMATTER field is authoritative. Stage bodies
+-        # contain the raw description, which may itself include an unindented
+-        # `session:` line or fenced example. Stop at the second exact delimiter
+-        # so prose can never impersonate ownership.
+-        stage_session=$(awk '
+-            NR == 1 && $0 == "---" { in_frontmatter = 1; next }
+-            in_frontmatter && $0 == "---" { exit }
+-            in_frontmatter && $0 ~ /^session:[[:space:]]*[A-Za-z0-9._-]+[[:space:]]*$/ {
+-                value = $0
+-                sub(/^session:[[:space:]]*/, "", value)
+-                sub(/[[:space:]]*$/, "", value)
+-                print value
+-                exit
+-            }
+-        ' "$stage_file" 2>/dev/null || true)
++        stage_session=$(loom_stage_frontmatter_field "$stage_file" session || true)
++        [[ "$stage_session" =~ ^[A-Za-z0-9._-]+$ ]] || stage_session=""
+         if [[ -n "$stage_session" ]]; then
+             if [[ "$stage_session" != "$session_id" ]]; then
+                 loom_debug "heartbeat: session $session_id no longer owns stage $stage_id"
+diff --git a/loom-hooks/_lifecycle.sh b/loom-hooks/_lifecycle.sh
+index cae116dd..ab84d8ae 100644
+--- a/loom-hooks/_lifecycle.sh
++++ b/loom-hooks/_lifecycle.sh
+@@ -47,59 +47,18 @@ loom_lifecycle_plain_path() {
+ }
+ 
+ loom_lifecycle_find_stage() {
+-	local work="$1" stage="$2" exact="$work/stages/$stage.md"
+-	local candidate="" basename="" prefix="" unsafe=0
+-	local matches=()
++	local work="$1" stage="$2" file=""
+ 	loom_lifecycle_plain_path "$work/stages" dir || return 1
+-	if [[ -e "$exact" || -L "$exact" ]]; then
+-		if [[ -f "$exact" && ! -L "$exact" ]]; then matches+=("$exact"); else unsafe=1; fi
+-	fi
+-	for candidate in "$work"/stages/[0-9]*-"$stage".md; do
+-		[[ -e "$candidate" || -L "$candidate" ]] || continue
+-		basename=${candidate##*/}
+-		prefix=${basename%-${stage}.md}
+-		[[ -n "$prefix" && "$prefix" != *[!0-9]* ]] || continue
+-		if [[ -f "$candidate" && ! -L "$candidate" ]]; then
+-			matches+=("$candidate")
+-		else
+-			unsafe=1
+-		fi
+-	done
+-	[[ $unsafe -eq 0 && ${#matches[@]} -eq 1 ]] || return 1
+-	loom_lifecycle_plain_path "${matches[0]}" file || return 1
+-	printf '%s\n' "${matches[0]}"
+-}
+-
+-loom_lifecycle_trim() {
+-	local value="$1"
+-	value="${value#"${value%%[![:space:]]*}"}"
+-	value="${value%"${value##*[![:space:]]}"}"
+-	printf '%s' "$value"
++	file=$(loom_find_stage_file "$work" "$stage") || return 1
++	loom_lifecycle_plain_path "$file" file || return 1
++	printf '%s\n' "$file"
+ }
+ 
+ loom_lifecycle_stage_binding() {
+-	local work="$1" stage="$2" session="$3" file="" line="" value=""
+-	local line_number=0 id_seen=0 session_seen=0 closed=0 file_stage="" file_session=""
++	local work="$1" stage="$2" session="$3" file="" file_stage="" file_session=""
+ 	file=$(loom_lifecycle_find_stage "$work" "$stage") || return 1
+-	while IFS= read -r line || [[ -n "$line" ]]; do
+-		line_number=$((line_number + 1))
+-		if [[ $line_number -eq 1 ]]; then
+-			[[ "$line" == "---" ]] || return 1
+-			continue
+-		fi
+-		if [[ "$line" == "---" ]]; then closed=1; break; fi
+-		case "$line" in
+-		id:*)
+-			id_seen=$((id_seen + 1)); value=$(loom_lifecycle_trim "${line#id:}")
+-			file_stage="$value"
+-			;;
+-		session:*)
+-			session_seen=$((session_seen + 1)); value=$(loom_lifecycle_trim "${line#session:}")
+-			file_session="$value"
+-			;;
+-		esac
+-	done <"$file"
+-	[[ $closed -eq 1 && $id_seen -eq 1 && $session_seen -eq 1 ]] || return 1
++	file_stage=$(loom_stage_frontmatter_field "$file" id) || return 1
++	file_session=$(loom_stage_frontmatter_field "$file" session) || return 1
+ 	loom_lifecycle_safe_id "$file_stage" && loom_lifecycle_safe_id "$file_session" || return 1
+ 	[[ "$file_session" != "null" && "$file_session" != "~" ]] || return 1
+ 	[[ "$file_stage" == "$stage" && "$file_session" == "$session" ]]
+diff --git a/loom-hooks/_stage_lookup.sh b/loom-hooks/_stage_lookup.sh
+index a9eb0b2f..988ebed0 100644
+--- a/loom-hooks/_stage_lookup.sh
++++ b/loom-hooks/_stage_lookup.sh
+@@ -68,10 +68,12 @@ loom_stage_work_dir() {
+     done
+ }
+ 
+-# Reject incomplete frontmatter and duplicate statuses, including body prose.
+-loom_stage_status() {
+-    local file="$1" line="" value="" status="" count=0 closed=0 first=1
++# Read exactly one top-level frontmatter field. Bodies and incomplete or
++# duplicate fields cannot supply stage metadata to any hook.
++loom_stage_frontmatter_field() {
++    local file="$1" field="$2" line="" value="" count=0 closed=0 first=1
+     [[ -f "$file" && ! -L "$file" ]] || return 1
++    [[ "$field" =~ ^[a-z][a-z0-9_-]*$ ]] || return 1
+     while IFS= read -r line || [[ -n "$line" ]]; do
+         if ((first)); then
+             [[ "$line" == --- ]] || return 1
+@@ -79,18 +81,27 @@ loom_stage_status() {
+         fi
+         if [[ "$line" == --- ]]; then closed=1; break; fi
+         case "$line" in
+-        status:*)
+-            count=$((count + 1)); value=${line#status:}; value=${value%%#*}
++        "$field":*)
++            count=$((count + 1)); value=${line#*:}
+             value="${value#"${value%%[![:space:]]*}"}"
+             value="${value%"${value##*[![:space:]]}"}"
+-            case "$value" in
+-            \"*\") value=${value#\"}; value=${value%\"} ;;
+-            \'*\') value=${value#\'}; value=${value%\'} ;;
+-            esac
+-            status=$value
+             ;;
+         esac
+     done <"$file"
+-    [[ $closed -eq 1 && $count -eq 1 && "$status" =~ ^[A-Za-z][A-Za-z0-9-]*$ ]] || return 1
++    [[ $closed -eq 1 && $count -eq 1 ]] || return 1
++    printf '%s\n' "$value"
++}
++
++# Reject incomplete frontmatter and duplicate statuses, including body prose.
++loom_stage_status() {
++    local status=""
++    status=$(loom_stage_frontmatter_field "$1" status) || return 1
++    status=${status%%#*}
++    status="${status%"${status##*[![:space:]]}"}"
++    case "$status" in
++    \"*\") status=${status#\"}; status=${status%\"} ;;
++    \'*\') status=${status#\'}; status=${status%\'} ;;
++    esac
++    [[ "$status" =~ ^[A-Za-z][A-Za-z0-9-]*$ ]] || return 1
+     printf '%s\n' "$status"
+ }
+diff --git a/loom-hooks/tests/stage-terminal-guard.sh b/loom-hooks/tests/stage-terminal-guard.sh
+index 5d2643b8..04ad1eaf 100755
+--- a/loom-hooks/tests/stage-terminal-guard.sh
++++ b/loom-hooks/tests/stage-terminal-guard.sh
+@@ -136,4 +136,30 @@ run_hook || { echo "FAIL: unclosed frontmatter"; exit 1; }
+ printf '%s\n' '---' 'status: completed' 'status: executing' '---' >"$STAGES_DIR/01-$STAGE_ID.md"
+ run_hook || { echo "FAIL: duplicate status"; exit 1; }
+ 
++# Lifecycle binding and terminal decisions use the same stage lookup and
++# frontmatter boundary, while applying their own field requirements.
++source "$ROOT/loom-hooks/_lifecycle.sh"
++printf '%s\n' '---' "id: $STAGE_ID" 'session: owner-1' 'status: completed' '---' >"$STAGES_DIR/01-$STAGE_ID.md"
++loom_lifecycle_stage_binding "$PROJECT_ROOT/.work" "$STAGE_ID" owner-1 || {
++	echo "FAIL: lifecycle rejected valid shared metadata"; exit 1;
++}
++cp "$STAGES_DIR/01-$STAGE_ID.md" "$STAGES_DIR/$STAGE_ID.md"
++if loom_lifecycle_stage_binding "$PROJECT_ROOT/.work" "$STAGE_ID" owner-1; then
++	echo "FAIL: lifecycle accepted duplicate canonical and legacy stage files"; exit 1
++fi
++rm "$STAGES_DIR/$STAGE_ID.md"
++printf '%s\n' '---' "id: $STAGE_ID" 'session: owner-1' 'session: owner-2' '---' >"$STAGES_DIR/01-$STAGE_ID.md"
++if loom_lifecycle_stage_binding "$PROJECT_ROOT/.work" "$STAGE_ID" owner-1; then
++	echo "FAIL: lifecycle accepted duplicate session metadata"; exit 1
++fi
++printf '%s\n' '---' "id: $STAGE_ID" 'session: owner-1' >"$STAGES_DIR/01-$STAGE_ID.md"
++if loom_lifecycle_stage_binding "$PROJECT_ROOT/.work" "$STAGE_ID" owner-1; then
++	echo "FAIL: lifecycle accepted unclosed frontmatter"; exit 1
++fi
++mv "$STAGES_DIR/01-$STAGE_ID.md" "$TMP/lifecycle-target"
++ln -s "$TMP/lifecycle-target" "$STAGES_DIR/01-$STAGE_ID.md"
++if loom_lifecycle_stage_binding "$PROJECT_ROOT/.work" "$STAGE_ID" owner-1; then
++	echo "FAIL: lifecycle accepted a symlinked stage file"; exit 1
++fi
++
+ echo "PASS"
+diff --git a/loom/tests/completion_shell_paths.sh b/loom/tests/completion_shell_paths.sh
+new file mode 100644
+index 00000000..a1298737
+--- /dev/null
++++ b/loom/tests/completion_shell_paths.sh
+@@ -0,0 +1,58 @@
++#!/usr/bin/env bash
++# Exercise the shell's path fallback after loom returns no pressure candidates.
++set -euo pipefail
++
++ROOT=$(cd "$(dirname "$0")/../.." && pwd)
++LOOM_BIN=${LOOM_BIN:-$ROOT/loom/target/debug/loom}
++[[ -x "$LOOM_BIN" ]] || { echo "SKIP: loom binary unavailable"; exit 0; }
++
++TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-completion.XXXXXX")
++trap 'rm -rf "$TMP"' EXIT
++mkdir -p "$TMP/bin" "$TMP/paths" "$TMP/home"
++ln -s "$LOOM_BIN" "$TMP/bin/loom"
++: >"$TMP/paths/pressure-only.md"
++"$LOOM_BIN" completions bash >"$TMP/loom.bash"
++"$LOOM_BIN" completions fish >"$TMP/loom.fish"
++rg -Fq "complete -c loom -n '__fish_seen_subcommand_from init pressure' -F" "$TMP/loom.fish" || {
++    echo "FAIL: generated fish script disables pressure path fallback"
++    exit 1
++}
++
++if command -v expect >/dev/null 2>&1; then
++    LOOM_COMPLETION_FIXTURE="$TMP" PATH="$TMP/bin:$PATH" expect <<'EXPECT'
++log_user 0
++set timeout 10
++set fixture $env(LOOM_COMPLETION_FIXTURE)
++set env(HOME) "$fixture/home"
++set env(PS1) "ready> "
++spawn bash --noprofile --norc -i
++expect "ready> "
++send "cd $fixture/paths\r"
++expect "ready> "
++send "source $fixture/loom.bash\r"
++expect "ready> "
++send "loom pressure pressure-o\t"
++expect {
++    "loom pressure pressure-only.md" {}
++    timeout { puts stderr "FAIL: Bash did not complete the pressure path"; exit 1 }
++}
++send "\025exit\r"
++expect eof
++EXPECT
++else
++    echo "SKIP: expect unavailable; Bash runtime fallback unverified"
++fi
++
++if command -v fish >/dev/null 2>&1; then
++    LOOM_COMPLETION_FISH_SCRIPT="$TMP/loom.fish" LOOM_COMPLETION_PATHS="$TMP/paths" \
++        fish -c 'source "$LOOM_COMPLETION_FISH_SCRIPT"; cd "$LOOM_COMPLETION_PATHS"; complete -C "loom pressure pressure-o"' \
++        >"$TMP/fish-candidates"
++    if ! rg -q '^pressure-only\.md([[:space:]]|$)' "$TMP/fish-candidates"; then
++        echo "FAIL: fish did not complete the pressure path"
++        exit 1
++    fi
++else
++    echo "SKIP: fish unavailable; native fish fallback unverified"
++fi
++
++echo "PASS"
