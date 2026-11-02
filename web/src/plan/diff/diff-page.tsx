@@ -4,6 +4,7 @@ import { Link } from "react-router";
 
 import type { ApiResult } from "@/plan/api/client";
 import type { DiffTexts } from "@/plan/api/schema-files";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { toAddress } from "@/plan/files/address";
 import { fetchHeadDiff, fetchTurnDiff } from "@/plan/files/api";
 import { openDocAtom, previousOpenTextAtom } from "@/plan/files/atoms";
@@ -58,7 +59,9 @@ function Header({ kind, path }: { kind: DiffPageProps["kind"]; path: string }): 
   return (
     <header className="flex flex-wrap items-baseline gap-x-3 border-b border-hairline px-4 py-2 text-[13px]">
       <span className="font-medium">{KIND_LABEL[kind]}</span>
-      <span className="font-mono text-muted-foreground">{path}</span>
+      <span className="font-mono text-muted-foreground">
+        <Untrusted text={path} />
+      </span>
       <Link to={toAddress(path)} className="underline">
         Back to the document
       </Link>

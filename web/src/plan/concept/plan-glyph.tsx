@@ -4,6 +4,7 @@ import { Link, useLocation } from "react-router";
 
 import { featureOfKey, pageHref, pageKeyOfPath, summaryKey } from "@/plan/api/page-key";
 import type { PlanLink, SectionLink } from "@/plan/api/schema-concept";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
 
 /**
@@ -38,19 +39,23 @@ export function PlanGlyph({
                 className="underline"
                 to={pageHref(summaryKey(feature, "engineering", plan.slug))}
               >
-                {plan.title}
+                <Untrusted text={plan.title} />
               </Link>
-              <span className="ml-2 text-muted-foreground">{plan.state}</span>
+              <span className="ml-2 text-muted-foreground">
+                <Untrusted text={plan.state} />
+              </span>
             </li>
           ))}
           {sections.map((section) => (
             <li key={section.name}>
               {section.doc ? (
                 <Link className="underline" to={pageHref(section.doc.page)}>
-                  {section.doc.title}
+                  <Untrusted text={section.doc.title} />
                 </Link>
               ) : (
-                <span className="text-muted-foreground">{section.name}</span>
+                <span className="text-muted-foreground">
+                  <Untrusted text={section.name} />
+                </span>
               )}
             </li>
           ))}

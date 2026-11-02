@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 
 import type { SearchHit, SearchResults as Results } from "@/plan/api/schema-files";
+import { ISOLATED_LTR, Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { escapeRegExp } from "@/plan/markdown/context";
 
 /** The same highlight the rendered document gives a mark (`.md mark`), outside `.md` here. */
@@ -9,7 +10,7 @@ const MARK = "rounded-[2px] bg-(--highlight) px-px text-(color:--highlight-foreg
 /** The snippet as text with the terms wrapped in `<mark>`; server text never becomes HTML. */
 function Marked({ text, terms }: { text: string; terms: string[] }): JSX.Element {
   const usable = terms.filter(Boolean);
-  if (usable.length === 0) return <>{text}</>;
+  if (usable.length === 0) return <>{visibleControls(text)}</>;
   const pattern = new RegExp(`(${usable.map(escapeRegExp).join("|")})`, "gi");
   const wanted = new Set(usable.map((term) => term.toLowerCase()));
   return (
@@ -17,10 +18,10 @@ function Marked({ text, terms }: { text: string; terms: string[] }): JSX.Element
       {text.split(pattern).map((part, index) =>
         wanted.has(part.toLowerCase()) ? (
           <mark key={index} className={MARK}>
-            {part}
+            {visibleControls(part)}
           </mark>
         ) : (
-          part
+          visibleControls(part)
         ),
       )}
     </>
@@ -46,13 +47,15 @@ export function SearchResults({ results, onOpen }: Props): JSX.Element {
               className="flex w-full flex-col gap-0.5 px-3 py-2 text-left hover:bg-muted"
               onClick={() => onOpen(hit)}
             >
-              <span className="text-[13px] font-medium">{hit.title}</span>
+              <span className="text-[13px] font-medium">
+                <Untrusted text={hit.title} />
+              </span>
               {hit.heading_path.length > 0 && (
                 <span className="text-xs text-muted-foreground">
-                  {hit.heading_path.join(" › ")}
+                  <Untrusted text={hit.heading_path.join(" › ")} />
                 </span>
               )}
-              <span className="text-xs">
+              <span className="text-xs" style={ISOLATED_LTR}>
                 <Marked text={hit.snippet} terms={hit.terms} />
               </span>
             </button>
