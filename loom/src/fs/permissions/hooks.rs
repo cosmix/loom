@@ -97,7 +97,7 @@ fn install_hook_script(dir: &std::path::Path, filename: &str, content: &str) -> 
 /// string if extraction fails. `pub(super)`: also used by [`super::drift`]
 /// to compare registrations against `LOOM_HOOKS`.
 pub(super) fn extract_command_basename(cmd: &str) -> String {
-    std::path::Path::new(ownership::executable(cmd))
+    std::path::Path::new(ownership::executable(cmd).as_ref())
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(cmd)

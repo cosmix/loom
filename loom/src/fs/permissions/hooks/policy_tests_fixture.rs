@@ -81,38 +81,20 @@ pub(super) fn run_hook(
 }
 
 fn install_helpers(hooks: &Path) {
+    use crate::fs::permissions::constants as hook;
     for (name, contents) in [
         ("_common.sh", HOOK_COMMON),
-        ("_parser.sh", crate::fs::permissions::constants::HOOK_PARSER),
-        (
-            "_stage_lookup.sh",
-            crate::fs::permissions::constants::HOOK_STAGE_LOOKUP,
-        ),
-        (
-            "_parser_expand.sh",
-            crate::fs::permissions::constants::HOOK_PARSER_EXPAND,
-        ),
-        (
-            "_parser_scan.sh",
-            crate::fs::permissions::constants::HOOK_PARSER_SCAN,
-        ),
-        (
-            "_containment.sh",
-            crate::fs::permissions::constants::HOOK_CONTAINMENT,
-        ),
-        (
-            "_identity.sh",
-            crate::fs::permissions::constants::HOOK_IDENTITY,
-        ),
-        (
-            "_heartbeat.sh",
-            crate::fs::permissions::constants::HOOK_HEARTBEAT,
-        ),
+        ("_worktree_policy.sh", hook::HOOK_WORKTREE_POLICY_LOADER),
+        ("worktree-policy.json", hook::HOOK_WORKTREE_POLICY),
+        ("_parser.sh", hook::HOOK_PARSER),
+        ("_stage_lookup.sh", hook::HOOK_STAGE_LOOKUP),
+        ("_parser_expand.sh", hook::HOOK_PARSER_EXPAND),
+        ("_parser_scan.sh", hook::HOOK_PARSER_SCAN),
+        ("_containment.sh", hook::HOOK_CONTAINMENT),
+        ("_identity.sh", hook::HOOK_IDENTITY),
+        ("_heartbeat.sh", hook::HOOK_HEARTBEAT),
         ("_bounded.sh", HOOK_BOUNDED),
-        (
-            "_git-command.sh",
-            crate::fs::permissions::constants::HOOK_GIT_COMMAND,
-        ),
+        ("_git-command.sh", hook::HOOK_GIT_COMMAND),
         ("_lifecycle.sh", HOOK_LIFECYCLE),
         ("_codex_forward.sh", HOOK_CODEX_FORWARD_COMMON),
         ("_progress-classification.sh", HOOK_PROGRESS_CLASSIFICATION),

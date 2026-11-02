@@ -243,11 +243,18 @@ pub(super) fn mark_pending(holder: LockState) -> Option<LockState> {
 
 /// A spawned child takes over only the exact claim passed by its parent. A
 /// direct invocation must first win the normal claim policy in its caller.
-pub(super) fn begin_run(lock_path: &Path, pid: u32, claim: u128) -> bool {
+/// Re-stamping the epoch at `now` keeps `cancel`'s identity check true: this
+/// process started no later than the epoch even when the spawn was slow.
+pub(super) fn begin_run(lock_path: &Path, pid: u32, claim: u128, now: u64) -> bool {
     update_lock(lock_path, |state| match state {
-        Some(held) if held.pid != 0 && held.claim == claim && claim != 0 => {
-            (Some(LockState { pid, ..held }), true)
-        }
+        Some(held) if held.pid != 0 && held.claim == claim && claim != 0 => (
+            Some(LockState {
+                epoch: now,
+                pid,
+                ..held
+            }),
+            true,
+        ),
         _ => (None, false),
     })
     .unwrap_or(false)

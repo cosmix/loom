@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# MultiEdit modifies files exactly like Edit/Write and carries its target at
-# the same `.tool_input.file_path` position (confirmed against Claude Code's
-# published PostToolUse examples, which match "Write|Edit|MultiEdit" and read
-# `.tool_input.file_path` for all three). It must be recorded the same way.
+# The hook remains silent and must not invoke the obsolete edit recorder.
 set -euo pipefail
 HOOK="$(dirname "$0")/../post-tool-use.sh"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
@@ -40,12 +37,8 @@ if [[ -n "$OUTPUT" ]]; then
 	exit 1
 fi
 
-if [[ ! -f "$MARKER" ]]; then
-	echo "FAIL: loom context record-edit was never invoked for a MultiEdit tool call"
-	exit 1
-fi
-if ! grep -qF -- "--path src/bar.rs" "$MARKER"; then
-	echo "FAIL: record-edit was not called with the file_path from a MultiEdit payload. Got: $(cat "$MARKER")"
+if [[ -e "$MARKER" ]]; then
+	echo "FAIL: hook invoked the obsolete edit recorder"
 	exit 1
 fi
 

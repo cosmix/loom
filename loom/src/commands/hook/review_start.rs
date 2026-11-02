@@ -6,8 +6,7 @@ use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::review_harvest::{read_input, stage_worktree, work_dir_from_env, HarvestInput};
-use super::review_transcript::validate_transcript_identity;
+use super::review_harvest::{read_input, stage_worktree, work_dir_from_env};
 use crate::fs::locking::{atomic_write_locked, locked_dir_update};
 use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::validation::validate_id;
@@ -24,25 +23,34 @@ struct ReviewStart {
     stage_id: String,
     session_id: String,
     agent_id: String,
-    transcript_path: PathBuf,
     fingerprint: ChangeFingerprint,
+}
+
+/// One reviewer invocation: what SubagentStart can prove. Its payload's
+/// `transcript_path` is the parent session's and the worker's own transcript
+/// may not exist yet, so start evidence never names a transcript; the harvest
+/// validates the worker's at SubagentStop.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ReviewInvocation {
+    pub stage_id: String,
+    /// The parent Claude session.
+    pub session_id: String,
+    pub agent_id: String,
 }
 
 /// Hidden SubagentStart delegate. An unavailable snapshot leaves the later
 /// harvest without evidence, so that harvest fails closed.
 pub fn review_start() -> Result<()> {
-    let input = read_input()?;
+    let input: ReviewInvocation = read_input()?;
     capture(&work_dir_from_env()?, &input)?;
     Ok(())
 }
 
 /// Capture the tree before the reviewer begins. The first exact invocation
 /// wins: a repeated start cannot rebind the agent to later edits.
-pub(super) fn capture(work_dir: &Path, input: &HarvestInput) -> Result<()> {
-    validate_id(&input.stage_id).context("invalid stage id")?;
-    validate_id(&input.session_id).context("invalid parent session id")?;
-    validate_id(&input.agent_id).context("invalid reviewer agent id")?;
-    validate_transcript_identity(input)?;
+pub(super) fn capture(work_dir: &Path, input: &ReviewInvocation) -> Result<()> {
+    validate_invocation(input)?;
     let stage = load_stage(&input.stage_id, work_dir)?;
     if stage.plan_version != 2 {
         return Ok(());
@@ -55,7 +63,6 @@ pub(super) fn capture(work_dir: &Path, input: &HarvestInput) -> Result<()> {
         stage_id: input.stage_id.clone(),
         session_id: input.session_id.clone(),
         agent_id: input.agent_id.clone(),
-        transcript_path: input.transcript_path.clone(),
         fingerprint,
     };
     let root = work_dir
@@ -81,10 +88,8 @@ pub(super) fn capture(work_dir: &Path, input: &HarvestInput) -> Result<()> {
 
 /// Load the exact invocation's start snapshot. Missing, malformed, or
 /// mismatched evidence is never replaced by a harvest-time fingerprint.
-pub(super) fn load(work_dir: &Path, input: &HarvestInput) -> Result<ChangeFingerprint> {
-    validate_id(&input.stage_id).context("invalid stage id")?;
-    validate_id(&input.session_id).context("invalid parent session id")?;
-    validate_id(&input.agent_id).context("invalid reviewer agent id")?;
+pub(super) fn load(work_dir: &Path, input: &ReviewInvocation) -> Result<ChangeFingerprint> {
+    validate_invocation(input)?;
     let root = work_dir
         .canonicalize()
         .context("resolving the work directory")?;
@@ -97,11 +102,17 @@ pub(super) fn load(work_dir: &Path, input: &HarvestInput) -> Result<ChangeFinger
     ensure!(
         evidence.stage_id == input.stage_id
             && evidence.session_id == input.session_id
-            && evidence.agent_id == input.agent_id
-            && evidence.transcript_path == input.transcript_path,
+            && evidence.agent_id == input.agent_id,
         "reviewer start evidence does not match this invocation"
     );
     Ok(evidence.fingerprint)
+}
+
+fn validate_invocation(input: &ReviewInvocation) -> Result<()> {
+    validate_id(&input.stage_id).context("invalid stage id")?;
+    validate_id(&input.session_id).context("invalid parent session id")?;
+    validate_id(&input.agent_id).context("invalid reviewer agent id")?;
+    Ok(())
 }
 
 fn read_start(root: &Path, relative: &Path) -> Result<ReviewStart> {
@@ -109,7 +120,7 @@ fn read_start(root: &Path, relative: &Path) -> Result<ReviewStart> {
     serde_json::from_slice(&bytes).context("parsing reviewer start evidence")
 }
 
-fn start_relative(input: &HarvestInput) -> PathBuf {
+fn start_relative(input: &ReviewInvocation) -> PathBuf {
     let mut hasher = Sha256::new();
     for part in [&input.stage_id, &input.session_id, &input.agent_id] {
         hasher.update(part.as_bytes());

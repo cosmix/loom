@@ -5,7 +5,7 @@ HOOK="$(dirname "$0")/../subagent-start.sh"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
-mkdir -p "$TMP/work" "$TMP/bin" "$TMP/parent/subagents"
+mkdir -p "$TMP/work" "$TMP/bin" "$TMP/project/claude-parent-uuid/subagents"
 LOOM_CALLS="$TMP/loom-calls"
 cat >"$TMP/bin/loom" <<'SH'
 #!/usr/bin/env bash
@@ -17,10 +17,12 @@ exit 0
 SH
 chmod +x "$TMP/bin/loom"
 
-TRANSCRIPT="$TMP/parent/subagents/agent-agent-1.jsonl"
-printf '%s\n' '{"message":{"content":"<!-- loom-worker-brief nonce=0123456789abcdef0123456789abcdef -->"}}' >"$TRANSCRIPT"
-INPUT=$(jq -nc --arg transcript "$TRANSCRIPT" \
-	'{agent_id:"agent-1",agent_type:"loom-software-engineer",session_id:"claude-parent-uuid",transcript_path:$transcript}')
+# The Claude Code hooks reference's SubagentStart payload: transcript_path names
+# the parent session's transcript, and the worker's own file does not exist yet.
+PARENT_TRANSCRIPT="$TMP/project/claude-parent-uuid.jsonl"
+INPUT=$(jq -nc --arg transcript "$PARENT_TRANSCRIPT" \
+	'{agent_id:"agent-1",agent_type:"loom-software-engineer",session_id:"claude-parent-uuid",
+	  transcript_path:$transcript,hook_event_name:"SubagentStart"}')
 printf '%s' "$INPUT" |
 	env PATH="$TMP/bin:/usr/bin:/bin" LOOM_CALLS="$LOOM_CALLS" \
 		LOOM_WORK_DIR="$TMP/work" LOOM_STAGE_ID="stage-a" LOOM_SESSION_ID="parent-session" \
@@ -47,22 +49,35 @@ if [[ -f "$LOOM_CALLS" ]] && grep -q 'worker-brief' "$LOOM_CALLS"; then
 fi
 
 REVIEW_INPUT_FILE="$TMP/review-input"
-REVIEW_EVENT=$(jq -nc --arg transcript "$TRANSCRIPT" \
+REVIEW_EVENT=$(jq -nc --arg transcript "$PARENT_TRANSCRIPT" \
 	'{agent_id:"agent-1",agent_type:"loom-code-reviewer",
-	  session_id:"claude-parent-uuid",transcript_path:$transcript}')
+	  session_id:"claude-parent-uuid",transcript_path:$transcript,
+	  hook_event_name:"SubagentStart"}')
 printf '%s' "$REVIEW_EVENT" |
 	env PATH="$TMP/bin:/usr/bin:/bin" LOOM_CALLS="$LOOM_CALLS" \
 		LOOM_REVIEW_INPUT="$REVIEW_INPUT_FILE" LOOM_WORK_DIR="$TMP/work" \
 		LOOM_STAGE_ID="stage-a" LOOM_SESSION_ID="parent-session" bash "$HOOK"
-if ! jq -e --arg transcript "$TRANSCRIPT" '
-    .stage_id == "stage-a" and .session_id == "claude-parent-uuid" and
-    .agent_id == "agent-1" and .transcript_path == $transcript
-' "$REVIEW_INPUT_FILE" >/dev/null; then
+# Start evidence is keyed on the exact invocation: the transcript in this
+# payload is the parent's, so it must not reach the delegate.
+if ! jq -e '. == {stage_id:"stage-a",session_id:"claude-parent-uuid",agent_id:"agent-1"}' \
+	"$REVIEW_INPUT_FILE" >/dev/null; then
 	echo "FAIL: reviewer start did not capture the exact invocation"
+	cat "$REVIEW_INPUT_FILE" 2>/dev/null || true
 	exit 1
 fi
 if [[ $(grep -c '^hook review-start$' "$LOOM_CALLS") != 1 ]]; then
 	echo "FAIL: reviewer start was not captured exactly once"
+	exit 1
+fi
+
+# A payload with no transcript_path at all still captures a reviewer's start.
+rm -f "$REVIEW_INPUT_FILE"
+printf '%s' '{"agent_id":"agent-3","agent_type":"loom-code-reviewer","session_id":"claude-parent-uuid"}' |
+	env PATH="$TMP/bin:/usr/bin:/bin" LOOM_CALLS="$LOOM_CALLS" \
+		LOOM_REVIEW_INPUT="$REVIEW_INPUT_FILE" LOOM_WORK_DIR="$TMP/work" \
+		LOOM_STAGE_ID="stage-a" LOOM_SESSION_ID="parent-session" bash "$HOOK"
+if [[ ! -s "$REVIEW_INPUT_FILE" ]]; then
+	echo "FAIL: reviewer start capture must not depend on transcript_path"
 	exit 1
 fi
 

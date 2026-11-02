@@ -4,10 +4,9 @@
 //! session lifecycle management.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
-use std::path::PathBuf;
-
-use crate::plan::schema::PermissionMode;
+use std::path::Path;
 
 /// Claude Code hook event types supported by loom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -103,79 +102,28 @@ pub struct HookCommand {
     pub command: String,
 }
 
-/// Legacy configuration retained for library compatibility.
-///
-/// Production session capsules use their own emitter, which includes guard
-/// registrations and interpreter handling absent from this structure.
-///
-/// Deliberately carries NO per-session identity (stage ID, session ID): those
-/// env vars are exported by the session wrapper script only, never persisted
-/// in settings files, so they can never go stale across sessions.
-#[derive(Debug, Clone)]
-#[deprecated(note = "legacy emitter differs from production session capsules")]
-pub struct HooksConfig {
-    /// Path to the loom hooks directory
-    pub hooks_dir: PathBuf,
-    /// Path to the .loom/work directory
-    pub work_dir: PathBuf,
-    /// Resolved Claude Code permission mode for this session.
-    pub permission_mode: PermissionMode,
-}
-
-#[allow(deprecated)]
-impl HooksConfig {
-    /// Create a new hooks configuration.
-    pub fn new(hooks_dir: PathBuf, work_dir: PathBuf, permission_mode: PermissionMode) -> Self {
-        Self {
-            hooks_dir,
-            work_dir,
-            permission_mode,
-        }
-    }
-
-    /// Get the full path to a hook script.
-    ///
-    /// Sessions see host-absolute paths — the hooks are installed at
-    /// `<claude_dir>/hooks/loom/...` on the host (`assets::install::claude_hooks_dir`).
-    pub fn script_path(&self, event: HookEvent) -> PathBuf {
-        self.hooks_dir.join(event.script_name())
-    }
-
-    /// Build the legacy unwrapped script path for an event.
-    ///
-    /// Production capsules may wrap this path with an interpreter.
-    pub fn build_command(&self, event: HookEvent) -> String {
-        let script = self.script_path(event);
-        script.display().to_string()
-    }
-
-    /// Build the single hook rule for `event`: a `"*"` matcher running
-    /// `self.build_command(event)` as the sole command.
-    fn hook_rule(&self, event: HookEvent) -> HookRule {
-        HookRule {
-            matcher: "*".to_string(),
-            hooks: vec![HookCommand {
-                hook_type: "command".to_string(),
-                command: self.build_command(event),
-            }],
-        }
-    }
-
-    /// Produce the legacy session-hook map for compatibility callers.
-    ///
-    /// This map omits production guard, relay and interpreter registrations;
-    /// session capsules are built by `orchestrator::terminal::native::session_settings`.
-    pub fn to_settings_hooks(&self) -> std::collections::HashMap<String, Vec<HookRule>> {
-        use std::collections::HashMap;
-        let mut hooks_map: HashMap<String, Vec<HookRule>> = HashMap::new();
-
-        for &event in HookEvent::all() {
-            hooks_map
-                .entry(event.to_string())
-                .or_default()
-                .push(self.hook_rule(event));
-        }
-
+/// The event registrations in a session capsule. The capsule builder adds guard
+/// and relay hooks and interpreter wrapping around these rules, and carries no
+/// per-session identity: the session wrapper script exports those env vars.
+/// Claude Code runs a hook's command through a shell, so each command is one
+/// shell word however the hooks directory is spelled.
+pub(crate) fn session_event_rules(
+    hooks_dir: &Path,
+    events: &[HookEvent],
+) -> HashMap<String, Vec<HookRule>> {
+    let mut hooks_map: HashMap<String, Vec<HookRule>> = HashMap::new();
+    for &event in events {
+        let script = hooks_dir.join(event.script_name()).display().to_string();
         hooks_map
+            .entry(event.to_string())
+            .or_default()
+            .push(HookRule {
+                matcher: "*".to_string(),
+                hooks: vec![HookCommand {
+                    hook_type: "command".to_string(),
+                    command: shell_escape::escape(script.into()).into_owned(),
+                }],
+            });
     }
+    hooks_map
 }

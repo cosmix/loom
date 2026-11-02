@@ -180,6 +180,9 @@ main() {
     local worktree STAGE_ID work_path project_root
     worktree=$(loom_current_worktree) || exit 0
     worktree=${worktree%/}
+    # The checklist reads git status: a session that moved out of its worktree
+    # still has its stage's tree to account for, not the one it moved to.
+    cd "$worktree" 2>/dev/null || exit 0
     STAGE_ID=${worktree##*/}
     work_path=$(loom_stage_work_dir "$worktree") || exit 0
     case "$work_path" in

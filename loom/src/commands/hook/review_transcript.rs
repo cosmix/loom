@@ -42,7 +42,7 @@ fn reviewer_report(input: &HarvestInput) -> Result<(Option<String>, Option<Strin
     Ok(review_candidates(&read_tail(&input.transcript_path)?))
 }
 
-pub(super) fn validate_transcript_identity(input: &HarvestInput) -> Result<()> {
+fn validate_transcript_identity(input: &HarvestInput) -> Result<()> {
     let path = input.transcript_path.as_path();
     ensure_plain_path(path)?;
     let identity = TranscriptIdentity::from_path(path)?;

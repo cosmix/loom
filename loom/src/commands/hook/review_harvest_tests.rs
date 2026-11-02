@@ -69,14 +69,16 @@ fn fixture_with(plan_version: u32, write: impl FnOnce(&Path)) -> Fixture {
         .join(PARENT)
         .join("subagents")
         .join(format!("agent-{AGENT}.jsonl"));
-    write(&transcript);
     let input = HarvestInput {
         stage_id: STAGE.to_string(),
         session_id: PARENT.to_string(),
         agent_id: AGENT.to_string(),
         transcript_path: transcript,
     };
-    crate::commands::hook::review_start::capture(&work_dir, &input).unwrap();
+    // SubagentStart's order: evidence first, before any worker transcript exists.
+    assert!(!input.transcript_path.exists());
+    crate::commands::hook::review_start::capture(&work_dir, &input.invocation()).unwrap();
+    write(&input.transcript_path);
     Fixture {
         _temp: temp,
         work_dir,

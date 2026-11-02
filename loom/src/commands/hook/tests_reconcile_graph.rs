@@ -46,7 +46,9 @@ fn init_repo() -> TempDir {
     git_ok(root, &["add", "src.rs"]);
     git_ok(root, &["commit", "-m", "seed"]);
 
-    std::fs::create_dir_all(root.join(".loom").join("work")).unwrap();
+    let work = root.join(".loom").join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    crate::git::worktree::capture_main_identity(root, &work).unwrap();
     temp
 }
 

@@ -1,16 +1,39 @@
 //! Ownership and reconciliation of individual hook handlers.
 
 use serde_json::Value;
+use std::borrow::Cow;
 use std::path::Path;
 
-use super::super::constants::LOOM_HOOKS;
+/// The only scripts Loom ever registered directly under `~/.claude/hooks/`.
+/// Every later hook lives under `hooks/loom/`; a user's own script at the top
+/// level is theirs even when it shares a shipped hook's name. A user's script
+/// with one of these three names cannot be told apart from Loom's old one.
+const LEGACY_TOP_LEVEL_HOOKS: &[&str] = &["commit-guard.sh", "ask-user-pre.sh", "ask-user-post.sh"];
 
-pub(in crate::fs::permissions) fn executable(command: &str) -> &str {
+/// The command's first shell word. A single-quoted word may hold spaces and
+/// the `'\X'` spelling `shell_escape` gives an apostrophe or `!`; anything else
+/// ends at whitespace.
+pub(in crate::fs::permissions) fn executable(command: &str) -> Cow<'_, str> {
     let command = command.trim_start();
-    if let Some(rest) = command.strip_prefix('\'') {
-        return rest.split('\'').next().unwrap_or("");
+    let Some(mut quoted) = command.strip_prefix('\'') else {
+        return Cow::Borrowed(command.split_whitespace().next().unwrap_or(""));
+    };
+    let mut word = String::new();
+    loop {
+        let Some((part, rest)) = quoted.split_once('\'') else {
+            word.push_str(quoted);
+            return Cow::Owned(word);
+        };
+        word.push_str(part);
+        let mut after_escape = rest.strip_prefix('\\').map(str::chars);
+        let escaped = after_escape.as_mut().and_then(Iterator::next);
+        let reopened = after_escape.and_then(|chars| chars.as_str().strip_prefix('\''));
+        let (Some(escaped), Some(reopened)) = (escaped, reopened) else {
+            return Cow::Owned(word);
+        };
+        word.push(escaped);
+        quoted = reopened;
     }
-    command.split_whitespace().next().unwrap_or("")
 }
 
 pub(in crate::fs::permissions) fn is_owned(
@@ -42,7 +65,7 @@ pub(in crate::fs::permissions) fn is_owned(
     .into_iter()
     .flatten()
     .filter_map(|prefix| path.strip_prefix(prefix))
-    .any(|name| LOOM_HOOKS.iter().any(|(script, _)| *script == name));
+    .any(|name| LEGACY_TOP_LEVEL_HOOKS.contains(&name));
     legacy
 }
 

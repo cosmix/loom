@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
-# A synthetic PostToolUse Write payload with a worktree-relative file_path
-# must exit 0 with EMPTY stdout, and the shell hook must never write shared
-# state itself - only the heartbeat file may exist under LOOM_WORK_DIR
-# afterward. Edit recording is delegated to `loom context record-edit`
-# (stubbed here); the stub writes a marker OUTSIDE LOOM_WORK_DIR purely to
-# prove it was invoked with the right arguments, since the whole point of
-# this design is that the Rust binary owns the shared write, not this script.
+# Write hooks remain silent and refresh heartbeat without recording edits.
 set -euo pipefail
 HOOK="$(dirname "$0")/../post-tool-use.sh"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
@@ -23,7 +17,8 @@ exit 1
 SH
 chmod +x "$TMP/bin/loom"
 
-INPUT='{"tool_name":"Write","tool_input":{"file_path":"src/foo.rs"}}'
+for TOOL in Write Edit; do
+INPUT="{\"tool_name\":\"$TOOL\",\"tool_input\":{\"file_path\":\"src/foo.rs\"}}"
 
 set +e
 OUTPUT=$(printf '%s' "$INPUT" |
@@ -43,12 +38,8 @@ if [[ -n "$OUTPUT" ]]; then
 	exit 1
 fi
 
-if [[ ! -f "$MARKER" ]]; then
-	echo "FAIL: loom context record-edit was never invoked for a Write tool call"
-	exit 1
-fi
-if ! grep -qF -- "--path src/foo.rs" "$MARKER"; then
-	echo "FAIL: record-edit was not called with the worktree-relative path. Got: $(cat "$MARKER")"
+if [[ -e "$MARKER" ]]; then
+	echo "FAIL: hook invoked the obsolete edit recorder"
 	exit 1
 fi
 
@@ -59,4 +50,5 @@ if [[ "$FILES" != "$EXPECTED" ]]; then
 	exit 1
 fi
 
+done
 echo "PASS"
