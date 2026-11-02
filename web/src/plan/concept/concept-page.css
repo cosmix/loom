@@ -35,8 +35,10 @@
    grows the entry instead of running over its neighbour. */
 .concept-key-doc {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+  row-gap: 0;
   min-width: 0;
   max-width: 100%;
   min-height: var(--control-height);
@@ -74,7 +76,9 @@ a.concept-key-doc:hover {
   font-weight: 400;
 }
 
+/* With under 14ch of room beside the slug the title drops under it as one run, not a 90px column. */
 .concept-key-title {
+  flex: 1 1 14ch;
   min-width: 0;
   overflow-wrap: anywhere;
 }

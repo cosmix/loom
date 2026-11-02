@@ -85,6 +85,18 @@ describe("reading column", () => {
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(2);
   });
 
+  it("renders the title once when it holds a code span", async () => {
+    const title = "`loom plan` Engineering Metaplan";
+    vi.mocked(fetchDoc).mockResolvedValue(
+      ok(doc({ title, text: `# ${title}\n\nBody text.\n`, sections: [] })),
+    );
+    renderMode("/files/product/demo/section_01.md");
+    await screen.findByText("Body text.");
+    expect(
+      screen.getAllByRole("heading", { level: 1, name: "loom plan Engineering Metaplan" }),
+    ).toHaveLength(1);
+  });
+
   it("notes a missing anchor and renders plans with the plan view", async () => {
     vi.mocked(fetchDoc).mockResolvedValue(ok(planDoc()));
     renderMode("/files/plans/PLAN-file-mode.md#gone");

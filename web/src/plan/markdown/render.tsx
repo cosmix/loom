@@ -126,8 +126,9 @@ function headingText(nodes: readonly PhrasingContent[]): string {
     .join("");
 }
 
+/** `headingText` yields a code span's value without its backticks, so a title compared with it drops them too. */
 export function normalizeTitle(title: string): string {
-  return title.trim().replace(/\s+/g, " ");
+  return title.replaceAll("`", "").trim().replace(/\s+/g, " ");
 }
 
 /** Renders mdast nodes to React elements; `tight` drops the <p> of a tight list's paragraphs. */

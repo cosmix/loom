@@ -59,6 +59,16 @@ it("compares the title with collapsed whitespace", () => {
   expect(within(column).queryAllByRole("heading")).toHaveLength(0);
 });
 
+it("drops a leading level-1 block whose text carries backticks when the title matches", () => {
+  const { column } = mountSummary("docs plan", [
+    { kind: "heading", level: 1, text: "`docs` plan" },
+    body,
+  ]);
+
+  expect(within(column).queryAllByRole("heading")).toHaveLength(0);
+  expect(within(column).getByText("Plans are reviewed.")).toBeTruthy();
+});
+
 it("keeps a leading level-1 heading with different text and later headings", () => {
   const { column } = mountSummary("Planning", [
     { kind: "heading", level: 1, text: "Other" },
