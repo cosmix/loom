@@ -1,9 +1,10 @@
+use std::ffi::OsStr;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 
-use super::{run_worker, Finished, Worker, STDOUT_CAP};
+use super::{is_scrubbed, run_worker, Finished, Worker, SESSION_VARS, STDOUT_CAP};
 use crate::commands::ask::backend::{printable, Backend};
 use crate::commands::ask::AskArgs;
 
@@ -172,4 +173,50 @@ fn question_and_eval_exclude_each_other() {
     assert_eq!(args.timeout_secs, 180);
     assert!(args.model.is_none());
     assert!(parse(&["ask", "--eval", "c.json", "--backend", "codex"]).is_ok());
+}
+
+#[test]
+fn every_session_variable_and_the_loom_prefix_are_scrubbed() {
+    assert_eq!(SESSION_VARS.len(), 7);
+    for name in SESSION_VARS.iter().copied().chain(["LOOM_STAGE_ID"]) {
+        assert!(is_scrubbed(OsStr::new(name)), "{name} reaches the worker");
+    }
+    for name in ["PATH", "HOME", "CLAUDE_CODE_DISABLE_FILE_MENTIONS", "LOOM"] {
+        assert!(!is_scrubbed(OsStr::new(name)), "{name} was scrubbed");
+    }
+}
+
+#[test]
+fn codex_fails_closed_on_a_tool_item_in_any_phase() {
+    for phase in ["item.started", "item.updated"] {
+        for item in [r#"{"id":"x","type":"command_execution"}"#, r#"{"id":"x"}"#] {
+            let row = format!(r#"{{"type":"{phase}","item":{item}}}"#);
+            let output = format!("{row}\n{CODEX_CAPTURE}");
+            assert!(Backend::Codex.parse(&output).is_err(), "{row} was accepted");
+        }
+    }
+}
+
+#[test]
+fn codex_message_and_reasoning_may_stream_through_every_phase() {
+    let stream = [
+        r#"{"type":"item.started","item":{"id":"r","type":"reasoning"}}"#,
+        r#"{"type":"item.updated","item":{"id":"m","type":"agent_message"}}"#,
+        r#"{"type":"item.completed","item":{"id":"r","type":"reasoning","text":"hm"}}"#,
+    ]
+    .join("\n");
+    let reply = Backend::Codex
+        .parse(&format!("{stream}\n{CODEX_CAPTURE}"))
+        .expect("parse");
+    assert_eq!(reply.answer, "ok");
+}
+
+#[test]
+fn help_marks_the_codex_lane_experimental() {
+    let help = AskArgs::command().render_long_help().to_string();
+    let lane = help
+        .lines()
+        .find(|line| line.trim_start().starts_with("- codex"))
+        .unwrap_or_else(|| panic!("no codex lane in:\n{help}"));
+    assert!(lane.contains("Experimental"), "{help}");
 }

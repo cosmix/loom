@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use serde::Deserialize;
 
 use super::{ask_documents, payload, run, AskArgs, AskRequest, WorkerReply};
@@ -24,7 +24,8 @@ const MAX_CASES_BYTES: usize = 1024 * 1024;
 pub(crate) struct EvalCase {
     pub id: String,
     pub question: String,
-    /// Relative to the cases file's directory.
+    /// Joined to the cases file's directory, so an absolute path inside the
+    /// project is taken as it is.
     pub paths: Vec<String>,
     pub must_contain: Vec<String>,
     #[serde(default)]
@@ -33,10 +34,13 @@ pub(crate) struct EvalCase {
 
 /// Parse a JSON array of cases, refusing an empty list, an empty `id`,
 /// `question`, `paths` or `must_contain`, an empty match string, and
-/// duplicate ids.
+/// duplicate ids. Serde's errors quote the file's text, so they are made safe
+/// for a terminal.
 pub(crate) fn parse_cases(text: &str) -> Result<Vec<EvalCase>> {
-    let cases: Vec<EvalCase> =
-        serde_json::from_str(text).context("the cases file is not a JSON array of cases")?;
+    let cases: Vec<EvalCase> = serde_json::from_str(text).map_err(|error| {
+        let detail = inline_safe(&error.to_string());
+        anyhow!("the cases file is not a JSON array of cases: {detail}")
+    })?;
     ensure!(!cases.is_empty(), "the cases file holds no cases");
     let mut ids = HashSet::new();
     for case in &cases {
@@ -75,23 +79,28 @@ pub(crate) fn run(project_root: &Path, args: &AskArgs) -> Result<i32> {
         if run::interrupted() {
             break;
         }
-        let (outcome, chars) = run_case(project_root, &base, case, args);
-        println!("{}", tally.record(case, outcome, chars));
+        println!("{}", run_case(project_root, &base, case, args, &mut tally));
     }
     Ok(tally.report(cases.len()))
 }
 
-/// Ask one case's question; also returns the characters of its files.
+/// Ask one case's question and return its report line. Files that cannot be
+/// sent start no worker, so that case reads `refused`, apart from a worker
+/// failure; it still counts against accuracy.
 fn run_case(
     root: &Path,
     base: &Path,
     case: &EvalCase,
     args: &AskArgs,
-) -> (Result<WorkerReply>, usize) {
+    tally: &mut Tally,
+) -> String {
     let paths: Vec<PathBuf> = case.paths.iter().map(|path| base.join(path)).collect();
     let documents = match payload::read_documents(root, &paths) {
         Ok(documents) => documents,
-        Err(error) => return (Err(error), 0),
+        Err(error) => {
+            let reason = inline_safe(&format!("{error:#}"));
+            return format!("{}: refused ({reason})", inline_safe(&case.id));
+        }
     };
     let chars = documents.iter().map(|doc| doc.text.chars().count()).sum();
     let request = AskRequest {
@@ -100,7 +109,7 @@ fn run_case(
         model: args.model.clone(),
         timeout: Duration::from_secs(args.timeout_secs),
     };
-    (ask_documents(&documents, &request), chars)
+    tally.record(case, ask_documents(&documents, &request), chars)
 }
 
 /// The first `must_contain` string missing from `answer`, or the first
@@ -169,7 +178,7 @@ impl Tally {
             self.input, self.cache_read, self.cache_write, self.output
         );
         println!(
-            "latency p50: {} p90: {}",
+            "latency p50: {} p90: {} (answered cases only)",
             percentile(&self.latencies, 50),
             percentile(&self.latencies, 90)
         );

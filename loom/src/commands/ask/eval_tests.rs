@@ -84,3 +84,13 @@ fn a_duplicate_case_id_is_rejected() {
     let error = parse_cases(&text).expect_err("duplicate ids are refused");
     assert!(error.to_string().contains("duplicate case id"), "{error:#}");
 }
+
+#[test]
+fn a_cases_parse_error_cannot_write_to_the_terminal() {
+    let hostile = r#"[{"\u001b]52;c;QUJD\u0007":1}]"#;
+    let error = parse_cases(hostile).expect_err("the unknown field is refused");
+    let message = format!("{error:#}");
+    assert!(message.contains("not a JSON array of cases"), "{message}");
+    assert!(!message.contains('\u{1b}'), "{message:?}");
+    assert!(!message.contains('\u{7}'), "{message:?}");
+}
