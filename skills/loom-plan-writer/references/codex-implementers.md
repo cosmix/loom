@@ -9,7 +9,7 @@ license the better fit; the stage's orchestrator still picks the lane per subage
   foreground call to `codex-forward.sh`, which runs gpt-6.1-terra (common implementation,
   integration tests), or gpt-6-luna (boilerplate, scaffolding, simple unit tests) only when the user
   or the plan explicitly asks for it, always at effort xhigh.
-- **Claude lane:** `loom-software-engineer` (sonnet, or haiku by `model` override),
+- **Claude lane:** `loom-software-engineer` (sonnet), `loom-mechanical-engineer` (haiku, mechanical work),
   `loom-senior-software-engineer` (opus, effort high; spawned with `effort: xhigh` for hard cases), and fable by an explicit model override.
 
 ## Lane comparison

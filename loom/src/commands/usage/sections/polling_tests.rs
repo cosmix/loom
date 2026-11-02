@@ -36,6 +36,7 @@ fn transcript(entries: Vec<Entry>) -> Transcript {
         session_id: "session-1".to_owned(),
         agent_id: None,
         agent_type: None,
+        agent_type_from_sidecar: false,
         requested_model: None,
         stage_id: None,
         loom_session_id: None,
@@ -43,6 +44,7 @@ fn transcript(entries: Vec<Entry>) -> Transcript {
         forward_candidate: false,
         first_user_entry: None,
         entries,
+        attachments: Vec::new(),
         diagnostics: Default::default(),
     }
 }

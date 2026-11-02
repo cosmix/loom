@@ -120,6 +120,25 @@ fn declared_skills_line_names_each_skill_with_its_invocation() {
 }
 
 #[test]
+fn mechanical_worker_gets_no_skills_line_but_the_software_engineer_does() {
+    let mut fixture = Fixture::new(true);
+    fixture.config.stage.skills = vec!["loom-rust".to_string()];
+    let prompt =
+        "Implement the scoped worker.\n\nFiles owned (write only these):\n- `src/scoped.rs`";
+    let mechanical = payload(prompt).replace("loom-software-engineer", "loom-mechanical-engineer");
+
+    let without = issue(&mechanical, &fixture.config).expect("scoped source should match");
+    let with = issue(&payload(prompt), &fixture.config).expect("scoped source should match");
+
+    assert!(
+        !without.brief.contains("Required skills for this stage"),
+        "{}",
+        without.brief
+    );
+    assert!(with.brief.contains("Required skills for this stage"));
+}
+
+#[test]
 fn declared_skills_reach_the_worker_even_with_an_empty_context_pack() {
     let mut fixture = Fixture::new(false);
     fixture.config.stage.skills = vec!["loom-rust".to_string()];
@@ -240,7 +259,13 @@ fn unmet_required_material_is_rendered_without_plan_or_navigation_doctrine() {
     });
 
     scope_pack(&mut pack, &[]);
-    let brief = render_brief(&pack, &fixture.config.stage, NONCE_A).unwrap();
+    let brief = render_brief(
+        &pack,
+        &fixture.config.stage,
+        &fixture.config.stage.skills,
+        NONCE_A,
+    )
+    .unwrap();
 
     assert!(brief.contains("required-large"));
     assert!(brief.contains("worker material"));

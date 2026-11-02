@@ -33,6 +33,7 @@ fn subagent(prompt: &str, in_window_requests: usize) -> Transcript {
         session_id: "session-1".to_owned(),
         agent_id: Some("agent-1".to_owned()),
         agent_type: None,
+        agent_type_from_sidecar: false,
         requested_model: None,
         stage_id: None,
         loom_session_id: None,
@@ -42,6 +43,7 @@ fn subagent(prompt: &str, in_window_requests: usize) -> Transcript {
         entries: (0..in_window_requests)
             .map(|_| Entry::Assistant(Box::new(request())))
             .collect(),
+        attachments: Vec::new(),
         diagnostics: Default::default(),
     }
 }

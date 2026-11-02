@@ -1,6 +1,7 @@
 //! Makes small, expensive workers visible before their work is normalized into
-//! aggregate totals. Loom's hook ledger is authoritative for agent type;
-//! prompt inference is a best-effort fallback for transcripts without one.
+//! aggregate totals. Loom's hook ledger is authoritative for agent type, the
+//! Claude Code sidecar fills a missing ledger row, and prompt inference is a
+//! best-effort fallback for transcripts with neither.
 
 use std::collections::BTreeMap;
 
@@ -15,6 +16,7 @@ use super::fmt::{format_f64, format_u64, heading, no_data, row};
 pub struct AgentReport {
     pub subagent_transcripts: usize,
     pub agent_type_ledger_matches: usize,
+    pub agent_type_sidecar_matches: usize,
     pub tiny_subagents: Vec<TinySubagent>,
     pub by_agent_model: Vec<AgentModelRow>,
     pub parent_model: ParentModelMatch,
@@ -60,7 +62,13 @@ pub fn build(transcripts: &[Transcript]) -> AgentReport {
         subagent_transcripts: subagents.len(),
         agent_type_ledger_matches: subagents
             .iter()
-            .filter(|transcript| transcript.agent_type.is_some())
+            .filter(|transcript| {
+                transcript.agent_type.is_some() && !transcript.agent_type_from_sidecar
+            })
+            .count(),
+        agent_type_sidecar_matches: subagents
+            .iter()
+            .filter(|transcript| transcript.agent_type_from_sidecar)
             .count(),
         tiny_subagents,
         by_agent_model,
@@ -80,6 +88,13 @@ pub fn render(report: &AgentReport) {
         format!(
             "{}/{} transcripts matched",
             report.agent_type_ledger_matches, report.subagent_transcripts
+        ),
+    );
+    row(
+        "agent type sidecar",
+        format!(
+            "{}/{} transcripts matched",
+            report.agent_type_sidecar_matches, report.subagent_transcripts
         ),
     );
     row("under-500-output subagents", report.tiny_subagents.len());
@@ -239,13 +254,14 @@ fn parent_matches(
 
 /// Known prompt identities; excludes the ordinary word `Explore` to avoid
 /// false matches in task prose.
-const KNOWN_AGENT_TYPES: [&str; 6] = [
+const KNOWN_AGENT_TYPES: [&str; 7] = [
     "loom-senior-software-engineer",
     "loom-software-engineer",
     "loom-codex-forwarder",
     "loom-code-reviewer",
     "general-purpose",
     "loom-advisor",
+    "loom-mechanical-engineer",
 ];
 
 /// Infer a type from delimited prompt mentions when no joined type exists.

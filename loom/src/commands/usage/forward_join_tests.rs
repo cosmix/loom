@@ -88,6 +88,7 @@ fn transcript(identity: &ForwardIdentity) -> Transcript {
         session_id: identity.parent_session_id.clone(),
         agent_id: Some(identity.agent_id.clone()),
         agent_type: Some(FORWARDER_TYPE.to_owned()),
+        agent_type_from_sidecar: false,
         requested_model: None,
         stage_id: Some(identity.stage_id.clone()),
         loom_session_id: Some(identity.loom_session_id.clone()),
@@ -102,6 +103,7 @@ fn transcript(identity: &ForwardIdentity) -> Transcript {
                 text: "private result".to_owned(),
             }),
         ],
+        attachments: Vec::new(),
         diagnostics: TranscriptDiagnostics::default(),
     }
 }

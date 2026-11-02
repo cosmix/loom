@@ -33,6 +33,7 @@ fn transcript(scope: Scope, session_id: &str, prompt: Option<&str>, models: &[&s
         session_id: session_id.to_owned(),
         agent_id: Some("agent-1".to_owned()),
         agent_type: None,
+        agent_type_from_sidecar: false,
         requested_model: None,
         stage_id: None,
         loom_session_id: None,
@@ -43,6 +44,7 @@ fn transcript(scope: Scope, session_id: &str, prompt: Option<&str>, models: &[&s
             .iter()
             .map(|m| Entry::Assistant(Box::new(request(m))))
             .collect(),
+        attachments: Vec::new(),
         diagnostics: Default::default(),
     }
 }

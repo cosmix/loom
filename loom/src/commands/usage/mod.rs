@@ -13,6 +13,7 @@
 //! partial write (dropped rather than mis-parsed).
 
 mod accounting;
+mod agent_sidecar;
 mod args;
 mod claude_provider;
 mod claude_usage;
@@ -49,6 +50,7 @@ mod spawn_join;
 mod stream_types;
 mod time_range;
 mod transcript;
+mod transcript_attachment;
 mod transcript_content;
 mod transcript_merge;
 // `pub(crate)`, not private: `transcript_types::SYNTHETIC_MODEL` is the
@@ -93,6 +95,10 @@ fn parse_all(
                             requested_models.requested_model(agent_id, &file.session_id)
                         })
                         .map(str::to_owned);
+                }
+                if transcript.agent_type.is_none() && file.scope == transcript::Scope::Subagent {
+                    transcript.agent_type = agent_sidecar::agent_type_from_sidecar(&file.path);
+                    transcript.agent_type_from_sidecar = transcript.agent_type.is_some();
                 }
                 forward_join.join_transcript(&mut transcript);
                 transcripts.push(transcript);

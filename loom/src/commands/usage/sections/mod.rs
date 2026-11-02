@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod attribution;
 pub mod by_model;
 pub mod edits;
 pub mod fmt;
@@ -25,6 +26,7 @@ pub struct Report {
     pub lengths: lengths::SessionLengths,
     pub tools: tools::ToolShape,
     pub reads: reads::Reads,
+    pub attribution: attribution::Attribution,
     pub agents: agents::AgentReport,
     pub skills: skills::Skills,
     pub polling: polling::Polling,
@@ -47,6 +49,7 @@ pub(crate) fn build(
         lengths: lengths::build(transcripts),
         tools: tools::build(transcripts),
         reads: reads::build(transcripts),
+        attribution: attribution::build(transcripts),
         agents: agents::build(transcripts),
         skills: skills::build(transcripts),
         polling: polling::build(transcripts),
@@ -65,6 +68,7 @@ pub fn render(report: &Report) {
     lengths::render(&report.lengths);
     tools::render(&report.tools);
     reads::render(&report.reads);
+    attribution::render(&report.attribution);
     agents::render(&report.agents);
     skills::render(&report.skills);
     polling::render(&report.polling);

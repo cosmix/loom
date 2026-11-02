@@ -123,6 +123,17 @@ impl Entry {
     }
 }
 
+/// A rendered `attachment` row: context Claude Code added to the prompt.
+#[derive(Debug, Clone)]
+pub struct AttachmentEntry {
+    /// Non-synthetic requests retained before this row; the row first reaches
+    /// the model on request `requests_before + 1`.
+    pub requests_before: usize,
+    pub kind: String,
+    /// Characters across the row's rendered content strings.
+    pub chars: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct Transcript {
     pub path: std::path::PathBuf,
@@ -135,9 +146,14 @@ pub struct Transcript {
     /// that is what makes the parent/child tree the report needs.
     pub session_id: String,
     pub agent_id: Option<String>,
-    /// Spawn type from loom's hook-side `starts.jsonl` ledger. `None` for
-    /// transcripts outside a loom run or when the optional ledger is absent.
+    /// Spawn type from loom's hook-side `starts.jsonl` ledger, else (subagents
+    /// only) from the `agent-<id>.meta.json` sidecar Claude Code writes beside
+    /// the transcript; see `agent_type_from_sidecar`. `None` when neither
+    /// exists.
     pub agent_type: Option<String>,
+    /// True when `agent_type` came from the sidecar because the ledger had no
+    /// row. Ledger-coverage diagnostics must not count such a transcript.
+    pub agent_type_from_sidecar: bool,
     /// The model the spawn guard recorded for this agent, joined from
     /// `spawns.jsonl`; `ambiguous` when the order join cannot decide.
     pub requested_model: Option<String>,
@@ -155,6 +171,9 @@ pub struct Transcript {
     pub first_user_entry: Option<UserEntry>,
     /// File order, deduplicated, entries older than the `since` cutoff dropped.
     pub entries: Vec<Entry>,
+    /// Context rows the model saw that are neither requests nor user entries,
+    /// older than the `since` cutoff dropped.
+    pub attachments: Vec<AttachmentEntry>,
     pub diagnostics: TranscriptDiagnostics,
 }
 

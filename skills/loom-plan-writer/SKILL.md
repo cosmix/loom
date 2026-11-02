@@ -213,7 +213,7 @@ Each worker's brief is written to `doc/plans/briefs/<plan-slug>/<stage-id>/<work
 
 `Worker | Role | Tier | Files owned | Shared context | Brief path`
 
-Territories are DISJOINT; workers NEVER spawn subagents; the orchestrator spawns every worker BY AGENT TYPE, ALL in ONE message, each with a short fixed prompt plus `Your brief: <path>. Read it in full before anything else.` Execution → `loom-software-engineer` (pins sonnet), or `loom-codex-forwarder` for a codex unit (Tier `codex terra` or `codex luna`); judgment → `loom-senior-software-engineer`.
+Territories are DISJOINT; workers NEVER spawn subagents; the orchestrator spawns every worker BY AGENT TYPE, ALL in ONE message, each with a short fixed prompt plus `Your brief: <path>. Read it in full before anything else.` Execution → `loom-software-engineer` (pins sonnet), or HAIKU (loom-mechanical-engineer) for mechanical pieces, or `loom-codex-forwarder` for a codex unit (Tier `codex terra` or `codex luna`); judgment → `loom-senior-software-engineer`.
 
 **A `Files owned` cell holds paths only.** `loom plan verify` parses the table: it splits the cell on `,` and `;`, strips one trailing `(annotation)` and backticks, and treats every remaining string as a path. Prose in the cell becomes a bogus path that warns as outside the stage's `files:`; a row with the wrong column count makes the whole table claim nothing. It also warns when two workers claim one path, and when four or more rows each own exactly one path (group them).
 

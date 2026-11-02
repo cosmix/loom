@@ -49,7 +49,7 @@ fn push_codex_unavailable_fallback(content: &mut String) {
          Do NOT spawn `loom-codex-forwarder`; route {CODEX_IMPLEMENTER_MODEL_TERRA}-tier work (common\n\
          implementation, integration tests) to sonnet (`loom-software-engineer`) and\n\
          {CODEX_IMPLEMENTER_MODEL_LUNA}-tier work (boilerplate, scaffolding, simple unit tests)\n\
-         to haiku (`loom-software-engineer` with `model: haiku`).\n"
+         to haiku (`loom-mechanical-engineer`).\n"
     ));
 }
 
