@@ -7,6 +7,12 @@ use super::transcript_types::{saturated_counter, TokenUsage};
 use chrono::{Datelike, Duration, NaiveDate, TimeZone, Utc, Weekday};
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 
+/// S2 weights, relative to fresh input.
+pub(crate) const CACHE_READ_WEIGHT: f64 = 0.1;
+pub(crate) const CACHE_WRITE_5M_WEIGHT: f64 = 1.25;
+pub(crate) const CACHE_WRITE_1H_WEIGHT: f64 = 2.0;
+pub(crate) const OUTPUT_WEIGHT: f64 = 5.0;
+
 #[derive(Debug, Clone, Copy, Default, serde::Serialize)]
 pub struct Accounting {
     /// Every token counted once: resident input plus output.
@@ -23,10 +29,10 @@ impl Accounting {
         Accounting {
             s1: saturated_counter(usage.resident(), usage.output),
             s2: usage.input as f64
-                + usage.cache_read as f64 * 0.1
-                + usage.ephemeral_5m as f64 * 1.25
-                + usage.ephemeral_1h as f64 * 2.0
-                + usage.output as f64 * 5.0,
+                + usage.cache_read as f64 * CACHE_READ_WEIGHT
+                + usage.ephemeral_5m as f64 * CACHE_WRITE_5M_WEIGHT
+                + usage.ephemeral_1h as f64 * CACHE_WRITE_1H_WEIGHT
+                + usage.output as f64 * OUTPUT_WEIGHT,
             s3: saturated_counter(
                 saturated_counter(usage.cache_creation, usage.input),
                 usage.output,

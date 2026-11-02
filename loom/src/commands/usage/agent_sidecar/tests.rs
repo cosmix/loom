@@ -113,3 +113,67 @@ fn symlinked_sidecar_is_ignored() {
 
     assert_eq!(agent_type_from_sidecar(&transcript), None);
 }
+
+#[test]
+fn spawned_agent_type_outranks_a_teammate_name() {
+    let temp = tempfile::tempdir().unwrap();
+    let transcript = write_transcript(temp.path());
+    let teammate = include_str!("../../../plan_server/pressure/fixtures/teammate.meta.json");
+    fs::write(transcript.with_file_name("agent-a1.meta.json"), teammate).unwrap();
+
+    let found = agent_type_from_sidecar(&transcript);
+
+    assert_eq!(found.as_deref(), Some("general-purpose"));
+}
+
+#[test]
+fn malformed_sidecar_yields_no_type() {
+    let temp = tempfile::tempdir().unwrap();
+    let transcript = write_transcript(temp.path());
+    fs::write(
+        transcript.with_file_name("agent-a1.meta.json"),
+        r#"{"agentType":"#,
+    )
+    .unwrap();
+
+    assert_eq!(agent_type_from_sidecar(&transcript), None);
+}
+
+#[test]
+fn sidecar_type_reaches_the_forward_join() {
+    let temp = tempfile::tempdir().unwrap();
+    let transcript = write_transcript(temp.path());
+    write_sidecar(&transcript, "loom-codex-forwarder");
+
+    let parsed = parse_one(transcript, None);
+
+    assert_eq!(
+        parsed[0].agent_type.as_deref(),
+        Some("loom-codex-forwarder")
+    );
+    assert!(parsed[0].forward_candidate);
+}
+
+#[test]
+fn main_scope_transcript_ignores_a_sidecar() {
+    let temp = tempfile::tempdir().unwrap();
+    let transcript = write_transcript(temp.path());
+    write_sidecar(&transcript, "loom-code-reviewer");
+    let file = DiscoveredFile {
+        path: transcript,
+        project_slug: "project".to_owned(),
+        scope: Scope::Main,
+        session_id: SESSION.to_owned(),
+        agent_id: None,
+    };
+    let range = TimeRange {
+        since: Utc.with_ymd_and_hms(2026, 8, 29, 0, 0, 0).single().unwrap(),
+        until: None,
+    };
+
+    let parsed = parse_all(&[file], &range, None, &ForwardJoin::load(None));
+
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0].agent_type, None);
+    assert!(!parsed[0].agent_type_from_sidecar);
+}
