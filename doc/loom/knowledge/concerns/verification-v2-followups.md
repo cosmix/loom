@@ -167,3 +167,10 @@ Reviewer suggestions from the gate-dedup and integration-verify rounds that were
 ## Subcommand Lint Path Ownership
 
 The subcommand lint resolves stage file and artifact entries against `working_dir` before deciding whether a stage or a dependency may add a CLI subcommand. Partial-component glob prefixes are conservatively treated as possible ownership; this can produce warnings for patterns whose later tokens would not match.
+
+## Merge Resolver and Relay Gaps
+
+- **A relay ticket is stranded when its Bash call exits non-zero.** The relay hook is registered on `PostToolUse` only, so a command that prints its `LOOM_RELAY_V1` line and then exits non-zero is not relayed; a resolver's commit ticket stayed `pending relay` this way. The trigger then was the `TMPDIR` deny ([the mistake](../mistakes/sandbox-write-rules-inert.md)), and anything else failing a Bash call can repeat it.
+- **`--resolved` ignores the requesting session.** `inbox_drain/merge_resolved.rs::resolve_merge_from_inbox` takes `_session`, so a dead resolver's queued request can cancel a newer resolver's check. Requests drained after a resolver exits are deliberate, so a fix has to keep that case.
+- **Plan locks outside unit tests.** `fs/locking.rs::plan_lock_dir` uses `temp_dir()` only under `cfg(test)`. Integration tests that reach `lock_plan` (`plan_amendment_integration`, `adjudication_e2e`, `pressure_pipeline_contracts`, `refusal_adjudication_contracts`) still need a writable `/tmp` and fail inside a session sandbox, and `loom pressure` run by hand in a session fails the same way.
+- **Unproven end to end.** No real resolver has run `loom check` through a daemon from its capsule, and the kill-ordering test in `inbox_drain/tests_merge_check.rs` has not been run against the mutations it is meant to catch.

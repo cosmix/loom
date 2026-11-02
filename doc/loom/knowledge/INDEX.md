@@ -75,7 +75,7 @@
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 376 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | Daemon-run gates | 239 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | Daemon-run gates | 248 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 118 |
 | [web-terminal](architecture/web-terminal.md) |  | 181 |
 
@@ -155,7 +155,7 @@
 | [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) |  | 37 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | Cleanup | 205 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Git ops | 70 |
-| [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) |  | 15 |
+| [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) |  | 25 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Merge cleanup, daemon singleton, broker, waiting-state incidents | 353 |
 | [phantom-merges](mistakes/phantom-merges.md) | Plan stages split by compile order instead of merge order | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
@@ -175,7 +175,7 @@
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) |  | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) |  | 299 |
 | [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) |  | 389 |
-| [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) |  | 57 |
+| [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) |  | 67 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) |  | 130 |
 | [session-identity-env](mistakes/session-identity-env.md) | Env | 126 |
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 382 |
@@ -208,7 +208,7 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gaps | 71 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Recovery sync; unrun branches | 225 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Recovery sync; unrun branches | 226 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 61 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
@@ -226,9 +226,9 @@
 | [session-tmpdir-deny](concerns/session-tmpdir-deny.md) | TMPDIR read-only in sessions | 11 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 86 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Host-verification review suggestions: open and fixed defects by file:line | 301 |
-| [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 17 |
+| [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 334 |
 | [typed-config-values](concerns/typed-config-values.md) | Gaps | 22 |
-| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 169 |
+| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 176 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | oversights. See… | 97 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 136 |
