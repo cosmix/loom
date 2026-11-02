@@ -254,6 +254,38 @@ fn requested_model_splits_rows_of_one_agent_type() {
     assert_eq!(requested, ["ambiguous", "sonnet"]);
 }
 
+/// The divisor for whole cost per transcript: each row counts a transcript once
+/// however many requests it made, and only the rows it has requests in.
+#[test]
+fn each_row_counts_its_transcripts_once() {
+    let typed = |models: &[&str]| {
+        let mut item = transcript(Scope::Subagent, "s", None, models);
+        item.agent_type = Some("loom-software-engineer".to_owned());
+        item
+    };
+    let long = typed(&["claude-sonnet-5", "claude-sonnet-5", "claude-sonnet-5"]);
+    let short = typed(&["claude-sonnet-5"]);
+    let cheap = typed(&["claude-haiku-5", "claude-haiku-5"]);
+
+    let rows = by_agent_model(&[&long, &short, &cheap]);
+
+    let counts = rows
+        .iter()
+        .map(|row| (row.model.as_str(), row.transcripts, row.requests))
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        counts,
+        [("claude-haiku-5", 1, 2), ("claude-sonnet-5", 2, 4)]
+            .into_iter()
+            .collect()
+    );
+    assert!(
+        agent_model_line(&rows[0]).contains(" transcripts, "),
+        "{}",
+        agent_model_line(&rows[0])
+    );
+}
+
 /// An agent type comes from the hook ledger, which a repository can write; an
 /// OSC clipboard write in it must not reach the terminal from either table.
 #[test]

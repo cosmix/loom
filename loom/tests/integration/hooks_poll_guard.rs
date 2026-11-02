@@ -196,6 +196,17 @@ fn run_payload(
     session: &Session,
     stub_dir: Option<&Path>,
 ) -> HookOutput {
+    run_payload_in(hook, payload, session, stub_dir, None)
+}
+
+/// `run_payload` with the hook's working directory set to `cwd`, when given.
+fn run_payload_in(
+    hook: &Path,
+    payload: &Value,
+    session: &Session,
+    stub_dir: Option<&Path>,
+    cwd: Option<&Path>,
+) -> HookOutput {
     let payload_str = payload.to_string();
     let path_value = match stub_dir {
         Some(dir) => format!(
@@ -220,6 +231,9 @@ fn run_payload(
         .env_remove("COMMIT_FILTER_DEBUG");
     if let Some(pid) = &session.main_agent_pid {
         cmd.env("LOOM_MAIN_AGENT_PID", pid);
+    }
+    if let Some(cwd) = cwd {
+        cmd.current_dir(cwd);
     }
 
     let output = super::helpers::run_hook_process(&mut cmd, payload_str.as_bytes());
@@ -276,12 +290,17 @@ fn warn_context(stdout: &str) -> String {
 mod gate;
 
 // 4, 4b and 5. The Bash-side cat/sed/head/tail read cases (rule 1 reuse,
-// the shared read ledger, and the head/tail bounded-vs-bare distinction)
+// the shared read ledger, and which head/tail forms are bounded)
 // live in `hooks_poll_guard_reads.rs`, split out purely for size - see its
 // module docs before editing one. It shares this file's harness via
 // `use super::*`.
 #[path = "hooks_poll_guard_reads.rs"]
 mod reads;
+
+// What counts as a whole read of a large file: output that never reaches the
+// agent, an earlier `cd`, and rule 1's message.
+#[path = "hooks_poll_guard_read_forms.rs"]
+mod read_forms;
 
 #[path = "hooks_poll_guard_skills.rs"]
 mod skills;

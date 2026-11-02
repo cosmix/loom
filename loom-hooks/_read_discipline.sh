@@ -24,21 +24,6 @@ source "$(dirname "$0")/_read_ledger.sh"
 # is reading something that should not exist at this size.
 READ_GUARD_LINE_LIMIT=400
 
-# _LOOM_VERIFY_RUNNER_BASENAMES - runner basenames poll-guard.sh's rule 2
-# must NEVER count toward the repeated-command deny: the acceptance loop is
-# SUPPOSED to rerun `cargo test` many times. This DUPLICATES the dispatch
-# list in loom-hooks/subagent-verify-guard.sh's check_command (that file's line
-# 343) rather than sourcing it - a hand-transcribed copy that must be kept
-# in sync with it by hand.
-_LOOM_VERIFY_RUNNER_BASENAMES="cargo|pytest|tsc|eslint|go|npm|bun|pnpm|yarn|make"
-
-# _loom_is_verify_runner_command - Return 0 when the already-tokenized
-# command (global LOOM_TOKENS) invokes one of _LOOM_VERIFY_RUNNER_BASENAMES
-# in command position.
-_loom_is_verify_runner_command() {
-	loom_tokens_invoke "$_LOOM_VERIFY_RUNNER_BASENAMES"
-}
-
 # _loom_is_tier1_knowledge_path <path> - Return 0 when <path> is a tier-1
 # knowledge file: doc/loom/knowledge/<name>.md with NO further directory
 # component. A tier-2 topic file (doc/loom/knowledge/<category>/<slug>.md) is
@@ -157,7 +142,8 @@ _loom_ledger_file() {
 }
 
 # _loom_outline_covered_rows <path> - echo `loom map --outline <path>`'s
-# symbol rows (matching `^[[:space:]]+L[0-9]+-L[0-9]+[[:space:]]`), or return
+# symbol rows (matching `^[[:space:]]+L[0-9]+-L[0-9]+[[:space:]]`) and the
+# `... <n> more headings` line a capped Markdown outline ends with, or return
 # 1 (nothing echoed) when the graph does not cover <path> or the command
 # produced no output. The call is bounded to 2 seconds by loom_run_bounded
 # (_bounded.sh: gtimeout, timeout, or a bash watchdog on a machine with
@@ -169,7 +155,7 @@ _loom_outline_covered_rows() {
 	local path="$1" output rows
 	output=$(LOOM_HOOK_CONTEXT=1 loom_run_bounded 2 "${LOOM_BIN:-loom}" map --outline "$path" 2>/dev/null || true)
 	[[ -n "$output" ]] || return 1
-	rows=$(printf '%s\n' "$output" | grep -E '^[[:space:]]+L[0-9]+-L[0-9]+[[:space:]]' || true)
+	rows=$(printf '%s\n' "$output" | grep -E '^[[:space:]]+L[0-9]+-L[0-9]+[[:space:]]|^\.\.\. [0-9]+ more headings$' || true)
 	[[ -n "$rows" ]] || return 1
 	printf '%s' "$rows"
 	return 0
@@ -255,9 +241,19 @@ _loom_read_discipline_large_unbounded() {
 # _loom_is_read_gate_exempt <path> - Return 0 when <path> is a control input
 # rule 1 never redirects: anything under a .loom/ directory or $LOOM_WORK_DIR
 # (signals and other files loom hands an agent) or under doc/plans/ (plans and
-# worker briefs, written to be read whole). An empty LOOM_WORK_DIR, or one of
-# "/", is ignored, since every absolute path would sit under it.
+# worker briefs, written to be read whole). A relative <path> is also tested in
+# its absolute form, so `cat PLAN-x.md` run from inside doc/plans is exempt. An
+# empty LOOM_WORK_DIR, or one of "/", is ignored, since every absolute path would
+# sit under it.
 _loom_is_read_gate_exempt() {
+	local abs
+	_loom_path_is_control_input "$1" && return 0
+	[[ "$1" != /* ]] || return 1
+	abs=$(_loom_read_abs_path "$1") || return 1
+	_loom_path_is_control_input "$abs"
+}
+
+_loom_path_is_control_input() {
 	local path="$1" work="${LOOM_WORK_DIR:-}"
 	case "$path" in
 	*/.loom/* | .loom/* | */doc/plans/* | doc/plans/*) return 0 ;;
@@ -275,12 +271,13 @@ _loom_is_read_gate_exempt() {
 # says only that no outline is available. loom_read_deny_once decides whether
 # the message denies or warns.
 _loom_read_discipline_verdict1() {
-	local path="$1" n="$2" rows
+	local path="$1" n="$2" rows quoted
 	if rows=$(_loom_outline_covered_rows "$path"); then
 		LOOM_RD_V1_MSG="${path} is ${n} lines. Outline: ${rows}
 Read the ranges you need with offset/limit."
 	else
-		LOOM_RD_V1_MSG="${path} is ${n} lines and no outline is available - find the part you need with \`rg -n '<pattern>' ${path}\`, then read that range with offset/limit."
+		printf -v quoted '%q' "$path"
+		LOOM_RD_V1_MSG="${path} is ${n} lines and no outline is available - find the part you need with \`rg -n '<pattern>' ${quoted}\`, then read that range with offset/limit."
 	fi
 	return 0
 }

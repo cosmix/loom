@@ -3,7 +3,7 @@
 //! Claude Code sidecar fills a missing ledger row, and prompt inference is a
 //! best-effort fallback for transcripts with neither.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::commands::usage::accounting::UsageSummary;
 use crate::commands::usage::transcript::{Scope, Transcript};
@@ -36,6 +36,8 @@ pub struct AgentModelRow {
     pub agent_type: String,
     pub requested_model: String,
     pub model: String,
+    /// Transcripts with at least one request in this row, each counted once.
+    pub transcripts: usize,
     pub requests: usize,
     #[serde(flatten)]
     pub(crate) summary: UsageSummary,
@@ -131,10 +133,11 @@ fn tiny_line(agent: &TinySubagent) -> String {
 
 fn agent_model_line(item: &AgentModelRow) -> String {
     format!(
-        "    {} / requested {} / {}: {} requests, input {}, output {}, S2 {}",
+        "    {} / requested {} / {}: {} transcripts, {} requests, input {}, output {}, S2 {}",
         inline_safe(&item.agent_type),
         inline_safe(&item.requested_model),
         inline_safe(&item.model),
+        item.transcripts,
         item.requests,
         format_u64(item.summary.usage.input),
         format_u64(item.summary.usage.output),
@@ -195,6 +198,7 @@ fn by_agent_model(subagents: &[&Transcript]) -> Vec<AgentModelRow> {
             .requested_model
             .clone()
             .unwrap_or_else(|| "unknown".to_owned());
+        let mut counted = BTreeSet::new();
         for request in transcript.requests() {
             if request.model == SYNTHETIC_MODEL {
                 continue;
@@ -205,9 +209,11 @@ fn by_agent_model(subagents: &[&Transcript]) -> Vec<AgentModelRow> {
                     agent_type: kind.clone(),
                     requested_model: requested.clone(),
                     model: request.model.clone(),
+                    transcripts: 0,
                     requests: 0,
                     summary: UsageSummary::default(),
                 });
+            row.transcripts += usize::from(counted.insert(request.model.as_str()));
             row.requests += 1;
             row.summary.add(&request.usage);
         }
