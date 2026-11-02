@@ -94,14 +94,13 @@ pub fn origin_matches(head: &RequestHead, required: bool) -> bool {
     }
 }
 
-/// Run section 12's checks on one request. `spec` is the matched API route (body and role
-/// checks run only with one); `/ws` is recognised by its path.
+/// Run section 12's request checks: host, origin, access cookie and browser id. The route's own
+/// body and role checks follow in [`check_route`], once the load has ended; `/ws` is recognised
+/// by its path.
 pub fn admit(
     head: &RequestHead,
     local: SocketAddr,
     policy: &AccessPolicy,
-    ctx: &PlanContext,
-    spec: Option<&RouteSpec>,
 ) -> Result<Admitted, Denied> {
     if !policy.host_allowed(local, head) {
         return Err(denied(403, "forbidden", "host not allowed"));
@@ -117,12 +116,19 @@ pub fn admit(
             "open the link loom plan printed",
         ));
     }
-    let admitted = identify(head, local.port(), websocket)?;
-    if let Some(spec) = spec {
-        check_body(head, spec)?;
-        check_role(ctx, &admitted, spec.role)?;
-    }
-    Ok(admitted)
+    identify(head, local.port(), websocket)
+}
+
+/// The checks of an admitted request against its route: the body's type and length, then the
+/// role.
+pub fn check_route(
+    head: &RequestHead,
+    ctx: &PlanContext,
+    admitted: &Admitted,
+    spec: &RouteSpec,
+) -> Result<(), Denied> {
+    check_body(head, spec)?;
+    check_role(ctx, admitted, spec.role)
 }
 
 /// The request's browser id. An HTTP request without a valid one gets a new id and a cookie;

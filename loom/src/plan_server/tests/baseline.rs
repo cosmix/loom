@@ -3,19 +3,23 @@
 
 use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::Arc;
 
 use super::support::project;
-use crate::plan_server::context::BindInfo;
+use crate::plan_server::context::{BindInfo, PlanContext};
 use crate::plan_server::files::texts::TextStore;
 use crate::plan_server::prereq::ReadOnly;
-use crate::plan_server::{load, watch};
+use crate::plan_server::{loading, watch};
+use crate::planning::watch::OwnWrites;
 
 #[test]
 fn an_edit_made_after_the_stores_load_reaches_the_text_store() {
     let dir = project();
     let bind = BindInfo::new(SocketAddr::from(([127, 0, 0, 1], 0)), "t");
     let read_only = ReadOnly::from_problems(Vec::new());
-    let (ctx, mut watcher) = load(dir.path().to_path_buf(), read_only, bind).expect("load");
+    let ctx = PlanContext::unloaded(dir.path().to_path_buf(), bind, OwnWrites::default());
+    let ctx = Arc::new(ctx.expect("build the context"));
+    let mut watcher = loading::load_project(&ctx, read_only).expect("load");
     crate::plan_server::files::install(&ctx);
     let rel = Path::new("doc/product/index.md");
     let edited = "# Demo, edited while the server started\n";

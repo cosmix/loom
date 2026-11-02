@@ -11,7 +11,7 @@ use super::fake::Script;
 use super::{call_on, start_body, Fixture, PLAN};
 use crate::plan_server::authoring::Take;
 use crate::plan_server::context::PlanContext;
-use crate::plan_server::gate::{access_cookie_name, admit, browser_cookie_name};
+use crate::plan_server::gate::{access_cookie_name, admit, browser_cookie_name, check_route};
 use crate::plan_server::ids::BrowserId;
 use crate::plan_server::pressure::routes::all;
 use crate::plan_server::wire::pressure::disabled_reason;
@@ -259,8 +259,10 @@ fn confirm_through_the_gate(ctx: &PlanContext, browser: &BrowserId) -> (u16, Val
     );
     let head = parse_head(raw.as_bytes()).unwrap().unwrap();
     let policy = AccessPolicy::new(local, Some(Auth::new(token, access_cookie_name(port))));
-    match admit(&head, local, &policy, ctx, Some(&route)) {
-        Ok(_) => call_on(ctx, CONFIRM, browser, None),
+    let checked = admit(&head, local, &policy)
+        .and_then(|admitted| check_route(&head, ctx, &admitted, &route));
+    match checked {
+        Ok(()) => call_on(ctx, CONFIRM, browser, None),
         Err(denied) => (denied.status, json!({ "error": denied.code })),
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! Every route module (`plan_server/<name>/mod.rs`) contributes `routes()` with one line in
 //! [`all_routes`], and an optional `install(&Arc<PlanContext>)` with one line in
-//! [`install_all`]. `start` runs `install_all` before the first request is accepted.
+//! [`install_all`]. The background load runs `install_all` before any route handler is called.
 
 use std::sync::Arc;
 
