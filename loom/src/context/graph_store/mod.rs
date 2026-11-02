@@ -11,11 +11,14 @@
 //!   once by the host and thereafter immutable. `.loom/cache/context-v1/graph/base/`
 //!   under the canonical main project root, shared by every worktree;
 //! - a per-stage **overlay**, under `.loom/work/context/<plan>/<stage>/`, holding
-//!   only the files that stage changed.
+//!   only the files that stage changed: a delta against the base at its revision.
+//!   An overlay built with no such base holds the whole tree and says so
+//!   ([`GraphLayer::complete`]).
 //!
 //! A read is `overlay ∪ (base − overlay's files)`: an overlay entry shadows the
 //! base entry for the same path wholesale, never merges with it. Partial merges
-//! are what produce a graph that describes no revision that ever existed.
+//! are what produce a graph that describes no revision that ever existed. A
+//! complete overlay is read alone.
 //!
 //! Nothing here builds a graph — `crate::context::refresh` does that — and
 //! nothing here decides *when* to write one; that is
@@ -66,6 +69,13 @@ pub(crate) struct GraphRead<'a> {
     pub revision: String,
     pub address: Option<(&'a str, &'a str)>,
     pub overlay: Option<GraphLayer>,
+}
+
+impl GraphRead<'_> {
+    /// Whether the overlay holds the whole tree, so no base is read under it.
+    pub fn has_complete_overlay(&self) -> bool {
+        self.overlay.as_ref().is_some_and(|layer| layer.complete)
+    }
 }
 
 impl GraphStore {
@@ -226,14 +236,10 @@ impl GraphStore {
     /// Called after the stage's work is merged and folded into a new base
     /// layer, at which point the overlay layer describes a revision nobody
     /// reads. Removes only [`LAYER_FILE`] and the overlay's resolved view
-    /// (`view.json`) — never the overlay directory — because that directory is a shared namespace, not this module's alone:
-    /// `crate::commands::context::record_edit` keeps `dirty-paths.json` there,
-    /// and `crate::context::delivery` keeps `session-retrieval/*.json` there,
-    /// and both outlive the graph layer and are read by other stages after
-    /// this one merges. A `remove_dir_all` here would delete those out from
-    /// under their owners on a schedule this module does not control; `.loom/work/`
-    /// is removed wholesale when the plan finishes, so the leftover directory
-    /// does not accumulate across plans.
+    /// (`view.json`) — never the shared overlay directory. Delivery keeps
+    /// `session-retrieval/*.json` there for other stages after this one merges.
+    /// Legacy sibling files are also preserved; plan cleanup owns the
+    /// directory's lifetime.
     pub fn discard_overlay(&self, plan: &str, stage: &str) -> Result<()> {
         let path = self.overlay_path(plan, stage);
         match fs::remove_file(&path) {
@@ -291,7 +297,8 @@ impl GraphStore {
     }
 
     pub(crate) fn resolve_read(&self, read: &GraphRead<'_>) -> Result<(ResolvedGraph, bool)> {
-        let base = if read.revision.is_empty() {
+        let complete = read.has_complete_overlay();
+        let base = if read.revision.is_empty() || complete {
             None
         } else {
             self.load_base(&read.revision)?
@@ -299,8 +306,13 @@ impl GraphStore {
         };
         let mut current = base.as_ref().is_none_or(GraphLayer::has_current_schema);
         let base = base.unwrap_or_default();
+        let base_revision = if complete {
+            read.revision.clone()
+        } else {
+            base.revision
+        };
         let mut resolved = ResolvedGraph {
-            base_revision: base.revision.clone(),
+            base_revision,
             overlaid: BTreeSet::new(),
             files: base.files,
         };

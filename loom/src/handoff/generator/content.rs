@@ -21,6 +21,9 @@ pub struct HandoffContent {
     pub current_branch: Option<String>,
     pub test_status: Option<String>,
     pub files_modified: Vec<String>,
+    /// Whether `files_modified` came from looking at the working tree, so that
+    /// an empty list means a clean tree rather than no observation.
+    pub files_observed: bool,
     pub next_steps: Vec<String>,
     pub git_history: Option<GitHistory>,
     /// Memory content from session journal (for handoff)
@@ -43,6 +46,7 @@ impl HandoffContent {
             current_branch: None,
             test_status: None,
             files_modified: Vec::new(),
+            files_observed: false,
             next_steps: Vec::new(),
             git_history: None,
             memory_content: None,
@@ -91,9 +95,10 @@ impl HandoffContent {
         self
     }
 
-    /// Add modified files
+    /// Record the modified files the working tree shows now; none means clean.
     pub fn with_files_modified(mut self, files: Vec<String>) -> Self {
         self.files_modified = files;
+        self.files_observed = true;
         self
     }
 
@@ -225,6 +230,7 @@ impl HandoffContent {
             current_branch: document.branch.clone(),
             test_status: document.test_status.clone(),
             files_modified: document.files_modified.clone(),
+            files_observed: false,
             next_steps: document.next_actions.clone(),
             git_history,
             memory_content: document.memory_content.clone(),

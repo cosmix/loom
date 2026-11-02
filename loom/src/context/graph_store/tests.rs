@@ -226,7 +226,7 @@ fn discarding_an_overlay_leaves_sibling_records_in_the_shared_directory() {
     );
     assert!(
         dirty_paths.exists(),
-        "the edit recorder's file must survive discard_overlay"
+        "a sibling record must survive discard_overlay"
     );
     assert!(
         delivery_record.exists(),

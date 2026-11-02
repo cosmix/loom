@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 use super::{merge_session_handoff, HandoffContent, MergeOutcome};
+use crate::handoff::completion::attestation_key;
 use crate::handoff::schema::{
     CompletionAttemptEvidence, CompletionCheckpoint, CompletionPhase, CriterionResult,
     HandoffOrigin, HandoffV2, ParsedHandoff, VerificationCheckpoint, COMPLETION_EVIDENCE_VERSION,
@@ -58,6 +59,17 @@ fn evidence(
 fn checkpoint(evidence: &CompletionAttemptEvidence) -> CompletionCheckpoint {
     let mut checkpoint = CompletionCheckpoint::new(&evidence.stage_id, &evidence.session_id);
     checkpoint.record_attempt(evidence).unwrap();
+    checkpoint
+}
+
+fn signed(temp: &TempDir, mut checkpoint: CompletionCheckpoint) -> CompletionCheckpoint {
+    let key = attestation_key(temp.path()).unwrap();
+    for observation in &mut checkpoint.observations {
+        observation.attestation =
+            Some(key.sign_observation(&checkpoint.stage_id, &checkpoint.session_id, observation));
+    }
+    let latest = checkpoint.latest.as_mut().unwrap();
+    latest.attestation = Some(key.sign_evidence(latest));
     checkpoint
 }
 
@@ -131,7 +143,7 @@ fn empty_session_end_cannot_erase_rich_stalled_handoff() {
     let rich = content(&session, &stage)
         .with_origin(HandoffOrigin::Stalled)
         .with_completed_work(vec!["implemented recovery".to_string()])
-        .with_completion_checkpoint(Some(checkpoint(&attempt)));
+        .with_completion_checkpoint(Some(signed(&temp, checkpoint(&attempt))));
     let (rich_path, _) = merge_session_handoff(
         &session,
         &stage,
@@ -193,7 +205,7 @@ fn new_blocker_fixture() -> (TempDir, Session, Stage, HandoffContent) {
         "nonce_attempt_0000000001",
         "DAEMON_OFFLINE",
     );
-    let rich = completion_content(&session, &stage, checkpoint(&first))
+    let rich = completion_content(&session, &stage, signed(&temp, checkpoint(&first)))
         .with_completed_work(vec!["implemented recovery".to_string()]);
     merge_session_handoff(
         &session,
@@ -210,7 +222,7 @@ fn new_blocker_fixture() -> (TempDir, Session, Stage, HandoffContent) {
         "nonce_attempt_0000000002",
         "ACK_REJECTED",
     );
-    let update = completion_content(&session, &stage, checkpoint(&second));
+    let update = completion_content(&session, &stage, signed(&temp, checkpoint(&second)));
     (temp, session, stage, update)
 }
 
@@ -272,7 +284,7 @@ fn parsed_merged_artifact_preserves_repeat_count() {
     second.observed_at = "2026-09-14T10:01:00Z".to_string();
     let mut checkpoint = checkpoint(&first);
     checkpoint.record_attempt(&second).unwrap();
-    let incoming = completion_content(&session, &stage, checkpoint);
+    let incoming = completion_content(&session, &stage, signed(&temp, checkpoint));
 
     let (path, _) = merge_session_handoff(
         &session,

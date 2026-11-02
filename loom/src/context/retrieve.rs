@@ -207,8 +207,8 @@ fn resolve_catalog(
 /// With a knowledge tree this is [`evaluate`] verbatim. Without one there is
 /// nothing to fingerprint, so the structural layer reports itself never built
 /// while the semantic layer keeps whatever the store records — the source graph
-/// is not derived from the knowledge tree, and its revision is what
-/// [`graph::load_resolved_graph`] reads the base layer by.
+/// is not derived from the knowledge tree; `load_resolved_graph` uses that
+/// revision only when the checkout's HEAD cannot be read.
 fn evaluate_state(store: &ContextStore, knowledge_root: Option<&Path>) -> Result<StoreState> {
     #[cfg(test)]
     EVALUATE_STATE_CALLS.with(|count| count.set(count.get() + 1));

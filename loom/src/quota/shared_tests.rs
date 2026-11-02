@@ -43,6 +43,68 @@ fn state_reader_refuses_fifo_oversize_and_symlinked_parent() {
     );
 }
 
+/// A 429 with a Retry-After must back off across pollers: the state written
+/// through `dir` has to read back through the same `dir`.
+#[cfg(unix)]
+fn assert_retry_after_is_honoured(dir: &Path) {
+    let limited = poll_shared(dir, "aa", 1_000, || {
+        Err(RateLimited {
+            retry_after_secs: Some(600),
+        }
+        .into())
+    })
+    .unwrap();
+    assert_eq!(limited.next_poll_at, 1_600);
+    let adopted = poll_shared(dir, "aa", 1_100, || panic!("fetched during the backoff")).unwrap();
+    assert_eq!(adopted, limited);
+}
+
+#[cfg(unix)]
+#[test]
+fn state_reads_back_under_a_symlinked_home() {
+    let root = tempdir().unwrap();
+    let real_home = root.path().join("real-home");
+    std::fs::create_dir(&real_home).unwrap();
+    let home = root.path().join("home");
+    std::os::unix::fs::symlink(&real_home, &home).unwrap();
+    assert_retry_after_is_honoured(&shared_dir(&home));
+}
+
+#[cfg(unix)]
+#[test]
+fn state_reads_back_under_a_symlinked_loom_directory() {
+    let root = tempdir().unwrap();
+    let dotfiles = root.path().join("dotfiles-loom");
+    std::fs::create_dir(&dotfiles).unwrap();
+    let home = root.path().join("home");
+    std::fs::create_dir(&home).unwrap();
+    std::os::unix::fs::symlink(&dotfiles, home.join(".loom")).unwrap();
+    assert_retry_after_is_honoured(&shared_dir(&home));
+}
+
+#[cfg(unix)]
+#[test]
+fn state_reader_still_refuses_a_symlinked_quota_directory_under_an_alias() {
+    let root = tempdir().unwrap();
+    let real_home = root.path().join("real-home");
+    let elsewhere = root.path().join("elsewhere");
+    std::fs::create_dir_all(real_home.join(".loom")).unwrap();
+    std::fs::create_dir(&elsewhere).unwrap();
+    let body = serde_json::to_string(&AccountState {
+        next_poll_at: 42,
+        ..AccountState::default()
+    })
+    .unwrap();
+    std::fs::write(elsewhere.join("claude-aa.json"), body).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, real_home.join(".loom/quota")).unwrap();
+    let home = root.path().join("home");
+    std::os::unix::fs::symlink(&real_home, &home).unwrap();
+    assert_eq!(
+        read_state(&shared_dir(&home).join("claude-aa.json")),
+        AccountState::default()
+    );
+}
+
 fn limited(state: AccountState, times: u32) -> AccountState {
     (0..times).fold(state, |s, _| apply_rate_limited(s, None, 1_000))
 }

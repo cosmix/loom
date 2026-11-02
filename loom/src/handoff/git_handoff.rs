@@ -26,6 +26,15 @@ pub struct GitHistory {
     pub uncommitted_changes: Vec<String>,
 }
 
+impl GitHistory {
+    /// Whether this history came from looking at a checkout. One with no branch
+    /// only names commits, as a stage's completed commit does, and its empty
+    /// `uncommitted_changes` says nothing about the working tree.
+    pub fn observed_worktree(&self) -> bool {
+        !self.branch.is_empty()
+    }
+}
+
 /// Render a table cell without introducing columns or rows.
 pub(super) fn table_cell(value: &str) -> String {
     value

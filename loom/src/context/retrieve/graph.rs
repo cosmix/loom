@@ -19,9 +19,13 @@ pub(super) struct GraphLoad {
     /// The checkout the graph's paths are relative to, for reading source back.
     pub project_root: Option<PathBuf>,
     pub degraded: Option<String>,
-    pub working_tree_stale: Option<String>,
+    /// Why the served graph does not describe this checkout's current tree.
+    pub stale_detail: Option<String>,
     pub served_revision: Option<String>,
 }
+
+/// A loaded graph, and the note that its cross-file edges could not be resolved.
+type LoadedGraph = (ResolvedGraph, Option<String>);
 
 impl GraphLoad {
     fn empty() -> Self {
@@ -29,7 +33,7 @@ impl GraphLoad {
             graph: None,
             project_root: None,
             degraded: None,
-            working_tree_stale: None,
+            stale_detail: None,
             served_revision: None,
         }
     }
@@ -60,7 +64,7 @@ impl GraphLoad {
                     Some("source graph base for the served snapshot is unavailable".into());
             }
         }
-        if let Some(detail) = &self.working_tree_stale {
+        if let Some(detail) = &self.stale_detail {
             state.semantic.stale = true;
             state.semantic.detail = Some(detail.clone());
         }
@@ -69,7 +73,8 @@ impl GraphLoad {
 
 /// Load the checkout source layers and resolve a derived view.
 /// Retrieval may cache the view, but does not rebuild source layers. An
-/// overlay chooses its recorded base; without one, the checkout HEAD does.
+/// overlay chooses its recorded base; without one, the checkout HEAD does, and
+/// a HEAD with no base serves the newest base there is, labelled stale.
 pub(super) fn load_resolved_graph(
     work_dir_hint: &Path,
     store: &ContextStore,
@@ -89,35 +94,74 @@ pub(super) fn load_resolved_graph(
     let Ok(read) = graph_store.graph_read(requested, Some((&plan, &stage))) else {
         return GraphLoad::empty();
     };
-    let (graph, view_note) = match graph_store.view_read(&read) {
-        Ok(view) => (view.graph, None),
-        Err(error) => {
-            let Ok((graph, _)) = graph_store.resolve_read(&read) else {
-                return GraphLoad::empty();
-            };
-            let note =
-                format!("resolved view unavailable ({error}); cross-file edges are not resolved");
-            (graph, Some(note))
-        }
+    let Some(loaded) = load_graph(&graph_store, &read) else {
+        return GraphLoad::empty();
     };
+    let (read, (graph, view_note), older_base) = with_older_base(&graph_store, read, loaded);
 
     let degraded = graph_degradation(&read, &graph, view_note);
-    let working_tree_stale = tree.and_then(|tree| match &read.overlay {
-        Some(layer) if layer.revision != tree.head || layer.generation != tree.generation => {
-            Some("working tree changed since the source graph overlay was built".to_string())
-        }
-        None if tree.generation != clean_generation(&tree.head) => {
-            Some("working tree has changes but no source graph overlay exists".to_string())
-        }
-        _ => None,
+    let stale_detail = older_base.or_else(|| {
+        tree.and_then(|tree| match &read.overlay {
+            Some(layer) if layer.revision != tree.head || layer.generation != tree.generation => {
+                Some("working tree changed since the source graph overlay was built".to_string())
+            }
+            None if tree.generation != clean_generation(&tree.head) => {
+                Some("working tree has changes but no source graph overlay exists".to_string())
+            }
+            _ => None,
+        })
     });
     GraphLoad {
         graph: Some(graph),
         project_root: Some(project_root.to_path_buf()),
         degraded,
-        working_tree_stale,
+        stale_detail,
         served_revision: Some(read.revision),
     }
+}
+
+/// The read's view, or its unresolved graph with a note when no view can be
+/// built.
+fn load_graph(graph_store: &GraphStore, read: &GraphRead<'_>) -> Option<LoadedGraph> {
+    match graph_store.view_read(read) {
+        Ok(view) => Some((view.graph, None)),
+        Err(error) => {
+            let (graph, _) = graph_store.resolve_read(read).ok()?;
+            let note =
+                format!("resolved view unavailable ({error}); cross-file edges are not resolved");
+            Some((graph, Some(note)))
+        }
+    }
+}
+
+/// A read with neither an overlay nor a base has nothing to answer from, so it
+/// serves the newest base there is, with the label saying so. An overlay never
+/// falls back: its files are a delta against one revision only.
+fn with_older_base<'a>(
+    graph_store: &GraphStore,
+    read: GraphRead<'a>,
+    loaded: LoadedGraph,
+) -> (GraphRead<'a>, LoadedGraph, Option<String>) {
+    if read.overlay.is_some() || !loaded.0.base_revision.is_empty() {
+        return (read, loaded, None);
+    }
+    let Ok(Some(newest)) = graph_store.load_newest_base() else {
+        return (read, loaded, None);
+    };
+    let older = GraphRead {
+        revision: newest.revision,
+        address: None,
+        overlay: None,
+    };
+    let Some(older_loaded) = load_graph(graph_store, &older) else {
+        return (read, loaded, None);
+    };
+    let detail = format!(
+        "serving source graph base {}: no base or overlay for revision {} yet",
+        short_revision(&older.revision),
+        short_revision(&read.revision)
+    );
+    (older, older_loaded, Some(detail))
 }
 
 fn graph_degradation(

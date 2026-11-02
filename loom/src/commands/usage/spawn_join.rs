@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-const MAX_LEDGER_BYTES: usize = 4 * 1024 * 1024;
+use crate::provider_data::ledger::read_ledger_text;
 
 pub(crate) const AMBIGUOUS_MODEL: &str = "ambiguous";
 
@@ -194,16 +194,7 @@ fn plain_directory(path: &Path) -> bool {
 }
 
 fn json_lines(path: &Path) -> Vec<Value> {
-    // The path is <work_dir>/subagents/<stage>/<ledger>.
-    let Some(root) = path.parent().and_then(Path::parent).and_then(Path::parent) else {
-        return Vec::new();
-    };
-    let Ok(relative) = path.strip_prefix(root) else {
-        return Vec::new();
-    };
-    let Ok(content) =
-        crate::fs::safe_read::read_to_string_bounded(root, relative, MAX_LEDGER_BYTES)
-    else {
+    let Some(content) = read_ledger_text(path) else {
         return Vec::new();
     };
     content

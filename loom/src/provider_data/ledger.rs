@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-const MAX_LEDGER_BYTES: usize = 4 * 1024 * 1024;
+pub(crate) const MAX_LEDGER_BYTES: usize = 4 * 1024 * 1024;
 
 /// Return the agent type recorded for `agent_id`, if the hook-side ledgers
 /// can establish one without guessing. Stage ids are unknown to this command,
@@ -344,20 +344,22 @@ fn spawns_agent_type(stage_dirs: &[PathBuf]) -> Option<String> {
     agreed
 }
 
+/// The text of the ledger at `<work_dir>/subagents/<stage>/<ledger>`, or `None`
+/// when it is missing, oversized or refused. A linked worktree reaches the work
+/// directory through its `.loom/work` symlink, so that root is resolved first;
+/// every component below it is opened without following a symlink.
+pub(crate) fn read_ledger_text(path: &Path) -> Option<String> {
+    let work_dir = path.parent()?.parent()?.parent()?;
+    let relative = path.strip_prefix(work_dir).ok()?;
+    let root = work_dir.canonicalize().ok()?;
+    crate::fs::safe_read::read_to_string_bounded(&root, relative, MAX_LEDGER_BYTES).ok()
+}
+
 /// Parse independently so a hook appending a partial line cannot hide the
 /// valid ledger records before it. Missing or unreadable ledgers simply have
 /// no usable rows.
 fn json_lines(path: &Path) -> Vec<Value> {
-    // The path is <work_dir>/subagents/<stage>/<ledger>.
-    let Some(root) = path.parent().and_then(Path::parent).and_then(Path::parent) else {
-        return Vec::new();
-    };
-    let Ok(relative) = path.strip_prefix(root) else {
-        return Vec::new();
-    };
-    let Ok(mut content) =
-        crate::fs::safe_read::read_to_string_bounded(root, relative, MAX_LEDGER_BYTES)
-    else {
+    let Some(mut content) = read_ledger_text(path) else {
         return Vec::new();
     };
     if !content.ends_with('\n') {

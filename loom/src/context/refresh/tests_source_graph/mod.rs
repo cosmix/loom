@@ -83,6 +83,11 @@ fn head_sha(root: &Path) -> String {
 
 fn stores(temp: &TempDir) -> (ContextStore, GraphStore) {
     let state_root = temp.path().join(".loom");
+    let work = state_root.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    if !work.join("main-checkout-identity.json").exists() {
+        crate::git::worktree::capture_main_identity(temp.path(), &work).unwrap();
+    }
     let store = ContextStore::with_root(state_root.join("cache/context-v1"));
     let graph_store = GraphStore::new(store.root(), &state_root.join("work"));
     (store, graph_store)
@@ -148,7 +153,9 @@ fn init_repo_with_knowledge() -> TempDir {
     // which yields `<root>/.loom/work` once that directory exists. Creating it
     // here pins the layer location instead of letting the upward search find
     // some ancestor's `.loom/work`.
-    std::fs::create_dir_all(root.join(".loom").join("work")).unwrap();
+    let work = root.join(".loom").join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    crate::git::worktree::capture_main_identity(root, &work).unwrap();
     temp
 }
 

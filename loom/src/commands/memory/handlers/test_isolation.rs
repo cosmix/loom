@@ -2,6 +2,7 @@
 //! attribute does not protect other, unannotated tests from a cwd change.
 
 use std::env;
+use std::io::{Read, Write as _};
 use std::ops::Deref;
 use std::process::{Command, Stdio};
 use tempfile::TempDir;
@@ -24,27 +25,41 @@ pub(super) fn run_isolated_test() -> bool {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    // A child that fills an unread pipe blocks forever, so the pipes drain
+    // while this thread polls for the child's exit.
+    let stdout = drain(child.stdout.take().unwrap());
+    let stderr = drain(child.stderr.take().unwrap());
     let mut observed_child_cwd = false;
-    while child.try_wait().unwrap().is_none() {
+    let status = loop {
         observed_child_cwd |=
             std::fs::canonicalize(".").is_ok_and(|cwd| cwd.starts_with(&fixture_path));
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
         std::thread::sleep(std::time::Duration::from_millis(1));
-    }
-    let output = child.wait_with_output().unwrap();
+    };
+    let stdout = stdout.join().unwrap();
+    let stderr = stderr.join().unwrap();
     assert!(
-        output.status.success(),
-        "isolated test {test_name} failed:\n{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        status.success(),
+        "isolated test {test_name} failed:\n{stdout}\n{stderr}"
     );
     assert!(
-        String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+        stdout.contains("1 passed"),
         "isolated test {test_name} did not run exactly once"
     );
     observed_child_cwd |=
         std::fs::canonicalize(".").is_ok_and(|cwd| cwd.starts_with(&fixture_path));
     assert!(!observed_child_cwd, "parent observed the child fixture cwd");
     true
+}
+
+fn drain(mut pipe: impl Read + Send + 'static) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        pipe.read_to_end(&mut bytes).unwrap();
+        String::from_utf8_lossy(&bytes).into_owned()
+    })
 }
 
 pub(super) struct CwdRestorer(std::path::PathBuf);
@@ -97,6 +112,16 @@ pub(super) fn init_git_repo() -> RepoFixture {
 pub(super) fn isolated_temp_dir() -> TempDir {
     let root = env::var_os("LOOM_MEMORY_TEST_TMPDIR").expect("memory test must run in child");
     TempDir::new_in(std::path::PathBuf::from(root)).unwrap()
+}
+
+#[test]
+fn child_output_beyond_a_pipe_buffer_does_not_stall_the_parent() {
+    if run_isolated_test() {
+        return;
+    }
+    let bulk = vec![b'x'; 256 * 1024];
+    std::io::stdout().write_all(&bulk).unwrap();
+    std::io::stderr().write_all(&bulk).unwrap();
 }
 
 #[test]

@@ -24,6 +24,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
+#[path = "retrieve_source_overlays.rs"]
+mod overlays;
+
 /// A symbol distinctive enough that it cannot collide with anything in
 /// `project_with_knowledge`'s prose, so a hit in the pack can only have come
 /// from the source graph this test writes.
@@ -55,6 +58,11 @@ fn distinctive_node() -> SourceNode {
 /// resolves for `root`, using the same API the production writer (`loom
 /// map`, `commands/map.rs`) uses to write it.
 fn write_local_overlay(root: &Path, node: &SourceNode) {
+    write_local_layer(root, node, false);
+}
+
+/// [`write_local_overlay`], as a delta or as a complete overlay.
+fn write_local_layer(root: &Path, node: &SourceNode, complete: bool) {
     let work_dir = WorkDir::new(root).unwrap();
     let project_root = work_dir.project_root().unwrap();
     let store = ContextStore::open(&work_dir).unwrap();
@@ -79,6 +87,7 @@ fn write_local_overlay(root: &Path, node: &SourceNode) {
         files,
         blob_index: BTreeMap::new(),
         schema_version: crate::context::source_graph::GRAPH_SCHEMA_VERSION,
+        complete,
     };
     graph_store.save_overlay(&plan, &stage, &layer).unwrap();
 }
@@ -163,7 +172,8 @@ fn retrieve_for_stage_packs_source_nodes_with_no_knowledge_tree_at_all() {
     );
 }
 
-// An overlay remains usable when its base is missing, with explicit degradation.
+// A delta overlay remains usable when its base is missing, with explicit
+// degradation; a complete one is healthy (`overlays`).
 #[test]
 fn retrieve_for_stage_reports_a_missing_base_with_an_overlay() {
     let temp = project_with_knowledge();
@@ -253,6 +263,7 @@ fn retrieve_for_stage_is_not_degraded_when_the_semantic_base_exists() {
         files: BTreeMap::new(),
         blob_index: BTreeMap::new(),
         schema_version: crate::context::source_graph::GRAPH_SCHEMA_VERSION,
+        complete: false,
     };
     graph_store.publish_base(revision, &layer).unwrap();
     store
@@ -327,6 +338,7 @@ fn retrieval_reports_the_working_tree_stale_when_the_overlay_generation_moved() 
         );
     };
     git(&["init", "-b", "main"]);
+    crate::git::worktree::capture_main_identity(root, &root.join(".loom/work")).unwrap();
     git(&["config", "user.email", "t@t.com"]);
     git(&["config", "user.name", "t"]);
     std::fs::write(root.join("src.rs"), "fn before_edit() {}\n").unwrap();
