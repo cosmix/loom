@@ -209,7 +209,9 @@ loom_hook_emit_warns() {
 	exit 0
 }
 
-# loom_hook_deny_or_warn <message> - Deny (stderr heredoc, exit 2) only when
+# loom_hook_deny_or_warn <message> - poll-guard.sh's repeated-poll and
+# repeated-watch rules use this; rule 1 uses loom_read_deny_once, which does
+# not consult deny_enabled. Deny (stderr heredoc, exit 2) only when
 # BOTH hold: loom_deny_enabled (the repo's [hooks] deny_enabled=true switch,
 # _common.sh) AND LOOM_MAIN_AGENT_PID is set and a LIVE ancestor of this
 # process (is_ancestor, _common.sh) - proof a real loom stage session is
@@ -250,24 +252,35 @@ _loom_read_discipline_large_unbounded() {
 	((n > READ_GUARD_LINE_LIMIT))
 }
 
-# _loom_read_discipline_verdict1 <path> <lines> - Compute rule 1's verdict
-# WITHOUT emitting it: sets LOOM_RD_V1_KIND (none|warn|deny) and
-# LOOM_RD_V1_MSG. <lines> is <path>'s line count, computed ONCE by the caller
-# (never re-derived here with another `wc -l`). Deny when the graph covers
-# <path> (comes with the outline inline), warn otherwise. The caller decides
-# whether this is even a rule-1 candidate (large + unbounded) before calling
-# this.
+# _loom_is_read_gate_exempt <path> - Return 0 when <path> is a control input
+# rule 1 never redirects: anything under a .loom/ directory or $LOOM_WORK_DIR
+# (signals and other files loom hands an agent) or under doc/plans/ (plans and
+# worker briefs, written to be read whole). An empty LOOM_WORK_DIR, or one of
+# "/", is ignored, since every absolute path would sit under it.
+_loom_is_read_gate_exempt() {
+	local path="$1" work="${LOOM_WORK_DIR:-}"
+	case "$path" in
+	*/.loom/* | .loom/* | */doc/plans/* | doc/plans/*) return 0 ;;
+	esac
+	work="${work%/}"
+	[[ -n "$work" && "$path" == "$work"/* ]]
+}
+
+# _loom_read_discipline_verdict1 <path> <lines> - Compute rule 1's message
+# into LOOM_RD_V1_MSG without emitting it. <lines> is <path>'s line count,
+# computed ONCE by the caller (never re-derived here with another `wc -l`).
+# The message carries the outline inline when `loom map --outline` returns
+# rows. Otherwise it gives `rg -n` advice: the 2-second bound on
+# _loom_outline_covered_rows can time out on a covered file, so the message
+# says only that no outline is available. loom_read_deny_once decides whether
+# the message denies or warns.
 _loom_read_discipline_verdict1() {
 	local path="$1" n="$2" rows
-	LOOM_RD_V1_KIND="none"
-	LOOM_RD_V1_MSG=""
 	if rows=$(_loom_outline_covered_rows "$path"); then
-		LOOM_RD_V1_KIND="deny"
 		LOOM_RD_V1_MSG="${path} is ${n} lines. Outline: ${rows}
 Read the ranges you need with offset/limit."
 	else
-		LOOM_RD_V1_KIND="warn"
-		LOOM_RD_V1_MSG="${path} is ${n} lines and not covered by the source graph - find sections with \`rg -n \"^#\" ${path}\` then read a range with offset/limit."
+		LOOM_RD_V1_MSG="${path} is ${n} lines and no outline is available - find the part you need with \`rg -n '<pattern>' ${path}\`, then read that range with offset/limit."
 	fi
 	return 0
 }
@@ -285,8 +298,14 @@ Read the ranges you need with offset/limit."
 #      loom-hooks/knowledge-orient.sh's SessionStart nudge points at it directly).
 #      Checked before rule 3, for the same reason as rule 0.
 #   1. An unbounded ("full") read of a file over READ_GUARD_LINE_LIMIT lines
-#      is redirected to `loom map --outline` (denied when covered, warned
-#      when not).
+#      is redirected to `loom map --outline` (loom_read_deny_once in
+#      _read_ledger.sh). Inside a live stage the first such read of a path by
+#      an agent is denied, with the outline when one exists, and that agent's
+#      next whole read of the path (Read or Bash) passes; outside one, or with
+#      `[hooks] read_gate = false`, it is a warning. A denial that cannot be
+#      recorded, or would overflow the denial ledger, is a warning too.
+#      Control inputs (_loom_is_read_gate_exempt: .loom/, $LOOM_WORK_DIR,
+#      doc/plans/) skip rule 1 entirely.
 #   3. A tier-1 knowledge file (other than INDEX.md) is warned with an
 #      unscoped knowledge query, and OVERRIDES rule 1 outright.
 #   4. A whole-file read that a sibling agent of this session already made
@@ -294,12 +313,10 @@ Read the ranges you need with offset/limit."
 #      when rule 1 is silent, advised once per agent and path
 #      (_loom_read_sibling_request in _read_ledger.sh).
 #
-# Rule 1 is computed with _loom_read_discipline_verdict1, then at most one
-# decision is queued.
-#
-# Decisions are queued via loom_hook_note_warn/loom_hook_deny_or_warn, not
-# emitted directly, so a caller evaluating several independent rules
-# (poll-guard.sh) can still join every warning into one JSON object.
+# Warnings are queued via loom_hook_note_warn, not emitted directly, so a
+# caller evaluating several independent rules (poll-guard.sh) can still join
+# every warning into one JSON object. A denial exits 2 before this read's
+# ledger append; an allowed repeat reaches it.
 loom_read_discipline_check() {
 	local path="$1" kind="$2" lines="$3" agent_id="$4" fallback_sid="$5"
 	local ledger
@@ -321,21 +338,16 @@ loom_read_discipline_check() {
 		return 0
 	fi
 
-	LOOM_RD_V1_KIND="none"
-	LOOM_RD_V1_MSG=""
-	if [[ "$kind" == "full" ]] && _loom_read_discipline_large_unbounded "$path" "$lines"; then
-		_loom_read_discipline_verdict1 "$path" "$lines"
-	fi
-
-	if [[ "$LOOM_RD_V1_KIND" == "deny" ]]; then
-		loom_hook_deny_or_warn "$LOOM_RD_V1_MSG"
-	elif [[ "$LOOM_RD_V1_KIND" == "warn" ]]; then
-		loom_hook_note_warn "$LOOM_RD_V1_MSG"
+	local rule1=0
+	if [[ "$kind" == "full" ]] && _loom_read_discipline_large_unbounded "$path" "$lines" &&
+		! _loom_is_read_gate_exempt "$path"; then
+		rule1=1
+		loom_read_deny_once "$path" "$lines" "$agent_id" "$fallback_sid"
 	fi
 
 	local sibling
 	if sibling=$(_loom_read_sibling_request "$path" "$kind" "$lines" "$ledger" "${ledger%/*}/_shared.tsv") &&
-		[[ "$LOOM_RD_V1_KIND" == "none" ]]; then
+		((rule1 == 0)); then
 		loom_hook_note_warn "$sibling"
 	fi
 	_loom_ledger_append "$ledger" "$path" "$kind" "$lines"

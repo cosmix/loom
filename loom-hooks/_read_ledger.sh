@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # _read_ledger.sh - TSV ledger read/write/cap helpers for
-# loom-hooks/_read_discipline.sh (poll counters and the sibling-read scan
-# across one session directory's ledgers). It sources _bounded.sh, so
+# loom-hooks/_read_discipline.sh (poll counters, the sibling-read scan
+# across one session directory's ledgers, and the deny-once read gate's
+# denial ledger). It sources _bounded.sh, so
 # post-tool-use.sh and subagent-stop.sh, which source this file, get
 # loom_run_bounded through it.
 #
@@ -223,4 +224,90 @@ _loom_read_sibling_request() {
 	((count > 1)) && more=" and $((count - 1)) other agent(s)"
 	printf '%s (%s lines) was requested whole by %s%s (an attempt, not proof of delivery) and is unchanged since - run `loom map --outline %s`, then Read only the range you need with offset/limit.' \
 		"$path" "$sib_lines" "$who" "$more" "$path"
+}
+
+# Deny-once read gate for rule 1 (_read_discipline.sh). Inside a live stage the
+# first whole read of a large file by one agent is denied with the outline, and
+# that agent's next whole read of the same file passes. The key is the agent
+# and the file's absolute path, so a Bash `cat ../x` and a Read of the absolute
+# path share one denial. These functions call is_ancestor (_identity.sh),
+# loom_read_gate_enabled (_containment.sh), loom_hook_note_warn and
+# _loom_read_discipline_verdict1 (_read_discipline.sh): only
+# loom_read_discipline_check calls them, after all three are sourced.
+
+# _loom_read_gate_live - Return 0 when the gate may deny: LOOM_STAGE_ID and
+# LOOM_MAIN_AGENT_PID set, the main agent a live ancestor of this process (the
+# gate spawn-guard.sh applies; LOOM_STAGE_ID alone leaks into plain sessions),
+# and `[hooks] read_gate` not set to false.
+_loom_read_gate_live() {
+	[[ -n "${LOOM_STAGE_ID:-}" && -n "${LOOM_MAIN_AGENT_PID:-}" ]] || return 1
+	is_ancestor "$LOOM_MAIN_AGENT_PID" || return 1
+	loom_read_gate_enabled
+}
+
+# _loom_read_abs_path <path> - echo <path> with its directory made absolute
+# through `cd` and `pwd -P` in a subshell. Fails when the directory cannot be
+# entered.
+_loom_read_abs_path() {
+	local path="$1" dir="." base="$1"
+	if [[ "$path" == */* ]]; then
+		dir="${path%/*}"
+		base="${path##*/}"
+		[[ -n "$dir" ]] || dir="/"
+	fi
+	dir=$(CDPATH='' cd -- "$dir" 2>/dev/null && pwd -P) || return 1
+	printf '%s/%s' "${dir%/}" "$base"
+}
+
+# _loom_read_denial_record <ledger> <abs_path> - append the denial row and
+# return 0 only when a re-count proves it is there. A full ledger is refused
+# up front: _loom_ledger_append trims to the newest rows, so appending would
+# evict an earlier denial and deny that path a second time. The re-count is
+# the only proof of a write, since _loom_ledger_append swallows every failure
+# (an unwritable directory, a symlinked one).
+_loom_read_denial_record() {
+	local ledger="$1" abs="$2" rows=0
+	if [[ -r "$ledger" ]]; then
+		rows=$(wc -l 2>/dev/null <"$ledger" | tr -d '[:space:]') || rows=0
+	fi
+	((${rows:-0} < _LOOM_LEDGER_MAX_ROWS)) || return 1
+	_loom_ledger_append "$ledger" "$abs"
+	(($(_loom_polls_count "$ledger" "$abs") > 0))
+}
+
+# _loom_read_rule1_warn <path> <lines> - queue rule 1's message as a warning.
+_loom_read_rule1_warn() {
+	_loom_read_discipline_verdict1 "$1" "$2"
+	loom_hook_note_warn "$LOOM_RD_V1_MSG"
+}
+
+# loom_read_deny_once <path> <lines> <agent_id> <fallback_sid> - apply rule 1
+# to a whole read of <path> (<lines> long). Outside a live stage, or with
+# `read_gate = false`, the message is only a warning. Inside one, a repeat
+# this agent was already denied passes silently, checked before the outline
+# runs so the repeat never pays for `loom map --outline`; a first read is
+# recorded in the "read-denials" ledger and denied (exit 2). A denial that
+# cannot be recorded would deny forever, so it is a warning instead.
+loom_read_deny_once() {
+	local path="$1" lines="$2" agent_id="$3" fallback_sid="$4" abs ledger
+	if ! _loom_read_gate_live; then
+		_loom_read_rule1_warn "$path" "$lines"
+		return 0
+	fi
+	if ! abs=$(_loom_read_abs_path "$path"); then
+		_loom_read_rule1_warn "$path" "$lines"
+		return 0
+	fi
+	ledger=$(_loom_ledger_file "read-denials" "$agent_id" "$fallback_sid")
+	if (($(_loom_polls_count "$ledger" "$abs") > 0)); then
+		return 0
+	fi
+	_loom_read_discipline_verdict1 "$path" "$lines"
+	if ! _loom_read_denial_record "$ledger" "$abs"; then
+		loom_hook_note_warn "$LOOM_RD_V1_MSG"
+		return 0
+	fi
+	printf '⛔ BLOCKED: %s\nRepeating this read is allowed if you need the whole file.\n' \
+		"$LOOM_RD_V1_MSG" >&2
+	exit 2
 }
