@@ -1,7 +1,7 @@
 use crate::commands::{
-    attach, clean, config, context, graph, handoff, hook, init, install_assets, knowledge, map,
-    memory, plan, pressure, project, repair, request, resume, review, run, self_update, sessions,
-    skill_index, status, stop, subagents, target, usage, verify, worktree_cmd,
+    ask, attach, clean, config, context, graph, handoff, hook, init, install_assets, knowledge,
+    map, memory, plan, pressure, project, repair, request, resume, review, run, self_update,
+    sessions, skill_index, status, stop, subagents, target, usage, verify, worktree_cmd,
 };
 use crate::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use anyhow::Result;
@@ -287,6 +287,11 @@ fn dispatch_status(args: StatusArgs) -> Result<()> {
     }
 }
 
+fn dispatch_project(command: ProjectCommands) -> Result<()> {
+    let ProjectCommands::Detect { path, json } = command;
+    project::execute(path, json)
+}
+
 pub fn dispatch(command: Commands) -> Result<()> {
     match command {
         Commands::Init {
@@ -324,15 +329,14 @@ pub fn dispatch(command: Commands) -> Result<()> {
             state,
         } => clean::execute(all, worktrees, sessions, state),
         Commands::Repair { fix } => repair::execute(fix),
+        Commands::Ask { args } => ask::execute(args),
         Commands::Map { args } => map::execute(args),
         Commands::Subagents { args } => subagents::execute(args),
         Commands::Usage { args } => usage::execute(args),
         Commands::Pressure(args) => pressure::execute(args),
         Commands::Stop => stop::execute(),
         Commands::Plan { command, serve } => dispatch_plan(command, serve),
-        Commands::Project {
-            command: ProjectCommands::Detect { path, json },
-        } => project::execute(path, json),
+        Commands::Project { command } => dispatch_project(command),
         Commands::Check {
             stage_id,
             suggest,

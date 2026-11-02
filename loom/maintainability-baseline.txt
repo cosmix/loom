@@ -26,7 +26,7 @@ file src/sandbox/settings/tests.rs 1565
 file tests/adjudication_e2e.rs 525
 file tests/integration/plan_verify.rs 1027
 
-function src/cli/dispatch.rs dispatch 58
+function src/cli/dispatch.rs dispatch 57
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/worktrees.rs clean_worktrees 110
 function src/commands/graph/display.rs build_graph_display 52
