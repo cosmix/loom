@@ -26,10 +26,29 @@ export default defineConfig(({ mode }) => ({
         entryFileNames: "assets/[name].js",
         chunkFileNames: "assets/[name].js",
         assetFileNames: "assets/[name][extname]",
-        // React is shared by both entries; its own chunk keeps the shared chunk under the
-        // 500 kB size warning.
+        // Vendor groups keep every chunk under the 500 kB size warning. Only the lazy editor chunk
+        // imports `cm-view` and `cm-lang`, so no entry's initial closure reaches them
+        // (scripts/bundle-rules.json, checked by scripts/bundle-check.mjs). A group loads whole
+        // for any importer: gather only packages that every importer of the group needs.
         codeSplitting: {
-          groups: [{ name: "react", test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ }],
+          groups: [
+            { name: "react", test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            { name: "zod", test: /node_modules[\\/]zod[\\/]/ },
+            { name: "router", test: /node_modules[\\/]react-router[\\/]/ },
+            {
+              name: "flow",
+              test: /node_modules[\\/](@xyflow[\\/][^\\/]+|@dagrejs[\\/][^\\/]+|d3-[^\\/]+)[\\/]/,
+            },
+            {
+              name: "markdown",
+              test: /node_modules[\\/](micromark[^\\/]*|mdast-[^\\/]+|unist-[^\\/]+)[\\/]/,
+            },
+            {
+              name: "cm-view",
+              test: /node_modules[\\/](@codemirror[\\/](view|state)|style-mod|w3c-keyname|crelt|@marijn[\\/]find-cluster-break)[\\/]/,
+            },
+            { name: "cm-lang", test: /node_modules[\\/](@codemirror|@lezer)[\\/]/ },
+          ],
         },
       },
     },

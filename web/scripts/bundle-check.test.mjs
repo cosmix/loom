@@ -105,6 +105,26 @@ describe("rule checks over a manifest shaped like Vite's", () => {
     ]);
   });
 
+  // The editor chunks come from manualChunks groups: no manifest `src`, so only their `file`
+  // can name them.
+  it.each([
+    ["index.html", "assets/cm-view.js"],
+    ["index.html", "assets/cm-lang.js"],
+    ["plan.html", "assets/cm-view.js"],
+    ["plan.html", "assets/cm-lang.js"],
+  ])("%s fails when its initial closure holds the editor chunk %s", (entry, file) => {
+    const imports = [...manifest[entry].imports, "_editor.js"];
+    const withEditor = {
+      ...manifest,
+      "_editor.js": { file, name: "editor" },
+      [entry]: { ...manifest[entry], imports },
+    };
+    const files = { ...clean, [file]: "editor" };
+    expect(runBundleCheck(withEditor, rules, reader(files)).violations).toEqual([
+      `${entry}: ${file} matches ${file}`,
+    ]);
+  });
+
   it("reads only JavaScript chunks", () => {
     const chunks = [{ file: "assets/index.js" }, { file: "assets/style.css" }];
     const read = reader({ "assets/index.js": "dashboard" });
