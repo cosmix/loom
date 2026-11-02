@@ -11,7 +11,7 @@ mod metadata_tests;
 #[cfg(test)]
 mod tests;
 
-use crate::fs::knowledge::splice::{atx_heading, fence_mask, section_end};
+use crate::fs::knowledge::splice::{atx_heading, fence_mask, section_end, strip_closing_sequence};
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -176,23 +176,6 @@ fn scan_headings<'a>(lines: &[&'a str], mask: &[bool]) -> Vec<FoundHeading<'a>> 
             (!title.is_empty()).then_some(FoundHeading { line, level, title })
         })
         .collect()
-}
-
-/// `text` without an ATX closing sequence: a trailing run of `#` that is the whole text or is
-/// preceded by a space or tab (`Title ##` -> `Title`, `C#` unchanged).
-fn strip_closing_sequence(text: &str) -> &str {
-    let open = text.trim_end_matches('#');
-    if open.len() == text.len() {
-        return text;
-    }
-    if open.is_empty() {
-        return "";
-    }
-    if open.ends_with([' ', '\t']) {
-        open.trim_end_matches([' ', '\t'])
-    } else {
-        text
-    }
 }
 
 /// `title` with each Markdown link `[text](url)` replaced by `text`.

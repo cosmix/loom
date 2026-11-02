@@ -148,6 +148,24 @@ pub(crate) fn atx_heading(line: &str) -> Option<(usize, &str)> {
     super::scanner::atx_heading(line)
 }
 
+/// `text` (as `atx_heading` returns it) without an ATX closing sequence: a trailing run of `#`
+/// that is the whole text or is preceded by a space or tab (`Title ##` becomes `Title`, `C#` is
+/// unchanged).
+pub(crate) fn strip_closing_sequence(text: &str) -> &str {
+    let open = text.trim_end_matches('#');
+    if open.len() == text.len() {
+        return text;
+    }
+    if open.is_empty() {
+        return "";
+    }
+    if open.ends_with([' ', '\t']) {
+        open.trim_end_matches([' ', '\t'])
+    } else {
+        text
+    }
+}
+
 /// Level (2-6) of `line` if it is an ATX heading whose text exactly matches
 /// `heading`. `None` for anything else, including an H1 (`replace_section`
 /// only ever targets sub-sections, never the document title).
