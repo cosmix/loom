@@ -48,9 +48,9 @@ dead_code_check:
 1. Runs `command` in `working_dir`, **120 s timeout**, capturing stdout **and** stderr.
 2. Scans the combined output **line by line**.
 3. A line is a violation if it **contains** any `fail_pattern` (plain substring, **not regex**) AND contains **no** `ignore_pattern`.
-4. Each violating line becomes one gap.
+4. Each violating line becomes one gap. A nonzero exit, missing executable, or timeout also records an unavailable-analysis gap.
 
-⚠ **The command's exit code is ignored** — only output text matters. So `cargo build` (exit 0 with warnings) works fine; you do NOT need `-D warnings`. This is the key difference from an `acceptance` command, which passes/fails on exit code.
+The analyzer must exit successfully. A successful `cargo build` with warnings still produces gaps when a warning matches; `-D warnings` is unnecessary for pattern detection. A nonzero exit or timeout reports unavailable analysis, even if no pattern matches.
 
 ⚠ `ignore_patterns` match the **whole output line**, so you can suppress by symbol name, file path, or an `#[allow(...)]` echo — whatever appears on the tool's line. Substring, so `old_helper` also ignores `old_helper_2`.
 
@@ -61,9 +61,9 @@ dead_code_check:
 | | `dead_code_check` | `acceptance` |
 | --- | --- | --- |
 | Counts as goal-backward check | ✅ (satisfies `has_any_goal_checks`) | ❌ (separate requirement) |
-| Pass/fail driver | output pattern match | command exit code |
+| Pass/fail driver | successful execution and output pattern match | command exit code |
 | Surfaced by `loom check --suggest` | ✅ | ❌ |
-| Needs `-D warnings` to fail | no (exit ignored) | yes |
+| Needs `-D warnings` to fail | no (warnings can match on exit 0) | yes |
 
 Use `dead_code_check` when you want dead code counted as goal-backward proof; use `acceptance` when a tool already exits non-zero on findings and you want it in the build gate.
 
@@ -77,12 +77,12 @@ Use `dead_code_check` when you want dead code counted as goal-backward proof; us
 | Go | `staticcheck ./...` | `is unused`, `U1000`, `U1001` | `go install honnef.co/go/tools/cmd/staticcheck@latest`. `U1000`=unused code, `U1001`=unused field |
 | JS | `bunx unimported` (unused files + unresolved imports) | `unused file`, `unresolved import` | `bun add --dev unimported` |
 
-⚠ **Tools ship NO deps in a fresh loom worktree** (`node_modules`, cargo tool binaries, `staticcheck`). Install or vendor them in `knowledge-bootstrap`, or require them as preinstalled prerequisites; never bypass the host sandbox with `excluded_commands`. Otherwise the command errors and the check silently "passes" on empty output or fails opaquely. Rust's compiler-based check has no such dependency; prefer it.
+⚠ **Tools ship NO deps in a fresh loom worktree** (`node_modules`, cargo tool binaries, `staticcheck`). Install or vendor them in `knowledge-bootstrap`, or require them as preinstalled prerequisites; never bypass the host sandbox with `excluded_commands`. Otherwise the command reports unavailable analysis. Rust's compiler-based check has no such dependency; prefer it.
 
 ### Rust example — both forms
 
 ```yaml
-# Goal-backward form (exit code ignored, pattern-driven):
+# Goal-backward form (successful execution and pattern-driven findings):
 dead_code_check:
   command: "cargo build --message-format=short 2>&1"
   fail_patterns: ["warning: unused", "is never read", "never constructed"]
@@ -161,7 +161,7 @@ Dead-code says "code is used somewhere"; wiring says "used at the RIGHT place"; 
 
 - [ ] Dead-code checks use `dead_code_check` (goal-backward) or `acceptance` (exit-code) — NOT a removed `truths:` block
 - [ ] `fail_patterns` are substrings that appear on the SAME output line as the finding (verified against real tool output)
-- [ ] `dead_code_check` command doesn't rely on exit code (it's ignored); `acceptance` form uses `-D`/`--error` so it exits non-zero
+- [ ] `dead_code_check` command exits successfully; matching warnings still fail, while nonzero exits, missing executables and timeouts report unavailable analysis. The `acceptance` form uses `-D`/`--error` so findings exit non-zero
 - [ ] Any external tool (ts-prune, vulture, staticcheck, unimported) is installed in the worktree or bootstrap stage
 - [ ] `working_dir` points at the build manifest; all paths relative to it, no `../`
 - [ ] False positives suppressed with a language-native mechanism where possible, `ignore_patterns` only as fallback
