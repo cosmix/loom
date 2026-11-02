@@ -1,6 +1,7 @@
 //! Checked Git output consumed incrementally, with the shared child lifecycle.
 use super::{git_command, git_label, git_timeout, global_args};
 use anyhow::{bail, Context, Result};
+use std::ffi::OsStr;
 use std::io::Read;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -10,12 +11,13 @@ use std::time::Instant;
 
 /// Consume stdout without retaining the whole command output. The consumer must
 /// drain its reader to EOF. Errors and timeouts always retire the process group.
-pub(crate) fn run_git_stream<T: Send + 'static>(
+pub(crate) fn run_git_stream_with_env<T: Send + 'static>(
     args: &[&str],
     root: &Path,
+    env: &[(&str, &OsStr)],
     consume: impl FnOnce(Box<dyn Read + Send>) -> Result<T> + Send + 'static,
 ) -> Result<T> {
-    let mut command = git_command("git", &global_args(args), &[], root);
+    let mut command = git_command("git", &global_args(args), env, root);
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

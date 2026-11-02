@@ -16,9 +16,8 @@ use std::process::Output;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use crate::git::runner::{
-    run_git_checked, run_git_in_env_within, run_git_with_env_within, GIT_READ_TIMEOUT,
-};
+use crate::git::runner::GIT_READ_TIMEOUT;
+use crate::git::worktree::WorktreeGit;
 use crate::process::ProcessTimeoutError;
 
 /// The bound on every signing call: an agent that needs a passphrase no one
@@ -140,10 +139,19 @@ enum GitEnv<'a> {
 
 impl GitEnv<'_> {
     fn run(self, repo: &Path, args: &[&str], timeout: Duration) -> Result<Output> {
-        match self {
-            Self::Process(env) => run_git_with_env_within(repo, args, &env.env_pairs(), timeout),
-            Self::Exact(pairs) => run_git_in_env_within(repo, args, pairs, timeout),
-        }
+        let env = match self {
+            Self::Process(env) => {
+                let mut pairs: Vec<_> = std::env::vars_os().collect();
+                pairs.extend(
+                    env.env_pairs()
+                        .into_iter()
+                        .map(|(k, v)| (k.into(), v.into())),
+                );
+                pairs
+            }
+            Self::Exact(pairs) => pairs.to_vec(),
+        };
+        WorktreeGit::pinned_checkout(repo)?.run_in_env_within(args, &env, timeout)
     }
 }
 
@@ -218,10 +226,13 @@ fn commit_tree_with(
     }
     let Some(env) = signer else {
         args.extend(["-m", message]);
-        return run_git_checked(&args, repo).map_err(|error| CommitTreeError {
-            signing: false,
-            detail: format!("{error:#}"),
-        });
+        return WorktreeGit::pinned_checkout(repo)
+            .and_then(|git| git.run_checked(&args))
+            .map(|s| s.trim().to_string())
+            .map_err(|error| CommitTreeError {
+                signing: false,
+                detail: format!("{error:#}"),
+            });
     };
     args.extend(["-S", "-m", message]);
     run_signed(repo, &args, GitEnv::Process(env))
@@ -291,14 +302,15 @@ pub(crate) fn probe_in(repo: &Path, env: &[(OsString, OsString)]) -> Result<()> 
 }
 
 fn probe_with(repo: &Path, git: GitEnv<'_>) -> Result<()> {
-    let empty_tree = run_git_checked(&["hash-object", "-w", "-t", "tree", "/dev/null"], repo)?;
-    let args = [
-        "commit-tree",
-        empty_tree.as_str(),
-        "-S",
-        "-m",
-        PROBE_MESSAGE,
-    ];
+    let empty_tree = WorktreeGit::pinned_checkout(repo)?.run_checked(&[
+        "hash-object",
+        "-w",
+        "-t",
+        "tree",
+        "/dev/null",
+    ])?;
+    let empty_tree = empty_tree.trim();
+    let args = ["commit-tree", empty_tree, "-S", "-m", PROBE_MESSAGE];
     if let Err(error) = run_signed(repo, &args, git) {
         bail!(
             "commit.gpgsign is true but a test signature failed: {}. Loom signs every stage and \

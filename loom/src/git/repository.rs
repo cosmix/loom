@@ -10,7 +10,7 @@ use std::path::Path;
 
 use crate::git::init_blockers;
 use crate::git::runner::{run_git, run_git_bool, run_git_checked};
-use crate::git::worktree::check_git_available;
+use crate::git::worktree::{check_git_available, WorktreeGit};
 
 const INITIAL_COMMIT_MESSAGE: &str = "Initialize repository for loom";
 const BOOTSTRAP_README: &str = "README.md";
@@ -45,6 +45,25 @@ pub fn ensure_repo_ready_for_worktrees(repo_root: &Path) -> Result<RepoBootstrap
     ensure_repo_ready_with_config(repo_root, &[])
 }
 
+/// Prepare an initialized Loom checkout without rediscovering its repository.
+/// An invalid saved repository must be refused, never repaired as a new repo.
+pub(crate) fn ensure_pinned_repo_ready(repo_root: &Path) -> Result<RepoBootstrapResult> {
+    crate::git::worktree::require_main_identity(repo_root)?;
+    let git = WorktreeGit::pinned_main(repo_root)?;
+    let inside = git.run_checked(&["rev-parse", "--is-inside-work-tree"])?;
+    anyhow::ensure!(inside.trim() == "true", "Loom requires a non-bare checkout");
+    let mut result = RepoBootstrapResult::default();
+    if !git
+        .run(&["rev-parse", "--verify", "HEAD"])?
+        .status
+        .success()
+    {
+        create_bootstrap_commit(&git, &[])?;
+        result.created_initial_commit = true;
+    }
+    Ok(result)
+}
+
 pub(super) fn ensure_repo_ready_with_config(
     repo_root: &Path,
     git_config_args: &[&str],
@@ -64,7 +83,7 @@ pub(super) fn ensure_repo_ready_with_config(
     }
 
     if !has_head_commit(repo_root, git_config_args) {
-        create_bootstrap_commit(repo_root, git_config_args)?;
+        create_bootstrap_commit(&WorktreeGit::discovered(repo_root), git_config_args)?;
         result.created_initial_commit = true;
     }
 
@@ -97,11 +116,11 @@ fn has_head_commit(repo_root: &Path, git_config_args: &[&str]) -> bool {
     run_git_bool(&args, repo_root)
 }
 
-fn create_bootstrap_commit(repo_root: &Path, git_config_args: &[&str]) -> Result<()> {
-    ensure_git_identity(repo_root, git_config_args)?;
-    ensure_bootstrap_readme(repo_root)?;
+fn create_bootstrap_commit(git: &WorktreeGit, git_config_args: &[&str]) -> Result<()> {
+    ensure_git_identity(git, git_config_args)?;
+    ensure_bootstrap_readme(git.work_tree())?;
     let add_args = configured_args(git_config_args, &["add", "--", BOOTSTRAP_README]);
-    run_git_checked(&add_args, repo_root)
+    git.run_checked(&add_args)
         .context("Failed to stage README.md for Loom bootstrap commit")?;
     let commit_args = configured_args(
         git_config_args,
@@ -113,7 +132,8 @@ fn create_bootstrap_commit(repo_root: &Path, git_config_args: &[&str]) -> Result
             BOOTSTRAP_README,
         ],
     );
-    run_git_checked(&commit_args, repo_root).context("Failed to create Loom bootstrap commit")?;
+    git.run_checked(&commit_args)
+        .context("Failed to create Loom bootstrap commit")?;
 
     Ok(())
 }
@@ -127,15 +147,15 @@ fn ensure_bootstrap_readme(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn ensure_git_identity(repo_root: &Path, git_config_args: &[&str]) -> Result<()> {
-    read_git_config(repo_root, git_config_args, "user.name")?;
-    read_git_config(repo_root, git_config_args, "user.email")?;
+fn ensure_git_identity(git: &WorktreeGit, git_config_args: &[&str]) -> Result<()> {
+    read_git_config(git, git_config_args, "user.name")?;
+    read_git_config(git, git_config_args, "user.email")?;
     Ok(())
 }
 
-fn read_git_config(repo_root: &Path, git_config_args: &[&str], key: &str) -> Result<String> {
+fn read_git_config(git: &WorktreeGit, git_config_args: &[&str], key: &str) -> Result<String> {
     let args = configured_args(git_config_args, &["config", "--get", key]);
-    let output = run_git(&args, repo_root)?;
+    let output = git.run(&args)?;
 
     if output.status.success() {
         let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -149,6 +169,9 @@ fn read_git_config(repo_root: &Path, git_config_args: &[&str], key: &str) -> Res
 Set it with:\n  git config --global user.name \"Your Name\"\n  git config --global user.email \"you@example.com\""
     );
 }
+
+#[cfg(test)]
+mod pinned_tests;
 
 #[cfg(test)]
 mod tests {

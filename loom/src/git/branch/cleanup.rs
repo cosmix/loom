@@ -1,28 +1,16 @@
 //! Branch cleanup operations
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::path::Path;
-use std::process::Command;
 
 use super::operations::delete_branch;
-use crate::git::runner::NO_HOOKS_ARGS;
 
 /// Clean up loom branches that have been merged
 pub fn cleanup_merged_branches(target_branch: &str, repo_root: &Path) -> Result<Vec<String>> {
-    // Get merged branches
-    let output = Command::new("git")
-        .args(NO_HOOKS_ARGS)
-        .args(["branch", "--merged", target_branch])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| "Failed to get merged branches")?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let merged_loom_branches: Vec<String> = stdout
-        .lines()
-        .map(|s| s.trim().trim_start_matches('*').trim().to_string())
-        .filter(|s| s.starts_with("loom/"))
-        .collect();
+    let merged_loom_branches = super::info::list_refs(repo_root, Some(target_branch))?
+        .into_iter()
+        .map(|branch| branch.name)
+        .filter(|name| name.starts_with("loom/"));
 
     let mut deleted = Vec::new();
     for branch in merged_loom_branches {

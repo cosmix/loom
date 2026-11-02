@@ -4,9 +4,10 @@ use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::path::Path;
 
-use super::worktree_failure::{recover_half_removed, removal_failure};
+use super::worktree_failure::{recover_half_removed, removal_failure, require_unregistered};
 use crate::fs::memory::SPOOL_RELPATH as MEMORY_SPOOL_RELPATH;
 use crate::git::runner::run_git_checked;
+use crate::git::worktree::WorktreeGit;
 use crate::telemetry::TELEMETRY_SPOOL_RELPATH;
 use crate::verify::tool_artifacts::NAMES;
 
@@ -24,10 +25,13 @@ pub fn cleanup_worktree(stage_id: &str, repo_root: &Path, force: bool) -> Result
     let worktree_path = repo_root.join(".worktrees").join(stage_id);
 
     if !worktree_directory_exists(&worktree_path)? {
+        if !force {
+            require_unregistered(&worktree_path, repo_root)?;
+        }
         return Ok(false);
     }
     if !force && worktree_path.join(".git").try_exists()? {
-        remove_worktree_scaffold(&worktree_path)?;
+        remove_worktree_scaffold(&worktree_path, repo_root)?;
     }
 
     let worktree = worktree_path.to_string_lossy().to_string();
@@ -52,7 +56,7 @@ pub fn cleanup_worktree(stage_id: &str, repo_root: &Path, force: bool) -> Result
             } else if recover_half_removed(&worktree_path, repo_root, &e)? {
                 Ok(true)
             } else {
-                Err(removal_failure(&worktree_path, e))
+                Err(removal_failure(&worktree_path, repo_root, e))
             }
         }
     }
@@ -77,17 +81,29 @@ pub(crate) fn worktree_directory_exists(worktree_path: &Path) -> Result<bool> {
     Ok(true)
 }
 
-/// Repo-relative `.claude`/`CLAUDE.md`/`.loom` and sandbox-stub paths git tracks in
-/// `worktree_path`'s repository (`git ls-files -- .claude CLAUDE.md .loom`).
+/// Repo-relative `.claude`/`CLAUDE.md`/`.loom`/`.work` and sandbox-stub paths Git
+/// tracks in `worktree_path`'s repository.
 /// Creation only plants scaffold when the checkout carries none of its own
 /// (`setup_claude_directory`, `setup_root_claude_md`), and the spool files
 /// (see `remove_drained_spool`) are runtime output creation loom never commits
 /// either — so anything git tracks under these paths was never loom's to
 /// remove. Failure leaves ownership unknown and must prevent mutation.
-fn tracked_scaffold_paths(worktree_path: &Path) -> Result<HashSet<String>> {
-    let mut args = vec!["ls-files", "-z", "--", ".claude", "CLAUDE.md", ".loom"];
+pub(super) fn tracked_scaffold_paths(
+    worktree_path: &Path,
+    repo_root: &Path,
+) -> Result<HashSet<String>> {
+    let mut args = vec![
+        "ls-files",
+        "-z",
+        "--",
+        ".claude",
+        "CLAUDE.md",
+        ".loom",
+        ".work",
+    ];
     args.extend(NAMES);
-    run_git_checked(&args, worktree_path)
+    WorktreeGit::pinned(repo_root, worktree_path)
+        .and_then(|git| git.run_checked(&args))
         .map(|out| {
             out.split('\0')
                 .filter(|s| !s.is_empty())
@@ -115,8 +131,8 @@ fn tracked_scaffold_paths(worktree_path: &Path) -> Result<HashSet<String>> {
 /// they are loom's own sandboxed-write fallbacks, not agent work,
 /// and left on disk it is exactly the kind of untracked file that makes
 /// non-forced `git worktree remove` refuse.
-pub(crate) fn remove_worktree_scaffold(worktree_path: &Path) -> Result<()> {
-    let tracked = tracked_scaffold_paths(worktree_path)?;
+pub(crate) fn remove_worktree_scaffold(worktree_path: &Path, repo_root: &Path) -> Result<()> {
+    let tracked = tracked_scaffold_paths(worktree_path, repo_root)?;
     remove_worktree_scaffold_known(worktree_path, &tracked)
 }
 
@@ -126,24 +142,36 @@ pub(crate) fn remove_worktree_scaffold_with_known_paths(worktree_path: &Path) ->
 }
 
 fn remove_worktree_scaffold_known(worktree_path: &Path, tracked: &HashSet<String>) -> Result<()> {
-    remove_required_symlink(&worktree_path.join(".loom").join("work"))?;
-    // Tidy up `.loom/` if removing `work` left it empty; harmless no-op
-    // otherwise (e.g. it still holds the drained-spool check below, or the
-    // untracked `.loom/cache/`).
-    let _ = std::fs::remove_dir(worktree_path.join(".loom"));
-    remove_required_symlink(&worktree_path.join(".work"))?;
+    let loom = worktree_path.join(".loom");
+    // Never traverse a project-provided directory symlink to remove scaffold.
+    if !tracked.contains(".loom") && !loom.is_symlink() {
+        if !tracks_path(tracked, ".loom/work") {
+            remove_required_symlink(&loom.join("work"))?;
+        }
+        remove_drained_spool(worktree_path, tracked, MEMORY_SPOOL_RELPATH, "memory")?;
+        remove_drained_spool(worktree_path, tracked, TELEMETRY_SPOOL_RELPATH, "telemetry")?;
+        let _ = std::fs::remove_dir(&loom);
+    }
+    if !tracks_path(tracked, ".work") {
+        remove_required_symlink(&worktree_path.join(".work"))?;
+    }
     let claude_dir = worktree_path.join(".claude");
     if claude_dir.is_symlink() {
-        remove_if_symlink(&claude_dir)?;
+        if !tracked.contains(".claude") {
+            remove_if_symlink(&claude_dir)?;
+        }
     } else if claude_dir.exists() {
         remove_known_claude_scaffold(&claude_dir, tracked)?;
     }
     if !tracked.contains("CLAUDE.md") {
         remove_if_symlink(&worktree_path.join("CLAUDE.md"))?;
     }
-    remove_drained_spool(worktree_path, tracked, MEMORY_SPOOL_RELPATH, "memory")?;
-    remove_drained_spool(worktree_path, tracked, TELEMETRY_SPOOL_RELPATH, "telemetry")?;
     remove_sandbox_stubs(worktree_path, tracked)
+}
+
+fn tracks_path(tracked: &HashSet<String>, path: &str) -> bool {
+    let prefix = format!("{path}/");
+    tracked.contains(path) || tracked.iter().any(|entry| entry.starts_with(&prefix))
 }
 
 /// Remove the zero-byte regular files a sandbox leaves at the worktree root
@@ -172,7 +200,7 @@ fn remove_sandbox_stubs(worktree_path: &Path, tracked: &HashSet<String>) -> Resu
 /// refuse. Removal here is conservative in the same way the rest of this
 /// module is: skipped when git tracks the spool path (`tracked`, see
 /// `tracked_scaffold_paths` — an unusual repo could commit it), and the file
-/// is only ever removed when it is a REGULAR file, never a symlink — a
+/// is only ever removed when it is an empty REGULAR file, never a symlink — a
 /// symlink at that path is left for `git worktree remove` (or `git status`)
 /// to judge rather than followed and destroyed. The `.loom/` directory is
 /// removed only once removing the spool leaves it empty, mirroring
@@ -191,6 +219,11 @@ fn remove_drained_spool(
     let spool_path = worktree_path.join(spool_relpath);
     match std::fs::symlink_metadata(&spool_path) {
         Ok(metadata) if metadata.is_file() => {
+            anyhow::ensure!(
+                metadata.len() == 0,
+                "Refusing to remove undrained {spool_kind} spool {}",
+                spool_path.display()
+            );
             std::fs::remove_file(&spool_path).with_context(|| {
                 format!(
                     "Failed to remove drained {spool_kind} spool {}",

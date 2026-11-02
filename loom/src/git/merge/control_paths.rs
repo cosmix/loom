@@ -94,6 +94,18 @@ fn violation_reason(repo_root: &Path, changed: &[String], label: &str) -> Result
 /// `.gitmodules`, which a merged branch can set. The trailing `--` keeps a
 /// file named like a revision from making git refuse the call as ambiguous.
 pub(crate) fn changed_paths(repo_root: &Path, base: &str, branch_rev: &str) -> Result<Vec<String>> {
+    changed_paths_with(
+        &crate::git::worktree::WorktreeGit::discovered(repo_root),
+        base,
+        branch_rev,
+    )
+}
+
+pub(crate) fn changed_paths_with(
+    git: &crate::git::worktree::WorktreeGit,
+    base: &str,
+    branch_rev: &str,
+) -> Result<Vec<String>> {
     let args = [
         "diff",
         "-z",
@@ -104,7 +116,7 @@ pub(crate) fn changed_paths(repo_root: &Path, base: &str, branch_rev: &str) -> R
         branch_rev,
         "--",
     ];
-    let output = run_git(&args, repo_root)?;
+    let output = git.run(&args)?;
     if !output.status.success() {
         bail!(
             "git diff {base} {branch_rev} failed: {}",
@@ -229,29 +241,40 @@ pub fn hooks_dir_prefix(repo_root: &Path) -> Option<String> {
 /// Checked form used by gates so path and configuration errors hold the change.
 pub(crate) fn hooks_dir_prefix_checked(repo_root: &Path) -> Result<Option<String>> {
     // The runner's own -c core.hooksPath=/dev/null precludes an unscoped read.
-    let worktree = config_value(repo_root, "--local", "extensions.worktreeConfig")?
-        .is_some_and(|value| value.eq_ignore_ascii_case("true"));
+    // `--type=bool` applies git's own reading: yes, on and 1 enable the extension.
+    let worktree = config_value(
+        repo_root,
+        &["--local", "--type=bool"],
+        "extensions.worktreeConfig",
+    )?
+    .is_some_and(|value| value == "true");
     let scopes: &[&str] = if worktree {
         &["--worktree", "--local", "--global", "--system"]
     } else {
         &["--local", "--global", "--system"]
     };
     for scope in scopes {
-        if let Some(value) = config_value(repo_root, scope, "core.hooksPath")? {
+        // `--type=path` expands `~/` as git does when it runs a hook.
+        let typed = [*scope, "--type=path"];
+        if let Some(value) = config_value(repo_root, &typed, "core.hooksPath")? {
             return resolve_hooks_dir_prefix_checked(repo_root, Some(&value), None, None);
         }
     }
     Ok(None)
 }
 
-fn config_value(repo_root: &Path, scope: &str, key: &str) -> Result<Option<String>> {
-    let output = run_git(&["config", scope, "--includes", "--get", key], repo_root)?;
+fn config_value(repo_root: &Path, scope: &[&str], key: &str) -> Result<Option<String>> {
+    let mut args = vec!["config"];
+    args.extend_from_slice(scope);
+    args.extend(["--includes", "--get", key]);
+    let output = run_git(&args, repo_root)?;
     if output.status.code() == Some(1) {
         return Ok(None);
     }
     if !output.status.success() {
         bail!(
-            "git config {scope} --get {key} failed: {}",
+            "git config {} --get {key} failed: {}",
+            scope.join(" "),
             String::from_utf8_lossy(&output.stderr).trim()
         );
     }
@@ -351,3 +374,7 @@ mod tests;
 #[cfg(test)]
 #[path = "control_paths/tests_accepted.rs"]
 mod tests_accepted;
+
+#[cfg(test)]
+#[path = "control_paths/tests_worktree_config.rs"]
+mod tests_worktree_config;

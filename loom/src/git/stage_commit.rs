@@ -28,6 +28,9 @@ mod checks;
 use checks::require_object_id;
 pub use checks::{guarded_restore_command, validate_commit_message};
 
+/// Longest commit subject a reflog line repeats.
+const MAX_REFLOG_SUBJECT_CHARS: usize = 200;
+
 /// What the session saw when it asked for the commit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommitRequest {
@@ -126,6 +129,7 @@ pub struct Committer<'a> {
     git: &'a WorktreeGit,
     repo_root: &'a Path,
     merge_target: Option<&'a str>,
+    merge_snapshot: Option<&'a str>,
     guarded_paths: &'a [String],
 }
 
@@ -137,6 +141,7 @@ impl<'a> Committer<'a> {
             git,
             repo_root,
             merge_target: None,
+            merge_snapshot: None,
             guarded_paths: &[],
         }
     }
@@ -148,6 +153,12 @@ impl<'a> Committer<'a> {
     /// commit records as its second parent.
     pub fn merging_into(mut self, target_branch: &'a str) -> Self {
         self.merge_target = Some(target_branch);
+        self
+    }
+
+    /// Require the merge head to equal the target snapshot authorized at launch.
+    pub(crate) fn merging_snapshot(mut self, snapshot: &'a str) -> Self {
+        self.merge_snapshot = Some(snapshot);
         self
     }
 
@@ -288,8 +299,7 @@ impl<'a> Committer<'a> {
         old: &str,
         message: &str,
     ) -> Result<(), CommitRefusal> {
-        let subject = message.lines().next().unwrap_or_default().trim();
-        let reason = format!("loom: commit {subject}");
+        let reason = format!("loom: commit {}", reflog_subject(message));
         let args = [
             "update-ref",
             "--no-deref",
@@ -321,6 +331,23 @@ impl<'a> Committer<'a> {
             Err(error) => tracing::warn!("git merge --quit could not run: {error:#}"),
         }
     }
+}
+
+/// The commit subject as it appears in a reflog: what a session typed, with
+/// everything a shell or a line-oriented reader would act on replaced. Capsules
+/// and the private git directory keep the reflog write from being redirected;
+/// this limits what such a line could say if one ever is.
+fn reflog_subject(message: &str) -> String {
+    let safe = |c: char| c.is_alphanumeric() || " .,:_+=@/()[]#%-".contains(c);
+    message
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .chars()
+        .take(MAX_REFLOG_SUBJECT_CHARS)
+        .map(|c| if safe(c) { c } else { '_' })
+        .collect()
 }
 
 fn commit_tree_refusal(error: CommitTreeError) -> CommitRefusal {
@@ -355,3 +382,6 @@ pub fn commit_staged(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod tests_reflog;

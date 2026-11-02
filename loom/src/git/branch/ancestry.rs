@@ -163,10 +163,10 @@ fn branch_exists_ref(reference: &str, repo_root: &Path) -> bool {
 /// * `Ok(false)` if the branch has not been merged
 /// * `Err` if git command fails
 pub fn is_branch_merged(branch: &str, target: &str, repo_root: &Path) -> Result<bool> {
-    let stdout = run_git_checked(&["branch", "--merged", target, "--list", branch], repo_root)?;
-    Ok(stdout
-        .lines()
-        .any(|line| line.trim().trim_start_matches('*').trim() == branch))
+    let reference = branch_ref(branch);
+    Ok(super::info::list_refs(repo_root, Some(target))?
+        .iter()
+        .any(|entry| branch_ref(&entry.name) == reference))
 }
 
 #[cfg(test)]

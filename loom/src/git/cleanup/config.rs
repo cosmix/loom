@@ -7,7 +7,7 @@ pub struct CleanupConfig {
     pub force_worktree_removal: bool,
     /// Force branch deletion even if not fully merged
     pub force_branch_deletion: bool,
-    /// Run git worktree prune after cleanup
+    /// Run global git worktree prune after explicitly forced worktree cleanup.
     pub prune_worktrees: bool,
     /// Print progress messages
     pub verbose: bool,
@@ -53,7 +53,7 @@ pub struct CleanupResult {
     pub branch_deleted: bool,
     /// Whether the base branch was successfully deleted (if it existed)
     pub base_branch_deleted: bool,
-    /// Errors that occurred (non-fatal)
+    /// Retained resources and non-fatal cleanup errors.
     pub warnings: Vec<String>,
 }
 

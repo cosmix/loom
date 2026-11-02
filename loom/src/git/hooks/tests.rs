@@ -191,3 +191,124 @@ fn ambiguous_foreign_hook_is_left_untouched() {
     assert!(error.contains("executable shebang"), "{error}");
     assert_eq!(fs::read_to_string(hook).unwrap(), original);
 }
+
+const OLD_SECTION: &str = "# LOOM_PRE_COMMIT_HOOK_START\nold check\n# LOOM_PRE_COMMIT_HOOK_END";
+
+fn current_section() -> String {
+    extract_loom_section(PRE_COMMIT_HOOK_CONTENT)
+}
+
+fn repo_with_hook_bytes(content: &[u8]) -> (TempDir, std::path::PathBuf) {
+    let (repo, hook) = repo_with_hook("");
+    fs::write(&hook, content).unwrap();
+    (repo, hook)
+}
+
+#[test]
+fn an_earlier_wrapper_with_an_old_section_becomes_the_current_wrapper() {
+    let old = format!("#!/usr/bin/env bash\n# Git pre-commit hook\n\n{OLD_SECTION}");
+    let (repo, hook) = repo_with_hook(&old);
+    assert!(!is_pre_commit_hook_installed(repo.path()));
+
+    assert!(install_pre_commit_hook(repo.path()).unwrap());
+
+    assert_eq!(
+        fs::read_to_string(&hook).unwrap(),
+        wrapper_content(&current_section(), false)
+    );
+    assert!(is_pre_commit_hook_installed(repo.path()));
+    assert!(!install_pre_commit_hook(repo.path()).unwrap());
+}
+
+#[test]
+fn an_old_section_inside_a_foreign_hook_is_replaced_keeping_every_foreign_byte() {
+    let before =
+        b"#!/usr/bin/env bash\ntouch .git/before-ran\n# bytes \xff\xfe stay\n\n".as_slice();
+    let after = b"\ntouch .git/after-ran\n".as_slice();
+    let old = [before, OLD_SECTION.as_bytes(), after].concat();
+    let (repo, hook) = repo_with_hook_bytes(&old);
+    assert!(!is_pre_commit_hook_installed(repo.path()));
+
+    assert!(install_pre_commit_hook(repo.path()).unwrap());
+
+    let expected = [before, current_section().as_bytes(), after].concat();
+    assert_eq!(fs::read(&hook).unwrap(), expected);
+    assert!(is_pre_commit_hook_installed(repo.path()));
+    assert!(!install_pre_commit_hook(repo.path()).unwrap());
+    assert!(invoke(repo.path(), &hook).status.success());
+    assert!(repo.path().join(".git/before-ran").exists());
+    assert!(repo.path().join(".git/after-ran").exists());
+}
+
+#[test]
+fn an_old_section_in_a_chained_wrapper_keeps_the_chain() {
+    let (repo, hook) = repo_with_hook("#!/bin/sh\nprintf reached > .git/foreign-ran\n");
+    install_pre_commit_hook(repo.path()).unwrap();
+    let chained = fs::read_to_string(&hook).unwrap();
+    fs::write(&hook, chained.replace(&current_section(), OLD_SECTION)).unwrap();
+    assert!(!is_pre_commit_hook_installed(repo.path()));
+
+    assert!(install_pre_commit_hook(repo.path()).unwrap());
+
+    assert_eq!(fs::read_to_string(&hook).unwrap(), chained);
+    assert!(is_pre_commit_hook_installed(repo.path()));
+    assert!(invoke(repo.path(), &hook).status.success());
+    assert!(repo.path().join(".git/foreign-ran").exists());
+}
+
+#[test]
+fn an_old_chained_wrapper_whose_original_is_missing_is_left_alone() {
+    let (repo, hook) = repo_with_hook("#!/bin/sh\nexit 0\n");
+    install_pre_commit_hook(repo.path()).unwrap();
+    fs::remove_file(hook.with_file_name(FOREIGN_HOOK_NAME)).unwrap();
+    let chained = fs::read_to_string(&hook).unwrap();
+    let old = chained.replace(&current_section(), OLD_SECTION);
+    fs::write(&hook, &old).unwrap();
+
+    let error = install_pre_commit_hook(repo.path())
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("missing or not executable"), "{error}");
+    assert_eq!(fs::read_to_string(&hook).unwrap(), old);
+}
+
+#[test]
+fn markers_that_do_not_bound_one_section_are_refused_untouched() {
+    let start = LOOM_HOOK_START_MARKER;
+    let end = LOOM_HOOK_END_MARKER;
+    for content in [
+        format!("#!/bin/sh\n{start}\nno end\n"),
+        format!("#!/bin/sh\n{end}\nno start\n"),
+        format!("#!/bin/sh\n{end}\nreversed\n{start}\n"),
+        format!("#!/bin/sh\n{start}\none\n{end}\n{start}\ntwo\n{end}\n"),
+    ] {
+        let (repo, hook) = repo_with_hook(&content);
+
+        let error = install_pre_commit_hook(repo.path())
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("unrecognized Loom section"), "{error}");
+        assert_eq!(fs::read_to_string(&hook).unwrap(), content);
+        assert!(!is_pre_commit_hook_installed(repo.path()));
+    }
+}
+
+#[test]
+fn a_symlinked_hook_with_an_old_section_is_not_written_through() {
+    let (repo, hook) = repo_with_hook("");
+    let target = repo.path().join("tracked-hook");
+    let old = format!("#!/usr/bin/env bash\n{OLD_SECTION}\n");
+    fs::write(&target, &old).unwrap();
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::remove_file(&hook).unwrap();
+    std::os::unix::fs::symlink(&target, &hook).unwrap();
+
+    let error = install_pre_commit_hook(repo.path())
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("regular file"), "{error}");
+    assert_eq!(fs::read_to_string(&target).unwrap(), old);
+}

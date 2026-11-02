@@ -130,6 +130,34 @@ fn signing_enabled_reads_the_bool_forms() {
 }
 
 #[test]
+fn signing_preflight_uses_anchored_linked_checkout_after_pointer_change() {
+    let original = repo();
+    let foreign = repo();
+    let linked_parent = TempDir::new().unwrap();
+    let linked = linked_parent.path().join("checkout");
+    git_in(
+        original.path(),
+        &["worktree", "add", "-b", "linked", linked.to_str().unwrap()],
+    );
+    let log = fake_signer(original.path(), false);
+    let foreign_log = fake_signer(foreign.path(), false);
+    let state = linked.join(".loom/work");
+    fs::create_dir_all(&state).unwrap();
+    crate::git::worktree::capture_main_identity(&linked, &state).unwrap();
+    fs::write(
+        linked.join(".git"),
+        format!("gitdir: {}\n", foreign.path().join(".git").display()),
+    )
+    .unwrap();
+
+    let env = isolated_env(&linked);
+    assert!(signing_enabled_in(&linked, &env).unwrap());
+    probe_in(&linked, &env).unwrap();
+    assert_eq!(log_lines(&log).len(), 1);
+    assert!(log_lines(&foreign_log).is_empty());
+}
+
+#[test]
 fn signing_enabled_rejects_a_malformed_value() {
     let temp = repo();
     git_in(temp.path(), &["config", "commit.gpgsign", "maybe"]);

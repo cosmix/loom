@@ -27,6 +27,21 @@ pub(super) fn before_stash_push(repo: &Path) -> bool {
     })
 }
 
+thread_local! {
+    static BEFORE_STASH_RESET: RefCell<Option<BeforeStashPush>> = RefCell::new(None);
+}
+
+pub(super) fn before_stash_reset(repo: &Path) {
+    BEFORE_STASH_RESET.with(|hook| {
+        if let Some(hook) = hook.borrow_mut().take() {
+            hook(repo);
+        }
+    });
+}
+
+mod rollback;
+mod stash_entry;
+
 const LINES: &str = "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n";
 
 /// `f.txt` has a local edit at its end and the branch edits its
@@ -120,7 +135,7 @@ fn stash_failure_reports_a_recreated_untracked_file_and_keeps_the_backup() {
 
     let MergeResult::Blocked(MergeBlock::CheckoutRestoreIncomplete {
         failures,
-        backup_ref: Some(backup_ref),
+        changes: RollbackChanges::InCheckout { backup_ref },
         ..
     }) = result
     else {
@@ -289,31 +304,23 @@ fn an_errored_fast_forward_writes_removed_files_back_only_where_absent() {
     );
     // `a.txt` came back while the fast-forward ran; `b.txt` is still gone.
     std::fs::write(root.join("a.txt"), "operator's a\n").unwrap();
-    let _guard = inject(Failures {
-        fast_forward_error: true,
-        ..Failures::default()
-    });
     let removed = vec!["a.txt".to_string(), "b.txt".to_string()];
-
-    let advance = fast_forward(
-        root,
-        (&rev(root, "main"), &rev(root, "loom/s1")),
-        &removed,
-        Some("refs/loom/autostash/s1-1-abc".to_string()),
-    )
-    .unwrap();
+    let advance = errored_fast_forward(root, &removed);
 
     let Advance::Blocked(MergeBlock::CheckoutRestoreIncomplete {
-        failures,
-        backup_ref,
-        ..
+        failures, changes, ..
     }) = advance
     else {
         panic!("expected incomplete rollback, got {advance:?}");
     };
     assert_eq!(failures.len(), 1);
     assert_eq!(failures[0].path, "a.txt");
-    assert_eq!(backup_ref.as_deref(), Some("refs/loom/autostash/s1-1-abc"));
+    assert_eq!(
+        changes,
+        RollbackChanges::Stashed {
+            backup_ref: "refs/loom/autostash/s1-1-abc".to_string()
+        }
+    );
     assert_eq!(
         std::fs::read(root.join("a.txt")).unwrap(),
         b"operator's a\n",
@@ -324,4 +331,22 @@ fn an_errored_fast_forward_writes_removed_files_back_only_where_absent() {
         b"branch b\n",
         "an absent file is restored"
     );
+}
+
+/// `main` fast-forwarded to `loom/s1` with the fast-forward itself failing.
+fn errored_fast_forward(root: &Path, removed: &[String]) -> Advance {
+    let _guard = inject(Failures {
+        fast_forward_error: true,
+        ..Failures::default()
+    });
+    fast_forward(
+        root,
+        (&rev(root, "main"), &rev(root, "loom/s1")),
+        removed,
+        Some(StashedChanges {
+            commit: "unused: the errored fast-forward pops nothing".to_string(),
+            backup_ref: "refs/loom/autostash/s1-1-abc".to_string(),
+        }),
+    )
+    .unwrap()
 }

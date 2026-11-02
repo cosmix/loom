@@ -67,7 +67,7 @@ fn scaffold_query_rejects_non_git_directory() {
     fs::create_dir(dir.path().join(".claude")).unwrap();
     let settings = dir.path().join(".claude/settings.json");
     fs::write(&settings, "keep").unwrap();
-    assert!(remove_worktree_scaffold(dir.path()).is_err());
+    assert!(remove_worktree_scaffold(dir.path(), dir.path()).is_err());
     assert_eq!(fs::read_to_string(settings).unwrap(), "keep");
 }
 
@@ -126,7 +126,7 @@ fn tracked_root_claude_md_symlink_survives_scaffold_removal() {
     );
 
     let worktree = temp_dir.path().join(".worktrees/stage-1");
-    let result = remove_worktree_scaffold(&worktree);
+    let result = remove_worktree_scaffold(&worktree, temp_dir.path());
     assert!(
         result.is_ok(),
         "scaffold removal failed: {:?}",
@@ -198,7 +198,7 @@ fn tracked_loom_memory_spool_survives_scaffold_removal() {
     );
 
     let worktree = temp_dir.path().join(".worktrees/stage-1");
-    let result = remove_worktree_scaffold(&worktree);
+    let result = remove_worktree_scaffold(&worktree, temp_dir.path());
     assert!(
         result.is_ok(),
         "scaffold removal failed: {:?}",
@@ -268,7 +268,7 @@ fn tracked_empty_stub_name_survives_scaffold_removal() {
     git_ok(temp_dir.path(), &["commit", "-m", "track empty gitmodules"]);
     let worktree = add_stage_worktree(temp_dir.path());
 
-    remove_worktree_scaffold(&worktree).unwrap();
+    remove_worktree_scaffold(&worktree, temp_dir.path()).unwrap();
     assert!(worktree.join(".gitmodules").exists());
 }
 
@@ -279,7 +279,7 @@ fn sandbox_stub_name_with_content_survives_scaffold_removal() {
     let worktree = add_stage_worktree(temp_dir.path());
     fs::write(worktree.join(".bashrc"), "export X=1\n").unwrap();
 
-    remove_worktree_scaffold(&worktree).unwrap();
+    remove_worktree_scaffold(&worktree, temp_dir.path()).unwrap();
     assert_eq!(
         fs::read_to_string(worktree.join(".bashrc")).unwrap(),
         "export X=1\n"

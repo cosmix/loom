@@ -75,6 +75,74 @@ fn a_foreign_hook_is_reported_and_never_overwritten() {
 }
 
 #[test]
+fn a_symlink_with_a_missing_target_is_reported_as_foreign() {
+    let repo = repo();
+    let root = repo.path();
+    std::os::unix::fs::symlink(root.join("missing"), hook_path(root)).unwrap();
+
+    assert_eq!(
+        hook_issues(root),
+        ["Git reference-transaction hook belongs to another tool"]
+    );
+    assert!(!root.join("missing").exists());
+}
+
+/// Repair must say loom cannot act, and must not report a hook git never runs.
+#[test]
+fn a_hooks_path_outside_the_repository_is_reported_and_repair_writes_nothing() {
+    let shared = TempDir::new().unwrap();
+    let repo = TempDir::new().unwrap();
+    let root = repo.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    let configured = shared.path().to_str().unwrap();
+    git(root, &["config", "core.hooksPath", configured]);
+    install_reference_transaction_hook(root).unwrap_err();
+
+    let issues: Vec<_> = check(root)
+        .into_iter()
+        .filter(|issue| issue.description.contains("hook not installed:"))
+        .collect();
+
+    assert_eq!(issues.len(), 2, "{issues:?}");
+    for issue in issues {
+        assert_eq!(issue.action, RepairAction::Manual, "{issue:?}");
+        assert!(issue.description.contains(configured), "{issue:?}");
+        assert!(
+            issue.description.contains("outside this repository"),
+            "{issue:?}"
+        );
+        assert!(!fix_issue(root, &issue).unwrap());
+    }
+    assert_eq!(fs::read_dir(shared.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn a_hooks_path_inside_the_repository_is_where_repair_installs() {
+    let repo = TempDir::new().unwrap();
+    let root = repo.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "core.hooksPath", ".git/custom-hooks"]);
+
+    let issue = super::reference_transaction_issue(root).unwrap();
+    assert!(fix_issue(root, &issue).unwrap());
+
+    assert!(root
+        .join(".git/custom-hooks/reference-transaction")
+        .is_file());
+    assert!(!hook_path(root).exists());
+    assert!(hook_issues(root).is_empty());
+}
+
+fn git(root: &Path, args: &[&str]) {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git {args:?}");
+}
+
+#[test]
 fn a_loom_hook_raises_no_issue() {
     let repo = repo();
     install_reference_transaction_hook(repo.path()).unwrap();

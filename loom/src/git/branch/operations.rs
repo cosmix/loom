@@ -3,7 +3,7 @@
 use anyhow::Result;
 use std::path::Path;
 
-use super::info::{parse_branch_list, BranchInfo};
+use super::info::{list_refs, BranchInfo};
 use crate::git::runner::{run_git, run_git_bool, run_git_checked};
 
 /// Create a new branch from a base
@@ -30,7 +30,11 @@ pub fn delete_branch(name: &str, force: bool, repo_root: &Path) -> Result<()> {
 /// Reads the symbolic ref rather than `rev-parse --abbrev-ref`, which prints
 /// `heads/<name>` when a tag of the same name exists.
 pub fn current_branch(repo_root: &Path) -> Result<String> {
-    let output = run_git(&["symbolic-ref", "-q", "HEAD"], repo_root)?;
+    current_branch_with(&crate::git::worktree::WorktreeGit::discovered(repo_root))
+}
+
+pub(crate) fn current_branch_with(git: &crate::git::worktree::WorktreeGit) -> Result<String> {
+    let output = git.run(&["symbolic-ref", "-q", "HEAD"])?;
     if output.status.success() {
         let head = String::from_utf8_lossy(&output.stdout).trim().to_string();
         return Ok(head
@@ -48,10 +52,35 @@ pub fn current_branch(repo_root: &Path) -> Result<String> {
     )
 }
 
+pub(crate) fn resolve_target_branch_with(
+    config_branch: &Option<String>,
+    git: &crate::git::worktree::WorktreeGit,
+) -> Result<String> {
+    if let Some(branch) = config_branch {
+        return Ok(branch.clone());
+    }
+    let output = git.run(&["symbolic-ref", "refs/remotes/origin/HEAD"])?;
+    if output.status.success() {
+        let value = String::from_utf8_lossy(&output.stdout);
+        if let Some(branch) = value.trim().strip_prefix("refs/remotes/origin/") {
+            return Ok(branch.to_string());
+        }
+    }
+    for branch in ["main", "master"] {
+        if git
+            .run(&["rev-parse", "--verify", &format!("refs/heads/{branch}")])?
+            .status
+            .success()
+        {
+            return Ok(branch.to_string());
+        }
+    }
+    Ok("main".into())
+}
+
 /// List all branches
 pub fn list_branches(repo_root: &Path) -> Result<Vec<BranchInfo>> {
-    let stdout = run_git_checked(&["branch", "-v", "--no-color"], repo_root)?;
-    parse_branch_list(&stdout)
+    list_refs(repo_root, None)
 }
 
 /// Check if a branch exists
@@ -89,14 +118,11 @@ pub fn default_branch(repo_root: &Path) -> Result<String> {
 
 /// List loom branches (branches starting with loom/)
 pub fn list_loom_branches(repo_root: &Path) -> Result<Vec<String>> {
-    let stdout = run_git_checked(&["branch", "--list", "loom/*"], repo_root)?;
-    let branches: Vec<String> = stdout
-        .lines()
-        .map(|s| s.trim().trim_start_matches('*').trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    Ok(branches)
+    Ok(list_refs(repo_root, None)?
+        .into_iter()
+        .map(|branch| branch.name)
+        .filter(|name| name.starts_with("loom/"))
+        .collect())
 }
 
 /// Resolve target branch from config value or repo default
@@ -207,5 +233,84 @@ mod tests {
         let repo_root = temp_dir.path();
         git_in(repo_root, &["checkout", "-q", "--detach"]);
         assert_eq!(current_branch(repo_root).unwrap(), "HEAD");
+    }
+
+    /// Fields come out exact whatever the display would pad or mark: a current
+    /// branch, a branch checked out in a linked worktree, names of very
+    /// different widths, distinct hashes and an empty subject.
+    #[test]
+    fn listed_fields_are_exact_for_current_linked_and_padded_branches() {
+        let temp_dir = init_test_repo();
+        let repo = temp_dir.path();
+        let main_hash = run_git_checked(&["rev-parse", "HEAD"], repo).unwrap();
+        git_in(repo, &["branch", "x"]);
+        let long = "loom/a-branch-name-much-wider-than-any-other";
+        git_in(repo, &["branch", long]);
+        let linked = repo.join("linked");
+        git_in(repo, &["worktree", "add", linked.to_str().unwrap(), long]);
+        git_in(
+            &linked,
+            &["commit", "--allow-empty", "--allow-empty-message", "-m", ""],
+        );
+        let linked_hash = run_git_checked(&["rev-parse", "HEAD"], &linked).unwrap();
+        assert_ne!(main_hash, linked_hash);
+
+        let branches = list_branches(repo).unwrap();
+
+        let field = |name: &str| branches.iter().find(|b| b.name == name).unwrap();
+        assert_eq!(branches.len(), 3, "{branches:?}");
+        assert!(field("main").is_current);
+        assert_eq!(field("main").commit_hash, main_hash.trim());
+        assert_eq!(field("main").commit_message, "Initial commit");
+        assert!(!field("x").is_current);
+        assert_eq!(field("x").commit_hash, main_hash.trim());
+        assert!(
+            !field(long).is_current,
+            "a linked checkout is not current here"
+        );
+        assert_eq!(field(long).commit_hash, linked_hash.trim());
+        assert_eq!(field(long).commit_message, "");
+        assert!(!branches.iter().any(|b| b.name.starts_with(['+', '*', ' '])));
+    }
+
+    #[test]
+    fn listing_and_merged_checks_include_linked_worktree_refs() {
+        let temp_dir = init_test_repo();
+        let repo = temp_dir.path();
+        git_in(
+            repo,
+            &["commit", "--allow-empty", "--allow-empty-message", "-m", ""],
+        );
+        let hash = run_git_checked(&["rev-parse", "HEAD"], repo).unwrap();
+        git_in(repo, &["branch", "loom/a-long-linked-name"]);
+        git_in(repo, &["branch", "loom/z"]);
+        let linked = repo.join("linked");
+        git_in(
+            repo,
+            &[
+                "worktree",
+                "add",
+                linked.to_str().unwrap(),
+                "loom/a-long-linked-name",
+            ],
+        );
+        let branches = list_branches(repo).unwrap();
+        for name in ["main", "loom/a-long-linked-name", "loom/z"] {
+            let branch = branches.iter().find(|b| b.name == name).unwrap();
+            assert_eq!(branch.commit_hash, hash);
+            assert_eq!(branch.commit_message, "");
+            assert_eq!(branch.is_current, name == "main");
+        }
+        assert_eq!(
+            list_loom_branches(repo).unwrap(),
+            vec!["loom/a-long-linked-name", "loom/z"]
+        );
+        assert!(super::super::is_branch_merged("loom/a-long-linked-name", "main", repo).unwrap());
+        assert!(!super::super::is_branch_merged("loom/a-long", "main", repo).unwrap());
+        assert!(super::super::is_branch_merged("loom/z", "missing", repo).is_err());
+        assert_eq!(
+            super::super::cleanup_merged_branches("main", repo).unwrap(),
+            vec!["loom/z"]
+        );
     }
 }

@@ -16,6 +16,9 @@ mod naming;
 mod operations;
 mod status;
 
+pub(crate) use operations::{current_branch_with, resolve_target_branch_with};
+pub(crate) use status::pinned_uncommitted_changes;
+
 // Re-export all public items
 pub use ancestry::{
     commits_ahead_of, commits_between, get_branch_head, is_ancestor_of, is_branch_merged,

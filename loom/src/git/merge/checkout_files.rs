@@ -14,7 +14,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path};
 
 use super::checkout_state::{CheckoutProbe, DiskEntry};
-use super::tree::{MergeBlock, RestoreFailure};
+use super::tree::{MergeBlock, RestoreFailure, RollbackChanges};
 use crate::fs::safe_fs::{open_safely, safe_open_dirfd};
 use crate::git::runner::{run_git, run_git_with_env};
 
@@ -131,11 +131,11 @@ pub(super) struct RestoreReport {
 }
 
 impl RestoreReport {
-    pub fn block(self, rev: &str, backup_ref: Option<String>) -> MergeBlock {
+    pub fn block(self, rev: &str, changes: RollbackChanges) -> MergeBlock {
         MergeBlock::CheckoutRestoreIncomplete {
             source_rev: rev.to_string(),
             failures: self.failures,
-            backup_ref,
+            changes,
         }
     }
 }

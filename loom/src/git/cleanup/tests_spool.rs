@@ -94,6 +94,19 @@ fn test_cleanup_worktree_succeeds_with_drained_spool_present() {
     let loom_dir = worktrees_dir.join("stage-1").join(".loom");
     fs::create_dir_all(&loom_dir).unwrap();
     fs::write(loom_dir.join("memory-spool.jsonl"), "{}\n").unwrap();
+    let work_dir = temp_dir.path().join(".loom/work");
+    fs::create_dir_all(&work_dir).unwrap();
+    crate::git::worktree::capture_main_identity(temp_dir.path(), &work_dir).unwrap();
+    let drained =
+        crate::fs::memory::drain_into_journal(&work_dir, "stage-1", &worktrees_dir.join("stage-1"))
+            .unwrap();
+    assert_eq!(drained.skipped_malformed, 1);
+    assert_eq!(
+        fs::metadata(loom_dir.join("memory-spool.jsonl"))
+            .unwrap()
+            .len(),
+        0
+    );
 
     let result = cleanup_worktree("stage-1", temp_dir.path(), false);
     assert!(result.is_ok(), "cleanup failed: {:?}", result.err());
