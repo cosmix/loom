@@ -5,10 +5,10 @@ use tempfile::TempDir;
 #[cfg(unix)]
 use std::os::unix::fs::{symlink, PermissionsExt};
 
-const END: &str = "<!-- END loom METADATA -->\n";
+pub(super) const END: &str = "<!-- END loom METADATA -->\n";
 const RENDERED: &str = "- 2026-10-29: Claude sonnet, Codex gpt-6.1-sol; 1 round, review addressed";
 
-fn record_line(models: &[&str], rounds: u32, missing_rounds: &[u32]) -> RecordLine {
+pub(super) fn record_line(models: &[&str], rounds: u32, missing_rounds: &[u32]) -> RecordLine {
     RecordLine {
         date: chrono::NaiveDate::from_ymd_opt(2026, 10, 29).expect("valid fixed date"),
         claude_model: "sonnet".into(),
@@ -25,7 +25,7 @@ fn assert_placement(body: &str, expected: &str) {
     );
 }
 
-fn plan_file(text: &str) -> (TempDir, PathBuf) {
+pub(super) fn plan_file(text: &str) -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("temporary plan directory");
     let path = dir.path().join("PLAN-review.md");
     fs::write(&path, text).expect("write plan fixture");
@@ -318,21 +318,6 @@ fn replacement_before_publication_skips_record_without_losing_edit() -> anyhow::
     Ok(())
 }
 
-#[test]
-fn concurrent_loom_record_writers_preserve_both_records() -> anyhow::Result<()> {
-    let (_dir, plan) = plan_file(END);
-    let first = plan.clone();
-    let second = plan.clone();
-    let one = std::thread::spawn(move || append_record(&first, &record_line(&["one"], 1, &[])));
-    let two = std::thread::spawn(move || append_record(&second, &record_line(&["two"], 1, &[])));
-    assert_eq!(one.join().unwrap()?, RecordWrite::Written);
-    assert_eq!(two.join().unwrap()?, RecordWrite::Written);
-    let content = fs::read_to_string(&plan)?;
-    assert!(content.contains("Codex one"));
-    assert!(content.contains("Codex two"));
-    Ok(())
-}
-
 #[cfg(unix)]
 #[test]
 fn append_record_symlink_returns_plan_moved_without_changing_target() -> anyhow::Result<()> {
@@ -376,7 +361,7 @@ fn append_record_missing_plan_returns_plan_moved_without_creating_files() -> any
 #[test]
 fn append_record_succeeds_when_plan_directory_cannot_be_opened() -> anyhow::Result<()> {
     let (dir, plan) = plan_file(END);
-    // Write+search without read: the rename works, File::open(dir) fails.
+    // Write+search without read permits candidate creation and append.
     fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o311))?;
     let line = record_line(&["gpt-6.1-sol"], 1, &[]);
 

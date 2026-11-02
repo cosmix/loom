@@ -158,6 +158,103 @@ fn dropping_a_run_stops_and_reaps_its_active_attempt() {
     ));
 }
 
+fn job_in(repo: &Path, control: &Arc<Mutex<RunControl>>) -> CodexJob {
+    CodexJob {
+        codex_path: PathBuf::from("/bin/sh"),
+        repo_root: repo.to_path_buf(),
+        skill: "$pressure plan.md".to_string(),
+        log_path: repo.join("codex.log"),
+        effort: "high".to_string(),
+        pid: Arc::new(AtomicU32::new(0)),
+        control: Arc::clone(control),
+    }
+}
+
+fn group_count(control: &Mutex<RunControl>) -> usize {
+    control.lock().unwrap().groups.len()
+}
+
+#[cfg(unix)]
+#[test]
+fn a_finished_worker_leaves_no_group_to_signal() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(repo.path().join("exec"), "exit 0\n").unwrap();
+    let run = spawn_codex_with_fallback(
+        Path::new("/bin/sh"),
+        repo.path(),
+        "$pressure plan.md",
+        &repo.path().join("codex.log"),
+        vec!["only".to_string()],
+        "high",
+    )
+    .unwrap();
+    let control = Arc::clone(&run.control);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !run.is_finished() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the worker never ended"
+        );
+        thread::sleep(std::time::Duration::from_millis(10));
+    }
+
+    assert_eq!(
+        group_count(&control),
+        0,
+        "the worker's return clears its groups"
+    );
+    run.cancel_and_join().unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn an_attempts_group_is_dropped_once_empty_and_kept_while_a_child_outlives_it() {
+    let repo = tempfile::tempdir().unwrap();
+    let control = Arc::new(Mutex::new(RunControl::default()));
+    let job = job_in(repo.path(), &control);
+
+    std::fs::write(repo.path().join("exec"), "exit 0\n").unwrap();
+    let mut empty = job.spawn("first").unwrap();
+    empty.wait().unwrap();
+    let mut second = job.spawn("second").unwrap();
+    second.wait().unwrap();
+    assert_eq!(
+        group_count(&control),
+        1,
+        "only the newest attempt's group is left"
+    );
+
+    std::fs::write(
+        repo.path().join("exec"),
+        "(while [ ! -e release ]; do sleep 0.05; done) &\necho started > started\nexit 0\n",
+    )
+    .unwrap();
+    let mut outlived = job.spawn("third").unwrap();
+    outlived.wait().unwrap();
+    let group = control.lock().unwrap().groups.last().copied().unwrap();
+    std::fs::write(repo.path().join("exec"), "exit 0\n").unwrap();
+    let mut fourth = job.spawn("fourth").unwrap();
+    fourth.wait().unwrap();
+    let groups = control.lock().unwrap().groups.clone();
+    assert!(groups.contains(&group), "a child still runs in that group");
+
+    cancel_groups(&control).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while killpg(group, None).is_ok() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the child outlived cancel"
+        );
+        thread::sleep(std::time::Duration::from_millis(10));
+    }
+    cancel_groups(&control).unwrap();
+    assert_eq!(
+        group_count(&control),
+        0,
+        "a cancel drops the groups it found empty"
+    );
+}
+
 #[test]
 fn polling_a_running_thread_and_joining_preserve_its_error() {
     let (release, wait) = std::sync::mpsc::channel();

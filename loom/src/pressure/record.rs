@@ -1,8 +1,8 @@
-//! Render a pressure-test record and publish a replacement plan.
+//! Render a pressure-test record and append it without replacing plan text.
 
 use std::ffi::OsString;
-use std::fs::{self, File, Metadata, OpenOptions, Permissions};
-use std::io::{ErrorKind, Read, Write};
+use std::fs::{self, File, Metadata, OpenOptions};
+use std::io::{ErrorKind, Read};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -70,7 +70,7 @@ impl RecordLine {
     }
 }
 
-/// Whether the record was saved or a conflict was observed before publication.
+/// Whether the record was saved or a concurrent plan change was observed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordWrite {
     Written,
@@ -135,10 +135,20 @@ fn record_offset(text: &str) -> Option<usize> {
     Some(lines.iter().take(last + 1).map(|line| line.len()).sum())
 }
 
-/// Append a record through a synced sibling temp file, retaining the plan mode.
-/// Missing, changed, replaced, and symlinked plans observed before publication
-/// return [`RecordWrite::PlanMoved`]. External editors do not take Loom's lock:
-/// an edit between the last comparison and rename can still be overwritten.
+/// Append the exact rendered suffix through a retained `O_APPEND` handle.
+/// A synced sibling candidate is prepared first. Existing plan bytes are never
+/// rewritten: an external replacement or truncation cannot be overwritten by
+/// this writer. Observed conflicts return [`RecordWrite::PlanMoved`].
+///
+/// The plan lock orders Loom's own writers. It cannot stop an external editor,
+/// so that boundary is what the single `O_APPEND` write gives: the editor's bytes
+/// stay, and any change seen before or after the write reports `PlanMoved`.
+///
+/// An interior insertion is refused, since portable filesystems cannot make it
+/// conditional on unchanged contents. The caller receives the rendered record
+/// in the error for manual placement. An interrupted or short append can leave
+/// a record fragment, and its error says so and carries the record; it is never
+/// rolled back over a possible concurrent edit.
 pub fn append_record(plan_path: &Path, line: &RecordLine) -> Result<RecordWrite> {
     if regular_metadata(plan_path)?.is_none() {
         return Ok(RecordWrite::PlanMoved);
@@ -147,11 +157,23 @@ pub fn append_record(plan_path: &Path, line: &RecordLine) -> Result<RecordWrite>
     let Some(original) = regular_metadata(plan_path)? else {
         return Ok(RecordWrite::PlanMoved);
     };
-    // Keep the source inode open until replacement so it cannot be recycled.
+    // Keep the source inode open until publication so it cannot be recycled.
     let Some((_source, text)) = read_plan(plan_path, &original)? else {
         return Ok(RecordWrite::PlanMoved);
     };
     let updated = append_to_text(&text, &line.render());
+    ensure!(
+        updated.len() as u64 <= MAX_PLAN_BYTES,
+        "Recorded plan would exceed the 8 MiB read limit"
+    );
+    let suffix = updated.strip_prefix(&text).with_context(|| {
+        format!(
+            "Cannot safely insert a pressure record before existing plan text. \
+             Move the Pressure tests section to the end without trailing blank lines, \
+             or insert this record manually:\n{}",
+            line.render()
+        )
+    })?;
     let temp_path = temp_path(plan_path)?;
     let mut temp = OpenOptions::new()
         .write(true)
@@ -160,12 +182,10 @@ pub fn append_record(plan_path: &Path, line: &RecordLine) -> Result<RecordWrite>
         .mode(original.permissions().mode() & 0o7777)
         .open(&temp_path)
         .with_context(|| format!("Failed to create record temp file: {}", temp_path.display()))?;
-    let result = replace_plan(plan_path, &temp_path, &mut temp, &original, &text, &updated);
+    let result = publication::publish(plan_path, &mut temp, &original, &text, &updated, suffix);
     drop(temp);
-    if !matches!(&result, Ok(RecordWrite::Written)) {
-        // Only remove a temp file we successfully created, never a colliding path.
-        let _ = fs::remove_file(&temp_path);
-    }
+    // Only remove the candidate we created, including after successful append.
+    let _ = fs::remove_file(&temp_path);
     result
 }
 
@@ -256,48 +276,6 @@ fn temp_path(plan_path: &Path) -> Result<PathBuf> {
     Ok(plan_path.with_file_name(name))
 }
 
-fn replace_plan(
-    plan_path: &Path,
-    temp_path: &Path,
-    temp: &mut File,
-    original: &Metadata,
-    snapshot: &str,
-    text: &str,
-) -> Result<RecordWrite> {
-    temp.write_all(text.as_bytes())
-        .with_context(|| format!("Failed to write record temp file: {}", temp_path.display()))?;
-    // Apply permissions after writing: writing can clear setuid/setgid bits.
-    temp.set_permissions(Permissions::from_mode(
-        original.permissions().mode() & 0o7777,
-    ))
-    .context("Failed to preserve plan permissions")?;
-    temp.sync_all().context("Failed to sync record temp file")?;
-    #[cfg(test)]
-    BEFORE_PUBLICATION.with(|hook| {
-        if let Some(hook) = hook.borrow_mut().take() {
-            hook(plan_path);
-        }
-    });
-    if !still_matches(plan_path, original, snapshot)? {
-        return Ok(RecordWrite::PlanMoved);
-    }
-    fs::rename(temp_path, plan_path)
-        .with_context(|| format!("Failed to replace plan: {}", plan_path.display()))?;
-    // The plan already holds the record; a directory that cannot be opened or
-    // synced (for example mode 0311) only costs crash durability, so this is
-    // best effort like `fs::locking::atomic_write`.
-    let parent = plan_path
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    if let Ok(directory) = File::open(parent) {
-        let _ = directory.sync_all();
-    }
-    Ok(RecordWrite::Written)
-}
-
-/// This detects changed bytes but cannot make the later rename conditional.
-/// External editors do not take Loom's advisory lock.
 fn still_matches(plan_path: &Path, original: &Metadata, snapshot: &str) -> Result<bool> {
     let Some(current) = regular_metadata(plan_path)? else {
         return Ok(false);
@@ -311,5 +289,9 @@ fn still_matches(plan_path: &Path, original: &Metadata, snapshot: &str) -> Resul
     Ok(live == snapshot)
 }
 
+mod publication;
+
+#[cfg(test)]
+mod publication_tests;
 #[cfg(test)]
 mod tests;
