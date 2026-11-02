@@ -133,10 +133,11 @@ loom:
 <!-- END loom METADATA -->
 "#;
 
-/// A refused freeze under adjudication: a real repository whose base holds
-/// a Cargo package (`src/lib.rs`, `src/main.rs`), the stage worktree on
-/// `loom/s1` holding the untracked contract file, the plan named in the
-/// state directory's config, and dispute 1 over the refusal.
+#[path = "../test_support/mod.rs"]
+mod test_support;
+
+/// A refused freeze in a real Git worktree with a Cargo package, plan,
+/// untracked contract, and dispute 1.
 struct Refused {
     _tmp: tempfile::TempDir,
     work: PathBuf,
@@ -186,6 +187,7 @@ fn refused_freeze() -> Refused {
     let workspace = loom::fs::work_dir::WorkDir::new(&repo).unwrap();
     workspace.initialize().unwrap();
     let work = workspace.root().to_path_buf();
+    test_support::write_main_checkout_identity(&repo, &work);
     let plan = repo.join("doc/plans/PLAN-refusal.md");
     std::fs::create_dir_all(plan.parent().unwrap()).unwrap();
     std::fs::write(&plan, REFUSAL_PLAN).unwrap();
@@ -199,7 +201,6 @@ fn refused_freeze() -> Refused {
     }
 }
 
-/// `s1` as the plan states it, under adjudication of its refused freeze.
 fn refused_stage() -> Stage {
     Stage {
         plan_version: 2,

@@ -5,6 +5,9 @@
 //! equals the cold build byte for byte, and a corrupt view file is rebuilt,
 //! never served.
 
+#[path = "test_support/mod.rs"]
+mod test_support;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::process::Command;
@@ -152,7 +155,7 @@ fn committed_repo() -> TempDir {
     .unwrap();
     git(root, &["add", "src/lib.rs"]);
     git(root, &["commit", "-m", "seed"]);
-    std::fs::create_dir_all(root.join(".loom").join("work")).unwrap();
+    test_support::write_main_checkout_identity(root, &root.join(".loom/work"));
     temp
 }
 

@@ -34,10 +34,9 @@
 use loom::fs::permissions::constants::{HOOK_COMMON, HOOK_SUBAGENT_VERIFY_GUARD};
 use loom::process::sandbox_probe::{process_tree_visible, skip_unless};
 use std::fs;
-use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use tempfile::TempDir;
 
 /// Keep fixture writes under the runner's temporary root while rejecting a
@@ -165,23 +164,14 @@ fn run_hook_in_tree(
     );
 
     let mut cmd = Command::new("bash");
-    cmd.arg(dir.join("claude-outer.sh"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        // GOTCHA 2: clear ambient loom env before layering on whatever this
-        // specific test wants. Must happen before the extra_env loop below.
-        .env_remove("LOOM_STAGE_ID")
-        .env_remove("LOOM_WORK_DIR");
+    // GOTCHA 2: clear ambient loom env before layering on whatever this
+    // specific test wants. Must happen before the extra_env loop below.
+    super::helpers::clear_relay_env(&mut cmd).arg(dir.join("claude-outer.sh"));
     for (key, value) in extra_env {
         cmd.env(key, value);
     }
 
-    let mut child = cmd.spawn().expect("spawn process tree");
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(json_input.as_bytes()).ok();
-    }
-    let output = child.wait_with_output().expect("wait for process tree");
+    let output = super::helpers::run_hook_process(&mut cmd, json_input.as_bytes());
 
     (
         output.status.code().unwrap_or(-1),

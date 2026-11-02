@@ -1,16 +1,15 @@
 //! Integration tests for the read-guard PreToolUse hook.
 
-use super::helpers::clear_relay_env;
+use super::helpers::{clear_relay_env, run_hook_process};
 use loom::fs::permissions::constants::{
     HOOK_COMMON, HOOK_READ_DISCIPLINE, HOOK_READ_GUARD, HOOK_READ_LEDGER,
 };
 use loom::process::sandbox_probe::{process_tree_visible, skip_unless};
 use serde_json::{json, Value};
 use std::fs;
-use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use tempfile::TempDir;
 
 const STUB_STDERR_WARNING: &str = "could not refresh the working-tree source graph";
@@ -194,19 +193,12 @@ fn run_payload(
     cmd.arg(hook);
     configure_command_environment(&mut cmd, session, stub_dir);
     cmd.env_remove("LOOM_HOOK_DEBUG")
-        .env_remove("COMMIT_FILTER_DEBUG")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .env_remove("COMMIT_FILTER_DEBUG");
     if let Some(pid) = &session.main_agent_pid {
         cmd.env("LOOM_MAIN_AGENT_PID", pid);
     }
 
-    let mut child = cmd.spawn().expect("spawn hook");
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(payload_str.as_bytes()).ok();
-    }
-    let output = child.wait_with_output().expect("wait for hook");
+    let output = run_hook_process(&mut cmd, payload_str.as_bytes());
     HookOutput {
         code: output.status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),

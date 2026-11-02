@@ -76,9 +76,10 @@ pub fn refreeze_fixture() -> Refreeze {
     let home = tmp.path().join("home");
     fs::create_dir_all(&home).unwrap();
     let repo = tmp.path().join("repo");
-    let worktree = repo_with_worktree(&home, &repo);
+    let worktree = repo_with_worktree(&repo);
     let work = repo.join(".loom").join("work");
     fs::create_dir_all(&work).unwrap();
+    hv_support::capture_checkout_identity(&repo, &work);
     fs::write(work.join("orchestrator.lock"), b"").unwrap();
     WorkDir::new(&repo).unwrap().adopt_existing().unwrap();
     write_plan(&repo, &work);
@@ -112,28 +113,24 @@ impl Refreeze {
     }
 }
 
-fn repo_with_worktree(home: &Path, repo: &Path) -> PathBuf {
+fn repo_with_worktree(repo: &Path) -> PathBuf {
     fs::create_dir_all(repo.join("tests/support")).unwrap();
-    hv_support::git(home, repo, &["init", "-q", "-b", "main"]);
+    hv_support::git(repo, &["init", "-q", "-b", "main"]);
     for (key, value) in [
         ("user.email", "test@test.com"),
         ("user.name", "Test User"),
         ("commit.gpgsign", "false"),
     ] {
-        hv_support::git(home, repo, &["config", key, value]);
+        hv_support::git(repo, &["config", key, value]);
     }
     fs::write(repo.join(".gitignore"), ".loom/\n.worktrees/\n").unwrap();
     fs::write(repo.join(CONTRACT_FILE), CONTRACT_BYTES).unwrap();
     fs::write(repo.join(HELPER_FILE), HELPER_BYTES).unwrap();
-    hv_support::git(home, repo, &["add", "."]);
-    hv_support::git(home, repo, &["commit", "-q", "-m", "base"]);
+    hv_support::git(repo, &["add", "."]);
+    hv_support::git(repo, &["commit", "-q", "-m", "base"]);
     let relative = format!(".worktrees/{STAGE}");
     let branch = format!("loom/{STAGE}");
-    hv_support::git(
-        home,
-        repo,
-        &["worktree", "add", "-q", "-b", &branch, &relative],
-    );
+    hv_support::git(repo, &["worktree", "add", "-q", "-b", &branch, &relative]);
     repo.join(relative)
 }
 

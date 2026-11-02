@@ -5,6 +5,9 @@
 //! and `LOOM_SESSION_ID` removed, so the hook (when installed) can write the
 //! ledger and attests every move made through git.
 
+#[path = "test_support/mod.rs"]
+mod test_support;
+
 use loom::git::hooks::{install_reference_transaction_hook, HookInstall};
 use loom::git::merge::{merge_stage, MergeBlock, MergeGate, MergeResult};
 use loom::git::target_guard::{
@@ -57,7 +60,7 @@ fn fixture() -> (TempDir, PathBuf, PathBuf) {
     std::fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n").unwrap();
     commit(&root, "README.md", false);
     let work = root.join(".loom/work");
-    std::fs::create_dir_all(&work).unwrap();
+    test_support::write_main_checkout_identity(&root, &work);
     (dir, root, work)
 }
 

@@ -11,16 +11,16 @@
 //! * `--force-unsafe --assume-merged` checks ancestry before lying.
 //! * `--force-unsafe` alone refuses when an active merge for the stage is
 //!   in progress (would orphan MERGE_HEAD).
-//! * Daemon reconciliation reverts a `Completed + merged=true` stage when an
-//!   active merge for it is detected on disk.
+//! * Daemon reconciliation moves an unmerged completed stage to conflict while
+//!   preserving a finalized merged stage.
 
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use serial_test::serial;
 use tempfile::TempDir;
 
+use super::helpers::{git_checked, git_unchecked};
 use loom::commands::stage::complete::{route_complete_for_conflicts, CompleteConflictRoute};
 use loom::git::merge::{merge_head_exists, merge_stage, MergeBlock, MergeGate, MergeResult};
 use loom::models::stage::{Stage, StageStatus, StageType};
@@ -30,16 +30,7 @@ use loom::orchestrator::merge_attribution::{
 use loom::verify::transitions::{load_stage, save_stage, update_stage};
 
 fn run_git(args: &[&str], cwd: &Path) {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    git_checked(cwd, args);
 }
 
 fn init_repo() -> TempDir {
@@ -75,16 +66,9 @@ fn create_conflict_branch(stage_id: &str, repo_root: &Path) -> String {
     fs::write(repo_root.join("file.txt"), format!("branch-{stage_id}\n")).unwrap();
     run_git(&["add", "file.txt"], repo_root);
     run_git(&["commit", "-m", "branch"], repo_root);
-    let head = String::from_utf8_lossy(
-        &Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap()
-            .stdout,
-    )
-    .trim()
-    .to_string();
+    let head = String::from_utf8_lossy(&git_checked(repo_root, &["rev-parse", "HEAD"]).stdout)
+        .trim()
+        .to_string();
     run_git(&["checkout", "main"], repo_root);
     fs::write(repo_root.join("file.txt"), "main\n").unwrap();
     run_git(&["add", "file.txt"], repo_root);
@@ -96,11 +80,8 @@ fn create_conflict_branch(stage_id: &str, repo_root: &Path) -> String {
 /// MERGE_HEAD set on the main repo.
 fn start_active_merge_in_main(stage_id: &str, repo_root: &Path) {
     let branch = format!("loom/{stage_id}");
-    let _ = Command::new("git")
-        .args(["merge", "--no-ff", &branch])
-        .current_dir(repo_root)
-        .output()
-        .unwrap();
+    // The conflict makes this merge exit nonzero; MERGE_HEAD is the observable.
+    git_unchecked(repo_root, &["merge", "--no-ff", &branch]);
     assert!(
         merge_head_exists(repo_root).unwrap(),
         "test setup must leave MERGE_HEAD set"
@@ -129,7 +110,10 @@ fn force_unsafe_refuses_when_merge_head_present_in_main_repo() {
         false,
     )
     .unwrap();
-    matches!(route, CompleteConflictRoute::Refuse { .. });
+    assert!(
+        matches!(route, CompleteConflictRoute::Refuse { .. }),
+        "unexpected route: {route:?}"
+    );
 }
 
 #[test]
@@ -141,13 +125,6 @@ fn force_unsafe_assume_merged_refuses_when_commit_not_ancestor() {
 
     let stranded_sha = create_conflict_branch("stranded-stage", root);
     // No merge into main — branch HEAD is not an ancestor of main.
-
-    // Abort the active merge so router doesn't refuse via MERGE_HEAD path.
-    let _ = Command::new("git")
-        .args(["merge", "--abort"])
-        .current_dir(root)
-        .output()
-        .ok();
 
     let mut stage = make_stage("stranded-stage", StageStatus::Completed);
     stage.completed_commit = Some(stranded_sha);
@@ -163,7 +140,10 @@ fn force_unsafe_assume_merged_refuses_when_commit_not_ancestor() {
         true, // assume_merged
     )
     .unwrap();
-    matches!(route, CompleteConflictRoute::Refuse { .. });
+    assert!(
+        matches!(route, CompleteConflictRoute::Refuse { .. }),
+        "unexpected route: {route:?}"
+    );
 }
 
 #[test]
@@ -196,9 +176,12 @@ fn force_unsafe_assume_merged_succeeds_when_commit_is_ancestor() {
         true,
     )
     .unwrap();
-    matches!(
-        route,
-        CompleteConflictRoute::ForceUnsafeAssumeMergedVerified { .. }
+    assert!(
+        matches!(
+            route,
+            CompleteConflictRoute::ForceUnsafeAssumeMergedVerified { .. }
+        ),
+        "unexpected route: {route:?}"
     );
 }
 
@@ -315,7 +298,10 @@ fn complete_completed_with_active_merge_returns_daemon_managed_when_daemon_runni
         false,
     )
     .unwrap();
-    matches!(route, CompleteConflictRoute::DaemonManaged { .. });
+    assert!(
+        matches!(route, CompleteConflictRoute::DaemonManaged { .. }),
+        "unexpected route: {route:?}"
+    );
 }
 
 #[test]
@@ -393,22 +379,4 @@ fn daemon_reconcile_no_active_merge_returns_no_op() {
     assert_eq!(outcome, ReconciliationOutcome::NoActiveMerge);
 }
 
-#[test]
-#[serial]
-fn daemon_reconcile_unattributed_merge_logs_only() {
-    let repo = init_repo();
-    let root = repo.path();
-    let work_dir = make_work_dir(root);
-
-    // Manufacture MERGE_HEAD with bogus SHA.
-    fs::write(
-        root.join(".git").join("MERGE_HEAD"),
-        "deadbeefcafebabe1234567890abcdef12345678\n",
-    )
-    .unwrap();
-
-    let outcome = reconcile_main_repo_active_merge(root, &work_dir).unwrap();
-    assert_eq!(outcome, ReconciliationOutcome::UnattributedLogged);
-
-    fs::remove_file(root.join(".git").join("MERGE_HEAD")).ok();
-}
+mod unattributed_merge;

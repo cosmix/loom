@@ -54,27 +54,18 @@ fn setup_hook() -> (TempDir, std::path::PathBuf) {
 
 /// Run the hook against a Bash command; return its exit code (0 allow, 2 block).
 fn run_hook(hook_path: &std::path::Path, command: &str) -> i32 {
-    use std::io::Write;
-    use std::process::Stdio;
-
     let json_input = format!(
         r#"{{"tool_name": "Bash", "tool_input": {{"command": {}}}}}"#,
         serde_json::to_string(command).expect("encode command")
     );
 
-    let mut child = Command::new("bash")
-        .arg(hook_path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn hook");
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(json_input.as_bytes()).ok();
-    }
-
-    child.wait().expect("wait hook").code().unwrap_or(-1)
+    let mut cmd = Command::new("bash");
+    super::helpers::clear_relay_env(&mut cmd);
+    cmd.arg(hook_path);
+    super::helpers::run_hook_process(&mut cmd, json_input.as_bytes())
+        .status
+        .code()
+        .unwrap_or(-1)
 }
 
 // =============================================================================

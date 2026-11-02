@@ -6,8 +6,6 @@
 //! are completed AND merged. Temp merge branches are no longer created.
 
 use serial_test::serial;
-use std::fs;
-use std::process::Command;
 
 use loom::git::branch_exists;
 use loom::git::worktree::{resolve_base_branch, ResolvedBase};
@@ -124,51 +122,11 @@ fn test_diamond_pattern_all_merged() {
     merge_into_main("loom/stage-a", repo_root);
 
     // Create B from main (which now has A's work) and merge
-    Command::new("git")
-        .args(["checkout", "-b", "loom/stage-b"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to create branch");
-    fs::write(repo_root.join("b_file.txt"), "Content from B").expect("Failed to write");
-    Command::new("git")
-        .args(["add", "b_file.txt"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to add");
-    Command::new("git")
-        .args(["commit", "-m", "Add b_file.txt"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to commit");
-    Command::new("git")
-        .args(["checkout", "main"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to checkout main");
+    create_branch_with_file("loom/stage-b", "b_file.txt", "Content from B", repo_root);
     merge_into_main("loom/stage-b", repo_root);
 
     // Create C from main and merge
-    Command::new("git")
-        .args(["checkout", "-b", "loom/stage-c"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to create branch");
-    fs::write(repo_root.join("c_file.txt"), "Content from C").expect("Failed to write");
-    Command::new("git")
-        .args(["add", "c_file.txt"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to add");
-    Command::new("git")
-        .args(["commit", "-m", "Add c_file.txt"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to commit");
-    Command::new("git")
-        .args(["checkout", "main"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to checkout main");
+    create_branch_with_file("loom/stage-c", "c_file.txt", "Content from C", repo_root);
     merge_into_main("loom/stage-c", repo_root);
 
     let mut graph = build_test_graph(vec![

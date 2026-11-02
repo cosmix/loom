@@ -14,9 +14,9 @@ use tempfile::TempDir;
 ///
 /// Creates: A -> B -> C
 /// Verifies:
-/// - Stage 1 starts Ready (no deps)
-/// - Stages 2 and 3 start Pending
-/// - After stage 1 completes, stage 2 becomes Ready while stage 3 remains Pending
+/// - Stage 1 starts Queued (no deps)
+/// - Stages 2 and 3 start WaitingForDeps
+/// - After stage 1 completes, stage 2 becomes Queued while stage 3 remains WaitingForDeps
 #[test]
 fn test_sequential_plan_stage_order() {
     let temp_dir = TempDir::new().unwrap();
@@ -24,25 +24,7 @@ fn test_sequential_plan_stage_order() {
 
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
-    // Create stage 1 (no dependencies)
-    let mut stage1 = Stage::new("Stage 1".to_string(), Some("First stage".to_string()));
-    stage1.id = "stage-1".to_string();
-    stage1.status = StageStatus::Queued;
-    save_stage(&stage1, work_dir).expect("Should save stage 1");
-
-    // Create stage 2 (depends on stage 1)
-    let mut stage2 = Stage::new("Stage 2".to_string(), Some("Second stage".to_string()));
-    stage2.id = "stage-2".to_string();
-    stage2.status = StageStatus::WaitingForDeps;
-    stage2.add_dependency("stage-1".to_string());
-    save_stage(&stage2, work_dir).expect("Should save stage 2");
-
-    // Create stage 3 (depends on stage 2)
-    let mut stage3 = Stage::new("Stage 3".to_string(), Some("Third stage".to_string()));
-    stage3.id = "stage-3".to_string();
-    stage3.status = StageStatus::WaitingForDeps;
-    stage3.add_dependency("stage-2".to_string());
-    save_stage(&stage3, work_dir).expect("Should save stage 3");
+    crate::stage_fixture::save_three_stage_chain(work_dir);
 
     // Verify initial states
     let loaded_stage1 = load_stage("stage-1", work_dir).expect("Should load stage 1");
@@ -54,11 +36,11 @@ fn test_sequential_plan_stage_order() {
     let loaded_stage3 = load_stage("stage-3", work_dir).expect("Should load stage 3");
     assert_eq!(loaded_stage3.status, StageStatus::WaitingForDeps);
 
-    // Complete and verify stage 1
+    // Complete stage 1
     complete_stage("stage-1", work_dir).expect("Should complete stage 1");
-    let verified_stage1 = transition_stage("stage-1", StageStatus::Completed, work_dir)
-        .expect("Should verify stage 1");
-    assert_eq!(verified_stage1.status, StageStatus::Completed);
+    let repeated = transition_stage("stage-1", StageStatus::Completed, work_dir)
+        .expect("Repeated completion should succeed for stage 1");
+    assert_eq!(repeated.status, StageStatus::Completed);
 
     // Trigger dependents
     let triggered = trigger_dependents("stage-1", work_dir, work_dir, "main")
@@ -66,11 +48,11 @@ fn test_sequential_plan_stage_order() {
     assert_eq!(triggered.len(), 1);
     assert_eq!(triggered[0], "stage-2");
 
-    // Verify stage 2 is now Ready
+    // Verify stage 2 is now Queued
     let loaded_stage2 = load_stage("stage-2", work_dir).expect("Should load stage 2");
     assert_eq!(loaded_stage2.status, StageStatus::Queued);
 
-    // Verify stage 3 is still Pending
+    // Verify stage 3 is still WaitingForDeps
     let loaded_stage3 = load_stage("stage-3", work_dir).expect("Should load stage 3");
     assert_eq!(loaded_stage3.status, StageStatus::WaitingForDeps);
 }
@@ -78,8 +60,8 @@ fn test_sequential_plan_stage_order() {
 /// Test full completion of a sequential plan
 ///
 /// Runs through all stages sequentially (A -> B -> C) and verifies:
-/// - Each dependent only becomes Ready after its dependency is Verified
-/// - Final state: all stages Verified
+/// - Each dependent only becomes Queued after its dependency is Completed
+/// - Final state: all stages Completed
 #[test]
 fn test_sequential_plan_full_completion() {
     let temp_dir = TempDir::new().unwrap();
@@ -87,32 +69,15 @@ fn test_sequential_plan_full_completion() {
 
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
-    // Create stage 1 (no dependencies)
-    let mut stage1 = Stage::new("Stage 1".to_string(), Some("First stage".to_string()));
-    stage1.id = "stage-1".to_string();
-    stage1.status = StageStatus::Queued;
-    save_stage(&stage1, work_dir).expect("Should save stage 1");
-
-    // Create stage 2 (depends on stage 1)
-    let mut stage2 = Stage::new("Stage 2".to_string(), Some("Second stage".to_string()));
-    stage2.id = "stage-2".to_string();
-    stage2.status = StageStatus::WaitingForDeps;
-    stage2.add_dependency("stage-1".to_string());
-    save_stage(&stage2, work_dir).expect("Should save stage 2");
-
-    // Create stage 3 (depends on stage 2)
-    let mut stage3 = Stage::new("Stage 3".to_string(), Some("Third stage".to_string()));
-    stage3.id = "stage-3".to_string();
-    stage3.status = StageStatus::WaitingForDeps;
-    stage3.add_dependency("stage-2".to_string());
-    save_stage(&stage3, work_dir).expect("Should save stage 3");
+    crate::stage_fixture::save_three_stage_chain(work_dir);
 
     // Complete stage 1
     complete_stage("stage-1", work_dir).expect("Should complete stage 1");
-    transition_stage("stage-1", StageStatus::Completed, work_dir).expect("Should verify stage 1");
+    transition_stage("stage-1", StageStatus::Completed, work_dir)
+        .expect("Repeated completion should succeed for stage 1");
     trigger_dependents("stage-1", work_dir, work_dir, "main").expect("Should trigger dependents");
 
-    // Verify stage 2 is Ready, stage 3 still Pending
+    // Verify stage 2 is Queued, stage 3 still WaitingForDeps
     let loaded_stage2 = load_stage("stage-2", work_dir).expect("Should load stage 2");
     assert_eq!(loaded_stage2.status, StageStatus::Queued);
 
@@ -121,18 +86,20 @@ fn test_sequential_plan_full_completion() {
 
     // Complete stage 2
     complete_stage("stage-2", work_dir).expect("Should complete stage 2");
-    transition_stage("stage-2", StageStatus::Completed, work_dir).expect("Should verify stage 2");
+    transition_stage("stage-2", StageStatus::Completed, work_dir)
+        .expect("Repeated completion should succeed for stage 2");
     trigger_dependents("stage-2", work_dir, work_dir, "main").expect("Should trigger dependents");
 
-    // Verify stage 3 is now Ready
+    // Verify stage 3 is now Queued
     let loaded_stage3 = load_stage("stage-3", work_dir).expect("Should load stage 3");
     assert_eq!(loaded_stage3.status, StageStatus::Queued);
 
     // Complete stage 3
     complete_stage("stage-3", work_dir).expect("Should complete stage 3");
-    transition_stage("stage-3", StageStatus::Completed, work_dir).expect("Should verify stage 3");
+    transition_stage("stage-3", StageStatus::Completed, work_dir)
+        .expect("Repeated completion should succeed for stage 3");
 
-    // Verify all stages are Verified
+    // Verify all stages are Completed
     let stages = list_all_stages(work_dir).expect("Should list all stages");
     assert_eq!(stages.len(), 3);
 
@@ -140,7 +107,7 @@ fn test_sequential_plan_full_completion() {
         assert_eq!(
             stage.status,
             StageStatus::Completed,
-            "Stage {} should be Verified",
+            "Stage {} should be Completed",
             stage.id
         );
     }
@@ -150,7 +117,7 @@ fn test_sequential_plan_full_completion() {
 ///
 /// Creates: A -> B -> C -> D
 /// Verifies:
-/// - At each step, only the immediate next stage becomes Ready
+/// - At each step, only the immediate next stage becomes Queued
 /// - No stage skips ahead in the chain
 #[test]
 fn test_dependency_chain_respected() {
@@ -159,27 +126,23 @@ fn test_dependency_chain_respected() {
 
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
-    // Create stage 1 (no dependencies)
     let mut stage1 = Stage::new("Stage A".to_string(), Some("First stage".to_string()));
     stage1.id = "stage-a".to_string();
     stage1.status = StageStatus::Queued;
     save_stage(&stage1, work_dir).expect("Should save stage A");
 
-    // Create stage 2 (depends on stage 1)
     let mut stage2 = Stage::new("Stage B".to_string(), Some("Second stage".to_string()));
     stage2.id = "stage-b".to_string();
     stage2.status = StageStatus::WaitingForDeps;
     stage2.add_dependency("stage-a".to_string());
     save_stage(&stage2, work_dir).expect("Should save stage B");
 
-    // Create stage 3 (depends on stage 2)
     let mut stage3 = Stage::new("Stage C".to_string(), Some("Third stage".to_string()));
     stage3.id = "stage-c".to_string();
     stage3.status = StageStatus::WaitingForDeps;
     stage3.add_dependency("stage-b".to_string());
     save_stage(&stage3, work_dir).expect("Should save stage C");
 
-    // Create stage 4 (depends on stage 3)
     let mut stage4 = Stage::new("Stage D".to_string(), Some("Fourth stage".to_string()));
     stage4.id = "stage-d".to_string();
     stage4.status = StageStatus::WaitingForDeps;
@@ -188,14 +151,15 @@ fn test_dependency_chain_respected() {
 
     // Complete stage A
     complete_stage("stage-a", work_dir).expect("Should complete stage A");
-    transition_stage("stage-a", StageStatus::Completed, work_dir).expect("Should verify stage A");
+    transition_stage("stage-a", StageStatus::Completed, work_dir)
+        .expect("Repeated completion should succeed for stage A");
 
     let triggered = trigger_dependents("stage-a", work_dir, work_dir, "main")
         .expect("Should trigger dependents");
     assert_eq!(triggered.len(), 1);
     assert_eq!(triggered[0], "stage-b");
 
-    // Verify only stage B is Ready, C and D still Pending
+    // Verify only stage B is Queued, C and D still WaitingForDeps
     let loaded_stage_b = load_stage("stage-b", work_dir).expect("Should load stage B");
     assert_eq!(loaded_stage_b.status, StageStatus::Queued);
 
@@ -207,14 +171,15 @@ fn test_dependency_chain_respected() {
 
     // Complete stage B
     complete_stage("stage-b", work_dir).expect("Should complete stage B");
-    transition_stage("stage-b", StageStatus::Completed, work_dir).expect("Should verify stage B");
+    transition_stage("stage-b", StageStatus::Completed, work_dir)
+        .expect("Repeated completion should succeed for stage B");
 
     let triggered = trigger_dependents("stage-b", work_dir, work_dir, "main")
         .expect("Should trigger dependents");
     assert_eq!(triggered.len(), 1);
     assert_eq!(triggered[0], "stage-c");
 
-    // Verify only stage C is Ready, D still Pending
+    // Verify only stage C is Queued, D still WaitingForDeps
     let loaded_stage_c = load_stage("stage-c", work_dir).expect("Should load stage C");
     assert_eq!(loaded_stage_c.status, StageStatus::Queued);
 
@@ -223,14 +188,15 @@ fn test_dependency_chain_respected() {
 
     // Complete stage C
     complete_stage("stage-c", work_dir).expect("Should complete stage C");
-    transition_stage("stage-c", StageStatus::Completed, work_dir).expect("Should verify stage C");
+    transition_stage("stage-c", StageStatus::Completed, work_dir)
+        .expect("Repeated completion should succeed for stage C");
 
     let triggered = trigger_dependents("stage-c", work_dir, work_dir, "main")
         .expect("Should trigger dependents");
     assert_eq!(triggered.len(), 1);
     assert_eq!(triggered[0], "stage-d");
 
-    // Verify stage D is now Ready
+    // Verify stage D is now Queued
     let loaded_stage_d = load_stage("stage-d", work_dir).expect("Should load stage D");
     assert_eq!(loaded_stage_d.status, StageStatus::Queued);
 }

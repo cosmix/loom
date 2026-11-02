@@ -60,31 +60,19 @@ fn run_hook_with_env(
     command: &str,
     env: &[(&str, &str)],
 ) -> i32 {
-    use std::io::Write;
-    use std::process::Stdio;
-
     // Build JSON input matching what Claude Code sends
     let json_input = format!(
         r#"{{"tool_name": "{tool_name}", "tool_input": {{"command": {}}}}}"#,
         serde_json::to_string(command).unwrap_or_else(|_| format!("\"{command}\""))
     );
 
-    let mut child = Command::new("bash")
-        .arg(hook_path)
-        .env_remove("LOOM_STAGE_ID")
-        .env_remove("LOOM_SESSION_ID")
-        .envs(env.iter().copied())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn hook");
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(json_input.as_bytes()).ok();
-    }
-
-    child.wait().expect("wait hook").code().unwrap_or(-1)
+    let mut cmd = Command::new("bash");
+    super::helpers::clear_relay_env(&mut cmd);
+    cmd.arg(hook_path).envs(env.iter().copied());
+    super::helpers::run_hook_process(&mut cmd, json_input.as_bytes())
+        .status
+        .code()
+        .unwrap_or(-1)
 }
 
 #[path = "hooks_commit_filter_session.rs"]
