@@ -1,6 +1,6 @@
 # Review Integration Verification
 >
-> Integrated review test failures and verification discipline
+> Integrated review failures
 
 Integration failures and verification discipline for the Astra review repairs.
 

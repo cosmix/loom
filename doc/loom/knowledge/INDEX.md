@@ -9,7 +9,7 @@
 | File | Description | Lines |
 | --- | --- | --- |
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 250 |
-| [entry-points.md](entry-points.md) | Key files agents should read first | 76 |
+| [entry-points.md](entry-points.md) | Key files agents should read first | 77 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 208 |
@@ -49,11 +49,12 @@
 | [owned-waits](architecture/owned-waits.md) | One bound wait per parent session, keyed to an explicit worker set, replacing a… | 70 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 257 |
 | [plan-server](architecture/plan-server.md) | Chat | 245 |
-| [planner-web-shell](architecture/planner-web-shell.md) | Shell and screens | 44 |
+| [planner-feature-screens](architecture/planner-feature-screens.md) | Layout route, spine, offers | 25 |
+| [planner-web-shell](architecture/planner-web-shell.md) | Shell and screens | 46 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 180 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 35 |
-| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 230 |
-| [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 135 |
+| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 249 |
+| [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 146 |
 | [pressure](architecture/pressure.md) | Pipeline | 42 |
 | [quota-poller](architecture/quota-poller.md) |  | 37 |
 | [remote-control](architecture/remote-control.md) |  | 81 |
@@ -74,7 +75,7 @@
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 376 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | Daemon-run host jobs for completion, checks and freezes: state, child, apply | 237 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | Daemon-run gates | 239 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 118 |
 | [web-terminal](architecture/web-terminal.md) |  | 181 |
 
@@ -87,7 +88,7 @@
 | [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Fs, git | 135 |
 | [hooks](entry-points/hooks.md) |  | 137 |
 | [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) |  | 250 |
-| [remote-control](entry-points/remote-control.md) | Remote control and permission modes | 97 |
+| [remote-control](entry-points/remote-control.md) | Remote control and permission modes | 98 |
 
 ### patterns
 
@@ -115,7 +116,7 @@
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 239 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 139 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 143 |
-| [plan-web](conventions/plan-web.md) |  | 69 |
+| [plan-web](conventions/plan-web.md) |  | 77 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 62 |
 
@@ -142,9 +143,9 @@
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | Orphans | 55 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
-| [frontmatter-boundary](mistakes/frontmatter-boundary.md) | Keep YAML and body offsets distinct when sharing frontmatter boundaries | 13 |
+| [frontmatter-boundary](mistakes/frontmatter-boundary.md) | YAML vs body offsets | 13 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 362 |
-| [host-verify-group-containment](mistakes/host-verify-group-containment.md) | Guardian group boundaries and bubblewrap session cleanup mistakes | 23 |
+| [host-verify-group-containment](mistakes/host-verify-group-containment.md) | Guardian cleanup | 23 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) |  | 266 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Rules | 216 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 134 |
@@ -160,15 +161,16 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 49 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Delivery slips | 371 |
+| [planner-redesign](mistakes/planner-redesign.md) | Redesign slips | 80 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair slips | 94 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 329 |
 | [release-feature-review](mistakes/release-feature-review.md) | Gaps | 13 |
-| [review-continuation-verification](mistakes/review-continuation-verification.md) | Astra review repair lessons | 332 |
+| [review-continuation-verification](mistakes/review-continuation-verification.md) | Astra review repair lessons | 331 |
 | [review-final-wave](mistakes/review-final-wave.md) | Final repair wave lessons | 190 |
-| [review-integration-verification](mistakes/review-integration-verification.md) | Integrated review test failures and verification discipline | 169 |
-| [review-tracker](mistakes/review-tracker.md) | Keep completed findings and active review assignments current | 353 |
+| [review-integration-verification](mistakes/review-integration-verification.md) | Integrated review failures | 168 |
+| [review-tracker](mistakes/review-tracker.md) | Keep findings and review assignments current | 353 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 391 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) |  | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) |  | 299 |
@@ -206,7 +208,7 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gaps | 71 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | recovery sync resets a finished node; macOS forward-guard branches unrun | 224 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Recovery sync; unrun branches | 225 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 61 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
@@ -214,13 +216,14 @@
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 108 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 40 |
-| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 67 |
+| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 103 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 143 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 42 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 185 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 204 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 363 |
+| [session-tmpdir-deny](concerns/session-tmpdir-deny.md) | TMPDIR read-only in sessions | 11 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 86 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Host-verification review suggestions: open and fixed defects by file:line | 301 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 17 |
