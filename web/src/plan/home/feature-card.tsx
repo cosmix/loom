@@ -8,7 +8,8 @@ import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
 import { plural } from "@/plan/ui/plural";
 import { FeatureMark } from "@/plan/home/feature-mark";
-import { ProgressStrip, RUN_STEP } from "@/plan/home/progress-strip";
+import { STEP } from "@/plan/feature/steps";
+import { ProgressStrip } from "@/plan/home/progress-strip";
 import { featuresAtom } from "@/plan/state/atoms";
 import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
 
@@ -23,7 +24,7 @@ function pathLine({ feature, has_product }: ChecklistView): string {
 function currentStep(checklist: ChecklistView): number | null {
   const { current } = checklist;
   if (current.kind === "step") return current.number;
-  return current.kind === "ready" ? RUN_STEP : null;
+  return current.kind === "ready" ? STEP.run : null;
 }
 
 function Fact({ icon, children }: { icon: ReactNode; children: string }) {
