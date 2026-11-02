@@ -45,7 +45,8 @@ pub fn merge(stage_id: Option<String>, resolved: bool) -> Result<()> {
 ///
 /// This path:
 /// 1. Resolves stage ID (provided or auto-detected from branch)
-/// 2. Verifies the stage is in MergeConflict or MergeBlocked status
+/// 2. Verifies the stage is in MergeConflict or MergeBlocked status, with no
+///    host job still live in its worktree
 /// 3. Checks the stage worktree (`check_resolved_worktree`): the stage's
 ///    recorded commit still in the branch, committed, no unmerged path
 /// 4. Merges the stage into the target with `merge_stage`, which leaves the
@@ -71,6 +72,8 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
         );
     }
 
+    refuse_live_host_job(&stage_id, work_dir)?;
+
     // The resolver runs inside the stage worktree, so the repository root is
     // the main repository the state directory belongs to, not the cwd.
     let repo_root = main_repo_root(work_dir)?;
@@ -95,6 +98,59 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
         MergeResult::Blocked(block) => record_block(&stage_id, work_dir, block),
         MergeResult::Held { reason } => hold_for_review(&stage_id, work_dir, &reason),
     }
+}
+
+/// Clear the stage's host job before the acceptance run this command starts,
+/// since its criteria share the worktree with that run.
+fn refuse_live_host_job(stage_id: &str, work_dir: &Path) -> Result<()> {
+    withdraw_or_refuse_host_job(
+        stage_id,
+        work_dir,
+        crate::daemon::DaemonServer::is_running(work_dir),
+    )
+}
+
+/// With a daemon running, its runner owns the job's child and kills it on its
+/// own tick, so a live job is only waited for. Without one nothing would ever
+/// end the record: a queued job is withdrawn and the merge continues; a
+/// running job is withdrawn too, but its orphaned `verify-host` child still
+/// holds the worktree until `child_watchdog` sees the record is no longer
+/// `Running` (it polls every 50 ms and kills the child's process group), so
+/// the operator reruns shortly. A record that cannot be read refuses.
+fn withdraw_or_refuse_host_job(
+    stage_id: &str,
+    work_dir: &Path,
+    daemon_running: bool,
+) -> Result<()> {
+    use crate::host_verify::JobState;
+
+    let Some(job) = crate::host_verify::store::load_current(work_dir, stage_id)?
+        .filter(|job| !job.state.is_terminal())
+    else {
+        return Ok(());
+    };
+    if daemon_running {
+        bail!(
+            "Stage '{stage_id}' has host job {} still {:?}, which runs in the stage worktree. \
+             Wait for it to end, then rerun --resolved.",
+            job.id,
+            job.state
+        );
+    }
+    crate::host_verify::submit::cancel(
+        work_dir,
+        stage_id,
+        "withdrawn by merge --resolved: no daemon is running",
+    )?;
+    if job.state == JobState::Running {
+        bail!(
+            "Stage '{stage_id}' had host job {} running in the stage worktree with no daemon to \
+             stop it. The job was withdrawn, and its orphaned verify-host process stops itself \
+             through its watchdog within moments. Rerun --resolved shortly.",
+            job.id
+        );
+    }
+    Ok(())
 }
 
 /// Re-attempt merge for a stage in MergeConflict or MergeBlocked status.
@@ -193,6 +249,9 @@ fn find_repo_root(cwd: &Path) -> Result<std::path::PathBuf> {
         }
     }
 }
+
+#[cfg(test)]
+mod live_job_tests;
 
 #[cfg(test)]
 mod tests;

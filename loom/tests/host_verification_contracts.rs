@@ -368,16 +368,17 @@ fn verify_host_refuses_inside_a_session() {
 }
 
 #[test]
-fn adjudication_sessions_may_relay_check() {
+fn merge_and_adjudication_sessions_may_relay_check() {
     for session in [
         SessionType::Adjudication,
+        SessionType::Merge,
         SessionType::Stage,
         SessionType::Knowledge,
     ] {
         let got = verdict(session, RequestKind::Check);
         assert_eq!(got, MatrixVerdict::Apply, "{session:?}");
     }
-    for session in [SessionType::Contract, SessionType::Merge] {
+    for session in [SessionType::Contract, SessionType::BaseConflict] {
         let got = verdict(session, RequestKind::Check);
         assert_eq!(got, MatrixVerdict::Refuse, "{session:?}");
     }

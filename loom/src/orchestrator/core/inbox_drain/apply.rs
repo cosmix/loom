@@ -12,6 +12,7 @@ use chrono::{DateTime, Utc};
 use crate::daemon::Response;
 use crate::fs::memory::{append_entry, validate_spooled_entry, MemoryEntry};
 use crate::fs::stage_request::StageRequest;
+use crate::git::branch::branch_name_for_stage;
 use crate::handoff::session_content::{write_session_handoff, SessionHandoff, CEILING_TRIGGER};
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
@@ -203,6 +204,38 @@ pub(super) fn require_owner(
         return Err(format!(
             "session '{}' is not the active session of stage '{stage_id}'",
             record.id
+        ));
+    }
+    Ok(stage)
+}
+
+/// A merge session acts on a stage only while it resolves that stage's merge.
+/// It is not the stage's `session`, so it is attributed by the branch it was
+/// spawned for. Returns the stage as loaded for the check.
+pub(super) fn require_merge_resolver(
+    work_dir: &Path,
+    stage_id: &str,
+    record: &Session,
+) -> Result<Stage, String> {
+    if record.status != SessionStatus::Running {
+        return Err(format!("session '{}' is no longer running", record.id));
+    }
+    let branch = branch_name_for_stage(stage_id);
+    if record.merge_source_branch.as_deref() != Some(branch.as_str()) {
+        return Err(format!(
+            "session '{}' is not resolving the merge of {branch}",
+            record.id
+        ));
+    }
+    let stage = load_stage(stage_id, work_dir)
+        .map_err(|error| format!("stage '{stage_id}' could not be loaded: {error:#}"))?;
+    if !matches!(
+        stage.status,
+        StageStatus::MergeConflict | StageStatus::MergeBlocked
+    ) {
+        return Err(format!(
+            "stage '{stage_id}' is {}, not MergeConflict or MergeBlocked",
+            stage.status
         ));
     }
     Ok(stage)

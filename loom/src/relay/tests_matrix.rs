@@ -295,18 +295,19 @@ fn commit_is_applied_for_stage_knowledge_and_merge_only() {
     }
 }
 
-/// The `check` column: the sessions that verify (the judge included) apply it.
+/// The `check` column: the sessions that verify (the judge and the merge
+/// resolver included) apply it.
 const CHECK_COLUMN: [(SessionType, MatrixVerdict); 6] = [
     (SessionType::Stage, MatrixVerdict::Apply),
     (SessionType::Knowledge, MatrixVerdict::Apply),
-    (SessionType::Merge, MatrixVerdict::Refuse),
+    (SessionType::Merge, MatrixVerdict::Apply),
     (SessionType::BaseConflict, MatrixVerdict::Refuse),
     (SessionType::Adjudication, MatrixVerdict::Apply),
     (SessionType::Contract, MatrixVerdict::Refuse),
 ];
 
 #[test]
-fn check_is_applied_for_stage_knowledge_and_adjudication_only() {
+fn check_is_applied_for_stage_knowledge_merge_and_adjudication_only() {
     for (session, expected_verdict) in CHECK_COLUMN {
         assert_eq!(
             verdict(session, RequestKind::Check),

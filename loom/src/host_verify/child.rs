@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use anyhow::{bail, ensure, Context, Result};
 
+use super::child_policy::{check_cache_policy, requested_cache};
 use super::{child_complete, digest, freeze, store};
 use super::{CriterionOutcome, JobKind, JobRecord, JobResult, JobState};
 use crate::git::worktree::WorktreeGit;
@@ -98,7 +99,8 @@ fn check(work_dir: &Path, record: &JobRecord, progress: &Arc<Progress>) -> Resul
         bail!("the tree does not match the request: {mismatch}");
     }
     let only = record.criteria.clone().map(BTreeSet::from_iter);
-    let config = acceptance_config(&stage, &tree, work_dir, record.no_cache, progress);
+    let cache = check_cache_policy(work_dir, record)?;
+    let config = acceptance_config(&stage, &tree, work_dir, cache, progress);
     run_configured(&stage, &tree, &config.with_only(only))?;
     progress.take_failure()?;
     // The goal-backward checks belong to a run of every criterion.
@@ -119,7 +121,7 @@ pub(super) fn run_acceptance(
     no_cache: bool,
     progress: &Arc<Progress>,
 ) -> Result<()> {
-    let config = acceptance_config(stage, tree, work_dir, no_cache, progress);
+    let config = acceptance_config(stage, tree, work_dir, requested_cache(no_cache), progress);
     run_configured(stage, tree, &config)
 }
 
@@ -129,7 +131,7 @@ fn acceptance_config(
     stage: &Stage,
     tree: &JobTree,
     work_dir: &Path,
-    no_cache: bool,
+    cache: CachePolicy,
     progress: &Arc<Progress>,
 ) -> CriteriaConfig {
     let observer = {
@@ -138,12 +140,6 @@ fn acceptance_config(
         CriterionObserver(Arc::new(move |index: usize, result: &CriterionResult| {
             progress.acceptance(index, result, &setup);
         }))
-    };
-    // `--no-cache` reads nothing but stores what it re-proves.
-    let cache = if no_cache {
-        CachePolicy::Refresh
-    } else {
-        CachePolicy::Use
     };
     CriteriaConfig::default()
         .with_plan_confinement(plan_confinement(work_dir))

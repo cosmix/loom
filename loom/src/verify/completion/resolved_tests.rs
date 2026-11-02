@@ -128,6 +128,58 @@ fn the_failing_command_list_is_bounded() {
     assert!(listed.split("; ").all(|one| one.chars().count() <= 200));
 }
 
+thread_local! {
+    static EMITTED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn record_emitted(_: OutputStream, line: &str) {
+    EMITTED.with(|emitted| emitted.borrow_mut().push(line.to_owned()));
+}
+
+/// A stage session's `loom check` stores passes the same fingerprint would
+/// answer; the landing gate reruns the criterion regardless.
+#[test]
+fn a_pass_a_check_cached_does_not_answer_the_landing_gate() {
+    if crate::process::sandbox_probe::skip_unless(
+        crate::verify::criteria::host_launcher().is_some(),
+        "a_pass_a_check_cached_does_not_answer_the_landing_gate",
+        "OS sandbox launcher absent",
+    ) {
+        return;
+    }
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("repo");
+    std::fs::create_dir_all(&root).unwrap();
+    let (_, work_dir) = resolved_stage_with_broken_detector(&root);
+    let stage = update_stage(STAGE, &work_dir, |saved| {
+        saved.acceptance = vec![AcceptanceCriterion::Simple("true".to_owned())];
+        Ok(())
+    })
+    .unwrap();
+    let worktree = root.join(".worktrees").join(STAGE);
+    let dir = resolve_acceptance_dir(Some(&worktree), stage.working_dir.as_deref()).unwrap();
+    let check = CriteriaConfig::default()
+        .with_plan_confinement(plan_confinement(&work_dir))
+        .with_cache_dir(&work_dir)
+        .with_cache_policy(crate::verify::criteria::CachePolicy::Use)
+        .with_tree_root(Some(worktree.as_path()));
+    let run_check = || run_acceptance_with_config(&stage, dir.as_deref(), &check).unwrap();
+    run_check();
+    assert!(
+        run_check().results()[0].cached,
+        "the fixture never reaches the pass cache"
+    );
+
+    verify_resolved_completion_for_operator(&stage, &work_dir, record_emitted).unwrap();
+
+    let emitted = EMITTED.with(|emitted| emitted.borrow().join("\n"));
+    assert!(
+        emitted.contains("All acceptance criteria passed"),
+        "{emitted}"
+    );
+    assert!(!emitted.contains("(cached)"), "{emitted}");
+}
+
 #[test]
 fn an_operator_is_warned_and_keeps_the_decision() {
     let temp = TempDir::new().unwrap();

@@ -133,10 +133,10 @@ impl Orchestrator {
         })
     }
 
-    /// Check the worktree the resolver left, land the merge, and clean up.
-    /// Content that fails completion verification is handed back to a stage
-    /// session ([`Self::hand_merge_back`]) once a merge commit is proved. A
-    /// worktree that is not ready, content that fails with no merge commit, or
+    /// Stop any check the resolver left running, check the worktree it left,
+    /// land the merge, and clean up. Content that fails completion verification
+    /// is handed back to a stage session ([`Self::hand_merge_back`]) once a
+    /// merge commit is proved. A worktree that is not ready, content that fails with no merge commit, or
     /// a merge that does not land, leaves the stage as it is: the spawn loop
     /// gives it another counted resolver, or routes it to human review once
     /// the budget is spent.
@@ -146,6 +146,10 @@ impl Orchestrator {
         target: &str,
         completed_commit: Option<&str>,
     ) {
+        if let Err(reason) = self.stop_running_check(stage_id) {
+            self.report_unresolved_merge(stage_id, &reason);
+            return;
+        }
         if let Err(reason) =
             check_resolved_worktree(&self.config.repo_root, stage_id, completed_commit)
         {

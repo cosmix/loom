@@ -25,9 +25,9 @@ pub enum MatrixVerdict {
 /// its way to say it cannot finish the merge. The daemon applies it as a give-up
 /// (stops the resolver, routes the stage to human review with the reason), not
 /// as the stage block a stage session gets. `BaseConflict` follows `Merge`
-/// except that it refuses `block` and `merge-resolved`; for the latter, a
-/// base-conflict session resolves the *pre-stage* merge, so finalizing an
-/// unrelated stage merge from inside one would be a forgery.
+/// except that it refuses `block`, `commit`, `check` and `merge-resolved`; for
+/// the last, a base-conflict session resolves the *pre-stage* merge, so
+/// finalizing an unrelated stage merge from inside one would be a forgery.
 ///
 /// Verification v2 (DESIGN D8) adds the `Contract` session and the
 /// `freeze-contracts` kind. `Contract` follows `Stage` except that it may not
@@ -41,6 +41,10 @@ pub enum MatrixVerdict {
 /// sessions that write a branch relay it: `Stage` (its stage branch),
 /// `Knowledge` (the target branch, knowledge prefix only) and `Merge` (the
 /// resolved merge). A contract, judge or base-conflict session never commits.
+///
+/// `check` runs a stage's gate on the host and changes no stage state. A
+/// `Merge` session relays it to verify its merge, whose criteria cannot run
+/// inside its sandbox; a passing run never lands the merge.
 pub fn verdict(session: SessionType, kind: RequestKind) -> MatrixVerdict {
     match kind {
         RequestKind::Memory => policy_memory(session),
@@ -162,12 +166,11 @@ fn policy_commit(session: SessionType) -> MatrixVerdict {
 
 fn policy_check(session: SessionType) -> MatrixVerdict {
     match session {
-        SessionType::Stage | SessionType::Knowledge | SessionType::Adjudication => {
-            MatrixVerdict::Apply
-        }
-        SessionType::Merge | SessionType::BaseConflict | SessionType::Contract => {
-            MatrixVerdict::Refuse
-        }
+        SessionType::Stage
+        | SessionType::Knowledge
+        | SessionType::Merge
+        | SessionType::Adjudication => MatrixVerdict::Apply,
+        SessionType::BaseConflict | SessionType::Contract => MatrixVerdict::Refuse,
     }
 }
 

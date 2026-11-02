@@ -16,6 +16,7 @@ use anyhow::Result;
 use super::Orchestrator;
 use crate::host_verify::apply_retry::{apply_pending, apply_record};
 use crate::host_verify::runner::{fail_queued, HostJobRunner, RunnerConfig};
+use crate::host_verify::submit::cancel;
 use crate::host_verify::JobRecord;
 
 /// The runner the daemon starts with: the running loom binary's
@@ -58,6 +59,46 @@ impl Orchestrator {
             Err(error) => {
                 tracing::warn!(error = %format!("{error:#}"), "host job tick failed");
             }
+        }
+    }
+
+    /// End the job in `stage_id`'s worktree before a landing's gates run there.
+    /// Its criteria share that worktree, and this tick does not reach the
+    /// runner until the gates finish, so a child the runner holds is killed
+    /// here. A child that outlives this is an `Err`: the gates must not run.
+    pub(super) fn stop_running_check(&mut self, stage_id: &str) -> Result<(), String> {
+        let reason = "the resolved merge is landing; its gates run instead";
+        cancel(&self.config.work_dir, stage_id, reason).map_err(|error| {
+            format!("the stage's running check could not be cancelled: {error:#}")
+        })?;
+        if !self.holds_stage_job(stage_id) {
+            return Ok(());
+        }
+        self.settle_host_jobs();
+        if self.holds_stage_job(stage_id) {
+            return Err(format!(
+                "the running check of stage '{stage_id}' could not be stopped"
+            ));
+        }
+        Ok(())
+    }
+
+    fn holds_stage_job(&self, stage_id: &str) -> bool {
+        self.host_jobs
+            .as_ref()
+            .is_some_and(|runner| runner.holds_stage(stage_id))
+    }
+
+    /// The pass of [`Self::tick_host_jobs`] that ends and reaps jobs, starting
+    /// none, applying every job that ended.
+    fn settle_host_jobs(&mut self) {
+        let Some(runner) = self.host_jobs.as_mut() else {
+            return;
+        };
+        let ended = runner.settle_held();
+        log_records("host job ended", &ended);
+        for record in &ended {
+            apply_record(&self.config.work_dir, record);
         }
     }
 

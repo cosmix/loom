@@ -79,6 +79,13 @@ fn verify_resolved(
     })
 }
 
+/// Run the landing's acceptance criteria with no pass cache: a check is never
+/// evidence for landing. Each landing reruns the criteria, which blocks the
+/// daemon tick for as long as they take; revisit if landing gates move off the
+/// tick. The contract and impact checks at landing still read the cache
+/// (`contracts::completion::check`, `impact_tests::criteria_config`), which is
+/// safe because a resolver's check stores nothing (`host_verify::child_policy`),
+/// so a pass there came from a stage session's own run of that content.
 fn run_acceptance(
     stage: &Stage,
     work_dir: &Path,
@@ -101,7 +108,6 @@ fn run_acceptance(
     }
     let config = CriteriaConfig::default()
         .with_plan_confinement(plan_confinement(work_dir))
-        .with_cache_dir(work_dir)
         .with_tree_root(Some(root));
     let result = run_acceptance_with_config(stage, acceptance_dir, &config)
         .context("Failed to run acceptance criteria")?;

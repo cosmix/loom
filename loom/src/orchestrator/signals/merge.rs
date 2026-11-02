@@ -14,8 +14,9 @@ use super::types::MergeSignalContent;
 ///
 /// The signal directs the session to merge the target branch into the stage
 /// branch inside the stage worktree, resolve the conflicts there, rerun the
-/// stage's acceptance criteria, and report with `loom stage merge --resolved`.
-/// It never works in the main checkout. Where the plan protects paths with
+/// stage's acceptance criteria with `loom check`, whose host job runs outside
+/// the session sandbox, and report with `loom stage merge --resolved`. It
+/// never works in the main checkout. Where the plan protects paths with
 /// `deny_write`, the signal ends with the rule for them.
 pub fn generate_merge_signal(
     session: &Session,
@@ -180,16 +181,39 @@ fn format_merge_task(stage: &Stage, target_branch: &str, has_protected_paths: bo
          run `git merge --continue`, which commits)\n\
          2. Resolve the conflicts in the files listed above, preserving intent from both \
          sides{protected_note}\n\
-         3. Rerun {criteria} in this worktree and fix what the merge broke\n\
-         4. Finish the merge: {commit_rule} The worktree must end clean with no merge in \
+         3. {knowledge_step}\n\
+         4. Rerun {criteria} with `loom check {stage_id}` and fix what the merge broke. Loom runs \
+         them outside your sandbox against this worktree as it stands, staged merge included. \
+         `Host job: requested` and `pending` are not results: run the same command again until \
+         it reports one. Run directly inside this sandbox, a criterion can fail for sandbox \
+         reasons alone (no sockets, no nested bwrap, read-only /tmp), which says nothing about \
+         the merge\n\
+         5. Finish the merge: {commit_rule} The worktree must end clean with no merge in \
          progress\n\
-         5. Run: `loom stage merge {} --resolved`. Loom reruns all completion gates against the \
-         resolved commit and current policy before landing. A failed gate stops this session and \
-         hands the stage to a stage session, so step 3 must pass before you commit; fix any \
-         other refusal and retry.\n\n",
-        stage.id
+         6. Run: `loom stage merge {stage_id} --resolved`. Loom cancels a `loom check` still \
+         running, then reruns all completion gates against the resolved commit and current \
+         policy before landing, whatever `loom check` reported. A failed gate stops this \
+         session and hands the stage to a stage session, or holds it for the operator, so step \
+         4 must pass before you commit; fix any other refusal and retry.\n\n",
+        stage_id = stage.id,
+        knowledge_step = KNOWLEDGE_INDEX_STEP,
     )
 }
+
+/// Keeps the generated index in step with what the merge did to the knowledge
+/// files: the landing gates refuse an `INDEX.md` that differs by a byte, and git
+/// merges the index as text. `sync` writes this worktree's index first, then
+/// publishes a catalog under the main checkout's `.loom/`, which every session
+/// capsule denies, so its exit code says nothing here and `check` is the proof.
+const KNOWLEDGE_INDEX_STEP: &str = "If the merge touched anything under \
+     `doc/loom/knowledge/` (`git diff --cached --name-only -- doc/loom/knowledge` lists it), \
+     run `loom knowledge sync --structural-only` here, and again if a later fix changes a knowledge file. It \
+     rewrites this worktree's `doc/loom/knowledge/INDEX.md`, then may exit non-zero with \
+     `rebuilding the derived context catalog failed`, because this sandbox denies that cache: \
+     that failure alone does not matter. Run `loom knowledge check` and read its output, \
+     since it exits 0 without `--strict`: it must not report `INDEX.md is stale`. Then stage \
+     the index: `git add doc/loom/knowledge/INDEX.md`. If the plan protects `doc/**`, so the \
+     index cannot be committed, keep that protection rule as it is and use `loom stage block`";
 
 /// How many evidence lines of the last failed merge attempt the signal quotes.
 const MAX_FAILURE_LINES: usize = 5;
@@ -220,8 +244,9 @@ fn format_failure_section(
     }
     content.push_str(&format!(
         "\nStill merge the target branch into this worktree (`git merge --no-commit --no-ff \
-         {target_branch}`), rerun the acceptance criteria, commit with `loom stage commit`, \
-         and run `--resolved`; loom then retries the merge.\n\n"
+         {target_branch}`), rerun the acceptance criteria with `loom check {}`, commit with \
+         `loom stage commit`, and run `--resolved`; loom then retries the merge.\n\n",
+        stage.id
     ));
     content
 }
