@@ -1,5 +1,7 @@
 # Verification V2 Gates
 >
+> Daemon-run gates
+>
 >
 
 >
@@ -100,9 +102,10 @@ and every finding and carried finding is closed (listed `resolved` by a later ro
 `defer` in `rulings.json`; `uphold` does not close). A malformed round newer than a matching well-formed one
 does not fail the gate; it is quoted only when the gate fails for another reason. `loom stage review status`
 diffs against the latest well-formed round, not `rounds.last()`; a malformed round has a valid fingerprint and
-zero findings and would tell the next reviewer nothing changed. Review order: fix findings, run the full gate,
-run the final review, complete; a code edit after it, formatting included, needs another round. `gate::covers_review`
-also accepts a round whose fingerprint differs only by whole-line comments, blank lines and prose markdown: same base,
+zero findings and would tell the next reviewer nothing changed. Review order: one `loom check` beside the final
+review, one fix worker for every finding and failed criterion (failed criteria re-checked with `--criterion <n>`),
+one re-review on the follow-up model, complete. After the final round a code edit, formatting included, needs another
+round unless `gate::covers_review` accepts the tree: it accepts a round whose fingerprint differs only by whole-line comments, blank lines and prose markdown: same base,
 and equal non-empty `behaviour` maps (`verify/review/prose.rs`, which keeps pragma comments and markdown under `skills/`,
 `agents/`, `commands/`, `loom-hooks/`, tests and fixtures in the hash). An empty map never passes through this exemption.
 Known limit: a comment-prefixed line inside a multi-line string literal counts as a comment.

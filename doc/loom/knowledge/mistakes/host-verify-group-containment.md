@@ -1,6 +1,6 @@
 # Host Verify Group Containment
 
-> Guardian group boundaries and bubblewrap session cleanup mistakes
+> Guardian cleanup
 
 ## Group guardian assumed bubblewrap payload stayed in its host group
 

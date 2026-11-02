@@ -44,9 +44,14 @@ version ([concerns](../concerns/planning-session-sandbox-limits.md#planning-sess
 
 ## Spool, hooks and the event-name check
 
-`loom plan hook <event> --session-dir <dir>` handles ten events. `PermissionRequest` blocks; `SessionStart`,
-`UserPromptSubmit`, `Notification`, `Stop`, `StopFailure`, `SubagentStart`, `SubagentStop`, `PreCompact` and
-`SessionEnd` append one line to `events.jsonl` and exit 0 with no output. The payload's `hook_event_name`
+`loom plan hook <event> --session-dir <dir>` (`hook_cli.rs`) handles eleven events. `PermissionRequest` blocks;
+`SessionStart`, `UserPromptSubmit`, `Notification`, `Stop`, `StopFailure`, `SubagentStart`, `SubagentStop`,
+`PreCompact`, `SessionEnd` and `PermissionDenied` append one line to `events.jsonl` and exit 0 with no output;
+`OwnerWatch` runs the owner watch (see Interrupt, end, teardown). In auto mode the classifier's refusals reach
+the chat as `PermissionDenied`: the driver (`bridge/driver.rs`) posts an `Info` notice built by
+`bridge/denied.rs::denied_notice` from the payload's tool and reason, sanitized through `input::sanitize`; a
+missing or non-string tool gives the generic notice. A resumed driver replays the spool with an empty applied
+set, so these notices repeat after recovery, as `PreCompact` notices do. The payload's `hook_event_name`
 must equal the argument; a mismatch is not spooled. Payloads over 1 MiB are refused, strings over 64 KiB are
 cut with `…[truncated]`, and the append goes through `fs::safe_fs::safe_append` under a lock.
 `spool::try_read_payload` is the one payload reader (the guard calls it for its deny texts) and `spool::Tail`
@@ -141,6 +146,20 @@ end at their first main Stop with no subagent. `Bridge::abort` (second Ctrl-C) t
 gives a `Launching` session a `Teardown` end plan, and waits up to `LAUNCH_WAIT` 30 s for spawns in flight.
 A failed teardown keeps `session.json` and the session in `Failed` (`TEARDOWN_FAILED` prefix); the retry runs
 every `identity_interval`, by socket alone when the record has no pid.
+
+**Owner watch** (`owner_watch.rs`, started by `launch/script.rs` as the `OwnerWatch` hook): a session whose
+server was SIGKILLed has no one to end it, and `remain-on-exit` keeps its tmux server after claude dies, so the
+watch polls every `OWNER_POLL` (15 s) and tears the tmux server down once the server lock holder has been
+absent for `OWNER_GRACE` (15 min); every sighting of an owner resets the grace, and it returns when the
+session's socket is gone. The tmux socket is the session's liveness, independent of the Claude process
+identity. `read_holder_pid` reads the lock without taking the singleton lock or following a symlink.
+`hook_cli::owner_watch` calls `setsid` before watching, because a plain `&` job of the launch script's
+non-interactive `sh` dies with the pane leader; it does it inside the `watch_target` branch, not on the first
+line, so an in-process test of `run(OwnerWatch)` does not detach the test binary from its terminal session. A process that leads its own group cannot `setsid` (EPERM), so the regression test (`tests/plan_owner_watch_session.rs`) places the hook in a group another process leads with `Command::process_group`.
+`watch_target` validates the session record, the guard policy and the socket name as recovery does. Known
+limits ([follow-ups](../concerns/planner-ui-repair-followups.md#planner-redesign-follow-ups)): the watch starts
+once and is not restarted, a failed kill-server gets one attempt, and teardown does not call
+`terminate_children`.
 
 ## Recovery and its do-not-destroy rule
 

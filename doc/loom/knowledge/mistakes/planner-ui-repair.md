@@ -10,7 +10,7 @@
 
 **Prevention:** before conditionally unmounting a component, list the hooks it owns and move any app-wide one to a component that stays mounted. A test of the always-mounted owner must cover the moved hooks, not mock it.
 
-**Fix:** `ChatRegistrations` takes `connect`, which mounts `ChatConnection` when the route has no panel ([shell](../architecture/planner-web-shell.md#header-rail-and-dock)).
+**Fix:** `ChatRegistrations` takes `connect`, which mounts `ChatConnection` when the route has no panel ([shell](../architecture/planner-web-shell.md#header-and-dock)).
 
 ## A Conditional Hook Passed tsc, Lint and Tests
 
@@ -91,4 +91,4 @@
 
 **Prevention:** a UI plan's acceptance includes scripted journeys in a real browser against real documents: start a feature, review a finished one down to source, change a section by chat and by direct edit. A mockup that overrides the spec changes the spec in the same plan.
 
-**Fix:** open; the planner redesign is under discussion with the operator.
+**Fix:** `PLAN-feat-planner-13-planner-redesign` rebuilt the feature screen as a layout route with a spine over the real documents ([Planner Feature Screens](../architecture/planner-feature-screens.md)). Its design source was a `DESIGN.md` set by a designer worker, not a locked mockup (plan 12's procedure in [Visual Stages](../conventions/plan-web.md#visual-stages-and-the-screenshot-script) is one option), and its driver was a journey script that walks user tasks in a real browser. The slips that plan still made are in [Planner Redesign](planner-redesign.md).
