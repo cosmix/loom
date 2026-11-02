@@ -27,14 +27,18 @@ pub(super) fn has(list: &[String], item: &str) -> bool {
 }
 
 #[test]
-fn task_output_roots_are_denied_without_denying_ordinary_temporary_files() {
+fn claude_code_temporary_directory_stays_writable() {
+    // Claude Code's Bash wrapper writes its cwd file under this directory, so
+    // a deny covering it makes every sandboxed command exit 1.
     let denies = denies_for(NESTED, &[], None).unwrap();
     for root in crate::models::forward_receipt::locator::default_task_output_roots() {
-        assert!(has(&denies.deny_write, root.to_str().unwrap()));
-        assert!(has(&denies.edit, &format!("Edit(/{}/**)", root.display())));
+        let root = root.to_str().unwrap();
+        for covering in ["/tmp", root] {
+            assert!(!has(&denies.deny_write, covering), "{denies:?}");
+            let rule = format!("Edit(/{covering}/**)");
+            assert!(!has(&denies.edit, &rule), "{denies:?}");
+        }
     }
-    assert!(!has(&denies.deny_write, "/tmp"));
-    assert!(!has(&denies.edit, "Edit(//tmp/**)"));
 }
 
 #[test]

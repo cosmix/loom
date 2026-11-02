@@ -345,10 +345,6 @@ fn every_kind_gets_exactly_the_section_10_write_denies_for_its_location() {
             deny_write.extend(skill_writes);
             let mut edit = expand(&[SHARED_EDIT_DENIES, own_edit, TOOL_DENIES], &checkout);
             edit.extend(skill_edits);
-            for root in crate::models::forward_receipt::locator::default_task_output_roots() {
-                deny_write.insert(root.display().to_string());
-                edit.insert(format!("Edit(/{}/**)", root.display()));
-            }
             let label = format!("{kind} in {}", cwd.display());
             let written = strings(&capsule, "/sandbox/filesystem/denyWrite");
             assert_eq!(written, deny_write, "{label}");
