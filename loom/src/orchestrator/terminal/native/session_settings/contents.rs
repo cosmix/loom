@@ -14,7 +14,7 @@ use shell_escape::escape;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use crate::hooks::HookEvent;
+use crate::hooks::{session_event_rules, HookEvent};
 use crate::models::session::SessionType;
 use crate::sandbox::control_surfaces::SessionDenies;
 use crate::sandbox::{MergedSandboxConfig, SettingsTarget};
@@ -26,14 +26,22 @@ const CONTROL_COMPLETE_SCRIPT: &str = "loom-control-complete.sh";
 /// Tools that run in the Claude Code process, not under the Bash sandbox: the
 /// LSP plugins' servers index the worktree and can run its build scripts and
 /// proc macros; RemoteTrigger starts work off the machine; CronCreate and
-/// PushNotification act outside the session. They are bare tool names in
-/// `permissions.deny` because `--disallowedTools` is variadic and would
-/// consume the positional prompt (`build_claude_command`). `SendMessage`,
+/// PushNotification act outside the session. Monitor and PowerShell run a
+/// command that skips every guard hook matched on `Bash`, and nothing a session
+/// is told to do needs them. They are bare tool names in `permissions.deny`
+/// because `--disallowedTools` is variadic and would consume the positional
+/// prompt (`build_claude_command`). `SendMessage`,
 /// `ListAgents`, `WebFetch` and `WebSearch` stay allowed (agent teams; the
 /// engineer agents list the web tools). `Workflow` is denied unless
 /// [`CapsuleInputs::workflow_licensed`].
-pub(crate) const SESSION_TOOL_DENIES: [&str; 4] =
-    ["LSP", "RemoteTrigger", "CronCreate", "PushNotification"];
+pub(crate) const SESSION_TOOL_DENIES: [&str; 6] = [
+    "LSP",
+    "RemoteTrigger",
+    "CronCreate",
+    "PushNotification",
+    "Monitor",
+    "PowerShell",
+];
 pub(crate) const WORKFLOW_TOOL: &str = "Workflow";
 
 /// Everything [`capsule_settings`] reads.
@@ -88,8 +96,7 @@ fn capsule_deny_rules(inputs: &CapsuleInputs<'_>) -> Vec<String> {
 /// `worktree.bgIsolation` included, the checkout's deny rules carried, and
 /// with the codex lane its plugin keys), then the plans read, the scratch
 /// grant, the approved list, the session's write denies and tool-route denies
-/// (`LSP`, `RemoteTrigger`, `CronCreate`, `PushNotification`, and `Workflow`
-/// unless licensed), the hidden terminal
+/// ([`SESSION_TOOL_DENIES`], and `Workflow` unless licensed), the hidden terminal
 /// histories, the hidden host sockets and the kind's hooks.
 /// With the codex lane it also allows the home-expanded forwarding wrapper
 /// path, which must not be committed in the project's `settings.json`.
@@ -195,9 +202,10 @@ fn capsule_hooks(
     } else {
         &[HookEvent::PostToolUse]
     };
-    for event in events {
-        let script = hooks_dir.join(event.script_name());
-        push_rule(&mut hooks, &event.to_string(), "*", &script);
+    for (event, rules) in session_event_rules(hooks_dir, events) {
+        if let Some(entries) = entry(&mut hooks, &event, json!([])).as_array_mut() {
+            entries.extend(rules.into_iter().map(|rule| json!(rule)));
+        }
     }
     let relay = hooks_dir.join(RELAY_SCRIPT);
     push_rule(
@@ -210,7 +218,8 @@ fn capsule_hooks(
     hooks
 }
 
-/// Remove every registration whose command runs `script`.
+/// Remove every registration whose command runs `script`; a command may be
+/// shell-quoted, so its closing quote does not count as part of the path.
 fn drop_script(hooks: &mut Value, script: &str) {
     let suffix = format!("/{script}");
     let Some(events) = hooks.as_object_mut() else {
@@ -222,7 +231,7 @@ fn drop_script(hooks: &mut Value, script: &str) {
                 list.iter().any(|hook| {
                     hook["command"]
                         .as_str()
-                        .is_some_and(|c| c.ends_with(&suffix))
+                        .is_some_and(|c| c.trim_end_matches('\'').ends_with(&suffix))
                 })
             })
         });
@@ -232,15 +241,15 @@ fn drop_script(hooks: &mut Value, script: &str) {
 fn push_rule(hooks: &mut Value, event: &str, matcher: &str, script: &Path) {
     let rule = json!({
         "matcher": matcher,
-        "hooks": [{"type": "command", "command": script.display().to_string()}],
+        "hooks": [{"type": "command", "command": escape(Cow::Owned(script.display().to_string()))}],
     });
     if let Some(entries) = entry(hooks, event, json!([])).as_array_mut() {
         entries.push(rule);
     }
 }
 
-/// Rewrite every hook command `<script>` with the interpreter that must run
-/// it, so no hook depends on a script's execute bit or its shebang's
+/// Rewrite every hook command, an already shell-quoted `<script>`, with the
+/// interpreter that must run it, so no hook depends on a script's execute bit or its shebang's
 /// interpreter lookup: `<python3> <script>` when `script` is one of
 /// `python_hooks` and `python3` is `Some`, `/bin/bash <script>` for every
 /// other hook. A python hook with no `python3` on the pinned hook PATH is
@@ -274,14 +283,13 @@ fn rewrite_command(hook: &mut Value, python3: Option<&Path>, python_hooks: &[Pat
     };
     if python_hooks
         .iter()
-        .any(|script| script == Path::new(&command))
+        .any(|script| escape(Cow::Owned(script.display().to_string())) == command)
     {
         return match python3 {
             Some(interpreter) => {
                 hook["command"] = json!(format!(
-                    "{} {}",
+                    "{} {command}",
                     escape(Cow::Owned(interpreter.display().to_string())),
-                    escape(Cow::Owned(command)),
                 ));
                 true
             }
@@ -293,7 +301,7 @@ fn rewrite_command(hook: &mut Value, python3: Option<&Path>, python_hooks: &[Pat
             }
         };
     }
-    hook["command"] = json!(format!("/bin/bash {}", escape(Cow::Owned(command))));
+    hook["command"] = json!(format!("/bin/bash {command}"));
     true
 }
 

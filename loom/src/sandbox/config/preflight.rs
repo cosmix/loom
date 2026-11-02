@@ -15,6 +15,7 @@
 //! Every check takes its host facts as parameters; only the scripts, tools
 //! and hook executables those facts name are read from disk.
 
+mod exec_wrappers;
 mod hook_commands;
 mod local_settings;
 #[cfg(test)]

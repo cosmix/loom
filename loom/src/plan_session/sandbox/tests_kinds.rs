@@ -124,6 +124,8 @@ fn summary_whole_json_snapshot() {
         "RemoteTrigger",
         "CronCreate",
         "PushNotification",
+        "Monitor",
+        "PowerShell",
         "Workflow",
         "SendMessage",
         "ListAgents",
@@ -176,6 +178,8 @@ fn pressure_whole_json_snapshot() {
         "RemoteTrigger",
         "CronCreate",
         "PushNotification",
+        "Monitor",
+        "PowerShell",
         "Workflow",
         "AskUserQuestion"
     ]);
@@ -212,6 +216,8 @@ macro_rules! tool_denies_test {
                 "RemoteTrigger",
                 "CronCreate",
                 "PushNotification",
+                "Monitor",
+                "PowerShell",
                 "Workflow",
             ] {
                 assert!(deny.contains(&json!(tool)), "missing {tool}");

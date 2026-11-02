@@ -7,7 +7,9 @@ mod environment;
 mod errors;
 mod identity;
 mod owned;
+mod tail;
 pub(crate) use owned::OwnedProcess;
+pub(crate) use tail::run_bounded_tail_output;
 #[doc(hidden)]
 pub mod sandbox_probe;
 
@@ -92,8 +94,16 @@ impl BoundedOutput {
 /// group immediately; reaping and both pipes then share a one-second cleanup
 /// deadline. A successful leader retains its status after descendants are killed.
 pub fn run_bounded(command: &mut Command, timeout: Duration) -> Result<BoundedOutput> {
+    run_bounded_with(command, timeout, tail::Stdout::Whole)
+}
+
+fn run_bounded_with(
+    command: &mut Command,
+    timeout: Duration,
+    stdout: tail::Stdout,
+) -> Result<BoundedOutput> {
     let overflow = Arc::new(AtomicU8::new(0));
-    let result = run_bounded_inner(command, timeout, &overflow);
+    let result = run_bounded_inner(command, timeout, &overflow, stdout);
     let streams = overflow.load(Ordering::Relaxed);
     if streams != 0 {
         return Err(ProcessOutputLimitError {
@@ -109,6 +119,7 @@ fn run_bounded_inner(
     command: &mut Command,
     timeout: Duration,
     overflow: &Arc<AtomicU8>,
+    stdout: tail::Stdout,
 ) -> Result<BoundedOutput> {
     #[cfg(unix)]
     {
@@ -123,7 +134,7 @@ fn run_bounded_inner(
         .with_context(|| format!("Failed to spawn {:?}", command.get_program()))?;
 
     let mut child = OwnedProcess::new(child);
-    let (stdout_reader, stderr_reader) = start_readers(child.child(), command, overflow)?;
+    let (stdout_reader, stderr_reader) = start_readers(child.child(), command, overflow, stdout)?;
 
     match child
         .wait(timeout)
@@ -163,8 +174,13 @@ fn start_readers(
     child: &mut Child,
     command: &Command,
     overflow: &Arc<AtomicU8>,
+    stdout: tail::Stdout,
 ) -> Result<(ReaderHandle, ReaderHandle)> {
-    let stdout = match drain(child.stdout.take(), Arc::clone(overflow), 1) {
+    let stdout = match stdout {
+        tail::Stdout::Whole => drain(child.stdout.take(), Arc::clone(overflow), 1),
+        tail::Stdout::Tail => tail::drain_tail(child.stdout.take()),
+    };
+    let stdout = match stdout {
         Ok(reader) => reader,
         Err(error) => return Err(reader_spawn_failed("stdout", error, command)),
     };

@@ -10,13 +10,11 @@
 //! reconciliation counterpart. Shared identity keeps attach, reconciliation,
 //! and cleanup on the same repository socket.
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
-use std::{fs, io};
 
 use crate::fs::work_dir::WorkDir;
 use crate::models::session::{Session, SessionBackendKind, SessionStatus};
@@ -24,6 +22,11 @@ use crate::orchestrator::terminal::native::NativeBackend;
 use crate::parser::frontmatter::parse_from_markdown;
 
 use super::{socket_name, socket_path_for, TmuxBackend};
+
+mod retire;
+mod start_lock;
+
+pub(crate) use retire::retire_viewer;
 
 /// tmux session name of the tiled viewer. Fixed; the SOCKET is what varies per
 /// repo. Shared by `commands/attach`, which builds the viewer under this
@@ -64,46 +67,6 @@ pub fn viewer_socket_name(work_dir: &Path) -> String {
     // `/tmp/tmux-<uid>/loom-view-xxxxxxxx` is ~31 bytes, far inside the
     // 104-byte AF_UNIX `sun_path` limit.
     format!("loom-view-{}", &hex[..8])
-}
-
-/// Retire this repository's overview after explicit state cleanup has stopped
-/// its daemon. A detached viewer remains available until that cleanup.
-/// The deterministic socket name alone is insufficient authority to kill a
-/// server in the per-user socket directory: verify the socket owner, type,
-/// and sole tmux session before teardown.
-pub(crate) fn retire_viewer(work_dir: &Path) -> Result<bool> {
-    let name = viewer_socket_name(work_dir);
-    let path = socket_path_for(&name);
-    let metadata = match fs::symlink_metadata(&path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error.into()),
-    };
-    // SAFETY: getuid() is always safe to call and cannot fail.
-    let uid = unsafe { libc::getuid() };
-    if !metadata.file_type().is_socket() || metadata.uid() != uid {
-        bail!("viewer socket is not an owned socket: {}", path.display());
-    }
-    let path_arg = path.to_string_lossy();
-    let output = super::run_tmux_control(
-        &["-S", &path_arg, "list-sessions", "-F", "#{session_name}"],
-        super::TMUX_PROBE_TIMEOUT,
-        format!("tmux list-sessions ({})", path.display()),
-    )?;
-    if !output.status.success()
-        || String::from_utf8_lossy(&output.stdout).trim() != OVERVIEW_SESSION
-    {
-        bail!("viewer ownership could not be verified: {}", path.display());
-    }
-    let current = fs::symlink_metadata(&path)?;
-    if current.dev() != metadata.dev() || current.ino() != metadata.ino() {
-        bail!(
-            "viewer socket changed during ownership check: {}",
-            path.display()
-        );
-    }
-    super::teardown_socket(&name)?;
-    Ok(true)
 }
 
 /// Identity for loom's alphanumeric/dash ids; defence in depth because the
@@ -182,7 +145,7 @@ pub(crate) fn attachable_panes(
 /// something loom's own id generation can legitimately produce: session ids
 /// are `session-<uuid8>-<unixts>` (`Session::generate_id`,
 /// `models/session/methods.rs`) and tracking keys are
-/// `loom-[<kind>-]<stage_id>` (`Session::derive_tracking_key`, same file).
+/// `loom-v2-<kind>-<stage_id>` (`Session::derive_tracking_key`, same file).
 /// A future reader should not treat the charset as arbitrary and loosen it
 /// without widening `validate_id` first.
 ///

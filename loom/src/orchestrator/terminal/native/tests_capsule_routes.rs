@@ -14,11 +14,13 @@ use crate::orchestrator::terminal::native::tests_session_settings::{
 
 const DENY_RULES: &str = "/permissions/deny";
 const DENY_READ: &str = "/sandbox/filesystem/denyRead";
-const DENIED_TOOLS: [&str; 5] = [
+const DENIED_TOOLS: [&str; 7] = [
     "LSP",
     "RemoteTrigger",
     "CronCreate",
     "PushNotification",
+    "Monitor",
+    "PowerShell",
     "Workflow",
 ];
 

@@ -2,6 +2,25 @@ use super::*;
 use tempfile::TempDir;
 
 #[test]
+fn pid_capture_publishes_owner_with_process_identity() {
+    let temp = TempDir::new().unwrap();
+    let pid_file = temp.path().join("agent.pid");
+    let escaped = shell_escape::escape(pid_file.to_string_lossy());
+    let script = pid_capture(&escaped, "loom-owner:loom-v2-contract-auth");
+    let result = std::process::Command::new("bash")
+        .arg("-c")
+        .arg(script)
+        .status()
+        .unwrap();
+    assert!(result.success());
+    let contents = fs::read_to_string(pid_file).unwrap();
+    let mut lines = contents.lines();
+    assert!(lines.next().unwrap().parse::<u32>().unwrap() > 0);
+    let _start_time = lines.next().unwrap();
+    assert_eq!(lines.next(), Some("loom-owner:loom-v2-contract-auth"));
+}
+
+#[test]
 fn test_wrapper_script_creation() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path();
@@ -25,7 +44,7 @@ fn test_wrapper_script_creation() {
     assert!(wrapper_path.exists());
     let content = fs::read_to_string(&wrapper_path).unwrap();
     assert!(content.contains("#!/bin/bash"));
-    assert!(content.contains("echo $$"));
+    assert!(content.contains("loom-owner:loom-v2-stage-test-stage"));
     assert!(content.contains(claude_cmd));
     assert!(content.contains("LOOM_SESSION_ID"));
     assert!(content.contains(session_id));
@@ -73,7 +92,7 @@ fn test_wrapper_script_with_working_dir() {
     let content = fs::read_to_string(&wrapper_path).unwrap();
     assert!(content.contains("#!/bin/bash"));
     assert!(content.contains("cd /tmp/test-worktree"));
-    assert!(content.contains("echo $$"));
+    assert!(content.contains("loom-owner:loom-v2-stage-test-stage-cwd"));
     assert!(content.contains(claude_cmd));
     assert!(content.contains("LOOM_WORKTREE_PATH"));
     assert!(content.contains("/tmp/test-worktree"));

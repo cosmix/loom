@@ -60,7 +60,7 @@ const NOT_PER_DIR: [&str; 3] = ["loom", "product", "plans"];
 /// Characters a permission-rule path treats as pattern syntax or rule delimiters.
 const RULE_SYNTAX: [char; 10] = ['*', '?', '[', ']', '{', '}', '(', ')', '\\', '!'];
 
-/// The tool denies of a kind: the stage capsule's four (`SESSION_TOOL_DENIES`), `Workflow`,
+/// The tool denies of a kind: the stage capsule's (`SESSION_TOOL_DENIES`), `Workflow`,
 /// and, when `peer_tools`, `SendMessage` and `ListAgents`.
 pub(super) fn tool_denies(peer_tools: bool) -> Vec<&'static str> {
     let peers = peer_tools.then_some(PEER_TOOLS).into_iter().flatten();

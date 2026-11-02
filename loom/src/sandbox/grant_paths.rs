@@ -159,7 +159,10 @@ pub(super) fn push_allow_write_rules(allow: &mut Vec<Value>, config: &MergedSand
         .allow_write
         .iter()
         .map(|p| p.trim())
-        .filter(|p| !p.is_empty() && !p.contains("../"))
+        .filter(|p| {
+            !p.is_empty()
+                && super::config::detect_path_escape(p) == super::config::PathEscapeAttempt::Safe
+        })
     {
         let rule = json!(edit_rule(path));
         if !allow.contains(&rule) {
