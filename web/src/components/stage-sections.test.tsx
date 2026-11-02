@@ -42,6 +42,20 @@ describe("stage session details", () => {
     expect(sessionLabels(stage)).not.toContain("last activity");
   });
 
+  it("describes busy as verified foreground progress on Stage sessions", () => {
+    const stage = fixtureStage({ activity_status: "Busy", last_tool: "Bash" });
+    const session = stageSections(stage, null).find((section) => section.title === "session");
+    const hint = (label: string) => session?.rows.find((entry) => entry.label === label)?.hint;
+
+    expect(hint("activity")).toMatch(/Busy: a Stage session's foreground command/);
+    expect(hint("activity")).toMatch(/within a bounded hold/);
+    expect(hint("activity")).toMatch(/a long tool call can still read stale/);
+    expect(hint("last tool")).toMatch(/while busy, the tool running the foreground command/);
+    for (const label of ["activity", "last tool"]) {
+      expect(hint(label)).not.toMatch(/tool call (is still|that is still) open|no tool call open/);
+    }
+  });
+
   it("keeps a non-tool heartbeat activity", () => {
     const stage = fixtureStage({ last_tool: null, last_activity: "Session started" });
 

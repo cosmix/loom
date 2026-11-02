@@ -185,7 +185,11 @@ describe("the history card", () => {
   it("puts the current issue on top and marks each archived one by how it ended", () => {
     const history = [
       issue(),
-      issue({ ended_by: "loom stage reset", disposition: "reset", ended_at: "2026-10-27T20:00:00Z" }),
+      issue({
+        ended_by: "loom stage reset",
+        disposition: "reset",
+        ended_at: "2026-10-27T20:00:00Z",
+      }),
     ];
     renderModal(fixtureStage("docs", { history }), [fixtureEntry("docs")]);
 

@@ -13,6 +13,7 @@
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "test": "vitest run",
+    "test:browser": "bun scripts/graph-keyboard-test.mjs && bun scripts/theme-preview-test.mjs",
     "check": "bun run typecheck && bun run lint && bun run format:check && bun run test"
   },
   "dependencies": {
