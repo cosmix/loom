@@ -31,6 +31,7 @@ printf '%s\n' '{"type":"parent","message":"waiting"}' >"$PARENT_TRANSCRIPT"
 
 # The stub records one JSON line per call, then talks on both streams and
 # exits with HARVEST_EXIT, so the test sees whether the hook swallows them.
+# HARVEST_STDERR replaces what it prints on stderr; printf %b reads its \n.
 cat >"$TMP/bin/loom" <<'STUB'
 #!/usr/bin/env bash
 stdin=$(cat)
@@ -38,7 +39,7 @@ jq -nc --arg argv "$*" --arg stdin "$stdin" --arg context "${LOOM_HOOK_CONTEXT:-
 	--arg work_dir "${LOOM_WORK_DIR:-}" \
 	'{argv:$argv,stdin:$stdin,context:$context,work_dir:$work_dir}' >>"$HARVEST_CALLS"
 echo "stub stdout"
-echo "stub stderr" >&2
+printf '%b' "${HARVEST_STDERR-stub stderr\n}" >&2
 exit "${HARVEST_EXIT:-0}"
 STUB
 chmod +x "$TMP/bin/loom"
@@ -85,6 +86,7 @@ run_stop() {
 		  agent_transcript_path:$agent_transcript_path}' |
 		env PATH="$TMP/shim:$PATH" LOOM_WORK_DIR="$WORKDIR" LOOM_STAGE_ID="$STAGE_ID" LOOM_SESSION_ID="$SESSION_ID" \
 			LOOM_BIN="$TMP/bin/loom" HARVEST_CALLS="$CALLS" HARVEST_EXIT="$delegate_exit" \
+			HARVEST_STDERR="${STOP_STDERR-stub stderr\n}" \
 			bash "$HOOK" >"$TMP/stdout" 2>"$TMP/stderr" || HOOK_STATUS=$?
 }
 
@@ -129,9 +131,67 @@ if [[ "$(call_count)" != "2" ]]; then
 	exit 1
 fi
 
+# A failed harvest leaves no round, so it must reach the gate's ledger. The
+# successful delegates above left no row.
+SKIP_LOG="$WORKDIR/subagents/$STAGE_ID/stop-skips.jsonl"
+if ! jq -es 'length == 1 and (.[0] | .agent_id == "reviewer-2" and
+	.agent_type == "loom-code-reviewer" and .reason == "review_harvest_failed")' \
+	"$SKIP_LOG" >/dev/null 2>&1; then
+	echo "FAIL: a failed harvest should append exactly one stop-skips.jsonl row"
+	cat "$SKIP_LOG" 2>/dev/null || true
+	exit 1
+fi
+
+# The row names the cause the delegate reports at the start of a stderr line.
+# The same words inside a line name nothing, a wall-clock timeout is its own
+# cause, and an exit of 0 leaves no row, a duplicate report's message included.
+expect_reason() {
+	local agent="$1" want="$2" got=""
+	assert_quiet_success "harvest $agent"
+	got=$(jq -r --arg agent "$agent" 'select(.agent_id == $agent).reason' "$SKIP_LOG")
+	if [[ "$got" != "$want" ]]; then
+		echo "FAIL: harvest $agent: reason should be '$want', got '$got'"
+		exit 1
+	fi
+}
+STOP_STDERR='loom-review-harvest-cause=worktree_changed\nError: the worktree changed since this reviewer started; launch a new review\n' \
+	run_stop "harvest-cause" "loom-code-reviewer" 1
+expect_reason "harvest-cause" "review_harvest_failed.worktree_changed"
+STOP_STDERR='Error: something else\n' run_stop "harvest-plain" "loom-code-reviewer" 1
+expect_reason "harvest-plain" "review_harvest_failed"
+STOP_STDERR='quoted text loom-review-harvest-cause=worktree_changed mid-line\n' \
+	run_stop "harvest-midline" "loom-code-reviewer" 1
+expect_reason "harvest-midline" "review_harvest_failed"
+STOP_STDERR='' run_stop "harvest-timeout" "loom-code-reviewer" 124
+expect_reason "harvest-timeout" "review_harvest_failed.timed_out"
+STOP_STDERR='loom hook review-harvest: this report is already recorded as review round 1\n' \
+	run_stop "harvest-duplicate" "loom-code-reviewer" 0
+expect_reason "harvest-duplicate" ""
+
+# With no loom binary the harvest cannot run: the same row, and the hook's
+# output and exit code stay untouched.
+rm -f "$SKIP_LOG"
+transcript=$(transcript_of "reviewer-no-loom")
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"done"}]}}' >"$transcript"
+jq -nc --arg s "$PARENT_SESSION_ID" --arg stage "$STAGE_ID" --arg loom "$SESSION_ID" \
+	'{agent_id:"reviewer-no-loom",agent_type:"loom-code-reviewer",stage_id:$stage,
+	  parent_session_id:$s,loom_session_id:$loom,ts:"2000-01-01T00:00:00.000Z"}' \
+	>>"$WORKDIR/subagents/$STAGE_ID/starts.jsonl"
+jq -nc --arg t "$transcript" --arg p "$PARENT_TRANSCRIPT" --arg s "$PARENT_SESSION_ID" \
+	'{session_id:$s,hook_event_name:"SubagentStop",agent_id:"reviewer-no-loom",
+	  agent_type:"loom-code-reviewer",transcript_path:$p,agent_transcript_path:$t}' |
+	env LOOM_WORK_DIR="$WORKDIR" LOOM_STAGE_ID="$STAGE_ID" LOOM_SESSION_ID="$SESSION_ID" \
+		LOOM_BIN="$TMP/bin/no-such-loom" bash "$HOOK" >"$TMP/stdout" 2>"$TMP/stderr"
+if [[ -s "$TMP/stdout" || -s "$TMP/stderr" ]] || ! jq -es 'length == 1 and
+	.[0].agent_id == "reviewer-no-loom" and .[0].reason == "review_harvest_unavailable"' \
+	"$SKIP_LOG" >/dev/null 2>&1; then
+	echo "FAIL: a harvest with no loom binary should append one row, quietly"
+	cat "$SKIP_LOG" 2>/dev/null || true
+	exit 1
+fi
+
 # A reviewer stop with no SubagentStart row is skipped, and says so on disk as
 # one stop-skips.jsonl row.
-SKIP_LOG="$WORKDIR/subagents/$STAGE_ID/stop-skips.jsonl"
 rm -f "$WORKDIR/subagents/$STAGE_ID/starts.jsonl" "$SKIP_LOG"
 transcript=$(transcript_of "reviewer-orphan")
 printf '%s\n' '{"type":"assistant"}' >"$transcript"

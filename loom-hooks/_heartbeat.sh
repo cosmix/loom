@@ -6,16 +6,25 @@ _LOOM_HEARTBEAT_LOADED=1
 # loom_heartbeat_lock_acquire <lock-dir>
 # loom_heartbeat_lock_release <lock-dir>
 #
-# Serialize every shell heartbeat writer's ownership check and replacement.
-# `mkdir` is the one portable atomic primitive available on both macOS and
-# Linux; `flock` is not installed by default on macOS. A lock records its PID
-# and creation epoch. After a conservative grace period an old lock whose PID
-# is gone (or whose creator died between mkdir and metadata publication) is
-# reclaimed, so SIGKILL cannot strand a stage permanently. Metadata is built
-# before acquisition and hard-linked into the winning directory: if an empty
-# lock is reclaimed while its creator is paused, only one contender can claim
-# the owner path and enter the critical section. A valid live owner is never
-# stolen; malformed published metadata fails closed.
+# Serialize every shell heartbeat and lifecycle-journal writer with mkdir and
+# rmdir alone. Both are atomic on macOS and Linux; stock macOS Bash 3.2 has no
+# flock(1). A held lock is <lock-dir>/owner.<pid>.<created>.<nonce>/. Recovery
+# cannot cross generations, and needs no reclaimer serialization, because:
+#
+# - An owner name belongs to one acquisition. A reclaimer removes only the name
+#   it examined, so a stale decision is a no-op against any later owner.
+# - <lock-dir> is only ever removed by rmdir, which refuses while any owner is
+#   published. A stale rmdir can hit only a creator that has not entered yet.
+# - A creator enters only after publishing its owner and then scanning for any
+#   other. If its empty directory was reclaimed, publication either fails or
+#   lands beside a successor. Of two concurrent publishers at least one sees
+#   the other, and it backs off; both backing off just costs a retry.
+#
+# A live PID is reclaimed only when it provably is not the owner: the owner read
+# <created> after it started, so a process that started later is a reuse of the
+# PID. Without a readable start time the PID wins, as it does for any live owner.
+# An unparseable entry is never removed, so its lock stays held and writers skip
+# their refresh: unknown state fails closed.
 #
 # LOOM_HEARTBEAT_LOCK_STALE_SECONDS exists chiefly for regression tests. Keep
 # the production default deliberately longer than a normal hook invocation.
@@ -28,137 +37,106 @@ loom_heartbeat_lock_epoch() {
     [[ "$epoch" =~ ^[0-9]+$ ]] && printf '%s\n' "$epoch"
 }
 
-loom_heartbeat_lock_identity() {
-    local identity=""
-    identity=$(stat -f '%d:%i' "$1" 2>/dev/null || true)
-    if [[ ! "$identity" =~ ^[0-9]+:[0-9]+$ ]]; then
-        identity=$(stat -c '%d:%i' "$1" 2>/dev/null || true)
-    fi
-    [[ "$identity" =~ ^[0-9]+:[0-9]+$ ]] && printf '%s\n' "$identity"
+# _loom_heartbeat_pid_started_after <pid> <created> <now> - Whether <pid> started
+# after <created> by more than the slack below. Elapsed time is the one start
+# figure every `ps` prints alike ([[dd-]hh:]mm:ss, POSIX and BSD): `lstart` would
+# need a date parser that differs between them. A sandbox can deny `ps`, and the
+# restricted hook PATH can lack it; either answers no.
+#
+# The slack absorbs both figures' one-second rounding and a small clock step
+# while the owner holds the lock. A larger forward step can misread a live owner
+# that has also held the lock past the stale age. Revisit if a writer ever holds
+# it for longer than a hook invocation.
+_loom_heartbeat_pid_started_after() {
+    local pid="$1" created="$2" now="$3" elapsed="" slack=5
+    local pattern='^(([0-9]+)-)?(([0-9]+):)?([0-9]+):([0-9]+)$'
+    elapsed=$(LC_ALL=C ps -o etime= -p "$pid" 2>/dev/null) || return 1
+    elapsed="${elapsed//[[:space:]]/}"
+    [[ "$elapsed" =~ $pattern ]] || return 1
+    elapsed=$((10#${BASH_REMATCH[2]:-0} * 86400 + 10#${BASH_REMATCH[4]:-0} * 3600 + \
+        10#${BASH_REMATCH[5]} * 60 + 10#${BASH_REMATCH[6]}))
+    ((now - elapsed > 10#$created + slack))
 }
 
-loom_heartbeat_lock_is_abandoned() {
-    local lock_dir="$1" stale_after="${LOOM_HEARTBEAT_LOCK_STALE_SECONDS:-30}"
-    local owner_file="${lock_dir}/owner" now="" created="" pid=""
-    [[ "$stale_after" =~ ^[0-9]+$ ]] || stale_after=30
-    [[ -d "$lock_dir" && ! -L "$lock_dir" && ! -L "$owner_file" ]] || return 1
-
-    now=$(date +%s 2>/dev/null || true)
-    [[ "$now" =~ ^[0-9]+$ ]] || return 1
-    if [[ -e "$owner_file" ]]; then
-        [[ -f "$owner_file" && -r "$owner_file" ]] || return 1
-        created=$(sed -n 's/^created=\([0-9][0-9]*\)$/\1/p' "$owner_file" 2>/dev/null | head -n 1)
-        pid=$(sed -n 's/^pid=\([0-9][0-9]*\)$/\1/p' "$owner_file" 2>/dev/null | head -n 1)
-        # Published owner metadata is atomic and complete. Anything else is
-        # external corruption or an unknown writer, so never steal it.
-        [[ "$created" =~ ^[0-9]+$ && "$pid" =~ ^[0-9]+$ ]] || return 1
-    else
-        created=$(loom_heartbeat_lock_epoch "$lock_dir")
-    fi
-    [[ "$created" =~ ^[0-9]+$ ]] || return 1
-    (( now - created >= stale_after )) || return 1
-
-    # A valid, live PID always wins, even if the directory is unusually old.
-    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
-        return 1
-    fi
-
-    return 0
+# _loom_heartbeat_owner_is_abandoned <owner-dir> <now> <stale-after>
+_loom_heartbeat_owner_is_abandoned() {
+    local owner="$1" now="$2" stale_after="$3" name="${1##*/}" pid="" created=""
+    local pattern='^owner\.([0-9]+)\.([0-9]+)\.[0-9]+$'
+    [[ -d "$owner" && ! -L "$owner" && "$name" =~ $pattern ]] || return 1
+    pid="${BASH_REMATCH[1]}"
+    created="${BASH_REMATCH[2]}"
+    ((now - 10#$created >= stale_after)) || return 1
+    kill -0 "$pid" 2>/dev/null || return 0
+    _loom_heartbeat_pid_started_after "$pid" "$created" "$now"
 }
 
 loom_heartbeat_lock_recover_if_abandoned() {
-    local lock_dir="$1" claim_file="" reclaim_file="${1}/reclaimer"
-    local retirement="" retired="" generation=""
-    generation=$(loom_heartbeat_lock_identity "$lock_dir")
-    [[ -n "$generation" ]] || return 1
-    loom_heartbeat_lock_is_abandoned "$lock_dir" || return 1
-    claim_file=$(mktemp "${lock_dir}.reclaim.XXXXXX" 2>/dev/null) || return 1
-    if ! ln "$claim_file" "$reclaim_file" 2>/dev/null; then
-        # A killed reclaimer can leave this claim behind. Do not steal it by
-        # pathname: two cleaners could otherwise remove a live new claim.
-        rm -f "$claim_file" 2>/dev/null || true
-        return 1
+    local lock_dir="$1" stale_after="${LOOM_HEARTBEAT_LOCK_STALE_SECONDS:-30}"
+    local now="" owner="" created="" has_owner=0
+    [[ "$stale_after" =~ ^[0-9]+$ ]] || stale_after=30
+    [[ -d "$lock_dir" && ! -L "$lock_dir" ]] || return 1
+    now=$(date +%s 2>/dev/null || true)
+    [[ "$now" =~ ^[0-9]+$ ]] || return 1
+    for owner in "$lock_dir"/owner.*; do
+        [[ -e "$owner" || -L "$owner" ]] || continue
+        has_owner=1
+        if _loom_heartbeat_owner_is_abandoned "$owner" "$now" "$stale_after"; then
+            rmdir "$owner" 2>/dev/null || true
+        fi
+    done
+    # A creator can die between creating the directory and publishing an owner.
+    if ((has_owner == 0)); then
+        created=$(loom_heartbeat_lock_epoch "$lock_dir")
+        [[ "$created" =~ ^[0-9]+$ ]] || return 1
+        ((now - created >= stale_after)) || return 1
     fi
-    rm -f "$claim_file" 2>/dev/null || true
-    # A second reclaimer can have inspected this generation already. Its claim
-    # will fail here; if it claims a successor instead, this check sees that
-    # successor's live owner. The marker also tells a paused mkdir winner not
-    # to enter while an empty old directory is being retired.
-    # Adding the claim updates an empty directory's mtime, so retain the
-    # original age decision for that case. A published owner is checked again.
-    if [[ "$(loom_heartbeat_lock_identity "$lock_dir")" != "$generation" ]] ||
-        { [[ -e "$lock_dir/owner" || -L "$lock_dir/owner" ]] &&
-            ! loom_heartbeat_lock_is_abandoned "$lock_dir"; }; then
-        rm -f "$reclaim_file" 2>/dev/null || true
-        rmdir "$lock_dir" 2>/dev/null || true
-        return 1
-    fi
-    retirement=$(mktemp -d "${lock_dir}.retired.XXXXXX" 2>/dev/null) || {
-        rm -f "$reclaim_file" 2>/dev/null || true
-        return 1
-    }
-    retired="$retirement/lock"
-    if ! mv "$lock_dir" "$retired" 2>/dev/null; then
-        rm -f "$reclaim_file" 2>/dev/null || true
-        rmdir "$retirement" 2>/dev/null || true
-        return 1
-    fi
-    rm -f "$retired/owner" "$retired/reclaimer" 2>/dev/null || true
-    rmdir "$retired" "$retirement" 2>/dev/null || true
+    rmdir "$lock_dir" 2>/dev/null || return 1
     loom_debug "heartbeat: recovered abandoned lock $lock_dir"
-    return 0
+}
+
+# _loom_heartbeat_owner_publish <lock-dir> <owner-dir>
+_loom_heartbeat_owner_publish() {
+    local lock_dir="$1" owner="$2" entry=""
+    mkdir -m 700 "$owner" 2>/dev/null || return 1
+    for entry in "$lock_dir"/owner.*; do
+        if [[ "$entry" != "$owner" ]]; then
+            rmdir "$owner" 2>/dev/null || true
+            rmdir "$lock_dir" 2>/dev/null || true
+            return 1
+        fi
+    done
 }
 
 loom_heartbeat_lock_acquire() {
-    local lock_dir="$1" attempts=0 claim_file="" created=""
+    local lock_dir="$1" attempts=0 created="" owner=""
     [[ -n "$lock_dir" && ! -L "$lock_dir" ]] || return 1
     created=$(date +%s 2>/dev/null || true)
     [[ "$created" =~ ^[0-9]+$ ]] || return 1
-    claim_file=$(mktemp "${lock_dir}.claim.XXXXXX" 2>/dev/null) || return 1
-    chmod 600 "$claim_file" 2>/dev/null || true
-    if ! printf 'pid=%s\ncreated=%s\n' "$$" "$created" >"$claim_file" 2>/dev/null; then
-        rm -f "$claim_file" 2>/dev/null || true
-        return 1
-    fi
-    while ! mkdir -m 700 "$lock_dir" 2>/dev/null; do
-        loom_heartbeat_lock_recover_if_abandoned "$lock_dir" || true
-        attempts=$((attempts + 1))
-        if [[ "$attempts" -ge 200 ]]; then
-            loom_debug "heartbeat: timed out acquiring $lock_dir; skipping refresh"
-            rm -f "$claim_file" 2>/dev/null || true
-            return 1
+    owner="$lock_dir/owner.$$.$created.$RANDOM$RANDOM"
+    while ((attempts < 200)); do
+        if mkdir -m 700 "$lock_dir" 2>/dev/null; then
+            _loom_heartbeat_owner_publish "$lock_dir" "$owner" && return 0
+        else
+            loom_heartbeat_lock_recover_if_abandoned "$lock_dir" || true
         fi
+        attempts=$((attempts + 1))
         sleep 0.01
     done
-    # `ln` is the atomic ownership claim. If this directory was recovered and
-    # re-created while we were paused after mkdir, the successor's link wins
-    # and we must not enter or release its critical section.
-    if ! ln "$claim_file" "${lock_dir}/owner" 2>/dev/null; then
-        rmdir "$lock_dir" 2>/dev/null || true
-        rm -f "$claim_file" 2>/dev/null || true
-        return 1
-    fi
-    rm -f "$claim_file" 2>/dev/null || true
-    if [[ -e "${lock_dir}/reclaimer" ]]; then
-        # A stale empty directory can be claimed by a creator paused after
-        # mkdir. The reclaimer owns its generation until the rename completes.
-        loom_heartbeat_lock_release "$lock_dir"
-        return 1
-    fi
-    return 0
+    loom_debug "heartbeat: timed out acquiring $lock_dir; skipping refresh"
+    return 1
 }
 
 loom_heartbeat_lock_release() {
-    local lock_dir="$1" owner_file="${1}/owner" owner_pid=""
+    local lock_dir="$1" owner="" released=0
     [[ -n "$lock_dir" && -d "$lock_dir" && ! -L "$lock_dir" ]] || return 0
-    [[ -f "$owner_file" && ! -L "$owner_file" ]] || return 0
-    owner_pid=$(sed -n 's/^pid=\([0-9][0-9]*\)$/\1/p' "$owner_file" 2>/dev/null | head -n 1)
-    if [[ "$owner_pid" != "$$" ]]; then
-        loom_debug "heartbeat: refusing to release lock owned by pid ${owner_pid:-unknown}"
-        return 0
+    for owner in "$lock_dir"/owner."$$".*; do
+        if [[ -d "$owner" && ! -L "$owner" ]] && rmdir "$owner" 2>/dev/null; then
+            released=1
+        fi
+    done
+    if ((released == 1)); then
+        rmdir "$lock_dir" 2>/dev/null || true
     fi
-    rm -f "$owner_file" 2>/dev/null || return 0
-    rmdir "$lock_dir" 2>/dev/null || true
     return 0
 }
 

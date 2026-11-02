@@ -12,7 +12,8 @@ loom_git_runs_commit() {
 				k=$((j + 1))
 				while ((k < n)) && [[ "${LOOM_TOKENS[$k]}" == -* ]]; do
 					case "${LOOM_TOKENS[$k]}" in
-					-C | -c | --git-dir | --work-tree | --namespace)
+					# git.c's global options that may take their value as the next word.
+					-C | -c | --git-dir | --work-tree | --namespace | --attr-source | --config-env)
 						[[ "${LOOM_TOKENS[$((k + 1))]:-%%SEP%%}" == "%%SEP%%" ]] && break
 						k=$((k + 2))
 						;;

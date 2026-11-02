@@ -49,7 +49,9 @@ main() {
 	fi
 
     local worktree STAGE_ID work_dir stage_file status
-    worktree=$(loom_current_worktree) || exit 0
+    # Registered globally: an inherited LOOM_WORKTREE_PATH must not block an
+    # unrelated session, so the session's own location alone decides.
+    worktree=$(loom_cwd_worktree) || exit 0
     worktree=${worktree%/}
     STAGE_ID=${worktree##*/}
     work_dir=$(loom_stage_work_dir "$worktree") || exit 0

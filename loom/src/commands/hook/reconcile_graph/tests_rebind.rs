@@ -79,9 +79,9 @@ fn child_startup_requires_its_exact_claim() {
     })
     .unwrap();
 
-    assert!(!begin_run(&lock_path, child, 10));
+    assert!(!begin_run(&lock_path, child, 10, 101));
     assert_eq!(read_lock(&lock_path).unwrap().pid, parent);
-    assert!(begin_run(&lock_path, child, 11));
+    assert!(begin_run(&lock_path, child, 11, 101));
     assert_eq!(read_lock(&lock_path).unwrap().pid, child);
 
     update_lock(&lock_path, |_| {
@@ -95,10 +95,38 @@ fn child_startup_requires_its_exact_claim() {
     })
     .unwrap();
     assert!(
-        !begin_run(&lock_path, child, 11),
+        !begin_run(&lock_path, child, 11, 101),
         "delayed child lost its claim"
     );
     assert_eq!(read_lock(&lock_path).unwrap().claim, 12);
+}
+
+/// `--cancel` trusts a holder only if it started by the lock's epoch. A child
+/// spawned late against its parent's claim would fail that check unless its
+/// startup re-stamps the epoch.
+#[test]
+fn child_startup_restamps_the_epoch_and_keeps_the_counters() {
+    let temp = TempDir::new().unwrap();
+    let lock_path = temp.path().join("reconcile.lock");
+    let state = LockState {
+        epoch: 100,
+        pid: DEAD_PID,
+        failures: 3,
+        pending: true,
+        claim: 11,
+    };
+    update_lock(&lock_path, |_| (Some(state), ())).unwrap();
+
+    assert!(begin_run(&lock_path, 4242, 11, 500));
+
+    assert_eq!(
+        read_lock(&lock_path),
+        Some(LockState {
+            epoch: 500,
+            pid: 4242,
+            ..state
+        })
+    );
 }
 
 #[test]

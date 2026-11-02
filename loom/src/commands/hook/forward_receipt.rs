@@ -97,6 +97,7 @@ fn process(raw: &str, config: &Config, now: DateTime<Utc>) -> Result<()> {
     }
     Ok(())
 }
+
 fn observe(
     identity: &ForwardIdentity,
     call: &ForwardingInvocation,

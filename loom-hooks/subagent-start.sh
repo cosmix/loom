@@ -9,7 +9,11 @@
 # Input: JSON from stdin, e.g.
 #   {"agent_id": "...", "agent_type": "loom-software-engineer",
 #    "session_id": "<claude-parent-uuid>",
-#    "transcript_path": ".../subagents/agent-<agentId>.jsonl", ...}
+#    "transcript_path": ".../<claude-parent-uuid>.jsonl", ...}
+#
+# transcript_path is the PARENT session's transcript, per the Claude Code hooks
+# reference; SubagentStop alone names the worker's own agent_transcript_path.
+# Nothing here reads a transcript: the worker's file may not exist yet.
 #
 # Environment variables (set by loom worktree settings, PARENT session's own):
 #   LOOM_STAGE_ID    - The stage being executed
@@ -63,20 +67,6 @@ INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
 AGENT_TYPE=$(printf '%s' "$INPUT_JSON" | jq -r '.agent_type // empty' 2>/dev/null || true)
 AGENT_ID=$(printf '%s' "$INPUT_JSON" | jq -r '.agent_id // empty' 2>/dev/null || true)
 PARENT_SESSION_ID=$(printf '%s' "$INPUT_JSON" | jq -r '.session_id // empty' 2>/dev/null || true)
-TRANSCRIPT_PATH=$(printf '%s' "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null || true)
-
-# Fall back to deriving the agent id from transcript_path's basename, the same
-# shape subagent-stop.sh already relies on
-# (.../subagents/agent-<agentId>.jsonl).
-if [[ -z "$AGENT_ID" ]]; then
-	case "$TRANSCRIPT_PATH" in
-	*/subagents/agent-*.jsonl)
-		AGENT_ID="${TRANSCRIPT_PATH##*/}"
-		AGENT_ID="${AGENT_ID#agent-}"
-		AGENT_ID="${AGENT_ID%.jsonl}"
-		;;
-	esac
-fi
 
 case "$AGENT_ID" in
 *[!A-Za-z0-9._-]* | "")
@@ -127,16 +117,15 @@ else
 	loom_debug "subagent-start: skipping - jq -n failed for agent $AGENT_ID"
 fi
 
-# The exact reviewer invocation gets a worktree fingerprint before its first
-# turn. A missing snapshot makes the later harvest fail closed; it never
-# substitutes the tree seen at SubagentStop for the tree at review start.
-if [[ "$AGENT_TYPE" == "loom-code-reviewer" && -n "$TRANSCRIPT_PATH" &&
-	-n "$START_JSON" ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null; then
+# The exact reviewer invocation, keyed on stage, session and agent, gets a
+# worktree fingerprint before its first turn. A missing snapshot makes the later
+# harvest fail closed; it never substitutes the tree seen at SubagentStop for the
+# tree at review start.
+if [[ "$AGENT_TYPE" == "loom-code-reviewer" && -n "$START_JSON" ]] &&
+	command -v "${LOOM_BIN:-loom}" &>/dev/null; then
 	REVIEW_INPUT=$(jq -nc --arg stage_id "$LOOM_STAGE_ID" \
 		--arg session_id "$PARENT_SESSION_ID" --arg agent_id "$AGENT_ID" \
-		--arg transcript_path "$TRANSCRIPT_PATH" \
-		'{stage_id:$stage_id,session_id:$session_id,agent_id:$agent_id,
-		  transcript_path:$transcript_path}' 2>/dev/null || true)
+		'{stage_id:$stage_id,session_id:$session_id,agent_id:$agent_id}' 2>/dev/null || true)
 	if [[ -n "$REVIEW_INPUT" ]]; then
 		REVIEW_STATUS=0
 		REVIEW_OUTPUT=$(printf '%s' "$REVIEW_INPUT" | LOOM_HOOK_CONTEXT=1 \

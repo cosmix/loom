@@ -109,8 +109,8 @@ fn hook_drift_does_not_flag_worktree_session_hooks() {
     configure_loom_hooks_with_dir(&mut settings_obj, TEST_HOOKS_DIR).unwrap();
     let mut settings = Value::Object(settings_obj);
 
-    // Written by the session capsule emitter at
-    // worktree-creation time, not by `configure_loom_hooks`.
+    // Simulate a historical main settings file carrying session event hooks;
+    // the capsule builder normally registers them per session.
     let hooks_obj = settings["hooks"].as_object_mut().unwrap();
     for (event, script) in [
         ("SessionStart", "session-start.sh"),

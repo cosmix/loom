@@ -56,6 +56,19 @@ loom_deny_enabled() {
     [[ "$_LOOM_DENY_ENABLED_CACHE" == "1" ]]
 }
 
+# loom_cwd_worktree - Echo the worktree root holding the current directory, or
+# return non-zero outside one. No environment variable can answer yes, so a
+# globally registered guard that must leave unrelated sessions alone uses this.
+loom_cwd_worktree() {
+    local dir
+    dir=$(pwd 2>/dev/null) || dir=""
+    if [[ "$dir" =~ ^(.*/\.worktrees/[^/]+) ]]; then
+        printf '%s' "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    return 1
+}
+
 # loom_current_worktree - Echo the loom worktree root this session is operating
 # in, or return non-zero if this is NOT a loom worktree session.
 #
@@ -68,21 +81,24 @@ loom_deny_enabled() {
 #   (a) the current working directory is inside `.worktrees/<stage>/`, or
 #   (b) LOOM_WORKTREE_PATH names a worktree root - it ENDS at
 #       `.worktrees/<stage>`, which is what the wrapper exports, so a repo that
-#       itself lives under an outer worktree does not count - AND that
-#       directory still exists on disk (the on-disk check rejects a stale,
-#       leaked value).
+#       itself lives under an outer worktree does not count - that directory
+#       still exists on disk, AND the variable is this session's own
+#       (loom_in_live_session).
+#
+# (b) is what keeps a stage session contained after it moves out of its worktree,
+# since native file tools run outside the OS sandbox. The value also leaks into
+# any shell a loom session starts, and it can name a live worktree, so its
+# presence alone would block an unrelated session of a globally registered guard.
+# An agent cannot unset its own agent's variables, so leaving gains nothing.
+# Known limit: an agent-team teammate is outside the main agent's process tree,
+# so only (a) binds it. Revisit if the harness exposes teammate ancestry.
 #
 # Returns the worktree root on stdout.
 loom_current_worktree() {
-    local dir
-    dir=$(pwd 2>/dev/null) || dir=""
-    if [[ "$dir" =~ ^(.*/\.worktrees/[^/]+) ]]; then
-        printf '%s' "${BASH_REMATCH[1]}"
-        return 0
-    fi
+    loom_cwd_worktree && return 0
 
     local wt="${LOOM_WORKTREE_PATH:-}"
-    if [[ -n "$wt" && -d "$wt" && "$wt" =~ /\.worktrees/[^/]+/?$ ]]; then
+    if [[ -n "$wt" && -d "$wt" && "$wt" =~ /\.worktrees/[^/]+/?$ ]] && loom_in_live_session; then
         printf '%s' "$wt"
         return 0
     fi

@@ -94,7 +94,7 @@ assert_progress() {
 export LOOM_WORK_DIR="$WORK_DIR"
 export LOOM_STAGE_ID="$STAGE_ID"
 export LOOM_SESSION_ID="$SESSION_ID"
-export LOOM_BIN="$TEST_ROOT/missing-loom"
+export LOOM_BIN="${LOOM_BIN:-$SCRIPT_DIR/../../loom/target/debug/loom}"
 unset LOOM_HOOK_PATH LOOM_SESSION_TYPE
 
 append_usage 1

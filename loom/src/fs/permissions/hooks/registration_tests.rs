@@ -91,6 +91,25 @@ fn test_completion_control_hook_registered_before_bash_only() {
     }
 }
 
+/// A shell-running tool outside the `Bash` matcher must not be able to quote a
+/// minted invocation id unchecked.
+#[test]
+fn the_codex_forward_guard_covers_every_tool_that_runs_a_shell_command() {
+    let config = loom_hooks_config();
+    let entries = config["PreToolUse"].as_array().unwrap();
+    for tool in ["Bash", "Monitor", "PowerShell"] {
+        assert!(
+            entries.iter().any(|entry| {
+                entry["matcher"] == tool
+                    && entry["hooks"][0]["command"]
+                        .as_str()
+                        .is_some_and(|command| command.contains("codex-forward-guard.sh"))
+            }),
+            "codex-forward-guard.sh not registered for matcher '{tool}'"
+        );
+    }
+}
+
 fn home() -> Option<&'static std::path::Path> {
     Some(std::path::Path::new("/home/op"))
 }
@@ -151,6 +170,106 @@ fn a_project_level_claude_hooks_loom_script_is_the_users() {
         assert!(!is_loom_hook_in(user_hook, dir, home()), "{user_hook}");
         assert!(!is_loom_hook_in(user_hook, None, None), "{user_hook}");
     }
+}
+
+/// Loom's only registrations directly under `~/.claude/hooks/` were these
+/// three; a user's own script there can share any other shipped hook's name.
+#[test]
+fn only_the_scripts_loom_once_installed_at_top_level_are_legacy_owned() {
+    for legacy in ["commit-guard.sh", "ask-user-pre.sh", "ask-user-post.sh"] {
+        for prefix in [
+            "~/.claude/hooks",
+            "$HOME/.claude/hooks",
+            "/home/op/.claude/hooks",
+        ] {
+            let command = format!("{prefix}/{legacy}");
+            assert!(is_loom_hook_in(&command, None, home()), "{command}");
+        }
+    }
+    for user_hook in [
+        "session-start.sh",
+        "post-tool-use.sh",
+        "pre-compact.sh",
+        "_common.sh",
+    ] {
+        for prefix in [
+            "~/.claude/hooks",
+            "$HOME/.claude/hooks",
+            "/home/op/.claude/hooks",
+        ] {
+            let command = format!("{prefix}/{user_hook}");
+            assert!(!is_loom_hook_in(&command, None, home()), "{command}");
+        }
+    }
+}
+
+#[test]
+fn reconciliation_keeps_a_users_script_named_like_a_shipped_hook() {
+    let user = serde_json::json!({"command": "~/.claude/hooks/session-start.sh"});
+    let mut settings = serde_json::json!({"hooks": {"SessionStart": [
+        {"matcher": "*", "hooks": [user.clone(), {"command": "~/.claude/hooks/commit-guard.sh"}]}
+    ]}});
+    let object = settings.as_object_mut().unwrap();
+
+    configure_loom_hooks_with_dir(object, "/installed/loom").unwrap();
+
+    assert_eq!(
+        settings["hooks"]["SessionStart"][0]["hooks"],
+        serde_json::json!([user])
+    );
+}
+
+/// A home directory with a space must register a command the shell runs as one
+/// word, and that registration must be recognised on the next init.
+#[test]
+fn a_hooks_dir_with_shell_metacharacters_registers_one_runnable_word_once() {
+    for name in ["my user", "o'brien", "a$b", "wow!", "a!b'c!"] {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join(name).join(".claude/hooks/loom");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("commit-guard.sh");
+        std::fs::write(&script, "#!/bin/sh\necho ran\n").unwrap();
+        std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        let dir_text = dir.display().to_string();
+
+        let mut settings = serde_json::json!({});
+        let object = settings.as_object_mut().unwrap();
+        configure_loom_hooks_with_dir(object, &dir_text).unwrap();
+        let once = object.clone();
+        configure_loom_hooks_with_dir(object, &dir_text).unwrap();
+        assert_eq!(&once, object, "{name}: a second init appended handlers");
+
+        let stop = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
+        assert_eq!(extract_command_basename(stop), "commit-guard.sh", "{name}");
+        assert!(is_loom_hook_in(stop, Some(&dir), None), "{name}");
+        let ran = std::process::Command::new("sh")
+            .args(["-c", stop])
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&ran.stdout),
+            "ran\n",
+            "{name}: {stop}"
+        );
+
+        let drift = super::super::drift::hook_drift_for_dir(&settings, &dir_text);
+        assert!(
+            drift.missing.is_empty() && drift.obsolete.is_empty(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn the_unexpanded_default_dir_stays_unquoted_for_the_shell_to_expand() {
+    let config = loom_hooks_config_for_dir("~/.claude/hooks/loom");
+    assert_eq!(
+        config["Stop"][0]["hooks"][0]["command"],
+        "~/.claude/hooks/loom/commit-guard.sh"
+    );
 }
 
 #[test]

@@ -86,6 +86,10 @@ expect_allow "commit message mentioning worktree directories" 'git commit -m "Ad
 expect_allow "commit message describing an override" 'git commit -m "Use git -C for directory changes"'
 expect_allow "commit message mentioning traversal" 'git commit -m "Fixed ../../path issue"'
 expect_allow "heredoc prose containing guarded patterns" $'cat <<EOF\ngit -C ../other status\n../../escape\n.worktrees/other-stage/\nEOF'
+expect_allow "quoted heredoc marker hides its body" $'cat <<\'EOF\'\ngit -C ../other status\n../../escape\n.worktrees/other-stage/\nEOF'
+expect_allow "an indented terminator does not close a heredoc" $'cat <<\'EOF\'\n    EOF\ncat ../../still-in-body\nEOF'
+# Bash removes unquoted backslashes, so this names `....file.txt` in the cwd.
+expect_allow "unquoted backslashes leave no parent component" 'cat ..\..\file.txt'
 
 # --- MUST BE BLOCKED (exit 2), no regressions -------------------------------
 
@@ -98,6 +102,8 @@ expect_block "traversal before a compound command" "cd ../../other && ls"
 # what proves quoting alone is not the discriminator; whitespace inside the
 # token is.
 expect_block "quoted real traversal path argument" 'cat "../../foo"'
+expect_block "quoted backslash traversal path argument" 'cat "..\..\file.txt"'
+expect_block "traversal after a closed heredoc" $'cat <<\'EOF\'\nprose\nEOF\ncat ../../bad'
 
 expect_block "git -C directory override" "git -C /somewhere status"
 expect_block "git -C relative override" "git -C ../other status"

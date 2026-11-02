@@ -144,8 +144,10 @@ fn parse_etime(text: &str) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_stdout, cancel_holder_with, parse_etime};
-    use crate::commands::hook::reconcile_graph::lock::{read_lock, update_lock, LockState};
+    use super::{bounded_stdout, cancel_holder_with, is_reconciler, parse_etime, START_SKEW_SECS};
+    use crate::commands::hook::reconcile_graph::lock::{
+        begin_run, read_lock, unix_now, update_lock, LockState,
+    };
     use std::process::Command;
     use std::time::{Duration, Instant};
 
@@ -182,6 +184,47 @@ mod tests {
         assert_eq!(parse_etime(""), None);
         assert_eq!(parse_etime("a:b"), None);
         assert_eq!(parse_etime("1:2:3:4"), None);
+    }
+
+    /// A child that began well after its parent's claim is not `--cancel`'s
+    /// holder until its startup re-stamps the epoch; a lock left at the claim's
+    /// epoch made a live reconciler look like a reused pid, whose lease
+    /// `--cancel` would release under it for a second reconcile to take.
+    #[test]
+    fn a_late_child_is_the_reconciler_once_it_restamps_the_epoch() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("reconcile.lock");
+        // `read` is a builtin, so this argv stays in place until the kill below.
+        let mut child = Command::new("bash")
+            .args(["-c", "read -r _", "hook", "reconcile-graph"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let now = unix_now();
+        let claimed_at = now - START_SKEW_SECS - 30;
+        let state = LockState {
+            epoch: claimed_at,
+            pid,
+            failures: 0,
+            pending: false,
+            claim: 7,
+        };
+        update_lock(&path, |_| (Some(state), ())).unwrap();
+
+        let before = is_reconciler(pid, read_lock(&path).unwrap().epoch, now);
+        let began = begin_run(&path, pid, 7, unix_now());
+        let after = is_reconciler(pid, read_lock(&path).unwrap().epoch, unix_now());
+        child.kill().unwrap();
+        child.wait().unwrap();
+
+        assert_eq!(
+            before,
+            Some(false),
+            "the premise: the claim's epoch is too old"
+        );
+        assert!(began);
+        assert_eq!(after, Some(true));
     }
 
     #[test]

@@ -29,7 +29,7 @@ fn test_hooks_config_structure() {
         ("Glob", "worktree-file-guard.sh"),
         ("Grep", "worktree-file-guard.sh"),
     ];
-    assert_eq!(pre_tool.len(), 47);
+    assert_eq!(pre_tool.len(), 49);
     for (entry, (matcher, script)) in pre_tool.iter().zip(expected_prefix) {
         assert_hook(entry, matcher, script);
     }
@@ -123,8 +123,10 @@ fn assert_codex_forward_guard_matchers(pre_tool: &[Value]) {
             "Agent",
             "Bash",
             "Edit",
+            "Monitor",
             "MultiEdit",
             "NotebookEdit",
+            "PowerShell",
             "Read",
             "SendMessage",
             "Task",
@@ -173,7 +175,7 @@ fn test_hook_event_surface_has_eight_events() {
         HookEvent::all().len(),
         8,
         "HookEvent::all() surface changed - verify Display, script_name(), \
-         and to_settings_hooks() were all updated to match"
+         and the shared session-event rules were all updated to match"
     );
 }
 

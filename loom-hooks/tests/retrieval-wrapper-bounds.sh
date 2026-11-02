@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The prompt and edit-recording wrappers must use the portable watchdog when
-# timeout and gtimeout are absent, and never forward partial failed output.
+# The prompt wrapper uses the portable watchdog and suppresses failed output.
+# The post-patch hook must return promptly without invoking the old recorder.
 set -euo pipefail
 unset LOOM_HOOK_PATH LOOM_BIN LOOM_CODEX_FORWARD
 
@@ -49,7 +49,7 @@ start=$SECONDS
 printf '%s' "$PATCH_INPUT" | DELEGATE_MODE=stall LOOM_STAGE_ID=stage-1 \
 	bash "$HOOKS_DIR/codex-apply-patch.sh" post
 if ((SECONDS - start > 6)); then
-	echo "FAIL: stalled edit recording exceeded its bound"
+	echo "FAIL: post-patch hook exceeded its bound"
 	exit 1
 fi
 

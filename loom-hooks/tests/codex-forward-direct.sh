@@ -183,7 +183,8 @@ for _ in $(seq 1 200); do
 done
 [[ $(wc -l <"$OUT") -eq 1 ]]
 sed -n '1p' "$OUT" | jq -Rer '
-	ltrimstr("LOOM-FORWARD-START ") | fromjson | . == {v:1,backend:"direct",thread_id:"thread-exact"}' >/dev/null
+	ltrimstr("LOOM-FORWARD-START ") | fromjson |
+    . == {v:1,backend:"direct",thread_id:"thread-exact"}' >/dev/null
 touch "$d/release"
 wait "$gated_pid"
 sed -n '2p' "$OUT" | rg -qF 'LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"thread-exact","outcome":"succeeded"'

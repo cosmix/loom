@@ -296,22 +296,40 @@ loom_payload_agent_verdict() {
     return 0
 }
 
+# loom_in_live_session - Return 0 when this hook runs inside a live loom session.
+#
+# LOOM_MAIN_AGENT_PID must be set AND a LIVE ancestor: a leaked value from a
+# previous session names a PID that is not in our chain, and is ignored. Hooks
+# install globally at ~/.claude/hooks/loom/, so this is what scopes them to a
+# loom stage session rather than every Claude Code session on the machine. An
+# agent-team teammate is NOT in the main agent's process tree, so it is not part
+# of the session here. Where no process information exists at all (`ps` denied
+# by a sandbox, no /proc) ancestry is unknowable. A guard that cannot walk the
+# tree must fail CLOSED and keep guarding, or it silently becomes a no-op for
+# every session whose sandbox withholds `ps`, which is the common case rather
+# than an exotic one. So the gate degrades to the strongest proof left, the pid
+# must still be signalable, and a leaked value from an exited session stays out.
+loom_in_live_session() {
+    local main_pid="${LOOM_MAIN_AGENT_PID:-}" ancestry=0
+    [[ -n "$main_pid" ]] || return 1
+    is_ancestor "$main_pid" || ancestry=$?
+    if [[ $ancestry -eq 1 ]]; then
+        loom_debug "DEBUG: LOOM_MAIN_AGENT_PID=$main_pid is NOT in ancestor chain - stale value, ignoring"
+        return 1
+    fi
+    if [[ $ancestry -eq 2 ]] && ! kill -0 "$main_pid" 2>/dev/null; then
+        loom_debug "DEBUG: no process information available and LOOM_MAIN_AGENT_PID=$main_pid is not signalable - ignoring"
+        return 1
+    fi
+}
+
 # loom_is_subagent [<payload-json>] - Return 0 when this hook runs under a
 # SUBAGENT, non-zero otherwise (main agent, or no live loom session at all).
 #
-# LOOM-SESSION GATE FIRST, ALWAYS: LOOM_MAIN_AGENT_PID must be set AND a LIVE
-# ancestor (a leaked value from a previous session names a PID that is not in
-# our chain, and is ignored) before anything else runs - this scopes BOTH
-# hooks to a loom stage session. They install globally at
-# ~/.claude/hooks/loom/, so without this precondition the payload check below
-# would fire for every Claude Code session on the machine: a Task subagent in
-# an unrelated, non-loom repo would get `cargo build` / `git commit`
-# hard-blocked with no escape hatch. An agent-team teammate is NOT in the main
-# agent's process tree, so it correctly keeps returning 1 here too (it is not
-# part of a loom session at all). Where no process information exists at all
-# (`ps` denied by a sandbox, no /proc) ancestry is unknowable, and the gate
-# degrades to "the pid must still be signalable" rather than to "no loom
-# session" - see the branch on `ancestry -eq 2` below.
+# The loom_in_live_session gate comes first, always: without it the payload check
+# below would fire for every Claude Code session on the machine, and a Task
+# subagent in an unrelated, non-loom repo would get `cargo build` / `git commit`
+# hard-blocked with no escape hatch.
 #
 # PAYLOAD-FIRST CLASSIFICATION, ONCE THE GATE PASSES: with a live
 # LOOM_MAIN_AGENT_PID ancestor established, a payload argument lets
@@ -326,34 +344,7 @@ loom_is_subagent() {
     local payload="${1:-}"
 
     local main_pid="${LOOM_MAIN_AGENT_PID:-}"
-    if [[ -z "$main_pid" ]]; then
-        return 1
-    fi
-
-    local ancestry=0
-    is_ancestor "$main_pid" || ancestry=$?
-
-    # Stale value (from a previous session) - not in our ancestor chain
-    if [[ $ancestry -eq 1 ]]; then
-        loom_debug "DEBUG: LOOM_MAIN_AGENT_PID=$main_pid is NOT in ancestor chain - stale value, ignoring"
-        return 1
-    fi
-
-    # No process information in this environment, so ancestry is unknowable.
-    # Fall back to the strongest proof left - the pid must name a process we
-    # can still signal - and treat that as satisfying the gate. A guard that
-    # cannot walk the tree must fail CLOSED and keep guarding: returning 1
-    # here would silently turn commit-filter.sh and subagent-verify-guard.sh
-    # into no-ops for every session whose sandbox withholds `ps`, which is the
-    # common case rather than an exotic one. A dead pid is still ignored, so a
-    # leaked value from an exited session cannot re-arm the gate.
-    if [[ $ancestry -eq 2 ]]; then
-        if ! kill -0 "$main_pid" 2>/dev/null; then
-            loom_debug "DEBUG: no process information available and LOOM_MAIN_AGENT_PID=$main_pid is not signalable - ignoring"
-            return 1
-        fi
-        loom_debug "DEBUG: no process information available - LOOM_MAIN_AGENT_PID=$main_pid is live, loom-session gate satisfied"
-    fi
+    loom_in_live_session || return 1
 
     if [[ -n "$payload" ]]; then
         local verdict

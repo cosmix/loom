@@ -41,6 +41,8 @@ esac
 
 WORKTREE_PATH=$(loom_current_worktree) || exit 0
 WORKTREE_PATH=$(cd "$WORKTREE_PATH" 2>/dev/null && pwd -P) || exit 2
+source "$(dirname "${BASH_SOURCE[0]}")/_worktree_policy.sh" || exit 2
+loom_load_worktree_policy || exit 2
 
 is_within() {
 	local target="$1"
@@ -121,8 +123,8 @@ Tool: $TOOL_NAME
 Path: $original
 Reason: $reason
 
-Use a path inside the current worktree. Shared orchestration state is
-read-only to file tools, except for the explicit handoff write root.
+Shared orchestration state is read-only to file tools, except for the
+explicitly permitted shared write roots.
 ============================================================
 
 EOF
@@ -222,9 +224,10 @@ fi
 
 # Reject every parent component. This deliberately fails closed even when a
 # lexical `..` would normalize back into the worktree.
-case "/$FILE_PATH/" in
-*/../*) block_path "$FILE_PATH" "parent-directory components are forbidden"; exit 2 ;;
-esac
+if [[ "$FILE_PATH" =~ $LOOM_POLICY_PARENT_COMPONENT ]]; then
+	block_path "$FILE_PATH" "parent-directory components are forbidden"
+	exit 2
+fi
 
 if [[ "$FILE_PATH" == /* ]]; then
 	LEXICAL_PATH="$FILE_PATH"
@@ -333,24 +336,6 @@ Read | Glob | Grep)
 	;;
 esac
 
-# Knowledge files are recorded through the `loom knowledge update` CLI, not
-# file tools — the sandbox itself no longer enforces this (the CLI runs
-# inside it too, so a sandbox deny would block the CLI as well as the file
-# tools; see `sandbox::config::apply_knowledge_write_grant`). This hook is
-# the doctrine's replacement enforcement point. Reads stay allowed (an agent
-# legitimately reads its own knowledge base); only write-class tools are
-# gated, and only inside this worktree — main-repo knowledge/knowledge-distill
-# stages cannot be gated reliably here (never gate on LOOM_STAGE_ID).
-KNOWLEDGE_DIR="$WORKTREE_PATH/doc/loom/knowledge"
-case "$TOOL_NAME" in
-Write | Edit | MultiEdit | NotebookEdit)
-	if is_within "$RESOLVED_PATH" "$KNOWLEDGE_DIR"; then
-		block_path "$FILE_PATH" "knowledge files are recorded through \`loom knowledge update\`, not file tools"
-		exit 2
-	fi
-	;;
-esac
-
 if is_within "$RESOLVED_PATH" "$WORKTREE_PATH"; then
 	exit 0
 fi
@@ -367,7 +352,7 @@ if [[ -n "$WORK_SHARED" ]] && is_within "$RESOLVED_PATH" "$WORK_SHARED"; then
 	case "$TOOL_NAME" in
 	Read | Glob | Grep) exit 0 ;;
 	Write | Edit | MultiEdit | NotebookEdit)
-		if [[ "$RELATIVE_WORK_PATH" == /handoffs/* ]]; then
+		if loom_policy_shared_write_allowed "$RELATIVE_WORK_PATH"; then
 			exit 0
 		fi
 		block_path "$FILE_PATH" "shared orchestration state is not writable by file tools"

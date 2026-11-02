@@ -59,6 +59,8 @@ loom_find_stage_file() {
 loom_stage_work_dir() {
     local dir
     dir="${1:-$PWD}"
+    # A relative path never reaches `/`, so the walk below would not end.
+    [[ "$dir" == /* ]] || return 1
     dir=${dir%/}; [[ -n "$dir" ]] || dir=/
     while :; do
         if [[ -d "$dir/.loom/work" ]]; then printf '%s\n' "$dir/.loom/work"; return 0; fi

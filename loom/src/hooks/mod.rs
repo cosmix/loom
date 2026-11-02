@@ -28,14 +28,12 @@
 mod config;
 pub mod events;
 mod generator;
-/// Legacy compatibility API; it does not enforce the installed hook policy.
-pub mod validators;
 
 #[cfg(test)]
 pub(crate) mod tests;
 
-#[allow(deprecated)]
-pub use config::{HookEvent, HooksConfig};
+pub(crate) use config::session_event_rules;
+pub use config::HookEvent;
 pub use events::{
     log_hook_event, read_recent_events, read_session_events, read_stage_events, HookEventLog,
     HookEventPayload,

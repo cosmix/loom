@@ -1,7 +1,8 @@
 //! Tests for hook installation
 
 use crate::fs::permissions::constants::{
-    HOOK_COMMIT_GUARD, HOOK_COMMON, HOOK_CONTAINMENT, HOOK_STAGE_LOOKUP,
+    HOOK_COMMIT_GUARD, HOOK_COMMON, HOOK_CONTAINMENT, HOOK_STAGE_LOOKUP, HOOK_WORKTREE_POLICY,
+    HOOK_WORKTREE_POLICY_LOADER,
 };
 use crate::fs::permissions::hooks::install_loom_hooks_to;
 use std::fs;
@@ -53,4 +54,28 @@ fn test_install_loom_hooks_creates_hook_files() {
     // Check worktree hooks exist
     assert!(hooks_dir.join("post-tool-use.sh").exists());
     assert!(hooks_dir.join("session-start.sh").exists());
+}
+
+#[test]
+fn worktree_policy_upgrade_repairs_assets_and_preserves_user_files() {
+    let temp = TempDir::new().unwrap();
+    let hooks = temp.path();
+    install_loom_hooks_to(hooks).unwrap();
+    fs::write(hooks.join("worktree-policy.json"), "{}").unwrap();
+    fs::remove_file(hooks.join("_worktree_policy.sh")).unwrap();
+    fs::write(hooks.join("custom-user-hook.sh"), "user content").unwrap();
+
+    assert_eq!(
+        crate::fs::permissions::drift::hook_scripts_needing_install(hooks),
+        ["_worktree_policy.sh", "worktree-policy.json"]
+    );
+    assert_eq!(install_loom_hooks_to(hooks).unwrap(), 2);
+    for (name, expected) in [
+        ("worktree-policy.json", HOOK_WORKTREE_POLICY),
+        ("_worktree_policy.sh", HOOK_WORKTREE_POLICY_LOADER),
+        ("custom-user-hook.sh", "user content"),
+    ] {
+        assert_eq!(fs::read_to_string(hooks.join(name)).unwrap(), expected);
+    }
+    assert!(crate::fs::permissions::drift::hook_scripts_needing_install(hooks).is_empty());
 }

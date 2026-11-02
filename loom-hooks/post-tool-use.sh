@@ -285,31 +285,6 @@ if [[ "$TOOL_NAME" == "Bash" ]] && [[ -n "$COMMAND" ]]; then
 	fi
 fi
 
-# === EDIT RECORDING (Write/Edit/MultiEdit/NotebookEdit tool calls) ===
-# Delegate to the Rust binary, which owns the shared state-directory write under a lock.
-# This script only extracts the edited path and forwards it - it must never
-# write shared state itself, and a failed/slow record must never fail the
-# edit (every call below is suffixed with `|| true`).
-#
-# MultiEdit carries its target at `.file_path`, the same position Write/Edit
-# use - confirmed against Claude Code's published PostToolUse examples, which
-# match "Write|Edit|MultiEdit" and read `.tool_input.file_path` for all three.
-# NotebookEdit does NOT: its field is `.notebook_path`, confirmed against
-# `worktree-file-guard.sh`'s `extract_path()`, which already special-cases the
-# same tool for the same reason. Falling back to `.file_path` only guards
-# against a future field rename, matching that guard's fallback.
-if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "MultiEdit" || "$TOOL_NAME" == "NotebookEdit" ]] \
-	&& command -v "${LOOM_BIN:-loom}" &>/dev/null && command -v jq &>/dev/null; then
-	if [[ "$TOOL_NAME" == "NotebookEdit" ]]; then
-		EDIT_PATH=$(echo "$TOOL_INPUT" | jq -r '.notebook_path // .file_path // empty' 2>/dev/null || true)
-	else
-		EDIT_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty' 2>/dev/null || true)
-	fi
-	if [[ -n "$EDIT_PATH" ]]; then
-		LOOM_HOOK_CONTEXT=1 loom_run_bounded 3 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
-	fi
-fi
-
 # === MAIN-SESSION SIZE ADVISORY ===
 # A stage's main session that changes more than 20 lines or more than 2 files
 # itself gets one advisory (CLAUDE.md Rule 7, hard stop 6). It never blocks.

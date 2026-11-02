@@ -13,21 +13,24 @@
 //! last assistant entry that has any. The hand-back is preferred; if both
 //! parse and disagree, the hand-back wins and the round records why. A
 //! missing or unreadable block still records the round, with `malformed` set
-//! and no findings. The delegate always exits 0; a failure or a malformed
-//! report is one line on stderr.
+//! and no findings, and is one line on stderr. A harvest that records no round
+//! for a v2 stage exits nonzero, and a known cause is one more stderr line,
+//! `loom-review-harvest-cause=<token>`, so `subagent-stop.sh` can tell the
+//! review gate why.
 //!
 //! One round is recorded per reviewer agent per reviewed state. A reviewer's
 //! SubagentStop can fire twice (the lifecycle journal shows two stops for one
 //! agent id seconds apart, the second with a longer transcript), so a harvest
-//! first checks the immutable start snapshot, then looks for a recorded round
-//! with the same agent id, change fingerprint
+//! first loads the immutable start snapshot, then looks for a recorded round
+//! with the same agent id, start fingerprint
 //! and parsed review: the same findings (their ids aside), `resolved` and
 //! `unresolved`, or both malformed. Finding one, it writes and journals
-//! nothing. Suggestions are not stored in the round and are not compared. The
-//! check, the round number and the write share the store's review lock, so two
-//! concurrent harvests of one report record it once. A different report, or
-//! from the same start snapshot, is a new round. An edit since the start
-//! snapshot requires a new reviewer invocation.
+//! nothing and succeeds, even if the worktree has changed since. Suggestions are
+//! not stored in the round and are not compared. The check, the round number and
+//! the write share the store's review lock, so two concurrent harvests of one
+//! report record it once. A different report, or from the same start snapshot,
+//! is a new round. An edit since the start snapshot refuses any new round and
+//! requires a new reviewer invocation.
 //!
 //! Suggestions are journaled before the round is written, because the round
 //! is immutable and may only name entries that exist. If `write_round` then
@@ -38,9 +41,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{ensure, Context, Result};
 use chrono::Utc;
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
-use crate::commands::hook::review_start;
+use crate::commands::hook::review_start::{self, ReviewInvocation};
 use crate::commands::hook::review_transcript::reviewer_review;
 use crate::fs::memory::{
     append_entry, validate_content, validate_evidence, MemoryEntry, MemoryEntryType,
@@ -56,6 +60,10 @@ use crate::verify::review::store::{
 };
 use crate::verify::transitions::load_stage;
 
+#[path = "review_harvest_failure.rs"]
+mod failure;
+use failure::{failure_cause, HarvestFailure, CAUSE_PREFIX};
+
 const MAX_INPUT_BYTES: u64 = 64 * 1024;
 /// `validate_content`'s limit on a memory entry.
 const MAX_ENTRY_BYTES: usize = 2000;
@@ -69,6 +77,17 @@ pub(crate) struct HarvestInput {
     pub session_id: String,
     pub agent_id: String,
     pub transcript_path: PathBuf,
+}
+
+impl HarvestInput {
+    /// The invocation whose start evidence this stop must match.
+    pub(super) fn invocation(&self) -> ReviewInvocation {
+        ReviewInvocation {
+            stage_id: self.stage_id.clone(),
+            session_id: self.session_id.clone(),
+            agent_id: self.agent_id.clone(),
+        }
+    }
 }
 
 /// What one harvest did.
@@ -92,16 +111,22 @@ pub(crate) enum Harvest {
 }
 
 /// `loom hook review-harvest`: reads the stop event on stdin, `LOOM_WORK_DIR`
-/// from the environment.
+/// from the environment. An error is the nonzero exit `subagent-stop.sh` turns
+/// into a stop-skips row.
 pub fn review_harvest() -> Result<()> {
-    let outcome = read_input().and_then(|input| harvest(&work_dir_from_env()?, &input));
+    let input: HarvestInput = read_input()?;
+    let outcome = harvest(&work_dir_from_env()?, &input).inspect_err(|error| {
+        if let Some(cause) = failure_cause(error) {
+            eprintln!("{CAUSE_PREFIX}{cause}");
+        }
+    })?;
     match outcome {
-        Ok(Harvest::Recorded {
+        Harvest::Recorded {
             round,
             malformed,
             unjournaled,
             discrepancy,
-        }) => {
+        } => {
             if let Some(reason) = malformed {
                 eprintln!(
                     "loom hook review-harvest: review round {round} is malformed: {}",
@@ -121,14 +146,10 @@ pub fn review_harvest() -> Result<()> {
                 );
             }
         }
-        Ok(Harvest::Duplicate { round }) => eprintln!(
+        Harvest::Duplicate { round } => eprintln!(
             "loom hook review-harvest: this report is already recorded as review round {round}"
         ),
-        Ok(Harvest::Skipped) => {}
-        Err(error) => eprintln!(
-            "loom hook review-harvest: {}",
-            single_line(&format!("{error:#}"))
-        ),
+        Harvest::Skipped => {}
     }
     Ok(())
 }
@@ -140,22 +161,25 @@ pub(crate) fn harvest(work_dir: &Path, input: &HarvestInput) -> Result<Harvest> 
     if stage.plan_version != 2 {
         return Ok(Harvest::Skipped);
     }
-    let (parsed, discrepancy) = reviewer_review(input)?;
-    let reviewed = review_start::load(work_dir, input)?;
+    let (parsed, discrepancy) =
+        reviewer_review(input).context(HarvestFailure::TranscriptUnusable)?;
+    let reviewed = review_start::load(work_dir, &input.invocation())
+        .context(HarvestFailure::NoStartEvidence)?;
     let worktree = stage_worktree(work_dir, &stage)?;
     let target = crate::fs::resolve_target_branch_from_config(work_dir, &worktree)?;
     let current = fingerprint::compute(&worktree, &target)?;
-    ensure!(
-        current == reviewed,
-        "the worktree changed since this reviewer started; launch a new review"
-    );
     let mut unjournaled = None;
     let decision = store::record_round(work_dir, &stage.id, |number, recorded| {
         let repeats = |round: &&ReviewRound| {
             records_same_review(round, &input.agent_id, &reviewed.value, &parsed)
         };
+        // A repeat stop is checked first: edits made since the recorded round
+        // are that round's staleness to report, and this stop writes nothing.
         if let Some(existing) = recorded.iter().find(repeats) {
             return Ok(RoundDecision::Duplicate(existing.round));
+        }
+        if current != reviewed {
+            return Err(HarvestFailure::WorktreeChanged.into());
         }
         let (mut round, suggestions) = build_round(number, &input.agent_id, reviewed, parsed)?;
         // Journal first: the round is immutable once written, so it may only
@@ -225,7 +249,7 @@ fn journal_suggestions(
     (ids, None)
 }
 
-pub(super) fn read_input() -> Result<HarvestInput> {
+pub(super) fn read_input<T: DeserializeOwned>() -> Result<T> {
     let mut input = String::new();
     io::stdin()
         .take(MAX_INPUT_BYTES + 1)
@@ -242,7 +266,9 @@ pub(super) fn work_dir_from_env() -> Result<PathBuf> {
     let work_dir = std::env::var_os("LOOM_WORK_DIR").context("LOOM_WORK_DIR is unset")?;
     let work_dir = PathBuf::from(work_dir);
     ensure!(work_dir.is_dir(), "LOOM_WORK_DIR is not a directory");
-    Ok(work_dir)
+    // A stage session reaches the state directory through its worktree's
+    // symlink, and the project root derives from this path.
+    work_dir.canonicalize().context("resolving LOOM_WORK_DIR")
 }
 
 /// The round for `parsed`, and the suggestion entries to journal for it.

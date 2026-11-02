@@ -125,7 +125,7 @@ fn run_passes(
 ) {
     let pid = std::process::id();
     let acquired_claim = match claim {
-        Some(claim) if begin_run(lock_path, pid, claim) => Some(claim),
+        Some(claim) if begin_run(lock_path, pid, claim, unix_now()) => Some(claim),
         Some(_) => None,
         None => {
             let now = unix_now();

@@ -40,8 +40,8 @@ class StartAnnouncer:
         if self.fd is None or self.attempted:
             return
         self.attempted = True
-        body = json.dumps({"v": 1, "backend": "direct", "thread_id": thread_id},
-                          separators=(",", ":"))
+        marker = {"v": 1, "backend": "direct", "thread_id": thread_id}
+        body = json.dumps(marker, separators=(",", ":"))
         line = memoryview((START_PREFIX + body + "\n").encode())
         # os.write may write part of the line; finish it, or leave thread_id
         # unset so the wrapper fails closed on a START it cannot vouch for.
