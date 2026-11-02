@@ -63,6 +63,8 @@ Three things hid the cause:
 
 **Prevention:** an integration-verify full-suite criterion is an extended criterion with `timeout_secs` of at least 1200 (`verify/criteria/config.rs`).
 
+**Recurred (2026-11-02):** `PLAN-portal-token-savings` wrote the same criterion as a plain string and `cargo test --all-targets --no-fail-fast` was killed at 300 s with no test failing (2m40s compile, 6118 tests ok). On the host the lib tests alone take 237.73 s (12028 passed), so the default cannot hold whatever the compile cost. The same suite inside a stage's Bash sandbox shows 190 failures from nested bwrap, read-only `/tmp` locks, denied unix sockets and a temp root containing `claude` (`hooks_subagent_verify_guard.rs:46`), none in code the plan touched: the full suite is a host criterion, never a sandbox one. The recurrence means the knowledge did not reach plan authoring; the proposed guard is in [`loom ask` and Read Gate Concerns](../concerns/loom-ask-and-read-gate.md#proposed-guards-for-recurring-mistakes).
+
 ## Stage Completion Refused on an Untracked `target/` File Its Own Build Wrote (2026-10-28)
 
 **What happened:** the completion command was refused twice with "untracked completion input loom/target/debug/..." naming a different gitignored file each time, while the host job's Rust impact-test build wrote `loom/target` in the worktree. `loom/.gitignore:2` ignores the files.

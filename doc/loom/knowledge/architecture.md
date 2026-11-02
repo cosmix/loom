@@ -223,7 +223,7 @@ A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoi
 
 ## Token Accounting and Receipts [DETAILED]
 
-`loom usage` provider ledger and `--compare`, the certified criterion cache, the forward-receipt and worker-brief lifecycles, the read advisories, exact waits and their hook phases: [architecture/token-accounting-and-receipts.md](architecture/token-accounting-and-receipts.md). Partial reasons, Codex receipt scope and the `--run-evidence` producer: [architecture/usage-evidence.md](architecture/usage-evidence.md). Token usage sources (transcripts, rollouts, receipts, quota history): [architecture/token-flow-sources.md](architecture/token-flow-sources.md).
+`loom usage` provider ledger and `--compare`, the certified criterion cache, the forward-receipt and worker-brief lifecycles, exact waits and their hook phases: [architecture/token-accounting-and-receipts.md](architecture/token-accounting-and-receipts.md). The deny-once read gate and `[hooks] read_gate`: [architecture/read-gate.md](architecture/read-gate.md). The `loom usage` Attribution section: [architecture/read-gate.md](architecture/read-gate.md#the-attribution-section-of-loom-usage). The `loom ask` evaluation instrument (no agent may use it yet): [architecture/loom-ask.md](architecture/loom-ask.md). Partial reasons, Codex receipt scope and the `--run-evidence` producer: [architecture/usage-evidence.md](architecture/usage-evidence.md). Token usage sources (transcripts, rollouts, receipts, quota history): [architecture/token-flow-sources.md](architecture/token-flow-sources.md).
 
 ## Owned Subagent Waits
 
