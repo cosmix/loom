@@ -42,12 +42,12 @@
 | [hook-system](architecture/hook-system.md) |  | 309 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Digest | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
-| [loom-ask](architecture/loom-ask.md) | loom ask worker and --eval | 74 |
+| [loom-ask](architecture/loom-ask.md) | loom ask worker and --eval | 75 |
 | [memory-spool](architecture/memory-spool.md) |  | 205 |
 | [merge-checkout-state](architecture/merge-checkout-state.md) | FF | 32 |
 | [merge-flow](architecture/merge-flow.md) |  | 133 |
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Ticks | 80 |
-| [owned-waits](architecture/owned-waits.md) | One bound wait per session | 71 |
+| [owned-waits](architecture/owned-waits.md) | One bound wait per session | 72 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 257 |
 | [plan-server](architecture/plan-server.md) | Chat | 245 |
 | [planner-feature-screens](architecture/planner-feature-screens.md) | Layout route, spine, offers | 25 |
@@ -58,10 +58,10 @@
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 146 |
 | [pressure](architecture/pressure.md) | Pipeline | 42 |
 | [quota-poller](architecture/quota-poller.md) |  | 37 |
-| [read-gate](architecture/read-gate.md) | Read gate, deny-once, attribution | 145 |
+| [read-gate](architecture/read-gate.md) | Read gate, deny-once, attribution | 146 |
 | [remote-control](architecture/remote-control.md) |  | 81 |
 | [run-handoff](architecture/run-handoff.md) | Run lane | 52 |
-| [security-and-isolation](architecture/security-and-isolation.md) | Worktree deny and check | 199 |
+| [security-and-isolation](architecture/security-and-isolation.md) | Worktree deny and check | 200 |
 | [signal-generation](architecture/signal-generation.md) |  | 241 |
 | [skill-catalog](architecture/skill-catalog.md) |  | 158 |
 | [source-graph](architecture/source-graph.md) | Contract | 371 |
@@ -158,8 +158,8 @@
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | Cleanup | 205 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Git ops | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) |  | 25 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Merge, daemon, broker incidents | 354 |
-| [phantom-merges](mistakes/phantom-merges.md) | Split by compile order | 348 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Merge, daemon, broker incidents | 355 |
+| [phantom-merges](mistakes/phantom-merges.md) | Split by compile order | 349 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 49 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Delivery slips | 371 |
@@ -216,7 +216,7 @@
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) |  | 15 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 108 |
-| [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) | loom ask, read gate gaps | 111 |
+| [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) | loom ask, read gate gaps | 112 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 40 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 103 |
@@ -228,7 +228,7 @@
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 363 |
 | [session-tmpdir-deny](concerns/session-tmpdir-deny.md) | Read-only TMPDIR | 11 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 86 |
-| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Host-verify review items | 302 |
+| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Host-verify review items | 303 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 334 |
 | [typed-config-values](concerns/typed-config-values.md) | Gaps | 22 |
