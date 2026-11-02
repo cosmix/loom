@@ -174,8 +174,9 @@ pub fn build(root: &Path) -> anyhow::Result<Catalog> {
     })
 }
 
-/// The issues `loom knowledge check --strict` fails on — [`build`]'s issues
-/// that are not [`CatalogIssue::is_review_only`] — for a reader that must stay
+/// [`build`]'s issues that are not [`CatalogIssue::is_review_only`]: the
+/// catalog part of what `loom knowledge check --strict` fails on (it also fails
+/// on `StaleIndex`, which `check` adds from the index file and this omits), for a reader that must stay
 /// free of side effects (`loom plan verify`). Skips the two parts of `build`
 /// that cannot add one: the evidence pass, which runs `git` and reports only
 /// review-only issues, and prose indexing, which reports none. Reads the tree;
