@@ -6,6 +6,7 @@
 // only loom_cmd() is used; the shared module serves the integration target
 #[allow(dead_code)]
 mod helpers;
+use crate::helpers::test_support;
 
 use std::fs;
 use std::path::Path;
@@ -52,7 +53,7 @@ fn repo(files: &[(&str, &str)]) -> TempDir {
     }
     git(root, &["add", "-A"]);
     git(root, &["commit", "-q", "-m", "seed"]);
-    fs::create_dir_all(root.join(".loom").join("work")).expect("create .loom/work");
+    test_support::write_main_checkout_identity(root, &root.join(".loom/work"));
     temp
 }
 

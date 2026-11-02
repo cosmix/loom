@@ -281,13 +281,13 @@ fn needs_more_evidence_writes_questions() {
 }
 
 #[test]
-fn accept_verdict_amends_plan_and_clears_feedback() {
+fn failed_accept_amendment_leaves_verdict_unapplied() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     write_plan(work);
     write_stage(work, &make_stage("s1"));
     write_dispute(work, "s1", 1);
-    // Pre-seed feedback to verify it gets cleared.
+    // Pre-seed feedback while exercising a failed amendment.
     feedback::append_questions(work, "s1", &["stale".to_string()]).unwrap();
 
     let reg = AdjudicatorRegistry::new();

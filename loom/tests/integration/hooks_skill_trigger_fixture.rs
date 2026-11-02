@@ -4,13 +4,13 @@
 //! file cap and 50-line function cap), the same way that file already splits
 //! out its --codex and evidence-rule tests.
 
+use crate::helpers::{clear_relay_env, run_hook_process};
 use loom::fs::permissions::constants::{
     HOOK_READ_DISCIPLINE, HOOK_READ_LEDGER, HOOK_SKILL_TRIGGER,
 };
 use loom::process::sandbox_probe::skip_unless;
 use serde_json::{json, Value};
 use std::fs;
-use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -218,22 +218,16 @@ fn build_hook_command(
     codex: bool,
 ) -> Command {
     let mut cmd = Command::new("python3");
-    cmd.arg(hook)
+    // Strip any real stage identity so the hook can never resolve
+    // _loom_ledger_file's in-stage branch and touch the live .loom/work of the
+    // session running this test.
+    clear_relay_env(&mut cmd)
+        .arg(hook)
         .env("HOME", home.home_path())
         .env("LOOM_BIN", env!("CARGO_BIN_EXE_loom"))
         // Isolate the once-per-session ledger per FakeHome instance instead
-        // of the ambient TMPDIR, which every test in this process shares -
-        // and strip any real stage identity so the hook can never resolve
-        // _loom_ledger_file's in-stage branch and touch the live
-        // .loom/work of the session running this test.
-        .env("TMPDIR", home.tmp_path())
-        .env_remove("LOOM_WORK_DIR")
-        .env_remove("LOOM_SESSION_ID")
-        .env_remove("LOOM_STAGE_ID")
-        .env_remove("LOOM_SKILL_DEBUG")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        // of the ambient TMPDIR, which every test in this process shares.
+        .env("TMPDIR", home.tmp_path());
     if codex {
         cmd.arg("--codex")
             .env("CODEX_HOME", home.home_path().join(".claude"));
@@ -262,11 +256,7 @@ pub fn run_hook(
         "prompt": prompt,
     });
     let mut cmd = build_hook_command(hook, home, hash_seed, codex);
-    let mut child = cmd.spawn().expect("spawn python3 skill-trigger.sh");
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(payload.to_string().as_bytes()).ok();
-    }
-    let output = child.wait_with_output().expect("wait for hook");
+    let output = run_hook_process(&mut cmd, payload.to_string().as_bytes());
     HookOutput {
         code: output.status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),

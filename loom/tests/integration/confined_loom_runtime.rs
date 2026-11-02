@@ -1,9 +1,13 @@
 //! Acceptance can invoke the running Loom binary without depending on shell setup.
 
-use super::helpers::{init_test_repo, loom_bin_path, loom_cmd};
+use super::helpers::{
+    git_checked, init_test_repo, loom_bin_path, loom_cmd, write_main_checkout_identity,
+};
 use loom::fs::work_dir::WorkDir;
 use loom::models::stage::{AcceptanceCriterion, Stage, StageStatus, StageType};
 use loom::verify::transitions::{load_stage, save_stage};
+
+const SESSION: &str = "knowledge-session";
 
 #[test]
 fn knowledge_completion_finds_loom_with_minimal_path() {
@@ -17,11 +21,14 @@ fn knowledge_completion_finds_loom_with_minimal_path() {
         work.initialize().unwrap();
         commit_knowledge(repo.path());
         let work_dir = repo.path().join(".loom/work");
+        write_main_checkout_identity(repo.path(), &work_dir);
+        write_session_baseline(repo.path(), &work_dir);
         let stage = Stage {
             id: "knowledge-bootstrap".into(),
             name: "Knowledge bootstrap".into(),
             stage_type: StageType::Knowledge,
             status: StageStatus::Executing,
+            session: Some(SESSION.into()),
             working_dir: Some(".".into()),
             acceptance: vec![
                 AcceptanceCriterion::Simple("loom --version".into()),
@@ -49,26 +56,16 @@ fn knowledge_completion_finds_loom_with_minimal_path() {
     }
 }
 
+/// The trusted starting commit the daemon records when it spawns a knowledge
+/// session; completion validates knowledge changes against it.
+fn write_session_baseline(repo: &std::path::Path, work_dir: &std::path::Path) {
+    let head = git_checked(repo, &["rev-parse", "HEAD"]);
+    let baselines = work_dir.join("knowledge-baselines");
+    std::fs::create_dir_all(&baselines).unwrap();
+    std::fs::write(baselines.join(SESSION), head.stdout).unwrap();
+}
+
 fn commit_knowledge(repo: &std::path::Path) {
-    for args in [
-        vec!["add", "doc/loom/knowledge"],
-        vec![
-            "-c",
-            "commit.gpgsign=false",
-            "commit",
-            "-m",
-            "Initialize knowledge",
-        ],
-    ] {
-        let output = std::process::Command::new("git")
-            .args(args)
-            .current_dir(repo)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    git_checked(repo, &["add", "doc/loom/knowledge"]);
+    git_checked(repo, &["commit", "-m", "Initialize knowledge"]);
 }

@@ -18,6 +18,9 @@ use loom::context::store::ContextStore;
 use loom::fs::work_dir::WorkDir;
 use tempfile::TempDir;
 
+#[path = "test_support/mod.rs"]
+mod test_support;
+
 fn extract_lib(source: &str) -> FileExtraction {
     extract_file(&registry(), Path::new("src/lib.rs"), source.as_bytes())
 }
@@ -199,7 +202,7 @@ fn committed_repo() -> TempDir {
     .unwrap();
     git(root, &["add", "src/lib.rs"]);
     git(root, &["commit", "-m", "seed"]);
-    std::fs::create_dir_all(root.join(".loom").join("work")).unwrap();
+    test_support::write_main_checkout_identity(root, &root.join(".loom/work"));
     temp
 }
 

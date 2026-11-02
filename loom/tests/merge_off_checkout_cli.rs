@@ -5,6 +5,9 @@
 //! Only synchronous `git` commands and the synchronous binary run here: no
 //! daemon, no terminal, no session.
 
+#[path = "test_support/mod.rs"]
+mod test_support;
+
 use loom::models::stage::{Stage, StageStatus};
 use loom::verify::transitions::{load_stage, save_stage};
 use serial_test::serial;
@@ -73,6 +76,7 @@ impl Project {
         // The state directory lives in the main checkout; the worktree reaches
         // it through the `.loom/work` symlink every stage worktree has.
         let work_dir = root.join(".loom").join("work");
+        test_support::write_main_checkout_identity(&root, &work_dir);
         std::fs::create_dir_all(work_dir.join("stages")).unwrap();
         std::fs::create_dir_all(work_dir.join("sessions")).unwrap();
         std::fs::create_dir_all(worktree.join(".loom")).unwrap();

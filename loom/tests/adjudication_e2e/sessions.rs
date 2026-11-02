@@ -1,7 +1,4 @@
-//! Adjudication-session budget tests, and what the escalation at a spent
-//! budget leaves behind, split out of the parent module (`adjudication_e2e.rs`)
-//! to keep it under the maintainability line limit. `use super::*;` reaches
-//! every fixture in the parent.
+//! Adjudication-session budget and escalation tests using the parent fixtures.
 
 use super::*;
 use loom::models::session::Session;

@@ -14,6 +14,8 @@ pub mod merge;
 pub mod parallel;
 pub mod sequential;
 pub mod sessions;
+#[path = "../stage_fixture/mod.rs"]
+mod stage_fixture;
 pub mod tmux_backend;
 pub mod tmux_guards;
 pub mod tmux_reconcile;

@@ -1,32 +1,9 @@
 //! E2E tests for the tmux terminal backend.
 //!
-//! # Sandbox isolation
-//!
-//! Verified: inside a Claude Code sandbox, `tmux new-session -d` cannot
-//! create a socket under the default directory (`error creating
-//! /private/tmp/tmux-<uid>/<name> (Operation not permitted)`) — unsandboxed,
-//! the same command succeeds. loom deliberately never emits plan
-//! `allow_write` into `sandbox.filesystem.allowWrite` (see the "Do NOT emit
-//! allowWrite" comment in `src/sandbox/settings.rs`), so no plan config can
-//! grant that write. Every test here therefore redirects `TMUX_TMPDIR` to a
-//! throwaway directory under `/tmp` for its duration, and is `#[serial]`
-//! because they mutate process-global env state.
-//!
-//! Writability is not bindability, and `create_isolated_tmux_tmpdir()` only
-//! checks the former. A directory can pass both of its checks and still
-//! refuse an `AF_UNIX` **bind**: `mkdir` succeeds, `tmux new-session -d`
-//! prints `error creating ... (Operation not permitted)` to stderr and
-//! still **exits 0**, and the follow-up `has-session` probe then fails --
-//! see `doc/loom/knowledge/mistakes/tmux-backend.md` for the confirmed
-//! reproduction. The two tests below that start a real tmux server
-//! therefore call `skip_unless_tmux_can_bind()` first, which binds a
-//! throwaway socket in the isolated `TMUX_TMPDIR` via
-//! `tmux_bind_supported()` and skips loudly (a marked `SKIP ...` line on
-//! stderr, never a silent pass) when the bind itself is denied -- that is
-//! an environment limitation, not a defect in the code under test. The
-//! skip is narrow: only a failed bind probe triggers it, nothing else. Set
-//! `LOOM_E2E_REQUIRE_TMUX=1` to turn that skip back into a panic, so CI can
-//! assert the tests really ran against a live tmux server.
+//! Each test isolates the tmux socket directory and serializes environment changes.
+//! Directory writability does not guarantee AF_UNIX bind permission, so real-server
+//! tests use a separate bind probe. `LOOM_E2E_REQUIRE_TMUX=1` makes failure fatal.
+//! See [tmux backend notes](../../../doc/loom/knowledge/mistakes/tmux-backend.md) for the platform constraint.
 
 use loom::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS;
 use loom::models::session::{Session, SessionType};
@@ -68,7 +45,7 @@ fn stage_wrapper(work_dir: &Path, pid_key: &str, stage_id: &str, session_id: &st
 /// Probes whether `dir` can actually host an `AF_UNIX` socket, which is
 /// strictly stronger than being writable: a sandbox can permit `mkdir`
 /// and still deny `bind(2)`. See
-/// `doc/loom/knowledge/mistakes/tmux-backend.md` -- under exactly that
+/// [tmux backend notes](../../../doc/loom/knowledge/mistakes/tmux-backend.md) -- under exactly that
 /// condition `tmux new-session -d` prints an error and still exits 0.
 /// Binds and immediately unlinks a throwaway socket; returns the OS error
 /// string on failure.
@@ -261,20 +238,7 @@ fn tmux_spawn_lifecycle_reaches_a_live_pid_and_teardown_clears_it() {
     );
 }
 
-/// CASE 2 (pins the real permission-denied failure mode): when the tmux
-/// socket directory's PARENT cannot be written to, tmux exits **1** with
-/// `couldn't create directory ... (Permission denied)` on stderr (verified
-/// below, and documented at `tmux/mod.rs:74-81`) — `spawn_in_tmux` must
-/// propagate that as `Err`, carrying tmux's real stderr text, rather than
-/// swallow it.
-///
-/// This is a DIFFERENT case from the "exit 0 with stderr" rule: that shape
-/// needs the socket directory to already exist while only socket creation
-/// itself is denied — a sandbox/seccomp condition no CI runner can be relied
-/// on to reproduce (see `tmux/mod.rs:74-81`) — so it is pinned instead by the
-/// pure `evaluate_new_session` unit tests in
-/// `src/orchestrator/terminal/tmux/tests.rs`
-/// (`new_session_exit_zero_with_stderr_is_a_failure`).
+/// A directory permission error propagates tmux stderr; bind denial has separate coverage.
 #[test]
 #[serial]
 fn spawn_in_tmux_errs_when_socket_dir_is_unwritable() {
@@ -314,18 +278,7 @@ fn spawn_in_tmux_errs_when_socket_dir_is_unwritable() {
     );
 }
 
-/// CASE 3 (the reason `is_session_alive` is PID-based, not
-/// `tmux has-session`-based): a tmux server whose pane process has died but
-/// which has not yet reaped itself still answers `has-session` with exit 0.
-/// This proves BOTH halves at the same moment — the server really is still
-/// up, AND `TmuxBackend::is_session_alive` still reports `false` — because
-/// without the first half the second is vacuous: it would pass identically
-/// even if `is_session_alive` called `has-session` internally.
-///
-/// (The unit test of this same name in
-/// `src/orchestrator/terminal/tmux/tests.rs` never starts a real tmux
-/// server at all, so it cannot pin this property — that is why the
-/// canonical version lives here as a real e2e test.)
+/// The server remains live after its pane PID dies; liveness must follow the PID.
 #[test]
 #[serial]
 fn tmux_liveness_ignores_running_server_when_pid_is_dead() {

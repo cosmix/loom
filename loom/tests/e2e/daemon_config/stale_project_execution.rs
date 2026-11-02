@@ -38,9 +38,7 @@ fn test_orchestrator_config_ignores_stale_project_execution() {
     // config.toml contains a stale [project_execution] section does NOT cause
     // a panic, parse failure, or any behavioural difference from a clean config.
     //
-    // Orchestrator::new eagerly constructs a NativeBackend even in manual mode.
-    // Pin LOOM_TERMINAL so headless CI runners without terminal emulators do not
-    // fail this config-parser regression for unrelated host-environment reasons.
+    // Pin terminal selection so a backend probe cannot depend on the host.
     let _terminal_env = EnvVarGuard::set("LOOM_TERMINAL", "xterm");
 
     let temp_dir = TempDir::new().unwrap();

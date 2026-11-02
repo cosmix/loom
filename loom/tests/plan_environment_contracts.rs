@@ -341,8 +341,8 @@ fn registry_tool_without_registry_domain_is_an_error() {
         "a confined criterion needs a provision entry whatever the domains: {errors:?}"
     );
 
-    // Without confinement the criterion runs in the session's sandbox, where
-    // `*.npmjs.org` covers registry.npmjs.org.
+    // Inherit adds no completion confinement; the lint accepts the session's
+    // `*.npmjs.org` domain grant for registry.npmjs.org.
     let inherit = "  sandbox:\n    command_confinement: inherit\n    network:\n      allowed_domains: [\"crates.io\", \"*.npmjs.org\"]\n";
     write_file(repo.path(), "PLAN.md", &plan(inherit, bunx));
 

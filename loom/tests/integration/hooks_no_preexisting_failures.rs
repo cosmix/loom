@@ -12,7 +12,7 @@
 use loom::fs::permissions::constants::{HOOK_COMMON, HOOK_NO_PREEXISTING_FAILURES};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use tempfile::TempDir;
 
 fn setup_hook() -> (TempDir, std::path::PathBuf) {
@@ -49,21 +49,10 @@ fn setup_hook() -> (TempDir, std::path::PathBuf) {
 
 /// Run the hook with a raw JSON payload; return (exit_code, stdout).
 fn run_hook_json(hook_path: &std::path::Path, json_input: &str) -> (i32, String) {
-    use std::io::Write;
-
-    let mut child = Command::new("bash")
-        .arg(hook_path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn hook");
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(json_input.as_bytes()).ok();
-    }
-
-    let out = child.wait_with_output().expect("wait hook");
+    let mut cmd = Command::new("bash");
+    super::helpers::clear_relay_env(&mut cmd);
+    cmd.arg(hook_path);
+    let out = super::helpers::run_hook_process(&mut cmd, json_input.as_bytes());
     (
         out.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&out.stdout).into_owned(),

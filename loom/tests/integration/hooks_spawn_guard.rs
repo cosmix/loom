@@ -1,16 +1,15 @@
 //! Spawn-guard integration coverage for rewrites, denials, warnings, and its ledger.
 
-use super::helpers::clear_relay_env;
+use super::helpers::{clear_relay_env, run_hook_process};
 use loom::fs::permissions::constants::{
     HOOK_COMMON, HOOK_READ_DISCIPLINE, HOOK_READ_LEDGER, HOOK_SPAWN_GUARD, HOOK_SUBAGENT_PREAMBLE,
 };
 use loom::process::sandbox_probe::{process_tree_visible, skip_unless};
 use serde_json::{json, Value};
 use std::fs;
-use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use tempfile::TempDir;
 
 const PREAMBLE_LINE: &str = "CLAUDE.md is already in your context; the rules below are the ones that bind you as a subagent. The knowledge you need for this task is quoted in this brief - do not open doc/loom/knowledge/ unless the brief says a pull came back empty.";
@@ -110,19 +109,12 @@ fn run_hook(
         .env("HOME", home)
         // Out of a stage the session ledgers live under TMPDIR: keep them per test.
         .env("TMPDIR", home)
-        .env("PATH", "/usr/bin:/bin")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .env("PATH", "/usr/bin:/bin");
     for (key, value) in extra_env {
         cmd.env(key, value);
     }
 
-    let mut child = cmd.spawn().expect("spawn hook");
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(payload.as_bytes()).ok();
-    }
-    let output = child.wait_with_output().expect("wait for hook");
+    let output = run_hook_process(&mut cmd, payload.as_bytes());
     HookOutput {
         code: output.status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
