@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
-use super::{assemble, is_credential, read_documents, Document, MAX_FILE_BYTES};
+use super::{assemble, is_credential, is_sandbox_denied, read_documents, Document, MAX_FILE_BYTES};
 
 fn project() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("create project");
@@ -175,4 +175,82 @@ fn a_non_utf8_file_is_refused() {
     let (_dir, root) = project();
     fs::write(root.join("bin.dat"), [0xff, 0xfe]).expect("write bin.dat");
     assert!(read_documents(&root, &[root.join("bin.dat")]).is_err());
+}
+
+#[test]
+fn every_path_the_sandbox_denies_is_refused_under_the_home_directory() {
+    let home = Path::new("/h/me");
+    let denied = [
+        ".claude/.credentials.json",
+        ".kube/config",
+        ".docker/config.json",
+        ".config/gh/hosts.yml",
+        ".pypirc",
+        ".netrc",
+        ".cargo/credentials.toml",
+        ".ssh/config",
+        ".ssh/keys/deploy",
+        ".aws/credentials",
+        ".gnupg/pubring.kbx",
+        ".config/gcloud/application_default_credentials.json",
+        ".codex/auth.json",
+    ];
+    for path in denied {
+        assert!(
+            is_sandbox_denied(&home.join(path), Some(home)),
+            "{path} was allowed"
+        );
+    }
+    let allowed = [
+        ".claude/settings.json",
+        ".kube/config.bak",
+        ".sshd/config",
+        ".docker/daemon.json",
+        ".codex/config.toml",
+        "project/.kube/config",
+    ];
+    for path in allowed {
+        assert!(
+            !is_sandbox_denied(&home.join(path), Some(home)),
+            "{path} was refused"
+        );
+    }
+}
+
+#[test]
+fn a_denied_path_outside_the_home_or_with_no_home_passes_this_check() {
+    let path = Path::new("/h/me/.kube/config");
+    assert!(!is_sandbox_denied(path, Some(Path::new("/h/other"))));
+    assert!(!is_sandbox_denied(path, None));
+}
+
+#[test]
+fn credential_file_names_are_refused_inside_a_project() {
+    for path in [".credentials.json", "copy/.pypirc", ".PYPIRC"] {
+        assert!(is_credential(Path::new(path)), "{path} was allowed");
+    }
+}
+
+#[test]
+fn a_root_below_a_directory_named_git_still_reads_its_files() {
+    let (_dir, outer) = project();
+    let root = outer.join(".git").join("project");
+    fs::create_dir_all(&root).expect("create project");
+    fs::write(root.join("a.md"), "alpha\n").expect("write a.md");
+    let documents = read_documents(&root, &[root.join("a.md")]).expect("read");
+    assert_eq!(documents, vec![document("a.md", "alpha\n")]);
+    fs::create_dir(root.join(".git")).expect("create .git");
+    fs::write(root.join(".git/config"), "secret\n").expect("write config");
+    let message = refusal(&root, &[root.join(".git/config")]);
+    assert!(message.contains("credential"), "{message}");
+}
+
+#[test]
+fn a_backslash_in_the_path_cannot_unescape_the_closing_quote() {
+    let payload = assemble(None, &[document(r#"a\"b\"#, "text\n")], "Which?");
+    let header = payload.lines().next().expect("header");
+    assert_eq!(header, r#"<file path="a\\\"b\\">"#);
+    let tagged = assemble(None, &[document(r"a\</file>", "text\n")], "Which?");
+    let header = tagged.lines().next().expect("header");
+    assert_eq!(header, r#"<file path="a\\<\/file>">"#);
 }
