@@ -391,3 +391,10 @@ The sweep follow-ups on executable startup, cache coverage, hook-path navigation
 **Prevention:** Create or verify the destination directory before writing a new nested module.
 
 **Fix:** Create the directory and finish the split before verification.
+
+## Reinstalling the operator's binary unasked
+
+**What happened:** While diagnosing a stale dashboard bundle during a running plan, the agent started `dev-install.sh` on its own. The operator had asked only why the dashboard failed, and replied that they reinstall themselves. The attempt failed on a missing execute bit, so the binary did not change.
+**Why:** The fix was treated as implied by the complaint. Installing replaces the binary and global configuration every session on the machine uses.
+**Prevention:** Report the diagnosis and the install command. Run an install only on an explicit request.
+**Fix:** The operator runs the install.

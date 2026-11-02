@@ -9,6 +9,8 @@
 **Prevention:** Any plan whose stages change web/src either lists web/dist in each such stage's files and requires a rebuild-and-commit (with an acceptance check that dist matches src), or has a final stage that always rebuilds and commits web/dist.
 **Fix:** Run bun run build in web/, commit web/dist, then reinstall the binary with dev-install.sh.
 
+**Recurrence:** Commit 31561332 added the `disposition` issue field to the wire and to `web/src/api/schema.ts` without rebuilding `web/dist`. The schema objects are strict, so the old bundle rejected every frame with stage history and the dashboard header read "connection error". A schema or wire change needs the rebuild in the same commit.
+
 ## A Plan Handed Its Distill Stage a Side Document
 
 **What happened:** a plan's knowledge-distill stage was told to update a brainstorming report outside doc/loom/knowledge, and the plan's overview pointed at that report for its reasoning instead of carrying it.
@@ -35,3 +37,13 @@
 **Why:** The pass read the review as new input and did not diff it against the plan first.
 **Prevention:** For a later review round, first compare each finding with the current plan, then validate only the residual each finding adds.
 **Fix:** Triage against the plan, keep the amendment text that is new, and report the rest as already addressed.
+
+## A startup step scaled with one file's line length
+
+**What happened:** `loom plan` printed nothing for about 44 s. One untracked 467 KB single-line JSON file under `doc/` took 41.85 s in `chunk_sections`, inside `SearchIndex::build`, which ran before the server announced its URL.
+
+**Why:** `references_in_line` recounted the line's backticks for every candidate sentence end in every span, so cost grew with the square of line length. The announce came after every load step, so any slow step delayed the URL.
+
+**Prevention:** Print the URL as soon as the port is bound, and treat input from the document tree as unbounded when writing per-line scans.
+
+**Fix:** `plan_server/loading.rs` runs the load on its own thread. `sentence_ends` in `fs/knowledge/chunker/references.rs` computes sentence ends once per line.

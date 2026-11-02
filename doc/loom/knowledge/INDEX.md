@@ -48,7 +48,7 @@
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Ticks | 80 |
 | [owned-waits](architecture/owned-waits.md) | One bound wait per parent session, keyed to an explicit worker set, replacing a… | 70 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 257 |
-| [plan-server](architecture/plan-server.md) | Chat | 243 |
+| [plan-server](architecture/plan-server.md) | Chat | 245 |
 | [planner-web-shell](architecture/planner-web-shell.md) | Shell and screens | 44 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 180 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 35 |
@@ -112,7 +112,7 @@
 | [commits](conventions/commits.md) | Format | 24 |
 | [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 23 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 119 |
-| [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 235 |
+| [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 239 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 139 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 143 |
 | [plan-web](conventions/plan-web.md) |  | 69 |
@@ -126,7 +126,7 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 230 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 176 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 397 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift | 393 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift | 400 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 177 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 132 |
@@ -158,7 +158,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Merge cleanup, daemon singleton, broker, waiting-state incidents | 353 |
 | [phantom-merges](mistakes/phantom-merges.md) | Plan stages split by compile order instead of merge order | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
-| [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 37 |
+| [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 49 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Delivery slips | 371 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair slips | 94 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
@@ -166,7 +166,7 @@
 | [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 329 |
 | [release-feature-review](mistakes/release-feature-review.md) | Gaps | 13 |
 | [review-continuation-verification](mistakes/review-continuation-verification.md) | Astra review repair lessons | 332 |
-| [review-final-wave](mistakes/review-final-wave.md) | Final repair wave lessons | 191 |
+| [review-final-wave](mistakes/review-final-wave.md) | Final repair wave lessons | 190 |
 | [review-integration-verification](mistakes/review-integration-verification.md) | Integrated review test failures and verification discipline | 169 |
 | [review-tracker](mistakes/review-tracker.md) | Keep completed findings and active review assignments current | 353 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 391 |
