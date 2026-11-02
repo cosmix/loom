@@ -1,0 +1,177 @@
+[
+  {
+    "id": "plan-prompt-cache",
+    "question": "Is the prompt cache shared between loom sessions, and what in the way stages run explains that?",
+    "paths": ["docs/token-optim-metaplan.md"],
+    "must_contain": ["not shared", "worktree"]
+  },
+  {
+    "id": "plan-bash-output-cap",
+    "question": "At how many characters is Bash output bounded per call in stage sessions?",
+    "paths": ["docs/token-optim-metaplan.md"],
+    "must_contain": ["12,000"],
+    "must_not_contain": ["16,384"]
+  },
+  {
+    "id": "plan-plan-file-order",
+    "question": "List the plan files, PLAN-01 through PLAN-06, that the Plan map names.",
+    "paths": ["docs/token-optim-metaplan.md"],
+    "must_contain": [
+      "PLAN-01-doctrine-truth-and-plan-guards",
+      "PLAN-02-delivery-truth",
+      "PLAN-03-usage-evidence",
+      "PLAN-04-dependency-findings",
+      "PLAN-05-guidance-and-gate-output",
+      "PLAN-06-sandbox-route-closure"
+    ]
+  },
+  {
+    "id": "plan-forwarder-brief",
+    "question": "In the delivery truth plan, how does the condition in spawn-guard.sh change so that loom-codex-forwarder prompts stop receiving a worker brief? Name the shell variable the new test uses.",
+    "paths": ["docs/token-optim-metaplan.md"],
+    "must_contain": ["AGENT_TYPE_REQ"]
+  },
+  {
+    "id": "plan-max-payload",
+    "question": "What is max_payload_bytes for the worker brief envelope?",
+    "paths": ["docs/token-optim-metaplan.md"],
+    "must_contain": ["16,384"],
+    "must_not_contain": ["12,000"]
+  },
+  {
+    "id": "plan-unanswerable-owner",
+    "question": "What is the name of the person who owns the usage evidence plan?",
+    "paths": ["docs/token-optim-metaplan.md"],
+    "must_contain": ["not found"]
+  },
+  {
+    "id": "knowledge-test-path-factor",
+    "question": "Which config option holds the factor that multiplies the final score of a source node in a test path, and what is its default?",
+    "paths": ["docs/context-retrieval.md"],
+    "must_contain": ["test_path_factor", "0.4"],
+    "must_not_contain": ["0.2", "0.45"]
+  },
+  {
+    "id": "knowledge-expansion-seeds",
+    "question": "At most how many seed candidates does source-lane graph expansion use? Answer in the form CONSTANT = value.",
+    "paths": ["docs/context-retrieval.md"],
+    "must_contain": ["MAX_EXPANSION_SEEDS = 5"]
+  },
+  {
+    "id": "knowledge-provenance-classes",
+    "question": "List the seven edge provenance classes of the source graph, strongest first.",
+    "paths": ["docs/source-graph.md"],
+    "must_contain": [
+      "structural",
+      "compiler",
+      "receiver",
+      "import",
+      "local-name",
+      "unique-name",
+      "syntax"
+    ]
+  },
+  {
+    "id": "knowledge-h-header-dialect",
+    "question": "Which dialect do .h files belong to, and why was that dialect chosen over the other C family one? Quote the grammar reason.",
+    "paths": ["docs/source-graph.md"],
+    "must_contain": ["cpp", "nearly every"]
+  },
+  {
+    "id": "knowledge-graph-schema-version",
+    "question": "Which constant holds the graph schema version stamped into every graph layer, which file defines it, and what is its current value? Write the value as 'currently N'.",
+    "paths": ["docs/source-graph.md", "docs/context-retrieval.md"],
+    "must_contain": ["GRAPH_SCHEMA_VERSION", "source_graph/mod.rs", "currently 4"]
+  },
+  {
+    "id": "knowledge-unanswerable-config",
+    "question": "What is the default value of config.max_pack_tokens?",
+    "paths": ["docs/context-retrieval.md", "docs/source-graph.md"],
+    "must_contain": ["not found"]
+  },
+  {
+    "id": "diff-frontmatter-helper",
+    "question": "Which new shell function reads exactly one top-level frontmatter field, and in which file is it defined?",
+    "paths": ["docs/stage-diff.diff"],
+    "must_contain": ["loom_stage_frontmatter_field", "_stage_lookup.sh"]
+  },
+  {
+    "id": "diff-changed-files",
+    "question": "List the files this commit changes, by file name.",
+    "paths": ["docs/stage-diff.diff"],
+    "must_contain": [
+      "_heartbeat.sh",
+      "_lifecycle.sh",
+      "_stage_lookup.sh",
+      "stage-terminal-guard.sh",
+      "completion_shell_paths.sh"
+    ]
+  },
+  {
+    "id": "diff-find-stage-call",
+    "question": "After the change, which function does loom_lifecycle_find_stage call to locate the stage file?",
+    "paths": ["docs/stage-diff.diff"],
+    "must_contain": ["loom_find_stage_file"]
+  },
+  {
+    "id": "diff-commit-subject",
+    "question": "What is the subject line of the commit message?",
+    "paths": ["docs/stage-diff.diff"],
+    "must_contain": ["share lifecycle metadata lookup"]
+  },
+  {
+    "id": "diff-field-name-regex",
+    "question": "What regular expression must the field name match in loom_stage_frontmatter_field?",
+    "paths": ["docs/stage-diff.diff"],
+    "must_contain": ["^[a-z][a-z0-9_-]*$"]
+  },
+  {
+    "id": "diff-unanswerable-ci",
+    "question": "Which CI workflow file runs the new completion_shell_paths.sh test?",
+    "paths": ["docs/stage-diff.diff"],
+    "must_contain": ["not found"]
+  },
+  {
+    "id": "log-total-tests",
+    "question": "How many tests ran in this run?",
+    "paths": ["docs/test-run.txt"],
+    "must_contain": ["226"]
+  },
+  {
+    "id": "log-compile-time",
+    "question": "How long did the build take, as reported on the Finished line?",
+    "paths": ["docs/test-run.txt"],
+    "must_contain": ["45.73"]
+  },
+  {
+    "id": "log-latency-tests",
+    "question": "List the tests in the commands::usage::comparison_latency::tests module.",
+    "paths": ["docs/test-run.txt"],
+    "must_contain": [
+      "negative_mean_critical_path_increase_is_supported",
+      "partial_notification_evidence_is_inconclusive",
+      "positive_mean_critical_path_increase_is_rejected",
+      "unmeasured_notification_does_not_block_a_supported_critical_path",
+      "tolerance_allows_mean_below_the_limit"
+    ]
+  },
+  {
+    "id": "log-codex-scope-test",
+    "question": "Which test in the codex_scope module checks that an unavailable scope removes every rollout row?",
+    "paths": ["docs/test-run.txt"],
+    "must_contain": ["unavailable_scope_removes_every_rollout_row"],
+    "must_not_contain": ["unscoped_keeps_every_row"]
+  },
+  {
+    "id": "log-test-binary",
+    "question": "Which source file did the unittests binary come from, according to the Running line?",
+    "paths": ["docs/test-run.txt"],
+    "must_contain": ["src/lib.rs"]
+  },
+  {
+    "id": "log-unanswerable-slowest",
+    "question": "Which single test took the longest to run?",
+    "paths": ["docs/test-run.txt"],
+    "must_contain": ["not found"]
+  }
+]
