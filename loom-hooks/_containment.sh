@@ -22,38 +22,50 @@ _LOOM_CONTAINMENT_LOADED=1
 # _LOOM_DENY_ENABLED_CACHE for the life of this process; later calls skip the
 # file read entirely.
 loom_deny_enabled() {
-    if [[ -n "${_LOOM_DENY_ENABLED_CACHE:-}" ]]; then
-        [[ "$_LOOM_DENY_ENABLED_CACHE" == "1" ]]
-        return
-    fi
-
-    _LOOM_DENY_ENABLED_CACHE=0
-
-    local work_dir="${LOOM_WORK_DIR:-}"
-    if [[ -n "$work_dir" ]]; then
-        local config="${work_dir}/config.toml"
-        if [[ -r "$config" ]]; then
-            local found
-            found=$(awk '
-                {
-                    t = $0
-                    sub(/^[[:space:]]+/, "", t)
-                    sub(/[[:space:]]+$/, "", t)
-                }
-                t == "[hooks]" { in_hooks = 1; next }
-                t ~ /^\[/ { in_hooks = 0; next }
-                in_hooks && t ~ /^deny_enabled[[:space:]]*=[[:space:]]*true$/ {
-                    print "1"
-                    exit
-                }
-            ' "$config" 2>/dev/null || true)
-            if [[ "$found" == "1" ]]; then
-                _LOOM_DENY_ENABLED_CACHE=1
-            fi
+    if [[ -z "${_LOOM_DENY_ENABLED_CACHE:-}" ]]; then
+        _LOOM_DENY_ENABLED_CACHE=0
+        if _loom_hooks_setting_is deny_enabled true; then
+            _LOOM_DENY_ENABLED_CACHE=1
         fi
     fi
-
     [[ "$_LOOM_DENY_ENABLED_CACHE" == "1" ]]
+}
+
+# loom_read_gate_enabled - Return 0 unless a `[hooks]` table in
+# "$LOOM_WORK_DIR/config.toml" holds exactly `read_gate = false`. The default
+# is the inverse of loom_deny_enabled's: this answers "disabled" only on an
+# unambiguous `false`, and any doubt leaves the gate on. Only the deny-once
+# read gate (loom_read_deny_once, _read_ledger.sh) consults it, and only after
+# proving a live stage, so it cannot block a session with no loom above it.
+loom_read_gate_enabled() {
+    ! _loom_hooks_setting_is read_gate false
+}
+
+# _loom_hooks_setting_is <key> <value> - Return 0 when a `[hooks]` table in
+# "$LOOM_WORK_DIR/config.toml" holds `<key> = <value>` exactly (surrounding
+# whitespace ignored). LOOM_WORK_DIR unset, the file absent or unreadable, no
+# `[hooks]` table, the key outside that table, or any other value all fail.
+_loom_hooks_setting_is() {
+    local work_dir="${LOOM_WORK_DIR:-}" found
+    [[ -n "$work_dir" && -r "${work_dir}/config.toml" ]] || return 1
+    found=$(awk -v key="$1" -v value="$2" '
+        {
+            t = $0
+            sub(/^[[:space:]]+/, "", t)
+            sub(/[[:space:]]+$/, "", t)
+        }
+        t == "[hooks]" { in_hooks = 1; next }
+        t ~ /^\[/ { in_hooks = 0; next }
+        in_hooks && match(t, /^[A-Za-z0-9_-]+[[:space:]]*=[[:space:]]*/) {
+            k = t
+            sub(/[[:space:]]*=.*$/, "", k)
+            if (k == key && substr(t, RLENGTH + 1) == value) {
+                print "1"
+                exit
+            }
+        }
+    ' "${work_dir}/config.toml" 2>/dev/null || true)
+    [[ "$found" == "1" ]]
 }
 
 # loom_cwd_worktree - Echo the worktree root holding the current directory, or
