@@ -142,6 +142,24 @@ fn test_failed_step_still_deletes_report_and_returns_its_error() {
 }
 
 #[test]
+fn interior_record_refusal_is_an_error_and_still_cleans_up_report() {
+    let dir = TempDir::new().unwrap();
+    let plan = dir.path().join("PLAN-test.md");
+    let report = dir.path().join("codex-PLAN-test.md");
+    let text = "<!-- END loom METADATA -->\n\n## Pressure tests\n\n- old\n\n## Notes\nKeep.\n";
+    std::fs::write(&plan, text).unwrap();
+    let mut driver = RecordingDriver::default();
+    let error = run_pipeline(&mut driver, &input(1, &plan, &report)).unwrap_err();
+    assert!(
+        error.to_string().contains("Cannot safely insert"),
+        "{error}"
+    );
+    assert!(error.to_string().contains("insert this record manually"));
+    assert_eq!(driver.calls.last(), Some(&Call::Delete));
+    assert_eq!(std::fs::read_to_string(plan).unwrap(), text);
+}
+
+#[test]
 fn test_zero_rounds_is_rejected_before_any_step() {
     let dir = TempDir::new().unwrap();
     let plan = dir.path().join("PLAN-test.md");

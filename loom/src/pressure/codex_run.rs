@@ -16,6 +16,9 @@ use std::thread::{self, JoinHandle};
 
 use crate::codex::codex_model_candidates;
 
+mod retirement;
+pub use retirement::CodexRetirement;
+
 /// Phrases Codex and the API print when the account cannot use a model,
 /// matched case-insensitively.
 const UNAVAILABLE_PHRASES: [&str; 4] = [
@@ -62,8 +65,10 @@ pub struct CodexRun {
 #[derive(Default)]
 struct RunControl {
     cancelled: bool,
-    // Keep every attempt's group until the worker ends: a child can outlive
-    // its leader, including after an unavailable-model fallback.
+    // An attempt's group stays while a child outlives its leader, including
+    // after an unavailable-model fallback. An empty group's id can be recycled,
+    // so it leaves as soon as it is seen empty, and every group leaves when the
+    // worker returns: with no leader left to reap, nothing pins an id after that.
     groups: Vec<Pid>,
 }
 
@@ -73,14 +78,16 @@ fn cancel_groups(control: &Mutex<RunControl>) -> Result<()> {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     state.cancelled = true;
     let mut failure = None;
-    for &group in &state.groups {
-        match killpg(group, Signal::SIGKILL) {
-            Ok(()) | Err(Errno::ESRCH) => {}
+    state
+        .groups
+        .retain(|&group| match killpg(group, Signal::SIGKILL) {
+            Ok(()) => true,
+            Err(Errno::ESRCH) => false,
             Err(error) => {
                 failure.get_or_insert(error);
+                true
             }
-        };
-    }
+        });
     if let Some(error) = failure {
         return Err(anyhow!("failed to stop codex process group: {error}"));
     }
@@ -162,9 +169,18 @@ impl CodexJob {
             model,
             &self.effort,
         )?;
+        state.groups.retain(|&group| killpg(group, None).is_ok());
         state.groups.push(Pid::from_raw(child.id() as i32));
         self.pid.store(child.id(), Ordering::Release);
         Ok(child)
+    }
+
+    fn forget_groups(&self) {
+        self.control
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .groups
+            .clear();
     }
 
     /// An unreadable log counts as no unavailable-model error, so an unrelated
@@ -187,8 +203,27 @@ pub fn spawn_codex_with_fallback(
     candidates: Vec<String>,
     effort: &str,
 ) -> Result<CodexRun> {
+    start_run(
+        Arc::default(),
+        codex_path,
+        repo_root,
+        skill,
+        log_path,
+        candidates,
+        effort,
+    )
+}
+
+fn start_run(
+    control: Arc<Mutex<RunControl>>,
+    codex_path: &Path,
+    repo_root: &Path,
+    skill: &str,
+    log_path: &Path,
+    candidates: Vec<String>,
+    effort: &str,
+) -> Result<CodexRun> {
     let pid = Arc::new(AtomicU32::new(0));
-    let control = Arc::new(Mutex::new(RunControl::default()));
     let job = CodexJob {
         codex_path: codex_path.to_path_buf(),
         repo_root: repo_root.to_path_buf(),
@@ -200,7 +235,11 @@ pub fn spawn_codex_with_fallback(
     };
     let first = candidates.first().context("no codex model to run")?;
     let child = job.spawn(first)?;
-    let handle = thread::spawn(move || run_attempts(&job, child, &candidates));
+    let handle = thread::spawn(move || {
+        let outcome = run_attempts(&job, child, &candidates);
+        job.forget_groups();
+        outcome
+    });
     Ok(CodexRun {
         handle: Some(handle),
         pid,

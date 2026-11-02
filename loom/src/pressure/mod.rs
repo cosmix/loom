@@ -161,7 +161,7 @@ fn write_record(input: &PipelineInput<'_>, results: RoundResults) -> Result<Pipe
         record::RecordWrite::Written => PipelineOutcome::Recorded { line: rendered },
         record::RecordWrite::PlanMoved => PipelineOutcome::RecordSkipped {
             line: rendered,
-            why: "plan moved or changed while saving the record".to_string(),
+            why: "plan moved or changed while saving; the record may be present, inspect the plan before retrying".to_string(),
         },
     };
     Ok(outcome)
