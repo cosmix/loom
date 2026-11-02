@@ -1,18 +1,18 @@
 ---
 kind: document
 of: doc/product/feat-planner/section_05.md
-file: sha256:01eea572800e6ac67dfc0b7b08ef2f2bc63c993fca7823fbd55c75ff54d86431
+file: sha256:88fd2a5d1760191e0872a6fdaf10d12a2ff2b51a79c94a663cf3006953800939
 cites:
   "doc/product/feat-planner/section_05.md#document-summary-pages": "sha256:c0013de4e6355d37bfc699cd10bdd4397dd3f7d8a952e9204e05e1a7ed9ec3ea"
-  "doc/product/feat-planner/section_05.md#empty-and-partial-states": "sha256:999423b5c11c617864adee32baa67f586582311f93b3b82ad8d97e5c9e6b3a5b"
+  "doc/product/feat-planner/section_05.md#empty-and-partial-states": "sha256:cc33f1b34dabd92927e14bab7066426fa79ff7432f54f8b4b505161464dd60d5"
   "doc/product/feat-planner/section_05.md#folding-back": "sha256:7e6416b94780187a6b180806a7850f5a22cb5cd263bdf8244a00744659f429a4"
   "doc/product/feat-planner/section_05.md#keyboard": "sha256:77ae1c7f3fbc11bf3657956152f95e2886b232431bc50a99fa79c01ebfab146e"
   "doc/product/feat-planner/section_05.md#levels": "sha256:8c978debdeb4733ee9cd01f65681efd6e2788f84aaacabed5acc27cae9c44124"
   "doc/product/feat-planner/section_05.md#opening": "sha256:d08a0fe5c58f79daafc57135081cc4b1de1e9b7aea931989fba323fb7bff5a86"
-  "doc/product/feat-planner/section_05.md#product-to-plan-links": "sha256:6822d84d7d1e2eacc6dda66a024ef07cd8cc7f40a271f00d3d5da0ce955169db"
+  "doc/product/feat-planner/section_05.md#product-to-plan-links": "sha256:dee5c87b10b70f23223a454010f81f5b38ac9fb9f05482f125d729a2464b1530"
   "doc/product/feat-planner/section_05.md#rebuilds-while-reading": "sha256:f816da1f309a1f14a715a1f8fadd6b927791b7b38c73e5e9ce3b920d9a85eb3a"
   "doc/product/feat-planner/section_05.md#sentences-and-their-marks": "sha256:3546e6d8e7fc8aa88fcdfd4f6da38734732d0f015ca06d9e3ecd4a1e31fb024b"
-  "doc/product/feat-planner/section_05.md#the-two-overviews": "sha256:3ba211debcb0e033c9c74216855f9ec680d1889f5f16e998f7410c757008e433"
+  "doc/product/feat-planner/section_05.md#the-two-overviews": "sha256:c21ce60819acf6ec85f4930ef53cd46819d264b948e2cb1904867604be7148a4"
   "doc/product/feat-planner/section_05.md#what-stays-open": "sha256:8dfbc5fb1cdc04d766d5ded820d0c164049c64c2968d75c30812169bce98a843"
 ---
 
@@ -43,4 +43,4 @@ Links between product sections and plans come only from Implements lines and are
 
 ## Empty and partial states
 
-An overview never renders half-built, and it shows its last complete version with dashed marks or the building state. [Empty and partial states](../../../../product/feat-planner/section_05.md#empty-and-partial-states)
+An overview never renders half-built, and it shows its last complete version with dashed marks, or the building state when there is none. [Empty and partial states](../../../../product/feat-planner/section_05.md#empty-and-partial-states)

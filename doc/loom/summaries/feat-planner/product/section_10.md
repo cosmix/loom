@@ -1,10 +1,10 @@
 ---
 kind: document
 of: doc/product/feat-planner/section_10.md
-file: sha256:aac2360e199d700fca51ed37735fc5281903c2e529a56d98fdf23db08a88f418
+file: sha256:c1e6f88f856fed2bb3f1733ec6a73d6acb5ecb0695b25f0ca8de4f7eab453cf0
 cites:
-  "doc/product/feat-planner/section_10.md#approval": "sha256:369161c5a7f88e23626859e225c45b42ee9409fa6d7ec15e8bb36bfa91f32dc9"
-  "doc/product/feat-planner/section_10.md#open-questions-in-documents": "sha256:ede070ca0d5d91f2eabb9c92f435e48b2bc7558e99be4ff67f20ca497c8bfc27"
+  "doc/product/feat-planner/section_10.md#approval": "sha256:d16db62adf7bf6056fa9a9734cf36affa85aacf0cbb7a90f1aedbd5ce8d3fbe9"
+  "doc/product/feat-planner/section_10.md#open-questions-in-documents": "sha256:c8f39019873a5dcebe75c8f09258206df82df61747fbe1d050ab8bf490a26ef6"
   "doc/product/feat-planner/section_10.md#read-only-viewers": "sha256:9dc6ddf107b75783bc63f7848263336995a9f4bc4f3edd644baa6c52b9d95598"
   "doc/product/feat-planner/section_10.md#refinement-after-plans-ran": "sha256:6ac9dae34f1eac78ab717a9f2ecad3fb363e776aaf0840f89dda413522d8534f"
   "doc/product/feat-planner/section_10.md#refining-across-product-and-plans": "sha256:87b7c83f3bcfc4960d2407824e5b4d94c8a77356b32ba6529631189b75cfd795"
@@ -44,7 +44,7 @@ Restore is refused when the file changed after the turn ended, and it is offered
 
 ## Approval
 
-The app records no approval, so the user's reading is step 6 and a team's sign-off uses a pull request review of the committed doc tree. [Approval](../../../../product/feat-planner/section_10.md#approval)
+The app records no approval, because reviewing is the user reading, which has no step in the workflow, and a team's sign-off uses a pull request review of the committed doc tree. [Approval](../../../../product/feat-planner/section_10.md#approval)
 
 ## Refinement after plans ran
 
@@ -60,7 +60,7 @@ A read-only browser can send a passage and a note to the holder, and nothing rea
 
 ## Open questions in documents
 
-Open questions sit under an Open questions heading and are counted on summary pages and file mode tree entries. [Open questions in documents](../../../../product/feat-planner/section_10.md#open-questions-in-documents)
+Sessions write unresolved points under a heading named `Open questions`, and the open question count appears in the checklist beside each product section and on the summary page header and file mode tree entry of any document with that heading. [Open questions in documents](../../../../product/feat-planner/section_10.md#open-questions-in-documents)
 
 ## What changed since you last looked
 

@@ -1,11 +1,11 @@
 ---
 kind: document
 of: doc/product/feat-planner/section_06.md
-file: sha256:df4a61b23d0022d121e2cdc0423b2b596d978942353ff3d9a692117a50552745
+file: sha256:cc65601a1ea6d80da229b2435710fcb501f35868681ccea2f839ed9a7a626b08
 cites:
   "doc/product/feat-planner/section_06.md#diffs": "sha256:c7ce7c5f90e2948358d5ebc835e6b486fe04d37da47935cd95b08cb6a8399c8b"
   "doc/product/feat-planner/section_06.md#how-plans-render": "sha256:9922a394f9eb281a15c232032c5780a4a1f00c8094fdb163193b508f0ee77e99"
-  "doc/product/feat-planner/section_06.md#layout-and-addresses": "sha256:b4c5a12fc13ad33d4b935b8463611f90f7860f3e4d30a44d8d8cee3e52e69a58"
+  "doc/product/feat-planner/section_06.md#layout-and-addresses": "sha256:ce9aca1a401d4dbd67ef861d23d995fa20f62e4ae59e81f1efd552f16fbd3aea"
   "doc/product/feat-planner/section_06.md#plan-validation": "sha256:00325335241f0829cb87633a6c2def60db583b8f3b9231b0bb99123d44d895a2"
   "doc/product/feat-planner/section_06.md#rendering-markdown": "sha256:b98df215a9cf5674f3fd85b767a35710cc421a020ff0f15da71b5077ec08e681"
   "doc/product/feat-planner/section_06.md#search": "sha256:bcb67e61950e50b35cfb540f88ba837037852bc7895d804f2119d020609140ee"

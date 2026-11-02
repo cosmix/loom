@@ -2,7 +2,7 @@
 kind: overview
 of: overview/feat-planner/engineering
 cites:
-  "doc/plans/feat-planner/index.md#plan-map": "sha256:37931643933d66da9cff1cccb5a7cfcc5622fdca6d412da87d5fa847a02a335c"
+  "doc/plans/feat-planner/index.md#plan-map": "sha256:edb6365c2d67ba86f380a42976159845cfcf7acc052839e8fda7d70452c9d01a"
 members:
   "plans/feat-planner-01-documents": "sha256:dbca69e697b2c8feece7246aa693ee01f12b2eaad9824120554c9b05eb68aa12"
   "plans/feat-planner-02-server": "sha256:b49f00e1419f45ae4802d7c76bc546c7f78b84732941f4cc8d104410ecef4615"
@@ -15,13 +15,15 @@ members:
   "plans/feat-planner-09-chat": "sha256:983e77ebd7b40c25f4e24f61c6f7eadf376b10ebc50142e330114cb29626424b"
   "plans/feat-planner-10-summary-rebuilds": "sha256:6e5465314b4ab6cc718d5a463cf81cd674bddd92e31624a3be418e81d3d21233"
   "plans/feat-planner-11-execution-handoff": "sha256:6770f2f165d39d82cfe83210361bec06b81cecbe3492e93609be668f12c4899b"
+  "plans/feat-planner-12-ui-repair": "sha256:b8fb23bc5401805a878a13d888284ef2adf5a695481992663ac05f500349a295"
+  "plans/feat-planner-13-planner-redesign": "sha256:6fed23a4f2c300ef6ace6a43af77779b2c34b7773d26cc4646185579f762be8e"
 ---
 
 # Planner Engineering Overview
 
 ## Programme
 
-The `loom plan` programme orders eleven plans that build the planning app from the document library up to the execution handoff. [Plan map](../../../../plans/feat-planner/index.md#plan-map)
+The `loom plan` programme orders thirteen plans that build the planning app from the document library up to the execution handoff, then repair and redesign its web screens. [Plan map](../../../../plans/feat-planner/index.md#plan-map)
 
 ## Foundations
 
@@ -80,3 +82,11 @@ The handoff plan moves the pressure pipeline into `loom::pressure` so the termin
 The app runs Claude steps as pressure sessions and Codex as a child of the server, and it stops cleanly on Stop, a failed step, Ctrl-C or a dead server. [11](../../plans/feat-planner-11-execution-handoff.md#s-864542e4)
 
 The run side adds the run dialog, the `doc/` commit, `loom init` and `loom run` as children, and Abandon run. [11](../../plans/feat-planner-11-execution-handoff.md#s-2159aacc)
+
+## Repair and redesign
+
+The repair plan rebuilds every planner screen to the transcribed mockup and moves summary generation to Haiku at high effort. [12](../../plans/feat-planner-12-ui-repair.md#s-99aa113a) [12](../../plans/feat-planner-12-ui-repair.md#s-95f02975)
+
+The redesign plan makes the feature screen a step spine that opens real content, makes the chat follow the document the reader views, and stops authoring chats from prompting for innocuous actions. [13](../../plans/feat-planner-13-planner-redesign.md#s-4b459a8f) [13](../../plans/feat-planner-13-planner-redesign.md#s-fe345ecf) [13](../../plans/feat-planner-13-planner-redesign.md#s-b8b930ec)
+
+The redesign bounds how long a planning session or tmux server may outlive its server to a 15-minute grace. [13](../../plans/feat-planner-13-planner-redesign.md#s-8e462c5c)

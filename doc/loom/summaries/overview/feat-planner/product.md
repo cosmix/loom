@@ -2,39 +2,39 @@
 kind: overview
 of: overview/feat-planner/product
 cites:
-  "doc/product/feat-planner/index.md#principles": "sha256:174b40b4f16daf0b35624bd6eb741b83d521e5e44988f7cd6f43cd7268abe645"
-  "doc/product/feat-planner/index.md#problem": "sha256:af0f130b5957c388773337d2d157358ec3dbc14dac0c6814a10a983b6aa17eff"
-  "doc/product/feat-planner/index.md#vision": "sha256:9f27159d2e5178f647ed6c7dae3e3a3eb58e79e312c1e6d0ad9bb16be2fed2b2"
+  "doc/product/feat-planner/index.md#principles": "sha256:893f636f87964ab0f3fe68e2645739d21f759c9b6f6bc520678beebb5405924e"
+  "doc/product/feat-planner/index.md#problem": "sha256:436d1c907b1d4211838b9a20f25a95234c9b1b8c2e6256ac3827db32b8a42f91"
+  "doc/product/feat-planner/index.md#vision": "sha256:10575e2e2451ea4fa762d93bfaaa91e07fa65ff5a734b6755789c3e040df5431"
 members:
-  "feat-planner/product/section_01": "sha256:2b142f9668a39fac39255dce25d0e34d9d300a47cac2726b6d8a5e6f05463da8"
-  "feat-planner/product/section_02": "sha256:09da3fd1be3a1dc98eac2d53a32605e4ec341887d7870eb8f0013e857fd948a0"
+  "feat-planner/product/section_01": "sha256:724b5b8338ccd00c0a4d10b112d82528ff2706286ec6c79948ea516d2ac4e454"
+  "feat-planner/product/section_02": "sha256:3927b613c9c813f4f81fd71adf33287832be00898528fbaf43083ba2e906c794"
   "feat-planner/product/section_03": "sha256:cc8404b3c8884a86f193143990b0679944d39bb1c04c9b39348f3ab62b571f72"
   "feat-planner/product/section_04": "sha256:0472610608f90e74d8b729681374a179af9b8d3ab936a51847ff40781362b096"
-  "feat-planner/product/section_05": "sha256:d2f641a07397db971bd309f4b3a013dbe29902c9896eb2ec89871a2ee0ebb0ae"
+  "feat-planner/product/section_05": "sha256:70959f3062922c236d4e3a964bc973446b00e6a5b7262e8b5b9071014226d322"
   "feat-planner/product/section_06": "sha256:52acfaf0406393f59afa2a5b89257b5710cde667af18288fd4226d7b638778e2"
-  "feat-planner/product/section_07": "sha256:8c603ca815bc62f97a459f282214f5696c9fa9c15686734efb5c2b43c80f4546"
-  "feat-planner/product/section_08": "sha256:42912d99fa15b11ade8d15a19d922e2725702e9ec97cfaeb7a103d8ef1f8ea25"
+  "feat-planner/product/section_07": "sha256:d56654aa22b6832970d11ce16f96a2b3c362455f761b640a745fb1389ee8d49d"
+  "feat-planner/product/section_08": "sha256:7498be33b5b2fffc1bb2a8769661b63e32ca75c2211ccf02eb8a613e0ebf31cb"
   "feat-planner/product/section_09": "sha256:18c4acff559940acbd8a4230371102915acfb19f65b1f6a88f108b3b67341795"
-  "feat-planner/product/section_10": "sha256:5c9a8a455bdc3bc9afdb3c154c5554f33a837e1798bec0ce2d87a5db810ae7c9"
-  "feat-planner/product/section_11": "sha256:57cc4b242347c7836fb0dd620db8ed791e169dba76550e47d4688704202bea65"
-  "feat-planner/product/section_12": "sha256:ee577c971675ade77c03e6ed5de09783034f93fae0e38c190e5752c5a22541d8"
+  "feat-planner/product/section_10": "sha256:95d11c8478cf0c42a71c6988182725ff457a12dd3d071cf7dbb6bf3e66ea65e3"
+  "feat-planner/product/section_11": "sha256:e2129a23cc1f3939b5dda3bd3dc6ee89a43acc3dc9b09231044b6aae249a24a7"
+  "feat-planner/product/section_12": "sha256:2cede91a7cd7317906b08b44bb9d8a9bcdf199174185df241e010900adfd43a4"
 ---
 
 # Planner Product Overview
 
 ## Vision and problem
 
-Planning a loom project happens in Claude Code in a sequence the user drives by hand, and by the review step the output is too large for anyone to review. [Problem](../../../../product/feat-planner/index.md#problem)
+Planning a loom project happens in Claude Code today, as a sequence the user drives by hand, and the review at the end is the step the current tooling serves worst. [Problem](../../../../product/feat-planner/index.md#problem)
 
-`loom plan` serves a browser app that takes a project from an empty `doc/` to approved, pressure-tested plans and lets the user return later to read, question and refine them. [Vision](../../../../product/feat-planner/index.md#vision)
+`loom plan` serves a browser app that takes a project from an empty `doc/` to approved, pressure-tested loom plans without a terminal, and lets the user return later to read, question and refine them. [Vision](../../../../product/feat-planner/index.md#vision)
 
 The files in `doc/` stay the truth, summaries are derived and disposable, and every summary claim traces to its source text. [Principles](../../../../product/feat-planner/index.md#principles)
 
 ## Workflow and server
 
-The app stores no workflow state and rebuilds one seven-step checklist per feature from the files under `doc/`, with the current step being the earliest gap. [01](../../feat-planner/product/section_01.md#s-282839d2) [01](../../feat-planner/product/section_01.md#s-abd7bbcb)
+The app stores no workflow state and rebuilds one six-step checklist per feature from the files under `doc/`, with the current step being the earliest gap. [01](../../feat-planner/product/section_01.md#s-282839d2) [01](../../feat-planner/product/section_01.md#s-abd7bbcb)
 
-A feature is the name shared by a product directory and a plans directory, and standalone plans follow their own lifecycle with no checklist. [01](../../feat-planner/product/section_01.md#s-b0ac3913) [01](../../feat-planner/product/section_01.md#s-3a704a6c)
+A feature is the shared name of its product directory and its plans directory under `doc/`, and standalone plans follow their own lifecycle with no six-step checklist. [01](../../feat-planner/product/section_01.md#s-b0ac3913) [01](../../feat-planner/product/section_01.md#s-ca0a1911)
 
 Bare `loom plan` starts the app on port 7272 and opens the browser, while `loom plan verify` keeps its behaviour. [02](../../feat-planner/product/section_02.md#s-24b80597) [02](../../feat-planner/product/section_02.md#s-8cb10e48)
 
@@ -64,9 +64,9 @@ Only the browser holding authoring can edit, and a save is refused on a hash mis
 
 ## Sessions and chat
 
-Planning sessions are interactive Claude Code processes in their own tmux servers, and the server reads their transcripts and hook events to know their state. [07](../../feat-planner/product/section_07.md#s-f764515f) [07](../../feat-planner/product/section_07.md#s-ff9354ef)
+Planning sessions are interactive Claude Code processes, each in its own tmux server, and the server reads their transcripts and hook events to follow their state. [07](../../feat-planner/product/section_07.md#s-b7f3b6da) [07](../../feat-planner/product/section_07.md#s-ff9354ef) [07](../../feat-planner/product/section_07.md#s-d4098782)
 
-Sessions start cold and never use `claude --resume`, and permission decisions go through a hook rather than keystrokes. [07](../../feat-planner/product/section_07.md#s-7bb0401a) [07](../../feat-planner/product/section_07.md#s-ed6537bb)
+Sessions start cold and never use `claude --resume`, and permission decisions go through a hook rather than keystrokes. [07](../../feat-planner/product/section_07.md#s-7bb0401a) [07](../../feat-planner/product/section_07.md#s-444fd782)
 
 The chat panel docks on the right and shows assistant text a whole block at a time with one row per tool call, and only the holder has a composer. [08](../../feat-planner/product/section_08.md#s-257c2d99) [08](../../feat-planner/product/section_08.md#s-f6d593b6) [08](../../feat-planner/product/section_08.md#s-bfd1930f)
 
@@ -80,7 +80,7 @@ After a turn that edits documents, the session rebuilds the affected summaries i
 
 A reviewer attaches a doubtful passage to a chat message, and the session either answers or edits the documents. [10](../../feat-planner/product/section_10.md#s-e324c0d2)
 
-The app records no approval, so the user's reading is step 6, and a reviewer can restore a file to its text from before a turn. [10](../../feat-planner/product/section_10.md#s-0c0170a6) [10](../../feat-planner/product/section_10.md#s-607384f2)
+The app records no approval, because reviewing is the user reading and has no step, and a reviewer can restore a file to its text from before a turn. [10](../../feat-planner/product/section_10.md#s-390ca474) [10](../../feat-planner/product/section_10.md#s-607384f2)
 
 Pressure testing and starting a run are buttons the user presses and never happen automatically. [11](../../feat-planner/product/section_11.md#s-ebc06a53)
 
@@ -88,4 +88,4 @@ A pressure run takes the authoring slot until it ends, and starting a run execut
 
 Every start mints a token that sets an access cookie, and the cookie is required on every API route and WebSocket. [12](../../feat-planner/product/section_12.md#s-9a0d1e1f) [12](../../feat-planner/product/section_12.md#s-465bfa4e)
 
-Sessions write only under `doc/` outside the locked set, and the OS sandbox, permission rules and planning hook enforce that table together. [12](../../feat-planner/product/section_12.md#s-22df0800) [12](../../feat-planner/product/section_12.md#s-bc501e36)
+Sessions write under `doc/` outside the locked set, and the OS sandbox, permission rules and planning hook enforce that table together. [12](../../feat-planner/product/section_12.md#s-2deab04f) [12](../../feat-planner/product/section_12.md#s-bc501e36)
