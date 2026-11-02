@@ -8,12 +8,22 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::{anyhow, ensure, Context, Result};
 
 use crate::context::untrusted::inline_safe;
+use crate::fs::permissions::state_root::{
+    CODEX_AUTH_DENY_READ_PATH, CREDENTIAL_DENY_READ_PATHS, CREDENTIAL_FILE_DENY_READ_PATHS,
+};
 use crate::fs::safe_read::read_to_string_bounded;
 
 /// Total bytes of file content one question may carry.
 pub(crate) const MAX_FILE_BYTES: usize = 400_000;
 
-const CREDENTIAL_NAMES: [&str; 4] = [".netrc", ".npmrc", ".pgpass", ".git-credentials"];
+const CREDENTIAL_NAMES: [&str; 6] = [
+    ".netrc",
+    ".npmrc",
+    ".pgpass",
+    ".git-credentials",
+    ".credentials.json",
+    ".pypirc",
+];
 const CREDENTIAL_PREFIXES: [&str; 6] = [
     ".env",
     "id_rsa",
@@ -40,12 +50,14 @@ pub(crate) fn read_documents(root: &Path, paths: &[PathBuf]) -> Result<Vec<Docum
     let mut seen = HashSet::new();
     let mut documents = Vec::new();
     let mut remaining = MAX_FILE_BYTES;
+    let home = dirs::home_dir().map(|home| home.canonicalize().unwrap_or(home));
     for arg in paths {
-        refuse_credential(arg, arg)?;
         let (canonical, relative) = locate(root, arg)?;
-        if let Ok(inside) = canonical.strip_prefix(root) {
-            refuse_credential(inside, arg)?;
-        }
+        ensure!(
+            !is_credential(&relative) && !is_sandbox_denied(&canonical, home.as_deref()),
+            "{} looks like a credential file; refusing to send it",
+            shown(arg)
+        );
         if !seen.insert(canonical) {
             continue;
         }
@@ -107,17 +119,30 @@ fn lexical_normal(path: &Path) -> PathBuf {
     normal
 }
 
-fn refuse_credential(path: &Path, arg: &Path) -> Result<()> {
-    ensure!(
-        !is_credential(path),
-        "{} looks like a credential file; refusing to send it",
-        shown(arg)
-    );
-    Ok(())
+/// Whether `canonical` is a path loom's own sandbox denies every session, with
+/// `~/` expanded against `home` and a trailing `/**` meaning anything under that
+/// directory. With no home, there is nothing to compare against.
+fn is_sandbox_denied(canonical: &Path, home: Option<&Path>) -> bool {
+    let Some(home) = home else {
+        return false;
+    };
+    CREDENTIAL_DENY_READ_PATHS
+        .iter()
+        .chain(&CREDENTIAL_FILE_DENY_READ_PATHS)
+        .chain(std::iter::once(&CODEX_AUTH_DENY_READ_PATH))
+        .any(|entry| {
+            let entry = entry.strip_prefix("~/").unwrap_or(entry);
+            match entry.strip_suffix("/**") {
+                Some(directory) => canonical.starts_with(home.join(directory)),
+                None => canonical == home.join(entry),
+            }
+        })
 }
 
 /// A `.git` component anywhere, or a basename that names a secret, ignoring
 /// ASCII case. Deliberately broad: `credentials.rs` and `.envrc` are refused.
+/// `read_documents` passes the path relative to the project root, so a directory
+/// above the root cannot trigger it.
 pub(crate) fn is_credential(path: &Path) -> bool {
     let in_git = path
         .components()
@@ -158,8 +183,8 @@ fn defuse_closing_tag(text: &str) -> String {
 
 /// The stdin payload: `lead` and a blank line when given, then each file as
 /// `<file path="...">` ... `</file>`, then the question. The path is flattened
-/// to one line and a `</file` in it or in a file is defused, so nothing can
-/// close or forge a wrapper.
+/// to one line, its backslashes and quotes are escaped, and a `</file` in it or
+/// in a file is defused, so nothing can close or forge a wrapper.
 pub(crate) fn assemble(lead: Option<&str>, documents: &[Document], question: &str) -> String {
     let mut payload = String::new();
     if let Some(lead) = lead {
@@ -168,8 +193,9 @@ pub(crate) fn assemble(lead: Option<&str>, documents: &[Document], question: &st
     }
     for document in documents {
         payload.push_str("<file path=\"");
-        let path = defuse_closing_tag(&inline_safe(&document.path));
-        payload.push_str(&path.replace('"', "\\\""));
+        // Backslashes first, so the ones defusing and quote escaping add stay single.
+        let path = inline_safe(&document.path).replace('\\', "\\\\");
+        payload.push_str(&defuse_closing_tag(&path).replace('"', "\\\""));
         payload.push_str("\">\n");
         payload.push_str(&defuse_closing_tag(&document.text));
         if !document.text.ends_with('\n') {

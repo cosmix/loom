@@ -13,7 +13,11 @@ pub fn format_f64(value: f64) -> String {
 }
 
 pub fn row(label: &str, value: impl std::fmt::Display) {
-    println!("  {label}: {value}");
+    println!("{}", row_line(label, value));
+}
+
+pub(super) fn row_line(label: &str, value: impl std::fmt::Display) -> String {
+    format!("  {label}: {value}")
 }
 
 pub fn heading(label: &str) {

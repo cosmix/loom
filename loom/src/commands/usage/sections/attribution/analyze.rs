@@ -3,16 +3,14 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::commands::usage::accounting::Accounting;
+use crate::commands::usage::accounting::{
+    Accounting, CACHE_READ_WEIGHT, CACHE_WRITE_1H_WEIGHT, CACHE_WRITE_5M_WEIGHT, OUTPUT_WEIGHT,
+};
 use crate::commands::usage::transcript::{Entry, Request, ToolUse, Transcript};
 use crate::commands::usage::transcript_types::SYNTHETIC_MODEL;
 
 use super::classify;
 
-/// Cache-read price relative to fresh input.
-const READ_RATE: f64 = 0.1;
-/// Output price relative to fresh input.
-const OUTPUT_RATE: f64 = 5.0;
 /// Characters per token in the estimate.
 const CHARS_PER_TOKEN: f64 = 4.0;
 
@@ -53,9 +51,9 @@ impl Costs {
             hour += request.usage.ephemeral_1h as f64;
         }
         let write_rate = if five + hour == 0.0 {
-            1.25
+            CACHE_WRITE_5M_WEIGHT
         } else {
-            (1.25 * five + 2.0 * hour) / (five + hour)
+            (CACHE_WRITE_5M_WEIGHT * five + CACHE_WRITE_1H_WEIGHT * hour) / (five + hour)
         };
         Costs {
             requests: requests.len(),
@@ -71,7 +69,7 @@ impl Costs {
             return None;
         }
         let reads = (self.requests - k - 1) as f64;
-        Some(chars as f64 / CHARS_PER_TOKEN * (self.write_rate + READ_RATE * reads))
+        Some(chars as f64 / CHARS_PER_TOKEN * (self.write_rate + CACHE_READ_WEIGHT * reads))
     }
 }
 
@@ -83,7 +81,6 @@ pub(super) fn analyze(transcript: &Transcript) -> Option<Analysis> {
         .collect();
     let first = *requests.first()?;
     let costs = Costs::of(&requests);
-    let (items, kind_chars) = admitted(transcript, &costs);
     let fresh = first.normalization.true_fresh_start == Some(true);
     Some(Analysis {
         total_s2: requests
@@ -95,12 +92,12 @@ pub(super) fn analyze(transcript: &Transcript) -> Option<Analysis> {
         } else {
             0.0
         },
-        output_s2: requests.iter().map(|r| r.usage.output as f64).sum::<f64>() * OUTPUT_RATE,
+        output_s2: requests.iter().map(|r| r.usage.output as f64).sum::<f64>() * OUTPUT_WEIGHT,
         replay_s2: replay_s2(&requests, &costs),
-        items,
+        items: admitted(transcript, &costs),
         startup: fresh.then(|| Startup {
             resident: first.usage.resident(),
-            kind_chars,
+            kind_chars: startup_kinds(transcript),
         }),
     })
 }
@@ -110,10 +107,10 @@ pub(super) fn analyze(transcript: &Transcript) -> Option<Analysis> {
 fn startup_s2(first: &Request, costs: &Costs) -> f64 {
     let usage = &first.usage;
     usage.input as f64
-        + READ_RATE * usage.cache_read as f64
-        + 1.25 * usage.ephemeral_5m as f64
-        + 2.0 * usage.ephemeral_1h as f64
-        + READ_RATE * usage.resident() as f64 * (costs.requests - 1) as f64
+        + CACHE_READ_WEIGHT * usage.cache_read as f64
+        + CACHE_WRITE_5M_WEIGHT * usage.ephemeral_5m as f64
+        + CACHE_WRITE_1H_WEIGHT * usage.ephemeral_1h as f64
+        + CACHE_READ_WEIGHT * usage.resident() as f64 * (costs.requests - 1) as f64
 }
 
 /// Every request's output except the last is written back into the context for
@@ -125,14 +122,24 @@ fn replay_s2(requests: &[&Request], costs: &Costs) -> f64 {
         .take(costs.requests - 1)
         .map(|(index, request)| {
             let reads = (costs.requests - index - 2) as f64;
-            request.usage.output as f64 * (costs.write_rate + READ_RATE * reads)
+            request.usage.output as f64 * (costs.write_rate + CACHE_READ_WEIGHT * reads)
         })
         .sum()
 }
 
-/// Costed items after the first request, and the characters per attachment
-/// kind that were present before it.
-fn admitted(transcript: &Transcript, costs: &Costs) -> (Vec<Item>, BTreeMap<String, usize>) {
+/// The characters per attachment kind that were present before the first request.
+fn startup_kinds(transcript: &Transcript) -> BTreeMap<String, usize> {
+    let mut kind_chars = BTreeMap::new();
+    for attachment in &transcript.attachments {
+        if attachment.requests_before == 0 {
+            *kind_chars.entry(attachment.kind.clone()).or_default() += attachment.chars;
+        }
+    }
+    kind_chars
+}
+
+/// Costed items after the first request.
+fn admitted(transcript: &Transcript, costs: &Costs) -> Vec<Item> {
     let tools: HashMap<&str, &ToolUse> = transcript
         .requests()
         .flat_map(|request| &request.tool_uses)
@@ -157,14 +164,11 @@ fn admitted(transcript: &Transcript, costs: &Costs) -> (Vec<Item>, BTreeMap<Stri
             }
         }
     }
-    let mut kind_chars = BTreeMap::new();
     for attachment in &transcript.attachments {
-        if attachment.requests_before == 0 {
-            *kind_chars.entry(attachment.kind.clone()).or_default() += attachment.chars;
-        } else {
+        if attachment.requests_before > 0 {
             let class = format!("attach:{}", attachment.kind);
             push(class, attachment.chars, attachment.requests_before);
         }
     }
-    (items, kind_chars)
+    items
 }

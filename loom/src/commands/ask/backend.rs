@@ -33,9 +33,9 @@ const CODEX_DISABLED_FEATURES: [&str; 7] = [
 pub enum Backend {
     /// Claude Code in print mode with every tool, setting source and MCP server off
     Claude,
-    /// `codex exec` in a read-only sandbox with every tool feature disabled.
+    /// Experimental: `codex exec` in a read-only sandbox with every tool feature disabled
     ///
-    /// Experimental until a probe against the real provider passes: the
+    /// It stays experimental until a probe against the real provider passes: the
     /// contracts drive a fake binary, so nothing here proves these flags keep
     /// a real worker from using tools.
     Codex,
@@ -214,8 +214,8 @@ fn parse_claude(stdout: &str) -> Result<WorkerReply> {
     })
 }
 
-/// Read `codex exec --json` rows. Any completed item other than a message or
-/// reasoning means the worker reached beyond the named files, so it fails
+/// Read `codex exec --json` rows. Any item other than a message or reasoning,
+/// in any phase, means the worker reached beyond the named files, so it fails
 /// closed rather than trusting the answer.
 fn parse_codex(stdout: &str) -> Result<WorkerReply> {
     let mut answer = None;
@@ -230,9 +230,12 @@ fn parse_codex(stdout: &str) -> Result<WorkerReply> {
             "turn.failed" | "error" => {
                 bail!("worker failed: {}", inline_safe(&row.to_string()))
             }
+            "item.started" | "item.updated" => refuse_tool_item(&row["item"])?,
             "item.completed" => {
-                if let Some(text) = completed_message(&row["item"])? {
-                    answer = Some(text);
+                refuse_tool_item(&row["item"])?;
+                if row["item"]["type"] == "agent_message" {
+                    let text = row["item"]["text"].as_str();
+                    answer = Some(text.context("agent message has no text")?.to_owned());
                 }
             }
             "turn.completed" => usage = Some(codex_usage(&row["usage"])),
@@ -244,15 +247,11 @@ fn parse_codex(stdout: &str) -> Result<WorkerReply> {
     Ok(reply)
 }
 
-fn completed_message(item: &Value) -> Result<Option<String>> {
+fn refuse_tool_item(item: &Value) -> Result<()> {
     match item["type"].as_str() {
-        Some("agent_message") => {
-            let text = item["text"].as_str().context("agent message has no text")?;
-            Ok(Some(text.to_owned()))
-        }
-        Some("reasoning") => Ok(None),
+        Some("agent_message" | "reasoning") => Ok(()),
         other => bail!(
-            "worker completed a {} item, reaching beyond the named files",
+            "worker used a {} item, reaching beyond the named files",
             inline_safe(other.unwrap_or("untyped"))
         ),
     }

@@ -139,6 +139,17 @@ fn mechanical_worker_gets_no_skills_line_but_the_software_engineer_does() {
 }
 
 #[test]
+fn mechanical_worker_with_an_empty_context_pack_gets_no_brief_despite_stage_skills() {
+    let mut fixture = Fixture::new(false);
+    fixture.config.stage.skills = vec!["loom-rust".to_string()];
+    let prompt = "Implement the worker.\n\nFiles owned (write only these):\n- `src/absent.rs`";
+    let mechanical = payload(prompt).replace("loom-software-engineer", "loom-mechanical-engineer");
+
+    assert!(issue(&mechanical, &fixture.config).is_none());
+    assert!(issue(&payload(prompt), &fixture.config).is_some());
+}
+
+#[test]
 fn declared_skills_reach_the_worker_even_with_an_empty_context_pack() {
     let mut fixture = Fixture::new(false);
     fixture.config.stage.skills = vec!["loom-rust".to_string()];

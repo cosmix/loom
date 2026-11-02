@@ -176,25 +176,36 @@ fn bounded_key(key: &str) -> String {
 }
 
 fn raw_command_key(command: &str) -> String {
-    let words = command.split_whitespace().collect::<Vec<_>>();
-    let first_program = words
-        .iter()
-        .position(|word| !is_assignment(word))
-        .unwrap_or(words.len());
-    let words = &words[first_program..];
-    let words = if words.len() >= 3 && words[0] == "cd" && words[2] == "&&" {
-        &words[3..]
-    } else {
-        words
-    };
+    let words = program_words(command);
     let Some(program) = words.first() else {
         return "(empty)".to_owned();
     };
-    let program = program.rsplit('/').next().unwrap_or(program);
     match words.get(1).filter(|next| !next.starts_with('-')) {
         Some(next) if is_subcommand(program) => format!("{program} {next}"),
-        _ => program.to_owned(),
+        _ => (*program).to_owned(),
     }
+}
+
+/// The words of a shell command from its program on, with the program reduced to
+/// its basename. Leading assignments and `cd <dir> &&` prefixes are skipped; the
+/// `&&` split lets a directory with spaces in it through.
+pub(super) fn program_words(command: &str) -> Vec<&str> {
+    let mut rest = command.trim_start();
+    loop {
+        let (first, tail) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+        if is_assignment(first) {
+            rest = tail.trim_start();
+        } else if let Some((_, after)) = rest.split_once("&&").filter(|_| first == "cd") {
+            rest = after.trim_start();
+        } else {
+            break;
+        }
+    }
+    let mut words = rest.split_whitespace();
+    let program = words
+        .next()
+        .map(|word| word.rsplit('/').next().unwrap_or(word));
+    program.into_iter().chain(words).collect()
 }
 
 fn is_assignment(word: &str) -> bool {
