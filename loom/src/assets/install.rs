@@ -11,6 +11,7 @@ pub(in crate::assets) mod placement;
 
 use anyhow::{bail, ensure, Context, Result};
 use std::fs;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use crate::commands::skill_index;
@@ -163,6 +164,14 @@ fn back_up_and_replace(dest: &Path, body: &str) -> Result<PathBuf> {
 /// Preserve every differing unmarked asset. Its previous installed bytes are
 /// unknown, so even a later divergence may be an operator edit.
 fn back_up_asset(dest: &Path) -> Result<PathBuf> {
+    let mut input =
+        fs::File::open(dest).with_context(|| format!("Failed to open {}", dest.display()))?;
+    let mode = input
+        .metadata()
+        .with_context(|| format!("Failed to inspect {}", dest.display()))?
+        .permissions()
+        .mode()
+        & 0o777;
     let base = backup_path(dest)?;
     for suffix in 0_u64.. {
         let backup = if suffix == 0 {
@@ -175,6 +184,7 @@ fn back_up_asset(dest: &Path) -> Result<PathBuf> {
         let mut output = match fs::OpenOptions::new()
             .write(true)
             .create_new(true)
+            .mode(mode)
             .open(&backup)
         {
             Ok(file) => file,
@@ -183,8 +193,10 @@ fn back_up_asset(dest: &Path) -> Result<PathBuf> {
                 return Err(error).with_context(|| format!("Failed to create {}", backup.display()))
             }
         };
-        let result =
-            fs::File::open(dest).and_then(|mut input| std::io::copy(&mut input, &mut output));
+        // The create mode above is narrowed by the umask; this restores any
+        // bits it removed, so the backup is never wider or narrower than the source.
+        let result = std::io::copy(&mut input, &mut output)
+            .and_then(|_| output.set_permissions(fs::Permissions::from_mode(mode)));
         if let Err(error) = result {
             let _ = fs::remove_file(&backup);
             return Err(error).with_context(|| format!("Failed to back up {}", dest.display()));

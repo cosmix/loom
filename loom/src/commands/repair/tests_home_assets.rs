@@ -34,7 +34,7 @@ fn shipped_legacy_assets_are_backed_up_and_custom_assets_survive() {
     assert!(fix_issue(root.path(), skill).unwrap());
     assert!(!skills.join("rust").exists());
     assert!(skills.join("python/SKILL.md").exists());
-    let skill_backups: Vec<_> = fs::read_dir(&skills)
+    let skill_backups: Vec<_> = fs::read_dir(root.path().join("loom-backups/skills"))
         .unwrap()
         .flatten()
         .filter(|entry| {
@@ -46,6 +46,38 @@ fn shipped_legacy_assets_are_backed_up_and_custom_assets_survive() {
         .collect();
     assert_eq!(skill_backups.len(), 1);
     assert!(skill_backups[0].path().join("SKILL.md").exists());
+}
+
+#[test]
+fn backed_up_legacy_skill_is_gone_from_every_scanned_root() {
+    let root = tempfile::tempdir().unwrap();
+    let skills = root.path().join("skills");
+    fs::create_dir_all(skills.join("loom-rust")).unwrap();
+    for (path, body) in SKILLS {
+        if let Some(relative) = path.strip_prefix("loom-rust/") {
+            let dest = skills.join("rust").join(relative);
+            fs::create_dir_all(dest.parent().unwrap()).unwrap();
+            fs::write(dest, body.replacen("name: loom-rust\n", "name: rust\n", 1)).unwrap();
+        }
+    }
+    let before = crate::skills::load_with_catalog(&skills).unwrap();
+    assert!(before.get_by_name("rust").is_some());
+
+    let issues = home_assets::check_old_skills_at(&skills);
+    let skill = issues
+        .iter()
+        .find(|issue| matches!(&issue.action, RepairAction::OldSkill(_)))
+        .unwrap();
+    assert!(fix_issue(root.path(), skill).unwrap());
+
+    let after = crate::skills::load_with_catalog(&skills).unwrap();
+    assert!(after.get_by_name("rust").is_none());
+    let kept: Vec<_> = fs::read_dir(root.path().join("loom-backups/skills"))
+        .unwrap()
+        .flatten()
+        .collect();
+    assert_eq!(kept.len(), 1);
+    assert!(kept[0].path().join("SKILL.md").exists());
 }
 
 #[test]
@@ -121,7 +153,7 @@ fn skill_permission_migration_matches_complete_names_only() {
     let path = root.path().join("settings.json");
     let original = serde_json::json!({
         "permissions": {
-            "allow": ["Skill(rust)", "Skill(rust:*)", "Skill(rustic)", "Skill(rust's)", "Skill(loom-rust)"],
+            "allow": ["Skill(rust)", "Skill(rust:*)", "Skill(rust *)", "Skill(rustic)", "Skill(rustic *)", "Skill(rust's)", "Skill(loom-rust)"],
             "deny": ["Skill(python)", "Skill(python-extra)"],
             "ask": ["Skill(testing)"]
         },
@@ -136,7 +168,9 @@ fn skill_permission_migration_matches_complete_names_only() {
         serde_json::json!([
             "Skill(loom-rust)",
             "Skill(loom-rust:*)",
+            "Skill(loom-rust *)",
             "Skill(rustic)",
+            "Skill(rustic *)",
             "Skill(rust's)",
             "Skill(loom-rust)"
         ])

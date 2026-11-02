@@ -12,13 +12,6 @@ use std::path::Path;
 
 /// Issue detected during repair check
 #[derive(Debug)]
-pub struct RepairIssue {
-    pub severity: Severity,
-    pub description: String,
-    pub fix_description: String,
-}
-
-#[derive(Debug)]
 pub(crate) struct DetectedIssue {
     severity: Severity,
     description: String,

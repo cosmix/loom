@@ -11,6 +11,9 @@ use super::{DetectedIssue, RepairAction, Severity};
 
 mod ownership;
 
+/// Where legacy skills go, under the installation root and beside `skills/`.
+const SKILL_BACKUP_DIR: &str = "loom-backups/skills";
+
 /// Loom-specific skill names referenced in settings.json that may need prefix migration.
 const LOOM_SKILL_NAMES: &[&str] = &[
     "accessibility",
@@ -126,7 +129,10 @@ pub(super) fn check_old_skills_at(skills_dir: &std::path::Path) -> Vec<DetectedI
                     format!("Ambiguous unprefixed skill '{}' found", name)
                 },
                 fix_description: if owned {
-                    format!("Back up {} before migration", entry.path().display())
+                    format!(
+                        "Move {} to {SKILL_BACKUP_DIR} before migration",
+                        entry.path().display()
+                    )
                 } else {
                     "Preserve this skill; its content does not prove Loom ownership".into()
                 },
@@ -221,10 +227,20 @@ pub(super) fn fix_old_skill(path: &Path) -> Result<()> {
         "{} is not a shipped Loom skill",
         path.display()
     );
-    back_up_legacy_asset(path)
+    // Every directory under a skills root is indexed as a skill, whatever its
+    // name, so the backup has to leave the root.
+    let backup_dir = path
+        .parent()
+        .and_then(Path::parent)
+        .context("Skill path has no installation root")?
+        .join(SKILL_BACKUP_DIR);
+    fs::create_dir_all(&backup_dir)
+        .with_context(|| format!("Failed to create {}", backup_dir.display()))?;
+    back_up_legacy_asset(path, &backup_dir)
 }
 
 /// Move a demonstrably shipped old agent to a unique, recoverable backup.
+/// Beside the original is safe: only `*.md` files in `agents/` load as agents.
 pub(super) fn fix_old_agent(path: &Path) -> Result<()> {
     let name = path
         .file_stem()
@@ -235,15 +251,15 @@ pub(super) fn fix_old_agent(path: &Path) -> Result<()> {
         "{} is not a shipped Loom agent",
         path.display()
     );
-    back_up_legacy_asset(path)
+    back_up_legacy_asset(path, path.parent().context("Invalid agent path")?)
 }
 
-fn back_up_legacy_asset(path: &Path) -> Result<()> {
+fn back_up_legacy_asset(path: &Path, backup_dir: &Path) -> Result<()> {
     let name = path
         .file_name()
         .context("Invalid asset path")?
         .to_string_lossy();
-    let backup = path.with_file_name(format!(
+    let backup = backup_dir.join(format!(
         "{name}.loom-backup-{}",
         crate::relay::new_request_id()
     ));
@@ -302,7 +318,10 @@ fn migrate_skill_refs(value: &mut serde_json::Value) -> bool {
             else {
                 continue;
             };
-            let (name, argument) = inner.find(':').map_or((inner, ""), |at| inner.split_at(at));
+            // `Skill(name:*)` and `Skill(name *)` both scope a rule to one skill.
+            let (name, argument) = inner
+                .find([':', ' '])
+                .map_or((inner, ""), |at| inner.split_at(at));
             if LOOM_SKILL_NAMES.contains(&name) {
                 *rule = serde_json::Value::String(format!("Skill(loom-{name}{argument})"));
                 changed = true;

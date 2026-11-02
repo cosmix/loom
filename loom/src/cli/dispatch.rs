@@ -9,13 +9,13 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use super::dispatch_admin;
-use super::dispatch_args::{narrow_family, CompletionsArgs, KnowledgeContextArgs, RuntimeCommand};
 use super::dispatch_stage;
 use super::types::{
-    Commands, ContextCommands, HookCommands, KnowledgeCommands, MemoryCommands, PlanCommands,
-    PlanServeArgs, ProjectCommands, RequestCommands, SessionsCommands, TargetCommands,
-    WorktreeCommands,
+    Commands, CompletionsArgs, ContextCommands, HookCommands, KnowledgeCommands, MemoryCommands,
+    PlanCommands, PlanServeArgs, ProjectCommands, RequestCommands, RunArgs, SessionsCommands,
+    StatusArgs, TargetCommands, WorktreeCommands,
 };
+use super::types_memory::KnowledgeContextArgs;
 
 // `dispatch_stage` reaches these through `super::dispatch::{..}`; re-exporting
 // here keeps that path working now that the implementations live in
@@ -25,6 +25,9 @@ pub(super) use dispatch_admin::{print_minted_proof, resolve_completion_proof};
 /// `loom knowledge <subcommand>` dispatch.
 fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
     match command {
+        KnowledgeCommands::RecoverBaseline { stage, commit } => {
+            knowledge::recovery::recover_baseline(&stage, &commit)
+        }
         KnowledgeCommands::Update { file, content } => knowledge::update(file, content),
         KnowledgeCommands::ReplaceSection {
             file,
@@ -35,9 +38,7 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
             knowledge::delete_section(file, heading)
         }
         KnowledgeCommands::Annotate(args) => knowledge::annotate::annotate(args),
-        context @ KnowledgeCommands::Context { .. } => {
-            dispatch_knowledge_context(narrow_family(context)?)
-        }
+        KnowledgeCommands::Context(args) => dispatch_knowledge_context(args),
         KnowledgeCommands::Eval {
             cases,
             budget_tokens,
@@ -255,48 +256,34 @@ fn dispatch_target(command: TargetCommands) -> Result<()> {
     }
 }
 
-fn dispatch_runtime(command: RuntimeCommand) -> Result<()> {
-    match command {
-        RuntimeCommand::Run {
-            manual,
-            max_parallel,
-            foreground,
-            watch,
-            no_merge,
-            backend,
-            accept_unix_socket_risk,
-            daemon_child,
-        } => {
-            let auto_merge = !no_merge;
-            if foreground {
-                run::execute(
-                    manual,
-                    max_parallel,
-                    watch,
-                    auto_merge,
-                    backend,
-                    accept_unix_socket_risk,
-                )
-            } else {
-                run::execute_background(
-                    manual,
-                    max_parallel,
-                    auto_merge,
-                    backend,
-                    accept_unix_socket_risk,
-                    daemon_child,
-                )
-            }
-        }
-        RuntimeCommand::Status {
-            live,
-            compact,
-            verbose,
-            web_args,
-        } => match web_args.web {
-            Some(port) => status::web::execute(port, web_args.terminals, web_args.resolved_host()),
-            None => status::execute(live, compact, verbose),
-        },
+fn dispatch_run(args: RunArgs) -> Result<()> {
+    let auto_merge = !args.no_merge;
+    if args.foreground {
+        run::execute(
+            args.manual,
+            args.max_parallel,
+            args.watch,
+            auto_merge,
+            args.backend,
+            args.accept_unix_socket_risk,
+        )
+    } else {
+        run::execute_background(
+            args.manual,
+            args.max_parallel,
+            auto_merge,
+            args.backend,
+            args.accept_unix_socket_risk,
+            args.daemon_child,
+        )
+    }
+}
+
+fn dispatch_status(args: StatusArgs) -> Result<()> {
+    let web_args = args.web_args;
+    match web_args.web {
+        Some(port) => status::web::execute(port, web_args.terminals, web_args.resolved_host()),
+        None => status::execute(args.live, args.compact, args.verbose),
     }
 }
 
@@ -308,9 +295,8 @@ pub fn dispatch(command: Commands) -> Result<()> {
             backend,
             no_repair,
         } => init::execute(Some(PathBuf::from(plan_path)), clean, backend, no_repair),
-        cmd @ (Commands::Run { .. } | Commands::Status { .. }) => {
-            narrow_family(cmd).and_then(dispatch_runtime)
-        }
+        Commands::Run(args) => dispatch_run(args),
+        Commands::Status(args) => dispatch_status(args),
         Commands::Resume { stage_id } => resume::execute(stage_id),
         Commands::Sessions { command } => dispatch_sessions(command),
         Commands::Worktree { command } => dispatch_worktree(command),
@@ -353,7 +339,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
             args,
         } => run_check(stage_id, suggest, args),
         Commands::SkillIndex => skill_index::execute(),
-        cmd @ Commands::Completions { .. } => dispatch_completions(narrow_family(cmd)?),
+        Commands::Completions(args) => dispatch_completions(args),
         Commands::Context { command } => dispatch_context(command),
         Commands::Hook { command } => dispatch_hook(command),
         Commands::Complete { shell, args } => dispatch_complete(&shell, &args),

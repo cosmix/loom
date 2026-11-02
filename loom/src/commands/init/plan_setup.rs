@@ -150,16 +150,8 @@ pub fn initialize_with_plan(
         .allowed_domains
         .is_empty()
     {
-        let detected = crate::language::detect_project_languages(repo_root);
-        if !detected.is_empty() {
-            let mut domains = vec!["github.com".to_string(), "api.github.com".to_string()];
-            for lang in &detected {
-                for domain in lang.registry_domains() {
-                    if !domains.iter().any(|d| d == domain) {
-                        domains.push((*domain).to_string());
-                    }
-                }
-            }
+        let domains = crate::language::suggested_network_domains(repo_root);
+        if !domains.is_empty() {
             println!(
                 "  {} {}",
                 "💡".blue(),
