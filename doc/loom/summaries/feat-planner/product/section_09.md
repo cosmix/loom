@@ -1,11 +1,11 @@
 ---
 kind: document
 of: doc/product/feat-planner/section_09.md
-file: sha256:05451da978de5d52685a4cba350ad5ed04db35b877aa99990f773f8088d8040d
+file: sha256:6c562d90ac90f36f7bfe8aff5c9d8a78827b2eeeafce73f3916a8474f12e7bcb
 cites:
   "doc/product/feat-planner/section_09.md#delivery": "sha256:a69079968adba7a69efd9ba592da5d447864043ff36be05e4af0f3b2936122f9"
-  "doc/product/feat-planner/section_09.md#models-and-effort": "sha256:5127a3e8a37702ac8a5be6ff4bcc0e41abfb9e11b48856a87405e3de2e617b96"
-  "doc/product/feat-planner/section_09.md#steps-and-their-skills": "sha256:262a0359c049425e57024ec6818a4ee401fc6aa829a5eecf63bbe9e3bddf0cb1"
+  "doc/product/feat-planner/section_09.md#models-and-effort": "sha256:8ea37a52f6994d9b16feb1ff4d9431398c86818d48f1b3c117628f7293c15ade"
+  "doc/product/feat-planner/section_09.md#steps-and-their-skills": "sha256:d9956bbd34875ea4600031a36ca297a1850d111f06c083f3b6f9b3a365f16adb"
   "doc/product/feat-planner/section_09.md#summaries-after-a-turn": "sha256:8b05d359f9c926fee85bb8a63a1186fedcb850fcafff4eab390ffe2f5c460bfe"
   "doc/product/feat-planner/section_09.md#summary-sessions": "sha256:890150c266cb74c402b7cc4d8d7af8cd2a8aed198baf35dcd8d18f9d518c7d2a"
   "doc/product/feat-planner/section_09.md#the-common-brief": "sha256:e2bf500fde4e4bbcd1ad85090b4eaaa336490fc7c15f34a3fc9b5443843fcc5b"

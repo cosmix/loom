@@ -1,7 +1,7 @@
 ---
 kind: document
 of: doc/product/feat-planner/section_02.md
-file: sha256:cab198a11c48ed127a272cd19baa760de5136375345747eed8c9873cf0a9e0c6
+file: sha256:40128e9c9d1dc59bc9b57b1c5b86f22c7fe9adbd717497905044e889ba03dea6
 cites:
   "doc/product/feat-planner/section_02.md#access": "sha256:9c2856ed73983bca92b81988da472dbf4cb1c9784fe6f32162c9e2e09a1daed5"
   "doc/product/feat-planner/section_02.md#command-line": "sha256:10526af42dee3edbb90ae07460e5987d2c60ad8d7cb0a94bca7633aef4445868"
@@ -14,7 +14,7 @@ cites:
   "doc/product/feat-planner/section_02.md#runtime-state": "sha256:5151951f6085287a6e5fa8a367ede7b98e4177cffba422d97dac5503d7f14c78"
   "doc/product/feat-planner/section_02.md#several-people-one-author": "sha256:581db94986d863b0e9b732a6ef619154509b39956ee299ef13cd658a073c60de"
   "doc/product/feat-planner/section_02.md#shared-code-with-loom-status---web": "sha256:cad537821432747a4ee3f9e05bacb02ec574188db5ef8cf30c79a782160614f2"
-  "doc/product/feat-planner/section_02.md#without-loomwork": "sha256:d938d1f2782b518951c01141ead61b4354396bd63264c7bf9d1bdb60c54040be"
+  "doc/product/feat-planner/section_02.md#without-loomwork": "sha256:ce9af4a1928d56a2e368ffdfbe9c309cceccabd80da65eb52d6ea9a0f571b5c4"
 ---
 
 # 02 — `loom plan` Command and Server
@@ -53,6 +53,6 @@ The first Ctrl-C asks running sessions to write their final state and waits for 
 
 `loom plan` runs its own server built from the dashboard's shared parts, such as the listener, access, and HTTP modules. [Shared code with `loom status --web`](../../../../product/feat-planner/section_02.md#shared-code-with-loom-status---web)
 
-Without `.loom/work`, the server still works in a project that has never run `loom init`. [Without `.loom/work`](../../../../product/feat-planner/section_02.md#without-loomwork)
+`loom plan` works in a project that has never run `loom init`, unlike `loom status --web`, which exits before binding without `.loom/work`. [Without `.loom/work`](../../../../product/feat-planner/section_02.md#without-loomwork)
 
 When `tmux`, the `claude` CLI, or Claude Code login is missing, the server starts in read-only mode and no session starts. [Missing prerequisites](../../../../product/feat-planner/section_02.md#missing-prerequisites)
