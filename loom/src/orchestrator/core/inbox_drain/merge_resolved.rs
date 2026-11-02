@@ -10,7 +10,8 @@
 //! fails completion verification hands the stage back to a stage session
 //! (`hand_merge_back`). The worktree is not removed here: the resolver is
 //! still running in it, and its exit (`handle_merge_session_completed`)
-//! cleans up.
+//! cleans up. A check the resolver ran is no input to any of this; one still
+//! running is stopped once the worktree is accepted, before the gates run.
 
 use crate::git::merge::check_resolved_worktree;
 use crate::models::session::Session;
@@ -41,15 +42,14 @@ impl Orchestrator {
                 stage.status
             ));
         }
-        let target = crate::git::branch::resolve_target_branch(
-            &self.config.base_branch,
-            &self.config.repo_root,
-        );
         if let Err(reason) = check_resolved_worktree(
             &self.config.repo_root,
             stage_id,
             stage.completed_commit.as_deref(),
         ) {
+            return Settle::Refused(reason);
+        }
+        if let Err(reason) = self.stop_running_check(stage_id) {
             return Settle::Refused(reason);
         }
         if let Err(error) = crate::verify::completion::resolved::verify_resolved_completion(
@@ -59,6 +59,15 @@ impl Orchestrator {
         ) {
             return self.settle_failed_verification(&stage, stage_id, &error);
         }
+        self.land_verified_merge(stage_id)
+    }
+
+    /// Land the merge whose content passed verification, and settle how it ended.
+    fn land_verified_merge(&mut self, stage_id: &str) -> Settle {
+        let target = crate::git::branch::resolve_target_branch(
+            &self.config.base_branch,
+            &self.config.repo_root,
+        );
         match self.land_stage_merge(stage_id, &target) {
             // The landing recorded why it held the merge; say that.
             Landing::Held => {
@@ -71,9 +80,7 @@ impl Orchestrator {
             landing => settle_for_landing(landing, stage_id, &target),
         }
     }
-}
 
-impl Orchestrator {
     /// Settle `--resolved` for content that failed completion verification
     /// with `error`. A typed block is refused: loom retries such a merge every
     /// tick, and a handback would cancel the retry of a resolution it already

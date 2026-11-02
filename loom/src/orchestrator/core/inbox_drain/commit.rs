@@ -28,17 +28,16 @@ use anyhow::Result;
 
 use crate::daemon::{handle_block_stage, Response};
 use crate::fs::resolve_target_branch_from_config;
-use crate::git::branch::{branch_name_for_stage, branch_ref};
+use crate::git::branch::branch_ref;
 use crate::git::merge::lock::MergeLock;
 use crate::git::stage_commit::{CommitRefusal, CommitRequest, CommitScope, Committer};
 use crate::git::target_guard::{append_attestation, guarded_refs, knowledge_prefix};
 use crate::git::worktree::{stage_worktree_path, WorktreeGit};
-use crate::models::session::{Session, SessionStatus, SessionType};
+use crate::models::session::{Session, SessionType};
 use crate::models::stage::{Stage, StageStatus};
 use crate::relay::CommitPayload;
-use crate::verify::transitions::load_stage;
 
-use super::apply::require_owner;
+use super::apply::{require_merge_resolver, require_owner};
 use super::{InboxHost, Settle};
 
 /// How long a knowledge commit waits for the merge lock.
@@ -162,35 +161,13 @@ fn target_branch(site: &CommitSite<'_>) -> Result<String, String> {
         .map_err(|error| format!("the target branch could not be read: {error:#}"))
 }
 
-/// A merge session's commit of the merge it resolves. The merge session is
-/// not the stage's `session`, so it is attributed by the branch it was
-/// spawned for, as `merge-resolved` is. Its `MERGE_HEAD` must be on the
-/// target: the session can write that file, and the commit records it. Its
-/// sandbox is released from the plan's worktree-relative `deny_write`, so the
-/// commit enforces those instead (`Committer::guarding_paths`).
+/// A merge session's commit of the merge it resolves. Its `MERGE_HEAD` must be
+/// on the target: the session can write that file, and the commit records it.
+/// Its sandbox is released from the plan's worktree-relative `deny_write`, so
+/// the commit enforces those instead (`Committer::guarding_paths`).
 fn prepare_merge(site: &CommitSite<'_>) -> Result<Prepared, String> {
     let record = site.record;
-    if record.status != SessionStatus::Running {
-        return Err(format!("session '{}' is no longer running", record.id));
-    }
-    let branch = branch_name_for_stage(site.stage_id);
-    if record.merge_source_branch.as_deref() != Some(branch.as_str()) {
-        return Err(format!(
-            "session '{}' is not resolving the merge of {branch}",
-            record.id
-        ));
-    }
-    let stage = load_stage(site.stage_id, site.work_dir)
-        .map_err(|error| format!("stage '{}' could not be loaded: {error:#}", site.stage_id))?;
-    if !matches!(
-        stage.status,
-        StageStatus::MergeConflict | StageStatus::MergeBlocked
-    ) {
-        return Err(format!(
-            "stage '{}' is {}, not MergeConflict or MergeBlocked",
-            site.stage_id, stage.status
-        ));
-    }
+    let stage = require_merge_resolver(site.work_dir, site.stage_id, record)?;
     let snapshot = crate::orchestrator::signals::load_merge_snapshot(site.work_dir, &record.id)
         .map_err(|error| {
             format!(

@@ -96,6 +96,18 @@ impl HostJobRunner {
     /// the jobs this call ended or reaped. A failure on one job is logged and
     /// retried on the next tick; it never stops the others.
     pub fn tick(&mut self) -> Result<Vec<JobRecord>> {
+        let mut ended = self.settle_held();
+        // Records settled above are already final; a failure to list or start
+        // queued jobs must not drop them.
+        match self.start_queued() {
+            Ok(started) => ended.extend(started),
+            Err(error) => warn_job("-", "could not start queued host jobs", &error),
+        }
+        Ok(ended)
+    }
+
+    /// The tick's end and reap steps alone, for a caller about to block the tick.
+    pub fn settle_held(&mut self) -> Vec<JobRecord> {
         let mut ended = Vec::new();
         let held: Vec<String> = self.running.keys().cloned().collect();
         for job_id in held {
@@ -104,13 +116,12 @@ impl HostJobRunner {
                 Err(error) => warn_job(&job_id, "could not settle a host job", &error),
             }
         }
-        // Records settled above are already final; a failure to list or start
-        // queued jobs must not drop them.
-        match self.start_queued() {
-            Ok(started) => ended.extend(started),
-            Err(error) => warn_job("-", "could not start queued host jobs", &error),
-        }
-        Ok(ended)
+        ended
+    }
+
+    /// Whether this runner holds a child of `stage_id`.
+    pub fn holds_stage(&self, stage_id: &str) -> bool {
+        self.running.values().any(|job| job.stage_id == stage_id)
     }
 
     /// The graceful stop: cancel every running record with `daemon stopped`,

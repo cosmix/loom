@@ -16,9 +16,13 @@ use crate::relay::HostJobRequest;
 use crate::verify::criteria::CriteriaConfig;
 use crate::verify::transitions::load_stage;
 
-use super::apply::{is_live_judge, require_owner};
+use super::apply::{is_live_judge, require_merge_resolver, require_owner};
 use super::commit::pinned_worktree;
 use super::{InboxHost, Settle};
+
+#[cfg(test)]
+#[path = "check_merge_tests.rs"]
+mod merge_tests;
 
 /// Validate and queue one relayed `check`.
 pub(super) fn apply_check(
@@ -66,11 +70,14 @@ pub(super) fn settle_submission(submission: anyhow::Result<Submission>) -> Settl
     }
 }
 
-/// A stage or knowledge session must own the stage; a judge must be the
-/// live adjudication session of this stage.
+/// A stage or knowledge session must own the stage; a merge session must be
+/// resolving this stage's merge; a judge must be the live adjudication session
+/// of this stage.
 fn admit_session(host: &dyn InboxHost, stage_id: &str, record: &Session) -> Result<Stage, String> {
-    if record.session_type != SessionType::Adjudication {
-        return require_owner(host.work_dir(), stage_id, record);
+    match record.session_type {
+        SessionType::Merge => return require_merge_resolver(host.work_dir(), stage_id, record),
+        SessionType::Adjudication => {}
+        _ => return require_owner(host.work_dir(), stage_id, record),
     }
     if !is_live_judge(host, record) {
         return Err(format!(
@@ -170,7 +177,7 @@ mod tests {
 
     /// A repository at the fixture's repo root with `s1`'s registered
     /// worktree; returns the worktree's HEAD.
-    fn repository(fx: &Fixture) -> String {
+    pub(super) fn repository(fx: &Fixture) -> String {
         git(&fx.repo_root, &["init", "-q", "-b", "main"]);
         crate::git::worktree::capture_main_identity(&fx.repo_root, &fx.work_dir).unwrap();
         git(
@@ -183,12 +190,12 @@ mod tests {
         git(&worktree, &["rev-parse", "HEAD"])
     }
 
-    fn request(head: &str) -> Value {
+    pub(super) fn request(head: &str) -> Value {
         json!({"head": head, "tree_digest": "0".repeat(64), "no_cache": false})
     }
 
     /// Relay `payload` as `agent` and return how the drain settled it.
-    fn settle(
+    pub(super) fn settle(
         fx: &Fixture,
         record: &Session,
         agent: AgentRole,
@@ -204,14 +211,14 @@ mod tests {
         found.unwrap().1
     }
 
-    fn refused(settled: Settle) -> String {
+    pub(super) fn refused(settled: Settle) -> String {
         match settled {
             Settle::Refused(reason) => reason,
             other => panic!("expected a refusal, got {other:?}"),
         }
     }
 
-    fn queued_check(fx: &Fixture) -> bool {
+    pub(super) fn queued_check(fx: &Fixture) -> bool {
         load_current(&fx.work_dir, STAGE)
             .unwrap()
             .is_some_and(|job| job.state == JobState::Queued)
