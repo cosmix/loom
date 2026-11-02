@@ -20,7 +20,11 @@ The full hook roster — every script in `loom-hooks/`, the event it binds to, w
 - `loom/src/verify/criteria/cache_contract.rs` — certified criterion-cache contract
 - `loom/src/models/forward_receipt.rs` (+ `payload.rs`, `transcript/argv.rs`), `loom/src/commands/hook/forward_receipt.rs` (reads the PostToolUse payload on stdin), `loom/src/commands/subagents/forward_jobs_wait.rs` — forward receipts and `loom subagents wait`
 - `loom/src/commands/hook/worker_brief.rs` (worker briefs filed at issue), `loom/src/commands/hook/pre_compact.rs` (prompt-record reset on compaction), `loom/src/quota/history.rs` — worker briefs, compaction reset, quota history
-- `loom-hooks/_read_ledger.sh`, `loom-hooks/_read_discipline.sh` — sibling-read ledger and read-guard rules (no Rust read-receipt path exists)
+- `loom-hooks/_read_ledger.sh`, `loom-hooks/_read_discipline.sh` — deny-once read gate, sibling-read ledger and read-guard rules ([Read Gate](architecture/read-gate.md); no Rust read-receipt path exists)
+- `loom/src/commands/ask/` (`mod.rs`, `backend.rs`, `run.rs`, `payload.rs`, `eval.rs`) — `loom ask` one-shot worker and `--eval` ([loom ask](architecture/loom-ask.md))
+- `loom/src/commands/usage/sections/attribution/` — `loom usage` Attribution section ([Read Gate](architecture/read-gate.md#the-attribution-section-of-loom-usage))
+- `loom/src/map/views/markdown_outline.rs` — direct heading outline for `loom map --outline` of a Markdown file
+- `agents/loom-mechanical-engineer.md` — haiku implementer with no `Skill` tool ([Subagent Hierarchy](patterns/subagent-hierarchy.md))
 
 → [Token Accounting and Receipts](architecture/token-accounting-and-receipts.md)
 

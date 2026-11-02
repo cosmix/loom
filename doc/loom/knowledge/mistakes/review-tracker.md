@@ -1,6 +1,6 @@
 # Review Tracker
 
-> Keep findings and review assignments current
+> Findings and assignments
 
 ## Keep the review tracker current
 

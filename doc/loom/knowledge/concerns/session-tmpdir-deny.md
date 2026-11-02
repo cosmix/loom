@@ -1,6 +1,6 @@
 # Session Deny on Claude Code's TMPDIR
 
-> TMPDIR read-only in sessions
+> Read-only TMPDIR
 
 `sandbox/control_surfaces/session_denies.rs:79` denies writes to every root of `models::forward_receipt::locator::default_task_output_roots()`, and `tests_session_denies.rs:32` pins it. One of those roots is `/tmp/claude-<uid>`, Claude Code's own `TMPDIR` (also named at `plan_session/guard/mod.rs:296`), while only its `tasks` subdirectories hold receipt channels. The deny covers the whole root, so in every sandboxed session:
 
