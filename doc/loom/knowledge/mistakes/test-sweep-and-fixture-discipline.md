@@ -143,3 +143,216 @@ Rust test module names also need graph lookup: `orchestrator::core::tests` does 
 **Why:** the session's `LOOM_*` environment and sandbox leak into tests that assume a clean environment.
 
 **Prevention:** judge those tests from the host-job gate log (`loom check` in the foreground), not from a run inside the agent session; do not edit tests to make an in-session run pass.
+
+## Stage fixture names are not IDs
+
+**What happened:** Merge retry tests looked up a fixed ID after constructing a stage with that value as its name. **Why:** `Stage::new` generates its own ID. **Prevention:** Set the fixture ID explicitly when a test subsequently loads by ID. **Fix:** Set the stage ID before persisting the merge retry fixtures.
+
+## Shared verification budget changed an untracked stall threshold
+
+**What happened:** A shared completion budget added an impact-test allowance, but an integration test retained its old literal escalation threshold.
+
+**Why:** The change updated the budget unit tests without tracing the monitor integration fixtures that also encode the threshold.
+
+**Prevention:** When changing a deadline or budget, search all dependent tests and fixtures for their literal thresholds as well as direct helper calls.
+
+**Fix:** Updated the monitor integration threshold to include the impact-test allowance.
+
+## Respect the requested verification boundary
+
+**What happened:** Runner verification expanded into provisioning external environments after local toolchains were unavailable.
+
+**Why:** I pursued broader acceptance evidence without checking the user’s preference for the extra setup.
+
+**Prevention:** Honor the user’s stated verification boundary and record unavailable evidence rather than provisioning alternatives.
+
+**Fix:** Continue the review repairs using available evidence and mark unverified runner behavior in the progress tracker.
+
+## Bootstrap test awaited too few promise turns
+
+**What happened:** A watchdog regression asserted the HTTP snapshot before its asynchronous fetch and JSON chain completed.
+
+**Why:** Two manually awaited microtasks did not cover the full chain.
+
+**Prevention:** Await the observable state using the existing asynchronous test helper instead of guessing the number of promise turns.
+
+**Fix:** Wait for the snapshot before asserting handshake expiry.
+
+## Geometry type change missed planner consumer
+
+**What happened:** Removing stage objects from graph geometry broke the planner graph typecheck.
+
+**Why:** A search for geometry consumers omitted the planner component.
+
+**Prevention:** Trace all imports and consumers of a changed shared type before running verification.
+
+**Fix:** Bind planner stages by ID from current data.
+
+## Test-only import masked production compilation failure
+
+**What happened:** A forwarding status module referenced an import gated to tests, so production compilation failed while a focused test compiled.
+
+**Why:** The sibling module path was resolved through a test-only import and only the test configuration was checked.
+
+**Prevention:** After changing conditional imports, verify both the production and test configurations and reference sibling modules directly where needed.
+
+**Fix:** Use the parent module path to the forwarding transcript type in the status module.
+
+## Typed history fixture kept its default outcome
+
+**What happened:** A reset history fixture changed its explanation but retained a superseded disposition after the outcome became explicit.
+
+**Why:** The fixture override was written when the UI derived outcomes from the explanation.
+
+**Prevention:** When migrating a derived field to an explicit contract, update every fixture override of its former source alongside the typed field.
+
+**Fix:** Set the reset disposition in the fixture.
+
+## Palette test retained literal-color assumptions
+
+**What happened:** Theme tests still expected distinct literal palettes and compared browser-normalized hex values as raw strings after switching previews to CSS variables.
+
+**Why:** The migration updated the palette fixture but missed a second test of its old representation.
+
+**Prevention:** Search all tests of a changed public representation and account for DOM color normalization when replacing fixtures.
+
+**Fix:** Test variable contracts and use CSS variable custom values in the swatch test.
+
+## Shared props extraction dropped a still-used type import
+
+**What happened:** Extracting settings presentation props removed ConfigScope from the cards file, where a nested component still used it.
+
+**Why:** The import was considered only against the removed interface.
+
+**Prevention:** Search the entire file for each symbol before removing a shared-type import.
+
+**Fix:** Restore the ConfigScope import and rerun typecheck.
+
+## Replacing tests needs visible coverage mapping
+
+**What happened:** A frontend history parsing test was replaced during the typed-outcome migration without first explaining the removed cases or demonstrating their replacement coverage.
+
+**Why:** The parsing moved to Rust, and the migration treated the old tests as implementation-specific without mapping each case first.
+
+**Prevention:** Before deleting any tracked file or test case, explain the reason and demonstrate replacement coverage to the coordinator.
+
+**Fix:** Audit the old history cases against the Rust compatibility test and restore missing coverage before reporting completion.
+
+## Explain deleted files and preserve coverage
+
+**What happened:** Review repairs deleted public validator modules and their tests without clearly explaining the compatibility impact or proving all valuable cases had moved.
+
+**Why:** The review recommendation to retire a stale replica was treated as sufficient evidence of replacement coverage and external API compatibility.
+
+**Prevention:** Before deleting a tracked file or test, inventory public consumers and map meaningful assertions to replacement coverage; explain deletions and unresolved compatibility to the user.
+
+**Fix:** Pause further deletions, audit the validator tests and public API, and retain or deprecate behavior where compatibility cannot be established.
+
+## Explain test replacement before moving coverage
+
+**What happened:** Completion-commit tests were moved and one helper-level environment test replaced by existing signing-layer coverage before reporting the replacement to the coordinator.
+
+**Why:** The edit focused on the changed implementation and file-size limit without making the test move reviewable first.
+
+**Prevention:** Before removing or moving test cases, explain why and identify the exact replacement coverage to the coordinator.
+
+**Fix:** Reported the moved test module, rewritten expectations, and existing signer-environment test.
+
+## Merge signer fixture must reach the signer
+
+**What happened:** A manual merge signing regression initially created a `MergeConflict` stage without a resolver worktree; the pre-merge worktree check would reject the fixture before Git attempted to sign.
+
+**Why:** `merge_stage` validates a resolved worktree for `MergeConflict` before creating a merge commit.
+
+**Prevention:** Choose a valid stage state and satisfy every earlier guard, then assert the signer-specific review evidence as well as the final status.
+
+**Fix:** Use a valid `MergeBlocked` retry fixture and assert the fake signer failure appears in the persisted review reason.
+
+## Direct supervisor fixture treated streamed events as one JSON result
+
+**What happened:** A signal lifecycle fixture tried to parse all supervisor stdout as one JSON object and failed on the forwarded event lines.
+
+**Why:** It overlooked that the supervisor relays child events before printing its final result.
+
+**Prevention:** Parse the final result line separately when testing a streaming supervisor.
+
+**Fix:** Read the last nonempty output line for the fixture result.
+
+## Hook test used an unwritable default temporary directory
+
+**What happened:** A direct-forward shell test failed its mktemp call and then attempted to create a stub under /bin in the restricted sandbox.
+
+**Why:** The test defaults TMPDIR to /tmp, which is read-only in this environment, and its chained assignment did not stop the script.
+
+**Prevention:** Supply a writable task-local TMPDIR before running hook fixtures in this sandbox.
+
+**Fix:** Rerun with TMPDIR under the workspace.
+
+## Track, stop and group parallel review work
+
+**What happened:** A broad review repair began without a durable finding tracker and continued until the user narrowed the batch and reiterated commit conventions.
+
+**Why:** Assignment state lived in the session, and a large set of fixes can obscure the stop boundary and logical commit scope.
+
+**Prevention:** Track finding ownership and status before reassignment; stop new work on user direction; group each fix with its tests in scoped Conventional Commits while preserving unrelated work. Check knowledge topic size before appending.
+
+**Fix:** Use doc/astra-review-progress-2026-10-31.md to record progress and stage only session-owned paths.
+
+## Shared-boundary changes invalidated existing fixture assumptions
+
+**What happened:** The filesystem suite found a concurrency fixture above the new memory admission limit, a freeze I/O failure treated as refusal, and a receipt fixture relying on the old predictable temporary path.
+
+**Why:** The boundary changes were not traced through all existing fixture setup and failure semantics.
+
+**Prevention:** Audit existing boundary tests for size, error classification and temporary-path assumptions before changing shared persistence.
+
+**Fix:** Keep concurrency inputs within the supported bound, propagate freeze read errors, and exercise receipt write failure without relying on a fixed temporary name.
+
+## Cargo commands from repository root
+
+**What happened:** Focused graph-loader tests were invoked from the repository root, where Cargo.toml is absent, and did not run.
+**Why:** The crate lives in the loom/ subdirectory.
+**Prevention:** Check the manifest location and run Cargo from loom/ or specify --manifest-path.
+**Fix:** Run the intended checks from the crate directory and report their actual results.
+
+## Parallel focused Cargo checks contend for one target lock
+
+**What happened:** Multiple review workers queued focused Cargo checks against the shared target directory and delayed finding-specific verification.
+**Why:** Test ownership was delegated without scheduling the shared build resource.
+**Prevention:** Coordinate Cargo compilation centrally after concurrent edits settle, then run focused checks against the shared build.
+**Fix:** Stopped queued worker checks and collected their exact commands for centralized verification.
+
+## Cross-surface test accessed private state
+
+**What happened:** A new usage cross-surface regression failed to compile because it accessed a private AgentState model field.
+**Why:** The regression was written from another module without checking the observable API boundary.
+**Prevention:** Assert externally observable accounting output or expose only an existing accessible interface, and compile before accepting the test.
+**Fix:** Replace the private-field assertion with a public-output assertion and rerun the focused suites.
+
+## Approval acceptance fixture recreated an existing stage
+
+**What happened:** The new freeze-refusal acceptance test failed with Stage already exists after approval.
+**Why:** The fixture attempted a create operation for a persisted stage instead of mutating or reusing it.
+**Prevention:** Trace fixture lifecycle and use the update path when a stage already exists.
+**Fix:** Correct the fixture without weakening the post-approval refusal assertions, then rerun the acceptance test.
+
+## Concurrent test edits missed formatting
+
+**What happened:** The integrated formatting check failed on newly edited regression tests.
+**Why:** Workers handed back changes for central verification without formatting all edited Rust files.
+**Prevention:** Format worker-owned Rust files after their final edit before handback, or run the formatter centrally before the gate.
+**Fix:** Format the edited files and rerun the formatting check.
+
+## CLI integration test bypassed the sanctioned spawn helper
+
+**What happened:** The all-target suite rejected a new stage-output integration test because it spawned the Loom binary directly.
+**Why:** The test did not use the repository spawn boundary that strips session variables.
+**Prevention:** Trace and use sanctioned binary spawn helpers for integration tests before adding a subprocess.
+**Fix:** Adapt the test to the approved helper while retaining the real CLI round-trip and rerun integration verification.
+
+## Late worker edits missed the formatting gate
+
+**What happened:** A second formatting check found late worker edits that arrived after the earlier formatting pass.
+**Why:** Formatting ran before all workers returned.
+**Prevention:** Wait for all editing workers before the final formatting pass and gate.
+**Fix:** Format the final tree and repeat the check.

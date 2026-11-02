@@ -42,7 +42,8 @@ freeze; `Passed` and `NotSelected` are errors; `Unparsed` needs a non-zero exit.
 is produced. Applying the job
 (`freeze::apply_freeze_result`, `stage_service::freeze_with_reports`) re-checks the changes, hashes every
 contract and harness-matched file, requires them to equal what the run hashed, copies them to
-`.loom/work/contracts/<stage>/files/`, and writes `freeze.json`. The freeze copies and hashes EVERY existing
+`.loom/work/contracts/<stage>/files/`, syncs every file and directory it wrote, and only then writes `freeze.json`
+(`store_generation::write_initial`), so a freeze record never names copies a crash could lose. The freeze copies and hashes EVERY existing
 file a harness glob matches, tracked or not, so a glob over a production file freezes it for the implementer
 and `src/**/*.rs` freezes the crate (cap 500 files, 64 MiB). Harness globs belong on test-only files. A
 refusal at either half goes to adjudication ([Refused Freezes Are Disputed](#refused-freezes-are-disputed)).
@@ -178,14 +179,11 @@ contracts are not batched into one command because `RunSummary` is aggregate.
 
 ## Accepted Dispute Re-Freeze
 
-An accepted `dispute-contract` (`orchestrator/adjudication/apply_contract.rs`) re-freezes the stage's whole frozen set, including the disputed contract:
+An accepted `dispute-contract` re-freezes the complete amended contract and harness set, including the disputed file. `store::refreeze_set` records the exact paths, adapters and working directories; newly added contracts receive the `refrozen` outcome because they did not run during the original freeze.
 
-- the files read by `verify/contracts/frozen_set.rs::read_frozen_set` are the amended contract files, the harness files re-expanded from `stage.harness` (`verify/contracts/changes.rs::harness_files`), every path the record lists, and the disputed contract's file before the amendment;
-- `store::refreeze_set` (`verify/contracts/store.rs`) replaces the record's `files` with exactly that set, upserts each contract the accept names with its adapter, file and `cwd` (`store::recorded_cwd`), and adds a contract the record lacks with outcome `REFROZEN_OUTCOME` (`refrozen`), because it never ran at freeze;
-- `freeze.json` is rewritten before the dropped copies are removed, so the record never names a copy that is not on disk. A failed removal leaves an orphan copy that no record names; restore and completion read only the copies the record names, so the orphan is harmless;
-- the stage must already be frozen; `refreeze_set` is called by the accept only.
+A re-freeze writes a version 2 record. It stages a complete generation under `staging/`, checks every copy hash, syncs every file and directory, renames it to `generations/<digest>/` (`<digest>` names its file and hash set), and only then publishes the freeze record (`verify/contracts/store_generation.rs`). Readers resolve copies from the generation their loaded record names, so a reader holding either record sees all of one generation; version 1 records keep the `files/` reader. Only `staging/` is collected, under the store lock and after publication, and a failure to collect changes nothing. A failed step leaves the previous committed record and generation readable, and a re-freeze that crashed restarts with every committed file restorable. Committed generations are kept indefinitely; power loss has not been exercised.
 
-The adjudicator's accept notice lists the re-frozen paths; see the cap suggestion in [Gate-Dedup and Integration-Verify Review Suggestions](../concerns/verification-v2-followups.md#gate-dedup-and-integration-verify-review-suggestions).
+The stage must already be frozen. The accept notice lists the re-frozen paths; see [Gate-Dedup and Integration-Verify Review Suggestions](../concerns/verification-v2-followups.md#gate-dedup-and-integration-verify-review-suggestions).
 
 ## Refused Freezes Are Disputed
 

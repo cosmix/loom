@@ -169,3 +169,37 @@ committable `.loom/config.toml`.
   "wrote merged=true without verifying ancestry" incidents.
 - `architecture/context-retrieval-state.md` — the overlay/base reconcile steps this
   ordering interleaves, and why base publication requires a clean tree.
+
+## Merge failure policy missed a conflict-state transition
+
+**What happened:** A shared merge failure writer refused to record infrastructure errors on a stage in `MergeConflict`, leaving manual retry in its old state.
+
+**Why:** The state machine has no direct `MergeConflict -> MergeBlocked` transition; merge outcome writers deliberately force this transition after guarding ownership and proof.
+
+**Prevention:** Compare existing outcome writers and state-machine edges before unifying their mutations, including repeat `MergeBlocked` and unmerged `Completed` cases.
+
+**Fix:** The shared writer permits guarded merge-state outcomes and records the failure on the fresh stage.
+
+## Distinct merge holds need distinct operator messages
+
+**What happened:** Unifying signing and control-path holds replaced the control-path failure message with generic review text, breaking its existing operator contract.
+
+**Why:** One coarse held outcome did not carry which remedy applies.
+
+**Prevention:** Preserve a typed hold reason through adapters and test existing control-path output alongside signing failures.
+
+**Fix:** Keep separate signing and control-path dispositions while sharing the durable review transition.
+
+## Half-removed cleanup accepted uncertain entries and raced new files
+
+**What happened:** A cleanup repair retained scan-then-remove behavior and treated some scaffold-shaped entries as owned without establishing their identity.
+**Why:** The review checked existing files at inspection time but did not account for replacement or creation before recursive deletion.
+**Prevention:** Require positive ownership proof and use removal operations that refuse unexpected entries at deletion time; do not treat names alone as proof.
+**Fix:** Reassess half-removed recovery with deterministic adversarial interleavings and preserve uncertain entries.
+
+## Empty directory replacement can fool half-removed recovery
+
+**What happened:** Directory-only cleanup prevented late file loss but could remove a substituted empty directory and report success while the original was renamed away.
+**Why:** unlinkat by name is not conditional on the inode held by an earlier directory descriptor.
+**Prevention:** Treat name-based directory removal as a separate ownership boundary and do not claim exact identity without an atomic proof.
+**Fix:** Reassess concurrent replacement and preserve or explicitly report any remaining limitation.

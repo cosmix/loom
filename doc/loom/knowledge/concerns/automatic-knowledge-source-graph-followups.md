@@ -6,15 +6,7 @@
 
 ## Open Items From the Automatic-Knowledge Plan
 
-**Whole-file read ahead of the size cap.** `read_bytes` (`context/refresh/source_graph/layer.rs`)
-reads every tracked file with `read_bounded(.., usize::MAX)` before `extract_file` applies the
-512 KiB `MAX_EXTRACTED_FILE_BYTES` cap. The cap bounds parsing but not allocation, so the daemon
-spikes to the size of the largest tracked blob on every reconcile. `FileExtraction::file_level`
-(`context/extract/mod.rs`) needs the bytes to build an oversized file node's span and its
-whole-file `content_hash`. Bounding the read therefore means changing that node's span and hash
-semantics, or threading a streamed line count through the extractor API. Peak is one file at a
-time, and `EXCLUDED_ROOTS` skips `target/` and `node_modules/`, so the realistic worst case is a
-transient spike.
+**Bounded refresh source retention.** `context/refresh/source_graph/layer.rs::read_bytes` uses `context/source_graph/read.rs::SourceRead` through `read_source` or `run_git_stream`. The reader hashes and counts every byte through a fixed 16 KiB buffer while retaining at most `MAX_EXTRACTED_FILE_BYTES`; oversized nodes keep full-file content identity and byte spans without whole-file allocation. Source windows have a separate read path and require a separate bound audit.
 
 **Three production-dead `KnowledgeDir` methods.** `append`, `read_index` and the
 `KnowledgeFile`-keyed `replace_section` (`fs/knowledge/dir.rs`) have no non-test callers.

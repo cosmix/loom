@@ -18,8 +18,8 @@ Graph synchronization and the StageCompleted monitor handler both reach `try_aut
 
 `merge_stage(stage_id, target, repo_root, work_dir, gate)` runs under `MergeLock`. It never checks out a
 branch, runs a three-way merge, or creates `MERGE_HEAD` in the operator's main checkout R. Only when
-the target is checked out in R does it change R's files: `git merge --ff-only`, plus the stash and
-untracked-file removal of the reapply path:
+the target is checked out in R does it change R's files: `git merge --ff-only`, plus the stash, the
+`reset --hard` and the untracked-file removal of the reapply path:
 
 1. An operator operation in progress in R (`MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`,
    `rebase-merge/`, `rebase-apply/`) returns `Blocked(OperatorOperation { marker })`.
@@ -53,8 +53,9 @@ refs/heads/<target> M T0`. A refusal because the target moved is `Blocked(Target
 `MergeResult` is `Success { files_changed, insertions, deletions, backup_ref, stash }`,
 `Conflict { conflicting_files }`, `AlreadyUpToDate`, `Held { reason }` or `Blocked(MergeBlock)`. `MergeBlock`
 (`git/merge/tree.rs`) is `OperatorOperation { marker }`, `TargetCheckedOutElsewhere { path }`, `TargetMoved`,
-`UncommittedOverlap { paths }`, `FastForwardRefused { detail }`, `StashNotRestored { backup_ref }` or
-`TargetHeld { target, accepted, observed }`. `MergeBlock` is stored on
+`UncommittedOverlap { paths }`, `FastForwardRefused { detail }`, `StashNotRestored { backup_ref }`,
+`StashResetRefused { backup_ref }`, `CheckoutRestoreIncomplete { source_rev, failures, changes }` (`changes` is a
+`RollbackChanges`, `git/merge/stash_report.rs`) or `TargetHeld { target, accepted, observed }`. `MergeBlock` is stored on
 the stage (`Stage.merge.block`, `#[serde(tag = "kind")]`) and has an operator-facing `Display`.
 `loom run` refuses git older than 2.40 (`commands/run/git_preflight.rs`, called from
 `run_startup_preflights`) because `merge-tree --write-tree` needs it. `git/runner.rs` gives
@@ -65,27 +66,13 @@ test ([Sandbox gaps](../concerns/sandbox-and-confinement-gaps.md)).
 
 ## Outcomes
 
-`apply_auto_merge_outcome` maps each result:
+`stage_service::merge_outcome` classifies Git, daemon and progressive results into landed, already landed, conflict, typed block, review hold, and the distinct missing-branch or missing-worktree cases. Signing failures in a `CommitTreeError` chain route to `NeedsHumanReview` with the signing remedy; other execution errors record `InfrastructureError` in `MergeBlocked`. Manual retry returns an error after persisting an execution failure. These adapters guard outcome writes against changes to the captured status, session, attempt start and completion proof; reviewed landing keeps its own authority and entry step.
 
-| Outcome                                                                                  | Stage file afterwards                                                                                                                                                                                                                                                                                          | Daemon                                                                                                                              |
-| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Success or `AlreadyUpToDate`, and `verify_merge_succeeded` proves ancestry               | `Completed`, `merged: true`; `finalize_auto_merge` runs `finish_verified_merge`, which reconciles the base and removes worktree and branch; a backup ref is printed and logged                                                                                                                                 | continues                                                                                                                           |
-| Conflict                                                                                 | `record_merge_conflict` forces `MergeConflict`; nothing is spawned here                                                                                                                                                                                                                                        | stays alive; the spawn loop starts a resolver in the stage worktree                                                                 |
-| Held (control path)                                                                      | `NeedsHumanReview` with the gate's reason                                                                                                                                                                                                                                                                      | exits; NEEDS REVIEW                                                                                                                 |
-| Blocked (`MergeBlock`, including `TargetHeld`)                                           | `record_merge_block` forces `MergeBlocked` with `Stage.merge.block` and `failure_info` carrying the block sentence as evidence, so `loom status` shows it                                                                                                                                                      | stays alive; the loop retries the merge (a `TargetHeld` block is never memoised, so the first retry after the hold clears lands it) |
-| Git error (lock timeout, missing branch)                                                 | forced to `MergeBlocked`, `failure_info` type `InfrastructureError` with the git error as evidence                                                                                                                                                                                                             | last stage: exits; `loom status` shows MERGE ERROR                                                                                  |
-| Merge ran but ancestry cannot be verified                                                | forced to `MergeBlocked`, reason in `failure_info`                                                                                                                                                                                                                                                             | same                                                                                                                                |
-| Branch has zero commits beyond target                                                    | forced to `NeedsHumanReview`, `review_reason` says the agent never committed                                                                                                                                                                                                                                   | exits; NEEDS REVIEW                                                                                                                 |
-| `commit_merge` fails to sign (`CommitTreeError { signing: true }` anywhere in the chain) | `route_to_human_review` with the signer text and the remedy: fix signing, then `loom stage human-review <id> --approve`; reached from `land_stage_merge` (it returns `Landing::Held`) and from the first auto-merge (`apply_auto_merge_outcome`'s `Err` arm); no resolver spawns and nothing retries each tick | exits; NEEDS REVIEW                                                                                                                 |
-| Auto-merge disabled for the stage or plan                                                | stays `Completed + !merged` by design                                                                                                                                                                                                                                                                          | exits; `loom status` shows unmerged                                                                                                 |
+A landed or already-landed result requires original completion-commit ancestry before `merged: true`. Finalization rechecks the proof and current stage before applying its delta, then uses `finish_verified_merge` for deferred-safe cleanup and base reconciliation. A missing branch cannot prove a merge; a missing worktree is finalized only with ancestry proof. Manual retry preserves a completed, unmerged stage when auto-merge was disabled and a conflict occurs.
 
-`persist_merge_blocked` is the writer for the infrastructure outcomes and `route_to_human_review`
-for the review outcome; both use `force_status_with_reason` because `Completed` has no legal exits.
-Nothing on the daemon path writes `merged: true` without `is_ancestor_of` returning true. The
-daemon's ancestry settles of a stage (the sweep in `sync_graph_with_stage_files`, which settles only Completed stages not yet merged, the
-`NoWorktree` finalize in `merge_handler.rs`) tests against the guard's accepted tip through
-`merged_into_accepted`, never the live ref: a ref any session could move would mark a stage merged without its work
-landing; other consumers still read the live ref ([open list](target-guard.md#unimplemented-review-suggestions)). The auto-merge precheck records `TargetHeld` before the gate, the zero-commits route and the finalize.
+The daemon spawn loop handles conflicts in the stage worktree and retries typed blocks; `TargetHeld` is rechecked each tick. The auto-merge precheck records `TargetHeld` before the gate, zero-commit route and finalization. A zero-commit branch routes to review. Auto-merge disabled leaves the stage `Completed + !merged`.
+
+The daemon ancestry settles of a stage (the sweep in `sync_graph_with_stage_files`, which settles only Completed stages not yet merged, and `NoWorktree` finalization) use the guard accepted tip through `merged_into_accepted`, never the live ref; other consumers still read the live ref ([open list](target-guard.md#unimplemented-review-suggestions)).
 
 ## Recovery from every non-merged outcome
 
@@ -95,7 +82,7 @@ The shared verifier checks the registered branch/worktree and original commit an
 
 A clean resolved worktree can also use `loom stage complete <id>` to run the ordinary operator pipeline. Resolver exit uses the shared verifier before automatic landing. Failed verification retains the worktree and original proof and routes an exited resolver to review with completion guidance; relay failure is refused. A live resolver retains its worktree after a successful relay until exit cleanup. Already landed content requires ancestry proof before cleanup.
 
-The spawn loop sends typed `MergeBlocked` records to `retry_blocked_merge`; other conflict/blocked records use `spawn_resolver_if_due`, which first checks whether the merge settled. Target holds, control-path violations, ownership, uncommitted changes and original-commit ancestry remain independent merge guards. Missing automatic completion proof routes to review instead of deriving authority from HEAD.
+The spawn loop sends typed `MergeBlocked` records to `retry_blocked_merge`. A retry that hits a permanent failure (the stage branch deleted, or moved after verification; `permanent_merge_failure`) routes the stage to review, and any other retry error keeps the typed block and records the failure once (`apply_retry_failure`). Other conflict/blocked records use `spawn_resolver_if_due`, which first checks whether the merge settled. Target holds, control-path violations, ownership, uncommitted changes and original-commit ancestry remain independent merge guards. Missing automatic completion proof routes to review instead of deriving authority from HEAD.
 
 `loom stage merge <id>` retries allowed merge states through `merge_stage` with the gate enforced. Successful outcomes persist merge evidence; conflicts and typed blocks retain their recovery paths. The progressive completion and human-review paths preserve typed merge blocks. See [merge-and-recovery](../patterns/merge-and-recovery.md#merge-resolver-spawn-loop).
 
@@ -136,3 +123,11 @@ Operator progressive completion performs its merge before the final Completed tr
 ## A Resolver's Committed Content That Fails Completion
 
 A merge resolver cannot repair content its own merge commit made fail `verify_resolved_completion`: a Merge-scope commit needs the merge in progress, which the merge commit used up, and a Merge stage cannot dispute (`MergeConflict` reaches only `Completed` and `Blocked`, `models/stage/transitions.rs`). `merge_handler/resolver_handback.rs` therefore stops every resolver of the stage and requeues the stage so a fresh Stage session gets the refusal text (up to `MAX_MERGE_HANDBACKS` = 2; an approval zeroes the count; the refusal is cut at `MAX_REFUSAL_BYTES`). `MergeConflict` to `Queued` stays illegal: `Stage::try_hand_back_merge` (`models/stage/merge_block.rs`) steps through `Blocked`. The stage is held for the operator (`NeedsHumanReview`) instead when a resolver may still run, a live worker session exists, the stage used its handbacks, or the merge commit since `completed_commit` is missing. Every `Err` of `verify_resolved_completion` counts as a failure, transient ones included, on purpose: the fresh session verifies from scratch and the cap holds a repeating error. Past mistakes: [Planner UI Repair](../mistakes/planner-ui-repair.md#a-merge-resolver-could-not-land-a-merge-that-edited-an-accepted-test-file).
+
+## Post-completion plan commits
+
+The DONE rename is committed from an isolated index rooted at the observed target HEAD. The merge lock covers preparation, signed commit creation, compare-and-swap ref movement, index synchronization for the two owned plan paths, and exact-commit attestation. Other staged and unstaged paths remain operator-owned.
+
+## Legacy worktree cleanup API
+
+`fs::worktree_files` remains public for compatibility; its legacy cleanup operations and types are deprecated because they omit stage retirement duties including liveness, final relay drain, settings and memory handling. Session listing uses `fs::session_files` directly; the canonical session and stage lookup re-exports remain available. The legacy option to clean signals only applies when session cleanup is enabled; disabling stage archiving leaves the stage file in place.

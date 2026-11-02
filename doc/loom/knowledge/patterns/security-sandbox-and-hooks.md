@@ -17,7 +17,7 @@ Hook installation: scripts embedded via `include_str!()` in constants.rs, instal
 
 ## Security Patterns
 
-**Input validation**: `validate_id()` - alphanumeric + dash/underscore, max 128 chars, reserved names blocked. `safe_filename()` strips traversal. **Shell escaping**: `escape_shell_single_quote()` and `escape_applescript_string()` in emulator.rs. **Self-update**: minisign signature verification (50MB binary, 4KB sig), atomic install via temp->backup->rename->rollback. **Env var expansion**: positional replacement to handle overlapping names ($FOO vs $FOOBAR).
+**Input validation**: `validate_id()` - alphanumeric + dash/underscore, max 128 chars, reserved names blocked. `safe_filename()` strips traversal. **Shell escaping**: `escape_shell_single_quote()` and `escape_applescript_string()` in emulator.rs. **Self-update**: minisign signature verification (50MB binary, 4KB sig), then atomic replacement from a staged file on the destination filesystem; a failed replacement leaves the original in place. **Env var expansion**: positional replacement to handle overlapping names ($FOO vs $FOOBAR).
 
 ## Permission Sync Pattern
 
@@ -138,3 +138,7 @@ than writing its own walk of the same JSON shape. A visibility bump plus a re-ex
 a second copy that can drift from the first — see
 [Duplicated Extension-to-Language Table](../concerns/code-quality-and-hook-debt.md#duplicated-extension-to-language-table-2026-08-17)
 for what happens when nobody does this.
+
+## Atomic file publication
+
+`fs::safe_replace` publishes through a unique exclusive temporary file under an opened parent directory, syncs the file, then renames it. A directory-sync failure after rename is warned and reported as success because publication already occurred. Project-root replacements traverse from an anchored root; locked state writes retain their parent-directory lock across publication. Contract restoration replaces the target inode, while shared append and in-place writers validate the opened inode and retain their advisory-lock behavior.

@@ -26,14 +26,8 @@ verified: 499b09b6297aeee4896a66df3da86d00f652a618
 Found during the plan's stages and integration-verify, verified against the tree at this page's
 `verified` revision, and not fixed by the plan. Each names its owner.
 
-- **Git runner does not isolate git's environment.** `git_command` (`loom/src/git/runner.rs`)
-  sets `LC_ALL`/`LANG` and the replace-ref and graft shutoff but removes no `GIT_*` repository variable, so an inherited `GIT_DIR`, `GIT_WORK_TREE` or `GIT_INDEX_FILE`
-  redirects every loom git call, knowledge evidence freshness included, to another repository.
-  Owner: `git/runner.rs`; `env_remove` the `GIT_*` repository variables.
-- **`process::run_bounded_output` bounds time, not bytes.** Its reader threads `read_to_end` with
-  no cap (`loom/src/process/mod.rs::collect_output`), so callers' output limits (for example
-  `MAX_GIT_OUTPUT_BYTES` in `fs/knowledge/catalog/evidence.rs`) cap the accepted result, not peak
-  memory. Owner: `process/mod.rs`; read through `take(limit + 1)` and error over the limit.
+- **Git runner environment.** `git/runner.rs` removes inherited repository-selection variables before applying explicit per-call overrides; ordinary calls use the specified repository root.
+- **Bounded process output.** `process::run_bounded_output` caps retained bytes per stream, drains excess and reports overflow while retaining its deadline and process-group retirement behavior.
 - **Two atomic-write implementations for quota state.** History rewrites reuse
   `quota/cache.rs`'s `atomic_write` instead of `fs::locking::atomic_write_locked`, and
   `ensure_history_dir` (`loom/src/quota/history_store.rs`) checks for symlinks before
@@ -135,7 +129,7 @@ Open items from PLAN-token-flow; the design is in [token-flow-sources](../archit
 - The frozen contract `rate-is-five-minute-average` stays green under an 11-14 bucket rate window (the outside line sits at `now - 420 s`); `flow_build.rs` uses `RATE_BUCKETS` = 10 correctly. A contract revision should place the outside line in bucket 11 (a dispute, not an edit).
 - The contract `tracker-memo-keeps-work-roots-apart` stays green with the memo's `is_for` guard removed: its two fixtures differ in transcript paths and flow hash, so cross-root reuse is unobservable (`tokens/tracker.rs::scan_until`). The implementation is right; the contract is weak.
 - The contract `stage-chips-carry-trends` stays green when a chip draws an empty series, because an empty `Sparkline` still renders `role="img"`.
-- No test clicks Back to details in control mode (`web/src/components/stage-modal.test.tsx`).
+- `web/src/components/terminal/terminal-back.test.tsx` enters control mode and clicks Back to details, asserting that the terminal closes and stage details remain selected. `stage-modal.test.tsx` separately covers terminal and saved-history back navigation.
 - `quota/codex_tests.rs`: when `poll_once` fails early the pid-file watcher keeps polling for up to `REPLY_DEADLINE` (60 s) before the scope joins and the `expect` panics; a shared done flag would end the wait. The detached `std::thread::spawn` in `a_shutdown_flag_set_mid_exchange_returns_quickly` predates the scoped helpers.
 
 ### Proposals
@@ -182,12 +176,6 @@ Verified against the tree; each gap blocks or weakens a token-saving claim that 
   resolve a plausible saving. The offline comparison therefore lets an inconclusive subscription
   verdict stand beside a supported net-total verdict and keeps only a rejected one as a veto
   ([Offline Comparison](../architecture/token-accounting-and-receipts.md#offline-comparison-loom-usage---compare)).
-- **`exact_forward_argv` still rejects the 10-word forward.** `forward_jobs_transcript.rs`
-  (`loom subagents` classification) reads forwarder transcripts through `exact_forward_argv`,
-  which accepts only the 8-word wrapper argv, so a recorded forward carrying `--unit-id` is
-  invisible to it. The receipt writer uses the wider `forward_argv`
-  (`models/forward_receipt/transcript/argv.rs`); widening `exact_forward_argv` changes
-  `loom subagents` classification, so it was left alone.
 - **A "Full output saved to:" notice forms no receipt.** When Claude Code replaces a Bash result
   with that notice, the payload's stdout decodes as `Absent` (`marker.rs` needs the START marker
   on line 0), so `forward-receipt` writes nothing; `codex-forward-result.sh` handles the notice,
@@ -302,16 +290,13 @@ Open items from the plan's reviews, all small. The implemented ones are gone fro
   `repeated_set` duplicates `repeated_commands`.
 - **Duplicated helpers and test gaps.** `spawn_join.rs` reimplements `json_lines`,
   `stage_directories`, `plain_directory` and `MAX_LEDGER_BYTES` from `provider_data/ledger.rs`
-  (a third `json_lines` lives in `commands/status/data/execution_models.rs`), and
+  (a third `json_lines` lives in `status/data/execution_models.rs`), and
   `AMBIGUOUS_MODEL` is `pub(crate)` for a file-local use. No test pins `same_fact`'s comparison of `backend` and `backend_id` (dropping either passes). No test covers `receipt_matches` or the
   receipt side of `resolve_wait_codex_execution`, and the damaged-journal error does not name the
   receipts path. `discovery_tests.rs` pins `<slug>-other` but not `<slug>x--worktrees-y`. No test
   pins the stderr filtering of session-controlled names in `completeness.rs`, and `inline_safe`
   caps the whole enumeration diagnostic at 200 characters, which can elide a parse error tail.
-- **Replay harness.** `check_shape` compares asset paths as strings while `asset_paths()` sorts
-  `PathBuf`s component-wise, so a skill named `loom-md` beside `loom-md-tables` would fail the
-  self-check; no such pair exists. Signals render with the real `HOME` while `worker-brief` runs
-  with an isolated one, so developer-level config could shift byte counts between machines.
+- **Replay harness.** `asset_paths()` sorts by the rendered path string, matching `check_shape`. Signals still render with the real `HOME` while worker-brief runs with an isolated one, so developer-level configuration can shift byte counts between machines.
 
 ## Dependency Findings Follow-Ups
 

@@ -15,11 +15,11 @@ Everything shared lives in `loom/src/pressure/`: `models.rs` (`PressureModels::r
 
 ## The Record
 
-`finish_pipeline` renders a `RecordLine` (date, Claude model, one Codex model per round, rounds, rounds whose report was missing at `/address`) and `record::append_record` writes it BEFORE the final report deletion; the deletion runs whether or not the write succeeded and a write error wins over a cleanup error. The line is a list item `- YYYY-MM-DD: Claude <m>, Codex <m>; N round(s), review addressed` (or `Codex review missing in round 1, 2`). An empty Codex model renders as `unknown`.
+The pressure pipeline renders a `RecordLine` with date, model names, rounds and missing-review evidence, then calls `record::append_record` before deleting the final report. An empty Codex model renders as `unknown`.
 
-Placement (`append_to_text`, `record_offset`): after the last non-fenced `<!-- END loom METADATA` line, inside an existing `## Pressure tests` section after its last non-blank line, ending at the next `#`/`##` heading; without the section, a new `## Pressure tests` is appended at the end of the file. Fenced code never counts as a heading or a marker (`fence_mask`). CRLF text keeps CRLF.
+`append_to_text` preserves CRLF, places a record inside an existing unfenced `## Pressure tests` section before the next heading, or appends a new section. It uses the parsed metadata boundary, with a nonfenced marker fallback. The public text renderer preserves those placement rules.
 
-The write is a synced sibling temp file renamed over the plan, with the plan's mode kept: a no-follow bounded read (8 MiB cap), inode/device checks before the rename, and `RecordWrite::PlanMoved` (reported as `RecordSkipped`) when the plan is missing, replaced or a symlink. Temp+rename does not keep uid/gid, xattrs or ACLs and breaks hard links.
+File publication takes the stable per-plan lock also used by amendment and plan-server save. It reads a retained no-follow regular file with an 8 MiB cap and stages a synced sibling candidate. To avoid overwriting a noncooperating edit, it writes once with `O_APPEND` only if the renderer result extends the snapshot. An interior insertion, unsupported file mode or other unsafe case is refused before publication. The path and contents are checked again after writing; a conflict can leave a suffix or partial fragment and is reported for inspection, without destructive rollback.
 
 ## The Codex Half
 
@@ -39,4 +39,4 @@ Claude Code 2.1.312 writes an in-process teammate's transcript where it writes a
 
 ## Terminal Driver Behaviour
 
-`TerminalDriver` keeps `loom pressure`'s output as it was before the pipeline moved: a `Stopped` outcome is `Ok(())` with no completion lines, and stop reasons come from the terminal exit helpers (`spawn.rs::should_stop`, `claude_should_stop`). Codex fallback notes print after the foreground Claude session exits. `execute` resolves rounds with `resolve_rounds` and `render_dry_run` prints the planned steps from `plan_steps`. An `Err` from `run_claude_foreground` after Codex has spawned drops the `CodexRun` without terminating it (open).
+`TerminalDriver` keeps `loom pressure`'s output as it was before the pipeline moved: a `Stopped` outcome is `Ok(())` with no completion lines, and stop reasons come from the terminal exit helpers (`spawn.rs::should_stop`, `claude_should_stop`). Codex fallback notes print after the foreground Claude session exits. `execute` resolves rounds with `resolve_rounds` and `render_dry_run` prints the planned steps from `plan_steps`. A Codex attempt leads its own process group, so the terminal's SIGINT never reaches it. `retire_on_signal` holds a `CodexRetirement` (`pressure/codex_run/retirement.rs`) that signals every run started through it on a termination signal; the process exits 130 and refuses any further fallback or run. A SIGKILL of `loom` runs no handler and still leaves Codex running. A finished worker leaves no group to signal, and a group is dropped once `killpg(group, 0)` finds it empty, which narrows and does not close the window for a recycled group id; a straggler that outlives its worker is not killed by a later cancel.

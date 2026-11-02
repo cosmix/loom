@@ -341,3 +341,13 @@ One question catches the class: **was this path resolved through `main_project_r
 **Prevention:** Before a bulk edit of tracked files, compare git status with the session-start snapshot. If files changed that this session did not touch, run ListAgents and ask the peer session before editing. Re-check the match list right before the replace, never from an earlier grep.
 
 **Fix:** Stop editing, hand the rename to the owning session with the list of files touched, and leave the commit to it.
+
+## Repository-wide diff check in a shared checkout
+
+**What happened:** A `git diff --check` without paths reported whitespace from another agent’s edits during an RT-02 repair.
+
+**Why:** The check covered the shared checkout instead of the files owned by this task.
+
+**Prevention:** Scope diff checks to the paths edited by the current task, after inspecting their diff stat.
+
+**Fix:** Repeat any needed whitespace check with explicit paths and leave unrelated edits to their owners.

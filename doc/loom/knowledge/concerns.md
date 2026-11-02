@@ -23,13 +23,9 @@ Lower layers import from higher ones:
 
 ### Oversized Rust Units Remain Controlled Debt
 
-The maintainability gate does not yet prove every production Rust file is at most 400 lines or
-every function at most 50 lines; exceptions are tracked by exact identity and size in
-`loom/maintainability-baseline.txt` and pinned by `loom/tests/maintainability.rs`, which rejects
-new entries, growth of an existing entry, or a stale one, so the exception set can only shrink.
-This entry now also covers the wider code-quality/hook-debt cluster: duplicated
-extension-to-language tables, hook files over the 400-line cap, the
-`subagent-verify-guard.sh` raw-regex gap, and undelivered remote hooks.
+`loom/maintainability-baseline.txt` and `loom/tests/maintainability.rs` track exact Rust size exceptions and reject growth or stale entries; they do not establish universal compliance. Several shell hook owners also exceed the repository's 400-line limit.
+
+Extension-to-language lookup is shared; project manifest detection still has competing registries. The subagent verification hook uses a private command-position scanner, while its stage-type exemption scans whole Markdown. Remote hooks ship through the embedded binary's `install-assets` command.
 
 → [Code Quality and Hook Debt](concerns/code-quality-and-hook-debt.md)
 
@@ -90,11 +86,7 @@ grouped by area in the backlog.
 
 ## Platform, Commit-Relay and Stall Gaps
 
-Open items from the macOS, daemon-launch, daemon-owned-commit and stall-parking work: macOS CI gaps (hook
-stdin reads unbounded on stock macOS, no `ulimit -u` cap on hook steps), no automated test of the production daemon re-exec (only the operator's
-host smoke test covers it), sessions get no proxy, CA or `CLAUDE_CONFIG_DIR` variables, the commit relay's
-tick cost and `MERGE_HEAD` ancestor gap, the park-time login probe on the tick thread, and mistakes that
-recurred and want a check (the signal dropping `exit_code`, the watch exiting 6 after a hand-back, the watch exiting 5 for codex workers, reviewer rounds that are never recorded).
+Remaining platform/runtime questions include live macOS branch coverage, process limits on hook tests, full daemon re-exec coverage, intentionally filtered session environment, synchronous commit and login-probe costs, merge-side authorization, and status/watch evidence. Hook stdin reads use the portable bounded helper; separate direct-command timeout fallbacks remain. A dedicated Linux capsule step requires sandbox availability, while general test jobs can still skip capability-gated cases.
 
 → [Platform and Commit Gaps](concerns/platform-and-commit-gaps.md)
 
@@ -130,15 +122,6 @@ Two residuals in worktree cleanup: daemon cleanup can still race SessionEnd hook
 SIGTERM teardown window, and manual `loom stage complete` with no daemon running defers cleanup
 until the next recovery pass or an explicit `loom worktree remove`.
 
-## iTerm2 Windows Survive Stage Completion — Spawn Never Names the Window (GitHub #7)
-
-Teardown closes an iTerm2 window by title, but the spawn arm never names the window, so the close
-query matches nothing and only the `claude` process dies; the shell and window survive. A second
-defect in the same path: teardown addresses `tell application "iTerm2"` while the scriptable name is
-`iTerm`. Naming the window alone is not enough. Terminal.app is unverified (needs a macOS host).
-
-Full detail: [iterm2-window-teardown.md](concerns/iterm2-window-teardown.md).
-
 ## Guard Hooks: Four Design Questions Deliberately Left Open
 
 The adversarial review of the guard hooks left four behaviours unpatched pending a spec decision (the
@@ -159,11 +142,7 @@ Shared package-manager caches stay session-writable, so a stage can edit an extr
 
 ## Agent Rule-Bending Hardening
 
-Only the OS sandbox, the capsule denies and the daemon's ancestry checks carry authority. Eight
-gaps, led by text-matched commits, the whole git common directory writable from a stage (Claude
-Code's own grant; host git follows the agent's `.git` pointer; the merge gate fails open), no
-live proof that any denial holds, and a knowledge-file guard that gates tool names over a directory
-the sandbox grants to every stage (G8). No plan addresses G1-G3, G7's caches or G8.
+The OS sandbox, attached session capsule and daemon ancestry checks carry authority; hook command matching is best effort. Remaining questions concern broad git/cache/Codex write grants, native file-tool credential coverage, live enforcement probes and knowledge-result validation. The authoritative merge-stage control-path gate fails closed on a diff error; the early orchestrator filter can defer to it.
 
 → [Agent Rule-Bending Hardening](concerns/agent-rule-bending-hardening.md)
 
@@ -192,24 +171,11 @@ dispute covers loom's own gates, a deliberate block is never retried; proposed: 
 
 ## Sandbox Denial Is Unproven End to End
 
-The capsule's denies are proven on the emitted capsule and, in CI, under bubblewrap (sibling
-administrative directories, credential files); nothing in CI proves them against a live Claude Code
-runtime, and the srt stand-in misses the git-dir grant. The manual release checklist
-(`doc/sandbox-release-checklist.md`) is the only live check. Open: credential files outside the nine
-listed (and a checkout-rooted session's file tools, which no hook checks against them), sibling
-worktrees and the main checkout readable from Bash, refs and objects writable (ref denies
-unmeasured), the residuals of the sibling-directory denies (unregistered or later-registered
-worktrees, a rewritten `gitdir`), tools still allowed and unmeasured (`Monitor`, `EnterWorktree`,
-`ExitWorktree` and others), unconfined `loom knowledge bootstrap`, the codex lane's whole `~/.codex`
-grant, an inert credential-guard rule, three stage-env allowlists (sessions get no proxy, CA or
-`CLAUDE_CONFIG_DIR` names), and the `Read(...)` deny-rule ban, among others.
-"Tool Routes That Run Outside the Bash Sandbox" lists what the capsule denies (`LSP`,
-`RemoteTrigger`, `CronCreate`, `PushNotification`, and `Workflow` except in an ultracode Stage
-session) and what stays allowed (`WebFetch`, `WebSearch`, `SendMessage`, `ListAgents`, plugins).
-The sibling-directory residuals, the other open route-closure items and the unimplemented reviewer
-suggestions are in [Agent Rule-Bending Hardening](concerns/agent-rule-bending-hardening.md#sibling-directory-denies-residuals).
+CI proves selected emitted capsule denies under bubblewrap; it does not exercise a credentialed Claude Code session or every native tool route. The srt stand-in emulates the linked-worktree common-directory grant and built-in git denies. The release checklist (`doc/sandbox-release-checklist.md`) remains the live runtime check.
 
-→ [Sandbox and Confinement Gaps](concerns/sandbox-and-confinement-gaps.md)
+Open boundaries include native file-tool credential coverage in checkout-rooted sessions, broad git/common-cache/Codex grants, spawn-time sibling-directory enumeration, unmeasured tool routes, and bootstrap launches without the shared capsule. Codex AGENTS, prompts, catalog and Loom-installed skills are denied; remaining Codex state needs separate assessment. Preserve the ban on `Read(...)` permission denies and keep stage environment filtering explicit.
+
+→ [Sandbox and Confinement Gaps](concerns/sandbox-and-confinement-gaps.md), [Agent Rule-Bending Hardening](concerns/agent-rule-bending-hardening.md)
 
 ## Dependency Findings Follow-Ups
 
@@ -246,3 +212,9 @@ Open teardown, race, transcript-mapper, chat-wire and trust-entry items from the
 ## Plan Chat Follow-ups
 
 The chat plan left the live-session operator test unrun, a SHA-256 ref gap and git edge cases in the review server, reconnect, draft and layout-state defects in the chat model, accessibility notes, and a list of duplicated helpers and missing tests, each with its file. → [Plan Chat Follow-ups](concerns/plan-chat-followups.md) The planner UI repair left the Codex summary backend unrun live, raw server strings outside the Untrusted rule, duplicated helpers and unshot layout details. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md)
+
+## macOS Window Teardown Closes by Title and Is Unverified (GitHub #7)
+
+Teardown closes an iTerm2 or Terminal.app window by its title. The iTerm2 spawn arm names the window and spawn and teardown address the same application name, but no macOS run of the close is on record, and Terminal.app's displayed title may not match.
+
+Full detail: [iterm2-window-teardown.md](concerns/iterm2-window-teardown.md).

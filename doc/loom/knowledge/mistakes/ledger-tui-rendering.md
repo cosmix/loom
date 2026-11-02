@@ -58,7 +58,7 @@ WRITTEN, not just where it is declared. A field credited at the end of a unit of
 for the whole of that work, and an `Option` fallback chain rescues nothing when the frozen value is
 `Some(0)`.
 
-**Fix:** `loom/src/commands/status/data/timing.rs` — `execution_secs_live` adds the in-flight
+**Fix:** `loom/src/status/data/timing.rs` — `execution_secs_live` adds the in-flight
 attempt (`now - attempt_started_at`, falling back to `started_at`) on top of the banked total, for
 `Executing` stages only, and `build_stage_summary` calls it, so every status surface fed by
 `collect_status_data` ticks.

@@ -195,3 +195,11 @@ A failure while `memory/` holds a `*.md` journal (or `memory/` cannot be listed)
 `loom init --clean` stop before removing the state directory. A failure with telemetry
 only prints a warning and returns `Ok(None)`. Under the daemon, `finish_orchestration`
 only logs the archive error (open gap in `concerns/merge-and-recovery-edge-cases.md`).
+
+## Inbox ledger recovery and retention
+
+The inbox ledger keeps every request record for the session lifetime because relay replay remains possible. Reads stream records with a per-line size bound rather than a total ledger-size bound. Readers take a shared file lock; appenders hold the exclusive lock while validating the same regular, single-link descriptor, removing a malformed final suffix, appending, and syncing. Interior corruption fails closed. A complete final record lacking a newline is retained and separated before the next append.
+
+## Memory entry admission
+
+`MemoryEntry::validate` is the shared admission check for journal append, spool append and relay delivery. It enforces event ids, receipt shape and journal round-trip of content and receipt fields, alongside the existing content, context and evidence bounds. Invalid spooled entries are skipped; journal I/O failures remain retryable. The journal parser continues to tolerate malformed historical entries.

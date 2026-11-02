@@ -108,3 +108,27 @@ include `INDEX.md` in it.
 **Prevention:** Pass knowledge prose through single-quoted shell arguments with embedded apostrophes escaped; never rely on JavaScript escaping for shell quoting.
 
 **Fix:** Replace the damaged section using a properly quoted argument.
+
+## Leading-dash section bodies need an option terminator
+
+**What happened:** a section replacement failed because a Markdown bullet body began with `-` and was parsed as an option.
+
+**Why:** positional content was passed without the CLI option terminator.
+
+**Prevention:** put `--` before arbitrary positional Markdown bodies in knowledge CLI calls.
+
+**Fix:** pass the replacement body after `--`; the failed invocation made no content change.
+
+## Validate knowledge reference classification after edits
+
+**What happened:** knowledge validation flagged a bare runtime request filename as a missing source file and rejected a link outside the knowledge corpus even though its repository target exists. **Why:** reference classification depends on explicit runtime path context and the checker’s link scope. **Prevention:** use full runtime path templates and unambiguous repository references, then validate the changed knowledge. **Fix:** identify the dispute request by its runtime template and name the release checklist by its repository path.
+
+## Pass option terminator before section bodies
+
+**What happened:** A section replacement whose body began with a Markdown bullet was rejected as an option.
+
+**Why:** The CLI parsed the leading hyphen as an argument flag.
+
+**Prevention:** Pass `--` before a positional section body that may begin with a hyphen.
+
+**Fix:** Retry the replacement with the option terminator.

@@ -48,7 +48,9 @@
 - `orchestrator/monitor/detection.rs` - Stage/session state change detection, budget checks
 - `orchestrator/monitor/heartbeat.rs` - Hung detection (300s timeout)
 - `orchestrator/monitor/context.rs` - `context_health(tokens, ceiling)`: Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved absolute `context_ceiling_tokens` (not a fixed 200k window — see architecture.md "Context Budget Enforcement")
-- `orchestrator/monitor/failure_tracking.rs` - Consecutive failure escalation
+- `orchestrator/monitor/crash_redelivery.rs` - Delivers a reported crash again until its stage has moved on, with doubling waits
+- `orchestrator/monitor/foreground.rs`, `foreground_progress.rs` - Bounded foreground work evidence, shared by stall decisions and the activity badge
+- `orchestrator/monitor/direct_worker.rs` - Host-observed progress of an authorized direct Codex worker
 
 ## Signal System
 
@@ -202,13 +204,13 @@ The legacy `ToolEvent` reader remains able to consume an older `.loom/work/tool-
 ## Status Command (commands/status/)
 
 - `commands/status.rs` - Entry point; dispatches to 3 modes
-- `commands/status/data/collector.rs` - `collect_status_data()` — loads stages, sessions, plan into `StatusData` (module root `commands/status/data/mod.rs` re-exports it)
+- `status/data/collector.rs` - `collect_status_data()` — loads stages, sessions, plan into `StatusData` (module root `status/data/mod.rs` re-exports it)
 - `commands/status/render/` - Renderers: `render_progress()`, `render_graph()`, `render_merge_status()`, `render_compact()`, `render_attention()`
 - `commands/status/ui/` - TUI for `--live` mode (subscribes to daemon via IPC); entry point `commands/status/ui/tui/mod.rs` (`run_tui`)
 - `commands/status/diagnostics.rs` - `check_directory_structure()`, `check_parsing_errors()` for `loom status validate` / `doctor`
 - `commands/status/display/mod.rs` - `count_files()` helper
 - `commands/status/merge_status.rs` - Merge section data
-- `commands/status/validation.rs` - `validate_markdown_files()`, `validate_references()`
+- `commands/status/validation.rs` - `validate_markdown_files()`
 
 **3 display modes:**
 
@@ -227,7 +229,7 @@ The legacy `ToolEvent` reader remains able to consume an older `.loom/work/tool-
 - `loom/src/tokens/pass_memo.rs` - `PassMemo`: what a pass reuses from the last (checkpoint, unchanged flow, quota time left)
 - `loom/src/tokens/discover.rs`, `tail.rs`, `accumulate.rs`, `claude_line.rs`, `codex_line.rs` - sources, incremental reads, dedupe, line parsers
 - `loom/src/tokens/flow_build.rs`, `quota_left.rs`, `quota_points.rs`, `checkpoint.rs` - buckets to rates and series, time-left estimate, restart state
-- `loom/src/commands/status/data/sanitize_token_flow.rs` - collector-side hygiene of the flow
+- `loom/src/status/data/sanitize_token_flow.rs` - collector-side hygiene of the flow
 - `loom/src/commands/status/ui/tui/ledger/tokens_pane.rs`, `tokens_models.rs`, `layout_tokens.rs` - the `t` pane, its by-model block and the row budget
 - `web/src/lib/tokens.ts`, `web/src/components/token-flow-panel.tsx`, `token-models.tsx`, `stage-tokens.tsx`, `graph/node-tokens.tsx` - web helpers and surfaces
 
