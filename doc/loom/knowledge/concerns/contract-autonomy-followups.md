@@ -17,17 +17,15 @@ The chain check proves which file rustc compiles under a contract's test name, n
 - A `cfg_attr` in any chain file, crate root included, is refused (`#![cfg_attr(not(test), no_std)]`, `#![cfg_attr(docsrs, ..)]`); the plan-writer skill documents the `tests/` workaround. Consider allowing a predicate that does not mention `test`.
 - `harness.rs::is_production_source` `is_production_source` calls the test_support.rs and conftest.py helpers production source, so the harness warning is wrong for them (warn-only).
 - `collection/mod.rs` `within()` silently drops scaffold edits outside `working_dir`, so the writer cannot satisfy the chain check and the refusal does not say why; `read_base` returns a base symlink's target text as file content while the worktree reader refuses symlinks.
-- `changes.rs::changed_paths` `changed_paths` applies `listed_name` before dropping worktree-scaffold paths, while `harness_files` drops them first (line 202): an odd name under scaffolding would block a freeze; nothing pins the scaffold-first order of `listed_unless_scaffold`.
+- `changes.rs::changed_paths` uses `listed_unless_scaffold`, which removes worktree scaffolding before `listed_name` validates the remaining paths. Odd scaffold names do not block a freeze.
 - `verify/contracts/completion.rs::run_contract` re-detects the adapter with `resolve_adapter` for `resolve_run` and `judge`, while `is_rust` uses the recorded one. Resolve once, recorded first, and share it.
 
 ## Freeze-Refusal Filing Gaps
 
-- `stage_service/dispute_kinds.rs::file_dispute_inner`: any `confirm()` error, I/O from `load_session_exact`/`load_freeze` included, becomes `Response::Error`, which `file_freeze_refusal` maps to `Declined`, and the tick marks the record declined for good. The pinned API reserves `Declined` for admission refusals and `Err` for I/O failure.
 - `orchestrator/core/event_handler/freeze_refusal.rs::dispute_refused_freezes_at`: a persistently failing filing is retried every tick with one warn per key and no counter; only the hung-session watchdog ends it. Consider a bounded attempt count.
 - `orchestrator/core/event_handler/freeze_refusal.rs::standing_refusal`: a record marked declined is returned early for the same session, so a later local refusal by that writer is never recorded or filed; only a stderr line reports the decline.
 - `orchestrator/core/event_handler/freeze_refusal.rs::file_refusal`: `escalate_refused_freezes` prints its own REVIEW NEEDED line, and in daemon mode the monitor's `StageNeedsHumanReview` event prints it again and sends the desktop notification.
 - `orchestrator/core/event_handler/freeze_refusal.rs::note_child_disposition`: the `freeze-refusal-children` key of a writer whose children stay Unknown is never removed once the writer is replaced (one string per such writer; clear by stage prefix if it ever matters).
-- `commands/stage/human_review.rs::handle_approve`: `handle_approve` resets the contract respawn budget but not `tally.freeze_refusal_disputes`, so after the fourth-refusal escalation an approved stage's fresh writer escalates on its first refusal.
 - `host_verify/freeze.rs::apply_passed`: a capture failure after a passing run (a harness-matching file with a control character created after the run) is filed as `infrastructure:`; the rerun hits the CLI pre-check with the real reason, at the cost of one budget slot.
 - `orchestrator/signals/contract.rs::generate_contract_signal`: the contract signal embeds the adjudication feedback file whenever it exists and only the next adjudication apply clears it, so after `loom stage reset` a re-entered contract phase shows the earlier run's notice.
 - `verify/contracts/refusal.rs` `Standing` has two variants (`Other`, `Frozen`) and works as a bool; `REFUSAL_FILE` is `pub` but used only inside the module (the hook mirrors the name in shell). `loom-hooks/commit-guard.sh::remind_contract_freeze` hard-codes "quiet for 5 minutes" while the rule is `REFUSAL_QUIET_SECS = 300`; nothing keeps them in step.
@@ -42,7 +40,7 @@ The chain check proves which file rustc compiles under a contract's test name, n
 - `orchestrator/adjudication/prompt/freeze_refusal_evidence.rs::fenced` re-implements `context::render::fence_for` and can emit a 4+ backtick fence that `prompt/truncate.rs::halve_section` (lines 62-76) does not handle; `halve_section` also finds its heading with `evidence.find(header)`, so a heading string inside an earlier writer-controlled fence makes an over-budget prompt shrink the wrong section (evidence loss, not label forgery).
 - `apply_freeze_refusal.rs::amendment_line` repeats `apply_accept::field_name`; `scaffold_line` reaches the file through a three-hop re-export (`signals/mod.rs`, `prompt/freeze_refusal.rs`, `orchestrator/adjudication/prompt.rs`).
 - Duplicated predicates that can drift: `stage_service/contracts.rs::check_changes` allowed-path rule (`is_contract_or_harness || scaffold.paths.contains`) repeated in `commands/stage/contracts/freeze.rs::check_changes` and `prompt/freeze_refusal_evidence.rs::recheck_section` (a `ScaffoldCheck::allows` would end it); `verify/contracts/completion.rs::collection_problems` `collection_problems` duplicates `StageTree::chain_problems`, and the prefix join and "adapter language is rust" test are repeated in `v2_lints/contracts.rs` (`join()` duplicates `collection::rust::join`) and `collection/mod.rs`; `commands/subagents/wait/codex_binding.rs::receipt_matches` repeats the receipt-to-`CodexExecution` mapping of `codex_lifecycle/direct.rs::direct_observation`.
-- Newline splitting of error text: `fs/safe_fs.rs::portable_open_walk` and `fs/safe_fs.rs::validate_relpath` interpolate raw or lossy components into errors that `problem_lines` splits on newlines (needs macOS or an old kernel plus a mid-walk swap; same class as accepted git stderr in daemon `Response::Error` text; escaping with `special_walk::escaped` would close it).
+- Newline splitting of error text: `fs/safe_fs.rs::portable_open_walk` escapes component bytes with `escape_ascii`, so that branch does not inject filename newlines into refusal problems. `validate_relpath` still interpolates the displayed path in validation errors; assess its callers separately before treating all safe-fs diagnostics as escaped.
 
 ## Contract Autonomy Test Gaps
 
@@ -54,8 +52,8 @@ The chain check proves which file rustc compiles under a contract's test name, n
 
 ## Codex Direct-Mode Follow-Ups
 
-- Token discovery (`codex_lifecycle/token_threads.rs::authorized_threads`, used by `tokens/discover.rs`) finds codex threads only through companion jobs, so direct forwards contribute no token threads.
-- Inside the 600 s receipt window, a `locate_job` error (ambiguous job, binding mismatch) reports Active instead of Unknown at once; telling them apart needs a typed error from `codex_lifecycle/jobs.rs`.
+- Token discovery (`codex_lifecycle/token_threads.rs::authorized_threads`) obtains authorization-correlated threads through companion jobs. `tokens/discover.rs::stage_threads` separately reads retained forward receipts, which can name direct-mode threads. A direct forward without a retained thread-bearing receipt has no companion discovery fallback.
+- Inside the 1560 s receipt window, a `locate_job` error (ambiguous job, binding mismatch) reports Active instead of Unknown at once; telling them apart needs a typed error from `codex_lifecycle/jobs.rs`.
 - A damaged receipt journal marks every authorization in the stage Unknown, companion rows whose job is healthy included (consistent with `commands/subagents/wait/codex_binding.rs::receipt_matches`); a companion row could still be classified from its job.
 
 ## Relayed Commands Run in the Background Again

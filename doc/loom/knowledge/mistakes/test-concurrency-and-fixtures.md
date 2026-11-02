@@ -351,10 +351,40 @@ expects to expire stays short. Reproduce a timing failure by looping the test un
 
 ## Stage event test setup used a create-only writer
 
-**What happened:** The contract handoff regression test called `save_stage` on an already seeded stage and failed with `Stage already exists`.
+**What happened:** A merge-resolver regression fixture called `save_stage` on an already seeded stage. A follow-up replacement changed the shared fixture instead of the intended test call. A later merge-outcome patch again selected an earlier matching call instead of its outcome arm; both misapplied edits were corrected.
 
-**Why:** The fixture assumed `save_stage` overwrites; the persistence API routes it through create-only semantics.
+**Why:** `save_stage` is create-only, and patches without enough enclosing context can select the first repeated call.
 
-**Prevention:** Create fixtures in their intended initial status, or use `update_stage` for mutations.
+**Prevention:** Create fixtures once, use `update_stage` for later changes, and anchor repeated-call edits to their enclosing function or match arm; inspect the affected occurrences immediately.
 
-**Fix:** Construct the queued fixture directly and call `create_stage` once.
+**Fix:** Restored stage creation, updated the typed-block test, and applied the review route only to the intended outcome.
+
+## Assert the sanitizer’s actual replacement characters
+
+**What happened:** The excerpt rendering regression expected spaces for terminal control bytes, although the shared sanitizer replaces them with U+FFFD.
+
+**Why:** The expected output was written without checking the sanitizer contract.
+
+**Prevention:** Read the shared sanitizer behavior before asserting exact rendered bytes.
+
+**Fix:** Expect U+FFFD for control bytes and a space for bidi controls.
+
+## Test compilation raced an incomplete module edit
+
+**What happened:** A focused Cargo test compiled a new module declaration before its test file was created, and failed with a missing file error.
+
+**Why:** Editing continued while a test waited on the shared build lock.
+
+**Prevention:** Finish dependent file edits before starting or queuing a Cargo test.
+
+**Fix:** Complete the module files and rerun the focused test.
+
+## Direct test binary ran without its writable temporary directory
+
+**What happened:** Running a Cargo-built test binary directly selected an overly broad test filter and failed many tests when /tmp was read-only.
+
+**Why:** Bypassing Cargo also bypassed the approved command environment, and the filter matched unrelated tests.
+
+**Prevention:** Use a writable workspace TMPDIR and fully qualified test filters for direct test binaries.
+
+**Fix:** Rerun only the intended tests with workspace-backed temporary storage.

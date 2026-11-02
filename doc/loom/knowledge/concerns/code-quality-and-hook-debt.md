@@ -25,58 +25,23 @@ or Go subagent is shown a Rust example. `loom-hooks/subagent-verify-guard.sh` is
 (591 lines). The fix is to append language-specific examples **after** the pinned block as
 explicitly hook-local guidance, the same way the `BLOCKED:` framing line already sits outside it.
 
-## `subagent-verify-guard.sh` Still Regexes Raw Command Strings
+## Subagent verification keeps a private shell scanner
 
-It is the last hook that matches patterns against the raw command string, so it still cannot tell
-an argument's _value_ from an argument's _mention_: text quoted inside a command is scanned as if
-it were shell. The shared `loom_tokens_*` helpers it needs already exist in `loom-hooks/_common.sh`.
+`subagent-verify-guard.sh` strips embedded content before scanning (`STRIPPED`, lines 136-141), normalizes shell separators, and examines command-position tokens with quote tracking (lines 528-563). Its private whitespace splitter still is not a complete shell parser; review quoted separators, wrappers, substitutions and scoped-runner options with differential adversarial fixtures before replacing it. The stage-type exemption separately greps the entire stage Markdown (`stage_declares`, lines 129-131), so it should use frontmatter-only state. Shared token helpers alone do not establish shell equivalence.
 
-It was left for last because its failure direction is the mild one — it blocks project-wide
-build/test/lint runs by subagents, so a false positive strands a subagent rather than admitting a
-dangerous command. That is a reason to do it last, not a reason it is safe.
-
-**Converting the fifth hook is not a mechanical edit.** The 2026-08-26 conversion of three hooks
-opened seven bypasses that the raw regexes had blocked, all found only by adversarial probing
-against the OLD pattern — a fully green suite showed nothing. Read
-`mistakes/shell-command-matchers.md` § "Converting a Raw-String Matcher to Token Scanning
-Silently Narrows It" before starting, and budget for the differential testing it describes.
-
-## Seven Hook Files Exceed Rule 17's 400-Line Cap
+## Hook responsibility boundaries and file sizes
 
 Several shell hooks exceed the repository file-size limit. Refactor by responsibility while preserving shell sourcing order and hook registration.
 
-- `loom-hooks/_common.sh` 1665 lines
-- `loom-hooks/commit-guard.sh` 606 lines
+- `loom-hooks/_common.sh` 1728 lines
+- `loom-hooks/commit-guard.sh` 589 lines
 - `loom-hooks/subagent-verify-guard.sh` 591 lines
 - `loom-hooks/credential-guard.sh` 570 lines
 - `loom-hooks/commit-filter.sh` 487 lines
-- `loom-hooks/codex-forward.sh` 406 lines
+- `loom-hooks/codex-forward.sh` 407 lines
 - `loom-hooks/prefer-modern-tools.sh` 402 lines
 
 `loom/src/fs/permissions/constants.rs` embeds hook sources and lists `LOOM_HOOKS`; the hook configuration builder registers invoked hooks, and asset tests check installed inventory. `install.sh` invokes the binary asset installer and has no duplicated `all_hooks` arrays. Add a new embedded helper to the inventory, and register it as an event hook only if it is invoked directly.
-
-## Duplicated Manifest-to-Language Tables
-
-File extensions have one table: `context/extract/dialect.rs::DIALECTS`. `language.rs::language_for_path`
-and `context/extract/lexical.rs::language_for_path` both derive from `dialect_for_path`, and
-`language/tests.rs` asserts every `DIALECTS` extension maps to a `DetectedLanguage`.
-
-Manifest files still have two tables that nothing pins together:
-
-- `language.rs::detect_project_languages` feeds `DetectedLanguage` (the orchestrator's fallback skill
-  recommendations and the `loom init` sandbox-domain suggestions).
-- `skills/project/markers.rs::FILE_MARKERS` plus its probes decide project kinds for `loom project detect`,
-  runner selection and package skills.
-
-They disagree today: markers counts a `package.json` with a `typescript` dependency as TypeScript while
-`language.rs` needs `tsconfig.json`; markers maps `build.gradle.kts` to `kotlin` while `language.rs` maps it to
-Java; `language.rs` takes `meson.build`, `conanfile.*` and `vcpkg.json` as C++ while markers takes only
-`CMakeLists.txt`; markers has kinds (`kotlin`, `scala`, `swift`, `elixir`, `dart`) with no `DetectedLanguage`
-variant.
-
-**Failure mode:** a project gets one language from `loom project detect` and another from the stage signal's
-fallback recommendations. **Fix:** derive `detect_project_languages` from the markers probe, or move both onto
-one manifest table.
 
 ## Low-Severity Cleanups Deferred From the Verification Gate
 
@@ -86,14 +51,11 @@ one manifest table.
   delivery records under a different namespace than the graph overlay and dirty paths. Route
   all three through one derivation.
 
-## Telemetry Under-Reports the Failures It Exists to Measure
+## Context Telemetry Delivery Evidence
 
-`orchestrator/core/stage_telemetry.rs::record_context_telemetry` calls `.ok()` on
-`load_deliveries`, collapsing a genuine I/O error into the same
-`ContextUnavailable { reason: "no delivery record for this session" }` as a real
-miss. The file exists to measure how often stages spawn without a context brief, so
-folding read failures into "no record" under-reports precisely the failures it is
-for. **Fix:** give the error branch its own reason string.
+`orchestrator/core/stage_telemetry.rs::record_context_telemetry` uses the strict delivery
+observer to distinguish an absent record from an unreadable or corrupt ledger. The ordinary
+retrieval loader remains tolerant; the observer treats any corrupt ledger row as unavailable.
 
 ## `git/worktree/settings.rs` Is Over the File Cap
 
@@ -108,18 +70,16 @@ that grows it (see `mistakes/testing-and-lint.md`).
 ## Ledger TUI: Tech Debt From the Live-Ledger-Dashboard Plan
 
 - **`StageSummary.session_backend` has no Rust reader.** Populated by `build_stage_summary`
-  (`commands/status/data/collector.rs`, from `session.backend`), but no ledger column, static
+  (`status/data/collector.rs`, from `session.backend`), but no ledger column, static
   renderer line, or attention entry reads it; every other Rust occurrence is a test-fixture struct
   literal. Its only reader is the web stage page (`web/src/routes/stage.tsx`), which shows the
   `loom run --backend tmux` command when the backend is `native`. Either give the ledger a BACKEND
   cell or accept the web as the sole consumer.
-- **`render_context_bar` (`commands/status/render/progress.rs::render_context_bar`, re-exported at `commands/status/render/mod.rs`) is dead**, with
-  no caller anywhere in the tree — `commands/status/ui/tui/ledger/cells.rs::tokens_cell` independently reimplements the
-  same five-cell bar with the same characters. Also apparently unused: `pub use theme::{StatusColors,
+- **Apparently unused:** `pub use theme::{StatusColors,
 Theme}` (`commands/status/ui/mod.rs`, every consumer imports `ui::theme::Theme` directly) and `pub use
 app::TuiApp` (`commands/status/ui/tui/mod.rs`, used only by `run_tui` in the same file).
 - **The stage-id path-component check exists in several independent forms.** Rust
-  `commands/status/data/sanitize.rs::valid_stage_id` (used by `execution_models_for_stage`) rejects `.`, any `..`
+  `status/data/sanitize.rs::valid_stage_id` (used by `execution_models_for_stage`) rejects `.`, any `..`
   and characters outside `[A-Za-z0-9._-]`; `commands/memory/handlers/work_dir.rs::validate_stage_id` rejects only
   path separators and `..` (a lone `.` passes); the shell writers use a leading-alphanumeric regex
   (`loom-hooks/codex-forward.sh`, `codex-forward-guard.sh`, `_read_discipline.sh`) or an explicit `.`/`..` case
@@ -127,12 +87,12 @@ app::TuiApp` (`commands/status/ui/tui/mod.rs`, used only by `run_tui` in the sam
   shared helper.
 - **Model-name display normalization (strip `claude-` prefix, strip trailing `-YYYYMMDD`) is
   implemented twice**: `commands/subagents/table.rs::display_model`/`strip_date_suffix` and
-  `commands/status/data/execution_models.rs::normalize_model`. The status/ copy was written
+  `status/data/execution_models.rs::normalize_model`. The status/ copy was written
   independently because `commands/subagents/table.rs` sits outside the payload-parity stage's declared files. Worth
   collapsing into one shared helper in a stage that owns both paths.
-- **`commands/status/ui/tui/app.rs` is pinned at exactly the 400-line file cap** after this plan's fixes (doc comment,
-  reconnect retry loop + constants). Any future addition must trim an equal number of lines elsewhere
-  or move content into `commands/status/ui/tui/app_tests.rs`. Relatedly, `TuiApp::reconnect_after_read_error` cannot get a
+- **`commands/status/ui/tui/app.rs` is below the 400-line file cap.** Its live daemon reader keeps partial frames
+  across idle polls in `daemon/wire.rs`; focused split-frame tests live in `daemon/wire_response_frame_tests.rs`.
+  `TuiApp::reconnect_after_read_error` cannot get a
   narrow unit test without mocking a live Unix socket plus a real
   `Terminal<CrosstermBackend<Stdout>>` — `TuiApp` owns both directly with no trait seam — so it is
   covered only by the full build.
@@ -142,16 +102,15 @@ app::TuiApp` (`commands/status/ui/tui/mod.rs`, used only by `run_tui` in the sam
 
 ## Efficiency-Plan Debt: Hook File Size, Unwired False Positives, Baseline Pressure, Criterion Rendering
 
-- **`loom-hooks/commit-filter.sh` is 494 lines** (491 before the hook-guards stage added one attribution sentence).
-  Rule 17's 400-line file cap is not enforced for `loom-hooks/*.sh`: `loom/tests/maintainability.rs`'s scanner walks
+- **`loom-hooks/commit-filter.sh` is 487 lines**.
+  The repository's 400-line file cap is not enforced for `loom-hooks/*.sh`: `loom/tests/maintainability.rs`'s scanner walks
   only the loom crate's `build`, `src` and `tests` Rust files, so no gate sees hook scripts. A refactor stage should
   either split the script or extend the scanner to hooks.
-- **The stage-completion unwired-file detector does not follow `#[path]` test modules.** It flagged
-  `commands/knowledge/tests_check_baseline.rs` as unwired although `orchestrator/core/inbox_drain/check.rs::a_head_that_is_not_the_checkouts_is_refused` compiles it through
-  `#[path = "tests_check_baseline.rs"] mod`; `signals/generate_declared_skills_tests.rs` and
-  `generate_missing_allow_write_tests.rs` are wired the same way from `orchestrator/signals/generate.rs::append_stage_feedback`. The detector
-  (`verify/wiring_detection.rs`) greps for the file's importable name, so a `#[path]` include declared outside a
-  `mod.rs` reads as unreferenced. Teach it the attribute or accept the false positive knowingly.
+- **The stage-completion unwired-file detector uses the resolved source graph.**
+  `verify/wiring_detection.rs:37-115` inspects resolved edges, marks missing or incomplete graph
+  evidence uncertain, and excludes conventional test paths. `#[path]` support depends on graph
+  extraction and resolution; any remaining false positive needs a current fixture with its graph
+  evidence. It is not a grep of importable names in `mod.rs`.
 - **Every new `Stage` field costs a baseline line.** `Stage::default` (`models/stage/defaults.rs`) is the single
   exhaustive literal and its `loom/maintainability-baseline.txt` entry (`function src/models/stage/defaults.rs default 76`)
   is exact; the next field needs a field-grouping refactor (nested structs) rather than another raise.
@@ -205,7 +164,7 @@ node is already terminal.
 
 ## Pinned Git Gitlink Route Is Unverified
 
-- `loom/src/git/worktree/pinned.rs::run`: a pinned `git status` or `git diff` runs `git status --porcelain=2` inside a gitlink (160000) entry, using the nested repo config, so a `filter.<name>.clean` there could run outside the sandbox. Not reproduced. Probe: add a gitlink to a stage index and check for a marker file.
+The route is closed in the runner and has its fixtures: `without_gitlink_recursion` (`git/runner.rs`) adds `--ignore-submodules=dirty` behind every global option form, so a pinned or unpinned `git status` or `git diff` starts nothing inside a gitlink (`git/runner/tests.rs`, `git/runner/global_option_tests.rs`). `git stash create` and `git stash push` have no such option, so `git/merge/checkout_stash.rs` avoids them. The cost: uncommitted content inside a gitlink no longer shows in `status`, `diff` or the completion check; a moved gitlink commit still shows.
 
 ## Observer Source Uses Path-Only Locate
 

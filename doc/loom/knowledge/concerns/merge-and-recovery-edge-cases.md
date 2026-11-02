@@ -84,21 +84,9 @@ A retry after a successful archive whose DONE rename then failed writes another 
 
 **Hardening path:** Tag base merges explicitly via session metadata (e.g., a marker file or distinct `SessionType::BaseConflict` always present during the base-merge window) and key the carve-out off that signal alone, not the current branch name. Until then, the heuristic is documented here so future work knows where to look.
 
-## Recovery: `retry --force` races daemon orphan-recovery on existing worktree
+## Retry session identity and startup recovery
 
-**Observed:** `loom stage retry --force --context "..."` correctly set `integration-verify` to `Queued`, but on the next daemon poll the orphan-recovery routine in `orchestrator/core/orphan_adoption.rs::route_orphaned_stage` saw the (now-stale) session_id, found commits-ahead-of-base on the worktree branch, and immediately re-routed the stage to `NeedsHandoff` (commits_ahead path in `route_orphaned_stage`). To the user, the stage looked stuck — they typed `retry`, it was ready for a second, then back to a handoff state with no agent activity.
-
-This is a logically defensible design (commits exist, don't burn tokens redoing them), but the user-visible interaction is confusing. The "fix" — using `retry --force` a _second_ time after acknowledging the handoff — is undocumented in the recovery flow.
-
-**What's needed (pick one or both):**
-
-- `retry --force` should clear `stage.session` before saving, so subsequent orphan recovery doesn't treat the prior session as live and doesn't rerun its decision tree.
-- Orphan-recovery should respect a recently-saved "retry intent" marker (e.g., a timestamp on the stage indicating user-driven retry within the last poll interval) and skip its commits-ahead reroute for those.
-
-**Where to look:**
-
-- `commands/stage/skip_retry.rs` (`retry` sets Queued but leaves `stage.session` populated)
-- `orchestrator/core/orphan_adoption.rs::route_orphaned_stage` (the orphan-recovery decision tree that re-routes to `NeedsHandoff`) and `orchestrator/core/recovery_sessions.rs`
+Explicit retry clears the previous session pointer on the simple path (`commands/stage/skip_retry.rs:236-243`). A retry with recovery context assigns a new session id (`:216`); `apply_retry_delta` persists the planned identity under the stages lock (`:313-336`). Orphan adoption runs at startup (`orchestrator/core/run.rs:70`). Any residual recovery issue requires a trace distinguishing the context path from the simple retry path.
 
 ## Status Dashboard: `started_at` not refreshed on retry, stage appears "stale/orphaned"
 

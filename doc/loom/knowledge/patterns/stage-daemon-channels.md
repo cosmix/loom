@@ -66,10 +66,7 @@ too).
 new sandbox grant is needed, and the daemon drains it from `orchestrator/core/spool_drain.rs` on its
 poll loop.
 
-**The payload carries no stage id and no session id, on purpose.** Attribution comes from WHICH
-WORKTREE the daemon drained the entry from: a worktree agent cannot write outside its own worktree,
-and a field it wrote would be forgeable. That is what replaces peer identity when there is no
-connection to identify.
+**The worktree identifies the stage; the envelope carries the session id.** The daemon checks the session against the freshly locked stage before applying the request. Legacy records without a session id are discarded, so a previous attempt cannot control a later one.
 
 **The guarantee holds only against worktree agents.** Main-checkout sessions
 (Knowledge, Merge, Adjudication) run with the whole checkout writable, every
@@ -80,7 +77,7 @@ attributes to another stage. Closing that is part of the pending `.loom` confine
 Two rules the drain depends on:
 
 - **Apply through the daemon's own handlers**, not a second implementation. A spooled block calls
-  the same `handle_agent_block_stage` the RPC calls for a request naming a session (refused while
+  the same `handle_agent_block_for_session` the RPC calls for a request naming a session (refused while
   the session's latest trusted completion checkpoint shows a failing criterion), so the id allocation, the `validate_id` guard, the
   dispute budget and every refusal message cannot drift between the two ways a request arrives.
 - **A refusal is counted, never returned as `Err`.** An `Err` from the sink stops the spool being
@@ -166,11 +163,7 @@ A `complete` call that follows a passing run waits for the daemon's application,
 appears for it. A session that cannot relay (no `LOOM_SCRATCH_DIR`) is refused; the operator's shell
 completes locally.
 
-**Known limit.** `wait_or_request` writes the `requested` lines before the emit closure runs. If the
-emit then fails, the call prints `Host job: refused` after them, so a call can open with `requested`
-and end with `refused`. The test that pins the order (`host_verify/tests_wait.rs`,
-`with_no_state_the_request_lines_print_before_the_relay_runs`) must change before the order can
-change. Revisit when the relay sink can fail before the first line is written.
+The relay request is formed first, followed by atomic scratch-state publication and the `requested` output. If writing the output fails, the caller removes only its own request state. Ticket publication follows the requested output; failures preserve newer owners through the shared state lock.
 
 ## The Host Job State Directory
 

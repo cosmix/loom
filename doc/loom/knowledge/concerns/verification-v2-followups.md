@@ -17,9 +17,7 @@ Open parser and command gaps found while writing the language skills, checked ag
   passing contract likely parses `Unparsed` (exit 0 passes with a warning) instead of `Passed`.
 - **pest** `--filter <name>`: the mechanism by which a multi-word description reaches PHPUnit's name filter was not
   found in Pest's source. Run one through the real runner when Pest is available.
-- **ctest** runs `cmake --build build && ctest --test-dir build ...` relative to the package dir. `scan.rs` makes every
-  directory with a `CMakeLists.txt` a package, so a contract under a `tests/CMakeLists.txt` runs where no `build/`
-  exists and completion can never pass. Nothing configures `build/`. Fix by walking up to the configured CMake root.
+- **ctest** builds and tests a `build/` directory relative to its package root. `skills/project/scan.rs::resolve_nested_cmake` folds nested CMakeLists directories into their ancestor CMake package. The command does not configure a build tree; the package must provide one.
 - **minitest** runs `ruby -Itest <file>` without `bundle exec`, unlike rspec with a `Gemfile`.
 - **JVM**: `mvn` is taken from `PATH` even when `./mvnw` exists; every Gradle subproject with its own `build.gradle*`
   is a separate package and falls back to `gradle` on `PATH`; Android (`test` aggregate) and Kotlin Multiplatform
@@ -32,9 +30,7 @@ Open parser and command gaps found while writing the language skills, checked ag
 
 ## Verification v2 Known Gaps
 
-- **Contract outcomes are self-attested.** The daemon re-derives changed paths from git but does not re-run agent-written
-  contract tests (untrusted code outside the sandbox). A raw-socket client could report `failed` for an
-  already-passing contract; completion re-runs every frozen contract and requires a pass. Security review accepted it.
+- **Contract red runs are host-owned.** The freeze RPC accepts head/tree identity and queues a Freeze host job; `host_verify/freeze.rs` prepares and runs contracts through the confined host runner. `stage_service/contracts.rs::freeze_with_reports` applies host reports only after checking captured file hashes. Session-supplied red reports are not the freeze admission interface.
 - **Tracking-key collision.** `loom-contract-<id>` (Contract session of stage `<id>`) equals the Stage key of a stage named
   `contract-<id>`; `orphan_candidates.rs::orphan_candidate` matches pid-file stems by prefix, so after a daemon restart the scanner
   can adopt one stage's process into the other. Same class as the `merge-`, `knowledge-` and `adjudication-` prefixes;
@@ -96,7 +92,7 @@ Plan authors are trusted, so these are author-mistake gaps, not stage-agent bypa
 - `format_gate.rs` builds a `Stage::default()` whose empty id makes `${STAGE_ID}` expand to an empty string, contradicting the module doc; `biome check` also lints, so a lint error in a contract file is reported with "run the formatter" advice; the formatter-gate tests (`freeze_tests.rs`) need a host `rustfmt` binary.
 - Three enums mirror the dispute field (`DisputeField` in `cli/types_stage_disputes.rs`, `AmendField`, `CriterionField`), and `dispute_criteria_with_mode` takes nine arguments under `allow(too_many_arguments)`.
 - Other `std::env::set_current_dir` tests (`commands/knowledge/tests*.rs`, `telemetry/tests.rs`) restore the cwd by hand and are not panic-safe; the guard in `commands/stage/state_relay.rs` tests could become a shared `CwdGuard`.
-- `commands/status/data/collector.rs::build_stage_summary` stays under the 50-line ledger through `let (facts, now) = (...)`; moving the ledger entry or extracting a helper is the cleaner fix.
+- `status/data/collector.rs::build_stage_summary` stays under the 50-line ledger through `let (facts, now) = (...)`; moving the ledger entry or extracting a helper is the cleaner fix.
 
 ## Test Gaps Recorded by Reviewers
 
@@ -117,9 +113,9 @@ Plan authors are trusted, so these are author-mistake gaps, not stage-agent bypa
 - A `stdout_empty` field beside `stderr_empty`, so `gofmt -l .` fails on any output without a `test -z` wrapper.
 - A narrower rule recognising `test -z "$(gofmt -l ...)"` and more formatter commands in `format_gate.rs`, one file, no schema; `invocations()` splits subshells and pipelines, so each accepted shape needs a test, with near-miss tests as the module already has.
 
-## Contract Run Dir Detected Twice at Freeze
+## Authoritative contract run-directory resolution
 
-The freeze CLI resolves each contract's run dir for its red run, and the daemon resolves it again from the worktree when it writes `freeze.json` (`daemon/server/contracts.rs`); `ContractRunReport` carries no cwd. A run-root marker matching a `harness` glob that the writer adds or removes between the two would record a dir the red run never used. Fix when it matters: send the CLI's cwd in the report and refuse a freeze whose daemon-side resolution differs.
+The freeze CLI preflights site changes and submits the head and tree identity. The host freeze job performs the authoritative recheck, resolves contract run directories, executes the contract checks and records their freeze evidence. The CLI does not supply self-attested red-run results for a later daemon directory resolution.
 
 `loom stage amend --field contracts` re-freezes nothing. An amended explicit `cwd` still takes effect, because the plan's `cwd` beats the recorded one, and a changed `file` drops the recorded dir. But the new file's content is not hashed until a dispute re-freezes it.
 
@@ -136,7 +132,7 @@ Open after host jobs moved the run out of the session: `loom check` and `loom st
 
 ## Dispute Accept and Host-Job Recovery Gaps
 
-- **Accept re-freezes only the disputed contract's files.** `orchestrator/adjudication/apply_contract.rs` `accept()` collects the contract's file, the recorded file for that contract and the refrozen contracts. Any other file in the freeze record, such as a harness-glob file the disputed diff touched (`tests/host_verification_contracts/support.rs` in the host-verification stage), keeps its old hash. `loom stage complete` then fails with `frozen file ... changed after the freeze` (`verify/contracts/completion.rs`) while every criterion is green. Fix direction: re-freeze every frozen file the disputed diff touched, or every harness-glob file, on accept.
+- **Accept re-freezes the contract and harness set.** `orchestrator/adjudication/apply_contract.rs::accept` combines the old freeze paths, current contract paths and current harness matches before `read_frozen_set` and `refreeze_set`. Changed harness files receive current hashes and deleted optional recorded/harness paths leave the freeze. Each generation is complete and synced before its record is published ([Accepted Dispute Re-Freeze](../architecture/contract-phase.md#accepted-dispute-re-freeze)); generations are kept indefinitely, and power loss has not been exercised.
 - **Recovery signals groups of dead children.** `host_verify/signals.rs::kill_led_groups` runs for `Interrupted` records whose child is long gone (the daemon was down for hours, or the host rebooted). The leader check cannot tell a recycled pid that leads its own group from the old criterion leader, so the SIGKILL can reach an unrelated service group. Gating the call on a live `verify-host` child breaks `recovery_interrupts_running_jobs_and_leaves_queued_ones_alone` (`host_verify/tests_runner_recovery.rs`), which asserts that a led group is killed while the record's pid is a stranger. Revisit: record a start time or command line per group, then rewrite that test.
 
 ## Gate-Dedup and Integration-Verify Review Suggestions
@@ -145,7 +141,7 @@ Reviewer suggestions from the gate-dedup and integration-verify rounds that were
 
 - `loom/src/plan/schema/validation_suite.rs`: lint messages use 1-based criterion numbers, while `loom check --criterion` and the printed labels are 0-based. Align with the other lints in that file.
 - `loom/src/plan/schema/validation_suite.rs::build_config`: a value-less flag followed by a positional (`--release x`) takes `x` as its value. Only missed warnings result; accepted.
-- `loom/src/plan/schema/validation_suite.rs::classify`: `has_flag(options, "-p")` misses the attached form `-pfoo`, which `build_config` handles, so `cargo test -pfoo` is classed as a full run.
+- `loom/src/plan/schema/validation_suite.rs::scopes_package` recognizes separate and attached `-p` forms, including `-pfoo` and `-p=foo`, plus `--package`.
 - `loom/src/plan/schema/validation_suite.rs::classify`: `classify` resolves `npm test` and `package.json` scripts against the lint process's cwd, not the stage's `working_dir`.
 - `loom/src/plan/schema/validation_suite.rs::NOT_COVERED_FLAGS`: `NOT_COVERED_FLAGS` lacks `--benches` and `--examples`, so `cargo test --benches` is judged covered by `cargo test`.
 - `loom/src/commands/stage/acceptance_runner.rs::run_selected_acceptance`: a `--criterion` subset run prints "All acceptance criteria passed!" when only the selected criteria ran. Print "Selected criteria passed" when the selection is set.
@@ -168,6 +164,6 @@ Reviewer suggestions from the gate-dedup and integration-verify rounds that were
 - `loom/tests/integration/hooks_subagent_verify_guard_main.rs::write_standard_stage`: `write_standard_stage` duplicates `write_stage_file` in the carve-out module and in `gate_dedup_contracts/support.rs::write_standard_stage`.
 - `loom/src/assets/install/claude.rs::write_layout`: the installer never prunes `~/.claude/agents`, and `install.rs` has no pruning of retired agent files either. A retired verifier agent file stays installed on upgraded machines until removed by hand.
 
-## The Subcommand Lint Ignores `working_dir`
+## Subcommand Lint Path Ownership
 
-`v2_lints/loom_subcommands.rs` treats an unknown `loom` subcommand as one a stage may be adding (a warning, not an error) only when that stage, or a stage it depends on, lists a `files` or `artifacts` entry under `CLI_DIR` (`loom/src/cli`). `stage_touches_dir` (`v2_lints/mod.rs`) matches the entries as written, but entries are relative to the stage's `working_dir`. A stage with `working_dir: loom` that owns `src/cli/**` and adds a subcommand therefore still gets the hard error. Workaround: call the new subcommand through `cargo run --bin loom -- <subcommand>` in that stage's criteria. Fix direction: join each entry with the stage's `working_dir` before matching in `stage_touches_dir`.
+The subcommand lint resolves stage file and artifact entries against `working_dir` before deciding whether a stage or a dependency may add a CLI subcommand. Partial-component glob prefixes are conservatively treated as possible ownership; this can produce warnings for patterns whose later tokens would not match.

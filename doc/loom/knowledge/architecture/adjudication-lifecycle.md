@@ -8,65 +8,31 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 
 ## Durable Artifact Chain
 
-Paths below are relative to `.loom/work/`, the run's state directory:
+Paths below are relative to `.loom/work/`, the run state directory:
 
-| Path                                  | Authority                           | Purpose                                                                                                                                                        |
-| ------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `disputes/<stage>/<n>/request.md`     | daemon on behalf of the stage agent | Original criterion index, reason, evidence commit, captured failure output, fix-attempt count, and timestamp                                                   |
-| `disputes/<stage>/<n>/verdict.json`   | adjudication session                | Draft passed to `loom stage adjudicate`; not authoritative                                                                                                     |
-| `disputes/<stage>/<n>/verdict.md`     | guarded adjudication record path    | Immutable YAML-frontmatter record containing the verdict, reasoning or questions, citations, plan patch, model, attempt count, timestamp, and judge session id |
-| `disputes/<stage>/<n>/.applying`      | daemon                              | Temporary crash-recovery marker while a verdict is being applied                                                                                               |
-| `disputes/<stage>/<n>/applied.marker` | daemon                              | Zero-byte idempotency sentinel proving that the verdict was applied                                                                                            |
-| `disputes/<stage>/<n>/attempts`       | daemon                              | Adjudication-session respawn budget, spent when work is handed out                                                                                             |
-| `disputes/<stage>/feedback.md`        | daemon                              | The one adjudication message that may be injected into a later stage signal                                                                                    |
+| Path | Authority | Purpose |
+| --- | --- | --- |
+| `disputes/<stage>/<n>/request.md` | daemon on behalf of the stage agent | Criterion, reason, evidence, failure output, attempt count and timestamp |
+| `disputes/<stage>/<n>/verdict.json` | adjudication session | Draft passed to `loom stage adjudicate`; not authoritative |
+| `disputes/<stage>/<n>/verdict.md` | guarded adjudication record path | Immutable verdict, reasoning or questions, citations, plan patch and judge identity |
+| `disputes/<stage>/<n>/applied.marker` | daemon | Terminal marker that keeps the applied verdict out of pending scans |
+| `disputes/<stage>/<n>/closed.marker` | daemon | Marks an abandoned dispute settled |
+| `disputes/<stage>/<n>/attempts` | daemon | Adjudication-session respawn budget spent when work is handed out |
+| `disputes/<stage>/feedback.md` | daemon | Adjudication message eligible for a later stage signal |
 
-`loom stage adjudicate` validates the draft `verdict.json` and records it as
-`disputes/<stage>/<n>/verdict.md`. The daemon's
-`orchestrator/adjudication/apply.rs::apply_pending_verdicts` scans verdicts without an
-`applied.marker`, applies them idempotently, updates the stage file under `stages/`, then writes
-the marker. A daemon restart can therefore resume an interrupted apply from the same record.
+`loom stage adjudicate` validates the draft and records the immutable verdict. The daemon scans verdicts without terminal markers and applies them under the stage dispute lock. The stage transaction records a dispute-specific receipt together with the verdict result; replay uses that receipt to finish closure and marker publication without repeating the stage charge. A legacy `.applying` file is removed on successful marker publication and is not an ownership claim.
 
 ## Retirement and Fresh-Session Boundary
 
-Before applying a verdict, `orchestrator/core/event_handler/stage_takedown.rs::retire_disputing_agents`
-writes a `HandoffOrigin::Retired` handoff, kills every non-adjudication agent attached to the stage and
-confirms each is dead, and clears `stage.session`. If any writer survives, verdict application
-is deferred. This keeps the old, idle agent from being adopted after the criteria change.
+Before applying a verdict, the daemon holds the stage dispute lock while checking the pending dispute, retiring its attached non-adjudication agents and applying the verdict. Retirement writes a `HandoffOrigin::Retired` handoff, confirms each writer is dead and clears `stage.session`; a surviving writer defers application. Recording, application, reset and approval coordinate through the same dispute-lock-before-stage-lock order.
 
-Escalation out of the dispute loop retires first and never defers. The adjudicator registry
-(`orchestrator/adjudication/mod.rs`, `session.rs`) returns `Escalation` values (`escalation.rs`) when
-a judge spawn fails or the evidence or attempt cap is reached. `Orchestrator::escalate_dispute`
-(`orchestrator/core/orchestrator.rs`) calls `retire_disputing_agents`, then `Escalation::write`.
-`Escalation::write` moves the stage to `NeedsHumanReview` only while it is still `NeedsAdjudication`.
-When an agent survives the kill, `Escalation::with_unretired_agents` names it and
-`loom stage reset <stage> --kill-session` in `review_reason`. The apply cap (`escalate_apply_cap`) and
-the degenerate-verdict escalation (`record.rs`) also go through `Escalation::write`.
+Verdict application commits a dispute-specific receipt with the stage update. A replay that finds the receipt finishes marker and sibling closure work without charging the evidence round twice. Apply-cap escalation records a separate cap receipt with the `NeedsHumanReview` transition. Strict sibling closure publishes applied markers for receipt-consumed verdicts, closes abandoned siblings and propagates failures before publishing the current marker. The current applied verdict is not marked closed. Scanners and recorders treat `closed.marker` as settled.
 
-Every move into `NeedsHumanReview` from the dispute loop closes every dispute of the stage that has no
-`applied.marker`. That covers `Escalation::write`, the degenerate verdict in `record.rs`, and
-`persist_verdict_result` in `apply.rs` for Reject, the amendment cap and exhausted evidence rounds. Closing
-writes `closed.marker` into each such dispute directory (`close_open_disputes`,
-`orchestrator/adjudication/closed_disputes.rs`) under the `disputes/<stage>/.lock` flock the filing path
-takes. No caller holds the stage-file lock while closing. `is_closed` makes the scans
-(`scan_pending_requests`, `scan_pending_verdicts`), `apply_verdict_once` and `ensure_recordable` treat a
-closed dispute as settled.
+Ordinary escalation retires writers first, then moves a stage still in `NeedsAdjudication` to `NeedsHumanReview`. `Escalation::with_unretired_agents` names any surviving agent and the reset command. Human-review approval refuses live worker sessions and requires open disputes to be closed before queueing the stage.
 
-`loom stage human-review <stage> --approve` refuses while `orchestrator::coherence::live_worker_sessions`
-finds a live worker, and names `loom stage reset <stage> --kill-session`. Adoption uses the same predicate,
-so approval never queues a stage onto a live agent. Approve closes the stage's open disputes again before
-queueing it, which repairs a crash between a status write and its close. An abandoned dispute therefore
-never shadows a dispute filed after approval.
+Once all sibling disputes have verdicts, an `Accept` or `NeedsMoreEvidence` result moves the stage to `Queued`. The executor creates a fresh session in the existing worktree. `start_stage` starts or adopts only a stage that is `Queued` or `WaitingForDeps` on disk; for another status it resyncs the graph node and returns. The successor signal contains the updated stage, eligible predecessor handoff, stage memory and any dispute feedback.
 
-Once all sibling disputes have verdicts, an `Accept` or `NeedsMoreEvidence` result moves the stage
-to `Queued`. The normal executor then creates a fresh session in the existing worktree. `start_stage`
-starts or adopts only a stage that is `Queued` or `WaitingForDeps` on disk. For any other status on
-disk it resyncs the graph node (`session_adoption.rs::sync_unstartable_node`) and returns. Its signal
-contains the updated `Stage`, the eligible predecessor handoff from `handoffs/`, the latest stage
-memory, and, when present, `disputes/<stage>/feedback.md`.
-
-The successor does **not** load `disputes/<stage>/<n>/request.md` or `disputes/<stage>/<n>/verdict.md`
-directly, and it does not inherit the judge's conversation. Verdict application must write every fact
-the successor needs into one of the signal inputs above.
+The successor does not load dispute request or verdict files directly and does not inherit the judge conversation. Verdict application writes the facts needed by the successor into those signal inputs.
 
 ## What Each Verdict Delivers
 
@@ -168,3 +134,17 @@ target stage's review gate counts it open until a later round resolves it or a r
 ## Durable attempt reservations
 
 Adjudication charges its spawn budget before handing out a session. The historical `apply_failures` file stores a durable reservation for every verdict-application attempt, including a successful one; its cap remains three. Missing counters begin at zero, while malformed or unreadable existing counters stop the operation instead of resetting the budget.
+
+## Filing Under the Stage Lock and Orphaned Requests
+
+`file_under_stage_lock` (`stage_service/dispute_store.rs`) runs one filing under the stage lock, so no independent stage writer comes between its admission checks and its status change. A status change before admission publishes nothing and spends nothing. `check_filer` reads the session with the unlocked loader: taking `sessions/` while holding `stages/` inverts the order `complete_stage` uses and would deadlock.
+
+A failed stage write publishes nothing, so the request written for it is withdrawn: a filing reported failed leaves no open request. A crash between the two writes leaves a request the stage does not name:
+
+- A retried filing with a receipt reuses that request, because the receipt reserved its id (`dispute-published:<id>` in `tally.request_receipts`). The receipt of the attempt past capacity settles without a new document.
+- A later filing names another request. The adjudication scan then settles the orphan unjudged (`settle_orphaned_request`, `orchestrator/adjudication/mod.rs`) under the dispute lock, so one budget unit pays for one judgement. A filing holds that lock across both its writes, so a filing in flight is never settled. A `NeedsAdjudication` stage that names no dispute counts as having no orphans.
+- `requeue_or_hold_for_remaining_disputes` skips a request the filing never published (`dispute_is_orphaned`), so an orphan holds no verdict's re-queue.
+
+**Verdicts that no longer apply.** A verdict for a stage that left adjudication closes uncharged and leaves sibling disputes open (`orchestrator/adjudication/apply.rs`).
+
+**Failures in the apply pass.** `apply_pending_verdicts` reports one stage's lock or verdict failure and goes on to the others (`orchestrator/core/verdict_apply.rs`); a lasting lock failure is reported once until the lock works again. An unreadable dispute directory does not end the tick.

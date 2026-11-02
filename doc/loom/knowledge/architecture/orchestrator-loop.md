@@ -33,13 +33,14 @@ The constructor and configuration live in `core/orchestrator.rs`; that file does
 
 ## Monitor Subsystem (orchestrator/monitor/)
 
-Full file list:
+Main files:
 
 - `core.rs` — `Monitor` struct, `poll()` API, stage/session loading
 - `config.rs` — `MonitorConfig` (work_dir, hung_timeout, etc.)
 - `detection.rs` — `Detection` struct: `detect_stage_changes()`, `detect_session_changes()`, `detect_heartbeat_events()`
 - `events.rs` — `MonitorEvent` enum (stage/session/heartbeat event variants)
-- `failure_tracking.rs` — Consecutive failure escalation logic
+- `crash_redelivery.rs` — delivers a reported crash again until its stage has moved on; the handler's `reported_crashes` latch makes a repeat harmless, and the waits between failed deliveries double up to a limit
+- `foreground.rs`, `foreground_progress.rs`, `direct_worker.rs` — bounded foreground work evidence for stall decisions ([Heartbeat and Activity](status-data-model.md#heartbeat-and-activity))
 - `handlers.rs` — `Handlers` struct: handoff/crash-report generation; holds optional `LivenessService`
 - `heartbeat.rs` — `HeartbeatWatcher` with 300s hung timeout
 - `hung_latch.rs` — when a silent session's report becomes escalation evidence rather than a warning (see [Signal Generation Pipeline](signal-generation.md) § Soft Signals for the detection pipeline this drives)

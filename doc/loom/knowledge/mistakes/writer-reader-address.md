@@ -103,3 +103,13 @@ fixing an address bug, and test with a path past the limit through each client.
 **Prevention:** test a boost end to end with a stage that has a `working_dir` and a glob, and assert the `SelectionReason` appears. Two functions that share a normalizer still need one stated base for the paths they pass between them. See also [A Field Name Can Name the Wrong Domain Object](visibility-and-reachability.md), the earlier way this boost went inert.
 
 **Fix:** the boosted paths are now each dependency's accepted change from git (`signals/retrieval.rs::dependency_changes`, `git/merge/control_paths.rs::accepted_change_base`), repository-relative by construction; the declared files, joined to `working_dir` by `join_working_dir`, are only the fallback. Current behaviour: [Two Graphs, Two Lanes, Both Wired](../architecture/context-retrieval.md).
+
+## Completion index synchronization after a staged deletion
+
+**What happened:** After a completion commit, git add over both plan paths failed when the old path had already been removed from the index, leaving the new path staged as deleted.
+
+**Why:** A pathspec for the old path no longer matched either HEAD or the index after the ref moved.
+
+**Prevention:** Synchronize deletion and addition using operations that accept an already-absent old index entry; test a pre-staged deletion.
+
+**Fix:** Remove the old index entry explicitly and add the new path while preserving unrelated entries.

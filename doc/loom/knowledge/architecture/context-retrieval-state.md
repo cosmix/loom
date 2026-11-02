@@ -12,7 +12,7 @@ edits — worse than seeing none, because there is no way to tell which half.
 | Layer       | Location                                                                                                            | Keyed by                                                                             | Mutability                                                                                |
 | ----------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | **base**    | `.loom/cache/context-v1/graph/base/<revision>.json` under the canonical MAIN project root, shared by every worktree | the commit it describes                                                              | written once, thereafter immutable; old bases are pruned only when a new one is published |
-| **overlay** | `graph.json` in `.loom/work/context/<plan>/<stage>/`                                                                | plan + stage — a real stage, or `_local` / `map-<dir>` for a checkout's working tree | rewritten by its owner; holds only the files that differ from the base                    |
+| **overlay** | `graph.json` in `.loom/work/context/<plan>/<stage>/`                                                                | plan + stage — a real stage, or `_local` / a readable directory name plus a canonical-path digest for a checkout's working tree | rewritten by its owner; holds only the files that differ from the base                    |
 
 A read is `overlay ∪ (base − overlay's files)`. An overlay entry shadows the base
 entry for the same path **wholesale, never merges with it** — partial merges
@@ -31,23 +31,9 @@ the CLI reads `OverlayScope::Local`; the prompt hook reads whatever its
 `HookTarget` resolved — the stage overlay inside a stage, `Local` in a plain
 checkout.
 
-**A missing base is not automatically a degraded pack.** `GraphStore::resolved`
-substitutes an empty base when no base file exists for the recorded semantic
-revision. Bases are built from committed `HEAD` content even in a dirty checkout
-(`ensure_snapshot`), with working-tree changes carried by the `_local` overlay, so
-a missing base usually means nothing has published one for this `HEAD` yet.
-`ContextPack::degraded` (A.11) fires only for the narrower case: a non-empty
-semantic revision that NEITHER the base nor any overlay can back at all, so the
-resolved graph has no content whatsoever (`retrieve/graph.rs::degraded_reason`).
-Widening that predicate to "any missing base" was tried and reverted — it flagged
-every healthy checkout as degraded permanently, and
-`reconcile_graph::spawn_if_needed` triggers on `stale OR degraded`, so it also
-started a detached full-repository tree-sitter rebuild on every single prompt in
-every working checkout. See `degraded_reason`'s own doc comment for the
-reconcile-trigger consequence before widening this predicate again. Separately,
-the read marks the semantic layer stale — without degrading the pack — when the
-overlay's `generation` no longer matches the working tree, or the tree is dirty and
-no overlay exists; that too wakes the background reconcile.
+An overlay is a delta against its recorded base revision, unless it is complete (`GraphLayer.complete`, built with no base), which is read alone and whose own revision names the view. A graph read loads the overlay once, chooses that revision for both the view identity and composition, and applies whole-file replacement and tombstones only to that base. With no overlay, retrieval selects the requesting checkout's HEAD when available. A legacy overlay without a revision is served without a base and marked degraded.
+
+A missing base is served as an empty base, with any overlay still usable; retrieval reports the missing base as degraded. A persisted view is not served when its base has been removed. The semantic freshness in the pack describes the selected snapshot, and a changed overlay generation, differing checkout HEAD, or dirty tree without an overlay marks it stale. Retrieval can cache a derived view but never rebuilds source layers.
 
 ## Derived vs Durable
 

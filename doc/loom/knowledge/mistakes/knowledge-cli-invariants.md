@@ -204,3 +204,13 @@ an added line is a knowledge defect to fix.
 **Prevention:** Put `--` immediately before a positional Markdown body that may begin with a hyphen.
 
 **Fix:** Repeat the replacement with the option terminator and confirm the CLI reports that the existing heading was replaced.
+
+## Knowledge replacement text beginning with a dash
+
+**What happened:** A section replacement failed because the content began with a Markdown list marker.
+
+**Why:** The CLI parsed the content argument as an option.
+
+**Prevention:** Pass `--` before positional replacement content that may begin with a dash.
+
+**Fix:** Repeat the unchanged replacement with the option terminator.

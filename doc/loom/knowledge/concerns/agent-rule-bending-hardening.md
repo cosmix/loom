@@ -117,18 +117,19 @@ commit is doctrine plus a best-effort hook, not a boundary.
   of every session whose cwd is a linked worktree, denying only `hooks`, `config*`, `commondir`
   and the alternates files ([Execution Containment](../architecture/execution-containment.md),
   "Claude Code Grants a Linked Worktree Its Whole Git Common Directory"). Loom adds
-  `R/.git/hooks`, `R/.git/config`, every sibling worktree's administrative directory
-  `R/.git/worktrees/<name>` whole, and the session's own `config.worktree`, for the worktrees
+  `R/.git/hooks`, `R/.git/config`, `R/.git/config.worktree`, `R/.git/logs` whole, `R/.git/packed-refs`,
+  every sibling worktree's administrative directory `R/.git/worktrees/<name>` whole, and the session's
+  own `config.worktree`, `gitdir` and `commondir` with `R/.git/HEAD` and `R/.git/index`, for the worktrees
   registered at spawn (`partition_admin_dirs` in `git/worktree/config_worktree.rs`, applied in
   `sandbox/control_surfaces/session_denies.rs`; [Where a Session's Write Grants Come
   From](../architecture/security-and-isolation.md#where-a-sessions-write-grants-come-from)).
 - **What a stage can still do**, each shown in a scratch repository: move `main` or any branch and
-  rewrite sibling stages' `refs/heads/loom/*`; replace a loose object that `git show` and
+  rewrite sibling stages' `refs/heads/loom/*` by a raw ref write (a git command that writes an
+  existing branch reflog fails loudly under the `logs` deny); replace a loose object that `git show` and
   `git checkout` then serve with exit 0 (only a full `git fsck` notices); plant `MERGE_HEAD` so the
   operator's next plain `git commit` in `R` becomes a merge with the agent's history; rewrite
-  `R/.git/index`, which that commit then records. The merge gate fails open besides
-  (`merge_handler/merge_gate.rs` and the `commits_ahead_of` probe in `merge_handler.rs` log and
-  proceed when they cannot compute the diff).
+  `R/.git/index`, which that commit then records, once the host has replaced the file and its single-file deny has detached. The orchestrator prefilter logs a diff error and continues, but the authoritative
+  `git/merge/mod.rs::merge_stage` gate propagates `control_path_violation_as` errors and fails closed.
 - **The target ref is guarded.** A move of `refs/heads/<target>` loom did not make is attested by a
   `reference-transaction` hook and held by the daemon until the operator accepts or restores it
   ([Target Guard](../architecture/target-guard.md)). Loom's own git ignores session-planted replace
@@ -162,8 +163,7 @@ commit is doctrine plus a best-effort hook, not a boundary.
 
 **Fix direction for the rest:** not planned: measuring a `refs/` deny, narrowing the
 common-directory grant to what `git add` and a merge resolver need once a `refs/` deny is
-measured, pinning host-side git, verifying checkout-rooted sessions' effect on `R/.git`, and
-failing the merge gate closed.
+measured, pinning host-side git, verifying checkout-rooted sessions' effect on `R/.git`, with the authoritative merge gate kept fail-closed.
 
 ## Gaps Found (continued): G3
 
@@ -177,11 +177,10 @@ skipped probe fails there. It covers the sibling administrative directories and 
 files. The release checklist `doc/sandbox-release-checklist.md` has a person run fifteen rows
 against a live, credentialed Claude Code session.
 
-What neither reaches: the srt harness (`orchestrator/terminal/native/tests_confinement_srt.rs`,
-run outside any sandbox with `LOOM_TEST_REQUIRE_SANDBOX_FREE=1` and a PATH shim for `srt`) is not
-in CI and skips where `srt` is absent. It cannot test the git directory: srt
-(`@anthropic-ai/sandbox-runtime` 0.0.78) shares Claude Code's bind logic but not its
-linked-worktree grant, so `R/.git` is read-only under srt whatever the capsule says. Denies the
+The srt harness (`orchestrator/terminal/native/tests_confinement_srt.rs`) emulates the
+linked-worktree common-directory grant and built-in git denies (`srt_settings`, lines 134-153;
+`claude_code_git_denies`, lines 189-212). It remains an uncredentialed stand-in, is not in CI,
+and skips when srt is absent. Denies the
 bubblewrap probe does not cover (the state root, the attestation key, `.claude`, the common
 directory's `hooks` and `config`) have no CI probe, and the tool-route denies are checked on the
 emitted capsule text only. Each new probe needs the matched positive/negative control pair
@@ -273,9 +272,6 @@ environment scrubbing only.
   easier than defeating any hook. Fix direction (not planned): give each session
   its own cache over read-only views of the real ones; detail in
   [State Confinement Gaps](state-confinement-gaps.md).
-- **Three `pub`-but-uncalled path-escape validators** (`sandbox/config.rs`: `detect_path_escape`,
-  `validate_paths`, `is_legitimate_work_access`) still read as protection. Wire them in or delete
-  them.
 - **Attestation key confidentiality** holds in the capsule: every stage capsule's `denyRead` names
   `<state root>/completion-attestation.key` beside `admin.token` and `user.token` (seen in a live
   stage capsule on 2026-10-01), and `loom-hooks/credential-guard.sh` blocks the three for the file
@@ -344,12 +340,12 @@ standard-stage path (the memory spool drain, an index refresh) writes the direct
 
 ## Sibling Directory Denies: Residuals
 
-`partition_admin_dirs` (`git/worktree/config_worktree.rs`) lists `<common>/worktrees/*` once, when the capsule is built, and denies every entry that is not the session's own whole; the own entry keeps `config.worktree` denied and the rest writable (`git add` writes its `index`). Nothing is denied beneath a directory denied whole, because bubblewrap aborts when a deny's mount point lies beneath a read-only bind ([Execution Containment](../architecture/execution-containment.md#claude-code-grants-a-linked-worktree-its-whole-git-common-directory)). What stays open:
+`partition_admin_dirs` (`git/worktree/config_worktree.rs`) lists `<common>/worktrees/*` once, when the capsule is built, and denies every entry that is not the session's own whole; the own entry keeps `config.worktree`, `gitdir` and `commondir` denied and the rest writable (`git add` writes its `index`). Nothing is denied beneath a directory denied whole, because bubblewrap aborts when a deny's mount point lies beneath a read-only bind ([Execution Containment](../architecture/execution-containment.md#claude-code-grants-a-linked-worktree-its-whole-git-common-directory)). What stays open:
 
 - **Only registry entries are denied.** A session can rename an entry or add a new directory under `<common>/worktrees` itself; the new name is covered by no deny.
-- **A worktree registered after the session spawned** keeps its `HEAD`, `index`, `gitdir` and `logs/` writable to that session. Only its `config.worktree` is covered, by the daemon's `WorktreeGit::run` check ([A Check-Then-Use Window Around the `config.worktree` Check](sandbox-and-confinement-gaps.md#a-check-then-use-window-around-the-configworktree-check)).
+- **A worktree registered after the session spawned** keeps its `HEAD`, `index`, `gitdir` and `logs/` writable to that session. Pinned git opens none of them by path: it reads a validated copy of `config.worktree` and refuses a planted link ([Loom's `config.worktree` Deny and Check](../architecture/security-and-isolation.md#looms-configworktree-deny-and-check)). A rewritten `gitdir` there still changes which worktree the registry names.
 - **Symlinks and unreadable entries.** `worktree_admin_dirs` keeps only real directories: a symlinked registry entry present at spawn gets no deny, and a `DirEntry` whose `file_type()` errors is silently omitted from the sibling list (benign on Linux, where it means the entry vanished, but security-adjacent).
-- **A session can rewrite its own entry's `gitdir`.** `partition_admin_dirs` then finds no claimant for the worktree and refuses that session's own later spawn; when the rewrite names a sibling's worktree, two entries claim it and the sibling's next spawn is refused too. The refusal fails closed and escalates nothing.
+- **A session can rewrite its own entry's `gitdir` once its single-file deny has detached**, which takes a host rename of that file ([A File Deny Stops Protecting a Live Session](sandbox-and-confinement-gaps.md#a-file-deny-stops-protecting-a-live-session-once-the-host-replaces-the-file)). `partition_admin_dirs` then finds no claimant for the worktree and refuses that session's own later spawn; when the rewrite names a sibling's worktree, two entries claim it and the sibling's next spawn is refused too. The refusal fails closed and escalates nothing.
 - **A worktree directory on disk that no registry entry claims** refuses every worktree-rooted spawn there, the adjudication judge (escalated as `adjudicator_unavailable`) and the merge resolver included, because `judge_cwd` (`orchestrator/adjudication/session.rs`) and `merge_resolver_worktree` (`orchestrator/terminal/backend.rs`) check only `is_dir()`.
 - **`target_is_worktree` (`sandbox/settings.rs`) matches any `.worktrees` path component**, so a standalone clone under such a path that has linked worktrees is refused at spawn: the main worktree has no claimant. Unlikely.
 - **An empty registry with `Some(worktree)`** returns an empty partition although the doc says an unclaimed worktree is an error; pinned git refuses an unregistered worktree anyway, so nothing escalates. An unreadable registry (a `read_dir` error other than `NotFound`), the third spawn-refusal path, has no test.
@@ -358,10 +354,10 @@ standard-stage path (the memory spool drain, an index refresh) writes the direct
 
 ## Route-Closure Open Items
 
-- **Ref denies are unmeasured.** Commits are daemon-owned, so the metaplan's reason for leaving ref denies out is gone; sessions still write the object store and their own index, and nobody has measured a `refs/` deny under the current grant (G2 above).
+- **`refs/` stays writable by measurement.** Git takes `refs/heads/<branch>.lock` even for a move to the same commit, so a `refs/` deny fails `git merge --abort` and `git reset` on a branch, the merge session's way out (`sandbox/control_surfaces/session_denies.rs`, G2 above). The common directory's reflogs and `packed-refs` are denied. Sessions still write the object store and their own index.
 - **`credential-guard.sh` rule (b) reads only an operator-authored `settings.local.json`**, so a checkout-rooted session's file tools read the credential files ([Sandbox and Confinement Gaps](sandbox-and-confinement-gaps.md#credential-reads-denied-files-plain-paths-and-what-stays-readable)).
 - **Sibling worktree reads stay open**, and the main checkout stays readable by design.
-- **Unmeasured tool routes:** `Monitor`, `AppifactRepl`, the self-hosted-runner tools, `EnterWorktree` and `ExitWorktree` (checklist row 15).
+- **Unmeasured tool routes:** `AppifactRepl`, the self-hosted-runner tools, `EnterWorktree` and `ExitWorktree` (checklist row 15).
 - **`loom knowledge bootstrap` runs unconfined.** `commands/knowledge/bootstrap/mod.rs` starts `claude` through `crate::claude::run_foreground` with no capsule, outside manual mode, so the session it runs carries none of the capsule's denies and no confinement notice.
 - **Manual mode prints unquoted paths.** `orchestrator/core/manual_start.rs` prints the worktree, work-directory, repository-root and signal paths bare: a path with a space breaks the printed `cd`, and `$` or backticks in a path expand in the operator's shell. Ids are validated and cannot inject. The builder's text was pinned byte for byte, so `shell_escape::escape` is a later change.
 - **Documentation disagrees with the checklist.** `CONTRIBUTING.md` (the release-checklist paragraph) lists trigger paths that differ from `doc/sandbox-release-checklist.md`, which adds `state_root.rs` and `config_worktree.rs`; neither names `launch.rs`, which carries the Workflow licence; the paragraph also separates the tag sentence from its code block. `README.md` and `CONTRIBUTING.md` are outside the route-closure stages' files, so this stays open until a stage that owns them.

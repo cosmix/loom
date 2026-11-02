@@ -8,12 +8,7 @@
   `ConfigValue::Text` straight into a ratatui `Cell`. Harmless today because no `KEYS` entry uses
   `ValueKind::String` and the TUI only edits the operator's own `~/.loom/config.toml`; strip control
   characters before the first `String`-kind key is registered.
-- **No non-interactive way to unset a user-tier config key.** `user_config::write::unset`
-  (`user_config/write.rs::unset`) is reached only from the dashboard's `POST` `value:null` path
-  (`commands/status/web/config_api/apply.rs::apply`); the CLI and TUI never call it. An operator can only clear a user-tier
-  key by editing `~/.loom/config.toml` directly or through the settings page. Also: a bare negative
-  CLI value needs `--` (`loom config -k context.ceiling_tokens -- -1`) because clap reads `-1` as a
-  flag.
+- **No non-interactive way to unset a user-tier config key.** The dashboard POST `value:null` and config TUI clearing action both reach `user_config::unset`. The TUI stages the clear and applies it on save. The non-interactive CLI has no unset option; a bare negative CLI value needs `--` because clap reads `-1` as a flag.
 - **`#[serde(untagged)] ConfigValue` cannot carry the registry's error wording for a malformed JSON
   number.** A `POST /api/config` body with a `Number` field of `-1` or `1.5` fails all three untagged
   variants before any validator runs, so the response is serde's generic "data did not match any

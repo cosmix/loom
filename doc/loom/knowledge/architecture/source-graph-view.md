@@ -14,7 +14,7 @@ in [Source Graph Resolution](source-graph-resolution.md).
 `ResolvedView { identity, graph: ResolvedGraph, stats: ResolutionStats, deps: DependencyIndex,
 origin }`. `ViewIdentity { schema_version, base_revision, overlay_generation, extractor_digest,
 resolver_version }`; `ViewIdentity::current` fills the current schema, `RESOLVER_VERSION`
-(`identity.rs`, currently 3) and the digest. `extractor_digest` is a `sha256` over the sorted
+(`identity.rs`, currently 4) and the digest. `extractor_digest` is a `sha256` over the sorted
 `{dialect}={parser_version}` lines of the registered extractors **plus a `lexical=<LEXICAL_PARSER_VERSION>`
 line**: gap and unknown-type files are stamped with the lexical version, and relink copies unchanged
 entries on an equal digest, so a lexical bump must change identity or relink would differ from a cold
@@ -23,6 +23,8 @@ was read from disk; `loom map` prints it as `"view"`. The view persists no name 
 queries scan the parsed graph in one linear pass, and a persisted index would grow the JSON every warm
 query parses. The storage-engine choice waits on `--timings` data
 ([Known Gaps](../concerns/source-graph-known-gaps.md)).
+
+A graph read loads one overlay generation and binds its recorded base revision to both identity and composition. Without an overlay it uses the requested revision; an overlay without a recorded revision is never combined with a base or persisted as an identifiable view.
 
 ## Relink Equals Cold Build
 
@@ -57,7 +59,7 @@ Copying an old entry is sound only because the identity gate proves the same ext
   `entries_are_current` (`refresh/source_graph/layer.rs`): a view over a stale-served older-extractor base
   would otherwise carry a current identity and relink would copy its retired entries. No view is persisted
   for a revision with no base layer (`resolved()` leaves `base_revision` empty for a missing or unparseable
-  base); `publish_base` removes `graph/view/<revision>-*.json`.
+  base). A newly persisted `publish_base` invalidates revision views through `prune_after_publish` and `remove_views`. The `BaseWrite::Replace` refresh branch explicitly removes views after replacement. Denied-write publication held only in memory skips pruning and invalidation.
 - An overlay view is current only when `view.json` is not older than the overlay layer file
   (`GraphStore::layer_modified`), and `ensure_snapshot` discards the overlay view whenever it wrote a layer,
   which also defeats a coarse-clock same-tick rewrite. Materializing a view deletes sibling views of the

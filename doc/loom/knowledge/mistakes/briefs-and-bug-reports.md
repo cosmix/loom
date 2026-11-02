@@ -391,3 +391,7 @@ sibling's files.
 **Prevention**: Preserve the requested whole-checkout commit scope and distinguish focused verification from validation of unrelated work.
 
 **Fix**: Commit all current tracked and untracked changes after the quota checks finish.
+
+## Check schema bounds before publishing review examples
+
+**What happened:** an intermediate review example used an after-stage timeout of 7200 seconds; schema validation caps it at 3600. The confirmed host-deadline defect remains reproducible with the allowed 3600-second value against a 2700-second host budget. **Why:** runtime behavior was traced before schema bounds. **Prevention:** validate concrete review inputs against parsing and schema constraints before reporting reachable scenarios. **Fix:** the review uses 3600 seconds and retains the deadline mismatch finding.

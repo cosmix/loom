@@ -301,8 +301,10 @@ degrade retrieval, never block a run.
 
 A base for `HEAD` is reused when it exists and is `layer_is_current` (current schema version
 and every entry current under `entries_are_current`); a stale or corrupt base is replaced in
-place through `replace_base`. An overlay is reused when its `generation` equals the tree's and
-it is `layer_is_current`. The result is a
+place through `replace_base`. An overlay is reused when its `generation` equals the tree's,
+it is `layer_is_current`, and it is either complete (`GraphLayer.complete`, built with no base, read alone) or a delta
+whose recorded base exists at the current schema; a delta whose base was pruned no longer describes the tree, and
+reconciling rebuilds it complete. The result is a
 `SnapshotOutcome { action, reason, revision, generation, overlay, counters, elapsed, persisted,
 serving }` whose `SnapshotAction` is `Reused`, `Updated` (some files reused), `Rebuilt` or
 `Unavailable`. `persisted` is false when the memory fallback served the layer, when

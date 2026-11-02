@@ -8,9 +8,7 @@ CI runs every gate whose result depends on the target OS on `macos-latest` as we
 `lint-macos` (clippy, rustdoc), `test-macos` (`cargo test --all-targets --no-fail-fast`, both smoke
 scripts), `flake-check-macos`, and `hooks-macos` (hook syntax, the hook suite and the partial-staging
 regression under `/bin/bash` 3.2, which a step asserts). fmt, audit, deny and the web job stay Linux-only.
-Every macOS job is green from run 38397957790 (commit `44095fa4`) on. The causes of the earlier macOS
-failures are in
-[The First macOS Hook Run](../mistakes/hooks-shell-portability.md#the-first-macos-hook-run-found-bash-32-and-bsd-faults-the-linux-shims-hid-2026-10-13),
+Related portability lessons: [The First macOS Hook Run](../mistakes/hooks-shell-portability.md#the-first-macos-hook-run-found-bash-32-and-bsd-faults-the-linux-shims-hid-2026-10-13),
 [Rust Fixtures Assumed Linux](../mistakes/ci-toolchain-and-cargo.md#rust-fixtures-assumed-linux-paths-ptys-and-tool-output-2026-10-13)
 and [macOS `proc_pidinfo` Hid Zombies](../mistakes/sessions-and-liveness.md#macos-proc_pidinfo-hid-zombies-so-an-unreaped-dead-session-read-as-alive-2026-10-13).
 Open gaps:
@@ -40,9 +38,10 @@ Open gaps:
   extensionless shims too.
 - `knowledge-orient-emits.sh` asserts `3 entries` but not the byte count, so dropping the padded-`wc`
   strip in `knowledge-orient.sh` survives under the shim (cosmetic).
-- About 20 hooks (`codex-forward-guard.sh`, `read-guard.sh`, `stage-terminal-guard.sh` and others) read
-  stdin through their own `gtimeout` → `timeout` → bare `cat` cascade, not `loom_run_bounded`, so on
-  stock macOS those reads have no bound.
+- Hook stdin reads use `loom_read_input` from `loom-hooks/_bounded.sh:63-65`; its portable
+  `loom_run_bounded` fallback provides a deadline when GNU timeout is absent. Separate direct
+  command-execution fallbacks remain in `user-prompt-context.sh:77-86`,
+  `codex-apply-patch.sh:97-103` and `loom-relay.sh:196-204`; audit those independently.
 - Bash 3.2 writes every here-string and here-document to a temp file. It tries `$TMPDIR`, `/tmp`,
   `/var/tmp`, `/usr/tmp`, then the current directory, and leaves an `sh-thd-*` file behind when
   killed mid-command. Only when none is writable does the redirect fail ("cannot create temp file for
@@ -198,15 +197,8 @@ Each recurred after its lesson was recorded, so a check beats another paragraph:
   completion command, which the broker cannot read. Proposal: drop the advice and add a `loom plan verify` note
   for gate text that names it ([Completion Started With `run_in_background`](../mistakes/completion-broker-credential.md#completion-started-with-run_in_background-reached-no-broker-2026-10-06)).
 
-## Tooling Gaps Found While Running the Plan
+## Tooling and test-fixture constraints
 
-- **The unwired-file check does not follow `#[path]`.** The stage-completion check flags a test file wired
-  by a `#[path = "..."] mod tests;` declaration as unwired; a `wiring:` memory note per file clears it. Files
-  hit: `claude/auth_tests.rs`, `commands/stage/human_review_tests.rs`, `remote_control_tests.rs`,
-  `git/stage_commit/tests_paths.rs`, `inbox_drain/commit_tests_signing.rs` and
-  `merge_handler/landing_signing_tests.rs`. Proposal: make the check follow `#[path]` declarations.
-- **Stage wall clock.** The platform-portability stage ran 75+ minutes. One oversized worker brief (hooks, 18
-  files, 31 minutes against 2 to 14 for the others) set the wave time. Candidate fix: have the plan-writer
-  balance worker briefs so none exceeds about twice the median.
-- **A load-sensitive timing bound.** `commands::status::web::terminal::tests_pty::pty_child_shutdown_reaps_the_child`
-  failed once during the completion run on its `started.elapsed() < 1s` bound while passing 15 of 15 alone.
+The unwired-file detector is graph-based (`verify/wiring_detection.rs:37-115`), with incomplete or unresolved evidence reported as uncertain. Any remaining `#[path]` false-positive report needs a fixture showing the current extractor/resolver evidence; it is not a grep-only detector.
+
+A stage's longest worker bounds its wall-clock progress. Brief balancing remains a planning consideration, with no automatic balancing policy. PTY shutdown tests using subsecond wall-clock assertions can be load-sensitive; prefer observable retirement plus a generous bounded deadline when revising those fixtures.

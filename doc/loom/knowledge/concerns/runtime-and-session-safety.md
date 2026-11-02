@@ -26,16 +26,9 @@ Left as-is deliberately: the plan mandates the exact pane string. If the overvie
 _viewer_ rather than N live terminals, adding `-r` to `attach-session` on the **overview path only**
 (never on `loom attach <stage-id>`, which is the intentionally interactive path) is a one-word change.
 
-## Nothing Reaps the Overview Viewer Socket
+## Overview Viewer Retirement
 
-`list_loom_sockets` skips `loom-view-<8hex>` by name so `clean`/`init` do not report it as
-unattributable, and the skip comment concedes "Nothing currently reaps this socket". After
-`loom attach` the viewer server and its nested clients outlive the operator's detach, and
-`loom init --clean` now kills every attributed _session_ server while stranding the viewer.
-
-It is the one socket whose name is a pure function of the repo root, so reaping it carries no
-cross-checkout risk — roughly two lines in `cleanup_orphaned_sessions` and `clean::sessions` once
-`viewer_socket_name` is crate-visible.
+The overview viewer has a repository-specific retirement path used by explicit clean and init. Generic socket enumeration still excludes viewer sockets to avoid treating other repositories’ viewers as session sockets.
 
 ## PreToolUse File Guards Cannot Eliminate Path-Swap Races
 
@@ -72,21 +65,9 @@ the duplicate-spawn hole independently, so this is a narrower reach rather than 
 per-tick is a one-line addition to the scheduler loop; the pass is already idempotent and pinned as
 such by a test, so the only question is cost — it scans `.loom/work/pids/` per Executing stage.
 
-## `get_work_dir()` Trusts Any Path Containing `.worktrees/`
+## Memory commands use shared state discovery
 
-`find_worktree_root_from_cwd` (`git/worktree/paths.rs`) is a pure substring match on `.worktrees/`
-in the cwd string — it never checks that the directory is a loom-managed worktree. `get_work_dir`'s
-first branch then adopts `<that root>/.loom/work` if one merely exists. A user working in any directory
-they happen to name `.worktrees/<anything>` that contains a leftover `.loom/work` would silently read
-another project's memory and stage state.
-
-Lower severity than the creation-path bug fixed alongside it (`mistakes/ambient-filesystem-trust.md`):
-both of `get_work_dir`'s branches only ever RETURN a `.loom/work` that already exists, so this
-misattributes reads rather than manufacturing stray directories. Left alone deliberately, because
-changing it would alter the reuse and read-only degrade paths that `loom memory list` depends on
-during post-compaction recovery (the SessionStart re-anchor message in `loom-hooks/session-start.sh` names it). Fix shape if it is ever worth doing: confirm the
-candidate root is a real worktree — a `.git` FILE containing a `gitdir:` pointer — before trusting
-its `.loom/work`.
+Memory commands resolve state through `commands::common::work_dir_path` (`commands/memory/handlers/work_dir.rs:76-77`), which delegates to `WorkDir::new` (`commands/common/mod.rs:23-34`). `fs/work_dir.rs:130-174` searches within the nearest repository and temporary-directory boundary, with direct workspace and state-root handling. `find_worktree_root_from_cwd` retains substring-based detection for its other callers; it is not the memory read resolver. Review those other consumers separately rather than changing read-only memory recovery based on this helper.
 
 ## `commands::memory` Tests Mutate the Process-Global Working Directory
 
@@ -140,10 +121,10 @@ behaviour that makes it a latent bug elsewhere.
 
 ## Dispute Bookkeeping Gaps Around Escalation
 
-`--approve` refuses while a worker session is live, so no path into `NeedsHumanReview` can queue a stage onto a live agent. A filing checks the status transition (`transition_refusal`) before the request file is written, and `loom stage reset` closes open disputes (`commands/stage/state/loop_recovery/mod.rs`). Two gaps stay open:
+`--approve` refuses while a live worker or merge resolver may write to the stage (`commands/stage/human_review.rs::refuse_live_writer`). A filing checks the transition on a loaded snapshot before writing the request; `loom stage reset` closes open disputes (`commands/stage/state/loop_recovery/mod.rs`).
 
-- **A refused filing can still leave an open request in one race.** `daemon/server/dispute.rs` and `dispute_kinds.rs` check the transition on a clone under the dispute lock, not the stage lock. A status change between that check and `update_stage` makes `update_stage` fail after `write_request` created the request file, so an open dispute remains for a stage that never moved. Fix: remove the request directory when `update_stage` fails, or take the stage lock for the whole filing.
-- **Unverified: a survivor may block the fresh spawn.** A surviving session with no PID identity reads as dead, so approve succeeds. It stays in `active_sessions` and `stage.session`, though, and `insert_active_session` (`orchestrator/core/session_lifecycle.rs`) may then refuse the fresh session.
+- **A refused filing can leave an open request in a race.** `stage_service/dispute.rs::handle_dispute_criteria_identified` (lines 80–106) and `stage_service/dispute_kinds.rs::file_dispute_inner` (lines 192–219) hold the dispute lock, validate a snapshot, publish `disputes/<stage>/<n>/request.md`, then call `update_stage` under the separate stages-directory lock. A concurrent status change can make the final transition fail after the request is published. Fix the publication/transition transaction at the shared service; preserve the dispute-before-stage lock ordering. `daemon/server/dispute.rs` and `dispute_kinds.rs` are transport adapters.
+- **Unverified: a survivor may block the fresh spawn.** A surviving session with no PID identity can read as dead to an approval probe. If it stays in `active_sessions` and `stage.session`, `insert_active_session` (`orchestrator/core/session_lifecycle.rs`) may refuse the fresh session; verify this against the current retirement and adoption paths before changing behavior.
 
 ## `failure_info` Outlives the Attempt That Set It
 

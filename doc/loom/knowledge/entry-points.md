@@ -45,7 +45,7 @@ do not guarantee, which is narrower than the word "containment" suggests.
 
 ## Owned Waits and Completion Recovery Surfaces
 
-- `commands/subagents/wait/` — `lease.rs`, `lease_fs.rs`, `engine.rs`, `identity.rs`, `codex_binding.rs`, `model.rs`, `output.rs`, `mod.rs`: the owned `loom subagents watch/wait --worker ...` implementation. See [Owned Waits](architecture/owned-waits.md).
+- `commands/subagents/wait/` — `lease.rs`, `lease_fs.rs`, `engine.rs`, `identity.rs`, `codex_binding.rs`, `model.rs`, `output.rs`, `mod.rs`: the owned `loom subagents watch --worker ...` implementation. `commands/subagents/forward_jobs_wait.rs` owns `loom subagents wait --receipt ...`. See [Owned Waits](architecture/owned-waits.md).
 - `subagent_lifecycle/` (top-level crate module, not under `orchestrator/monitor/`) — `store.rs` (`LifecycleIndex::outcome`, `append_locked`, `codex_event_id`), `lock.rs` (`JournalLock`/`claim_lock`). Per-worker lifecycle journal (`subagents/<stage>/lifecycle.jsonl`), consumed by `commands/subagents/classify/lifecycle.rs`.
 - `codex_lifecycle/` — `authorization.rs`, `jobs.rs`, `ledger.rs`, `reconcile.rs` (`reconcile_codex_jobs`, `companion_outcome`). Codex companion job identity/authorization and daemon reconciliation into `subagent_lifecycle`.
 - `handoff/completion/` — `attest.rs` (HMAC attestation), `checkpoint.rs`, `identity.rs` (`expected_stage_commit`, `stage_head_commit`), `mod.rs`. See [Completion Recovery](architecture/completion-recovery.md).

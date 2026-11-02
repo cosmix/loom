@@ -49,8 +49,7 @@ Token Scanning Silently Narrows It" first.
 recursion budget exhausted — resolves toward the stricter check, never toward permitting. That is
 the correct direction for a development guard.
 
-Each hook sources `_common.sh` via `source "$(dirname "$0")/_common.sh"`. The Rust twin of
-`strip_embedded_content` lives at `loom/src/hooks/validators/bash.rs` and has NOT been converted.
+Each hook sources `_common.sh` via `source "$(dirname "$0")/_common.sh"`. The installed shell hooks own this policy.
 
 Full hook inventory (24 top-level scripts in `loom-hooks/`; 64 including `loom-hooks/tests/`):
 
