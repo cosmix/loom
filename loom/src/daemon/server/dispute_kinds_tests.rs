@@ -296,8 +296,7 @@ fn the_status_summary_numbers_each_dispute_cycle_across_kinds() {
     let contract = freeze_contract(&work_dir);
     let summary_count = || {
         let data =
-            crate::commands::status::data::collect_status_data(&WorkDir::new(tmp.path()).unwrap())
-                .unwrap();
+            crate::status::data::collect_status_data(&WorkDir::new(tmp.path()).unwrap()).unwrap();
         let summary = data.stages.into_iter().find(|s| s.id == STAGE).unwrap();
         (summary.status, summary.dispute_count)
     };

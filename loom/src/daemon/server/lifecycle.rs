@@ -67,6 +67,7 @@ impl DaemonServer {
         // Remove stale socket if it exists (ignore NotFound to avoid TOCTOU race)
         remove_control_file(&self.work_dir, Path::new(SOCKET_FILE))
             .context("Failed to remove stale socket file")?;
+        super::status::remove_previous_outcome(&self.work_dir)?;
 
         let identity = current_identity();
         publish_private_file(
@@ -264,7 +265,8 @@ impl DaemonServer {
         }
     }
 
-    /// Clean up socket, PID, token, and completion marker files.
+    /// Clean up socket, PID and token files. The completion marker stays: it is
+    /// the persisted terminal outcome, and the next daemon start removes it.
     ///
     /// CRITICAL (A-1/O-7): This only removes files when THIS process was the live
     /// daemon — i.e. it acquired the singleton lock and bound the socket
@@ -283,13 +285,7 @@ impl DaemonServer {
             return Ok(());
         }
 
-        for relative in [
-            SOCKET_FILE,
-            PID_FILE,
-            USER_TOKEN_FILE,
-            ADMIN_TOKEN_FILE,
-            "orchestrator.complete",
-        ] {
+        for relative in [SOCKET_FILE, PID_FILE, USER_TOKEN_FILE, ADMIN_TOKEN_FILE] {
             remove_control_file(&self.work_dir, Path::new(relative))
                 .with_context(|| format!("Failed to remove daemon control file {relative}"))?;
         }

@@ -4,7 +4,7 @@ use super::super::protocol::Response;
 use super::super::wire::encode_response_frame;
 use super::client::{write_bounded_frame, Subscriber};
 use super::core::DaemonServer;
-use super::status::{collect_completion_summary, collect_status};
+use super::status::{collect_status, completion_frames, COMPLETION_MARKER};
 use anyhow::{Context, Result};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
@@ -171,7 +171,6 @@ fn run_status_broadcaster(
     shutdown_flag: Arc<AtomicBool>,
     status_subscribers: Arc<Mutex<Vec<Subscriber>>>,
 ) {
-    let completion_marker_path = work_dir.join("orchestrator.complete");
     let mut state = BroadcastState::default();
 
     while !shutdown_flag.load(Ordering::Relaxed) {
@@ -192,47 +191,42 @@ fn run_status_broadcaster(
 
         // Collect data outside of the lock to minimize lock hold time. Only
         // reached when at least one subscriber is connected.
-        let completion_response = if !state.completion_sent && completion_marker_path.exists() {
-            collect_completion_summary(work_dir).ok().map(|summary| {
-                state.completion_sent = true;
-                Response::OrchestrationComplete { summary }
-            })
-        } else {
-            None
-        };
-
+        broadcast_completion_once(work_dir, &status_subscribers, &mut state);
         let status_response =
             status_or_failure_notice(collect_status(work_dir), &mut state.collect_failure_logged);
-
-        if let Some(ref response) = completion_response {
-            broadcast_to_subscribers(&status_subscribers, response, &mut state.oversized_logged);
-        }
         broadcast_to_subscribers(
             &status_subscribers,
             &status_response,
             &mut state.oversized_logged,
         );
-        let subscriber_count = lock_or_recover(&status_subscribers).len();
-
-        // Log completion outside the lock
-        if completion_response.is_some() {
-            println!("Orchestration complete - notified {subscriber_count} subscriber(s)");
-        }
 
         thread::sleep(Duration::from_millis(STATUS_BROADCAST_INTERVAL_MS));
     }
 
-    // Final completion check before exiting - handles race with shutdown_flag
-    if !state.completion_sent && completion_marker_path.exists() {
-        if let Ok(summary) = collect_completion_summary(work_dir) {
-            let response = Response::OrchestrationComplete { summary };
-            broadcast_to_subscribers(&status_subscribers, &response, &mut state.oversized_logged);
-            println!(
-                "Orchestration complete (final) - notified {} subscriber(s)",
-                lock_or_recover(&status_subscribers).len()
-            );
-        }
+    // A completion marker can arrive between the last poll and shutdown.
+    broadcast_completion_once(work_dir, &status_subscribers, &mut state);
+}
+
+/// Announce the terminal outcome the first time its marker is readable.
+fn broadcast_completion_once(
+    work_dir: &Path,
+    status_subscribers: &Arc<Mutex<Vec<Subscriber>>>,
+    state: &mut BroadcastState,
+) {
+    if state.completion_sent || !work_dir.join(COMPLETION_MARKER).exists() {
+        return;
     }
+    let Ok(frames) = completion_frames(work_dir) else {
+        return;
+    };
+    state.completion_sent = true;
+    for frame in &frames {
+        broadcast_to_subscribers(status_subscribers, frame, &mut state.oversized_logged);
+    }
+    println!(
+        "Orchestration complete - notified {} subscriber(s)",
+        lock_or_recover(status_subscribers).len()
+    );
 }
 
 /// The response to broadcast for one status collection.

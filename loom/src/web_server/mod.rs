@@ -22,8 +22,10 @@ pub(crate) mod interfaces;
 pub mod limits;
 pub mod listener;
 mod serve;
+mod shutdown;
 pub(crate) mod token;
 mod unserved;
 pub(crate) mod ws;
 
 pub use serve::{serve, ConnInfo, Router, ServeConfig};
+pub use shutdown::ShutdownPending;

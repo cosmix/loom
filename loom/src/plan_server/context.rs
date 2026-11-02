@@ -67,6 +67,7 @@ type BatchHook = Arc<dyn Fn(&PlanContext, &Batch) + Send + Sync>;
 
 /// Everything one planning server shares. Built once by `start`; `Send + Sync`.
 pub struct PlanContext {
+    background: super::background::Background,
     root: PathBuf,
     project_key: String,
     runtime: RuntimePaths,
@@ -95,6 +96,7 @@ impl PlanContext {
         let project = Project::load(&root)?;
         let (runtime, _) = server_runtime_paths(&root)?;
         Ok(PlanContext {
+            background: super::background::Background::default(),
             project_key: project_key(&root)?,
             root,
             runtime,
@@ -221,6 +223,19 @@ impl PlanContext {
 
     pub fn extensions(&self) -> &Extensions {
         &self.extensions
+    }
+
+    pub(crate) fn own_worker(
+        &self,
+        name: &'static str,
+        handle: std::thread::JoinHandle<()>,
+        stop: Option<Arc<std::sync::atomic::AtomicBool>>,
+    ) {
+        self.background.own(name, handle, stop);
+    }
+
+    pub(super) fn stop_workers(&self) -> Result<()> {
+        self.background.stop_and_join()
     }
 
     /// A new connection's context for `browser`.

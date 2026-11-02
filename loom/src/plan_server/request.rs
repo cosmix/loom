@@ -1,9 +1,10 @@
 //! What an API handler receives and returns, and how a response reaches the socket.
 
-use std::io::Read;
 use std::net::TcpStream;
+use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
-use anyhow::{ensure, Context, Result};
+use anyhow::Result;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -226,25 +227,23 @@ fn decode(raw: &str) -> Result<String, ApiResponse> {
     String::from_utf8(bytes).map_err(|_| bad("a query parameter is not UTF-8"))
 }
 
+/// Longest a request may spend delivering its body. A text route takes more than the
+/// dashboard's 8 KiB, so it gets more than the dashboard's five seconds.
+const BODY_TIME_LIMIT: Duration = Duration::from_secs(30);
+
 /// Read exactly `length` body bytes, counting the `prefix` that arrived with the head.
 ///
 /// `web_server::http::read_body` caps every body at 8 KiB, below a text route's own limit,
-/// so the read is bounded here by the length the gate already checked against the route.
-/// Each read keeps the 5 s timeout `read_head` installed.
-pub(crate) fn read_body(stream: &mut TcpStream, prefix: Vec<u8>, length: usize) -> Result<Vec<u8>> {
-    let mut body = prefix;
-    body.truncate(length);
-    let missing = u64::try_from(length - body.len()).context("body length overflows u64")?;
-    stream
-        .by_ref()
-        .take(missing)
-        .read_to_end(&mut body)
-        .context("failed to read the request body")?;
-    ensure!(
-        body.len() == length,
-        "client closed the connection inside the request body"
-    );
-    Ok(body)
+/// so the size is bounded here by the length the gate already checked against the route.
+/// An incomplete body is cancelled when the server stops, so it can never reach a handler
+/// afterwards; a request whose body is complete keeps server ownership until it answers.
+pub(crate) fn read_body(
+    stream: &mut TcpStream,
+    prefix: Vec<u8>,
+    length: usize,
+    running: &AtomicBool,
+) -> Result<Vec<u8>> {
+    http::read_body_within(stream, prefix, length, running, BODY_TIME_LIMIT)
 }
 
 #[cfg(test)]

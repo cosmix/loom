@@ -6,6 +6,7 @@
 //! lines, browser, signals.
 
 pub mod authoring;
+mod background;
 pub mod browser;
 pub mod chat;
 pub mod concept;
@@ -34,6 +35,7 @@ pub mod startup;
 pub mod summaries;
 pub mod watch;
 pub mod wire;
+mod worker_owner;
 pub mod ws;
 
 #[cfg(test)]
@@ -72,7 +74,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 
 use crate::cli::PlanServeArgs;
 use crate::planning::runtime::{create_runtime_dir, server_runtime_paths};
@@ -111,23 +113,25 @@ pub struct RunningServer {
     pub ctx: Arc<PlanContext>,
     running: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
-    serve: JoinHandle<Result<()>>,
-    workers: Vec<JoinHandle<()>>,
+    workers: worker_owner::Workers,
+    ownership: Arc<lock::Ownership>,
 }
 
 impl RunningServer {
-    /// Stop accepting, end every connection, the watcher and the tick, and wait for them.
+    /// Stop accepting and ask the watcher and tick to end. Wait up to three
+    /// seconds for their owner to reap them and drain every request; otherwise
+    /// return [`web_server::ShutdownPending`]. The cleanup owner retains all
+    /// handles, the listener reservation and singleton through context disposal.
+    /// Context references cloned by callers remain their own responsibility.
     pub fn stop(self) -> Result<()> {
         self.running.store(false, Ordering::SeqCst);
         self.stop.store(true, Ordering::SeqCst);
-        let served = self
-            .serve
-            .join()
-            .map_err(|_| anyhow!("the loom plan accept loop panicked"))?;
-        for worker in self.workers {
-            let _ = worker.join();
-        }
-        served
+        self.ctx.shutdown().mark_stopping();
+        // The cleanup owner still holds these; their last-drop work belongs
+        // there, so child disposal cannot block this caller after its deadline.
+        drop(self.ctx);
+        drop(self.ownership);
+        self.workers.stop()
     }
 
     /// Wait for the shutdown drains `drains` joins (from [`begin_shutdown`]), then stop.
@@ -139,7 +143,7 @@ impl RunningServer {
     }
 
     fn is_serving(&self) -> bool {
-        !self.serve.is_finished()
+        self.workers.is_serving()
     }
 }
 
@@ -152,6 +156,14 @@ pub fn start(opts: ServerOptions) -> Result<RunningServer> {
 
 /// [`start`] with an explicit route table; tests serve routes of their own with it.
 fn start_with_routes(opts: ServerOptions, routes: Vec<RouteSpec>) -> Result<RunningServer> {
+    start_owned(opts, routes, Arc::new(lock::Ownership::default()))
+}
+
+fn start_owned(
+    opts: ServerOptions,
+    routes: Vec<RouteSpec>,
+    ownership: Arc<lock::Ownership>,
+) -> Result<RunningServer> {
     let listener = bind_listener(opts.host, opts.port, DEFAULT_PORT)?;
     let local = listener.local_addr()?;
     let token = token::mint().context("failed to mint the loom plan access token")?;
@@ -159,30 +171,38 @@ fn start_with_routes(opts: ServerOptions, routes: Vec<RouteSpec>) -> Result<Runn
     let (ctx, watcher) = load(opts.root, opts.read_only, bind)?;
     let running = Arc::new(AtomicBool::new(true));
     let stop = Arc::new(AtomicBool::new(false));
-    let started = spawn_workers(&ctx, watcher, &stop).and_then(|workers| {
-        let serve = spawn_accept_loop(listener, &ctx, routes, &token, &running)?;
-        Ok((serve, workers))
-    });
-    let (serve, workers) = started.inspect_err(|_| stop.store(true, Ordering::SeqCst))?;
+    let workers = worker_owner::Workers::launch(
+        listener,
+        Arc::clone(&ownership),
+        Arc::clone(&ctx),
+        &running,
+        &stop,
+        |listener, registration| {
+            routes::install_all(&ctx);
+            spawn_workers(&ctx, watcher, &stop, registration)?;
+            let serve = spawn_accept_loop(listener, &ctx, routes, &token, &running, &ownership)?;
+            registration.accept(serve);
+            Ok(())
+        },
+    )?;
     Ok(RunningServer {
         local,
         token,
         ctx,
         running,
         stop,
-        serve,
         workers,
+        ownership,
     })
 }
 
-/// Take the watcher's baseline, then load the project into a new context and run every route
-/// module's `install`. The baseline comes first, so a document edited while the project and
-/// the stores load reaches them as the watcher's first batch.
+/// Take the watcher's baseline, then load the context before module workers
+/// start under the cleanup owner. The baseline keeps intervening edits in the
+/// watcher's first batch.
 fn load(root: PathBuf, read_only: ReadOnly, bind: BindInfo) -> Result<(Arc<PlanContext>, Watcher)> {
     let own_writes = OwnWrites::default();
     let watcher = watch::baseline(root.clone(), own_writes.clone());
     let ctx = Arc::new(PlanContext::new(root, read_only, bind, own_writes)?);
-    routes::install_all(&ctx);
     Ok((ctx, watcher))
 }
 
@@ -190,11 +210,14 @@ fn spawn_workers(
     ctx: &Arc<PlanContext>,
     watcher: Watcher,
     stop: &Arc<AtomicBool>,
-) -> Result<Vec<JoinHandle<()>>> {
+    registration: &worker_owner::Registration,
+) -> Result<()> {
     let (watcher, errors) = watch::spawn_watcher(Arc::clone(ctx), watcher, Arc::clone(stop))?;
+    registration.background(watcher);
     let tick = watch::spawn_tick(Arc::clone(ctx), errors, Arc::clone(stop));
     let tick = tick.inspect_err(|_| stop.store(true, Ordering::SeqCst))?;
-    Ok(vec![watcher, tick])
+    registration.background(tick);
+    Ok(())
 }
 
 fn spawn_accept_loop(
@@ -203,6 +226,7 @@ fn spawn_accept_loop(
     routes: Vec<RouteSpec>,
     token: &str,
     running: &Arc<AtomicBool>,
+    ownership: &Arc<lock::Ownership>,
 ) -> Result<JoinHandle<Result<()>>> {
     let local = listener.local_addr()?;
     let auth = Auth::new(token.to_owned(), gate::access_cookie_name(local.port()));
@@ -211,7 +235,9 @@ fn spawn_accept_loop(
         limits: Limits::new(ws::MAX_INBOUND_BYTES),
         thread_name: "loom-plan-conn",
     };
-    let router = Arc::new(router::PlanRouter::new(Arc::clone(ctx), routes));
+    let router = Arc::new(
+        router::PlanRouter::new(Arc::clone(ctx), routes).with_ownership(Arc::clone(ownership)),
+    );
     let running = Arc::clone(running);
     thread::Builder::new()
         .name("loom-plan-accept".into())
@@ -241,7 +267,7 @@ pub fn run(args: &PlanServeArgs) -> Result<()> {
         eprintln!("warning: LOOM_PLAN_STATE is set in this shell and is ignored by the server");
     }
     create_runtime_dir(&paths)?;
-    let mut lock = match lock::acquire(&paths.lock)? {
+    let lock = match lock::acquire(&paths.lock)? {
         Acquired::Held(lock) => lock,
         Acquired::Running(record) => {
             for line in startup::already_running_lines(&record) {
@@ -256,13 +282,18 @@ pub fn run(args: &PlanServeArgs) -> Result<()> {
         port: args.port,
         read_only: ReadOnly::detect(),
     };
-    let server = start(options)?;
+    let ownership = Arc::new(lock::Ownership::default());
+    ownership.retain(lock);
+    let server = start_owned(options, routes::all_routes(), ownership)?;
     let base = display_addrs(server.local).first().map_or_else(
         || format!("http://{}", server.local),
         |addr| format!("http://{addr}"),
     );
-    if let Err(error) = lock.publish(&base, &server.token) {
-        let _ = server.stop();
+    let published = server.ownership.publish(&base, &server.token);
+    if let Err(error) = published {
+        server
+            .stop()
+            .with_context(|| format!("cannot publish server startup: {error}"))?;
         return Err(error);
     }
     announce(&server, &root, args.no_open);
@@ -290,7 +321,7 @@ fn announce(server: &RunningServer, root: &Path, no_open: bool) {
     }
 }
 
-/// Block until the first stop signal's drains finish (then stop and return Ok), or until the
+/// Block until the first stop signal's drains finish (then return the stop result), or until the
 /// accept loop ends by itself (then return its result). A second signal exits at once.
 fn serve_until_stopped(server: RunningServer) -> Result<()> {
     let (drains_tx, drains_rx) = mpsc::channel();
@@ -298,12 +329,16 @@ fn serve_until_stopped(server: RunningServer) -> Result<()> {
     let on_first = move || {
         let _ = drains_tx.send(begin_shutdown(&ctx));
     };
-    shutdown::install_signal_handler(
+    let installed = shutdown::install_signal_handler(
         server.ctx.shutdown_handle(),
         Box::new(on_first),
         std::process::exit,
     )
-    .context("failed to install the Ctrl-C handler")?;
+    .context("failed to install the Ctrl-C handler");
+    if let Err(error) = installed {
+        server.stop().with_context(|| error.to_string())?;
+        return Err(error);
+    }
     loop {
         match drains_rx.recv_timeout(Duration::from_millis(200)) {
             Ok(drains) => return server.stop_when_drained(drains),

@@ -3,6 +3,7 @@
 
 use std::io;
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use super::context::PlanContext;
@@ -27,11 +28,21 @@ const PLAIN: &str = "text/plain; charset=utf-8";
 pub struct PlanRouter {
     ctx: Arc<PlanContext>,
     routes: Vec<RouteSpec>,
+    _ownership: Arc<super::lock::Ownership>,
 }
 
 impl PlanRouter {
     pub fn new(ctx: Arc<PlanContext>, routes: Vec<RouteSpec>) -> Self {
-        PlanRouter { ctx, routes }
+        PlanRouter {
+            ctx,
+            routes,
+            _ownership: Arc::default(),
+        }
+    }
+
+    pub(super) fn with_ownership(mut self, ownership: Arc<super::lock::Ownership>) -> Self {
+        self._ownership = ownership;
+        self
     }
 
     fn port(&self) -> u16 {
@@ -160,7 +171,7 @@ impl PlanRouter {
             Err(denial) => return refuse(stream, head, &denial),
         };
         let response = match lookup {
-            Lookup::Found(spec) => self.call(stream, head, body, &admitted, spec),
+            Lookup::Found(spec) => self.call(stream, head, body, &admitted, spec, conn.running),
             Lookup::WrongMethod => {
                 ApiResponse::error(405, "method_not_allowed", "wrong method for this route")
             }
@@ -176,12 +187,13 @@ impl PlanRouter {
         prefix: Vec<u8>,
         admitted: &Admitted,
         spec: &RouteSpec,
+        running: &AtomicBool,
     ) -> ApiResponse {
         let query = match QueryParams::parse(head.query.as_deref()) {
             Ok(query) => query,
             Err(response) => return response,
         };
-        let body = match read_request_body(stream, head, prefix, spec) {
+        let body = match read_request_body(stream, head, prefix, spec, running) {
             Ok(body) => body,
             Err(response) => return response,
         };
@@ -211,14 +223,20 @@ fn read_request_body(
     head: &RequestHead,
     prefix: Vec<u8>,
     spec: &RouteSpec,
+    running: &AtomicBool,
 ) -> Result<Vec<u8>, ApiResponse> {
     if spec.method != Method::Post {
         return Ok(Vec::new());
     }
     let length = gate::content_length(head)
         .map_err(|denial| ApiResponse::error(denial.status, denial.code, &denial.message))?;
-    request::read_body(stream, prefix, length)
-        .map_err(|error| ApiResponse::error(400, "bad_request", &format!("{error:#}")))
+    request::read_body(stream, prefix, length, running).map_err(|error| {
+        if running.load(Ordering::SeqCst) {
+            ApiResponse::error(400, "bad_request", &format!("{error:#}"))
+        } else {
+            ApiResponse::error(503, "stopping", "the server is stopping")
+        }
+    })
 }
 
 fn refuse(stream: &mut TcpStream, head: &RequestHead, denial: &Denied) {

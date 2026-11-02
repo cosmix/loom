@@ -4,12 +4,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::commands::status::{data::collect_status_data, render::attention_entries};
 use crate::daemon::DaemonServer;
 use crate::fs::{plan_lifecycle::get_plan_source_path, work_dir::WorkDir};
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::lifecycle;
 use crate::plan_server::wire::{message::PlanMessage, run::RunStrip};
+use crate::status::{attention_model::attention_entries, data::collect_status_data};
 
 const INTERVAL: Duration = Duration::from_secs(5);
 const STOP_CHECK: Duration = Duration::from_millis(50);
@@ -85,14 +85,16 @@ fn install_replay(ctx: &PlanContext) -> Arc<PublishedStrip> {
 
 pub(super) fn spawn_strip(ctx: Arc<PlanContext>) {
     let published = install_replay(&ctx);
+    let worker_ctx = Arc::clone(&ctx);
     let spawned = thread::Builder::new()
         .name("loom-plan-run-strip".into())
-        .spawn(move || poll_strip(&ctx, &published));
-    if let Err(error) = spawned {
-        lifecycle::line(&format!(
+        .spawn(move || poll_strip(&worker_ctx, &published));
+    match spawned {
+        Ok(worker) => ctx.own_worker("run strip", worker, None),
+        Err(error) => lifecycle::line(&format!(
             "run strip: cannot start poll thread: {}",
             lifecycle::safe(&error.to_string())
-        ));
+        )),
     }
 }
 

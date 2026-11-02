@@ -75,12 +75,15 @@ pub fn install(ctx: &Arc<PlanContext>) {
 /// validates it on request. Each plan's result is broadcast as `validation`, then the tree as
 /// `tree_changed`. When the thread cannot start, the first batch validates every plan.
 fn spawn_validation(ctx: &Arc<PlanContext>, state: &Arc<FileMode>) {
-    let (ctx, state) = (Arc::clone(ctx), Arc::clone(state));
+    let (worker_ctx, state) = (Arc::clone(ctx), Arc::clone(state));
     let spawned = thread::Builder::new()
         .name("loom-plan-validate".into())
-        .spawn(move || state.validate_all(&ctx));
-    if let Err(error) = spawned {
-        tracing::warn!("loom plan validates its plans at the first doc/ change: {error}");
+        .spawn(move || state.validate_all(&worker_ctx));
+    match spawned {
+        Ok(worker) => ctx.own_worker("startup validation", worker, None),
+        Err(error) => {
+            tracing::warn!("loom plan validates its plans at the first doc/ change: {error}")
+        }
     }
 }
 
