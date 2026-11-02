@@ -73,12 +73,10 @@ pub(crate) struct SessionDenies {
 pub(crate) fn session_denies(inputs: &DenyInputs<'_>) -> Result<SessionDenies> {
     let repo = inputs.repo_root;
     let mut denies = SessionDenies::default();
-    // The host creates future background-task files here. Their registered
-    // output inode is a receipt channel; sandboxed commands may only use the
-    // host's preopened stdout, never rewrite another task's channel by path.
-    for root in crate::models::forward_receipt::locator::default_task_output_roots() {
-        denies.absolute(&root, true)?;
-    }
+    // `<tmp>/claude-<uid>` stays writable, task output files included: it is
+    // Claude Code's `TMPDIR`, and its Bash wrapper writes its cwd file there,
+    // so a deny on it fails every sandboxed command. Linux skips `denyWrite`
+    // globs, so no literal path can cover future `*/*/tasks` directories alone.
     denies.absolute(&repo.join(".loom"), true)?;
     denies.relative(".loom");
     if inputs.state_root == repo.join(".work") {
