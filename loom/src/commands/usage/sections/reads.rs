@@ -121,7 +121,7 @@ fn result_bytes(transcript: &Transcript) -> BTreeMap<String, u64> {
     answers
 }
 
-fn read_path(tool: &ToolUse) -> Option<String> {
+pub(super) fn read_path(tool: &ToolUse) -> Option<String> {
     if tool.name == "Read" {
         return tool.input.get("file_path")?.as_str().map(str::to_owned);
     }
@@ -205,6 +205,6 @@ fn count_where(observations: &[Observation], matches: impl Fn(&Observation) -> b
     result
 }
 
-fn is_knowledge_path(path: &str) -> bool {
+pub(super) fn is_knowledge_path(path: &str) -> bool {
     path.starts_with("doc/loom/knowledge/") || path.contains("/doc/loom/knowledge/")
 }

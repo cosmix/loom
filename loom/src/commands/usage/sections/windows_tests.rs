@@ -27,6 +27,7 @@ fn windows_exclude_synthetic_requests_just_like_totals() {
         session_id: "session-1".to_owned(),
         agent_id: None,
         agent_type: None,
+        agent_type_from_sidecar: false,
         requested_model: None,
         stage_id: None,
         loom_session_id: None,
@@ -37,6 +38,7 @@ fn windows_exclude_synthetic_requests_just_like_totals() {
             Entry::Assistant(Box::new(request("claude-sonnet-5", 100))),
             Entry::Assistant(Box::new(request(SYNTHETIC_MODEL, 999))),
         ],
+        attachments: Vec::new(),
         diagnostics: Default::default(),
     };
 

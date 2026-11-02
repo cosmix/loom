@@ -22,10 +22,13 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
+use super::transcript_attachment::attachment_entry;
 use super::transcript_merge::merge_request;
+use super::transcript_types::AttachmentEntry;
 
 struct ScanResult {
     entries: Vec<Entry>,
+    attachments: Vec<AttachmentEntry>,
     first_user_entry: Option<UserEntry>,
     project_path: Option<PathBuf>,
     diagnostics: TranscriptDiagnostics,
@@ -49,6 +52,7 @@ pub fn parse(
 
 fn scan_lines(reader: BufReader<File>, range: &super::time_range::TimeRange) -> ScanResult {
     let mut entries = Vec::new();
+    let mut attachments = Vec::new();
     let mut request_indices = HashMap::new();
     let mut first_user_entry = None;
     let mut project_path = None;
@@ -74,14 +78,27 @@ fn scan_lines(reader: BufReader<File>, range: &super::time_range::TimeRange) -> 
             &mut had_prior_request,
             &mut chronology_uncertain,
         );
+        collect_attachment(&mut attachments, &entries, &value, range);
     }
     ScanResult {
         entries,
+        attachments,
         first_user_entry,
         project_path,
         diagnostics,
         had_prior_request,
         chronology_uncertain,
+    }
+}
+
+fn collect_attachment(
+    attachments: &mut Vec<AttachmentEntry>,
+    entries: &[Entry],
+    value: &Value,
+    range: &super::time_range::TimeRange,
+) {
+    if timestamp(value).is_some_and(|stamp| range.includes(stamp)) {
+        attachments.extend(attachment_entry(value, entries));
     }
 }
 
@@ -125,6 +142,7 @@ fn build_transcript(file: &super::discovery::DiscoveredFile, scan: ScanResult) -
         session_id: file.session_id.clone(),
         agent_id: file.agent_id.clone(),
         agent_type: None,
+        agent_type_from_sidecar: false,
         requested_model: None,
         stage_id: None,
         loom_session_id: None,
@@ -132,6 +150,7 @@ fn build_transcript(file: &super::discovery::DiscoveredFile, scan: ScanResult) -
         forward_candidate: false,
         first_user_entry: scan.first_user_entry,
         entries: scan.entries,
+        attachments: scan.attachments,
         diagnostics: scan.diagnostics,
     }
 }

@@ -21,6 +21,8 @@ use super::target::non_empty_env;
 const MAX_STDIN_BYTES: u64 = 1024 * 1024;
 const QUERY_INPUTS: &str = "the stage inputs, worker task and explicitly declared paths";
 const CODEX_FORWARD_PATH: &str = "loom-hooks/codex-forward.sh";
+/// The mechanical worker has no `Skill` tool, so a skills line would name a tool it lacks.
+const MECHANICAL_WORKER: &str = "loom-mechanical-engineer";
 
 #[derive(Deserialize)]
 struct HookPayload {
@@ -133,13 +135,18 @@ fn issue(raw: &str, config: &Config) -> Option<Envelope> {
     }
     let paths = declared_paths(&payload.tool_input.prompt);
     let pack = retrieve_pack(config, &payload, &paths)?;
+    let skills: &[String] = if payload.tool_input.subagent_type == MECHANICAL_WORKER {
+        &[]
+    } else {
+        &config.stage.skills
+    };
     // Declared skills must reach the worker even with an empty context pack.
-    if pack.items.is_empty() && pack.unmet_required.is_empty() && config.stage.skills.is_empty() {
+    if pack.items.is_empty() && pack.unmet_required.is_empty() && skills.is_empty() {
         return None;
     }
 
     let nonce = Uuid::new_v4().simple().to_string();
-    let brief = render_brief(&pack, &config.stage, &nonce)?;
+    let brief = render_brief(&pack, &config.stage, skills, &nonce)?;
     let envelope = Envelope { nonce, brief };
     let encoded = serde_json::to_string(&envelope).ok()?;
     if encoded.len() > config.retrieval.max_payload_bytes {
@@ -209,13 +216,18 @@ fn plan_document(path: &str) -> bool {
         .is_some_and(|name| !name.contains('/') && name.contains("PLAN-"))
 }
 
-fn render_brief(pack: &ContextPack, stage: &Stage, nonce: &str) -> Option<String> {
+fn render_brief(
+    pack: &ContextPack,
+    stage: &Stage,
+    skills: &[String],
+    nonce: &str,
+) -> Option<String> {
     let rendered = format_knowledge_brief(pack, Some(&stage.id), QUERY_INPUTS);
     if rendered.lines().any(|line| marker_nonce(line).is_some()) {
         return None;
     }
     let mut brief = format!("<!-- loom-worker-brief nonce={nonce} -->\n{rendered}");
-    if let Some(line) = skills_line(&stage.skills) {
+    if let Some(line) = skills_line(skills) {
         brief.push_str(&line);
     }
     Some(brief)

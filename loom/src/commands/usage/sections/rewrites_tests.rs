@@ -33,6 +33,7 @@ fn synthetic_row_following_a_large_residency_request_is_not_a_rewrite() {
         session_id: "session-1".to_owned(),
         agent_id: None,
         agent_type: None,
+        agent_type_from_sidecar: false,
         requested_model: None,
         stage_id: None,
         loom_session_id: None,
@@ -43,6 +44,7 @@ fn synthetic_row_following_a_large_residency_request_is_not_a_rewrite() {
             Entry::Assistant(Box::new(previous)),
             Entry::Assistant(Box::new(current)),
         ],
+        attachments: Vec::new(),
         diagnostics: Default::default(),
     };
 
