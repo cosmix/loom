@@ -24,7 +24,7 @@ use super::check_lines::{decorated_issue_line, issue_line};
 use crate::fs::knowledge::catalog::{
     self, BaselineComparison, Catalog, CatalogIssue, CheckBaseline,
 };
-use crate::fs::knowledge::KnowledgeDir;
+use crate::fs::knowledge::{index, KnowledgeDir, INDEX_FILENAME};
 use crate::fs::work_dir::WorkDir;
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
@@ -66,7 +66,7 @@ pub fn check(options: CheckOptions) -> Result<()> {
         Some(path) => Some((path.as_path(), CheckBaseline::read(path)?)),
         None => None,
     };
-    let catalog = catalog::build(&root)?;
+    let catalog = diagnose(&root)?;
     let comparison = baseline
         .as_ref()
         .map(|(path, baseline)| (*path, baseline.compare(&catalog.issues)));
@@ -93,6 +93,17 @@ pub fn check(options: CheckOptions) -> Result<()> {
         strict_failure(failure_count, &root);
     }
     Ok(())
+}
+
+/// The catalog with its diagnostics, plus a stale `INDEX.md` by the comparison
+/// the landing gate makes. A tree with no index is the flat layout: nothing to
+/// compare, as at the gate when neither side has one.
+fn diagnose(root: &Path) -> Result<Catalog> {
+    let mut catalog = catalog::build(root)?;
+    if root.join(INDEX_FILENAME).exists() && index::index_is_stale(root)? {
+        catalog.issues.push(CatalogIssue::StaleIndex);
+    }
+    Ok(catalog)
 }
 
 /// `--write-baseline` writes and exits before any other flag is honoured, so
@@ -326,3 +337,7 @@ mod tests_evidence;
 #[cfg(test)]
 #[path = "tests_check_baseline.rs"]
 mod tests_baseline;
+
+#[cfg(test)]
+#[path = "tests_check_index.rs"]
+mod tests_index;

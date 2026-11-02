@@ -99,13 +99,9 @@ fn validate(base: &Path, current: &Path) -> Result<()> {
             }
         }
     }
-    if current.join(INDEX_FILENAME).exists() || base.join(INDEX_FILENAME).exists() {
-        let actual = std::fs::read_to_string(current.join(INDEX_FILENAME))
-            .context("knowledge INDEX.md is missing or unreadable; run loom knowledge sync")?;
-        let expected = index::generate_index(current)?;
-        if actual != expected {
-            bail!("knowledge INDEX.md is stale; run loom knowledge sync");
-        }
+    let has_index = current.join(INDEX_FILENAME).exists() || base.join(INDEX_FILENAME).exists();
+    if has_index && index::index_is_stale(current)? {
+        bail!("knowledge INDEX.md is stale; run loom knowledge sync");
     }
     Ok(())
 }

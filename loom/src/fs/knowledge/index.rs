@@ -230,6 +230,14 @@ fn append_topic_tables(out: &mut String, topics: &[TopicEntry]) {
     }
 }
 
+/// Whether `<root>/INDEX.md` differs from what [`generate_index`] renders. A
+/// missing or unreadable index is an error; callers decide if it may be absent.
+pub fn index_is_stale(root: &Path) -> Result<bool> {
+    let actual = fs::read_to_string(root.join(INDEX_FILENAME))
+        .context("knowledge INDEX.md is missing or unreadable; run loom knowledge sync")?;
+    Ok(actual != generate_index(root)?)
+}
+
 /// Crash-atomically write `<root>/INDEX.md`.
 pub fn write_index(root: &Path) -> Result<()> {
     let content = generate_index(root)?;

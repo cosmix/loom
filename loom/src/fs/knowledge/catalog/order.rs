@@ -20,7 +20,9 @@ pub(super) fn baseline_key(issue: &CatalogIssue) -> String {
     let detail = match issue {
         CatalogIssue::DuplicateHeading { heading, .. }
         | CatalogIssue::OversizedSection { heading, .. } => heading.clone(),
-        CatalogIssue::OversizedFile { .. } | CatalogIssue::OversizedIndex { .. } => String::new(),
+        CatalogIssue::OversizedFile { .. }
+        | CatalogIssue::OversizedIndex { .. }
+        | CatalogIssue::StaleIndex => String::new(),
         _ => issue_payload(issue),
     };
     let key = format!("{} {file} {detail}", issue_kind_name(issue));
@@ -38,7 +40,7 @@ fn issue_file(issue: &CatalogIssue) -> &Path {
         | CatalogIssue::UnverifiableReference { file, .. }
         | CatalogIssue::OversizedSection { file, .. }
         | CatalogIssue::OversizedFile { file, .. } => file,
-        CatalogIssue::OversizedIndex { .. } => Path::new(INDEX_FILENAME),
+        CatalogIssue::OversizedIndex { .. } | CatalogIssue::StaleIndex => Path::new(INDEX_FILENAME),
         CatalogIssue::DuplicateHeadingAcrossFiles { files, .. } => {
             files.first().map_or(Path::new(""), PathBuf::as_path)
         }
@@ -58,6 +60,7 @@ fn issue_kind(issue: &CatalogIssue) -> u8 {
         CatalogIssue::OversizedFile { .. } => 8,
         CatalogIssue::OversizedIndex { .. } => 9,
         CatalogIssue::DuplicateHeadingAcrossFiles { .. } => 10,
+        CatalogIssue::StaleIndex => 11,
     }
 }
 
@@ -74,6 +77,7 @@ fn issue_kind_name(issue: &CatalogIssue) -> &'static str {
         CatalogIssue::OversizedFile { .. } => "oversized-file",
         CatalogIssue::OversizedIndex { .. } => "oversized-index",
         CatalogIssue::DuplicateHeadingAcrossFiles { .. } => "duplicate-heading-across-files",
+        CatalogIssue::StaleIndex => "stale-index",
     }
 }
 
@@ -103,6 +107,7 @@ fn issue_payload(issue: &CatalogIssue) -> String {
         CatalogIssue::OversizedSection { heading, lines, .. } => format!("{heading}:{lines}"),
         CatalogIssue::OversizedFile { lines, .. } => lines.to_string(),
         CatalogIssue::OversizedIndex { bytes } => bytes.to_string(),
+        CatalogIssue::StaleIndex => String::new(),
         CatalogIssue::DuplicateHeadingAcrossFiles { heading, files } => {
             let files: Vec<_> = files.iter().map(|file| file.to_string_lossy()).collect();
             format!("{heading}:{}", files.join(","))

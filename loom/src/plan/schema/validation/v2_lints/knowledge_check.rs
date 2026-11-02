@@ -78,9 +78,10 @@ fn is_strict_check_without_baseline(argv: &[&Word]) -> bool {
     strict && !baseline
 }
 
-/// Structural (non-review) issues in the repository's knowledge tree, through
-/// the catalog checks `loom knowledge check` runs, minus its git-backed
-/// evidence pass (`catalog::structural_issues` runs no process). Zero when
+/// Structural (non-review) catalog issues in the repository's knowledge tree,
+/// minus the git-backed evidence pass (`catalog::structural_issues` runs no
+/// process). It omits `StaleIndex`, which `check --strict` also fails on,
+/// because a stage can cure a stale index by running `knowledge sync`. Zero when
 /// there is no tree or it cannot be read: nothing to report then.
 fn structural_issue_count(repo_root: &Path) -> usize {
     let knowledge = KnowledgeDir::new(repo_root);
