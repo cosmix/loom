@@ -233,6 +233,16 @@ run_companion completed "$OUT" "$ERR" "$UNSUPPORTED_HOME"
 assert_absent '^LOOM-FORWARD-START ' "$OUT"
 rg -qF 'Supported codex companion 1.0.6 is missing or unsafe' "$OUT"
 
+# A symlink at the supported leaf is unsafe even when its target is a file.
+SYMLINK_HOME="$d/symlink-home"
+SYMLINK_COMPANION="$SYMLINK_HOME/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts"
+mkdir -p "$SYMLINK_COMPANION"
+ln -s "$COMPANION" "$SYMLINK_COMPANION/codex-companion.mjs"
+rm -f "$NODE_CALLED"
+run_companion completed "$OUT" "$ERR" "$SYMLINK_HOME"
+[[ $RUN_STATUS -eq 1 && ! -e "$NODE_CALLED" ]]
+rg -qF 'Supported codex companion 1.0.6 is missing or unsafe' "$OUT"
+
 UNWRITABLE_HOME="$d/unwritable-home"
 UNWRITABLE_COMPANION="$UNWRITABLE_HOME/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts"
 mkdir -p "$UNWRITABLE_COMPANION" "$UNWRITABLE_HOME/.codex"

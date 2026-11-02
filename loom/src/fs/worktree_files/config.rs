@@ -5,9 +5,9 @@
 pub struct StageFileCleanupConfig {
     /// Remove session files for the stage
     pub cleanup_sessions: bool,
-    /// Remove signal files for the stage
+    /// Remove signal files for the stage's sessions when `cleanup_sessions` is enabled.
     pub cleanup_signals: bool,
-    /// Archive stage file instead of deleting
+    /// Archive the stage file; when false, leave it in place.
     pub archive_stage: bool,
     /// Print progress messages
     pub verbose: bool,
@@ -33,7 +33,7 @@ impl StageFileCleanupConfig {
         }
     }
 
-    /// Create a config that archives instead of deleting
+    /// Create a config that archives the stage file.
     pub fn with_archive() -> Self {
         Self {
             archive_stage: true,
@@ -49,7 +49,7 @@ pub struct StageFileCleanupResult {
     pub sessions_removed: usize,
     /// Number of signal files removed
     pub signals_removed: usize,
-    /// Whether the stage file was archived or removed
+    /// Whether archiving returned successfully, including when no stage file existed.
     pub stage_file_handled: bool,
     /// Session IDs that were cleaned up
     pub cleaned_session_ids: Vec<String>,

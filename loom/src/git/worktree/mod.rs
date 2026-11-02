@@ -13,16 +13,20 @@
 //! - `parser`: Git worktree output parsing
 //! - `paths`: Path resolution utilities for worktrees
 //! - `pinned`: Git run in a stage worktree from outside its sandbox
+//! - `scratch_admin`: The private git directory that keeps pinned git away from
+//!   the whole administrative directory
 //! - `settings`: Settings management (.claude/, CLAUDE.md, symlinks)
 
 mod base;
 mod checks;
 mod config_worktree;
 mod discovery;
+mod main_identity;
 mod operations;
 mod parser;
 mod paths;
 mod pinned;
+mod scratch_admin;
 mod settings;
 
 // Re-export all public items for backwards compatibility
@@ -34,6 +38,9 @@ pub use checks::{
 pub use config_worktree::{partition_admin_dirs, worktree_admin_dirs, AdminDirs};
 pub use discovery::{
     extract_stage_id_from_path, extract_worktree_stage_id, find_worktree_by_prefix,
+};
+pub(crate) use main_identity::{
+    capture_main_identity, main_identity_exists, require_main_identity, require_main_identity_at,
 };
 pub use operations::{
     clean_worktrees, create_worktree, get_or_create_worktree, list_worktrees, remove_worktree,

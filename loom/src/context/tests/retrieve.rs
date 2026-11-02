@@ -1,5 +1,6 @@
 use crate::context::retrieve::*;
 use crate::context::schema::*;
+use crate::context::store::ContextStore;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -249,6 +250,71 @@ fn retrieve_for_stage_fingerprints_the_knowledge_tree_once() {
 }
 
 #[test]
+fn corrupt_derived_artifacts_are_rebuilt_for_retrieval() {
+    let temp = project_with_knowledge();
+    let query = StageQuery::new(temp.path(), "signal generation");
+    let original = retrieve_for_stage(&query, 2_000).unwrap();
+    assert!(!original.items.is_empty());
+    let cache = temp.path().join(".loom/cache/context-v1");
+    for name in ["state.json", "catalog.json"] {
+        fs::write(cache.join(name), "{broken").unwrap();
+        let recovered = retrieve_for_stage(&query, 2_000).unwrap();
+        assert!(!recovered.items.is_empty(), "{name}");
+        assert_eq!(
+            recovered.structural_freshness.revision,
+            original.structural_freshness.revision
+        );
+        let data = fs::read_to_string(cache.join(name)).unwrap();
+        serde_json::from_str::<serde_json::Value>(&data).unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn corrupt_cache_is_usable_when_publication_is_denied() {
+    use std::os::unix::fs::PermissionsExt;
+    for name in ["state.json", "catalog.json"] {
+        let temp = project_with_knowledge();
+        let query = StageQuery::new(temp.path(), "signal generation");
+        let original = retrieve_for_stage(&query, 2_000).unwrap();
+        let cache = temp.path().join(".loom/cache/context-v1");
+        let store = ContextStore::with_root(&cache);
+        store
+            .update_state(|state| state.semantic.revision = "known-semantic".into())
+            .unwrap();
+        fs::write(cache.join(name), "{broken").unwrap();
+        let permissions = fs::metadata(&cache).unwrap().permissions();
+        fs::set_permissions(&cache, fs::Permissions::from_mode(0o555)).unwrap();
+        let probe = cache.join("permission-probe");
+        if fs::write(&probe, "probe").is_ok() {
+            fs::remove_file(probe).unwrap();
+            fs::set_permissions(&cache, permissions).unwrap();
+            eprintln!("skipping: this environment does not enforce directory permissions");
+            return;
+        }
+        let result = retrieve_for_stage(&query, 2_000);
+        fs::set_permissions(&cache, permissions).unwrap();
+        let recovered = result.unwrap();
+        assert!(!recovered.items.is_empty(), "{name}");
+        assert_eq!(
+            recovered.structural_freshness.revision,
+            original.structural_freshness.revision
+        );
+        assert!(recovered
+            .structural_freshness
+            .detail
+            .unwrap()
+            .contains("cache not updated"));
+        if name == "catalog.json" {
+            assert_eq!(recovered.semantic_freshness.revision, "known-semantic");
+        } else {
+            assert!(recovered.semantic_freshness.unavailable);
+        }
+        assert_eq!(fs::read_to_string(cache.join(name)).unwrap(), "{broken");
+    }
+}
+
+#[test]
 fn retrieve_for_stage_boosts_a_chunk_named_by_stage_dependency_ids() {
     let temp = project_with_knowledge();
 
@@ -303,6 +369,16 @@ fn retrieve_for_stage_degrades_rather_than_failing_with_no_knowledge_tree() {
         pack.structural_freshness.stale && pack.semantic_freshness.stale,
         "a layer that was never built must never report itself current"
     );
+}
+
+#[test]
+fn missing_knowledge_tree_and_corrupt_state_degrade() {
+    let temp = TempDir::new().unwrap();
+    fs::create_dir_all(temp.path().join(".loom/work")).unwrap();
+    write_file(temp.path(), ".loom/cache/context-v1/state.json", "{broken");
+    let pack = retrieve_for_stage(&StageQuery::new(temp.path(), "anything"), 500).unwrap();
+    assert!(pack.items.is_empty());
+    assert!(pack.semantic_freshness.unavailable);
 }
 
 /// The `loom knowledge` commands read and write the tree itself, so for them an

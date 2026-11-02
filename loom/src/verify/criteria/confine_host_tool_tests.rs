@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-fn launcher_available(name: &str) -> bool {
+pub(super) fn launcher_available(name: &str) -> bool {
     !crate::process::sandbox_probe::skip_unless(
         super::launcher().is_some(),
         name,
@@ -91,10 +91,17 @@ fn run_cache_canary(cwd: &Path, home: &Path, port: u16, network: NetworkAccess, 
     );
     assert!(String::from_utf8_lossy(&output.stdout).contains("CACHE_CANARY_PASSED"));
     for cache in ["cache", "uv-cache", "bun-cache"] {
-        assert!(
-            scratch_path.join(cache).join("written").is_file(),
-            "{cache}"
-        );
+        let mut written = scratch_path.join(cache).join("written").is_file();
+        #[cfg(target_os = "linux")]
+        if !written {
+            written = scratch
+                .cache_overlays()
+                .iter()
+                .any(|(_, upper, _, target)| {
+                    target == &scratch_path.join(cache) && upper.join("written").is_file()
+                });
+        }
+        assert!(written, "{cache}");
     }
     drop(scratch);
     assert!(!scratch_path.exists());
@@ -141,7 +148,7 @@ fn private_scratch_does_not_change_acceptance_cache_identity() {
     );
 }
 
-fn optional_tool(name: &str, variable: &str) -> Option<PathBuf> {
+pub(super) fn optional_tool(name: &str, variable: &str) -> Option<PathBuf> {
     let tool = std::env::var_os(variable)
         .map(PathBuf::from)
         .or_else(|| which::which(name).ok());
@@ -159,7 +166,7 @@ fn optional_tool(name: &str, variable: &str) -> Option<PathBuf> {
 /// while the copy's write fd is open holds a duplicate until its own exec, and
 /// an exec of the copy in that window fails with `ETXTBSY`. One exec that
 /// succeeds proves no writer remains, so every later exec of the copy is safe.
-fn install_tool(tool: &Path, binary: &Path) {
+pub(super) fn install_tool(tool: &Path, binary: &Path) {
     const MAX_ATTEMPTS: u32 = 50;
     std::fs::copy(tool, binary).unwrap();
     for attempt in 1..=MAX_ATTEMPTS {

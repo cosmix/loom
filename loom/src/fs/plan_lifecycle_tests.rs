@@ -381,3 +381,19 @@ fn archive_failure_prevents_done_and_retry_finishes() {
         .starts_with("DONE-"));
     assert!(done.exists());
 }
+
+#[test]
+fn done_rename_rolls_back_if_config_update_fails() {
+    let temp = TempDir::new().unwrap();
+    let work = WorkDir::new(temp.path()).unwrap();
+    work.initialize().unwrap();
+    fs::write(work.root().join("config.toml"), "not valid = [").unwrap();
+    let plan = create_plan_file(&temp, "IN_PROGRESS-PLAN-feature.md");
+    let done = add_prefix_to_filename(
+        &remove_prefix_from_filename(&plan, IN_PROGRESS_PREFIX),
+        DONE_PREFIX,
+    );
+    assert!(rename_completed_plan(&work, &plan, &done).is_err());
+    assert!(plan.exists());
+    assert!(!done.exists());
+}

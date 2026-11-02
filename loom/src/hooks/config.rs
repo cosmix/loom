@@ -4,10 +4,9 @@
 //! session lifecycle management.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
-use std::path::PathBuf;
-
-use crate::plan::schema::PermissionMode;
+use std::path::Path;
 
 /// Claude Code hook event types supported by loom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -103,102 +102,28 @@ pub struct HookCommand {
     pub command: String,
 }
 
-/// Configuration for loom hooks.
-///
-/// This structure defines all hooks that loom sets up for Claude Code sessions.
-///
-/// Deliberately carries NO per-session identity (stage ID, session ID): those
-/// env vars are exported by the session wrapper script only, never persisted
-/// in settings files, so they can never go stale across sessions.
-#[derive(Debug, Clone)]
-pub struct HooksConfig {
-    /// Path to the loom hooks directory
-    pub hooks_dir: PathBuf,
-    /// Path to the .loom/work directory
-    pub work_dir: PathBuf,
-    /// Resolved Claude Code permission mode for this session.
-    pub permission_mode: PermissionMode,
-}
-
-impl HooksConfig {
-    /// Create a new hooks configuration.
-    pub fn new(hooks_dir: PathBuf, work_dir: PathBuf, permission_mode: PermissionMode) -> Self {
-        Self {
-            hooks_dir,
-            work_dir,
-            permission_mode,
-        }
-    }
-
-    /// Get the full path to a hook script.
-    ///
-    /// Sessions see host-absolute paths — the hooks are installed at
-    /// `<claude_dir>/hooks/loom/...` on the host (`assets::install::claude_hooks_dir`).
-    pub fn script_path(&self, event: HookEvent) -> PathBuf {
-        self.hooks_dir.join(event.script_name())
-    }
-
-    /// Build the command string for a hook event
-    ///
-    /// Returns just the script path. Hooks read LOOM_STAGE_ID / LOOM_SESSION_ID /
-    /// LOOM_WORK_DIR from the process environment, which the session wrapper
-    /// script exports before `exec claude` (settings files only carry the
-    /// stable LOOM_WORK_DIR — see `generate_hooks_settings`).
-    pub fn build_command(&self, event: HookEvent) -> String {
-        let script = self.script_path(event);
-        script.display().to_string()
-    }
-
-    /// Build the single hook rule for `event`: a `"*"` matcher running
-    /// `self.build_command(event)` as the sole command.
-    fn hook_rule(&self, event: HookEvent) -> HookRule {
-        HookRule {
-            matcher: "*".to_string(),
-            hooks: vec![HookCommand {
-                hook_type: "command".to_string(),
-                command: self.build_command(event),
-            }],
-        }
-    }
-
-    /// Generate session-specific hooks for Claude Code settings.json (new format)
-    ///
-    /// This creates ONLY session-specific hooks that should be added to worktree settings.
-    /// Global hooks (ask-user-pre, ask-user-post, prefer-modern-tools, commit-guard, skill-trigger)
-    /// are already in the main settings.json and should NOT be duplicated here.
-    ///
-    /// Every `HookEvent` variant returned by `HookEvent::all()` is a session
-    /// hook and belongs in this map — there is currently no variant that must
-    /// be excluded. What each one does, and why:
-    /// - SessionStart: writes the initial heartbeat.
-    /// - PostToolUse: updates the heartbeat after each tool use ("*" matcher
-    ///   catches every tool).
-    /// - PreCompact: triggers a handoff before context compaction.
-    /// - SessionEnd: runs cleanup when a session ends normally.
-    /// - Stop: runs learning-validator.sh. commit-guard.sh is a separate,
-    ///   global hook already present in the main settings.json, so it must
-    ///   not be duplicated here.
-    /// - SubagentStart: records a Task-tool subagent's spawn type in the ledger.
-    /// - SubagentStop: runs in the PARENT session's own hook context when a
-    ///   Task-tool subagent finishes. Writes authoritative lifecycle evidence and
-    ///   refreshes the parent's heartbeat, since the parent runs no tools of
-    ///   its own while blocked on the subagent, so PostToolUse cannot do that.
-    /// - TeammateIdle: records nonterminal idle evidence for an agent-team
-    ///   teammate and refreshes the parent heartbeat. It always allows the
-    ///   teammate to remain idle; Loom never uses it as completion evidence.
-    ///
-    /// Returns a map of event type to hook rules.
-    pub fn to_settings_hooks(&self) -> std::collections::HashMap<String, Vec<HookRule>> {
-        use std::collections::HashMap;
-        let mut hooks_map: HashMap<String, Vec<HookRule>> = HashMap::new();
-
-        for &event in HookEvent::all() {
-            hooks_map
-                .entry(event.to_string())
-                .or_default()
-                .push(self.hook_rule(event));
-        }
-
+/// The event registrations in a session capsule. The capsule builder adds guard
+/// and relay hooks and interpreter wrapping around these rules, and carries no
+/// per-session identity: the session wrapper script exports those env vars.
+/// Claude Code runs a hook's command through a shell, so each command is one
+/// shell word however the hooks directory is spelled.
+pub(crate) fn session_event_rules(
+    hooks_dir: &Path,
+    events: &[HookEvent],
+) -> HashMap<String, Vec<HookRule>> {
+    let mut hooks_map: HashMap<String, Vec<HookRule>> = HashMap::new();
+    for &event in events {
+        let script = hooks_dir.join(event.script_name()).display().to_string();
         hooks_map
+            .entry(event.to_string())
+            .or_default()
+            .push(HookRule {
+                matcher: "*".to_string(),
+                hooks: vec![HookCommand {
+                    hook_type: "command".to_string(),
+                    command: shell_escape::escape(script.into()).into_owned(),
+                }],
+            });
     }
+    hooks_map
 }

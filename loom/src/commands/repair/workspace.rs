@@ -8,7 +8,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use super::{RepairIssue, Severity};
+use super::{DetectedIssue, RepairAction, Severity};
 use crate::fs::work_dir::Layout;
 use crate::fs::work_integrity::{
     check_work_dir_state, is_in_worktree, is_work_dir_git_ignored, is_worktrees_git_ignored,
@@ -21,12 +21,8 @@ mod tests;
 /// Check 1: state directory shape. Check 2: `.gitignore` has the state
 /// directory. Check 3: `.gitignore` has `.worktrees`.
 ///
-/// The descriptions below name the path `check_work_dir_state` actually
-/// inspected — nested `.loom/work`, or, for a legacy workspace, `.work` — so
-/// `WorkspaceFix::classify`'s substring dispatch matches on fragments that
-/// stay the same across both spellings rather than on the interpolated path
-/// itself.
-pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
+/// Descriptions name the state layout inspected by the detector.
+pub(super) fn check(repo_root: &Path) -> Vec<DetectedIssue> {
     let mut issues = Vec::new();
 
     let (_, work_layout) = state_dir(repo_root);
@@ -38,14 +34,16 @@ pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
     // A symlink is corruption only in the main repo; in a worktree it is correct.
     match check_work_dir_state(repo_root) {
         WorkDirState::Symlink { target } if !is_in_worktree(repo_root) => {
-            issues.push(RepairIssue {
+            issues.push(DetectedIssue {
+                action: RepairAction::Workspace(super::workspace::WorkspaceFix::WorkSymlink),
                 severity: Severity::Critical,
                 description: format!("{work_display_path} is a symlink (-> {target}) in main repo"),
                 fix_description: format!("Remove the {work_display_path} symlink and reinitialize"),
             });
         }
         WorkDirState::Invalid => {
-            issues.push(RepairIssue {
+            issues.push(DetectedIssue {
+                action: RepairAction::Workspace(super::workspace::WorkspaceFix::InvalidWork),
                 severity: Severity::Critical,
                 description: format!(
                     "{work_display_path} exists but is neither directory nor symlink"
@@ -56,8 +54,15 @@ pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
         _ => {}
     }
 
+    check_gitignore(repo_root, work_display_path, &mut issues);
+
+    issues
+}
+
+fn check_gitignore(repo_root: &Path, work_display_path: &str, issues: &mut Vec<DetectedIssue>) {
     if !is_work_dir_git_ignored(repo_root) {
-        issues.push(RepairIssue {
+        issues.push(DetectedIssue {
+            action: RepairAction::Workspace(super::workspace::WorkspaceFix::GitignoreWork),
             severity: Severity::Warning,
             description: format!("{work_display_path} not found in .gitignore"),
             fix_description: format!(
@@ -67,14 +72,13 @@ pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
     }
 
     if !is_worktrees_git_ignored(repo_root) {
-        issues.push(RepairIssue {
+        issues.push(DetectedIssue {
+            action: RepairAction::Workspace(super::workspace::WorkspaceFix::GitignoreWorktrees),
             severity: Severity::Warning,
             description: ".worktrees not found in .gitignore".to_string(),
             fix_description: "Add .worktrees/ and .worktrees to .gitignore".to_string(),
         });
     }
-
-    issues
 }
 
 /// Fix a corrupted work-directory symlink in the main repo
@@ -224,12 +228,12 @@ pub fn repair_workspace(repo_root: &Path) -> Result<Vec<AppliedRepair>> {
 /// to a human).
 pub(crate) fn repair_workspace_from(
     repo_root: &Path,
-    issues: Vec<RepairIssue>,
+    issues: Vec<DetectedIssue>,
 ) -> Result<Vec<AppliedRepair>> {
     let mut applied = Vec::new();
 
     for issue in &issues {
-        let Some(fix) = WorkspaceFix::classify(&issue.description) else {
+        let RepairAction::Workspace(fix) = &issue.action else {
             continue;
         };
         if !fix.unattended() {
@@ -247,6 +251,7 @@ pub(crate) fn repair_workspace_from(
 
 /// The workspace-shape repairs, one variant per arm `fix_workspace_issue`
 /// used to dispatch inline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum WorkspaceFix {
     WorkSymlink,
     InvalidWork,
@@ -259,35 +264,6 @@ pub(super) enum WorkspaceFix {
 }
 
 impl WorkspaceFix {
-    /// The single substring matcher. `None` = not a workspace-family issue.
-    pub(super) fn classify(description: &str) -> Option<Self> {
-        if description.contains("is a symlink (->") {
-            Some(Self::WorkSymlink)
-        } else if description.contains("exists but is neither") {
-            Some(Self::InvalidWork)
-        } else if description.contains(".loom/work not found in .gitignore")
-            || description.contains(".work not found in .gitignore")
-        {
-            Some(Self::GitignoreWork)
-        } else if description.contains(".worktrees not found in .gitignore") {
-            Some(Self::GitignoreWorktrees)
-        } else if description.contains("pre-commit hook not installed") {
-            Some(Self::PreCommitHook)
-        } else if description.contains(super::hooks::REFERENCE_TRANSACTION_ISSUE) {
-            Some(Self::ReferenceTransactionHook)
-        } else if description.contains("Project .claude/settings.json incomplete")
-            || description.contains("Hooks found in .claude/settings.json")
-        {
-            Some(Self::HooksAndSettings)
-        } else if description.contains("Loom hook scripts")
-            || description.contains("Codex hook installation")
-        {
-            Some(Self::HookScripts)
-        } else {
-            None
-        }
-    }
-
     /// Whether `loom init` may apply this without being asked. `InvalidWork`
     /// is the only `false`: its fix is a recursive delete of the state
     /// directory, keyed on shape detection a sibling plan stage rewrites, so

@@ -33,6 +33,26 @@ fn accounting_applies_known_s2_weights() {
 }
 
 #[test]
+fn maximum_legacy_counters_saturate_without_wrapping() {
+    let max = TokenUsage {
+        input: u64::MAX,
+        cache_creation: u64::MAX,
+        cache_read: u64::MAX,
+        output: u64::MAX,
+        ephemeral_5m: u64::MAX,
+        ephemeral_1h: u64::MAX,
+    };
+    let mut total = max;
+    total.add(&max);
+    assert_eq!(total.resident(), u64::MAX);
+    assert_eq!(total.output, u64::MAX);
+    let mut accounting = Accounting::of(&total);
+    accounting.add(&Accounting::of(&max));
+    assert_eq!(accounting.s1, u64::MAX);
+    assert_eq!(accounting.s3, u64::MAX);
+}
+
+#[test]
 fn five_hour_gap_splits_but_four_hour_gap_does_not() -> Result<()> {
     let one = request("2026-08-01T00:00:00Z", TokenUsage::default())?;
     let two = request("2026-08-01T04:00:00Z", TokenUsage::default())?;

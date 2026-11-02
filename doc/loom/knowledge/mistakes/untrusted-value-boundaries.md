@@ -128,12 +128,12 @@ cells are not all trusted: `stage.model`/`execution_models` come from the spawn 
 caller-controlled `.tool_input.model` (`loom-hooks/spawn-guard.sh::emit_result`), and `last_tool`/`last_activity`
 come from heartbeat JSON. A width-bounded renderer cannot do sanitization's
 job — it does not even try, it just measures cells. The fix sanitizes once, at the collector boundary
-that constructs the shared `StatusData` (`commands/status/data/sanitize.rs`, wired at
-`commands/status/data/collector.rs`), using the same `inline_safe` from this file's main lesson — that one boundary
+that constructs the shared `StatusData` (`status/data/sanitize.rs`, wired at
+`status/data/collector.rs`), using the same `inline_safe` from this file's main lesson — that one boundary
 covers the wire, the static renderer, and the ledger TUI at once, where fixing each renderer
 separately would not.
 
-A second bug rode on the same code: `commands/status/data/execution_models.rs` deduped model names on the RAW ledger
+A second bug rode on the same code: `status/data/execution_models.rs` deduped model names on the RAW ledger
 string while flattening happened later, so `"sonnet<ZWSP>"` and `"sonnet "` passed dedup as distinct
 and rendered as two identical-looking rows — and a trailing zero-width character could hide a
 `-YYYYMMDD` date stamp from the suffix stripper. Fixed by calling `inline_safe` BEFORE
@@ -158,7 +158,7 @@ distinct keys.
 
 ## Byte-Index Slicing Panics on a Multi-Byte String From an Untrusted Source
 
-**What happened:** `commands/status/data/execution_models.rs::normalize_model` stripped a trailing `-YYYYMMDD` stamp by
+**What happened:** `status/data/execution_models.rs::normalize_model` stripped a trailing `-YYYYMMDD` stamp by
 slicing a `&str` at a fixed byte offset (`len - 9`). The model name comes from `spawns.jsonl`, written
 verbatim from a caller-controlled tool argument (`loom-hooks/spawn-guard.sh::record_spawn`), and
 `execution_models_for_stage` runs inside `collect_status_data`, which backs both `loom status` and
@@ -180,9 +180,9 @@ a character-class case (`case $stage_id in *[!A-Za-z0-9._-]* | "") return 0`), w
 `..` because both are made only of allowed characters. The resulting ledger path
 `${work_dir}/subagents/${stage_id}` then resolves to the work dir itself for a `..` id — `chmod 700`
 changes the work dir's own mode and the ledger row lands one level outside its per-stage directory.
-The Rust reader (`commands/status/data/sanitize.rs::valid_stage_id`) gets this right by explicitly
+The Rust reader (`status/data/sanitize.rs::valid_stage_id`) gets this right by explicitly
 rejecting `..`, so the two sides of the same boundary disagree, and the same check now exists in four
-places at three different strengths (`commands/status/data/execution_models.rs`, `commands/memory/handlers/work_dir.rs`,
+places at three different strengths (`status/data/execution_models.rs`, `commands/memory/handlers/work_dir.rs`,
 `loom-hooks/codex-forward.sh`, `loom-hooks/spawn-guard.sh`). The shell writers have since been fixed: `spawn-guard.sh::record_spawn`
 rejects `.`/`..` by name and `codex-forward.sh` anchors on a leading alphanumeric.
 

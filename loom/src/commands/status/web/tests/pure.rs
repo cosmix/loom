@@ -9,7 +9,7 @@ use std::{fs::OpenOptions, os::fd::AsRawFd, path::Path};
 use clap::CommandFactory;
 use serial_test::serial;
 
-use super::{assert_security_headers, workspace};
+use super::workspace;
 use crate::cli::Cli;
 use crate::commands::status::data::StatusData;
 use crate::commands::status::web::broadcast::{self, DaemonStep, SUBSCRIBER_QUEUE_DEPTH};
@@ -48,6 +48,9 @@ fn restore_tmpdir(value: Option<std::ffi::OsString>) {
         None => std::env::remove_var("TMUX_TMPDIR"),
     }
 }
+
+#[path = "pure/security_headers.rs"]
+mod security_headers;
 
 #[test]
 fn parse_head_reads_method_path_and_upgrade() {
@@ -233,6 +236,29 @@ fn oversized_daemon_response_is_degraded() {
 }
 
 #[test]
+fn file_snapshots_keep_terminal_failure_after_daemon_disconnect() {
+    let (_temp, base) = workspace();
+    let work = WorkDir::new(&base).unwrap();
+    std::fs::write(
+        work.root().join("orchestrator.complete"),
+        r#"{"kind":"scheduler_failure","message":"panic"}"#,
+    )
+    .unwrap();
+    let frame = broadcast::snapshot_frame(
+        work.root(),
+        StatusData::default(),
+        SnapshotSource::Files,
+        false,
+    )
+    .unwrap();
+    let snapshot: WebSnapshot = serde_json::from_str(&frame).unwrap();
+    assert!(snapshot
+        .notice
+        .unwrap()
+        .contains("Scheduler failure: panic"));
+}
+
+#[test]
 fn publish_skips_an_unchanged_tree() {
     let (_temp, base) = workspace();
     let work_dir = WorkDir::new(&base).expect("build work dir");
@@ -361,35 +387,4 @@ fn adopt_is_called_with_the_state_dir() {
     );
     drop(lock);
     restore_tmpdir(ambient);
-}
-
-#[test]
-fn every_http_response_carries_the_security_headers() {
-    for (status, reason) in [
-        (200, "OK"),
-        (403, "Forbidden"),
-        (404, "Not Found"),
-        (405, "Method Not Allowed"),
-        (408, "Request Timeout"),
-        (431, "Request Header Fields Too Large"),
-        (500, "Internal Server Error"),
-        (503, "Service Unavailable"),
-    ] {
-        let response =
-            String::from_utf8(http::response_bytes(status, reason, "text/plain", b"body"))
-                .expect("response bytes are UTF-8");
-        assert_security_headers(&response);
-        for directive in [
-            "connect-src 'self';",
-            "base-uri 'none';",
-            "form-action 'none';",
-            "frame-ancestors 'none'",
-        ] {
-            assert!(response.contains(directive), "missing {directive}");
-        }
-        assert!(
-            !response.contains("ws://"),
-            "connect-src must not name loopback WebSocket ports"
-        );
-    }
 }

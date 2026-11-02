@@ -32,6 +32,45 @@ fn adapter_reads_fixtures_without_writing() {
 
 #[test]
 #[serial_test::serial]
+fn forwarding_view_uses_the_acquired_transcript_after_append() {
+    let fixture = Fixture::new("queued", None);
+    fixture.write_transcript(AGENT, TOOL, &start_marker(JOB), true);
+    let bytes = fs::read(&fixture.transcript).unwrap();
+    fs::write(&fixture.transcript, b"invalid appended transcript\n").unwrap();
+    let transcript = forward_jobs_transcript::from_bytes(&fixture.transcript, &bytes, true);
+    let evidence = evidence_for_agent(&fixture.index(), AGENT, &transcript).unwrap();
+    assert_eq!(evidence.overlay, ForwardOverlay::ForwardWait);
+    assert_eq!(evidence.metadata.state, ForwardState::Queued);
+}
+
+#[test]
+#[serial_test::serial]
+fn classification_observes_transcript_and_companion_once() {
+    let fixture = Fixture::new("queued", None);
+    fixture.write_transcript(AGENT, TOOL, &start_marker(JOB), true);
+    let index = fixture.index();
+    let reads = crate::commands::subagents::classify::read_count();
+    let receipts = RECEIPT_READ_COUNT.with(std::cell::Cell::get);
+    let summary = crate::commands::subagents::classify::analyze_with_evidence_at_ceiling(
+        &fixture.transcript,
+        AGENT.into(),
+        180,
+        None,
+        u64::MAX,
+        None,
+        Some(&index),
+    )
+    .unwrap();
+    assert_eq!(
+        crate::commands::subagents::classify::read_count(),
+        reads + 1
+    );
+    assert_eq!(RECEIPT_READ_COUNT.with(std::cell::Cell::get), receipts + 1);
+    assert_eq!(summary.forward.unwrap().state, ForwardState::Queued);
+}
+
+#[test]
+#[serial_test::serial]
 fn deterministic_id_isolates_same_model_siblings() {
     let fixture = Fixture::new("queued", None);
     fixture.write_job("job-b", "failed", None);

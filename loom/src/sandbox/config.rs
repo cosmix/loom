@@ -5,7 +5,6 @@ use crate::plan::schema::{
 };
 use anyhow::Result;
 use std::env;
-use std::path::Path;
 
 pub(crate) mod preflight;
 
@@ -18,10 +17,10 @@ pub(crate) mod preflight;
 /// create `<file>.md.tmp`. See `apply_knowledge_write_grant`.
 pub const KNOWLEDGE_WRITE_GLOB: &str = "doc/loom/knowledge/**";
 
-/// Result of path traversal validation
+/// Result of classifying an `allow_write` entry for settings emission.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PathEscapeAttempt {
-    /// Path is safe - no escape detected
+    /// The entry is not excluded by the traversal spelling filter.
     Safe,
     /// Path attempts to escape via parent directory traversal
     ParentEscape {
@@ -30,8 +29,6 @@ pub enum PathEscapeAttempt {
     },
     /// Path attempts to access other worktrees
     WorktreeAccess { path: String },
-    /// Path uses absolute path that may escape worktree
-    AbsoluteEscape { path: String },
 }
 
 /// Merged sandbox configuration for a specific stage
@@ -230,20 +227,13 @@ pub fn expand_paths(config: &mut MergedSandboxConfig) {
     }
 }
 
-/// Check if a path attempts to escape the worktree boundary
-///
-/// This function detects:
-/// - Parent directory traversal patterns (../, ../../, etc.)
-/// - Direct access to .worktrees directory
-/// - Absolute paths that escape the worktree
-///
-/// Note: This is a static check on path patterns. The actual sandbox enforcement
-/// is done by Claude Code's sandbox based on the deny/allow rules we generate.
+/// Classify the traversal spelling excluded from emitted `allow_write` grants:
+/// any `..` path component. This filters settings emission; it is not filesystem
+/// containment, and mandatory denies and OS confinement apply independently.
 pub fn detect_path_escape(path: &str) -> PathEscapeAttempt {
     let path_trimmed = path.trim();
 
-    // Check for parent directory escape patterns
-    if contains_parent_escape(path_trimmed) {
+    if path_trimmed.split('/').any(|component| component == "..") {
         // Determine the type of escape
         if path_trimmed.contains(".worktrees") {
             return PathEscapeAttempt::WorktreeAccess {
@@ -256,51 +246,7 @@ pub fn detect_path_escape(path: &str) -> PathEscapeAttempt {
         };
     }
 
-    // Check for absolute paths that might escape worktree
-    // Only flag if path starts with / and is not a standard system path
-    if path_trimmed.starts_with('/') {
-        let path_obj = Path::new(path_trimmed);
-        // Allow /tmp, /dev, /proc for legitimate use
-        let allowed_prefixes = ["/tmp", "/dev", "/proc", "/sys"];
-        if !allowed_prefixes.iter().any(|p| path_trimmed.starts_with(p)) {
-            // Check if it's not a home directory (those are handled separately)
-            if !path_trimmed.starts_with("/home/") && !path_trimmed.starts_with("/Users/") {
-                // Check if this could be an escape (starts with user's cwd parent)
-                if let Ok(cwd) = env::current_dir() {
-                    if let Some(parent) = cwd.parent() {
-                        if path_obj.starts_with(parent) && !path_obj.starts_with(&cwd) {
-                            return PathEscapeAttempt::AbsoluteEscape {
-                                path: path.to_string(),
-                            };
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     PathEscapeAttempt::Safe
-}
-
-/// Check if path contains parent directory escape patterns
-fn contains_parent_escape(path: &str) -> bool {
-    // Patterns that indicate escape attempts
-    let escape_patterns = [
-        "../..", // Two levels up
-        "../",   // Check if starts with parent escape
-        "/..",   // Parent in middle of path
-        "..\\",  // Windows-style
-        "\\..",  // Windows-style in middle
-    ];
-
-    for pattern in escape_patterns {
-        if path.contains(pattern) {
-            return true;
-        }
-    }
-
-    // Also check if path starts with ..
-    path.starts_with("..")
 }
 
 /// Normalize parent escape patterns for reporting
@@ -320,41 +266,6 @@ fn normalize_parent_escape(path: &str) -> String {
     }
 
     normalized
-}
-
-/// Validate all paths in a sandbox config and return any escape attempts detected
-pub fn validate_paths(config: &MergedSandboxConfig) -> Vec<PathEscapeAttempt> {
-    let mut escapes = Vec::new();
-
-    // Check allow_write paths - these are the most sensitive since they grant write access
-    for path in &config.filesystem.allow_write {
-        let result = detect_path_escape(path);
-        if result != PathEscapeAttempt::Safe {
-            escapes.push(result);
-        }
-    }
-
-    // Note: deny_read and deny_write typically contain escape patterns intentionally
-    // (to block them), so we don't validate those here
-
-    escapes
-}
-
-/// Check if a path is a legitimate state-root directory access via symlink
-///
-/// In worktrees, the state root is a symlink — `.loom/work` on the nested
-/// layout, `.work` on a legacy workspace — to the main repo's shared
-/// orchestration state. Direct access under either prefix is legitimate;
-/// escaping through the symlink's target is not.
-pub fn is_legitimate_work_access(path: &str) -> bool {
-    let path_trimmed = path.trim();
-
-    let under_state_root = path_trimmed.starts_with(".loom/work/")
-        || path_trimmed == ".loom/work"
-        || path_trimmed.starts_with(".work/")
-        || path_trimmed == ".work";
-
-    under_state_root && !path_trimmed.contains("../")
 }
 
 #[cfg(test)]
@@ -740,6 +651,20 @@ mod tests {
             matches!(result, PathEscapeAttempt::ParentEscape { .. }),
             "Mid-path traversal should be detected"
         );
+
+        // A bare parent component grants the parent as surely as a longer path
+        for path in ["..", "dir/.."] {
+            assert!(
+                matches!(
+                    detect_path_escape(path),
+                    PathEscapeAttempt::ParentEscape { .. }
+                ),
+                "{path} should be detected as parent escape"
+            );
+        }
+
+        // Dots that are part of a name are no traversal
+        assert_eq!(detect_path_escape("v1..2/x"), PathEscapeAttempt::Safe);
     }
 
     #[test]
@@ -769,45 +694,6 @@ mod tests {
         // System paths are safe
         assert_eq!(detect_path_escape("/tmp/cache"), PathEscapeAttempt::Safe);
         assert_eq!(detect_path_escape("/dev/null"), PathEscapeAttempt::Safe);
-    }
-
-    #[test]
-    fn test_legitimate_work_access_via_symlink() {
-        // Direct .work/ access is legitimate (legacy layout)
-        assert!(is_legitimate_work_access(".work/signals/session.md"));
-        assert!(is_legitimate_work_access(".work/config.toml"));
-        assert!(is_legitimate_work_access(".work"));
-
-        // Direct .loom/work/ access is legitimate (nested layout)
-        assert!(is_legitimate_work_access(".loom/work/signals/session.md"));
-        assert!(is_legitimate_work_access(".loom/work/config.toml"));
-        assert!(is_legitimate_work_access(".loom/work"));
-
-        // But not escape through either spelling
-        assert!(!is_legitimate_work_access(".work/../../../escape"));
-        assert!(!is_legitimate_work_access(".loom/work/../../../escape"));
-
-        // Not other paths
-        assert!(!is_legitimate_work_access("src/main.rs"));
-        assert!(!is_legitimate_work_access("../../.work"));
-        assert!(!is_legitimate_work_access("../../../.loom/work"));
-    }
-
-    #[test]
-    fn test_validate_paths_detects_escape_in_allow_write() {
-        let mut config = default_merged();
-        // Malicious: trying to allow writing to parent
-        config.filesystem.allow_write =
-            vec!["../../malicious/**".to_string(), "src/**".to_string()];
-
-        let escapes = validate_paths(&config);
-
-        // Should detect the escape attempt
-        assert_eq!(escapes.len(), 1);
-        assert!(matches!(
-            &escapes[0],
-            PathEscapeAttempt::ParentEscape { path, .. } if path == "../../malicious/**"
-        ));
     }
 
     #[test]

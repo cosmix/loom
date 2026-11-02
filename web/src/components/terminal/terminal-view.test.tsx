@@ -302,13 +302,7 @@ describe("terminal view", () => {
       }
     }
 
-    // `src/test/setup.ts` installs its own ResizeObserver stub via
-    // `Object.defineProperty(window, "ResizeObserver", { value: ... })` with no
-    // `configurable: true`, unlike the `matchMedia`/`getBBox` stubs beside it in
-    // that same file. A non-configurable property can never be redefined to a
-    // different value by any means (`vi.stubGlobal`, `Object.defineProperty`,
-    // or `delete`), so this stub cannot be swapped for one that fires from
-    // this file alone; see the accompanying report for the one-line fix.
+    // A controllable observer lets the test trigger a resize explicitly.
     vi.stubGlobal("ResizeObserver", TestResizeObserver);
     const timers = fakeTimers();
     const factory = fakeFactory();

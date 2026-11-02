@@ -73,10 +73,159 @@ fn the_same_agent_with_different_findings_records_a_new_round() {
 }
 
 #[test]
-fn the_same_agent_at_a_different_fingerprint_records_a_new_round() {
+fn a_replayed_stop_cannot_certify_edits_after_the_review() {
     let fixture = fixture(2, REVIEW);
     harvest(&fixture.work_dir, &fixture.input).unwrap();
     fs::write(fixture.worktree.join("changed.txt"), "after the review\n").unwrap();
+
+    // The repeat stop is the report round 1 holds, so it is no failure; it
+    // still writes nothing, so round 1 stays bound to the tree it reviewed.
+    assert_eq!(
+        harvest(&fixture.work_dir, &fixture.input).unwrap(),
+        Harvest::Duplicate { round: 1 }
+    );
+    assert_eq!(round_count(&fixture), 1);
+    let rounds = store::load_rounds(&fixture.work_dir, STAGE).unwrap();
+    assert_ne!(
+        rounds[0].fingerprint,
+        fingerprint::compute(&fixture.worktree, "main")
+            .unwrap()
+            .value
+    );
+}
+
+#[test]
+fn a_different_report_after_edits_is_refused_as_a_changed_worktree() {
+    let fixture = fixture(2, REVIEW);
+    harvest(&fixture.work_dir, &fixture.input).unwrap();
+    fs::write(fixture.worktree.join("changed.txt"), "after the review\n").unwrap();
+    write_transcript(&fixture.input.transcript_path, REVIEW_ALT);
+
+    let error = harvest(&fixture.work_dir, &fixture.input).unwrap_err();
+
+    assert_eq!(failure_cause(&error), Some("worktree_changed"));
+    assert!(
+        format!("{error:#}").contains("launch a new review"),
+        "{error:#}"
+    );
+    assert_eq!(round_count(&fixture), 1);
+}
+
+#[test]
+fn a_harvest_failure_names_its_cause() {
+    let mut fixture = fixture(2, REVIEW);
+    fixture.input.session_id = "other-parent".to_string();
+    let error = harvest(&fixture.work_dir, &fixture.input).unwrap_err();
+    assert_eq!(failure_cause(&error), Some("transcript_unusable"));
+
+    let fixture = super::fixture(2, REVIEW);
+    let start_file = fs::read_dir(reviews_dir(&fixture))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.to_string_lossy().contains("start-"))
+        .unwrap();
+    fs::remove_file(start_file).unwrap();
+    let error = harvest(&fixture.work_dir, &fixture.input).unwrap_err();
+    assert_eq!(failure_cause(&error), Some("no_start_evidence"));
+    assert!(
+        format!("{error:#}").contains("reviewer start evidence"),
+        "{error:#}"
+    );
+
+    let fixture = super::fixture(2, REVIEW);
+    fs::remove_dir_all(&fixture.worktree).unwrap();
+    let error = harvest(&fixture.work_dir, &fixture.input).unwrap_err();
+    assert_eq!(failure_cause(&error), None, "{error:#}");
+}
+
+#[test]
+fn a_repeated_start_cannot_rebind_an_agent_after_edits() {
+    let fixture = fixture(2, REVIEW);
+    fs::write(fixture.worktree.join("changed.txt"), "after the start\n").unwrap();
+
+    assert!(crate::commands::hook::review_start::capture(
+        &fixture.work_dir,
+        &fixture.input.invocation()
+    )
+    .is_err());
+    assert!(harvest(&fixture.work_dir, &fixture.input).is_err());
+    assert_eq!(round_count(&fixture), 0);
+}
+
+/// The start snapshot, not the tree at SubagentStop, binds the harvest: the
+/// tree the reviewer read must match even though the start named no transcript.
+#[test]
+fn start_evidence_binds_each_agent_to_its_own_start_tree() {
+    let mut fixture = fixture(2, REVIEW);
+    fs::write(fixture.worktree.join("changed.txt"), "after the first\n").unwrap();
+    fixture.input.agent_id = "other".to_string();
+    fixture.input.transcript_path = fixture
+        .input
+        .transcript_path
+        .with_file_name("agent-other.jsonl");
+    crate::commands::hook::review_start::capture(&fixture.work_dir, &fixture.input.invocation())
+        .unwrap();
+    write_transcript(&fixture.input.transcript_path, REVIEW);
+
+    assert_eq!(
+        harvest(&fixture.work_dir, &fixture.input).unwrap(),
+        recorded(1)
+    );
+
+    fixture.input.agent_id = AGENT.to_string();
+    fixture.input.transcript_path = fixture
+        .input
+        .transcript_path
+        .with_file_name(format!("agent-{AGENT}.jsonl"));
+    assert!(
+        harvest(&fixture.work_dir, &fixture.input).is_err(),
+        "the first agent started on the earlier tree"
+    );
+    assert_eq!(round_count(&fixture), 1);
+}
+
+/// A session id is part of the invocation: the same agent id under another
+/// parent session has no start evidence, even with its own valid transcript.
+#[test]
+fn start_evidence_is_keyed_on_the_parent_session() {
+    let mut fixture = fixture(2, REVIEW);
+    let elsewhere = fixture
+        .input
+        .transcript_path
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .with_file_name("other-parent")
+        .join("subagents")
+        .join(format!("agent-{AGENT}.jsonl"));
+    write_transcript(&elsewhere, REVIEW);
+    fixture.input.session_id = "other-parent".to_string();
+    fixture.input.transcript_path = elsewhere;
+
+    let error = harvest(&fixture.work_dir, &fixture.input).unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("reviewer start evidence"),
+        "{error:#}"
+    );
+    assert_eq!(round_count(&fixture), 0);
+}
+
+#[test]
+fn a_new_reviewer_invocation_can_review_the_edited_tree() {
+    let mut fixture = fixture(2, REVIEW);
+    harvest(&fixture.work_dir, &fixture.input).unwrap();
+    fs::write(fixture.worktree.join("changed.txt"), "after the review\n").unwrap();
+    let other = fixture
+        .input
+        .transcript_path
+        .with_file_name("agent-other.jsonl");
+    fs::copy(&fixture.input.transcript_path, &other).unwrap();
+    fixture.input.agent_id = "other".to_string();
+    fixture.input.transcript_path = other;
+    crate::commands::hook::review_start::capture(&fixture.work_dir, &fixture.input.invocation())
+        .unwrap();
 
     let outcome = harvest(&fixture.work_dir, &fixture.input).unwrap();
 
@@ -95,6 +244,8 @@ fn different_agents_with_the_same_report_record_two_rounds() {
     fs::copy(&fixture.input.transcript_path, &other).unwrap();
     fixture.input.agent_id = "other".to_string();
     fixture.input.transcript_path = other;
+    crate::commands::hook::review_start::capture(&fixture.work_dir, &fixture.input.invocation())
+        .unwrap();
 
     let outcome = harvest(&fixture.work_dir, &fixture.input).unwrap();
 

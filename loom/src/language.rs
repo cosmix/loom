@@ -1,10 +1,15 @@
 //! Language detection for projects.
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::path::Path;
 
 use crate::context::extract::dialect::dialect_for_path;
 use crate::context::source_graph::NodeLanguage;
+
+pub(crate) mod evidence;
+#[cfg(test)]
+mod evidence_tests;
 
 /// Detected programming language in a project
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -86,85 +91,57 @@ impl DetectedLanguage {
 
 /// Detect programming languages used in a project
 ///
-/// Returns a Vec of detected languages based on manifest files:
-/// - Rust: Cargo.toml
-/// - TypeScript: tsconfig.json
-/// - JavaScript: package.json without tsconfig.json
-/// - Python: pyproject.toml or requirements.txt
-/// - Go: go.mod
-/// - Java: pom.xml, build.gradle or build.gradle.kts
-/// - C#: a root `*.csproj`, `*.sln` or `*.slnx`
-/// - Ruby: Gemfile or a root `*.gemspec`
-/// - PHP: composer.json
-/// - C++: CMakeLists.txt, meson.build, conanfile.txt, conanfile.py or vcpkg.json
+/// Projects detected in this directory use the shared manifest evidence rules.
+/// Kotlin, Scala, Swift, Elixir and Dart have no `DetectedLanguage` projection.
 ///
 /// C has no manifest: nothing distinguishes a C build from a C++ build, so C
 /// is detected only from file extensions (see [`detect_languages_from_files`]).
 ///
 /// Returns empty Vec if no languages detected.
 pub fn detect_project_languages(root: &Path) -> Vec<DetectedLanguage> {
-    let has = |name: &str| root.join(name).exists();
-    let has_any = |names: &[&str]| names.iter().any(|name| has(name));
-    let root_extensions = root_entry_extensions(root);
-    let has_ext = |exts: &[&str]| root_extensions.iter().any(|e| exts.contains(&e.as_str()));
-
-    let checks = [
-        (DetectedLanguage::Rust, has("Cargo.toml")),
-        (DetectedLanguage::TypeScript, has("tsconfig.json")),
-        (
-            DetectedLanguage::JavaScript,
-            has("package.json") && !has("tsconfig.json"),
-        ),
-        (
-            DetectedLanguage::Python,
-            has_any(&["pyproject.toml", "requirements.txt"]),
-        ),
-        (DetectedLanguage::Go, has("go.mod")),
-        (
-            DetectedLanguage::Java,
-            has_any(&["pom.xml", "build.gradle", "build.gradle.kts"]),
-        ),
-        (
-            DetectedLanguage::CSharp,
-            has_ext(&["csproj", "sln", "slnx"]),
-        ),
-        (
-            DetectedLanguage::Ruby,
-            has("Gemfile") || has_ext(&["gemspec"]),
-        ),
-        (DetectedLanguage::Php, has("composer.json")),
-        (
-            DetectedLanguage::Cpp,
-            has_any(&[
-                "CMakeLists.txt",
-                "meson.build",
-                "conanfile.txt",
-                "conanfile.py",
-                "vcpkg.json",
-            ]),
-        ),
-    ];
-    checks
-        .into_iter()
-        .filter_map(|(language, found)| found.then_some(language))
-        .collect()
+    project_languages(&evidence::detect(root))
 }
 
-/// Lowercase extensions of the entries directly under `root`.
+/// Sandbox network domains suggested for the project at `root`: GitHub plus each
+/// detected ecosystem's registries. Empty when no supported project is detected.
 ///
-/// One `read_dir` pass; an unreadable root yields no extensions.
-fn root_entry_extensions(root: &Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(root) else {
+/// Kotlin stays out of [`DetectedLanguage`], but a Kotlin manifest is a Gradle
+/// Kotlin DSL build, which resolves through the same hosts as a Java Gradle build.
+pub fn suggested_network_domains(root: &Path) -> Vec<String> {
+    let found = evidence::detect(root);
+    let mut languages = project_languages(&found);
+    if found.contains(&evidence::LanguageEvidence::Kotlin) {
+        languages.push(DetectedLanguage::Java);
+    }
+    if languages.is_empty() {
         return Vec::new();
-    };
-    entries
-        .flatten()
-        .filter_map(|entry| {
-            let path = entry.path();
-            let ext = path.extension()?;
-            Some(ext.to_string_lossy().to_ascii_lowercase())
-        })
-        .collect()
+    }
+    let mut domains = vec!["github.com".to_string(), "api.github.com".to_string()];
+    for domain in languages.iter().flat_map(|lang| lang.registry_domains()) {
+        if !domains.iter().any(|known| known == domain) {
+            domains.push((*domain).to_string());
+        }
+    }
+    domains
+}
+
+fn project_languages(found: &BTreeSet<evidence::LanguageEvidence>) -> Vec<DetectedLanguage> {
+    use evidence::LanguageEvidence as E;
+    [
+        (E::Rust, DetectedLanguage::Rust),
+        (E::TypeScript, DetectedLanguage::TypeScript),
+        (E::JavaScript, DetectedLanguage::JavaScript),
+        (E::Python, DetectedLanguage::Python),
+        (E::Go, DetectedLanguage::Go),
+        (E::Java, DetectedLanguage::Java),
+        (E::CSharp, DetectedLanguage::CSharp),
+        (E::Ruby, DetectedLanguage::Ruby),
+        (E::Php, DetectedLanguage::Php),
+        (E::Cpp, DetectedLanguage::Cpp),
+    ]
+    .into_iter()
+    .filter_map(|(evidence, language)| found.contains(&evidence).then_some(language))
+    .collect()
 }
 
 /// Detect programming languages from a list of file paths or glob patterns.

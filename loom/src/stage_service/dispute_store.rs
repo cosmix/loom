@@ -7,6 +7,7 @@ use std::os::fd::OwnedFd;
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 
+use super::Response;
 use crate::fs::dispute_lock::lock_stage_dispute_dir;
 use crate::fs::safe_fs::safe_create_new_in_workdir;
 use crate::fs::work_dir::WorkDir;
@@ -56,6 +57,56 @@ pub(super) fn lock_stage_disputes(work_dir: &Path, stage_id: &str) -> Result<Loc
         stage_dir,
         _lock: lock,
     })
+}
+
+/// One filing's request, written while the stage lock is held so admission and
+/// publication see the same stage.
+pub(super) struct Publication<'a> {
+    stage_dir: &'a Path,
+    key: Option<&'a str>,
+    written: Option<u32>,
+}
+
+impl Publication<'_> {
+    /// Write the request and allocate its id, or reuse the id its receipt
+    /// reserved. Call only after every admission check has passed.
+    pub(super) fn write(&mut self, record: DisputeRequest) -> Result<u32> {
+        let id = super::receipts::write_request(self.stage_dir, record, self.key)?;
+        self.written = Some(id);
+        Ok(id)
+    }
+}
+
+/// Run one filing under the stage lock, so no independent stage writer can
+/// come between its admission checks and its status change. A failed stage
+/// write publishes nothing (`safe_replace::publish_in_dir`), so the request
+/// written for it is withdrawn: a filing reported failed leaves no open request.
+/// A crash between the two writes leaves a request the stage does not name. The
+/// receipt, when there is one, makes the retried filing reuse it; the adjudication
+/// scan settles it unjudged once a later filing has named another.
+pub(super) fn file_under_stage_lock(
+    locked: &LockedDisputes,
+    stage_id: &str,
+    key: Option<&str>,
+    file: impl FnOnce(&mut Stage, &mut Publication<'_>) -> Result<Response>,
+) -> Result<Response> {
+    let mut publication = Publication {
+        stage_dir: &locked.stage_dir,
+        key,
+        written: None,
+    };
+    let mut response = None;
+    let updated = update_stage(stage_id, &locked.work_dir, |stage| {
+        response = Some(file(stage, &mut publication)?);
+        Ok(())
+    });
+    if let Err(error) = updated {
+        if let Some(id) = publication.written {
+            super::receipts::withdraw(&locked.stage_dir, id, key);
+        }
+        return Err(error);
+    }
+    Ok(response.expect("stage update supplies a response"))
 }
 
 /// Reserve the next numeric dispute directory under the per-stage lock.

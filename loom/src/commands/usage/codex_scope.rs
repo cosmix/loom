@@ -2,7 +2,7 @@
 //! by every project on the machine, so a row counts only when a forward
 //! receipt of this project names its thread; every other row is foreign.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use chrono::Duration;
 
@@ -19,7 +19,7 @@ const MAX_FORWARD_SECS: i64 = 1560;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CodexScope {
-    /// `--all`: every Codex row is reported.
+    /// `--all` without stage or plan selection: every Codex row is reported.
     Unscoped,
     /// The receipts could not be read completely; no row can be claimed.
     Unavailable,
@@ -34,6 +34,7 @@ pub(crate) enum CodexScope {
         in_window: BTreeSet<String>,
         /// In-window receipts that carry no thread id.
         unthreaded: usize,
+        ambiguous: usize,
     },
 }
 
@@ -43,20 +44,39 @@ pub(crate) struct ScopeOutcome {
     pub(crate) missing_threads: usize,
     pub(crate) unthreaded_receipts: usize,
     pub(crate) unavailable: bool,
+    pub(crate) ambiguous_threads: usize,
 }
 
 impl CodexScope {
-    pub(crate) fn for_selection(all: bool, join: &ForwardJoin, range: &TimeRange) -> Self {
+    pub(crate) fn for_selection(
+        all: bool,
+        join: &ForwardJoin,
+        range: &TimeRange,
+        stages: Option<&HashSet<String>>,
+    ) -> Self {
         if all {
-            return Self::Unscoped;
+            return if stages.is_some() {
+                Self::Unavailable
+            } else {
+                Self::Unscoped
+            };
         }
         if !join.scope_available() {
             return Self::Unavailable;
         }
-        Self::from_receipt_threads(join.receipt_threads(), range)
+        Self::from_selected_receipt_threads(join.receipt_threads(), range, stages)
     }
 
+    #[cfg(test)]
     pub(crate) fn from_receipt_threads(threads: &[ReceiptThread], range: &TimeRange) -> Self {
+        Self::from_selected_receipt_threads(threads, range, None)
+    }
+
+    fn from_selected_receipt_threads(
+        threads: &[ReceiptThread],
+        range: &TimeRange,
+        stages: Option<&HashSet<String>>,
+    ) -> Self {
         let checked_from = range.since + Duration::seconds(MAX_FORWARD_SECS);
         let observed_by = |receipt: &ReceiptThread, from| {
             receipt.observed_at >= from
@@ -65,9 +85,22 @@ impl CodexScope {
         let mut all = BTreeSet::new();
         let mut in_window = BTreeSet::new();
         let mut unthreaded = 0;
+        let owners = receipt_owners(threads);
+        let mut ambiguous = BTreeSet::new();
         for receipt in threads {
+            if stages.is_some_and(|selected| !selected.contains(&receipt.stage_id)) {
+                continue;
+            }
             match &receipt.thread_id {
                 Some(thread_id) => {
+                    if stages.is_some()
+                        && owners
+                            .get(thread_id.as_str())
+                            .is_some_and(|owner| owner.len() > 1)
+                    {
+                        ambiguous.insert(thread_id);
+                        continue;
+                    }
                     all.insert(thread_id.clone());
                     if observed_by(receipt, checked_from) {
                         in_window.insert(thread_id.clone());
@@ -81,8 +114,22 @@ impl CodexScope {
             threads: all,
             in_window,
             unthreaded,
+            ambiguous: ambiguous.len(),
         }
     }
+}
+
+fn receipt_owners(threads: &[ReceiptThread]) -> BTreeMap<&str, BTreeSet<&str>> {
+    let mut owners = BTreeMap::new();
+    for receipt in threads {
+        if let Some(thread_id) = receipt.thread_id.as_deref() {
+            owners
+                .entry(thread_id)
+                .or_insert_with(BTreeSet::new)
+                .insert(receipt.stage_id.as_str());
+        }
+    }
+    owners
 }
 
 fn is_rollout_row(row: &NormalizedEvent) -> bool {
@@ -107,6 +154,7 @@ pub(crate) fn apply(scope: &CodexScope, rows: &mut Vec<NormalizedEvent>) -> Scop
             threads,
             in_window,
             unthreaded,
+            ambiguous,
         } => {
             outcome.foreign_rows = remove_where(rows, |row| {
                 row.codex_thread_conflict
@@ -116,6 +164,7 @@ pub(crate) fn apply(scope: &CodexScope, rows: &mut Vec<NormalizedEvent>) -> Scop
                         .is_none_or(|thread| !threads.contains(thread))
             });
             outcome.unthreaded_receipts = *unthreaded;
+            outcome.ambiguous_threads = *ambiguous;
             let seen: HashSet<&str> = rows
                 .iter()
                 .filter(|row| is_rollout_row(row))

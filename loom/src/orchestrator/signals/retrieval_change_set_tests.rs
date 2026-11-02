@@ -48,6 +48,8 @@ fn init_repo() -> TempDir {
     git(root, &["add", "seed.txt"]);
     git(root, &["commit", "-m", "seed"]);
     std::fs::create_dir_all(root.join(".loom/work/stages")).unwrap();
+    // `loom init` records this; merge's commit-signing check refuses without it.
+    crate::git::worktree::capture_main_identity(root, &root.join(".loom/work")).unwrap();
     temp
 }
 
@@ -217,6 +219,7 @@ fn write_stage_overlay(root: &Path) {
         files,
         blob_index: BTreeMap::new(),
         schema_version: crate::context::source_graph::GRAPH_SCHEMA_VERSION,
+        complete: false,
     };
     GraphStore::new(store.root(), work_dir.root())
         .save_overlay("default", "down", &layer)

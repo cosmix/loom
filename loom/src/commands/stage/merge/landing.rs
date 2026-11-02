@@ -4,16 +4,19 @@
 use anyhow::{anyhow, bail, Context, Result};
 use std::path::{Path, PathBuf};
 
-use crate::git::{merge_stage, MergeBlock, MergeGate, MergeResult};
+use crate::git::{merge_stage, MergeBlock, MergeGate};
 use crate::models::stage::Stage;
+use crate::stage_service::merge_outcome::{
+    apply_retry_failure, check_stage, classify_failure, MergeDisposition, MergeFailure,
+};
 use crate::verify::transitions::{trigger_dependents, update_stage};
 
 use super::conflict::record_conflict_and_report;
 use super::finish::finish_merge_and_report;
 use super::next_step::report_merge_error;
+use crate::commands::stage::progressive_complete::route_held_to_review;
 use crate::commands::stage::progressive_complete::{
-    note_merge_stash, report_merge_block, route_held_to_review, route_zero_commit_to_review,
-    zero_commit_review_reason,
+    note_merge_stash, report_merge_block, route_zero_commit_to_review, zero_commit_review_reason,
 };
 
 /// The main repository root, followed out of a worktree through the state
@@ -72,9 +75,11 @@ pub(super) fn attempt_retried_merge(
         repo_root,
         work_dir,
         MergeGate::Enforce,
-    ) {
-        Ok(MergeResult::Success {
-            files_changed,
+    )
+    .map(MergeDisposition::from)
+    {
+        Ok(MergeDisposition::Landed {
+            files: files_changed,
             insertions,
             deletions,
             stash,
@@ -85,21 +90,69 @@ pub(super) fn attempt_retried_merge(
             let done = format!("Stage '{stage_id}' merge complete! (Completed, merged: true)");
             complete_retried_merge(stage, work_dir, repo_root, target_branch, &done)
         }
-        Ok(MergeResult::Blocked(block)) => record_block(stage_id, work_dir, block),
-        Ok(MergeResult::AlreadyUpToDate) => {
+        Ok(MergeDisposition::Blocked(block)) => record_block_claimed(stage, work_dir, block),
+        Ok(MergeDisposition::AlreadyLanded) => {
             println!("Branch is already up to date with {target_branch}.");
             let done = format!("Stage '{stage_id}' marked as merged.");
             complete_retried_merge(stage, work_dir, repo_root, target_branch, &done)
         }
-        Ok(MergeResult::Conflict { conflicting_files }) => {
+        Ok(MergeDisposition::Conflict(conflicting_files)) => {
             record_conflict_and_report(stage, work_dir, repo_root, &conflicting_files)
         }
-        Ok(MergeResult::Held { reason }) => hold_for_review(stage_id, work_dir, &reason),
-        Err(e) => {
-            report_merge_error(stage, work_dir, repo_root, &e);
-            Ok(())
+        Ok(MergeDisposition::Held(reason)) => hold_for_review_claimed(stage, work_dir, &reason),
+        Ok(MergeDisposition::MissingBranch | MergeDisposition::MissingWorktree) => {
+            bail!("merge returned an invalid missing-input outcome")
         }
+        Err(e) => report_failed_retry(stage, work_dir, repo_root, e),
     }
+}
+
+fn report_failed_retry(
+    stage: &Stage,
+    work_dir: &Path,
+    repo_root: &Path,
+    error: anyhow::Error,
+) -> Result<()> {
+    persist_merge_error(stage, work_dir, &error)?;
+    match classify_failure(&stage.id, &error) {
+        MergeFailure::Signing(reason) => eprintln!("Merge held for review: {reason}"),
+        MergeFailure::Infrastructure(_) => report_merge_error(stage, work_dir, repo_root, &error),
+    }
+    Err(error.context("merge failed"))
+}
+
+fn record_block_claimed(stage: &Stage, work_dir: &Path, block: MergeBlock) -> Result<()> {
+    update_stage(&stage.id, work_dir, |current| {
+        check_stage(current, stage)?;
+        crate::stage_service::merge_outcome::apply_block(current, block.clone());
+        Ok(())
+    })?;
+    report_merge_block(&stage.id, &block);
+    Ok(())
+}
+
+fn hold_for_review_claimed(stage: &Stage, work_dir: &Path, reason: &str) -> Result<()> {
+    update_stage(&stage.id, work_dir, |current| {
+        check_stage(current, stage)?;
+        crate::stage_service::merge_outcome::apply_review(current, reason);
+        Ok(())
+    })?;
+    bail!("Stage '{}' merge held for human review: {reason}", stage.id)
+}
+
+fn persist_merge_error(stage: &Stage, work_dir: &Path, error: &anyhow::Error) -> Result<()> {
+    let failure = classify_failure(&stage.id, error);
+    update_stage(&stage.id, work_dir, |current| {
+        check_stage(current, stage)?;
+        match &failure {
+            MergeFailure::Signing(reason) => {
+                crate::stage_service::merge_outcome::apply_review(current, reason);
+                Ok(())
+            }
+            MergeFailure::Infrastructure(reason) => apply_retry_failure(current, reason),
+        }
+    })?;
+    Ok(())
 }
 
 /// Mark a resolved merge complete after ancestry proves it landed, then
@@ -161,10 +214,11 @@ fn prove_and_mark_merged(
         repo_root,
     )?;
     update_stage(&stage.id, work_dir, |s| {
-        anyhow::ensure!(
-            s.completed_commit.as_deref() == Some(verified.commit.as_str()),
-            "completion proof changed during merge finalization"
-        );
+        check_stage(s, stage)?;
+        crate::stage_service::merge_outcome::check_completion_commit(
+            s,
+            Some(verified.commit.as_str()),
+        )?;
         s.merge_conflict = false;
         s.clear_merge_block();
         s.try_complete_merge()
@@ -190,3 +244,7 @@ pub(super) fn trigger_and_report(
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "landing_outcome_tests.rs"]
+mod outcome_tests;

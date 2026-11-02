@@ -13,6 +13,12 @@ loom_lifecycle_safe_id() {
 	[[ "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]
 }
 
+# Agent types are serialized values, not path components; plugin names use ':'.
+loom_lifecycle_safe_agent_type() {
+	local value="$1"
+	[[ "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]]
+}
+
 loom_lifecycle_resolve_work_root() {
 	local root="$1" resolved=""
 	[[ -n "$root" && -d "$root" ]] || return 1
@@ -41,59 +47,18 @@ loom_lifecycle_plain_path() {
 }
 
 loom_lifecycle_find_stage() {
-	local work="$1" stage="$2" exact="$work/stages/$stage.md"
-	local candidate="" basename="" prefix="" unsafe=0
-	local matches=()
+	local work="$1" stage="$2" file=""
 	loom_lifecycle_plain_path "$work/stages" dir || return 1
-	if [[ -e "$exact" || -L "$exact" ]]; then
-		if [[ -f "$exact" && ! -L "$exact" ]]; then matches+=("$exact"); else unsafe=1; fi
-	fi
-	for candidate in "$work"/stages/[0-9]*-"$stage".md; do
-		[[ -e "$candidate" || -L "$candidate" ]] || continue
-		basename=${candidate##*/}
-		prefix=${basename%-${stage}.md}
-		[[ -n "$prefix" && "$prefix" != *[!0-9]* ]] || continue
-		if [[ -f "$candidate" && ! -L "$candidate" ]]; then
-			matches+=("$candidate")
-		else
-			unsafe=1
-		fi
-	done
-	[[ $unsafe -eq 0 && ${#matches[@]} -eq 1 ]] || return 1
-	loom_lifecycle_plain_path "${matches[0]}" file || return 1
-	printf '%s\n' "${matches[0]}"
-}
-
-loom_lifecycle_trim() {
-	local value="$1"
-	value="${value#"${value%%[![:space:]]*}"}"
-	value="${value%"${value##*[![:space:]]}"}"
-	printf '%s' "$value"
+	file=$(loom_find_stage_file "$work" "$stage") || return 1
+	loom_lifecycle_plain_path "$file" file || return 1
+	printf '%s\n' "$file"
 }
 
 loom_lifecycle_stage_binding() {
-	local work="$1" stage="$2" session="$3" file="" line="" value=""
-	local line_number=0 id_seen=0 session_seen=0 closed=0 file_stage="" file_session=""
+	local work="$1" stage="$2" session="$3" file="" file_stage="" file_session=""
 	file=$(loom_lifecycle_find_stage "$work" "$stage") || return 1
-	while IFS= read -r line || [[ -n "$line" ]]; do
-		line_number=$((line_number + 1))
-		if [[ $line_number -eq 1 ]]; then
-			[[ "$line" == "---" ]] || return 1
-			continue
-		fi
-		if [[ "$line" == "---" ]]; then closed=1; break; fi
-		case "$line" in
-		id:*)
-			id_seen=$((id_seen + 1)); value=$(loom_lifecycle_trim "${line#id:}")
-			file_stage="$value"
-			;;
-		session:*)
-			session_seen=$((session_seen + 1)); value=$(loom_lifecycle_trim "${line#session:}")
-			file_session="$value"
-			;;
-		esac
-	done <"$file"
-	[[ $closed -eq 1 && $id_seen -eq 1 && $session_seen -eq 1 ]] || return 1
+	file_stage=$(loom_stage_frontmatter_field "$file" id) || return 1
+	file_session=$(loom_stage_frontmatter_field "$file" session) || return 1
 	loom_lifecycle_safe_id "$file_stage" && loom_lifecycle_safe_id "$file_session" || return 1
 	[[ "$file_session" != "null" && "$file_session" != "~" ]] || return 1
 	[[ "$file_stage" == "$stage" && "$file_session" == "$session" ]]

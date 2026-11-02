@@ -2,6 +2,7 @@
 
 use super::super::protocol::DaemonConfig;
 use super::core::DaemonServer;
+use super::status::{TerminalOutcome, COMPLETION_MARKER, SCHEDULER_FAILURE_FILE};
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -51,12 +52,16 @@ pub fn spawn_orchestrator(
 }
 
 /// All exits, including initialization errors and panics, retire the essential worker.
-fn supervise_worker(work_dir: &Path, shutdown: &AtomicBool, run: impl FnOnce() -> Result<()>) {
+fn supervise_worker(
+    work_dir: &Path,
+    shutdown: &AtomicBool,
+    run: impl FnOnce() -> Result<TerminalOutcome>,
+) {
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run));
-    let failure = match outcome {
-        Ok(Ok(())) => None,
-        Ok(Err(error)) => Some(format!("{error:#}")),
-        Err(payload) => Some(format!(
+    let outcome = match outcome {
+        Ok(Ok(outcome)) => outcome,
+        Ok(Err(error)) => TerminalOutcome::SchedulerFailure(format!("{error:#}")),
+        Err(payload) => TerminalOutcome::SchedulerFailure(format!(
             "scheduler panicked: {}",
             payload
                 .downcast_ref::<&str>()
@@ -65,13 +70,15 @@ fn supervise_worker(work_dir: &Path, shutdown: &AtomicBool, run: impl FnOnce() -
                 .unwrap_or("unknown panic")
         )),
     };
-    if let Some(failure) = failure {
+    if let TerminalOutcome::SchedulerFailure(ref failure) = outcome {
         eprintln!("Orchestrator failed: {failure}");
-        if let Err(error) = fs::write(work_dir.join("scheduler.failed"), failure) {
+        if let Err(error) = fs::write(work_dir.join(SCHEDULER_FAILURE_FILE), failure) {
             eprintln!("Cannot persist scheduler failure: {error}");
         }
     }
-    write_completion_marker(work_dir);
+    if let Err(error) = write_completion_marker(work_dir, &outcome) {
+        eprintln!("Failed to write completion marker: {error:#}");
+    }
     shutdown.store(true, Ordering::Release);
     crate::fs::tmux_tmpdir::remove_tmux_tmpdir_record(work_dir);
 }
@@ -83,7 +90,7 @@ fn run_orchestrator(
     shutdown_flag: Arc<AtomicBool>,
     lock_identity: Option<LockIdentity>,
     ready: std::sync::mpsc::SyncSender<()>,
-) -> Result<()> {
+) -> Result<TerminalOutcome> {
     let (mut orchestrator, repo_root_for_plan) = initialize_orchestrator(
         work_dir,
         daemon_config,
@@ -99,17 +106,15 @@ fn run_orchestrator(
     // Check shutdown flag before starting
     if shutdown_flag.load(Ordering::Relaxed) {
         println!("Orchestrator shutdown requested before start");
-        return Ok(());
+        return Ok(TerminalOutcome::SchedulerFailure(
+            "shutdown requested before scheduler start".into(),
+        ));
     }
 
     let result = orchestrator.run().context("Orchestrator run failed")?;
-    finish_orchestration(work_dir, &repo_root_for_plan, &result);
+    let outcome = finish_orchestration(&WorkDir::new(&repo_root_for_plan)?, &result);
 
-    println!("Orchestration finished, signaling daemon shutdown");
-    shutdown_flag.store(true, Ordering::Relaxed);
-    crate::fs::tmux_tmpdir::remove_tmux_tmpdir_record(work_dir);
-
-    Ok(())
+    Ok(outcome)
 }
 
 fn initialize_orchestrator(
@@ -166,17 +171,37 @@ fn plan_context(work_dir: &Path) -> (PathBuf, Option<String>) {
     (repo_root, plan_id)
 }
 
-fn finish_orchestration(work_dir: &Path, repo_root: &Path, result: &OrchestratorResult) {
+fn finish_orchestration(work_dir: &WorkDir, result: &OrchestratorResult) -> TerminalOutcome {
     log_stage_lists(result);
     if result.is_success() {
         println!("All stages completed successfully");
-        if let Ok(work_dir_obj) = WorkDir::new(repo_root) {
-            if let Err(e) = mark_plan_done_if_all_merged(&work_dir_obj) {
-                eprintln!("Warning: Failed to mark plan as done: {e}");
-            }
+        if let Err(error) = mark_plan_done_if_all_merged(work_dir) {
+            return TerminalOutcome::FinalizationFailure(format!("{error:#}"));
+        }
+    } else {
+        return TerminalOutcome::Incomplete(format!(
+            "{} failed, {} unfinished, {} requiring handoff",
+            result.failed_stages.len(),
+            result.unfinished_stages.len(),
+            result.needs_handoff.len()
+        ));
+    }
+    TerminalOutcome::Success
+}
+
+pub(crate) fn finish_foreground(work_dir: &WorkDir, result: &OrchestratorResult) -> Result<()> {
+    let outcome = finish_orchestration(work_dir, result);
+    write_completion_marker(work_dir.root(), &outcome)?;
+    match outcome {
+        TerminalOutcome::Success => Ok(()),
+        TerminalOutcome::FinalizationFailure(message) => {
+            anyhow::bail!("Finalization failure: {message}")
+        }
+        TerminalOutcome::SchedulerFailure(message) => anyhow::bail!("Scheduler failure: {message}"),
+        TerminalOutcome::Incomplete(message) => {
+            anyhow::bail!("Orchestration incomplete: {message}")
         }
     }
-    write_completion_marker(work_dir);
 }
 
 /// Log the completed/failed/unfinished stage id lists from a finished
@@ -230,11 +255,10 @@ fn orchestrator_config(
 ///
 /// The status broadcaster detects this file and sends OrchestrationComplete
 /// to all subscribers.
-fn write_completion_marker(work_dir: &Path) {
-    let marker_path = work_dir.join("orchestrator.complete");
-    if let Err(e) = fs::write(&marker_path, chrono::Utc::now().to_rfc3339()) {
-        eprintln!("Failed to write completion marker: {e}");
-    }
+fn write_completion_marker(work_dir: &Path, outcome: &TerminalOutcome) -> Result<()> {
+    let marker_path = work_dir.join(COMPLETION_MARKER);
+    let content = serde_json::to_string(outcome)?;
+    crate::fs::cache_io::atomic_write(&marker_path, &content)
 }
 
 /// Build execution graph from .loom/work/stages/ files.
@@ -245,53 +269,5 @@ pub(super) fn build_execution_graph(work_dir: &Path) -> Result<(ExecutionGraph, 
 }
 
 #[cfg(test)]
-mod supervision_tests {
-    use super::*;
-
-    #[test]
-    fn initialization_errors_and_panics_retire_essential_worker() {
-        for panic in [false, true] {
-            let temp = tempfile::TempDir::new().unwrap();
-            let shutdown = AtomicBool::new(false);
-            supervise_worker(temp.path(), &shutdown, || {
-                if panic {
-                    panic!("constructor panicked");
-                }
-                anyhow::bail!("graph initialization failed")
-            });
-            assert!(shutdown.load(Ordering::Acquire));
-            assert!(temp.path().join("orchestrator.complete").exists());
-            let failure = fs::read_to_string(temp.path().join("scheduler.failed")).unwrap();
-            assert!(failure.contains(if panic {
-                "constructor panicked"
-            } else {
-                "graph initialization failed"
-            }));
-        }
-    }
-
-    #[test]
-    fn cyclic_graph_fails_at_supervised_initialization_boundary() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let dir = temp.path().join("stages");
-        fs::create_dir_all(&dir).unwrap();
-        for (id, dep) in [("a", "b"), ("b", "a")] {
-            let stage = crate::models::stage::Stage {
-                id: id.into(),
-                dependencies: vec![dep.into()],
-                ..Default::default()
-            };
-            fs::write(
-                dir.join(format!("{id}.md")),
-                crate::verify::transitions::serialize_stage_to_markdown(&stage).unwrap(),
-            )
-            .unwrap();
-        }
-        let shutdown = AtomicBool::new(false);
-        supervise_worker(temp.path(), &shutdown, || {
-            build_execution_graph(temp.path()).map(|_| ())
-        });
-        assert!(shutdown.load(Ordering::Acquire));
-        assert!(temp.path().join("scheduler.failed").exists());
-    }
-}
+#[path = "orchestrator_tests.rs"]
+mod supervision_tests;

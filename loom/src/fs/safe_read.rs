@@ -15,6 +15,9 @@ use std::path::Path;
 
 use super::safe_fs::{open_safely, safe_open_dirfd};
 
+mod tail;
+pub(crate) use tail::read_tail;
+
 /// Whether any cause in `error`'s chain is `ENOENT`: an absent file, an
 /// absent parent directory, or an absent dirfd root. Shared by every no-follow
 /// open that treats a missing path as `Ok(None)` rather than an error.
@@ -38,6 +41,14 @@ fn regular_file_metadata(file: &File) -> Result<Metadata> {
     Ok(metadata)
 }
 
+/// Reject files whose inode can also be modified through another name.
+pub(crate) fn single_link_regular_file(file: &File) -> Result<()> {
+    if regular_file_metadata(file)?.nlink() != 1 {
+        bail!("opened path is a hard link with more than one name");
+    }
+    Ok(())
+}
+
 /// Read at most `max_bytes` from a regular file beneath `root`.
 ///
 /// `relative` must not be absolute or contain `..`. The kernel opens every
@@ -47,6 +58,15 @@ fn regular_file_metadata(file: &File) -> Result<Metadata> {
 /// it; it has no effect on reading a regular file.
 pub fn read_bounded(root: &Path, relative: &Path, max_bytes: usize) -> Result<Vec<u8>> {
     let root_fd = safe_open_dirfd(root)?;
+    read_bounded_at(&root_fd, relative, max_bytes)
+}
+
+/// Bounded read anchored to an already-open directory, without taking a lock.
+pub(crate) fn read_bounded_at(
+    root_fd: &OwnedFd,
+    relative: &Path,
+    max_bytes: usize,
+) -> Result<Vec<u8>> {
     let flags = libc::O_RDONLY | libc::O_NONBLOCK;
     let file_fd = open_safely(root_fd.as_raw_fd(), relative, flags, 0)
         .with_context(|| format!("Refusing unsafe read of {}", relative.display()))?;
@@ -167,10 +187,7 @@ pub(crate) fn open_regular_no_follow(
         Err(error) if is_not_found(&error) => return Ok(None),
         Err(error) => return Err(error.context("no-follow open failed")),
     };
-    let metadata = regular_file_metadata(&file)?;
-    if metadata.nlink() != 1 {
-        bail!("opened path is a hard link with more than one name");
-    }
+    single_link_regular_file(&file)?;
     Ok(Some(file))
 }
 

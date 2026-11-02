@@ -10,13 +10,14 @@ use crate::context::graph_store::GraphStore;
 use crate::context::refresh::{ensure_snapshot, SnapshotAction, SnapshotOutcome, SnapshotPolicy};
 use crate::context::store::ContextStore;
 use crate::fs::work_dir::WorkDir;
-use crate::git::{get_uncommitted_changes_summary, has_uncommitted_changes};
+use crate::git::branch::pinned_uncommitted_changes;
 
 /// Ensure the repository is ready for Loom's git worktree operations.
 pub fn prepare_repo_for_run(repo_root: &Path) -> Result<()> {
+    crate::git::worktree::require_main_identity(repo_root)?;
     require_jq()?;
 
-    let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(repo_root)?;
+    let repo_bootstrap = crate::git::repository::ensure_pinned_repo_ready(repo_root)?;
     print_repo_bootstrap(repo_bootstrap);
 
     // Stale per-session identity in the MAIN repo's settings env shadows the
@@ -215,8 +216,8 @@ fn print_repo_bootstrap(result: crate::git::RepoBootstrapResult) {
 /// This prevents starting orchestration with a dirty repository, which could
 /// cause issues with worktree creation and branch management.
 pub fn check_for_uncommitted_changes(repo_root: &Path) -> Result<()> {
-    if has_uncommitted_changes(repo_root)? {
-        let summary = get_uncommitted_changes_summary(repo_root)?;
+    let (dirty, summary) = pinned_uncommitted_changes(repo_root)?;
+    if dirty {
         eprintln!(
             "{} Cannot start loom run with uncommitted changes",
             "✗".red().bold()

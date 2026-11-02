@@ -44,8 +44,26 @@ pub(crate) fn assess(
     coverage: &CoverageCounts,
     diagnostics: &ProviderDiagnostics,
 ) -> Completeness {
-    let damaged_receipts = damaged_receipts(provider, diagnostics);
-    let checks = [
+    let checks = reason_counts(coverage, diagnostics)
+        .into_iter()
+        .chain(receipt_reason_counts(provider, diagnostics));
+    let reasons: Vec<&'static str> = checks
+        .filter(|(_, count)| *count > 0)
+        .map(|(reason, _)| reason)
+        .collect();
+    let state = if reasons.is_empty() {
+        CompletenessState::Measured
+    } else {
+        CompletenessState::Partial
+    };
+    Completeness { state, reasons }
+}
+
+fn reason_counts(
+    coverage: &CoverageCounts,
+    diagnostics: &ProviderDiagnostics,
+) -> [(&'static str, usize); 12] {
+    [
         ("missing-roots", diagnostics.missing_roots),
         ("unreadable-files", diagnostics.unreadable_files),
         ("malformed-rows", diagnostics.malformed_rows),
@@ -63,6 +81,28 @@ pub(crate) fn assess(
             "codex-scope-unavailable",
             diagnostics.codex_scope_unavailable,
         ),
+        (
+            "codex-file-identity-unknown",
+            diagnostics.codex_unknown_file_identity,
+        ),
+        (
+            "forward-thread-ambiguous",
+            diagnostics.ambiguous_forward_threads,
+        ),
+        (
+            "execution-receipt-unscoped",
+            diagnostics.unscoped_execution_receipts,
+        ),
+        ("selection-unavailable", diagnostics.selection_unavailable),
+    ]
+}
+
+fn receipt_reason_counts(
+    provider: Provider,
+    diagnostics: &ProviderDiagnostics,
+) -> [(&'static str, usize); 3] {
+    let damaged_receipts = damaged_receipts(provider, diagnostics);
+    [
         ("malformed-forward-receipts", damaged_receipts),
         (
             "forward-thread-missing",
@@ -72,18 +112,7 @@ pub(crate) fn assess(
             "forward-receipt-unthreaded",
             diagnostics.unthreaded_forward_receipts,
         ),
-    ];
-    let reasons: Vec<&'static str> = checks
-        .into_iter()
-        .filter(|(_, count)| *count > 0)
-        .map(|(reason, _)| reason)
-        .collect();
-    let state = if reasons.is_empty() {
-        CompletenessState::Measured
-    } else {
-        CompletenessState::Partial
-    };
-    Completeness { state, reasons }
+    ]
 }
 
 /// A damaged receipt line can hide a project thread, whose rows then read

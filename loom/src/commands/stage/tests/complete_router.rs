@@ -6,7 +6,6 @@ use std::process::Command;
 use tempfile::TempDir;
 
 use super::super::complete::{route_complete_for_conflicts, CompleteConflictRoute};
-use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus, StageType};
 
 fn run_git(args: &[&str], cwd: &Path) {
@@ -134,7 +133,7 @@ fn merge_blocked_routes_same_as_merge_conflict() {
         false,
     )
     .unwrap();
-    matches!(route, CompleteConflictRoute::SpawnResolver { .. });
+    assert!(matches!(route, CompleteConflictRoute::SpawnResolver { .. }));
 }
 
 #[test]
@@ -198,7 +197,7 @@ fn force_unsafe_assume_merged_with_no_ancestor_refuses() {
         true,
     )
     .unwrap();
-    matches!(route, CompleteConflictRoute::Refuse { .. });
+    assert!(matches!(route, CompleteConflictRoute::Refuse { .. }));
 }
 
 #[test]
@@ -252,7 +251,7 @@ fn force_unsafe_assume_merged_refuses_when_branch_missing_and_no_commit() {
         true,
     )
     .unwrap();
-    matches!(route, CompleteConflictRoute::Refuse { .. });
+    assert!(matches!(route, CompleteConflictRoute::Refuse { .. }));
 }
 
 #[test]
@@ -338,7 +337,7 @@ fn unattributed_main_repo_merge_is_refused() {
         false,
     )
     .unwrap();
-    matches!(route, CompleteConflictRoute::Refuse { .. });
+    assert!(matches!(route, CompleteConflictRoute::Refuse { .. }));
 
     // Cleanup so we don't leak across tests on shared repo.
     std::fs::remove_file(root.join(".git").join("MERGE_HEAD")).ok();
@@ -379,11 +378,8 @@ fn other_stage_merge_active_refuses_for_this_stage() {
         false,
     )
     .unwrap();
-    matches!(route, CompleteConflictRoute::Refuse { .. });
+    assert!(matches!(route, CompleteConflictRoute::Refuse { .. }));
 }
 
-#[test]
-fn _unused_session_compiles() {
-    // Smoke test: Session struct construction in tests works.
-    let _s: Session = Session::new();
-}
+#[path = "complete_router_worktree.rs"]
+mod worktree;

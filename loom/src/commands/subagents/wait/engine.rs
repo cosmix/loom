@@ -35,6 +35,19 @@ pub trait EvidenceSource {
     fn unknown_settled(&self, _worker: &BoundWorker) -> bool {
         false
     }
+
+    /// Acquire all evidence for one poll. Implementations may share a snapshot.
+    fn poll(&self, workers: &[BoundWorker]) -> Vec<(WorkerOutcome, bool)> {
+        workers
+            .iter()
+            .map(|worker| {
+                let outcome = self.outcome(worker);
+                let settled =
+                    matches!(outcome, WorkerOutcome::Unknown(_)) && self.unknown_settled(worker);
+                (outcome, settled)
+            })
+            .collect()
+    }
 }
 
 /// Terminal result returned by the bounded wait engine.
@@ -59,19 +72,8 @@ pub fn wait_for_workers(
 ) -> EngineResult {
     let mut polls = 0_u64;
     loop {
-        let outcomes: Vec<_> = identity
-            .workers
-            .iter()
-            .map(|worker| evidence.outcome(worker))
-            .collect();
-        let settled: Vec<bool> = identity
-            .workers
-            .iter()
-            .zip(&outcomes)
-            .map(|(worker, outcome)| {
-                matches!(outcome, WorkerOutcome::Unknown(_)) && evidence.unknown_settled(worker)
-            })
-            .collect();
+        let (outcomes, settled): (Vec<_>, Vec<_>) =
+            evidence.poll(&identity.workers).into_iter().unzip();
         if let Some(result) = terminal_evidence(identity, &outcomes, &settled, polls) {
             return result;
         }

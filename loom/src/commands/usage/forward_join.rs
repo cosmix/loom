@@ -43,6 +43,7 @@ impl From<&ForwardReceipt> for ForwardMetadata {
 pub(crate) struct ReceiptThread {
     pub(crate) thread_id: Option<String>,
     pub(crate) observed_at: DateTime<Utc>,
+    pub(crate) stage_id: String,
 }
 
 enum Candidate {
@@ -71,6 +72,7 @@ impl ForwardJoin {
             result.receipt_threads.push(ReceiptThread {
                 thread_id: receipt_thread_id(&receipt),
                 observed_at: receipt.observed_at,
+                stage_id: receipt.identity.stage_id.clone(),
             });
             let metadata = ForwardMetadata::from(&receipt);
             result

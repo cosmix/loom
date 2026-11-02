@@ -64,7 +64,7 @@ pub(super) fn discover(root: PathBuf) -> ProjectProfile {
     while let Some((dir, depth)) = pending.pop_front() {
         let mut types = markers::detect(&dir);
         let path = dir.strip_prefix(&profile.root).unwrap_or(Path::new(""));
-        resolve_nested_cmake(&mut types, path, &mut cpp_package_roots);
+        resolve_nested_cmake(&mut types, &dir, path, &mut cpp_package_roots);
         if !types.is_empty() || markers::package_boundary(&dir) {
             profile.packages.push(path.to_path_buf());
         }
@@ -95,16 +95,22 @@ pub(super) fn discover(root: PathBuf) -> ProjectProfile {
 /// `build/` of its own. Otherwise, a new `cpp` package root is recorded.
 fn resolve_nested_cmake(
     types: &mut BTreeSet<String>,
+    dir: &Path,
     path: &Path,
     cpp_package_roots: &mut Vec<PathBuf>,
 ) {
-    let nested_cmake = types.contains("cpp")
+    let cmake = markers::regular_file(&dir.join("CMakeLists.txt"));
+    let nested_cmake = cmake
         && cpp_package_roots
             .iter()
             .any(|known| path != known.as_path() && path.starts_with(known));
-    if nested_cmake {
+    let other_cpp = markers::any_file(
+        dir,
+        &["meson.build", "conanfile.txt", "conanfile.py", "vcpkg.json"],
+    );
+    if nested_cmake && !other_cpp {
         types.remove("cpp");
-    } else if types.contains("cpp") {
+    } else if cmake && !nested_cmake {
         cpp_package_roots.push(path.to_path_buf());
     }
 }

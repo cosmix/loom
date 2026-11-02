@@ -79,14 +79,14 @@ pub(super) struct BaseProbe<'a> {
 }
 
 /// A detached checkout of one commit in a scratch directory, removed on drop.
-pub(super) struct BaseCheckout {
+pub(crate) struct BaseCheckout {
     dir: Option<TempDir>,
     root: PathBuf,
 }
 
 impl BaseCheckout {
     /// Check out `commit` of the repository holding `worktree`.
-    pub(super) fn create(worktree: &Path, commit: &str) -> Result<Self> {
+    pub(crate) fn create(worktree: &Path, commit: &str) -> Result<Self> {
         let common_dir = ["rev-parse", "--path-format=absolute", "--git-common-dir"];
         let common = git(&local_git(worktree)?, &common_dir)?;
         let common = String::from_utf8(common).context("the git common directory is not UTF-8")?;
@@ -109,7 +109,7 @@ impl BaseCheckout {
     }
 
     /// The checkout's top directory.
-    pub(super) fn root(&self) -> &Path {
+    pub(crate) fn root(&self) -> &Path {
         &self.root
     }
 }

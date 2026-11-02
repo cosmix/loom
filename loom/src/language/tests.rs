@@ -178,10 +178,9 @@ fn detect_in(entries: &[&str]) -> Vec<DetectedLanguage> {
 #[test]
 fn test_detect_manifest_rules() {
     use DetectedLanguage::*;
-    let cases: [(&[&str], DetectedLanguage); 17] = [
+    let cases: [(&[&str], DetectedLanguage); 16] = [
         (&["pom.xml"], Java),
         (&["build.gradle"], Java),
-        (&["build.gradle.kts"], Java),
         (&["App.csproj"], CSharp),
         (&["App.sln"], CSharp),
         (&["App.slnx"], CSharp),
@@ -200,6 +199,45 @@ fn test_detect_manifest_rules() {
     for (entries, expected) in cases {
         assert_eq!(detect_in(entries), vec![expected], "entries {entries:?}");
     }
+    // Kotlin has no DetectedLanguage variant; project detection reports it separately.
+    assert!(detect_in(&["build.gradle.kts"]).is_empty());
+}
+
+#[test]
+fn gradle_kotlin_build_suggests_gradle_hosts_without_becoming_java() {
+    let temp = TempDir::new().unwrap();
+    fs::write(temp.path().join("build.gradle.kts"), "").unwrap();
+
+    assert!(detect_project_languages(temp.path()).is_empty());
+    let domains = suggested_network_domains(temp.path());
+    assert_eq!(domains[..2], ["github.com", "api.github.com"]);
+    for host in DetectedLanguage::Java.registry_domains() {
+        assert!(domains.iter().any(|domain| domain == host), "{host}");
+    }
+}
+
+#[test]
+fn suggested_domains_follow_regular_manifest_evidence() {
+    let suggest = |entries: &[&str]| {
+        let temp = TempDir::new().unwrap();
+        for entry in entries {
+            fs::write(temp.path().join(entry), "").unwrap();
+        }
+        suggested_network_domains(temp.path())
+    };
+    assert!(suggest(&[]).is_empty());
+    // No registry policy exists for these evidence-only ecosystems.
+    assert!(suggest(&["build.sbt"]).is_empty());
+    // A detected language without a canonical registry still gets GitHub.
+    assert_eq!(suggest(&["meson.build"]), ["github.com", "api.github.com"]);
+    // Hosts shared by two sources appear once.
+    let both = suggest(&["settings.gradle.kts", "pom.xml"]);
+    let java = DetectedLanguage::Java.registry_domains();
+    assert_eq!(both.len(), 2 + java.len());
+
+    let temp = TempDir::new().unwrap();
+    fs::create_dir(temp.path().join("build.gradle.kts")).unwrap();
+    assert!(suggested_network_domains(temp.path()).is_empty());
 }
 
 #[test]

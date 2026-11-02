@@ -12,6 +12,7 @@ fn setup() -> tempfile::TempDir {
 
 #[test]
 fn proof_is_bound_to_stage_action_and_flags() {
+    let temp = setup();
     let request = AdminProofRequest::completion("stage-a", true, false, false);
     let proof = mint_admin_proof(SECRET, request, NONCE);
 
@@ -20,11 +21,11 @@ fn proof_is_bound_to_stage_action_and_flags() {
         AdminProofRequest::completion("stage-a", false, true, false),
         AdminProofRequest::completion("stage-a", true, false, false).with_action("stage.retry"),
     ] {
-        let temp = setup();
         let error =
             verify_and_consume_admin_proof(temp.path(), wrong_request, Some(&proof)).unwrap_err();
         assert!(error.to_string().contains("invalid"));
     }
+    verify_and_consume_admin_proof(temp.path(), request, Some(&proof)).unwrap();
 }
 
 #[test]
@@ -69,6 +70,116 @@ fn valid_proof_is_consumed_exactly_once() {
 
     let replay = verify_and_consume_admin_proof(temp.path(), request, Some(&proof)).unwrap_err();
     assert!(replay.to_string().contains("already been used"));
+}
+
+#[test]
+fn noncanonical_mac_is_rejected_and_lowercase_proof_is_single_use() {
+    for request in [
+        AdminProofRequest::completion("stage-a", true, false, false),
+        AdminProofRequest::daemon_stop(),
+    ] {
+        let temp = setup();
+        let proof = mint_admin_proof(SECRET, request, NONCE);
+        let (prefix, mac) = proof.rsplit_once(':').unwrap();
+        let upper = format!("{prefix}:{}", mac.to_ascii_uppercase());
+        assert_ne!(proof, upper);
+        assert!(verify_and_consume_admin_proof(temp.path(), request, Some(&upper)).is_err());
+        verify_and_consume_admin_proof(temp.path(), request, Some(&proof)).unwrap();
+        assert!(verify_and_consume_admin_proof(temp.path(), request, Some(&proof)).is_err());
+        assert!(verify_and_consume_admin_proof(temp.path(), request, Some(&upper)).is_err());
+    }
+}
+
+#[test]
+fn concurrent_canonical_and_uppercase_proofs_admit_once() {
+    for request in [
+        AdminProofRequest::completion("stage-a", true, false, false),
+        AdminProofRequest::daemon_stop(),
+    ] {
+        let temp = setup();
+        let proof = mint_admin_proof(SECRET, request, NONCE);
+        let (prefix, mac) = proof.rsplit_once(':').unwrap();
+        let upper = format!("{prefix}:{}", mac.to_ascii_uppercase());
+        let index = mac.bytes().position(|b| b.is_ascii_lowercase()).unwrap();
+        let mut mixed = mac.to_string();
+        mixed.replace_range(
+            index..index + 1,
+            &mac[index..index + 1].to_ascii_uppercase(),
+        );
+        let mixed = format!("{prefix}:{mixed}");
+        let barrier = std::sync::Barrier::new(5);
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = [&proof, &proof, &upper, &mixed]
+                .into_iter()
+                .map(|candidate| {
+                    let barrier = &barrier;
+                    let path = temp.path();
+                    scope.spawn(move || {
+                        barrier.wait();
+                        verify_and_consume_admin_proof(path, request, Some(candidate)).is_ok()
+                    })
+                })
+                .collect();
+            barrier.wait();
+            assert_eq!(
+                handles
+                    .into_iter()
+                    .map(|h| h.join().unwrap())
+                    .filter(|ok| *ok)
+                    .count(),
+                1
+            );
+        });
+    }
+}
+
+#[test]
+fn preexisting_marker_blocks_minted_proof() {
+    for request in [
+        AdminProofRequest::completion("stage-a", true, false, false),
+        AdminProofRequest::daemon_stop(),
+    ] {
+        let temp = setup();
+        let proof = mint_admin_proof(SECRET, request, NONCE);
+        let mut digest = Sha256::new();
+        digest.update(request.canonical_message(NONCE).as_bytes());
+        digest.update([0]);
+        digest.update(proof.as_bytes());
+        let replay_dir = temp.path().join(REPLAY_DIR);
+        std::fs::create_dir(&replay_dir).unwrap();
+        std::fs::write(replay_dir.join(hex::encode(digest.finalize())), b"v2\n").unwrap();
+        let err = verify_and_consume_admin_proof(temp.path(), request, Some(&proof)).unwrap_err();
+        assert!(err.to_string().contains("already been used"));
+    }
+}
+
+#[test]
+fn legacy_proofs_are_invalid_even_if_only_an_alternate_spelling_was_consumed() {
+    for request in [
+        AdminProofRequest::completion("stage-a", true, false, false),
+        AdminProofRequest::daemon_stop(),
+    ] {
+        for uppercase_marker in [false, true] {
+            let temp = setup();
+            let message = request.canonical_message(NONCE).replacen("v2\n", "v1\n", 1);
+            let mac = hex::encode(hmac_sha256(SECRET.as_bytes(), message.as_bytes()));
+            let proof = format!("v1:{NONCE}:{mac}");
+            let prior = if uppercase_marker {
+                format!("v1:{NONCE}:{}", mac.to_ascii_uppercase())
+            } else {
+                proof.clone()
+            };
+            let mut digest = Sha256::new();
+            digest.update(message.as_bytes());
+            digest.update([0]);
+            digest.update(prior.as_bytes());
+            let replay_dir = temp.path().join(REPLAY_DIR);
+            std::fs::create_dir(&replay_dir).unwrap();
+            std::fs::write(replay_dir.join(hex::encode(digest.finalize())), b"v1\n").unwrap();
+            assert!(verify_and_consume_admin_proof(temp.path(), request, Some(&proof)).is_err());
+            assert!(verify_and_consume_admin_proof(temp.path(), request, Some(&prior)).is_err());
+        }
+    }
 }
 
 #[cfg(unix)]

@@ -14,6 +14,7 @@ fn truncate_failure_retries_without_refiling_a_dispute() {
             "replay",
             &entry.payload,
             &entry.identity(),
+            entry.session_id.as_deref(),
             &mut refused,
         )
     });
@@ -53,6 +54,7 @@ fn later_sink_failure_does_not_replay_the_first_dispute_effect() {
             "replay",
             &entry.payload,
             &entry.identity(),
+            entry.session_id.as_deref(),
             &mut refused,
         )
     });
@@ -88,7 +90,7 @@ fn receipt_write_failure_does_not_publish_an_untracked_dispute() {
     let directory = work_dir.join("disputes/receipt");
     let obstacle = directory
         .join("requests")
-        .join(format!("{}.json.tmp", entry.identity()));
+        .join(format!("{}.json", entry.identity()));
     std::fs::create_dir_all(&obstacle).unwrap();
     assert!(drain_requests(&work_dir, "receipt", &root).is_err());
     assert!(!directory.join("1/request.md").exists());
@@ -96,6 +98,6 @@ fn receipt_write_failure_does_not_publish_an_untracked_dispute() {
     std::fs::remove_dir(&obstacle).unwrap();
     drain_requests(&work_dir, "receipt", &root).unwrap();
     assert_eq!(load_stage("receipt", &work_dir).unwrap().dispute_count, 1);
-    assert!(directory.join("2/request.md").is_file());
+    assert!(directory.join("1/request.md").is_file());
     assert!(read_pending(&root).unwrap().is_empty());
 }

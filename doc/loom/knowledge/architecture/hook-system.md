@@ -15,16 +15,9 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 
 ## Hook System Architecture (loom/src/hooks/)
 
-The `loom/src/hooks/` module provides Claude Code hooks integration for session lifecycle management, plus a Codex-native subset installed through `fs/permissions/codex_hooks.rs`. It is a **top-level module** — currently imported by `orchestrator/` and `git/worktree/`, which is a known layering violation (both should import a stable hooks interface instead).
+The top-level `loom/src/hooks` module owns `HookEvent`, hook discovery and event-log readers. Global guard registrations come from `fs/permissions/hooks/config.rs`. The capsule builder combines those guards with shared session event rules, relay hooks and interpreter handling; stage, contract and knowledge capsules register every event, while other capsules register heartbeat.
 
-**Layering:** `loom/src/hooks/` is used by `orchestrator/core/stage_executor.rs` (worktree hook setup) and `git/worktree/settings.rs` (settings injection). The intended fix is to extract hooks as a fully independent top-level module with no reverse imports.
-
-**Global vs session hooks distinction:**
-
-- **Global hooks** include commit filtering, Git-add protection, Bash isolation, the canonical five-tool file guard, plan-path protection, `prefer-modern-tools.sh`, and the forwarding guard. They are installed under `~/.claude/hooks/loom/` and registered by `fs/permissions/hooks.rs`, so they persist across sessions. `prefer-modern-tools.sh` lives here as a global `PreToolUse:Bash` hook (`fs/permissions/hooks/config.rs`) — there is no `PreferModernTools` `HookEvent` variant (deleted); it never was one of the session hooks below.
-- **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh, subagent-start.sh, subagent-stop.sh, teammate-idle.sh): generated fresh per-session by `loom/src/hooks/generator.rs:generate_hooks_settings()` from the **8** `HookEvent`s that `HooksConfig::to_settings_hooks()` (`loom/src/hooks/config.rs`) emits, derived by iterating `HookEvent::all()` rather than eight hand-written blocks. Written into the per-session settings capsule (`<work_dir>/capsules/<session-id>.settings.json`) that every session kind launches with `--settings`; `contents.rs` sets `settings["hooks"]` (`loom/src/orchestrator/terminal/native/session_settings/contents.rs::capsule_settings`). No session loads a `settings.local.json`. `TeammateIdle` (`teammate-idle.sh`) was added for agent-team teammates, which never fire `SubagentStop`; it writes nonterminal idle evidence through the same shared lifecycle-journal/heartbeat helpers (`loom-hooks/_lifecycle.sh`) that `subagent-stop.sh` uses.
-
-`LOOM_HOOKS` (the full inventory: session hooks, global `PreToolUse` guards, compatibility bridges, and sourced libraries `_common.sh`/`_lifecycle.sh`/`_codex_forward.sh`/`_read_discipline.sh`/`_read_ledger.sh`/`_progress-classification.sh`/`_post-tool-heartbeat.sh`/`_subagent-preamble.txt`) is 42 rows. Earlier text said 33; the array in `fs/permissions/constants.rs` has since gained four sourced libraries plus `loom-control-complete.sh`, `loom-relay.sh`, `codex-forward-result.sh` and `teammate-idle.sh`. Claude's global `PreToolUse` registration alone is 47 entries, including `spawn-guard.sh` (Task+Agent), `read-guard.sh` (Read), and `poll-guard.sh` (Bash). Installers iterate `LOOM_HOOKS`; trigger configuration and tests remain separate registration surfaces — see [Registration Sites for a New Hook](../entry-points/hooks.md).
+Installed shell guards consume the shared `loom-hooks/worktree-policy.json` rule data and additionally enforce context, filesystem and shared-root boundaries. The production capsule builder consumes the session-event rules through `session_event_rules`, while guard and relay registration remain capsule-specific. Installed guard, mutation and installer tests exercise the shared owner.
 
 ## Hook System — Session-Start Behavior and hookSpecificOutput Pattern
 
@@ -162,6 +155,7 @@ differ where it matters. The rules, in `loom-hooks/_lifecycle.sh` unless noted:
   with parameter expansion, never `read <<<`.
 - **Ledger appends** (`loom_lifecycle_journal_ready`, the stop-skips append) require a regular file or an
   absent path, never a symlink: a planted FIFO would block the hook.
+- **Heartbeat lock** (`_heartbeat.sh`). Every shell heartbeat and lifecycle-journal writer serializes with `mkdir` and `rmdir` alone: stock macOS Bash 3.2 has no `flock(1)`, and a hook primitive must not depend on the `loom` binary on `PATH`. A held lock is `<lock-dir>/owner.<pid>.<created>.<nonce>/`. A reclaimer removes only the name it examined and `rmdir` of the lock directory refuses while an owner is published, so a stale decision cannot hit a later owner. An unparseable entry is never removed, so the lock stays held and writers skip their refresh. Residuals: a clock step of over 5 s, and PID reuse within 5 s.
 - **Tests.** `loom-hooks/tests/run-all.sh` runs in the `hook-syntax` CI job twice, plain and with
   `LOOM_HOOK_TEST_BSD=1`, which puts `loom-hooks/tests/bsd-shims/` (padded `wc`, BSD `stat` including
   `-f '%Lp'`, BSD `date` with `-r` and `-j -f`) first on PATH. Each shim carries a `# loom-bsd-shim`
@@ -175,7 +169,7 @@ differ where it matters. The rules, in `loom-hooks/_lifecycle.sh` unless noted:
 message, so `subagent-stop.sh` (`loom_subagent_stop_skip`) appends one row to
 `.loom/work/subagents/<stage>/stop-skips.jsonl`: `{"ts":"<UTC>","agent_id":"<id>","agent_type":
 "loom-code-reviewer","reason":"<code>"}`. It is diagnostic only: it never creates the directory,
-follows a symlink, or changes the hook's exit code. `verify/review/gate.rs::harvest_hint` compares the
+follows a symlink, or changes the hook's exit code. A harvest that failed writes `review_harvest_failed`, suffixed with its cause when one is known: `.transcript_unusable`, `.no_start_evidence`, `.worktree_changed` (`commands/hook/review_harvest_failure.rs`) or `.timed_out`. A repeated stop for a round already recorded is a duplicate and writes no row. `verify/review/gate.rs::harvest_hint` compares the
 `starts.jsonl` reviewer spawns with the recorded rounds, opens both ledgers read-only (no symlink, regular
 file, size cap), and `loom stage review status` and the review gate's failure message print
 `N reviewer spawns, M rounds, K stop events not harvested` with the last recorded skip reasons and a
@@ -309,3 +303,7 @@ they have gone stale three times.
 ## Forwarded Codex context hooks
 
 `loom-hooks/codex-forward.sh` exports `LOOM_CODEX_FORWARD=1` before launching either the companion or direct Codex lane. With a nonempty marker, `skill-trigger.sh --codex`, `user-prompt-context.sh`, and `knowledge-orient.sh` exit 0 without output before processing input. Claude-mode skill suggestions retain their normal behavior. Guard hooks still run; the marker suppresses only these context-injecting hooks. The wrapper retains its instruction against opening skill files, while hook suppression prevents forwarded jobs from receiving injected skill/context directives.
+
+## Pre-commit chaining and control paths
+
+`install_pre_commit_hook` (`git/hooks.rs`) installs in the directory git runs hooks from (`git/hooks/location.rs`): `.git/hooks`, or a `core.hooksPath` inside the repository, untracked and reached through no symlink. Another `core.hooksPath` is refused with its reason, unless the hook is already there, which is how an operator serves a shared one. A foreign executable hook is preserved byte-for-byte as `pre-commit.loom-original` and invoked after Loom through the installed wrapper. An earlier Loom section is replaced in place, keeping every other byte; markers that do not bound one section, a hook without an executable shebang, and a symlink whose target is missing are refused untouched. Hook control-path classification refuses existing symlink ancestors when their link and destination cannot be represented by one protected prefix.

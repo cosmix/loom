@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::locking::locked_write;
 use crate::models::session::Session;
-use crate::parser::markdown::MarkdownDocument;
+use crate::parser::markdown::parse_frontmatter_strings;
 
 mod enumerate;
 #[path = "session_files/exact.rs"]
@@ -24,16 +24,9 @@ pub use exact::{
 
 /// Persist a session to `.loom/work/sessions/{id}.md`.
 ///
-/// This is the single canonical session-persistence routine: it serializes the
-/// session via [`session_to_markdown`] and writes through
-/// [`crate::fs::locking::locked_write`] so the write is crash-atomic and
-/// serialized against the monitor/CLI/daemon readers that read the same files
-/// under locks. All call sites (orchestrator persistence, monitor handlers,
-/// continuation, merge-resolver, CLI session updates) route through here so the
-/// locking discipline cannot diverge.
-///
-/// The public signature `(session, work_dir)` is stable — external callers
-/// depend on it.
+/// Creates or replaces the full record under the parent-directory lock using
+/// atomic replacement. For field mutations, use the exact locked delta APIs
+/// to avoid overwriting newer fields with a stale snapshot.
 pub fn save_session(session: &Session, work_dir: &Path) -> Result<()> {
     validate_session_file_id(&session.id).context("Invalid session file id")?;
     let sessions_dir = work_dir.join("sessions");
@@ -182,11 +175,11 @@ pub fn find_session_for_stage(stage_id: &str, work_dir: &Path) -> Option<String>
             continue;
         }
 
-        // Try to read and parse session file using canonical parser
+        // Read only the session fields needed for lookup.
         if let Ok(content) = fs::read_to_string(&path) {
-            if let Ok(doc) = MarkdownDocument::parse(&content) {
-                if doc.get_frontmatter("stage_id").map(|s| s.as_str()) == Some(stage_id) {
-                    if let Some(session_id) = doc.get_frontmatter("id") {
+            if let Ok(frontmatter) = parse_frontmatter_strings(&content) {
+                if frontmatter.get("stage_id").map(|s| s.as_str()) == Some(stage_id) {
+                    if let Some(session_id) = frontmatter.get("id") {
                         return Some(session_id.clone());
                     }
                 }

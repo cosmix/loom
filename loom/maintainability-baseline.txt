@@ -8,92 +8,63 @@
 # refactor it back. New violations must be refactored or explicitly recorded.
 
 file src/commands/graph/tests.rs 425
-file src/commands/init/tests.rs 448
-file src/fs/permissions/settings.rs 411
-file src/fs/safe_fs.rs 1019
+file src/fs/safe_fs.rs 637
 file src/fs/work_dir.rs 429
 file src/fs/work_dir/tests.rs 873
-file src/git/worktree/base.rs 469
-file src/git/worktree/settings.rs 462
-file src/models/stage/methods.rs 493
+file src/models/stage/methods.rs 492
 file src/models/stage/types.rs 591
-file src/orchestrator/merge_attribution.rs 543
 file src/orchestrator/signals/cache.rs 511
-file src/orchestrator/signals/format/sections.rs 569
+file src/orchestrator/signals/format/sections.rs 568
 file src/orchestrator/signals/tests.rs 551
 file src/orchestrator/signals/tests_cache.rs 629
-file src/orchestrator/terminal/emulator.rs 611
-file src/orchestrator/terminal/native/pid_tracking.rs 452
 file src/plan/parser/extraction.rs 410
 file src/plan/schema/tests/validation_tests.rs 826
-file src/plan/schema/validation.rs 1189
+file src/plan/schema/validation.rs 1063
 file src/plan/tests/amendment.rs 605
-file src/sandbox/config.rs 822
-file src/sandbox/settings.rs 438
+file src/sandbox/config.rs 708
 file src/sandbox/settings/tests.rs 1565
-file src/skills/index.rs 564
-file src/verify/transitions/state.rs 431
 file tests/adjudication_e2e.rs 525
-file tests/e2e/tmux_backend.rs 437
-file tests/failure_resume.rs 468
-file tests/integration/merge_conflict_recovery.rs 414
 file tests/integration/plan_verify.rs 1027
 
-function src/cli/dispatch.rs dispatch 69
+function src/cli/dispatch.rs dispatch 58
 function src/commands/clean/mod.rs print_summary 52
-function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 57
 function src/commands/clean/worktrees.rs clean_worktrees 110
-function src/commands/clean/worktrees.rs confirm_branch_deletion 56
 function src/commands/graph/display.rs build_graph_display 52
 function src/commands/graph/tests.rs test_build_graph_display_shows_all_deps 70
 function src/commands/graph/tree.rs build_tree_display 57
-function src/commands/init/execute.rs execute 110
-function src/commands/init/plan_setup.rs initialize_with_plan 192
-function src/commands/init/tests.rs test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode 76
-function src/commands/init/tests.rs test_create_stage_from_definition_no_dependencies 62
+function src/commands/init/plan_setup.rs initialize_with_plan 184
 function src/commands/knowledge/tests.rs test_knowledge_update_in_worktree_writes_to_worktree 74
 function src/commands/knowledge/tests.rs test_parse_file_type 70
 function src/commands/repair.rs execute 99
 function src/commands/repair/tests.rs repair_fixes_a_stale_knowledge_directory_deny_in_a_worktree 62
 function src/commands/resume.rs execute 57
-function src/commands/self_update/install.rs install_binary 52
 function src/commands/sessions.rs kill 54
 function src/commands/sessions.rs kill_single_session 51
 function src/commands/skill_index.rs parse_skill_triggers 80
-function src/commands/stage/merge.rs merge_retry 52
-function src/commands/stage/skip_retry.rs retry 209
 function src/commands/status.rs execute_static 81
-function src/commands/status/render/completion.rs render_completion_lines 55
-function src/commands/status/render/completion.rs render_completion_screen 84
 function src/commands/status/render/graph.rs render_graph 64
 function src/commands/status/ui/tui/renderer.rs render_completion 128
 function src/commands/verify.rs execute 63
 function src/completions/dynamic/mod.rs complete_after_subcommand 56
 function src/completions/install.rs install 52
 function src/context/refresh/tests_source_graph/enumeration.rs an_unreadable_file_survives_as_a_reported_lexical_only_entry 62
-function src/daemon/server/broadcast.rs run_status_broadcaster 79
-function src/daemon/server/lifecycle.rs run_server 126
-function src/daemon/server/status.rs collect_completion_summary 97
+function src/daemon/server/lifecycle.rs run_server 94
 function src/daemon/server/tests.rs test_collect_status_with_stages 77
 function src/fs/knowledge/templates.rs default_content 62
 function src/fs/memory/export.rs format_memory_for_handoff 70
 function src/fs/memory/export.rs format_memory_for_signal 82
-function src/fs/permissions/hooks.rs migrate_old_hook_paths 84
 function src/fs/permissions/settings.rs ensure_loom_hooks_local_inner 65
-function src/fs/permissions/settings.rs ensure_loom_permissions_inner 65
+function src/fs/permissions/settings.rs ensure_loom_permissions_inner 63
 function src/fs/permissions/sync.rs transform_worktree_path 65
-function src/fs/safe_fs.rs safe_replace_outside_workdir 138
 function src/fs/session_files.rs find_session_file 55
 function src/fs/work_integrity.rs validate_work_dir_state 60
-function src/git/worktree/base.rs resolve_base_branch 92
+function src/git/worktree/base.rs resolve_base_branch 90
 function src/git/worktree/discovery.rs find_worktree_by_prefix 55
-function src/git/worktree/settings.rs create_worktree_settings 115
 function src/git/worktree/tests_settings_env.rs test_worktree_gitignore_actually_hides_loom_runtime_paths 57
-function src/handoff/generator/formatter.rs format_handoff_markdown 112
 function src/models/stage/defaults.rs default 76
 function src/models/stage/methods_tests.rs from_definition_copies_all_runtime_policy_fields 118
 function src/orchestrator/core/event_handler.rs handle_one_event 116
-function src/orchestrator/merge_attribution.rs attribute_main_repo_merge 101
+function src/orchestrator/merge_attribution.rs attribute_main_repo_merge 99
 function src/orchestrator/merge_attribution.rs reconcile_main_repo_active_merge 64
 function src/orchestrator/monitor/detection.rs detect_stage_changes 56
 function src/orchestrator/monitor/tests/heartbeats.rs test_hung_detection_honors_per_stage_subagent_timeout 68
@@ -102,32 +73,29 @@ function src/orchestrator/retry.rs test_classify_failure 85
 function src/orchestrator/signals/cache.rs generate_knowledge_distill_stable_prefix 74
 function src/orchestrator/signals/crud.rs update_signal 69
 function src/orchestrator/signals/format/helpers.rs format_structured_handoff 107
-function src/orchestrator/signals/format/sandbox_section.rs format_sandbox_section 58
 function src/orchestrator/signals/format/sections.rs format_dynamic_section 205
-function src/orchestrator/signals/format/sections.rs format_recitation_section 58
-function src/orchestrator/signals/format/sections.rs format_semi_stable_section 278
+function src/orchestrator/signals/format/sections.rs format_recitation_section 57
+function src/orchestrator/signals/format/sections.rs format_semi_stable_section 276
 function src/orchestrator/signals/knowledge.rs format_knowledge_signal_content 77
 function src/orchestrator/signals/parse.rs parse_signal_content 113
 function src/orchestrator/signals/recovery_format.rs format_recovery_signal 102
-function src/orchestrator/signals/recovery_parsing.rs read_recovery_signal 67
+function src/orchestrator/signals/recovery_parsing.rs read_recovery_signal 61
 function src/orchestrator/signals/tests_cache.rs test_recovery_signal_carries_codex_implementers_section 56
 function src/orchestrator/signals/tests_cache.rs test_signal_codex_implementers_section_gated 116
 function src/orchestrator/spawner.rs generate_crash_report 98
-function src/orchestrator/terminal/emulator.rs build_command 161
+function src/orchestrator/terminal/emulator.rs build_command 135
 function src/orchestrator/terminal/native/detection.rs detect_parent_terminal 51
 function src/orchestrator/terminal/native/detection.rs detect_terminal#1 56
 function src/orchestrator/terminal/native/detection.rs detect_terminal#2 65
 function src/orchestrator/terminal/tmux/tests_discovery.rs live_tmux_sessions_orders_by_created_at_then_id 60
-function src/orchestrator/terminal/tmux/tests_spawn.rs a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt 97
 function src/orchestrator/terminal/tmux/tests_viewer.rs pane_command_neutralises_hostile_session_ids 69
 function src/plan/parser/extraction.rs extract_yaml_metadata_with_ranges 51
 function src/plan/parser/mod.rs test_parse_plan_with_all_fields 74
 function src/plan/schema/tests/security_policy_tests.rs rejects_misspelled_nested_sandbox_fields 58
 function src/plan/schema/validation.rs check_cross_stage_wiring_coverage 66
 function src/plan/schema/validation.rs validate 357
-function src/plan/schema/validation.rs validate_structural_preflight 222
+function src/plan/schema/validation.rs validate_structural_preflight 196
 function src/sandbox/settings.rs generate_settings_json 106
-function src/sandbox/settings/policy.rs filesystem_settings 52
 function src/sandbox/settings/tests.rs every_stage_type_can_write_the_knowledge_directory 56
 function src/sandbox/settings/tests.rs test_build_settings_adds_resolved_work_symlink_permissions_legacy_layout 92
 function src/sandbox/settings/tests.rs test_build_settings_does_not_carry_forward_existing_allow 63
@@ -136,40 +104,31 @@ function src/sandbox/settings/tests.rs test_deny_write_parent_traversal_not_in_o
 function src/sandbox/settings/tests.rs test_generate_settings_emits_network_block 53
 function src/sandbox/settings/tests_read_denies.rs test_build_settings_adds_resolved_work_symlink_permissions_nested_layout 74
 function src/sandbox/settings/tests_read_denies.rs test_build_settings_main_repo_drops_stale_escape_from_existing 67
-function src/skills/matcher.rs match_skills 62
+function src/skills/matcher.rs match_skills 55
 function src/verify/goal_backward/artifacts.rs verify_artifacts 60
 function src/verify/goal_backward/artifacts.rs verify_regression_test 52
-function src/verify/transitions/state.rs are_all_dependencies_satisfied 62
-function src/verify/transitions/state.rs describe_dependency_block 95
 function tests/completion_flow.rs test_acceptance_failure_creates_correct_status 64
 function tests/completion_flow.rs test_completion_requires_merged_dependencies 70
 function tests/completion_flow.rs test_successful_completion_flow 55
 function tests/completion_gates_contracts.rs wiring_dispute_indexes_the_wiring_list 51
 function tests/e2e/daemon_config/manual_mode.rs test_orchestrator_with_manual_mode 84
-function tests/e2e/daemon_config/parallel_sessions.rs test_orchestrator_respects_max_parallel_sessions 106
-function tests/e2e/daemon_config/tests.rs test_daemon_respects_auto_merge 62
+function tests/e2e/daemon_config/parallel_sessions.rs test_orchestrator_respects_max_parallel_sessions 71
 function tests/e2e/handoff/generation.rs test_handoff_generation 63
 function tests/e2e/parallel.rs test_diamond_dependency_pattern 75
-function tests/e2e/parallel.rs test_fan_out_fan_in 80
-function tests/e2e/parallel.rs test_parallel_group_isolation 58
-function tests/e2e/parallel.rs test_parallel_stages_triggered_together 57
-function tests/e2e/sequential.rs test_dependency_chain_respected 81
+function tests/e2e/parallel.rs test_fan_out_fan_in 77
+function tests/e2e/parallel.rs test_parallel_group_isolation 52
+function tests/e2e/parallel.rs test_parallel_stages_triggered_together 54
+function tests/e2e/sequential.rs test_dependency_chain_respected 80
 function tests/language_packs_contracts.rs wave_pack_dialects_extract_declarations 56
 function tests/plan_environment_contracts.rs plan 64
-function tests/e2e/sequential.rs test_sequential_plan_full_completion 64
-function tests/e2e/sequential.rs test_sequential_plan_stage_order 56
 function tests/e2e/tmux_backend.rs tmux_liveness_ignores_running_server_when_pid_is_dead 107
 function tests/e2e/tmux_backend.rs tmux_spawn_lifecycle_reaches_a_live_pid_and_teardown_clears_it 100
-function tests/integration/dependency_conflict.rs test_retry_after_manual_conflict_resolution 89
-function tests/integration/dependency_multi.rs test_diamond_pattern_all_merged 102
+function tests/integration/dependency_multi.rs test_diamond_pattern_all_merged 62
 function tests/integration/dependency_multi.rs test_multiple_deps_all_merged_uses_main 58
-function tests/integration/hooks_subagent_verify_guard.rs run_hook_in_tree 60
+function tests/integration/hooks_subagent_verify_guard.rs run_hook_in_tree 51
 function tests/integration/plan_verify.rs test_json_schema_completeness_and_levels 55
 function tests/stage_transitions.rs test_multiple_dependencies_all_satisfied 52
-function tests/stage_transitions.rs test_stage_transition_workflow 72
-file src/commands/clean/sessions.rs 403
-file src/git/worktree/tests_settings.rs 437
-file src/utils.rs 403
+function tests/stage_transitions.rs test_stage_transition_workflow 54
 file src/commands/repair/tests.rs 489
 function src/fs/permissions/tests/write_rules_tests.rs test_ensure_loom_permissions_prunes_legacy_work_write_grants 56
-function src/git/worktree/tests_settings.rs test_create_worktree_settings_adds_resolved_work_permissions_legacy_layout 86
+function src/git/worktree/tests_settings.rs test_create_worktree_settings_adds_resolved_work_permissions_legacy_layout 85

@@ -136,18 +136,8 @@ pub(super) fn stage_field_matches(
 ) -> bool {
     match field {
         AmendmentField::Acceptance => stage.acceptance == def.acceptance,
-        AmendmentField::Wiring => {
-            // WiringCheck doesn't derive PartialEq; compare by serialized form.
-            let a = crate::yaml::to_string(&stage.wiring).unwrap_or_default();
-            let b = crate::yaml::to_string(&def.wiring).unwrap_or_default();
-            a == b
-        }
-        AmendmentField::WiringTests => {
-            // WiringTest doesn't derive PartialEq; compare by serialized form.
-            let a = crate::yaml::to_string(&stage.wiring_tests).unwrap_or_default();
-            let b = crate::yaml::to_string(&def.wiring_tests).unwrap_or_default();
-            a == b
-        }
+        AmendmentField::Wiring => stage.wiring == def.wiring,
+        AmendmentField::WiringTests => stage.wiring_tests == def.wiring_tests,
         AmendmentField::Contracts => stage.contracts == def.contracts,
         AmendmentField::Harness => stage.harness == def.harness,
         AmendmentField::Reachable => stage.reachable == def.reachable,

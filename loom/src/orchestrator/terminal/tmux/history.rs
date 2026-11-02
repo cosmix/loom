@@ -67,9 +67,9 @@ pub fn history_relpath(session_id: &str) -> PathBuf {
     Path::new(HISTORY_DIR).join(format!("{session_id}.terminal"))
 }
 
-/// Keep the tail of `captured` that fits [`MAX_HISTORY_BYTES`], cut at a line
-/// start so no line is half there, behind a reset so colors from the dropped
-/// part do not carry over.
+/// Keep the tail of `captured` that fits [`MAX_HISTORY_BYTES`]. Cut after the
+/// first newline when one exists in the retained tail; otherwise retain the
+/// partial tail. Reset colors from the dropped prefix.
 fn bound_history(captured: Vec<u8>) -> Vec<u8> {
     if captured.len() <= MAX_HISTORY_BYTES {
         return captured;
@@ -96,8 +96,8 @@ pub fn write_history(work_dir: &Path, session_id: &str, history: &[u8]) -> Resul
 /// Capture `session`'s whole scrollback and write it to its history file.
 ///
 /// Best-effort: a pane that cannot be read (its server already gone, a probe
-/// timeout) or a file that cannot be written is logged, and the kill the caller
-/// is about to perform goes ahead. A capture that yields nothing leaves an
+/// timeout) is skipped; a file that cannot be written is logged, and the kill
+/// the caller is about to perform goes ahead. A capture that yields nothing leaves an
 /// earlier history file alone.
 pub(super) fn save_history(work_dir: &Path, session: &Session) {
     let Some(captured) = capture_history(session).filter(|bytes| !bytes.is_empty()) else {

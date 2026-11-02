@@ -9,7 +9,7 @@ use crate::fs::permissions::{trust_worktree, untrust_worktree};
 use crate::git::branch::{
     branch_name_for_stage, branch_ref, commits_ahead_of, commits_between, default_branch,
 };
-use crate::git::runner::{run_git, run_git_checked};
+use crate::git::runner::{run_git, run_git_checked, run_git_checked_bytes};
 use crate::models::worktree::Worktree;
 use crate::validation::validate_id;
 
@@ -227,7 +227,7 @@ pub fn remove_worktree(stage_id: &str, repo_root: &Path, force: bool) -> Result<
 
 /// List all worktrees
 pub fn list_worktrees(repo_root: &Path) -> Result<Vec<WorktreeInfo>> {
-    let stdout = run_git_checked(&["worktree", "list", "--porcelain"], repo_root)?;
+    let stdout = run_git_checked_bytes(&["worktree", "list", "--porcelain", "-z"], repo_root)?;
     parse_worktree_list(&stdout)
 }
 
@@ -240,7 +240,7 @@ pub fn clean_worktrees(repo_root: &Path) -> Result<()> {
 /// Get an existing worktree or create a new one
 ///
 /// If a valid worktree exists at .worktrees/{stage_id}/, reuses it.
-/// If the directory exists but is not a valid worktree, removes it and recreates.
+/// An unregistered directory is preserved unless it is empty.
 /// Otherwise, creates a new worktree.
 ///
 /// A new worktree branches from `start_point` when given, else from
@@ -273,23 +273,28 @@ pub fn get_or_create_worktree(
             }
         }
 
-        // Directory exists but is not a valid worktree - remove it
-        // First try to prune any stale worktree references
-        let _ = clean_worktrees(repo_root);
-
-        // Now remove the directory
-        std::fs::remove_dir_all(&worktree_path).with_context(|| {
-            format!(
-                "Failed to remove invalid worktree directory: {}",
-                worktree_path.display()
-            )
-        })?;
+        remove_empty_remnant(&worktree_path, repo_root)?;
     }
 
     // Create new worktree
     create_worktree(stage_id, repo_root, base_branch, start_point)
 }
 
+fn remove_empty_remnant(path: &Path, repo_root: &Path) -> Result<()> {
+    let meta = std::fs::symlink_metadata(path)?;
+    if !meta.is_dir() || std::fs::read_dir(path)?.next().transpose()?.is_some() {
+        bail!("Cannot reuse unregistered worktree {}; its contents were preserved. Inspect and move or remove the directory before retrying", path.display());
+    }
+    clean_worktrees(repo_root).context("Failed to prune stale worktree registrations")?;
+    std::fs::remove_dir(path)
+        .with_context(|| format!("Failed to remove empty worktree remnant {}", path.display()))?;
+    Ok(())
+}
+
 #[cfg(test)]
 #[path = "operations_start_point_tests.rs"]
 mod start_point_tests;
+
+#[cfg(test)]
+#[path = "operations_recovery_tests.rs"]
+mod recovery_tests;

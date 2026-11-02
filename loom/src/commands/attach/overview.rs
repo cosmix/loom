@@ -1,10 +1,8 @@
 //! The tiled overview viewer — a per-repo tmux server whose panes each host a
 //! nested attach client into one live session's own server.
 //!
-//! Split from the parent module because the viewer is a second tmux server
-//! with its own lifecycle rules, distinct from the discovery and direct-attach
-//! logic that surrounds it: it must be created, hardened against its own panes
-//! dying, populated, and only then attached to.
+//! The viewer server must be created and hardened before its panes are
+//! populated and attached.
 //!
 //! The viewer's identity (socket name, session name, pane command) and the
 //! attachability filter now live in `orchestrator::terminal::tmux::viewer`,
@@ -58,16 +56,10 @@ const REMAIN_ON_EXIT_FLAGS: &[&str] = &[
 ///
 /// # Why pane 0 needs this
 ///
-/// `new-session` creates pane 0 with an attach client into ANOTHER server
-/// already running in it (see [`build_overview_argv`]). If that inner server
-/// is gone — the session just ended, or has not finished spawning — the client
-/// exits immediately. Under tmux's defaults the dead pane takes its window,
-/// the window takes the session, and the empty server then exits too, so
-/// `new-session` itself reports `server exited unexpectedly` and the whole
-/// attach fails. [`REMAIN_ON_EXIT_FLAGS`] cannot close that window: it targets
-/// a window that does not exist until `new-session` returns. Setting the same
-/// option GLOBALLY here does, because a global option is already in force for
-/// the window `new-session` goes on to create.
+/// Pane 0 runs a client into another server. If that server is unavailable,
+/// the client can exit immediately and take the viewer server with it. The
+/// global option protects pane 0 before a window exists; the later targeted
+/// [`REMAIN_ON_EXIT_FLAGS`] cannot do that.
 ///
 /// # Why one `;`-separated sequence and not four invocations
 ///
@@ -94,17 +86,9 @@ const REMAIN_ON_EXIT_FLAGS: &[&str] = &[
 /// common setting — is in force in every server loom creates; `mouse off`
 /// disarms tmux's own mouse bindings (menus, copy-mode) inside the viewer.
 ///
-/// The `kmous@` override closes the hole `mouse off` leaves open: claude
-/// enables all-motion mouse tracking in its pane, the inner server mirrors
-/// that to its client (the viewer pane), and the viewer would mirror it again
-/// to the operator's real terminal — which then reports every drag as app
-/// mouse events instead of selecting text. Those events are forwarded inward
-/// to claude (with `mouse off` tmux forwards client mouse input straight to
-/// the pane app), claude copies the "selection" via `tmux load-buffer -w -`,
-/// and tmux 3.6a crashes serving that — the `server exited unexpectedly`
-/// stage deaths. Deleting the `kmous` capability for every client TERM stops
-/// tmux from ever enabling mouse mode on the operator's terminal, so drags
-/// stay native emulator selection. The indexed form (`[99]`) is idempotent —
+/// `mouse off` alone still forwards pane mouse tracking to the operator's
+/// terminal. Removing `kmous` keeps drags as terminal text selection instead
+/// of forwarding them to the nested application. The indexed form (`[99]`) is idempotent —
 /// this sequence re-runs on every `loom attach` against the same long-lived
 /// server — and preserves the operator's own override entries. The same
 /// override is applied to stage servers in `orchestrator/terminal/tmux/mod.rs`,

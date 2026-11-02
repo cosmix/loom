@@ -11,7 +11,6 @@ mod inbox;
 mod kind;
 mod line;
 mod matrix;
-mod matrix_host;
 mod payload;
 mod scratch;
 mod ticket;

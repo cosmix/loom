@@ -7,9 +7,6 @@
 //! target at all. They mutate process environment and are therefore
 //! `#[serial]`.
 //!
-//! Split out of `tests_user_prompt.rs` itself so that file stays under the
-//! maintainability line limit; wired back in via `#[path =
-//! "tests_user_prompt_e2e.rs"] mod e2e;` at the bottom of that file.
 
 use super::super::{retrieve_for_prompt, Emission};
 use crate::context::graph_store::{FileEntry, GraphLayer, GraphStore};
@@ -51,8 +48,8 @@ fn write_local_overlay(root: &Path) {
     write_overlay(root, &plan, &stage, DISTINCTIVE_SYMBOL, "src/zorble.rs");
 }
 
-fn write_overlay(root: &Path, plan: &str, stage: &str, symbol: &str, path: &str) {
-    let node = SourceNode {
+fn source_node(symbol: &str, path: &str) -> SourceNode {
+    SourceNode {
         id: format!("{path}#function:{symbol}"),
         kind: SourceNodeKind::Function,
         path: PathBuf::from(path),
@@ -69,7 +66,11 @@ fn write_overlay(root: &Path, plan: &str, stage: &str, symbol: &str, path: &str)
         parser_version: "test+v1".to_string(),
         coverage: FileCoverage::Full,
         symbol_key: String::new(),
-    };
+    }
+}
+
+fn write_overlay(root: &Path, plan: &str, stage: &str, symbol: &str, path: &str) {
+    let node = source_node(symbol, path);
 
     let work_dir = WorkDir::new(root).unwrap();
     let store = ContextStore::open(&work_dir).unwrap();
@@ -97,6 +98,7 @@ fn write_overlay(root: &Path, plan: &str, stage: &str, symbol: &str, path: &str)
                 files,
                 blob_index: BTreeMap::new(),
                 schema_version: crate::context::source_graph::GRAPH_SCHEMA_VERSION,
+                complete: false,
             },
         )
         .unwrap();

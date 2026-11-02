@@ -161,7 +161,11 @@ pub fn build_merge_report(
     let mut report = MergeStatusReport::new();
 
     for stage in stages {
-        // Only check completed stages
+        if stage.status == crate::models::stage::StageStatus::MergeConflict {
+            report.conflicts.push(stage.id.clone());
+            continue;
+        }
+        // Git verification applies only to completed stages.
         if stage.status != crate::models::stage::StageStatus::Completed {
             continue;
         }
@@ -226,6 +230,32 @@ mod tests {
 
         let result = check_merge_state(&stage, "main", temp_dir.path()).unwrap();
         assert_eq!(result, MergeState::Conflict);
+    }
+
+    #[test]
+    fn report_counts_conflicts_and_retains_completed_warnings() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut completed = make_test_stage("completed");
+        completed.stage_type = StageType::Knowledge;
+        completed.merged = true;
+        let unknown = make_test_stage("unknown");
+        let mut conflict = make_test_stage("conflict");
+        conflict.status = StageStatus::MergeConflict;
+        let mut executing = make_test_stage("executing");
+        executing.status = StageStatus::Executing;
+
+        let report = build_merge_report(
+            &[completed, unknown, conflict, executing],
+            "main",
+            temp.path(),
+        )
+        .unwrap();
+        assert_eq!(report.merged, ["completed"]);
+        assert!(report.pending.is_empty());
+        assert_eq!(report.conflicts, ["conflict"]);
+        assert_eq!(report.warnings.len(), 1);
+        assert!(report.warnings[0].contains("unknown"));
+        assert_eq!(report.total(), 2);
     }
 
     #[test]

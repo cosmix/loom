@@ -9,6 +9,24 @@ use tempfile::TempDir;
 use super::super::{run, LintContext, LintFinding};
 use crate::plan::schema::{ContractSpec, LoomConfig, LoomMetadata, StageDefinition};
 
+#[test]
+fn integration_verify_accepts_go_benchmarks_only_when_tests_are_unfiltered() {
+    use crate::plan::schema::types::{AcceptanceCriterion, StageType};
+    for (command, full) in [
+        ("go test ./... -bench . -benchtime 1s", true),
+        ("go test ./... -bench . -run TestOne", false),
+    ] {
+        let stage = StageDefinition {
+            stage_type: Some(StageType::IntegrationVerify),
+            acceptance: vec![AcceptanceCriterion::Simple(command.to_string())],
+            ..Default::default()
+        };
+        let mut findings = Vec::new();
+        super::check_full_test_run(&stage, None, &mut findings);
+        assert_eq!(findings.is_empty(), full, "{command}");
+    }
+}
+
 fn git(root: &Path, args: &[&str]) {
     let output = Command::new("git")
         .args(args)

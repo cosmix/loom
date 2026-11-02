@@ -107,3 +107,33 @@ fn malformed_user_config_is_never_replaced() {
     assert!(error.to_string().contains("Refusing to replace malformed"));
     assert_eq!(fs::read_to_string(path).unwrap(), "{ definitely not json");
 }
+
+#[test]
+fn mixed_handlers_and_commands_mentioning_install_path_survive() {
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path().join("hooks/loom");
+    let mixed = json!({"matcher":"^Bash$", "timeout":17, "hooks":[
+        {"command": format!("{}/old.sh", dir.display())},
+        {"command": format!("/custom/check.sh {}/argument", dir.display())}
+    ]});
+    let mut root = json!({"hooks":{"PreToolUse":[mixed]}})
+        .as_object()
+        .unwrap()
+        .clone();
+    super::merge_hooks(&mut root, &dir).unwrap();
+    let once = root.clone();
+    super::merge_hooks(&mut root, &dir).unwrap();
+    assert_eq!(root, once);
+    assert_eq!(root["hooks"]["PreToolUse"][0]["timeout"], 17);
+    assert_eq!(
+        root["hooks"]["PreToolUse"][0]["hooks"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(root["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap()
+        .starts_with("/custom/"));
+}

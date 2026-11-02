@@ -2,21 +2,21 @@
 //! every request it has drained from a session's inbox
 //! (`doc/plans/PLAN-loom-state-confinement.md` section 8, drain steps 5-6).
 
-use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::paths::{inbox_root_relpath, ledger_relpath, session_relpath, validate_request_id};
-use crate::fs::safe_fs::{
-    open_safely, safe_append_in_workdir, safe_create_dir_all_in_workdir, safe_open_dirfd,
-    MAX_LOG_BYTES,
-};
-use crate::fs::safe_read::{is_not_found, read_to_string_bounded};
+use super::paths::validate_request_id;
 use crate::relay::RequestKind;
 use crate::validation::validate_id;
+
+mod io;
+
+#[cfg(test)]
+#[path = "ledger/recovery_tests.rs"]
+mod recovery_tests;
 
 /// Bound on one encoded ledger line, including its trailing newline.
 /// [`append_ledger`] truncates `reason` rather than fail the append outright.
@@ -59,24 +59,7 @@ pub fn append_ledger(work_dir: &Path, session_id: &str, record: &LedgerRecord) -
     validate_id(session_id).context("invalid inbox session id")?;
     let line = encode_ledger_line(record)?;
 
-    let dirfd = safe_open_dirfd(work_dir)?;
-    let raw = dirfd.as_raw_fd();
-    safe_create_dir_all_in_workdir(raw, &inbox_root_relpath(), 0o700)?;
-    safe_create_dir_all_in_workdir(raw, &session_relpath(session_id)?, 0o700)?;
-    let relpath = ledger_relpath(session_id)?;
-    safe_append_in_workdir(raw, &relpath, line.as_bytes())?;
-    fsync_relpath(raw, &relpath)
-}
-
-fn fsync_relpath(raw: RawFd, relpath: &Path) -> Result<()> {
-    let fd = open_safely(raw, relpath, libc::O_RDONLY, 0)
-        .with_context(|| format!("inbox: failed to reopen {} for fsync", relpath.display()))?;
-    // SAFETY: `fd` was just opened and is valid for the duration of this call.
-    if unsafe { libc::fsync(fd.as_raw_fd()) } < 0 {
-        return Err(std::io::Error::last_os_error())
-            .with_context(|| format!("inbox: fsync failed on {}", relpath.display()));
-    }
-    Ok(())
+    io::append(work_dir, session_id, line.as_bytes())
 }
 
 fn encode_ledger_line(record: &LedgerRecord) -> Result<String> {
@@ -124,26 +107,7 @@ fn truncate_to_byte_budget(s: &str, budget: usize) -> String {
 /// error.
 pub fn read_ledger(work_dir: &Path, session_id: &str) -> Result<Vec<LedgerRecord>> {
     validate_id(session_id).context("invalid inbox session id")?;
-    let relpath = ledger_relpath(session_id)?;
-    let content = match read_to_string_bounded(work_dir, &relpath, MAX_LOG_BYTES) {
-        Ok(content) => content,
-        Err(error) if is_not_found(&error) => return Ok(Vec::new()),
-        Err(error) => return Err(error),
-    };
-
-    let mut records = Vec::new();
-    let mut lines = content.lines().peekable();
-    while let Some(line) = lines.next() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        match serde_json::from_str::<LedgerRecord>(line) {
-            Ok(record) => records.push(record),
-            Err(_) if lines.peek().is_none() => {} // torn last line: tolerated
-            Err(error) => return Err(error).context("ledger line did not parse as JSON"),
-        }
-    }
-    Ok(records)
+    io::read(work_dir, session_id)
 }
 
 /// Whether `id` already has a ledger record for `session_id` — the

@@ -6,6 +6,21 @@ use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 use tempfile::TempDir;
 
+#[path = "../test_support/mod.rs"]
+pub mod test_support;
+
+// Several test targets load this file through `#[path]` without using this name.
+#[allow(unused_imports)]
+pub use test_support::write_main_checkout_identity;
+
+pub fn git_checked(dir: &Path, args: &[&str]) -> std::process::Output {
+    test_support::git_checked(dir, args)
+}
+
+pub fn git_unchecked(dir: &Path, args: &[&str]) -> std::process::Output {
+    test_support::git_unchecked(dir, args)
+}
+
 use loom::plan::graph::ExecutionGraph;
 use loom::plan::schema::StageDefinition;
 
@@ -14,75 +29,19 @@ pub fn init_test_repo() -> TempDir {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let repo_root = temp_dir.path();
 
-    Command::new("git")
-        .args(["init"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to init git repo");
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to set git user.email");
-
-    Command::new("git")
-        .args(["config", "user.name", "Test User"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to set git user.name");
-
-    fs::write(repo_root.join("README.md"), "# Test Repository\n")
-        .expect("Failed to write README.md");
-
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to git add");
-
-    Command::new("git")
-        .args(["commit", "-m", "Initial commit"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to git commit");
-
-    Command::new("git")
-        .args(["branch", "-M", "main"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to rename branch to main");
+    test_support::init_git_repo(repo_root);
+    test_support::git_checked(repo_root, &["branch", "-M", "main"]);
 
     temp_dir
 }
 
 /// Test helper: Create a branch with a commit adding a file
 pub fn create_branch_with_file(name: &str, filename: &str, content: &str, repo_root: &Path) {
-    Command::new("git")
-        .args(["checkout", "-b", name])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to checkout new branch");
-
+    test_support::git_checked(repo_root, &["checkout", "-b", name]);
     fs::write(repo_root.join(filename), content).expect("Failed to write file");
-
-    Command::new("git")
-        .args(["add", filename])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to git add");
-
-    Command::new("git")
-        .args(["commit", "-m", &format!("Add {filename}")])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to git commit");
-
-    Command::new("git")
-        .args(["checkout", "main"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to checkout main");
+    test_support::git_checked(repo_root, &["add", filename]);
+    test_support::git_checked(repo_root, &["commit", "-m", &format!("Add {filename}")]);
+    test_support::git_checked(repo_root, &["checkout", "main"]);
 }
 
 /// Test helper: Build execution graph from stage definitions
@@ -119,26 +78,16 @@ pub fn verify_worktree_has_file(worktree_path: &Path, filename: &str) -> bool {
 
 /// Test helper: Merge a branch into main
 pub fn merge_into_main(branch: &str, repo_root: &Path) {
-    Command::new("git")
-        .args(["checkout", "main"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to checkout main");
-
-    Command::new("git")
-        .args(["merge", "--no-ff", "-m", &format!("Merge {branch}"), branch])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to merge");
+    test_support::git_checked(repo_root, &["checkout", "main"]);
+    test_support::git_checked(
+        repo_root,
+        &["merge", "--no-ff", "-m", &format!("Merge {branch}"), branch],
+    );
 }
 
 /// Test helper: Delete a branch
 pub fn delete_branch(branch: &str, repo_root: &Path) {
-    Command::new("git")
-        .args(["branch", "-D", branch])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to delete branch");
+    test_support::git_checked(repo_root, &["branch", "-D", branch]);
 }
 
 /// Path to the `loom` binary this test run built.
@@ -189,37 +138,71 @@ pub fn loom_cmd() -> Command {
     command
 }
 
-/// Every `LOOM_*` variable a spawned loom session may export
-/// (`orchestrator/terminal/native/wrapper.rs` and its `host_env` submodule),
-/// beyond what a bare `loom` invocation ever needs to see. A test that spawns
-/// the real binary — or a hook script under test — must never let one of
-/// these leak in from the process actually running `cargo test`: it would
-/// silently make the child believe it is a stage/knowledge/merge/adjudication
-/// session, or (via `LOOM_HOOK_PATH`/`LOOM_BIN`) resolve a hook script's PATH
-/// and binary to something other than the test's own stub.
-pub const RELAY_ENV_VARS_TO_CLEAR: &[&str] = &[
-    "LOOM_SESSION_ID",
-    "LOOM_STAGE_ID",
-    "LOOM_WORK_DIR",
-    "LOOM_WORKTREE_PATH",
-    "LOOM_MAIN_AGENT_PID",
-    "LOOM_SESSION_TYPE",
-    "LOOM_MERGE_SESSION",
-    "LOOM_SCRATCH_DIR",
-    "LOOM_BIN",
-    "LOOM_HOOK_PATH",
-    "LOOM_HOOK_CONTEXT",
-];
-
-/// Remove every variable in [`RELAY_ENV_VARS_TO_CLEAR`] from `command`. Callers
-/// that need one of them for the scenario under test set it back afterward
-/// with an explicit `.env(...)` — that always wins, since it runs after this
-/// blanket clear.
+/// Remove inherited Loom variables; scenarios may add explicit values afterward.
 pub fn clear_relay_env(command: &mut Command) -> &mut Command {
-    for var in RELAY_ENV_VARS_TO_CLEAR {
-        command.env_remove(var);
-    }
+    test_support::clear_loom_env(command);
     command
+}
+
+/// Feed a finite payload from a file and capture both streams under a deadline.
+pub fn run_hook_process(command: &mut Command, input: &[u8]) -> std::process::Output {
+    run_hook_process_with_timeout(command, input, std::time::Duration::from_secs(15))
+        .unwrap_or_else(|error| panic!("hook process {command:?}: {error:#}"))
+}
+
+fn run_hook_process_with_timeout(
+    command: &mut Command,
+    input: &[u8],
+    timeout: std::time::Duration,
+) -> anyhow::Result<std::process::Output> {
+    use std::io::{Seek, Write};
+    let mut payload = tempfile::tempfile().expect("create hook input");
+    payload.write_all(input).expect("write hook input");
+    payload.rewind().expect("rewind hook input");
+    command.stdin(Stdio::from(payload));
+    loom::process::run_bounded_output(command, timeout, "hook test")
+}
+
+#[test]
+fn hook_runner_drains_large_output_and_times_out() {
+    let mut noisy = Command::new("bash");
+    noisy.args(["-c", "for ((i=0; i<10000; i++)); do printf '0123456789abcdef\\n'; printf '0123456789abcdef\\n' >&2; done"]);
+    let output = run_hook_process_with_timeout(&mut noisy, b"", std::time::Duration::from_secs(5))
+        .expect("drain output");
+    assert!(output.status.success());
+    assert!(output.stdout.len() > 65536);
+    assert!(output.stderr.len() > 65536);
+
+    let mut overflowing = Command::new("dd");
+    overflowing.args(["if=/dev/zero", "bs=1024", "count=17000"]);
+    let error =
+        run_hook_process_with_timeout(&mut overflowing, b"", std::time::Duration::from_secs(10))
+            .expect_err("output above the capture limit must fail");
+    assert!(error.to_string().contains("stdout"), "{error:#}");
+
+    let dir = TempDir::new().unwrap();
+    let pid_file = dir.path().join("descendant.pid");
+    let mut hung = Command::new("bash");
+    hung.arg("-c")
+        .arg("sleep 300 & echo $! > \"$1\"; while :; do :; done")
+        .arg("hung")
+        .arg(&pid_file);
+    let error = run_hook_process_with_timeout(&mut hung, b"", std::time::Duration::from_secs(2))
+        .expect_err("hung child must time out");
+    assert!(error.to_string().contains("hook test"), "{error:#}");
+    let pid: u32 = fs::read_to_string(&pid_file)
+        .expect("hung child records its descendant")
+        .trim()
+        .parse()
+        .expect("descendant pid");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while loom::process::is_process_alive(pid) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(
+        !loom::process::is_process_alive(pid),
+        "descendant {pid} outlived the timed-out hook"
+    );
 }
 
 /// Whether a `name --version` child spawns successfully, i.e. `name` is on

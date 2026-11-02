@@ -1,6 +1,5 @@
 //! Snapshot production from the daemon subscription or the local work files.
 
-use std::io;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -11,13 +10,17 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
-use crate::commands::status::data::{collect_status_data, StatusData};
 use crate::commands::status::ui::tui::daemon_client;
-use crate::daemon::{read_message, Response};
+use crate::daemon::{Response, ResponseFrameReader};
 use crate::fs::work_dir::WorkDir;
+use crate::status::data::{collect_status_data, StatusData};
 use crate::web_server::hub::Hub;
 
 use super::model::{collect_snapshot, SnapshotSource, WebSnapshot};
+
+#[cfg(test)]
+#[path = "broadcast_tests.rs"]
+mod tests;
 
 const RECONNECT_ATTEMPTS: usize = 3;
 const FILE_POLL_COUNT: usize = 5;
@@ -211,9 +214,10 @@ fn forward_daemon(
     terminals: bool,
 ) -> DaemonExit {
     let mut received_frame = false;
+    let mut reader = ResponseFrameReader::new(Duration::from_secs(30));
     while running.load(Ordering::SeqCst) {
-        match read_message::<Response, _>(&mut stream) {
-            Ok(response) => match classify_response(work_path, response, terminals) {
+        match reader.poll(&mut stream) {
+            Ok(Some(response)) => match classify_response(work_path, response, terminals) {
                 Ok(DaemonStep::Frame(frame)) => {
                     broadcaster.publish(frame);
                     received_frame = true;
@@ -222,10 +226,10 @@ fn forward_daemon(
                 Ok(DaemonStep::Degraded(message)) => return DaemonExit::Degraded(message),
                 Err(error) => tracing::warn!("dashboard could not serialize daemon frame: {error}"),
             },
+            Ok(None) => {}
             Err(error) if daemon_client::is_socket_disconnected(&error) => {
                 return DaemonExit::Disconnected { received_frame };
             }
-            Err(error) if is_read_timeout(&error) => {}
             Err(error) => {
                 tracing::warn!("dashboard daemon stream error: {error}");
                 return DaemonExit::StreamError { received_frame };
@@ -274,7 +278,9 @@ pub(super) fn poll_files_once(
         }
     };
     let mut snapshot = collect_snapshot(work_path, data, SnapshotSource::Files, terminals);
-    snapshot.notice = notice.map(str::to_owned);
+    if let Some(notice) = notice {
+        snapshot.notice = Some(notice.to_owned());
+    }
     broadcaster.publish(serde_json::to_string(&snapshot).context("serialize file snapshot")?);
     Ok(())
 }
@@ -316,15 +322,4 @@ fn sleep_while_running(running: &AtomicBool, duration: Duration) {
         thread::sleep(slice);
         remaining = remaining.saturating_sub(slice);
     }
-}
-
-fn is_read_timeout(error: &anyhow::Error) -> bool {
-    error.chain().any(|cause| {
-        cause.downcast_ref::<io::Error>().is_some_and(|io_error| {
-            matches!(
-                io_error.kind(),
-                io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
-            )
-        })
-    })
 }

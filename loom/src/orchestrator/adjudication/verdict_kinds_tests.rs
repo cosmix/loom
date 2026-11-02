@@ -155,3 +155,6 @@ fn an_impact_test_dispute_takes_accept_without_a_patch_or_reject_but_no_rulings(
 
 #[path = "verdict_freeze_refusal_tests.rs"]
 mod freeze_refusal;
+
+#[path = "record_freshness_tests.rs"]
+mod record_freshness;

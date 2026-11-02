@@ -9,8 +9,12 @@ use crate::plan_server::wire::server::{MissingPrereq, PrereqKind};
 use crate::planning::watch::OwnWrites;
 use tempfile::TempDir;
 
+#[path = "environment_tests.rs"]
+mod environment;
 #[path = "tests_route.rs"]
 mod route;
+#[path = "shutdown_tests.rs"]
+mod shutdown;
 
 struct Repo(TempDir);
 

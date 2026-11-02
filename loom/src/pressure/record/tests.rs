@@ -5,10 +5,10 @@ use tempfile::TempDir;
 #[cfg(unix)]
 use std::os::unix::fs::{symlink, PermissionsExt};
 
-const END: &str = "<!-- END loom METADATA -->\n";
+pub(super) const END: &str = "<!-- END loom METADATA -->\n";
 const RENDERED: &str = "- 2026-10-29: Claude sonnet, Codex gpt-6.1-sol; 1 round, review addressed";
 
-fn record_line(models: &[&str], rounds: u32, missing_rounds: &[u32]) -> RecordLine {
+pub(super) fn record_line(models: &[&str], rounds: u32, missing_rounds: &[u32]) -> RecordLine {
     RecordLine {
         date: chrono::NaiveDate::from_ymd_opt(2026, 10, 29).expect("valid fixed date"),
         claude_model: "sonnet".into(),
@@ -25,7 +25,7 @@ fn assert_placement(body: &str, expected: &str) {
     );
 }
 
-fn plan_file(text: &str) -> (TempDir, PathBuf) {
+pub(super) fn plan_file(text: &str) -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("temporary plan directory");
     let path = dir.path().join("PLAN-review.md");
     fs::write(&path, text).expect("write plan fixture");
@@ -33,13 +33,20 @@ fn plan_file(text: &str) -> (TempDir, PathBuf) {
 }
 
 #[test]
-fn placement_uses_last_end_marker() {
-    let prefix = format!("{END}\n## Pressure tests\n\n- earlier block\n\n{END}");
-    let text = format!("{prefix}\n## Pressure tests\n\n- latest block\n");
+fn placement_uses_parsed_boundary_before_later_marker_like_prose() {
+    let text = format!(
+        "<!-- loom METADATA -->\n```yaml\nloom: {{}}\n```\n{END}\n## Pressure tests\n\n- first\n\n## Notes\n\n{END}\n## Pressure tests\n\n- later\n"
+    );
+    let expected = text.replacen("- first\n", "- first\n- new review\n", 1);
 
-    assert_eq!(
-        append_to_text(&text, "- new review"),
-        format!("{prefix}\n## Pressure tests\n\n- latest block\n- new review\n")
+    assert_eq!(append_to_text(&text, "- new review"), expected);
+}
+
+#[test]
+fn placement_uses_shared_atx_heading_and_section_boundary() {
+    assert_placement(
+        "\n##\tPressure tests\n\n- old\n\n##\tNotes\nLeave this.\n",
+        "\n##\tPressure tests\n\n- old\n- new review\n\n##\tNotes\nLeave this.\n",
     );
 }
 
@@ -276,6 +283,41 @@ fn append_record_keeps_mode_0640_and_writes_record() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn in_place_edit_after_read_skips_record_without_losing_edit() -> anyhow::Result<()> {
+    let (dir, plan) = plan_file(END);
+    BEFORE_PUBLICATION.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(|path| {
+            fs::write(path, format!("{END}An editor changed this plan.\n")).unwrap();
+        }));
+    });
+    let result = append_record(&plan, &record_line(&["a"], 1, &[]))?;
+    assert_eq!(result, RecordWrite::PlanMoved);
+    assert_eq!(
+        fs::read_to_string(&plan)?,
+        format!("{END}An editor changed this plan.\n")
+    );
+    assert_eq!(fs::read_dir(dir.path())?.count(), 1);
+    Ok(())
+}
+
+#[test]
+fn replacement_before_publication_skips_record_without_losing_edit() -> anyhow::Result<()> {
+    let (dir, plan) = plan_file(END);
+    BEFORE_PUBLICATION.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(|path| {
+            let replacement = path.with_extension("replacement");
+            fs::write(&replacement, format!("{END}A newer plan.\n")).unwrap();
+            fs::rename(replacement, path).unwrap();
+        }));
+    });
+    let result = append_record(&plan, &record_line(&["a"], 1, &[]))?;
+    assert_eq!(result, RecordWrite::PlanMoved);
+    assert_eq!(fs::read_to_string(&plan)?, format!("{END}A newer plan.\n"));
+    assert_eq!(fs::read_dir(dir.path())?.count(), 1);
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn append_record_symlink_returns_plan_moved_without_changing_target() -> anyhow::Result<()> {
@@ -319,7 +361,7 @@ fn append_record_missing_plan_returns_plan_moved_without_creating_files() -> any
 #[test]
 fn append_record_succeeds_when_plan_directory_cannot_be_opened() -> anyhow::Result<()> {
     let (dir, plan) = plan_file(END);
-    // Write+search without read: the rename works, File::open(dir) fails.
+    // Write+search without read permits candidate creation and append.
     fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o311))?;
     let line = record_line(&["gpt-6.1-sol"], 1, &[]);
 

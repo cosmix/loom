@@ -8,11 +8,13 @@
 ## Git Modules
 
 - `git/worktree/operations.rs` - Create/remove worktrees at `.worktrees/{stage-id}/`
-- `git/worktree/config_worktree.rs` - `worktree_admin_dirs` (the real directories under `<common>/worktrees`, listed at spawn), `partition_admin_dirs` / `AdminDirs` (split them into the session's `own` entry and its `siblings`; an unclaimed or doubly claimed worktree is an error, so the spawn is refused), `check_worktree_config` (pinned git refuses unexpected `config.worktree` keys)
+- `git/worktree/config_worktree.rs` - `worktree_admin_dirs` (the real directories under `<common>/worktrees`, listed at spawn), `partition_admin_dirs` / `AdminDirs` (split them into the session's `own` entry and its `siblings`; an unclaimed or doubly claimed worktree is an error, so the spawn is refused), `snapshot_worktree_config` (copies `config.worktree` for one pinned command and refuses unexpected keys) and `worktree_config_enabled`
+- `git/worktree/pinned.rs` - `WorktreeGit` (`pinned`, `pinned_main`, `discovered`); `scratch_admin.rs` - the private `GIT_DIR` of one pinned command, under `<state root>/pinned-git`; `pinned_settings.rs` - the identity passed explicitly, since an `includeIf "gitdir:"` does not match the private path
+- `git/hooks.rs` - `install_pre_commit_hook`; `git/hooks/location.rs` - where git runs hooks from and whether loom may write there; `git/hooks/reference_transaction.rs` - the target guard's hook
 - `git/worktree/base.rs` - Base branch resolution for dependencies
 - `git/worktree/settings.rs` - Worktree symlinks (.loom/work, .claude/CLAUDE.md, CLAUDE.md)
 - `git/merge/mod.rs` - `merge_stage`: `merge-tree` + `commit-tree`, never git in the operator's checkout; `MergeResult`, `MergeBlock`
-- `git/merge/tree.rs` - `merge_tree`, `commit_merge`, `advance_target`; `checkout_apply.rs` (`advance_in_checkout`) and `checkout_state.rs` (`classify`) guard the fast-forward into the operator's checkout
+- `git/merge/tree.rs` - `merge_tree`, `commit_merge`, `advance_target`; `checkout_apply.rs` (`advance_in_checkout`) and `checkout_state.rs` (`classify`) guard the fast-forward into the operator's checkout; `checkout_stash.rs` builds and stores the stash commit from plumbing; `stash_report.rs` holds `RollbackChanges`
 - `git/merge/resolved.rs` - `check_resolved_worktree`: validates a resolver's worktree before landing; `inputs.rs` - `blocked_merge_inputs` fingerprint for the blocked retry
 - `git/merge/control_paths.rs` - `MergeGate::{Enforce, Bypass}` and the control-path check (`git diff -z`, case-insensitive) that `merge_stage` runs under the lock
 - `git/merge/checkout_files.rs` - `CheckoutProbe`: ignored local files at paths a merge adds; `fast_forward.rs` - the refused-fast-forward typing; `operation.rs` - operator operations in R (`sequencer/` included)

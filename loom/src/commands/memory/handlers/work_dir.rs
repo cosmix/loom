@@ -15,37 +15,15 @@ use crate::git::worktree::find_repo_root_from_cwd;
 /// insights instead of erroring outright.
 pub(super) const AD_HOC_STAGE_ID: &str = "ad-hoc";
 
-/// Get the state directory for RECORDING commands, creating it if necessary.
-///
-/// Tries the shared resolver ([`work_dir_path`], which walks up from cwd and
-/// resolves a worktree's state symlink like every other command) first. If
-/// nothing is found and cwd is inside a git repo, creates
-/// `<repo_root>/.loom/work/memory/` (via `init_memory_dir`) so
-/// `note`/`decision`/`change`/`question` still work from an ad-hoc session with
-/// no active loom plan. `find_repo_root_from_cwd` already resolves to the main
-/// repo root even when cwd is inside a `.worktrees/<stage>` checkout, so this
-/// never creates a second state directory alongside a worktree's symlink.
-/// Read-only commands (`query`, `list`, `show`) must NOT call this — they
-/// degrade instead of creating anything.
-///
-/// Still fails with the original message when cwd is not inside a git repo.
+/// Resolve the state directory, creating one at the repository root if needed.
+/// Read-only commands use `readonly_work_dir` instead.
 pub(super) fn get_or_create_work_dir() -> Result<std::path::PathBuf> {
     if let Ok(work_dir) = work_dir_path() {
         return Ok(work_dir);
     }
 
     let cwd = env::current_dir().context("Failed to get current directory")?;
-    // `find_repo_root_from_cwd` falls back to returning `cwd` itself when it
-    // walks all the way to the filesystem root without finding a `.git`, so
-    // `Some` alone doesn't mean "inside a git repo" - confirm the candidate
-    // root actually has a `.git` entry before trusting it. A bare
-    // `.exists()` isn't enough either: the walk-up has no ceiling, so from a
-    // cwd with no repo in its own ancestry (e.g. a scratch directory under
-    // the OS-shared temp root) it can climb all the way to an unrelated
-    // ambient `.git` sitting far above any real project - even an empty
-    // impostor directory that merely happens to be named `.git` - and treat
-    // it as this call's repo root. `is_real_git_dir` requires the structure
-    // a real repo always has, not just the name.
+    // The resolver can fall back to cwd; require a real git directory.
     let repo_root =
         find_repo_root_from_cwd(&cwd).filter(|root| is_real_git_dir(&root.join(".git")));
     let Some(repo_root) = repo_root else {
@@ -80,8 +58,30 @@ pub(super) fn readonly_work_dir() -> Option<std::path::PathBuf> {
 
 /// Validate stage ID to prevent path traversal attacks
 pub(super) fn validate_stage_id(id: &str) -> Result<()> {
-    if id.contains('/') || id.contains("..") || id.contains('\\') {
-        bail!("Invalid stage ID: contains path separators");
+    if !crate::validation::valid_stage_path_component(id) {
+        bail!("Invalid stage ID: must be a safe path component");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_stage_id;
+
+    #[test]
+    fn stage_ids_require_safe_path_components() {
+        for (id, valid) in [
+            ("stage-1.a_b", true),
+            ("", false),
+            (".", false),
+            ("..", false),
+            ("a..b", false),
+            ("bad/stage", false),
+            ("bad\\stage", false),
+            ("with space", false),
+            ("é", false),
+        ] {
+            assert_eq!(validate_stage_id(id).is_ok(), valid, "{id:?}");
+        }
+    }
 }

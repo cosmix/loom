@@ -13,10 +13,8 @@ fn merge_usage_observation(first: &mut Request, duplicate: &Request) {
     }
     first.normalization.usage_observations += duplicate.normalization.usage_observations;
     record_first_usage(first, duplicate);
-    let current_key = (first.timestamp, first.normalization.line_ordinal);
-    let duplicate_key = (duplicate.timestamp, duplicate.normalization.line_ordinal);
     if !first.normalization.usage_observed
-        || crate::provider_data::supersedes(current_key, duplicate_key)
+        || crate::provider_data::supersedes(first.timestamp, duplicate.timestamp)
     {
         first.usage = duplicate.usage;
         first.timestamp = duplicate.timestamp;

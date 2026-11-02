@@ -8,6 +8,9 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
 use crate::git::runner::run_git_checked;
+use crate::git::worktree::WorktreeGit;
+
+const UNMERGED_PATHS_ARGS: [&str; 3] = ["diff", "--name-only", "--diff-filter=U"];
 
 /// Where an in-progress merge was found.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,16 +108,14 @@ pub fn merge_head_exists(repo_path: &Path) -> Result<bool> {
     Ok(git_dir.join("MERGE_HEAD").exists())
 }
 
-/// Inspect a single repo or worktree path, returning the merge if present.
-///
-/// `is_worktree=true` means the caller knows this is a worktree directory
-/// (relevant for distinguishing the `MergeLocation` variant).
-fn detect_at(repo_path: &Path, is_worktree: bool) -> Result<Option<InProgressMerge>> {
-    let git_dir = match git_dir_for_repo_path(repo_path) {
-        Ok(p) => p,
-        Err(_) => return Ok(None),
-    };
-
+/// The merge at `repo_path` whose git directory is `git_dir`, if present.
+/// `unmerged` lists its conflicted paths.
+fn detect_at(
+    repo_path: &Path,
+    git_dir: PathBuf,
+    is_worktree: bool,
+    unmerged: impl FnOnce() -> Result<String>,
+) -> Result<Option<InProgressMerge>> {
     let merge_head_path = git_dir.join("MERGE_HEAD");
     if !merge_head_path.exists() {
         return Ok(None);
@@ -127,7 +128,12 @@ fn detect_at(repo_path: &Path, is_worktree: bool) -> Result<Option<InProgressMer
         .filter(|s| !s.is_empty())
         .collect();
 
-    let unmerged = unmerged_paths(repo_path)?;
+    let listing = unmerged()?;
+    let unmerged: Vec<String> = listing
+        .lines()
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
     let state = if unmerged.is_empty() {
         ActiveMergeState::ResolvedButUncommitted
     } else {
@@ -155,14 +161,34 @@ fn detect_at(repo_path: &Path, is_worktree: bool) -> Result<Option<InProgressMer
 
 /// Inspect a single main-repo path, returning the active merge if present.
 pub fn detect_in_progress_merge_at(repo_path: &Path) -> Result<Option<InProgressMerge>> {
-    detect_at(repo_path, false)
+    let Ok(git_dir) = git_dir_for_repo_path(repo_path) else {
+        return Ok(None);
+    };
+    detect_at(repo_path, git_dir, false, || {
+        run_git_checked(&UNMERGED_PATHS_ARGS, repo_path)
+    })
 }
 
-/// Inspect a worktree path, returning the active merge if present.
+/// Inspect a stage worktree, returning the active merge if present. A stage
+/// session can rewrite the worktree's `.git`, so its git directory comes from
+/// the registry of the repository the path sits in, and a worktree that
+/// registry does not name is an error.
 pub fn detect_in_progress_merge_at_worktree(
     worktree_path: &Path,
 ) -> Result<Option<InProgressMerge>> {
-    detect_at(worktree_path, true)
+    let repo_root = worktree_path
+        .parent()
+        .filter(|parent| parent.file_name() == Some(std::ffi::OsStr::new(".worktrees")))
+        .and_then(Path::parent)
+        .with_context(|| format!("{} is not a stage worktree", worktree_path.display()))?;
+    let git = WorktreeGit::pinned(repo_root, worktree_path)?;
+    let git_dir = git
+        .git_dir_path()
+        .context("a pinned worktree has a git directory")?
+        .to_path_buf();
+    detect_at(worktree_path, git_dir, true, || {
+        git.run_checked(&UNMERGED_PATHS_ARGS)
+    })
 }
 
 /// Inspect main repo and the stage's worktree, returning all active merges found.
@@ -183,214 +209,6 @@ pub fn detect_in_progress_merges(stage_id: &str, repo_root: &Path) -> Vec<InProg
     merges
 }
 
-/// Run `git diff --name-only --diff-filter=U` in the given path and return
-/// its lines. Returns an empty Vec on git failure (the caller treats the
-/// "no unmerged paths" case as `ResolvedButUncommitted`).
-fn unmerged_paths(repo_path: &Path) -> Result<Vec<String>> {
-    let stdout = run_git_checked(&["diff", "--name-only", "--diff-filter=U"], repo_path)?;
-    Ok(stdout
-        .lines()
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .collect())
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::process::Command;
-    use tempfile::TempDir;
-
-    fn run_git(args: &[&str], cwd: &Path) {
-        let out = Command::new("git")
-            .args(args)
-            .current_dir(cwd)
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-
-    fn init_repo() -> TempDir {
-        let tmp = TempDir::new().unwrap();
-        let root = tmp.path();
-        run_git(&["init", "-b", "main"], root);
-        run_git(&["config", "user.email", "t@t.com"], root);
-        run_git(&["config", "user.name", "t"], root);
-        std::fs::write(root.join("README.md"), "seed").unwrap();
-        run_git(&["add", "README.md"], root);
-        run_git(&["commit", "-m", "seed"], root);
-        tmp
-    }
-
-    #[test]
-    fn merge_head_exists_returns_false_when_clean() {
-        let tmp = init_repo();
-        assert!(!merge_head_exists(tmp.path()).unwrap());
-    }
-
-    #[test]
-    fn merge_head_exists_returns_true_when_active() {
-        let tmp = init_repo();
-        let root = tmp.path();
-        // Build a conflicting branch.
-        run_git(&["checkout", "-b", "feature"], root);
-        std::fs::write(root.join("a.txt"), "branch").unwrap();
-        run_git(&["add", "a.txt"], root);
-        run_git(&["commit", "-m", "branch"], root);
-        run_git(&["checkout", "main"], root);
-        std::fs::write(root.join("a.txt"), "main").unwrap();
-        run_git(&["add", "a.txt"], root);
-        run_git(&["commit", "-m", "main"], root);
-
-        // Try to merge — produces MERGE_HEAD with conflict.
-        let out = Command::new("git")
-            .args(["merge", "--no-ff", "feature"])
-            .current_dir(root)
-            .output()
-            .unwrap();
-        assert!(!out.status.success());
-
-        assert!(merge_head_exists(root).unwrap());
-    }
-
-    #[test]
-    fn detect_returns_unmerged_paths_state_when_conflicts_present() {
-        let tmp = init_repo();
-        let root = tmp.path();
-        run_git(&["checkout", "-b", "feature"], root);
-        std::fs::write(root.join("file.txt"), "feature\n").unwrap();
-        run_git(&["add", "file.txt"], root);
-        run_git(&["commit", "-m", "feature"], root);
-        run_git(&["checkout", "main"], root);
-        std::fs::write(root.join("file.txt"), "main\n").unwrap();
-        run_git(&["add", "file.txt"], root);
-        run_git(&["commit", "-m", "main"], root);
-
-        let _ = Command::new("git")
-            .args(["merge", "--no-ff", "feature"])
-            .current_dir(root)
-            .output()
-            .unwrap();
-
-        let merge = detect_in_progress_merge_at(root).unwrap().unwrap();
-        match merge.state {
-            ActiveMergeState::HasUnmergedPaths(paths) => {
-                assert!(paths.iter().any(|p| p == "file.txt"));
-            }
-            other => panic!("expected HasUnmergedPaths, got {other:?}"),
-        }
-        assert!(matches!(merge.location, MergeLocation::MainRepo { .. }));
-        assert_eq!(merge.merge_heads.len(), 1);
-    }
-
-    #[test]
-    fn detect_returns_resolved_but_uncommitted_when_paths_staged() {
-        let tmp = init_repo();
-        let root = tmp.path();
-        run_git(&["checkout", "-b", "feature"], root);
-        std::fs::write(root.join("file.txt"), "feature\n").unwrap();
-        run_git(&["add", "file.txt"], root);
-        run_git(&["commit", "-m", "feature"], root);
-        run_git(&["checkout", "main"], root);
-        std::fs::write(root.join("file.txt"), "main\n").unwrap();
-        run_git(&["add", "file.txt"], root);
-        run_git(&["commit", "-m", "main"], root);
-
-        let _ = Command::new("git")
-            .args(["merge", "--no-ff", "feature"])
-            .current_dir(root)
-            .output()
-            .unwrap();
-
-        // Resolve by writing one side and staging.
-        std::fs::write(root.join("file.txt"), "resolved\n").unwrap();
-        run_git(&["add", "file.txt"], root);
-
-        let merge = detect_in_progress_merge_at(root).unwrap().unwrap();
-        assert_eq!(merge.state, ActiveMergeState::ResolvedButUncommitted);
-    }
-
-    #[test]
-    fn merge_heads_parses_octopus_multiple_lines() {
-        let tmp = init_repo();
-        let root = tmp.path();
-        let git_dir = root.join(".git");
-        // Write a fake MERGE_HEAD with two lines to test parser.
-        std::fs::write(
-            git_dir.join("MERGE_HEAD"),
-            "abc1234567890abcdef1234567890abcdef1234\n\
-             def4567890abcdef1234567890abcdef1234abcd\n",
-        )
-        .unwrap();
-
-        let merge = detect_in_progress_merge_at(root).unwrap().unwrap();
-        assert_eq!(merge.merge_heads.len(), 2);
-
-        // Cleanup the manufactured MERGE_HEAD.
-        std::fs::remove_file(git_dir.join("MERGE_HEAD")).ok();
-    }
-
-    #[test]
-    fn git_dir_for_repo_resolves_dot_git_directory() {
-        let tmp = init_repo();
-        let root = tmp.path();
-        let git_dir = git_dir_for_repo_path(root).unwrap();
-        assert!(git_dir.is_dir());
-        assert_eq!(git_dir, root.join(".git"));
-    }
-
-    #[test]
-    fn git_dir_for_repo_resolves_dot_git_file_with_absolute_path() {
-        let tmp = TempDir::new().unwrap();
-        let worktree_path = tmp.path().join("wt");
-        std::fs::create_dir_all(&worktree_path).unwrap();
-        let absolute_gitdir = tmp.path().join("gits").join("wt-gitdir");
-        std::fs::create_dir_all(&absolute_gitdir).unwrap();
-        std::fs::write(
-            worktree_path.join(".git"),
-            format!("gitdir: {}\n", absolute_gitdir.display()),
-        )
-        .unwrap();
-
-        let resolved = git_dir_for_repo_path(&worktree_path).unwrap();
-        assert_eq!(resolved, absolute_gitdir);
-    }
-
-    #[test]
-    fn git_dir_for_repo_resolves_dot_git_file_with_relative_path() {
-        let tmp = TempDir::new().unwrap();
-        let worktree_path = tmp.path().join("wt");
-        std::fs::create_dir_all(&worktree_path).unwrap();
-        let target = worktree_path.join("..").join("real-gitdir");
-        std::fs::create_dir_all(&target).unwrap();
-        std::fs::write(worktree_path.join(".git"), "gitdir: ../real-gitdir\n").unwrap();
-
-        let resolved = git_dir_for_repo_path(&worktree_path).unwrap();
-        assert_eq!(
-            resolved.canonicalize().unwrap(),
-            target.canonicalize().unwrap()
-        );
-    }
-
-    #[test]
-    fn git_dir_for_repo_errors_on_malformed_dot_git_file() {
-        let tmp = TempDir::new().unwrap();
-        let worktree_path = tmp.path().join("wt");
-        std::fs::create_dir_all(&worktree_path).unwrap();
-        std::fs::write(worktree_path.join(".git"), "garbage\n").unwrap();
-
-        let result = git_dir_for_repo_path(&worktree_path);
-        assert!(result.is_err(), "malformed .git file must produce an error");
-    }
-
-    #[test]
-    fn detect_returns_none_when_not_a_repo() {
-        let tmp = TempDir::new().unwrap();
-        let result = detect_in_progress_merge_at(tmp.path()).unwrap();
-        assert!(result.is_none());
-    }
-}
+#[path = "in_progress_tests.rs"]
+mod tests;

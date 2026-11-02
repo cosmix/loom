@@ -5,6 +5,9 @@
 //! and `LOOM_SESSION_ID` removed, so the hook (when installed) can write the
 //! ledger and attests every move made through git.
 
+#[path = "test_support/mod.rs"]
+mod test_support;
+
 use loom::git::hooks::{install_reference_transaction_hook, HookInstall};
 use loom::git::merge::{merge_stage, MergeBlock, MergeGate, MergeResult};
 use loom::git::target_guard::{
@@ -57,7 +60,7 @@ fn fixture() -> (TempDir, PathBuf, PathBuf) {
     std::fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n").unwrap();
     commit(&root, "README.md", false);
     let work = root.join(".loom/work");
-    std::fs::create_dir_all(&work).unwrap();
+    test_support::write_main_checkout_identity(&root, &work);
     (dir, root, work)
 }
 
@@ -259,6 +262,30 @@ fn tracked_hooks_dir_change_is_held() {
         has_control_path(&reasons, "hooks/pre-commit"),
         "{reasons:?}"
     );
+}
+
+#[test]
+fn normalized_hook_paths_are_held_at_the_target_boundary() {
+    for spelling in [".", "././.githooks", "x/../.githooks", "absolute"] {
+        let (_dir, root, work) = fixture();
+        std::fs::create_dir_all(root.join("x")).unwrap();
+        let absolute = root.join("x/../.githooks");
+        let configured = if spelling == "absolute" {
+            absolute.to_str().unwrap()
+        } else {
+            spelling
+        };
+        git(&root, &["config", "core.hooksPath", configured]);
+        record(&root, &work);
+        let path = if spelling == "." {
+            "pre-commit"
+        } else {
+            ".githooks/pre-commit"
+        };
+        commit(&root, path, false);
+        let held = reasons(check_now(&root, &work));
+        assert!(has_control_path(&held, path), "{spelling}: {held:?}");
+    }
 }
 
 #[test]

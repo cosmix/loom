@@ -1,16 +1,13 @@
 //! Summary-facing views of a stage-scoped forwarding receipt index.
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use serde::Serialize;
 
-use super::forward_jobs_transcript;
 use super::{
-    combine_overlays, matching_receipts, overlay_for_agent, overlay_from_state, receipt_state,
-    ForwardIndex, ForwardOverlay, FORWARDER_TYPE,
+    combine_overlays, matching_receipts, overlay_from_observation, overlay_from_state,
+    receipt_state, ForwardIndex, ForwardOverlay,
 };
-use crate::commands::subagents::ledger;
 use crate::models::forward_receipt::{ForwardReceipt, ForwardState};
 
 /// JSON-only backend details for an expected forwarding call.
@@ -31,16 +28,14 @@ pub(in crate::commands::subagents) struct ForwardEvidence {
 pub(in crate::commands::subagents) fn evidence_for_agent(
     index: &ForwardIndex,
     agent_id: &str,
-    transcript_path: &Path,
+    transcript: &super::super::forward_jobs_transcript::ForwardTranscript,
 ) -> Option<ForwardEvidence> {
-    let overlay = overlay_for_agent(index, agent_id, transcript_path)?;
-    let transcript = forward_jobs_transcript::read(transcript_path);
-    let receipts = matching_receipts(index, agent_id, &transcript);
-    let expected =
-        known_forwarder(index, agent_id) || !receipts.is_empty() || transcript.has_forwarding_use();
-    expected.then(|| ForwardEvidence {
+    let receipts = matching_receipts(index, agent_id, transcript);
+    let states = observe_receipts(index, &receipts);
+    let overlay = overlay_from_observation(index, agent_id, transcript, &receipts, &states)?;
+    Some(ForwardEvidence {
         overlay,
-        metadata: receipt_metadata(index, &receipts, overlay),
+        metadata: receipt_metadata(index, &receipts, &states, overlay),
     })
 }
 
@@ -56,19 +51,20 @@ pub(in crate::commands::subagents) fn evidence_for_missing_agent(
     if receipts.is_empty() {
         return None;
     }
+    let states = observe_receipts(index, &receipts);
     let overlay = if index.unreadable {
         ForwardOverlay::ForwardUnknown
     } else {
         combine_overlays(
-            receipts
+            states
                 .iter()
-                .map(|receipt| overlay_from_state(receipt_state(index, receipt), false))
+                .map(|state| overlay_from_state(*state, false))
                 .collect(),
         )
     };
     Some(ForwardEvidence {
         overlay,
-        metadata: receipt_metadata(index, &receipts, overlay),
+        metadata: receipt_metadata(index, &receipts, &states, overlay),
     })
 }
 
@@ -82,13 +78,20 @@ pub(in crate::commands::subagents) fn expected_agent_ids(index: &ForwardIndex) -
         .collect()
 }
 
-fn known_forwarder(index: &ForwardIndex, agent_id: &str) -> bool {
-    ledger::agent_type(Some(&index.work_dir), agent_id).as_deref() == Some(FORWARDER_TYPE)
+fn observe_receipts(index: &ForwardIndex, receipts: &[&ForwardReceipt]) -> Vec<ForwardState> {
+    if index.unreadable {
+        return vec![ForwardState::Unknown; receipts.len()];
+    }
+    receipts
+        .iter()
+        .map(|receipt| receipt_state(index, receipt))
+        .collect()
 }
 
 fn receipt_metadata(
     index: &ForwardIndex,
     receipts: &[&ForwardReceipt],
+    states: &[ForwardState],
     overlay: ForwardOverlay,
 ) -> ForwardMetadata {
     if !index.unreadable && receipts.len() == 1 {
@@ -96,7 +99,7 @@ fn receipt_metadata(
         return ForwardMetadata {
             receipt_id: Some(receipt.receipt_id.clone()),
             backend_id: Some(receipt.backend_id.clone()),
-            state: receipt_state(index, receipt),
+            state: states[0],
         };
     }
     ForwardMetadata {

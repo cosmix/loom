@@ -8,12 +8,12 @@
 loom/src/
   main.rs, lib.rs          # CLI entry (clap), module exports
   yaml.rs                   # YAML from_str/to_string over serde-saphyr (strict booleans)
-  commands/                 # CLI implementations (~4K lines)
+  commands/                 # CLI implementations
     init/, run/, stage/ (complete, merge, merge_resolver, merge_verify, ...),
     status/, merge/, memory/, knowledge/, track/, runner/
-  daemon/server/            # Background daemon (~1.5K lines)
+  daemon/server/            # Background daemon
     core.rs, lifecycle.rs, protocol.rs, status.rs, client.rs, orchestrator.rs
-  orchestrator/             # Core engine (~4K lines)
+  orchestrator/             # Core engine
     core/                   # Main loop, stage executor, persistence, recovery
     terminal/               # SessionBackend dispatcher
       native/               # Host OS terminal spawning (11+ emulators)
@@ -25,16 +25,16 @@ loom/src/
     progressive_merge/      # Merge orchestration + lock
     auto_merge.rs
     merge_attribution.rs    # Attribute global MERGE_HEAD to a stage; reconcile
-  models/                   # Domain models (~1K lines)
+  models/                   # Domain models
     stage/ (types, transitions, methods)
     session/ (types, methods)
-  plan/                     # Plan parsing (~1.5K lines)
+  plan/                     # Plan parsing
     parser.rs, schema/ (types, validation), graph/ (DAG builder)
-  fs/                       # File operations (~500 lines)
+  fs/                       # File operations
     work_dir.rs, knowledge.rs, memory.rs
-  git/                      # Git operations (~800 lines)
+  git/                      # Git operations
     worktree/ (base, operations), merge/ (mod, in_progress, lock, status), branch/
-  verify/                   # Acceptance + goal-backward verification (~600 lines)
+  verify/                   # Acceptance + goal-backward verification
     criteria/, transitions/, goal_backward/
   sandbox/                  # Claude Code sandbox config generation
     config.rs, settings.rs

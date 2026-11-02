@@ -5,6 +5,7 @@
 
 use anyhow::{bail, Context, Result};
 use std::ffi::{OsStr, OsString};
+use std::fs::File;
 use std::path::Path;
 use std::process::{Command, Output};
 use std::time::Duration;
@@ -37,18 +38,59 @@ pub const NO_HOOKS_ARGS: [&str; 4] = [
 /// runs. Must precede the subcommand in argv.
 const NO_COMMIT_GRAPH_ARGS: [&str; 2] = ["-c", "core.commitGraph=false"];
 
+/// Global git args that keep loom's own commands from starting automatic
+/// maintenance. A detached `gc` runs past every deadline here, opens `gc.pid`
+/// and `gc.log` by path, and replaces `packed-refs`, which drops the read-only
+/// bind a running session's capsule holds on that file.
+const NO_MAINTENANCE_ARGS: [&str; 4] = ["-c", "gc.auto=0", "-c", "maintenance.auto=false"];
+
+/// Global options whose value is the next argument. Every other argument
+/// before the subcommand that starts with `-` stands alone.
+const GLOBAL_OPTIONS_WITH_VALUE: [&str; 7] = [
+    "-c",
+    "-C",
+    "--git-dir",
+    "--work-tree",
+    "--namespace",
+    "--config-env",
+    "--attr-source",
+];
+
+/// The position of the subcommand in `args`, past every global option; the
+/// length of `args` when there is none (`--version`).
+fn subcommand_index(args: &[&str]) -> usize {
+    let mut index = 0;
+    while let Some(arg) = args.get(index).filter(|arg| arg.starts_with('-')) {
+        index += if GLOBAL_OPTIONS_WITH_VALUE.contains(arg) {
+            2
+        } else {
+            1
+        };
+    }
+    index.min(args.len())
+}
+
+/// The subcommand of `args`, past every global option.
+pub(crate) fn subcommand<'a>(args: &[&'a str]) -> Option<&'a str> {
+    args.get(subcommand_index(args)).copied()
+}
+
 mod pinned;
+mod planted_links;
 mod stream;
 pub use pinned::{run_git_pinned, run_git_pinned_checked};
 pub(crate) use pinned::{run_git_pinned_within, REPO_REDIRECT_ENV};
-pub(crate) use stream::run_git_stream;
+use planted_links::refuse_links_in_discovered_git_dir;
+pub(crate) use planted_links::{refuse_planted_links, refuse_ref_path_links};
+pub(crate) use stream::run_git_stream_with_env;
 
 fn git_timeout(args: &[&str]) -> Duration {
-    match args.first().copied() {
+    match subcommand(args) {
         Some("clone" | "fetch" | "pull" | "push") => GIT_NETWORK_TIMEOUT,
         Some(
             "checkout" | "commit" | "merge" | "rebase" | "reset" | "restore" | "switch"
-            | "worktree" | "merge-tree" | "commit-tree" | "update-ref" | "stash",
+            | "worktree" | "merge-tree" | "commit-tree" | "update-ref" | "stash" | "update-index"
+            | "read-tree" | "write-tree",
         ) => GIT_MUTATION_TIMEOUT,
         _ => GIT_READ_TIMEOUT,
     }
@@ -65,7 +107,7 @@ const NO_GRAFT_FILE: &str = "/dev/null/loom-no-grafts";
 /// `<common git dir>/refs/replace/*` and `<common git dir>/info/grafts` (its
 /// capsule denies `<common git dir>/hooks`, `<common git dir>/config`, every
 /// sibling's `<common git dir>/worktrees/<name>` and the session's own
-/// `config.worktree`; `refs/` and `info/` stay writable), and git honors both
+/// `config.worktree` and the reflogs; `refs/` and `info/` stay writable), and git honors both
 /// in `diff`, `merge-base` and every ancestry test; loom uses neither. A
 /// caller's `env` is applied last, so it still wins.
 fn git_command(
@@ -82,6 +124,9 @@ fn git_command(
 
 /// The argv, variables and directory of [`git_command`], set on `command`.
 fn harden(command: &mut Command, exec_args: &[&str], repo_root: &Path) {
+    for variable in REPO_REDIRECT_ENV {
+        command.env_remove(variable);
+    }
     command
         .args(exec_args)
         .env("LC_ALL", "C")
@@ -97,6 +142,7 @@ fn run_bounded_git(
     label: &str,
     timeout: Duration,
 ) -> Result<Output> {
+    refuse_links_in_discovered_git_dir(&command, exec_args)?;
     crate::process::run_bounded_output(&mut command, timeout, label.to_string())
         .with_context(|| format!("Failed to execute: git {}", exec_args.join(" ")))
 }
@@ -113,19 +159,53 @@ fn run_git_program(
     run_bounded_git(command, exec_args, label, timeout)
 }
 
-/// `args` behind [`NO_HOOKS_ARGS`] and [`NO_COMMIT_GRAPH_ARGS`], the argv
-/// every runner call executes.
+/// Subcommands that compare the work tree and, for a gitlink, run `git status`
+/// in its directory. That child opens the directory's `.git`, which a checkout's
+/// author controls, and runs what its configuration names.
+const WORKTREE_COMPARISONS: [&str; 4] = ["status", "diff", "diff-index", "diff-files"];
+
+/// `args` with gitlink recursion off: `--ignore-submodules=dirty` still reports
+/// a gitlink whose commit moved but starts no process inside it. It is passed as
+/// an option because an `ignore` in the checkout's `.gitmodules` overrides
+/// configuration. A caller's weaker `--ignore-submodules` value is dropped;
+/// `all`, stricter, is kept and wins by coming later.
+fn without_gitlink_recursion<'a>(args: &[&'a str]) -> Vec<&'a str> {
+    let position = subcommand_index(args);
+    let compares = args
+        .get(position)
+        .is_some_and(|name| WORKTREE_COMPARISONS.contains(name));
+    if !compares {
+        return args.to_vec();
+    }
+    let (head, rest) = args.split_at(position + 1);
+    let options = rest
+        .iter()
+        .position(|arg| *arg == "--")
+        .unwrap_or(rest.len());
+    let weaker =
+        |arg: &&str| arg.starts_with("--ignore-submodules=") && *arg != "--ignore-submodules=all";
+    let mut hardened = head.to_vec();
+    hardened.push("--ignore-submodules=dirty");
+    hardened.extend(rest[..options].iter().copied().filter(|arg| !weaker(arg)));
+    hardened.extend_from_slice(&rest[options..]);
+    hardened
+}
+
+/// `args` behind [`NO_HOOKS_ARGS`], [`NO_COMMIT_GRAPH_ARGS`] and
+/// [`NO_MAINTENANCE_ARGS`], the argv every runner call executes.
 fn global_args<'a>(args: &[&'a str]) -> Vec<&'a str> {
-    let globals = NO_HOOKS_ARGS.len() + NO_COMMIT_GRAPH_ARGS.len();
+    let args = without_gitlink_recursion(args);
+    let globals = NO_HOOKS_ARGS.len() + NO_COMMIT_GRAPH_ARGS.len() + NO_MAINTENANCE_ARGS.len();
     let mut exec_args = Vec::with_capacity(globals + args.len());
     exec_args.extend_from_slice(&NO_HOOKS_ARGS);
     exec_args.extend_from_slice(&NO_COMMIT_GRAPH_ARGS);
-    exec_args.extend_from_slice(args);
+    exec_args.extend_from_slice(&NO_MAINTENANCE_ARGS);
+    exec_args.extend_from_slice(&args);
     exec_args
 }
 
 fn git_label(args: &[&str]) -> String {
-    format!("git {}", args.first().unwrap_or(&"command"))
+    format!("git {}", subcommand(args).unwrap_or("command"))
 }
 
 /// Run a git command in `repo_root` and return the raw Output.
@@ -140,6 +220,19 @@ pub fn run_git(args: &[&str], repo_root: &Path) -> Result<Output> {
 /// [`run_git`] with `env` added to this one command's environment.
 pub fn run_git_with_env(args: &[&str], env: &[(&str, &OsStr)], repo_root: &Path) -> Result<Output> {
     run_git_with_env_within(repo_root, args, env, git_timeout(args))
+}
+
+/// [`run_git_with_env`] with git reading `stdin`.
+pub(crate) fn run_git_with_stdin(
+    args: &[&str],
+    env: &[(&str, &OsStr)],
+    stdin: File,
+    repo_root: &Path,
+) -> Result<Output> {
+    let exec_args = global_args(args);
+    let mut command = git_command("git", &exec_args, env, repo_root);
+    command.stdin(stdin);
+    run_bounded_git(command, &exec_args, &git_label(args), git_timeout(args))
 }
 
 /// [`run_git_with_env`] bounded by `timeout` instead of the subcommand's
@@ -164,10 +257,14 @@ pub(crate) fn run_git_in_env_within(
 ) -> Result<Output> {
     let exec_args = global_args(args);
     let mut command = Command::new("git");
-    command
-        .env_clear()
-        .envs(env.iter().map(|pair| (&pair.0, &pair.1)));
+    command.env_clear();
     harden(&mut command, &exec_args, repo_root);
+    command.envs(env.iter().map(|pair| (&pair.0, &pair.1)));
+    command
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("GIT_NO_REPLACE_OBJECTS", "1")
+        .env("GIT_GRAFT_FILE", NO_GRAFT_FILE);
     run_bounded_git(command, &exec_args, &git_label(args), timeout)
 }
 
@@ -243,6 +340,9 @@ pub fn run_git_bool(args: &[&str], repo_root: &Path) -> bool {
 
 #[cfg(test)]
 mod commit_graph_tests;
+
+#[cfg(test)]
+mod global_option_tests;
 
 #[cfg(test)]
 mod tests;

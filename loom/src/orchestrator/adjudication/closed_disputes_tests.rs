@@ -28,7 +28,7 @@ fn approve_and_dispute_again(work: &Path, dispute_id: u32) {
     write_dispute_request(work, "s1", dispute_id, 0);
 }
 
-/// An apply-cap escalation closes its own verdict and every sibling dispute.
+/// An apply-cap escalation marks its own verdict handled and closes siblings.
 /// After approval the next dispute is the one offered a session, and the
 /// capped verdict is never applied again, even had its best-effort
 /// `applied.marker` failed to land.
@@ -42,13 +42,19 @@ fn an_apply_cap_escalation_closes_its_verdict_and_every_sibling() {
     }
     let escalated = load_stage("s1", work).unwrap();
     assert_eq!(escalated.status, StageStatus::NeedsHumanReview);
-    assert!(closed(work, 1) && closed(work, 2));
+    assert!(!closed(work, 1) && closed(work, 2));
+    assert!(applied.exists());
 
     std::fs::remove_file(&applied).unwrap();
     approve_and_dispute_again(work, 3);
 
-    assert!(reg.pending_verdicts(work).unwrap().is_empty());
+    assert_eq!(reg.pending_verdicts(work).unwrap(), vec![("s1".into(), 1)]);
     reg.apply_pending_verdicts(work).unwrap();
+    assert!(
+        applied.exists(),
+        "the cap receipt restores a missing marker"
+    );
+    assert!(reg.pending_verdicts(work).unwrap().is_empty());
     let after = load_stage("s1", work).unwrap();
     assert_eq!(after.status, StageStatus::NeedsAdjudication);
     let pending = reg.disputes_awaiting_session(work).unwrap();
@@ -112,6 +118,7 @@ fn a_closed_dispute_takes_no_verdict() {
 fn closing_leaves_an_applied_dispute_as_it_is() {
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
+    write_stage(work, &make_stage("s1"));
     write_dispute_request(work, "s1", 1, 0);
     write_dispute_request(work, "s1", 2, 0);
     std::fs::write(applied_marker(&work.join("disputes"), "s1", 1), b"").unwrap();

@@ -59,6 +59,33 @@ fn a_linked_worktree_exposes_its_own_metadata_and_the_shared_store_only() {
 }
 
 #[test]
+fn a_stage_of_a_linked_operator_checkout_uses_the_common_store() {
+    let repo = linked_worktrees();
+    let operator = repo.root.join(".worktrees/a");
+    git(
+        &operator,
+        &["worktree", "add", "-q", "-b", "child", ".worktrees/child"],
+    );
+    let dirs = git_dirs(&operator.join(".worktrees/child"), NetworkAccess::Denied).unwrap();
+    assert_eq!(dirs.common, repo.root.join(".git").canonicalize().unwrap());
+    assert_eq!(dirs.admin, dirs.common.join("worktrees/child"));
+    assert!(dirs.roots.contains(&dirs.common.join("objects")));
+}
+
+#[test]
+fn a_linked_operator_checkout_exposes_its_anchored_git_metadata() {
+    let repo = linked_worktrees();
+    let operator = repo.root.join(".worktrees/a");
+    let state = operator.join(".loom/work");
+    std::fs::create_dir_all(&state).unwrap();
+    crate::git::worktree::capture_main_identity(&operator, &state).unwrap();
+    let dirs = git_dirs(&operator, NetworkAccess::Denied).unwrap();
+    assert_eq!(dirs.common, repo.root.join(".git").canonicalize().unwrap());
+    assert_eq!(dirs.admin, dirs.common.join("worktrees/a"));
+    assert!(dirs.roots.contains(&dirs.common.join("objects")));
+}
+
+#[test]
 fn a_main_checkout_or_a_plain_directory_needs_no_git_roots() {
     let repo = repo();
     let main = git_dirs(&repo.root, NetworkAccess::Denied).unwrap();

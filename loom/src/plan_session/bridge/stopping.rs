@@ -1,6 +1,7 @@
 //! Server stops: drain on the first Ctrl-C, abort on the second, and the wait they share with
 //! recovery.
 
+use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -70,15 +71,18 @@ impl Bridge {
         self.wait_ended(&ids, Instant::now() + LAUNCH_WAIT);
     }
 
-    /// Wait until none of `ids` is still running, or the deadline.
+    /// Wait until none of `ids` is still running and their queued events have been published,
+    /// or the deadline. A conclusion removes a session before its `Ended` event is flushed.
     pub(super) fn wait_ended(&self, ids: &[String], deadline: Instant) {
         while Instant::now() < deadline {
-            let running = {
+            let pending = {
                 let inner = self.lock();
                 ids.iter()
                     .any(|id| inner.sessions.get(id).is_some_and(Session::active))
+                    || !inner.outbox.is_empty()
+                    || self.flushing.load(Ordering::SeqCst)
             };
-            if !running {
+            if !pending {
                 return;
             }
             thread::sleep(self.config.tick);

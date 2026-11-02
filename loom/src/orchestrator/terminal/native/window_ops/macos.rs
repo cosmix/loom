@@ -44,7 +44,7 @@ end tell"#,
 /// Close an iTerm2 window by title (macOS)
 fn close_iterm2_window(escaped_title: &str) -> bool {
     let script = format!(
-        r#"tell application "iTerm2"
+        r#"tell application "iTerm"
     if it is running then
         set windowList to every window whose name is "{}"
         if (count of windowList) > 0 then
@@ -189,7 +189,7 @@ end tell"#,
 /// Check if an iTerm2 window exists by title (macOS)
 fn iterm2_window_exists(escaped_title: &str) -> bool {
     let script = format!(
-        r#"tell application "iTerm2"
+        r#"tell application "iTerm"
     set windowList to every window whose name is "{}"
     return (count of windowList) > 0
 end tell"#,

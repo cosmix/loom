@@ -102,6 +102,53 @@ fn run(fixture: &InputFixture, stage: &Stage) -> crate::verify::criteria::Accept
 
 #[test]
 #[serial]
+fn quoted_ignored_input_with_stdout_assertion_reexecutes_after_change() {
+    let fixture = InputFixture::new("true");
+    std::fs::write(fixture.repo.path().join(".gitignore"), "ignored data.txt\n").unwrap();
+    let ignored = fixture.repo.path().join("ignored data.txt");
+    std::fs::write(&ignored, "expected\n").unwrap();
+    let stage = extended("cat 'ignored data.txt'", "expected");
+
+    let first = run(&fixture, &stage);
+    std::fs::write(&ignored, "changed\n").unwrap();
+    let changed = run(&fixture, &stage);
+
+    assert!(first.all_passed());
+    assert!(!changed.all_passed());
+    assert!(!first.results()[0].cached && !changed.results()[0].cached);
+    assert_eq!(fixture.cache_records(), 0);
+}
+
+/// An adapter's selector is part of the command, so changing a substring selector
+/// to an exact one runs the exact one. An anchored regex holds `$`, which
+/// `is_cacheable` refuses outright; an exact flag gets a record of its own.
+#[test]
+#[serial]
+fn a_changed_selector_command_does_not_reuse_the_earlier_pass() {
+    let fixture = InputFixture::new("true");
+    let broad = extended("sh scripts/probe.sh -t 'rejects input'", "");
+    let anchored = extended("sh scripts/probe.sh -t '^rejects input$'", "");
+    let flagged = extended("sh scripts/probe.sh --exact 'rejects input'", "");
+
+    let first = run(&fixture, &broad);
+    let replay = run(&fixture, &broad);
+    assert!(first.all_passed() && !first.results()[0].cached);
+    assert!(replay.results()[0].cached, "the fixture must prove a hit");
+    assert_eq!(fixture.executions(), 1);
+
+    for (selector, executions, records) in [(&anchored, 2, 1), (&flagged, 3, 2)] {
+        let selected = run(&fixture, selector);
+        assert!(selected.all_passed());
+        assert!(!selected.results()[0].cached);
+        assert_eq!(fixture.executions(), executions);
+        assert_eq!(fixture.cache_records(), records);
+    }
+    assert!(run(&fixture, &flagged).results()[0].cached);
+    assert_eq!(fixture.executions(), 3);
+}
+
+#[test]
+#[serial]
 fn command_changing_its_tracked_input_never_publishes() {
     let fixture = InputFixture::new("printf x >> source.txt");
     let stage = extended("sh scripts/probe.sh", "");

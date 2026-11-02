@@ -9,7 +9,7 @@ use crate::models::stage::Stage;
 use crate::orchestrator::auto_merge::AutoMergeResult;
 use crate::orchestrator::core::{clear_status_line, Orchestrator};
 
-use super::landing::{merge_signing_reason, signing_failure};
+use crate::stage_service::merge_outcome::{classify_failure, MergeDisposition, MergeFailure};
 
 impl Orchestrator {
     /// Returns true when a guard stops the auto-merge of `stage_id` into
@@ -24,9 +24,7 @@ impl Orchestrator {
     /// judges the target without the lock, and an error holds the target.
     ///
     /// Phantom-merge guard: an existing branch with zero commits beyond the
-    /// target would "merge" as a no-op, `completed_commit` would be filled from
-    /// the branch HEAD (equal to the target HEAD), ancestry would pass, and
-    /// `merged: true` would stand for work that was never committed. Such a
+    /// target would "merge" as a no-op without proving new work landed. Such a
     /// stage goes to human review, so dependents do not unblock. A missing
     /// branch skips the branch guards: the merge attempt reports it with its
     /// own recovery handling.
@@ -86,9 +84,9 @@ impl Orchestrator {
         target: &str,
         outcome: Result<AutoMergeResult>,
     ) -> bool {
-        match outcome {
-            Ok(AutoMergeResult::Success {
-                files_changed,
+        match outcome.map(MergeDisposition::from) {
+            Ok(MergeDisposition::Landed {
+                files: files_changed,
                 insertions,
                 deletions,
                 stash,
@@ -97,24 +95,28 @@ impl Orchestrator {
                 let summary = format!("merged: {files_changed} files, +{insertions} -{deletions}");
                 self.finalize_auto_merge(stage, stage_id, target, &summary)
             }
-            Ok(AutoMergeResult::AlreadyUpToDate) => {
+            Ok(MergeDisposition::AlreadyLanded) => {
                 self.finalize_auto_merge(stage, stage_id, target, "already up to date")
             }
-            Ok(AutoMergeResult::Conflict { conflicting_files }) => {
-                self.record_merge_conflict(stage_id, conflicting_files.len());
+            Ok(MergeDisposition::Conflict(conflicting_files)) => {
+                self.record_merge_conflict_claimed(stage_id, conflicting_files.len(), Some(stage));
                 false
             }
-            Ok(AutoMergeResult::Blocked(block)) => {
-                self.record_merge_block(stage_id, block);
+            Ok(MergeDisposition::Blocked(block)) => {
+                self.record_merge_block_claimed(stage_id, block, Some(stage));
                 false
             }
-            Ok(AutoMergeResult::Held { reason }) => {
-                self.route_to_human_review(stage_id, reason, None);
+            Ok(MergeDisposition::Held(reason)) => {
+                self.route_claimed_to_review(stage, reason);
                 false
             }
             // Nothing to merge: the stage may have been created without a worktree.
-            Ok(AutoMergeResult::NoWorktree) => {
+            Ok(MergeDisposition::MissingWorktree) => {
                 self.verify_and_finalize_merge(stage, stage_id, target)
+            }
+            Ok(MergeDisposition::MissingBranch) => {
+                self.persist_merge_blocked(stage, stage_id, "stage branch is missing");
+                false
             }
             Err(error) => {
                 self.settle_auto_merge_error(stage, stage_id, &error);
@@ -136,11 +138,13 @@ impl Orchestrator {
     ) {
         clear_status_line();
         tracing::error!(stage_id = %stage_id, %error, "Auto-merge failed");
-        if let Some(failure) = signing_failure(error) {
-            let reason = merge_signing_reason(stage_id, &failure.detail);
-            self.route_to_human_review(stage_id, reason, None);
-            return;
+        match classify_failure(stage_id, error) {
+            MergeFailure::Signing(reason) => {
+                self.route_claimed_to_review(stage, reason);
+            }
+            MergeFailure::Infrastructure(reason) => {
+                self.persist_merge_blocked(stage, stage_id, &reason)
+            }
         }
-        self.persist_merge_blocked(stage, stage_id, &format!("{error:#}"));
     }
 }

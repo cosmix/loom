@@ -11,14 +11,15 @@ use tempfile::TempDir;
 use super::super::{Orchestrator, OrchestratorConfig};
 use crate::fs::session_files::save_session;
 use crate::fs::work_dir::write_terminal_config;
+use crate::host_verify::apply_retry::apply_record;
 use crate::host_verify::runner::{HostJobRunner, RunnerConfig};
-use crate::host_verify::store::{load_current, load_job_file};
+use crate::host_verify::store::{load_current, load_job_file, save_current, save_job_file};
 use crate::host_verify::submit::{submit, Submission, SubmitRequest};
 use crate::host_verify::{JobKind, JobRecord, JobState};
 use crate::models::session::{Session, SessionBackendKind, SessionStatus, TerminalConfig};
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::ExecutionGraph;
-use crate::verify::contracts::refusal::daemon_refusal;
+use crate::verify::contracts::refusal::{daemon_refusal, INFRASTRUCTURE_PREFIX};
 
 const STAGE: &str = "stage-a";
 /// Writes a passing `result.json` for the job the runner named.
@@ -59,6 +60,16 @@ fn shell_runner(work: &Path, script: &str) -> HostJobRunner {
         slots: 1,
     };
     HostJobRunner::new(work.to_path_buf(), config)
+}
+
+fn another_orchestrator(work: &Path, repo_root: &Path) -> Orchestrator {
+    let config = OrchestratorConfig {
+        work_dir: work.to_path_buf(),
+        repo_root: repo_root.to_path_buf(),
+        enable_skill_routing: false,
+        ..Default::default()
+    };
+    Orchestrator::new(config, ExecutionGraph::build(Vec::new()).unwrap()).unwrap()
 }
 
 fn queue(work: &Path, kind: JobKind) -> JobRecord {
@@ -166,6 +177,139 @@ fn marker(work: &Path, job: &JobRecord) -> Option<String> {
         .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
 
+fn contract_writer(work: &Path) {
+    let mut writer = Session::new_contract(STAGE);
+    writer.id = "session-a".to_string();
+    writer.status = SessionStatus::Running;
+    save_session(&writer, work).unwrap();
+    crate::verify::transitions::update_stage(STAGE, work, |stage| {
+        stage.session = Some(writer.id.clone());
+        Ok(())
+    })
+    .unwrap();
+}
+
+fn terminal_freeze(work: &Path) -> JobRecord {
+    contract_writer(work);
+    let mut record = queue(work, JobKind::Freeze);
+    record.state = JobState::Failed;
+    record.finished_at = Some(Utc::now());
+    save_current(work, &record).unwrap();
+    record
+}
+
+#[test]
+fn restart_applies_an_old_terminal_job_after_current_advances() {
+    let (_temp, work, orchestrator) = orchestrator();
+    let old = terminal_freeze(&work);
+    let session_file = work.join("sessions/session-a.md");
+    std::fs::write(&session_file, "not a session record").unwrap();
+    apply_record(&work, &old);
+    assert_eq!(marker(&work, &old), None);
+    assert_eq!(
+        load_job_file(&work, STAGE, &old.id, "apply-attempts").unwrap(),
+        Some(b"1".to_vec())
+    );
+    contract_writer(&work);
+    let current = queue(&work, JobKind::Check);
+
+    orchestrator.report_host_job_recovery(Ok(Vec::new()));
+
+    assert!(marker(&work, &old).is_some());
+    assert_eq!(load_current(&work, STAGE).unwrap(), Some(current));
+    let refusal = daemon_refusal(&work, STAGE).unwrap().unwrap();
+    assert_eq!(refusal.session_id, "session-a");
+    orchestrator.report_host_job_recovery(Ok(Vec::new()));
+    assert_eq!(daemon_refusal(&work, STAGE).unwrap(), Some(refusal));
+    assert_eq!(
+        load_job_file(&work, STAGE, &old.id, "apply-attempts").unwrap(),
+        Some(b"2".to_vec())
+    );
+}
+
+#[test]
+fn a_second_orchestrator_recovers_only_the_durable_unapplied_job() {
+    let (temp, work, first) = orchestrator();
+    let job = terminal_freeze(&work);
+    std::fs::write(work.join("sessions/session-a.md"), "not a session record").unwrap();
+
+    first.report_host_job_recovery(Ok(Vec::new()));
+    assert_eq!(marker(&work, &job), None);
+    assert_eq!(
+        load_job_file(&work, STAGE, &job.id, "apply-attempts").unwrap(),
+        Some(b"1".to_vec())
+    );
+    drop(first);
+
+    contract_writer(&work);
+    let second = another_orchestrator(&work, temp.path());
+    second.report_host_job_recovery(Ok(Vec::new()));
+    assert!(marker(&work, &job).is_some());
+    assert_eq!(
+        load_job_file(&work, STAGE, &job.id, "apply-attempts").unwrap(),
+        Some(b"2".to_vec())
+    );
+}
+
+#[test]
+fn obsolete_freeze_binding_does_not_publish_a_refusal() {
+    let (_temp, work, orchestrator) = orchestrator();
+    let old = terminal_freeze(&work);
+    crate::verify::transitions::update_stage(STAGE, &work, |stage| {
+        stage.session = Some("session-b".to_string());
+        Ok(())
+    })
+    .unwrap();
+
+    orchestrator.report_host_job_recovery(Ok(Vec::new()));
+
+    assert!(marker(&work, &old).is_some());
+    assert_eq!(daemon_refusal(&work, STAGE).unwrap(), None);
+}
+
+#[test]
+fn newer_freeze_refusal_survives_an_older_retry_after_restart() {
+    let (_temp, work, orchestrator) = orchestrator();
+    let mut old = terminal_freeze(&work);
+    old.detail = Some("older failure".to_string());
+    save_current(&work, &old).unwrap();
+    let mut new = queue(&work, JobKind::Freeze);
+    new.state = JobState::Failed;
+    new.finished_at = Some(Utc::now());
+    new.detail = Some("newer failure".to_string());
+    save_current(&work, &new).unwrap();
+    queue(&work, JobKind::Check);
+
+    orchestrator.report_host_job_recovery(Ok(Vec::new()));
+
+    let refusal = daemon_refusal(&work, STAGE).unwrap().unwrap();
+    assert_eq!(refusal.job_origin.unwrap().job_id, new.id);
+    assert!(refusal
+        .problems
+        .iter()
+        .any(|problem| problem.contains("newer failure")));
+    assert!(marker(&work, &old).is_some());
+    assert!(marker(&work, &new).is_some());
+}
+
+#[test]
+fn exhausted_freeze_retry_publishes_an_infrastructure_refusal() {
+    let (_temp, work, orchestrator) = orchestrator();
+    let record = terminal_freeze(&work);
+    save_job_file(&work, STAGE, &record.id, "apply-attempts", b"10").unwrap();
+
+    orchestrator.report_host_job_recovery(Ok(Vec::new()));
+
+    assert!(marker(&work, &record).unwrap().starts_with("apply failed:"));
+    let refusal = daemon_refusal(&work, STAGE).unwrap().unwrap();
+    assert_eq!(refusal.session_id, "session-a");
+    assert_eq!(refusal.job_origin.unwrap().job_id, record.id);
+    assert!(refusal
+        .problems
+        .iter()
+        .any(|problem| problem.starts_with(INFRASTRUCTURE_PREFIX)));
+}
+
 /// A root process writes through the read-only directory, so the failure
 /// cannot be injected.
 fn running_as_root() -> bool {
@@ -217,11 +361,12 @@ fn an_application_that_fails_ten_times_is_marked_failed() {
 
     orchestrator.tick_host_jobs();
     set_writable(&work);
+    assert_eq!(marker(&work, &job), None, "refusal storage was unavailable");
+    orchestrator.tick_host_jobs();
 
     let marked = marker(&work, &job).unwrap_or_default();
     assert!(marked.starts_with("apply failed: "), "{marked}");
-    orchestrator.tick_host_jobs();
     let stage = crate::verify::transitions::load_stage(STAGE, &work).unwrap();
     assert_eq!(stage.status, StageStatus::Executing, "never applied again");
-    assert_eq!(daemon_refusal(&work, STAGE).unwrap(), None);
+    assert!(daemon_refusal(&work, STAGE).unwrap().is_some());
 }

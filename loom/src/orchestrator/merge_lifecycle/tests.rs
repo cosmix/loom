@@ -65,6 +65,7 @@ fn init_repo() -> TempDir {
 
     // Present so `WorkDir::new` resolves here instead of searching upward.
     fs::create_dir_all(root.join(".loom").join("work")).unwrap();
+    crate::git::worktree::capture_main_identity(root, &root.join(".loom/work")).unwrap();
 
     temp
 }

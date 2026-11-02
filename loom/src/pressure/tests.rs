@@ -12,6 +12,8 @@ enum Call {
 #[derive(Default)]
 struct RecordingDriver {
     calls: Vec<Call>,
+    plan_to_check: Option<PathBuf>,
+    record_visible_at_deletes: Vec<bool>,
     /// `run_pressure` fails (Codex did not start) after recording its call.
     fail_pressure: bool,
 }
@@ -29,6 +31,10 @@ fn input<'a>(rounds: u32, plan: &'a Path, report: &'a Path) -> PipelineInput<'a>
 
 impl PressureDriver for RecordingDriver {
     fn delete_report(&mut self, _report: &Path) -> Result<()> {
+        if let Some(path) = &self.plan_to_check {
+            self.record_visible_at_deletes
+                .push(std::fs::read_to_string(path)?.contains("## Pressure tests"));
+        }
         self.calls.push(Call::Delete);
         Ok(())
     }
@@ -57,7 +63,10 @@ fn test_pipeline_two_rounds_driver_call_order() {
     let plan = dir.path().join("PLAN-test.md");
     let report = dir.path().join("codex-PLAN-test.md");
     std::fs::write(&plan, "# Test plan\n\n<!-- END loom METADATA -->\n").unwrap();
-    let mut driver = RecordingDriver::default();
+    let mut driver = RecordingDriver {
+        plan_to_check: Some(plan.clone()),
+        ..RecordingDriver::default()
+    };
     let input = PipelineInput {
         rounds: 2,
         invocation: "PLAN-test.md",
@@ -81,6 +90,7 @@ fn test_pipeline_two_rounds_driver_call_order() {
             Call::Delete,
         ]
     );
+    assert_eq!(driver.record_visible_at_deletes, [false, false, true]);
 }
 
 #[test]
@@ -132,6 +142,24 @@ fn test_failed_step_still_deletes_report_and_returns_its_error() {
 }
 
 #[test]
+fn interior_record_refusal_is_an_error_and_still_cleans_up_report() {
+    let dir = TempDir::new().unwrap();
+    let plan = dir.path().join("PLAN-test.md");
+    let report = dir.path().join("codex-PLAN-test.md");
+    let text = "<!-- END loom METADATA -->\n\n## Pressure tests\n\n- old\n\n## Notes\nKeep.\n";
+    std::fs::write(&plan, text).unwrap();
+    let mut driver = RecordingDriver::default();
+    let error = run_pipeline(&mut driver, &input(1, &plan, &report)).unwrap_err();
+    assert!(
+        error.to_string().contains("Cannot safely insert"),
+        "{error}"
+    );
+    assert!(error.to_string().contains("insert this record manually"));
+    assert_eq!(driver.calls.last(), Some(&Call::Delete));
+    assert_eq!(std::fs::read_to_string(plan).unwrap(), text);
+}
+
+#[test]
 fn test_zero_rounds_is_rejected_before_any_step() {
     let dir = TempDir::new().unwrap();
     let plan = dir.path().join("PLAN-test.md");
@@ -152,8 +180,8 @@ fn test_zero_rounds_is_rejected_before_any_step() {
 fn test_plan_steps_order_and_count() {
     let report = PathBuf::from("/repo/doc/plans/codex-PLAN-foo.md");
     let steps = plan_steps(2, "doc/plans/PLAN-foo.md", &report);
-    // 3 steps per round (delete, parallel pressure, address) + 1 final delete.
-    assert_eq!(steps.len(), 2 * 3 + 1);
+    // 3 steps per round, then record before final deletion.
+    assert_eq!(steps.len(), 2 * 3 + 2);
     assert_eq!(steps[0], Step::DeleteReport(report.clone()));
     assert_eq!(
         steps[1],
@@ -168,6 +196,7 @@ fn test_plan_steps_order_and_count() {
     );
     // Per-round delete must precede that round's parallel pressure step.
     assert_eq!(steps[3], Step::DeleteReport(report.clone()));
+    assert_eq!(steps[6], Step::Record);
     assert_eq!(*steps.last().unwrap(), Step::DeleteReport(report));
 }
 
@@ -175,7 +204,7 @@ fn test_plan_steps_order_and_count() {
 fn test_plan_steps_single_round() {
     let report = PathBuf::from("/r/codex-P.md");
     let steps = plan_steps(1, "P.md", &report);
-    assert_eq!(steps.len(), 4);
+    assert_eq!(steps.len(), 5);
 }
 
 #[test]
@@ -184,11 +213,11 @@ fn test_completion_instruction_workspace_preserves_original_text() {
     let expected = format!(
         "AUTONOMOUS RUN: this Claude session was launched by `loom pressure`; no human will end it for you. \
          When the task is FULLY complete and the plan file is fully updated (after every subagent has finished), \
-         your FINAL action MUST be to run exactly this shell command and nothing after it: touch {}. \
+         your FINAL action MUST be to run exactly this shell command and nothing after it: {}. \
          Do not run it earlier. That path is inside the repo's gitignored `.loom/work/` because the agent sandbox \
          mounts /tmp read-only; creating this one marker is the sanctioned exception to the rule against \
          writing under `.loom/work/` directly. Once that file exists the driver closes this session.",
-        marker.display()
+        crate::pressure::instruction::marker_command(marker)
     );
 
     let instruction = completion_instruction(marker, MarkerHome::Workspace);

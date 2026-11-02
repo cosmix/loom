@@ -51,9 +51,9 @@ const HINT = {
     "The contract writer has frozen its contracts; loom is running them as a host job while the writer waits.",
   exitReason: "Why the outgoing session ended, independently of the stage's workflow status.",
   activity:
-    "Working: a tool ran recently. Busy: a tool call is still open; the time is the silence so far. Quiet: no heartbeat for 5 min, but within the stage's budget. Stale: no heartbeat past the stage's budget (5 min by default) and no tool call open. Idle: no live session, or the stage is finished. Orphaned: executing with no session record. Error: the process died.",
+    "Working: a tool ran recently. Busy: a Stage session's foreground command is still making progress, within a bounded hold; the time is the silence so far. Quiet: no heartbeat for 5 min, but within the stage's budget. Stale: no heartbeat past the stage's budget (5 min by default) with no verified progress; a long tool call can still read stale. Idle: no live session, or the stage is finished. Orphaned: executing with no session record. Error: the process died.",
   lastTool:
-    "The tool the session used most recently, from its heartbeat; while busy, the tool call that is still open.",
+    "The tool the session used most recently, from its heartbeat; while busy, the tool running the foreground command.",
   lastActivity:
     "The last heartbeat event that is not already stated by last tool, such as session start or a subagent finishing.",
   staleness: "Time since the last heartbeat.",

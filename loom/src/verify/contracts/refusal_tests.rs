@@ -194,9 +194,86 @@ fn the_daemon_record_is_the_documented_json() {
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     assert_eq!(json["session_id"], "w1");
     assert_eq!(json["source"], "daemon");
+    assert!(json.get("job_origin").is_none());
     assert!(json["declined"].is_null());
     assert_eq!(json["problems"][1], problems()[1]);
     assert!(json["at"].is_string());
+}
+
+#[test]
+fn host_job_refusal_order_is_atomic_and_idempotent() {
+    let fx = fixture(SessionType::Contract);
+    let old = JobRefusalOrigin {
+        job_id: "old".to_string(),
+        submission_order: 1,
+    };
+    let new = JobRefusalOrigin {
+        job_id: "new".to_string(),
+        submission_order: 2,
+    };
+    assert!(record_job_refusal(
+        &fx.work_dir,
+        STAGE,
+        &fx.session_id,
+        old.clone(),
+        &["old".to_string()]
+    )
+    .unwrap());
+    assert!(record_job_refusal(
+        &fx.work_dir,
+        STAGE,
+        &fx.session_id,
+        new.clone(),
+        &["new".to_string()]
+    )
+    .unwrap());
+    let latest = daemon_refusal(&fx.work_dir, STAGE).unwrap();
+
+    assert!(!record_job_refusal(
+        &fx.work_dir,
+        STAGE,
+        &fx.session_id,
+        old,
+        &["stale".to_string()]
+    )
+    .unwrap());
+    assert!(record_job_refusal(
+        &fx.work_dir,
+        STAGE,
+        &fx.session_id,
+        new,
+        &["duplicate".to_string()]
+    )
+    .unwrap());
+    assert_eq!(daemon_refusal(&fx.work_dir, STAGE).unwrap(), latest);
+}
+
+#[test]
+fn an_unversioned_refusal_keeps_unknown_order() {
+    let fx = fixture(SessionType::Contract);
+    record_daemon_refusal(
+        &fx.work_dir,
+        STAGE,
+        &fx.session_id,
+        &["legacy".to_string()],
+        RefusalSource::Writer,
+    )
+    .unwrap();
+    let prior = daemon_refusal(&fx.work_dir, STAGE).unwrap();
+
+    let attempted = record_job_refusal(
+        &fx.work_dir,
+        STAGE,
+        &fx.session_id,
+        JobRefusalOrigin {
+            job_id: "new".to_string(),
+            submission_order: 1,
+        },
+        &["new".to_string()],
+    );
+
+    assert!(attempted.is_err());
+    assert_eq!(daemon_refusal(&fx.work_dir, STAGE).unwrap(), prior);
 }
 
 #[test]

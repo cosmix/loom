@@ -20,27 +20,94 @@ pub(super) fn record_context_telemetry(
     // the join key between the writer of a delivery record and its readers, and
     // a second derivation reads an empty directory rather than a missing record.
     let plan = crate::context::delivery::plan_key(stage);
-    let event =
-        crate::context::delivery::load_deliveries(&orchestrator.config.work_dir, plan, &stage.id)
-            .ok()
-            .and_then(|records| {
-                records
-                    .into_iter()
-                    .find(|record| record.recipient_id == session_id)
-            })
-            .map(
-                |record| crate::telemetry::TelemetryEvent::ContextDelivered {
-                    stage_id: stage.id.clone(),
+    let deliveries = crate::context::delivery::observe_deliveries(
+        &orchestrator.config.work_dir,
+        plan,
+        &stage.id,
+    );
+    let event = context_event(&stage.id, session_id, deliveries);
+
+    let _ = crate::telemetry::emit(&orchestrator.config.work_dir, &event);
+}
+
+fn context_event(
+    stage_id: &str,
+    session_id: &str,
+    deliveries: anyhow::Result<Vec<crate::context::delivery::DeliveryRecord>>,
+) -> crate::telemetry::TelemetryEvent {
+    use crate::telemetry::TelemetryEvent;
+    let reason = match deliveries {
+        Ok(records) => match records
+            .into_iter()
+            .find(|record| record.recipient_id == session_id)
+        {
+            Some(record) => {
+                return TelemetryEvent::ContextDelivered {
+                    stage_id: stage_id.to_string(),
                     session_id: session_id.to_string(),
                     context_epoch: record.context_epoch,
                     items: record.delivered.len(),
-                },
-            )
-            .unwrap_or_else(|| crate::telemetry::TelemetryEvent::ContextUnavailable {
-                stage_id: stage.id.clone(),
-                session_id: session_id.to_string(),
-                reason: "no delivery record for this session".to_string(),
-            });
+                }
+            }
+            None => "no delivery record for this session",
+        },
+        Err(_) => "delivery records could not be read",
+    };
+    TelemetryEvent::ContextUnavailable {
+        stage_id: stage_id.to_string(),
+        session_id: session_id.to_string(),
+        reason: reason.to_string(),
+    }
+}
 
-    let _ = crate::telemetry::emit(&orchestrator.config.work_dir, &event);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::telemetry::TelemetryEvent;
+
+    #[test]
+    fn unavailable_reasons_distinguish_read_failure() {
+        let missing = context_event("stage", "session", Ok(Vec::new()));
+        let failed = context_event(
+            "stage",
+            "session",
+            Err(anyhow::anyhow!("secret ledger text")),
+        );
+        assert_eq!(
+            missing,
+            TelemetryEvent::ContextUnavailable {
+                stage_id: "stage".into(),
+                session_id: "session".into(),
+                reason: "no delivery record for this session".into(),
+            }
+        );
+        assert_eq!(
+            failed,
+            TelemetryEvent::ContextUnavailable {
+                stage_id: "stage".into(),
+                session_id: "session".into(),
+                reason: "delivery records could not be read".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn matching_delivery_reports_epoch_and_count() {
+        let record = crate::context::delivery::DeliveryRecord {
+            recipient_id: "session".into(),
+            launch_id: "launch".into(),
+            context_epoch: "epoch".into(),
+            delivered: vec![],
+            written_at: chrono::Utc::now(),
+        };
+        assert_eq!(
+            context_event("stage", "session", Ok(vec![record])),
+            TelemetryEvent::ContextDelivered {
+                stage_id: "stage".into(),
+                session_id: "session".into(),
+                context_epoch: "epoch".into(),
+                items: 0,
+            }
+        );
+    }
 }

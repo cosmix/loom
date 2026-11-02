@@ -15,22 +15,25 @@
 use crate::context::graph_store::GraphStore;
 use crate::context::retrieve::context_epoch;
 use crate::context::schema::ContextPack;
-use crate::fs::locking::{atomic_write_locked, locked_dir_update};
+use crate::fs::safe_fs::{
+    flock_exclusive, open_safely, safe_create_dir_all_in_workdir, safe_open_dirfd,
+};
+use crate::fs::safe_read::{list_dir_no_follow, read_bounded_at, EntryKind, OverLimit};
+use crate::fs::safe_replace::publish_in_dir;
 use crate::models::stage::Stage;
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::ErrorKind;
+use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-/// Session-scoped delivery dedupe (A.16) and its compaction reset (A.21) —
-/// split out to keep this file under the maintainability line limit. Still
-/// delivery-record bookkeeping, not a new concept: `session::`'s own module
-/// doc picks up exactly where this file's doc comment leaves off.
+mod observe;
+/// Session identity, delivery deduplication, and compaction reset.
 mod session;
+pub(crate) use observe::observe_deliveries;
 pub use session::{
     delivered_to_session, discard_session_delivery, hook_recipient_id, worker_recipient_id,
 };
@@ -38,6 +41,9 @@ pub use session::{
 /// Delivery records live beside the stage overlay, in this subdirectory.
 const DELIVERY_RELATIVE_DIR: &str = "session-retrieval";
 const WORKER_DELIVERY_RELATIVE_DIR: &str = "worker-brief";
+/// Accumulated records exceeding this limit are left unchanged; later
+/// deliveries may be repeated rather than losing the previous union.
+pub(crate) const DELIVERY_RECORD_MAX_BYTES: usize = 4 * 1024 * 1024;
 
 /// Plan component used for a stage that names no plan of its own.
 const DEFAULT_PLAN_KEY: &str = "default";
@@ -182,32 +188,51 @@ pub fn record_delivery(
 ) -> Result<()> {
     validate_recipient_id(&record.recipient_id)?;
 
+    fs::create_dir_all(work_dir)?;
+    let root = fs::canonicalize(work_dir)?;
+    let root_fd = safe_open_dirfd(&root)?;
     let dir = delivery_dir(work_dir, plan, stage);
-    let path = dir.join(format!("{}.json", record.recipient_id));
-
-    locked_dir_update(&dir, || {
-        let merged = merge_with_recorded(&path, record);
-        let json = serde_json::to_string_pretty(&merged)
-            .context("Failed to serialize a context delivery record")?;
-        atomic_write_locked(&path, &json)
-    })
+    let relative = dir.strip_prefix(work_dir)?;
+    safe_create_dir_all_in_workdir(root_fd.as_raw_fd(), relative, 0o777)?;
+    let dir_fd = open_safely(
+        root_fd.as_raw_fd(),
+        relative,
+        libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NONBLOCK,
+        0,
+    )?;
+    flock_exclusive(&dir_fd)?;
+    let name = format!("{}.json", record.recipient_id);
+    let merged = merge_with_recorded(&dir_fd, Path::new(&name), record)?;
+    let json = serde_json::to_string_pretty(&merged)
+        .context("Failed to serialize a context delivery record")?;
+    if json.len() > DELIVERY_RECORD_MAX_BYTES {
+        bail!("context delivery record exceeds {DELIVERY_RECORD_MAX_BYTES} bytes");
+    }
+    publish_in_dir(&dir_fd, name.as_ref(), json.as_bytes(), 0o666, false)
 }
 
 /// `record` folded into the record already at `path`, or `record` unchanged when
 /// there is nothing to fold — no file, an unreadable or malformed one, or one
-/// written under a different epoch.
+/// written under a different epoch. An oversized record is preserved and the
+/// update is rejected because its existing union cannot be safely loaded.
 ///
-/// The caller MUST hold the delivery directory's lock. Reading with plain
-/// [`fs::read_to_string`] rather than a locked read is deliberate: the locked
-/// helpers take the same directory lock, and taking it twice from one process
-/// deadlocks.
-fn merge_with_recorded(path: &Path, record: &DeliveryRecord) -> DeliveryRecord {
-    let existing = fs::read_to_string(path)
-        .ok()
+/// The caller holds the delivery directory lock; the bounded reader takes no
+/// lock of its own, avoiding a recursive directory lock.
+fn merge_with_recorded(
+    dir: &std::os::fd::OwnedFd,
+    path: &Path,
+    record: &DeliveryRecord,
+) -> Result<DeliveryRecord> {
+    let raw = match read_bounded_at(dir, path, DELIVERY_RECORD_MAX_BYTES) {
+        Ok(raw) => String::from_utf8(raw).ok(),
+        Err(error) if error.downcast_ref::<OverLimit>().is_some() => return Err(error),
+        Err(_) => None,
+    };
+    let existing = raw
         .and_then(|raw| serde_json::from_str::<DeliveryRecord>(&raw).ok())
         .filter(|existing| existing.context_epoch == record.context_epoch);
     let Some(existing) = existing else {
-        return record.clone();
+        return Ok(record.clone());
     };
 
     // Sorted and de-duplicated so the folded set is the same however the
@@ -223,7 +248,7 @@ fn merge_with_recorded(path: &Path, record: &DeliveryRecord) -> DeliveryRecord {
     // The newest delivery names the record: `launch_id` and `written_at`
     // describe the event that last touched it, and its set is everything the
     // recipient holds for this epoch.
-    DeliveryRecord {
+    Ok(DeliveryRecord {
         delivered: union
             .into_iter()
             .map(|(node_id, content_hash)| DeliveredNode {
@@ -232,7 +257,7 @@ fn merge_with_recorded(path: &Path, record: &DeliveryRecord) -> DeliveryRecord {
             })
             .collect(),
         ..record.clone()
-    }
+    })
 }
 
 /// Every record written for this stage, ordered by recipient then launch.
@@ -248,8 +273,17 @@ pub fn load_deliveries(work_dir: &Path, plan: &str, stage: &str) -> Result<Vec<D
     let dir = delivery_dir(work_dir, plan, stage);
     let worker_dir = worker_delivery_dir(work_dir, plan, stage);
     let mut records = Vec::new();
-    load_delivery_dir(&dir, &mut records)?;
-    load_delivery_dir(&worker_dir, &mut records)?;
+    let Ok(root) = fs::canonicalize(work_dir) else {
+        return Ok(records);
+    };
+    let Ok(root_fd) = safe_open_dirfd(&root) else {
+        return Ok(records);
+    };
+    for dir in [&dir, &worker_dir] {
+        if let Ok(relative) = dir.strip_prefix(work_dir) {
+            load_delivery_dir(&root_fd, relative, &mut records);
+        }
+    }
 
     // `read_dir` order is unspecified; sort so two reads of one directory agree.
     records.sort_by(|left, right| {
@@ -260,26 +294,27 @@ pub fn load_deliveries(work_dir: &Path, plan: &str, stage: &str) -> Result<Vec<D
     Ok(records)
 }
 
-fn load_delivery_dir(dir: &Path, records: &mut Vec<DeliveryRecord>) -> Result<()> {
-    let entries = match fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
-            return Err(error)
-                .with_context(|| format!("Failed to read delivery records in {}", dir.display()));
-        }
+fn load_delivery_dir(
+    root_fd: &std::os::fd::OwnedFd,
+    dir: &Path,
+    records: &mut Vec<DeliveryRecord>,
+) {
+    let Ok(entries) = list_dir_no_follow(root_fd, dir) else {
+        return;
     };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
+    for (name, kind) in entries {
+        let path = dir.join(name);
+        if kind != EntryKind::File {
+            continue;
+        }
         if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
             continue;
         }
-        let Ok(content) = fs::read_to_string(path.as_path()) else {
+        let Ok(bytes) = read_bounded_at(root_fd, &path, DELIVERY_RECORD_MAX_BYTES) else {
             tracing::debug!("skipping unreadable delivery record: {}", path.display());
             continue;
         };
-        match serde_json::from_str::<DeliveryRecord>(&content) {
+        match serde_json::from_slice::<DeliveryRecord>(&bytes) {
             Ok(record) => records.push(record),
             Err(error) => {
                 tracing::debug!(
@@ -289,7 +324,6 @@ fn load_delivery_dir(dir: &Path, records: &mut Vec<DeliveryRecord>) -> Result<()
             }
         }
     }
-    Ok(())
 }
 
 /// `(node_id, content_hash)` pairs already delivered under `epoch`.

@@ -3,11 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::context::untrusted::inline_safe;
-use crate::fs::session_files::load_session_exact;
 use crate::git::stage_commit::guarded_restore_command;
-use crate::models::session::{Session, SessionType};
+use crate::models::session::Session;
 use crate::models::stage::Stage;
-use crate::process::is_process_alive;
 
 use super::helpers;
 use super::types::MergeSignalContent;
@@ -27,100 +25,36 @@ pub fn generate_merge_signal(
     conflicting_files: &[String],
     work_dir: &Path,
 ) -> Result<PathBuf> {
-    let content = format_merge_signal_content(
+    generate_merge_snapshot_signal(
+        session,
+        stage,
+        source_branch,
+        target_branch,
+        conflicting_files,
+        work_dir,
+        target_branch,
+    )
+}
+
+pub(crate) fn generate_merge_snapshot_signal(
+    session: &Session,
+    stage: &Stage,
+    source_branch: &str,
+    target_branch: &str,
+    conflicting_files: &[String],
+    work_dir: &Path,
+    snapshot: &str,
+) -> Result<PathBuf> {
+    let content = format_merge_snapshot_content(
         session,
         stage,
         source_branch,
         target_branch,
         conflicting_files,
         &format_protected_paths(stage, work_dir),
+        snapshot,
     );
     helpers::write_signal_file(&session.id, &content, work_dir)
-}
-
-/// Find a live merge resolver session for the given stage by scanning
-/// `.loom/work/signals/` for merge signals.
-///
-/// For each signal of `stage_id`, loads the session record it names and
-/// checks PID liveness. If alive -> returns `Some(session_id)`. If dead (or
-/// the record is missing) -> removes the stale signal file and continues
-/// scanning. A signal outlives its record in ordinary operation: a failed
-/// resolver spawn in `spawn_merge_resolver` leaves its signal with no record,
-/// and orphan recovery and `loom sessions kill` remove a record before its
-/// signal. A record that exists but cannot be read
-/// leaves liveness unknown, so its error is returned.
-///
-/// A signal that cannot be read is attributed through its filename, which is
-/// its session's id: a session record naming another stage, or a session that
-/// is not a merge resolver, puts it out of this stage's concern; a merge
-/// session of this stage is judged alive or dead like any other. With no
-/// readable record, the signal could belong to a live resolver of this stage,
-/// so the read error is returned.
-///
-/// Returns `Ok(None)` if no live merge session exists for the stage.
-pub fn find_live_merge_session_for_stage(
-    stage_id: &str,
-    work_dir: &Path,
-) -> Result<Option<String>> {
-    let signal_ids = super::crud::list_signals(work_dir)?;
-    for signal_id in &signal_ids {
-        let (session_id, record) = match read_merge_signal(signal_id, work_dir) {
-            Ok(Some(signal)) if signal.stage_id == stage_id => {
-                let id = signal.session_id;
-                let record = load_session_exact(work_dir, &id).with_context(|| {
-                    format!("the session record of merge resolver {id} cannot be read")
-                })?;
-                (id, record)
-            }
-            Ok(_) => continue,
-            Err(error) => {
-                match attribute_unreadable_signal(signal_id, stage_id, work_dir, error)? {
-                    Some(record) => (signal_id.clone(), Some(record)),
-                    None => continue,
-                }
-            }
-        };
-
-        let alive = record
-            .and_then(|session| session.pid)
-            .is_some_and(is_process_alive);
-        if alive {
-            return Ok(Some(session_id));
-        }
-        // Dead session: clean up the stale signal and keep scanning.
-        if let Err(e) = super::crud::remove_signal(signal_id, work_dir) {
-            tracing::warn!(
-                signal_id = %signal_id,
-                error = %e,
-                "Failed to remove stale merge signal"
-            );
-        }
-    }
-    Ok(None)
-}
-
-/// The session record of the unreadable signal `signal_id` when that record
-/// is a merge session of `stage_id` (or names no stage), `None` when it
-/// belongs elsewhere, and `error` when no readable record attributes the
-/// signal at all.
-fn attribute_unreadable_signal(
-    signal_id: &str,
-    stage_id: &str,
-    work_dir: &Path,
-    error: anyhow::Error,
-) -> Result<Option<Session>> {
-    let Some(record) = load_session_exact(work_dir, signal_id).ok().flatten() else {
-        return Err(error.context(format!(
-            "merge signal {signal_id} cannot be read, and no session record attributes it to a \
-             stage"
-        )));
-    };
-    let ours = record.session_type == SessionType::Merge
-        && record
-            .stage_id
-            .as_deref()
-            .is_none_or(|owner| owner == stage_id);
-    Ok(ours.then_some(record))
 }
 
 /// Read and parse a merge signal file.
@@ -136,7 +70,11 @@ pub fn read_merge_signal(session_id: &str, work_dir: &Path) -> Result<Option<Mer
     let content = fs::read_to_string(&signal_path).context("Failed to read signal file")?;
 
     // Check if this is a merge signal by looking for the merge-specific header
-    if !content.contains("# Merge Signal:") {
+    if !content
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .is_some_and(|line| line.starts_with("# Merge Signal:"))
+    {
         return Ok(None);
     }
 
@@ -147,6 +85,7 @@ pub fn read_merge_signal(session_id: &str, work_dir: &Path) -> Result<Option<Mer
 /// The whole signal. `protected_paths` is [`format_protected_paths`]'s section,
 /// empty when the plan protects nothing; the Task cross-references it only
 /// when it is there.
+#[cfg(test)]
 pub(super) fn format_merge_signal_content(
     session: &Session,
     stage: &Stage,
@@ -154,6 +93,26 @@ pub(super) fn format_merge_signal_content(
     target_branch: &str,
     conflicting_files: &[String],
     protected_paths: &str,
+) -> String {
+    format_merge_snapshot_content(
+        session,
+        stage,
+        source_branch,
+        target_branch,
+        conflicting_files,
+        protected_paths,
+        target_branch,
+    )
+}
+
+fn format_merge_snapshot_content(
+    session: &Session,
+    stage: &Stage,
+    source_branch: &str,
+    target_branch: &str,
+    conflicting_files: &[String],
+    protected_paths: &str,
+    snapshot: &str,
 ) -> String {
     let mut content = format!("# Merge Signal: {}\n\n", session.id);
     content.push_str(&format_merge_context(stage, source_branch, target_branch));
@@ -168,14 +127,10 @@ pub(super) fn format_merge_signal_content(
     content.push_str(&helpers::format_conflicting_files_section(
         conflicting_files,
     ));
-    content.push_str(&format_failure_section(
-        stage,
-        target_branch,
-        conflicting_files,
-    ));
+    content.push_str(&format_failure_section(stage, snapshot, conflicting_files));
     content.push_str(&format_merge_task(
         stage,
-        target_branch,
+        snapshot,
         !protected_paths.is_empty(),
     ));
     content.push_str(&format_acceptance_section(stage));
@@ -216,8 +171,10 @@ fn format_merge_task(stage: &Stage, target_branch: &str, has_protected_paths: bo
     };
     format!(
         "## Your Task\n\n\
-         1. If `git status` shows a merge already in progress in this worktree, continue it; \
-         do not start a new `git merge`. Otherwise merge the target WITHOUT committing: \
+         1. If `git status` shows a merge already in progress, continue it only when \
+         `git rev-parse MERGE_HEAD` equals `{target_branch}`. Otherwise preserve your staged \
+         changes and seek manual recovery. If no merge is in progress, merge the authorized \
+         target snapshot WITHOUT committing: \
          `git merge --no-commit --no-ff {target_branch}` (a bare `git merge {target_branch}` \
          commits by itself and cannot be signed in this sandbox) (stage the resolution; never \
          run `git merge --continue`, which commits)\n\
@@ -276,7 +233,7 @@ fn format_acceptance_section(stage: &Stage) -> String {
     }
     let mut content = String::from("## Acceptance Criteria\n\n");
     for criterion in &stage.acceptance {
-        content.push_str(&format!("- [ ] {criterion}\n"));
+        content.push_str(&super::format::format_criterion(criterion));
     }
     content.push('\n');
     content

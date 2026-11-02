@@ -9,11 +9,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use chrono::Utc;
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use super::daemon_client::{connect, is_socket_disconnected, subscribe};
@@ -24,9 +20,17 @@ use super::state::{GraphState, LiveStatus, TuiActivityLog};
 use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::render::print_completion_summary;
 use crate::daemon::{
-    read_auth_token, read_message, write_message, CompletionSummary, Request, Response,
+    read_auth_token, write_message, CompletionSummary, Request, Response, ResponseFrameReader,
 };
 use crate::orchestrator::scheduling_report::{self, Alert};
+
+#[cfg(test)]
+#[path = "app_tests.rs"]
+mod tests;
+
+#[path = "app_terminal.rs"]
+mod app_terminal;
+use app_terminal::TerminalGuard;
 
 /// Poll timeout for event loop (100ms for responsive UI).
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
@@ -55,7 +59,7 @@ pub struct TuiApp {
     legend_open: bool,
     show_tokens: bool,
     tick_age_secs: Option<i64>,
-    mouse_enabled: bool,
+    terminal_guard: TerminalGuard,
     exiting: bool,
     completion_summary: Option<CompletionSummary>,
     /// Tracks when completion was received for auto-exit delay.
@@ -69,17 +73,10 @@ pub struct TuiApp {
 impl TuiApp {
     /// Create a new TUI application.
     pub fn new() -> Result<Self> {
-        enable_raw_mode().context("Failed to enable raw mode")?;
-        let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen).context("Failed to enter alternate screen")?;
-
-        crate::utils::install_crossterm_panic_hook();
-
-        let mouse_enabled =
-            crossterm::execute!(stdout, crossterm::event::EnableMouseCapture).is_ok();
-
-        let backend = CrosstermBackend::new(stdout);
-        let terminal = Terminal::new(backend).context("Failed to create terminal")?;
+        let (terminal_guard, terminal) = app_terminal::initialize(|| {
+            let backend = CrosstermBackend::new(io::stdout());
+            Terminal::new(backend).context("Failed to create terminal")
+        })?;
 
         Ok(Self {
             terminal,
@@ -92,7 +89,7 @@ impl TuiApp {
             legend_open: false,
             show_tokens: false,
             tick_age_secs: None,
-            mouse_enabled,
+            terminal_guard,
             exiting: false,
             completion_summary: None,
             completion_received_at: None,
@@ -111,6 +108,9 @@ impl TuiApp {
         self.unsubscribe(&mut stream, work_path);
         self.cleanup_terminal();
         if let Some(summary) = self.completion_summary.take() {
+            if let Some(ref error) = self.last_error {
+                eprintln!("{error}");
+            }
             print_completion_summary(&summary);
         }
         result
@@ -164,6 +164,7 @@ impl TuiApp {
 
     /// Main event loop - returns on quit or daemon disconnect.
     fn run_event_loop(&mut self, stream: &mut UnixStream, work_path: &Path) -> Result<()> {
+        let mut reader = ResponseFrameReader::new(Duration::from_secs(30));
         while self.running.load(Ordering::SeqCst) {
             self.refresh_alerts(work_path);
 
@@ -173,7 +174,9 @@ impl TuiApp {
                 break;
             }
 
-            if self.completion_delay_elapsed() || self.receive_response(stream, work_path)? {
+            if self.completion_delay_elapsed()
+                || self.receive_response(stream, work_path, &mut reader)?
+            {
                 break;
             }
             self.handle_input()?;
@@ -191,18 +194,16 @@ impl TuiApp {
             .is_some_and(|received_at| received_at.elapsed() >= COMPLETION_EXIT_DELAY)
     }
 
-    /// Read one daemon response and apply it. A read timeout with nothing
-    /// consumed is the normal idle case (~20x/second) and stays silent -
-    /// `is_read_timeout` is load-bearing here. It also swallows a timeout
-    /// landing mid-frame (`read_exact` cannot tell the two apart), losing one
-    /// frame; recovery happens on the *next* read, once the misaligned stream
-    /// makes `read_frame_length` (`daemon/wire.rs:190-199`) decode a length
-    /// `>= 0x20000000` from JSON body bytes - past `MAX_RESPONSE_BYTES` (2
-    /// MiB) - reaching `reconnect_after_read_error` below (pinned by
-    /// `app_tests.rs:24-32`).
-    fn receive_response(&mut self, stream: &mut UnixStream, work_path: &Path) -> Result<bool> {
-        match read_message::<Response, _>(stream) {
-            Ok(response) => self.handle_response(response),
+    /// Read one complete daemon response while preserving partial frames over idle polls.
+    fn receive_response(
+        &mut self,
+        stream: &mut UnixStream,
+        work_path: &Path,
+        reader: &mut ResponseFrameReader,
+    ) -> Result<bool> {
+        match reader.poll(stream) {
+            Ok(Some(response)) => self.handle_response(response),
+            Ok(None) => {}
             Err(error) if is_socket_disconnected(&error) => {
                 if self.completion_summary.is_some() {
                     return Ok(true);
@@ -212,8 +213,11 @@ impl TuiApp {
                 std::thread::sleep(Duration::from_millis(500));
                 return Ok(true);
             }
-            Err(error) if is_read_timeout(&error) => {}
-            Err(error) => return self.reconnect_after_read_error(&error, stream, work_path),
+            Err(error) => {
+                let recovered = self.reconnect_after_read_error(&error, stream, work_path)?;
+                *reader = ResponseFrameReader::new(Duration::from_secs(30));
+                return Ok(recovered);
+            }
         }
         Ok(false)
     }
@@ -281,12 +285,21 @@ impl TuiApp {
                 self.status = LiveStatus { data: *data };
                 let all_stages = self.status.all_stages();
                 self.activity_log.update(&all_stages);
-                self.last_error = None;
+                if self.completion_summary.is_none()
+                    && !self
+                        .last_error
+                        .as_deref()
+                        .is_some_and(|message| message.starts_with("Orchestration: "))
+                {
+                    self.last_error = None;
+                }
             }
             Response::OrchestrationComplete { summary } => {
+                if summary.failure_count == 0 {
+                    self.last_error = None;
+                }
                 self.completion_summary = Some(summary);
                 self.completion_received_at = Some(Instant::now());
-                self.last_error = None;
             }
             Response::Error { message } => {
                 self.last_error = Some(message);
@@ -303,14 +316,7 @@ impl TuiApp {
         }
         self.cleaned_up = true;
 
-        let _ = disable_raw_mode();
-        if self.mouse_enabled {
-            let _ = crossterm::execute!(
-                self.terminal.backend_mut(),
-                crossterm::event::DisableMouseCapture
-            );
-        }
-        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+        self.terminal_guard.cleanup();
         let _ = self.terminal.show_cursor();
     }
 
@@ -319,8 +325,15 @@ impl TuiApp {
         // If orchestration completed, render completion screen
         if let Some(ref summary) = self.completion_summary {
             let summary_clone = summary.clone();
+            let last_error = self.last_error.clone();
             self.terminal.draw(|frame| {
                 render_completion(frame, frame.area(), &summary_clone);
+                if let Some(ref error) = last_error {
+                    let area = frame.area();
+                    let line =
+                        ratatui::layout::Rect::new(area.x, area.y.saturating_add(2), area.width, 1);
+                    frame.render_widget(ratatui::widgets::Paragraph::new(error.as_str()), line);
+                }
             })?;
             return Ok(());
         }
@@ -364,31 +377,8 @@ impl TuiApp {
     }
 }
 
-/// True when `error`'s underlying `io::Error` is a read timeout
-/// (`WouldBlock`/`TimedOut`) - the kind a 50ms socket read timeout produces
-/// both for the ordinary idle case and for a timeout that landed mid-frame.
-/// `daemon_client::is_socket_disconnected` answers a different question (is
-/// this a real disconnect) and returns false for both timeout kinds too, so
-/// it cannot serve here.
-fn is_read_timeout(error: &anyhow::Error) -> bool {
-    error.chain().any(|cause| {
-        cause
-            .downcast_ref::<std::io::Error>()
-            .is_some_and(|io_error| {
-                matches!(
-                    io_error.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                )
-            })
-    })
-}
-
 impl Drop for TuiApp {
     fn drop(&mut self) {
         self.cleanup_terminal();
     }
 }
-
-#[cfg(test)]
-#[path = "app_tests.rs"]
-mod tests;

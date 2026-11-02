@@ -2,6 +2,7 @@
 //! session, and the refusal of a pinned run under a file git would act on.
 
 use super::*;
+use crate::git::runner::run_git;
 use crate::git::worktree::WorktreeGit;
 use crate::verify::contracts::test_support::contract_worktree;
 use tempfile::TempDir;
@@ -206,20 +207,68 @@ fn an_empty_regular_file_is_allowed_with_the_extension_on() {
     let output = status(&repo, &worktree).unwrap();
 
     assert!(output.status.success(), "{output:?}");
-    check_worktree_config(&repo, &admin_dir(&repo)).unwrap();
+    let into = TempDir::new().unwrap();
+    let admin = admin_dir(&repo);
+    let descriptor = crate::fs::safe_fs::safe_open_dirfd(&admin).unwrap();
+    snapshot_worktree_config(&repo, &descriptor, &admin, into.path()).unwrap();
+    assert!(!into.path().join(CONFIG_WORKTREE).exists());
+}
+
+/// Git reads a private copy and never opens this path, so nothing requires
+/// following a link here, and following one would copy any file the daemon can
+/// read into a directory git then parses. Whatever the target holds, a harmless
+/// setting included, a link refuses the command and its bytes go nowhere.
+#[test]
+fn a_symlinked_config_worktree_is_refused_and_its_target_never_read() {
+    for target in [
+        "[core]\n\tpager = touch /nonexistent\n",
+        "[core]\n\tsparseCheckout = true\n",
+    ] {
+        let (_tmp, repo, worktree) = repository();
+        enable_extension(&repo);
+        let secret = repo.parent().unwrap().join("admin.token");
+        std::fs::write(&secret, target).unwrap();
+        let link = admin_dir(&repo).join("config.worktree");
+        std::os::unix::fs::symlink(&secret, &link).unwrap();
+
+        let error = status(&repo, &worktree).unwrap_err();
+
+        let message = format!("{error:#}");
+        assert!(message.contains("will not run git"), "{message}");
+        assert!(message.contains("config.worktree"), "{message}");
+        assert!(!message.contains("pager"), "the target was read: {message}");
+    }
 }
 
 #[test]
-fn a_symlinked_config_worktree_still_goes_through_the_full_check() {
+fn a_dangling_link_at_config_worktree_is_refused_too() {
     let (_tmp, repo, worktree) = repository();
     enable_extension(&repo);
-    let hostile = repo.parent().unwrap().join("hostile.config");
-    std::fs::write(&hostile, "[core]\n\tpager = touch /nonexistent\n").unwrap();
-    std::os::unix::fs::symlink(&hostile, admin_dir(&repo).join("config.worktree")).unwrap();
+    let link = admin_dir(&repo).join("config.worktree");
+    std::os::unix::fs::symlink(repo.join("no-such-file"), &link).unwrap();
 
     let error = status(&repo, &worktree).unwrap_err();
 
-    assert!(format!("{error:#}").contains("core.pager"), "{error:#}");
+    assert!(
+        format!("{error:#}").contains("will not run git"),
+        "{error:#}"
+    );
+}
+
+/// A FIFO must neither block nor pass as a file.
+#[test]
+fn a_fifo_at_config_worktree_is_refused_without_blocking() {
+    let (_tmp, repo, worktree) = repository();
+    enable_extension(&repo);
+    let fifo = admin_dir(&repo).join("config.worktree");
+    nix::unistd::mkfifo(&fifo, nix::sys::stat::Mode::from_bits_truncate(0o600)).unwrap();
+
+    let error = status(&repo, &worktree).unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("will not run git"),
+        "{error:#}"
+    );
 }
 
 #[test]

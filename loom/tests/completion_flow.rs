@@ -10,25 +10,17 @@
 //! 2. test_acceptance_failure_creates_correct_status
 //! 3. test_successful_completion_flow
 
-use loom::models::stage::{Stage, StageStatus, StageType};
+use loom::models::stage::StageStatus;
 use loom::plan::schema::AcceptanceCriterion;
 use loom::verify::transitions::{
     are_all_dependencies_satisfied, load_stage, save_stage, trigger_dependents, update_stage,
 };
 use tempfile::TempDir;
 
-/// Helper to create a test stage with a specific ID and status.
-///
-/// By default, stages are set to `StageType::Knowledge` so that the git
-/// ancestry check added in Fix 9 (PLAN-fix-phantom-merge.md) is bypassed in
-/// these metadata-focused tests. Real-git tests live separately.
-fn create_test_stage(id: &str, name: &str, status: StageStatus) -> Stage {
-    let mut stage = Stage::new(name.to_string(), Some(format!("Test stage {name}")));
-    stage.id = id.to_string();
-    stage.status = status;
-    stage.stage_type = StageType::Knowledge;
-    stage
-}
+#[path = "stage_fixture/mod.rs"]
+mod stage_fixture;
+
+use stage_fixture::knowledge_stage as create_test_stage;
 
 /// Test: A stage in Completed status but NOT merged should not satisfy dependencies.
 ///

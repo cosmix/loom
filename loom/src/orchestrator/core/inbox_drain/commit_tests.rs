@@ -24,6 +24,8 @@ use super::test_support::{entry_for, fixture, FakeHost, Fixture, STAGE};
 mod guarded;
 #[path = "commit_tests_signing.rs"]
 mod signing;
+#[path = "commit_tests_snapshot.rs"]
+mod snapshot;
 
 const BRANCH: &str = "refs/heads/loom/s1";
 
@@ -105,6 +107,13 @@ fn knowledge_session(fx: &Fixture) -> Session {
 fn merge_session(fx: &Fixture) -> Session {
     let mut record = fx.record(SessionType::Merge, SessionStatus::Running);
     record.merge_source_branch = Some(format!("loom/{STAGE}"));
+    crate::orchestrator::signals::publish_merge_snapshot(
+        &fx.repo_root,
+        &fx.work_dir,
+        &record.id,
+        "main",
+    )
+    .unwrap();
     save_session(&record, &fx.work_dir).unwrap();
     record
 }

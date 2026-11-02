@@ -343,3 +343,20 @@ reaches 3.
 **Prevention:** time hook delegates with a release build, or with the installed binary after `git diff <installed commit> HEAD -- loom` comes back empty.
 
 **Fix:** the replay was re-timed with the installed release binary; the numbers above are from that run.
+
+## Linux BSD shims are not a BSD test run
+
+**What happened:** A Linux full-suite run started the BSD-shim hook mode and described it as BSD compatibility verification.
+
+**Why:** The CI shim mode was conflated with execution on a BSD or macOS host.
+
+**Prevention:** Treat Linux shims only as partial simulation; never report them as platform verification. Follow the user’s request to omit this run.
+
+**Fix:** Report the Linux results and identify native BSD/macOS coverage as unrun.
+
+## Timeout fixture left a descendant holding stdout
+
+**What happened:** A bounded-hook test fixture spawned `sleep` as a child, leaving the watchdog capture pipe open after the shell was terminated.
+**Why:** The fixture did not replace its shell process with the intended stalled delegate.
+**Prevention:** Use `exec` in timeout fixtures when the test models a single stalled delegate; test descendant cleanup separately when required.
+**Fix:** Changed the fixture to `exec sleep` and reran the focused hook tests.

@@ -59,6 +59,7 @@ pub fn create_journal(work_dir: &Path, stage_id: &str) -> Result<PathBuf> {
 
 /// Append an entry to a stage's memory journal
 pub fn append_entry(work_dir: &Path, stage_id: &str, entry: &MemoryEntry) -> Result<()> {
+    entry.validate()?;
     init_memory_dir(work_dir)?;
     let file_path = memory_file_path(work_dir, stage_id);
     let formatted = format_entry(entry);

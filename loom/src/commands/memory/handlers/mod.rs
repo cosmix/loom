@@ -6,6 +6,8 @@ mod read;
 mod record;
 mod resolve;
 #[cfg(test)]
+mod test_isolation;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 #[path = "tests_record_shape.rs"]

@@ -10,7 +10,6 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 /// Lines of captured session output embedded in a crash report. Named once
@@ -108,14 +107,15 @@ pub fn read_log_tail(path: &Path, max_lines: usize) -> Option<String> {
 
 /// The last `max_bytes` of `path`, or the whole file when it is smaller.
 fn read_trailing_bytes(path: &Path, max_bytes: u64) -> Option<Vec<u8>> {
-    let mut file = std::fs::File::open(path).ok()?;
-    let len = file.metadata().ok()?.len();
-    if len > max_bytes {
-        file.seek(SeekFrom::Start(len - max_bytes)).ok()?;
-    }
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes).ok()?;
-    Some(bytes)
+    let parent = path.parent()?;
+    let root = if parent.file_name().is_some_and(|name| name == "logs") {
+        parent.parent()?
+    } else {
+        parent
+    };
+    let relative = path.strip_prefix(root).ok()?;
+    let root = root.canonicalize().ok()?;
+    crate::fs::safe_read::read_tail(&root, relative, max_bytes).ok()
 }
 
 /// `text` reduced to at most `max_bytes` by dropping from the FRONT, landing on
@@ -337,5 +337,29 @@ mod tests {
 
         let tail = read_log_tail(&log, 100).unwrap();
         assert_eq!(tail.len(), MAX_LOG_TAIL_BYTES);
+    }
+
+    #[test]
+    fn tail_reads_large_logs_and_refuses_links_and_fifos() {
+        use std::os::unix::fs::symlink;
+        let temp = tempfile::tempdir().unwrap();
+        let logs = temp.path().join("logs");
+        std::fs::create_dir(&logs).unwrap();
+        let log = logs.join("log");
+        std::fs::write(
+            &log,
+            format!("{}\nlast", "x".repeat(MAX_LOG_READ_BYTES as usize)),
+        )
+        .unwrap();
+        assert_eq!(read_log_tail(&log, 1).as_deref(), Some("last"));
+        let link = logs.join("link");
+        symlink(&log, &link).unwrap();
+        assert!(read_log_tail(&link, 1).is_none());
+        let fifo = logs.join("fifo");
+        nix::unistd::mkfifo(&fifo, nix::sys::stat::Mode::S_IRUSR).unwrap();
+        assert!(read_log_tail(&fifo, 1).is_none());
+        std::fs::rename(&logs, temp.path().join("real-logs")).unwrap();
+        symlink(temp.path().join("real-logs"), &logs).unwrap();
+        assert!(read_log_tail(&log, 1).is_none());
     }
 }

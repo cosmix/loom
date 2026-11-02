@@ -214,7 +214,12 @@ would become permanently unattributable and leak forever. `--clean` therefore re
 even when alive; the normal path stays conservative.
 
 `list_loom_sockets` skips names starting `loom-view-` so the overview viewer is not reported as
-unattributable. Nothing currently reaps that viewer socket (see `concerns.md`).
+unattributable. Explicit clean and init retire this repository's viewer through its separate
+ownership-checked path (`tmux/viewer/retire.rs`). An owned socket nothing listens on is what a dead
+server leaves, and also what a starting one shows between its bind and its listen, so it is removed only
+under tmux's own start lock, an exclusive `flock` on `<socket>.lock` (`tmux/viewer/start_lock.rs`, read
+from tmux 3.6). A socket that listens and cannot be verified is refused. Residual: a server rebinding its
+socket on SIGUSR1 takes no such lock.
 
 ## macOS Terminal Detection Priority
 

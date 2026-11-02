@@ -3,7 +3,10 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-use super::{c_name, create_temp, open_parent, publish, replace_no_follow, temp_name, NAME_MAX};
+use super::{
+    c_name, create_temp, open_parent, publish, publish_in_dir, replace_no_follow, replace_private,
+    restore_no_follow, temp_name, FAIL_DIR_SYNC, NAME_MAX,
+};
 
 /// A root holding `dir/a.md` with `text`.
 fn root_with(text: &str) -> TempDir {
@@ -36,6 +39,101 @@ fn a_normal_replace_writes_the_bytes_and_keeps_the_mode() {
     let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o7777;
     assert_eq!(mode, 0o640);
     assert!(temp_files(&root.path().join("dir")).is_empty());
+}
+
+#[test]
+fn restore_replaces_a_hard_link_without_changing_its_other_name() {
+    let root = root_with("original");
+    let original = root.path().join("dir/a.md");
+    let target = root.path().join("dir/target.md");
+    std::fs::set_permissions(&original, std::fs::Permissions::from_mode(0o640)).unwrap();
+    std::fs::hard_link(&original, &target).unwrap();
+    restore_no_follow(root.path(), Path::new("dir/target.md"), b"restored", 0o644).unwrap();
+    assert_eq!(std::fs::read(&original).unwrap(), b"original");
+    assert_eq!(
+        std::fs::metadata(&original).unwrap().permissions().mode() & 0o777,
+        0o640
+    );
+    assert_eq!(std::fs::read(&target).unwrap(), b"restored");
+    assert_eq!(
+        std::fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+        0o644
+    );
+    restore_no_follow(root.path(), Path::new("dir/new.md"), b"new", 0o644).unwrap();
+    assert_eq!(read(&root, "dir/new.md"), "new");
+}
+
+#[test]
+fn opened_parent_stays_anchored_when_its_path_is_replaced() {
+    let root = root_with("original");
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("a.md"), "outside").unwrap();
+    let parent = open_parent(root.path(), Path::new("dir/a.md")).unwrap();
+    std::fs::rename(root.path().join("dir"), root.path().join("moved")).unwrap();
+    symlink(outside.path(), root.path().join("dir")).unwrap();
+
+    publish_in_dir(&parent, std::ffi::OsStr::new("a.md"), b"new", 0o600, true).unwrap();
+
+    assert_eq!(read(&root, "moved/a.md"), "new");
+    assert_eq!(
+        std::fs::read_to_string(outside.path().join("a.md")).unwrap(),
+        "outside"
+    );
+}
+
+#[test]
+fn sync_failure_after_rename_still_reports_publication() {
+    let root = root_with("original");
+    FAIL_DIR_SYNC.with(|flag| flag.set(true));
+    let result = replace_no_follow(root.path(), Path::new("dir/a.md"), b"new");
+    FAIL_DIR_SYNC.with(|flag| flag.set(false));
+    result.unwrap();
+    assert_eq!(read(&root, "dir/a.md"), "new");
+}
+
+#[test]
+fn reporting_publisher_distinguishes_sync_warning_from_failure() {
+    let root = root_with("original");
+    let parent = open_parent(root.path(), Path::new("dir/a.md")).unwrap();
+    FAIL_DIR_SYNC.with(|flag| flag.set(true));
+    let result = super::publish_in_dir_reporting(
+        &parent,
+        std::ffi::OsStr::new("a.md"),
+        b"new",
+        0o666,
+        false,
+    );
+    FAIL_DIR_SYNC.with(|flag| flag.set(false));
+    assert!(result.unwrap().is_some());
+    assert_eq!(read(&root, "dir/a.md"), "new");
+    assert!(super::publish_in_dir_reporting(
+        &parent,
+        std::ffi::OsStr::new("bad\0name"),
+        b"x",
+        0o666,
+        false
+    )
+    .is_err());
+    assert_eq!(read(&root, "dir/a.md"), "new");
+}
+
+#[test]
+fn private_replacement_creates_missing_file_and_refuses_symlinked_parent() {
+    let root = root_with("original");
+    let outside = tempfile::tempdir().unwrap();
+    symlink(outside.path(), root.path().join("link")).unwrap();
+    assert!(replace_private(root.path(), Path::new("link/escape"), b"x").is_err());
+    assert!(!outside.path().join("escape").exists());
+    replace_private(root.path(), Path::new("dir/new"), b"created").unwrap();
+    assert_eq!(read(&root, "dir/new"), "created");
+    assert_eq!(
+        std::fs::metadata(root.path().join("dir/new"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o077,
+        0
+    );
 }
 
 #[test]
@@ -121,7 +219,7 @@ fn a_failed_rename_removes_the_temp_file() {
     assert_eq!(temp_files(&dir).len(), 1);
     // A file cannot be renamed over a directory.
     let target = c_name(b"sub").unwrap();
-    assert!(publish(&parent, &tmp, &target, file, 0o644, b"y").is_err());
+    assert!(publish(&parent, &tmp, &target, file, 0o644, true, b"y").is_err());
     assert!(temp_files(&dir).is_empty());
     assert!(dir.join("sub").is_dir());
 }

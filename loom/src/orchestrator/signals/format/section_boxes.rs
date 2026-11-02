@@ -1,7 +1,4 @@
 //! Fixed literal reminder boxes rendered inline in signal sections.
-//!
-//! Split out of `sections.rs` to keep its two large section builders under
-//! their line ceilings; each function here just appends one fixed block.
 
 /// The "📝 KNOWLEDGE UPDATES REQUIRED" box shown to knowledge-family stages.
 pub(super) fn append_knowledge_updates_required_box(content: &mut String) {
@@ -15,7 +12,7 @@ pub(super) fn append_knowledge_updates_required_box(content: &mut String) {
     content.push_str("│  - Conventions: Coding conventions you learn                       │\n");
     content.push_str("│  - Mistakes: Errors you make and how to avoid them                 │\n");
     content.push_str("│                                                                    │\n");
-    content.push_str("│  Command: loom knowledge update <file> \"content\"                   │\n");
+    content.push_str("│  Use update, replace-section, or delete-section as appropriate.    │\n");
     content.push_str("└────────────────────────────────────────────────────────────────────┘\n");
     content.push_str("```\n\n");
 }

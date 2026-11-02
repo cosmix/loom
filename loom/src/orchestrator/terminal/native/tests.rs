@@ -1,6 +1,4 @@
-//! Unit tests for `native/mod.rs`, split out to keep the module under the
-//! 400-line ceiling (CLAUDE.md Rule 17), matching `tmux/tests.rs` and
-//! `backend/tests.rs`.
+//! Unit tests for `native/mod.rs`.
 
 use super::*;
 use crate::orchestrator::terminal::emulator::TerminalEmulator;
@@ -31,7 +29,17 @@ pub(crate) fn write_test_pid_identity(
         pid,
         start_time: crate::process::process_start_time(pid),
     };
-    pid_tracking::write_pid_entry(work_dir, &pid_key, identity)
+    pid_tracking::write_pid_entry(work_dir, &pid_key, identity)?;
+    let path = pid_tracking::pid_file_path(work_dir, &pid_key);
+    let start = identity
+        .start_time
+        .map(|value| value.to_string())
+        .unwrap_or_default();
+    std::fs::write(
+        path,
+        format!("{pid}\n{start}\nloom-owner:{}\n", session.tracking_key),
+    )?;
+    Ok(())
 }
 
 #[test]
@@ -124,10 +132,9 @@ fn window_title_and_pid_key_for_stage_session() {
     let mut session = Session::new();
     session.assign_to_stage("worker-pool".to_string());
     let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
-    // Title is the tracking_key, matched exactly against window titles.
-    assert_eq!(title, "loom-worker-pool");
+    assert_eq!(title, "loom-v2-stage-worker-pool");
     // PID-file key is per-session: tracking_key + session.id (O-14).
-    assert_eq!(pid_key, format!("loom-worker-pool-{}", session.id));
+    assert_eq!(pid_key, format!("loom-v2-stage-worker-pool-{}", session.id));
 }
 
 #[test]
@@ -135,16 +142,16 @@ fn window_title_and_pid_key_for_merge_session() {
     let mut session = Session::new_merge("loom/feature".to_string(), "main".to_string());
     session.assign_to_stage("feature".to_string());
     let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
-    assert_eq!(title, "loom-merge-feature");
-    assert_eq!(pid_key, format!("loom-merge-feature-{}", session.id));
+    assert_eq!(title, "loom-v2-merge-feature");
+    assert_eq!(pid_key, format!("loom-v2-merge-feature-{}", session.id));
 }
 
 #[test]
 fn window_title_and_pid_key_for_knowledge_session() {
     let session = Session::new_knowledge("kb");
     let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
-    assert_eq!(title, "loom-knowledge-kb");
-    assert_eq!(pid_key, format!("loom-knowledge-kb-{}", session.id));
+    assert_eq!(title, "loom-v2-knowledge-kb");
+    assert_eq!(pid_key, format!("loom-v2-knowledge-kb-{}", session.id));
 }
 
 #[test]
@@ -154,10 +161,10 @@ fn window_title_and_pid_key_for_base_conflict_session() {
     session.merge_target_branch = Some("loom/_base/feature".to_string());
     session.assign_to_stage("feature".to_string());
     let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
-    assert_eq!(title, "loom-base-conflict-feature");
+    assert_eq!(title, "loom-v2-base_conflict-feature");
     assert_eq!(
         pid_key,
-        format!("loom-base-conflict-feature-{}", session.id)
+        format!("loom-v2-base_conflict-feature-{}", session.id)
     );
 }
 
@@ -191,14 +198,13 @@ fn pid_key_distinct_per_session_for_same_stage() {
 
     let (title1, key1) = NativeBackend::window_title_and_pid_key(&s1).unwrap();
     let (title2, key2) = NativeBackend::window_title_and_pid_key(&s2).unwrap();
-    assert_eq!(title1, title2, "same stage → same window title");
+    assert_eq!(title1, title2, "tmux keeps the friendly stage title");
     assert_ne!(key1, key2, "different session → different PID-file key");
 }
 
 #[test]
 fn prefix_sharing_stage_ids_get_distinct_titles() {
-    // O-5: `auth` and `auth-tests` must resolve to distinct window titles
-    // so kill/liveness for one never targets the other.
+    // The stage labels remain distinct; native titles add session identity.
     let mut auth = Session::new();
     auth.assign_to_stage("auth".to_string());
     let mut auth_tests = Session::new();
@@ -206,11 +212,10 @@ fn prefix_sharing_stage_ids_get_distinct_titles() {
 
     let (auth_title, _) = NativeBackend::window_title_and_pid_key(&auth).unwrap();
     let (auth_tests_title, _) = NativeBackend::window_title_and_pid_key(&auth_tests).unwrap();
-    assert_eq!(auth_title, "loom-auth");
-    assert_eq!(auth_tests_title, "loom-auth-tests");
+    assert_eq!(auth_title, "loom-v2-stage-auth");
+    assert_eq!(auth_tests_title, "loom-v2-stage-auth-tests");
     assert_ne!(auth_title, auth_tests_title);
-    // The exact-match window ops (tested in window_ops.rs) ensure
-    // `loom-auth` never matches `loom-auth-tests`.
+    // Exact-match window ops reject prefix matches for the derived native title.
 }
 
 #[test]

@@ -8,10 +8,9 @@
 //!
 //! # Crash atomicity vs. advisory-lock identity
 //!
-//! Writes are crash-atomic: content is written to a sibling `<file>.tmp`,
-//! `fsync`ed, and `rename`d over the target, then the containing directory is
-//! `fsync`ed. A crash mid-write therefore leaves either the old file intact or
-//! the fully-written new file — never a truncated/empty file.
+//! Writes use a unique sibling temporary file, `fsync` it, and rename it over
+//! the target. The directory sync is best effort after publication; failure is
+//! logged because the replacement has already happened.
 //!
 //! `flock` identity is tied to an inode, but `rename` swaps the target's inode,
 //! so a lock taken on the *data file* would not exclude a reader that opened the
@@ -23,10 +22,81 @@
 
 use anyhow::{Context, Result};
 use fs2::FileExt;
-use std::fs::{File, OpenOptions};
-use std::io::{BufReader, BufWriter, Read, Write};
-use std::os::unix::fs::OpenOptionsExt;
+use sha2::Digest;
+use std::fs::File;
+use std::io::{BufReader, Read};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
+
+/// Serialize Loom plan writers across inode-replacing publication.
+///
+/// The lock file is keyed by canonical parent and basename, so replacing the
+/// plan inode does not change lock identity. Callers that also hold the
+/// plan-versions lock must acquire this lock second. External editors do not
+/// participate in this advisory lock.
+pub fn lock_plan(path: &Path) -> Result<File> {
+    let name = path.file_name().context("plan path has no filename")?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .canonicalize()
+        .context("Failed to resolve plan parent for lock")?;
+    let mut identity = parent.as_os_str().as_encoded_bytes().to_vec();
+    identity.push(0);
+    identity.extend_from_slice(name.as_encoded_bytes());
+    let digest = hex::encode(sha2::Sha256::digest(identity));
+    let lock_path = plan_lock_dir()?.join(format!("{digest}.lock"));
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(&lock_path)
+        .with_context(|| format!("Failed to open plan lock: {}", lock_path.display()))?;
+    let metadata = file.metadata()?;
+    anyhow::ensure!(metadata.is_file(), "Plan lock is not a regular file");
+    // SAFETY: geteuid has no preconditions and does not access caller memory.
+    let uid = unsafe { libc::geteuid() };
+    anyhow::ensure!(metadata.uid() == uid, "Plan lock has another owner");
+    anyhow::ensure!(
+        metadata.permissions().mode() & 0o022 == 0,
+        "Plan lock is writable by others"
+    );
+    file.lock_exclusive()
+        .with_context(|| format!("Failed to lock plan: {}", path.display()))?;
+    Ok(file)
+}
+
+/// A fixed per-user location avoids per-process TMPDIR differences and does
+/// not leave an untracked lock file beside the plan. The mode checks reject a
+/// pre-existing directory another user could manipulate.
+fn plan_lock_dir() -> Result<std::path::PathBuf> {
+    use std::os::unix::fs::DirBuilderExt;
+
+    // SAFETY: geteuid has no preconditions and does not access caller memory.
+    let uid = unsafe { libc::geteuid() };
+    let dir = Path::new("/tmp").join(format!("loom-plan-locks-{uid}"));
+    let mut builder = std::fs::DirBuilder::new();
+    builder.mode(0o700);
+    match builder.create(&dir) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error).context("Failed to create plan lock directory"),
+    }
+    let metadata = std::fs::symlink_metadata(&dir)?;
+    anyhow::ensure!(
+        metadata.is_dir() && metadata.uid() == uid,
+        "Unsafe plan lock directory"
+    );
+    anyhow::ensure!(
+        metadata.permissions().mode() & 0o077 == 0,
+        "Plan lock directory is shared"
+    );
+    Ok(dir)
+}
 
 /// Open the parent directory of `path` and acquire an advisory lock on it.
 ///
@@ -68,64 +138,18 @@ fn lock_parent_dir(path: &Path, exclusive: bool) -> Result<File> {
     Ok(dir_file)
 }
 
-/// Crash-atomically write `content` to `path` via a temp file + `rename`.
-///
-/// The caller MUST already hold the parent-directory lock (see
-/// [`lock_parent_dir`]) for the write to be serialized against readers. The
-/// sequence is: write `<file>.tmp` → `sync_all` → `rename` over `<file>` →
-/// `fsync` the directory so the rename itself is durable.
-///
-/// The temp file is opened with `O_NOFOLLOW`: a committed repository can
-/// track `<file>.tmp` as a symlink to a path outside the repo, and this
-/// write must not follow it. A symlinked temp path fails closed with an
-/// error naming the path; the symlink itself is left untouched.
+/// Crash-atomically write through a sibling temporary file. The caller holds
+/// the parent-directory lock across publication and any surrounding read.
 fn atomic_write(path: &Path, content: &str) -> Result<()> {
-    let mut tmp_os = path.as_os_str().to_os_string();
-    tmp_os.push(".tmp");
-    let tmp_path = std::path::PathBuf::from(tmp_os);
-
-    {
-        let tmp = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(&tmp_path)
-            .with_context(|| format!("Failed to open temp file: {}", tmp_path.display()))?;
-        let mut writer = BufWriter::new(&tmp);
-        writer
-            .write_all(content.as_bytes())
-            .with_context(|| format!("Failed to write temp file: {}", tmp_path.display()))?;
-        writer
-            .flush()
-            .with_context(|| format!("Failed to flush temp file: {}", tmp_path.display()))?;
-        drop(writer);
-        tmp.sync_all()
-            .with_context(|| format!("Failed to sync temp file: {}", tmp_path.display()))?;
-    }
-
-    std::fs::rename(&tmp_path, path).with_context(|| {
-        format!(
-            "Failed to rename {} to {}",
-            tmp_path.display(),
-            path.display()
-        )
-    })?;
-
-    // Fsync the directory so the rename (the metadata change that makes the new
-    // content visible) is itself durable across a crash.
-    if let Some(parent) = path.parent() {
-        let dir = if parent.as_os_str().is_empty() {
-            Path::new(".")
-        } else {
-            parent
-        };
-        if let Ok(dir_file) = File::open(dir) {
-            let _ = dir_file.sync_all();
-        }
-    }
-
-    Ok(())
+    let name = path.file_name().context("write target has no filename")?;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let dir = File::open(parent)
+        .with_context(|| format!("Failed to open directory: {}", parent.display()))?;
+    let dir = std::os::fd::OwnedFd::from(dir);
+    super::safe_replace::publish_in_dir(&dir, name, content.as_bytes(), 0o666, false)
 }
 
 /// Acquire an exclusive advisory lock on `dir` for the duration of `f`.
@@ -187,43 +211,13 @@ pub fn locked_read(path: &Path) -> Result<String> {
 
 /// Read-modify-write with an exclusive lock held throughout.
 ///
-/// Opens the file (creating if needed), acquires exclusive lock, reads content,
-/// calls the modifier function, writes the result, and releases the lock.
+/// Acquires the exclusive parent-directory lock, treats a missing file as empty,
+/// calls the modifier function, and atomically publishes the result.
 pub fn locked_read_modify_write<F>(path: &Path, modify: F) -> Result<()>
 where
     F: FnOnce(String) -> String,
 {
-    // Hold the parent-directory lock across the whole read-modify-write so no
-    // other reader/writer observes an intermediate state.
-    let _dir_lock = lock_parent_dir(path, true)?;
-
-    let content = match File::open(path) {
-        Ok(file) => {
-            let mut buf = String::new();
-            BufReader::new(&file)
-                .read_to_string(&mut buf)
-                .with_context(|| format!("Failed to read file: {}", path.display()))?;
-            buf
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // File does not exist yet — treat as empty so callers can create it.
-            String::new()
-        }
-        Err(e) => {
-            return Err(e).with_context(|| {
-                format!(
-                    "Failed to open file for read-modify-write: {}",
-                    path.display()
-                )
-            });
-        }
-    };
-
-    let new_content = modify(content);
-
-    // Crash-atomic replace (temp + rename). The directory lock above already
-    // serializes this against concurrent readers/writers.
-    atomic_write(path, &new_content)
+    locked_update(path, |content| Ok(modify(content)))
 }
 
 /// Fallible read-modify-write with an exclusive lock held throughout.

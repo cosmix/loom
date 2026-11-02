@@ -10,7 +10,10 @@ use crate::sandbox::preflight::ACCEPT_UNIX_SOCKET_RISK_FLAG;
 use crate::sandbox::TMP_SCAN_DEPTH;
 
 use super::super::criterion_hazards::{criterion_needs_ungrantable_resource, scan, Hazard};
-use super::{stage_commands, LintContext, LintFinding};
+use super::network_probe::{classify, Probe};
+use super::{
+    command_policy, stage_commands, CommandPolicy, LintContext, LintFinding, StageCommand,
+};
 
 /// Install hazards `registry_domains` reports with the domains they need.
 const REGISTRY_INSTALLS: [&str; 3] = ["npm install", "bun install", "cargo install"];
@@ -27,7 +30,7 @@ pub(super) fn check(ctx: &LintContext<'_>, out: &mut Vec<LintFinding>) -> Vec<St
             .network
             .as_ref()
             .unwrap_or(&plan_sandbox.network);
-        check_commands(stage, network, out);
+        check_commands(ctx, stage, network, out);
         if let Some(own_network) = &stage.sandbox.network {
             check_unix_sockets(Some(stage), own_network, out, &mut notes);
         }
@@ -126,27 +129,27 @@ fn names_in_tree_path(entry: &str) -> bool {
         && !entry.starts_with(".work/")
 }
 
-fn check_commands(stage: &StageDefinition, network: &NetworkConfig, out: &mut Vec<LintFinding>) {
+fn check_commands(
+    ctx: &LintContext<'_>,
+    stage: &StageDefinition,
+    network: &NetworkConfig,
+    out: &mut Vec<LintFinding>,
+) {
     let no_domains = network.allowed_domains.is_empty() && network.additional_domains.is_empty();
+    let session_enabled = stage
+        .sandbox
+        .enabled
+        .unwrap_or(ctx.metadata.loom.sandbox.enabled);
     for command in stage_commands(stage) {
-        if no_domains {
-            for hazard in scan(command.text, false) {
-                if let Hazard::Network(tool) = hazard {
-                    if REGISTRY_INSTALLS.contains(&tool) {
-                        continue;
-                    }
-                    let problem = format!(
-                        "runs `{tool}` while the stage's sandbox allows no network domain; add \
-                         the host it reaches to `sandbox.network.allowed_domains` or \
-                         `sandbox.network.additional_domains`"
-                    );
-                    out.push(LintFinding::in_stage(
-                        stage,
-                        command.describe(&problem),
-                        true,
-                    ));
-                }
-            }
+        let policy = command_policy(ctx, stage, &command);
+        if policy.lints_network() && (no_domains || policy.network_denied()) {
+            let error = policy.network_refusal_is_error(no_domains && session_enabled);
+            check_network(stage, &command, policy, error, out);
+        }
+        // An unsandboxed command reaches host daemons and shared state; a
+        // confined runner does not, whatever the session's grants would be.
+        if policy == CommandPolicy::Unsandboxed {
+            continue;
         }
         if let Some(what) = criterion_needs_ungrantable_resource(command.text) {
             let problem = format!(
@@ -156,9 +159,68 @@ fn check_commands(stage: &StageDefinition, network: &NetworkConfig, out: &mut Ve
             out.push(LintFinding::in_stage(
                 stage,
                 command.describe(&problem),
-                true,
+                // A disabled sandbox let this phase through until it was modelled.
+                policy != CommandPolicy::AfterStageConfined || session_enabled,
             ));
         }
+    }
+}
+
+/// Report the network tools `command` runs that `policy` cannot serve. In a
+/// confined runner a version probe needs no network and a loopback probe can
+/// reach a server the same command starts, so only the second is reported, and
+/// as a warning: the runner cannot reach a loopback service on the host.
+fn check_network(
+    stage: &StageDefinition,
+    command: &StageCommand<'_>,
+    policy: CommandPolicy,
+    error: bool,
+    out: &mut Vec<LintFinding>,
+) {
+    let tools = scan(command.text, false)
+        .into_iter()
+        .filter_map(|hazard| match hazard {
+            Hazard::Network(tool) if !REGISTRY_INSTALLS.contains(&tool) => Some(tool),
+            _ => None,
+        });
+    for tool in tools {
+        let denied = policy.network_denied();
+        let probe = denied.then(|| classify(command.text, tool)).flatten();
+        let (problem, error) = match probe {
+            Some(Probe::Version) => continue,
+            Some(Probe::Loopback) => (loopback_problem(tool), false),
+            None => (network_problem(tool, denied.then_some(policy)), error),
+        };
+        out.push(LintFinding::in_stage(
+            stage,
+            command.describe(&problem),
+            error,
+        ));
+    }
+}
+
+fn loopback_problem(tool: &str) -> String {
+    format!(
+        "runs `{tool}` against the loopback interface in a confined runner, which reaches only a \
+         server the same command starts and no service on the host"
+    )
+}
+
+fn network_problem(tool: &str, runner: Option<CommandPolicy>) -> String {
+    match runner {
+        Some(CommandPolicy::BeforeStage) => format!(
+            "runs `{tool}` in the confined before-stage runner, which has no network whatever \
+             the stage's sandbox allows"
+        ),
+        Some(_) => format!(
+            "runs `{tool}` in the confined completion runner, which has no network whatever \
+             `allowed_domains` says; fetch what it needs in a `provision` entry, or set \
+             `command_confinement: inherit` so the command runs under the stage's sandbox"
+        ),
+        None => format!(
+            "runs `{tool}` while the stage's sandbox allows no network domain; add the host it \
+             reaches to `sandbox.network.allowed_domains` or `sandbox.network.additional_domains`"
+        ),
     }
 }
 

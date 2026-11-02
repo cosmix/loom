@@ -70,6 +70,51 @@ fn merge_stage(root: &Path, stage_id: &str) {
 }
 
 #[test]
+fn verified_cleanup_reconciles_half_removed_worktree_and_reports_retained_path() {
+    let temp = init_repo();
+    let root = temp.path();
+    let (worktree, commit) = create_stage_worktree(root, "retained");
+    merge_stage(root, "retained");
+    fs::remove_dir_all(&worktree).unwrap();
+    fs::remove_dir_all(root.join(".git/worktrees/retained")).unwrap();
+    fs::create_dir_all(worktree.join(".claude/.cc-writes")).unwrap();
+    fs::write(root.join("README.md"), "operator edits in enclosing repo").unwrap();
+
+    for _ in 0..2 {
+        let result = cleanup_verified_stage("retained", &commit, "main", root).unwrap();
+        assert!(!result.worktree_removed);
+        assert!(result.warnings[0].contains(worktree.to_str().unwrap()));
+        assert!(worktree.join(".claude/.cc-writes").is_dir());
+    }
+    assert_eq!(
+        fs::read_to_string(root.join("README.md")).unwrap(),
+        "operator edits in enclosing repo"
+    );
+}
+
+#[test]
+fn verified_cleanup_preserves_detached_admin_work_beyond_the_completed_commit() {
+    let temp = init_repo();
+    let root = temp.path();
+    let completed = git_stdout(root, &["rev-parse", "HEAD"]);
+    let (worktree, unmerged) = create_stage_worktree(root, "detached");
+    git_ok(&worktree, &["checkout", "--detach"]);
+    git_ok(root, &["branch", "-D", "loom/detached"]);
+    let admin = root.join(".git/worktrees/detached");
+    fs::remove_dir_all(&worktree).unwrap();
+    fs::create_dir_all(worktree.join(".claude/.cc-writes")).unwrap();
+
+    assert!(cleanup_verified_stage("detached", &completed, "main", root).is_err());
+
+    assert_eq!(
+        fs::read_to_string(admin.join("HEAD")).unwrap().trim(),
+        unmerged
+    );
+    assert!(admin.join("index").is_file());
+    assert!(worktree.join(".claude/.cc-writes").is_dir());
+}
+
+#[test]
 fn verified_cleanup_refuses_modified_worktree() {
     let temp = init_repo();
     let root = temp.path();
@@ -81,6 +126,49 @@ fn verified_cleanup_refuses_modified_worktree() {
     assert!(error.to_string().contains("uncommitted changes"));
     assert!(worktree.join("feature.txt").exists());
     assert!(branch_exists_strict("loom/dirty", root).unwrap());
+}
+
+#[test]
+fn verified_cleanup_does_not_follow_a_foreign_gitdir() {
+    let temp = init_repo();
+    let root = temp.path();
+    let (worktree, commit) = create_stage_worktree(root, "redirected");
+    merge_stage(root, "redirected");
+    let foreign = init_repo();
+    let marker = worktree.join("filter-ran");
+    fs::write(
+        foreign.path().join(".gitattributes"),
+        "feature.txt filter=probe\n",
+    )
+    .unwrap();
+    fs::write(foreign.path().join("feature.txt"), "foreign\n").unwrap();
+    git_ok(foreign.path(), &["add", ".gitattributes", "feature.txt"]);
+    git_ok(foreign.path(), &["commit", "-m", "foreign"]);
+    git_ok(
+        foreign.path(),
+        &["config", "filter.probe.clean", "touch filter-ran; cat"],
+    );
+    fs::write(
+        worktree.join(".gitattributes"),
+        "feature.txt filter=probe\n",
+    )
+    .unwrap();
+    fs::write(
+        worktree.join(".git"),
+        format!("gitdir: {}\n", foreign.path().join(".git").display()),
+    )
+    .unwrap();
+
+    git_ok(&worktree, &["status", "--porcelain"]);
+    assert!(
+        marker.exists(),
+        "foreign filter must execute in the positive control"
+    );
+    fs::remove_file(&marker).unwrap();
+
+    assert!(cleanup_verified_stage("redirected", &commit, "main", root).is_err());
+    assert!(!marker.exists(), "cleanup executed the foreign filter");
+    assert!(worktree.exists());
 }
 
 #[test]

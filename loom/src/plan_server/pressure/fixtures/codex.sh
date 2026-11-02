@@ -20,7 +20,10 @@ if [ -f "$d/config" ]; then
 fi
 if [ -f "$d/stubborn" ]; then
   trap '' TERM
-  sleep "$(cat "$d/stubborn")"
+  sleep "$(cat "$d/stubborn")" &
+  child=$!
+  echo "$child" > "$d/stubborn-child"
+  wait "$child"
 fi
 if [ -f "$d/sleep" ]; then
   trap 'kill $child 2>/dev/null; exit 143' TERM

@@ -251,8 +251,8 @@ export const HELP_TOPICS: HelpTopic[] = [
       },
     ],
     tips: [
-      "Recent activity starts empty after a reload. It lists only what this page has seen.",
-      "Stale means no heartbeat for five minutes; crashed means the process died.",
+      "Recent activity comes from recorded stage transitions and survives a page reload.",
+      "Quiet means no recent heartbeat; stale means the stage's heartbeat budget was exceeded with no verified progress, and a long tool call can still read stale. Busy means a foreground command is still making progress, within a bounded hold; crashed means the process died.",
     ],
   },
   {

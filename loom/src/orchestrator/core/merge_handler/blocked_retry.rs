@@ -7,12 +7,14 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use crate::git::branch::resolve_target_branch;
+use crate::git::cleanup::branch_exists_strict;
 use crate::git::runner::run_git_bool;
-use crate::git::{blocked_merge_inputs, MergeBlock};
+use crate::git::{blocked_merge_inputs, branch_name_for_stage, get_branch_head, MergeBlock};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::persistence::Persistence;
 use crate::orchestrator::core::{clear_status_line, Orchestrator};
 use crate::orchestrator::signals::find_live_merge_session_for_stage;
+use crate::stage_service::merge_outcome::{apply_retry_failure, check_stage};
 
 use super::landing::Landing;
 
@@ -25,11 +27,15 @@ fn overlap_paths(stage: &Stage) -> Vec<String> {
     }
 }
 
-/// The backup refs of unrestored stashes the stage holds, the block's own
-/// first: each keeps changes of the operator that the checkout lacks.
+/// The backup refs of stashes the stage holds, the block's own first: each
+/// keeps changes of the operator that the checkout lacks, or a spare copy of
+/// them after a refused reset, which a retry would stash again.
 fn unrestored_backup_refs(stage: &Stage) -> Vec<&str> {
     let held = match &stage.merge.block {
-        Some(MergeBlock::StashNotRestored { backup_ref }) => Some(backup_ref),
+        Some(
+            MergeBlock::StashNotRestored { backup_ref }
+            | MergeBlock::StashResetRefused { backup_ref },
+        ) => Some(backup_ref),
         _ => None,
     };
     held.into_iter()
@@ -76,8 +82,9 @@ impl Orchestrator {
     /// Run `merge_stage` again for `stage` at time `now`. A merge that lands
     /// follows the verified-merge path and its worktree is cleaned up, unless
     /// a resolver still runs in it: its exit cleans up then. A conflict moves
-    /// the stage to `MergeConflict`; a block that is still there, or an
-    /// error, leaves the stage for the next tick, and prints nothing.
+    /// the stage to `MergeConflict`; a block that is still there leaves the
+    /// stage for the next tick, and prints nothing. An error goes through
+    /// [`Self::handle_retry_failure`].
     ///
     /// A retry is skipped while the inputs the block depends on are the ones
     /// the last blocked attempt saw, for at most ten minutes: an attempt
@@ -127,6 +134,56 @@ impl Orchestrator {
             ),
             Landing::Held | Landing::Conflict(_) | Landing::Blocked(_) => {}
         }
+    }
+
+    /// `merge_stage` failed for `stage`, which holds a typed block. A cause no
+    /// tick can clear hands it to the operator: the block's remedy is stale.
+    /// Any other failure says nothing about the block, which stays and keeps
+    /// the promise that no resolver spawns for a merge with no conflict; the
+    /// stage records the error so `loom status` says what the retry hits.
+    pub(super) fn handle_retry_failure(
+        &mut self,
+        stage: &Stage,
+        stage_id: &str,
+        reason: String,
+    ) -> Landing {
+        if let Some(permanent) = self.permanent_merge_failure(stage, stage_id) {
+            return self.hold_claimed_landing(stage, permanent);
+        }
+        let evidence: Vec<&str> = reason.lines().collect();
+        let unchanged = stage
+            .failure_info
+            .as_ref()
+            .is_some_and(|failure| failure.evidence == evidence);
+        if !unchanged {
+            let saved = self.update_stage(stage_id, |current| {
+                check_stage(current, stage)?;
+                apply_retry_failure(current, &reason)
+            });
+            if let Err(error) = saved {
+                tracing::warn!(stage_id = %stage_id, %error, "Failed to save a merge retry failure");
+            }
+        }
+        Landing::Failed(reason)
+    }
+
+    /// The remedy for a merge `merge_stage` refuses until an operator acts: the
+    /// stage branch is gone, or it moved past the commit verification proved.
+    /// A check that itself fails proves nothing, so it reads as no such cause.
+    fn permanent_merge_failure(&self, stage: &Stage, stage_id: &str) -> Option<String> {
+        let repo_root = &self.config.repo_root;
+        let branch = branch_name_for_stage(stage_id);
+        let steps = self.manual_merge_steps(stage_id);
+        if !branch_exists_strict(&branch, repo_root).ok()? {
+            return Some(format!(
+                "branch {branch} is missing; restore it, then {steps}"
+            ));
+        }
+        let tip = get_branch_head(&branch, repo_root).ok()?;
+        let verified = stage.completed_commit.as_deref().unwrap_or("no commit");
+        (verified != tip).then(|| {
+            format!("branch {branch} moved from {verified} to {tip} after verification; {steps}")
+        })
     }
 
     /// Drop the retry memo of every stage that is no longer `MergeBlocked`
@@ -236,3 +293,7 @@ impl Orchestrator {
 #[cfg(test)]
 #[path = "blocked_retry_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "blocked_retry_failure_tests.rs"]
+mod failure_tests;

@@ -67,8 +67,12 @@ pub(super) fn decide(
 }
 
 /// Whether the state is stale enough to schedule a fetch.
-fn refresh_due(state: Option<&UpdateState>, interval_hours: u32, now: DateTime<Utc>) -> bool {
-    // Floored the same way `schedule_refresh` floors the lock lifetime (see
+pub(super) fn refresh_due(
+    state: Option<&UpdateState>,
+    interval_hours: u32,
+    now: DateTime<Utc>,
+) -> bool {
+    // Floored at the minimum refresh interval (see
     // `MIN_REFRESH_INTERVAL_MINUTES`): otherwise `check_interval_hours = 0`
     // (a valid, user-settable config) would make every single invocation
     // decide to refresh, and since the fetcher releases its lock the moment
@@ -86,7 +90,7 @@ fn refresh_due(state: Option<&UpdateState>, interval_hours: u32, now: DateTime<U
             // permanently: the writer always stamps its own `now`, so the
             // very next successful refresh sets `last_checked = now` again
             // and the record self-heals after exactly one fetch — the
-            // exclusive lock in `schedule_refresh` already bounds that to
+            // worker-held lock already bounds that to
             // one fetch per lock lifetime, so there is no "storm" to guard
             // against here.
             elapsed >= interval || elapsed < Duration::zero()

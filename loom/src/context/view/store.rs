@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 
 use super::{build_cold, relink, ResolvedView, ViewIdentity};
 use crate::context::extract::registry;
-use crate::context::graph_store::GraphStore;
+use crate::context::graph_store::{GraphRead, GraphStore};
 use crate::context::refresh::snapshot::entries_are_current;
 use crate::context::store::canonical_json;
 
@@ -48,7 +48,7 @@ impl GraphStore {
         }
     }
 
-    /// The resolved view of the base at `revision` with `overlay` applied.
+    /// The resolved view of the overlay's base, or `revision` without one.
     ///
     /// Returns, in order: the view this process just materialized, the
     /// persisted view of the requested identity, or a view relinked from the
@@ -57,16 +57,23 @@ impl GraphStore {
     /// is known stale (an overlay view older than its layer) is rebuilt
     /// without being parsed.
     pub fn view(&self, revision: &str, overlay: Overlay<'_>) -> Result<ResolvedView> {
-        let (identity, overlay) = self.view_identity(revision, overlay)?;
-        if let Some(view) = self.take_cached_view(&identity, overlay) {
-            return Ok(view);
-        }
-        if self.has_view(&identity, overlay) {
-            if let Some(view) = self.load_view(&identity, overlay) {
+        let read = self.graph_read(revision, overlay)?;
+        self.view_read(&read)
+    }
+
+    pub(crate) fn view_read(&self, read: &GraphRead<'_>) -> Result<ResolvedView> {
+        let (identity, overlay) = self.view_identity(read);
+        if read.has_complete_overlay() || self.has_base_layer(&read.revision) {
+            if let Some(view) = self.take_cached_view(&identity, overlay) {
                 return Ok(view);
             }
+            if self.has_view(&identity, overlay) {
+                if let Some(view) = self.load_view(&identity, overlay) {
+                    return Ok(view);
+                }
+            }
         }
-        self.build_view(identity, overlay)
+        self.build_view(identity, read)
     }
 
     /// Load the persisted view of `identity`, or `None` when there is none, it
@@ -97,11 +104,12 @@ impl GraphStore {
     /// cannot be told from its predecessors, so it is never kept, as it is
     /// never persisted.
     pub(crate) fn materialize_view(&self, revision: &str, overlay: Overlay<'_>) -> Result<()> {
-        let (identity, overlay) = self.view_identity(revision, overlay)?;
+        let read = self.graph_read(revision, overlay)?;
+        let (identity, overlay) = self.view_identity(&read);
         if !is_identifiable(&identity, overlay) || self.has_view(&identity, overlay) {
             return Ok(());
         }
-        let view = self.build_view(identity, overlay)?;
+        let view = self.build_view(identity, &read)?;
         self.keep_view(view, overlay);
         Ok(())
     }
@@ -160,19 +168,12 @@ impl GraphStore {
 
     /// The identity a request resolves to, and the overlay it applies: one
     /// with no overlay layer is a base view.
-    fn view_identity<'a>(
-        &self,
-        revision: &str,
-        overlay: Overlay<'a>,
-    ) -> Result<(ViewIdentity, Overlay<'a>)> {
-        let layer = match overlay {
-            Some((plan, stage)) => self.load_overlay(plan, stage)?,
-            None => None,
-        };
-        Ok(match layer {
-            Some(layer) => (ViewIdentity::current(revision, &layer.generation), overlay),
-            None => (ViewIdentity::current(revision, ""), None),
-        })
+    fn view_identity<'a>(&self, read: &GraphRead<'a>) -> (ViewIdentity, Overlay<'a>) {
+        let generation = read.overlay.as_ref().map_or("", |layer| &layer.generation);
+        (
+            ViewIdentity::current(&read.revision, generation),
+            read.address,
+        )
     }
 
     fn take_cached_view(
@@ -186,8 +187,9 @@ impl GraphStore {
     }
 
     /// Resolve the view, relinking from a previous view when one is usable,
-    /// and persist it when the base layer of its revision loaded: the view of
-    /// a missing or unparseable base stays in memory.
+    /// and persist it when the base layer of its revision loaded or a complete
+    /// overlay needs none: the view of a missing or unparseable base stays in
+    /// memory.
     ///
     /// `identity` names the schema and extractors registered now, whatever
     /// wrote the layers, and a relink copies an unchanged file's previous
@@ -195,16 +197,17 @@ impl GraphStore {
     /// from a layer written under another schema (an older layer served
     /// stale), is built cold and never persisted, which keeps it from seeding
     /// a later relink, and a seed holding one is never used.
-    fn build_view(&self, identity: ViewIdentity, overlay: Overlay<'_>) -> Result<ResolvedView> {
+    fn build_view(&self, identity: ViewIdentity, read: &GraphRead<'_>) -> Result<ResolvedView> {
         let revision = identity.base_revision.clone();
-        let (next, schema_current) = self.resolved_with_schema(&revision, overlay)?;
-        // `resolved` takes its revision from the layer `load_base` returned,
-        // and leaves it empty for `None`.
-        let base_loaded = next.base_revision == revision;
+        let overlay = read.address;
+        let (next, schema_current) = self.resolve_read(read)?;
+        // `resolved` takes its revision from the layer `load_base` returned, or
+        // from a complete overlay, and otherwise leaves it empty.
+        let base_loaded = !revision.is_empty() && next.base_revision == revision;
         let extractors = registry();
         let current = schema_current && entries_are_current(&next.files, &extractors);
         let seed = match overlay {
-            _ if !current => None,
+            _ if !current || read.has_complete_overlay() => None,
             Some(_) => Some(self.view(&revision, None)?),
             None => self.newest_older_base_view(&identity),
         };
@@ -270,7 +273,8 @@ impl GraphStore {
 /// Whether an overlay view can be told apart from its predecessors. A layer
 /// with no generation has no identity to key a persisted view by.
 fn is_identifiable(identity: &ViewIdentity, overlay: Overlay<'_>) -> bool {
-    overlay.is_none() || !identity.overlay_generation.is_empty()
+    overlay.is_none()
+        || (!identity.base_revision.is_empty() && !identity.overlay_generation.is_empty())
 }
 
 /// Parse the view at `path`; a missing, unreadable or unparseable file is a

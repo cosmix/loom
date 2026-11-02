@@ -168,11 +168,70 @@ fn a_criterion_dispute_is_still_admitted_for_a_knowledge_session() {
     let stage = load_stage(FREEZE_STAGE, &work_dir).unwrap();
     let criterion = DisputeKind::criterion(Default::default(), vec![0]);
 
-    check_filer(&work_dir, &stage, &criterion).unwrap();
-    let refusal = check_filer(&work_dir, &stage, &freeze_refusal()).unwrap_err();
-    assert!(
-        format!("{refusal:#}").contains("knowledge session"),
-        "{refusal:#}"
+    assert!(check_filer(&work_dir, &stage, &criterion)
+        .unwrap()
+        .is_none());
+    let refusal = check_filer(&work_dir, &stage, &freeze_refusal())
+        .unwrap()
+        .unwrap();
+    assert!(refusal.contains("knowledge session"), "{refusal}");
+}
+
+#[test]
+fn transient_confirmation_read_errors_are_retryable_and_idempotent() {
+    for source in ["session", "freeze"] {
+        let (_tmp, work_dir) = contract_phase(SessionType::Contract);
+        let stage = load_stage(FREEZE_STAGE, &work_dir).unwrap();
+        let path = if source == "session" {
+            work_dir
+                .join("sessions")
+                .join(format!("{}.md", stage.session.unwrap()))
+        } else {
+            work_dir
+                .join("contracts")
+                .join(FREEZE_STAGE)
+                .join("freeze.json")
+        };
+        let saved = path.with_extension("saved");
+        if source == "session" {
+            std::fs::rename(&path, &saved).unwrap();
+        } else {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        }
+        std::fs::create_dir(&path).unwrap();
+
+        assert!(
+            file_freeze_refusal(&work_dir, FREEZE_STAGE, vec![PROBLEM.into()], KEY).is_err(),
+            "{source}"
+        );
+        assert!(!request_path(&work_dir, 1).exists());
+        assert_eq!(
+            load_stage(FREEZE_STAGE, &work_dir)
+                .unwrap()
+                .tally
+                .freeze_refusal_disputes,
+            0
+        );
+
+        std::fs::remove_dir(&path).unwrap();
+        if source == "session" {
+            std::fs::rename(saved, path).unwrap();
+        }
+        assert_retry_files_once(&work_dir);
+    }
+}
+
+fn assert_retry_files_once(work_dir: &Path) {
+    assert!(matches!(file(work_dir, KEY), FreezeRefusalFiling::Filed(_)));
+    assert!(matches!(file(work_dir, KEY), FreezeRefusalFiling::Filed(_)));
+    assert!(request_path(work_dir, 1).exists());
+    assert!(!request_path(work_dir, 2).exists());
+    assert_eq!(
+        load_stage(FREEZE_STAGE, work_dir)
+            .unwrap()
+            .tally
+            .freeze_refusal_disputes,
+        1
     );
 }
 

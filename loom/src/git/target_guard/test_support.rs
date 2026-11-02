@@ -72,6 +72,7 @@ pub(crate) fn repo() -> Repo {
     commit_file(&root, "README.md", "readme\n");
     let work = root.join(".loom/work");
     std::fs::create_dir_all(&work).unwrap();
+    crate::git::worktree::capture_main_identity(&root, &work).unwrap();
     Repo {
         _dir: dir,
         root,

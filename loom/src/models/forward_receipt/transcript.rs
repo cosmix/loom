@@ -12,10 +12,10 @@ use super::marker::{decode_marker_channel, MarkerChannel, MAX_PREFIX_BYTES};
 
 mod argv;
 mod identity;
-pub use argv::{exact_forward_argv, forward_argv};
+pub use argv::{exact_forward_argv, forward_argv, ForwardArgv};
 pub use identity::TranscriptIdentity;
 
-const MAX_TRANSCRIPT_BYTES: usize = 16 * 1024 * 1024;
+pub(crate) const MAX_TRANSCRIPT_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForwardingResult {
@@ -161,7 +161,7 @@ fn add_invocation(
     let Some(command) = block.pointer("/input/command").and_then(Value::as_str) else {
         return;
     };
-    let Some((model, effort)) = exact_forward_argv(command) else {
+    let Some(ForwardArgv { model, effort, .. }) = forward_argv(command) else {
         return;
     };
     insert_unique(

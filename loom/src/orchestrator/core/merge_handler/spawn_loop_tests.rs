@@ -6,7 +6,10 @@
 use chrono::{Duration, Utc};
 
 use super::super::merge_gate::stale_merge_retirement_blocks_spawn;
-use super::super::resolver_attempts::{attempts_dir, attempts_file, MAX_MERGE_RESOLVER_ATTEMPTS};
+use super::super::resolver_attempts::{
+    attempts_dir, attempts_file, merge_resolver_attempts, with_recording_failure,
+    MAX_MERGE_RESOLVER_ATTEMPTS,
+};
 use super::test_fixtures::{
     commit_on_stage_branch, git_ok, orchestrator_with_conflict, repo_with_clean_stage_branch,
     repo_with_conflicting_stage_branches, repo_with_stage_branches, use_real_worktree,
@@ -73,11 +76,22 @@ fn a_spent_resolver_budget_escalates_the_stage_to_review() {
 fn an_attempt_the_counter_cannot_record_routes_the_stage_to_review() {
     let repo = repo_with_conflicting_stage_branches(&["unrecorded"]);
     let mut orchestrator = orchestrator_with_conflict(repo.path(), "unrecorded");
-    // A file where the counter directory belongs: the counter reads 0, but no
-    // attempt can be written, so no resolver may spawn.
-    std::fs::write(attempts_dir(&orchestrator.config.work_dir), "not a dir").unwrap();
-    let reason = review_reason_after_one_pass(&mut orchestrator, "unrecorded");
+    let work_dir = orchestrator.config.work_dir.clone();
+    assert_eq!(merge_resolver_attempts(&work_dir, "unrecorded"), 0);
+    let reason = with_recording_failure(&work_dir, || {
+        review_reason_after_one_pass(&mut orchestrator, "unrecorded")
+    });
     assert!(reason.contains("could not be recorded"), "{reason}");
+}
+
+#[test]
+fn an_unreadable_counter_directory_exhausts_the_budget_without_spawning() {
+    let repo = repo_with_conflicting_stage_branches(&["unreadable"]);
+    let mut orchestrator = orchestrator_with_conflict(repo.path(), "unreadable");
+    std::fs::write(attempts_dir(&orchestrator.config.work_dir), "not a dir").unwrap();
+    let reason = review_reason_after_one_pass(&mut orchestrator, "unreadable");
+    let gave_up = format!("gave up after {MAX_MERGE_RESOLVER_ATTEMPTS} attempt(s)");
+    assert!(reason.contains(&gave_up), "{reason}");
 }
 
 #[test]
@@ -233,12 +247,46 @@ fn stale_session(session_type: SessionType, age_secs: i64) -> Session {
 /// identity whose kill fails and whose liveness probe answers `alive`.
 fn identityless_blocks(session: &Session, alive: bool) -> bool {
     stale_merge_retirement_blocks_spawn(
+        std::path::Path::new("/nonexistent/work"),
         session,
         false,
         |_| Ok(alive),
         |_| Err(anyhow::anyhow!("no PID identity to signal")),
         |_| panic!("death is never confirmed by PID without a PID identity"),
     )
+}
+
+/// A slow launch writes its wrapper long after its record: an old record with a
+/// wrapper written just now can still become a process, so it keeps ownership.
+#[test]
+fn an_identityless_writer_keeps_ownership_inside_the_grace_of_its_wrapper_script() {
+    use crate::orchestrator::terminal::native::{wrapper_script_path, NativeBackend};
+    let session = stale_session(SessionType::Stage, ORPHAN_PROBE_GRACE_SECS + 300);
+    let work = tempfile::tempdir().unwrap();
+    let (_, key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+    let wrapper = wrapper_script_path(work.path(), &key);
+    std::fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
+    std::fs::write(&wrapper, "#!/bin/sh\n").unwrap();
+    let retirement_blocks = || {
+        stale_merge_retirement_blocks_spawn(
+            work.path(),
+            &session,
+            false,
+            |_| Ok(false),
+            |_| Err(anyhow::anyhow!("no PID identity to signal")),
+            |_| panic!("death is never confirmed by PID without a PID identity"),
+        )
+    };
+    assert!(retirement_blocks());
+
+    let aged = std::time::SystemTime::now() - std::time::Duration::from_secs(300);
+    std::fs::File::options()
+        .write(true)
+        .open(&wrapper)
+        .unwrap()
+        .set_modified(aged)
+        .unwrap();
+    assert!(!retirement_blocks());
 }
 
 #[test]

@@ -12,10 +12,11 @@
 //! `install.sh` — which reads the same file at install time — cannot drift
 //! into two different lists.
 
+#[cfg(test)]
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use super::SkillIndex;
 
@@ -41,23 +42,8 @@ pub fn is_core_skill(name: &str) -> bool {
     core_skill_names().any(|core| core == name)
 }
 
-/// The Skill-tool invocation that actually loads `name`.
-///
-/// Decided from the compiled-in manifest rather than the filesystem, so the
-/// rendered form is deterministic in tests and stays correct even on a
-/// `--skills all` install that has no catalog directory at all — the
-/// `loom-skills` loader itself falls back to `~/.claude/skills/<name>/SKILL.md`
-/// when there is no catalog to read.
-///
-/// `SkillIndex::load_from_directory` indexes every subdirectory of
-/// `~/.claude/skills` that has a `SKILL.md`, including skills that are not
-/// loom's — the catalog split only ever moved loom's own `loom-`prefixed
-/// skills out of that directory. Routing a non-`loom-` name through the
-/// loader would still resolve (the loader falls back to a direct read), but
-/// it bypasses that skill's own `allowed-tools` declaration and adds a hop
-/// for a skill that already has a working direct invocation. Only a
-/// `loom-`prefixed non-core skill is catalogued, so only that case goes
-/// through the loader.
+/// Invoke non-core `loom-` skills through the catalog loader. Invoke other
+/// skills directly so their own `allowed-tools` declarations apply.
 pub fn skill_invocation(name: &str) -> String {
     if is_core_skill(name) || !name.starts_with("loom-") {
         format!("Skill(skill=\"{name}\")")
@@ -92,46 +78,7 @@ pub fn load_with_catalog(skills_dir: &Path) -> Result<SkillIndex> {
 pub fn load_from_roots(skills_dir: &Path, catalog_dir: &Path) -> Result<SkillIndex> {
     let mut index = SkillIndex::load_from_directory(skills_dir)?;
 
-    if !catalog_dir.exists() {
-        return Ok(index);
-    }
-
-    let entries = fs::read_dir(catalog_dir).with_context(|| {
-        format!(
-            "Failed to read catalog directory: {}",
-            catalog_dir.display()
-        )
-    })?;
-
-    for entry in entries.flatten() {
-        let skill_dir = entry.path();
-        if !skill_dir.is_dir() {
-            continue;
-        }
-
-        let skill_file = skill_dir.join("SKILL.md");
-        if !skill_file.exists() {
-            continue;
-        }
-
-        match SkillIndex::parse_skill_file(&skill_file) {
-            Ok(metadata) => {
-                if index.get_by_name(&metadata.name).is_none() {
-                    index.add_skill(metadata);
-                }
-            }
-            Err(e) => {
-                // Match load_from_directory's own failure behaviour: warn and
-                // skip rather than aborting the whole load over one skill.
-                eprintln!(
-                    "Warning: Failed to parse skill file {}: {}",
-                    skill_file.display(),
-                    e
-                );
-            }
-        }
-    }
-
+    index.load_directory(catalog_dir)?;
     Ok(index)
 }
 
@@ -332,6 +279,70 @@ mod tests {
 
         let metadata = index.get_by_name("dup").expect("dup should be indexed");
         assert_eq!(metadata.description, "From skills_dir");
+    }
+
+    #[test]
+    fn duplicate_names_and_triggers_have_stable_ownership() {
+        let temp = TempDir::new().unwrap();
+        let skills_dir = temp.path().join("skills");
+        let catalog_dir = temp.path().join("catalog");
+        for (root, dir, description, triggers) in [
+            (&catalog_dir, "a-catalog", "catalog", "catalog only"),
+            (&skills_dir, "z-primary", "later", "later only"),
+            (
+                &skills_dir,
+                "a-primary",
+                "winner",
+                "Alpha_Beta, alpha-beta, Alpha Beta",
+            ),
+        ] {
+            let path = root.join(dir);
+            fs::create_dir_all(&path).unwrap();
+            fs::write(
+                path.join("SKILL.md"),
+                format!(
+                "---\nname: duplicate\ndescription: {description}\ntriggers: [{triggers}]\n---\n"
+            ),
+            )
+            .unwrap();
+        }
+        let index = load_from_roots(&skills_dir, &catalog_dir).unwrap();
+        assert_eq!(index.skill_count(), 1);
+        assert_eq!(
+            index.get_by_name("duplicate").unwrap().description,
+            "winner"
+        );
+        let matches = index.match_skills("alpha beta", 5);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].description, "winner");
+        assert_eq!(matches[0].score, 2.0);
+        assert_eq!(matches[0].matched_triggers, ["alpha beta"]);
+        assert!(index.match_skills("later only catalog only", 5).is_empty());
+    }
+
+    #[test]
+    fn duplicate_names_in_catalog_use_sorted_first_valid_copy() {
+        let temp = TempDir::new().unwrap();
+        let skills_dir = temp.path().join("missing");
+        let catalog_dir = temp.path().join("catalog");
+        let invalid = catalog_dir.join("0-invalid");
+        fs::create_dir_all(&invalid).unwrap();
+        fs::write(invalid.join("SKILL.md"), "invalid frontmatter").unwrap();
+        for (dir, description) in [("z", "later"), ("a", "winner")] {
+            let path = catalog_dir.join(dir);
+            fs::create_dir_all(&path).unwrap();
+            fs::write(
+                path.join("SKILL.md"),
+                format!("---\nname: duplicate\ndescription: {description}\n---\n"),
+            )
+            .unwrap();
+        }
+        let index = load_from_roots(&skills_dir, &catalog_dir).unwrap();
+        assert_eq!(index.skill_count(), 1);
+        assert_eq!(
+            index.get_by_name("duplicate").unwrap().description,
+            "winner"
+        );
     }
 
     #[test]

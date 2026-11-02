@@ -16,6 +16,8 @@ use super::sandbox_section::format_sandbox_section;
 use super::section_boxes::{append_empty_memory_box, append_knowledge_updates_required_box};
 use super::skills::format_skill_recommendations;
 
+mod acceptance;
+pub(in crate::orchestrator::signals) use acceptance::format_criterion;
 mod goal_backward_section;
 use goal_backward_section::format_goal_backward_verification_section;
 
@@ -26,7 +28,6 @@ pub(super) fn format_semi_stable_section(
     stage_id: &str,
 ) -> String {
     let mut content = String::new();
-
     // Per-stage `## Knowledge Brief`, gated on retrieval having selected
     // anything. Labelled with the query's INPUT FIELDS, never `pack.query`
     // itself: that is the whole stage description, re-embedded a second time.
@@ -145,6 +146,7 @@ pub(super) fn format_semi_stable_section(
             content.push_str(
                 "**For long content, use stdin:** `loom knowledge update <file> - <<'EOF'`\n\n",
             );
+            content.push_str("Use `loom knowledge replace-section` or `delete-section` for existing sections; after direct edits run `loom knowledge sync`.\n\n");
 
             // Review document generation (knowledge-distill only)
             if stage_type == StageType::KnowledgeDistill {
@@ -219,10 +221,8 @@ pub(super) fn format_semi_stable_section(
             );
             content.push_str("| Gotcha | `loom memory note \"gotcha: ...\"` |\n");
             content.push_str("| File change | `loom memory change \"...\"` |\n");
+            // The recitation section states why evidence matters.
             content.push_str("| Question | `loom memory question \"...\"` |\n\n");
-            content.push_str(
-                "Evidence makes the entry checkable at distillation; an entry without evidence is a claim.\n\n",
-            );
             content.push_str(
                 "⚠️ NEVER use 'loom knowledge' in this stage — knowledge-distill curates \
                  memory into knowledge.\n",
@@ -485,7 +485,7 @@ pub(super) fn format_dynamic_section(
         content.push_str("- [ ] Code reviewed and tested\n");
     } else {
         for criterion in &stage.acceptance {
-            content.push_str(&format!("- [ ] {}\n", criterion.command()));
+            content.push_str(&format_criterion(criterion));
         }
     }
     content.push('\n');
@@ -564,6 +564,5 @@ pub(super) fn format_recitation_section(
     content.push_str(
         "- Evidence makes the entry checkable at distillation; an entry without evidence is a claim.\n\n",
     );
-
     content
 }

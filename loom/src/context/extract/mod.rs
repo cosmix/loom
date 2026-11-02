@@ -174,9 +174,20 @@ pub fn whole_file_span(bytes: &[u8]) -> Span {
         start_byte: 0,
         end_byte: bytes.len(),
         line_start: 1,
-        // A file with no trailing newline still ends on the line after the last
-        // break; an empty file is one (empty) line.
-        line_end: lines.max(1),
+        line_end: whole_file_line_count(lines, bytes.last().copied()),
+    }
+}
+
+/// Inclusive last line, with an empty file represented as line one.
+pub(crate) fn whole_file_line_count(newlines: usize, last: Option<u8>) -> usize {
+    (newlines + usize::from(last.is_some_and(|byte| byte != b'\n'))).max(1)
+}
+
+#[cfg(test)]
+#[test]
+fn whole_file_span_counts_unterminated_lines() {
+    for (bytes, lines) in [(b"".as_slice(), 1), (b"a", 1), (b"a\nb", 2), (b"a\nb\n", 2)] {
+        assert_eq!(whole_file_span(bytes).line_end, lines);
     }
 }
 

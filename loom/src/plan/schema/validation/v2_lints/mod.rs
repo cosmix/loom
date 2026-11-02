@@ -20,6 +20,7 @@ mod contracts;
 mod js_provision;
 mod knowledge_check;
 pub(crate) mod loom_subcommands;
+mod network_probe;
 mod regex_patterns;
 mod registry_domains;
 mod repo_hooks;
@@ -78,52 +79,73 @@ pub(crate) fn run(ctx: &LintContext<'_>, notes: &mut Vec<String>) -> Vec<LintFin
 
 /// One command a stage runs, with the label its findings name it by.
 struct StageCommand<'a> {
-    label: String,
+    kind: CommandKind<'a>,
     text: &'a str,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CommandKind<'a> {
+    Acceptance(usize),
+    Setup(usize),
+    Wiring(usize, &'a str),
+    Before(usize),
+    After(usize),
+    DeadCode,
+}
+
+impl CommandKind<'_> {
+    fn label(self) -> String {
+        match self {
+            Self::Acceptance(i) => format!("Acceptance criterion #{}", i + 1),
+            Self::Setup(i) => format!("Setup command #{}", i + 1),
+            Self::Wiring(i, name) => format!("Wiring test #{} '{name}'", i + 1),
+            Self::Before(i) => format!("before_stage check #{}", i + 1),
+            Self::After(i) => format!("after_stage check #{}", i + 1),
+            Self::DeadCode => "dead_code_check command".to_string(),
+        }
+    }
+}
+
 impl<'a> StageCommand<'a> {
-    fn new(label: String, text: &'a str) -> Self {
-        Self { label, text }
+    fn new(kind: CommandKind<'a>, text: &'a str) -> Self {
+        Self { kind, text }
     }
 
     /// `<label> `<command>` <problem>`, the shape `criterion_hazards` uses.
     fn describe(&self, problem: &str) -> String {
-        format!("{} `{}` {problem}", self.label, self.text)
+        format!("{} `{}` {problem}", self.kind.label(), self.text)
     }
 }
-
-/// Label prefix of a `before_stage` check, which runs on the daemon's host.
-const BEFORE_STAGE_LABEL: &str = "before_stage check";
 
 /// Every command D4 scans: acceptance, setup, wiring tests, before/after-stage
 /// checks and the dead-code check.
 fn stage_commands(stage: &StageDefinition) -> Vec<StageCommand<'_>> {
-    let numbered = |kind: &str, idx: usize| format!("{kind} #{}", idx + 1);
     let acceptance = stage.acceptance.iter().enumerate().map(|(idx, criterion)| {
-        StageCommand::new(numbered("Acceptance criterion", idx), criterion.command())
+        StageCommand::new(CommandKind::Acceptance(idx), criterion.command())
     });
     let setup = stage
         .setup
         .iter()
         .enumerate()
-        .map(|(idx, command)| StageCommand::new(numbered("Setup command", idx), command));
-    let wiring = stage.wiring_tests.iter().enumerate().map(|(idx, test)| {
-        let label = format!("{} '{}'", numbered("Wiring test", idx), test.name);
-        StageCommand::new(label, &test.command)
-    });
-    let before =
-        stage.before_stage.iter().enumerate().map(|(idx, check)| {
-            StageCommand::new(numbered(BEFORE_STAGE_LABEL, idx), &check.command)
+        .map(|(idx, command)| StageCommand::new(CommandKind::Setup(idx), command));
+    let wiring =
+        stage.wiring_tests.iter().enumerate().map(|(idx, test)| {
+            StageCommand::new(CommandKind::Wiring(idx, &test.name), &test.command)
         });
-    let after =
-        stage.after_stage.iter().enumerate().map(|(idx, check)| {
-            StageCommand::new(numbered("after_stage check", idx), &check.command)
-        });
+    let before = stage
+        .before_stage
+        .iter()
+        .enumerate()
+        .map(|(idx, check)| StageCommand::new(CommandKind::Before(idx), &check.command));
+    let after = stage
+        .after_stage
+        .iter()
+        .enumerate()
+        .map(|(idx, check)| StageCommand::new(CommandKind::After(idx), &check.command));
     let dead_code = stage
         .dead_code_check
         .iter()
-        .map(|check| StageCommand::new("dead_code_check command".to_string(), &check.command));
+        .map(|check| StageCommand::new(CommandKind::DeadCode, &check.command));
     acceptance
         .chain(setup)
         .chain(wiring)
@@ -133,12 +155,81 @@ fn stage_commands(stage: &StageDefinition) -> Vec<StageCommand<'_>> {
         .collect()
 }
 
-/// The commands that run inside the stage's sandbox: every scanned command
-/// except `before_stage`, which runs on the daemon's host.
-fn sandboxed_commands(stage: &StageDefinition) -> Vec<StageCommand<'_>> {
-    let mut commands = stage_commands(stage);
-    commands.retain(|command| !command.label.starts_with(BEFORE_STAGE_LABEL));
-    commands
+/// Which restrictions a stage command runs under, as far as the lints care.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CommandPolicy {
+    /// `run_before_stage_checks` always uses the default confined runner on
+    /// the pristine worktree, with the network denied and before any
+    /// `provision` entry, whatever the stage's sandbox or confinement says.
+    BeforeStage,
+    /// `run_after_checks` at a resolved `confined`: the confined runner, with
+    /// the network denied.
+    AfterStageConfined,
+    /// Not confined, with the stage's effective sandbox disabled.
+    Unsandboxed,
+    /// Governed by the stage's effective sandbox and its domains.
+    Session,
+    /// The confined completion runner, with no network whatever the session
+    /// may reach, independent of the stage's sandbox.
+    Confined,
+}
+
+impl CommandPolicy {
+    /// Whether a registry or network command depends on the stage's domains
+    /// or a confined runner; only an unsandboxed command depends on neither.
+    fn lints_network(self) -> bool {
+        self != Self::Unsandboxed
+    }
+
+    /// Whether the command runs in a confined runner, which denies the network.
+    fn network_denied(self) -> bool {
+        matches!(
+            self,
+            Self::BeforeStage | Self::AfterStageConfined | Self::Confined
+        )
+    }
+
+    /// Whether a network command this policy cannot serve is an error, given
+    /// whether the session rule alone refuses it. Plans that verified before
+    /// these phases were modelled keep verifying, with a warning: every
+    /// before-stage finding, and an after-stage one the session rule let through.
+    fn network_refusal_is_error(self, session_refused: bool) -> bool {
+        match self {
+            Self::BeforeStage => false,
+            Self::AfterStageConfined => session_refused,
+            Self::Unsandboxed | Self::Session | Self::Confined => true,
+        }
+    }
+}
+
+fn command_policy(
+    ctx: &LintContext<'_>,
+    stage: &StageDefinition,
+    command: &StageCommand<'_>,
+) -> CommandPolicy {
+    use crate::plan::schema::CommandConfinement;
+    if matches!(command.kind, CommandKind::Before(_)) {
+        return CommandPolicy::BeforeStage;
+    }
+    let confinement = stage
+        .sandbox
+        .command_confinement
+        .unwrap_or(ctx.metadata.loom.sandbox.command_confinement);
+    if confinement == CommandConfinement::Confined {
+        return match command.kind {
+            CommandKind::After(_) => CommandPolicy::AfterStageConfined,
+            _ => CommandPolicy::Confined,
+        };
+    }
+    if stage
+        .sandbox
+        .enabled
+        .unwrap_or(ctx.metadata.loom.sandbox.enabled)
+    {
+        CommandPolicy::Session
+    } else {
+        CommandPolicy::Unsandboxed
+    }
 }
 
 /// Call `visit` with each stage command and the argv (past assignments and
@@ -183,18 +274,38 @@ pub(super) fn stage_touches_dir(stage: &StageDefinition, dir: &str) -> bool {
         .files
         .iter()
         .chain(&stage.artifacts)
-        .any(|entry| entry_touches_dir(entry, dir))
+        .any(|entry| entry_touches_dir(&stage.working_dir, entry, dir))
 }
 
-fn entry_touches_dir(entry: &str, dir: &str) -> bool {
-    let (_, literal) = split_glob_entry(entry);
-    let literal = literal.trim_end_matches('/');
+fn entry_touches_dir(working_dir: &str, entry: &str, dir: &str) -> bool {
+    let (entry, literal) = split_glob_entry(entry);
+    let partial_component = literal.len() < entry.len() && !literal.ends_with('/');
+    let path = std::path::Path::new(working_dir).join(literal);
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(part) => {
+                let Some(part) = part.to_str() else {
+                    return false;
+                };
+                parts.push(part);
+            }
+            std::path::Component::CurDir => {}
+            _ => return false,
+        }
+    }
+    let literal = parts.join("/");
     // A glob with no literal prefix (`**`, `*`, `**/*.rs`) can create a path
     // anywhere, so it is an ancestor of every directory.
     if literal.is_empty() {
         return true;
     }
-    literal_names_or_nests_under(literal, dir) || dir.starts_with(&format!("{literal}/"))
+    literal == dir
+        || literal.starts_with(&format!("{dir}/"))
+        || dir.starts_with(&format!("{literal}/"))
+        // The first wildcard may complete a directory component, as in
+        // `src/cl*/**`. Conservatively count any compatible literal prefix.
+        || (partial_component && dir.starts_with(&literal))
 }
 
 /// Split a `files:`/`artifacts:` entry into (the entry without a leading

@@ -9,10 +9,6 @@
 //! `INDEX.md`, and left out the documents the question was actually about.
 //! Retrieving against a path whose file the session already holds is pure
 //! noise, so the token goes before retrieval ever sees it.
-//!
-//! Its own file rather than more of `user_prompt.rs`, which was already near
-//! the maintainability line limit — wired in the same `#[path]` idiom that
-//! file already uses for `user_prompt_compose.rs`.
 
 /// `prompt` with its `@`-prefixed file attachments removed, every other byte
 /// and every whitespace run left exactly where it was.

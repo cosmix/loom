@@ -4,7 +4,6 @@
 
 use serial_test::serial;
 use std::fs;
-use std::process::Command;
 
 use loom::git::worktree::{resolve_base_branch, ResolvedBase};
 
@@ -78,32 +77,16 @@ fn test_worktree_inherits_full_git_history() {
     let temp_dir = init_test_repo();
     let repo_root = temp_dir.path();
 
-    Command::new("git")
-        .args(["checkout", "-b", "loom/stage-a"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to checkout");
+    git_checked(repo_root, &["checkout", "-b", "loom/stage-a"]);
 
     for i in 1..=3 {
         let filename = format!("file{i}.txt");
         fs::write(repo_root.join(&filename), format!("Content {i}")).expect("Failed to write");
-        Command::new("git")
-            .args(["add", &filename])
-            .current_dir(repo_root)
-            .output()
-            .expect("Failed to add");
-        Command::new("git")
-            .args(["commit", "-m", &format!("Add {filename}")])
-            .current_dir(repo_root)
-            .output()
-            .expect("Failed to commit");
+        git_checked(repo_root, &["add", &filename]);
+        git_checked(repo_root, &["commit", "-m", &format!("Add {filename}")]);
     }
 
-    Command::new("git")
-        .args(["checkout", "main"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to checkout main");
+    git_checked(repo_root, &["checkout", "main"]);
 
     let mut graph = build_test_graph(vec![("stage-a", vec![]), ("stage-b", vec!["stage-a"])]);
 

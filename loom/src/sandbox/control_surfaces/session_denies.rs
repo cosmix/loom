@@ -12,6 +12,11 @@ use anyhow::{bail, Context, Result};
 use std::fs::DirEntry;
 use std::path::{Path, PathBuf};
 
+#[path = "session_denies_ref_store.rs"]
+mod ref_store;
+
+use ref_store::deny_reflogs_and_packed_refs;
+
 use super::{home_surfaces, push_unique, surface_path, GLOB_CHARS};
 use crate::codex::CODEX_PLUGIN_DATA_GRANT;
 use crate::git::worktree::partition_admin_dirs;
@@ -68,6 +73,12 @@ pub(crate) struct SessionDenies {
 pub(crate) fn session_denies(inputs: &DenyInputs<'_>) -> Result<SessionDenies> {
     let repo = inputs.repo_root;
     let mut denies = SessionDenies::default();
+    // The host creates future background-task files here. Their registered
+    // output inode is a receipt channel; sandboxed commands may only use the
+    // host's preopened stdout, never rewrite another task's channel by path.
+    for root in crate::models::forward_receipt::locator::default_task_output_roots() {
+        denies.absolute(&root, true)?;
+    }
     denies.absolute(&repo.join(".loom"), true)?;
     denies.relative(".loom");
     if inputs.state_root == repo.join(".work") {
@@ -81,9 +92,7 @@ pub(crate) fn session_denies(inputs: &DenyInputs<'_>) -> Result<SessionDenies> {
     for surface in inputs.plugin_entries.unwrap_or(&whole_plugins_dir[..]) {
         denies.home(surface);
     }
-    denies.absolute(&repo.join(".git").join("hooks"), true)?;
-    denies.absolute(&repo.join(".git").join("config"), false)?;
-    deny_worktree_admin_dirs(&mut denies, repo, inputs.worktree)?;
+    deny_git_controls(&mut denies, inputs)?;
     for dir in inputs.executable_dirs {
         if is_ancestor_of_writable_root(dir, repo, inputs.worktree, inputs.writable_roots) {
             continue;
@@ -108,6 +117,39 @@ pub(crate) fn session_denies(inputs: &DenyInputs<'_>) -> Result<SessionDenies> {
     Ok(denies)
 }
 
+fn deny_git_controls(denies: &mut SessionDenies, inputs: &DenyInputs<'_>) -> Result<()> {
+    let repo = inputs.repo_root;
+    let pointer = repo.join(".git");
+    let metadata = std::fs::symlink_metadata(&pointer);
+    let has_anchor = crate::git::worktree::main_identity_exists(inputs.state_root);
+    let identity = if has_anchor || metadata.as_ref().is_ok_and(|m| !m.is_dir()) {
+        Some(crate::git::worktree::WorktreeGit::pinned_main(repo)?)
+    } else {
+        None
+    };
+    let linked_checkout = identity
+        .as_ref()
+        .is_some_and(|git| git.is_linked_checkout());
+    if linked_checkout {
+        denies.absolute(&pointer, false)?;
+        push_unique(&mut denies.edit, edit_rule(".git", false));
+    }
+    if let Err(error) = metadata {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            return Err(error).context("cannot inspect checkout .git");
+        }
+    }
+    let git_control = identity
+        .as_ref()
+        .and_then(|git| git.common_dir_path())
+        .unwrap_or(&pointer);
+    denies.absolute(&git_control.join("hooks"), true)?;
+    denies.absolute(&git_control.join("config"), false)?;
+    denies.absolute(&git_control.join("config.worktree"), false)?;
+    deny_reflogs_and_packed_refs(denies, git_control, inputs.worktree)?;
+    deny_worktree_admin_dirs(denies, repo, git_control, inputs.worktree, linked_checkout)
+}
+
 /// Deny the administrative directories `<common dir>/worktrees/<name>` by
 /// their relation to the session at `worktree` ([`partition_admin_dirs`]).
 ///
@@ -118,16 +160,30 @@ pub(crate) fn session_denies(inputs: &DenyInputs<'_>) -> Result<SessionDenies> {
 /// stage's `HEAD`, `index`, `gitdir`, `logs/` or `config.worktree`. Nothing
 /// is denied beneath a directory denied here: bubblewrap cannot create a
 /// mount point inside a read-only bind, and a sibling directory vanishes
-/// when its stage merges. The common directory, `refs/` and the object
-/// store stay writable.
+/// when its stage merges. The common directory, `refs/` and the object store
+/// stay writable; its reflogs do not ([`deny_reflogs_and_packed_refs`]).
 fn deny_worktree_admin_dirs(
     denies: &mut SessionDenies,
     repo: &Path,
+    common: &Path,
     worktree: Option<&Path>,
+    linked_checkout: bool,
 ) -> Result<()> {
-    let admin = partition_admin_dirs(repo, worktree)?;
+    let own_worktree = worktree.or_else(|| linked_checkout.then_some(repo));
+    let admin = partition_admin_dirs(repo, own_worktree)?;
     if let Some(own) = &admin.own {
-        denies.absolute(&own.join("config.worktree"), false)?;
+        for name in ["config.worktree", "gitdir", "commondir"] {
+            denies.absolute(&own.join(name), false)?;
+        }
+        // The checkout's files, when they are not this session's: git writes
+        // through a link at either. A single-file deny lasts until the daemon
+        // replaces the file; `git::runner` looks again ahead of each command.
+        for name in ["HEAD", "index"] {
+            let path = common.join(name);
+            if std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file()) {
+                denies.absolute(&path, false)?;
+            }
+        }
     }
     for sibling in &admin.siblings {
         denies.absolute(sibling, true)?;
@@ -269,3 +325,11 @@ mod tests;
 #[cfg(test)]
 #[path = "tests_admin_dir_denies.rs"]
 mod tests_admin_dir_denies;
+
+#[cfg(test)]
+#[path = "tests_ref_store_denies.rs"]
+mod tests_ref_store_denies;
+
+#[cfg(test)]
+#[path = "tests_session_ref_moves.rs"]
+mod tests_session_ref_moves;

@@ -1,12 +1,12 @@
 //! Tests for hooks infrastructure
 
 use super::*;
-use crate::plan::schema::PermissionMode;
-use std::path::PathBuf;
 use tempfile::TempDir;
 
-fn test_config(hooks: PathBuf, work: PathBuf) -> HooksConfig {
-    HooksConfig::new(hooks, work, PermissionMode::AcceptEdits)
+/// Historical main-settings fixture used to test cleanup, not a session emitter.
+pub(crate) fn session_hook_fixture(hooks_dir: &std::path::Path) -> serde_json::Value {
+    serde_json::to_value(super::session_event_rules(hooks_dir, HookEvent::all()))
+        .expect("session hook rules are serializable")
 }
 
 mod config_tests {
@@ -50,58 +50,49 @@ mod config_tests {
         );
     }
 
+    /// One `*` rule per event, running that event's script unquoted when the
+    /// hooks directory needs no quoting.
     #[test]
-    fn test_hooks_config_new() {
-        let config = super::test_config(
-            PathBuf::from("/path/to/hooks"),
-            PathBuf::from("/path/to/.loom/work"),
-        );
-
-        assert_eq!(config.hooks_dir, PathBuf::from("/path/to/hooks"));
-        assert_eq!(config.work_dir, PathBuf::from("/path/to/.loom/work"));
-        assert_eq!(config.permission_mode, PermissionMode::AcceptEdits);
-    }
-
-    #[test]
-    fn test_hooks_config_script_path() {
-        let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
-
-        assert_eq!(
-            config.script_path(HookEvent::SessionStart),
-            PathBuf::from("/hooks/session-start.sh")
-        );
-        assert_eq!(
-            config.script_path(HookEvent::PreCompact),
-            PathBuf::from("/hooks/pre-compact.sh")
-        );
-    }
-
-    #[test]
-    fn test_hooks_config_build_command() {
-        let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
-
-        let cmd = config.build_command(HookEvent::SessionStart);
-        assert_eq!(cmd, "/hooks/session-start.sh");
-
-        let cmd = config.build_command(HookEvent::PostToolUse);
-        assert_eq!(cmd, "/hooks/post-tool-use.sh");
-    }
-
-    #[test]
-    fn test_hooks_config_to_settings_hooks() {
-        let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
-
-        let hooks = config.to_settings_hooks();
+    fn session_event_rules_register_each_events_script() {
+        let hooks = session_event_rules(std::path::Path::new("/hooks"), HookEvent::all());
         assert_eq!(hooks.len(), HookEvent::all().len());
 
         for &event in HookEvent::all() {
-            let rules = hooks
-                .get(&event.to_string())
-                .unwrap_or_else(|| panic!("missing hook rules for {event}"));
-            assert!(!rules.is_empty(), "{event} has no hook rules");
-            assert_eq!(rules[0].matcher, "*");
-            assert!(rules[0].hooks[0].command.ends_with(event.script_name()));
+            let rules = &hooks[&event.to_string()];
+            assert_eq!(rules.len(), 1, "{event}");
+            assert_eq!(rules[0].matcher, "*", "{event}");
+            assert_eq!(rules[0].hooks.len(), 1, "{event}");
+            assert_eq!(rules[0].hooks[0].hook_type, "command", "{event}");
+            assert_eq!(
+                rules[0].hooks[0].command,
+                format!("/hooks/{}", event.script_name())
+            );
         }
+    }
+
+    /// Claude Code hands a hook's command to a shell, so a home directory with
+    /// a space must still name one script.
+    #[test]
+    fn session_event_commands_run_from_a_hooks_dir_with_a_space() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new().unwrap();
+        let hooks_dir = dir.path().join("home with space/it's hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        let marker = dir.path().join("ran");
+        let script = hooks_dir.join(HookEvent::Stop.script_name());
+        std::fs::write(&script, format!("#!/bin/sh\n: >'{}'\n", marker.display())).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let rules = session_event_rules(&hooks_dir, &[HookEvent::Stop]);
+        let command = &rules["Stop"][0].hooks[0].command;
+        let status = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(command)
+            .status()
+            .unwrap();
+        assert!(status.success(), "{command}");
+        assert!(marker.exists(), "{command} did not run the script");
     }
 }
 

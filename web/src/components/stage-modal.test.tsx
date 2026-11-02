@@ -167,6 +167,7 @@ describe("stage modal", () => {
       id: stage.id,
       name: stage.name,
       label: "ADJUDICATING",
+      status: "needs-adjudication",
       command: null,
       command_when: null,
       alternatives: [],

@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use super::stash_report::{restore_remedy, spare_copy_remedy};
+pub use super::stash_report::{RollbackChanges, StashReapply};
 use crate::git::branch::branch_ref;
 use crate::git::runner::{run_git, run_git_checked};
 use crate::git::signing;
@@ -29,8 +31,8 @@ pub enum TreeMerge {
     Conflict { tree: String, paths: Vec<String> },
 }
 
-/// Why the target branch was not advanced. Nothing in the main checkout was
-/// changed when one of these is returned.
+/// Why the target branch was not advanced. `StashNotRestored` requires the
+/// operator to restore stashed checkout changes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MergeBlock {
@@ -46,8 +48,20 @@ pub enum MergeBlock {
     /// and git named no paths; `detail` is git's message on one line.
     FastForwardRefused { detail: String },
     /// The merge did not land and the operator's stashed changes could not
-    /// be put back: they are in the top stash entry and in `backup_ref`.
+    /// be put back: they are in `backup_ref`, and in a stash entry unless
+    /// something removed it.
     StashNotRestored { backup_ref: String },
+    /// The reset after stashing failed with the checkout still as it was, so
+    /// the merge did not land and the changes never left. The stash entry and
+    /// `backup_ref` are spare copies for the operator to remove.
+    StashResetRefused { backup_ref: String },
+    /// Rollback could not restore every removed untracked file. The blob in
+    /// `source_rev` remains available for manual recovery.
+    CheckoutRestoreIncomplete {
+        source_rev: String,
+        failures: Vec<RestoreFailure>,
+        changes: RollbackChanges,
+    },
     /// The target guard holds the target: it moved outside loom from
     /// `accepted` to `observed`, and merges into it wait for the operator.
     /// `accepted` is empty when the guard record could not be read, and
@@ -86,8 +100,18 @@ impl fmt::Display for MergeBlock {
             ),
             Self::StashNotRestored { backup_ref } => write!(
                 f,
-                "the merge did not land and your uncommitted changes could not be put back: they are in the top `git stash list` entry and in {backup_ref}; restore them with `git stash pop`"
+                "the merge did not land and your uncommitted changes could not be put back: they are in {backup_ref} and, unless it was removed, in a `git stash list` entry; {}",
+                restore_remedy(backup_ref)
             ),
+            Self::StashResetRefused { backup_ref } => write!(
+                f,
+                "the merge did not land because clearing the checkout failed before changing anything: your uncommitted changes are still in the checkout; {}",
+                spare_copy_remedy(backup_ref)
+            ),
+            Self::CheckoutRestoreIncomplete { source_rev, failures, changes } => {
+                write!(f, "the merge did not land and checkout rollback is incomplete ({}); recover the removed files from git revision {source_rev} after inspecting the listed paths", failures.iter().map(|failure| format!("{}: {}", failure.path, failure.reason)).collect::<Vec<_>>().join(", "))?;
+                changes.fmt_note(f)
+            }
             Self::TargetHeld {
                 target,
                 accepted,
@@ -95,6 +119,13 @@ impl fmt::Display for MergeBlock {
             } => fmt_target_held(f, target, accepted, observed),
         }
     }
+}
+
+/// One checkout path that rollback could not restore.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RestoreFailure {
+    pub path: String,
+    pub reason: String,
 }
 
 /// The operator text of [`MergeBlock::TargetHeld`]; an empty tip prints as
@@ -120,32 +151,6 @@ fn fmt_target_held(
             short(accepted),
             short(observed)
         )
-    }
-}
-
-/// What happened to the operator's stashed changes around a merge that landed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StashReapply {
-    /// Ref holding the stashed changes; kept after a restore as a backup.
-    pub backup_ref: String,
-    /// False when `stash pop --index` and `stash pop` both failed: the
-    /// changes stay in the stash entry and in `backup_ref`.
-    pub restored: bool,
-}
-
-impl StashReapply {
-    /// One sentence for the operator: where the stashed changes are.
-    pub fn notice(&self) -> String {
-        let backup_ref = &self.backup_ref;
-        if self.restored {
-            format!(
-                "uncommitted changes in the main checkout were stashed and reapplied around the merge; backup at {backup_ref}"
-            )
-        } else {
-            format!(
-                "the merge LANDED but your uncommitted changes in the main checkout could not be reapplied: they are in the top `git stash list` entry and in {backup_ref}; restore them with `git stash pop`"
-            )
-        }
     }
 }
 
@@ -206,7 +211,8 @@ pub fn commit_merge(repo: &Path, tree: &str, parents: [&str; 2], message: &str) 
 }
 
 /// A computed merge whose commit is written only when an advance needs it,
-/// so a blocked attempt leaves no unreachable commit behind.
+/// so preflight blocks leave no unreachable commit behind. A later raced
+/// ref update can still be refused after the commit is written.
 pub struct PendingMerge<'a> {
     repo: &'a Path,
     tree: String,
@@ -253,8 +259,8 @@ impl<'a> PendingMerge<'a> {
 /// `repo` is the operator's main checkout. Where the target is checked out
 /// decides the mechanism: nowhere, `update-ref` guarded by the old tip; in
 /// `repo`, a fast-forward that keeps the operator's uncommitted work; in
-/// another worktree, a block. The commit is written only on the paths that
-/// can advance.
+/// another worktree, a block. A ref update can be refused after commit creation
+/// if the target moves concurrently.
 pub fn advance_target(
     repo: &Path,
     target: &str,

@@ -5,7 +5,6 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::git::branch::{branch_name_for_stage, get_branch_head};
-use crate::git::runner::run_git_checked;
 use crate::models::stage::{Stage, StageType};
 
 pub const STAGE_ENVIRONMENT_POLICY: &str = "stage-host-allowlist-v2";
@@ -84,7 +83,8 @@ pub fn stage_head_commit(stage_id: &str, repo_root: &Path) -> Result<String> {
 }
 
 pub fn worktree_head_commit(worktree: &Path) -> Result<String> {
-    let commit = run_git_checked(&["rev-parse", "HEAD"], worktree)?;
+    let git = crate::verify::review::fingerprint::checkout_git(worktree)?;
+    let commit = git.run_checked(&["rev-parse", "HEAD"])?;
     validated_commit(commit.trim())
 }
 

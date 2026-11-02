@@ -103,9 +103,10 @@ fn render_span(item: &ContextItem) -> Option<String> {
     })
 }
 
-/// A fenced, escape-proof excerpt block.
+/// A fenced excerpt with terminal controls neutralized.
 pub(crate) fn render_excerpt_block(excerpt: &str) -> String {
-    let fence = fence_for(excerpt);
+    let excerpt = terminal_safe(excerpt);
+    let fence = fence_for(&excerpt);
     format!("{fence}text\n{excerpt}\n{fence}\n")
 }
 
@@ -360,3 +361,7 @@ pub(crate) fn rendered_chrome_tokens<'a>(
 
     estimate_tokens(&chrome)
 }
+
+#[cfg(test)]
+#[path = "render_tests.rs"]
+mod excerpt_tests;

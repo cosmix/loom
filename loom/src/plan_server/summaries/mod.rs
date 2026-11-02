@@ -69,11 +69,8 @@ pub fn install(ctx: &Arc<PlanContext>) {
     }
     spawn_tick(ctx, &rebuilds);
     let stop = Arc::new(AtomicBool::new(false));
-    // Detached: the shutdown hook and `PollerStop` end it within one poll slice.
-    drop(spawn_quota_poller(
-        ctx.runtime().dir.clone(),
-        Arc::clone(&stop),
-    ));
+    let poller = spawn_quota_poller(ctx.runtime().dir.clone(), Arc::clone(&stop));
+    ctx.own_worker("summary quota poller", poller, Some(Arc::clone(&stop)));
     ctx.extensions()
         .insert(Arc::new(PollerStop(Arc::clone(&stop))));
     register_shutdown(ctx, &rebuilds, stop);
@@ -126,15 +123,16 @@ fn follow_engine(concept: &ConceptState, rebuilds: &Arc<Rebuilds>) {
 }
 
 fn spawn_tick(ctx: &Arc<PlanContext>, rebuilds: &Arc<Rebuilds>) {
-    let (ctx, rebuilds) = (Arc::downgrade(ctx), Arc::downgrade(rebuilds));
+    let (weak, rebuilds) = (Arc::downgrade(ctx), Arc::downgrade(rebuilds));
     let spawned = thread::Builder::new()
         .name("loom-plan-summaries".into())
-        .spawn(move || run_ticks(&ctx, &rebuilds));
-    if let Err(error) = spawned {
-        let why = safe(&error.to_string());
-        line(&format!(
-            "summaries: no tick thread, stalls go unnoticed: {why}"
-        ));
+        .spawn(move || run_ticks(&weak, &rebuilds));
+    match spawned {
+        Ok(worker) => ctx.own_worker("summary tick", worker, None),
+        Err(error) => line(&format!(
+            "summaries: no tick thread, stalls go unnoticed: {}",
+            safe(&error.to_string())
+        )),
     }
 }
 

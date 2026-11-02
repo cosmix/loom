@@ -1,14 +1,16 @@
 //! Applies forwarding-job evidence after structural transcript classification.
 
-use std::path::Path;
-
 use super::super::forward_jobs::{
     self, ForwardEvidence, ForwardIndex, ForwardOverlay, FORWARDER_TYPE,
 };
 use super::super::summary;
 use super::{DoneEvidence, SubagentState, SubagentSummary};
 
-pub(super) fn apply(summary: &mut SubagentSummary, index: &ForwardIndex, transcript: &Path) {
+pub(super) fn apply(
+    summary: &mut SubagentSummary,
+    index: &ForwardIndex,
+    transcript: &super::super::forward_jobs_transcript::ForwardTranscript,
+) {
     let Some(evidence) = forward_jobs::evidence_for_agent(index, &summary.agent_id, transcript)
     else {
         return;

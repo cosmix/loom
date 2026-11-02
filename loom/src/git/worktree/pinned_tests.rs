@@ -17,10 +17,15 @@ fn repository() -> (TempDir, PathBuf, PathBuf) {
 }
 
 /// The git directory `repo` reports, as an absolute path.
-fn git_dir(repo: &WorktreeGit) -> PathBuf {
-    let output = repo.run(&["rev-parse", "--absolute-git-dir"]).unwrap();
-    assert!(output.status.success(), "{output:?}");
-    PathBuf::from(String::from_utf8(output.stdout).unwrap().trim())
+/// The directory the pin names, confirmed against what git itself reads: a
+/// command runs with a private directory, so `rev-parse --absolute-git-dir`
+/// names that, and the real one is known by the `HEAD` git reports.
+fn git_dir(pinned: &WorktreeGit) -> PathBuf {
+    let real = pinned.git_dir_path().unwrap().to_path_buf();
+    let head = pinned.run_checked(&["symbolic-ref", "HEAD"]).unwrap();
+    let recorded = std::fs::read_to_string(real.join("HEAD")).unwrap();
+    assert_eq!(format!("ref: {head}"), recorded);
+    real
 }
 
 fn registered_git_dir(repo: &Path) -> PathBuf {
@@ -28,6 +33,38 @@ fn registered_git_dir(repo: &Path) -> PathBuf {
         .join(STAGE)
         .canonicalize()
         .unwrap()
+}
+
+#[test]
+fn main_checkout_uses_its_real_git_directory() {
+    let (_tmp, repo, _worktree) = repository();
+    let pinned = WorktreeGit::pinned_main(&repo).unwrap();
+    assert_eq!(git_dir(&pinned), repo.join(".git").canonicalize().unwrap());
+    assert!(pinned
+        .run(&["status", "--porcelain"])
+        .unwrap()
+        .status
+        .success());
+}
+
+#[test]
+fn linked_operator_checkout_uses_its_registered_directories() {
+    let (_tmp, repo, worktree) = repository();
+    let pinned = WorktreeGit::pinned_main(&worktree).unwrap();
+    assert_eq!(git_dir(&pinned), registered_git_dir(&repo));
+    assert!(pinned
+        .run(&["status", "--porcelain"])
+        .unwrap()
+        .status
+        .success());
+}
+
+#[test]
+fn main_checkout_refuses_a_git_pointer() {
+    let (_tmp, _repo, worktree) = repository();
+    let marker = plant_foreign_git_dir(&worktree);
+    assert!(WorktreeGit::pinned_main(&worktree).is_err());
+    assert!(!marker.exists());
 }
 
 #[test]

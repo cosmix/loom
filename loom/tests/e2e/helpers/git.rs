@@ -2,8 +2,10 @@
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+#[path = "../../test_support/mod.rs"]
+mod test_support;
 use tempfile::TempDir;
+pub(crate) use test_support::{git_checked, write_main_checkout_identity};
 
 /// Creates a temporary git repository with initial commit
 ///
@@ -11,38 +13,7 @@ use tempfile::TempDir;
 pub fn create_temp_git_repo() -> Result<TempDir> {
     let temp = TempDir::new().context("Failed to create temp directory")?;
 
-    Command::new("git")
-        .args(["init"])
-        .current_dir(temp.path())
-        .output()
-        .context("Failed to run git init")?;
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(temp.path())
-        .output()
-        .context("Failed to set git user.email")?;
-
-    Command::new("git")
-        .args(["config", "user.name", "Test User"])
-        .current_dir(temp.path())
-        .output()
-        .context("Failed to set git user.name")?;
-
-    std::fs::write(temp.path().join("README.md"), "# Test Repository\n")
-        .context("Failed to write README.md")?;
-
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(temp.path())
-        .output()
-        .context("Failed to git add")?;
-
-    Command::new("git")
-        .args(["commit", "-m", "Initial commit"])
-        .current_dir(temp.path())
-        .output()
-        .context("Failed to git commit")?;
+    test_support::init_git_repo(temp.path());
 
     Ok(temp)
 }

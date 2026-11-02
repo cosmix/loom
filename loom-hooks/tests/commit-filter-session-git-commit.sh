@@ -86,8 +86,33 @@ expect_exit "loom stage commit with an attribution trailer is blocked" \
 	2 "$(plain_payload 'loom stage commit s1 -m "feat(x): y" -m "Co-Authored-By: Claude <noreply@anthropic.com>"')" "${SESSION[@]}"
 
 # --- a subagent never commits, with either command --------------------------
+expect_exit "git -C commit by a subagent is blocked" \
+	2 "$(subagent_payload 'git -C . commit -m x')" LOOM_MAIN_AGENT_PID=$$
+for command in 'git cat-file commit HEAD' 'git log --grep commit'; do
+	expect_exit "subagent read $command is allowed" \
+		0 "$(subagent_payload "$command")" LOOM_MAIN_AGENT_PID=$$
+done
 expect_exit "loom stage commit by a subagent is blocked" \
 	2 "$(subagent_payload 'loom stage commit s1 -m "feat(x): y"')" LOOM_MAIN_AGENT_PID=$$
 expect_stderr_has "subagent block" 'loom stage commit'
+
+# --- every git global option that takes a separate value ---------------------
+# Reading the value as the subcommand would let the real `commit` through every
+# gate. `-c x=y` beside it proves the scan keeps walking after the value.
+for prefix in '--attr-source HEAD' '--config-env core.editor=EDITOR' '--git-dir .git' \
+	'--work-tree .' '--namespace ns' '-c x=y --attr-source HEAD'; do
+	expect_exit "git $prefix commit in a stage session is blocked" \
+		2 "$(plain_payload "git $prefix commit -m x")" "${SESSION[@]}"
+	expect_exit "git $prefix commit by a subagent is blocked" \
+		2 "$(subagent_payload "git $prefix commit -m x")" LOOM_MAIN_AGENT_PID=$$
+done
+# The joined spellings hold their value in one word.
+expect_exit "git --attr-source=HEAD commit in a stage session is blocked" \
+	2 "$(plain_payload 'git --attr-source=HEAD commit -m x')" "${SESSION[@]}"
+# `commit` as the option's value is not the subcommand.
+expect_exit "git --attr-source commit status in a stage session is allowed" \
+	0 "$(plain_payload 'git --attr-source commit status')" "${SESSION[@]}"
+expect_exit "git --attr-source HEAD with an attribution trailer is blocked" \
+	2 "$(plain_payload 'git --attr-source HEAD commit -m "x" -m "Co-Authored-By: Claude <noreply@anthropic.com>"')"
 
 echo "PASS: commit-filter-session-git-commit"

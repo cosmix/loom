@@ -100,6 +100,6 @@ fn pinned_commands_drop_every_variable_that_redirects_git() {
 
     for variable in REPO_REDIRECT_ENV {
         assert!(pinned.iter().any(|name| name == variable), "{variable}");
-        assert!(!plain.iter().any(|name| name == variable), "{variable}");
+        assert!(plain.iter().any(|name| name == variable), "{variable}");
     }
 }

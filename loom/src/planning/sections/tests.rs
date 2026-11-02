@@ -77,9 +77,9 @@ fn tilde_fence_closes_only_on_a_long_enough_run() {
 }
 
 #[test]
-fn unclosed_fence_degrades_to_fence_unaware() {
+fn unclosed_fence_keeps_headings_masked() {
     let s = sections_of("# T\n```\n## Inside\ntext\n");
-    assert_eq!(layout(&s), [("t", 0, 4), ("inside", 2, 4)]);
+    assert_eq!(layout(&s), [("t", 0, 4)]);
 }
 
 #[test]

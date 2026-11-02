@@ -17,17 +17,37 @@ fn test_build_execution_graph_no_config() {
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("No active plan"));
+    assert!(build_execution_graph(work_dir.root())
+        .unwrap_err()
+        .to_string()
+        .contains("No active plan"));
 }
 
 #[test]
 fn test_build_execution_graph_from_config() {
     let temp_dir = TempDir::new().unwrap();
-    let (_plan_path, work_dir) = setup_work_dir_with_plan(&temp_dir);
+    let (plan_path, work_dir) = setup_work_dir_with_plan(&temp_dir);
 
-    let result = build_execution_graph(&work_dir);
-
-    assert!(result.is_ok());
-    let (_graph, _sandbox) = result.unwrap();
+    fs::write(
+        work_dir.root().join("config.toml"),
+        format!(
+            "[plan]\nsource_path = \"{}\"\n[plan_sandbox]\nenabled = false\n",
+            plan_path.display()
+        ),
+    )
+    .unwrap();
+    let (graph, sandbox) = build_execution_graph(&work_dir).unwrap();
+    let (path_graph, path_sandbox) = build_execution_graph(work_dir.root()).unwrap();
+    assert_eq!(graph.all_nodes().len(), 1);
+    assert_eq!(
+        serde_json::to_value(graph).unwrap(),
+        serde_json::to_value(path_graph).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(&sandbox).unwrap(),
+        serde_json::to_value(path_sandbox).unwrap()
+    );
+    assert!(!sandbox.enabled);
 }
 
 #[test]
@@ -44,6 +64,42 @@ fn test_build_execution_graph_missing_plan_file() {
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("not found"));
+    assert!(build_execution_graph(work_dir.root())
+        .unwrap_err()
+        .to_string()
+        .contains("not found"));
+}
+
+#[test]
+fn graph_loader_inputs_agree_when_stage_directory_is_missing() {
+    let temp_dir = TempDir::new().unwrap();
+    let (_plan_path, work_dir) = setup_work_dir_with_plan(&temp_dir);
+    fs::remove_dir_all(work_dir.stages_dir()).unwrap();
+
+    let (graph, sandbox) = build_execution_graph(&work_dir).unwrap();
+    let (path_graph, path_sandbox) = build_execution_graph(work_dir.root()).unwrap();
+    assert_eq!(
+        serde_json::to_value(graph).unwrap(),
+        serde_json::to_value(path_graph).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(sandbox).unwrap(),
+        serde_json::to_value(path_sandbox).unwrap()
+    );
+}
+
+#[test]
+fn graph_loader_inputs_reject_missing_persisted_stage() {
+    let temp_dir = TempDir::new().unwrap();
+    let (_plan_path, work_dir) = setup_work_dir_with_plan(&temp_dir);
+    fs::remove_file(work_dir.stages_dir().join("test-stage.md")).unwrap();
+
+    for error in [
+        build_execution_graph(&work_dir).unwrap_err(),
+        build_execution_graph(work_dir.root()).unwrap_err(),
+    ] {
+        assert!(error.to_string().contains("Persisted stages do not match"));
+    }
 }
 
 #[test]

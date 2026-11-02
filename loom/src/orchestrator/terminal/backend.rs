@@ -135,11 +135,10 @@ impl SessionBackend {
         spawn_native(native, session)
     }
 
-    /// Shared spawn dispatcher: dispatches on the CONFIGURED lane only — no
-    /// availability probe ever swaps it for the other lane. A configured tmux
-    /// backend with no `tmux` on PATH, or whose spawn fails, returns `Err`
-    /// straight to the caller; nothing is written to disk and no native retry
-    /// is attempted.
+    /// Dispatch on the configured lane. A missing tmux executable or failed
+    /// tmux spawn returns an error to the caller. A failure after launch
+    /// preparation may leave generated wrapper or settings files for the
+    /// normal cleanup path.
     fn dispatch_spawn(
         &self,
         session: Session,

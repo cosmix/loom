@@ -65,6 +65,68 @@ fn human_review_force_completes_knowledge_without_a_branch() {
     );
 }
 
+/// A knowledge stage owned by a session, with the trusted starting commit the
+/// daemon records for that session before it spawns.
+fn knowledge_stage_with_baseline(repo: &Path, work_dir: &Path) -> crate::models::stage::Stage {
+    let mut stage = create_test_stage("knowledge-stage", StageStatus::Executing);
+    stage.stage_type = StageType::Knowledge;
+    stage.session = Some("knowledge-session".to_string());
+    crate::verify::completion::knowledge_baseline::capture(
+        work_dir,
+        repo,
+        "knowledge-session",
+        None,
+    )
+    .unwrap();
+    stage
+}
+
+/// A knowledge stage without a session is refused, and each way out the
+/// refusal names works: --no-verify from Executing, retry and --force-unsafe
+/// from Blocked, where --no-verify is not allowed.
+#[test]
+#[serial]
+fn a_sessionless_knowledge_stage_is_refused_with_recoveries_that_work() {
+    use crate::commands::stage::knowledge_complete::complete_knowledge_stage as finish;
+
+    let temp = setup_work_dir();
+    initialize_zero_commit_repo(temp.path());
+    let work_dir = temp.path().join(".loom/work");
+    let _guard = EnvGuard::new();
+    std::env::set_current_dir(temp.path()).unwrap();
+    let knowledge_at = |id: &str, status: StageStatus| {
+        let mut stage = create_test_stage(id, status);
+        stage.stage_type = StageType::Knowledge;
+        save_test_stage(&work_dir, &stage);
+    };
+    let status = |id: &str| load_stage(id, &work_dir).unwrap().status;
+
+    knowledge_at("running", StageStatus::Executing);
+    let refusal = format!("{:#}", finish("running", None, false, false).unwrap_err());
+    assert!(refusal.contains("loom stage retry running"), "{refusal}");
+    assert!(
+        refusal.contains("complete running --no-verify"),
+        "{refusal}"
+    );
+    assert!(
+        refusal.contains("complete running --force-unsafe"),
+        "{refusal}"
+    );
+    assert_eq!(status("running"), StageStatus::Executing);
+    finish("running", None, true, false).unwrap();
+    assert_eq!(status("running"), StageStatus::Completed);
+
+    knowledge_at("blocked", StageStatus::Blocked);
+    finish("blocked", None, true, false).unwrap_err();
+    assert_eq!(status("blocked"), StageStatus::Blocked);
+    finish("blocked", None, false, true).unwrap();
+    assert_eq!(status("blocked"), StageStatus::Completed);
+
+    knowledge_at("retried", StageStatus::Blocked);
+    crate::commands::stage::retry("retried".to_string(), false, None).unwrap();
+    assert_eq!(status("retried"), StageStatus::Queued);
+}
+
 #[test]
 #[serial]
 fn test_complete_knowledge_stage_sets_merged_true() {
@@ -73,8 +135,7 @@ fn test_complete_knowledge_stage_sets_merged_true() {
     let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     // Create a knowledge stage (no acceptance criteria)
-    let mut stage = create_test_stage("knowledge-stage", StageStatus::Executing);
-    stage.stage_type = StageType::Knowledge;
+    let stage = knowledge_stage_with_baseline(temp_dir.path(), &work_dir_path);
     save_test_stage(&work_dir_path, &stage);
 
     let _guard = EnvGuard::new();
@@ -101,8 +162,7 @@ fn test_complete_knowledge_stage_with_passing_acceptance() {
     let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     // Create a knowledge stage with passing acceptance criteria
-    let mut stage = create_test_stage("knowledge-stage", StageStatus::Executing);
-    stage.stage_type = StageType::Knowledge;
+    let mut stage = knowledge_stage_with_baseline(temp_dir.path(), &work_dir_path);
     stage.acceptance = vec![AcceptanceCriterion::Simple("exit 0".to_string())];
     save_test_stage(&work_dir_path, &stage);
 
@@ -157,8 +217,7 @@ fn test_complete_knowledge_stage_triggers_dependents() {
     let work_dir_path = temp_dir.path().join(".loom").join("work");
 
     // Create a knowledge stage
-    let mut knowledge_stage = create_test_stage("knowledge-stage", StageStatus::Executing);
-    knowledge_stage.stage_type = StageType::Knowledge;
+    let knowledge_stage = knowledge_stage_with_baseline(temp_dir.path(), &work_dir_path);
     save_test_stage(&work_dir_path, &knowledge_stage);
 
     // Create a dependent stage waiting for the knowledge stage

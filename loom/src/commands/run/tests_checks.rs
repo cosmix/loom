@@ -22,3 +22,15 @@ fn format_search_tools_warning_names_both() {
     assert!(warning.contains("rg (ripgrep)"));
     assert!(warning.contains("fd"));
 }
+
+#[test]
+fn repository_preparation_requires_identity_before_bootstrap() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let error = super::checks::prepare_repo_for_run(temp.path()).unwrap_err();
+    assert!(
+        format!("{error:#}").contains("checkout identity"),
+        "{error:#}"
+    );
+    assert!(!temp.path().join(".git").exists());
+    assert!(!temp.path().join("README.md").exists());
+}

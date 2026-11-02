@@ -7,13 +7,11 @@ use anyhow::{bail, Result};
 
 use super::types::SignalContent;
 
-/// Expected `## ` section headers across every signal kind written to
-/// `signals/<session-id>.md` (standard/knowledge/integration-verify/distill
-/// stage signals, recovery signals, merge and merge-conflict signals). Kept
-/// exhaustive rather than just the common path: this list only suppresses the
-/// "unexpected section" warning below (see the `Context`/`Handoff`/prefix
-/// exemptions there for sections not listed here), so a missing entry is
-/// silent false-positive noise on every signal of that kind, not a failure.
+/// Structural `## ` section headers emitted by the signal kinds written to
+/// `signals/<session-id>.md`: stage, contract, recovery and merge signals. This
+/// list only suppresses the "unexpected section" warning below (see the
+/// `Context`/`Handoff`/prefix exemptions there for sections not listed here), so
+/// a missing entry is a false warning on that kind of signal, never a failure.
 pub(super) const EXPECTED_SECTIONS: &[&str] = &[
     "Worktree Context",
     "Target",
@@ -40,13 +38,24 @@ pub(super) const EXPECTED_SECTIONS: &[&str] = &[
     "Sandbox Restrictions",
     "Subagent Response Budget",
     "Knowledge Brief",
-    "Section Title",
     "Review Dimensions",
+    "Protected Paths",
+    "Why the Last Merge Attempt Failed",
     "Cross-Stage Changes",
     super::generate::DEPENDENCY_FINDINGS_HEADING,
     "Goal-Backward Verification",
     "Adjudicator Feedback (from your prior dispute)",
     "Merge Resolver Handback",
+    "Contracts",
+    "Harness",
+    "Scaffold",
+    "Language Skills",
+    "Your Job",
+    "Adjudicator Feedback (from the refused freeze)",
+    "Frozen Contracts",
+    "Review Gate",
+    "Reviewer Suggestions",
+    "Unimplemented Suggestions",
 ];
 
 /// Required sections that must be present
@@ -56,9 +65,11 @@ const REQUIRED_SECTIONS: &[&str] = &["Target"];
 fn validate_signal_format(content: &str, session_id: &str) {
     let mut found_sections: Vec<&str> = Vec::new();
 
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if let Some(section) = trimmed.strip_prefix("## ") {
+    for (_, outside_fence, heading) in super::helpers::signal_sections(content) {
+        if !outside_fence {
+            continue;
+        }
+        if let Some((2, section)) = heading {
             found_sections.push(section);
         }
     }
@@ -96,7 +107,7 @@ fn validate_signal_format(content: &str, session_id: &str) {
 /// Validate a field line matches expected format
 fn validate_field_format(line: &str, section: &str, session_id: &str) {
     // Check Target section field format
-    if section == "Target" && line.starts_with("- ") && !line.starts_with("- **") {
+    if section == "Target" && line.starts_with("- ") && !line.contains(':') {
         eprintln!(
             "Warning: Signal file for session '{session_id}' has invalid Target field format: '{line}'. Expected '- **Field**: value'"
         );
@@ -130,27 +141,29 @@ pub fn parse_signal_content(session_id: &str, content: &str) -> Result<SignalCon
     let mut acceptance_criteria = Vec::new();
     let mut context_files = Vec::new();
     let mut files_to_modify = Vec::new();
-
     let mut current_section = "";
 
-    for line in content.lines() {
+    for (line, outside_fence, heading) in super::helpers::signal_sections(content) {
         let trimmed = line.trim();
 
-        if trimmed.starts_with("## ") {
-            current_section = trimmed.trim_start_matches("## ");
+        if let Some((2, section)) = heading {
+            current_section = section;
             continue;
         }
 
         // Validate field format within known sections
-        if !trimmed.is_empty() && !current_section.is_empty() {
+        if outside_fence && !trimmed.is_empty() && !current_section.is_empty() {
             validate_field_format(trimmed, current_section, session_id);
         }
 
+        if !outside_fence && current_section != "Assignment" {
+            continue;
+        }
         match current_section {
             "Target" => {
-                if let Some(id) = trimmed.strip_prefix("- **Stage**: ") {
+                if let Some(id) = super::helpers::field_value(trimmed, "Stage") {
                     stage_id = id.to_string();
-                } else if let Some(pid) = trimmed.strip_prefix("- **Plan**: ") {
+                } else if let Some(pid) = super::helpers::field_value(trimmed, "Plan") {
                     // Strip the plan ID suffix if present (handles both old and new formats)
                     let clean_pid = pid
                         .strip_suffix(" (reference only - content embedded below)")
@@ -175,10 +188,8 @@ pub fn parse_signal_content(session_id: &str, content: &str) -> Result<SignalCon
                 }
             }
             "Immediate Tasks" => {
-                if let Some(task) = trimmed.strip_prefix(|c: char| c.is_ascii_digit()) {
-                    if let Some(t) = task.strip_prefix(". ") {
-                        tasks.push(t.to_string());
-                    }
+                if let Some(task) = super::helpers::numbered_item(trimmed) {
+                    tasks.push(task.to_string());
                 }
             }
             "Acceptance Criteria" => {
@@ -235,6 +246,18 @@ pub fn parse_signal_content(session_id: &str, content: &str) -> Result<SignalCon
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_long_task_list_and_ignores_fenced_structure() {
+        let tasks = (1..=12)
+            .map(|i| format!("{i}. task {i}\n"))
+            .collect::<String>();
+        let content = format!("# Signal\n## Target\n- Stage: mine\n## Assignment\nExample:\n```md\n## Target\n- **Stage**: wrong\n## Acceptance Criteria\n- [ ] wrong\n```\n## Immediate Tasks\n{tasks}");
+        let parsed = parse_signal_content("s", &content).unwrap();
+        assert_eq!(parsed.stage_id, "mine");
+        assert_eq!(parsed.tasks.len(), 12);
+        assert!(parsed.acceptance_criteria.is_empty());
+    }
 
     #[test]
     fn test_parse_valid_signal() {

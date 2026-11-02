@@ -45,7 +45,7 @@ pub(super) fn report(
     out: &mut dyn Write,
 ) -> Result<()> {
     let text = match outcome {
-        WaitOutcome::Requested => return Ok(()),
+        WaitOutcome::Requested { .. } => return Ok(()),
         WaitOutcome::Refused(reason) => {
             refusal(out, site.kind, head, reason)?;
             return Ok(());

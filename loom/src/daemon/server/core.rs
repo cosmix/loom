@@ -1,10 +1,11 @@
 //! Core DaemonServer struct and constructors.
 
+use super::super::deadline_transport::DeadlineStream;
 use super::super::protocol::DaemonConfig;
 use super::super::SOCKET_FILE;
+use super::client::Subscriber;
 use super::lock::{inspect_lock, read_persisted_identity, LockState};
 use super::storage::remove_control_file;
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -13,15 +14,20 @@ use std::time::Duration;
 pub(super) const CLIENT_WORKERS: usize = 8;
 pub(super) const CLIENT_QUEUE_CAPACITY: usize = 16;
 pub(super) const MAX_IN_FLIGHT_REQUEST_BYTES: usize = 512 * 1024;
+/// How long a status probe waits for the socket. A listener with room in its
+/// backlog completes a connect at once, whether or not it is accepting; only a
+/// full backlog waits, and a blocking connect there would never return.
+const STATUS_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Daemon status indicating process and socket state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DaemonStatus {
     /// Daemon process not found
     NotRunning,
-    /// Daemon process running and socket responsive
+    /// Singleton lock held and socket connection accepted (no health probe).
     Running,
-    /// Daemon process exists but socket unreachable or unresponsive (hung state)
+    /// Socket connection failed, or was not accepted within the probe's bound,
+    /// under a held lock; or lock state is indeterminate.
     ProcessOnly,
     /// The singleton flock proves a daemon owns this `.loom/work/`, but this
     /// process could not `connect()` to its socket because AF_UNIX socket
@@ -62,8 +68,8 @@ pub struct DaemonServer {
     pub(super) work_dir: PathBuf,
     pub(super) config: DaemonConfig,
     pub(super) shutdown_flag: Arc<AtomicBool>,
-    pub(super) status_subscribers: Arc<Mutex<Vec<UnixStream>>>,
-    pub(super) log_subscribers: Arc<Mutex<Vec<UnixStream>>>,
+    pub(super) status_subscribers: Arc<Mutex<Vec<Subscriber>>>,
+    pub(super) log_subscribers: Arc<Mutex<Vec<Subscriber>>>,
     /// Set to `true` only after this process has acquired the singleton flock
     /// AND bound the socket. `Drop::cleanup()` is gated on this so a daemon that
     /// loses the singleton race (or fails before bind) never deletes the live
@@ -114,46 +120,45 @@ impl DaemonServer {
     /// * `work_dir` - The .loom/work/ directory path
     ///
     /// # Returns
-    /// `DaemonStatus` indicating whether the daemon is running and responsive
+    /// `DaemonStatus` describing singleton ownership and socket connectivity.
     pub fn check_status(work_dir: &Path) -> DaemonStatus {
         let socket_path = crate::daemon::socket_path(work_dir);
         match inspect_lock(work_dir) {
-            LockState::Held(_) => match UnixStream::connect(&socket_path) {
-                Ok(stream) => {
-                    let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
-                    DaemonStatus::Running
+            LockState::Held(_) => {
+                match DeadlineStream::connect(&socket_path, STATUS_CONNECT_TIMEOUT) {
+                    Ok(_) => DaemonStatus::Running,
+                    Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                        // Sandboxed callers (e.g. this process running inside
+                        // Claude Code's Bash tool) have AF_UNIX socket syscalls
+                        // denied outright, so the connect fails either
+                        // at socket() creation or at connect() itself — POSIX
+                        // doesn't guarantee which, but both surface as
+                        // `PermissionDenied` here and mean the identical thing:
+                        // the daemon is fine, this process just cannot reach it.
+                        // The flock already proved a live daemon owns this state
+                        // (we are in the `LockState::Held` arm), so trust that
+                        // over the failed connect.
+                        //
+                        // Deliberately NOT corroborating with
+                        // `socket_path.exists()`: a sandbox that denies
+                        // `connect()` may or may not also deny `stat`/`lstat` on
+                        // the same path, so a failed `exists()` here would prove
+                        // nothing (the socket can still be there) and a
+                        // successful one adds no confidence that `connect` would
+                        // ever succeed from this process. Classify by error kind
+                        // alone and never let this downgrade back to
+                        // `ProcessOnly`.
+                        DaemonStatus::Unreachable
+                    }
+                    // A session whose stage is granted every Unix socket sees the
+                    // socket masked by `/dev/null`: refused, like a dead listener,
+                    // but by something that is not a socket.
+                    Err(e) if super::super::rpc::refused_by_mask(&e, &socket_path) => {
+                        DaemonStatus::Unreachable
+                    }
+                    Err(_) => DaemonStatus::ProcessOnly,
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                    // Sandboxed callers (e.g. this process running inside
-                    // Claude Code's Bash tool) have AF_UNIX socket syscalls
-                    // denied outright, so `UnixStream::connect` fails either
-                    // at socket() creation or at connect() itself — POSIX
-                    // doesn't guarantee which, but both surface as
-                    // `PermissionDenied` here and mean the identical thing:
-                    // the daemon is fine, this process just cannot reach it.
-                    // The flock already proved a live daemon owns this state
-                    // (we are in the `LockState::Held` arm), so trust that
-                    // over the failed connect.
-                    //
-                    // Deliberately NOT corroborating with
-                    // `socket_path.exists()`: a sandbox that denies
-                    // `connect()` may or may not also deny `stat`/`lstat` on
-                    // the same path, so a failed `exists()` here would prove
-                    // nothing (the socket can still be there) and a
-                    // successful one adds no confidence that `connect` would
-                    // ever succeed from this process. Classify by error kind
-                    // alone and never let this downgrade back to
-                    // `ProcessOnly`.
-                    DaemonStatus::Unreachable
-                }
-                // A session whose stage is granted every Unix socket sees the
-                // socket masked by `/dev/null`: refused, like a dead listener,
-                // but by something that is not a socket.
-                Err(e) if super::super::rpc::refused_by_mask(&e, &socket_path) => {
-                    DaemonStatus::Unreachable
-                }
-                Err(_) => DaemonStatus::ProcessOnly,
-            },
+            }
             LockState::Free(guard) => {
                 if let Some(guard) = guard {
                     cleanup_stale_control_files(work_dir);
@@ -171,7 +176,7 @@ impl DaemonServer {
     /// * `work_dir` - The .loom/work/ directory path
     ///
     /// # Returns
-    /// `true` if a daemon is running (either responsive or hung), `false` otherwise
+    /// `true` if a daemon may own the singleton lock, `false` otherwise.
     pub fn is_running(work_dir: &Path) -> bool {
         daemon_running_from_status(Self::check_status(work_dir))
     }
@@ -199,13 +204,7 @@ impl DaemonServer {
 }
 
 fn cleanup_stale_control_files(work_dir: &Path) {
-    for relative in [
-        SOCKET_FILE,
-        "orchestrator.pid",
-        "admin.token",
-        "user.token",
-        "orchestrator.complete",
-    ] {
+    for relative in [SOCKET_FILE, "orchestrator.pid", "admin.token", "user.token"] {
         let _ = remove_control_file(work_dir, Path::new(relative));
     }
 }
@@ -224,10 +223,17 @@ mod tests {
         std::fs::write(&key, "persistent-key").unwrap();
         std::fs::write(temp.path().join("admin.token"), "rotating-token").unwrap();
 
+        let outcome = temp.path().join("orchestrator.complete");
+        std::fs::write(&outcome, "terminal outcome").unwrap();
+
         cleanup_stale_control_files(temp.path());
 
         assert!(key.exists());
         assert!(!temp.path().join("admin.token").exists());
+        assert!(
+            outcome.exists(),
+            "a status probe must keep the last outcome"
+        );
     }
 
     /// A non-socket at the socket path under a held lock is a sandbox's

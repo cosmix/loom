@@ -14,6 +14,9 @@ pub(in crate::verify) struct ProbeRun {
     pub(in crate::verify) stderr: String,
     pub(in crate::verify) exit_code: Option<i32>,
     pub(in crate::verify) timed_out: bool,
+    /// Whether both streams were captured completely. Cached diagnostic tails
+    /// are certified separately by `cached` and retain this original verdict.
+    pub(in crate::verify) output_complete: bool,
     /// Set when the run is a certified cache hit: `stdout` and `stderr` are
     /// then tails of the original run, too short to re-parse.
     pub(in crate::verify) cached: Option<CachedRun>,
@@ -53,9 +56,39 @@ impl ProbeRunner for CriteriaProbe<'_> {
             stderr: run.stderr.clone(),
             exit_code: run.exit_code,
             timed_out: run.timed_out,
+            output_complete: run.output_complete,
             cached: run.cached.then_some(CachedRun {
                 tests_executed: run.cached_tests_executed,
             }),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn probe_preserves_executor_capture_incompleteness() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let stage = Stage::default();
+        let probe = CriteriaProbe {
+            stage: &stage,
+            config: CriteriaConfig::default(),
+        };
+        let run = probe
+            .run(
+                "awk 'BEGIN { for (i=0; i<1200000; i++) print \"123456789\" }'",
+                temp.path(),
+            )
+            .unwrap();
+        assert!(
+            !run.output_complete,
+            "exit={:?}, stdout bytes={}, stderr={}",
+            run.exit_code,
+            run.stdout.len(),
+            run.stderr
+        );
+        assert!(run.cached.is_none());
     }
 }

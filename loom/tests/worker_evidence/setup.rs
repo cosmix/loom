@@ -3,8 +3,7 @@ use loom::fs::permissions::constants::{
     HOOK_COMMON, HOOK_LIFECYCLE, HOOK_READ_LEDGER, HOOK_SUBAGENT_START, HOOK_SUBAGENT_STOP,
     HOOK_TEAMMATE_IDLE,
 };
-use loom::hooks::{HookEvent, HooksConfig};
-use loom::plan::schema::PermissionMode;
+use loom::hooks::HookEvent;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
@@ -84,6 +83,35 @@ pub(super) fn install_hooks(hooks: &Path) {
             loom::fs::permissions::constants::HOOK_BOUNDED,
         ),
         ("_common.sh", HOOK_COMMON),
+        ("_parser.sh", loom::fs::permissions::constants::HOOK_PARSER),
+        (
+            "_parser_expand.sh",
+            loom::fs::permissions::constants::HOOK_PARSER_EXPAND,
+        ),
+        (
+            "_parser_scan.sh",
+            loom::fs::permissions::constants::HOOK_PARSER_SCAN,
+        ),
+        (
+            "_identity.sh",
+            loom::fs::permissions::constants::HOOK_IDENTITY,
+        ),
+        (
+            "_stage_lookup.sh",
+            loom::fs::permissions::constants::HOOK_STAGE_LOOKUP,
+        ),
+        (
+            "_containment.sh",
+            loom::fs::permissions::constants::HOOK_CONTAINMENT,
+        ),
+        (
+            "_heartbeat.sh",
+            loom::fs::permissions::constants::HOOK_HEARTBEAT,
+        ),
+        (
+            "_spawn_policy.sh",
+            loom::fs::permissions::constants::HOOK_SPAWN_POLICY,
+        ),
         ("_lifecycle.sh", HOOK_LIFECYCLE),
         ("_read_ledger.sh", HOOK_READ_LEDGER),
         ("subagent-start.sh", HOOK_SUBAGENT_START),
@@ -94,37 +122,16 @@ pub(super) fn install_hooks(hooks: &Path) {
     }
 }
 
-pub(super) fn generated_commands(hooks: &Path, work: &Path) -> HashMap<HookEvent, String> {
-    let settings = HooksConfig::new(
-        hooks.to_path_buf(),
-        work.to_path_buf(),
-        PermissionMode::AcceptEdits,
-    )
-    .to_settings_hooks();
-    let mut commands = HashMap::new();
-    for event in [
+/// Commands for exercising installed lifecycle scripts directly.
+pub(super) fn generated_commands(hooks: &Path, _work: &Path) -> HashMap<HookEvent, String> {
+    [
         HookEvent::SubagentStart,
         HookEvent::SubagentStop,
         HookEvent::TeammateIdle,
-    ] {
-        let rules = settings
-            .get(&event.to_string())
-            .expect("generated event rule");
-        assert_eq!(rules.len(), 1, "{event} must have exactly one rule");
-        assert_eq!(
-            rules[0].hooks.len(),
-            1,
-            "{event} must have exactly one command"
-        );
-        let hook = &rules[0].hooks[0];
-        assert_eq!(hook.hook_type, "command");
-        assert_eq!(
-            hook.command,
-            hooks.join(event.script_name()).display().to_string()
-        );
-        commands.insert(event, hook.command.clone());
-    }
-    commands
+    ]
+    .into_iter()
+    .map(|event| (event, hooks.join(event.script_name()).display().to_string()))
+    .collect()
 }
 
 pub(super) fn install_shims(bin: &Path) {

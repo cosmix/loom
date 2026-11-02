@@ -1,10 +1,8 @@
 //! Merge session handling and auto-merge logic
 
 use anyhow::Result;
-use chrono::Utc;
 
 use crate::git::cleanup::CleanupConfig;
-use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::stage::StageStatus;
 use crate::orchestrator::merge_lifecycle::{self, CleanupOutcome, MergeLifecycle};
 
@@ -21,6 +19,7 @@ pub(super) mod resolver_attempts;
 mod resolver_exit;
 mod resolver_give_up;
 mod resolver_handback;
+mod resolver_recovery;
 mod resolver_spawn;
 mod resolver_stop;
 mod review_route;
@@ -29,6 +28,9 @@ mod spawn_failure;
 pub(super) use landing::Landing;
 use leftover_sweep::report_deferred_cleanup;
 use resolver_attempts::attempts_file;
+pub(super) use resolver_exit::trace_verification_output;
+#[cfg(test)]
+pub(super) use resolver_spawn::test_fixtures::with_read_only_stages;
 use review_route::awaits_merge;
 
 impl Orchestrator {
@@ -91,10 +93,11 @@ impl Orchestrator {
         completed_commit: &str,
     ) -> bool {
         let updated = self.update_stage(stage_id, |current| {
-            anyhow::ensure!(
-                current.completed_commit.as_deref() == Some(completed_commit),
-                "completed_commit changed during merge verification"
-            );
+            crate::stage_service::merge_outcome::check_stage(current, stage)?;
+            crate::stage_service::merge_outcome::check_completion_commit(
+                current,
+                Some(completed_commit),
+            )?;
             current.merged = true;
             current.clear_merge_block();
             Ok(())
@@ -122,25 +125,8 @@ impl Orchestrator {
     ) {
         let first_line = error.lines().next().unwrap_or(error);
         let updated = self.update_stage(stage_id, |current| {
-            // A stage that became final on disk after the caller loaded it
-            // is never moved to MergeBlocked.
-            anyhow::ensure!(
-                !current.is_final_merged(),
-                "stage '{stage_id}' is already merged"
-            );
-            current.clear_merge_block();
-            current.replace_failure(FailureInfo {
-                failure_type: FailureType::InfrastructureError,
-                detected_at: Utc::now(),
-                evidence: error.lines().map(str::to_owned).collect(),
-            });
-            if current.try_mark_merge_blocked().is_err() {
-                current.force_status_with_reason(
-                    StageStatus::MergeBlocked,
-                    &format!("auto-merge failed: {first_line}"),
-                );
-            }
-            Ok(())
+            crate::stage_service::merge_outcome::check_stage(current, stage)?;
+            crate::stage_service::merge_outcome::apply_infrastructure_failure(current, error)
         });
         match updated {
             Ok(updated) => *stage = updated,

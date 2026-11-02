@@ -1,6 +1,7 @@
 //! Fixed-size, bounded worker pool for daemon client handling.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -11,6 +12,7 @@ type Job = Box<dyn FnOnce() + Send + 'static>;
 pub(super) struct WorkerPool {
     sender: Option<SyncSender<Job>>,
     workers: Vec<JoinHandle<()>>,
+    cancelling: Arc<AtomicBool>,
 }
 
 impl WorkerPool {
@@ -18,12 +20,14 @@ impl WorkerPool {
         assert!(worker_count > 0, "worker count must be positive");
         let (sender, receiver) = mpsc::sync_channel(queue_capacity);
         let receiver = Arc::new(Mutex::new(receiver));
+        let cancelling = Arc::new(AtomicBool::new(false));
         let workers = (0..worker_count)
-            .map(|index| spawn_worker(index, Arc::clone(&receiver)))
+            .map(|index| spawn_worker(index, Arc::clone(&receiver), Arc::clone(&cancelling)))
             .collect();
         Self {
             sender: Some(sender),
             workers,
+            cancelling,
         }
     }
 
@@ -42,10 +46,15 @@ impl WorkerPool {
             Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => false,
         }
     }
-}
 
-impl Drop for WorkerPool {
-    fn drop(&mut self) {
+    /// Cancel queued jobs and wait for running jobs, which retain ownership of
+    /// any state they are modifying until they finish.
+    pub(super) fn shutdown(mut self) {
+        self.cancelling.store(true, Ordering::SeqCst);
+        self.join_workers();
+    }
+
+    fn join_workers(&mut self) {
         self.sender.take();
         for worker in self.workers.drain(..) {
             let _ = worker.join();
@@ -53,14 +62,24 @@ impl Drop for WorkerPool {
     }
 }
 
-fn spawn_worker(index: usize, receiver: Arc<Mutex<Receiver<Job>>>) -> JoinHandle<()> {
+impl Drop for WorkerPool {
+    fn drop(&mut self) {
+        self.join_workers();
+    }
+}
+
+fn spawn_worker(
+    index: usize,
+    receiver: Arc<Mutex<Receiver<Job>>>,
+    cancelling: Arc<AtomicBool>,
+) -> JoinHandle<()> {
     thread::Builder::new()
         .name(format!("loom-daemon-client-{index}"))
-        .spawn(move || worker_loop(&receiver))
+        .spawn(move || worker_loop(&receiver, &cancelling))
         .expect("failed to spawn daemon client worker")
 }
 
-fn worker_loop(receiver: &Mutex<Receiver<Job>>) {
+fn worker_loop(receiver: &Mutex<Receiver<Job>>, cancelling: &AtomicBool) {
     loop {
         let result = receiver
             .lock()
@@ -69,7 +88,9 @@ fn worker_loop(receiver: &Mutex<Receiver<Job>>) {
         let Ok(job) = result else {
             break;
         };
-        let _ = catch_unwind(AssertUnwindSafe(job));
+        if !cancelling.load(Ordering::SeqCst) {
+            let _ = catch_unwind(AssertUnwindSafe(job));
+        }
     }
 }
 
@@ -78,7 +99,7 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{mpsc, Arc, Condvar};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn queue_saturation_rejects_immediately_and_accepted_jobs_run() {
@@ -108,5 +129,43 @@ mod tests {
         wake.notify_one();
         drop(pool);
         assert_eq!(completed.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn shutdown_waits_for_running_work_and_cancels_queued_work() {
+        let pool = WorkerPool::new(1, 1);
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        assert!(pool.try_execute(move || {
+            started_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+        }));
+        started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+
+        let queued_runs = Arc::new(AtomicUsize::new(0));
+        let queued_counter = Arc::clone(&queued_runs);
+        assert!(pool.try_execute(move || {
+            queued_counter.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        let cancelling = Arc::clone(&pool.cancelling);
+        let (stopped_tx, stopped_rx) = mpsc::channel();
+        let shutdown = thread::spawn(move || {
+            pool.shutdown();
+            stopped_tx.send(()).unwrap();
+        });
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !cancelling.load(Ordering::SeqCst) {
+            assert!(Instant::now() < deadline, "shutdown did not start");
+            thread::yield_now();
+        }
+        let returned_early = stopped_rx.try_recv().is_ok();
+        release_tx.send(()).unwrap();
+        if !returned_early {
+            stopped_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        }
+        shutdown.join().unwrap();
+        assert!(!returned_early, "shutdown released a running worker");
+        assert_eq!(queued_runs.load(Ordering::SeqCst), 0);
     }
 }

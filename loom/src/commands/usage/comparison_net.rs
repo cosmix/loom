@@ -12,6 +12,16 @@ pub(super) struct NetTotalSummary {
     pub(super) providers: Vec<ProviderNetTotal>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(super) enum Classification {
+    MissingDimension,
+    InsufficientPairs,
+    Reduction,
+    Regression,
+    WithinNoise,
+}
+
 #[derive(Debug, Serialize)]
 pub(super) struct ProviderNetTotal {
     pub(super) provider: Provider,
@@ -20,7 +30,7 @@ pub(super) struct ProviderNetTotal {
     pub(super) candidate_total: u64,
     pub(super) mean_reduction: Option<f64>,
     pub(super) standard_error: Option<f64>,
-    pub(super) classification: &'static str,
+    pub(super) classification: Classification,
 }
 
 pub(super) fn evaluate(pairs: &[&ComparisonPair], excluded_pairs: usize) -> NetTotalSummary {
@@ -113,9 +123,9 @@ fn provider_summary(provider: Provider, pairs: &[&ComparisonPair]) -> ProviderNe
     }
 
     let (classification, mean_reduction, standard_error) = if missing_dimension {
-        ("missing-dimension", None, None)
+        (Classification::MissingDimension, None, None)
     } else if pair_count < 3 {
-        ("insufficient-pairs", None, None)
+        (Classification::InsufficientPairs, None, None)
     } else {
         let (mean, error) = mean_and_standard_error(&deltas);
         (classification(mean, error), Some(mean), Some(error))
@@ -148,41 +158,33 @@ fn mean_and_standard_error(deltas: &[i128]) -> (f64, f64) {
     (mean, (variance / count).sqrt())
 }
 
-fn classification(mean: f64, standard_error: f64) -> &'static str {
+fn classification(mean: f64, standard_error: f64) -> Classification {
     if mean > 0.0 && mean > 2.0 * standard_error {
-        "reduction"
+        Classification::Reduction
     } else if mean < 0.0 && -mean > 2.0 * standard_error {
-        "regression"
+        Classification::Regression
     } else {
-        "within-noise"
+        Classification::WithinNoise
     }
 }
 
 fn summary_result(providers: &[ProviderNetTotal]) -> (Outcome, Option<&'static str>) {
-    if providers
-        .iter()
-        .any(|provider| provider.classification == "missing-dimension")
-    {
-        return (Outcome::Inconclusive, Some("missing-token-dimension"));
+    let (mut missing, mut insufficient, mut reduction, mut regression, mut noise) =
+        (false, false, false, false, false);
+    for provider in providers {
+        match provider.classification {
+            Classification::MissingDimension => missing = true,
+            Classification::InsufficientPairs => insufficient = true,
+            Classification::Reduction => reduction = true,
+            Classification::Regression => regression = true,
+            Classification::WithinNoise => noise = true,
+        }
     }
-    if providers
-        .iter()
-        .any(|provider| provider.classification == "insufficient-pairs")
-    {
-        return (Outcome::Inconclusive, Some("insufficient-pairs"));
-    }
-
-    let reduction = providers
-        .iter()
-        .any(|provider| provider.classification == "reduction");
-    let regression = providers
-        .iter()
-        .any(|provider| provider.classification == "regression");
-    if !providers.is_empty()
-        && providers
-            .iter()
-            .all(|provider| provider.classification == "reduction")
-    {
+    if missing {
+        (Outcome::Inconclusive, Some("missing-token-dimension"))
+    } else if insufficient {
+        (Outcome::Inconclusive, Some("insufficient-pairs"))
+    } else if reduction && !regression && !noise {
         (Outcome::SupportedCandidate, None)
     } else if reduction && regression {
         (Outcome::Inconclusive, Some("cross-provider-transfer"))

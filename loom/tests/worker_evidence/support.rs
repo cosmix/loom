@@ -246,7 +246,7 @@ impl Fixture {
         json!({
             "hook_event_name": "SubagentStart",
             "session_id": PARENT_UUID,
-            "transcript_path": self.worker,
+            "transcript_path": self.parent,
             "agent_id": AGENT_ID,
             "agent_type": AGENT_TYPE,
         })

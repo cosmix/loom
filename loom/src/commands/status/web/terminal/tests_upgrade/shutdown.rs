@@ -122,14 +122,13 @@ fn start_server(base: PathBuf) -> RunningServer {
     }
 }
 
-/// Attaches one real, live terminal to `server`: a genuine `bridge::run`
-/// holding a slot against the same `limits`/`running` Arcs the server itself
-/// uses - the same `Slot` and shutdown path a real connection thread relies
-/// on - so the count this polls up to 1 before returning is provably
-/// non-zero before shutdown, rather than pinned at zero for the whole test
-/// (as it was when nothing here ever incremented it). Returns the bridge
-/// thread so the caller can join it once shutdown is underway.
-fn attach_live_terminal(server: &RunningServer) -> thread::JoinHandle<()> {
+struct LiveTerminal {
+    client: tungstenite::WebSocket<TcpStream>,
+    thread: thread::JoinHandle<()>,
+}
+
+/// Keep the client and bridge alive while shutdown drains the terminal slot.
+fn attach_live_terminal(server: &RunningServer) -> LiveTerminal {
     let bridge_listener = TcpListener::bind("127.0.0.1:0").expect("bind bridge listener");
     let bridge_port = bridge_listener.local_addr().unwrap().port();
     let bridge_running = server.running.clone();
@@ -149,7 +148,7 @@ fn attach_live_terminal(server: &RunningServer) -> thread::JoinHandle<()> {
         .expect("build bridge client request");
     let bridge_stream =
         TcpStream::connect(("127.0.0.1", bridge_port)).expect("connect bridge client");
-    let (_bridge_client, _) =
+    let (client, _) =
         tungstenite::client(bridge_request, bridge_stream).expect("bridge client handshake");
 
     let deadline = Instant::now() + Duration::from_secs(3);
@@ -161,14 +160,17 @@ fn attach_live_terminal(server: &RunningServer) -> thread::JoinHandle<()> {
         1,
         "the live terminal should be counted before shutdown"
     );
-    bridge_thread
+    LiveTerminal {
+        client,
+        thread: bridge_thread,
+    }
 }
 
 /// Flips `running` false, waits for the server and the bridge thread to both
 /// stop, then sends a terminal upgrade on a connection that was already open
 /// before shutdown completed - and asserts it spawns no child: an empty or
 /// 503 response, and the terminal slot back at zero.
-fn shut_down_and_assert_slot_freed(server: RunningServer, bridge_thread: thread::JoinHandle<()>) {
+fn shut_down_and_assert_slot_freed(server: RunningServer, terminal: LiveTerminal) {
     let RunningServer {
         port,
         running,
@@ -177,13 +179,26 @@ fn shut_down_and_assert_slot_freed(server: RunningServer, bridge_thread: thread:
     } = server;
 
     let mut client = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
     thread::sleep(Duration::from_millis(200));
+    assert_eq!(
+        limits.terminal_count(),
+        1,
+        "terminal must still be held at shutdown"
+    );
+    assert!(
+        !terminal.thread.is_finished(),
+        "bridge must still be running at shutdown"
+    );
     running.store(false, Ordering::SeqCst);
     assert!(result
         .recv_timeout(Duration::from_secs(4))
         .expect("server returned")
         .is_ok());
-    join_within(bridge_thread, Duration::from_secs(3));
+    join_within(terminal.thread, Duration::from_secs(3));
+    drop(terminal.client);
 
     let _ = client.write_all(
         terminal_request(
@@ -209,6 +224,6 @@ fn a_late_upgrade_after_shutdown_spawns_no_child() {
     }
     let (_temp, base) = workspace();
     let server = start_server(base);
-    let bridge_thread = attach_live_terminal(&server);
-    shut_down_and_assert_slot_freed(server, bridge_thread);
+    let terminal = attach_live_terminal(&server);
+    shut_down_and_assert_slot_freed(server, terminal);
 }

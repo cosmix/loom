@@ -24,11 +24,6 @@
 //! Every failure is an empty stdout and exit 0. A prompt-submit hook that
 //! reports a problem is a prompt-submit hook that interrupts the session, so
 //! the only two outcomes here are "one useful object" and "nothing at all".
-//!
-//! Split across two files to stay under the maintainability line limit: this
-//! one owns recipient resolution, the hook's own filters, and the
-//! print/record/reconcile ordering; `user_prompt_compose.rs` owns turning a
-//! pack into the one stdout line.
 
 use crate::context::config::RetrievalConfig;
 use crate::context::delivery::{self, DeliveryRecord};

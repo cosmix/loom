@@ -11,24 +11,28 @@ use std::cell::RefCell;
 use std::fs;
 use tempfile::TempDir;
 
+#[path = "impact_tests/rust_import_tests.rs"]
+mod rust_import_tests;
+
 const CARGO_TOML: &str = "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n";
 
-/// `add`, with its unit tests in a `#[path]` module file.
+/// `add`, with unit tests in `#[path]` and conventional module files.
 const LIB: &str = "pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n\n\
-                   #[cfg(test)]\n#[path = \"lib_tests.rs\"]\nmod tests;\n";
+                   #[cfg(test)]\n#[path = \"lib_tests.rs\"]\nmod tests;\n\
+                   #[cfg(test)]\nmod add_tests;\n";
 
 // The calls sit outside `assert_eq!`: the Rust extractor does not look inside
 // macro arguments, so a call there leaves no edge to reach.
 const LIB_TESTS: &str = "use super::*;\n\n#[test]\nfn adds_in_unit() {\n    \
                          let sum = add(1, 1);\n    assert_eq!(sum, 2);\n}\n";
 
-const ADD_TEST: &str = "use demo::add;\n\n#[test]\nfn adds_two() {\n    \
+const ADD_TEST: &str = "use crate::add;\n\n#[test]\nfn adds_two() {\n    \
                         let sum = add(1, 2);\n    assert_eq!(sum, 3);\n}\n";
 
 const OTHER_TEST: &str = "#[test]\nfn subtracts() {\n    assert_eq!(5 - 3, 2);\n}\n";
 
 const CARGO_PASS: &str =
-    "running 2 tests\ntest adds_two ... ok\ntest tests::adds_in_unit ... ok\n\n\
+    "running 2 tests\ntest add_tests::adds_two ... ok\ntest tests::adds_in_unit ... ok\n\n\
                           test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered \
                           out; finished in 0.00s\n";
 
@@ -47,6 +51,7 @@ impl ProbeRunner for Recorder {
             stderr: String::new(),
             exit_code: Some(0),
             timed_out: false,
+            output_complete: true,
             cached: None,
         })
     }
@@ -63,6 +68,7 @@ impl ProbeRunner for NotFound {
             stderr: String::new(),
             exit_code: Some(127),
             timed_out: false,
+            output_complete: true,
             cached: None,
         })
     }
@@ -128,7 +134,7 @@ fn write(root: &Path, path: &str, content: &str) {
 
 /// A repository with `manifest` and a crate whose `add` two test files call
 /// and one does not, committed, with a base layer published for `HEAD`.
-fn repo_with_base(manifest: (&str, &str)) -> TempDir {
+fn repo_with_base(manifest: (&str, &str), extra: Option<(&str, &str)>) -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
     git(root, &["init", "-b", "main"]);
@@ -138,10 +144,10 @@ fn repo_with_base(manifest: (&str, &str)) -> TempDir {
         manifest,
         ("src/lib.rs", LIB),
         ("src/lib_tests.rs", LIB_TESTS),
-        ("tests/add_test.rs", ADD_TEST),
+        ("src/add_tests.rs", ADD_TEST),
         ("tests/other_test.rs", OTHER_TEST),
     ];
-    for (path, content) in files {
+    for (path, content) in files.into_iter().chain(extra) {
         write(root, path, content);
     }
     git(root, &["add", "."]);
@@ -172,7 +178,7 @@ fn select_after_changing_add(root: &Path, recorder: &Recorder) -> ImpactOutcome 
 
 #[test]
 fn impact_selection_runs_reached_tests() {
-    let temp = repo_with_base(("Cargo.toml", CARGO_TOML));
+    let temp = repo_with_base(("Cargo.toml", CARGO_TOML), None);
     let root = temp.path().canonicalize().unwrap();
     let recorder = Recorder::default();
 
@@ -182,7 +188,7 @@ fn impact_selection_runs_reached_tests() {
     assert_eq!(commands.len(), 1, "{commands:?}");
     let (command, package_dir) = &commands[0];
     assert!(command.starts_with("cargo test -- "), "{command}");
-    assert!(command.contains("adds_two"), "{command}");
+    assert!(command.contains("add_tests::adds_two"), "{command}");
     assert!(command.contains("tests::adds_in_unit"), "{command}");
     assert!(!command.contains("subtracts"), "{command}");
     assert_eq!(package_dir.canonicalize().unwrap(), root);
@@ -193,7 +199,7 @@ fn impact_selection_runs_reached_tests() {
 #[test]
 fn impact_selection_skips_unsupported_adapters() {
     let cmake = "cmake_minimum_required(VERSION 3.20)\n";
-    let temp = repo_with_base(("CMakeLists.txt", cmake));
+    let temp = repo_with_base(("CMakeLists.txt", cmake), None);
     let root = temp.path().canonicalize().unwrap();
     let recorder = Recorder::default();
 
@@ -287,7 +293,7 @@ fn a_dependency_free_node_test_package_still_runs() {
 
 #[test]
 fn exit_127_is_a_note() {
-    let temp = repo_with_base(("Cargo.toml", CARGO_TOML));
+    let temp = repo_with_base(("Cargo.toml", CARGO_TOML), None);
     let root = temp.path().canonicalize().unwrap();
     write(&root, "src/lib.rs", &LIB.replace("a + b", "b + a"));
     let graph = build_for_worktree(&root).unwrap();
@@ -326,6 +332,9 @@ fn committed_stage_repo() -> (TempDir, PathBuf) {
     write(&root, "web/src/a.test.ts", WEB_TEST);
     git(&root, &["add", "."]);
     git(&root, &["commit", "-m", "A"]);
+    let work = root.join(".loom/work");
+    fs::create_dir_all(&work).unwrap();
+    crate::git::worktree::capture_main_identity(&root, &work).unwrap();
     git(&root, &["checkout", "-b", "loom/s"]);
     write(
         &root,
@@ -340,7 +349,6 @@ fn committed_stage_repo() -> (TempDir, PathBuf) {
 fn run_selects_the_committed_stage_diff() {
     let (temp, root) = committed_stage_repo();
     let work = temp.path().join(".loom/work");
-    fs::create_dir_all(&work).unwrap();
 
     let outcome = run(
         &stage("s"),
@@ -368,7 +376,6 @@ fn run_selects_the_committed_stage_diff() {
 fn an_unresolvable_target_is_a_note_not_a_failure() {
     let (temp, root) = committed_stage_repo();
     let work = temp.path().join(".loom/work");
-    fs::create_dir_all(&work).unwrap();
 
     let outcome = run(
         &stage("s"),

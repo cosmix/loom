@@ -99,7 +99,8 @@ pub(super) fn write_session_capsule(request: &CapsuleRequest<'_>) -> Result<Stri
     let state_root = super::wrapper::absolute(request.work_dir);
     let repo_root = super::wrapper::absolute(request.repo_root);
     let cwd = super::wrapper::absolute(request.cwd);
-    let worktree_rooted = crate::sandbox::target_is_worktree(&cwd);
+    let worktree_rooted =
+        !in_operator_checkout(&cwd, &repo_root) && crate::sandbox::target_is_worktree(&cwd);
     let checkout_settings = read_checkout_settings(&repo_root)?;
     let approved = crate::fs::permissions::approved::approved_rules(&state_root, request.surfaces);
     let worktree = worktree_rooted.then_some(cwd.as_path());
@@ -129,6 +130,20 @@ pub(super) fn write_session_capsule(request: &CapsuleRequest<'_>) -> Result<Stri
             path.display()
         )
     })
+}
+
+/// Whether `cwd` lies in `repo_root` outside its `.worktrees` directory.
+fn in_operator_checkout(cwd: &Path, repo_root: &Path) -> bool {
+    cwd.canonicalize()
+        .ok()
+        .zip(repo_root.canonicalize().ok())
+        .and_then(|(cwd, root)| cwd.strip_prefix(root).ok().map(Path::to_path_buf))
+        .is_some_and(|relative| {
+            relative
+                .components()
+                .next()
+                .is_none_or(|component| component.as_os_str() != ".worktrees")
+        })
 }
 
 /// The refusal of a spawn with no verified hooks directory.

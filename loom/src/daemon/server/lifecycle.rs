@@ -67,6 +67,7 @@ impl DaemonServer {
         // Remove stale socket if it exists (ignore NotFound to avoid TOCTOU race)
         remove_control_file(&self.work_dir, Path::new(SOCKET_FILE))
             .context("Failed to remove stale socket file")?;
+        super::status::remove_previous_outcome(&self.work_dir)?;
 
         let identity = current_identity();
         publish_private_file(
@@ -182,44 +183,12 @@ impl DaemonServer {
         let client_pool = WorkerPool::new(CLIENT_WORKERS, CLIENT_QUEUE_CAPACITY);
         let byte_budget = ByteBudget::new(MAX_IN_FLIGHT_REQUEST_BYTES);
 
-        let mut last_identity_check = Instant::now();
-        while !self.shutdown_flag.load(Ordering::SeqCst) {
-            watch_lock_identity(&self.work_dir, lock_identity, &mut last_identity_check);
-            match listener.accept() {
-                Ok((stream, _addr)) => {
-                    let shutdown_flag = Arc::clone(&self.shutdown_flag);
-                    let status_subscribers = Arc::clone(&self.status_subscribers);
-                    let log_subscribers = Arc::clone(&self.log_subscribers);
-                    let work_dir = self.work_dir.clone();
-                    let request_budget = Arc::clone(&byte_budget);
-                    if !client_pool.try_execute(move || {
-                        let result = handle_client_connection(
-                            stream,
-                            shutdown_flag,
-                            status_subscribers,
-                            log_subscribers,
-                            &work_dir,
-                            request_budget,
-                        );
-                        if let Err(e) = result {
-                            eprintln!("Client handler error: {e}");
-                        }
-                    }) {
-                        eprintln!("Daemon client capacity is exhausted; rejecting connection");
-                    }
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    // No connection available, sleep briefly but check shutdown frequently
-                    thread::sleep(Duration::from_millis(10));
-                }
-                Err(e) => {
-                    eprintln!("Accept error: {e}");
-                    break;
-                }
-            }
-        }
+        self.accept_clients(&listener, &client_pool, &byte_budget, lock_identity);
 
-        drop(client_pool);
+        // Stop queued clients and wait for active handlers before releasing the
+        // singleton: a stage-control handler may still be changing state.
+        self.shutdown_flag.store(true, Ordering::SeqCst);
+        client_pool.shutdown();
 
         // Wait for threads to finish with timeout (5 seconds)
         let join_timeout = Duration::from_secs(5);
@@ -252,7 +221,52 @@ impl DaemonServer {
         Ok(())
     }
 
-    /// Clean up socket, PID, token, and completion marker files.
+    fn accept_clients(
+        &self,
+        listener: &UnixListener,
+        client_pool: &WorkerPool,
+        byte_budget: &Arc<ByteBudget>,
+        lock_identity: Option<LockIdentity>,
+    ) {
+        let mut last_identity_check = Instant::now();
+        while !self.shutdown_flag.load(Ordering::SeqCst) {
+            watch_lock_identity(&self.work_dir, lock_identity, &mut last_identity_check);
+            match listener.accept() {
+                Ok((stream, _addr)) => {
+                    let shutdown_flag = Arc::clone(&self.shutdown_flag);
+                    let status_subscribers = Arc::clone(&self.status_subscribers);
+                    let log_subscribers = Arc::clone(&self.log_subscribers);
+                    let work_dir = self.work_dir.clone();
+                    let request_budget = Arc::clone(byte_budget);
+                    if !client_pool.try_execute(move || {
+                        let result = handle_client_connection(
+                            stream,
+                            shutdown_flag,
+                            status_subscribers,
+                            log_subscribers,
+                            &work_dir,
+                            request_budget,
+                        );
+                        if let Err(e) = result {
+                            eprintln!("Client handler error: {e}");
+                        }
+                    }) {
+                        eprintln!("Daemon client capacity is exhausted; rejecting connection");
+                    }
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(e) => {
+                    eprintln!("Accept error: {e}");
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Clean up socket, PID and token files. The completion marker stays: it is
+    /// the persisted terminal outcome, and the next daemon start removes it.
     ///
     /// CRITICAL (A-1/O-7): This only removes files when THIS process was the live
     /// daemon — i.e. it acquired the singleton lock and bound the socket
@@ -271,13 +285,7 @@ impl DaemonServer {
             return Ok(());
         }
 
-        for relative in [
-            SOCKET_FILE,
-            PID_FILE,
-            USER_TOKEN_FILE,
-            ADMIN_TOKEN_FILE,
-            "orchestrator.complete",
-        ] {
+        for relative in [SOCKET_FILE, PID_FILE, USER_TOKEN_FILE, ADMIN_TOKEN_FILE] {
             remove_control_file(&self.work_dir, Path::new(relative))
                 .with_context(|| format!("Failed to remove daemon control file {relative}"))?;
         }

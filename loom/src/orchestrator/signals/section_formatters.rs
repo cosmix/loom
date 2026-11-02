@@ -3,10 +3,8 @@
 //!
 //! These render the small, self-contained sections ("## Target",
 //! "## Execution Rules", "## Stage Context", "## Conflicting Files") that
-//! appear verbatim across those three signal types. Split out of `helpers.rs`
-//! as its own cohesive cluster: every function here formats content destined
-//! for the OUTGOING signal, as opposed to `helpers.rs`'s `parse_signal_sections`
-//! and friends, which parse a signal file back in.
+//! appear verbatim across those signal types. Every function here formats
+//! content for the OUTGOING signal; `helpers.rs` parses a signal file back in.
 
 use crate::context::untrusted::multiline_safe;
 use crate::models::stage::Stage;

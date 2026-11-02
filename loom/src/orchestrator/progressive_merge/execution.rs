@@ -13,10 +13,9 @@ use super::ProgressiveMergeResult;
 /// Attempt to merge a just-completed stage into the merge point.
 ///
 /// Called immediately after verification passes. This function:
-/// 1. Acquires a file-based lock to prevent concurrent merges
-/// 2. Checks if the stage's branch exists
-/// 3. Attempts to merge the branch into the merge point
-/// 4. Returns the result (success, conflict, or no-op)
+/// 1. Checks if the stage's branch exists
+/// 2. Attempts to merge the branch under the lock owned by `merge_stage`
+/// 3. Returns the result (success, conflict, or no-op)
 ///
 /// # Arguments
 /// * `stage` - The stage that just completed verification
@@ -73,11 +72,8 @@ pub fn merge_completed_stage(
         }
     };
 
-    // Lock is automatically released when _lock goes out of scope
     Ok(progressive_result)
 }
-
-// get_merge_point is now provided by crate::fs module
 
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,5 @@
 import { createStore } from "jotai/vanilla";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import fixtureJson from "@/api/fixtures/snapshot.json";
 import { snapshotSchema } from "@/api/schema";
@@ -38,14 +38,21 @@ class FakeSocket {
 let clock = 0;
 let intervalCallback: (() => void) | undefined;
 let intervalCleared = false;
+let timeoutCallback: (() => void) | undefined;
+let timeoutCleared = false;
 
 function dependencies(): SocketDeps {
   return {
     WebSocket: FakeSocket as unknown as typeof WebSocket,
     fetch: (async () => ({ json: async () => fixture })) as unknown as typeof fetch,
     location: { protocol: "http:", host: "127.0.0.1:7373" },
-    setTimeout: (() => 1) as unknown as typeof setTimeout,
-    clearTimeout: (() => undefined) as unknown as typeof clearTimeout,
+    setTimeout: ((callback: () => void) => {
+      timeoutCallback = callback;
+      return 1;
+    }) as unknown as typeof setTimeout,
+    clearTimeout: (() => {
+      timeoutCleared = true;
+    }) as unknown as typeof clearTimeout,
     setInterval: ((callback: () => void) => {
       intervalCallback = callback;
       return 7;
@@ -67,9 +74,40 @@ afterEach(() => {
   clock = 0;
   intervalCallback = undefined;
   intervalCleared = false;
+  timeoutCallback = undefined;
+  timeoutCleared = false;
 });
 
 describe("status socket watchdog", () => {
+  it("expires each silent handshake and ignores events from the retired socket", async () => {
+    const store = createStore();
+    const dispose = connectStatusSocket(store, dependencies());
+    const first = FakeSocket.instances[0];
+    await vi.waitFor(() => expect(store.get(snapshotAtom)).toEqual(fixture));
+    expect(store.get(connectionAtom).phase).toBe("connecting");
+
+    tick(30000);
+    expect(first.closed).toBe(true);
+    expect(store.get(connectionAtom)).toMatchObject({
+      phase: "reconnecting",
+      message: "connection attempt timed out",
+    });
+    const since = store.get(connectionAtom).since;
+    timeoutCallback?.();
+    const second = FakeSocket.instances[1];
+    first.open();
+    first.receive(JSON.stringify({ ...fixture, generated_at: "2099-01-01T00:00:00Z" }));
+    expect(store.get(connectionAtom).phase).toBe("reconnecting");
+    expect(store.get(snapshotAtom)).toEqual(fixture);
+    tick(30000);
+    expect(second.closed).toBe(true);
+    expect(store.get(connectionAtom).since).toBe(since);
+    dispose();
+    expect(timeoutCleared).toBe(true);
+    timeoutCallback?.();
+    expect(FakeSocket.instances).toHaveLength(2);
+  });
+
   it("reconnects after 30s of silence on a socket that never closes", () => {
     const store = createStore();
     const dispose = connectStatusSocket(store, dependencies());

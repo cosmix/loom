@@ -98,13 +98,18 @@ fn live_sessions_for_stage_lists_only_live_records_of_that_stage() {
     spawn_a_dead_agent(work, &dead);
     save_session(&dead, work).unwrap();
 
-    // A file caught mid-write must not fail the scan and report the stage idle.
+    // A malformed file makes the ownership answer uncertain even when a
+    // healthy record is also present.
     std::fs::write(
         work.join("sessions").join("session-corrupt-1.md"),
         "this is not session frontmatter",
     )
     .unwrap();
 
+    let partial = in_progress::session_inventory(work).unwrap();
+    assert_eq!(partial.records().len(), 4);
+    assert!(live_sessions_for_stage(work, "alpha").is_err());
+    std::fs::remove_file(work.join("sessions").join("session-corrupt-1.md")).unwrap();
     let live = live_sessions_for_stage(work, "alpha").unwrap();
     assert_eq!(ids(&live), vec![alive.id.as_str()]);
 }
@@ -211,7 +216,7 @@ fn the_pid_only_probe_answers_liveness_with_no_terminal_backend_at_all() {
     spawn_a_dead_agent(work, &dead);
     save_session(&dead, work).unwrap();
 
-    let live = live_sessions_with_probe(&LivenessProbe::PidOnly, work, "alpha");
+    let live = live_sessions_with_probe(&LivenessProbe::PidOnly, work, "alpha").unwrap();
     assert_eq!(
         ids(&live),
         vec![alive.id.as_str()],
@@ -225,6 +230,94 @@ fn live_sessions_for_stage_is_empty_before_any_session_exists() {
     assert!(live_sessions_for_stage(temp.path(), "alpha")
         .unwrap()
         .is_empty());
+}
+
+#[test]
+fn malformed_record_alone_refuses_an_idle_answer() {
+    let temp = work_dir();
+    let sessions = temp.path().join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    std::fs::write(sessions.join("broken.md"), "not frontmatter").unwrap();
+    assert!(live_sessions_for_stage(temp.path(), "alpha").is_err());
+    assert!(in_progress_sessions_for_stage(temp.path(), "alpha").is_err());
+}
+
+#[test]
+fn unreadable_existing_inventory_refuses_an_idle_answer() {
+    let temp = work_dir();
+    std::fs::write(temp.path().join("sessions"), "not a directory").unwrap();
+    assert!(live_sessions_for_stage(temp.path(), "alpha").is_err());
+    assert!(in_progress_sessions_for_stage(temp.path(), "alpha").is_err());
+}
+
+#[test]
+fn dangling_session_directory_is_not_an_empty_initial_inventory() {
+    let temp = work_dir();
+    std::os::unix::fs::symlink("missing", temp.path().join("sessions")).unwrap();
+    assert!(live_sessions_for_stage(temp.path(), "alpha").is_err());
+}
+
+#[test]
+fn symlinked_session_directory_is_not_an_empty_inventory() {
+    let temp = work_dir();
+    std::fs::create_dir(temp.path().join("elsewhere")).unwrap();
+    std::os::unix::fs::symlink("elsewhere", temp.path().join("sessions")).unwrap();
+    assert!(live_sessions_for_stage(temp.path(), "alpha").is_err());
+}
+
+#[test]
+fn symlinked_work_root_reads_its_real_session_inventory() {
+    let temp = work_dir();
+    let real = temp.path().join("real-work");
+    std::fs::create_dir(&real).unwrap();
+    let alias = temp.path().join("work-alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let running = session_for("alpha", SessionStatus::Running);
+    spawn_a_live_agent(&real, &running);
+    save_session(&running, &real).unwrap();
+
+    let live = live_sessions_with_probe(&LivenessProbe::PidOnly, &alias, "alpha").unwrap();
+    assert_eq!(ids(&live), vec![running.id.as_str()]);
+}
+
+#[test]
+fn probe_error_refuses_an_idle_answer() {
+    let temp = work_dir();
+    let running = session_for("alpha", SessionStatus::Running);
+    save_session(&running, temp.path()).unwrap();
+    let error = live_sessions_with_probe(&LivenessProbe::Error, temp.path(), "alpha").unwrap_err();
+    assert!(format!("{error:#}").contains("injected liveness failure"));
+}
+
+#[test]
+fn spawning_record_without_pid_identity_is_unknown() {
+    let temp = work_dir();
+    let spawning = session_for("alpha", SessionStatus::Spawning);
+    save_session(&spawning, temp.path()).unwrap();
+    let error =
+        live_sessions_with_probe(&LivenessProbe::PidOnly, temp.path(), "alpha").unwrap_err();
+    assert!(format!("{error:#}").contains("no PID identity evidence"));
+}
+
+#[test]
+fn assigned_session_requires_valid_ownership_and_confirmed_liveness() {
+    let temp = work_dir();
+    let work = temp.path();
+    assert!(!assigned_session_is_live(work, "alpha", "missing").unwrap());
+
+    let dead = session_for("alpha", SessionStatus::Running);
+    spawn_a_dead_agent(work, &dead);
+    save_session(&dead, work).unwrap();
+    assert!(!assigned_session_is_live(work, "alpha", &dead.id).unwrap());
+    assert!(assigned_session_is_live(work, "beta", &dead.id).is_err());
+
+    let live = session_for("alpha", SessionStatus::Running);
+    spawn_a_live_agent(work, &live);
+    save_session(&live, work).unwrap();
+    assert!(assigned_session_is_live(work, "alpha", &live.id).unwrap());
+
+    std::fs::write(work.join("sessions").join("broken.md"), "invalid").unwrap();
+    assert!(assigned_session_is_live(work, "alpha", &live.id).is_err());
 }
 
 /// An adjudication session carries the stage's own `stage_id`, so a scan

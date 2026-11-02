@@ -4,7 +4,6 @@ use colored::Colorize;
 use std::io::Write;
 
 use crate::commands::status::data::ProgressSummary;
-use crate::orchestrator::{context_health, ContextHealth};
 
 /// Render progress bar with stage counts.
 ///
@@ -50,24 +49,4 @@ pub fn render_progress<W: Write>(w: &mut W, progress: &ProgressSummary) -> std::
 
     writeln!(w)?;
     Ok(())
-}
-
-/// Render resident context tokens against their resolved ceiling.
-pub fn render_context_bar(tokens: u32, ceiling: u32, width: usize) -> String {
-    let filled = if ceiling == 0 {
-        0
-    } else {
-        ((tokens as f64 / ceiling as f64) * width as f64).min(width as f64) as usize
-    };
-    let fill = match context_health(tokens, ceiling) {
-        ContextHealth::Green => '░',
-        ContextHealth::Yellow => '▓',
-        ContextHealth::Red => '█',
-    };
-
-    let bar: String = (0..width)
-        .map(|i| if i < filled { fill } else { '·' })
-        .collect();
-
-    format!("[{bar}] {tokens}/{ceiling}")
 }

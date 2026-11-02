@@ -150,6 +150,25 @@ pub struct ContextPack {
 }
 
 impl ContextPack {
+    /// Replace items with a retained subset and update its accounting.
+    pub(crate) fn retain_items(&mut self, items: Vec<ContextItem>) {
+        let dropped = self.items.len().saturating_sub(items.len());
+        self.items = items;
+        self.omitted.omitted += dropped;
+        self.omitted.coverage.included = self.items.len();
+        self.omitted.coverage.included_tokens =
+            self.items.iter().map(|item| item.token_count).sum();
+        if dropped > 0 {
+            self.omitted.weakest_included_score = self
+                .items
+                .iter()
+                .map(|item| item.score)
+                .reduce(f32::min)
+                .unwrap_or(0.0);
+        }
+        self.recompute_estimate();
+    }
+
     /// The invariant the packer must never violate.
     pub fn within_budget(&self) -> bool {
         self.estimated_tokens <= self.budget_tokens

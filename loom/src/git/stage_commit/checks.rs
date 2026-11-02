@@ -159,15 +159,24 @@ impl Committer<'_> {
     /// drop the rest. The file is read without following a symlink: git
     /// never writes one there.
     pub(super) fn require_single_merge_head(&self) -> Result<(), CommitRefusal> {
-        let listed = self.checked(&[
-            "rev-parse",
-            "--path-format=absolute",
-            "--git-path",
-            "MERGE_HEAD",
-        ])?;
-        let path = Path::new(&listed);
-        let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
-            return Err(refused(format!("MERGE_HEAD resolved to {listed:?}")));
+        let located;
+        // A pinned command's own git directory can be private and gone once it
+        // exits; the pin names the directory that keeps the merge state.
+        let (dir, name) = match self.git.git_dir_path() {
+            Some(dir) => (dir, std::ffi::OsStr::new("MERGE_HEAD")),
+            None => {
+                located = self.checked(&[
+                    "rev-parse",
+                    "--path-format=absolute",
+                    "--git-path",
+                    "MERGE_HEAD",
+                ])?;
+                let path = Path::new(&located);
+                let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+                    return Err(refused(format!("MERGE_HEAD resolved to {located:?}")));
+                };
+                (dir, name)
+            }
         };
         let content = read_to_string_bounded(dir, Path::new(name), MAX_MERGE_HEAD_BYTES)
             .map_err(|error| refused(format!("MERGE_HEAD could not be read: {error:#}")))?;
@@ -200,7 +209,7 @@ impl Committer<'_> {
         ];
         let output = self.run(&args)?;
         match output.status.code() {
-            Some(0) => Ok(()),
+            Some(0) => self.require_snapshot(merge_head),
             Some(1) => Err(refused(format!(
                 "MERGE_HEAD {merge_head} is not on {target}; a merge session commits a merge \
                  of {target} only: run git merge --abort, then git merge --no-commit --no-ff \
@@ -208,6 +217,19 @@ impl Committer<'_> {
             ))),
             _ => Err(git_failure(&args, &output)),
         }
+    }
+
+    fn require_snapshot(&self, merge_head: &str) -> Result<(), CommitRefusal> {
+        if let Some(snapshot) = self.merge_snapshot {
+            require_object_id("merge target snapshot", snapshot)?;
+            if merge_head != snapshot {
+                return Err(refused(format!(
+                    "MERGE_HEAD {merge_head} differs from authorized target snapshot {snapshot}; \
+                     preserve your staged changes, then resolve against the authorized snapshot"
+                )));
+            }
+        }
+        Ok(())
     }
 }
 

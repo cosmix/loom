@@ -1,4 +1,5 @@
 use super::*;
+use chrono::Duration;
 
 #[test]
 fn disabled_check_yields_no_notice_and_no_refresh() {
@@ -165,55 +166,86 @@ fn refresh_only_fires_once_the_interval_has_elapsed() {
 }
 
 #[test]
-fn concurrent_stale_calls_schedule_at_most_one_refresh() {
+fn worker_lock_excludes_other_workers_until_owner_exits() {
     let dir = tempfile::tempdir().unwrap();
-    let now = Utc::now();
-    let interval = Duration::hours(24);
-
-    // 8 threads racing `schedule_refresh` against the same fresh directory:
-    // exactly one may win the `O_EXCL` lock.
-    let winners: usize = std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..8)
-            .map(|_| scope.spawn(|| schedule_refresh(dir.path(), now, interval)))
-            .collect();
-        handles
-            .into_iter()
-            .map(|handle| handle.join().unwrap())
-            .filter(|won| *won)
-            .count()
-    });
-    assert_eq!(winners, 1, "exactly one racer must win the refresh lock");
-
-    assert!(
-        !schedule_refresh(dir.path(), now, interval),
-        "a later invocation must lose the race, not fetch again"
-    );
+    let lock = acquire_refresh_lock(dir.path()).unwrap();
+    assert!(acquire_refresh_lock(dir.path()).is_none());
+    drop(lock);
+    assert!(acquire_refresh_lock(dir.path()).is_some());
 }
 
 #[test]
-fn a_stale_lock_is_taken_over() {
+fn refresh_lock_survives_launcher_exit() {
+    use std::process::{Command, Stdio};
+    use std::time::{Duration as Wait, Instant};
+
+    const MODE: &str = "LOOM_REFRESH_LOCK_FIXTURE_MODE";
+    const DIR: &str = "LOOM_REFRESH_LOCK_FIXTURE_DIR";
+    let spawn = |mode: &str, dir: &Path| {
+        Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "update_check::tests::refresh_lock_survives_launcher_exit",
+            ])
+            .env(MODE, mode)
+            .env(DIR, dir)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap()
+    };
+    if let Ok(mode) = std::env::var(MODE) {
+        refresh_lock_fixture(
+            &mode,
+            &PathBuf::from(std::env::var_os(DIR).unwrap()),
+            &spawn,
+        );
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
-    let now = Utc::now();
-    let interval = Duration::hours(24);
-
-    // A lock stamped well outside the interval simulates an owner that
-    // crashed before releasing it.
-    assert!(schedule_refresh(
-        dir.path(),
-        now - Duration::hours(48),
-        interval
-    ));
-    assert!(schedule_refresh(dir.path(), now, interval));
-
-    // `update.check_interval_hours = 0` means "check every invocation", not
-    // "every racer may take over a live lock": the lock keeps its own minimum
-    // lifetime, so a second invocation an instant later still backs off.
-    let zero = tempfile::tempdir().unwrap();
-    assert!(schedule_refresh(zero.path(), now, Duration::zero()));
+    assert!(spawn("launcher", dir.path()).wait().unwrap().success());
+    let deadline = Instant::now() + Wait::from_secs(5);
+    while !dir.path().join("ready").exists() && Instant::now() < deadline {
+        std::thread::sleep(Wait::from_millis(10));
+    }
+    assert!(dir.path().join("ready").exists());
+    let excluded = acquire_refresh_lock(dir.path()).is_none();
+    std::fs::write(dir.path().join("release"), "release").unwrap();
+    let deadline = Instant::now() + Wait::from_secs(5);
+    while !dir.path().join("done").exists() && Instant::now() < deadline {
+        std::thread::sleep(Wait::from_millis(10));
+    }
+    assert!(dir.path().join("done").exists());
+    assert!(acquire_refresh_lock(dir.path()).is_some());
     assert!(
-        !schedule_refresh(zero.path(), now + Duration::seconds(1), Duration::zero()),
-        "a zero check interval must not defeat the one-fetcher lock"
+        excluded,
+        "worker must retain the lock after its launcher exits"
     );
+}
+
+fn refresh_lock_fixture(
+    mode: &str,
+    dir: &Path,
+    spawn: &impl Fn(&str, &Path) -> std::process::Child,
+) {
+    use std::time::{Duration as Wait, Instant};
+    if mode == "launcher" {
+        // The launcher exits while the worker still holds the lock. Reap it
+        // if the launcher remains alive long enough for the worker to exit.
+        let mut worker = spawn("worker", dir);
+        std::thread::spawn(move || {
+            let _ = worker.wait();
+        });
+        return;
+    }
+    let lock = acquire_refresh_lock(dir).unwrap();
+    std::fs::write(dir.join("ready"), "ready").unwrap();
+    let deadline = Instant::now() + Wait::from_secs(10);
+    while !dir.join("release").exists() && Instant::now() < deadline {
+        std::thread::sleep(Wait::from_millis(10));
+    }
+    drop(lock);
+    std::fs::write(dir.join("done"), "done").unwrap();
 }
 
 #[test]
@@ -231,7 +263,6 @@ fn perform_refresh_stamps_the_attempt_even_when_the_fetch_fails() {
         serde_json::to_string(&prior).unwrap(),
     )
     .unwrap();
-    assert!(schedule_refresh(dir.path(), now, Duration::hours(24)));
 
     perform_refresh(dir.path(), now, || {
         Err(anyhow::anyhow!("network unreachable"))
@@ -244,17 +275,11 @@ fn perform_refresh_stamps_the_attempt_even_when_the_fetch_fails() {
         Some("0.1.0"),
         "a failed fetch must preserve the previous latest_version"
     );
-    assert!(
-        !lock_path(dir.path()).exists(),
-        "the lock must be released on both the failure and success paths"
-    );
 
-    assert!(schedule_refresh(dir.path(), now, Duration::hours(24)));
     perform_refresh(dir.path(), now, || {
         Version::parse("0.4.0").map_err(Into::into)
     });
 
     let state = read_state(dir.path()).expect("perform_refresh always writes a state file");
     assert_eq!(state.latest_version.as_deref(), Some("0.4.0"));
-    assert!(!lock_path(dir.path()).exists());
 }

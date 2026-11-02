@@ -76,7 +76,7 @@ pub fn render_find_all(graph: &ResolvedGraph, symbol: &str, opts: &ViewOptions) 
 pub fn find_all_json(graph: &ResolvedGraph, symbol: &str, opts: &ViewOptions) -> Value {
     let found = collect(graph, symbol, opts);
     json!({
-        "symbol": safe(symbol),
+        "symbol": symbol,
         "match": found.mode.as_str(),
         "exact": found.mode != MatchMode::Substring,
         "matches": found.hits.iter().map(|node| find_match_json(node)).collect::<Vec<_>>(),
@@ -107,9 +107,9 @@ fn find_all_row(node: &SourceNode) -> String {
 
 fn find_match_json(node: &SourceNode) -> Value {
     json!({
-        "id": safe(&node.id),
+        "id": node.id,
         "kind": node.kind.as_str(),
-        "path": safe(&node.path.to_string_lossy()),
+        "path": node.path.to_string_lossy(),
         "line_start": node.span.line_start,
         "coverage_status": node.coverage.status(),
     })

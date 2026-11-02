@@ -1,14 +1,12 @@
 //! Joins hook spawn requests to Claude lifecycle starts.
 
 use std::collections::{HashMap, HashSet};
-use std::fs::{self, OpenOptions};
-use std::io::Read;
-use std::os::unix::fs::OpenOptionsExt;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-const MAX_LEDGER_BYTES: u64 = 4 * 1024 * 1024;
+use crate::provider_data::ledger::read_ledger_text;
 
 pub(crate) const AMBIGUOUS_MODEL: &str = "ambiguous";
 
@@ -196,27 +194,9 @@ fn plain_directory(path: &Path) -> bool {
 }
 
 fn json_lines(path: &Path) -> Vec<Value> {
-    let Ok(metadata) = fs::symlink_metadata(path) else {
+    let Some(content) = read_ledger_text(path) else {
         return Vec::new();
     };
-    if !metadata.file_type().is_file()
-        || metadata.file_type().is_symlink()
-        || metadata.len() > MAX_LEDGER_BYTES
-    {
-        return Vec::new();
-    }
-    let Ok(file) = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-    else {
-        return Vec::new();
-    };
-    let mut content = String::new();
-    let mut limited = file.take(MAX_LEDGER_BYTES);
-    if limited.read_to_string(&mut content).is_err() {
-        return Vec::new();
-    }
     content
         .lines()
         .filter(|line| !line.trim().is_empty())

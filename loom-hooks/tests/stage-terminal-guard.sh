@@ -116,4 +116,105 @@ if [[ $CODE -ne 2 ]]; then
 	exit 1
 fi
 
+# Case 7: this guard is registered globally, so a LOOM_WORKTREE_PATH inherited
+# from a stage's shell must not block an unrelated session's writes. Only the
+# session's own location makes it a stage session.
+write_stage_status "completed"
+UNRELATED="$TMP/unrelated"
+mkdir -p "$UNRELATED"
+set +e
+(cd "$UNRELATED" && printf '%s' "$INPUT" | LOOM_WORKTREE_PATH="$WORKTREE" bash "$HOOK" 2>/dev/null)
+CODE=$?
+set -e
+if [[ $CODE -ne 0 ]]; then
+	echo "FAIL: an unrelated session with an inherited LOOM_WORKTREE_PATH was blocked (exit $CODE)"
+	exit 1
+fi
+set +e
+run_hook LOOM_WORKTREE_PATH="$UNRELATED/.worktrees/other"
+CODE=$?
+set -e
+if [[ $CODE -ne 2 ]]; then
+	echo "FAIL: the session's own worktree stopped deciding the guard (exit $CODE)"
+	exit 1
+fi
+
+# Case 8: a relative path has no root, so the upward walk must end instead of
+# spinning forever on the last component.
+walk_ended() {
+	local path="$1" waited=0 pid=""
+	bash -c 'source "$1"; loom_stage_work_dir "$2"' _ "$ROOT/loom-hooks/_stage_lookup.sh" "$path" \
+		>/dev/null 2>&1 &
+	pid=$!
+	while kill -0 "$pid" 2>/dev/null; do
+		if ((waited >= 50)); then
+			kill "$pid" 2>/dev/null || true
+			wait "$pid" 2>/dev/null || true
+			return 1
+		fi
+		sleep 0.1
+		waited=$((waited + 1))
+	done
+	wait "$pid" 2>/dev/null || true
+}
+for relative in 'wt' 'repo/.worktrees/stage' './.worktrees/stage'; do
+	if ! walk_ended "$relative"; then
+		echo "FAIL: loom_stage_work_dir never returned for relative path '$relative'"
+		exit 1
+	fi
+done
+
+# Exercise the source-only owner directly as well as the guard decision.
+source "$ROOT/loom-hooks/_common.sh"
+if loom_stage_work_dir "repo/.worktrees/stage" >/dev/null; then
+	echo "FAIL: a relative path must resolve to no state directory"
+	exit 1
+fi
+[[ $(loom_stage_work_dir "$WORKTREE") == "$PROJECT_ROOT/.work" ]] || {
+	echo "FAIL: an absolute worktree path must still find its state directory"
+	exit 1
+}
+write_stage_status '"completed" # terminal'
+[[ $(loom_stage_status "$STAGES_DIR/01-$STAGE_ID.md") == completed ]]
+
+# Ambiguous, symlinked and malformed records cannot establish terminal state.
+write_stage_status completed
+cp "$STAGES_DIR/01-$STAGE_ID.md" "$STAGES_DIR/$STAGE_ID.md"
+run_hook || { echo "FAIL: ambiguous stage"; exit 1; }
+rm "$STAGES_DIR/$STAGE_ID.md"
+mv "$STAGES_DIR/01-$STAGE_ID.md" "$TMP/stage-target"
+ln -s "$TMP/stage-target" "$STAGES_DIR/01-$STAGE_ID.md"
+run_hook || { echo "FAIL: symlink stage"; exit 1; }
+rm "$STAGES_DIR/01-$STAGE_ID.md"
+printf '%s\n' '---' 'status: completed' >"$STAGES_DIR/01-$STAGE_ID.md"
+run_hook || { echo "FAIL: unclosed frontmatter"; exit 1; }
+printf '%s\n' '---' 'status: completed' 'status: executing' '---' >"$STAGES_DIR/01-$STAGE_ID.md"
+run_hook || { echo "FAIL: duplicate status"; exit 1; }
+
+# Lifecycle binding and terminal decisions use the same stage lookup and
+# frontmatter boundary, while applying their own field requirements.
+source "$ROOT/loom-hooks/_lifecycle.sh"
+printf '%s\n' '---' "id: $STAGE_ID" 'session: owner-1' 'status: completed' '---' >"$STAGES_DIR/01-$STAGE_ID.md"
+loom_lifecycle_stage_binding "$PROJECT_ROOT/.work" "$STAGE_ID" owner-1 || {
+	echo "FAIL: lifecycle rejected valid shared metadata"; exit 1;
+}
+cp "$STAGES_DIR/01-$STAGE_ID.md" "$STAGES_DIR/$STAGE_ID.md"
+if loom_lifecycle_stage_binding "$PROJECT_ROOT/.work" "$STAGE_ID" owner-1; then
+	echo "FAIL: lifecycle accepted duplicate canonical and legacy stage files"; exit 1
+fi
+rm "$STAGES_DIR/$STAGE_ID.md"
+printf '%s\n' '---' "id: $STAGE_ID" 'session: owner-1' 'session: owner-2' '---' >"$STAGES_DIR/01-$STAGE_ID.md"
+if loom_lifecycle_stage_binding "$PROJECT_ROOT/.work" "$STAGE_ID" owner-1; then
+	echo "FAIL: lifecycle accepted duplicate session metadata"; exit 1
+fi
+printf '%s\n' '---' "id: $STAGE_ID" 'session: owner-1' >"$STAGES_DIR/01-$STAGE_ID.md"
+if loom_lifecycle_stage_binding "$PROJECT_ROOT/.work" "$STAGE_ID" owner-1; then
+	echo "FAIL: lifecycle accepted unclosed frontmatter"; exit 1
+fi
+mv "$STAGES_DIR/01-$STAGE_ID.md" "$TMP/lifecycle-target"
+ln -s "$TMP/lifecycle-target" "$STAGES_DIR/01-$STAGE_ID.md"
+if loom_lifecycle_stage_binding "$PROJECT_ROOT/.work" "$STAGE_ID" owner-1; then
+	echo "FAIL: lifecycle accepted a symlinked stage file"; exit 1
+fi
+
 echo "PASS"

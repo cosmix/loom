@@ -124,6 +124,48 @@ fn unknown_loom_subcommand_when_the_calling_stage_itself_adds_cli_files_is_a_war
 }
 
 #[test]
+fn cli_ownership_is_relative_to_the_stage_working_directory() {
+    for (working_dir, entry, warning) in [
+        (".", "loom/src/cli/**", true),
+        ("loom", "src/cli/**", true),
+        ("loom", "src/cl*/**", true),
+        ("loom", "src/c?i/**", true),
+        ("loom", "src/c[lt]i/**", true),
+        ("loom/src", "**", true),
+        ("loom", "src/other/**", false),
+        ("loom", "src/cl/*", false),
+        ("loom", "src/clerk*/**", false),
+        ("elsewhere", "loom/src/cli/**", false),
+        ("loom", "../loom/src/cli/**", false),
+    ] {
+        let mut calls = stage("feature", StageType::Standard, &["loom foo bar"]);
+        calls.working_dir = working_dir.to_string();
+        calls.files = vec![entry.to_string()];
+        let found = matching(&plan(vec![calls]), None, "is not a subcommand");
+        assert_eq!(found.len(), 1, "{working_dir}: {entry}: {found:?}");
+        assert_eq!(!found[0].error_in_v2, warning, "{working_dir}: {entry}");
+    }
+}
+
+#[test]
+fn partial_component_glob_in_transitive_dependency_is_a_warning() {
+    let mut adds_cli = stage("add-cli", StageType::Standard, &[]);
+    adds_cli.working_dir = "loom".to_string();
+    adds_cli.artifacts = vec!["src/c?i/**".to_string()];
+    let mut middle = stage("middle", StageType::Standard, &[]);
+    middle.dependencies = vec!["add-cli".to_string()];
+    let mut calls = stage("feature", StageType::Standard, &["loom foo bar"]);
+    calls.dependencies = vec!["middle".to_string()];
+    let found = matching(
+        &plan(vec![adds_cli, middle, calls]),
+        None,
+        "is not a subcommand",
+    );
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(!found[0].error_in_v2);
+}
+
+#[test]
 fn protected_dash_patterns_are_clean() {
     let metadata = standard(&[
         r#"rg -qF -e "--out" src/x.rs"#,

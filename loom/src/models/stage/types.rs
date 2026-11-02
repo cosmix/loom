@@ -87,7 +87,7 @@ impl PermissionMode {
 /// Success criteria for wiring tests.
 ///
 /// Defines how to determine if a wiring test passed.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SuccessCriteria {
     /// Expected exit code (default: 0)
@@ -111,7 +111,7 @@ pub struct SuccessCriteria {
 ///
 /// Unlike WiringCheck (grep-based pattern matching), WiringTest runs
 /// actual commands to verify runtime behavior of component connections.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WiringTest {
     /// Human-readable name for this test

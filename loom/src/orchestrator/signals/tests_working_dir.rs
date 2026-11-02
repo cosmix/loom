@@ -102,6 +102,69 @@ fn test_signal_acceptance_criteria_working_dir_note() {
 }
 
 #[test]
+fn test_signal_acceptance_criterion_expected_failure() {
+    let mut stage = create_test_stage();
+    stage.acceptance = vec![crate::yaml::from_str(
+        "command: check-absent\nexit_code: 1\nstdout_contains: [missing]\n",
+    )
+    .unwrap()];
+    let content = format_signal_content(
+        &create_test_session(),
+        &stage,
+        &create_test_worktree(),
+        &[],
+        None,
+        None,
+        &EmbeddedContext::default(),
+    );
+    assert!(
+        content.contains("check-absent (expected exit code: 1)"),
+        "{content}"
+    );
+    assert!(content.contains("stdout contains \"missing\""), "{content}");
+}
+
+#[test]
+fn merge_knowledge_and_recovery_signals_keep_the_expected_exit() {
+    use crate::orchestrator::signals::{
+        generate_knowledge_signal, generate_merge_signal, generate_recovery_signal,
+        RecoverySignalContent,
+    };
+
+    let temp = tempfile::TempDir::new().unwrap();
+    let work_dir = temp.path().join(".loom").join("work");
+    let session = create_test_session();
+    let mut stage = create_test_stage();
+    stage.acceptance =
+        vec![crate::yaml::from_str("command: check-absent\nexit_code: 1\n").unwrap()];
+    let recovery = RecoverySignalContent::for_crash(
+        "session-recovery".to_string(),
+        stage.id.clone(),
+        "session-old".to_string(),
+        None,
+        1,
+    );
+    let signals = [
+        generate_merge_signal(&session, &stage, "loom/s", "main", &[], &work_dir).unwrap(),
+        generate_recovery_signal(&recovery, &stage, &work_dir).unwrap(),
+    ];
+    for path in signals {
+        let content = std::fs::read_to_string(path).unwrap();
+        assert!(
+            content.contains("- [ ] check-absent (expected exit code: 1)"),
+            "{content}"
+        );
+    }
+    let knowledge =
+        generate_knowledge_signal(&session, &stage, temp.path(), &[], &work_dir, None).unwrap();
+    let content = std::fs::read_to_string(knowledge).unwrap();
+    assert!(
+        content.contains("- [ ] check-absent (expected exit code: 1)"),
+        "{content}"
+    );
+}
+
+#[test]
 fn test_signal_contains_where_commands_execute_box() {
     let session = create_test_session();
     let mut stage = create_test_stage();

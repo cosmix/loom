@@ -21,23 +21,19 @@ fn resolve(index: &PathIndex, spec: &str, from: &str) -> Vec<String> {
 }
 
 #[test]
-fn integration_test_imports_its_own_crate_by_package_name() {
+fn package_names_without_manifest_evidence_remain_unresolved() {
     let index = index_of(&["src/lib.rs", "tests/add_test.rs"]);
 
-    assert_eq!(
-        resolve(&index, "demo::add", "tests/add_test.rs"),
-        ["src/lib.rs"]
-    );
+    assert!(resolve(&index, "demo::add", "tests/add_test.rs").is_empty());
+    assert!(resolve(&index, "serde::add", "tests/add_test.rs").is_empty());
 }
 
 #[test]
-fn package_name_path_reaches_a_module_file() {
+fn bench_package_prefix_cannot_be_verified() {
     let index = index_of(&["src/lib.rs", "src/util.rs", "benches/b.rs"]);
 
-    assert_eq!(
-        resolve(&index, "demo::util::helper", "benches/b.rs"),
-        ["src/util.rs"]
-    );
+    assert!(resolve(&index, "demo::util::helper", "benches/b.rs").is_empty());
+    assert!(resolve(&index, "serde::util::helper", "benches/b.rs").is_empty());
 }
 
 #[test]
@@ -49,14 +45,37 @@ fn package_name_path_inside_a_crate_root_stays_external() {
 }
 
 #[test]
-fn package_name_path_needs_the_package_directory_to_hold_the_citing_file() {
+fn package_directory_does_not_prove_the_package_name() {
     let index = index_of(&["pkg/src/lib.rs", "other/tests/x.rs", "pkg/tests/y.rs"]);
 
     assert!(resolve(&index, "demo::add", "other/tests/x.rs").is_empty());
+    assert!(resolve(&index, "demo::add", "pkg/tests/y.rs").is_empty());
+}
+
+#[test]
+fn crate_anchor_never_selects_a_foreign_crate() {
+    let index = index_of(&[
+        "a/src/lib.rs",
+        "a/src/caller.rs",
+        "b/src/lib.rs",
+        "b/src/helper.rs",
+    ]);
     assert_eq!(
-        resolve(&index, "demo::add", "pkg/tests/y.rs"),
-        ["pkg/src/lib.rs"]
+        resolve(&index, "crate::helper::run", "a/src/caller.rs"),
+        ["a/src/lib.rs"]
     );
+    let index = index_of(&[
+        "a/src/lib.rs",
+        "a/src/caller.rs",
+        "a/src/helper.rs",
+        "b/src/lib.rs",
+        "b/src/helper.rs",
+    ]);
+    assert_eq!(
+        resolve(&index, "crate::helper::run", "a/src/caller.rs"),
+        ["a/src/helper.rs"]
+    );
+    assert!(resolve(&index, "crate::helper::run", "tests/unknown.rs").is_empty());
 }
 
 #[test]

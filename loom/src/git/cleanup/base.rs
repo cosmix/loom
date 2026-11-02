@@ -47,13 +47,19 @@ pub fn cleanup_base_branch(stage_id: &str, repo_root: &Path) -> Result<bool> {
 /// # Returns
 /// A vector of branch names that were deleted
 pub fn cleanup_all_base_branches(repo_root: &Path) -> Result<Vec<String>> {
-    // List all branches matching the pattern
-    let stdout = run_git_checked(&["branch", "--list", "loom/_base/*"], repo_root)?;
+    let stdout = run_git_checked(
+        &[
+            "for-each-ref",
+            "--format=%(refname:strip=2)",
+            "refs/heads/loom/_base/",
+        ],
+        repo_root,
+    )?;
 
     let branches: Vec<String> = stdout
         .lines()
-        .map(|s| s.trim().trim_start_matches('*').trim().to_string())
-        .filter(|s| !s.is_empty())
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
         .collect();
 
     let mut deleted = Vec::new();

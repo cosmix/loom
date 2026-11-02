@@ -10,6 +10,7 @@ use crate::git::merge::MergeGate;
 use crate::models::stage::Stage;
 use crate::orchestrator::merge_lifecycle::MergeLifecycle;
 use crate::orchestrator::{get_merge_point, merge_completed_stage, ProgressiveMergeResult};
+use crate::stage_service::merge_outcome::{classify_failure, MergeDisposition, MergeFailure};
 
 mod finish;
 mod guard;
@@ -40,10 +41,16 @@ pub enum MergeOutcome {
     /// The control-path gate held the branch - stage already routed to
     /// NeedsHumanReview
     Held,
+    /// Merge signing failed and the stage was routed to human review.
+    SigningHeld,
     /// The branch has no commit beyond the merge point - stage already routed
     /// to NeedsHumanReview, nothing merged
     NoCommits,
 }
+
+#[cfg(test)]
+#[path = "progressive_complete/merge_outcome_tests.rs"]
+mod merge_outcome_tests;
 
 /// Attempt to progressively merge a completed stage into the merge point.
 ///
@@ -69,6 +76,7 @@ pub enum MergeOutcome {
 /// - `MergeOutcome::Blocked` if merge failed (stage already marked MergeBlocked)
 /// - `MergeOutcome::Held` if the landing gates the merge and the branch touches
 ///   a control path (stage already routed to NeedsHumanReview)
+/// - `MergeOutcome::SigningHeld` if signing failed and review is required
 /// - `MergeOutcome::NoCommits` if the landing gates the merge and the branch
 ///   has no commit beyond the merge point (stage already routed to
 ///   NeedsHumanReview)
@@ -116,30 +124,35 @@ fn record_merge_result(
     at: &ConflictTarget<'_>,
 ) -> Result<MergeOutcome> {
     let (merge_point, repo_root, work_dir) = (at.merge_point, at.repo_root, at.work_dir);
-    match merged {
-        Ok(ProgressiveMergeResult::Success {
-            files_changed,
+    match merged.map(MergeDisposition::from) {
+        Ok(MergeDisposition::Landed {
+            files: files_changed,
             stash,
+            ..
         }) => {
             println!("  ✓ Merged {files_changed} file(s) into '{merge_point}'");
             note_merge_stash(&stage.id, work_dir, stash);
             mark_landed(stage, merge_point, repo_root)
         }
-        Ok(ProgressiveMergeResult::AlreadyMerged) => {
+        Ok(MergeDisposition::AlreadyLanded) => {
             println!("  ✓ Already up to date with '{merge_point}'");
             mark_landed(stage, merge_point, repo_root)
         }
-        Ok(ProgressiveMergeResult::NoBranch) => block_missing_branch(stage, work_dir, claim),
-        Ok(ProgressiveMergeResult::Blocked(block)) => {
-            hold_blocked_merge(stage, work_dir, claim, block)
-        }
-        Ok(ProgressiveMergeResult::Held { reason }) => {
-            hold_for_review(stage, work_dir, claim, &reason)
-        }
-        Ok(ProgressiveMergeResult::Conflict { conflicting_files }) => {
+        Ok(MergeDisposition::MissingBranch) => block_missing_branch(stage, work_dir, claim),
+        Ok(MergeDisposition::Blocked(block)) => hold_blocked_merge(stage, work_dir, claim, block),
+        Ok(MergeDisposition::Held(reason)) => hold_for_review(stage, work_dir, claim, &reason),
+        Ok(MergeDisposition::Conflict(conflicting_files)) => {
             record_conflict(stage, &conflicting_files, claim, at)
         }
-        Err(e) => block_failed_merge(stage, work_dir, claim, &e),
+        Ok(MergeDisposition::MissingWorktree) => {
+            bail!("progressive merge returned an invalid missing-worktree outcome")
+        }
+        Err(e) => match classify_failure(&stage.id, &e) {
+            MergeFailure::Signing(reason) => {
+                outcome::hold_for_signing(stage, work_dir, claim, &reason)
+            }
+            MergeFailure::Infrastructure(_) => block_failed_merge(stage, work_dir, claim, &e),
+        },
     }
 }
 
@@ -222,9 +235,13 @@ pub fn complete_with_merge(
                 stage.id
             );
         }
-        MergeOutcome::Held => {
+        hold @ (MergeOutcome::Held | MergeOutcome::SigningHeld) => {
+            let reason = match hold {
+                MergeOutcome::Held => "the branch touches a control path",
+                _ => "signing failed; fix signing before approval",
+            };
             bail!(
-                "Merge held for stage '{}': the branch touches a control path.\n\
+                "Merge held for stage '{}': {reason}.\n\
                  The stage has been routed to NeedsHumanReview.\n\
                  This session should exit now; a person releases it.",
                 stage.id

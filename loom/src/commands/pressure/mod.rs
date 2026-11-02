@@ -40,13 +40,13 @@ mod paths;
 mod spawn;
 mod terminal;
 
-use crate::pressure::codex_run::{codex_args, codex_model_label};
+use crate::pressure::codex_run::{codex_args, codex_model_label, CodexRetirement};
 use crate::pressure::models::{project_pressure_config, resolve_rounds, PressureModels};
 use crate::pressure::paths::{codex_report_path, resolve_plan_path, ResolvedPlan};
 use crate::pressure::{plan_steps, PipelineInput, PipelineOutcome, Step, RECORD_STEP_LABEL};
 use paths::{claude_marker_path, codex_log_path, resolve_repo_root};
 use spawn::{claude_args, AGENT_TEAMS_ENV};
-use terminal::TerminalDriver;
+use terminal::{retire_on_signal, TerminalDriver};
 
 /// Render the exact commands `--dry-run` would execute.
 ///
@@ -78,13 +78,9 @@ fn render_dry_run(
         models.address_effort
     );
     let steps = plan_steps(rounds, invocation, report);
-    let record_step = steps.len() + 1;
     for (n, step) in steps.into_iter().enumerate() {
-        render_dry_run_step(&mut out, n + 1, step, repo_root, marker, models);
+        render_dry_run_step(&mut out, n + 1, step, invocation, repo_root, marker, models);
     }
-    out.push_str(&format!(
-        "  {record_step}. {RECORD_STEP_LABEL} in {invocation}\n"
-    ));
     out
 }
 
@@ -95,11 +91,13 @@ fn render_dry_run_step(
     out: &mut String,
     n: usize,
     step: Step,
+    invocation: &str,
     repo_root: &Path,
     marker: &Path,
     models: &PressureModels,
 ) {
     match step {
+        Step::Record => out.push_str(&format!("  {n}. {RECORD_STEP_LABEL} in {invocation}\n")),
         Step::DeleteReport(p) => {
             out.push_str(&format!("  {n}. delete report {}\n", p.display()));
         }
@@ -227,6 +225,8 @@ pub fn execute(args: PressureArgs) -> Result<()> {
     }
     let claude_path = find_claude_path()?;
     let codex_path = find_codex_path()?;
+    let retirement = CodexRetirement::default();
+    retire_on_signal(retirement.clone())?;
     let mut driver = TerminalDriver {
         claude_path: &claude_path,
         codex_path: &codex_path,
@@ -235,6 +235,7 @@ pub fn execute(args: PressureArgs) -> Result<()> {
         codex_log: &codex_log,
         report: &report,
         models: &models,
+        retirement,
     };
     run_terminal_pipeline(&mut driver, rounds, &resolved)
 }

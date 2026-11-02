@@ -4,7 +4,7 @@ use sha2::digest::Output;
 use sha2::{Digest, Sha256};
 use std::fs::{File, Metadata};
 use std::io::Read;
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -113,9 +113,9 @@ fn digest_regular_file<D: Digest>(
     path: &Path,
     before: &Metadata,
     remaining: &mut u64,
-    mut file_hasher: D,
+    file_hasher: D,
 ) -> Option<Output<D>> {
-    if before.len() > *remaining {
+    if !before.is_file() || before.len() > *remaining {
         return None;
     }
     *remaining -= before.len();
@@ -124,25 +124,46 @@ fn digest_regular_file<D: Digest>(
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)
         .ok()?;
+    let opened = file.metadata().ok()?;
+    if !opened.is_file() || !same_file_snapshot(before, &opened) {
+        return None;
+    }
+    let digest = digest_bounded(&mut file, before.len(), file_hasher)?;
+    let after = file.metadata().ok()?;
+    if !after.is_file() || !same_file_snapshot(before, &after) {
+        return None;
+    }
+    Some(digest)
+}
+
+/// Read no more than the admitted length plus one byte to detect growth.
+fn digest_bounded<D: Digest>(
+    reader: &mut impl Read,
+    length: u64,
+    mut hasher: D,
+) -> Option<Output<D>> {
+    let mut bounded = reader.take(length.checked_add(1)?);
     let mut bytes_read = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
     loop {
-        let count = file.read(&mut buffer).ok()?;
+        let count = bounded.read(&mut buffer).ok()?;
         if count == 0 {
             break;
         }
         bytes_read = bytes_read.checked_add(u64::try_from(count).ok()?)?;
-        file_hasher.update(&buffer[..count]);
+        if bytes_read > length {
+            return None;
+        }
+        hasher.update(&buffer[..count]);
     }
-    let after = file.metadata().ok()?;
-    if bytes_read != before.len() || !after.is_file() || !same_file_snapshot(before, &after) {
+    if bytes_read != length {
         return None;
     }
-    Some(file_hasher.finalize())
+    Some(hasher.finalize())
 }
 
 fn same_file_snapshot(before: &Metadata, after: &Metadata) -> bool {
-    if before.len() != after.len() {
+    if before.dev() != after.dev() || before.ino() != after.ino() || before.len() != after.len() {
         return false;
     }
     matches!(

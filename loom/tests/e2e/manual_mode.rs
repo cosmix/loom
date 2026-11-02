@@ -1,7 +1,9 @@
-//! E2E tests for manual mode execution (signals without session spawning)
+//! Signal generation and listing tests for manually prepared sessions.
 //!
-//! Manual mode creates signal files for Ready stages without spawning sessions.
-//! This allows developers to manually attach to sessions and execute work.
+//! These tests call the signal formatter and listing directly. The scheduler's
+//! refusal to signal a waiting stage is proven by
+//! `a_manual_tick_does_not_signal_a_stage_waiting_for_dependencies` in
+//! `orchestrator/core/run_tests.rs`.
 
 use loom::models::session::Session;
 use loom::models::stage::{Stage, StageStatus};
@@ -44,7 +46,7 @@ fn create_test_worktree(stage_id: &str) -> Worktree {
 }
 
 #[test]
-fn test_manual_mode_creates_signals() {
+fn test_generate_signals_for_multiple_sessions() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = create_work_dir_structure(temp_dir.path());
 
@@ -106,10 +108,10 @@ fn test_signal_file_format() {
     assert_eq!(signal_content.acceptance_criteria.len(), 2);
     assert!(signal_content
         .acceptance_criteria
-        .contains(&"cargo test passes".to_string()));
+        .contains(&"cargo test passes (expected exit code: 0)".to_string()));
     assert!(signal_content
         .acceptance_criteria
-        .contains(&"cargo clippy passes".to_string()));
+        .contains(&"cargo clippy passes (expected exit code: 0)".to_string()));
 
     // Note: context_files is populated from ## Context Restoration section,
     // which is only present in fallback mode. New format embeds content directly.
@@ -124,7 +126,7 @@ fn test_signal_file_format() {
 }
 
 #[test]
-fn test_signal_not_created_for_pending_stages() {
+fn test_listing_only_includes_generated_signals() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = create_work_dir_structure(temp_dir.path());
 
@@ -159,7 +161,7 @@ fn test_signal_not_created_for_pending_stages() {
 }
 
 #[test]
-fn test_manual_mode_creates_signal_without_session_spawn() {
+fn test_generate_signal_writes_file_for_queued_stage() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = create_work_dir_structure(temp_dir.path());
 

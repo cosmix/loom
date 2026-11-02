@@ -78,7 +78,7 @@ pub fn submit(
     if request.kind == JobKind::Check && current.kind != JobKind::Check {
         return Ok(Submission::Refused(CHECK_BEHIND_RUN.to_string()));
     }
-    let queued = new_record(request, now);
+    let queued = new_record(work_dir, request, now)?;
     end(&mut current, &format!("superseded by {}", queued.id), now);
     store::save_current(work_dir, &current)?;
     persist_queued(work_dir, &queued)?;
@@ -131,6 +131,25 @@ pub fn cancel(work_dir: &Path, stage_id: &str, reason: &str) -> Result<Option<Jo
     Ok(Some(record))
 }
 
+/// Cancel only the job observed by an earlier stage operation. A replacement
+/// job belongs to a later request and must not be retired by stale cleanup.
+pub fn cancel_if_id(
+    work_dir: &Path,
+    stage_id: &str,
+    job_id: &str,
+    reason: &str,
+) -> Result<Option<JobRecord>> {
+    let _lock = store::lock_stage(work_dir, stage_id)?;
+    let Some(mut record) = store::load_current(work_dir, stage_id)?
+        .filter(|record| record.id == job_id && !record.state.is_terminal())
+    else {
+        return Ok(None);
+    };
+    end(&mut record, reason, Utc::now());
+    store::save_current(work_dir, &record)?;
+    Ok(Some(record))
+}
+
 /// Whether the non-terminal `current` job answers `request` as well: the same
 /// tree and kind, a cached request is answered by an uncached run too, and
 /// the job runs every criterion the request selects.
@@ -157,9 +176,14 @@ fn runs_selection(job: Option<&[usize]>, request: Option<&[usize]>) -> bool {
     }
 }
 
-fn new_record(request: &SubmitRequest<'_>, now: DateTime<Utc>) -> JobRecord {
-    JobRecord {
+fn new_record(
+    work_dir: &Path,
+    request: &SubmitRequest<'_>,
+    now: DateTime<Utc>,
+) -> Result<JobRecord> {
+    Ok(JobRecord {
         id: new_job_id(),
+        submission_order: store::next_submission_order(work_dir, request.stage_id)?,
         stage_id: request.stage_id.to_string(),
         session_id: request.session_id.to_string(),
         kind: request.kind,
@@ -174,11 +198,11 @@ fn new_record(request: &SubmitRequest<'_>, now: DateTime<Utc>) -> JobRecord {
         finished_at: None,
         pid: None,
         detail: None,
-    }
+    })
 }
 
 fn queue(work_dir: &Path, request: &SubmitRequest<'_>, now: DateTime<Utc>) -> Result<JobRecord> {
-    let queued = new_record(request, now);
+    let queued = new_record(work_dir, request, now)?;
     persist_queued(work_dir, &queued)?;
     Ok(queued)
 }

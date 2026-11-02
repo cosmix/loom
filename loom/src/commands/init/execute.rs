@@ -74,13 +74,52 @@ pub fn execute(
     no_repair: bool,
 ) -> Result<()> {
     let repo_root = std::env::current_dir()?;
+    for state in [repo_root.join(".loom/work"), repo_root.join(".work")] {
+        if holds_orchestration_state(&state) {
+            crate::git::worktree::require_main_identity_at(&repo_root, &state)?;
+        }
+    }
     let preflighted = preflight_plan_if_given(plan_path.as_deref())?;
-    let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(&repo_root)?;
+    prepare_workspace(&repo_root, clean, no_repair)?;
+    let (work_dir, mut guard) = create_init_work_dir(&repo_root)?;
+    if crate::git::worktree::main_identity_exists(work_dir.root()) {
+        crate::git::worktree::require_main_identity_at(&repo_root, work_dir.root())?;
+    } else {
+        crate::git::worktree::capture_main_identity(&repo_root, work_dir.root())?;
+    }
+    configure_workspace(&repo_root)?;
+
+    if let Some(preflighted) = preflighted {
+        let backend = resolve_backend_choice(backend)?;
+        let stage_count = initialize_with_plan(&work_dir, &preflighted, &repo_root, backend)?;
+        print_summary(plan_path.as_deref(), stage_count);
+    } else {
+        print_summary(None, 0);
+    }
+
+    // Publish for both planned and plan-less init; a dirty first checkout
+    // may need the source graph's overlay fallback.
+    crate::commands::run::checks::advisory_source_graph_preflight(&repo_root, &work_dir);
+    guard.disarm();
+    Ok(())
+}
+
+fn prepare_workspace(repo_root: &Path, clean: bool, no_repair: bool) -> Result<()> {
+    let has_state = [repo_root.join(".loom/work"), repo_root.join(".work")]
+        .iter()
+        .any(|state| {
+            holds_orchestration_state(state) || crate::git::worktree::main_identity_exists(state)
+        });
+    let repo_bootstrap = if has_state {
+        crate::git::repository::ensure_pinned_repo_ready(repo_root)?
+    } else {
+        crate::git::ensure_repo_ready_for_worktrees(repo_root)?
+    };
 
     // Repair the workspace BEFORE the validator judges it - see `startup_repairs`.
-    let repairs = startup_repairs(&repo_root, no_repair)?;
+    let repairs = startup_repairs(repo_root, no_repair)?;
 
-    validate_work_dir_state(&repo_root)?;
+    validate_work_dir_state(repo_root)?;
 
     print_header();
     print_repo_bootstrap(repo_bootstrap);
@@ -90,28 +129,14 @@ pub fn execute(
 
     println!("\n{}", "Cleanup".bold());
     println!("{}", "─".repeat(40).dimmed());
-
-    stop_daemon_and_prune(&repo_root, clean)?;
-    // `--clean` is about to delete the state directory below, which destroys the ONLY
-    // record (`<state-dir>/sessions/<id>.md`) that lets a tmux socket ever be
-    // attributed to this work dir again. Reap attributed sockets EVEN IF
-    // their session is still alive in that case; otherwise stay
-    // conservative and only reap truly-dead sessions.
-    let session_reap_mode = if clean {
-        SessionReapMode::IncludeLiveBeforeClean
-    } else {
-        SessionReapMode::OrphansOnly
-    };
-    cleanup_orphaned_sessions(&repo_root, session_reap_mode)?;
-
-    if clean {
-        cleanup_work_directory(&repo_root)?;
-        cleanup_worktrees_directory(&repo_root)?;
-    }
+    cleanup_previous_run(repo_root, clean)?;
 
     println!("\n{}", "Initialize".bold());
     println!("{}", "─".repeat(40).dimmed());
+    Ok(())
+}
 
+fn create_init_work_dir(repo_root: &Path) -> Result<(WorkDir, InitGuard)> {
     // `loom init` is one-shot: if the state directory already holds real orchestration
     // state, refuse. Pass --clean to wipe and start over. Reusing a stateful
     // state directory would silently overlay the new plan's stages on top of the
@@ -132,12 +157,15 @@ pub fn execute(
         );
     }
 
-    let mut guard = InitGuard::new(repo_root.clone());
+    let mut guard = InitGuard::new(repo_root.to_path_buf());
     create_or_adopt_work_dir(&work_dir, adopting_empty_work_dir, &mut guard)?;
+    Ok((work_dir, guard))
+}
 
-    git_hooks::install_git_hooks(&repo_root);
+fn configure_workspace(repo_root: &Path) -> Result<()> {
+    git_hooks::install_git_hooks(repo_root);
 
-    ensure_loom_permissions(&repo_root)?;
+    ensure_loom_permissions(repo_root)?;
     println!("  {} Permissions configured", "✓".green().bold());
     install_codex_hooks_advisory();
 
@@ -153,28 +181,33 @@ pub fn execute(
     }
 
     // Clean up legacy trustedDirectories entries (no-op if none exist)
-    if let Err(e) = migrate_legacy_trust(&repo_root) {
+    if let Err(e) = migrate_legacy_trust(repo_root) {
         eprintln!("  {} Legacy trust migration: {}", "!".yellow().bold(), e);
     }
+    Ok(())
+}
 
-    if let Some(preflighted) = preflighted {
-        let backend = resolve_backend_choice(backend)?;
-        let stage_count = initialize_with_plan(&work_dir, &preflighted, &repo_root, backend)?;
-        print_summary(plan_path.as_deref(), stage_count);
-    } else {
-        print_summary(None, 0);
+fn cleanup_previous_run(repo_root: &Path, clean: bool) -> Result<()> {
+    if clean {
+        let work_dir = resolve_state_dir(repo_root);
+        crate::fs::tmux_tmpdir::adopt_recorded_tmux_tmpdir(&work_dir);
     }
+    stop_daemon_and_prune(repo_root, clean)?;
+    // `--clean` deletes the state directory and its session records. Reap
+    // attributed sockets while those records can still identify them.
+    let session_reap_mode = if clean {
+        SessionReapMode::IncludeLiveBeforeClean
+    } else {
+        SessionReapMode::OrphansOnly
+    };
+    cleanup_orphaned_sessions(repo_root, session_reap_mode)?;
 
-    // Publish the source graph as part of init, AFTER the if/else so a
-    // plan-less `loom init` gets one too. Overlay fallback is enabled here and
-    // nowhere else: `loom init` is commonly the first command run in a dirty
-    // checkout, where a base publish is always refused, and publishing nothing
-    // would be honest but useless.
-    crate::commands::run::checks::advisory_source_graph_preflight(&repo_root, &work_dir);
-
-    // Success - disarm the guard to prevent cleanup
-    guard.disarm();
-
+    if clean {
+        let work_dir = resolve_state_dir(repo_root);
+        crate::orchestrator::terminal::tmux::viewer::retire_viewer(&work_dir)?;
+        cleanup_work_directory(repo_root)?;
+        cleanup_worktrees_directory(repo_root)?;
+    }
     Ok(())
 }
 

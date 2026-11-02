@@ -248,6 +248,40 @@ fn claude_only_allow_write_is_plan_paths_then_package_caches() {
 }
 
 #[test]
+fn public_path_diagnostics_match_emitted_plan_grants() {
+    use crate::sandbox::{detect_path_escape, PathEscapeAttempt};
+    let mut config = config();
+    let paths = [
+        "src/**",
+        "../sibling",
+        "../.worktrees/other",
+        "/tmp/cache",
+        "..",
+        "dir/..",
+    ];
+    config.filesystem.allow_write = paths.iter().map(|path| (*path).to_string()).collect();
+    let settings = generate_settings_json(&config);
+    let grants = settings["sandbox"]["filesystem"]["allowWrite"]
+        .as_array()
+        .unwrap();
+    let permissions = settings["permissions"]["allow"].as_array().unwrap();
+    for path in paths {
+        let safe = detect_path_escape(path) == PathEscapeAttempt::Safe;
+        assert_eq!(grants.contains(&json!(path)), safe, "{path}");
+        let rule = super::super::super::grant_paths::edit_rule(path);
+        assert_eq!(permissions.contains(&json!(rule)), safe, "{path}");
+    }
+    for traversal in ["../sibling", "../.worktrees/other", "..", "dir/.."] {
+        assert!(
+            !grants.contains(&json!(traversal)),
+            "{traversal} was granted"
+        );
+    }
+    assert!(grants.contains(&json!("src/**")));
+    assert!(grants.contains(&json!("/tmp/cache")));
+}
+
+#[test]
 fn codex_licensed_allow_write_appends_codex_state_paths() {
     let mut config = config();
     config.implementers = Implementers::new(vec![Implementer::Codex, Implementer::Claude]);

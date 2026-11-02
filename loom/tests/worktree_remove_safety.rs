@@ -3,6 +3,8 @@
 // and relay instead of removing. The tests drive `remove_with_mode` directly
 // with an explicit `RelayMode::Operator` instead of depending on the
 // environment (tests must never mutate process-wide environment).
+#[path = "test_support/mod.rs"]
+mod test_support;
 use loom::commands::worktree_cmd;
 use loom::models::stage::{Stage, StageStatus, StageType};
 use loom::relay::emit::RelayMode;
@@ -63,6 +65,7 @@ fn init_repo() -> TempDir {
     git_ok(root, &["add", "README.md"]);
     git_ok(root, &["commit", "-m", "base"]);
     fs::create_dir_all(root.join(".loom/work/stages")).unwrap();
+    test_support::write_main_checkout_identity(root, &root.join(".loom/work"));
     fs::write(
         root.join(".loom/work/config.toml"),
         "[plan]\nbase_branch = \"main\"\n",

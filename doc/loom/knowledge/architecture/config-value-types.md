@@ -1,7 +1,7 @@
 # Typed Config Values: the `ConfigValue` Read-Path Seam
 
 >
-> web API, TypeScript client, React — instead of collapsing to a string at the read boundary.
+> ConfigValue read-path seam
 
 ## The Seam
 

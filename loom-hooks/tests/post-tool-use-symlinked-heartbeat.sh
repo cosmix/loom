@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
-# A symlinked heartbeat file must still exit 0 and must never be written
-# through - the guard at post-tool-use.sh's heartbeat block exists precisely
-# to refuse that. But that refusal must skip ONLY the heartbeat write: it is
-# not a whole-script `exit 0`, so a Write/Edit tool call under a symlinked
-# heartbeat file must still get its path recorded via
-# `loom context record-edit`. This is a regression test for the defect where
-# the guard exited the entire script, silently disabling edit recording
-# whenever the heartbeat happened to be a symlink.
+# A symlinked heartbeat must not be followed, and no edit recording occurs.
 set -euo pipefail
 HOOK="$(dirname "$0")/../post-tool-use.sh"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
@@ -60,12 +53,8 @@ if [[ "$NEW_CONTENT" != "$ORIGINAL_CONTENT" ]]; then
 	exit 1
 fi
 
-if [[ ! -f "$MARKER" ]]; then
-	echo "FAIL: a symlinked heartbeat file must not disable edit recording"
-	exit 1
-fi
-if ! grep -qF -- "--path src/foo.rs" "$MARKER"; then
-	echo "FAIL: record-edit was not called with the worktree-relative path. Got: $(cat "$MARKER")"
+if [[ -e "$MARKER" ]]; then
+	echo "FAIL: hook invoked the obsolete edit recorder"
 	exit 1
 fi
 

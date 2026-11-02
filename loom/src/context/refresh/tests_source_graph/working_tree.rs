@@ -6,6 +6,50 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 #[test]
+fn linked_checkout_graph_uses_anchored_identity_after_pointer_change() {
+    let original = init_repo();
+    let foreign = init_repo();
+    std::fs::write(foreign.path().join("src.rs"), "fn foreign() {}\n").unwrap();
+    git_ok(foreign.path(), &["add", "src.rs"]);
+    git_ok(foreign.path(), &["commit", "-m", "foreign"]);
+    let parent = tempfile::TempDir::new().unwrap();
+    let root = parent.path().join("checkout");
+    git_ok(
+        original.path(),
+        &["worktree", "add", "-b", "linked", root.to_str().unwrap()],
+    );
+    let revision = head_sha(&root);
+    let work = root.join(".loom/work");
+    std::fs::create_dir_all(&work).unwrap();
+    crate::git::worktree::capture_main_identity(&root, &work).unwrap();
+    std::fs::write(
+        root.join(".git"),
+        format!("gitdir: {}\n", foreign.path().join(".git").display()),
+    )
+    .unwrap();
+    std::fs::write(root.join("src.rs"), "fn dirty() {}\n").unwrap();
+
+    let store = ContextStore::with_root(root.join(".loom/cache/context-v1"));
+    let graph = GraphStore::new(store.root(), &work);
+    let outcome = reconcile_source_graph(
+        &store,
+        &graph,
+        &root,
+        SourceGraphScope::Base {
+            revision: revision.clone(),
+        },
+    )
+    .unwrap();
+    assert!(!outcome.freshness.stale, "{:?}", outcome.freshness);
+    let base = graph.load_base(&revision).unwrap().unwrap();
+    assert_eq!(
+        base.files["src.rs"].content_hash,
+        crate::context::source_graph::body_hash(b"fn main() {}\n")
+    );
+    assert_eq!(working_tree(&root).unwrap().head, revision);
+}
+
+#[test]
 fn base_scope_refuses_to_publish_when_the_tracked_tree_is_dirty() {
     let temp = init_repo();
     let root = temp.path();

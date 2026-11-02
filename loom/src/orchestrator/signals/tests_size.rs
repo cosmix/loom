@@ -25,7 +25,7 @@ use super::generate::{
 /// print them (`tests_guidance_manifest.rs` lists every relocation). The
 /// ceiling equals the actual size, so any addition fails here: trim the
 /// template or move the text to its home instead of raising the ceiling.
-const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 20_138;
+const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 20_131;
 
 /// The KV-cache-stable prefix pasted into the first message of every fresh
 /// session spawned for a standard stage.
@@ -55,10 +55,9 @@ const STABLE_PREFIX_MAX_BYTES: usize = 8_192;
 /// A future stage tightening this ratchet should do that split and add a
 /// fifth ceiling over the invariant part; until then it can regrow unchecked.
 ///
-/// Unchanged by BLOCK-D (see `STABLE_PREFIX_MAX_BYTES`): stable_prefix_bytes
-/// grows by ~889 bytes for a standard stage, but actual floor after that
-/// addition is 7,624 bytes (stable 6,034, semi-stable 1,590) - comfortably
-/// under this ceiling already, so it stays at its original value.
+/// The sandbox section renders the effective configuration, so an inherited
+/// default `deny_read` list counts here; it stays one line in the signal
+/// (`format/sandbox_section.rs`) rather than one line per path.
 const STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES: usize = 10_240;
 
 /// Mirrors `generate::MAX_PLAN_OVERVIEW_BYTES` (private to that module); an

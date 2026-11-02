@@ -1,3 +1,4 @@
+pub(crate) mod cache_io;
 pub(crate) mod daemon_state;
 pub(crate) mod dispute_lock;
 pub(crate) mod git_marker;
@@ -14,6 +15,7 @@ pub mod safe_read;
 pub mod safe_replace;
 pub mod safe_write;
 pub mod session_files;
+pub(crate) mod stage_admission;
 pub mod stage_events;
 pub mod stage_files;
 pub mod stage_loading;

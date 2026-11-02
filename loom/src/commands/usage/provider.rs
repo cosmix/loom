@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::codex_scope::{self, CodexScope};
@@ -22,6 +23,8 @@ pub(crate) struct ProviderEventInput<'a> {
     pub(crate) codex_unreadable_directories: usize,
     pub(crate) codex_scope: &'a CodexScope,
     pub(crate) receipts_root: Option<&'a Path>,
+    pub(crate) selected_stages: Option<&'a HashSet<String>>,
+    pub(crate) selection_unavailable: bool,
 }
 
 pub(crate) struct NormalizedProviderEvents {
@@ -45,6 +48,7 @@ pub(crate) fn normalize_provider_events(
         claude_diagnostics.missing_roots += input.claude_missing_roots;
         claude_diagnostics.missed_session_transcripts = input.claude_sessions.missed;
         claude_diagnostics.unreadable_session_records = input.claude_sessions.unreadable;
+        claude_diagnostics.selection_unavailable = usize::from(input.selection_unavailable);
         rows.extend(normalized.rows);
     }
     if input.selection.includes(Provider::Codex) {
@@ -81,16 +85,22 @@ pub(crate) fn normalize_provider_events(
 /// Codex rollout rows of the selection, reduced to the threads the project's
 /// forward receipts name.
 fn normalize_codex(input: &ProviderEventInput<'_>) -> (Vec<NormalizedEvent>, ProviderDiagnostics) {
-    let normalized = super::codex_provider::normalize(input.codex_files, &input.range);
+    let normalized = super::codex_provider::normalize_unclassified(
+        input.codex_files,
+        &input.range,
+        input.codex_scope,
+    );
     let mut diagnostics = normalized.diagnostics;
     let mut rows = normalized.rows;
     diagnostics.missing_roots += input.codex_missing_roots;
     diagnostics.unreadable_files += input.codex_unreadable_directories;
     let outcome = codex_scope::apply(input.codex_scope, &mut rows);
+    super::codex_provider::classify_response_ids(&mut rows);
     diagnostics.foreign_codex_rows = outcome.foreign_rows;
     diagnostics.missing_forward_threads = outcome.missing_threads;
     diagnostics.unthreaded_forward_receipts = outcome.unthreaded_receipts;
     diagnostics.codex_scope_unavailable = usize::from(outcome.unavailable);
+    diagnostics.ambiguous_forward_threads = outcome.ambiguous_threads;
     (rows, diagnostics)
 }
 
@@ -120,7 +130,14 @@ fn merge_receipts(
     let receipts = super::receipt_provider::normalize(input.receipts_root, &input.range);
     for row in receipts.rows {
         if input.selection.includes(row.provider) {
-            rows.push(row);
+            if input.selected_stages.is_some() {
+                match row.provider {
+                    Provider::Claude => claude.unscoped_execution_receipts += 1,
+                    Provider::Codex => codex.unscoped_execution_receipts += 1,
+                }
+            } else {
+                rows.push(row);
+            }
         }
     }
     for (provider, diagnostics) in receipts.diagnostics {
@@ -152,4 +169,55 @@ fn selected_reports(
         reports.push(super::provider_report::build(Provider::Codex, rows, codex));
     }
     reports
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+    use serde_json::json;
+
+    #[test]
+    fn stage_selection_excludes_execution_receipt_without_stage_evidence() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("one.json"),
+            json!({
+                "schema_version": 1,
+                "provider": "claude",
+                "observed_at": "2026-09-12T20:00:00Z",
+                "request_id": "receipt-1",
+                "usage": {"input_tokens": 10, "output_tokens": 2}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let stages = HashSet::from(["alpha".to_owned()]);
+        let range = TimeRange {
+            since: Utc.with_ymd_and_hms(2026, 9, 12, 0, 0, 0).single().unwrap(),
+            until: None,
+        };
+        let normalized = normalize_provider_events(ProviderEventInput {
+            selection: ProviderSelection::Claude,
+            range,
+            claude_transcripts: Vec::new(),
+            claude_discovered_files: 0,
+            claude_missing_roots: 0,
+            claude_sessions: SessionInventory::default(),
+            codex_files: &[],
+            codex_missing_roots: 0,
+            codex_unreadable_directories: 0,
+            codex_scope: &CodexScope::Unscoped,
+            receipts_root: Some(root.path()),
+            selected_stages: Some(&stages),
+            selection_unavailable: false,
+        });
+        assert!(normalized.ledger.rows.is_empty());
+        let report = &normalized.ledger.providers[0];
+        assert_eq!(report.diagnostics.unscoped_execution_receipts, 1);
+        assert!(report
+            .completeness
+            .reasons
+            .contains(&"execution-receipt-unscoped"));
+    }
 }

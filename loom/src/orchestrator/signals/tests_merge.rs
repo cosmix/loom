@@ -184,7 +184,7 @@ fn signal_directs_the_resolver_to_the_stage_worktree() {
         "the resolver merges the target into the stage branch: {content}"
     );
     assert!(
-        content.contains("continue it; do not start a new `git merge`"),
+        content.contains("continue it only when `git rev-parse MERGE_HEAD` equals `main`"),
         "{content}"
     );
     assert!(

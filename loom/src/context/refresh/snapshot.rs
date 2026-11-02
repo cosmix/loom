@@ -267,10 +267,18 @@ fn overlay_is_current(
     stage: &str,
     generation: &str,
 ) -> Result<bool> {
-    Ok(graph_store
-        .load_overlay(plan, stage)?
-        .as_ref()
-        .is_some_and(|layer| layer.generation == generation && layer_is_current(layer)))
+    let Some(layer) = graph_store.load_overlay(plan, stage)? else {
+        return Ok(false);
+    };
+    if layer.generation != generation || !layer_is_current(&layer) {
+        return Ok(false);
+    }
+    // A delta left its unchanged files to its base. With that base pruned it
+    // no longer describes the tree; reconciling rebuilds it complete.
+    Ok(layer.complete
+        || graph_store
+            .load_base(&layer.revision)?
+            .is_some_and(|base| base.has_current_schema()))
 }
 
 /// A layer is current when it was written under

@@ -21,6 +21,7 @@ fn seed(lock_path: &Path, epoch: u64, pid: u32, failures: u32, pending: bool) {
         pid,
         failures,
         pending,
+        claim: 0,
     };
     update_lock(lock_path, |_| (Some(state), ())).expect("seed the lock");
 }
@@ -250,20 +251,21 @@ fn the_lock_line_is_four_fields() {
             epoch: 12345,
             pid: 999,
             failures: 3,
-            pending: true
+            pending: true,
+            claim: 0,
         })
     );
 }
 
 #[test]
-fn a_line_that_is_not_exactly_four_fields_is_no_lock() {
+fn a_line_that_is_not_four_or_five_fields_is_no_lock() {
     let temp = TempDir::new().unwrap();
     let lock_path = temp.path().join("reconcile.lock");
 
     for body in [
         "12345 999\n",
         "12345 999 3\n",
-        "12345 999 3 1 7\n",
+        "12345 999 3 1 7 8\n",
         "12345 999 3 2\n",
         "12345 999 x 0\n",
         "",
@@ -300,7 +302,16 @@ fn try_claim_over_no_lock_wins_with_zeroed_counters() {
 
     assert_eq!(claim(&lock_path, 50, 7), Claim::Won);
 
-    assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), "50 7 0 0\n");
+    let state = read_lock(&lock_path).unwrap();
+    assert_eq!(
+        (state.epoch, state.pid, state.failures, state.pending),
+        (50, 7, 0, false)
+    );
+    assert_ne!(state.claim, 0, "a new lease needs a claim token");
+    assert_eq!(
+        std::fs::read_to_string(&lock_path).unwrap(),
+        format!("50 7 0 0 {}\n", state.claim)
+    );
 }
 
 #[test]
@@ -353,11 +364,11 @@ fn pending_is_consumed_by_exactly_one_extra_pass() {
     let lock_path = temp.path().join("reconcile.lock");
     seed(&lock_path, 100, 4242, 0, true);
 
-    assert_eq!(end_pass(&lock_path, 200, 4242, false), PassEnd::Again);
+    assert_eq!(end_pass(&lock_path, 200, 4242, 0, false), PassEnd::Again);
     let kept = read_lock(&lock_path).unwrap();
     assert_eq!((kept.epoch, kept.pid, kept.pending), (200, 4242, false));
 
-    assert_eq!(end_pass(&lock_path, 300, 4242, false), PassEnd::Done);
+    assert_eq!(end_pass(&lock_path, 300, 4242, 0, false), PassEnd::Done);
     let released = read_lock(&lock_path).unwrap();
     assert_eq!(
         (released.epoch, released.pid, released.failures),
@@ -371,10 +382,10 @@ fn a_failed_pass_adds_one_failure_and_a_success_resets_them() {
     let lock_path = temp.path().join("reconcile.lock");
     seed(&lock_path, 100, 4242, 2, false);
 
-    assert_eq!(end_pass(&lock_path, 200, 4242, true), PassEnd::Done);
+    assert_eq!(end_pass(&lock_path, 200, 4242, 0, true), PassEnd::Done);
     assert_eq!(read_lock(&lock_path).unwrap().failures, 3);
 
     seed(&lock_path, 300, 4242, 3, false);
-    assert_eq!(end_pass(&lock_path, 400, 4242, false), PassEnd::Done);
+    assert_eq!(end_pass(&lock_path, 400, 4242, 0, false), PassEnd::Done);
     assert_eq!(read_lock(&lock_path).unwrap().failures, 0);
 }

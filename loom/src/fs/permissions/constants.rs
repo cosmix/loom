@@ -2,7 +2,19 @@
 
 /// Common utilities shared across loom hooks (source guard, strip_embedded_content)
 pub const HOOK_BOUNDED: &str = include_str!("../../../../loom-hooks/_bounded.sh");
+pub const HOOK_PARSER_EXPAND: &str = include_str!("../../../../loom-hooks/_parser_expand.sh");
+pub const HOOK_PARSER_SCAN: &str = include_str!("../../../../loom-hooks/_parser_scan.sh");
+pub const HOOK_CONTAINMENT: &str = include_str!("../../../../loom-hooks/_containment.sh");
+pub const HOOK_STAGE_LOOKUP: &str = include_str!("../../../../loom-hooks/_stage_lookup.sh");
+pub const HOOK_PARSER: &str = include_str!("../../../../loom-hooks/_parser.sh");
+pub const HOOK_IDENTITY: &str = include_str!("../../../../loom-hooks/_identity.sh");
+pub const HOOK_HEARTBEAT: &str = include_str!("../../../../loom-hooks/_heartbeat.sh");
+pub const HOOK_SPAWN_POLICY: &str = include_str!("../../../../loom-hooks/_spawn_policy.sh");
 pub const HOOK_COMMON: &str = include_str!("../../../../loom-hooks/_common.sh");
+pub const HOOK_WORKTREE_POLICY_LOADER: &str =
+    include_str!("../../../../loom-hooks/_worktree_policy.sh");
+pub const HOOK_WORKTREE_POLICY: &str = include_str!("../../../../loom-hooks/worktree-policy.json");
+pub const HOOK_GIT_COMMAND: &str = include_str!("../../../../loom-hooks/_git-command.sh");
 
 /// Claude worker lifecycle evidence utilities shared by lifecycle hooks
 pub const HOOK_LIFECYCLE: &str = include_str!("../../../../loom-hooks/_lifecycle.sh");
@@ -43,7 +55,7 @@ pub const HOOK_COMMIT_GUARD: &str = include_str!("../../../../loom-hooks/commit-
 /// PostToolUse hook - updates heartbeat after each tool use
 pub const HOOK_POST_TOOL_USE: &str = include_str!("../../../../loom-hooks/post-tool-use.sh");
 
-/// Trusted PostToolUse bridge from sandboxed verification to a narrow daemon transition.
+/// Trusted PreToolUse guard for daemon-owned stage completion.
 pub const HOOK_LOOM_CONTROL_COMPLETE: &str =
     include_str!("../../../../loom-hooks/loom-control-complete.sh");
 
@@ -186,6 +198,17 @@ pub const HOOK_LOOM_RELAY: &str = include_str!("../../../../loom-hooks/loom-rela
 pub const LOOM_HOOKS: &[(&str, &str)] = &[
     // Common utilities (sourced by other hooks)
     ("_common.sh", HOOK_COMMON),
+    ("_worktree_policy.sh", HOOK_WORKTREE_POLICY_LOADER),
+    ("worktree-policy.json", HOOK_WORKTREE_POLICY),
+    ("_git-command.sh", HOOK_GIT_COMMAND),
+    ("_parser.sh", HOOK_PARSER),
+    ("_stage_lookup.sh", HOOK_STAGE_LOOKUP),
+    ("_parser_expand.sh", HOOK_PARSER_EXPAND),
+    ("_parser_scan.sh", HOOK_PARSER_SCAN),
+    ("_containment.sh", HOOK_CONTAINMENT),
+    ("_identity.sh", HOOK_IDENTITY),
+    ("_heartbeat.sh", HOOK_HEARTBEAT),
+    ("_spawn_policy.sh", HOOK_SPAWN_POLICY),
     ("_bounded.sh", HOOK_BOUNDED),
     ("_lifecycle.sh", HOOK_LIFECYCLE),
     ("_codex_forward.sh", HOOK_CODEX_FORWARD_COMMON),
@@ -277,30 +300,5 @@ pub const LOOM_PERMISSIONS: &[&str] = &[
     "Bash(~/.claude/hooks/loom/codex-forward.sh:*)",
 ];
 
-/// Loom permissions for WORKTREE context
-/// Worktrees are at .worktrees/stage-X/ with symlink .loom/work -> ../../../.loom/work
-pub const LOOM_PERMISSIONS_WORKTREE: &[&str] = &[
-    // Access via the symlink path (how Claude sees the paths). Same shape as
-    // LOOM_PERMISSIONS above and for the same reasons: read-only over the
-    // entire state root, no broad `Edit(<state>/**)` in either spelling that
-    // would re-expose the daemon tokens, and never a `Write(...)` rule (inert —
-    // Claude Code's file permission check consults only `Edit(path)`). Both
-    // layouts are listed for the same reason too: a worktree of a project whose
-    // workspace predates the move symlinks `.work`, not `.loom/work`.
-    "Read(.loom/work/**)",
-    "Read(.work/**)",
-    // Read access to instruction files
-    "Read(.claude/CLAUDE.md)",
-    "Read(~/.claude/CLAUDE.md)",
-    // Read access to loom hooks and catalogued skills loaded on demand
-    "Read(~/.claude/hooks/loom/**)",
-    "Read(~/.claude/loom-skill-catalog/**)",
-    // Covers the loom-skills loader's fallback read on a `--skills all`
-    // install (no catalog directory) and the installed skills themselves.
-    "Read(~/.claude/skills/**)",
-    // Loom CLI commands (use :* for prefix matching)
-    "Bash(loom *)",
-    // Loom's own codex forwarding wrapper. codex-forward-guard.sh independently
-    // pins forwarder subagents to exactly one invocation of this wrapper.
-    "Bash(~/.claude/hooks/loom/codex-forward.sh:*)",
-];
+/// Worktrees use the same grants as the main repository.
+pub const LOOM_PERMISSIONS_WORKTREE: &[&str] = LOOM_PERMISSIONS;

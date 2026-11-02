@@ -1,10 +1,7 @@
 //! How a query names a file: exact paths, bare stems, stage-dependency paths,
 //! and the test-file convention that damps them.
 //!
-//! Split out of [`super`] so the scoring pass and the path vocabulary it
-//! consults stay under the file line limit independently. Everything here is
-//! purely lexical — no filesystem access — because it runs against candidate
-//! paths that may not exist in this checkout at all.
+//! Matching is lexical; candidate paths need not exist in this checkout.
 
 use crate::context::config::RetrievalConfig;
 use crate::context::lexical::{contains_whole_term, ExactGate, TermEvidence};

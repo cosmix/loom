@@ -8,12 +8,14 @@
 
 use std::io::ErrorKind;
 use std::os::unix::fs::FileTypeExt;
+#[cfg(test)]
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 
+use super::deadline_transport::DeadlineStream;
 use super::protocol::{read_message, write_message, Request, Response};
 use super::{read_user_token, socket_path, socket_path_fits};
 
@@ -22,10 +24,10 @@ use super::{read_user_token, socket_path, socket_path_fits};
 /// own stage from an operator shell.
 pub const SESSION_ID_ENV: &str = "LOOM_SESSION_ID";
 
-/// How long to wait for the daemon's reply. Generous: a dispute or a block
+/// Maximum duration of the entire daemon exchange. A dispute or a block
 /// takes a directory lock and writes a file, both of which can queue behind
 /// the orchestrator's own state writes.
-const READ_TIMEOUT: Duration = Duration::from_secs(30);
+const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Fixed non-empty stand-in used when no readable `user.token` exists.
 ///
@@ -157,6 +159,14 @@ pub enum DaemonReach {
 /// - A failure after the connection is established (write, read, timeout) is
 ///   also always an `Err`, never `NotListening` — something was listening.
 pub fn try_send_request(work_dir: &Path, request: &Request) -> Result<DaemonReach> {
+    try_send_request_with_timeout(work_dir, request, EXCHANGE_TIMEOUT)
+}
+
+fn try_send_request_with_timeout(
+    work_dir: &Path,
+    request: &Request,
+    timeout: Duration,
+) -> Result<DaemonReach> {
     let socket_path = socket_path(work_dir);
     match std::fs::symlink_metadata(&socket_path) {
         Ok(_) => {}
@@ -166,7 +176,7 @@ pub fn try_send_request(work_dir: &Path, request: &Request) -> Result<DaemonReac
     if !socket_path_fits(&socket_path) {
         return Ok(DaemonReach::Unreachable);
     }
-    let stream = match UnixStream::connect(&socket_path) {
+    let mut stream = match DeadlineStream::connect(&socket_path, timeout) {
         Ok(stream) => stream,
         Err(e) if e.kind() == ErrorKind::PermissionDenied || refused_by_mask(&e, &socket_path) => {
             return Ok(DaemonReach::Unreachable);
@@ -180,7 +190,7 @@ pub fn try_send_request(work_dir: &Path, request: &Request) -> Result<DaemonReac
             })
         }
     };
-    exchange(stream, request).map(DaemonReach::Answered)
+    exchange(&mut stream, request).map(DaemonReach::Answered)
 }
 
 /// Whether `error`, from connecting to `path`, is a sandbox's mask rather
@@ -214,12 +224,9 @@ pub fn send_request(work_dir: &Path, request: &Request) -> Result<Response> {
 
 /// Write the request and read back the reply over an already-connected
 /// stream.
-fn exchange(mut stream: UnixStream, request: &Request) -> Result<Response> {
-    stream
-        .set_read_timeout(Some(READ_TIMEOUT))
-        .context("Failed to set daemon socket read timeout")?;
-    write_message(&mut stream, request).context("Failed to send request to daemon")?;
-    read_message(&mut stream).context("Failed to read daemon response")
+fn exchange(stream: &mut DeadlineStream, request: &Request) -> Result<Response> {
+    write_message(stream, request).context("Failed to send request to daemon")?;
+    read_message(stream).context("Failed to read daemon response")
 }
 
 #[cfg(test)]

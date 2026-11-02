@@ -51,6 +51,7 @@ fn save_stage_with_status(work_dir: &Path, stage_id: &str, status: StageStatus) 
     let mut stage = Stage::new(stage_id.to_string(), None);
     stage.id = stage_id.to_string();
     stage.status = status;
+    stage.session = Some("session-test".into());
     save_stage(&stage, work_dir).unwrap();
 }
 
@@ -215,7 +216,14 @@ fn an_invalid_entry_is_skipped_without_blocking_a_valid_entry_and_the_spool_is_t
     let stage_id = "mixed-spool";
     save_stage_with_status(&work_dir, stage_id, StageStatus::Executing);
     let worktree_root = worktree_dir(temp.path(), stage_id);
-    spool_note(&worktree_root, &"x".repeat(2001)); // fails validate_content
+    let invalid = MemoryEntry::new(MemoryEntryType::Note, "x".repeat(2001));
+    crate::fs::jsonl_spool::append(
+        &worktree_root,
+        ".loom/memory-spool.jsonl",
+        &invalid,
+        1024 * 1024,
+    )
+    .unwrap();
     spool_note(&worktree_root, "a good entry");
 
     let mut orchestrator = orchestrator_for(&work_dir, temp.path());
@@ -239,11 +247,12 @@ fn an_invalid_entry_is_skipped_without_blocking_a_valid_entry_and_the_spool_is_t
 /// Append one block request directly to a worktree's request spool, as the
 /// sandboxed CLI fallback would when its socket syscalls are denied.
 fn spool_block(worktree_root: &Path, reason: &str) {
-    stage_request::append_to_spool(
+    stage_request::append_to_spool_for_session(
         worktree_root,
         &stage_request::StageRequest::Block {
             reason: reason.to_string(),
         },
+        "session-test",
     )
     .unwrap();
 }

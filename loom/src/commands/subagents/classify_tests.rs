@@ -1,8 +1,7 @@
 //! Tests for `classify.rs`'s liveness table, including the `done` debounce,
 //! the two classifier shapes the empirical census surfaced (`thinking`-only
 //! and a `user`-role text entry), `tool-wait`'s immunity to idle time, and
-//! lifecycle fast paths. Split out to keep `classify.rs` itself under the
-//! 400-line ceiling.
+//! lifecycle fast paths.
 
 use super::*;
 
@@ -211,10 +210,8 @@ fn text_only_entry_aged_past_debounce_is_done() {
     assert_eq!(summary.final_report.as_deref(), Some("genuinely finished"));
 }
 
-/// `tool-wait` must never debounce or time out, at any idle time -- a real
-/// tool call in this codebase has been measured running 603s, and the
-/// overall max is 1,425s (23.8 minutes). 30 minutes idle must still read
-/// as `tool-wait`, never `done` and never `unknown`.
+/// Diagnostic classification keeps `tool-wait` even after 30 minutes idle;
+/// the watch stall policy is tested separately.
 #[test]
 fn tool_wait_never_debounces_even_after_30_minutes_idle() {
     let temp = tempfile::tempdir().unwrap();

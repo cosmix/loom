@@ -48,7 +48,7 @@ fn behaviour_is_additive_and_does_not_change_the_content_fingerprint() {
     let after = fingerprint_from(
         "base",
         &[
-            ("a.rs".into(), Some(b"// note\nfn a() {}\n\n".to_vec())),
+            ("a.rs".into(), Some(b"fn a() {}\n".to_vec())),
             ("doc/x.md".into(), Some(b"new".to_vec())),
         ],
     );

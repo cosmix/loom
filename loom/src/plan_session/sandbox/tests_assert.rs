@@ -193,6 +193,8 @@ deny_refusal!(refuses_missing_lsp, "LSP");
 deny_refusal!(refuses_missing_remote_trigger, "RemoteTrigger");
 deny_refusal!(refuses_missing_cron_create, "CronCreate");
 deny_refusal!(refuses_missing_push_notification, "PushNotification");
+deny_refusal!(refuses_missing_monitor, "Monitor");
+deny_refusal!(refuses_missing_power_shell, "PowerShell");
 deny_refusal!(refuses_missing_workflow, "Workflow");
 deny_refusal!(refuses_missing_send_message, "SendMessage");
 deny_refusal!(refuses_missing_list_agents, "ListAgents");

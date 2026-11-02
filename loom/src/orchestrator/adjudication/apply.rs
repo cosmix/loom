@@ -1,24 +1,10 @@
-//! Applying a written verdict to the stage it judged.
-//!
-//! The daemon scans for `verdict.md` files with no sibling `applied.marker`
-//! and acts on each one exactly once. Which way a verdict moves the stage is
-//! the whole autonomy contract:
-//!
-//! * `Accept` — the criteria were wrong. Amend the plan, tell the next session
-//!   what changed and why (`apply_accept.rs`), then re-queue the stage, or hold
-//!   it in `NeedsAdjudication` while other disputes on it are unanswered.
-//! * `NeedsMoreEvidence` — ask the agent the adjudicator's questions, then
-//!   re-queue (or hold, per the same rule) up to
-//!   [`MAX_EVIDENCE_ROUNDS`](super::MAX_EVIDENCE_ROUNDS).
-//! * `Reject` — the criterion was right and the implementation is wrong.
-//!   This is a DEADLOCK, not a retry: the agent already judged the criterion
-//!   impossible and the adjudicator has now upheld it, so re-queueing would
-//!   loop the same disagreement. It escalates to `NeedsHumanReview` — the one
-//!   outcome of adjudication that is designed to need a human.
-//!
-//! These are a criterion dispute's verdicts; `apply_kinds.rs` routes by kind.
+//! Apply a recorded verdict under the dispute claim. The stage transaction
+//! stores its consumed identity with counters and status; marker publication
+//! and sibling closure can then recover after a crash.
+//! `apply_kinds.rs` routes verdicts by dispute kind.
 
 use anyhow::{Context, Result};
+use std::os::fd::OwnedFd;
 use std::path::Path;
 
 use crate::models::dispute::{applied_marker, dispute_dir, CriterionField, DisputeKind};
@@ -27,21 +13,53 @@ use crate::plan::amendment::{apply_amendment, AmendmentRequest};
 use crate::verify::transitions::{load_stage, update_stage};
 
 use super::apply_kinds::apply_by_kind;
+use super::apply_receipt::{
+    apply_reason_change, cap_receipt, finish_apply_cap, publish_applied_marker, verdict_receipt,
+    write_marker,
+};
+use super::closed_disputes::close_dispute_locked;
 use super::requeue::requeue_or_hold_for_remaining_disputes;
 use super::scan::read_verdict_record;
 use super::{
-    close_open_disputes, feedback, is_closed, resolve_plan_path, AdjudicatorRegistry,
-    MAX_EVIDENCE_ROUNDS,
+    close_open_disputes_except_locked, feedback, is_closed, lock_stage_dispute_dir,
+    resolve_plan_path, AdjudicatorRegistry, MAX_EVIDENCE_ROUNDS,
 };
 
 impl AdjudicatorRegistry {
-    /// Apply verdict files that haven't been applied yet (no
-    /// `applied.marker`). Idempotent under crash recovery: a `.applying`
-    /// marker is written before mutating stage state and removed only
-    /// after `applied.marker` is in place.
+    /// A caller holding `claim` may retire the disputing writer only while
+    /// this exact open verdict still owns a stage in adjudication.
+    pub(crate) fn verdict_needs_retirement(
+        &self,
+        work_dir: &Path,
+        stage_id: &str,
+        dispute_id: u32,
+        _claim: &OwnedFd,
+    ) -> Result<bool> {
+        let root = work_dir.join("disputes");
+        let dir = dispute_dir(&root, stage_id, dispute_id);
+        if is_closed(&dir) || applied_marker(&root, stage_id, dispute_id).exists() {
+            return Ok(false);
+        }
+        let stage = load_stage(stage_id, work_dir)?;
+        Ok(stage.status == StageStatus::NeedsAdjudication
+            && !stage
+                .tally
+                .request_receipts
+                .contains_key(&verdict_receipt(dispute_id))
+            && !stage
+                .tally
+                .request_receipts
+                .contains_key(&cap_receipt(dispute_id)))
+    }
+
+    /// Apply verdict files without an `applied.marker`. The stage receipt is
+    /// authoritative after a crash between its write and marker publication.
     pub fn apply_pending_verdicts(&self, work_dir: &Path) -> Result<()> {
         for (stage_id, dispute_id) in self.pending_verdicts(work_dir)? {
             if let Err(e) = self.apply_verdict(work_dir, &stage_id, dispute_id) {
+                if e.downcast_ref::<super::counter::CounterError>().is_some() {
+                    return Err(e).context("adjudication apply budget unavailable");
+                }
                 tracing::warn!(
                     target: "loom::adjudication",
                     stage = %stage_id,
@@ -59,18 +77,81 @@ impl AdjudicatorRegistry {
     /// bounded retry: after [`super::MAX_APPLY_ATTEMPTS`] failures the
     /// verdict is a wedge, not a transient, and gets escalated instead.
     pub fn apply_verdict(&self, work_dir: &Path, stage_id: &str, dispute_id: u32) -> Result<()> {
+        let lifecycle = lock_stage_dispute_dir(&work_dir.join("disputes").join(stage_id))?;
+        self.apply_verdict_claimed(work_dir, stage_id, dispute_id, lifecycle)
+    }
+
+    /// Apply while the caller retains the dispute claim across retirement.
+    pub(crate) fn apply_verdict_claimed(
+        &self,
+        work_dir: &Path,
+        stage_id: &str,
+        dispute_id: u32,
+        lifecycle: OwnedFd,
+    ) -> Result<()> {
+        let dir = dispute_dir(&work_dir.join("disputes"), stage_id, dispute_id);
+        if applied_marker(&work_dir.join("disputes"), stage_id, dispute_id).exists()
+            || is_closed(&dir)
+        {
+            return Ok(());
+        }
+        let receipt = verdict_receipt(dispute_id);
+        let current = load_stage(stage_id, work_dir)?;
+        let receipts = &current.tally.request_receipts;
+        if receipts.contains_key(&cap_receipt(dispute_id)) || receipts.contains_key(&receipt) {
+            if current.status == StageStatus::NeedsHumanReview {
+                close_open_disputes_except_locked(work_dir, stage_id, Some(dispute_id))?;
+            }
+            publish_applied_marker(work_dir, stage_id, dispute_id)?;
+            return Ok(());
+        }
+        // No receipt and no adjudication left to answer: an operator or a reset
+        // moved the stage, and no later tick can apply this verdict. Closing it
+        // ends the retries, charges nothing, and lets the caller retire its judge.
+        if current.status != StageStatus::NeedsAdjudication {
+            tracing::warn!(target: "loom::adjudication", stage = %stage_id, dispute = dispute_id,
+                status = %current.status, "closing a verdict uncharged; the stage moved on");
+            return close_dispute_locked(work_dir, stage_id, dispute_id);
+        }
+        let spent = super::apply_failure_count(work_dir, stage_id, dispute_id)?;
+        if spent >= super::MAX_APPLY_ATTEMPTS {
+            let error = anyhow::anyhow!("apply attempt budget was exhausted before recovery");
+            return finish_apply_cap(work_dir, stage_id, dispute_id, spent, &error, &lifecycle);
+        }
+        // Reserve durably before any verdict effect. A failed counter write
+        // leaves the stage untouched and cannot grant a free retry next tick.
+        let attempts = super::reserve_apply_attempt(work_dir, stage_id, dispute_id)?;
+        self.apply_reserved_verdict(work_dir, stage_id, dispute_id, attempts, receipt, lifecycle)
+    }
+
+    fn apply_reserved_verdict(
+        &self,
+        work_dir: &Path,
+        stage_id: &str,
+        dispute_id: u32,
+        attempts: u32,
+        receipt: String,
+        lifecycle: OwnedFd,
+    ) -> Result<()> {
+        if attempts > super::MAX_APPLY_ATTEMPTS {
+            let error = anyhow::anyhow!("apply attempt budget was exhausted concurrently");
+            return finish_apply_cap(work_dir, stage_id, dispute_id, attempts, &error, &lifecycle);
+        }
         match self.apply_verdict_once(work_dir, stage_id, dispute_id) {
             Ok(()) => Ok(()),
             Err(e) => {
-                let failures = super::record_apply_failure(work_dir, stage_id, dispute_id);
-                if failures >= super::MAX_APPLY_ATTEMPTS {
-                    super::escalate_apply_cap(work_dir, stage_id, dispute_id, failures, &e);
-                    // Write applied.marker so pending_verdicts stops
-                    // returning this dispute: that is what stops both the
-                    // retry loop AND the retire_disputing_agents kill that
-                    // runs before every attempt.
-                    write_applied_marker_after_apply_cap(work_dir, stage_id, dispute_id);
-                    Ok(())
+                // The stage transaction can commit successfully even when
+                // marker publication fails. That failure is recoverable and
+                // must not spend the apply-failure escalation budget.
+                let consumed = load_stage(stage_id, work_dir)?
+                    .tally
+                    .request_receipts
+                    .contains_key(&receipt);
+                if consumed {
+                    return Err(e);
+                }
+                if attempts >= super::MAX_APPLY_ATTEMPTS {
+                    finish_apply_cap(work_dir, stage_id, dispute_id, attempts, &e, &lifecycle)
                 } else {
                     Err(e)
                 }
@@ -78,8 +159,7 @@ impl AdjudicatorRegistry {
         }
     }
 
-    /// One apply attempt, a no-op on a closed dispute. Idempotent under crash
-    /// recovery: a `.applying` marker guards the mutation until `applied.marker` lands.
+    /// One apply attempt, serialized with recording and closing by the dispute lock.
     fn apply_verdict_once(&self, work_dir: &Path, stage_id: &str, dispute_id: u32) -> Result<()> {
         let disputes_root = work_dir.join("disputes");
         let verdict_path =
@@ -89,41 +169,31 @@ impl AdjudicatorRegistry {
         if applied.exists() || is_closed(&dir) {
             return Ok(());
         }
-        let applying = dir.join(".applying");
-
         let record = read_verdict_record(&verdict_path)?;
+        let request = super::read_request(work_dir, stage_id, dispute_id)
+            .with_context(|| format!("read request for stage {stage_id} dispute {dispute_id}"))?;
         let mut stage = load_stage(stage_id, work_dir)?;
+        anyhow::ensure!(
+            stage.status == StageStatus::NeedsAdjudication,
+            "stage left adjudication before dispute {dispute_id} was applied"
+        );
         let loaded_reason = stage.review_reason.clone();
+        let loaded_updated_at = stage.updated_at;
 
-        // Write the .applying marker BEFORE mutating any state so a
-        // crash mid-apply is recoverable (the next tick re-enters here
-        // and re-applies the same verdict; the work is idempotent).
-        if let Some(parent) = applying.parent() {
-            std::fs::create_dir_all(parent).ok();
-        }
-        let _ = std::fs::write(&applying, b"");
-
-        let result = apply_by_kind(work_dir, &mut stage, &record);
-        let final_result = persist_verdict_result(
+        apply_by_kind(work_dir, &mut stage, &record, &request.kind)?;
+        persist_verdict_result(
             work_dir,
             stage_id,
+            dispute_id,
             &stage,
             loaded_reason.as_deref(),
+            loaded_updated_at,
             &applied,
-            result,
-        );
-        // Always remove the .applying marker — success means the
-        // applied.marker now exists, failure means we'll retry on
-        // the next tick and re-write the marker.
-        let _ = std::fs::remove_file(&applying);
-        final_result
+        )
     }
 }
 
-/// The persistence half of `apply_verdict`, split out because setup
-/// (reading the verdict, taking the `.applying` lock) and persisting the
-/// result are two different concerns sharing one function only because they
-/// run in sequence.
+/// Persist the verdict's stage delta and its receipt in one locked stage write.
 ///
 /// Re-applies ONLY the verdict-owned fields onto the FRESH on-disk stage so a
 /// concurrent dispute-thread write (e.g. dispute_count for a parallel filing)
@@ -134,77 +204,48 @@ impl AdjudicatorRegistry {
 /// transaction already persisted it, and a cached copy could overwrite a
 /// newer amendment. The amendment tally is monotonic for the same reason.
 ///
-/// The status write itself is skipped entirely when the on-disk status
-/// already matches (the common "hold in NeedsAdjudication while a sibling
-/// dispute is unanswered" no-op — logging a forced transition for a status
-/// that never changed is pure noise), and goes through the validated
-/// `try_transition` when the on-disk status legally allows it (e.g.
-/// `NeedsAdjudication -> Queued`, which the transition table already knows
-/// about). `force_status_with_reason` remains the fallback for the case the
-/// on-disk status does NOT recognize the move — the in-memory `stage` already
-/// holds the verdict's resolved status and the on-disk status is re-read
-/// here, so re-validating unconditionally would risk a spurious refusal
-/// against an intermediate on-disk state.
+/// A changed lifecycle refuses the commit. The dispute lock keeps cooperating
+/// reset, close and record operations from crossing this boundary.
 fn persist_verdict_result(
     work_dir: &Path,
     stage_id: &str,
+    dispute_id: u32,
     stage: &Stage,
     loaded_reason: Option<&str>,
+    loaded_updated_at: chrono::DateTime<chrono::Utc>,
     applied: &Path,
-    inner_result: Result<()>,
 ) -> Result<()> {
-    inner_result?;
+    let receipt = verdict_receipt(dispute_id);
     let verdict_status = stage.status.clone();
     let verdict_evidence_rounds = stage.tally.evidence_rounds;
     let verdict_amendments_applied = stage.tally.amendments_applied;
-    let persisted = update_stage(stage_id, work_dir, |s| {
+    update_stage(stage_id, work_dir, |s| {
+        if s.tally.request_receipts.contains_key(&receipt) {
+            return Ok(());
+        }
+        anyhow::ensure!(
+            s.status == StageStatus::NeedsAdjudication && s.updated_at == loaded_updated_at,
+            "stage lifecycle changed while applying dispute {dispute_id}; refusing stale verdict"
+        );
+        anyhow::ensure!(
+            s.tally.request_receipts.len() < 1024,
+            "stage receipt capacity exhausted; refusing to lose verdict replay protection"
+        );
         if s.status != verdict_status {
-            if s.status.can_transition_to(&verdict_status) {
-                let _ = s.try_transition(verdict_status.clone());
-            } else {
-                s.force_status_with_reason(verdict_status.clone(), "adjudicator verdict applied");
-            }
+            s.try_transition(verdict_status.clone())?;
         }
         apply_reason_change(s, loaded_reason, stage.review_reason.as_deref());
         s.tally.evidence_rounds = verdict_evidence_rounds;
         s.tally.amendments_applied = s.tally.amendments_applied.max(verdict_amendments_applied);
+        s.tally.request_receipts.insert(receipt.clone(), dispute_id);
         Ok(())
     })
     .context("save amended stage after verdict apply")?;
-    if let Some(parent) = applied.parent() {
-        std::fs::create_dir_all(parent).ok();
+    if stage.status == StageStatus::NeedsHumanReview {
+        close_open_disputes_except_locked(work_dir, stage_id, Some(dispute_id))?;
     }
-    std::fs::write(applied, b"")
-        .with_context(|| format!("Failed to write {}", applied.display()))?;
-    // A verdict-driven escalation abandons the stage's other open disputes.
-    // The stage lock is released by now: the filing path takes the dispute
-    // lock and then the stage lock, so this order must never invert.
-    if persisted.status == StageStatus::NeedsHumanReview {
-        close_open_disputes(work_dir, stage_id);
-    }
+    write_marker(applied)?;
     Ok(())
-}
-
-/// Re-apply the verdict's change to `review_reason` onto the locked on-disk
-/// `stage`. The verdict was worked out on a copy loaded unlocked with
-/// `loaded`; a sibling filing may have written a newer reason since. A reason
-/// the verdict left as loaded is not its to write, so the newer one stays; a
-/// reason it set replaces whatever is on disk (archived as replaced, which it
-/// is); a reason it cleared is retired only while the disk still holds the
-/// one it cleared. A verdict that requeued the stage never reaches that arm:
-/// the on-disk `NeedsAdjudication -> Queued` transition has already retired
-/// the reason it held.
-fn apply_reason_change(stage: &mut Stage, loaded: Option<&str>, verdict: Option<&str>) {
-    if verdict == loaded {
-        return;
-    }
-    match verdict {
-        Some(reason) => stage.replace_review_reason(reason.to_owned()),
-        None if stage.review_reason.as_deref() == loaded => {
-            stage.retire_review_reason("adjudicator verdict applied");
-        }
-        None => {}
-    }
 }
 
 /// Apply an accepted verdict's amendment and resync the stage from it.
@@ -272,6 +313,7 @@ pub(super) fn apply_reject(
     dispute_id: u32,
     reasoning: &str,
     citations: &[crate::models::dispute::Citation],
+    kind: &DisputeKind,
 ) -> Result<()> {
     // The reasoning and citations are what a human needs to arbitrate, so they
     // are still written for the record.
@@ -283,7 +325,7 @@ pub(super) fn apply_reject(
          it stands and the implementation is what must change. The stage \
          agent judged it impossible, so it cannot make progress unaided — read \
          {} — then decide with: loom stage human-review {}",
-        disputed_entry(work_dir, &stage.id, dispute_id),
+        disputed_entry(kind),
         verdict_path.display(),
         stage.id
     );
@@ -305,11 +347,10 @@ pub(super) fn apply_reject(
     Ok(())
 }
 
-/// What a criterion dispute contested, as `apply_reject`'s review reason
-/// names it: `criterion` when its request cannot be read.
-fn disputed_entry(work_dir: &Path, stage_id: &str, dispute_id: u32) -> &'static str {
-    match super::read_request(work_dir, stage_id, dispute_id).map(|request| request.kind) {
-        Ok(DisputeKind::Criterion { field, .. }) => match field {
+/// What a criterion dispute contested, as `apply_reject`'s review reason names it.
+fn disputed_entry(kind: &DisputeKind) -> &'static str {
+    match kind {
+        DisputeKind::Criterion { field, .. } => match field {
             CriterionField::Acceptance => "acceptance criterion",
             CriterionField::Wiring => "wiring check",
             CriterionField::WiringTests => "wiring test",
@@ -339,24 +380,10 @@ pub(super) fn apply_needs_more_evidence(
     }
 }
 
-/// Write `applied.marker` after an apply-cap escalation so the daemon stops
-/// retrying; best-effort, since a write failure here just means a retry.
-fn write_applied_marker_after_apply_cap(work_dir: &Path, stage_id: &str, dispute_id: u32) {
-    let applied = applied_marker(&work_dir.join("disputes"), stage_id, dispute_id);
-    if let Some(parent) = applied.parent() {
-        std::fs::create_dir_all(parent).ok();
-    }
-    if let Err(error) = std::fs::write(&applied, b"") {
-        tracing::warn!(
-            target: "loom::adjudication",
-            stage = %stage_id,
-            dispute = dispute_id,
-            %error,
-            "failed to write applied.marker after apply-cap escalation; verdict will be retried",
-        );
-    }
-}
-
 #[cfg(test)]
 #[path = "apply_persistence_tests.rs"]
 mod persistence_tests;
+
+#[cfg(test)]
+#[path = "apply_recovery_tests.rs"]
+mod recovery_tests;

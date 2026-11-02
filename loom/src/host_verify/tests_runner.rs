@@ -11,10 +11,11 @@ use chrono::{DateTime, Utc};
 use tempfile::TempDir;
 
 use super::runner::{fail_queued, HostJobRunner, RunnerConfig};
-use super::store::{append_group, load_current, save_current};
+use super::store::{load_current, save_current, start_guarded_group};
 use super::submit::{cancel, submit, Submission, SubmitRequest};
 use super::{JobKind, JobRecord, JobState};
 use crate::models::stage::{Stage, StageStatus};
+use crate::verify::criteria::GroupAnchor;
 
 pub(super) const STAGE: &str = "stage-a";
 /// Writes a passing `result.json` for the job the runner named.
@@ -92,8 +93,8 @@ fn gone(pid: u32) -> bool {
     nix::sys::signal::kill(pid, None) == Err(nix::errno::Errno::ESRCH)
 }
 
-/// A stand-in criterion leading its own process group, as a confined one
-/// does; killed and reaped on drop so a failing test leaks nothing.
+/// A stand-in criterion with its own group for stranger and legacy cases.
+/// Guarded host-job criteria use [`guarded_criterion`].
 pub(super) struct Criterion(pub(super) Child);
 
 impl Criterion {
@@ -127,6 +128,20 @@ impl Drop for Criterion {
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
+}
+
+pub(super) fn guarded_criterion(work: &Path, record: &JobRecord) -> (GroupAnchor, Criterion) {
+    let (leader, address) = start_guarded_group(work, &record.stage_id, &record.id).unwrap();
+    let anchor = GroupAnchor::new(leader, Box::new(move || address.signal()));
+    let child = Command::new("sleep")
+        .arg("600")
+        .process_group(i32::try_from(anchor.pgid()).unwrap())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    (anchor, Criterion(child))
 }
 
 #[test]
@@ -174,7 +189,9 @@ fn a_job_whose_stage_cannot_be_loaded_fails_without_starting() {
     assert_eq!(ended[0].pid, None);
     let detail = ended[0].detail.clone().unwrap_or_default();
     assert!(
-        detail.contains("cannot load stage 'no-such-stage'"),
+        detail.contains(
+            "cannot calculate the host job budget: Stage file not found for: no-such-stage"
+        ),
         "{detail}"
     );
 }
@@ -216,8 +233,7 @@ fn a_job_past_its_deadline_fails_and_its_child_and_criteria_die() {
         .with_deadline_override(Duration::from_secs(1));
     let job = queue(&work, STAGE, Utc::now());
     let started = tick_until(&mut runner, &work, STAGE, running);
-    let mut criterion = Criterion::spawn();
-    append_group(&work, STAGE, &job.id, criterion.0.id()).unwrap();
+    let (_anchor, mut criterion) = guarded_criterion(&work, &job);
     std::thread::sleep(Duration::from_millis(1_200));
 
     let ended = runner.tick().unwrap();
@@ -244,8 +260,7 @@ fn cancelling_a_running_job_kills_its_child_and_criteria() {
     let mut runner = HostJobRunner::new(work.clone(), shell("sleep 600", 1));
     let job = queue(&work, STAGE, Utc::now());
     let started = tick_until(&mut runner, &work, STAGE, running);
-    let mut criterion = Criterion::spawn();
-    append_group(&work, STAGE, &job.id, criterion.0.id()).unwrap();
+    let (_anchor, mut criterion) = guarded_criterion(&work, &job);
 
     cancel(&work, STAGE, "takedown").unwrap();
     let ended = runner.tick().unwrap();
@@ -336,8 +351,7 @@ fn a_child_killed_mid_run_takes_its_criteria_with_it() {
     let (_dir, work) = state_root();
     let mut runner = HostJobRunner::new(work.clone(), shell("kill -9 $$", 1));
     let job = queue(&work, STAGE, Utc::now());
-    let mut criterion = Criterion::spawn();
-    append_group(&work, STAGE, &job.id, criterion.0.id()).unwrap();
+    let (_anchor, mut criterion) = guarded_criterion(&work, &job);
 
     let ended = tick_until(&mut runner, &work, STAGE, |r| r.state.is_terminal());
 

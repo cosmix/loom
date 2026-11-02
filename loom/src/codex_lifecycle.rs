@@ -4,6 +4,8 @@
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
+use chrono::{DateTime, Utc};
+
 use anyhow::Result;
 
 use crate::models::session::Session;
@@ -22,6 +24,174 @@ pub use authorization::CodexAuthorization;
 pub(crate) use direct::receipt_matches_authorization;
 pub(crate) use ledger::{read_authorization_rows, read_lifecycle_records, LedgerRow};
 pub(crate) use token_threads::authorized_threads;
+
+/// An authorized forward from this exact stage attempt. `Some(false)` means
+/// the worker existed but has no fresh evidence to hold stall recovery.
+pub(crate) fn foreground_forward_active(
+    work_dir: &Path,
+    stage_id: &str,
+    session_id: &str,
+    since: DateTime<Utc>,
+    budget: Duration,
+    now: DateTime<Utc>,
+) -> Option<bool> {
+    let state_root = authorization::canonical_daemon_state_root().ok()?;
+    forward_active_at(
+        work_dir,
+        stage_id,
+        session_id,
+        since,
+        budget,
+        now,
+        &state_root,
+    )
+}
+
+/// Every invocation authorized for this stage session, whatever its state. An
+/// unreadable ledger names none, which costs a forward's launch only its
+/// exclusion from the bounded hold any foreground command earns.
+pub(crate) fn session_invocation_ids(
+    work_dir: &Path,
+    stage_id: &str,
+    session_id: &str,
+) -> Vec<String> {
+    if !crate::models::forward_receipt::is_safe_id(stage_id) {
+        return Vec::new();
+    }
+    let path = work_dir
+        .join("subagents")
+        .join(stage_id)
+        .join("codex.jsonl");
+    let rows = ledger::read_authorization_rows(&path).unwrap_or_default();
+    rows.into_iter()
+        .filter_map(|row| match row {
+            LedgerRow::Authorization(auth)
+                if auth.stage_id == stage_id && auth.loom_session_id == session_id =>
+            {
+                Some(auth.invocation_id)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn forward_active_at(
+    work_dir: &Path,
+    stage_id: &str,
+    session_id: &str,
+    since: DateTime<Utc>,
+    budget: Duration,
+    now: DateTime<Utc>,
+    state_root: &Path,
+) -> Option<bool> {
+    if !crate::models::forward_receipt::is_safe_id(stage_id)
+        || !crate::models::forward_receipt::is_safe_id(session_id)
+    {
+        return None;
+    }
+    let path = work_dir
+        .join("subagents")
+        .join(stage_id)
+        .join("codex.jsonl");
+    let rows = ledger::read_authorization_rows(&path).ok()?;
+    let receipts = direct::StageReceipts::load(work_dir, stage_id, now);
+    let mut found = false;
+    for row in rows {
+        let LedgerRow::Authorization(auth) = row else {
+            continue;
+        };
+        if auth.stage_id != stage_id
+            || auth.loom_session_id != session_id
+            || auth.authorized_at > now
+            || auth.validate_state_root(state_root).is_err()
+        {
+            continue;
+        }
+        // `since` is the session's latest progress, which a parallel subagent's
+        // tool call can move past a forward still running. Only a forward with
+        // no live evidence is history at that point: it says nothing either way.
+        found |= auth.authorized_at >= since;
+        if forward_is_fresh(work_dir, &auth, &receipts, state_root, budget, now) {
+            return Some(true);
+        }
+    }
+    found.then_some(false)
+}
+
+/// Whether host observation of the launch the guard authorized shows progress.
+/// A job file, its pid and its log are writable from the stage, so none of them
+/// holds recovery without that launch.
+fn forward_is_fresh(
+    work_dir: &Path,
+    auth: &CodexAuthorization,
+    receipts: &direct::StageReceipts,
+    state_root: &Path,
+    budget: Duration,
+    now: DateTime<Utc>,
+) -> bool {
+    use direct::DirectOutcome;
+    let elapsed = now.signed_duration_since(auth.authorized_at);
+    if elapsed.num_seconds() < 0 || elapsed.num_seconds() > direct::RECEIPT_WINDOW_SECS {
+        return false;
+    }
+    match receipts
+        .receipts()
+        .map(|load| direct::receipt_outcome(auth, load))
+    {
+        // A direct START receipt proves neither ongoing progress nor the
+        // launch identity of its worker.
+        Ok(DirectOutcome::Direct(_, observation)) => {
+            observation.state == crate::subagent_lifecycle::LifecycleState::Running
+                && direct_worker_holds(work_dir, auth, budget, now)
+        }
+        Ok(DirectOutcome::Companion) => {
+            companion_job_holds(work_dir, auth, state_root, budget, now)
+        }
+        // A foreground forward writes its first receipt when it ends, so nothing
+        // names its lane yet; a planted job must not hide a direct worker.
+        Ok(DirectOutcome::NoReceipt) => {
+            companion_job_holds(work_dir, auth, state_root, budget, now)
+                || direct_worker_holds(work_dir, auth, budget, now)
+        }
+        _ => false,
+    }
+}
+
+/// Whether the direct worker of the launch `auth` names still holds recovery.
+fn direct_worker_holds(
+    work_dir: &Path,
+    auth: &CodexAuthorization,
+    budget: Duration,
+    now: DateTime<Utc>,
+) -> bool {
+    crate::orchestrator::monitor::direct_worker::direct_worker_holds(
+        work_dir,
+        &auth.loom_session_id,
+        &auth.invocation_id,
+        auth.authorized_at,
+        budget,
+        now,
+    )
+}
+
+/// Whether a companion job for `auth` logs progress while its launch awaits it.
+fn companion_job_holds(
+    work_dir: &Path,
+    auth: &CodexAuthorization,
+    state_root: &Path,
+    budget: Duration,
+    now: DateTime<Utc>,
+) -> bool {
+    jobs::locate_job(auth, state_root).is_ok_and(|job| {
+        progress::fresh_companion_log(&job, state_root, budget, now.into())
+            && crate::orchestrator::monitor::direct_worker::launch_awaits_job(
+                work_dir,
+                &auth.loom_session_id,
+                &auth.invocation_id,
+                &job.id,
+            )
+    })
+}
 
 #[derive(Debug, Default)]
 pub struct ReconcileReport {
@@ -153,6 +323,9 @@ pub(crate) fn has_correlated_lifecycle(work_dir: &Path, identity: &CodexAuthoriz
     reconcile::has_correlated_lifecycle(work_dir, identity)
 }
 
+#[cfg(test)]
+#[path = "codex_lifecycle/foreground_tests.rs"]
+mod foreground_tests;
 #[cfg(test)]
 pub(crate) mod test_support;
 #[cfg(test)]

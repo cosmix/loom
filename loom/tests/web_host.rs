@@ -3,11 +3,12 @@
 //! without the cookie, and refuses a cookieless settings write - all against
 //! the real compiled binary, not the library directly.
 
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpStream;
+use std::io::{Read, Write};
+use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdout, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -72,41 +73,59 @@ fn loom_cmd(base: &Path, home: &Path, args: &[&str]) -> Command {
     command
 }
 
-/// Stream a child's stdout into a channel on a background thread, so the
-/// caller can wait for a specific line with a bounded deadline instead of
-/// blocking forever on a process that never prints it.
-fn spawn_line_reader(stdout: ChildStdout) -> Receiver<String> {
-    let (sender, receiver) = mpsc::channel();
+/// Drain both pipes even after the diagnostic capture fills.
+fn capture_output(mut output: impl Read + Send + 'static) -> (Arc<Mutex<Vec<u8>>>, Receiver<()>) {
+    const CAP: usize = 16 * 1024;
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&captured);
+    let (done, finished) = mpsc::channel();
     thread::spawn(move || {
-        let mut reader = BufReader::new(stdout);
-        loop {
-            let mut line = String::new();
-            match reader.read_line(&mut line) {
-                Ok(0) | Err(_) => break,
-                Ok(_) => {
-                    if sender.send(line).is_err() {
-                        break;
-                    }
-                }
+        let mut chunk = [0; 1024];
+        while let Ok(count) = output.read(&mut chunk) {
+            if count == 0 {
+                break;
             }
+            let mut bytes = sink.lock().expect("capture lock");
+            let take = count.min(CAP.saturating_sub(bytes.len()));
+            bytes.extend_from_slice(&chunk[..take]);
         }
+        let _ = done.send(());
     });
-    receiver
+    (captured, finished)
 }
 
-/// Read lines from `receiver` until one contains `needle`, or `deadline`
-/// passes.
-fn wait_for_line(receiver: &Receiver<String>, needle: &str, deadline: Instant) -> Option<String> {
+fn wait_for_start(
+    mut guard: ChildGuard,
+    needle: &str,
+    timeout: Duration,
+) -> Result<(ChildGuard, String), String> {
+    let (stdout, stdout_done) = capture_output(guard.0.stdout.take().ok_or("missing stdout")?);
+    let (stderr, stderr_done) = capture_output(guard.0.stderr.take().ok_or("missing stderr")?);
+    let deadline = Instant::now() + timeout;
     loop {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            return None;
+        let text = String::from_utf8_lossy(&stdout.lock().expect("stdout lock")).into_owned();
+        if let Some(line) = text
+            .split_inclusive('\n')
+            .find(|line| line.contains(needle) && line.ends_with('\n'))
+        {
+            return Ok((guard, line.to_owned()));
         }
-        match receiver.recv_timeout(remaining) {
-            Ok(line) if line.contains(needle) => return Some(line),
-            Ok(_) => continue,
-            Err(_) => return None,
+        let status = guard
+            .0
+            .try_wait()
+            .map_err(|error| format!("checking child: {error}"))?;
+        if status.is_some() || Instant::now() >= deadline {
+            if status.is_some() {
+                let _ = stdout_done.recv_timeout(Duration::from_millis(100));
+                let _ = stderr_done.recv_timeout(Duration::from_millis(100));
+            }
+            let text = String::from_utf8_lossy(&stdout.lock().expect("stdout lock")).into_owned();
+            let errors = String::from_utf8_lossy(&stderr.lock().expect("stderr lock")).into_owned();
+            return Err(format!(
+                "dashboard startup failed ({status:?}); stdout: {text:?}; stderr: {errors:?}"
+            ));
         }
+        thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -140,24 +159,18 @@ fn request(port: u16, request: &str) -> String {
     response
 }
 
-/// Spawn `loom status --web 0 --host 0.0.0.0` and capture the port/token off
-/// its printed loopback bootstrap line, or `None` when the process could not
-/// be spawned or never printed one (no bindable wildcard address).
-fn spawn_remote_dashboard(base: &Path, home: &Path) -> Option<(ChildGuard, u16, String)> {
-    let mut child = loom_cmd(base, home, &["status", "--web", "0", "--host", "0.0.0.0"])
+/// Spawn the dashboard and require its bootstrap URL within the deadline.
+fn spawn_remote_dashboard(base: &Path, home: &Path) -> Result<(ChildGuard, u16, String), String> {
+    let child = loom_cmd(base, home, &["status", "--web", "0", "--host", "0.0.0.0"])
         .spawn()
-        .ok()?;
-    let stdout = child.stdout.take().expect("child stdout");
-    let guard = ChildGuard(child);
-    let lines = spawn_line_reader(stdout);
-    let deadline = Instant::now() + STARTUP_DEADLINE;
-    let line = wait_for_line(
-        &lines,
+        .map_err(|error| format!("spawning dashboard: {error}"))?;
+    let (guard, line) = wait_for_start(
+        ChildGuard(child),
         "bootstrap from this machine at: http://127.0.0.1:",
-        deadline,
+        STARTUP_DEADLINE,
     )?;
     let (port, token) = parse_bootstrap_url(&line);
-    Some((guard, port, token))
+    Ok((guard, port, token))
 }
 
 /// The value half of a response's `Set-Cookie` header.
@@ -174,6 +187,34 @@ fn cookie_value(response: &str) -> String {
         .to_owned()
 }
 
+#[cfg(unix)]
+#[test]
+fn startup_failure_and_timeout_are_errors_with_diagnostics() {
+    for (script, expected) in [
+        (
+            "printf 'early failure\\n' >&2; sleep 0.1; exit 7",
+            "early failure",
+        ),
+        (
+            "printf 'waiting for startup\\n'; sleep 2",
+            "waiting for startup",
+        ),
+    ] {
+        let child = Command::new("sh")
+            .args(["-c", script])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn fixture");
+        let result = wait_for_start(ChildGuard(child), "bootstrap:", Duration::from_millis(200));
+        let error = match result {
+            Ok(_) => panic!("fixture unexpectedly started"),
+            Err(error) => error,
+        };
+        assert!(error.contains(expected), "{error}");
+    }
+}
+
 /// `loom status --web 0 --host 0.0.0.0`, in a disposable workspace, proves the
 /// remote-mode contract against the real binary: viewing needs no cookie, the
 /// bootstrap redirect sets one, and a settings write without it is refused.
@@ -181,10 +222,23 @@ fn cookie_value(response: &str) -> String {
 fn remote_wildcard_dashboard_serves_viewing_without_the_cookie() {
     let (_temp, base, home) = workspace();
     const NAME: &str = "remote_wildcard_dashboard_serves_viewing_without_the_cookie";
-    let Some((_guard, port, token)) = spawn_remote_dashboard(&base, home.path()) else {
-        eprintln!("SKIP {NAME}: dashboard did not start (no bindable wildcard address?)");
-        return;
-    };
+    match TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0)) {
+        Ok(listener) => drop(listener),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::PermissionDenied
+                    | std::io::ErrorKind::AddrNotAvailable
+                    | std::io::ErrorKind::Unsupported
+            ) =>
+        {
+            eprintln!("SKIP {NAME}: wildcard bind unavailable: {error}");
+            return;
+        }
+        Err(error) => panic!("wildcard bind probe failed: {error}"),
+    }
+    let (_guard, port, token) =
+        spawn_remote_dashboard(&base, home.path()).expect("dashboard startup");
     assert_eq!(token.len(), 64, "process token must be 64 hex characters");
     let host = format!("Host: 127.0.0.1:{port}\r\n");
 

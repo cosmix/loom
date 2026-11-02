@@ -34,15 +34,14 @@ footer reader classifies no-match as `Passed`. unittest reports both a missing n
 import as an `ERROR` from `_FailedTest`; only the `AttributeError` case is `NotSelected`, or a contract whose
 module imports a not-yet-written name is rejected at freeze.
 
-**Detection** (`skills/project/markers.rs`, `runners.rs`, `probe.rs`, `scan.rs`). Kinds added: java, kotlin,
+**Detection** (`language/evidence.rs`, `skills/project/markers.rs`, `runners.rs`, `probe.rs`, `scan.rs`). A single-directory, no-follow manifest probe supplies typed language evidence to both root-only `detect_project_languages` and recursive project detection. The root projection omits Kotlin, Scala, Swift, Elixir and Dart, which have no `DetectedLanguage` variant. TypeScript dependencies are shared evidence; `.slnx`, gemspec and Meson are recognized. Newly recognized language evidence does not by itself select a .NET, Ruby or CMake runner. Kinds include java, kotlin,
 scala, csharp, ruby, php, swift, elixir, cpp, dart, javascript. Rules that differ from a literal reading of
 the design: `javascript` means `package.json` with no `typescript` kind (no `tsconfig.json`, no `typescript`
 dependency), so the two never co-occur; gradle wins when `build.gradle*` OR `settings.gradle*` exists (a
 multi-project root has only settings); flutter-test needs the substring `sdk: flutter` matched by line through
 `probe::has_line`, not bare `flutter`; pytest evidence also accepts a `[tool.pytest]` table. Java versus kotlin
 follows the build-script DSL (`build.gradle.kts` is kotlin), not the source language; the runner stays correct.
-Probe reads go through `fs::safe_read::read_bounded` with an `lstat` regular-file pre-check, because
-`safe_read` opens `O_RDONLY` without `O_NONBLOCK` and a FIFO named like a manifest would block the prompt hook.
+Probe reads use `fs::safe_read::read_bounded`; its no-follow nonblocking open and descriptor validation reject special files without blocking on a FIFO.
 `loom project detect [PATH] [--json]` (`commands/project.rs`, `cli/types_project.rs`, declared by `#[path]` in
 `types.rs`) prints per package the kinds, the runner and the skills; `"runner":null` means unsupported.
 `loom-hooks/skill-trigger.sh` maps a kind to `loom-<kind>` and finds no skill for `javascript`

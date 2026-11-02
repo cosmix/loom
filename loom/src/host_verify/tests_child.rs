@@ -17,6 +17,8 @@ use crate::models::stage::{AcceptanceCriterion, Stage, StageStatus, StageType};
 use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
 use crate::verify::transitions::save_stage;
 
+mod invalid_requests;
+
 pub(super) const STAGE: &str = "stage-a";
 
 pub(super) fn confinement_unavailable(test_name: &str) -> bool {
@@ -85,6 +87,7 @@ impl Fixture {
         );
         let work_dir = repo.join(".loom").join("work");
         fs::create_dir_all(&work_dir).expect("create state root");
+        crate::git::worktree::capture_main_identity(&repo, &work_dir).expect("capture identity");
         let fixture = Self {
             _dir: dir,
             repo,
@@ -156,6 +159,7 @@ impl Fixture {
         let now = Utc::now();
         let record = JobRecord {
             id: new_job_id(),
+            submission_order: 0,
             stage_id: STAGE.to_string(),
             session_id: "session-a".to_string(),
             kind: JobKind::Check,
@@ -375,26 +379,4 @@ fn a_no_cache_job_runs_a_criterion_the_cache_would_answer() {
     assert!(fresh.passed);
     assert!(!outcome.summary.contains("(cached)"), "{}", outcome.summary);
     assert_eq!(outcome.log.as_deref(), Some("acceptance-0.log"));
-}
-
-#[test]
-#[serial]
-fn a_job_that_is_not_running_is_refused_without_a_result() {
-    let fx = Fixture::new(&["true"], StageType::Standard);
-    let record = fx.job(JobState::Queued, false);
-    assert!(run_job(&fx.work_dir, STAGE, &record.id).is_err());
-    let saved = store::load_result(&fx.work_dir, STAGE, &record.id).unwrap();
-    assert_eq!(saved, None);
-}
-
-#[test]
-#[serial]
-fn a_state_root_without_a_plan_source_is_an_error_result() {
-    let fx = Fixture::new(&["true"], StageType::Standard);
-    fs::remove_file(fx.work_dir.join("config.toml")).unwrap();
-    let record = fx.job(JobState::Running, false);
-    let result = fx.run(&record);
-    let error = error_of(&result);
-    assert!(error.contains("plan source"), "{error}");
-    assert!(result.criteria.is_empty(), "nothing ran");
 }

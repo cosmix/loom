@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
-use super::super::resolver_attempts::{attempts_dir, attempts_file, merge_resolver_attempts};
+use super::super::resolver_attempts::{
+    attempts_file, merge_resolver_attempts, with_recording_failure,
+};
 use super::super::resolver_spawn::test_fixtures::{
     git_ok, orchestrator_with_conflict, repo_with_stage_branches,
 };
@@ -123,8 +125,10 @@ fn an_auto_merge_conflict_spawns_nothing_and_the_spawn_pass_counts_the_first_res
     assert_eq!(merge_resolver_attempts(work_dir, ID), 0);
     // The pass reserves attempt 1 before any spawn; a counter that cannot be
     // written sends the stage to review instead of spawning an uncounted one.
-    std::fs::write(attempts_dir(work_dir), "not a dir").unwrap();
-    assert_eq!(orchestrator.spawn_merge_resolution_sessions().unwrap(), 0);
+    let work_dir = work_dir.clone();
+    with_recording_failure(&work_dir, || {
+        assert_eq!(orchestrator.spawn_merge_resolution_sessions().unwrap(), 0);
+    });
     let reviewed = on_disk(&orchestrator);
     assert_eq!(reviewed.status, StageStatus::NeedsHumanReview);
     assert!(reviewed

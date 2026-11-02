@@ -12,9 +12,19 @@ use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::core::persistence::Persistence;
 use crate::orchestrator::core::{clear_status_line, Orchestrator};
 use crate::orchestrator::signals::remove_signal;
+use crate::verify::completion::OutputStream;
 
 use super::landing::Landing;
 use super::review_route::awaits_merge;
+
+/// Where the daemon's completion checks of a resolved merge report, each
+/// failing command included: a daemon has no terminal to print them on.
+pub(in crate::orchestrator::core) fn trace_verification_output(stream: OutputStream, line: &str) {
+    match stream {
+        OutputStream::Stdout => tracing::info!("{line}"),
+        OutputStream::Stderr => tracing::warn!("{line}"),
+    }
+}
 
 impl Orchestrator {
     /// Drop the tracked entry of `stage_id` when it is the resolver
@@ -149,9 +159,10 @@ impl Orchestrator {
                 return;
             }
         };
-        if let Err(error) = crate::commands::stage::complete::verify_resolved_completion(
+        if let Err(error) = crate::verify::completion::resolved::verify_resolved_completion(
             &stage,
             &self.config.work_dir,
+            trace_verification_output,
         ) {
             self.settle_failed_exit_verification(&stage, &error);
             return;

@@ -3,7 +3,6 @@
 //! Tests for orchestrator creation, auto-merge, watch mode,
 //! directory configuration, and stage-specific execution.
 
-use loom::models::stage::Stage;
 use loom::orchestrator::{Orchestrator, OrchestratorConfig};
 use loom::plan::graph::ExecutionGraph;
 use loom::plan::schema::SandboxConfig;
@@ -58,8 +57,7 @@ fn test_orchestrator_creation_with_config() {
 }
 
 /// Build a `StageDefinition` for the auto-merge cascade test below, varying
-/// only the field the test asserts on. All other fields are exhaustive
-/// defaults deliberately spelled out (no `..Default::default()` spread).
+/// only the field the test asserts on; remaining fields use defaults.
 fn stage_def(id: &str, name: &str, auto_merge: Option<bool>) -> StageDefinition {
     StageDefinition {
         id: id.to_string(),
@@ -71,16 +69,19 @@ fn stage_def(id: &str, name: &str, auto_merge: Option<bool>) -> StageDefinition 
 }
 
 #[test]
-fn test_auto_merge_config_cascade() {
-    // Test that auto_merge can be configured at different levels
-
-    // Stage-level auto_merge overrides plan-level
+fn test_stage_definition_auto_merge_serialization() {
     let stage_with_auto_merge = stage_def("stage-override", "Override Stage", Some(true));
     assert_eq!(stage_with_auto_merge.auto_merge, Some(true));
 
-    // Stage without override uses plan-level (represented as None)
+    // An absent stage override is represented as None.
     let stage_without_override = stage_def("stage-default", "Default Stage", None);
     assert_eq!(stage_without_override.auto_merge, None);
+    for stage in [stage_with_auto_merge, stage_without_override] {
+        let serialized = serde_json::to_string(&stage).unwrap();
+        let restored: StageDefinition = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(restored.auto_merge, stage.auto_merge);
+        assert_eq!(restored.id, stage.id);
+    }
 }
 
 #[test]
@@ -110,90 +111,27 @@ fn test_orchestrator_creates_successfully() {
 }
 
 #[test]
-fn test_watch_mode_configuration() {
-    // Test watch mode flag
-    let config_watch = OrchestratorConfig {
-        watch_mode: true,
-        ..Default::default()
-    };
-    assert!(config_watch.watch_mode);
-
-    let config_no_watch = OrchestratorConfig {
-        watch_mode: false,
-        ..Default::default()
-    };
-    assert!(!config_no_watch.watch_mode);
+fn test_watch_mode_default() {
+    assert!(!OrchestratorConfig::default().watch_mode);
 }
 
 #[test]
-fn test_work_dir_and_repo_root_configuration() {
-    let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".loom").join("work");
-    let repo_root = temp_dir.path().to_path_buf();
-
-    std::fs::create_dir_all(&work_dir).unwrap();
-
-    let config = OrchestratorConfig {
-        work_dir: work_dir.clone(),
-        repo_root: repo_root.clone(),
-        ..Default::default()
-    };
-
-    assert_eq!(config.work_dir, work_dir);
-    assert_eq!(config.repo_root, repo_root);
+fn test_work_dir_and_repo_root_defaults() {
+    assert_eq!(
+        OrchestratorConfig::default().work_dir,
+        std::path::Path::new(".loom/work")
+    );
+    assert_eq!(
+        OrchestratorConfig::default().repo_root,
+        std::path::Path::new(".")
+    );
 }
 
-/// Integration test: Verify auto-merge configuration cascade
-///
-/// Tests that `is_auto_merge_enabled()` correctly prioritizes:
-/// 1. Stage-level `auto_merge` setting (highest priority)
-/// 2. Plan-level `auto_merge` setting
-/// 3. Orchestrator config `auto_merge` setting (lowest priority)
+/// Construct an orchestrator with auto-merge enabled.
 #[test]
 #[ignore] // Integration test - run with --ignored
 #[serial]
-fn test_daemon_respects_auto_merge() {
-    use loom::orchestrator::auto_merge::is_auto_merge_enabled;
-
-    // Create a test stage
-    let mut stage = Stage::new("Test Stage".to_string(), None);
-    stage.id = "stage-1".to_string();
-
-    // Test 1: Stage override = None, Plan = None -> uses orchestrator config
-    stage.auto_merge = None;
-    assert!(
-        is_auto_merge_enabled(&stage, true, None),
-        "Should use orchestrator config (true) when no overrides"
-    );
-    assert!(
-        !is_auto_merge_enabled(&stage, false, None),
-        "Should use orchestrator config (false) when no overrides"
-    );
-
-    // Test 2: Stage override = None, Plan = Some -> uses plan config
-    stage.auto_merge = None;
-    assert!(
-        is_auto_merge_enabled(&stage, false, Some(true)),
-        "Plan override (true) should take precedence over orchestrator (false)"
-    );
-    assert!(
-        !is_auto_merge_enabled(&stage, true, Some(false)),
-        "Plan override (false) should take precedence over orchestrator (true)"
-    );
-
-    // Test 3: Stage override = Some -> uses stage config (highest priority)
-    stage.auto_merge = Some(true);
-    assert!(
-        is_auto_merge_enabled(&stage, false, Some(false)),
-        "Stage override (true) should take precedence over everything"
-    );
-    stage.auto_merge = Some(false);
-    assert!(
-        !is_auto_merge_enabled(&stage, true, Some(true)),
-        "Stage override (false) should take precedence over everything"
-    );
-
-    // Test 4: Verify orchestrator config flows through to OrchestratorConfig
+fn test_orchestrator_creation_with_auto_merge_enabled() {
     let temp_dir = TempDir::new().unwrap();
     let _home_env = isolate_user_config(&temp_dir);
     let work_dir = temp_dir.path();
@@ -207,14 +145,8 @@ fn test_daemon_respects_auto_merge() {
         ..Default::default()
     };
 
-    assert!(config.auto_merge, "auto_merge should be enabled in config");
-
     let stage_defs = vec![create_stage_def("stage-1", "Test Stage", vec![])];
     let graph = ExecutionGraph::build(stage_defs).expect("Should build execution graph");
     let orchestrator = Orchestrator::new(config, graph).expect("Should create orchestrator");
     assert_eq!(orchestrator.running_session_count(), 0);
 }
-
-// NOTE: test_daemon_respects_stage_id was removed because it tested
-// a run_single() method that doesn't exist in the Orchestrator API.
-// The --stage flag functionality is tested via CLI integration tests instead.

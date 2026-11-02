@@ -17,7 +17,10 @@ use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::orchestrator::core::persistence::Persistence;
 use crate::orchestrator::core::{clear_status_line, Orchestrator};
-use crate::orchestrator::signals::{find_live_merge_session_for_stage, generate_merge_signal};
+use crate::orchestrator::signals::{
+    find_live_merge_session_for_stage, find_live_merge_session_for_stage_unlocked,
+    with_merge_resolver_lock, write_ahead_merge_session,
+};
 use crate::orchestrator::terminal::backend::merge_resolver_worktree;
 
 use super::landing::Landing;
@@ -76,7 +79,7 @@ impl Orchestrator {
             return false;
         };
         match self.spawn_merge_resolution_session(stage, attempt) {
-            Ok(()) => true,
+            Ok(spawned) => spawned,
             Err(error) => {
                 self.report_merge_spawn_failure(stage_id, error);
                 false
@@ -260,44 +263,83 @@ impl Orchestrator {
     /// Spawn a merge resolution session for a stage with merge issues.
     /// `attempt` is kept once the backend spawns the session; any failure
     /// before that gives it back, and `launch_resolver` settles a backend
-    /// failure. A spawned resolver stays tracked when its record cannot be
-    /// saved: its signal then reads as stale, and only tracking holds the stage.
+    /// failure. Its write-ahead record remains discoverable when publication
+    /// fails after the process starts.
     fn spawn_merge_resolution_session(
         &mut self,
         stage: &Stage,
         attempt: ReservedAttempt,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let source_branch = branch_name_for_stage(&stage.id);
-
         let target_branch = resolve_target_branch(&self.config.base_branch, &self.config.repo_root);
-
         // Conflicting files from a merge-tree dry run, which touches no working tree.
         let conflicting_files =
-            match merge_tree(&self.config.repo_root, &target_branch, &source_branch)? {
-                TreeMerge::Clean { .. } => Vec::new(),
-                TreeMerge::Conflict { paths, .. } => paths,
-            };
-        let session = Session::new_merge(source_branch.clone(), target_branch.clone());
-
-        let signal_path = generate_merge_signal(
-            &session,
-            stage,
-            &source_branch,
-            &target_branch,
-            &conflicting_files,
-            &self.config.work_dir,
-        )
-        .context("Failed to generate merge signal")?;
-
-        let spawned_session = self.launch_resolver(stage, session, &signal_path, attempt)?;
-
+            resolver_conflicting_files(&self.config.repo_root, &target_branch, &source_branch)?;
+        let work_dir = self.config.work_dir.clone();
+        // Lock stage admission before resolver admission and re-read after reset.
+        let _admission = crate::fs::stage_admission::lock_for_daemon(&work_dir, &stage.id)?;
+        let stage = self.load_stage(&stage.id)?;
+        if !awaits_merge(&stage.status) {
+            return Ok(false);
+        }
+        let spawned = with_merge_resolver_lock(&work_dir, &stage.id, || {
+            self.spawn_resolver_locked(
+                &stage,
+                &source_branch,
+                &target_branch,
+                &conflicting_files,
+                attempt,
+            )
+        })?;
+        let Some(spawned_session) = spawned else {
+            return Ok(false);
+        };
         announce_resolver(&stage.id, &spawned_session.id, &conflicting_files);
         self.active_sessions
-            .insert(stage.id.clone(), spawned_session.clone());
-        if let Err(error) = self.save_session(&spawned_session) {
-            eprintln!("Warning: Failed to save the merge resolver's session record: {error:#}");
+            .insert(stage.id.clone(), spawned_session);
+        Ok(true)
+    }
+
+    /// Under the resolver lock: publish the snapshot, signal and write-ahead
+    /// record, then spawn; `None` when a live resolver already holds the stage.
+    fn spawn_resolver_locked(
+        &mut self,
+        stage: &Stage,
+        source_branch: &str,
+        target_branch: &str,
+        conflicting_files: &[String],
+        attempt: ReservedAttempt,
+    ) -> Result<Option<Session>> {
+        let work_dir = self.config.work_dir.clone();
+        if find_live_merge_session_for_stage_unlocked(&stage.id, &work_dir)?.is_some() {
+            return Ok(None);
         }
-        Ok(())
+        let mut session = Session::new_merge(source_branch.to_string(), target_branch.to_string());
+        let snapshot = crate::orchestrator::signals::publish_merge_snapshot(
+            &self.config.repo_root,
+            &work_dir,
+            &session.id,
+            target_branch,
+        )?;
+        let signal_path = crate::orchestrator::signals::generate_merge_snapshot_signal(
+            &session,
+            stage,
+            source_branch,
+            target_branch,
+            conflicting_files,
+            &work_dir,
+            &snapshot,
+        )
+        .context("Failed to generate merge signal")?;
+        write_ahead_merge_session(
+            &mut session,
+            &stage.id,
+            self.backend.resolve_lane(),
+            &work_dir,
+        )?;
+        let spawned = self.launch_resolver(stage, session, &signal_path, attempt)?;
+        self.publish_spawned_resolver(&spawned);
+        Ok(Some(spawned))
     }
 
     /// Record the attempt of the resolver about to spawn for `stage_id`, whose
@@ -322,6 +364,17 @@ impl Orchestrator {
     }
 }
 
+fn resolver_conflicting_files(
+    repo_root: &std::path::Path,
+    target: &str,
+    source: &str,
+) -> Result<Vec<String>> {
+    Ok(match merge_tree(repo_root, target, source)? {
+        TreeMerge::Clean { .. } => Vec::new(),
+        TreeMerge::Conflict { paths, .. } => paths,
+    })
+}
+
 /// Tell the console which resolver spawned for `stage_id` and what it merges.
 fn announce_resolver(stage_id: &str, session_id: &str, conflicting_files: &[String]) {
     clear_status_line();
@@ -341,3 +394,7 @@ pub(super) mod test_fixtures;
 #[cfg(test)]
 #[path = "spawn_loop_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "resolver_admission_tests.rs"]
+mod admission_tests;

@@ -16,6 +16,7 @@ fn test_create_temp_git_repo() {
 
     let readme = repo.path().join("README.md");
     assert!(readme.exists(), "README should exist");
+    super::git_checked(repo.path(), &["rev-parse", "--verify", "HEAD"]);
 }
 
 #[test]

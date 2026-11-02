@@ -127,3 +127,42 @@ fn unparseable_live_plan_is_never_written() {
         "live plan bytes must be untouched"
     );
 }
+
+#[test]
+fn wiring_test_criteria_is_reconciled_from_snapshot() {
+    let env = setup_env_with_plan(TWO_STAGE_PLAN);
+    let req = AmendmentRequest {
+        stage_id: "stage-a".into(),
+        field: AmendmentField::WiringTests,
+        patch: AmendmentPatch::Replace {
+            index: 0,
+            value: "name: smoke test\ncommand: 'true'\nsuccess_criteria:\n  stderr_contains: [first, second]\n".into(),
+        },
+        reason: None,
+        dispute_id: None,
+    };
+    apply_amendment(&env.plan_path, &env.work_dir, req).unwrap();
+    let amended = read_plan(&env);
+    let stale = amended.replace("first", "changed");
+    assert_ne!(stale, amended);
+    fs::write(&env.plan_path, stale).unwrap();
+
+    assert_eq!(
+        verify_plan_versions_consistency(&env.plan_path, &env.work_dir).unwrap(),
+        1
+    );
+    let recovered = read_plan(&env);
+    assert!(recovered.contains("first"));
+    assert!(!recovered.contains("changed"));
+}
+
+#[test]
+fn wiring_test_criteria_vector_order_matters() {
+    let original: crate::models::stage::WiringTest = crate::yaml::from_str(
+        "name: smoke\ncommand: 'true'\nsuccess_criteria:\n  stderr_contains: [first, second]\n",
+    )
+    .unwrap();
+    let mut reordered = original.clone();
+    reordered.success_criteria.stderr_contains.reverse();
+    assert_ne!(original, reordered);
+}

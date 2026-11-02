@@ -1,0 +1,19 @@
+{
+  "parent_pair": "\\.\\.[\\\\/]\\.\\.",
+  "parent_component": "(^|/)\\.\\.(/|$)",
+  "worktree_marker": "\\.worktrees/",
+  "state_marker": "\\.(loom/)?work/",
+  "git_options": [
+    { "flag": "-C", "token": "exact", "fallback": "value" },
+    { "flag": "--work-tree", "token": "equals-or-exact", "fallback": "equals-or-value" },
+    { "flag": "--git-dir", "token": "equals-or-exact", "fallback": "equals-or-value" }
+  ],
+  "git_env": ["GIT_DIR", "GIT_WORK_TREE"],
+  "opaque_commands": ["eval"],
+  "shared_state": {
+    "stages": { "live_write": "deny" },
+    "sessions": { "live_write": "deny" },
+    "handoffs": { "live_write": "allow" }
+  },
+  "defaults": { "live_write": "deny" }
+}

@@ -3,7 +3,8 @@ use crate::handoff::schema::HandoffV2;
 use crate::models::stage::{Implementers, StageOutput};
 use crate::skills::SkillMatch;
 
-/// Summary of sandbox restrictions for signal display
+/// Display projection of the effective sandbox configuration the launcher uses.
+/// `allow_write` omits the knowledge grant, which serves only the knowledge CLI.
 #[derive(Debug, Clone, Default)]
 pub struct SandboxSummary {
     /// Whether sandboxing is enabled

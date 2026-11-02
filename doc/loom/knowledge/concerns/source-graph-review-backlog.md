@@ -10,13 +10,10 @@ Anchors are `path:line` at merge time; locate by symbol (`loom map --find-all`).
 
 ## Resolver and Path Conventions
 
-- `resolve/paths/rust.rs` `package_named` reads any one-segment external import from `tests/`, `benches/` or
-  `examples/` as `crate::<seg>`, so every such `use` gets an `Import` edge to `lib.rs` and the rule 4/6 external
-  refusal never fires there; a test should pin the trade-off. `rules.rs::placed()` rejects a package-name first
+- `resolve/paths/rust.rs` `package_named` refuses an external import whose remaining path is empty. For multi-segment imports from `tests/`, `benches/` or `examples/`, it still drops the first segment without checking the Cargo package name, so an external package prefix can resolve to a local path; pin and narrow that heuristic. `rules.rs::placed()` rejects a package-name first
   segment, so `mycrate::Widget::new()` without a `use` in those directories is a gap; consider accepting what
   `package_named` would.
-- `paths/rust.rs` `unanchored` should read a non-anchored path against the citing file's own crate root only, so
-  `use log::info;` in one workspace crate cannot match `crates/a/src/log.rs`.
+- `paths/rust.rs::unanchored` searches the citing file’s own crate root and module directory. The anchored `crate::` lookup and multi-segment package-name heuristic need separate scope-confidence review.
 - `paths/python.rs`: a one-segment spec is suffix-matched anywhere (record the trade-off in a test); `from . import
 helper` resolves only to `__init__.py`, so a namespace package refuses instead of falling through to name matching
   (pin the intended behaviour). `paths/go.rs`: a slashed stdlib path can suffix-match a local directory.
@@ -28,18 +25,15 @@ helper` resolves only to `__init__.py`, so a namespace package refuses instead o
 - `rules.rs`: narrow scope-matched ids to the files the dropped prefix names so `crate::a::Widget::new` binds
   the matching file's `Widget::new` instead of listing every `Widget::new`. A comment there names `RESOLVER_VERSION`; keep it in
   step with `view/identity.rs`.
-- `receivers.rs`: `traits_used` is not gated to PHP, so any dialect that later emits `References` edges from type
-  nodes would make `self.m()` bind to an unrelated type's member at `Receiver` confidence; Rust and C++ rule 3 match
+- `receivers.rs`: `traits_used` is gated to PHP, so another dialect’s type-level `References` edges are not interpreted as trait uses; Rust and C++ rule 3 match
   any same-named type in the crate or family (prefer ids whose full scope equals the caller's).
 - `record.rs`: `name_key` splits file names on `.`, so every file node shares `name:{family}:rs` (`:h`, `:py`), and any
   change to a file of that family reopens every edge that read another file's entry (re-export hops, prototype
-  checks); `family_of` duplicates `paths/mod.rs`, and `PACKAGE_FAMILIES` duplicates the go/java/csharp/php arm of
-  `PathIndex::package_files` (let it return an `Option`).
+  checks). `record.rs` imports the shared `paths::family_of`, and there is no separate `PACKAGE_FAMILIES` table.
 - `resolve.rs`: `resolve_edges` with an empty edge set still builds both indexes over the whole graph (return early so
   a no-op relink is free); `retarget` is a one-line wrapper over `SourceEdge::bind`; `impact()` and
   `EdgeProvenance::rank` are used only by tests (remove, or say why they stay).
-- `source_graph/edge.rs`: `bound()` debug-asserts against `Structural` and `Syntax` only; add `Compiler` so no call can
-  mint a 1.0 edge that is not containment.
+- `source_graph/edge.rs::bound` debug-asserts against `Structural`, `Compiler` and `Syntax`; compiler provenance is included in the containment-only confidence guard.
 - Resolver tests to add: a multi-match relative ES import (`an_import_resolves_only_when_exactly_one_file_matches`
   checks only the unique and no-match cases), `ns:` keys on a C# or PHP call and the rule 2 and 3 key sets, the
   re-export hop limit (a cycle terminates unbound), `prototyped()` being C-family only, the `item_module` fallback
@@ -49,8 +43,7 @@ helper` resolves only to `__init__.py`, so a namespace package refuses instead o
 
 ## Extraction and Identity
 
-- `extract/treesitter/ids.rs::disambiguate` is O(k²) per duplicate group (two filter scans per member); a running
-  ordinal in a `HashMap` makes it O(k). A 512 KiB file with ~25k identical declarations is ~1e9 string compares.
+- `extract/treesitter/ids.rs::disambiguate` counts suffixed-id multiplicities and running ordinals with `HashMap` tables, so duplicate-group settlement is linear in the number of members after grouping.
 - `collect.rs`: receiver text is the raw expression and part of the dedupe key, so chains such as
   `expect(a).toBe(1)` store O(n²) text and stop equal callees merging sites; keep only identifier or path receivers
   or cap the length.
@@ -64,9 +57,7 @@ helper` resolves only to `__init__.py`, so a namespace package refuses instead o
   every dialect has unique query text; `Query::new` runs under the global mutex (about 12 × 39 ms once per process);
   no test asserts that two `run_query` calls share one `Arc<Query>` or that a bad query is not cached.
 - `php.rs`: `imports::clauses(statement)` is re-parsed in `import_spec` and `import_bindings` for every clause
-  (quadratic for large `use A\{...}` groups). `Capabilities.references` stays false for php, c and cpp although they
-  emit `References` edges, and Go reports `receivers: false` though its query captures `@call.receiver`; the flag is
-  never read but misdescribes the extractor.
+  (quadratic for large `use A\{...}` groups). `Capabilities.references` is true for PHP, C and C++, and Go reports `receivers: true`, matching their emitted reference and receiver data.
 - `c.rs`: the shared prototype pattern may match a C++ local direct-init (`Foo w(x);`) if the grammar parses it as a
   function declarator; add a C++ extractor test. `source_graph/imports.rs::last_segment` splits on `.` (Go
   `gopkg.in/yaml.v3` has local name `v3`).
@@ -82,18 +73,13 @@ helper` resolves only to `__init__.py`, so a namespace package refuses instead o
 
 ## Resolved View, Store and Cache
 
-- `view/store.rs`: `cache_view` keys an overlay view whose layer has an empty generation at the base view path with an
-  identity equal to the base identity, so a later `view(rev, None)` in the same process could take the overlay graph as
-  the base view, and keys by the caller's overlay when the overlay layer vanished (the entry is then never found). On
+- `view/store.rs::materialize_view` refuses cache reuse for an identity whose overlay generation is absent; generationless overlays do not occupy the base-view cache identity. The corresponding regression is in `view/tests_store_cache.rs`. On
   an overlay build, `self.view(&revision, None)` takes the base view out of `view_cache` (`take_cached_view`), so a
   later `view(HEAD, None)` parses the base file again; when the base view was not persisted, `build_view` removes the
-  view `materialize_view` cached a moment earlier. A successful `persist_view` does not drop a `view_fallback` entry at
-  the same path (layers do via `write_or_fall_back`), so an old-generation overlay entry makes `load_view` return
-  `None` without reading the current file. `newest_older_base_view` fully parses each older view (up to
+  view `materialize_view` cached a moment earlier. A successful `persist_view` removes the `view_fallback` entry for the same path, so an older fallback does not shadow the newly persisted view. `newest_older_base_view` fully parses each older view (up to
   `keep_base_graphs` files of about 100 MB) before the `relinkable_from` filter, although after a `RESOLVER_VERSION`
   or extractor bump none can seed a relink. `has_current_view` and `view()` each load the overlay layer (harmless race).
-- `graph_store/prune.rs`: `remove_views` deletes files only, so `view_cache` and `view_fallback` keep the view of a
-  replaced base in a process on a read-only cache; `view_dir()` uses `base_dir().with_file_name("view")` where
+- `graph_store/prune.rs`: `remove_views` removes matching entries from both `view_cache` and `view_fallback` before deleting persisted view files; `view_dir()` uses `base_dir().with_file_name("view")` where
   `self.graph_root.join(VIEW_RELATIVE_DIR)` is reachable. A denied `publish_base` skips `prune_after_publish` and
   `remove_views` (no current caller order reaches it). A successful `replace_base` does not clear a `memory_fallback`
   entry left by an earlier denied write, so a stale in-memory layer would shadow disk if write permission returned
@@ -106,9 +92,7 @@ helper` resolves only to `__init__.py`, so a namespace package refuses instead o
   fallback though it is now false for a refused `state.json` write and a view fallback.
 - `refresh/snapshot.rs`: `let _ = super::mark_semantic_stale(..)` (two sites) swallows the failure; log it with
   `tracing::warn!`. The warm path still parses the full base layer in `ensure_base` only for `layer_is_current`, then
-  parses the view: it meets "view parsed at most once" but not a one-file warm path. `worktree_graph.rs`: a changed
-  worktree file over `MAX_EXTRACTED_FILE_BYTES` fails `read_bounded` and becomes an unreadable entry with no file node,
-  while the refresh path records `Oversized` with a file node.
+  parses the view: it meets "view parsed at most once" but not a one-file warm path. `worktree_graph.rs` uses the same streaming `SourceRead` as refresh, retaining an `Oversized` file node and full content hash without retaining the whole file.
 - `map/views/snapshot.rs`: `built_at` is the layer file mtime and so null for a layer held only in memory (the stage
   sandbox); a `GraphStore::resolved_with_layers` would remove the ~12-line overlay merge duplicated there.
   `commands/knowledge/eval.rs::ensure_local_snapshot` uses a private `GraphStore` whose in-memory layers are dropped
@@ -124,14 +108,8 @@ helper` resolves only to `__init__.py`, so a namespace package refuses instead o
 
 ## Lease, Census, Window and Hardening
 
-- `reconcile_graph/cancel.rs`: a sub-millisecond PID-reuse window remains between the argv and start-time check and
-  `kill` (`pidfd_open` and `pidfd_send_signal` close it on Linux; an attacker-writable lease controls the epoch, so argv
-  is the only gate); `ps` is spawned through `.output()` with no deadline (use `run_bounded_output`); `--cancel` rewrites
-  the lease to `pid 0` with a fresh epoch even when the recorded holder is dead, where design says no live holder is a
-  no-op.
-- `reconcile_graph/lock.rs::read_lock` uses `fs::read_to_string`: it follows symlinks, is unbounded and blocks on a FIFO
-  in place of `reconcile.lock`, stalling the prompt hook's claim path; writer capability on `<main>/.loom/cache` is not
-  established, so this is a hardening item.
+- `reconcile_graph/cancel.rs`: a PID-reuse window remains between the argv/start-time checks and signalling. `pidfd_open` and `pidfd_send_signal` can close that window on Linux. The `ps` queries use `run_bounded_output` with a five-second deadline, and `cancel_holder` returns without rewriting the lease when its recorded holder is dead.
+- `reconcile_graph/lock.rs::read_lock` uses the bounded no-follow regular-file reader with `MAX_LOCK_BYTES = 256`. Missing, malformed, oversized, symlinked and nonregular leases read as absent; claim policy can recover instead of waiting on a FIFO.
 - `census/classify.rs`: `size_of` and `has_generated_marker` refuse a symlink only at the last component (a directory
   swapped for a symlink is followed; `open_safely` and `read_bounded` would confine it); `git check-attr` is spawned
   with no deadline (a hung git on an unusual `--root` hangs `--census`); `--census` with only `--root <other>` still
@@ -142,19 +120,13 @@ helper` resolves only to `__init__.py`, so a namespace package refuses instead o
   `commands/map.rs::read_source_window` and `map/views/window.rs::window_json` echo the id and path raw on stderr while the success path uses `safe()`
   (not attacker-reachable). `map/views/filters.rs`: `--path .` normalises to `.` and matches nothing while `--path ./`
   matches everything; treat a bare `.` as no filter.
-- Terminal safety: `render.rs::inline_code` maps only `is_control`, so U+2028/U+2029 and bidi controls survive in the
-  `Literal text` line (no injection, but it drifts from the single-sanitizer rule in `untrusted.rs`); `terminal_safe`
-  keeps Unicode `Cf` bidi controls (U+202A-202E, U+2066-2069), which allows Trojan-Source reordering in source windows;
-  `knowledge/context.rs` prints knowledge excerpts raw through `render_excerpt_block` (older than this plan): sanitize
-  inside the block renderer.
+- Terminal safety: `render.rs::inline_code` uses `untrusted::flatten_char`, which removes line separators and bidi controls. `terminal_safe` also removes terminal and bidi controls from source windows and knowledge excerpts in `render_excerpt_block` before sizing their fences.
 - `git/runner.rs`: `core.fsmonitor=false` on runner status calls in the user's own repo drops the index fsmonitor
   extension whenever git rewrites the index, so fsmonitor users pay a full rescan; consider `--no-optional-locks`.
 
 ## Retrieval Routing and Rendering
 
-- `rank_source/intent.rs`: `PRONOUNS` holds no articles, so `classify("who calls the parser")` returns
-  `Relationship { Callers, "the" }` and a node named `a` would be seeded by `what uses a cache` (add article
-  negatives to `rank_source_intent.rs`); `captured_name` examines only the first regex match, so a pronoun first match
+- `rank_source/intent.rs`: `NON_SYMBOL_WORDS` includes `the`, `a` and `an`, so article-led noun phrases classify as General instead of treating an article as a symbol; `captured_name` examines only the first regex match, so a pronoun first match
   hides a later real symbol; the `NON_SYMBOL_WORDS` doc example (`who calls the parser`) reads as if it routes to
   `parser` when `classify` returns `General`. `classify` runs on the multi-line composite text of stage and worker
   briefs, where a quoted phrase halves source lexical scores and adds an `rg` line.
@@ -240,10 +212,6 @@ README.md` that already passes at HEAD: a pattern starting with `--` after `-F -
 
 > Host-verification review suggestions: open and fixed defects by file:line
 
-## FAILED_APPLIES Is Process-Wide State
-
-- `loom/src/orchestrator/core/host_jobs.rs::FAILED_APPLIES` keeps `FAILED_APPLIES`, a static keyed by state root, outside the runner. Move the retry list next to the runner and the `give_up` marker write beside `APPLIED_MARKER` in `loom/src/host_verify/apply.rs`. Open.
-
 ## Drain Tick Runs committed_content Inline
 
 - `loom/src/orchestrator/core/inbox_drain/complete.rs::validate` calls `committed_content` (`loom/src/handoff/completion/content.rs::committed_content`, a git status walk) on the single-threaded tick; `apply_passed` adds snapshot and fingerprint passes there, so a large repository delays every session. Open.
@@ -280,9 +248,9 @@ README.md` that already passes at HEAD: a pattern starting with `--` after `-F -
 
 - `loom/src/orchestrator/adjudication/prompt/criterion.rs::run_the_criteria` covers only `requested` and `pending`; a `stopped` (exit 4) or `refused` first line gives the judge no instruction. Open.
 
-## Reaped Child Without Result Skips Group Kill
+## Reaped host-child process-group cleanup
 
-- `loom/src/host_verify/runner.rs::settle` `settle` ends a record without the group kill of `signals::retire`. A child reaped without `result.json` (signal, OOM, `pkill verify-host`) leaves criterion groups that lead their own pgid alive. Open.
+`loom/src/host_verify/runner.rs::check_held` calls `kill_groups` when `reaped_outcome.without_result` is true, before settling the record. Criterion groups are retired when the host child exits without a result; restart identity validation remains a separate concern.
 
 ## command_confinement Inherit Has No Command Boundary
 
@@ -324,6 +292,10 @@ README.md` that already passes at HEAD: a pattern starting with `--` after `-F -
 
 - `loom/src/verify/criteria/confine_protected.rs::protected`: `orchestrator.sock` stays connectable inside a knowledge criterion under `--unshare-all`; the daemon peer-identity gate refuses the caller once `user.token` is masked. Hardening only. Open.
 
-## Give-Up Leaves Freeze Refusals Unfiled
+## Durable host-job retry state
 
-- `loom/src/orchestrator/core/host_jobs.rs::give_up` `give_up` marks a Freeze job `apply failed: <error>` after `MAX_APPLY_ATTEMPTS` failed applications. That refusal is never recorded in `contracts/<stage>/refused.json`, so nothing files it and the idle contract writer is left to hung detection. Open.
+Host-job application retries use retained terminal job records and durable attempt reservations. Unapplied records survive pruning; restart scans recover them without a process-global retry registry.
+
+## Freeze application exhaustion
+
+When freeze application retries are exhausted, the daemon publishes an infrastructure refusal for the active writer before recording the terminal application outcome. If refusal storage is unavailable, finalization remains pending for retry.

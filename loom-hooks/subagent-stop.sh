@@ -13,12 +13,16 @@ REVIEWER_AGENT_TYPE="loom-code-reviewer"
 
 # Hand a code reviewer's stop event to `loom hook review-harvest`, which records
 # its final report as a review round (DESIGN D12). Best effort: the delegate's
-# output and exit status never reach this hook's own; failures are logged only
-# under LOOM_HOOK_DEBUG=1.
+# output and exit status never reach this hook's own. A harvest that cannot run
+# or fails records no round, so it appends a stop-skips row for the review gate,
+# whose reason names a known cause as `review_harvest_failed.<cause>`; its detail
+# is logged only under LOOM_HOOK_DEBUG=1. A repeat stop of a recorded report exits
+# zero and leaves no row.
 loom_subagent_stop_review_harvest() {
 	local input="" output="" status=0
 	command -v "${LOOM_BIN:-loom}" &>/dev/null || {
 		loom_debug "$HOOK_NAME: review harvest skipped - loom is not on PATH"
+		loom_subagent_stop_skip review_harvest_unavailable
 		return 0
 	}
 	input=$(jq -nc --arg stage_id "$LOOM_STAGE_ID" --arg session_id "$PARENT_SESSION_ID" \
@@ -27,12 +31,20 @@ loom_subagent_stop_review_harvest() {
 		  transcript_path:$transcript_path}' 2>/dev/null) || status=$?
 	if ((status != 0)) || [[ -z "$input" ]]; then
 		loom_lifecycle_log_jq_failure "$HOOK_NAME" "constructing the review harvest input" "$status"
+		loom_subagent_stop_skip review_harvest_unavailable
 		return 0
 	fi
 	output=$(printf '%s' "$input" | LOOM_HOOK_CONTEXT=1 LOOM_WORK_DIR="$WORK_DIR" \
 		loom_run_bounded 10 "${LOOM_BIN:-loom}" hook review-harvest 2>&1 >/dev/null) || status=$?
 	if ((status != 0)); then
 		loom_debug "$HOOK_NAME: review harvest failed (exit $status): $output"
+		local cause_line=$'(^|\n)loom-review-harvest-cause=([a-z_]+)' cause=""
+		if ((status == 124)); then
+			cause=".timed_out"
+		elif [[ "$output" =~ $cause_line ]]; then
+			cause=".${BASH_REMATCH[2]}"
+		fi
+		loom_subagent_stop_skip "review_harvest_failed$cause"
 	elif [[ -n "$output" ]]; then
 		loom_debug "$HOOK_NAME: review harvest: $output"
 	fi
@@ -107,7 +119,7 @@ WORKER_TRANSCRIPT=$(loom_lifecycle_jq_value "$INPUT_JSON" '.agent_transcript_pat
 
 if ! loom_lifecycle_safe_id "$PARENT_SESSION_ID" ||
 	! loom_lifecycle_safe_id "$AGENT_ID" ||
-	! loom_lifecycle_safe_id "$AGENT_TYPE"; then
+	! loom_lifecycle_safe_agent_type "$AGENT_TYPE"; then
 	loom_debug "$HOOK_NAME: skipping - unsafe parent, agent, or type identity"
 	exit 0
 fi

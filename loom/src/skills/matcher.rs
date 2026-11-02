@@ -20,15 +20,8 @@ pub fn split_into_words(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Match skills against input text using the trigger index
-///
-/// Algorithm:
-/// 1. Normalize input text (lowercase, replace _ and - with space)
-/// 2. Split into words
-/// 3. Match against trigger_map (exact word match)
-/// 4. Check multi-word triggers (phrase match)
-/// 5. Score: phrase_hits * 2 + word_hits
-/// 6. Return top N by score (threshold: 2.0)
+/// Match triggers, scoring phrase hits at 2 and word hits at 1. Return scores
+/// at or above `score_threshold`, ordered by descending score then name, up to `max_results`.
 pub fn match_skills(
     text: &str,
     trigger_map: &HashMap<String, Vec<String>>,
@@ -39,7 +32,6 @@ pub fn match_skills(
     let normalized = normalize_text(text);
     let words = split_into_words(text);
 
-    // Track scores and matched triggers per skill
     let mut skill_scores: HashMap<String, f32> = HashMap::new();
     let mut skill_matched_triggers: HashMap<String, Vec<String>> = HashMap::new();
 
@@ -47,15 +39,12 @@ pub fn match_skills(
         let trigger_normalized = normalize_text(trigger);
         let trigger_words: Vec<_> = trigger_normalized.split_whitespace().collect();
 
-        // Check for phrase match (multi-word triggers)
         let is_phrase_match = trigger_words.len() > 1 && normalized.contains(&trigger_normalized);
 
-        // Check for word match (single-word triggers or individual word matches)
         let is_word_match =
             trigger_words.len() == 1 && words.iter().any(|w| w == &trigger_normalized);
 
         if is_phrase_match || is_word_match {
-            // Score: phrase matches are worth 2 points, word matches are worth 1
             let score_increment = if is_phrase_match { 2.0 } else { 1.0 };
 
             for skill_name in skill_names {
@@ -68,7 +57,6 @@ pub fn match_skills(
         }
     }
 
-    // Convert to SkillMatch and sort by score
     let mut matches: Vec<SkillMatch> = skill_scores
         .into_iter()
         .filter(|(_, score)| *score >= score_threshold)
@@ -79,7 +67,6 @@ pub fn match_skills(
         })
         .collect();
 
-    // Sort by score (descending), then by name (ascending) for stability
     matches.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
@@ -87,7 +74,6 @@ pub fn match_skills(
             .then_with(|| a.name.cmp(&b.name))
     });
 
-    // Return top N
     matches.truncate(max_results);
     matches
 }

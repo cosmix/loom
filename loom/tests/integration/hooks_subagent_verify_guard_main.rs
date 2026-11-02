@@ -9,10 +9,10 @@ use super::{
     bash_payload, install_hook, run_hook_in_tree, skip_unless_gate_visible, temp_dir_no_claude,
     write_integration_verify_stage,
 };
+use crate::helpers::{clear_relay_env, run_hook_process};
 use std::fs;
-use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 const STAGE: &str = "main-guard-stage";
 
@@ -143,23 +143,13 @@ fn run_with_main_pid(main_pid: u32) -> (i32, String) {
     let hook_path = install_hook(dir.path());
     let work_dir = dir.path().join("work");
     write_standard_stage(&work_dir, STAGE);
-    let mut child = Command::new("bash")
+    let mut cmd = Command::new("bash");
+    clear_relay_env(&mut cmd)
         .arg(&hook_path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
         .env("LOOM_MAIN_AGENT_PID", main_pid.to_string())
         .env("LOOM_WORK_DIR", &work_dir)
-        .env("LOOM_STAGE_ID", STAGE)
-        .spawn()
-        .expect("spawn hook");
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(main_shaped_payload("cargo test").as_bytes())
-        .ok();
-    let output = child.wait_with_output().expect("wait for hook");
+        .env("LOOM_STAGE_ID", STAGE);
+    let output = run_hook_process(&mut cmd, main_shaped_payload("cargo test").as_bytes());
     (
         output.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&output.stderr).to_string(),
@@ -238,23 +228,12 @@ fn no_live_loom_session_allows_everything() {
     write_standard_stage(&work_dir, STAGE);
 
     for command in ["cargo test", "bunx vitest run", "cargo build"] {
-        let mut child = Command::new("bash")
+        let mut cmd = Command::new("bash");
+        clear_relay_env(&mut cmd)
             .arg(&hook_path)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .env_remove("LOOM_MAIN_AGENT_PID")
             .env("LOOM_WORK_DIR", &work_dir)
-            .env("LOOM_STAGE_ID", STAGE)
-            .spawn()
-            .expect("spawn hook");
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(bash_payload(command).as_bytes())
-            .ok();
-        let output = child.wait_with_output().expect("wait for hook");
+            .env("LOOM_STAGE_ID", STAGE);
+        let output = run_hook_process(&mut cmd, bash_payload(command).as_bytes());
         assert_eq!(
             output.status.code(),
             Some(0),

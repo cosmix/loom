@@ -44,6 +44,104 @@ fn window_runner_returns_scripted_output_and_records_arguments() {
     );
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn xdotool_close_requires_successful_exit_status() {
+    for (close_reply, expected) in [(reply(1, ""), false), (None, false), (reply(0, ""), true)] {
+        let (closed, calls) =
+            test_commands::capture([reply(1, ""), reply(0, "101\n"), close_reply], || {
+                close_window_by_title("loom-owned")
+            });
+        assert_eq!(closed, expected);
+        assert_eq!(calls.len(), 3);
+        assert_eq!(
+            calls[0].args,
+            ["-F", "-c", "loom-owned"].map(std::ffi::OsString::from)
+        );
+        assert_eq!(
+            calls[1].args,
+            ["search", "--name", "^loom-owned$"].map(std::ffi::OsString::from)
+        );
+        assert_eq!(
+            calls[2].args,
+            ["windowclose", "101"].map(std::ffi::OsString::from)
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn xdotool_close_tries_later_matching_windows_after_failure() {
+    let (closed, calls) = test_commands::capture(
+        [
+            reply(1, ""),
+            reply(0, "101\n102\n"),
+            reply(1, ""),
+            reply(0, ""),
+        ],
+        || close_window_by_title("loom-owned"),
+    );
+    assert!(closed);
+    assert_eq!(calls.len(), 4);
+    assert_eq!(
+        calls[2].args,
+        ["windowclose", "101"].map(std::ffi::OsString::from)
+    );
+    assert_eq!(
+        calls[3].args,
+        ["windowclose", "102"].map(std::ffi::OsString::from)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn failed_xdotool_close_reaches_verified_pid_teardown() {
+    use super::super::{pid_tracking, window_identity, NativeBackend};
+    use crate::models::session::Session;
+    use crate::orchestrator::terminal::emulator::TerminalEmulator;
+    use std::time::{Duration, Instant};
+    use tempfile::TempDir;
+
+    let work = TempDir::new().unwrap();
+    let backend = NativeBackend::with_terminal(TerminalEmulator::XTerm, work.path().to_path_buf());
+    let mut session = Session::new();
+    session.assign_to_stage("failed-close".to_string());
+    session.native_window_title = window_identity::native_window_title(work.path(), &session);
+    let mut child = Command::new("sleep").arg("60").spawn().unwrap();
+    let start_time = crate::process::process_start_time(child.id()).unwrap();
+    let (_, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+    pid_tracking::write_pid_entry(
+        work.path(),
+        &pid_key,
+        crate::process::ProcessIdentity {
+            pid: child.id(),
+            start_time: Some(start_time),
+        },
+    )
+    .unwrap();
+
+    let (result, calls) =
+        test_commands::capture([reply(1, ""), reply(0, "101\n"), reply(1, "")], || {
+            backend.kill_session(&session)
+        });
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            assert!(!status.success());
+            break;
+        }
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("failed window close suppressed verified PID teardown");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    result.unwrap();
+    assert_eq!(calls.len(), 3);
+    assert!(pid_tracking::read_pid_entry(work.path(), &pid_key).is_some());
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn applescript_boolean_requires_success_and_exact_true() {
@@ -73,7 +171,7 @@ fn terminal_scripts_keep_titles_literal_for_each_application() {
     let escaped_title = r#"loom-a\"\\\nb"#;
     for (terminal, app) in [
         (TerminalEmulator::TerminalApp, "Terminal"),
-        (TerminalEmulator::ITerm2, "iTerm2"),
+        (TerminalEmulator::ITerm2, "iTerm"),
         (TerminalEmulator::Ghostty, "Ghostty"),
         (TerminalEmulator::Kitty, "kitty"),
         (TerminalEmulator::Alacritty, "Alacritty"),
@@ -101,6 +199,47 @@ fn terminal_scripts_keep_titles_literal_for_each_application() {
 
 #[cfg(target_os = "macos")]
 #[test]
+fn native_backend_uses_only_persisted_window_identity() {
+    use super::super::NativeBackend;
+    use crate::models::session::Session;
+    use tempfile::TempDir;
+
+    let work = TempDir::new().unwrap();
+    let backend =
+        NativeBackend::with_terminal(TerminalEmulator::TerminalApp, work.path().to_path_buf());
+    let mut session = Session::new();
+    session.assign_to_stage("shared-stage".to_string());
+    let (_, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+    super::super::pid_tracking::write_pid_entry(
+        work.path(),
+        &pid_key,
+        crate::process::ProcessIdentity {
+            pid: u32::MAX,
+            start_time: Some(1),
+        },
+    )
+    .unwrap();
+    let ((), legacy_calls) = test_commands::capture([], || backend.kill_session(&session).unwrap());
+    assert!(legacy_calls.is_empty());
+
+    session.native_window_title = Some("loom-shared-stage-other-session".to_string());
+    let ((), mismatched_calls) =
+        test_commands::capture([], || backend.kill_session(&session).unwrap());
+    assert!(mismatched_calls.is_empty());
+
+    let owned_title =
+        super::super::window_identity::native_window_title(work.path(), &session).unwrap();
+    session.native_window_title = Some(owned_title.clone());
+    let ((), calls) = test_commands::capture([reply(0, "true")], || {
+        backend.kill_session(&session).unwrap()
+    });
+    assert_eq!(calls.len(), 1);
+    let script = calls[0].args[1].to_str().unwrap();
+    assert!(script.contains(&format!("every window whose name is \"{owned_title}\"")));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
 fn terminal_fallbacks_query_each_application_and_return_false() {
     for operation in [
         macos::close_window_by_title_with_preference,
@@ -113,7 +252,7 @@ fn terminal_fallbacks_query_each_application_and_return_false() {
         assert_eq!(calls.len(), 6);
         for (call, app) in calls.iter().zip([
             "Terminal",
-            "iTerm2",
+            "iTerm",
             "Ghostty",
             "kitty",
             "Alacritty",

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
+use super::codex_scope::CodexScope;
 use super::codex_tokens::token_vector;
 use super::provider_normalization::{classify_by_id, project_basename};
 use super::provider_types::{
@@ -16,6 +17,12 @@ use super::time_range::TimeRange;
 pub(crate) struct CodexNormalization {
     pub(crate) rows: Vec<NormalizedEvent>,
     pub(crate) diagnostics: ProviderDiagnostics,
+}
+
+struct ParsedFile {
+    rows: Vec<NormalizedEvent>,
+    thread_id: Option<String>,
+    thread_conflict: bool,
 }
 
 #[derive(Default)]
@@ -32,19 +39,55 @@ struct FileState {
     thread_id_conflict: bool,
 }
 
+#[cfg(test)]
 pub(crate) fn normalize(files: &[PathBuf], range: &TimeRange) -> CodexNormalization {
+    let mut result = normalize_unclassified(files, range, &CodexScope::Unscoped);
+    classify_response_ids(&mut result.rows);
+    result
+}
+
+pub(crate) fn normalize_unclassified(
+    files: &[PathBuf],
+    range: &TimeRange,
+    scope: &CodexScope,
+) -> CodexNormalization {
     let mut rows = Vec::new();
-    let mut diagnostics = ProviderDiagnostics {
-        files_seen: files.len(),
-        ..ProviderDiagnostics::default()
-    };
+    let mut diagnostics = ProviderDiagnostics::default();
     for path in files {
-        match parse_file(path, range, &mut diagnostics) {
-            Ok(file_rows) => rows.extend(file_rows),
-            Err(_) => diagnostics.unreadable_files += 1,
+        let mut file_diagnostics = ProviderDiagnostics {
+            files_seen: 1,
+            ..Default::default()
+        };
+        match parse_file(path, range, &mut file_diagnostics) {
+            Ok(file) => {
+                let selected = match scope {
+                    CodexScope::Unscoped => true,
+                    CodexScope::Unavailable => false,
+                    CodexScope::Threads { threads, .. } => {
+                        file.thread_id
+                            .as_ref()
+                            .is_some_and(|id| threads.contains(id))
+                            && !file.thread_conflict
+                    }
+                };
+                let unknown = file.thread_id.is_none() || file.thread_conflict;
+                if selected || unknown {
+                    if unknown && !matches!(scope, CodexScope::Unscoped) {
+                        file_diagnostics.codex_unknown_file_identity += 1;
+                    }
+                    diagnostics.merge(file_diagnostics);
+                }
+                rows.extend(file.rows);
+            }
+            Err(_) => {
+                diagnostics.files_seen += 1;
+                diagnostics.unreadable_files += 1;
+                if !matches!(scope, CodexScope::Unscoped) {
+                    diagnostics.codex_unknown_file_identity += 1;
+                }
+            }
         }
     }
-    classify_response_ids(&mut rows);
     CodexNormalization { rows, diagnostics }
 }
 
@@ -52,7 +95,7 @@ fn parse_file(
     path: &Path,
     range: &TimeRange,
     diagnostics: &mut ProviderDiagnostics,
-) -> std::io::Result<Vec<NormalizedEvent>> {
+) -> std::io::Result<ParsedFile> {
     let reader = BufReader::new(File::open(path)?);
     let mut state = FileState::default();
     let mut rows = Vec::new();
@@ -75,7 +118,11 @@ fn parse_file(
     }
     apply_thread_identity(&mut rows, &state);
     classify_mixed_file(&mut rows, state.saw_direct, state.saw_fallback, diagnostics);
-    Ok(rows)
+    Ok(ParsedFile {
+        rows,
+        thread_id: state.thread_id,
+        thread_conflict: state.thread_id_conflict,
+    })
 }
 
 fn apply_thread_identity(rows: &mut [NormalizedEvent], state: &FileState) {
@@ -314,7 +361,7 @@ fn classify_mixed_file(
     }
 }
 
-fn classify_response_ids(rows: &mut [NormalizedEvent]) {
+pub(crate) fn classify_response_ids(rows: &mut [NormalizedEvent]) {
     classify_by_id(rows, |row| {
         (row.source_kind == SourceKind::CodexDirect)
             .then(|| row.request_id.clone())

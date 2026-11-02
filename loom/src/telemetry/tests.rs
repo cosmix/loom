@@ -107,6 +107,53 @@ fn drain_moves_spooled_lines_and_truncates() {
     assert_eq!(std::fs::read_to_string(path).unwrap(), "");
 }
 
+#[test]
+fn oversized_spool_is_neither_delivered_nor_truncated_and_append_respects_cap() {
+    let worktree = TempDir::new().unwrap();
+    let work_dir = TempDir::new().unwrap();
+    let event = record(10, delivered("stage-a"));
+    spool::append_to_spool(worktree.path(), &event).unwrap();
+    let path = spool::spool_path(worktree.path());
+    let cap = crate::fs::jsonl_spool::MAX_BYTES as usize;
+    std::fs::write(&path, vec![b' '; cap + 1]).unwrap();
+    assert!(spool::drain_into_events(work_dir.path(), worktree.path()).is_err());
+    assert_eq!(std::fs::metadata(&path).unwrap().len(), (cap + 1) as u64);
+    assert!(read_events(work_dir.path()).unwrap().is_empty());
+    std::fs::write(&path, vec![b' '; cap - 1]).unwrap();
+    assert!(spool::append_to_spool(worktree.path(), &event).is_err());
+    assert_eq!(std::fs::metadata(&path).unwrap().len(), (cap - 1) as u64);
+}
+
+#[test]
+fn failed_delivery_keeps_spool_for_retry() {
+    let worktree = TempDir::new().unwrap();
+    let work_dir = TempDir::new().unwrap();
+    let event = record(10, delivered("stage-a"));
+    spool::append_to_spool(worktree.path(), &event).unwrap();
+    std::fs::write(work_dir.path().join("telemetry"), "not a directory").unwrap();
+    assert!(spool::drain_into_events(work_dir.path(), worktree.path()).is_err());
+    assert_eq!(spool::read_pending(worktree.path()).unwrap(), vec![event]);
+}
+
+#[test]
+fn drain_refuses_hardlink_and_fifo() {
+    use std::os::unix::ffi::OsStrExt;
+    let worktree = TempDir::new().unwrap();
+    let work_dir = TempDir::new().unwrap();
+    let victim = worktree.path().join("victim");
+    std::fs::write(&victim, VICTIM).unwrap();
+    std::fs::create_dir(worktree.path().join(".loom")).unwrap();
+    let path = spool::spool_path(worktree.path());
+    std::fs::hard_link(&victim, &path).unwrap();
+    assert!(spool::drain_into_events(work_dir.path(), worktree.path()).is_err());
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), VICTIM);
+    std::fs::remove_file(&path).unwrap();
+    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    // SAFETY: c_path is a valid NUL-terminated pathname.
+    assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+    assert!(spool::drain_into_events(work_dir.path(), worktree.path()).is_err());
+}
+
 const VICTIM: &str = "outside the worktree; a drain must never read or truncate this\n";
 
 #[test]

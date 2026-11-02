@@ -81,7 +81,7 @@ fn parse_header(header: &str) -> Option<EntryBuilder> {
     })
 }
 
-fn is_event_id(id: &str) -> bool {
+pub(super) fn is_event_id(id: &str) -> bool {
     id.len() == 32
         && id
             .bytes()

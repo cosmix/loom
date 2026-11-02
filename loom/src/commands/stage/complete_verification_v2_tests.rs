@@ -143,6 +143,8 @@ fn aggregated_reachable_reverified_in_iv() {
         worktree_root: Some(repo.path()),
         daemon_gates: false,
         fail_closed: false,
+        expected_policy: None,
+        emit: |_, _| {},
         work_dir: work.path(),
     };
 

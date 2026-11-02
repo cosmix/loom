@@ -129,6 +129,26 @@ fn projection(out: &Value) -> Value {
     })
 }
 
+fn assert_steps(checklist: &Value) {
+    let steps: Vec<_> = checklist["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|step| step["step"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        steps,
+        [
+            "vision",
+            "product_spec",
+            "metaplan",
+            "plans",
+            "pressure_test",
+            "run"
+        ]
+    );
+}
+
 fn assert_shape(out: &Value) {
     let keys =
         |value: &Value| -> Vec<String> { value.as_object().unwrap().keys().cloned().collect() };
@@ -165,7 +185,7 @@ fn assert_shape(out: &Value) {
             ]
         );
         assert_eq!(checklist["feature"], feature["name"]);
-        assert_eq!(checklist["steps"].as_array().unwrap().len(), 6);
+        assert_steps(checklist);
         assert!(checklist["items"].is_array());
         assert!(checklist["state"].is_object());
     }

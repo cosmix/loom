@@ -26,6 +26,7 @@ set -euo pipefail
 
 # Read stdin JSON (for the `reason` field)
 source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
 
 # Validate required environment variables
@@ -51,26 +52,16 @@ mkdir -p "$HOOKS_DIR" 2>/dev/null || {
 EVENTS_FILE="${HOOKS_DIR}/events.jsonl"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 
-# Check if stage was already completed
-# Stage files have depth prefix: e.g., 02-implement-handoff-fix.md
-STAGE_FILE=""
-for candidate in "${LOOM_WORK_DIR}/stages/"*"-${LOOM_STAGE_ID}.md"; do
-	if [[ -f "$candidate" ]]; then
-		STAGE_FILE="$candidate"
-		break
-	fi
-done
-# Fallback to exact match (no prefix)
-if [[ -z "$STAGE_FILE" ]]; then
-	STAGE_FILE="${LOOM_WORK_DIR}/stages/${LOOM_STAGE_ID}.md"
-fi
-
+# Missing, unsafe, ambiguous, or malformed metadata requires a handoff.
 COMPLETED=false
-if [[ -n "$STAGE_FILE" ]] && [[ -f "$STAGE_FILE" ]]; then
-	if grep -q "status: Completed" "$STAGE_FILE" 2>/dev/null || grep -q "status: Verified" "$STAGE_FILE" 2>/dev/null; then
-		COMPLETED=true
-	fi
+STAGE_FILE=$(loom_find_stage_file "$LOOM_WORK_DIR" "$LOOM_STAGE_ID" || true)
+STAGE_STATUS=""
+if [[ -n "$STAGE_FILE" ]]; then
+    STAGE_STATUS=$(loom_stage_status "$STAGE_FILE" || true)
 fi
+case "$STAGE_STATUS" in
+    completed | Completed | verified | Verified) COMPLETED=true ;;
+esac
 
 # If not completed and loom is available, try to create handoff
 if [[ "$COMPLETED" != "true" ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null; then

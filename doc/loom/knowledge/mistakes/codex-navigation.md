@@ -100,3 +100,33 @@ that lands in the tree is `100644`.
 **Prevention:** Track whether a fence is opening or closing before requiring a language tag.
 
 **Fix:** Use a stateful fence check; the report itself required no fence change.
+
+## Reported a test count without checking
+
+**What happened:** A handoff said an extracted module had 13 tests, but it has 14.
+
+**Why:** The count was recalled from an outline instead of checked against the extracted file.
+
+**Prevention:** Count test attributes before reporting an exact test count.
+
+**Fix:** Correct the handoff to 14 tests.
+
+## Patch targeted pre-format source
+
+**What happened:** A focused test fix did not apply because the target match arm had been reformatted.
+
+**Why:** The patch used an earlier source shape instead of the current text.
+
+**Prevention:** Re-read the exact current range immediately before constructing a contextual patch.
+
+**Fix:** Apply the correction against the current formatted arm.
+
+## Reused stale context in a multi-file patch
+
+**What happened:** A multi-file refactor patch failed to apply because one formatted match arm differed from its assumed shape.
+
+**Why:** The patch was composed without rereading every target after formatting.
+
+**Prevention:** Read each exact target range after formatting before building the patch.
+
+**Fix:** Apply each extraction against the current source.

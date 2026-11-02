@@ -3,7 +3,9 @@
 //! record remains useful, and a read-only command should not suggest a
 //! monetary precision it cannot guarantee.
 
+use super::transcript_types::{saturated_counter, TokenUsage};
 use chrono::{Datelike, Duration, NaiveDate, TimeZone, Utc, Weekday};
+use serde::ser::{Serialize, SerializeStruct, Serializer};
 
 #[derive(Debug, Clone, Copy, Default, serde::Serialize)]
 pub struct Accounting {
@@ -19,19 +21,53 @@ pub struct Accounting {
 impl Accounting {
     pub fn of(usage: &super::transcript::TokenUsage) -> Accounting {
         Accounting {
-            s1: usage.resident() + usage.output,
+            s1: saturated_counter(usage.resident(), usage.output),
             s2: usage.input as f64
                 + usage.cache_read as f64 * 0.1
                 + usage.ephemeral_5m as f64 * 1.25
                 + usage.ephemeral_1h as f64 * 2.0
                 + usage.output as f64 * 5.0,
-            s3: usage.cache_creation + usage.input + usage.output,
+            s3: saturated_counter(
+                saturated_counter(usage.cache_creation, usage.input),
+                usage.output,
+            ),
         }
     }
     pub fn add(&mut self, other: &Accounting) {
-        self.s1 += other.s1;
+        self.s1 = saturated_counter(self.s1, other.s1);
         self.s2 += other.s2;
-        self.s3 += other.s3;
+        self.s3 = saturated_counter(self.s3, other.s3);
+    }
+}
+
+/// Shared accumulation for legacy model and agent groupings. Serialization
+/// projects the historic flat field names at the report boundary.
+#[derive(Debug, Default)]
+pub(crate) struct UsageSummary {
+    pub(crate) usage: TokenUsage,
+    pub(crate) accounting: Accounting,
+}
+
+impl UsageSummary {
+    pub(crate) fn add(&mut self, usage: &TokenUsage) {
+        self.usage.add(usage);
+        self.accounting.add(&Accounting::of(usage));
+    }
+}
+
+impl Serialize for UsageSummary {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut fields = serializer.serialize_struct("UsageSummary", 9)?;
+        fields.serialize_field("fresh_input", &self.usage.input)?;
+        fields.serialize_field("cache_creation", &self.usage.cache_creation)?;
+        fields.serialize_field("cache_reads", &self.usage.cache_read)?;
+        fields.serialize_field("output", &self.usage.output)?;
+        fields.serialize_field("cache_writes_5m", &self.usage.ephemeral_5m)?;
+        fields.serialize_field("cache_writes_1h", &self.usage.ephemeral_1h)?;
+        fields.serialize_field("s1", &self.accounting.s1)?;
+        fields.serialize_field("s2", &self.accounting.s2)?;
+        fields.serialize_field("s3", &self.accounting.s3)?;
+        fields.end()
     }
 }
 

@@ -4,29 +4,11 @@
 
 ## Every Stage Worktree Builds From Cold, and the Contract Freeze Pays First
 
-**Symptom.** A contract phase that writes three tests takes about 3.5 minutes. Measured on loom, stage
-`web-server-extract` (plan "`loom plan` server foundation and access"):
+A newly created stage worktree contains sources without ignored build outputs. Its first compiler or dependency-install invocation pays the cold-build cost for outputs that remain worktree-local.
 
-| Step | UTC | Elapsed |
-| --- | --- | --- |
-| Contract writer session starts | 04:15:56 | |
-| Writer calls freeze; host Freeze job `started_at` | 04:17:01 | about 65 s writing three tests |
-| `<worktree>/loom/target/` created | 04:17:02 | |
-| Job writes `contract-reports.json` | 04:19:22 | about 2 min 21 s |
-| `freeze.json` written, implementer starts | 04:19:27 | 5 s |
+The contract freeze runs through `host_verify/freeze.rs::run_contracts` and `freeze_memo::run_memoized`: contracts with the same prepared build key reuse a captured `build_failed` report, while independently keyed contracts run separately. The format gate runs after contract evaluation. This removes repeated failed compiles within one freeze without warming the first build or sharing outputs across stage worktrees.
 
-All three contracts ended `build_failed` (exit 101), the expected red. The worktree `target/` held
-17 GB in `debug/deps`, 3.1 GB in `debug/incremental` and 274 MB in `debug/build` afterwards; the main
-checkout's `loom/target` is 98 GB. Evidence lives in
-`.loom/work/verification/<stage>/<job>/record.json` (`started_at`, `finished_at`) and the mtimes of
-`contract-reports.json` and the worktree `target/`.
-
-**Cause.** A stage worktree starts with sources only. The freeze job
-(`host_verify/freeze.rs::run_contracts`) is the first process that compiles in it, so it pays the cold
-build of every dependency and the workspace crate. It then runs each contract as its own command, one
-after another, plus the format gate (`format_outcome`). The cost is not specific to the contract phase:
-whichever step compiles first in a new worktree pays it, in every ecosystem whose build state lives in
-the worktree.
+Revisit when a measured first build exceeds the project's acceptable stage-start budget. Preserve parallel stages, confinement, stage-keyed worktree identity and the operator's restriction against copying build trees or introducing a worktree pool.
 
 ## Build sharing does not happen today
 
@@ -140,12 +122,7 @@ leaves the workspace crates cold.
 
 ## Contract-freeze specifics, independent of the above
 
-- The freeze runs every contract through its own command (`run_contracts`). When contracts share one
-  test target and the first run is `build_failed`, the remaining runs repeat the same failed compile.
-  Grouping contracts by resolved target and reusing a `build_failed` result per group saves a few seconds
-  per extra contract once the build is warm.
-- Starting the freeze's compile while the writer still writes (option 6 scoped to the contract phase)
-  hides most of the writer's time behind the cold build.
+`host_verify/freeze.rs::run_contracts` passes contracts through `freeze_memo::run_memoized`, keyed by `PreparedContract::build_key` (lines 204-240). Contracts sharing a failed build reuse the captured failure with a shared-from label; successful or independently keyed runs retain their own evaluation. `host_verify/tests_freeze_memo.rs` covers this owner. Cold compilation of the first target remains. Pre-warming during contract writing is an optional scheduling design, subject to concurrent source writes, build-lock ownership and cancellation.
 
 ## Next steps when this is picked up
 

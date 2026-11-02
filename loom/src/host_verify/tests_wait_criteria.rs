@@ -42,7 +42,12 @@ fn state_names(fx: &Fx, request_id: &str) -> bool {
 fn a_full_check_never_follows_a_pending_subset_job() {
     let fx = fixture();
     let (first, ticket) = call(&fx, Some(&[1]), "r1");
-    assert_eq!(first, WaitOutcome::Requested);
+    assert_eq!(
+        first,
+        WaitOutcome::Requested {
+            request_id: "r1".into()
+        }
+    );
     assert_eq!(
         ticket,
         Some(Some(vec![1])),
@@ -57,7 +62,12 @@ fn a_full_check_never_follows_a_pending_subset_job() {
     assert_eq!(ticket, None, "the same selection follows its request");
 
     let (full, ticket) = call(&fx, None, "r2");
-    assert_eq!(full, WaitOutcome::Requested);
+    assert_eq!(
+        full,
+        WaitOutcome::Requested {
+            request_id: "r2".into()
+        }
+    );
     assert_eq!(ticket, Some(None), "a full check requests every criterion");
     assert!(state_names(&fx, "r2"));
 }
@@ -66,12 +76,22 @@ fn a_full_check_never_follows_a_pending_subset_job() {
 fn a_subset_check_requests_its_own_job_after_a_full_request() {
     let fx = fixture();
     let (first, ticket) = call(&fx, None, "r1");
-    assert_eq!(first, WaitOutcome::Requested);
+    assert_eq!(
+        first,
+        WaitOutcome::Requested {
+            request_id: "r1".into()
+        }
+    );
     assert_eq!(ticket, Some(None));
     save_current(&fx.work_dir, &fx.job(JOB, JobState::Running, &["r1"])).unwrap();
 
     let (subset, ticket) = call(&fx, Some(&[0, 2]), "r2");
-    assert_eq!(subset, WaitOutcome::Requested);
+    assert_eq!(
+        subset,
+        WaitOutcome::Requested {
+            request_id: "r2".into()
+        }
+    );
     assert_eq!(ticket, Some(Some(vec![0, 2])));
     assert!(state_names(&fx, "r2"));
 }

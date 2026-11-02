@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Bridge Codex's apply_patch payload to Loom's Claude-shaped file guards and
-# record edited paths for the source-graph overlay after a successful patch.
+# Bridge Codex apply_patch payloads to Loom file guards.
 
 # Resolve commands through loom's pinned hook PATH when set (LOOM_HOOK_PATH):
 # inherited PATH directories can be writable from a sandboxed session.
@@ -27,6 +26,8 @@ INPUT_JSON=$(loom_read_input 5 2>/dev/null || true)
 
 TOOL_NAME=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 [[ "$TOOL_NAME" == "apply_patch" ]] || exit 0
+
+[[ "$MODE" == "post" ]] && exit 0
 
 PATCH=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
 if [[ -z "$PATCH" ]]; then
@@ -83,23 +84,6 @@ if [[ ${#TARGETS[@]} -eq 0 ]]; then
 	[[ "$MODE" == "post" ]] && exit 0
 	echo "LOOM: blocked apply_patch because no target paths could be validated" >&2
 	exit 2
-fi
-
-[[ "$MODE" == "post" ]] || exit 0
-[[ -n "${LOOM_STAGE_ID:-}" ]] || exit 0
-command -v "${LOOM_BIN:-loom}" &>/dev/null || exit 0
-
-declare -a ARGS=()
-for path in "${TARGETS[@]}"; do
-	ARGS+=(--path "$path")
-done
-
-if command -v gtimeout &>/dev/null; then
-	LOOM_HOOK_CONTEXT=1 gtimeout 3 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" "${ARGS[@]}" >/dev/null 2>&1 || true
-elif command -v timeout &>/dev/null; then
-	LOOM_HOOK_CONTEXT=1 timeout 3 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" "${ARGS[@]}" >/dev/null 2>&1 || true
-else
-	LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" "${ARGS[@]}" >/dev/null 2>&1 || true
 fi
 
 exit 0

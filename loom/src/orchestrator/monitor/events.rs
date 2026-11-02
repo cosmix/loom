@@ -65,7 +65,7 @@ pub enum MonitorEvent {
         /// The stage looks FINISHED rather than stuck: its branch carries
         /// commits beyond its base and its worktree is clean, so the session
         /// most likely ended its turn without running `loom stage complete`.
-        /// Advisory like the rest of this event — it only sharpens the warning.
+        /// This heuristic sharpens the warning; it does not prove gates pass.
         finished_without_completing: bool,
     },
     /// An adjudication session is alive but has stopped working: no tool call,
@@ -117,9 +117,8 @@ pub enum MonitorEvent {
         transcript_path: Option<String>,
         last_tool: Option<String>,
     },
-    /// A session ran past the daemon's backstop multiple of its stage ceiling -
-    /// forced handoff required. `ceiling_tokens` is the stage's own ceiling;
-    /// the backstop fires at `DAEMON_CEILING_MULTIPLIER` times that.
+    /// A session exceeded the configured backstop for its stage ceiling and
+    /// requires handoff. The threshold also respects the model-window clamp.
     BudgetExceeded {
         session_id: String,
         stage_id: String,

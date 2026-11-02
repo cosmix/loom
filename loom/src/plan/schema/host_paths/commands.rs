@@ -72,8 +72,8 @@ fn format_issue(
         ),
         HostPathIssue::WriteOutsideWorktree(path) => format!(
             "Stage '{stage_id}': {locator} writes to '{path}' outside the \
-             worktree; commands run inside the stage sandbox, where everything outside the \
-             worktree is read-only - write under the worktree or \"$TMPDIR\"."
+             worktree; default confined verification commands can write under the \
+             worktree or their private TMPDIR - write there instead."
         ),
     }
 }

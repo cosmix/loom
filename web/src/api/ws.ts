@@ -44,6 +44,8 @@ class StatusSocketConnection {
   private readonly cancel: typeof clearTimeout;
   private watchdog: ReturnType<typeof setInterval> | undefined;
   private lastMessageAt = 0;
+  private attemptStartedAt = 0;
+  private opened = false;
   private readonly every: typeof setInterval;
   private readonly stopEvery: typeof clearInterval;
   private readonly now: () => number;
@@ -113,6 +115,12 @@ class StatusSocketConnection {
 
   private checkLiveness(): void {
     if (this.stopped || this.socket === undefined) return;
+    if (!this.opened) {
+      if (this.now() - this.attemptStartedAt >= STALE_AFTER_MS) {
+        this.reconnect("connection attempt timed out");
+      }
+      return;
+    }
     const phase = this.store.get(connectionAtom).phase;
     if (
       (phase === "live" || phase === "error") &&
@@ -134,6 +142,8 @@ class StatusSocketConnection {
     if (this.stopped) {
       return;
     }
+    this.attemptStartedAt = this.now();
+    this.opened = false;
     const socket = new this.Socket(this.url);
     this.socket = socket;
     // Every handler checks it's still the current socket: a superseded
@@ -142,6 +152,7 @@ class StatusSocketConnection {
     // second, untracked reconnect loop.
     socket.onopen = () => {
       if (this.stopped || this.socket !== socket) return;
+      this.opened = true;
       this.attempts = 0;
       this.lastMessageAt = this.now();
       this.setConnection("live");
@@ -176,7 +187,7 @@ class StatusSocketConnection {
     if (result.success) {
       applySnapshot(this.store, result.data);
       // Only transition on phase change: `since` marks when the phase began,
-      // not when the last frame arrived (connection-badge.tsx relies on that
+      // not when the last frame arrived (header-lines.tsx relies on that
       // distinction), so calling setConnection on every frame would stamp a
       // new `since` and break it. This also clears a stale error `message`
       // once the feed recovers.

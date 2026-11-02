@@ -20,67 +20,6 @@ fn create_test_stage(id: &str, auto_merge: Option<bool>) -> Stage {
 }
 
 #[test]
-fn test_auto_merge_enabled_by_default() {
-    let stage = create_test_stage("test-1", None);
-
-    // With orchestrator default (now true), auto-merge should be enabled
-    assert!(is_auto_merge_enabled(&stage, true, None));
-}
-
-#[test]
-fn test_auto_merge_disabled_via_orchestrator_config() {
-    let stage = create_test_stage("test-1", None);
-
-    // Orchestrator config disables it (--no-merge flag)
-    assert!(!is_auto_merge_enabled(&stage, false, None));
-}
-
-#[test]
-fn test_auto_merge_enabled_via_plan_config() {
-    let stage = create_test_stage("test-1", None);
-
-    // Plan config enables it
-    assert!(is_auto_merge_enabled(&stage, false, Some(true)));
-}
-
-#[test]
-fn test_auto_merge_stage_override_takes_precedence() {
-    // Stage explicitly disables, even with plan and orchestrator enabled
-    let stage = create_test_stage("test-1", Some(false));
-    assert!(!is_auto_merge_enabled(&stage, true, Some(true)));
-
-    // Stage explicitly enables, even with plan and orchestrator disabled
-    let stage = create_test_stage("test-2", Some(true));
-    assert!(is_auto_merge_enabled(&stage, false, Some(false)));
-}
-
-#[test]
-fn test_plan_config_overrides_orchestrator() {
-    let stage = create_test_stage("test-1", None);
-
-    // Plan config overrides orchestrator config
-    assert!(is_auto_merge_enabled(&stage, false, Some(true)));
-    assert!(!is_auto_merge_enabled(&stage, true, Some(false)));
-}
-
-#[test]
-fn test_auto_merge_config_priority_chain() {
-    // Full priority test: stage > plan > orchestrator
-
-    // 1. Stage set - should win
-    let stage = create_test_stage("test-1", Some(true));
-    assert!(is_auto_merge_enabled(&stage, false, Some(false)));
-
-    // 2. Stage not set, plan set - plan wins
-    let stage = create_test_stage("test-2", None);
-    assert!(is_auto_merge_enabled(&stage, false, Some(true)));
-
-    // 3. Neither stage nor plan set - orchestrator wins
-    let stage = create_test_stage("test-3", None);
-    assert!(is_auto_merge_enabled(&stage, true, None));
-}
-
-#[test]
 fn test_parse_auto_merge_from_yaml() {
     let yaml = r#"
 loom:
@@ -108,7 +47,8 @@ loom:
 
 #[test]
 fn test_auto_merge_all_combinations() {
-    // Test all 8 combinations of the three boolean flags
+    // Precedence is stage > plan > orchestrator, over all 18 combinations of the
+    // boolean and two optional flags.
     // Format: (orchestrator, plan, stage, expected_result)
     let test_cases = [
         (false, None, None, false),

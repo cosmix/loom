@@ -10,10 +10,12 @@ use chrono::Utc;
 use tempfile::TempDir;
 
 use super::store::{
-    append_group, append_progress, job_dir, load_current, load_groups, load_job_record, prune_jobs,
-    read_progress, save_criterion_log, save_current, save_job_file, stage_dir,
+    append_group, append_progress, job_dir, load_current, load_groups, load_job_record, lock_stage,
+    next_submission_order, prune_jobs, read_progress, save_criterion_log, save_current,
+    save_job_file, stage_dir, start_guarded_group,
 };
 use super::{new_job_id, CriterionOutcome, JobKind, JobRecord, JobState};
+use crate::verify::criteria::GroupAnchor;
 
 const STAGE: &str = "stage-a";
 
@@ -27,6 +29,7 @@ fn state_root() -> (TempDir, PathBuf) {
 fn record(state: JobState) -> JobRecord {
     JobRecord {
         id: new_job_id(),
+        submission_order: 0,
         stage_id: STAGE.to_string(),
         session_id: "session-a".to_string(),
         kind: JobKind::Check,
@@ -42,6 +45,34 @@ fn record(state: JobState) -> JobRecord {
         pid: None,
         detail: None,
     }
+}
+
+#[test]
+fn old_job_json_defaults_to_unordered() {
+    let job = record(JobState::Failed);
+    let mut json = serde_json::to_value(&job).unwrap();
+    json.as_object_mut().unwrap().remove("submission_order");
+
+    let decoded: JobRecord = serde_json::from_value(json).unwrap();
+
+    assert_eq!(decoded, job);
+}
+
+#[test]
+fn submission_order_survives_restart_and_a_reserved_gap() {
+    let (_dir, work) = state_root();
+    {
+        let _lock = lock_stage(&work, STAGE).unwrap();
+        assert_eq!(next_submission_order(&work, STAGE).unwrap(), 1);
+        assert_eq!(next_submission_order(&work, STAGE).unwrap(), 2);
+    }
+    // The first reservation never published a job, as after a crash.
+    let mut published = record(JobState::Queued);
+    published.submission_order = 2;
+    save_current(&work, &published).unwrap();
+
+    let _lock = lock_stage(&work, STAGE).unwrap();
+    assert_eq!(next_submission_order(&work, STAGE).unwrap(), 3);
 }
 
 fn outcome(label: &str, summary: String) -> CriterionOutcome {
@@ -260,6 +291,7 @@ fn pruning_keeps_the_three_newest_job_directories_and_the_current_one() {
     let jobs: Vec<JobRecord> = (0..5).map(|_| record(JobState::Passed)).collect();
     for (index, job) in jobs.iter().enumerate() {
         save_current(&work, job).unwrap();
+        save_job_file(&work, STAGE, &job.id, "applied", b"done").unwrap();
         age(&work, &job.id, 1_000 + index as u64);
     }
 
@@ -274,6 +306,24 @@ fn pruning_keeps_the_three_newest_job_directories_and_the_current_one() {
         .unwrap()
         .join("current.json")
         .is_file());
+}
+
+#[test]
+fn pruning_keeps_an_old_terminal_job_without_an_applied_marker() {
+    let (_dir, work) = state_root();
+    let pending = record(JobState::Failed);
+    save_current(&work, &pending).unwrap();
+    age(&work, &pending.id, 1_000);
+    let newer: Vec<JobRecord> = (0..4).map(|_| record(JobState::Passed)).collect();
+    for (index, job) in newer.iter().enumerate() {
+        save_current(&work, job).unwrap();
+        save_job_file(&work, STAGE, &job.id, "applied", b"done").unwrap();
+        age(&work, &job.id, 2_000 + index as u64);
+    }
+
+    prune_jobs(&work, STAGE, &newer[3].id).unwrap();
+
+    assert!(job_dir(&work, STAGE, &pending.id).unwrap().exists());
 }
 
 #[test]
@@ -309,6 +359,7 @@ fn pruning_keeps_a_job_cancelled_after_its_start_before_its_pid_was_written() {
     let newer: Vec<JobRecord> = (0..4).map(|_| record(JobState::Passed)).collect();
     for (index, job) in newer.iter().enumerate() {
         save_current(&work, job).unwrap();
+        save_job_file(&work, STAGE, &job.id, "applied", b"done").unwrap();
         age(&work, &job.id, 2_000 + index as u64);
     }
 
@@ -319,4 +370,26 @@ fn pruning_keeps_a_job_cancelled_after_its_start_before_its_pid_was_written() {
         job_dir(&work, STAGE, &started.id).unwrap().exists(),
         "the directory the runner reads to retire the job was pruned"
     );
+}
+
+#[test]
+fn pruning_keeps_an_old_job_with_a_live_group_guardian() {
+    let (_dir, work) = state_root();
+    let mut old = record(JobState::Cancelled);
+    old.started_at = Some(Utc::now() - chrono::Duration::minutes(3));
+    old.finished_at = Some(Utc::now() - chrono::Duration::minutes(2));
+    save_current(&work, &old).unwrap();
+    let (leader, address) = start_guarded_group(&work, STAGE, &old.id).unwrap();
+    let _anchor = GroupAnchor::new(leader, Box::new(move || address.signal()));
+    age(&work, &old.id, 1_000);
+    let newer: Vec<JobRecord> = (0..4).map(|_| record(JobState::Passed)).collect();
+    for (index, job) in newer.iter().enumerate() {
+        save_current(&work, job).unwrap();
+        save_job_file(&work, STAGE, &job.id, "applied", b"done").unwrap();
+        age(&work, &job.id, 2_000 + index as u64);
+    }
+
+    prune_jobs(&work, STAGE, &newer[3].id).unwrap();
+
+    assert!(job_dir(&work, STAGE, &old.id).unwrap().exists());
 }

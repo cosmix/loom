@@ -228,7 +228,7 @@ fn test_locked_read_modify_write_concurrent_append() {
 }
 
 #[test]
-fn test_locked_write_refuses_a_symlinked_tmp_file() {
+fn test_locked_write_ignores_a_symlinked_legacy_tmp_file() {
     let temp = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();
     let outside_file = outside.path().join("real.md");
@@ -238,10 +238,8 @@ fn test_locked_write_refuses_a_symlinked_tmp_file() {
     let tmp_path = temp.path().join("linked.md.tmp");
     std::os::unix::fs::symlink(&outside_file, &tmp_path).unwrap();
 
-    let error = locked_write(&path, "attacker content")
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains(&tmp_path.display().to_string()), "{error}");
+    locked_write(&path, "safe content").unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "safe content");
 
     // The symlink is left in place, and the file it points at is untouched.
     assert!(tmp_path

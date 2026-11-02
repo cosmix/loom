@@ -1,8 +1,11 @@
 pub mod before_after;
+pub(crate) mod budget;
+pub(crate) mod completion;
 pub mod context;
 pub mod contracts;
 pub mod criteria;
 pub mod duplicate_detection;
+pub(crate) mod execution_paths;
 pub mod goal_backward;
 pub mod impact_tests;
 pub mod integrity;

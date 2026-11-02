@@ -1,6 +1,7 @@
 //! The `labels.yaml` of a labelled corpus: what a compiler would bind, written
 //! before the extractor ran.
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
@@ -33,7 +34,7 @@ pub struct Labels {
     pub syntax_error_files: Vec<String>,
 }
 
-/// A declaration the extractor must find: matched on `(path, kind, scope)`.
+/// A declaration the extractor must find: matched on `(path, kind, scope, line)`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeclarationLabel {
@@ -50,6 +51,9 @@ pub struct ReferenceLabel {
     pub path: String,
     pub line: usize,
     pub symbol: String,
+    /// Optional zero-based byte offset of the reference site.
+    #[serde(default)]
+    pub site_start: Option<usize>,
     pub expect: Expect,
 }
 
@@ -118,7 +122,50 @@ pub fn load_labels(dir: &Path) -> Result<Labels> {
     if dialect_by_id(&labels.dialect).is_none() {
         bail!("{}: unknown dialect '{}'", path.display(), labels.dialect);
     }
-    for label in &labels.references {
+    let mut declarations = HashSet::new();
+    for label in &labels.declarations {
+        if !declarations.insert((&label.path, &label.kind, &label.scope, label.line)) {
+            bail!(
+                "{}: duplicate declaration label {} {}",
+                path.display(),
+                label.path,
+                label.scope.join("::")
+            );
+        }
+    }
+    validate_references(&labels.references, &path)?;
+    let mut impacts = HashSet::new();
+    for label in &labels.impact {
+        if !impacts.insert((&label.start, label.depth)) {
+            bail!(
+                "{}: duplicate impact label {} depth {}",
+                path.display(),
+                label.start,
+                label.depth
+            );
+        }
+    }
+    let mut syntax_files = HashSet::new();
+    for file in &labels.syntax_error_files {
+        if !syntax_files.insert(file) {
+            bail!("{}: duplicate syntax-error file {}", path.display(), file);
+        }
+    }
+    Ok(labels)
+}
+
+fn validate_references(labels: &[ReferenceLabel], path: &Path) -> Result<()> {
+    let mut references = HashSet::new();
+    for label in labels {
+        if !references.insert((&label.path, label.line, &label.symbol, label.site_start)) {
+            bail!(
+                "{}: duplicate reference label {}:{} {}",
+                path.display(),
+                label.path,
+                label.line,
+                label.symbol
+            );
+        }
         label.expect.validate().with_context(|| {
             format!(
                 "{}: reference {}:{} {}",
@@ -129,5 +176,5 @@ pub fn load_labels(dir: &Path) -> Result<Labels> {
             )
         })?;
     }
-    Ok(labels)
+    Ok(())
 }

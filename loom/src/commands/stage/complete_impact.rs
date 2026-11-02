@@ -8,17 +8,7 @@
 
 use std::path::Path;
 
-use crate::verify::impact_tests::{record_observed, ImpactTestsFailed, ObservedImpact};
-
-/// The impact-test failures a completion that failed with `error` observed:
-/// none unless the impact gate itself failed it.
-pub(crate) fn observed_impact(error: &anyhow::Error) -> ObservedImpact {
-    let failures = error
-        .downcast_ref::<ImpactTestsFailed>()
-        .map(|failed| failed.failures.as_slice())
-        .unwrap_or_default();
-    ObservedImpact::of(failures)
-}
+use crate::verify::impact_tests::{observed_impact, record_observed};
 
 /// After the operator's completion of `stage_id` failed with `error`, record
 /// what the impact gate observed. A record that cannot be kept is a warning;

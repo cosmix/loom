@@ -7,15 +7,13 @@ use std::fs;
 use serde_json::{json, Value};
 
 use super::*;
-use crate::hooks::HooksConfig;
-use crate::plan::schema::PermissionMode;
 
 fn read_settings_local(root: &Path) -> Value {
     let path = root.join(".claude/settings.local.json");
     serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
 }
 
-fn find_issue(root: &Path, starts_with: &str) -> RepairIssue {
+fn find_issue(root: &Path, starts_with: &str) -> DetectedIssue {
     check_all_issues(root)
         .into_iter()
         .find(|issue| issue.description.starts_with(starts_with))
@@ -28,13 +26,12 @@ fn find_issue(root: &Path, starts_with: &str) -> RepairIssue {
 /// text below counts.
 fn plant_loom_written_keys(settings: &mut Value, root: &Path, work_dir: &str) {
     let hooks_dir = crate::assets::install::claude_hooks_dir().unwrap();
-    let session = HooksConfig::new(hooks_dir, work_dir.into(), PermissionMode::Auto);
-    for (event, rules) in session.to_settings_hooks() {
+    let session = crate::hooks::tests::session_hook_fixture(&hooks_dir);
+    for (event, rules) in session.as_object().unwrap() {
         let slot = &mut settings["hooks"][event.as_str()];
         if slot.is_null() {
             *slot = json!([]);
         }
-        let rules = serde_json::to_value(rules).unwrap();
         slot.as_array_mut()
             .unwrap()
             .extend(rules.as_array().unwrap().iter().cloned());

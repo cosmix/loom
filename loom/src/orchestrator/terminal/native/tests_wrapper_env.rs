@@ -1,8 +1,4 @@
 //! Unit tests for the wrapper script's `LOOM_SESSION_TYPE` export.
-//!
-//! Split out of `tests.rs` to keep it under the 400-line ceiling (CLAUDE.md
-//! Rule 17), matching how `tests_capsule.rs` and `tests_launch.rs` are split
-//! out of the same directory.
 
 use super::wrapper::{create_session_wrapper_script, WrapperHostEnv};
 use super::*;

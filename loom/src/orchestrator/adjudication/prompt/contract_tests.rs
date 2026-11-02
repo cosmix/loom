@@ -26,7 +26,7 @@ fn request() -> DisputeRequest {
     }
 }
 
-/// Fixture for [`full_briefing_quotes_each_source_and_the_diff`]: a
+/// Fixture for the full briefing test: a
 /// stage with one contract, its frozen file and current worktree file
 /// written to disk, ready for [`KindPromptInput`] to borrow from.
 pub(super) struct ContractFixture {
@@ -71,47 +71,33 @@ pub(super) fn contract_fixture() -> ContractFixture {
     }
 }
 
+#[path = "contract_tests/full_briefing.rs"]
+mod full_briefing;
+
 #[test]
-fn full_briefing_quotes_each_source_and_the_diff() {
+fn briefing_uses_the_published_generation_for_all_frozen_evidence() {
     let fx = contract_fixture();
-    let input = KindPromptInput {
-        stage: &fx.stage,
-        dispute_id: 4,
-        request: &fx.request,
-        site: &fx.site,
-        worktree: Some(&fx.worktree),
-        work_dir: &fx.work_dir,
-    };
-
-    let prompt = build(&input);
-
-    for expected in [
-        "## Contract spec",
-        "id: rejects-x",
-        "file: tests/x_contract.rs",
-        "test: tests::rejects_x",
-        "cwd: (not set; detected)",
-        "recorded cwd: (none recorded)",
-        "scenario: x arrives",
-        "rejects: accepting x",
-        "## Frozen content",
-        "assert!(false);",
-        "## Current content",
-        "assert!(rejects_x());",
-        "## Agent's reason",
-        "the new assertion still rejects x",
-        "## Diff (frozen vs current)",
-        "-assert!(false);",
-        "+assert!(rejects_x());",
-    ] {
-        assert!(prompt.evidence.contains(expected), "missing {expected}");
-    }
-    assert!(prompt
-        .instructions
-        .contains("loom stage adjudicate --stage demo"));
-    assert!(prompt
-        .instructions
-        .contains("run directory (`loom` in the stage's worktree)"));
+    freeze_then_change_support_files(&fx);
+    let files = vec![
+        (
+            "tests/x_contract.rs".to_string(),
+            b"new frozen contract\n".to_vec(),
+        ),
+        (
+            "tests/support/changed.rs".to_string(),
+            b"new frozen support\n".to_vec(),
+        ),
+    ];
+    store::refreeze_set(&fx.work_dir, "demo", &files, &[]).unwrap();
+    fs::write(
+        fx.site.path.join("tests/support/changed.rs"),
+        "current support\n",
+    )
+    .unwrap();
+    let prompt = build(&input_of(&fx));
+    assert!(prompt.evidence.contains("new frozen contract"));
+    assert!(prompt.evidence.contains("-new frozen support"));
+    assert!(!prompt.evidence.contains("-assert!(false);"));
 }
 
 #[test]

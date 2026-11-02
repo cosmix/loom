@@ -14,6 +14,57 @@ fn bash_rc_uses_shell_quoted_completion_path() {
     assert!(bashrc.contains(&format!("[ -f {quoted} ] && source {quoted}")));
 }
 
+#[test]
+fn writable_probe_preserves_existing_files_and_symlink_targets() {
+    use std::os::unix::fs::symlink;
+    let dir = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let probe = dir.path().join(".loom_write_probe");
+    std::fs::write(&probe, "keep").unwrap();
+    assert!(is_writable(dir.path()));
+    assert_eq!(std::fs::read_to_string(&probe).unwrap(), "keep");
+    std::fs::remove_file(&probe).unwrap();
+    let target = outside.path().join("target");
+    std::fs::write(&target, "keep target").unwrap();
+    symlink(&target, &probe).unwrap();
+    assert!(is_writable(dir.path()));
+    assert_eq!(std::fs::read_to_string(target).unwrap(), "keep target");
+    assert!(std::fs::symlink_metadata(probe).unwrap().is_symlink());
+}
+
+#[test]
+#[serial]
+fn refresh_skips_default_and_xdg_symlink_escapes() {
+    use std::os::unix::fs::symlink;
+    let home = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let target = outside.path().join("completion");
+    std::fs::write(&target, "keep").unwrap();
+    let default = home.path().join(".zfunc/_loom");
+    std::fs::create_dir_all(default.parent().unwrap()).unwrap();
+    symlink(&target, &default).unwrap();
+    let xdg = home.path().join("xdg");
+    symlink(outside.path(), &xdg).unwrap();
+    let xdg_target = outside.path().join("bash-completion/completions/loom");
+    std::fs::create_dir_all(xdg_target.parent().unwrap()).unwrap();
+    std::fs::write(&xdg_target, "keep xdg").unwrap();
+    let _data = EnvVarGuard::set("XDG_DATA_HOME", &xdg);
+    let _config = EnvVarGuard::unset("XDG_CONFIG_HOME");
+    assert_eq!(refresh_existing_in(home.path()).unwrap(), 0);
+    assert_eq!(std::fs::read_to_string(target).unwrap(), "keep");
+    assert_eq!(std::fs::read_to_string(xdg_target).unwrap(), "keep xdg");
+    std::fs::remove_file(&default).unwrap();
+    std::fs::remove_dir(default.parent().unwrap()).unwrap();
+    let external_zsh = outside.path().join("_loom");
+    std::fs::write(&external_zsh, "keep parent").unwrap();
+    symlink(outside.path(), default.parent().unwrap()).unwrap();
+    assert_eq!(refresh_existing_in(home.path()).unwrap(), 0);
+    assert_eq!(
+        std::fs::read_to_string(external_zsh).unwrap(),
+        "keep parent"
+    );
+}
+
 /// Pins an environment variable for a test's duration and restores whatever
 /// value (or absence) it had beforehand on drop. Mirrors the same-purpose
 /// guard in `orchestrator/terminal/native/tests_wrapper_env.rs`, which is
@@ -119,7 +170,6 @@ fn refresh_existing_in_ignores_xdg_outside_home() {
     );
 }
 
-/// The same `../` escape the doc comment on `is_under_home` calls out:
 /// `home/../<outside-basename>` lexically "starts with" `home`, but resolves
 /// to a sibling directory once canonicalised. `TempDir::new()` creates both
 /// directories directly under the same OS temp root, so `outside`'s basename

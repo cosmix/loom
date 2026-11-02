@@ -56,7 +56,35 @@ fn receipt(thread: Option<&str>, observed_at: DateTime<Utc>) -> ReceiptThread {
     ReceiptThread {
         thread_id: thread.map(str::to_owned),
         observed_at,
+        stage_id: "alpha".to_owned(),
     }
+}
+
+#[test]
+fn stage_selection_keeps_distinct_threads_and_rejects_conflicting_ownership() {
+    let mut beta = receipt(Some("beta-thread"), at(10, 40, 0));
+    beta.stage_id = "beta".to_owned();
+    let mut shared = receipt(Some("shared-thread"), at(10, 40, 0));
+    let mut shared_beta = shared.clone();
+    shared_beta.stage_id = "beta".to_owned();
+    shared.stage_id = "alpha".to_owned();
+    let receipts = [
+        receipt(Some("alpha-thread"), at(10, 40, 0)),
+        beta,
+        shared,
+        shared_beta,
+    ];
+    let selected = HashSet::from(["alpha".to_owned()]);
+    let scope =
+        CodexScope::from_selected_receipt_threads(&receipts, &window(None), Some(&selected));
+    let mut rows = vec![
+        rollout("alpha-thread"),
+        rollout("beta-thread"),
+        rollout("shared-thread"),
+    ];
+    let outcome = apply(&scope, &mut rows);
+    assert_eq!(thread_ids(&rows), ["alpha-thread"]);
+    assert_eq!(outcome.ambiguous_threads, 1);
 }
 
 fn set(ids: &[&str]) -> BTreeSet<String> {
@@ -68,6 +96,7 @@ fn threads(ids: &[&str]) -> CodexScope {
         threads: set(ids),
         in_window: set(ids),
         unthreaded: 0,
+        ambiguous: 0,
     }
 }
 
@@ -91,6 +120,7 @@ fn thread_scope_keeps_named_threads_and_counts_foreign_and_missing() {
             missing_threads: 1,
             unthreaded_receipts: 0,
             unavailable: false,
+            ambiguous_threads: 0,
         }
     );
 }

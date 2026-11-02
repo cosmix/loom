@@ -44,29 +44,6 @@ const APPLIED_THEMES = [
   },
 ] as const;
 
-const NAMED_PALETTES = [
-  {
-    label: "Ledger",
-    background: "oklch(0.925 0.009 102)",
-    primary: "oklch(0.84 0.155 80)",
-  },
-  {
-    label: "Aubergine",
-    background: "oklch(0.16 0.035 325)",
-    primary: "oklch(0.83 0.165 82)",
-  },
-  {
-    label: "Pacific",
-    background: "oklch(0.18 0.045 258)",
-    primary: "oklch(0.78 0.135 258)",
-  },
-  {
-    label: "Graphite",
-    background: "oklch(0.18 0.005 270)",
-    primary: "oklch(0.78 0.015 270)",
-  },
-] as const;
-
 function renderThemePicker(store = createStore(), applyTheme = false) {
   const picker = <ThemePicker />;
   const content = applyTheme ? <ThemeProvider>{picker}</ThemeProvider> : picker;
@@ -92,6 +69,18 @@ describe("ThemePicker", () => {
     expect(screen.getAllByRole("button")).toHaveLength(4);
     for (const label of THEME_LABELS) {
       expect(screen.getByRole("button", { name: `${label} theme` })).toBeTruthy();
+    }
+  });
+
+  it("scopes each swatch to the same theme selector as the applied theme", () => {
+    renderThemePicker();
+    for (const option of THEME_OPTIONS) {
+      const button = screen.getByRole("button", { name: `${option.label} theme` });
+      const scope = button.querySelector(".theme-preview") as HTMLElement;
+      expect(scope.classList.contains("dark")).toBe(option.scheme === "dark");
+      expect(scope.dataset.lightTheme ?? null).toBe(option.lightVariant);
+      expect(scope.dataset.darkTheme ?? null).toBe(option.darkVariant);
+      expect(option.palette.background).toBe("var(--background)");
     }
   });
 
@@ -207,13 +196,11 @@ describe("ThemePicker", () => {
     }
   });
 
-  it("exports complete and distinct oklch palettes", () => {
+  it("exports complete palettes backed by scoped CSS variables", () => {
     const paletteValues = THEME_OPTIONS.flatMap((option) => Object.values(option.palette));
-    const backgrounds = THEME_OPTIONS.map((option) => option.palette.background);
 
     expect(paletteValues).toHaveLength(28);
-    expect(paletteValues.every((value) => value.startsWith("oklch("))).toBe(true);
-    expect(new Set(backgrounds).size).toBe(4);
+    expect(paletteValues.every((value) => value.startsWith("var(--"))).toBe(true);
   });
 
   it("does not mark an unoffered dark variant as active", () => {
@@ -251,16 +238,6 @@ describe("ThemePicker", () => {
         const restored = screen.getByRole("button", { name: `${label} theme` });
         expect(restored.getAttribute("aria-pressed")).toBe("true");
       });
-    },
-  );
-
-  it.each(NAMED_PALETTES)(
-    "uses the named palette literals for $label",
-    ({ label, background, primary }) => {
-      const option = THEME_OPTIONS.find((candidate) => candidate.label === label);
-
-      expect(option?.palette.background).toBe(background);
-      expect(option?.palette.primary).toBe(primary);
     },
   );
 

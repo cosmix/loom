@@ -1,9 +1,6 @@
-//! The rebuild decision, the failure backoff across real runs, the holder
-//! protocol under concurrency, and `--cancel`.
+//! Rebuild, backoff, holder concurrency, and cancellation tests.
 //!
-//! No test here may leave a process behind: every child is wrapped in
-//! [`Reaped`], which kills and waits on drop, and `SPAWN_ENABLED` stays false
-//! under `cfg(test)`.
+//! Children are reaped; `SPAWN_ENABLED` stays false under `cfg(test)`.
 
 use super::lock::{decide, read_lock, update_lock, LockDecision, LockState};
 use super::tests::{degraded_pack, leave};
@@ -22,11 +19,12 @@ pub(super) fn seed(lock_path: &Path, epoch: u64, pid: u32, failures: u32, pendin
         pid,
         failures,
         pending,
+        claim: 0,
     };
     update_lock(lock_path, |_| (Some(state), ())).expect("seed the lock");
 }
 
-/// A child process that is killed and reaped when the test ends, however it ends.
+/// Kill and reap a child when its test ends.
 struct Reaped(std::process::Child);
 
 impl Drop for Reaped {
@@ -36,14 +34,12 @@ impl Drop for Reaped {
     }
 }
 
-/// A process whose argv holds `hook` and `reconcile-graph`, blocked on its stdin.
 fn fake_reconciler() -> Reaped {
     let child = Command::new("sh")
         .args(["-c", "read line", "hook", "reconcile-graph"])
         .stdin(Stdio::piped())
         .spawn()
         .unwrap();
-    // Until the child execs, its argv is still this test binary's.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     let execed = |pid| cancel::process_argv(pid).is_some_and(|a| a.contains(&"hook".into()));
     while !execed(child.id()) && std::time::Instant::now() < deadline {
@@ -111,15 +107,16 @@ fn never_built_degraded_pack_spawns_nothing() {
 #[test]
 #[serial]
 fn two_failed_runs_count_two_failures() {
-    // Not a git work tree: the real `ensure_snapshot` reports it unavailable.
     let temp = TempDir::new().unwrap();
     let store = pinned_project(&temp);
     let lock_path = reconcile_lock_path(&store);
     let debounce = RetrievalConfig::load(temp.path()).reconcile_debounce_secs;
     let stale = RetrievalConfig::load(temp.path()).reconcile_stale_lock_secs;
+    let config = RetrievalConfig::load(temp.path());
 
     try_spawn(temp.path(), unix_now()).unwrap();
-    try_reconcile().unwrap();
+    let claim = read_lock(&lock_path).unwrap().claim;
+    run_passes(&lock_path, Some(claim), &config, || true);
     let first = read_lock(&lock_path).unwrap();
     assert_eq!((first.pid, first.failures), (0, 1), "{first:?}");
     let refused = decide(
@@ -133,7 +130,8 @@ fn two_failed_runs_count_two_failures() {
 
     try_spawn(temp.path(), first.epoch + debounce * 2).unwrap();
     assert_eq!(read_lock(&lock_path).unwrap().pid, std::process::id());
-    try_reconcile().unwrap();
+    let claim = read_lock(&lock_path).unwrap().claim;
+    run_passes(&lock_path, Some(claim), &config, || true);
     leave();
 
     let second = read_lock(&lock_path).unwrap();
@@ -157,8 +155,9 @@ fn pending_pass_keeps_the_lease_held() {
     let lock_path = lock_in(&temp);
     let me = std::process::id();
     let mut passes = 0;
+    let config = RetrievalConfig::load(temp.path());
 
-    run_passes(&lock_path, || {
+    run_passes(&lock_path, None, &config, || {
         passes += 1;
         if passes > 1 {
             let held = read_lock(&lock_path).unwrap();
@@ -188,8 +187,9 @@ fn pending_pass_keeps_the_lease_held() {
 fn finish_after_takeover_keeps_the_new_holder() {
     let temp = TempDir::new().unwrap();
     let lock_path = lock_in(&temp);
+    let config = RetrievalConfig::load(temp.path());
 
-    run_passes(&lock_path, || {
+    run_passes(&lock_path, None, &config, || {
         seed(&lock_path, 200, 4242, 3, true);
         true
     });
@@ -229,7 +229,7 @@ fn pending_is_never_lost_across_threads() {
                     7,
                 )
             });
-            let finisher = scope.spawn(|| end_pass(&lock_path, now + 2, HOLDER, false));
+            let finisher = scope.spawn(|| end_pass(&lock_path, now + 2, HOLDER, 0, false));
             let (claim, end) = (claimer.join().unwrap(), finisher.join().unwrap());
             stop.store(true, Ordering::SeqCst);
             reader.join().unwrap();
@@ -319,7 +319,6 @@ fn cancel_with_a_dead_holder_leaves_the_lease_for_an_immediate_takeover() {
     let temp = TempDir::new().unwrap();
     let lock_path = lock_in(&temp);
     let now = unix_now();
-    // Above i32::MAX, so `is_process_alive` reports it dead without a process.
     seed(&lock_path, now, u32::MAX, 1, false);
 
     cancel::cancel_holder(&lock_path, now);
@@ -335,9 +334,9 @@ fn failed_spawn_releases_the_lease_with_a_failure_and_backoff() {
     let lock_path = lock_in(&temp);
     let me = std::process::id();
     let now = 5_000;
-    seed(&lock_path, 100, me, 1, true);
+    seed(&lock_path, now, me, 1, true);
 
-    let result = spawn_claimed(&lock_path, now, me, || {
+    let result = spawn_claimed(&lock_path, now, me, |_| {
         Err(anyhow::anyhow!("spawn refused"))
     });
 
@@ -348,6 +347,7 @@ fn failed_spawn_releases_the_lease_with_a_failure_and_backoff() {
         pid: 0,
         failures: 2,
         pending: true,
+        claim: 0,
     };
     assert_eq!(released, expected);
     let window = DEBOUNCE_SECS * 4;
@@ -375,7 +375,7 @@ fn failed_spawn_leaves_a_taken_over_lease_alone() {
     let lock_path = lock_in(&temp);
     seed(&lock_path, 200, 4242, 3, false);
 
-    let result = spawn_claimed(&lock_path, 300, std::process::id(), || {
+    let result = spawn_claimed(&lock_path, 300, std::process::id(), |_| {
         Err(anyhow::anyhow!("spawn refused"))
     });
 
@@ -391,9 +391,9 @@ fn successful_spawn_keeps_the_lease_claimed() {
     let temp = TempDir::new().unwrap();
     let lock_path = lock_in(&temp);
     let me = std::process::id();
-    seed(&lock_path, 100, me, 0, false);
+    seed(&lock_path, 300, me, 0, false);
 
-    spawn_claimed(&lock_path, 300, me, || Ok(None)).unwrap();
+    spawn_claimed(&lock_path, 300, me, |_| Ok(None)).unwrap();
 
     assert_eq!(read_lock(&lock_path).unwrap().pid, me);
 }

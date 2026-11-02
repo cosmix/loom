@@ -27,6 +27,8 @@ pub(super) fn run_verification_phase(phase: VerificationPhase<'_>) -> Result<()>
         worktree_root: phase.worktree_root.as_deref(),
         daemon_gates: false,
         fail_closed: false,
+        expected_policy: None,
+        emit: complete_verification::print_event,
         work_dir: phase.work_dir,
     })?;
     let snapshot = phase.snapshot.context("missing verification snapshot")?;

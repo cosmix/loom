@@ -4,8 +4,8 @@ use std::path::Path;
 
 use crate::context::extract::{file_node, FileExtraction};
 use crate::context::source_graph::{
-    body_hash, file_node_id, node_id, syntax_confidence, EdgeProvenance, FileCoverage,
-    NodeLanguage, SourceEdge, SourceEdgeKind, SourceNode, Span,
+    file_node_id, node_id, syntax_confidence, EdgeProvenance, FileCoverage, NodeLanguage,
+    SourceEdge, SourceEdgeKind, SourceNode, Span,
 };
 
 use super::binding::{
@@ -176,7 +176,7 @@ fn definition_node(
         scope: placed.scope.clone(),
         span: definition.span,
         signature: definition.signature.clone(),
-        body_hash: body_hash(&definition.body),
+        body_hash: definition.body_hash.clone(),
         language: ctx.node_language.clone(),
         parser_version: ctx.parser_version.to_string(),
         coverage: ctx.coverage.clone(),

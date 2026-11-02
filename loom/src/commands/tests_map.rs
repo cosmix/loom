@@ -206,6 +206,7 @@ fn load_graph_answers_when_the_cache_directory_cannot_be_created() {
     git_setup(root, &["commit", "-m", "seed"]);
     let work = root.join(".loom").join("work");
     std::fs::create_dir_all(&work).unwrap();
+    crate::git::worktree::capture_main_identity(root, &work).unwrap();
     let work_dir = WorkDir::new(root).unwrap();
 
     let loom_dir = root.join(".loom");

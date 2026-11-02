@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::testrun::command::{regex_literal, shell_quote, shell_word};
+use crate::testrun::command::{exact_phpunit_regex, shell_quote, shell_word};
 use crate::testrun::recognize::{
     combined_output, command_args, has_flag, last_match, pattern, positionals, summary_from_counts,
 };
@@ -79,11 +79,7 @@ impl TestRunnerAdapter for Phpunit {
     /// A `composer.json` alone marks no run root: every PHP package has one,
     /// whether or not it runs its own tests.
     fn run_root_markers(&self) -> &'static [&'static str] {
-        &[
-            "phpunit.xml",
-            "phpunit.xml.dist",
-            "phpunit.dist.xml",
-        ]
+        &["phpunit.xml", "phpunit.xml.dist", "phpunit.dist.xml"]
     }
 
     fn recognizes(&self, argv: &[String]) -> bool {
@@ -100,7 +96,7 @@ impl TestRunnerAdapter for Phpunit {
     }
 
     fn single_test_command(&self, file: &str, test: &str, _package_dir: &Path) -> String {
-        let name = shell_quote(&regex_literal(test));
+        let name = shell_quote(&exact_phpunit_regex(test));
         format!("vendor/bin/phpunit --filter {name} {}", shell_word(file))
     }
 
@@ -151,18 +147,34 @@ mod tests {
 
     #[test]
     fn method_filter_uses_the_declaring_file() {
-        let command =
-            ADAPTER.single_test_command("tests/ExampleTest.php", "testAlphaPasses", Path::new("."));
+        let command = ADAPTER.single_test_command(
+            "tests/ExampleTest.php",
+            r"Tests\ExampleTest::testAlphaPasses",
+            Path::new("."),
+        );
         assert_eq!(
             command,
-            "vendor/bin/phpunit --filter 'testAlphaPasses' tests/ExampleTest.php"
+            r"vendor/bin/phpunit --filter '~\ATests\\ExampleTest::testAlphaPasses\z~' tests/ExampleTest.php"
+        );
+    }
+
+    #[test]
+    fn named_data_set_filter_uses_phpunits_internal_full_name() {
+        let command = ADAPTER.single_test_command(
+            "tests/CollisionTest.php",
+            "CollisionTest::testValue with data set \"value (a)+\"",
+            Path::new("."),
+        );
+        assert_eq!(
+            command,
+            r#"vendor/bin/phpunit --filter '~\ACollisionTest::testValue with data set "value \(a\)\+"\z~' tests/CollisionTest.php"#
         );
     }
 
     #[test]
     fn hostile_test_name_stays_one_escaped_pattern() {
         let command = ADAPTER.single_test_command("ATest.php", HOSTILE_NAME, Path::new("."));
-        assert_one_word(&command, &regex_literal(HOSTILE_NAME));
+        assert_one_word(&command, &exact_phpunit_regex(HOSTILE_NAME));
     }
 
     #[test]

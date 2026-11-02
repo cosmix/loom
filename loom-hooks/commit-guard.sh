@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stop hook: Enforce commit and stage completion in loom worktrees
 #
-# This hook runs when Claude finishes responding. In loom worktrees, it enforces:
+# This hook runs when Claude finishes responding. In loom worktrees, it reminds:
 # 1. All changes must be committed before ending
 # 2. Stage must be marked complete (not left in "Executing" state)
 #
@@ -14,93 +14,15 @@ set -euo pipefail
 
 # Drain stdin to prevent blocking (Stop hooks receive JSON from Claude Code)
 source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 loom_read_input 1 >/dev/null 2>&1 || true
 
-# Configuration
-readonly WORKTREE_MARKER=".worktrees/"
-readonly LOOM_BRANCH_PREFIX="loom/"
-# The state directory name is resolved per-root, not fixed: the current
-# layout is .loom/work, but a workspace created before this migration keeps
-# the legacy .work forever (see doc/plans, "Back-compat"). Set by
-# resolve_work_dir_name() once the project root is known.
 WORK_DIR=""
 # Debug logging - enabled when LOOM_HOOK_DEBUG=1
 debug_log() {
 	if [[ "${LOOM_HOOK_DEBUG:-0}" == "1" ]]; then
 		printf "[loom-stop] %s\n" "$*" >&2
 	fi
-}
-
-# Detect if running in a loom worktree
-# Returns: 0 if in worktree, 1 otherwise
-# Sets: STAGE_ID variable if in worktree
-detect_loom_worktree() {
-	local cwd
-	cwd=$(pwd)
-	debug_log "Checking for loom worktree in: $cwd"
-
-	# Method 1: Check if path contains .worktrees/
-	if [[ "$cwd" == *"$WORKTREE_MARKER"* ]]; then
-		# Extract stage ID from path: /path/to/.worktrees/<stage-id>/...
-		# The INNERMOST segment wins (`##`): the repo may itself live inside an
-		# outer loom worktree, and the session belongs to the worktree closest
-		# to cwd - the same rule as loom_current_worktree in _common.sh.
-		local worktree_part="${cwd##*$WORKTREE_MARKER}"
-		STAGE_ID="${worktree_part%%/*}"
-		debug_log "Detected worktree via path, stage ID: $STAGE_ID"
-		return 0
-	fi
-
-	# Method 2: Check git branch name
-	local branch
-	if branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); then
-		debug_log "Current git branch: $branch"
-		if [[ "$branch" == "$LOOM_BRANCH_PREFIX"* ]]; then
-			STAGE_ID="${branch#$LOOM_BRANCH_PREFIX}"
-			debug_log "Detected worktree via branch prefix, stage ID: $STAGE_ID"
-			return 0
-		fi
-	fi
-
-	debug_log "Not in a loom worktree"
-	return 1
-}
-
-# Resolve the state directory name under a given root: current .loom/work
-# takes priority, falling back to the legacy .work. Echoes empty if neither
-# exists.
-resolve_work_dir_name() {
-	local root="$1"
-	if [[ -d "$root/.loom/work" ]]; then
-		echo ".loom/work"
-	elif [[ -d "$root/.work" ]]; then
-		echo ".work"
-	fi
-}
-
-# Find the project root (where the state directory is: .loom/work, or the
-# legacy .work). Searches upward from current directory.
-#
-# Called as `project_root=$(find_project_root)`, which runs in a subshell -
-# any variable this function assigned would be lost when that subshell
-# exits, so it only communicates via stdout. Callers resolve WORK_DIR
-# separately with resolve_work_dir_name() once project_root is known.
-find_project_root() {
-	local dir
-	dir=$(pwd)
-	debug_log "Searching for project root from: $dir"
-
-	while [[ "$dir" != "/" ]]; do
-		if [[ -d "$dir/.loom/work" || -d "$dir/.work" ]]; then
-			debug_log "Found project root at: $dir"
-			echo "$dir"
-			return 0
-		fi
-		dir=$(dirname "$dir")
-	done
-
-	debug_log "Could not find project root (state directory not found)"
-	return 1
 }
 
 # Check for uncommitted changes (staged or unstaged)
@@ -129,124 +51,6 @@ get_uncommitted_changes() {
 	local status
 	status=$(git status --porcelain 2>/dev/null || true)
 	head -n 10 <<<"$status"
-}
-
-# Parse stage status from stage file YAML frontmatter
-# Args: $1 = path to stage file
-# Returns: status string or empty if not found
-# Handles:
-#   - Quoted values: status: "completed"
-#   - Inline comments: status: completed  # done
-#   - Leading/trailing whitespace
-get_stage_status() {
-	local stage_file="$1"
-
-	if [[ ! -f "$stage_file" ]]; then
-		debug_log "get_stage_status: file not found: $stage_file"
-		echo ""
-		return
-	fi
-
-	# Parse YAML frontmatter for status field
-	# Frontmatter is between --- markers
-	local in_frontmatter=0
-	local status=""
-
-	while IFS= read -r line; do
-		if [[ "$line" == "---" ]]; then
-			if [[ $in_frontmatter -eq 0 ]]; then
-				in_frontmatter=1
-			else
-				break # End of frontmatter
-			fi
-			continue
-		fi
-
-		if [[ $in_frontmatter -eq 1 ]]; then
-			# Match status: <value>
-			if [[ "$line" =~ ^status:\ *(.+)$ ]]; then
-				status="${BASH_REMATCH[1]}"
-
-				# Strip inline comments (everything after #)
-				status="${status%%#*}"
-
-				# Trim whitespace
-				status="${status#"${status%%[![:space:]]*}"}"
-				status="${status%"${status##*[![:space:]]}"}"
-
-				# Strip surrounding quotes (single or double)
-				if [[ "$status" =~ ^\"(.*)\"$ ]] || [[ "$status" =~ ^\'(.*)\'$ ]]; then
-					status="${BASH_REMATCH[1]}"
-				fi
-
-				debug_log "get_stage_status: parsed status='$status' from line: $line"
-				break
-			fi
-		fi
-	done <"$stage_file"
-
-	debug_log "get_stage_status: final status='$status'"
-	echo "$status"
-}
-
-# Find the stage file for a given stage ID
-# Args: $1 = project root, $2 = stage ID
-# Matches Rust logic: files are named NN-stage-id.md (e.g., 01-my-stage.md)
-# Uses exact matching to avoid false positives (e.g., "fix" matching "fix-bug")
-find_stage_file() {
-	local project_root="$1"
-	local stage_id="$2"
-	local stages_path="$project_root/$WORK_DIR/stages"
-	debug_log "find_stage_file: looking for stage '$stage_id' in: $stages_path"
-
-	# Check if stages directory exists and is accessible
-	if [[ ! -d "$stages_path" ]]; then
-		debug_log "find_stage_file: stages directory does not exist: $stages_path"
-		echo ""
-		return
-	fi
-
-	# Check if the state directory is a symlink and accessible
-	if [[ -L "$project_root/$WORK_DIR" ]]; then
-		debug_log "find_stage_file: $WORK_DIR is a symlink"
-		if [[ ! -e "$project_root/$WORK_DIR" ]]; then
-			debug_log "find_stage_file: $WORK_DIR symlink is broken/inaccessible"
-			echo ""
-			return
-		fi
-	fi
-
-	# Exact match: NN-<stage-id>.md (Rust naming convention)
-	# Pattern: digits followed by dash, then exact stage-id, then .md
-	for file in "$stages_path"/*.md; do
-		if [[ ! -f "$file" ]]; then
-			continue
-		fi
-
-		local basename
-		basename=$(basename "$file")
-
-		# Match pattern: NN-stage-id.md (depth prefix + exact stage id)
-		# Strip the numeric prefix and dash, check if remainder matches stage-id.md
-		if [[ "$basename" =~ ^[0-9]+-(.+)\.md$ ]]; then
-			local extracted_id="${BASH_REMATCH[1]}"
-			if [[ "$extracted_id" == "$stage_id" ]]; then
-				debug_log "find_stage_file: found exact match: $file"
-				echo "$file"
-				return
-			fi
-		fi
-
-		# Also check for exact match without prefix: stage-id.md
-		if [[ "$basename" == "${stage_id}.md" ]]; then
-			debug_log "find_stage_file: found exact match (no prefix): $file"
-			echo "$file"
-			return
-		fi
-	done
-
-	debug_log "find_stage_file: no exact match found for stage '$stage_id'"
-	echo ""
 }
 
 # Output advisory warning and allow stop
@@ -312,7 +116,7 @@ remind_contract_freeze() {
 }
 
 # Non-blocking reminder about memory recording
-# Called after blocking checks pass, outputs to stderr
+# Outputs to stderr
 remind_memory_usage() {
 	local project_root="$1"
 	local stage_id="$2"
@@ -373,22 +177,18 @@ main() {
 		remind_contract_freeze "${LOOM_STAGE_ID:-<stage-id>}"
 	fi
 
-	# Check if we're in a loom worktree
-	local STAGE_ID=""
-	if ! detect_loom_worktree; then
-		# Not in a worktree - allow stop, nothing to enforce
-		debug_log "Not in loom worktree, allowing stop"
-		exit 0
-	fi
-
-	# Find project root
-	local project_root
-	if ! project_root=$(find_project_root); then
-		# Cannot find the state directory - allow stop, may be manual worktree
-		debug_log "Project root not found (.loom/work and .work both missing), allowing stop"
-		exit 0
-	fi
-	WORK_DIR=$(resolve_work_dir_name "$project_root")
+    local worktree STAGE_ID work_path project_root
+    worktree=$(loom_current_worktree) || exit 0
+    worktree=${worktree%/}
+    # The checklist reads git status: a session that moved out of its worktree
+    # still has its stage's tree to account for, not the one it moved to.
+    cd "$worktree" 2>/dev/null || exit 0
+    STAGE_ID=${worktree##*/}
+    work_path=$(loom_stage_work_dir "$worktree") || exit 0
+    case "$work_path" in
+        */.loom/work) project_root=${work_path%/.loom/work}; WORK_DIR=.loom/work ;;
+        */.work) project_root=${work_path%/.work}; WORK_DIR=.work ;;
+    esac
 
 	# Log complete state for debugging
 	debug_log "=== State Summary ==="
@@ -426,83 +226,21 @@ main() {
 	fi
 
 	# Check stage status
-	local stage_file
-	stage_file=$(find_stage_file "$project_root" "$STAGE_ID")
+	local stage_file status=""
+	stage_file=$(loom_find_stage_file "$work_path" "$STAGE_ID" || true)
 
 	if [[ -n "$stage_file" ]]; then
-		local status
-		status=$(get_stage_status "$stage_file")
+		status=$(loom_stage_status "$stage_file" || true)
 		debug_log "Stage '$STAGE_ID' status: $status"
 
-		# Status values and their blocking behavior
-		# BLOCK: executing (work in progress, must complete)
-		# ALLOW: merge-conflict (handled by resolution session)
-		# ALLOW: all other valid statuses
-		case "$status" in
-		# BLOCKING STATUSES - work is not done or needs attention
-		executing | Executing)
-			stage_incomplete=1
-			issues+=("Stage '$STAGE_ID' is still in EXECUTING status")
-			debug_log "Stage is still executing - will block"
-			;;
-		merge-conflict | MergeConflict)
-			debug_log "Stage has merge conflict - resolution session handles this, allowing stop"
-			;;
-
-		# ALLOWING STATUSES - stage is in a valid terminal or waiting state
-
-		# Waiting states - haven't started or waiting for external input
-		queued | Queued)
-			debug_log "Stage is queued (not yet started) - allowing stop"
-			;;
-		waiting-for-deps | WaitingForDeps | pending)
-			debug_log "Stage is waiting for dependencies - allowing stop"
-			;;
-		waiting-for-input | WaitingForInput)
-			debug_log "Stage is waiting for user input - allowing stop"
-			;;
-
-		# Blocked/paused states - intentionally stopped
-		blocked | Blocked)
-			debug_log "Stage is blocked - allowing stop"
-			;;
-		needs-handoff | NeedsHandoff)
-			debug_log "Stage needs handoff - allowing stop"
-			;;
-		merge-blocked | MergeBlocked)
-			debug_log "Stage merge is blocked - allowing stop"
-			;;
-		needs-human-review | NeedsHumanReview)
-			debug_log "Stage needs human review - allowing stop"
-			;;
-
-		# Completion states - work is done
-		completed | Completed)
-			debug_log "Stage is completed - allowing stop"
-			;;
-		verified | Verified)
-			debug_log "Stage is verified - allowing stop"
-			;;
-		completed-with-failures | CompletedWithFailures)
-			debug_log "Stage completed with failures - allowing stop"
-			;;
-		skipped | Skipped)
-			debug_log "Stage is skipped - allowing stop"
-			;;
-
-		# Empty status - stage file exists but no status field
-		"")
-			debug_log "Stage has empty status - allowing stop (may be newly created)"
-			;;
-
-		# Unknown status - don't block, but log for debugging
-		*)
-			debug_log "Stage has unrecognized status '$status' - allowing stop (add to case statement if blocking needed)"
-			;;
-		esac
+        if [[ "$status" == executing || "$status" == Executing ]]; then
+            stage_incomplete=1
+            issues+=("Stage '$STAGE_ID' is still in EXECUTING status")
+            debug_log "Stage is still executing - showing reminder"
+        fi
 	else
 		# Edge case: stage file not found
-		# This can happen in non-loom worktrees that happen to have loom/ branch prefix
+		# Missing or ambiguous stage metadata does not establish stage status.
 		# If git is also clean, this is likely a non-loom worktree - allow stop
 		debug_log "No stage file found for '$STAGE_ID'"
 		if [[ $git_is_clean -eq 1 ]]; then
@@ -518,7 +256,7 @@ main() {
 		exit 0
 	fi
 
-	debug_log "Found ${#issues[@]} issue(s), will block stop"
+	debug_log "Found ${#issues[@]} issue(s), showing advisory"
 
 	# Build error message with detailed context
 	local message="LOOM WORKTREE COMPLETION CHECKLIST for stage '$STAGE_ID' (advisory):"
@@ -543,13 +281,7 @@ main() {
 			step_num=2
 		fi
 
-		# Get status for error message
-		local blocking_status=""
-		if [[ -n "$stage_file" ]]; then
-			blocking_status=$(get_stage_status "$stage_file")
-		fi
-
-		message+="\n\n${step_num}. Stage is still in '$blocking_status' status. Once the stage is SETTLED and committed, run:\n   loom stage complete $STAGE_ID"
+		message+="\n\n${step_num}. Stage is still in '$status' status. Once the stage is SETTLED and committed, run:\n   loom stage complete $STAGE_ID"
 
 		if [[ -n "$stage_file" ]]; then
 			message+="\n   (Stage file: $stage_file)"
@@ -572,9 +304,7 @@ main() {
 	message+="\n\n--- Debug Info ---"
 	message+="\nStage ID: $STAGE_ID"
 	if [[ -n "$stage_file" ]]; then
-		local parsed_status
-		parsed_status=$(get_stage_status "$stage_file")
-		message+="\nParsed status: '$parsed_status'"
+		message+="\nParsed status: '$status'"
 		message+="\nStage file: $stage_file"
 	else
 		message+="\nStage file: NOT FOUND"

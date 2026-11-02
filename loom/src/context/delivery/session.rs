@@ -1,26 +1,9 @@
-//! Session-scoped delivery dedupe, and its compaction-time reset.
+//! Session delivery deduplication and compaction reset.
 //!
-//! `super` answers "has this recipient already been given these exact bytes,
-//! this epoch?" — but until this module existed, "recipient" was scoped to
-//! checkout+epoch only, never to the process asking. A fresh Claude Code
-//! session — new PID, empty context window — inherited every prior session's
-//! deliveries under that recipient key and could be starved of a brief an old,
-//! possibly long-dead, session had already consumed. And the hook path never
-//! rebuilds the source graph on its own, so nothing forced a new epoch to
-//! unstick it: a fresh session could go silent indefinitely
-//! (`doc/PROPOSAL-retrieval-precision.md` root cause 8, recommendation 16).
-//!
-//! [`hook_recipient_id`] keys a recipient to the session asking, not just the
-//! scope; [`delivered_to_session`] respects that key and also credits the
-//! asking stage session's own spawn record for the session's whole life,
-//! compaction included (see `commands/hook/pre_compact.rs`). [`session8`] and
-//! [`discard_session_delivery`] exist only to serve those two.
-//!
-//! Every contract `delivery.rs`'s module doc states still holds here without
-//! restatement: a record is an optimisation nothing may fail over, and an
-//! absent file or directory reads as "nothing delivered" rather than an error.
+//! Hook recipients are session-scoped; a spawned session also retains credit
+//! for its spawn brief across compaction.
 
-use super::{delivered_in_epoch, delivery_dir, validate_recipient_id, DeliveryRecord};
+use super::{delivery_dir, validate_recipient_id, DeliveryRecord};
 use crate::fs::locking::locked_dir_update;
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
@@ -29,25 +12,8 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::Path;
 
-/// The delivery-record recipient key for one hook invocation.
-///
-/// Shape: `prompt-<scope>-<session8>`, where `scope` is the hook's existing
-/// stage id or checkout key and `session8` is 16 lowercase hex characters —
-/// the first 8 bytes of `sha256(session_id)`, the same truncation
-/// [`crate::context::retrieve::context_epoch`] uses for its own digest. An
-/// absent, empty, or whitespace-only `session_id` yields the literal
-/// `nosession` component instead: one shared recipient for every caller that
-/// cannot name a session, exactly today's un-keyed behaviour.
-///
-/// Hashing rather than filing the raw id is not decoration. The recipient
-/// reaches the filesystem as `<recipient_id>.json` and
-/// `validate_recipient_id` refuses anything outside `[A-Za-z0-9._-]`
-/// because of that — but a session id arriving on a hook's stdin JSON is
-/// untrusted input, so a raw id would either be refused outright (a starved
-/// session, indistinguishable from a bug) or, were that check ever loosened,
-/// become a path-traversal write. A sha8 has neither problem: it is always
-/// inside `[0-9a-f]`, by construction rather than by validation, whatever
-/// bytes the session id itself contains.
+/// Filesystem-safe prompt identity. Blank session ids share the nosession suffix;
+/// other session ids are hashed before use as path components.
 pub fn hook_recipient_id(scope: &str, session_id: Option<&str>) -> String {
     let suffix = match session_id.map(str::trim).filter(|id| !id.is_empty()) {
         Some(id) => session8(id),
@@ -84,62 +50,28 @@ fn session8(value: &str) -> String {
     hex::encode(&result[..8])
 }
 
-/// The `(node_id, content_hash)` pairs THIS session already holds under
-/// `epoch`: the union of its own record (`recipient_id`) and, when this
-/// process is the session a stage spawned, the spawn record filed under
-/// `spawn_recipient`.
-///
-/// A fresh session must skip only what its OWN context window already
-/// holds — its own prior deliveries this epoch, and the spawn brief when it
-/// is the spawn session — and never a dead session's. That is why this takes
-/// `recipient_id` rather than deriving one internally: the caller already
-/// resolved exactly which recipient this invocation is, and only the caller
-/// can. `spawn_recipient` is loom's OWN session id (`LOOM_SESSION_ID`), a
-/// different id space entirely from the hook payload's `session_id` that
-/// [`hook_recipient_id`] hashes — the caller supplies it because only the
-/// caller can tell whether this process is the session a stage spawned.
-///
-/// Builds on [`delivered_in_epoch`] rather than folding its filter in here:
-/// that function keeps its own callers and its own contract unchanged.
+/// Delivered pairs in this epoch for the hook recipient and, when applicable,
+/// the spawn recipient identified by the caller.
 pub fn delivered_to_session(
     records: &[DeliveryRecord],
     epoch: &str,
     recipient_id: &str,
     spawn_recipient: Option<&str>,
 ) -> BTreeSet<(String, String)> {
-    let own: Vec<DeliveryRecord> = records
+    records
         .iter()
-        .filter(|record| record.recipient_id == recipient_id)
-        .cloned()
-        .collect();
-    let mut delivered = delivered_in_epoch(&own, epoch);
-
-    if let Some(spawn_recipient) = spawn_recipient {
-        let spawn: Vec<DeliveryRecord> = records
-            .iter()
-            .filter(|record| record.recipient_id == spawn_recipient)
-            .cloned()
-            .collect();
-        delivered.extend(delivered_in_epoch(&spawn, epoch));
-    }
-
-    delivered
+        .filter(|record| {
+            record.context_epoch == epoch
+                && (record.recipient_id == recipient_id
+                    || spawn_recipient == Some(record.recipient_id.as_str()))
+        })
+        .flat_map(|record| &record.delivered)
+        .map(|node| (node.node_id.clone(), node.content_hash.clone()))
+        .collect()
 }
 
-/// Remove one recipient's own delivery record, so it is eligible again for
-/// units it was already given — used after a compaction, where the
-/// compacted context can no longer be assumed to hold what was delivered
-/// before it.
-///
-/// Removes exactly the ONE file named `<recipient_id>.json`. It never
-/// touches anything else in the delivery directory — not another
-/// recipient's record, and never the directory itself: that directory is a
-/// shared namespace with other writers (`GraphStore::discard_overlay`'s doc
-/// comment records the incident a directory-level discard caused here
-/// before), so a routine that means "reset one recipient" must never reach
-/// for "clear the directory" as a shortcut. A missing directory or a missing
-/// file both read as "already reset", not an error — the same "absent means
-/// nothing delivered" contract every reader in `super` already holds to.
+/// Reset one recipient after compaction without touching other records in the
+/// shared delivery directory. Missing directories and records are already reset.
 pub fn discard_session_delivery(
     work_dir: &Path,
     plan: &str,
@@ -157,4 +89,52 @@ pub fn discard_session_delivery(
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error).with_context(|| format!("Failed to remove {}", path.display())),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context::delivery::DeliveredNode;
+
+    fn record(recipient: &str, epoch: &str, id: &str) -> DeliveryRecord {
+        DeliveryRecord {
+            recipient_id: recipient.into(),
+            launch_id: String::new(),
+            context_epoch: epoch.into(),
+            delivered: vec![DeliveredNode {
+                node_id: id.into(),
+                content_hash: "hash".into(),
+            }],
+            written_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn delivery_union_respects_recipient_and_epoch() {
+        let records = [
+            record("own", "a", "own"),
+            record("spawn", "a", "spawn"),
+            record("other", "a", "other"),
+            record("own", "b", "old"),
+        ];
+        let ids = |spawn| {
+            delivered_to_session(&records, "a", "own", spawn)
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect::<BTreeSet<_>>()
+        };
+        assert_eq!(ids(None), BTreeSet::from(["own".to_string()]));
+        assert_eq!(ids(Some("own")), ids(None));
+        assert_eq!(
+            ids(Some("spawn")),
+            BTreeSet::from(["own".to_string(), "spawn".to_string()])
+        );
+        assert_eq!(
+            delivered_to_session(&records, "b", "own", Some("spawn"))
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect::<Vec<_>>(),
+            vec!["old"]
+        );
+    }
 }

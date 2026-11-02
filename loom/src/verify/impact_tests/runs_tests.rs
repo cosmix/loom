@@ -162,6 +162,7 @@ fn cached_zero_test_tail(tests_executed: Option<u64>) -> ProbeRun {
         stderr: String::new(),
         exit_code: Some(0),
         timed_out: false,
+        output_complete: true,
         cached: Some(CachedRun { tests_executed }),
     }
 }
@@ -174,10 +175,56 @@ fn a_cached_pass_is_judged_by_its_recorded_count() {
 }
 
 #[test]
+fn incomplete_capture_is_inconclusive_even_with_a_pass_or_cached_count() {
+    for cached in [
+        None,
+        Some(CachedRun {
+            tests_executed: Some(3),
+        }),
+    ] {
+        let mut run = cached_zero_test_tail(Some(3));
+        run.cached = cached;
+        run.output_complete = false;
+        let Run::Inconclusive(why) = judge("cargo test x".to_string(), cargo(), &run) else {
+            panic!("incomplete output must be inconclusive");
+        };
+        assert!(why.contains("output capture was incomplete"), "{why}");
+    }
+}
+
+#[test]
 fn a_cached_run_that_selected_nothing_stays_inconclusive() {
     let run = cached_zero_test_tail(Some(0));
     let Run::Inconclusive(why) = judge("cargo test x".to_string(), cargo(), &run) else {
         panic!("a cached run that selected no test must be inconclusive");
     };
     assert!(why.contains("selected no test"), "{why}");
+}
+
+/// A run with an over-long log and a failing exit is a failure: the capture
+/// limit says nothing about the exit code, and a note would let the gate pass.
+#[test]
+fn incomplete_capture_of_a_failing_run_stays_failed_and_unparsed() {
+    for exit_code in [Some(1), Some(101), None] {
+        let mut run = cached_zero_test_tail(None);
+        run.cached = None;
+        run.output_complete = false;
+        run.exit_code = exit_code;
+        let Run::Failed(failure) = judge("cargo test x".to_string(), cargo(), &run) else {
+            panic!("exit {exit_code:?} with incomplete output must fail");
+        };
+        assert_eq!(failure.kind, FailureKind::Unparsed { exit_code });
+    }
+}
+
+#[test]
+fn incomplete_capture_of_a_run_that_could_not_start_stays_inconclusive() {
+    let mut run = cached_zero_test_tail(None);
+    run.cached = None;
+    run.output_complete = false;
+    run.exit_code = Some(127);
+    let Run::Inconclusive(why) = judge("cargo test x".to_string(), cargo(), &run) else {
+        panic!("exit 127 must stay inconclusive");
+    };
+    assert!(why.contains("could not start"), "{why}");
 }

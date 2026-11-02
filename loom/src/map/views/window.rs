@@ -31,7 +31,7 @@ pub fn render_window(window: &SourceWindow, snapshot: &SnapshotIdentity) -> Stri
 
 pub fn window_json(window: &SourceWindow, snapshot: &SnapshotIdentity) -> Value {
     json!({
-        "path": safe(&window.path),
+        "path": window.path,
         "line_start": window.span.line_start,
         "line_end": window.span.line_end,
         "start_byte": window.span.start_byte,

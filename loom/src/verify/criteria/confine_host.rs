@@ -3,7 +3,8 @@
 //! private /tmp and /var/tmp under bubblewrap; runtime and compiler
 //! installation directories and a linked worktree's Git metadata
 //! (`confine_git.rs`) are readable. Verification denies network access;
-//! plan-approved provisioning can fetch dependencies.
+//! plan-approved provisioning can fetch dependencies. Warm uv and Bun caches are
+//! read-only lowers beneath each command's private cache (`confine_scratch.rs`).
 //! A missing or unusable OS facility fails before executing repository code.
 //! A command may start below its working tree's root (a package of a monorepo);
 //! the whole tree stays visible so sibling packages and shared stores resolve.
@@ -116,7 +117,7 @@ fn confined_tree(tree: Option<&Path>, cwd: &Path) -> Result<PathBuf> {
     Ok(tree)
 }
 
-fn environment_path(command: &Command, key: &str) -> Option<PathBuf> {
+pub(super) fn environment_path(command: &Command, key: &str) -> Option<PathBuf> {
     command
         .get_envs()
         .find_map(|(name, value)| (name == key).then_some(value).flatten().map(PathBuf::from))
@@ -259,6 +260,34 @@ fn platform_command(
     network: NetworkAccess,
     git: Option<&git_roots::GitDirs>,
 ) -> Result<Command> {
+    let mut command = bubblewrap(network)?;
+    for writable in writable_roots(tree, scratch) {
+        command.arg("--bind").arg(writable).arg(writable);
+    }
+    command.arg("--chdir").arg(cwd);
+    bind_read_roots(&mut command, original, scratch);
+    for (source, upper, work, target) in scratch.cache_overlays() {
+        command.arg("--overlay-src").arg(source);
+        command.arg("--overlay").arg(upper).arg(work).arg(target);
+    }
+    for root in git.into_iter().flat_map(|git| &git.roots) {
+        command.arg("--ro-bind").arg(root).arg(root);
+    }
+    protected::bind(&mut command, &protected::protected(tree));
+    bind_resolver_target(&mut command, Path::new("/etc/resolv.conf"))?;
+    // The new root is a writable tmpfs in which `--bind` created the working
+    // tree's parents; left writable, writes outside the working tree and the
+    // private temporary directories would succeed privately instead of failing
+    // as the Seatbelt profile makes them.
+    // The remount is not recursive: the binds above keep their own modes.
+    command.args(["--remount-ro", "/"]);
+    command.arg("--").arg(program).args(original.get_args());
+    Ok(command)
+}
+
+/// The launcher with its namespaces and private system mounts, before any bind.
+#[cfg(target_os = "linux")]
+fn bubblewrap(network: NetworkAccess) -> Result<Command> {
     let launcher =
         which::which("bwrap").context("confined verification requires bubblewrap (bwrap)")?;
     let mut command = Command::new(launcher);
@@ -280,23 +309,6 @@ fn platform_command(
     if network == NetworkAccess::Provision {
         command.arg("--share-net");
     }
-    for writable in writable_roots(tree, scratch) {
-        command.arg("--bind").arg(writable).arg(writable);
-    }
-    command.arg("--chdir").arg(cwd);
-    bind_read_roots(&mut command, original, scratch);
-    for root in git.into_iter().flat_map(|git| &git.roots) {
-        command.arg("--ro-bind").arg(root).arg(root);
-    }
-    protected::bind(&mut command, &protected::protected(tree));
-    bind_resolver_target(&mut command, Path::new("/etc/resolv.conf"))?;
-    // The new root is a writable tmpfs in which `--bind` created the working
-    // tree's parents; left writable, writes outside the working tree and the
-    // private temporary directories would succeed privately instead of failing
-    // as the Seatbelt profile makes them.
-    // The remount is not recursive: the binds above keep their own modes.
-    command.args(["--remount-ro", "/"]);
-    command.arg("--").arg(program).args(original.get_args());
     Ok(command)
 }
 
@@ -380,3 +392,7 @@ mod tool_tests;
 #[cfg(test)]
 #[path = "confine_cargo_home_tests.rs"]
 mod cargo_home_tests;
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "confine_scratch/warm_cache_tests.rs"]
+mod warm_cache_tests;

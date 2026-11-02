@@ -200,13 +200,33 @@ fn the_new_blocks_serialize_and_explain_themselves() {
     let not_restored = MergeBlock::StashNotRestored {
         backup_ref: "refs/loom/autostash/s1-1".to_string(),
     };
-    for block in [&refused, &not_restored] {
+    let incomplete = MergeBlock::CheckoutRestoreIncomplete {
+        source_rev: "abc123".to_string(),
+        failures: vec![RestoreFailure {
+            path: "path.txt".to_string(),
+            reason: "destination occupied".to_string(),
+        }],
+        changes: RollbackChanges::Stashed {
+            backup_ref: "refs/loom/autostash/s1-1".to_string(),
+        },
+    };
+    for block in [&refused, &not_restored, &incomplete] {
         let json = serde_json::to_string(block).unwrap();
         assert_eq!(&serde_json::from_str::<MergeBlock>(&json).unwrap(), block);
     }
     assert!(refused.to_string().contains("odd"));
     let text = not_restored.to_string();
-    assert!(text.contains("git stash pop") && text.contains("refs/loom/autostash/s1-1"));
+    assert!(
+        text.contains("git stash apply refs/loom/autostash/s1-1"),
+        "{text}"
+    );
+    assert!(!text.contains("git stash pop"), "{text}");
+    let text = incomplete.to_string();
+    assert!(
+        text.contains("path.txt")
+            && text.contains("abc123")
+            && text.contains("refs/loom/autostash/s1-1")
+    );
 }
 
 #[test]
@@ -288,5 +308,9 @@ fn stash_reapply_notice_says_whether_the_merge_landed_without_the_changes() {
         ..restored.clone()
     };
     assert!(restored.notice().contains("reapplied"));
-    assert!(lost.notice().contains("LANDED") && lost.notice().contains("git stash pop"));
+    assert!(lost.notice().contains("LANDED"));
+    assert!(lost
+        .notice()
+        .contains("git stash apply refs/loom/autostash/s1-1"));
+    assert!(!lost.notice().contains("git stash pop"));
 }

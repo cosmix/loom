@@ -113,16 +113,15 @@ fn print_cleanup_outcome(stage_id: &str, outcome: CleanupOutcome) {
             eprintln!("  Warning: Cleanup refused: {reason}");
             eprintln!("  You can manually clean up with: loom worktree remove {stage_id}");
         }
-        // `result.warnings` is not surfaced: `MergeLifecycle::cleanup` reaches
-        // `Done` only via `cleanup_after_merge`, which always builds an empty
-        // `warnings` vec on its `Ok` path (only `cleanup_multiple_stages`
-        // ever populates it) — dead on this path.
         CleanupOutcome::Done(result) => {
             if result.worktree_removed {
                 println!("  Removed worktree: .worktrees/{stage_id}");
             }
             if result.branch_deleted {
                 println!("  Deleted branch: {}", branch_name_for_stage(stage_id));
+            }
+            for warning in &result.warnings {
+                eprintln!("  Warning: {warning}");
             }
         }
         CleanupOutcome::Failed(e) => {

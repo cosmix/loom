@@ -154,3 +154,23 @@ which this bound was added to fix.
 **Prevention:** Decide whether a path is ignored with `git check-ignore`, never by matching `.gitignore` lines. Before telling an operator a branch is ready for `loom run`, include `loom init` in the check and confirm `git status --porcelain` lists no tracked change.
 
 **Fix:** Both checks take `git check-ignore`'s verdict when the repository root is a git work tree, with discovery capped at the root (`GIT_CEILING_DIRECTORIES`) so an enclosing repository's rules never count, and fall back to the literal lines otherwise (`git_ignores`, `gitignore_lists`). A loom binary built before the fix still dirties `.gitignore` on `loom init`: run `git checkout -- .gitignore` after it.
+
+## Admission lock initially rejected worktree state symlink
+
+**What happened:** A new per-stage admission lock opened the work directory with a no-follow helper, although a worktree deliberately exposes `.loom/work` as a symlink.
+
+**Why:** The helper was chosen for child-path safety without checking its root-path contract against the repository worktree layout.
+
+**Prevention:** When using safe filesystem helpers, trace whether the caller passes a real root or a deliberate root symlink; canonicalize the root once and keep no-follow traversal below it.
+
+**Fix:** Canonicalize `work_dir` before `safe_open_dirfd`, while retaining no-follow opens for the lock directory and file.
+
+## Read-only openat2 mode must be zero
+
+**What happened:** An inbox ledger reader passed creation mode 0600 to openat2 without O_CREAT, causing EINVAL.
+
+**Why:** The reader and writer shared an open helper but applied the writer mode to both.
+
+**Prevention:** Pass mode zero when O_CREAT and O_TMPFILE are absent and exercise both open paths.
+
+**Fix:** Select the mode alongside the flags and retain the read and append regressions.

@@ -6,7 +6,6 @@ use loom::plan::graph::ExecutionGraph;
 use loom::verify::transitions::save_stage;
 use serial_test::serial;
 use std::time::Duration;
-use tempfile::TempDir;
 
 use super::{create_stage_def, isolate_user_config};
 
@@ -32,17 +31,8 @@ fn test_execution_graph_with_parallel_stages() {
 }
 
 #[test]
-fn test_max_parallel_sessions_configuration() {
-    // Test different max_parallel_sessions values
-    let values = vec![1, 2, 4, 8, 16];
-
-    for max in values {
-        let config = OrchestratorConfig {
-            max_parallel_sessions: max,
-            ..Default::default()
-        };
-        assert_eq!(config.max_parallel_sessions, max);
-    }
+fn test_max_parallel_sessions_default() {
+    assert_eq!(OrchestratorConfig::default().max_parallel_sessions, 4);
 }
 
 /// Integration test: Verify orchestrator respects max_parallel_sessions at runtime
@@ -54,46 +44,11 @@ fn test_max_parallel_sessions_configuration() {
 #[ignore] // Integration test - run with --ignored
 #[serial]
 fn test_orchestrator_respects_max_parallel_sessions() {
-    use std::process::Command;
-
-    let temp_dir = TempDir::new().unwrap();
+    // Worktree creation requires a repository with at least one commit.
+    let temp_dir = crate::helpers::create_temp_git_repo().unwrap();
     let _home_env = isolate_user_config(&temp_dir);
     let repo_root = temp_dir.path();
     let work_dir = repo_root.join(".loom").join("work");
-
-    // Initialize a git repository (required for worktree creation)
-    let git_init = Command::new("git")
-        .args(["init"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to run git init");
-    assert!(git_init.status.success(), "git init failed");
-
-    // Configure git user for commits (required for initial commit)
-    Command::new("git")
-        .args(["config", "user.email", "test@example.com"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to configure git email");
-    Command::new("git")
-        .args(["config", "user.name", "Test User"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to configure git name");
-
-    // Create an initial commit (worktree creation requires at least one commit)
-    std::fs::write(repo_root.join("README.md"), "# Test Project").unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to git add");
-    let git_commit = Command::new("git")
-        .args(["commit", "-m", "Initial commit"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to git commit");
-    assert!(git_commit.status.success(), "git commit failed");
 
     // Create work directories
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();

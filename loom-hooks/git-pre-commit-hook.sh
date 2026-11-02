@@ -6,7 +6,7 @@
 # state files. In worktrees, the state directory is a symlink to shared state -
 # committing it would corrupt the main repository.
 #
-# Installation: Appended to .git/hooks/pre-commit by `loom init`
+# Installation: `loom init` wraps this section in .git/hooks/pre-commit; it runs first, then execs any foreign hook kept as pre-commit.loom-original
 #
 # Exit codes:
 #   0 - Allow commit

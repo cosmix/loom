@@ -188,6 +188,7 @@ fn attention_conversion_keeps_failure_label() {
         id: "server".to_owned(),
         name: "Rust server".to_owned(),
         label: "BLOCKED",
+        status: crate::models::stage::StageStatus::Blocked,
         command: Some("loom stage retry server".to_owned()),
         command_when: None,
         alternatives: Vec::new(),
@@ -208,6 +209,7 @@ fn attention_conversion_keeps_failure_label() {
         outgoing_session_exit_reason: None,
     };
     let attention = WebAttention::from(&entry);
+    assert_eq!(attention.status, crate::models::stage::StageStatus::Blocked);
     assert_eq!(attention.label, "BLOCKED");
     assert_eq!(attention.failure_label.as_deref(), Some("test"));
     let wire = serde_json::to_value(&attention).unwrap();

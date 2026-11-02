@@ -5,7 +5,9 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::testrun::command::{distinct_files, shell_quote, shell_word, shell_words};
+use crate::testrun::command::{
+    distinct_files, exact_regex_literal, shell_quote, shell_word, shell_words,
+};
 use crate::testrun::recognize::{
     combined_output, command_args, has_flag, last_match, pattern, positionals, summary_from_counts,
 };
@@ -88,7 +90,10 @@ impl TestRunnerAdapter for FlutterTest {
 
     fn single_test_command(&self, file: &str, test: &str, _package_dir: &Path) -> String {
         let file = shell_word(file);
-        format!("flutter test {file} --plain-name {}", shell_quote(test))
+        format!(
+            "flutter test {file} --name {}",
+            shell_quote(&exact_regex_literal(test))
+        )
     }
 
     /// Flutter accepts several test files in one invocation; names do not
@@ -135,19 +140,35 @@ mod tests {
     }
 
     #[test]
-    fn flutter_plain_name_command_selects_one_description() {
+    fn flutter_command_selects_one_description() {
         let command =
             ADAPTER.single_test_command("test/fixture_test.dart", "alpha_passes", Path::new("."));
         assert_eq!(
             command,
-            "flutter test test/fixture_test.dart --plain-name 'alpha_passes'"
+            "flutter test test/fixture_test.dart --name '^alpha_passes$'"
         );
     }
 
     #[test]
-    fn hostile_test_name_stays_one_plain_name() {
+    fn hostile_test_name_stays_one_escaped_pattern() {
         let command = ADAPTER.single_test_command("a_test.dart", HOSTILE_NAME, Path::new("."));
-        assert_one_word(&command, HOSTILE_NAME);
+        assert_one_word(&command, &exact_regex_literal(HOSTILE_NAME));
+    }
+
+    /// The live runner's output when the exact target is skipped: both exit 0,
+    /// and the skip must not pass as the selected test.
+    #[test]
+    fn an_exact_target_that_is_skipped_is_not_selected() {
+        let output = "\r00:00 +0 ~1: All tests skipped.\n";
+        let summary = ADAPTER.parse(&RunOutput {
+            stdout: output,
+            stderr: "",
+            exit_code: Some(0),
+        });
+        assert_eq!(
+            crate::testrun::classify(&summary, Some(0)),
+            crate::testrun::RunOutcome::NotSelected
+        );
     }
 
     #[test]

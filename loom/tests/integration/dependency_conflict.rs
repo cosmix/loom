@@ -1,10 +1,9 @@
 //! Conflict detection and resolution tests
 //!
-//! Tests for: Multi-dep conflict blocking and retry after resolution
+//! Tests for unmerged dependency refusal and manually prepared worktree bases.
 
 use serial_test::serial;
 use std::fs;
-use std::process::Command;
 
 use loom::git::worktree::resolve_base_branch;
 
@@ -51,10 +50,10 @@ fn test_multi_dep_not_merged_returns_scheduling_error() {
     );
 }
 
-/// Test: Conflict error contains helpful info
+/// The scheduling error identifies the affected stage or dependency.
 #[test]
 #[serial]
-fn test_conflict_error_contains_helpful_info() {
+fn test_unmerged_dependency_error_contains_helpful_info() {
     let temp_dir = init_test_repo();
     let repo_root = temp_dir.path();
 
@@ -87,10 +86,34 @@ fn test_conflict_error_contains_helpful_info() {
     );
 }
 
-/// Test 6: Retry after manual conflict resolution
+/// Create `branch` from main, merge both conflicting stage branches into it,
+/// and commit the manual resolution of `shared.txt`.
+fn resolve_conflict_on_base_branch(branch: &str, repo_root: &std::path::Path) {
+    git_checked(repo_root, &["checkout", "main"]);
+    git_checked(repo_root, &["checkout", "-b", branch]);
+    git_checked(
+        repo_root,
+        &["merge", "--no-ff", "-m", "Merge stage-a", "loom/stage-a"],
+    );
+    let merge_output = git_unchecked(
+        repo_root,
+        &["merge", "--no-ff", "-m", "Merge stage-b", "loom/stage-b"],
+    );
+    assert!(
+        !merge_output.status.success(),
+        "fixture must produce a merge conflict"
+    );
+    fs::write(repo_root.join("shared.txt"), "Line from A\nLine from B\n")
+        .expect("Failed to write resolved file");
+    git_checked(repo_root, &["add", "shared.txt"]);
+    git_checked(repo_root, &["commit", "-m", "Resolve merge conflict"]);
+    git_checked(repo_root, &["checkout", "main"]);
+}
+
+/// A manually resolved base branch can seed a worktree.
 #[test]
 #[serial]
-fn test_retry_after_manual_conflict_resolution() {
+fn test_worktree_uses_manually_resolved_base_branch() {
     let temp_dir = init_test_repo();
     let repo_root = temp_dir.path();
 
@@ -115,55 +138,15 @@ fn test_retry_after_manual_conflict_resolution() {
     );
     assert!(
         first_attempt.is_err(),
-        "First attempt should fail due to conflict"
+        "Unmerged dependencies must refuse scheduling"
+    );
+    let error = first_attempt.unwrap_err().to_string();
+    assert!(
+        error.contains("Scheduling error") && error.contains("merged=false"),
+        "{error}"
     );
 
-    Command::new("git")
-        .args(["checkout", "main"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to checkout main");
-
-    Command::new("git")
-        .args(["checkout", "-b", "loom/_base/stage-c"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to create base branch");
-
-    Command::new("git")
-        .args(["merge", "--no-ff", "-m", "Merge stage-a", "loom/stage-a"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to merge stage-a");
-
-    let merge_output = Command::new("git")
-        .args(["merge", "--no-ff", "-m", "Merge stage-b", "loom/stage-b"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to start merge");
-
-    if !merge_output.status.success() {
-        fs::write(repo_root.join("shared.txt"), "Line from A\nLine from B\n")
-            .expect("Failed to write resolved file");
-
-        Command::new("git")
-            .args(["add", "shared.txt"])
-            .current_dir(repo_root)
-            .output()
-            .expect("Failed to add");
-
-        Command::new("git")
-            .args(["commit", "-m", "Resolve merge conflict"])
-            .current_dir(repo_root)
-            .output()
-            .expect("Failed to commit resolution");
-    }
-
-    Command::new("git")
-        .args(["checkout", "main"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to checkout main");
+    resolve_conflict_on_base_branch("loom/_base/stage-c", repo_root);
 
     let worktree = create_worktree_isolated("stage-c", repo_root, Some("loom/_base/stage-c"))
         .expect("Failed to create worktree after conflict resolution");

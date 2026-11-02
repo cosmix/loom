@@ -8,12 +8,8 @@ use crate::models::dispute::{CriterionField, DisputeKind};
 /// `Request::DisputeCriteria`, `Request::FileDispute` and
 /// `Request::FreezeContracts` RPCs field for field.
 ///
-/// The RPC variants carry `stage_id` and `session_id`; these deliberately do
-/// not. Over the socket those fields are checked against the connection's peer
-/// identity, so claiming a stage you do not own gets you refused. A spool has
-/// no connection to check against, so the fields are simply absent and the
-/// daemon attributes the request to the worktree it found it in — see the
-/// module documentation.
+/// The spool envelope carries the session as an ownership precondition; the
+/// stage is derived from the worktree rather than from the request payload.
 ///
 /// Decoding refuses any key a variant does not declare, so a request shaped
 /// for another version (a freeze carrying session-made `reports`) is refused
@@ -65,6 +61,8 @@ impl StageRequest {
 pub struct QueuedRequest {
     #[serde(default)]
     pub request_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     #[serde(flatten)]
     pub payload: StageRequest,
 }
@@ -72,11 +70,13 @@ impl QueuedRequest {
     pub fn new(payload: StageRequest) -> Self {
         Self {
             request_id: uuid::Uuid::new_v4().simple().to_string(),
+            session_id: None,
             payload,
         }
     }
     pub fn identity(&self) -> String {
         let payload = serde_json::to_vec(&self.payload).expect("serializable stage request");
-        crate::relay::sha256_hex(&[self.request_id.as_bytes(), &payload].concat())
+        let session = self.session_id.as_deref().unwrap_or_default().as_bytes();
+        crate::relay::sha256_hex(&[self.request_id.as_bytes(), session, &payload].concat())
     }
 }

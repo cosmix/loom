@@ -39,6 +39,9 @@ pub(crate) fn repo_with_stage_branches(stage_ids: &[&str]) -> TempDir {
     std::fs::write(root.join("seed.txt"), "seed").unwrap();
     git_ok(root, &["add", "seed.txt"]);
     git_ok(root, &["commit", "-m", "seed"]);
+    let work_dir = root.join(".loom").join("work");
+    std::fs::create_dir_all(&work_dir).unwrap();
+    crate::git::worktree::capture_main_identity(root, &work_dir).unwrap();
     for stage_id in stage_ids {
         git_ok(root, &["branch", &format!("loom/{stage_id}")]);
     }

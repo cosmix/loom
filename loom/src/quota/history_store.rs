@@ -102,10 +102,10 @@ fn should_skip_observation(last: Option<&StoredPoint>, next: &StoredPoint, provi
 
 fn ensure_history_dir(work_root: &Path) -> Result<PathBuf> {
     let quota_dir = cache::quota_dir(work_root);
-    cache::create_quota_dir(&quota_dir)?;
+    crate::fs::cache_io::create_dir(&quota_dir)?;
     let dir = quota_dir.join("history");
-    cache::reject_symlink(&dir)?;
-    cache::create_quota_dir(&dir)?;
+    crate::fs::cache_io::reject_symlink(&dir)?;
+    crate::fs::cache_io::create_dir(&dir)?;
     let metadata = std::fs::symlink_metadata(&dir)?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
         bail!("quota history path is not a directory");
@@ -193,8 +193,8 @@ fn write_history_files(dir: &Path, files: &[HistoryFile; 2]) -> Result<()> {
     for file in files {
         if file.changed {
             let path = history_path_in(dir, file.provider);
-            cache::reject_symlink(&path)?;
-            cache::atomic_write(&path, &serialize_rows(&file.rows)?)?;
+            crate::fs::cache_io::reject_symlink(&path)?;
+            crate::fs::cache_io::atomic_write(&path, &serialize_rows(&file.rows)?)?;
         }
     }
     Ok(())

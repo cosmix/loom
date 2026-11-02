@@ -18,6 +18,11 @@ pub(super) fn execute(work_root: &Path, config: DaemonConfig) -> Result<()> {
             work_root.display()
         );
     }
+    let work_dir = crate::fs::work_dir::WorkDir::new(work_root)?;
+    let repo_root = work_dir
+        .repo_root()
+        .ok_or_else(|| anyhow::anyhow!("cannot resolve checkout for {}", work_root.display()))?;
+    crate::git::worktree::require_main_identity(repo_root)?;
     // Before any thread exists (`main` spawns none before dispatch, and the
     // server starts its runtime in `serve`): keep the signing variables for
     // the daemon's own signing calls and take them out of the environment

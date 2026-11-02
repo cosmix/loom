@@ -22,9 +22,47 @@ pub struct LifecycleEvidence {
 
 impl EvidenceSource for LifecycleEvidence {
     fn outcome(&self, worker: &BoundWorker) -> WorkerOutcome {
+        self.poll(std::slice::from_ref(worker)).remove(0).0
+    }
+
+    fn unknown_settled(&self, worker: &BoundWorker) -> bool {
+        // A direct forward's `unknown` record is reconcile's last word on it:
+        // the receipt folded to `Unknown`, which absorbs every later
+        // observation, so the watch would otherwise hold until its deadline.
+        // An unreadable journal settles nothing: the forward may still run.
+        self.poll(std::slice::from_ref(worker))[0].1
+    }
+
+    fn poll(&self, workers: &[BoundWorker]) -> Vec<(WorkerOutcome, bool)> {
+        let index = crate::subagent_lifecycle::replay(&self.work_dir);
+        workers
+            .iter()
+            .map(|worker| {
+                let outcome = match &index {
+                    Ok(index) => self.outcome_from_index(worker, index),
+                    Err(error) => {
+                        WorkerOutcome::Unknown(format!("lifecycle replay failed: {error:#}"))
+                    }
+                };
+                let settled = matches!(outcome, WorkerOutcome::Unknown(_))
+                    && index
+                        .as_ref()
+                        .is_ok_and(|index| unknown_settled(index, worker));
+                (outcome, settled)
+            })
+            .collect()
+    }
+}
+
+impl LifecycleEvidence {
+    fn outcome_from_index(
+        &self,
+        worker: &BoundWorker,
+        index: &crate::subagent_lifecycle::LifecycleIndex,
+    ) -> WorkerOutcome {
         let outcome = match worker.worker.kind {
-            WorkerKind::Claude => self.claude_outcome(worker),
-            WorkerKind::Codex => self.codex_outcome(worker),
+            WorkerKind::Claude => self.claude_from_index(worker, index),
+            WorkerKind::Codex => self.codex_from_index(worker, index),
         };
         match outcome {
             WorkerOutcome::Active => stall::detect(worker, &self.work_dir, self.stall_budget)
@@ -33,31 +71,11 @@ impl EvidenceSource for LifecycleEvidence {
         }
     }
 
-    fn unknown_settled(&self, worker: &BoundWorker) -> bool {
-        // A direct forward's `unknown` record is reconcile's last word on it:
-        // the receipt folded to `Unknown`, which absorbs every later
-        // observation, so the watch would otherwise hold until its deadline.
-        // An unreadable journal settles nothing: the forward may still run.
-        worker.worker.kind == WorkerKind::Codex
-            && matches!(
-                &worker.lifecycle_identity,
-                WorkerIdentity::Codex {
-                    execution: CodexExecution::Direct { .. },
-                    ..
-                }
-            )
-            && has_exact_record(&self.work_dir, &worker.lifecycle_identity, false, |state| {
-                state == LifecycleState::Unknown
-            })
-    }
-}
-
-impl LifecycleEvidence {
-    fn claude_outcome(&self, worker: &BoundWorker) -> WorkerOutcome {
-        let index = match crate::subagent_lifecycle::replay(&self.work_dir) {
-            Ok(index) => index,
-            Err(error) => return replay_error(error),
-        };
+    fn claude_from_index(
+        &self,
+        worker: &BoundWorker,
+        index: &crate::subagent_lifecycle::LifecycleIndex,
+    ) -> WorkerOutcome {
         match &worker.lifecycle_identity {
             WorkerIdentity::ClaudeSubagent {
                 stage_id,
@@ -77,11 +95,8 @@ impl LifecycleEvidence {
                 if matches!(
                     &outcome,
                     WorkerOutcome::Unknown(reason) if reason == "no matching lifecycle evidence"
-                ) && missing_or_idle_claude_evidence(
-                    &self.work_dir,
-                    &index,
-                    &worker.lifecycle_identity,
-                ) {
+                ) && missing_or_idle_claude_evidence(index, &worker.lifecycle_identity)
+                {
                     WorkerOutcome::Active
                 } else {
                     outcome
@@ -94,13 +109,13 @@ impl LifecycleEvidence {
         }
     }
 
-    fn codex_outcome(&self, worker: &BoundWorker) -> WorkerOutcome {
+    fn codex_from_index(
+        &self,
+        worker: &BoundWorker,
+        index: &crate::subagent_lifecycle::LifecycleIndex,
+    ) -> WorkerOutcome {
         let Some(authority) = &worker.authority else {
             return WorkerOutcome::Unknown("missing Codex authority".into());
-        };
-        let index = match crate::subagent_lifecycle::replay(&self.work_dir) {
-            Ok(index) => index,
-            Err(error) => return replay_error(error),
         };
         match &worker.lifecycle_identity {
             WorkerIdentity::Codex {
@@ -109,7 +124,7 @@ impl LifecycleEvidence {
             } => {
                 let journal = index.outcome(&worker.lifecycle_identity);
                 if terminal_outcome(&journal)
-                    || has_exact_terminal_record(&self.work_dir, &worker.lifecycle_identity)
+                    || has_exact_terminal_record(index, &worker.lifecycle_identity)
                 {
                     journal
                 } else {
@@ -131,7 +146,6 @@ impl LifecycleEvidence {
 }
 
 fn missing_or_idle_claude_evidence(
-    work_dir: &std::path::Path,
     index: &crate::subagent_lifecycle::LifecycleIndex,
     expected: &WorkerIdentity,
 ) -> bool {
@@ -145,9 +159,9 @@ fn missing_or_idle_claude_evidence(
     else {
         return false;
     };
-    let records = match lifecycle_records(work_dir, stage_id) {
+    let records = match index.stage_records(stage_id) {
         Ok(records) => records,
-        Err(error) => return error.kind() == std::io::ErrorKind::NotFound,
+        Err(_) => return false,
     };
     records.iter().all(|record| match &record.identity {
         WorkerIdentity::ClaudeSubagent { agent_id: seen, .. } => seen != agent_id,
@@ -167,8 +181,11 @@ fn missing_or_idle_claude_evidence(
     })
 }
 
-fn has_exact_terminal_record(work_dir: &std::path::Path, expected: &WorkerIdentity) -> bool {
-    has_exact_record(work_dir, expected, true, |state| {
+fn has_exact_terminal_record(
+    index: &crate::subagent_lifecycle::LifecycleIndex,
+    expected: &WorkerIdentity,
+) -> bool {
+    has_exact_record(index, expected, true, |state| {
         matches!(
             state,
             LifecycleState::Completed
@@ -184,14 +201,13 @@ fn has_exact_terminal_record(work_dir: &std::path::Path, expected: &WorkerIdenti
 /// where the caller must stop trusting live progress, false where a match
 /// would end a wait. A missing journal never matches.
 fn has_exact_record(
-    work_dir: &std::path::Path,
+    index: &crate::subagent_lifecycle::LifecycleIndex,
     expected: &WorkerIdentity,
     unreadable: bool,
     wanted: impl Fn(LifecycleState) -> bool,
 ) -> bool {
-    let records = match lifecycle_records(work_dir, expected.stage_id()) {
+    let records = match index.stage_records(expected.stage_id()) {
         Ok(records) => records,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return false,
         Err(_) => return unreadable,
     };
     records
@@ -199,19 +215,21 @@ fn has_exact_record(
         .any(|record| &record.identity == expected && wanted(record.state))
 }
 
-fn lifecycle_records(
-    work_dir: &std::path::Path,
-    stage_id: &str,
-) -> std::io::Result<Vec<crate::subagent_lifecycle::LifecycleRecord>> {
-    let path = work_dir
-        .join("subagents")
-        .join(stage_id)
-        .join("lifecycle.jsonl");
-    crate::codex_lifecycle::read_lifecycle_records(&path).map_err(|error| {
-        error
-            .downcast::<std::io::Error>()
-            .unwrap_or_else(|error| std::io::Error::other(error.to_string()))
-    })
+fn unknown_settled(
+    index: &crate::subagent_lifecycle::LifecycleIndex,
+    worker: &BoundWorker,
+) -> bool {
+    worker.worker.kind == WorkerKind::Codex
+        && matches!(
+            &worker.lifecycle_identity,
+            WorkerIdentity::Codex {
+                execution: CodexExecution::Direct { .. },
+                ..
+            }
+        )
+        && has_exact_record(index, &worker.lifecycle_identity, false, |state| {
+            state == LifecycleState::Unknown
+        })
 }
 
 fn terminal_outcome(outcome: &WorkerOutcome) -> bool {
@@ -219,8 +237,4 @@ fn terminal_outcome(outcome: &WorkerOutcome) -> bool {
         outcome,
         WorkerOutcome::Succeeded | WorkerOutcome::Failed(_) | WorkerOutcome::Cancelled(_)
     )
-}
-
-fn replay_error(error: anyhow::Error) -> WorkerOutcome {
-    WorkerOutcome::Unknown(format!("lifecycle replay failed: {error}"))
 }

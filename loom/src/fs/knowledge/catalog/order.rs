@@ -1,4 +1,4 @@
-//! Issue ordering is what keeps `Catalog::revision` and every diagnostics diff stable.
+//! Deterministic issue ordering keeps diagnostics and baseline diffs stable.
 
 use super::CatalogIssue;
 use crate::fs::knowledge::types::INDEX_FILENAME;

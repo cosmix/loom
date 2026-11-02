@@ -21,6 +21,16 @@ const RESERVED_NAMES: &[&str] = &[
     "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
 ];
 
+/// Whether a stage ID is safe to use as a filesystem path component.
+pub fn valid_stage_path_component(id: &str) -> bool {
+    !id.is_empty()
+        && id != "."
+        && !id.contains("..")
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ".-_".contains(c))
+}
+
 /// Validates that an ID is safe for use in file paths.
 ///
 /// An ID is valid if:

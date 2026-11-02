@@ -18,6 +18,10 @@ mod integrity_status;
 mod knowledge_complete;
 mod merge;
 mod merge_resolver;
+#[cfg(test)]
+pub(crate) use merge_resolver::{
+    spawn_merge_resolver as test_spawn_merge_resolver, MergeResolverResult,
+};
 pub mod merge_verify;
 mod output;
 mod progressive_complete;

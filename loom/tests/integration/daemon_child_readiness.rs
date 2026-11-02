@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use loom::daemon::{SOCKET_FILE, SUN_PATH_MAX};
 use tempfile::TempDir;
 
-use super::helpers::loom_cmd;
+use super::helpers::{git_checked, loom_cmd, write_main_checkout_identity};
 
 /// `daemon::server::launch::LOG_ACTIVE_BYTE`, which is crate-private.
 const LOG_ACTIVE_BYTE: u8 = 0x02;
@@ -92,6 +92,8 @@ fn the_daemon_child_reports_log_active_then_fails_into_the_log() {
     let work_root = root.join("w".repeat(SUN_PATH_MAX));
     let home = root.join("home");
     fs::create_dir_all(&work_root).expect("create the state root");
+    git_checked(&work_root, &["init", "-q", "-b", "main"]);
+    write_main_checkout_identity(&work_root, &work_root.join(".loom/work"));
     fs::create_dir_all(&home).expect("create the scratch home");
     assert!(work_root.join(SOCKET_FILE).as_os_str().len() >= SUN_PATH_MAX);
 

@@ -315,6 +315,29 @@ fn validate_stage_sandbox_blocks_an_invalid_config() {
     );
 }
 
+#[test]
+fn knowledge_and_worktree_preflights_agree_on_policy() {
+    let temp = work_dir();
+    let work = temp.path().join(".loom").join("work");
+    stage_at(&work, "alpha", StageStatus::Executing);
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    let mut stage = Stage::new("alpha".to_string(), None);
+    stage.id = "alpha".to_string();
+    assert_eq!(
+        orchestrator
+            .validate_knowledge_sandbox(&stage, "alpha")
+            .unwrap(),
+        orchestrator.validate_stage_sandbox(&stage, "alpha", "session-does-not-exist")
+    );
+    stage.sandbox.enabled = Some(false);
+    assert_eq!(
+        orchestrator
+            .validate_knowledge_sandbox(&stage, "alpha")
+            .unwrap(),
+        orchestrator.validate_stage_sandbox(&stage, "alpha", "session-does-not-exist")
+    );
+}
+
 /// The eviction guard: once a stage has a tracked session, a second insert
 /// for the same stage must not silently replace it. Silent replacement is how
 /// the daemon stopped monitoring an original session the moment a duplicate
@@ -341,3 +364,6 @@ fn insert_active_session_refuses_to_evict_an_existing_entry() {
         "the first-tracked session must survive a second insert for the same stage"
     );
 }
+
+#[path = "stage_executor_pass_tests.rs"]
+mod pass_tests;

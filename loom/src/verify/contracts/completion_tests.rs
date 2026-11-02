@@ -26,6 +26,7 @@ impl ProbeRunner for Replay {
             stderr: String::new(),
             exit_code: Some(0),
             timed_out: false,
+            output_complete: true,
             cached: None,
         })
     }

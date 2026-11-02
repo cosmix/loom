@@ -3,6 +3,7 @@
 //! stage's overlay or the immutable base layer. The dirty-tree fallback in
 //! `context::refresh::semantic` already shares this same address.
 
+use sha2::{Digest, Sha256};
 use std::path::Path;
 
 /// Plan name for the graph overlay the CLI reads and writes for the working
@@ -10,32 +11,18 @@ use std::path::Path;
 /// the underscore prefix keeps it out of any plan's namespace.
 pub const LOCAL_PLAN_KEY: &str = "_local";
 
-/// Stage name for the working-tree overlay, keyed by the tree's own
-/// directory name.
+/// Stage name for the working-tree overlay, keyed by the full checkout path.
 ///
-/// `.loom/work` is a symlink to the main repository in every worktree, so a fixed
-/// stage name would make every worktree's local view read and clobber the
-/// SAME overlay file. Keying by the project root's directory name keeps each
-/// worktree's working-tree view private to it - but only if the key is
-/// canonical. The same directory can be reached by more than one spelling (a
-/// relative "." run from the tree's own root, an absolute path reached from a
-/// subdirectory, a path threaded through a `..`), and a writer and a reader
-/// that reach it by different spellings must still land on the same address,
-/// or a write from one is invisible to a read from the other. Canonicalizing
-/// before taking the final component makes the address identify the
-/// directory, not how the caller happened to spell it: a worktree
-/// canonicalizes to `.worktrees/<stage-id>`, the main checkout to the repo
-/// directory, so the "keep each worktree private" property this function
-/// exists for still holds. A path that cannot be canonicalized (e.g. it does
-/// not exist) falls back to its own final component, same as before.
+/// Worktrees share `.loom/work`, so even equal-basename checkouts need distinct
+/// addresses. Canonicalization makes alternate spellings of an existing root
+/// agree. If it fails, the exact path spelling is hashed instead; callers must
+/// use the same spelling until the root can be canonicalized.
 pub fn local_overlay_stage_name(project_root: &Path) -> String {
     let canonical = project_root
         .canonicalize()
         .unwrap_or_else(|_| project_root.to_path_buf());
-    match canonical.file_name() {
-        Some(name) => format!("map-{}", name.to_string_lossy()),
-        None => "map".to_string(),
-    }
+    let digest = Sha256::digest(canonical.as_os_str().as_encoded_bytes());
+    format!("map-{}", hex::encode(digest))
 }
 
 /// The full `(plan, stage)` address of this checkout's working-tree overlay.
@@ -74,21 +61,102 @@ impl OverlayScope {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context::graph_store::{FileEntry, GraphLayer, GraphStore};
+    use std::process::Command;
 
-    /// `/a/b/myrepo` does not exist, so this exercises the
-    /// canonicalization-failure fallback (the path as spelled), not the
-    /// canonical happy path.
+    fn git(root: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .current_dir(root)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn create_worktrees(root: &Path) {
+        git(root, &["init", "repo"]);
+        let repo = root.join("repo");
+        git(
+            &repo,
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "base",
+            ],
+        );
+        std::fs::create_dir_all(root.join("a")).unwrap();
+        std::fs::create_dir_all(root.join("b")).unwrap();
+        git(&repo, &["worktree", "add", "--detach", "../a/shared"]);
+        git(&repo, &["worktree", "add", "--detach", "../b/shared"]);
+    }
+
     #[test]
-    fn stage_name_falls_back_when_path_does_not_exist() {
+    fn equal_basename_worktrees_isolate_overlays_in_shared_store() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let root = temp.path();
+        create_worktrees(root);
+        let first = local_overlay_key(&root.join("a/shared"));
+        let second = local_overlay_key(&root.join("b/shared"));
+        assert_ne!(first, second);
+        let store = GraphStore::new(&root.join("cache"), &root.join("work"));
+        let mut layer = GraphLayer::default();
+        layer.files.insert(
+            "src.rs".into(),
+            FileEntry {
+                content_hash: "first edit".into(),
+                ..Default::default()
+            },
+        );
+        store.save_overlay(&first.0, &first.1, &layer).unwrap();
+        assert!(store.load_overlay(&second.0, &second.1).unwrap().is_none());
+        layer.files.get_mut("src.rs").unwrap().content_hash = "second edit".into();
+        store.save_overlay(&second.0, &second.1, &layer).unwrap();
         assert_eq!(
-            local_overlay_stage_name(Path::new("/a/b/myrepo")),
-            "map-myrepo"
+            store
+                .load_overlay(&first.0, &first.1)
+                .unwrap()
+                .unwrap()
+                .files["src.rs"]
+                .content_hash,
+            "first edit"
+        );
+        assert_eq!(
+            store
+                .load_overlay(&second.0, &second.1)
+                .unwrap()
+                .unwrap()
+                .files["src.rs"]
+                .content_hash,
+            "second edit"
         );
     }
 
     #[test]
-    fn stage_name_falls_back_when_no_file_name() {
-        assert_eq!(local_overlay_stage_name(Path::new("/")), "map");
+    fn stage_name_falls_back_when_path_does_not_exist() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("a/myrepo");
+        assert_eq!(
+            local_overlay_stage_name(&path),
+            local_overlay_stage_name(&path)
+        );
+        assert_ne!(
+            local_overlay_stage_name(&path),
+            local_overlay_stage_name(&temp.path().join("b/myrepo"))
+        );
+    }
+
+    #[test]
+    fn stage_name_handles_root_path() {
+        assert!(local_overlay_stage_name(Path::new("/")).starts_with("map-"));
     }
 
     /// THE REGRESSION GUARD: `local_overlay_stage_name` used to key on how a
@@ -118,10 +186,7 @@ mod tests {
         // canonicalization-failure fallback, not just the happy path.
         let root = Path::new("/a/b/myrepo");
         assert_eq!(OverlayScope::Local.resolve(root), local_overlay_key(root));
-        assert_eq!(
-            OverlayScope::Local.resolve(root),
-            ("_local".to_string(), "map-myrepo".to_string())
-        );
+        assert_eq!(OverlayScope::Local.resolve(root).0, "_local");
     }
 
     #[test]

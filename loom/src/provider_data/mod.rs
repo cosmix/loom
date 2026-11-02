@@ -6,7 +6,7 @@ pub mod resolve;
 pub mod sessions;
 pub(crate) const SYNTHETIC_MODEL: &str = "<synthetic>";
 
-/// Later timestamps win; input order breaks ties for equal timestamps.
+/// Only a strictly later observation replaces the selected one.
 pub(crate) fn supersedes<T: Ord>(current: T, incoming: T) -> bool {
-    incoming >= current
+    incoming > current
 }

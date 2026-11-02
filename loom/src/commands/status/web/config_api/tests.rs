@@ -21,6 +21,7 @@ use crate::user_config::{redirect_user_config, ConfigValue, UserConfigRedirect};
 use super::wire::{ConfigKind, ConfigPayload, Source};
 use super::{entries, payload};
 
+mod pressure_matrix;
 mod resolution;
 mod typed_values;
 mod updates;

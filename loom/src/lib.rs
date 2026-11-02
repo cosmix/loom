@@ -33,6 +33,7 @@ pub mod remote_control;
 pub mod sandbox;
 pub mod skills;
 pub mod stage_service;
+pub mod status;
 pub mod subagent_lifecycle;
 pub mod telemetry;
 pub mod testrun;

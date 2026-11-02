@@ -84,21 +84,23 @@ fn require_compact_flag_sets_the_compact_representation() {
 #[test]
 fn reject_unknown_require_ids_allows_every_id_present() {
     let catalog = catalog_with_ids(&["a", "b"]);
-    let result = reject_unknown_require_ids(&catalog, None, &["a".to_string(), "b".to_string()]);
+    let result =
+        reject_unknown_require_ids(Some(&catalog), None, &["a".to_string(), "b".to_string()]);
     assert!(result.is_ok());
 }
 
 #[test]
 fn reject_unknown_require_ids_allows_an_empty_list() {
     let catalog = catalog_with_ids(&["a"]);
-    let result = reject_unknown_require_ids(&catalog, None, &[]);
+    let result = reject_unknown_require_ids(Some(&catalog), None, &[]);
     assert!(result.is_ok());
 }
 
 #[test]
 fn reject_unknown_require_ids_fails_on_one_unknown_id() {
     let catalog = catalog_with_ids(&["a"]);
-    let error = reject_unknown_require_ids(&catalog, None, &["missing".to_string()]).unwrap_err();
+    let error =
+        reject_unknown_require_ids(Some(&catalog), None, &["missing".to_string()]).unwrap_err();
     assert!(error.to_string().contains("missing"));
 }
 
@@ -106,7 +108,7 @@ fn reject_unknown_require_ids_fails_on_one_unknown_id() {
 fn reject_unknown_require_ids_names_every_unknown_id_in_a_single_error() {
     let catalog = catalog_with_ids(&["a"]);
     let error = reject_unknown_require_ids(
-        &catalog,
+        Some(&catalog),
         None,
         &["first-missing".to_string(), "second-missing".to_string()],
     )
@@ -157,14 +159,14 @@ fn reject_unknown_require_ids_accepts_a_source_node_id_and_still_rejects_an_unkn
     let graph = graph_with_one_node("src/a.rs#function:widget");
 
     let result = reject_unknown_require_ids(
-        &catalog,
+        Some(&catalog),
         Some(&graph),
         &["src/a.rs#function:widget".to_string()],
     );
     assert!(result.is_ok());
 
     let error = reject_unknown_require_ids(
-        &catalog,
+        Some(&catalog),
         Some(&graph),
         &["src/a.rs#function:missing".to_string()],
     )

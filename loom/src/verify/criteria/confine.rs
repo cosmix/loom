@@ -72,6 +72,7 @@ pub(super) struct PreparedCommand {
     wrapped: Option<Command>,
     scratch: Option<host::CargoScratch>,
     git: Option<GitDirs>,
+    group_anchor: Option<super::spawn_observer::GroupAnchor>,
 }
 
 impl PreparedCommand {
@@ -122,10 +123,26 @@ impl PreparedCommand {
 
     pub(super) fn spawn(mut self) -> Result<ConfinedChild> {
         let child = self.spawn_retaining_resources()?;
+        let process = if self.group_anchor.is_some() {
+            crate::process::OwnedProcess::child_only(child)
+        } else {
+            crate::process::OwnedProcess::new(child)
+        };
         Ok(ConfinedChild {
-            process: crate::process::OwnedProcess::new(child),
+            process,
+            _group_anchor: self.group_anchor.take(),
             _scratch: self.scratch.take(),
         })
+    }
+
+    pub(super) fn has_group_anchor(&self) -> bool {
+        self.group_anchor.is_some()
+    }
+
+    pub(super) fn retire_group(&mut self) {
+        if let Some(mut anchor) = self.group_anchor.take() {
+            anchor.retire();
+        }
     }
 
     pub(super) fn spawn_retaining_resources(&mut self) -> Result<Child> {
@@ -135,11 +152,15 @@ impl PreparedCommand {
         if let Some(wrapped) = self.wrapped.take() {
             self.command = wrapped;
         }
+        self.group_anchor = super::spawn_observer::prepare_group()?;
+        if let Some(anchor) = &self.group_anchor {
+            #[cfg(unix)]
+            self.command.process_group(i32::try_from(anchor.pgid())?);
+        }
         let child = self
             .command
             .spawn()
             .with_context(|| format!("Failed to spawn command: {}", self.display))?;
-        super::spawn_observer::notify_spawned(child.id());
         Ok(child)
     }
 }
@@ -148,6 +169,7 @@ impl PreparedCommand {
 /// removing its private tool state. Borrow the child for pipe and wait APIs.
 pub struct ConfinedChild {
     process: crate::process::OwnedProcess,
+    _group_anchor: Option<super::spawn_observer::GroupAnchor>,
     _scratch: Option<host::CargoScratch>,
 }
 
@@ -201,9 +223,9 @@ impl fmt::Display for CommandSpec {
 
 /// Spawn a plan-authored command as a child process under `confinement`.
 ///
-/// On Unix the child leads its own process group (pgid == child pid) so that a
-/// timeout kill can reach grandchildren — `kill(-pgid, SIGKILL)` on a compound
-/// `a && b` must also take down the `cargo test` it started.
+/// On Unix a normal child leads its own process group. Under the host-job
+/// observer it joins a persistent guardian's group, which can still be
+/// retired after the command exits or the daemon restarts.
 ///
 /// stdin is `/dev/null` and both output streams are piped; callers must drain
 /// them concurrently with waiting — `executor::run_spec_with_timeout` is the
@@ -287,6 +309,7 @@ fn prepare(
         wrapped,
         scratch,
         git,
+        group_anchor: None,
     })
 }
 

@@ -143,8 +143,8 @@ impl ConfigState {
         self.project_path.as_deref()
     }
 
-    /// The file `s` writes for the active scope, so pressing it is never a
-    /// guess. `None` when the active scope has no file in this tree.
+    /// The file edited by the active scope. Saving writes every staged scope.
+    /// `None` when the active scope has no file in this tree.
     pub(crate) fn active_path(&self) -> Option<&str> {
         match self.scope {
             Scope::User => Some(&self.user_path),
@@ -219,7 +219,7 @@ impl ConfigState {
         self.set_scope(self.scope.other());
     }
 
-    /// Point the editor at `scope`, naming the file it now writes.
+    /// Point the editor at `scope`, naming the file future edits target.
     ///
     /// Switching to the project tier of a tree that has no `.loom/work` is
     /// allowed on purpose: an operator who cannot see the tier cannot learn it
@@ -227,7 +227,7 @@ impl ConfigState {
     pub(crate) fn set_scope(&mut self, scope: Scope) {
         self.scope = scope;
         let status = match self.active_path() {
-            Some(path) => format!("{} scope — writes go to {path}.", scope.word()),
+            Some(path) => format!("{} scope — edits target {path}.", scope.word()),
             None => NO_WORKSPACE.to_owned(),
         };
         self.set_status(false, status);
@@ -301,7 +301,7 @@ impl ConfigState {
     }
 
     /// How many edits are staged at each scope, user first.
-    fn staged_counts(&self) -> (usize, usize) {
+    pub(crate) fn staged_counts(&self) -> (usize, usize) {
         let staged = self.staged();
         let users = staged
             .iter()

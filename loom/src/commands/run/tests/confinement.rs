@@ -72,6 +72,22 @@ fn both_run_entry_points_refuse_before_the_plan_is_marked_in_progress() {
     }
 }
 
+/// A foreground run forgets the previous run's outcome as a daemon start does,
+/// or the web notice keeps showing it. Refused runs keep it: a failure stays
+/// readable until a run really starts. Structural for the reason above.
+#[test]
+fn a_foreground_run_forgets_the_previous_outcome_once_it_passes_preflight() {
+    let source = include_str!("../foreground.rs");
+    let refusal = source
+        .find("run_startup_preflights(&work_dir, accept_unix_socket_risk)")
+        .unwrap();
+    let forgotten = source
+        .find("remove_previous_outcome(work_dir.root())")
+        .expect("foreground.rs must clear the previous outcome");
+    let rename = source.find("mark_plan_in_progress(").unwrap();
+    assert!(refusal < forgotten && forgotten < rename);
+}
+
 /// Checks 1-5 and the Unix-socket acknowledgement over `work_dir`'s stages,
 /// on a host whose every fact passes.
 fn findings_on_a_clean_host(work_dir: &WorkDir, accept_unix_socket_risk: bool) -> HookFindings {

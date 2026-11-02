@@ -1,31 +1,23 @@
 use super::*;
 use tempfile::TempDir;
 
-/// Execs of a just-written wrapper script transiently fail with `ETXTBSY` when
-/// a sibling test thread forks between the write and the spawn: the child
-/// holds a duplicate of the write fd until its own exec closes it. Retry until
-/// that window passes.
-///
-/// Sibling of `retry_past_etxtbsy` in `commands/self_update/tests.rs` - that
-/// one is `anyhow::Result`-based for its callers; this one works directly on
-/// the `std::io::Result` that `Command::output`/`Command::status` return.
-fn retry_past_etxtbsy<T>(mut attempt: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
-    const ETXTBSY: i32 = 26; // "Text file busy"
-    const MAX_ATTEMPTS: u32 = 50;
-
-    let mut attempts = 0;
-    loop {
-        attempts += 1;
-        match attempt() {
-            Ok(value) => return Ok(value),
-            Err(error) => {
-                if error.raw_os_error() != Some(ETXTBSY) || attempts >= MAX_ATTEMPTS {
-                    return Err(error);
-                }
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-        }
-    }
+#[test]
+fn pid_capture_publishes_owner_with_process_identity() {
+    let temp = TempDir::new().unwrap();
+    let pid_file = temp.path().join("agent.pid");
+    let escaped = shell_escape::escape(pid_file.to_string_lossy());
+    let script = pid_capture(&escaped, "loom-owner:loom-v2-contract-auth");
+    let result = std::process::Command::new("bash")
+        .arg("-c")
+        .arg(script)
+        .status()
+        .unwrap();
+    assert!(result.success());
+    let contents = fs::read_to_string(pid_file).unwrap();
+    let mut lines = contents.lines();
+    assert!(lines.next().unwrap().parse::<u32>().unwrap() > 0);
+    let _start_time = lines.next().unwrap();
+    assert_eq!(lines.next(), Some("loom-owner:loom-v2-contract-auth"));
 }
 
 #[test]
@@ -52,7 +44,7 @@ fn test_wrapper_script_creation() {
     assert!(wrapper_path.exists());
     let content = fs::read_to_string(&wrapper_path).unwrap();
     assert!(content.contains("#!/bin/bash"));
-    assert!(content.contains("echo $$"));
+    assert!(content.contains("loom-owner:loom-v2-stage-test-stage"));
     assert!(content.contains(claude_cmd));
     assert!(content.contains("LOOM_SESSION_ID"));
     assert!(content.contains(session_id));
@@ -100,7 +92,7 @@ fn test_wrapper_script_with_working_dir() {
     let content = fs::read_to_string(&wrapper_path).unwrap();
     assert!(content.contains("#!/bin/bash"));
     assert!(content.contains("cd /tmp/test-worktree"));
-    assert!(content.contains("echo $$"));
+    assert!(content.contains("loom-owner:loom-v2-stage-test-stage-cwd"));
     assert!(content.contains(claude_cmd));
     assert!(content.contains("LOOM_WORKTREE_PATH"));
     assert!(content.contains("/tmp/test-worktree"));
@@ -152,12 +144,10 @@ fn merge_session_env_follows_kind_not_stage_id_prefix() {
     assert!(!regular_content.contains("LOOM_MERGE_SESSION"));
 }
 
-/// Only stage and contract sessions run in a worktree. Merge, knowledge, base-conflict and
-/// adjudication sessions `cd` into the main repo, so exporting
-/// `LOOM_WORKTREE_PATH` for them would make presence-based gates treat a
-/// main-repo agent as a sandboxed worktree agent — which used to make knowledge
-/// stages impossible to complete, and which `loom stage adjudicate` now reads
-/// the other way round to refuse a verdict written from a stage worktree.
+/// Only stage and contract sessions export `LOOM_WORKTREE_PATH`. Merge
+/// sessions also run in a stage worktree, but are not stage agents;
+/// knowledge and adjudication run in the main repository. Presence-based
+/// gates use the variable to identify stage agents.
 #[test]
 fn worktree_path_is_exported_only_for_stage_sessions() {
     let temp_dir = TempDir::new().unwrap();
@@ -289,7 +279,10 @@ fn wrapper_stderr_capture_survives_execution() {
     // `output()` reads the pipes to EOF before returning, and `tee` holds fd 1
     // open until it has flushed, so the log is complete by the time this call
     // comes back.
-    let output = retry_past_etxtbsy(|| std::process::Command::new(&wrapper_path).output()).unwrap();
+    let output = std::process::Command::new("bash")
+        .arg(&wrapper_path)
+        .output()
+        .unwrap();
     assert!(output.status.success());
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -320,13 +313,12 @@ fn wrapper_executes_with_minimal_environment_and_no_ambient_secret() {
     )
     .unwrap();
 
-    let status = retry_past_etxtbsy(|| {
-        std::process::Command::new(&wrapper)
-            .env("ANTHROPIC_API_KEY", "ambient-secret-canary")
-            .env("GITHUB_TOKEN", "ambient-secret-canary")
-            .status()
-    })
-    .unwrap();
+    let status = std::process::Command::new("bash")
+        .arg(&wrapper)
+        .env("ANTHROPIC_API_KEY", "ambient-secret-canary")
+        .env("GITHUB_TOKEN", "ambient-secret-canary")
+        .status()
+        .unwrap();
     assert!(status.success());
 
     let environment = fs::read_to_string(output_path).unwrap();

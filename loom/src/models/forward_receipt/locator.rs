@@ -15,7 +15,8 @@ const MAX_WORKSPACE_CHILDREN: usize = 256;
 pub fn read_bounded_prefix(path: &Path, max_bytes: usize) -> anyhow::Result<String> {
     let file = OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
+        // A FIFO must not block the open before descriptor type validation.
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)
         .with_context(|| format!("opening {} without following symlinks", path.display()))?;
     let metadata = file
@@ -57,7 +58,7 @@ fn decode_utf8_prefix(bytes: Vec<u8>) -> anyhow::Result<String> {
     }
 }
 
-fn effective_uid() -> u32 {
+pub(crate) fn effective_uid() -> u32 {
     // SAFETY: geteuid has no arguments and only reads process credentials.
     unsafe { libc::geteuid() }
 }

@@ -25,7 +25,7 @@ fn test_session_marks_context_exhausted() {
 }
 
 #[test]
-fn test_context_exhausted_triggers_stage_needs_handoff() {
+fn test_session_and_stage_handoff_transitions() {
     let mut session = Session::new();
     let mut stage = Stage::new("test-stage".to_string(), None);
 

@@ -19,6 +19,7 @@ pub mod collection;
 pub mod completion;
 pub(crate) mod failed_builds;
 pub mod format_gate;
+pub(crate) mod freeze;
 pub mod frozen_set;
 pub mod refusal;
 pub mod run_dir;

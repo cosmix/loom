@@ -50,13 +50,13 @@ fn file(slug: &str) -> DiscoveredFile {
 
 #[test]
 fn stage_filter_matches_only_worktree_suffix() {
-    let files = filter_stage(
+    let files = filter_stages(
         vec![
             file("-repo--worktrees-measure"),
             file("-repo--worktrees-other"),
             file("-repo"),
         ],
-        "measure",
+        &HashSet::from(["measure".to_owned()]),
     );
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].project_slug, "-repo--worktrees-measure");
@@ -78,6 +78,23 @@ fn normalize_plan_strips_status_prefix_before_plan_prefix() {
         normalize_plan(Path::new("doc/plans/DONE-PLAN-foo.md")),
         "foo"
     );
+}
+
+#[test]
+fn plan_resolution_uses_selected_work_root() -> Result<()> {
+    let foreign = tempfile::tempdir()?;
+    std::fs::write(
+        foreign.path().join("config.toml"),
+        "[plan]\nsource_path = \"doc/plans/PLAN-foreign.md\"\nplan_id = \"foreign\"\nplan_name = \"Foreign\"\nbase_branch = \"main\"\n",
+    )?;
+    std::fs::create_dir(foreign.path().join("stages"))?;
+    std::fs::write(foreign.path().join("stages/beta.md"), "")?;
+    assert_eq!(
+        plan_stage_ids("foreign", Some(foreign.path()))?,
+        Some(HashSet::from(["beta".to_owned()]))
+    );
+    assert_eq!(plan_stage_ids("local", Some(foreign.path()))?, None);
+    Ok(())
 }
 
 #[test]
@@ -160,8 +177,7 @@ fn collect_projects_skips_unreadable_project_directory_under_sweep() {
         claude_root: None,
         project: None,
         all: true,
-        stage: None,
-        plan: None,
+        selected_stages: None,
     };
     let result = collect_projects(root.path(), &options);
 
@@ -205,8 +221,7 @@ fn explicit_root_discovers_old_mtime_file_without_home_fallback() -> Result<()> 
         claude_root: Some(root.path().to_path_buf()),
         project: None,
         all: true,
-        stage: None,
-        plan: None,
+        selected_stages: None,
     };
 
     let files = discover(&options)?;
@@ -226,8 +241,7 @@ fn missing_explicit_root_is_empty_and_diagnostic() -> Result<()> {
         claude_root: Some(temp.path().join("missing")),
         project: None,
         all: true,
-        stage: None,
-        plan: None,
+        selected_stages: None,
     };
 
     assert!(discover(&options)?.is_empty());
@@ -307,8 +321,7 @@ fn project_selection_includes_removed_worktrees_only() -> Result<()> {
         claude_root: Some(temp.path().to_path_buf()),
         project: Some(project.path().to_path_buf()),
         all: false,
-        stage: None,
-        plan: None,
+        selected_stages: None,
     };
 
     assert_eq!(

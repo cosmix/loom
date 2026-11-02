@@ -25,7 +25,7 @@
 //! like any session; typing into the session, an accepted freeze and
 //! `loom stage resume` end that wait ([`end_wait`]).
 
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
@@ -201,6 +201,15 @@ pub enum RefusalSource {
     Writer,
 }
 
+/// Durable host-job origin. Order zero denotes a job recorded before the
+/// per-stage submission counter existed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JobRefusalOrigin {
+    pub job_id: String,
+    pub submission_order: u64,
+}
+
 /// `refused.json`: a refused freeze of the session `session_id`, waiting for
 /// the tick step to file it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -210,6 +219,8 @@ pub struct DaemonRefusal {
     pub problems: Vec<String>,
     pub at: DateTime<Utc>,
     pub source: RefusalSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_origin: Option<JobRefusalOrigin>,
     /// The admission's reason when loom declined to file it; a declined
     /// refusal is never filed again.
     pub declined: Option<String>,
@@ -230,11 +241,55 @@ pub fn record_daemon_refusal(
         problems: problems.to_vec(),
         at: Utc::now(),
         source,
+        job_origin: None,
         declined: None,
     };
     let dir = refusal_dir(work_dir, stage_id)?;
     locked_dir_update(&dir, || write_refusal(&dir, &record))
         .with_context(|| format!("failed to record the refused freeze of stage '{stage_id}'"))
+}
+
+/// Write a host-job refusal under the refusal lock. A later job from the
+/// same writer wins; an older job cannot replace it. An unversioned refusal
+/// has unknown order, so the caller must retry after it is consumed.
+/// Returns false when a newer job has already published its refusal.
+pub fn record_job_refusal(
+    work_dir: &Path,
+    stage_id: &str,
+    session_id: &str,
+    origin: JobRefusalOrigin,
+    problems: &[String],
+) -> Result<bool> {
+    let dir = refusal_dir(work_dir, stage_id)?;
+    locked_dir_update(&dir, || {
+        if let Some(existing) =
+            daemon_refusal(work_dir, stage_id)?.filter(|existing| existing.session_id == session_id)
+        {
+            let prior = existing
+                .job_origin
+                .context("unversioned refusal has unknown job order")?;
+            if prior == origin {
+                return Ok(true);
+            }
+            ensure!(
+                prior.submission_order != origin.submission_order,
+                "distinct host jobs share a refusal order"
+            );
+            if prior.submission_order > origin.submission_order {
+                return Ok(false);
+            }
+        }
+        let record = DaemonRefusal {
+            session_id: session_id.to_string(),
+            problems: problems.to_vec(),
+            at: Utc::now(),
+            source: RefusalSource::Daemon,
+            job_origin: Some(origin),
+            declined: None,
+        };
+        write_refusal(&dir, &record)?;
+        Ok(true)
+    })
 }
 
 /// The refusal on record for `stage_id`, if any.

@@ -46,6 +46,8 @@ When every check in a suite fails at once, suspect the harness. Also: the PATH b
 
 → [Verification Harnesses](mistakes/verification-harness.md)
 
+Group cleanup must trace each wrapper and session boundary. Bubblewrap starts a new session, so a host group guardian reaches sandbox descendants through the wrapper's parent-death contract: [Host Verify Group Containment](mistakes/host-verify-group-containment.md).
+
 ## Knowledge CLI and Filesystem Invariants (2026-07-28)
 
 Invariants belong in the filesystem constructor, not the CLI handler; sibling-file refreshes must happen outside the directory lock; `update` appends, so retries duplicate; CWD resolution for knowledge commands.
@@ -124,6 +126,11 @@ Resolver fixtures, candidate narrowing across files, cache mutation outside Grap
 
 Review rounds recorded twice or counted per message, a re-review after every small fix, gate runs that repeat the criteria completion runs, and a verifier round started before the cheap checks. → [Gate and Review Rounds](mistakes/subagent-orchestration.md)
 
+Keep completed review findings separate from active assignments, and replenish independent work to the requested concurrency. → [Review Tracker](mistakes/review-tracker.md)
+
+Coordinate shared build resources and verify integrated fixtures before claiming a green gate.
+→ [Review Integration Verification](mistakes/review-integration-verification.md)
+
 ## Runtime and Daemon Incidents
 
 Ten incidents: merge cleanup that destroyed the evidence it needed, a tracked `<file>.tmp` symlink redirecting a locked write, a broker fallback the client could never reach, two daemons on one `.loom/work/`, the adjudication deadlock, status-broadcast eviction, live-state pollution from the tests of one stage, spurious waiting-for-input, an unbounded walk up the filesystem, and parallel worktrees sharing derived state.
@@ -135,6 +142,10 @@ Ten incidents: merge cleanup that destroyed the evidence it needed, a tracked `<
 Eight lessons: a store shipped without its consumer, a strict schema attribute breaking a second reader, writer and reader disagreeing on one address, a doctrine channel that was not privileged, computed values with hidden couplings, visibility capped by path reachability, auditing untrusted-value boundaries, and a raw string ended early by its own body.
 
 → [Design and Boundary Lessons](mistakes/untrusted-value-boundaries.md)
+
+A frontmatter split must keep the YAML start and post-delimiter body start as
+separate offsets; tests should assert both slices across line-ending variants.
+→ [Frontmatter boundary offsets](mistakes/frontmatter-boundary.md)
 
 ## Agent and Process Lessons
 
@@ -190,3 +201,8 @@ Review handlers briefed without lock, guard and subscriber order; codex and fixe
 ## Planner UI Redesign Delivery
 
 A path-convention move that left hardcoded homes in the crate, jsdom tests green over a broken browser (stale fixtures, nested routers, unserved fonts), an unowned "spec changes before running" table, subset gates that hid four failures until integration-verify, briefs missing facts only the code held, and orchestration slips. → [Moving a Path Convention Left Hardcoded Homes](mistakes/plan-server-delivery.md#moving-a-path-convention-left-hardcoded-homes-in-the-crate-2026-10-29) and the entries after it The repair plan's own slips (a hidden component's hooks, a conditional hook that passed lint, rewritten tests that lost guards, parallel stages merging into red tests, a resolver dead end, a Codex backend whose ids failed its own validator): → [Planner UI Repair](mistakes/planner-ui-repair.md)
+
+## Astra Review Continuation
+
+Parallel review repairs need explicit ownership, retained user data, and finding-specific verification.
+See [review-continuation-verification](mistakes/review-continuation-verification.md) for coordination and test lessons, and [review-final-wave](mistakes/review-final-wave.md) for fixtures that could not fail, git internals assumed from memory, and capping open-ended review rounds.

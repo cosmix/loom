@@ -17,8 +17,8 @@ const stage = (id: string, dependencies: string[], template = stages[0]!): Stage
 });
 
 function renderThread(layout: GraphLayout, edge: ThreadEdgeType) {
-  const source = layout.nodes.find((node) => node.stage.id === edge.source)!;
-  const target = layout.nodes.find((node) => node.stage.id === edge.target)!;
+  const source = layout.nodes.find((node) => node.id === edge.source)!;
+  const target = layout.nodes.find((node) => node.id === edge.target)!;
   return render(
     <svg>
       <ThreadEdge
@@ -46,8 +46,8 @@ function expectClearThreads(input: StageSummary[]) {
     const path = container.querySelector(".thread-base")!.getAttribute("d")!;
     const samples = samplePath(path);
     expect(samples.length).toBeGreaterThan(1);
-    const source = layout.nodes.find((node) => node.stage.id === edge.source)!;
-    const target = layout.nodes.find((node) => node.stage.id === edge.target)!;
+    const source = layout.nodes.find((node) => node.id === edge.source)!;
+    const target = layout.nodes.find((node) => node.id === edge.target)!;
     expect(samples[0]).toEqual({ x: source.x + source.width / 2, y: source.y + source.height + 5 });
     expect(samples.at(-1)).toEqual({ x: target.x + target.width / 2, y: target.y - 5 });
     for (const node of layout.nodes) {
@@ -58,7 +58,7 @@ function expectClearThreads(input: StageSummary[]) {
           y > node.y - 2 &&
           y < node.y + node.height + 2,
       );
-      expect(hits.length, `${edge.id} crosses ${node.stage.id}`).toBe(0);
+      expect(hits.length, `${edge.id} crosses ${node.id}`).toBe(0);
     }
     const running = container.querySelector(".thread-run");
     if (edge.data?.thread.style === "running") expect(running?.getAttribute("d")).toBe(path);

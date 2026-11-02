@@ -92,9 +92,9 @@ fn snapshot(path: &str, content: Option<&str>) -> ChangeFingerprint {
 }
 
 #[test]
-fn gate_allows_only_comment_and_prose_changes() {
+fn gate_allows_only_prose_changes() {
     let cases = [
-        ("a.rs", "fn a() {}\n", "// note\nfn a() {}\n\n", true),
+        ("a.rs", "fn a() {}\n", "// note\nfn a() {}\n\n", false),
         ("a.rs", "fn a() {}\n", "fn b() {}\n", false),
         (
             "a.rs",
@@ -123,6 +123,9 @@ fn gate_allows_only_comment_and_prose_changes() {
         write_round_case(&fx, seen, &snapshot(path, Some(after)), allowed, path);
     }
 }
+
+#[path = "gate_freshness_tests.rs"]
+mod freshness_tests;
 
 fn write_round_case(
     fx: &Fixture,

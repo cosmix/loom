@@ -126,6 +126,59 @@ fn pending_dispute_is_offered_a_session_and_counted() {
     );
 }
 
+#[test]
+fn corrupt_spawn_budget_stops_session_handoff() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    std::fs::create_dir_all(work.join("stages")).unwrap();
+    write_stage(work, &make_stage("s1"));
+    write_dispute_request(work, "s1", 1, 0);
+    let counter = work.join("disputes/s1/1/attempts");
+    std::fs::write(&counter, "invalid").unwrap();
+
+    assert!(AdjudicatorRegistry::new()
+        .disputes_awaiting_session(work)
+        .is_err());
+    assert_eq!(std::fs::read_to_string(counter).unwrap(), "invalid");
+}
+
+#[test]
+fn failed_spawn_charge_stops_session_handoff() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    std::fs::create_dir_all(work.join("stages")).unwrap();
+    write_stage(work, &make_stage("s1"));
+    write_dispute_request(work, "s1", 1, 0);
+    let registry = AdjudicatorRegistry::new();
+    let result = super::counter::with_write_failure(|| registry.disputes_awaiting_session(work));
+    assert!(result.is_err());
+    assert!(!work.join("disputes/s1/1/attempts").exists());
+    assert_eq!(
+        registry.disputes_awaiting_session(work).unwrap().jobs.len(),
+        1
+    );
+    assert_eq!(attempt_count(work, "s1", 1), 1);
+}
+
+#[test]
+fn uncertain_session_inventory_does_not_offer_a_second_adjudicator() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    std::fs::create_dir_all(work.join("stages")).unwrap();
+    write_stage(work, &make_stage("s1"));
+    write_dispute_request(work, "s1", 1, 0);
+    let sessions = work.join("sessions");
+    std::fs::create_dir(&sessions).unwrap();
+    std::fs::write(sessions.join("broken.md"), "malformed").unwrap();
+
+    let pending = AdjudicatorRegistry::new()
+        .disputes_awaiting_session(work)
+        .unwrap();
+
+    assert!(pending.jobs.is_empty());
+    assert_eq!(attempt_count(work, "s1", 1), 0);
+}
+
 /// Two unanswered disputes on one stage (an abandoned one plus the live one)
 /// must still produce a single adjudicator.
 #[test]

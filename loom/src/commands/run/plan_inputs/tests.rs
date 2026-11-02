@@ -54,6 +54,7 @@ fn fixture() -> (TempDir, WorkDir) {
     let work = WorkDir::new(root).unwrap();
     fs::create_dir_all(work.root()).unwrap();
     configure(&work, &root.join(PLAN));
+    crate::git::worktree::capture_main_identity(root, work.root()).unwrap();
     (temp, work)
 }
 
@@ -68,6 +69,46 @@ fn configure(work: &WorkDir, plan: &Path) {
 fn commit_inputs(root: &Path) {
     git(root, &["add", "doc/plans"]);
     git(root, &["commit", "-m", "docs: add plan and briefs"]);
+}
+
+#[path = "pinned_tests.rs"]
+mod pinned_tests;
+
+/// Git's lock on the real index stops only the publication after the commit: the
+/// branch has moved, so the commit stands and is not reported as failed.
+#[test]
+fn a_commit_that_lost_only_its_index_publication_stands() {
+    let (temp, _work) = fixture();
+    let root = temp.path();
+    commit_inputs(root);
+    write(root, "renamed.md", "renamed\n");
+    git(root, &["add", "renamed.md"]);
+    let before = git(root, &["rev-parse", "HEAD"]);
+    let lock = root.join(".git/index.lock");
+    fs::write(&lock, "").unwrap();
+    let pinned = crate::git::worktree::WorktreeGit::pinned_main(root).unwrap();
+    let paths = ["renamed.md".to_string(), "renamed.md".to_string()];
+
+    super::commit_paths(&pinned, &paths).unwrap();
+
+    fs::remove_file(&lock).unwrap();
+    assert_ne!(git(root, &["rev-parse", "HEAD"]), before);
+    assert_eq!(git(root, &["show", "HEAD:renamed.md"]), "renamed");
+}
+
+/// A commit git itself refused moved nothing, so the error stays.
+#[test]
+fn a_commit_that_moved_nothing_still_fails() {
+    let (temp, _work) = fixture();
+    let root = temp.path();
+    commit_inputs(root);
+    let before = git(root, &["rev-parse", "HEAD"]);
+    let pinned = crate::git::worktree::WorktreeGit::pinned_main(root).unwrap();
+    let paths = ["seed".to_string(), "seed".to_string()];
+
+    assert!(super::commit_paths(&pinned, &paths).is_err());
+
+    assert_eq!(git(root, &["rev-parse", "HEAD"]), before);
 }
 
 #[test]

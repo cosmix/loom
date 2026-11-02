@@ -5,6 +5,7 @@ mod identity;
 mod lease;
 mod model;
 mod output;
+mod parent_scan;
 mod stall;
 
 #[cfg(test)]

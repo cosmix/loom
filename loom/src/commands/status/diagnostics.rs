@@ -1,5 +1,5 @@
+use super::validation::scan_markdown;
 use crate::fs::work_dir::WorkDir;
-use crate::parser::markdown::MarkdownDocument;
 use anyhow::Result;
 use colored::Colorize;
 use std::fs;
@@ -38,38 +38,25 @@ pub fn check_parsing_errors(work_dir: &WorkDir) -> Result<usize> {
     ];
 
     for (entity_type, dir) in dirs {
-        if !dir.exists() {
-            continue;
-        }
-
-        for entry in fs::read_dir(&dir)? {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path.is_file() && path.extension().is_some_and(|e| e == "md") {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    if MarkdownDocument::parse(&content).is_err() {
-                        let file_name = path.file_name().ok_or_else(|| {
-                            anyhow::anyhow!("Path has no file name: {}", path.display())
-                        })?;
-                        println!(
-                            "{} Invalid {} file: {:?}",
-                            "WARNING:".yellow().bold(),
-                            entity_type,
-                            file_name
-                        );
-                        println!(
-                            "  {} Check frontmatter and markdown syntax",
-                            "Fix:".yellow()
-                        );
-                        issues += 1;
-                    }
-                }
+        for (path, parsed) in scan_markdown(&dir)? {
+            if parsed.is_err() {
+                let file_name = path
+                    .file_name()
+                    .ok_or_else(|| anyhow::anyhow!("Path has no file name: {}", path.display()))?;
+                println!(
+                    "{} Invalid {} file: {:?}",
+                    "WARNING:".yellow().bold(),
+                    entity_type,
+                    file_name
+                );
+                println!(
+                    "  {} Check frontmatter and markdown syntax",
+                    "Fix:".yellow()
+                );
+                issues += 1;
             }
         }
     }
 
     Ok(issues)
 }
-
-// Runner and track diagnostics removed - these concepts no longer exist
