@@ -200,6 +200,12 @@ pub enum Commands {
         fix: bool,
     },
 
+    /// Answer one question about named files with a one-shot worker that has no tools
+    Ask {
+        #[command(flatten)]
+        args: crate::commands::ask::AskArgs,
+    },
+
     /// Query the derived source graph: file outlines, symbol lookup, impact analysis
     Map {
         #[command(flatten)]
