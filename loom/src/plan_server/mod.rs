@@ -257,6 +257,13 @@ pub fn run(args: &PlanServeArgs) -> Result<()> {
         read_only: ReadOnly::detect(),
     };
     let server = start(options)?;
+    let drains_rx = match install_stop_handler(&server) {
+        Ok(drains_rx) => drains_rx,
+        Err(error) => {
+            let _ = server.stop();
+            return Err(error);
+        }
+    };
     let base = display_addrs(server.local).first().map_or_else(
         || format!("http://{}", server.local),
         |addr| format!("http://{addr}"),
@@ -266,7 +273,7 @@ pub fn run(args: &PlanServeArgs) -> Result<()> {
         return Err(error);
     }
     announce(&server, &root, args.no_open);
-    serve_until_stopped(server)
+    serve_until_stopped(server, drains_rx)
 }
 
 /// Print the startup lines, then open the first URL unless `--no-open`, SSH or no display.
@@ -290,9 +297,13 @@ fn announce(server: &RunningServer, root: &Path, no_open: bool) {
     }
 }
 
-/// Block until the first stop signal's drains finish (then stop and return Ok), or until the
-/// accept loop ends by itself (then return its result). A second signal exits at once.
-fn serve_until_stopped(server: RunningServer) -> Result<()> {
+/// Install the Ctrl-C handler and return the channel the first signal's drains arrive on.
+///
+/// It runs before the URL exists because whoever reads the URL may signal at once, and without
+/// the handler that signal kills the server with no drain. A signal that arrives while the
+/// startup lines print only queues its drains on the channel, which [`serve_until_stopped`]
+/// reads once it starts.
+fn install_stop_handler(server: &RunningServer) -> Result<mpsc::Receiver<JoinHandle<()>>> {
     let (drains_tx, drains_rx) = mpsc::channel();
     let ctx = Arc::clone(&server.ctx);
     let on_first = move || {
@@ -304,6 +315,15 @@ fn serve_until_stopped(server: RunningServer) -> Result<()> {
         std::process::exit,
     )
     .context("failed to install the Ctrl-C handler")?;
+    Ok(drains_rx)
+}
+
+/// Block until the first stop signal's drains finish (then stop and return Ok), or until the
+/// accept loop ends by itself (then return its result). A second signal exits at once.
+fn serve_until_stopped(
+    server: RunningServer,
+    drains_rx: mpsc::Receiver<JoinHandle<()>>,
+) -> Result<()> {
     loop {
         match drains_rx.recv_timeout(Duration::from_millis(200)) {
             Ok(drains) => return server.stop_when_drained(drains),
