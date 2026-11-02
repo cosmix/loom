@@ -9,12 +9,12 @@
 | File | Description | Lines |
 | --- | --- | --- |
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 250 |
-| [entry-points.md](entry-points.md) | Key files agents should read first | 77 |
+| [entry-points.md](entry-points.md) | Key files agents should read first | 81 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 208 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 115 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 220 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 226 |
 
 ## Tier 2 — Topics
 
@@ -42,11 +42,12 @@
 | [hook-system](architecture/hook-system.md) |  | 309 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Digest | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
+| [loom-ask](architecture/loom-ask.md) | loom ask worker and --eval | 75 |
 | [memory-spool](architecture/memory-spool.md) |  | 205 |
 | [merge-checkout-state](architecture/merge-checkout-state.md) | FF | 32 |
 | [merge-flow](architecture/merge-flow.md) |  | 133 |
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Ticks | 80 |
-| [owned-waits](architecture/owned-waits.md) | One bound wait per parent session, keyed to an explicit worker set, replacing a… | 70 |
+| [owned-waits](architecture/owned-waits.md) | One bound wait per session | 72 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 257 |
 | [plan-server](architecture/plan-server.md) | Chat | 245 |
 | [planner-feature-screens](architecture/planner-feature-screens.md) | Layout route, spine, offers | 25 |
@@ -57,11 +58,12 @@
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 146 |
 | [pressure](architecture/pressure.md) | Pipeline | 42 |
 | [quota-poller](architecture/quota-poller.md) |  | 37 |
+| [read-gate](architecture/read-gate.md) | Read gate, deny-once, attribution | 146 |
 | [remote-control](architecture/remote-control.md) |  | 81 |
 | [run-handoff](architecture/run-handoff.md) | Run lane | 52 |
-| [security-and-isolation](architecture/security-and-isolation.md) | config.worktree deny and check | 198 |
+| [security-and-isolation](architecture/security-and-isolation.md) | Worktree deny and check | 200 |
 | [signal-generation](architecture/signal-generation.md) |  | 241 |
-| [skill-catalog](architecture/skill-catalog.md) |  | 155 |
+| [skill-catalog](architecture/skill-catalog.md) |  | 158 |
 | [source-graph](architecture/source-graph.md) | Contract | 371 |
 | [source-graph-build](architecture/source-graph-build.md) | Builder | 129 |
 | [source-graph-evaluation](architecture/source-graph-evaluation.md) | Evaluator | 68 |
@@ -72,7 +74,7 @@
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 285 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 56 |
-| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 376 |
+| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 358 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Daemon-run gates | 248 |
@@ -86,9 +88,9 @@
 | [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI | 192 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) |  | 80 |
 | [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Fs, git | 135 |
-| [hooks](entry-points/hooks.md) |  | 137 |
+| [hooks](entry-points/hooks.md) |  | 143 |
 | [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) |  | 250 |
-| [remote-control](entry-points/remote-control.md) | Remote control and permission modes | 98 |
+| [remote-control](entry-points/remote-control.md) | Remote control, permission modes | 98 |
 
 ### patterns
 
@@ -103,7 +105,7 @@
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) |  | 144 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) | Channels | 184 |
 | [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) |  | 206 |
-| [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out | 100 |
+| [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out | 101 |
 
 ### conventions
 
@@ -134,7 +136,7 @@
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 162 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 206 |
-| [completion-runtime](mistakes/completion-runtime.md) | Churn | 72 |
+| [completion-runtime](mistakes/completion-runtime.md) | Churn | 74 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Couplings | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 107 |
 | [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 75 |
@@ -152,12 +154,12 @@
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
 | [live-state-pollution](mistakes/live-state-pollution.md) |  | 133 |
 | [maintainability-baseline](mistakes/maintainability-baseline.md) |  | 96 |
-| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) |  | 37 |
+| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) |  | 39 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | Cleanup | 205 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Git ops | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) |  | 25 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Merge cleanup, daemon singleton, broker, waiting-state incidents | 353 |
-| [phantom-merges](mistakes/phantom-merges.md) | Plan stages split by compile order instead of merge order | 347 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Merge, daemon, broker incidents | 355 |
+| [phantom-merges](mistakes/phantom-merges.md) | Split by compile order | 349 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 49 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Delivery slips | 371 |
@@ -170,7 +172,7 @@
 | [review-continuation-verification](mistakes/review-continuation-verification.md) | Astra review repair lessons | 331 |
 | [review-final-wave](mistakes/review-final-wave.md) | Final repair wave lessons | 190 |
 | [review-integration-verification](mistakes/review-integration-verification.md) | Integrated review failures | 168 |
-| [review-tracker](mistakes/review-tracker.md) | Keep findings and review assignments current | 353 |
+| [review-tracker](mistakes/review-tracker.md) | Findings and assignments | 353 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 391 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) |  | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) |  | 299 |
@@ -199,7 +201,7 @@
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) |  | 141 |
 | [web-dashboard](mistakes/web-dashboard.md) | UI | 17 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Races | 278 |
-| [web-terminal](mistakes/web-terminal.md) | Mistakes in the PTY/tmux terminal bridge under… | 135 |
+| [web-terminal](mistakes/web-terminal.md) | Terminal bridge mistakes | 135 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Keys | 115 |
 
 ### concerns
@@ -214,6 +216,7 @@
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) |  | 15 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 108 |
+| [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) | loom ask, read gate gaps | 112 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 40 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 103 |
@@ -223,9 +226,9 @@
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 204 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 363 |
-| [session-tmpdir-deny](concerns/session-tmpdir-deny.md) | TMPDIR read-only in sessions | 11 |
+| [session-tmpdir-deny](concerns/session-tmpdir-deny.md) | Read-only TMPDIR | 11 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 86 |
-| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Host-verification review suggestions: open and fixed defects by file:line | 301 |
+| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Host-verify review items | 303 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 334 |
 | [typed-config-values](concerns/typed-config-values.md) | Gaps | 22 |

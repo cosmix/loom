@@ -1,6 +1,6 @@
 # Remote Control
 >
-> Remote control and permission modes
+> Remote control, permission modes
 
 >
 

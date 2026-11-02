@@ -349,25 +349,7 @@ are YAML-indented and have no Markdown divider row; the parser accepts that shap
 
 ## Read Advisories and Reread Measurement
 
-No Rust delegate, intent or receipt store backs a read, and no rule judges a same-agent repeat.
-The measured saving at stake is small: identical same-agent rereads are 29 of 7,612 stage Read
-results, about 0.4% of Read characters. Why the earlier receipt path never worked:
-[Read Receipts Could Not Form](../mistakes/store-without-consumer.md#read-receipts-could-not-form-and-fixtures-wrote-the-pair-before-completion-2026-10-20).
-
-`loom_read_discipline_check` (`loom-hooks/_read_discipline.sh`) keeps rules 0 and 0b (exemptions for
-a skill's `SKILL.md` and `INDEX.md`), 1 (a whole read over `READ_GUARD_LINE_LIMIT` lines is
-redirected to `loom map --outline`), 3 (an unscoped tier-1 knowledge read) and 4 (a whole-file read
-a sibling agent of the session already requested of the unchanged file is advised once per agent
-and path). The number 2 is deliberately unused. Rule 4 reads the sibling ledger written by
-`_read_ledger.sh` (`_loom_read_sibling_request`); the advisory says the file was requested whole by
-N agents, an attempt and not proof of delivery. The ledger is
-`$LOOM_WORK_DIR/hooks/reads/<session>/<agent>.tsv` inside a stage and a private
-`$TMPDIR/loom-reads/` directory outside one.
-
-Rereads are measured after the fact: the `reads` section of `loom usage`
-(`loom/src/commands/usage/sections/reads.rs`) counts native and shell reads from transcripts. If
-that measurement shows same-agent rereads above 2% of Read characters, the revival design is
-completion at the agent's next Read, from a transcript offset recorded at prepare time.
+The read gate (rule 1 of `loom_read_discipline_check`) is deny-once inside a live stage: an agent's first whole read of a large file is denied with `loom map --outline`, its repeat passes, and `[hooks] read_gate = false` turns the denial into a warning. Rereads are measured after the fact by the `reads` section of `loom usage`, where `same_transcript_rereads` counts a denied attempt plus its retry. Full rules, ledgers and measurement: [Read Gate](read-gate.md).
 
 ## Signal Caps and the IV Gate
 
