@@ -95,6 +95,16 @@ _loom_expand_shell_c() {
         return 0
     fi
 
+    # LOOM_TOKEN_SEPS moves with its tokens. Each payload walk below replaces
+    # it, and "${out_seps[@]}" keeps indices only because no entry is skipped.
+    local -a src_seps out_seps
+    src_seps=()
+    out_seps=()
+    local i k
+    for ((i = 0; i < n; i++)); do
+        src_seps[$i]="${LOOM_TOKEN_SEPS[$i]:-}"
+    done
+
     # " 2 5 " - a space-delimited set, since bash 3.2 has no associative arrays
     local marks=" " idx
     for idx in $indices; do
@@ -103,9 +113,10 @@ _loom_expand_shell_c() {
 
     local -a out
     out=()
-    local i payload rc=0
+    local payload rc=0
     for ((i = 0; i < n; i++)); do
         out+=("${src[$i]}")
+        out_seps+=("${src_seps[$i]}")
         if [[ "$marks" != *" $i "* ]]; then
             continue
         fi
@@ -121,16 +132,23 @@ _loom_expand_shell_c() {
         _loom_expand_shell_c $((depth - 1)) || rc=1
         if ((${#LOOM_TOKENS[@]} > 0)); then
             out+=("%%SEP%%")
+            out_seps+=("")
             out+=("${LOOM_TOKENS[@]}")
+            for ((k = 0; k < ${#LOOM_TOKENS[@]}; k++)); do
+                out_seps+=("${LOOM_TOKEN_SEPS[$k]:-}")
+            done
             if ((i + 1 < n)) && [[ "${src[$((i + 1))]}" != "%%SEP%%" ]]; then
                 out+=("%%SEP%%")
+                out_seps+=("")
             fi
         fi
     done
 
     LOOM_TOKENS=()
+    LOOM_TOKEN_SEPS=()
     if ((${#out[@]} > 0)); then
         LOOM_TOKENS=("${out[@]}")
+        LOOM_TOKEN_SEPS=("${out_seps[@]}")
     fi
     return "$rc"
 }

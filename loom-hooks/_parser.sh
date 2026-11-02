@@ -110,6 +110,12 @@ BEGIN { inside = 0; marker = "" }
 # residual is accepted - a caller that must not be fooled by a self-chosen
 # argument value cannot rely on segment boundaries alone.
 #
+# LOOM_TOKEN_SEPS is a side channel for the callers that need what a sentinel
+# collapsed: at a sentinel's index it holds the raw separator characters of that
+# run as written outside quotes (`||`, `2>&1`'s `>&`), and any other index is
+# empty or unset, so read it with `${LOOM_TOKEN_SEPS[$i]:-}`. A substitution
+# opener adds no character.
+#
 # Arguments:
 #   $1 - The command string to tokenize
 #
@@ -143,7 +149,7 @@ _loom_tokenize_walk() {
     local started=0
     local last_was_sep=0
     local length=${#input}
-    local i char next entry
+    local i char next entry sentinel
     # Substitutions currently open, innermost last. Each entry is
     # "<kind>:<state>": the kind the close must match (`p` for `(` / `$(`,
     # `b` for a backtick) and the state to restore when it does. Bash 3.2 has
@@ -153,6 +159,7 @@ _loom_tokenize_walk() {
     local subst_depth=0
 
     LOOM_TOKENS=()
+    LOOM_TOKEN_SEPS=()
 
     for ((i = 0; i < length; i++)); do
         char="${input:$i:1}"
@@ -178,6 +185,8 @@ _loom_tokenize_walk() {
                     LOOM_TOKENS+=("%%SEP%%")
                     last_was_sep=1
                 fi
+                sentinel=$((${#LOOM_TOKENS[@]} - 1))
+                LOOM_TOKEN_SEPS[$sentinel]="${LOOM_TOKEN_SEPS[$sentinel]:-}$char"
                 case "$char" in
                 '(')
                     subst_stack[$subst_depth]="p:plain"

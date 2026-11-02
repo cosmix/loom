@@ -100,7 +100,6 @@ hook_context() {
 }
 
 # --- THE ENFORCEMENT GATE ---------------------------------------------------
-#
 # This hook runs in every Claude Code session, loom or not, and LOOM_STAGE_ID
 # leaks into plain sessions from the shell a prior loom run exported it into
 # (doc/loom/knowledge/mistakes/session-identity-env.md). Gated on it alone, an
