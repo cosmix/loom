@@ -15,6 +15,7 @@ use super::connection::{fail, PEEK_TIMEOUT, WRITE_TIMEOUT};
 use super::head::complete as complete_head;
 use super::http::{self, RequestHead};
 use super::limits::{Limits, Slot};
+use super::shutdown::{Completion, ShutdownPending};
 use super::unserved;
 
 /// How long [`serve`] waits, once stopped, for in-flight connections to end.
@@ -73,6 +74,13 @@ pub struct ServeConfig {
 /// Serve `listener` with `router` until `running` becomes false, then wait up
 /// to three seconds for in-flight connections to finish.
 ///
+/// Success means every handler has finished, including admitted mutations.
+/// A drain deadline returns [`ShutdownPending`]; remaining handlers retain
+/// the listener and router until they finish, even if the caller drops the
+/// error. They may complete updates admitted before stopping. Routers using
+/// [`http::read_body`] cancel incomplete bodies when stopping. A timeout never
+/// reports completed shutdown.
+///
 /// Fails closed before accepting anything when the policy is remote (a
 /// non-loopback bind) and carries no [`Auth`](super::auth::Auth).
 pub fn serve(
@@ -88,26 +96,32 @@ pub fn serve(
     );
     listener.set_nonblocking(true)?;
     let shared = Arc::new(Shared {
+        listener,
         router,
         policy: config.policy,
         limits: config.limits,
         running,
         thread_name: config.thread_name,
+        completion: Completion(Arc::new(AtomicBool::new(false))),
     });
     while shared.running.load(Ordering::SeqCst) {
-        accept_connection(&listener, &shared);
+        accept_connection(&shared.listener, &shared);
     }
-    drain_connections(&shared.limits);
-    Ok(())
+    drain_connections(&shared, local)
 }
 
 /// Everything a connection thread needs, shared by one `Arc` across them.
 pub(super) struct Shared {
+    // Workers keep the listening address reserved until their handlers finish.
+    // No worker accepts connections through this listener.
+    listener: TcpListener,
     pub(super) router: Arc<dyn Router>,
     pub(super) policy: AccessPolicy,
     pub(super) limits: Arc<Limits>,
     pub(super) running: Arc<AtomicBool>,
     pub(super) thread_name: &'static str,
+    // Must stay last: completion follows release of the listener and router.
+    completion: Completion,
 }
 
 fn accept_connection(listener: &TcpListener, shared: &Arc<Shared>) {
@@ -125,14 +139,32 @@ fn accept_connection(listener: &TcpListener, shared: &Arc<Shared>) {
     }
 }
 
-fn drain_connections(limits: &Limits) {
-    let deadline = Instant::now() + DRAIN_TIMEOUT;
-    while limits.connection_count() != 0 && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(50));
-    }
+fn drain_connections(shared: &Arc<Shared>, local: SocketAddr) -> Result<()> {
+    drain_until(shared, local, Instant::now() + DRAIN_TIMEOUT)
 }
 
-/// Handle one accepted connection; request bodies observe server shutdown.
+fn drain_until(shared: &Arc<Shared>, local: SocketAddr, deadline: Instant) -> Result<()> {
+    while !drained(shared) && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(50));
+    }
+    if !drained(shared) {
+        return Err(ShutdownPending::new(local, Arc::clone(&shared.completion.0)).into());
+    }
+    Ok(())
+}
+
+fn drained(shared: &Arc<Shared>) -> bool {
+    // A handler releases its slot just before its worker drops Shared. With
+    // accepting stopped, no new owner can appear, so both observations must
+    // agree before success can promise that the listening address is free.
+    shared.limits.connection_count() == 0 && Arc::strong_count(shared) == 1
+}
+
+#[cfg(test)]
+#[path = "serve_tests.rs"]
+mod tests;
+
+/// Handle one accepted connection, retaining ownership until the router returns.
 ///
 /// `_slot` is the connection's reservation: holding it here releases it when
 /// this thread ends, panic included. `Host` is checked ahead of the router, so

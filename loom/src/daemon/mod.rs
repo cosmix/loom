@@ -12,8 +12,11 @@ pub use protocol::{
     Request, Response, StageCompletionInfo, WireMessage,
 };
 pub use rpc::{current_session_id, send_request, try_send_request, user_credential, DaemonReach};
+pub(crate) use server::completion_diagnostics;
+pub(crate) use server::finish_foreground;
 #[cfg(test)]
 pub(crate) use server::handle_file_dispute;
+pub(crate) use server::remove_previous_outcome;
 pub use server::{
     admin_token_path, await_ready, collect_completion_summary, disable_spawn_for_tests,
     handle_dispute_criteria, read_auth_token, read_user_token, DaemonServer, DaemonStatus,

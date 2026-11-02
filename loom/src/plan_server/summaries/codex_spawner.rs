@@ -170,13 +170,17 @@ impl CodexSummarySpawner {
                     }
                 }
             });
-        if let Err(error) = watcher {
-            if let Some(job) = lock(&self.jobs).jobs.remove(session) {
-                let _ = killpg(job.pid, Signal::SIGKILL);
+        let watcher = match watcher {
+            Ok(watcher) => watcher,
+            Err(error) => {
+                if let Some(job) = lock(&self.jobs).jobs.remove(session) {
+                    let _ = killpg(job.pid, Signal::SIGKILL);
+                }
+                let _ = lock(&child).wait();
+                return Err(error).context("cannot start codex summary watcher");
             }
-            let _ = lock(&child).wait();
-            return Err(error).context("cannot start codex summary watcher");
-        }
+        };
+        ctx.own_worker("codex summary", watcher, None);
         Ok(())
     }
 }

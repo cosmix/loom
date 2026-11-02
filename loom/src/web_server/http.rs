@@ -8,6 +8,7 @@ use anyhow::{bail, Context, Result};
 
 mod body;
 pub use body::read_body;
+pub(crate) use body::read_body_within;
 
 /// Largest request head accepted by the server.
 pub const MAX_HEAD_BYTES: usize = 16 * 1024;

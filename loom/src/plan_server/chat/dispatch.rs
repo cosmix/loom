@@ -309,16 +309,17 @@ pub(super) fn release_ended(
         release_unless_open(ctx, bridge, leases, &starter);
         return;
     }
-    let (ctx, state, bridge) = (Arc::clone(ctx), Arc::clone(state), Arc::clone(bridge));
+    let (worker_ctx, state, bridge) = (Arc::clone(ctx), Arc::clone(state), Arc::clone(bridge));
     let leases = Arc::clone(leases);
     let waiting = thread::Builder::new()
         .name("loom-plan-release".into())
         .spawn(move || {
             let _starting = state.starting();
-            release_unless_open(&ctx, &bridge, &leases, &starter);
+            release_unless_open(&worker_ctx, &bridge, &leases, &starter);
         });
-    if let Err(error) = waiting {
-        tracing::warn!("authoring stays held after its chat ended: {error}");
+    match waiting {
+        Ok(worker) => ctx.own_worker("authoring release", worker, None),
+        Err(error) => tracing::warn!("authoring stays held after its chat ended: {error}"),
     }
 }
 

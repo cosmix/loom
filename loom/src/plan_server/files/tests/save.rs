@@ -18,6 +18,8 @@ use crate::plan_server::wire::server::{MissingPrereq, PrereqKind};
 use crate::plan_server::{RunningServer, ServerOptions};
 use crate::planning::sections::normalized_hash;
 
+mod concurrency;
+
 /// A project holding `files` (repo-relative) and its started server.
 fn served(files: &[(&str, &str)], read_only: ReadOnly) -> (TempDir, RunningServer) {
     let dir = tempfile::tempdir().unwrap();

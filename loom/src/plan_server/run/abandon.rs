@@ -18,12 +18,12 @@ mod tests;
 use std::path::{Path, PathBuf};
 
 use crate::commands::clean::{unmerged_loom_branches, UnmergedBranches};
-use crate::commands::status::data::collect_status_data;
 use crate::fs::work_dir::WorkDir;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::routes::RouteSpec;
 use crate::plan_server::wire::run::{AbandonView, UnmergedBranch};
 use crate::planning::runtime::RuntimePaths;
+use crate::status::data::collect_status_data;
 
 /// How an abandon or a finish-abandon ended.
 #[derive(Debug, Clone, PartialEq, Eq)]

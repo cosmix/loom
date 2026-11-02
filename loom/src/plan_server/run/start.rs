@@ -1,9 +1,9 @@
 //! Starting a run with the running loom binary and streamed child output.
 
 use std::io::{self, ErrorKind};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Weak};
+use std::sync::{mpsc, Arc, Weak};
 use std::thread;
 
 use super::child::{self, JobGuard};
@@ -108,14 +108,30 @@ fn accept_start(req: &ApiRequest<'_>) -> Result<(), ApiResponse> {
         .ok_or_else(|| ApiResponse::error(500, "internal", "run start is not installed"))?;
     let loom_bin = std::env::current_exe()
         .map_err(|error| ApiResponse::error(500, "internal", &error.to_string()))?;
+    spawn_start(ctx, guard, loom_bin, request, steps)
+}
+
+fn spawn_start(
+    ctx: Arc<PlanContext>,
+    guard: JobGuard,
+    loom_bin: PathBuf,
+    request: RunStartRequest,
+    steps: Steps,
+) -> Result<(), ApiResponse> {
+    let (finished, completion) = mpsc::channel();
+    let worker_ctx = Arc::clone(&ctx);
     let worker = thread::Builder::new()
         .name("plan-run-start".into())
-        .spawn(move || start_worker(ctx, guard, &loom_bin, &request, steps))
+        .spawn(move || {
+            start_worker(worker_ctx, guard, &loom_bin, &request, steps);
+            let _ = finished.send(());
+        })
         .map_err(|error| ApiResponse::error(500, "internal", &error.to_string()))?;
-    req.ctx.shutdown().register(ShutdownHook {
+    ctx.own_worker("run start", worker, None);
+    ctx.shutdown().register(ShutdownHook {
         name: "run start",
         drain: Box::new(move || {
-            let _ = worker.join();
+            let _ = completion.recv();
         }),
         abort: Box::new(|| {}),
     });

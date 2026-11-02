@@ -139,10 +139,10 @@ pub(crate) fn install_with(
         abort: Box::new(move || abort.abort()),
     });
     let stop = Arc::new(AtomicBool::new(false));
-    // Detached: `DriverStop` ends the driver with the context.
-    drop(bridge.run(Arc::clone(&stop)));
+    let driver = bridge.run(Arc::clone(&stop));
+    ctx.own_worker("chat driver", driver, Some(Arc::clone(&stop)));
     ctx.extensions().insert(Arc::new(DriverStop(stop)));
-    spawn_recovery(&bridge);
+    spawn_recovery(ctx, &bridge);
 }
 
 fn bridge_config(ctx: &PlanContext, slot: &Arc<GuidanceSlot>) -> BridgeConfig {
@@ -335,7 +335,7 @@ fn ended_line(
 }
 
 /// Recovery runs before the first chat can start (the bridge refuses starts until it ends).
-fn spawn_recovery(bridge: &Arc<Bridge>) {
+fn spawn_recovery(ctx: &PlanContext, bridge: &Arc<Bridge>) {
     let bridge = Arc::clone(bridge);
     let spawned = thread::Builder::new()
         .name("loom-plan-recover".into())
@@ -346,8 +346,11 @@ fn spawn_recovery(bridge: &Arc<Bridge>) {
                 lifecycle::line(&format!("left alone: session {id}, socket {socket}: {why}"));
             }
         });
-    if let Err(error) = spawned {
-        tracing::warn!("chats stay unavailable: session recovery could not start: {error}");
+    match spawned {
+        Ok(worker) => ctx.own_worker("chat recovery", worker, None),
+        Err(error) => {
+            tracing::warn!("chats stay unavailable: session recovery could not start: {error}")
+        }
     }
 }
 

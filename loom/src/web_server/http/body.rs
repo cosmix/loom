@@ -22,6 +22,9 @@ pub fn read_body(
     length: usize,
     running: &AtomicBool,
 ) -> Result<Vec<u8>> {
+    if length > MAX_BODY_BYTES {
+        bail!("request body exceeds {MAX_BODY_BYTES} bytes");
+    }
     read_body_until(
         stream,
         prefix,
@@ -29,6 +32,18 @@ pub fn read_body(
         running,
         Instant::now() + Duration::from_secs(5),
     )
+}
+
+/// [`read_body`] for a route whose own larger limit the caller already checked:
+/// the same cancellation on stop, with `limit` as the whole body's time budget.
+pub(crate) fn read_body_within(
+    stream: &mut TcpStream,
+    prefix: Vec<u8>,
+    length: usize,
+    running: &AtomicBool,
+    limit: Duration,
+) -> Result<Vec<u8>> {
+    read_body_until(stream, prefix, length, running, Instant::now() + limit)
 }
 
 #[cfg(test)]
@@ -42,9 +57,6 @@ fn read_body_until(
     running: &AtomicBool,
     deadline: Instant,
 ) -> Result<Vec<u8>> {
-    if length > MAX_BODY_BYTES {
-        bail!("request body exceeds {MAX_BODY_BYTES} bytes");
-    }
     let mut body = prefix;
     body.truncate(length);
     let mut chunk = [0_u8; 1024];

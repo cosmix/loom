@@ -1,11 +1,11 @@
 use super::*;
-use crate::commands::status::data::{
-    CompletionBlockerState, CompletionBlockerSummary, MergeSummary, ProgressSummary, StageSummary,
-    StatusData,
-};
 use crate::daemon::protocol::{CompletionSummary, DaemonConfig, StageCompletionInfo};
 use crate::models::session::{SessionBackendKind, SessionExitReason};
 use crate::models::stage::StageStatus;
+use crate::status::data::{
+    CompletionBlockerState, CompletionBlockerSummary, MergeSummary, ProgressSummary, StageSummary,
+    StatusData,
+};
 use std::io::{Cursor, Read};
 
 struct CountingReader<R> {
