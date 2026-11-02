@@ -96,6 +96,12 @@ Open follow-ups from the token-accounting plans: git and bounded-runner hygiene,
 
 → [Token Accounting Follow-Ups](concerns/token-accounting-and-proof-defects.md). Token flow limits, hardening and structure: [Token Flow Gaps](concerns/token-accounting-and-proof-defects.md#token-flow-gaps).
 
+## `loom ask` and Read Gate Concerns
+
+`loom ask` has no evaluation and no isolation probe yet, and its Codex lane is experimental, so no agent, skill, hook or doctrine text may tell an agent to use it until the evaluation and the replays pass. The read gate ships on by default with no replay behind it. Also the unimplemented reviewer suggestions for both, and proposed guards for two recurring mistakes.
+
+→ [`loom ask` and Read Gate Concerns](concerns/loom-ask-and-read-gate.md)
+
 ## Host-Verification Review Suggestions
 
 Open and fixed reviewer findings on the host-verification code, one bullet per defect with its file:line. The open ones cover the apply and recovery path, criteria confinement, observer git discovery, and skill and reference text that still describes the session sandbox as the criteria environment.

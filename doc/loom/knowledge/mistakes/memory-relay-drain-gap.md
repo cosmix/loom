@@ -22,6 +22,8 @@ verified: e88e8294c12301e520f82aaf968b1456d5f4ce92
 
 **Recurred (2026-10-22):** an orchestrator ran `loom check integration-verify > file` in a background Bash call. The relay hook refused the redirected stdout, and the next bare call reported `refused: the request never reached the daemon`. `loom check`, like every relay-eligible command, runs bare, foreground and unredirected; to wait, repeat the same bare command. Template Rule 14 now says "Never redirect `loom` commands".
 
+**Recurred again (2026-11-02):** an integration-verify orchestrator ran `loom check integration-verify` in the background piped through `tail`; the host job ended `refused: the request never reached the daemon` and a bare foreground rerun fixed it. Two prose rules did not stop a third occurrence; the proposed hook guard is in [`loom ask` and Read Gate Concerns](../concerns/loom-ask-and-read-gate.md#proposed-guards-for-recurring-mistakes).
+
 ## `loom-relay.sh` Never Recognizes `loom memory resolve`, So Its Tickets Can Deadlock a Sandboxed Session (2026-09-14)
 
 **What happened:** inside a stage worktree, `loom memory resolve <id> --outcome ...` succeeds locally (prints `✓ Resolved ... as receipt ...` and a trailing `LOOM_RELAY_V1 kind=memory id=... sha256=... bytes=...` line) but the entry never actually lands in the daemon's memory journal — `loom memory pending` still lists it. Running 32 `resolve` calls in a row (piped through a script that redirected their stdout away) hard-deadlocked the session: every further `loom memory` write failed outright with `Error: this session already has 32 unconsumed relay tickets (limit 32); wait for the relay hook to drain them before retrying`, and nothing drained on its own.
