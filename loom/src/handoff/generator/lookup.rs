@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::fs::safe_read::{read_bounded, OverLimit};
-use crate::handoff::completion::attestation_key;
-use crate::handoff::schema::{CompletionCheckpoint, MAX_EVIDENCE_NONCES};
+use crate::handoff::completion::{attestation_key, AttestationKey};
+use crate::handoff::schema::CompletionCheckpoint;
 use crate::handoff::{HandoffOrigin, HandoffV2, ParsedHandoff};
 
 use super::numbering::{find_latest_handoff, numbered_handoffs};
@@ -86,22 +86,43 @@ pub fn load_trusted_session_checkpoint(
     // Authentication must precede the lossy merge of latest evidence and nonce state.
     let trusted: Vec<_> = handoffs
         .iter()
-        .filter_map(|(_, handoff)| {
-            handoff
-                .completion_checkpoint
-                .as_ref()
-                .and_then(|checkpoint| {
-                    let trusted = checkpoint.trusted(&key);
-                    (!trusted.observations.is_empty() || trusted.accepted.is_some())
-                        .then_some(trusted)
-                })
-        })
+        .filter_map(|(_, handoff)| handoff.completion_checkpoint.as_ref())
+        .map(|checkpoint| checkpoint.trusted(&key))
+        .filter(CompletionCheckpoint::holds_signed_state)
         .collect();
-    let mut merged = fold_checkpoints(trusted.iter())?;
-    if let Some(checkpoint) = &mut merged {
-        checkpoint.capacity_exhausted = checkpoint.observations.len() >= MAX_EVIDENCE_NONCES;
-    }
-    Ok(merged)
+    fold_checkpoints(trusted.iter())
+}
+/// The session's signed state as a writer of further evidence extends it. Unlike
+/// the trusted loader it keeps an overflow's signed evidence and the bounds, so
+/// a rewrite of unchanged evidence compares equal to its artifact.
+pub fn load_authenticated_session_checkpoint(
+    stage_id: &str,
+    session_id: &str,
+    work_dir: &Path,
+    key: &AttestationKey,
+) -> Result<Option<CompletionCheckpoint>> {
+    let handoffs = session_handoffs(stage_id, session_id, work_dir)?;
+    fold_authenticated(
+        handoffs
+            .iter()
+            .filter_map(|(_, handoff)| handoff.completion_checkpoint.as_ref()),
+        key,
+    )
+}
+pub(super) fn fold_authenticated<'a, I>(
+    checkpoints: I,
+    key: &AttestationKey,
+) -> Result<Option<CompletionCheckpoint>>
+where
+    I: IntoIterator<Item = &'a CompletionCheckpoint>,
+{
+    // Authentication must precede the lossy merge of latest evidence and nonce state.
+    let authenticated: Vec<_> = checkpoints
+        .into_iter()
+        .map(|checkpoint| checkpoint.authenticated(key))
+        .filter(CompletionCheckpoint::holds_signed_state)
+        .collect();
+    fold_checkpoints(authenticated.iter())
 }
 pub(super) fn fold_checkpoints<'a, I>(checkpoints: I) -> Result<Option<CompletionCheckpoint>>
 where

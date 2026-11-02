@@ -161,14 +161,19 @@ pub(super) fn poll_shared(
 
 /// Missing, unreadable, symlinked, or unparsable state is the default (poll now).
 fn read_state(path: &Path) -> AccountState {
-    // Anchor above the quota directory so a replacement is refused as well.
-    let Some(root) = path.parent().and_then(Path::parent).and_then(Path::parent) else {
+    // Anchor above the quota directory so a replacement is refused as well. The
+    // anchor is `~/.loom`, which the user may reach through a symlinked $HOME or
+    // keep behind a symlink, so it is resolved before the no-follow walk.
+    let Some(anchor) = path.parent().and_then(Path::parent) else {
         return AccountState::default();
     };
-    let Ok(relative) = path.strip_prefix(root) else {
+    let Ok(relative) = path.strip_prefix(anchor) else {
         return AccountState::default();
     };
-    let Ok(body) = crate::fs::safe_read::read_to_string_bounded(root, relative, MAX_STATE_BYTES)
+    let Ok(root) = anchor.canonicalize() else {
+        return AccountState::default();
+    };
+    let Ok(body) = crate::fs::safe_read::read_to_string_bounded(&root, relative, MAX_STATE_BYTES)
     else {
         return AccountState::default();
     };

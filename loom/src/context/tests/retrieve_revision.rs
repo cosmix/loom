@@ -34,6 +34,7 @@ fn checkout_head_selects_its_base_without_an_overlay() {
     let temp = project_with_knowledge();
     let root = temp.path();
     git(root, &["init", "-q"]);
+    crate::git::worktree::capture_main_identity(root, &root.join(".loom/work")).unwrap();
     git(root, &["config", "user.email", "test@example.invalid"]);
     git(root, &["config", "user.name", "Test"]);
     std::fs::write(root.join("source.rs"), "pub fn alpha_unique() {}\n").unwrap();

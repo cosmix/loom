@@ -11,7 +11,7 @@ use crate::context::refresh::BoxedExtractor;
 use crate::context::source_graph::read::{read_source, SourceRead};
 use crate::context::source_graph::{FileCoverage, GRAPH_SCHEMA_VERSION};
 use crate::context::store::canonical_json;
-use crate::git::runner::run_git_stream;
+use crate::git::worktree::WorktreeGit;
 
 pub(super) struct LayerBuild {
     pub layer: GraphLayer,
@@ -106,6 +106,7 @@ fn assemble_layer(
         files,
         blob_index,
         schema_version: GRAPH_SCHEMA_VERSION,
+        complete: false,
     }
 }
 
@@ -253,7 +254,8 @@ fn read_bytes(
 ) -> std::result::Result<SourceRead, String> {
     if matches!(scope, SourceGraphScope::Base { .. }) && tree.dirty.contains_key(path) {
         let object = format!("HEAD:{path}");
-        return run_git_stream(&["show", &object], project_root, SourceRead::read)
+        return WorktreeGit::pinned_checkout(project_root)
+            .and_then(|git| git.run_stream(&["show", &object], SourceRead::read))
             .map_err(|error| error.to_string());
     }
     read_source(project_root, Path::new(path)).map_err(|error| format!("{error:#}"))
@@ -328,9 +330,11 @@ pub(super) fn persist_layer(
                 FileCoverage::Deleted => base.is_some_and(|base| base.files.contains_key(path)),
                 _ => base.and_then(|base| base.files.get(path)) != Some(&*entry),
             });
+            overlay.complete = base.is_none();
             let unchanged = previous.is_some_and(|previous| {
                 previous.revision == overlay.revision
                     && previous.generation == overlay.generation
+                    && previous.complete == overlay.complete
                     && previous.files == overlay.files
                     && previous.blob_index == overlay.blob_index
             });

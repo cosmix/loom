@@ -98,6 +98,11 @@ pub struct GraphLayer {
     /// before schema versioning deserializes as `0`.
     #[serde(default)]
     pub schema_version: u32,
+    /// An overlay built with no base at `revision`: `files` holds the whole
+    /// tree, so nothing belongs under it even if that base is published later.
+    /// False for a delta, whose files mean nothing without that base.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub complete: bool,
 }
 
 impl GraphLayer {
@@ -125,7 +130,8 @@ impl GraphLayer {
 /// which layer an entry came from.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ResolvedGraph {
-    /// Revision of the base layer underneath, empty when there is none.
+    /// Revision of the base layer underneath, or of a complete overlay that
+    /// needs none; empty when neither supplied it.
     pub base_revision: String,
     /// Paths the overlay shadowed. Non-empty means this view is stage-local.
     pub overlaid: BTreeSet<String>,

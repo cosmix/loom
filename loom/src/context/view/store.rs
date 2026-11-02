@@ -63,7 +63,7 @@ impl GraphStore {
 
     pub(crate) fn view_read(&self, read: &GraphRead<'_>) -> Result<ResolvedView> {
         let (identity, overlay) = self.view_identity(read);
-        if self.has_base_layer(&read.revision) {
+        if read.has_complete_overlay() || self.has_base_layer(&read.revision) {
             if let Some(view) = self.take_cached_view(&identity, overlay) {
                 return Ok(view);
             }
@@ -187,8 +187,9 @@ impl GraphStore {
     }
 
     /// Resolve the view, relinking from a previous view when one is usable,
-    /// and persist it when the base layer of its revision loaded: the view of
-    /// a missing or unparseable base stays in memory.
+    /// and persist it when the base layer of its revision loaded or a complete
+    /// overlay needs none: the view of a missing or unparseable base stays in
+    /// memory.
     ///
     /// `identity` names the schema and extractors registered now, whatever
     /// wrote the layers, and a relink copies an unchanged file's previous
@@ -200,13 +201,13 @@ impl GraphStore {
         let revision = identity.base_revision.clone();
         let overlay = read.address;
         let (next, schema_current) = self.resolve_read(read)?;
-        // `resolved` takes its revision from the layer `load_base` returned,
-        // and leaves it empty for `None`.
+        // `resolved` takes its revision from the layer `load_base` returned, or
+        // from a complete overlay, and otherwise leaves it empty.
         let base_loaded = !revision.is_empty() && next.base_revision == revision;
         let extractors = registry();
         let current = schema_current && entries_are_current(&next.files, &extractors);
         let seed = match overlay {
-            _ if !current => None,
+            _ if !current || read.has_complete_overlay() => None,
             Some(_) => Some(self.view(&revision, None)?),
             None => self.newest_older_base_view(&identity),
         };

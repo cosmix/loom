@@ -7,6 +7,8 @@ mod merge;
 mod numbering;
 
 #[cfg(test)]
+mod merge_snapshot_tests;
+#[cfg(test)]
 mod merge_tests;
 #[cfg(test)]
 mod tests;
@@ -22,7 +24,8 @@ use crate::models::stage::Stage;
 pub use content::HandoffContent;
 pub use lookup::{
     find_continuation_handoff, find_continuation_handoff_name, find_latest_session_handoff,
-    find_matching_handoff, load_session_checkpoint, load_trusted_session_checkpoint,
+    find_matching_handoff, load_authenticated_session_checkpoint, load_session_checkpoint,
+    load_trusted_session_checkpoint,
 };
 pub use merge::{merge_session_handoff, MergeOutcome};
 pub use numbering::find_latest_handoff;

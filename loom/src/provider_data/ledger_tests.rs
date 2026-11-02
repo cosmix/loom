@@ -40,6 +40,25 @@ fn ledger_refuses_fifo_and_intermediate_symlink() {
     assert!(json_lines(&link.join("starts.jsonl")).is_empty());
 }
 
+/// A linked worktree reaches the work directory through its `.loom/work` symlink.
+#[test]
+fn ledger_reads_through_a_symlinked_work_directory_and_refuses_below_it() {
+    let work_dir = tempfile::tempdir().unwrap();
+    let row = "{\"agent_id\":\"a\",\"agent_type\":\"review\"}\n";
+    fs::write(stage(&work_dir).join("starts.jsonl"), row).unwrap();
+    let checkout = tempfile::tempdir().unwrap();
+    let alias = checkout.path().join("work");
+    std::os::unix::fs::symlink(work_dir.path(), &alias).unwrap();
+
+    assert_eq!(agent_type(Some(&alias), "a"), Some("review".into()));
+
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("starts.jsonl"), row).unwrap();
+    let link = work_dir.path().join("subagents/link");
+    std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+    assert!(json_lines(&alias.join("subagents/link/starts.jsonl")).is_empty());
+}
+
 #[test]
 fn starts_ledger_resolves_matching_agent_type() {
     let work_dir = tempfile::tempdir().unwrap();

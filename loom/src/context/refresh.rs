@@ -90,11 +90,14 @@ fn structural_freshness(stored: &Freshness, current_revision: &str) -> Freshness
 /// [`refresh`] only ever rebuilds the STRUCTURAL layer when it finds
 /// `structural.stale`, and never reads this function's semantic verdict to
 /// decide whether to rebuild anything, so a moved HEAD reported here cannot
-/// start one. `revision` itself always stays the STORED value — that is the
-/// layer actually on disk, and what `load_resolved_graph`
-/// (`context/retrieve.rs`) keys the base read by; only `stale`/`detail`
-/// change. A knowledge root whose project cannot be resolved degrades to
-/// passing the stored semantic freshness through unchanged. A project with no
+/// start one. `revision` itself always stays the STORED value: the revision
+/// last published to the shared cache, which no longer selects what a query
+/// reads. `load_resolved_graph` (`context/retrieve/graph.rs`) keys its read by
+/// the overlay's recorded revision or the checkout's HEAD, uses the stored
+/// value only when HEAD cannot be read, and rewrites the freshness to describe
+/// what it served. Only `stale`/`detail` change here. A knowledge root whose
+/// project cannot be resolved degrades to passing the stored semantic freshness
+/// through unchanged. A project with no
 /// git HEAD (not a repository, no commits, `git` unavailable) is reported
 /// `unavailable` with the stored revision kept — a missing git repository is
 /// data, not a crash (`refresh/source_graph.rs`'s module doc).
