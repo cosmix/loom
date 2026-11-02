@@ -14,6 +14,8 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 pub(crate) mod complete_verification_v2;
+pub(crate) mod knowledge;
+pub(crate) mod knowledge_baseline;
 pub(crate) mod resolved;
 
 pub(crate) struct VerificationChecks<'a> {
@@ -64,6 +66,9 @@ pub(crate) fn run_checks(checks: &VerificationChecks<'_>, sink: &mut CheckSink<'
         .main_project_root()
         .context("completion repository is unavailable")?;
     let base_branch = crate::fs::resolve_target_branch_from_config(checks.work_dir, &repo_root)?;
+    if let Some(root) = checks.worktree_root {
+        sink("knowledge", knowledge::check(root, &base_branch))?;
+    }
     let definition = plan::load_optional(checks.stage_id, checks.work_dir, checks.expected_policy)?;
     if let Some(goal) = definition.as_ref().filter(|goal| goal.has_checks()) {
         sink("goal-backward", run_goal_checks(checks, goal))?;

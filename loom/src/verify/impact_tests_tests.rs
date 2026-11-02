@@ -332,6 +332,9 @@ fn committed_stage_repo() -> (TempDir, PathBuf) {
     write(&root, "web/src/a.test.ts", WEB_TEST);
     git(&root, &["add", "."]);
     git(&root, &["commit", "-m", "A"]);
+    let work = root.join(".loom/work");
+    fs::create_dir_all(&work).unwrap();
+    crate::git::worktree::capture_main_identity(&root, &work).unwrap();
     git(&root, &["checkout", "-b", "loom/s"]);
     write(
         &root,
@@ -346,7 +349,6 @@ fn committed_stage_repo() -> (TempDir, PathBuf) {
 fn run_selects_the_committed_stage_diff() {
     let (temp, root) = committed_stage_repo();
     let work = temp.path().join(".loom/work");
-    fs::create_dir_all(&work).unwrap();
 
     let outcome = run(
         &stage("s"),
@@ -374,7 +376,6 @@ fn run_selects_the_committed_stage_diff() {
 fn an_unresolvable_target_is_a_note_not_a_failure() {
     let (temp, root) = committed_stage_repo();
     let work = temp.path().join(".loom/work");
-    fs::create_dir_all(&work).unwrap();
 
     let outcome = run(
         &stage("s"),

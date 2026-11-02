@@ -25,7 +25,7 @@
 //! the completion records them (`observed`) for that dispute to name.
 
 mod accepted;
-mod base;
+pub(crate) mod base;
 mod failure;
 mod libtest;
 mod observed;

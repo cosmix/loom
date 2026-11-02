@@ -155,6 +155,22 @@ mod tests {
         assert_one_word(&command, &exact_regex_literal(HOSTILE_NAME));
     }
 
+    /// The live runner's output when the exact target is skipped: both exit 0,
+    /// and the skip must not pass as the selected test.
+    #[test]
+    fn an_exact_target_that_is_skipped_is_not_selected() {
+        let output = "\r00:00 +0 ~1: All tests skipped.\n";
+        let summary = ADAPTER.parse(&RunOutput {
+            stdout: output,
+            stderr: "",
+            exit_code: Some(0),
+        });
+        assert_eq!(
+            crate::testrun::classify(&summary, Some(0)),
+            crate::testrun::RunOutcome::NotSelected
+        );
+    }
+
     #[test]
     fn flutter_invocations_match_only_test_subcommand() {
         assert!(ADAPTER.recognizes(&words("flutter test")));

@@ -164,6 +164,48 @@ mod tests {
     }
 
     #[test]
+    fn installed_mocha_selects_only_the_exact_nested_name() {
+        let Some(runner) = std::env::var_os("LOOM_TEST_MOCHA_BIN") else {
+            return;
+        };
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/testrun/fixtures/mocha/collision.test.cjs");
+        let dir = tempfile::Builder::new()
+            .prefix("ver01-")
+            .tempdir_in(fixture.parent().expect("Mocha fixture directory"))
+            .expect("temporary Mocha project");
+        std::fs::copy(&fixture, dir.path().join("collision.test.cjs"))
+            .expect("copy collision fixture");
+
+        for (skip_exact, expected) in [(false, RunOutcome::Passed), (true, RunOutcome::NotSelected)]
+        {
+            let mut command = std::process::Command::new("node");
+            command
+                .arg(&runner)
+                .args(["collision.test.cjs", "--grep"])
+                .arg(exact_regex_literal("suite value (a)+"))
+                .current_dir(dir.path());
+            if skip_exact {
+                command.env("VER01_SKIP_EXACT", "1");
+            }
+            let output = command.output().expect("run installed Mocha");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let summary = ADAPTER.parse(&RunOutput {
+                stdout: &stdout,
+                stderr: &stderr,
+                exit_code: output.status.code(),
+            });
+            assert_eq!(
+                classify(&summary, output.status.code()),
+                expected,
+                "{stdout}\n{stderr}"
+            );
+            assert_eq!(summary.executed, Some(if skip_exact { 0 } else { 1 }));
+        }
+    }
+
+    #[test]
     fn command_recognition_accepts_runner_wrappers() {
         for words in [
             &["mocha", "test/math.js"][..],

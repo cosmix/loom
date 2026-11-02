@@ -248,8 +248,7 @@ mod tests {
         if !runner.is_file() {
             return;
         }
-        let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("src/testrun/fixtures/vitest");
+        let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/testrun/fixtures/vitest");
         let dir = tempfile::Builder::new()
             .prefix("ver01-")
             .tempdir_in(&fixture_dir)
@@ -259,19 +258,9 @@ mod tests {
             dir.path().join("collision.test.mjs"),
         )
         .expect("copy collision fixture");
-        for (skip_exact, expected) in [(false, RunOutcome::Passed), (true, RunOutcome::NotSelected)] {
-            let mut command = std::process::Command::new(&runner);
-            command
-                .args(["run", "collision.test.mjs", "--globals", "-t"])
-                .arg(exact_regex_literal("suite > value (a)+"))
-                .env("TMPDIR", dir.path())
-                .current_dir(dir.path());
-            if skip_exact {
-                command.env("VER01_SKIP_EXACT", "1");
-            } else {
-                command.env_remove("VER01_SKIP_EXACT");
-            }
-            let output = command.output().expect("run installed Vitest");
+        for (skip_exact, expected) in [(false, RunOutcome::Passed), (true, RunOutcome::NotSelected)]
+        {
+            let output = run_collision_fixture(&runner, dir.path(), skip_exact);
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
             let summary = ADAPTER.parse(&RunOutput {
@@ -279,9 +268,34 @@ mod tests {
                 stderr: &stderr,
                 exit_code: output.status.code(),
             });
-            assert_eq!(classify(&summary, output.status.code()), expected, "{stderr}");
-            assert_eq!(summary.executed, Some(if skip_exact { 0 } else { 1 }), "{stderr}");
+            assert_eq!(
+                classify(&summary, output.status.code()),
+                expected,
+                "{stderr}"
+            );
+            assert_eq!(
+                summary.executed,
+                Some(if skip_exact { 0 } else { 1 }),
+                "{stderr}"
+            );
         }
+    }
+
+    /// The installed runner over the collision fixture in `dir`, selecting one
+    /// exact nested name; `skip_exact` makes the fixture skip that test.
+    fn run_collision_fixture(runner: &Path, dir: &Path, skip_exact: bool) -> std::process::Output {
+        let mut command = std::process::Command::new(runner);
+        command
+            .args(["run", "collision.test.mjs", "--globals", "-t"])
+            .arg(exact_regex_literal("suite > value (a)+"))
+            .env("TMPDIR", dir)
+            .current_dir(dir);
+        if skip_exact {
+            command.env("VER01_SKIP_EXACT", "1");
+        } else {
+            command.env_remove("VER01_SKIP_EXACT");
+        }
+        command.output().expect("run installed Vitest")
     }
 
     fn fixture_expectation(scenario: &str) -> (RunSummary, RunOutcome) {

@@ -200,3 +200,31 @@ fn a_cached_run_that_selected_nothing_stays_inconclusive() {
     };
     assert!(why.contains("selected no test"), "{why}");
 }
+
+/// A run with an over-long log and a failing exit is a failure: the capture
+/// limit says nothing about the exit code, and a note would let the gate pass.
+#[test]
+fn incomplete_capture_of_a_failing_run_stays_failed_and_unparsed() {
+    for exit_code in [Some(1), Some(101), None] {
+        let mut run = cached_zero_test_tail(None);
+        run.cached = None;
+        run.output_complete = false;
+        run.exit_code = exit_code;
+        let Run::Failed(failure) = judge("cargo test x".to_string(), cargo(), &run) else {
+            panic!("exit {exit_code:?} with incomplete output must fail");
+        };
+        assert_eq!(failure.kind, FailureKind::Unparsed { exit_code });
+    }
+}
+
+#[test]
+fn incomplete_capture_of_a_run_that_could_not_start_stays_inconclusive() {
+    let mut run = cached_zero_test_tail(None);
+    run.cached = None;
+    run.output_complete = false;
+    run.exit_code = Some(127);
+    let Run::Inconclusive(why) = judge("cargo test x".to_string(), cargo(), &run) else {
+        panic!("exit 127 must stay inconclusive");
+    };
+    assert!(why.contains("could not start"), "{why}");
+}

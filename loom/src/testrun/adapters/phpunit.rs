@@ -159,6 +159,19 @@ mod tests {
     }
 
     #[test]
+    fn named_data_set_filter_uses_phpunits_internal_full_name() {
+        let command = ADAPTER.single_test_command(
+            "tests/CollisionTest.php",
+            "CollisionTest::testValue with data set \"value (a)+\"",
+            Path::new("."),
+        );
+        assert_eq!(
+            command,
+            r#"vendor/bin/phpunit --filter '~\ACollisionTest::testValue with data set "value \(a\)\+"\z~' tests/CollisionTest.php"#
+        );
+    }
+
+    #[test]
     fn hostile_test_name_stays_one_escaped_pattern() {
         let command = ADAPTER.single_test_command("ATest.php", HOSTILE_NAME, Path::new("."));
         assert_one_word(&command, &exact_phpunit_regex(HOSTILE_NAME));

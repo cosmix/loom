@@ -168,6 +168,51 @@ mod tests {
     }
 
     #[test]
+    fn installed_jest_selects_only_the_exact_nested_name() {
+        let Some(runner) = std::env::var_os("LOOM_TEST_JEST_BIN") else {
+            return;
+        };
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/testrun/fixtures/jest/collision.test.js");
+        let dir = tempfile::Builder::new()
+            .prefix("ver01-")
+            .tempdir_in(fixture.parent().expect("Jest fixture directory"))
+            .expect("temporary Jest project");
+        fs::copy(&fixture, dir.path().join("collision.test.js")).expect("copy collision fixture");
+        fs::write(dir.path().join("package.json"), "{}")
+            .expect("write temporary Jest package marker");
+
+        for (skip_exact, expected) in [(false, RunOutcome::Passed), (true, RunOutcome::NotSelected)]
+        {
+            let mut command = std::process::Command::new("node");
+            command
+                .arg(&runner)
+                .args(["collision.test.js", "--runInBand", "-t"])
+                .arg(exact_regex_literal("suite value (a)+"))
+                .arg(format!("--cacheDirectory={}", dir.path().display()))
+                .env("TMPDIR", dir.path())
+                .current_dir(dir.path());
+            if skip_exact {
+                command.env("VER01_SKIP_EXACT", "1");
+            }
+            let output = command.output().expect("run installed Jest");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let summary = ADAPTER.parse(&RunOutput {
+                stdout: &stdout,
+                stderr: &stderr,
+                exit_code: output.status.code(),
+            });
+            assert_eq!(
+                classify(&summary, output.status.code()),
+                expected,
+                "{stdout}\n{stderr}"
+            );
+            assert_eq!(summary.executed, Some(if skip_exact { 0 } else { 1 }));
+        }
+    }
+
+    #[test]
     fn identifies_jest_with_supported_prefixes() {
         for command in [
             "jest",

@@ -6,16 +6,41 @@ use std::path::Path;
 use super::{run_checks, OutputStream, VerificationChecks};
 use crate::handoff::completion::content::VerificationSnapshot;
 use crate::models::stage::{Stage, StageStatus};
+use crate::utils::truncate_for_display;
 use crate::verify::criteria::output::format_criterion_result;
-use crate::verify::criteria::{plan_confinement, run_acceptance_with_config, CriteriaConfig};
+use crate::verify::criteria::{
+    plan_confinement, run_acceptance_with_config, CriteriaConfig, CriterionResult,
+};
 use crate::verify::execution_paths::resolve_acceptance_dir;
 use crate::verify::transitions::update_stage;
 
-/// Verify the resolved worktree and preserve the original ancestry proof.
+/// Verify a resolver's result for a landing the daemon decides alone: a wiring
+/// or duplicate detector that cannot run fails the completion, as it does for
+/// a daemon completion job, since nobody reads a warning here.
 pub(crate) fn verify_resolved_completion(
     stage: &Stage,
     work_dir: &Path,
     emit: fn(OutputStream, &str),
+) -> Result<Stage> {
+    verify_resolved(stage, work_dir, emit, true)
+}
+
+/// [`verify_resolved_completion`] for an operator at a terminal, who reads the
+/// warning a detector that cannot run leaves and decides for themselves.
+pub(crate) fn verify_resolved_completion_for_operator(
+    stage: &Stage,
+    work_dir: &Path,
+    emit: fn(OutputStream, &str),
+) -> Result<Stage> {
+    verify_resolved(stage, work_dir, emit, false)
+}
+
+/// Verify the resolved worktree and preserve the original ancestry proof.
+fn verify_resolved(
+    stage: &Stage,
+    work_dir: &Path,
+    emit: fn(OutputStream, &str),
+    fail_closed: bool,
 ) -> Result<Stage> {
     let repo = crate::fs::work_dir::WorkDir::new(work_dir)?
         .main_project_root()
@@ -33,7 +58,7 @@ pub(crate) fn verify_resolved_completion(
             acceptance_dir: acceptance_dir.as_deref(),
             worktree_root: Some(&root),
             daemon_gates: false,
-            fail_closed: false,
+            fail_closed,
             expected_policy: None,
             emit,
             work_dir,
@@ -91,8 +116,30 @@ fn run_acceptance(
             OutputStream::Stderr,
             &format!("Acceptance criteria FAILED for stage '{}'", stage.id),
         );
-        bail!("Acceptance criteria failed for stage '{}'", stage.id);
+        bail!(
+            "Acceptance criteria failed for stage '{}': {}",
+            stage.id,
+            failed_commands(result.results())
+        );
     }
     emit(OutputStream::Stdout, "All acceptance criteria passed!");
     Ok(())
 }
+
+/// The failing commands on one line, for the refusal a resolver reads. The
+/// bounds leave room in the refusal for the rest of its text.
+fn failed_commands(results: &[CriterionResult]) -> String {
+    const COMMAND_MAX_CHARS: usize = 200;
+    const LIST_MAX_CHARS: usize = 1024;
+    let commands = results
+        .iter()
+        .filter(|criterion| !criterion.passed())
+        .map(|criterion| truncate_for_display(&criterion.command, COMMAND_MAX_CHARS))
+        .collect::<Vec<_>>()
+        .join("; ");
+    truncate_for_display(&commands, LIST_MAX_CHARS)
+}
+
+#[cfg(test)]
+#[path = "resolved_tests.rs"]
+mod tests;

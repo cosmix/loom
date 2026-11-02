@@ -4,14 +4,19 @@
 //! | Path | Written by |
 //! | --- | --- |
 //! | `freeze.json` | the daemon's freeze handler; rewritten only by an accepted contract dispute |
-//! | `files/<path>` | the same handler, before `freeze.json` |
+//! | `files/<path>` | the same handler, before `freeze.json`; read for a version 1 record |
+//! | `generations/<digest>/files/<path>` | an accepted contract dispute, before rewriting `freeze.json`; read for a version 2 record |
+//! | `staging/<digest>/` | that dispute, while it copies; removed after `freeze.json` is rewritten |
 //! | `attempts` | the daemon, when it hands out a contract session; reset by `loom stage retry` and `loom stage human-review --approve` |
 //! | `refused.json` | the daemon: `record_daemon_refusal` on a refused freeze, `mark_declined` when filing is declined. Fields: `session_id`, `problems`, `at`, `source` (`daemon` or `writer`), `declined` (`null`, or the reason filing was declined). `take_daemon_refusal` removes it once filed, escalated or stale |
 //!
 //! `freeze.json` is written last and atomically: its presence is what ends the
 //! contract phase, so it must never describe copies that are not on disk yet.
-//! A re-freeze follows the same order: copies first, then the record, then
-//! the removal of the copies the new record no longer names.
+//! A re-freeze writes and syncs an immutable generation before publishing a
+//! version 2 record. Its file/hash set identifies the generation, so the record
+//! a reader loaded always hashes to the copies [`frozen_file_path_for_record`]
+//! names, whichever re-freeze ran or failed since. Older generations and legacy
+//! copies remain available to readers holding records.
 //!
 //! Lock order: a caller may already hold the stages-dir lock (from
 //! `crate::verify::transitions::update_stage`/`update_stage_at_path`) while
@@ -23,21 +28,19 @@
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::os::fd::AsRawFd;
 use std::path::{Component, Path, PathBuf};
 
 use super::normalize;
 use crate::daemon::ContractRunReport;
 use crate::fs::locking::{atomic_write_locked, locked_dir_update};
-use crate::fs::safe_fs::{
-    safe_create_dir_all_in_workdir, safe_locked_write_in_workdir, safe_open_dirfd,
-    safe_remove_in_workdir,
-};
 use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::plan::schema::ContractSpec;
 use crate::relay::sha256_hex;
 
 pub const FREEZE_RECORD_VERSION: u32 = 1;
+const GENERATION_RECORD_VERSION: u32 = 2;
+#[path = "store_generation.rs"]
+mod generation;
 /// The largest file a freeze copies, and so the largest a completion re-reads.
 pub const MAX_FROZEN_FILE_BYTES: usize = crate::fs::safe_fs::MAX_LOG_BYTES;
 const CONTRACTS_DIR: &str = "contracts";
@@ -155,8 +158,7 @@ pub fn validate_relative(path: &str) -> Result<()> {
     Ok(())
 }
 
-/// Refuse a run directory that is neither `.` (the worktree root) nor a plain
-/// relative path, as [`validate_relative`] defines one.
+/// Refuse a run directory that is neither `.` nor a plain relative path.
 pub fn validate_cwd(cwd: &str) -> Result<()> {
     if cwd == "." {
         return Ok(());
@@ -168,7 +170,20 @@ pub fn validate_cwd(cwd: &str) -> Result<()> {
 /// Where the frozen copy of `rel` lives. `rel` must already have passed
 /// [`validate_relative`]; every path in a record [`load_freeze`] returns has.
 pub fn frozen_file_path(work_dir: &Path, stage_id: &str, rel: &str) -> PathBuf {
-    stage_dir(work_dir, stage_id).join(FILES_DIR).join(rel)
+    match load_freeze(work_dir, stage_id) {
+        Ok(Some(record)) => frozen_file_path_for_record(work_dir, &record, rel),
+        _ => stage_dir(work_dir, stage_id).join(FILES_DIR).join(rel),
+    }
+}
+
+/// Resolve against the caller's record; generations remain available to readers.
+pub fn frozen_file_path_for_record(work_dir: &Path, record: &FreezeRecord, rel: &str) -> PathBuf {
+    let dir = stage_dir(work_dir, &record.stage_id);
+    if record.version == GENERATION_RECORD_VERSION {
+        generation::files_root(&dir, record).join(rel)
+    } else {
+        dir.join(FILES_DIR).join(rel)
+    }
 }
 
 /// The stage's freeze record, or `None` before the contract phase froze.
@@ -182,6 +197,9 @@ pub fn load_freeze(work_dir: &Path, stage_id: &str) -> Result<Option<FreezeRecor
     };
     let record: FreezeRecord = serde_json::from_slice(&bytes)
         .with_context(|| format!("invalid freeze record for stage '{stage_id}'"))?;
+    if record.version != FREEZE_RECORD_VERSION && record.version != GENERATION_RECORD_VERSION {
+        bail!("unsupported freeze record version {}", record.version);
+    }
     if record.stage_id != stage_id {
         bail!(
             "freeze record for stage '{stage_id}' names stage '{}'",
@@ -226,22 +244,19 @@ pub fn write_freeze(
                 record.stage_id
             );
         }
-        copy_files(&dir, files)?;
+        generation::write_initial(&dir, record, files)?;
         atomic_write_locked(&freeze_path, &json)
     })
 }
 
 /// Re-freeze the stage at `files` (path relative to the working directory,
-/// content), its whole frozen set: replace the frozen copies, then rewrite
+/// content), its whole frozen set: publish an immutable generation, then rewrite
 /// `freeze.json` with exactly these files and hashes, and with each of
 /// `contracts` recorded with its adapter, file and run directory: a contract
 /// the record lists keeps its freeze-time run result, one it does not list is
 /// added as [`REFROZEN_OUTCOME`]. A path the record held that `files` lacks
-/// is dropped: `freeze.json` is rewritten first and the copy removed after, so
-/// the record never names a missing copy. A failed removal leaves an orphaned
-/// copy that a retry cannot find, as the record no longer names it; restore
-/// and completion read only the copies the record names, so an orphan is
-/// harmless. Returns the dropped paths. The adjudication of an accepted
+/// is dropped from the new record, but old copies remain for concurrent readers.
+/// Returns dropped paths. The adjudication of an accepted
 /// contract dispute is the only caller; the stage must already be frozen.
 pub fn refreeze_set(
     work_dir: &Path,
@@ -262,7 +277,6 @@ pub fn refreeze_set(
         let Some(mut record) = load_freeze(&root, stage_id)? else {
             bail!("the contracts of stage '{stage_id}' were never frozen");
         };
-        copy_files(&dir, files)?;
         for contract in contracts {
             upsert_contract(&mut record.contracts, contract);
         }
@@ -279,25 +293,17 @@ pub fn refreeze_set(
                 sha256: sha256_hex(bytes),
             })
             .collect();
+        record.version = GENERATION_RECORD_VERSION;
+        generation::stage(&dir, &record, files)?;
+        #[cfg(test)]
+        generation::faults::hit(generation::faults::Point::BeforeRecord)?;
         let json = serde_json::to_string_pretty(&record)?;
         atomic_write_locked(&dir.join(FREEZE_FILE), &json)?;
-        remove_copies(&dir, &dropped)?;
+        if let Err(error) = generation::cleanup(&dir) {
+            tracing::warn!(%error, "could not clean unpublished freeze generations");
+        }
         Ok(dropped)
     })
-}
-
-/// Remove the frozen copies of `paths`; one already gone is no error.
-fn remove_copies(dir: &Path, paths: &[String]) -> Result<()> {
-    let dirfd = safe_open_dirfd(dir)?;
-    for path in paths {
-        match safe_remove_in_workdir(dirfd.as_raw_fd(), &Path::new(FILES_DIR).join(path)) {
-            Err(error) if !is_not_found(&error) => {
-                return Err(error.context(format!("failed to remove frozen copy '{path}'")))
-            }
-            _ => {}
-        }
-    }
-    Ok(())
 }
 
 fn upsert_contract(frozen: &mut Vec<FrozenContract>, contract: &RefrozenContract) {
@@ -318,19 +324,6 @@ fn upsert_contract(frozen: &mut Vec<FrozenContract>, contract: &RefrozenContract
             cwd,
         }),
     }
-}
-
-fn copy_files(dir: &Path, files: &[(String, Vec<u8>)]) -> Result<()> {
-    let dirfd = safe_open_dirfd(dir)?;
-    for (path, bytes) in files {
-        let target = Path::new(FILES_DIR).join(path);
-        if let Some(parent) = target.parent() {
-            safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), parent, 0o755)?;
-        }
-        safe_locked_write_in_workdir(dirfd.as_raw_fd(), &target, bytes)
-            .with_context(|| format!("failed to copy frozen file '{path}'"))?;
-    }
-    Ok(())
 }
 
 /// Contract sessions handed out for the stage so far.
@@ -395,5 +388,12 @@ pub(in crate::verify) fn canonical_work_dir(work_dir: &Path, stage_id: &str) -> 
 }
 
 #[cfg(test)]
+pub(crate) use generation::faults;
+
+#[cfg(test)]
 #[path = "store_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "store_generation_tests.rs"]
+mod generation_tests;

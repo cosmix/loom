@@ -10,7 +10,10 @@
 //!
 //! Each test explicitly documents which fix it guards.
 
-use std::process::Command;
+#[path = "../../../../tests/test_support/mod.rs"]
+mod test_support;
+
+use test_support::git_checked;
 
 use serial_test::serial;
 use tempfile::TempDir;
@@ -29,44 +32,14 @@ fn init_repo_with_main() -> TempDir {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let repo_root = temp_dir.path();
 
-    Command::new("git")
-        .args(["init", "-b", "main"])
-        .current_dir(repo_root)
-        .output()
-        .expect("git init");
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(repo_root)
-        .output()
-        .expect("git config email");
-
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(repo_root)
-        .output()
-        .expect("git config name");
-
+    git_checked(repo_root, &["init", "-b", "main"]);
+    git_checked(repo_root, &["config", "user.email", "test@test.com"]);
+    git_checked(repo_root, &["config", "user.name", "Test"]);
+    git_checked(repo_root, &["config", "commit.gpgsign", "false"]);
     std::fs::write(repo_root.join("README.md"), "initial\n").expect("write README");
-
-    Command::new("git")
-        .args(["add", "README.md"])
-        .current_dir(repo_root)
-        .output()
-        .expect("git add");
-
-    Command::new("git")
-        .args(["commit", "-m", "initial"])
-        .current_dir(repo_root)
-        .output()
-        .expect("git commit");
-
-    // Ensure we are on main (older git defaults to 'master').
-    Command::new("git")
-        .args(["branch", "-M", "main"])
-        .current_dir(repo_root)
-        .output()
-        .expect("rename to main");
+    git_checked(repo_root, &["add", "README.md"]);
+    git_checked(repo_root, &["commit", "-m", "initial"]);
+    git_checked(repo_root, &["branch", "-M", "main"]);
 
     temp_dir
 }
@@ -79,39 +52,13 @@ fn create_branch_with_commit(
     content: &str,
     repo_root: &std::path::Path,
 ) -> String {
-    Command::new("git")
-        .args(["checkout", "-b", branch])
-        .current_dir(repo_root)
-        .output()
-        .expect("checkout -b");
-
+    git_checked(repo_root, &["checkout", "-b", branch]);
     std::fs::write(repo_root.join(filename), content).expect("write file");
-
-    Command::new("git")
-        .args(["add", filename])
-        .current_dir(repo_root)
-        .output()
-        .expect("git add");
-
-    Command::new("git")
-        .args(["commit", "-m", &format!("add {filename}")])
-        .current_dir(repo_root)
-        .output()
-        .expect("git commit");
-
-    let output = Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(repo_root)
-        .output()
-        .expect("rev-parse");
+    git_checked(repo_root, &["add", filename]);
+    git_checked(repo_root, &["commit", "-m", &format!("add {filename}")]);
+    let output = git_checked(repo_root, &["rev-parse", "HEAD"]);
     let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    // Return to main for isolation
-    Command::new("git")
-        .args(["checkout", "main"])
-        .current_dir(repo_root)
-        .output()
-        .expect("checkout main");
+    git_checked(repo_root, &["checkout", "main"]);
 
     sha
 }
@@ -119,17 +66,11 @@ fn create_branch_with_commit(
 /// Merge `branch` into `main` with --no-ff so the resulting main HEAD
 /// incorporates the branch's commits.
 fn merge_branch_into_main(branch: &str, repo_root: &std::path::Path) {
-    Command::new("git")
-        .args(["checkout", "main"])
-        .current_dir(repo_root)
-        .output()
-        .expect("checkout main");
-
-    Command::new("git")
-        .args(["merge", "--no-ff", "-m", &format!("merge {branch}"), branch])
-        .current_dir(repo_root)
-        .output()
-        .expect("git merge");
+    git_checked(repo_root, &["checkout", "main"]);
+    git_checked(
+        repo_root,
+        &["merge", "--no-ff", "-m", &format!("merge {branch}"), branch],
+    );
 }
 
 /// Fix 9: phantom-merge detection in `are_all_dependencies_satisfied`.
@@ -205,17 +146,10 @@ fn real_merge_commit_in_target_returns_true() {
 fn ancestry_error_is_retried_and_not_cached_as_a_block() {
     let repo = init_repo_with_main();
     let root = repo.path();
-    let commit = String::from_utf8(
-        Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(root)
-            .output()
-            .unwrap()
-            .stdout,
-    )
-    .unwrap()
-    .trim()
-    .to_string();
+    let commit = String::from_utf8(git_checked(root, &["rev-parse", "HEAD"]).stdout)
+        .unwrap()
+        .trim()
+        .to_string();
     let mut dep = create_test_stage("dep", "Dep", StageStatus::Completed);
     dep.merged = true;
     dep.completed_commit = Some(commit);
@@ -228,12 +162,7 @@ fn ancestry_error_is_retried_and_not_cached_as_a_block() {
         .unwrap()
         .unwrap();
     assert!(block.detail.contains("ancestry check failed"), "{block:?}");
-    let created = Command::new("git")
-        .args(["branch", "later", "main"])
-        .current_dir(root)
-        .output()
-        .unwrap();
-    assert!(created.status.success(), "{created:?}");
+    git_checked(root, &["branch", "later", "main"]);
     assert!(are_all_dependencies_satisfied_cached(&dependent, root, root, "later").unwrap());
 }
 

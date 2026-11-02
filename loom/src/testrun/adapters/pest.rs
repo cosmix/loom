@@ -137,15 +137,15 @@ mod tests {
     }
 
     #[test]
-    fn named_pest_test_uses_full_identifier_filter_and_file() {
+    fn named_pest_test_uses_printable_full_description_and_file() {
         let command = ADAPTER.single_test_command(
-            "tests/Feature/ExampleTest.php",
-            r"P\Tests\Feature\ExampleTest::__pest_evaluable_alpha_passes",
+            "tests/CollisionTest.php",
+            r"Tests\CollisionTest::`suite` → it value (a)+",
             Path::new("."),
         );
         assert_eq!(
             command,
-            r"vendor/bin/pest --filter '~\AP\\Tests\\Feature\\ExampleTest::__pest_evaluable_alpha_passes\z~' tests/Feature/ExampleTest.php"
+            r"vendor/bin/pest --filter '~\ATests\\CollisionTest::`suite` → it value \(a\)\+\z~' tests/CollisionTest.php"
         );
     }
 

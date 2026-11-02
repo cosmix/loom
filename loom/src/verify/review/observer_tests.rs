@@ -1,14 +1,14 @@
 //! [`checkout_git`] gives a process outside the stage's sandbox the git of
 //! the checkout holding a directory: pinned to the registered git directory
 //! for a path in a stage worktree, whatever `.git` entries the stage made in
-//! it, and as git finds it for any other checkout.
+//! it, and pinned to the main git directory for any other checkout.
 
 use std::path::Path;
 use std::process::Command;
 
 use tempfile::TempDir;
 
-use super::{checkout_git, local_git};
+use super::{checkout_git, local_git, source, Source};
 use crate::git::worktree::WorktreeGit;
 use crate::verify::contracts::test_support::{contract_worktree, plant_foreign_git_dir};
 use crate::verify::duplicate_detection::graph::{changed_files, repository_root};
@@ -60,6 +60,27 @@ fn a_repointed_git_file_moves_neither_the_toplevel_nor_the_git_directories() {
     );
     git(&worktree, &["status", "--porcelain"]);
     assert!(marker.exists(), "the fixture's filter never runs");
+}
+
+#[test]
+fn nested_observer_uses_the_enclosing_registered_worktree() {
+    let tmp = TempDir::new().unwrap();
+    let repo = tmp.path().join("repo");
+    let worktree = contract_worktree(&repo, "s1");
+    let workspace = crate::fs::work_dir::WorkDir::new(&repo).unwrap();
+    workspace.adopt_existing().unwrap();
+    let marker = plant_foreign_git_dir(&worktree);
+    let nested = worktree.join("tests");
+    std::fs::create_dir_all(&nested).unwrap();
+    let Source::ThisProcess(git) = source(&nested).unwrap() else {
+        panic!("unexpected daemon")
+    };
+    git.run_checked(&["status", "--porcelain"]).unwrap();
+    assert!(!marker.exists());
+    WorktreeGit::discovered(&worktree)
+        .run(&["status", "--porcelain"])
+        .unwrap();
+    assert!(marker.exists());
 }
 
 /// Make `dir` a repository of its own, its git directory at `git_dir` behind a
@@ -156,7 +177,9 @@ fn a_stage_worktree_planted_inside_a_stage_worktree_chooses_no_git() {
     let fake_project = worktree.join("fake");
     let marker = tmp.path().join("filter-ran");
     plant_nested_repository(&fake_project, None, &marker);
-    std::fs::create_dir_all(fake_project.join(".loom/work")).unwrap();
+    let fake_state = fake_project.join(".loom/work");
+    std::fs::create_dir_all(&fake_state).unwrap();
+    crate::git::worktree::capture_main_identity(&fake_project, &fake_state).unwrap();
     git(
         &fake_project,
         &["worktree", "add", "-q", "-b", "loom/s2", ".worktrees/s2"],
@@ -185,7 +208,7 @@ fn a_stage_worktree_planted_inside_a_stage_worktree_chooses_no_git() {
 }
 
 #[test]
-fn a_checkout_that_is_no_stage_worktree_is_read_as_git_finds_it() {
+fn a_checkout_that_is_no_stage_worktree_is_pinned_as_main() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path().join("plain");
     let nested = root.join("a/b");
