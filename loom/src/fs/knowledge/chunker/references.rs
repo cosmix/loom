@@ -145,6 +145,7 @@ fn references_in_line(
     references: &mut Vec<EvidenceReference>,
     symbols: &mut Vec<String>,
 ) {
+    let sentence_ends = sentence_ends(line);
     let mut span_start = None;
     for (position, character) in line.char_indices() {
         if character != '`' {
@@ -152,12 +153,15 @@ fn references_in_line(
         }
         if let Some(start) = span_start.take() {
             let span = &line[start..position];
-            let sentence = sentence_window(line, start.saturating_sub(1), position + 1);
+            let mut sentence = None;
             for matched in SOURCE_PATH_REGEX.find_iter(span) {
                 if !continues_name(&span[matched.end()..]) {
                     let source_path = matched.as_str().to_string();
+                    let window = sentence.get_or_insert_with(|| {
+                        sentence_window(line, &sentence_ends, start.saturating_sub(1), position + 1)
+                    });
                     references.push(EvidenceReference {
-                        kind: classify_reference(&source_path, &sentence),
+                        kind: classify_reference(&source_path, window),
                         source_path,
                     });
                 }
@@ -185,31 +189,24 @@ fn continues_name(rest: &str) -> bool {
 }
 
 /// The sentence-local window around a reference: bounded by real sentence
-/// ends (see `is_sentence_end`) on either side, with every OTHER backtick
-/// span's contents blanked out so a marker word in a neighbouring code span
-/// never leaks in. The current span, including its backticks, stays
-/// verbatim so `is_there_is_no_this_path` still sees it.
-fn sentence_window(line: &str, current_open: usize, after_closing: usize) -> String {
+/// ends (`sentence_ends`, ascending byte offsets of their `.`) on either side,
+/// with every OTHER backtick span's contents blanked out so a marker word in a
+/// neighbouring code span never leaks in. The current span, including its
+/// backticks, stays verbatim so `is_there_is_no_this_path` still sees it.
+fn sentence_window(
+    line: &str,
+    sentence_ends: &[usize],
+    current_open: usize,
+    after_closing: usize,
+) -> String {
     let current_close = after_closing.saturating_sub(1);
-    let start = last_sentence_boundary(line, current_open).map_or(0, |position| position + 1);
-    let end =
-        next_sentence_boundary(line, after_closing).map_or(line.len(), |position| position + 1);
+    let before = sentence_ends.partition_point(|&dot| dot < current_open);
+    let start = before
+        .checked_sub(1)
+        .map_or(0, |index| sentence_ends[index] + 1);
+    let after = sentence_ends.partition_point(|&dot| dot < after_closing);
+    let end = sentence_ends.get(after).map_or(line.len(), |&dot| dot + 1);
     mask_other_spans(line, start, end, current_open, current_close)
-}
-
-fn last_sentence_boundary(line: &str, before: usize) -> Option<usize> {
-    line[..before]
-        .char_indices()
-        .rev()
-        .find(|&(index, character)| character == '.' && is_sentence_end(line, index))
-        .map(|(index, _)| index)
-}
-
-fn next_sentence_boundary(line: &str, from: usize) -> Option<usize> {
-    line[from..]
-        .char_indices()
-        .find(|&(offset, character)| character == '.' && is_sentence_end(line, from + offset))
-        .map(|(offset, _)| from + offset)
 }
 
 /// Blank out the contents of every backtick span in `line[start..end]` other
@@ -238,23 +235,31 @@ fn mask_other_spans(
     window
 }
 
-/// A `.` ends a sentence only when it is followed by whitespace or the end of
-/// the line, sits outside any backtick span, and does not close one of
-/// [`ABBREVIATIONS`] (checked case-insensitively): `e.g.`, `i.e.`, `vs.`, and
-/// `cf.` never end a sentence in this corpus. `etc.` is deliberately left out
-/// — it does end a sentence here.
-fn is_sentence_end(line: &str, dot: usize) -> bool {
-    let next = dot + 1;
-    let followed_by_boundary =
-        next >= line.len() || line[next..].chars().next().is_some_and(char::is_whitespace);
-    if !followed_by_boundary || is_inside_backticks(line, dot) {
-        return false;
+/// Byte offsets of every `.` that ends a sentence, in one pass over `line`. A
+/// `.` ends a sentence only when it is followed by whitespace or the end of
+/// the line, sits outside any backtick span (an odd number of backticks before
+/// it means inside, so unbalanced backticks leave the rest of the line inside),
+/// and does not close one of [`ABBREVIATIONS`] (checked case-insensitively):
+/// `e.g.`, `i.e.`, `vs.`, and `cf.` never end a sentence in this corpus.
+/// `etc.` is deliberately left out — it does end a sentence here.
+fn sentence_ends(line: &str) -> Vec<usize> {
+    let mut ends = Vec::new();
+    let mut inside_backticks = false;
+    for (position, character) in line.char_indices() {
+        match character {
+            '`' => inside_backticks = !inside_backticks,
+            '.' if !inside_backticks => {
+                let next = position + 1;
+                let followed_by_boundary =
+                    line[next..].chars().next().is_none_or(char::is_whitespace);
+                if followed_by_boundary && !ends_with_abbreviation(&line[..next]) {
+                    ends.push(position);
+                }
+            }
+            _ => {}
+        }
     }
-    !ends_with_abbreviation(&line[..next])
-}
-
-fn is_inside_backticks(line: &str, position: usize) -> bool {
-    line[..position].matches('`').count() % 2 == 1
+    ends
 }
 
 const ABBREVIATIONS: &[&str] = &["e.g.", "i.e.", "vs.", "cf."];
@@ -308,5 +313,75 @@ mod tests {
     #[test]
     fn a_path_followed_by_sentence_punctuation_is_still_a_reference() {
         assert_eq!(paths("Edit `src/a.rs.` first."), ["src/a.rs"]);
+    }
+
+    /// The per-dot logic the single pass replaced, kept as the reference.
+    fn old_is_sentence_end(line: &str, dot: usize) -> bool {
+        let next = dot + 1;
+        let followed_by_boundary =
+            next >= line.len() || line[next..].chars().next().is_some_and(char::is_whitespace);
+        if !followed_by_boundary || line[..dot].matches('`').count() % 2 == 1 {
+            return false;
+        }
+        !ends_with_abbreviation(&line[..next])
+    }
+
+    fn old_sentence_ends(line: &str) -> Vec<usize> {
+        line.char_indices()
+            .filter(|&(index, character)| character == '.' && old_is_sentence_end(line, index))
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    #[test]
+    fn sentence_ends_match_the_per_dot_logic_on_awkward_input() {
+        let cases: &[(&str, &[usize])] = &[
+            ("", &[]),
+            (".", &[0]),
+            ("One. Two.", &[3, 8]),
+            ("a `b. c` d. e", &[10]),
+            ("`unbalanced. still inside. here", &[]),
+            ("x. `y` z. `w. v", &[1, 8]),
+            ("`a`. `b`. `c`.", &[3, 8, 13]),
+            ("`a``b`. next", &[6]),
+            ("See e.g. this, vs. that, i.e. CF. done. ok", &[38]),
+            ("héllo wörld. ünï. 日本語. `日.` x.", &[13, 20, 31, 41]),
+            ("no.space and a.b", &[]),
+        ];
+        for (line, expected) in cases {
+            assert_eq!(sentence_ends(line), *expected, "{line:?}");
+            assert_eq!(old_sentence_ends(line), *expected, "{line:?}");
+        }
+    }
+
+    #[test]
+    fn a_window_stops_at_the_sentence_ends_around_a_reference() {
+        let line = "Gone `a.rs` x. There is no `gc.rs` here. Then `b.rs`.";
+        let kinds: Vec<_> = references_in(line)
+            .0
+            .into_iter()
+            .map(|r| (r.source_path, r.kind))
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                ("a.rs".to_string(), EvidenceKind::Live),
+                ("gc.rs".to_string(), EvidenceKind::Historical),
+                ("b.rs".to_string(), EvidenceKind::Live),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_line_of_half_a_megabyte_of_spans_and_periods_is_scanned_in_linear_time() {
+        let body = "`a.md` needle in a sentence. ".repeat(17_000);
+        let start = std::time::Instant::now();
+        let (references, _) = references_in(&body);
+        assert_eq!(references.len(), 1);
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(2),
+            "took {:?}",
+            start.elapsed()
+        );
     }
 }
