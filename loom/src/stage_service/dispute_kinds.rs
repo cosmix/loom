@@ -28,26 +28,30 @@
 //! an `Err` on every tick, and a dispute refused once is refused forever. The
 //! transport entries refuse a freeze refusal outright: loom alone files one.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use std::path::Path;
 
 #[path = "dispute_admission.rs"]
 mod admission;
 
 use super::dispute::transition_refusal;
-use super::dispute_store::{escalate_to_human_review, lock_stage_disputes};
+use super::dispute_store::{
+    escalate_to_human_review, file_under_stage_lock, lock_stage_disputes, Publication,
+};
 use super::Response;
 use crate::context::untrusted::inline_safe;
-use crate::models::dispute::{
-    select_events, select_findings, select_impact, truncate_to_byte_limit, DisputeKind,
-    DISPUTE_REASON_MAX_BYTES,
-};
+use crate::models::dispute::{truncate_to_byte_limit, DisputeKind, DISPUTE_REASON_MAX_BYTES};
 use crate::models::stage::dispute_budgets::{self, MAX_DISPUTES_PER_KIND};
-use crate::models::stage::{Stage, StageStatus, StageType};
-use crate::verify::impact_tests::{check_failure_id, load_observed};
-use crate::verify::review::store::open_findings;
-use crate::verify::transitions::{load_stage, update_stage};
-use admission::{check_filer, check_frozen, check_unfrozen};
+use crate::models::stage::{Stage, StageStatus};
+use crate::verify::transitions::load_stage;
+use admission::{confirm, Admission};
+
+#[cfg(test)]
+use {
+    crate::models::dispute::select_findings, crate::models::stage::StageType,
+    crate::verify::review::store::open_findings, crate::verify::transitions::update_stage,
+    admission::check_filer,
+};
 
 /// The refusal every transport answers a freeze refusal with.
 const LOOM_ONLY: &str = "freeze-refusal disputes are filed by loom only";
@@ -62,12 +66,6 @@ const MAX_PROBLEM_BYTES: usize = 1024;
 pub(crate) enum FreezeRefusalFiling {
     Filed(String),
     Declined(String),
-}
-
-/// Admission decisions are durable; errors reading their evidence are not.
-enum Admission {
-    Accepted(DisputeKind),
-    Rejected(String),
 }
 
 #[cfg(test)]
@@ -209,53 +207,69 @@ fn file_dispute_inner(
     }
     let reason = truncate_to_byte_limit(&reason, DISPUTE_REASON_MAX_BYTES);
     let locked = lock_stage_disputes(work_dir, stage_id)?;
-    let mut response = None;
-    update_stage(stage_id, &locked.work_dir, |s| {
-        response = Some(file_on_locked_stage(
-            s,
-            &locked,
+    #[cfg(test)]
+    super::dispute_race_tests::before_stage_update();
+    let (request_id, _) = identity;
+    file_under_stage_lock(&locked, stage_id, request_id, |stage, publication| {
+        let filing = Filing {
+            work_dir: &locked.work_dir,
             kind,
             reason,
             evidence_commit,
             identity,
-        )?);
-        Ok(())
-    })?;
-    Ok(response.expect("stage update supplies a response"))
+        };
+        file_on_locked_stage(stage, publication, filing)
+    })
+}
+
+/// What one filing asks for, past the stage id.
+struct Filing<'a> {
+    work_dir: &'a Path,
+    kind: DisputeKind,
+    reason: String,
+    evidence_commit: Option<String>,
+    identity: (Option<&'a str>, Option<&'a str>),
 }
 
 fn file_on_locked_stage(
     stage: &mut Stage,
-    locked: &super::dispute_store::LockedDisputes,
-    kind: DisputeKind,
-    reason: String,
-    evidence_commit: Option<String>,
-    identity: (Option<&str>, Option<&str>),
+    publication: &mut Publication<'_>,
+    filing: Filing<'_>,
 ) -> Result<Response> {
-    let (request_id, session_id) = identity;
+    let (request_id, session_id) = filing.identity;
     if session_id.is_some_and(|id| !super::ownership::matches_attempt(stage, id)) {
         return Ok(refused("request belongs to a stale stage session".into()));
     }
     if let Some(existing) = super::receipts::existing(stage, request_id)? {
         return Ok(existing);
     }
-    let kind = match confirm(&locked.work_dir, stage, kind)? {
+    let kind = match confirm(filing.work_dir, stage, filing.kind)? {
         Admission::Accepted(kind) => kind,
         Admission::Rejected(reason) => return Ok(refused(reason)),
     };
     if dispute_budgets::exhausted(stage, &kind) {
         return Ok(exhausted_response(stage, &kind));
     }
+    let reason = filing.reason;
     if let Some(refusal) = transition_refusal(stage, &reason) {
         return Ok(refusal);
     }
-    let record =
-        super::dispute::build_record(stage, kind.clone(), reason.clone(), evidence_commit, None);
-    let id = super::receipts::write_request(&locked.stage_dir, record, request_id)?;
+    #[cfg(test)]
+    super::dispute_race_tests::after_admission();
+    let record = super::dispute::build_record(
+        stage,
+        kind.clone(),
+        reason.clone(),
+        filing.evidence_commit,
+        None,
+    );
+    let id = publication.write(record)?;
     dispute_budgets::spend(stage, &kind);
     super::receipts::remember(stage, request_id, id);
     stage.tally.evidence_rounds = 0;
     stage.try_request_adjudication(Some(reason))?;
+    #[cfg(test)]
+    super::dispute_race_tests::after_publication();
     Ok(Response::DisputeCreated { id })
 }
 
@@ -291,88 +305,6 @@ fn escalate_exhausted(stage: &mut Stage, kind: &DisputeKind) -> Response {
         "Dispute budget exhausted ({} {name} disputes filed; max is {MAX_DISPUTES_PER_KIND}).",
         dispute_budgets::filed(stage, kind)
     ))
-}
-
-/// The dispute to record: `kind` with every id checked against what exists
-/// now and its evidence re-derived by the daemon.
-fn confirm(work_dir: &Path, stage: &Stage, kind: DisputeKind) -> Result<Admission> {
-    if stage.plan_version != 2 {
-        return Ok(Admission::Rejected(format!(
-            "stage '{}' is not a plan version 2 stage; only its acceptance criteria, wiring \
-             checks and wiring tests can be disputed, with `loom stage dispute-criteria --field`",
-            stage.id
-        )));
-    }
-    if let Some(reason) = check_filer(work_dir, stage, &kind)? {
-        return Ok(Admission::Rejected(reason));
-    }
-    if let DisputeKind::FreezeRefusal { problems } = kind {
-        return Ok(match check_unfrozen(work_dir, stage)? {
-            Some(reason) => Admission::Rejected(reason),
-            None => Admission::Accepted(DisputeKind::FreezeRefusal { problems }),
-        });
-    }
-    Ok(match confirm_evidence(work_dir, stage, kind) {
-        Ok(kind) => Admission::Accepted(kind),
-        Err(error) => Admission::Rejected(format!("{error:#}")),
-    })
-}
-
-fn confirm_evidence(work_dir: &Path, stage: &Stage, kind: DisputeKind) -> Result<DisputeKind> {
-    match kind {
-        DisputeKind::Criterion { .. } => {
-            bail!("a criterion is disputed with `loom stage dispute-criteria`")
-        }
-        DisputeKind::FreezeRefusal { .. } => unreachable!("freeze refusals are confirmed above"),
-        DisputeKind::Findings { finding_ids, .. } => {
-            let open = open_findings(work_dir, &stage.id)?;
-            let evidence = select_findings(&open, &finding_ids)?;
-            Ok(DisputeKind::Findings {
-                finding_ids,
-                evidence,
-            })
-        }
-        DisputeKind::Contract { contract_id } => {
-            check_frozen(work_dir, &stage.id, &contract_id)?;
-            Ok(DisputeKind::Contract { contract_id })
-        }
-        DisputeKind::Integrity { event_ids, .. } => {
-            let events = super::observer::integrity_events(work_dir, stage)?;
-            let evidence = select_events(&events, &event_ids)?;
-            Ok(DisputeKind::Integrity {
-                event_ids,
-                evidence,
-            })
-        }
-        // Whatever evidence the client sent is dropped: the observed record is
-        // it, the host or operator completion's latest observed failure.
-        DisputeKind::ImpactTests { test_ids, .. } => confirm_impact(work_dir, stage, test_ids),
-    }
-}
-
-/// An impact-test dispute of a standard stage, its evidence each named
-/// failure as the observed record holds it (an unauthenticated report the
-/// adjudicator checks by re-running the selection).
-fn confirm_impact(work_dir: &Path, stage: &Stage, test_ids: Vec<String>) -> Result<DisputeKind> {
-    if stage.stage_type != StageType::Standard {
-        bail!(
-            "stage '{}' is not a standard stage; impact-selected tests run only when a \
-             standard stage completes",
-            stage.id
-        );
-    }
-    for id in &test_ids {
-        check_failure_id(id)?;
-    }
-    let observed = load_observed(work_dir, &stage.id)?;
-    let evidence = select_impact(&observed.failures, &test_ids).with_context(|| {
-        format!(
-            "loom keeps only the failures the latest failing `loom stage complete {}` run \
-             reported; dispute an id that run listed as disputable",
-            stage.id
-        )
-    })?;
-    Ok(DisputeKind::ImpactTests { test_ids, evidence })
 }
 
 #[cfg(test)]

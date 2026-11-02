@@ -12,7 +12,9 @@ use crate::fs::session_files::mark_session_terminal_reason;
 use crate::handoff::HandoffOrigin;
 use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::session_registry::in_progress_sessions_for_stage;
+use crate::orchestrator::session_registry::{
+    identityless_record_is_dead, in_progress_sessions_for_stage, Admission,
+};
 use crate::orchestrator::signals::remove_signal;
 use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
 
@@ -159,12 +161,7 @@ impl Orchestrator {
         self.cancel_host_job(stage_id);
         let mut survivors = Vec::new();
         for session in &agents {
-            // Capture whether identity evidence existed BEFORE teardown. A
-            // backend may remove its PID file after a successful kill, but a
-            // record that started with no evidence cannot turn a false
-            // liveness answer into proof of death.
-            let identity_was_missing = session_process_status(&self.config.work_dir, session)
-                == SessionProcessStatus::Missing;
+            let identity_was_missing = self.identity_evidence_missing(session);
             if let Err(e) = self.backend.kill_session(session) {
                 eprintln!("Warning: Failed to kill session '{}': {e}", session.id);
             }
@@ -198,6 +195,21 @@ impl Orchestrator {
             self.active_sessions.remove(stage_id);
         }
         Ok(survivors)
+    }
+
+    /// Capture whether identity evidence existed BEFORE teardown. A
+    /// backend may remove its PID file after a successful kill, but a
+    /// record that started with no evidence cannot turn a false
+    /// liveness answer into proof of death, until it is old enough
+    /// that the orphan rule can: such a record must not wedge the stage.
+    fn identity_evidence_missing(&self, session: &Session) -> bool {
+        session_process_status(&self.config.work_dir, session) == SessionProcessStatus::Missing
+            && !identityless_record_is_dead(
+                &self.config.work_dir,
+                session,
+                Admission::Open,
+                chrono::Utc::now(),
+            )
     }
 
     /// Cancel the stage's host job: its result would be for agents this

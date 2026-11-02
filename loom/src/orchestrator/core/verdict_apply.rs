@@ -1,12 +1,37 @@
 //! Applying verdict files written by adjudication sessions to stage state.
 
 use anyhow::Result;
+use std::cell::RefCell;
+use std::collections::HashSet;
 use std::path::Path;
 
+use crate::fs::dispute_lock::lock_stage_dispute_dir_for_daemon;
 use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
-use crate::orchestrator::adjudication::lock_stage_dispute_dir;
 
 use super::{clear_status_line, Orchestrator};
+
+thread_local! {
+    /// Stages whose verdict cannot be claimed and whose operator was told. Only
+    /// the scheduling thread applies verdicts.
+    static UNCLAIMABLE_VERDICTS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+}
+
+/// Tell the operator once that a stage's verdict cannot be claimed: a failure
+/// that lasts would otherwise repeat on every tick. Returns whether this call
+/// told them.
+fn report_unclaimable_verdict(stage_id: &str, dispute_id: u32, error: &anyhow::Error) -> bool {
+    let first = UNCLAIMABLE_VERDICTS.with(|set| set.borrow_mut().insert(stage_id.to_string()));
+    if first {
+        tracing::warn!(target: "loom::adjudication", stage = %stage_id, dispute = dispute_id,
+            error = %format!("{error:#}"), "could not claim a verdict; retrying each tick");
+        clear_status_line();
+        eprintln!(
+            "Stage '{stage_id}': the verdict on dispute {dispute_id} is waiting and the stage \
+             keeps waiting with it: {error:#}"
+        );
+    }
+    first
+}
 
 #[cfg(test)]
 thread_local! {
@@ -44,50 +69,70 @@ impl Orchestrator {
     /// than re-queueing the stage onto a live writer.
     pub(crate) fn apply_pending_verdicts(&mut self) -> Result<()> {
         let work_dir = self.config.work_dir.clone();
-        let pending = self.adjudicators.pending_verdicts(&work_dir)?;
+        let pending = match self.adjudicators.pending_verdicts(&work_dir) {
+            Ok(pending) => pending,
+            Err(error) => {
+                tracing::warn!(target: "loom::adjudication", %error,
+                    "could not scan for pending verdicts; retrying next tick");
+                return Ok(());
+            }
+        };
         #[cfg(test)]
         run_after_pending_scan_hook();
         for (stage_id, dispute_id) in pending {
-            let claim = lock_stage_dispute_dir(&work_dir.join("disputes").join(&stage_id))?;
-            let retire = match self
-                .adjudicators
-                .verdict_needs_retirement(&work_dir, &stage_id, dispute_id, &claim)
-            {
-                Ok(retire) => retire,
-                Err(error) => {
-                    tracing::warn!(stage = %stage_id, dispute = dispute_id, %error,
-                        "could not check verdict claim before agent retirement");
-                    continue;
-                }
-            };
-            // Keep the claim across retirement and application. Reset cannot
-            // close an old verdict and expose a fresh session between them.
-            if retire && !self.retire_agents_for_verdict(&stage_id, dispute_id) {
-                continue;
-            }
-            // Read who wrote the verdict before applying it — the record is
-            // read either way, so there is no reason to delay this past the
-            // point where a failed apply would otherwise lose it.
-            let judge = self
-                .adjudicators
-                .verdict_session_id(&work_dir, &stage_id, dispute_id);
-            match self
-                .adjudicators
-                .apply_verdict_claimed(&work_dir, &stage_id, dispute_id, claim)
-            {
-                Ok(()) => self.retire_adjudicator(&stage_id, dispute_id, judge.as_deref()),
-                Err(error) => {
-                    tracing::warn!(
-                        target: "loom::adjudication",
-                        stage = %stage_id,
-                        dispute = dispute_id,
-                        %error,
-                        "failed to apply verdict",
-                    );
-                }
-            }
+            self.apply_one_verdict(&work_dir, &stage_id, dispute_id);
         }
         Ok(())
+    }
+
+    /// One stage's lock or verdict failing is reported and left for the next
+    /// tick: it must not stop any other stage, or the daemon.
+    fn apply_one_verdict(&mut self, work_dir: &Path, stage_id: &str, dispute_id: u32) {
+        let stage_disputes = work_dir.join("disputes").join(stage_id);
+        let claim = match lock_stage_dispute_dir_for_daemon(&stage_disputes) {
+            Ok(claim) => claim,
+            Err(error) => {
+                report_unclaimable_verdict(stage_id, dispute_id, &error);
+                return;
+            }
+        };
+        let retire = match self
+            .adjudicators
+            .verdict_needs_retirement(work_dir, stage_id, dispute_id, &claim)
+        {
+            Ok(retire) => retire,
+            Err(error) => {
+                report_unclaimable_verdict(stage_id, dispute_id, &error);
+                return;
+            }
+        };
+        UNCLAIMABLE_VERDICTS.with(|set| set.borrow_mut().remove(stage_id));
+        // Keep the claim across retirement and application. Reset cannot
+        // close an old verdict and expose a fresh session between them.
+        if retire && !self.retire_agents_for_verdict(stage_id, dispute_id) {
+            return;
+        }
+        // Read who wrote the verdict before applying it — the record is
+        // read either way, so there is no reason to delay this past the
+        // point where a failed apply would otherwise lose it.
+        let judge = self
+            .adjudicators
+            .verdict_session_id(work_dir, stage_id, dispute_id);
+        match self
+            .adjudicators
+            .apply_verdict_claimed(work_dir, stage_id, dispute_id, claim)
+        {
+            Ok(()) => self.retire_adjudicator(stage_id, dispute_id, judge.as_deref()),
+            Err(error) => {
+                tracing::warn!(
+                    target: "loom::adjudication",
+                    stage = %stage_id,
+                    dispute = dispute_id,
+                    %error,
+                    "failed to apply verdict",
+                );
+            }
+        }
     }
 
     fn retire_agents_for_verdict(&mut self, stage_id: &str, dispute_id: u32) -> bool {

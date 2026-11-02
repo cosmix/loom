@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::models::stage::Stage;
 
 pub(crate) fn verify_resolved_completion(stage: &Stage, work_dir: &Path) -> Result<Stage> {
-    crate::verify::completion::resolved::verify_resolved_completion(
+    crate::verify::completion::resolved::verify_resolved_completion_for_operator(
         stage,
         work_dir,
         super::complete_verification::print_event,

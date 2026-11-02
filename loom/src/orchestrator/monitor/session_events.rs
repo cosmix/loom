@@ -163,7 +163,7 @@ impl Detection {
         }
 
         if previous_status.as_ref() == Some(current_status) {
-            return SessionStatusEvents::ongoing(Vec::new());
+            return SessionStatusEvents::ongoing(self.redeliver_crash(session, stages));
         }
 
         let events = if replays_stale_session(previous_status.as_ref(), session, stages) {
@@ -177,6 +177,7 @@ impl Detection {
         } else {
             transition_events(session, current_status, handlers)
         };
+        self.note_reported_crashes(&events);
 
         self.last_session_states
             .insert(session.id.clone(), current_status.clone());
@@ -362,11 +363,13 @@ impl Detection {
         // flag a fresh session reusing this stage as hung.
         let exit = SessionExitReason::Crashed;
         self.mark_terminal(session, stages, handlers, SessionStatus::Crashed, exit);
-        SessionStatusEvents::terminal(vec![MonitorEvent::SessionCrashed {
+        let events = vec![MonitorEvent::SessionCrashed {
             session_id: session.id.clone(),
             stage_id: session.stage_id.clone(),
             crash_report_path,
-        }])
+        }];
+        self.note_reported_crashes(&events);
+        SessionStatusEvents::terminal(events)
     }
 }
 

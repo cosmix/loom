@@ -156,18 +156,16 @@ impl Orchestrator {
             &report,
             now,
         );
-        if foreground_held {
-            return Ok(());
-        }
-        if !is_escalation(
-            report.stale_duration_secs,
-            report.timeout_secs,
-            never_started,
-            completion_line,
-        ) {
-            return Ok(());
-        }
-        if self.escalation_held(stage.as_ref(), report.session_id) {
+        if foreground_held
+            || !is_escalation(
+                report.stale_duration_secs,
+                report.timeout_secs,
+                never_started,
+                completion_line,
+            )
+            || self.escalation_held(stage.as_ref(), report.session_id)
+        {
+            self.monitor.defer_hung_escalation(report.session_id);
             return Ok(());
         }
         self.recover_stalled_stage(stage_id, &report, never_started, session.as_ref(), probes)

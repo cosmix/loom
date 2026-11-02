@@ -32,11 +32,9 @@ pub use merge_attribution::{
     MergeAttribution, ReconciliationOutcome,
 };
 pub use monitor::{
-    build_failure_info, context_health, failure_state_path, heartbeat_path, read_heartbeat,
-    remove_heartbeat, stage_context_tokens, write_heartbeat, ContextHealth, FailureRecord,
-    FailureTracker, Heartbeat, HeartbeatStatus, HeartbeatWatcher, Monitor, MonitorConfig,
-    MonitorEvent, StageFailureState, DEFAULT_HEARTBEAT_POLL_SECS, DEFAULT_HUNG_TIMEOUT_SECS,
-    DEFAULT_MAX_FAILURES,
+    context_health, heartbeat_path, read_heartbeat, remove_heartbeat, stage_context_tokens,
+    write_heartbeat, ContextHealth, Heartbeat, HeartbeatStatus, HeartbeatWatcher, Monitor,
+    MonitorConfig, MonitorEvent, DEFAULT_HEARTBEAT_POLL_SECS, DEFAULT_HUNG_TIMEOUT_SECS,
 };
 pub use notify::{notify_needs_human_review, send_desktop_notification};
 pub use progressive_merge::{
@@ -56,5 +54,4 @@ pub use spawner::{generate_crash_report, CrashReport};
 pub use terminal::backend::SessionBackend;
 pub use terminal::native::NativeBackend;
 // Re-export hooks infrastructure from top-level hooks module
-#[allow(deprecated)]
-pub use crate::hooks::{log_hook_event, HookEvent, HookEventLog, HookEventPayload, HooksConfig};
+pub use crate::hooks::{log_hook_event, HookEvent, HookEventLog, HookEventPayload};

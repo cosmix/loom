@@ -99,6 +99,7 @@ fn prepare_background_run(
 ) -> Result<WorkDir> {
     // Ensure git worktree prerequisites are met before starting.
     let repo_root = std::env::current_dir()?;
+    crate::git::worktree::require_main_identity(&repo_root)?;
     prepare_repo_for_run(&repo_root)?;
 
     // Absolute, not ".": a long-lived daemon must get an absolute base — a

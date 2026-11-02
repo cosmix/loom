@@ -232,6 +232,14 @@ impl Detection {
 /// warning is still due and the escalating report is not, nor latched.
 const HELD_LINE: u64 = u64::MAX;
 
+impl super::core::Monitor {
+    /// A handler can observe fresh work after detection latched its report.
+    /// Preserve warnings and measured progress; retry when the hold expires.
+    pub(crate) fn defer_hung_escalation(&mut self, session_id: &str) {
+        self.detection.escalated_hung_sessions.remove(session_id);
+    }
+}
+
 /// Whether `stage`'s current host job holds the escalation of the stage's
 /// active session ([`host_job_holds_session`]); a stage with none holds
 /// nothing.

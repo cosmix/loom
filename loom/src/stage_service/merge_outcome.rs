@@ -175,12 +175,30 @@ pub(crate) fn apply_infrastructure_failure(stage: &mut Stage, reason: &str) -> R
         );
     }
     stage.merge.block = None;
+    record_infrastructure_failure(stage, reason);
+    Ok(())
+}
+
+/// A retry of a merge the stage may hold a typed block on failed. Git failing
+/// says nothing about the block, and without it the daemon would spawn a
+/// counted resolver for a merge with no conflict, so it stays; only a stage
+/// with no block takes the ordinary failure.
+pub(crate) fn apply_retry_failure(stage: &mut Stage, reason: &str) -> Result<()> {
+    if stage.status == crate::models::stage::StageStatus::MergeBlocked
+        && stage.merge.block.is_some()
+    {
+        record_infrastructure_failure(stage, reason);
+        return Ok(());
+    }
+    apply_infrastructure_failure(stage, reason)
+}
+
+fn record_infrastructure_failure(stage: &mut Stage, reason: &str) {
     stage.replace_failure(FailureInfo {
         failure_type: FailureType::InfrastructureError,
         detected_at: Utc::now(),
         evidence: reason.lines().map(str::to_owned).collect(),
     });
-    Ok(())
 }
 
 #[cfg(test)]

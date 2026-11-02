@@ -12,9 +12,11 @@ use crate::git::branch::branch_name_for_stage;
 use crate::git::merge::control_path_violation;
 use crate::models::session::{Session, SessionBackendKind, SessionExitReason, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
+#[cfg(test)]
+use crate::orchestrator::signals::generate_merge_signal;
 use crate::orchestrator::signals::{
-    find_live_merge_session_for_stage_unlocked, generate_merge_signal, publish_merge_session,
-    with_merge_resolver_lock, write_ahead_merge_session,
+    find_live_merge_session_for_stage_unlocked, publish_merge_session, with_merge_resolver_lock,
+    write_ahead_merge_session,
 };
 use crate::orchestrator::terminal::backend::{merge_resolver_worktree, SessionBackend};
 
@@ -138,15 +140,22 @@ fn spawn_resolver_session(
 
     let source_branch = branch_name_for_stage(&stage.id);
     let mut session = Session::new_merge(source_branch.clone(), merge_point.to_string());
+    let snapshot = crate::orchestrator::signals::publish_merge_snapshot(
+        repo_root,
+        work_dir,
+        &session.id,
+        merge_point,
+    )?;
     let session_id = session.id.clone();
 
-    let signal_path = generate_merge_signal(
+    let signal_path = crate::orchestrator::signals::generate_merge_snapshot_signal(
         &session,
         stage,
         &source_branch,
         merge_point,
         conflicting_files,
         work_dir,
+        &snapshot,
     )
     .context("Failed to generate merge signal")?;
 

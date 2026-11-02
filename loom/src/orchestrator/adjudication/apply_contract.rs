@@ -34,8 +34,10 @@ use super::plan_patch;
 /// stage, every harness match listed afresh, and every path the record holds
 /// plus the disputed contract's file from before the amendment. A recorded or
 /// harness path deleted from the worktree leaves the freeze. The set derives
-/// from the stage, the record's paths and the worktree, so a retry after a
-/// partial failure writes the same record.
+/// from the stage, the record's paths and the worktree. The store publishes the
+/// new generation whole or not at all, so an interrupted re-freeze leaves the
+/// prior snapshot committed. A retry re-reads the worktree, so it freezes the
+/// bytes there at that time, not the bytes the interrupted attempt read.
 pub(super) fn accept(
     work_dir: &Path,
     stage: &mut Stage,

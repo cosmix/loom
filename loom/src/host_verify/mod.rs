@@ -63,6 +63,8 @@ mod tests_runner;
 #[cfg(test)]
 mod tests_runner_group;
 #[cfg(test)]
+mod tests_runner_legacy;
+#[cfg(test)]
 mod tests_runner_recovery;
 #[cfg(test)]
 mod tests_store;

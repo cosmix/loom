@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
-use super::super::resolver_attempts::ReservedAttempt;
+use super::super::resolver_attempts::{merge_resolver_attempts, ReservedAttempt};
 use super::test_fixtures::{orchestrator_with_conflict, repo_with_conflicting_stage_branches};
 use crate::commands::stage::{test_spawn_merge_resolver, MergeResolverResult};
 use crate::orchestrator::signals::{find_live_merge_session_for_stage, merge_test_backend};
@@ -97,10 +97,12 @@ fn run_competition(
         release.send(()).unwrap();
         let cli_result = cli.join().unwrap();
         assert_cli_result(cli_result, fail_publication, &work, &id);
-        assert!(!result
-            .recv_timeout(Duration::from_secs(10))
-            .unwrap()
-            .unwrap());
+        // The daemon waits for admission a bounded time: it either finds the
+        // CLI's resolver or defers to its next tick. Neither starts a second one.
+        match result.recv_timeout(Duration::from_secs(10)).unwrap() {
+            Ok(spawned) => assert!(!spawned),
+            Err(error) => assert_busy(&error),
+        }
         assert_eq!(count.load(Ordering::SeqCst), 1);
         assert_eq!(
             find_live_merge_session_for_stage("race", &work).unwrap(),
@@ -109,6 +111,14 @@ fn run_competition(
         assert!(work.join("signals").join(format!("{id}.md")).exists());
         id
     })
+}
+
+fn assert_busy(error: &anyhow::Error) {
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("another process has held the lock"),
+        "{message}"
+    );
 }
 
 fn assert_cli_result(
@@ -159,6 +169,30 @@ fn competing_launches(fail_publication: bool) {
         find_live_merge_session_for_stage("race", &work).unwrap(),
         None
     );
+}
+
+/// A holder stopped with Ctrl-Z must not stall the daemon's tick. The deferral
+/// spends no resolver attempt and leaves the stage waiting for its merge.
+#[test]
+fn a_held_admission_lock_defers_the_spawn_without_spending_an_attempt() {
+    let repo = repo_with_conflicting_stage_branches(&["race"]);
+    let mut daemon = orchestrator_with_conflict(repo.path(), "race");
+    let work = daemon.config.work_dir.clone();
+    let (release, _ready, count, _guard) = install_backend(&work, false);
+    let before = load_stage("race", &work).unwrap().status;
+
+    let holder = crate::fs::stage_admission::lock(&work, "race").unwrap();
+    assert_eq!(daemon.spawn_merge_resolution_sessions().unwrap(), 0);
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+    assert_eq!(merge_resolver_attempts(&work, "race"), 0);
+    assert_eq!(load_stage("race", &work).unwrap().status, before);
+
+    drop(holder);
+    release.send(()).unwrap();
+    assert_eq!(daemon.spawn_merge_resolution_sessions().unwrap(), 1);
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    assert_eq!(merge_resolver_attempts(&work, "race"), 1);
+    merge_test_backend::remove(&work);
 }
 
 #[test]

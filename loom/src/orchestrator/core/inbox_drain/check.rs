@@ -172,6 +172,7 @@ mod tests {
     /// worktree; returns the worktree's HEAD.
     fn repository(fx: &Fixture) -> String {
         git(&fx.repo_root, &["init", "-q", "-b", "main"]);
+        crate::git::worktree::capture_main_identity(&fx.repo_root, &fx.work_dir).unwrap();
         git(
             &fx.repo_root,
             &["commit", "-q", "--allow-empty", "-m", "base"],

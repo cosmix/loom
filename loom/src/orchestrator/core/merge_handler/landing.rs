@@ -37,7 +37,7 @@ pub(in crate::orchestrator::core) enum Landing {
     /// `merge_stage` reported success but ancestry gave no proof; `merged`
     /// stays false.
     Unproven,
-    /// The merge could not be attempted; the stage is unchanged.
+    /// The merge could not be attempted; the stage keeps its status.
     Failed(String),
 }
 
@@ -113,6 +113,9 @@ impl Orchestrator {
             }
             Err(error) => match classify_failure(stage_id, &error) {
                 MergeFailure::Signing(reason) => self.hold_claimed_landing(&stage, reason),
+                MergeFailure::Infrastructure(reason) if stage.merge.block.is_some() => {
+                    self.handle_retry_failure(&stage, stage_id, reason)
+                }
                 MergeFailure::Infrastructure(reason) => {
                     self.persist_merge_blocked(&mut stage, stage_id, &reason);
                     Landing::Failed(reason)
@@ -121,7 +124,7 @@ impl Orchestrator {
         }
     }
 
-    fn hold_claimed_landing(&mut self, stage: &Stage, reason: String) -> Landing {
+    pub(super) fn hold_claimed_landing(&mut self, stage: &Stage, reason: String) -> Landing {
         match self.route_claimed_to_review(stage, reason) {
             ReviewRoute::Routed => Landing::Held,
             ReviewRoute::StageMovedOn => {

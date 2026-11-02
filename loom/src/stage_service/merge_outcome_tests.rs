@@ -184,3 +184,32 @@ fn equivalent_authorities_apply_the_same_stage_changes() {
     assert_eq!(held.status, StageStatus::NeedsHumanReview);
     assert_eq!(held.review_reason.as_deref(), Some("hold"));
 }
+
+/// `loom stage merge` retries a blocked merge too: a failed attempt keeps the
+/// block, and a stage with none takes the ordinary failure.
+#[test]
+fn a_failed_retry_keeps_a_typed_block() {
+    let mut blocked = Stage {
+        status: crate::models::stage::StageStatus::MergeBlocked,
+        ..Stage::default()
+    };
+    blocked.merge.block = Some(MergeBlock::TargetMoved);
+    apply_retry_failure(&mut blocked, "git failed").unwrap();
+    assert_eq!(blocked.merge.block, Some(MergeBlock::TargetMoved));
+    assert_eq!(
+        blocked.failure_info.map(|info| info.evidence),
+        Some(vec!["git failed".to_string()])
+    );
+
+    let mut completed = Stage {
+        status: crate::models::stage::StageStatus::Completed,
+        ..Stage::default()
+    };
+    apply_retry_failure(&mut completed, "git failed").unwrap();
+    assert_eq!(
+        completed.status,
+        crate::models::stage::StageStatus::MergeBlocked
+    );
+    assert_eq!(completed.merge.block, None);
+    assert!(completed.failure_info.is_some());
+}

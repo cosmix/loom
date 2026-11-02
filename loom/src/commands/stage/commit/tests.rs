@@ -331,3 +331,45 @@ fn the_message_is_stripspaced_after_the_hooks() {
     relay_commit(&fixture, "feat: clean", &mut sink).unwrap();
     assert_eq!(payload(&fixture).message, "feat: clean\n");
 }
+
+/// Whatever `GIT_DIR` the caller exports, the hooks are the ones of the
+/// repository the commit is for. Exported in a child process only: this test
+/// binary runs raw git in parallel threads.
+#[test]
+fn hooks_ignore_an_inherited_repository_redirect() {
+    const RUN_IN: &str = "LOOM_TEST_RUN_HOOKS_IN";
+    if let Some(cwd) = std::env::var_os(RUN_IN) {
+        run_hooks(Path::new(&cwd), "feat: redirected\n").unwrap();
+        return;
+    }
+    let temp = TempDir::new().unwrap();
+    let (mine, other) = (temp.path().join("mine"), temp.path().join("other"));
+    for (root, marker) in [(&mine, "mine-ran"), (&other, "other-ran")] {
+        fs::create_dir(root).unwrap();
+        init_repo(root);
+        let script = format!(
+            "#!/bin/sh\ntouch '{}'\n",
+            temp.path().join(marker).display()
+        );
+        install_hook(root, "pre-commit", &script);
+        // Absolute: the fixture's relative path resolves against the working
+        // directory, which would run this directory's hook whatever the redirect.
+        let hooks = root.join(".git/hooks");
+        git(root, &["config", "core.hooksPath", hooks.to_str().unwrap()]);
+    }
+
+    let status = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "commands::stage::commit::tests::hooks_ignore_an_inherited_repository_redirect",
+        ])
+        .env(RUN_IN, &mine)
+        .env("GIT_DIR", other.join(".git"))
+        .env("GIT_WORK_TREE", &other)
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(temp.path().join("mine-ran").exists());
+    assert!(!temp.path().join("other-ran").exists());
+}

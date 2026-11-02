@@ -123,7 +123,13 @@ fn apply_freeze(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
             &[SessionType::Contract],
         )
     });
-    if !owns || stage.status != StageStatus::Executing {
+    // A writer parked on `AskUserQuestion` still owns the stage, and the freeze
+    // takes it back to `Executing`.
+    let running = matches!(
+        stage.status,
+        StageStatus::Executing | StageStatus::WaitingForInput
+    );
+    if !owns || !running {
         return Ok(Applied::Ignored(
             "contract writer no longer owns the stage".to_string(),
         ));
@@ -362,3 +368,7 @@ fn retire_session(work_dir: &Path, session: &Session) {
         tracing::warn!(session_id = %session.id, error = %format!("{error:#}"), "failed to remove the completed session's signal file");
     }
 }
+
+#[cfg(test)]
+#[path = "apply_waiting_tests.rs"]
+mod waiting_tests;

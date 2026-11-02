@@ -10,6 +10,7 @@ use chrono::Utc;
 use crate::models::failure::FailureType;
 use crate::models::stage::StageStatus;
 use crate::orchestrator::coherence::live_worker_sessions;
+use crate::orchestrator::scheduling_report::BlockReason;
 
 use super::persistence::Persistence;
 use super::Orchestrator;
@@ -78,6 +79,11 @@ impl Orchestrator {
             Err(error) => {
                 tracing::warn!(stage_id = %stage_id, %error,
                     "Session ownership is uncertain; deferring stage spawn");
+                let detail = format!("session ownership is uncertain: {error:#}");
+                self.spawn_blocks.insert(
+                    stage_id.to_string(),
+                    BlockReason::OwnershipUncertain { detail },
+                );
                 return Ok(AdoptionResult::Unknown);
             }
         };

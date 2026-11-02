@@ -46,6 +46,9 @@ pub struct Detection {
     /// Handoff documents asking for a takedown their sandboxed author could
     /// not record in the stage file. See [`super::handoff_watch`].
     handoff_watch: HandoffWatch,
+    /// Crashes reported whose stage still runs under the crashed session. See
+    /// [`super::crash_redelivery`].
+    pub(super) undelivered_crashes: super::crash_redelivery::UndeliveredCrashes,
 }
 
 impl Detection {
@@ -62,6 +65,7 @@ impl Detection {
             red_handoff_ready: HashSet::new(),
             last_budget_exceeded: HashMap::new(),
             handoff_watch: HandoffWatch::default(),
+            undelivered_crashes: HashMap::new(),
         }
     }
 

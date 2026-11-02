@@ -92,6 +92,29 @@ fn a_session_created_five_minutes_ago_is_not_too_young() {
     assert!(!recovery_guards::too_young_to_judge(&session, now));
 }
 
+/// Orphan recovery counts from the wrapper a slow launch wrote after its record.
+#[test]
+fn an_old_orphan_whose_wrapper_was_just_written_is_skipped() {
+    use crate::orchestrator::terminal::native::{wrapper_script_path, NativeBackend};
+    let work = TempDir::new().unwrap();
+    let mut session = Session::new();
+    session.assign_to_stage("alpha".to_string());
+    session.created_at = chrono::Utc::now() - chrono::Duration::minutes(5);
+    assert!(!recovery_guards::skip_too_young_orphan(
+        work.path(),
+        &session
+    ));
+
+    let (_, key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+    let wrapper = wrapper_script_path(work.path(), &key);
+    std::fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
+    std::fs::write(&wrapper, "#!/bin/sh\n").unwrap();
+    assert!(recovery_guards::skip_too_young_orphan(
+        work.path(),
+        &session
+    ));
+}
+
 // ----- queued_writeback_verdict (pure function, real stage files on disk) -----
 
 /// `alpha`'s dependency check is exempt from git ancestry by using a

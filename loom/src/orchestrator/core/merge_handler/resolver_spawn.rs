@@ -19,8 +19,7 @@ use crate::orchestrator::core::persistence::Persistence;
 use crate::orchestrator::core::{clear_status_line, Orchestrator};
 use crate::orchestrator::signals::{
     find_live_merge_session_for_stage, find_live_merge_session_for_stage_unlocked,
-    generate_merge_signal, publish_merge_session, with_merge_resolver_lock,
-    write_ahead_merge_session,
+    with_merge_resolver_lock, write_ahead_merge_session,
 };
 use crate::orchestrator::terminal::backend::merge_resolver_worktree;
 
@@ -278,34 +277,19 @@ impl Orchestrator {
             resolver_conflicting_files(&self.config.repo_root, &target_branch, &source_branch)?;
         let work_dir = self.config.work_dir.clone();
         // Lock stage admission before resolver admission and re-read after reset.
-        let _admission = crate::fs::stage_admission::lock(&work_dir, &stage.id)?;
+        let _admission = crate::fs::stage_admission::lock_for_daemon(&work_dir, &stage.id)?;
         let stage = self.load_stage(&stage.id)?;
         if !awaits_merge(&stage.status) {
             return Ok(false);
         }
         let spawned = with_merge_resolver_lock(&work_dir, &stage.id, || {
-            if find_live_merge_session_for_stage_unlocked(&stage.id, &work_dir)?.is_some() {
-                return Ok(None);
-            }
-            let mut session = Session::new_merge(source_branch.clone(), target_branch.clone());
-            let signal_path = generate_merge_signal(
-                &session,
+            self.spawn_resolver_locked(
                 &stage,
                 &source_branch,
                 &target_branch,
                 &conflicting_files,
-                &work_dir,
+                attempt,
             )
-            .context("Failed to generate merge signal")?;
-            write_ahead_merge_session(
-                &mut session,
-                &stage.id,
-                self.backend.resolve_lane(),
-                &work_dir,
-            )?;
-            let spawned = self.launch_resolver(&stage, session, &signal_path, attempt)?;
-            publish_merge_session(&spawned, &work_dir)?;
-            Ok(Some(spawned))
         })?;
         let Some(spawned_session) = spawned else {
             return Ok(false);
@@ -314,6 +298,48 @@ impl Orchestrator {
         self.active_sessions
             .insert(stage.id.clone(), spawned_session);
         Ok(true)
+    }
+
+    /// Under the resolver lock: publish the snapshot, signal and write-ahead
+    /// record, then spawn; `None` when a live resolver already holds the stage.
+    fn spawn_resolver_locked(
+        &mut self,
+        stage: &Stage,
+        source_branch: &str,
+        target_branch: &str,
+        conflicting_files: &[String],
+        attempt: ReservedAttempt,
+    ) -> Result<Option<Session>> {
+        let work_dir = self.config.work_dir.clone();
+        if find_live_merge_session_for_stage_unlocked(&stage.id, &work_dir)?.is_some() {
+            return Ok(None);
+        }
+        let mut session = Session::new_merge(source_branch.to_string(), target_branch.to_string());
+        let snapshot = crate::orchestrator::signals::publish_merge_snapshot(
+            &self.config.repo_root,
+            &work_dir,
+            &session.id,
+            target_branch,
+        )?;
+        let signal_path = crate::orchestrator::signals::generate_merge_snapshot_signal(
+            &session,
+            stage,
+            source_branch,
+            target_branch,
+            conflicting_files,
+            &work_dir,
+            &snapshot,
+        )
+        .context("Failed to generate merge signal")?;
+        write_ahead_merge_session(
+            &mut session,
+            &stage.id,
+            self.backend.resolve_lane(),
+            &work_dir,
+        )?;
+        let spawned = self.launch_resolver(stage, session, &signal_path, attempt)?;
+        self.publish_spawned_resolver(&spawned);
+        Ok(Some(spawned))
     }
 
     /// Record the attempt of the resolver about to spawn for `stage_id`, whose

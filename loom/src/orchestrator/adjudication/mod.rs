@@ -73,6 +73,7 @@ use std::path::{Path, PathBuf};
 
 use crate::models::dispute::{dispute_dir, request_file, verdict_file};
 use crate::models::stage::StageStatus;
+use crate::stage_service::dispute_is_orphaned;
 use crate::verify::transitions::load_stage;
 
 use closed_disputes::is_closed;
@@ -192,6 +193,10 @@ impl AdjudicatorRegistry {
         if stage.status != StageStatus::NeedsAdjudication {
             return Ok(None);
         }
+        if dispute_is_orphaned(&stage, dispute_id) {
+            settle_orphaned_request(work_dir, stage_id, dispute_id)?;
+            return Ok(None);
+        }
         if stage.tally.evidence_rounds >= MAX_EVIDENCE_ROUNDS {
             escalations.push(Escalation::evidence_cap(stage_id));
             return Ok(None);
@@ -245,6 +250,22 @@ impl AdjudicatorRegistry {
         session::record_attempt(work_dir, stage_id, dispute_id)?;
         Ok(true)
     }
+}
+
+/// Close a request whose filing crashed before the stage write, so the budget
+/// unit its refiling spent pays for one judgement and the request holds no
+/// verdict's re-queue. A filing holds the dispute lock across both its writes,
+/// so the stage read under it has named that filing's request, unless the
+/// filing is gone.
+fn settle_orphaned_request(work_dir: &Path, stage_id: &str, dispute_id: u32) -> Result<()> {
+    let _lifecycle = lock_stage_dispute_dir(&work_dir.join("disputes").join(stage_id))?;
+    let stage = load_stage(stage_id, work_dir)?;
+    if stage.status == StageStatus::NeedsAdjudication && dispute_is_orphaned(&stage, dispute_id) {
+        tracing::warn!(target: "loom::adjudication", stage = %stage_id, dispute = dispute_id,
+            "closing a dispute request no filing published");
+        closed_disputes::close_dispute_locked(work_dir, stage_id, dispute_id)?;
+    }
+    Ok(())
 }
 
 /// What one pass over `.loom/work/disputes/` found to act on.

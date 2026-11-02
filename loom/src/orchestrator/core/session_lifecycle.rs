@@ -55,6 +55,12 @@ impl Orchestrator {
             );
             return None;
         }
+        // The id is about to name a new process: a latch set for the attempt
+        // that crashed under it would swallow this attempt's crash and strand
+        // the stage `Executing` on a dead session.
+        if recovery_signal.is_some() {
+            self.reported_crashes.remove(&session.id);
+        }
         Some((session, recovery_signal))
     }
 
@@ -72,6 +78,13 @@ impl Orchestrator {
     ) -> Result<Option<Session>> {
         let mut session = Session::new_knowledge(stage_id);
         session.backend = self.backend.resolve_lane();
+        let prior = self.load_stage(stage_id)?;
+        crate::verify::completion::knowledge_baseline::capture(
+            &self.config.work_dir,
+            &self.config.repo_root,
+            &session.id,
+            prior.session.as_deref(),
+        )?;
         if let Err(e) = self.save_session(&session) {
             let err_msg = format!(
                 "Failed to write session record ahead of spawn for knowledge stage {stage_id}: {e:#}"

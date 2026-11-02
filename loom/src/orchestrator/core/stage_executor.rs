@@ -1,6 +1,6 @@
 //! Stage execution logic - creating worktrees, spawning sessions
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::Utc;
 
 use crate::models::failure::{FailureInfo, FailureType};
@@ -151,15 +151,19 @@ impl StageExecutor for Orchestrator {
                 );
                 continue;
             }
-            match self
-                .start_stage(stage_id)
-                .with_context(|| format!("Failed to start stage: {stage_id}"))?
-            {
-                StartDisposition::Deferred => {}
-                StartDisposition::Launched | StartDisposition::Adopted => {
+            match self.start_stage(stage_id) {
+                Ok(StartDisposition::Deferred) => {}
+                Ok(StartDisposition::Launched | StartDisposition::Adopted) => {
                     started += 1;
                     self.queued_since.remove(stage_id);
                     self.spawn_blocks.remove(stage_id);
+                }
+                // One stage's lock or file must not end the daemon for the rest.
+                Err(error) => {
+                    let detail = format!("failed to start: {error:#}");
+                    tracing::warn!(stage_id = %stage_id, %detail, "Stage not started; retrying next tick");
+                    self.spawn_blocks
+                        .insert(stage_id.clone(), BlockReason::OwnershipUncertain { detail });
                 }
             }
         }
@@ -178,7 +182,8 @@ impl StageExecutor for Orchestrator {
         // Reset holds this same per-stage lock from its liveness scan through
         // retirement and publication. Keep it through launch so reset cannot
         // inspect a write-ahead session before its process exists.
-        let _admission = crate::fs::stage_admission::lock(&self.config.work_dir, stage_id)?;
+        let _admission =
+            crate::fs::stage_admission::lock_for_daemon(&self.config.work_dir, stage_id)?;
         let mut stage = self.load_stage(stage_id)?;
 
         // The graph handed this stage over as Queued; its file decides.

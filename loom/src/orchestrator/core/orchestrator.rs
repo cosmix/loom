@@ -293,11 +293,18 @@ impl Orchestrator {
     /// [`AdjudicatorRegistry::start_pending_adjudications`] and
     /// [`AdjudicatorRegistry::disputes_awaiting_session`] for the guards.
     pub(crate) fn check_pending_disputes(&mut self) -> Result<()> {
-        let pass = self.adjudicators.start_pending_adjudications(
+        let pass = match self.adjudicators.start_pending_adjudications(
             &self.backend,
             &self.config.work_dir,
             &self.config.repo_root,
-        )?;
+        ) {
+            Ok(pass) => pass,
+            Err(error) => {
+                tracing::warn!(target: "loom::adjudication", error = %format!("{error:#}"),
+                    "could not scan for pending disputes; retrying next tick");
+                return Ok(());
+            }
+        };
         for started in pass.started {
             clear_status_line();
             eprintln!(

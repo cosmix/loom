@@ -10,17 +10,14 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::fs::work_dir::WorkDir;
-use crate::git::runner::NO_HOOKS_ARGS;
+use crate::git::runner::run_git_pinned;
 
-/// The repository root `work_dir`'s state directory sits in — the directory
-/// every one of these subprocesses runs from.
+/// The repository root `work_dir`'s state directory sits in, for Git evidence.
 ///
 /// The hop count from the state root is layout-dependent (two for
 /// `.loom/work`, one for a legacy `.work`) and lives in exactly one place:
 /// `WorkDir::project_root`. A bare `parent()` here would be right for one
-/// layout and wrong for the other, running `find` and `git show` from
-/// `<repo>/.loom` — whose 3-deep listing is loom's own spool, not the tree the
-/// adjudicator is being briefed on.
+/// layout and wrong for the other, running `git show` from `<repo>/.loom`.
 fn project_root_of(work_dir: &Path) -> PathBuf {
     WorkDir::new(work_dir)
         .ok()
@@ -33,20 +30,20 @@ pub(super) fn run_git_show(work_dir: &Path, commit: &str) -> Result<String> {
     // through from the agent. A value starting with `-` (e.g.
     // `--output=/tmp/x`) would be parsed by `git show` as an option.
     // Require a SHA-shaped string (4–64 hex chars — 4 matches git's
-    // minimum unambiguous short SHA) and pass `--` so any remaining
-    // shape oddity still lands in the positional slot.
+    // minimum unambiguous short SHA). The revision must precede `--`,
+    // which separates revisions from paths.
     let is_sha =
         commit.len() >= 4 && commit.len() <= 64 && commit.chars().all(|c| c.is_ascii_hexdigit());
     if !is_sha {
         anyhow::bail!("refusing git show: evidence_commit is not a SHA-shaped string");
     }
     let project_root = project_root_of(work_dir);
-    let output = Command::new("git")
-        .args(NO_HOOKS_ARGS)
-        .args(["show", "--no-color", "--stat", "-p", "--", commit])
-        .current_dir(project_root)
-        .output()
-        .context("Failed to invoke git show")?;
+    let output = run_git_pinned(
+        &["show", "--no-color", "--stat", "-p", commit, "--"],
+        None,
+        &project_root,
+    )
+    .context("Failed to invoke git show")?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
         anyhow::bail!("git show exited non-zero: {stderr}");
@@ -54,12 +51,14 @@ pub(super) fn run_git_show(work_dir: &Path, commit: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-pub(super) fn run_listing(work_dir: &Path) -> Result<String> {
-    let project_root = project_root_of(work_dir);
-    // Use `find` with maxdepth 3. If `find` is missing we degrade gracefully.
+pub(super) fn run_listing(root: &Path) -> Result<String> {
+    // POSIX find expressions avoid the non-portable `-maxdepth` option.
     let output = Command::new("find")
-        .args([".", "-maxdepth", "3", "-not", "-path", "*/.*"])
-        .current_dir(project_root)
+        .args([
+            ".", "(", "-name", ".*", "!", "-name", ".", ")", "-prune", "-o", "-path", "./*/*/*",
+            "-print", "-prune", "-o", "-print",
+        ])
+        .current_dir(root)
         .output();
     match output {
         Ok(out) if out.status.success() => Ok(String::from_utf8_lossy(&out.stdout).into_owned()),
@@ -73,55 +72,21 @@ pub(super) fn run_listing(work_dir: &Path) -> Result<String> {
 
 pub(super) fn read_plan_excerpt(plan_path: &Path, stage_id: &str) -> Result<String> {
     let raw = std::fs::read_to_string(plan_path).context("read plan")?;
-    // Best-effort: extract the YAML block and surface the stage's
-    // sub-document. If anything fails, return the entire (truncated)
-    // file — the truncate_to_budget pass will keep us under the cap.
-    if let Some(start) = raw.find("```yaml") {
-        if let Some(end_rel) = raw[start + 7..].find("```") {
-            let yaml = &raw[start + 7..start + 7 + end_rel];
-            if let Some(stage_block) = find_stage_block(yaml, stage_id) {
-                return Ok(stage_block);
-            }
-            return Ok(yaml.to_string());
-        }
-    }
-    Ok(raw)
-}
-
-/// Find the YAML sub-block corresponding to a stage definition. The
-/// extractor is intentionally string-based to avoid pulling in a full
-/// YAML parser in the briefing path.
-fn find_stage_block(yaml: &str, stage_id: &str) -> Option<String> {
-    let needle = format!("id: {stage_id}");
-    let pos = yaml.find(&needle)?;
-    // Walk backwards to the start of the surrounding `- ` list item.
-    let mut start = pos;
-    for (i, ch) in yaml[..pos].char_indices().rev() {
-        if ch == '\n' && (yaml[i + 1..].starts_with("    - ") || yaml[i + 1..].starts_with("  - "))
-        {
-            start = i + 1;
-            break;
-        }
-    }
-    // Forward until the next list-item marker at the same indent.
-    let rest = &yaml[start..];
-    let mut end = rest.len();
-    let mut seen_first_newline = false;
-    for (i, ch) in rest.char_indices() {
-        if ch != '\n' {
-            continue;
-        }
-        if !seen_first_newline {
-            seen_first_newline = true;
-            continue;
-        }
-        let after = &rest[i + 1..];
-        if after.starts_with("    - ") || after.starts_with("  - ") {
-            end = i;
-            break;
-        }
-    }
-    Some(rest[..end].trim_end().to_string())
+    let yaml = match crate::plan::parser::extract_yaml_metadata(&raw) {
+        Ok(yaml) => yaml,
+        Err(_) => return Ok(raw),
+    };
+    let metadata: serde_json::Value =
+        crate::yaml::from_str(&yaml).context("parse plan metadata")?;
+    let stage = metadata["loom"]["stages"]
+        .as_array()
+        .and_then(|stages| {
+            stages
+                .iter()
+                .find(|stage| stage["id"].as_str() == Some(stage_id))
+        })
+        .with_context(|| format!("stage '{stage_id}' missing from plan metadata"))?;
+    crate::yaml::to_string(stage).context("serialize stage evidence")
 }
 
 #[cfg(test)]
@@ -173,11 +138,97 @@ mod tests {
         let plan = tmp.path().join("PLAN.md");
         std::fs::write(
             &plan,
-            "# Plan\n\n```yaml\nloom:\n  stages:\n    - id: other\n      name: other\n    - id: s1\n      name: mine\n```\n",
+            "# Plan\n\n```yaml\nwrong: fence\n```\n<!-- loom METADATA\n```yaml\nloom:\n  stages:\n    - id: s10\n      name: other\n    - id: 's1'\n      name: mine\n```\n<!-- END loom METADATA -->\n",
         )
         .unwrap();
         let excerpt = read_plan_excerpt(&plan, "s1").unwrap();
         assert!(excerpt.contains("id: s1"));
-        assert!(!excerpt.contains("id: other"));
+        assert!(!excerpt.contains("s10"));
+        assert!(!excerpt.contains("wrong"));
+    }
+
+    #[test]
+    fn git_show_quotes_requested_revision() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8(output.stdout).unwrap()
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "test@example.com"]);
+        git(&["config", "user.name", "Test"]);
+        std::fs::write(root.join("evidence"), "first revision\n").unwrap();
+        git(&["add", "evidence"]);
+        git(&["commit", "-qm", "first"]);
+        let first = git(&["rev-parse", "HEAD"]);
+        std::fs::write(root.join("evidence"), "second revision\n").unwrap();
+        git(&["commit", "-qam", "second"]);
+        let work = root.join(".loom/work");
+        std::fs::create_dir_all(&work).unwrap();
+        let evidence = run_git_show(&work, first.trim()).unwrap();
+        assert!(evidence.contains("+first revision"));
+        assert!(!evidence.contains("second revision"));
+    }
+
+    /// The daemon can inherit `GIT_DIR` from the shell that started it. The
+    /// evidence must still come from the state directory's own repository, so
+    /// the read runs in a child whose whole environment carries the redirect.
+    #[test]
+    fn git_show_ignores_an_inherited_repository_redirect() {
+        const WORK_ENV: &str = "LOOM_TEST_GIT_SHOW_WORK";
+        const COMMIT_ENV: &str = "LOOM_TEST_GIT_SHOW_COMMIT";
+        if let Some(work) = std::env::var_os(WORK_ENV) {
+            let commit = std::env::var(COMMIT_ENV).unwrap();
+            let evidence = run_git_show(Path::new(&work), &commit).unwrap();
+            assert!(evidence.contains("+the real evidence"), "{evidence}");
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let git = |root: &Path, args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            String::from_utf8(output.stdout).unwrap()
+        };
+        let [root, other] = ["root", "other"].map(|name| tmp.path().join(name));
+        for (repo, text) in [(&root, "the real evidence\n"), (&other, "unrelated\n")] {
+            std::fs::create_dir_all(repo).unwrap();
+            git(repo, &["init", "-q"]);
+            git(repo, &["config", "user.email", "test@example.com"]);
+            git(repo, &["config", "user.name", "Test"]);
+            std::fs::write(repo.join("evidence"), text).unwrap();
+            git(repo, &["add", "evidence"]);
+            git(repo, &["commit", "-qm", "evidence"]);
+        }
+        let commit = git(&root, &["rev-parse", "HEAD"]);
+        let work = root.join(".loom/work");
+        std::fs::create_dir_all(&work).unwrap();
+        let status = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "orchestrator::adjudication::prompt::sources::tests::\
+                 git_show_ignores_an_inherited_repository_redirect",
+                "--nocapture",
+            ])
+            .env(WORK_ENV, &work)
+            .env(COMMIT_ENV, commit.trim())
+            .env("GIT_DIR", other.join(".git"))
+            .env("GIT_WORK_TREE", &other)
+            .status()
+            .unwrap();
+        assert!(status.success(), "the evidence read followed GIT_DIR");
     }
 }

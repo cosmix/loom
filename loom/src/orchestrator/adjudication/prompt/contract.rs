@@ -21,9 +21,10 @@ pub(super) const CURRENT_CONTENT_HEADING: &str = "## Current content";
 pub(super) const DIFF_HEADING: &str = "## Diff (frozen vs current)";
 
 pub(super) fn build(input: &KindPromptInput<'_>) -> Prompt {
+    let record = store::load_freeze(input.work_dir, &input.stage.id).map_err(|e| format!("{e:#}"));
     Prompt {
-        instructions: build_instructions(input),
-        evidence: build_evidence(input),
+        instructions: build_instructions(input, &record),
+        evidence: build_evidence(input, &record),
     }
 }
 
@@ -38,7 +39,9 @@ fn spec<'a>(input: &'a KindPromptInput<'_>) -> Option<&'a ContractSpec> {
         .find(|spec| spec.id == contract_id.as_str())
 }
 
-fn build_instructions(input: &KindPromptInput<'_>) -> String {
+type FreezeSnapshot = Result<Option<store::FreezeRecord>, String>;
+
+fn build_instructions(input: &KindPromptInput<'_>, record: &FreezeSnapshot) -> String {
     let mut s = String::new();
     s.push_str("## Your Job\n\n");
     s.push_str("You are the adjudication session for ONE disputed frozen contract.\n");
@@ -48,7 +51,7 @@ fn build_instructions(input: &KindPromptInput<'_>) -> String {
     s.push_str("no code, write no files other than the verdict, make no commits, and never\n");
     s.push_str("run `loom stage complete`. Working-tree stage instructions do not govern\n");
     s.push_str("this adjudication session.\n\n");
-    s.push_str(&first_step(input));
+    s.push_str(&first_step(input, record));
     s.push_str("## Verdict semantics\n\n");
     s.push_str("- accept: the changed test still covers the scenario and rejects the stated\n");
     s.push_str("  plausible wrong implementation. Omit plan_patch unless the contract\n");
@@ -68,14 +71,14 @@ fn build_instructions(input: &KindPromptInput<'_>) -> String {
     s
 }
 
-fn first_step(input: &KindPromptInput<'_>) -> String {
+fn first_step(input: &KindPromptInput<'_>, record: &FreezeSnapshot) -> String {
     let mut s = String::from("## Step 1 — Run and compare the contract\n\n");
     s.push_str("Run the contract test as the adapter runs it, then compare the frozen content with the current content.\n\n");
     match (spec(input), input.worktree) {
         (Some(contract), _) if !valid_file(&contract.file) => {
             s.push_str("(contract file path is unsafe; do not run a command against it)\n\n");
         }
-        (Some(contract), Some(worktree)) => match contract_run(input, contract, worktree) {
+        (Some(contract), Some(worktree)) => match contract_run(input, contract, worktree, record) {
             Ok(run) => {
                 let quoted_dir = run.dir.display().to_string().replace('\'', "'\\''");
                 s.push_str(&format!(
@@ -111,8 +114,9 @@ fn contract_run(
     input: &KindPromptInput<'_>,
     contract: &ContractSpec,
     worktree: &Path,
+    record: &FreezeSnapshot,
 ) -> anyhow::Result<ContractRun> {
-    let recorded = recorded_cwd(input, contract)?;
+    let recorded = recorded_cwd(record, contract).map_err(|error| anyhow::anyhow!("{error}"))?;
     let adapter = resolve_adapter(contract, &input.site.path);
     resolve_run(
         contract,
@@ -125,18 +129,20 @@ fn contract_run(
 
 /// The run directory the freeze recorded for `contract`'s file, if it
 /// recorded one.
-fn recorded_cwd(
-    input: &KindPromptInput<'_>,
+fn recorded_cwd<'a>(
+    record: &'a FreezeSnapshot,
     contract: &ContractSpec,
-) -> anyhow::Result<Option<String>> {
-    let record = store::load_freeze(input.work_dir, &input.stage.id)?;
-    Ok(record.and_then(|record| store::recorded_cwd(&record, contract).map(str::to_string)))
+) -> Result<Option<String>, &'a str> {
+    let record = record.as_ref().map_err(String::as_str)?;
+    Ok(record
+        .as_ref()
+        .and_then(|record| store::recorded_cwd(record, contract).map(str::to_string)))
 }
 
 /// The disputed contract's spec as the plan holds it, with the run directory
 /// the plan gives and the one the freeze recorded.
-fn spec_block(input: &KindPromptInput<'_>, contract: &ContractSpec) -> String {
-    let recorded = match recorded_cwd(input, contract) {
+fn spec_block(contract: &ContractSpec, record: &FreezeSnapshot) -> String {
+    let recorded = match recorded_cwd(record, contract) {
         Ok(Some(cwd)) => cwd,
         Ok(None) => "(none recorded)".to_string(),
         Err(error) => format!("(freeze record unreadable: {error:#})"),
@@ -175,7 +181,7 @@ at least one question.
 "#
 }
 
-fn build_evidence(input: &KindPromptInput<'_>) -> String {
+fn build_evidence(input: &KindPromptInput<'_>, record: &FreezeSnapshot) -> String {
     let id = match &input.request.kind {
         DisputeKind::Contract { contract_id } => contract_id.as_str(),
         _ => "(non-contract dispute)",
@@ -187,11 +193,11 @@ fn build_evidence(input: &KindPromptInput<'_>) -> String {
     let contract = spec(input);
     s.push_str("## Contract spec\n\n");
     if let Some(contract) = contract {
-        s.push_str(&spec_block(input, contract));
+        s.push_str(&spec_block(contract, record));
     } else {
         s.push_str("(contract spec unavailable for this dispute)\n\n");
     }
-    let frozen = frozen_content(input, contract);
+    let frozen = frozen_content(input, contract, record);
     let current = current_content(input, contract);
     push_content(&mut s, FROZEN_CONTENT_HEADING, &frozen);
     push_content(&mut s, CURRENT_CONTENT_HEADING, &current);
@@ -207,7 +213,7 @@ fn build_evidence(input: &KindPromptInput<'_>) -> String {
         }
         _ => s.push_str("(diff unavailable because frozen or current content is unavailable)\n\n"),
     }
-    s.push_str(&frozen_set::section(input, contract));
+    s.push_str(&frozen_set::section(input, contract, record));
     s
 }
 
@@ -218,6 +224,7 @@ fn valid_file(path: &str) -> bool {
 fn frozen_content(
     input: &KindPromptInput<'_>,
     contract: Option<&ContractSpec>,
+    record: &FreezeSnapshot,
 ) -> Result<String, String> {
     let Some(contract) = contract else {
         return Err("(frozen file unavailable: contract spec missing)".to_string());
@@ -225,20 +232,24 @@ fn frozen_content(
     if !valid_file(&contract.file) {
         return Err("(frozen file unavailable: unsafe contract file path)".to_string());
     }
-    let root = input
-        .work_dir
-        .join("contracts")
-        .join(&input.stage.id)
-        .join("files");
+    let record = record
+        .as_ref()
+        .map_err(|e| format!("(freeze record unreadable: {e})"))?
+        .as_ref()
+        .ok_or_else(|| "(the contracts are not frozen)".to_string())?;
+    if !record.files.iter().any(|file| file.path == contract.file) {
+        return Err("(frozen file unavailable: file absent from freeze record)".to_string());
+    }
+    let path = store::frozen_file_path_for_record(input.work_dir, record, &contract.file);
     let work_dir = fs::canonicalize(input.work_dir)
         .map_err(|_| "(frozen file work directory unavailable)".to_string())?;
-    let frozen_root =
-        fs::canonicalize(&root).map_err(|_| "(frozen file root unavailable)".to_string())?;
-    if !frozen_root.starts_with(work_dir) {
-        return Err("(frozen file root escapes the work directory)".to_string());
-    }
-    let path = store::frozen_file_path(input.work_dir, &input.stage.id, &contract.file);
-    read_confined(&frozen_root, &path, "frozen file")
+    let relative = path
+        .strip_prefix(input.work_dir)
+        .map_err(|_| "(frozen file path escapes the work directory)".to_string())?;
+    let bytes =
+        crate::fs::safe_read::read_bounded(&work_dir, relative, store::MAX_FROZEN_FILE_BYTES)
+            .map_err(|_| "(frozen file unavailable)".to_string())?;
+    String::from_utf8(bytes).map_err(|_| "(frozen file unreadable as UTF-8 text)".to_string())
 }
 
 fn current_content(

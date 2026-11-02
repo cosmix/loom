@@ -5,7 +5,7 @@ use super::super::tests::{
 use super::super::AdjudicatorRegistry;
 use crate::models::dispute::{DisputeKind, DisputeVerdict};
 use crate::models::stage::StageStatus;
-use crate::verify::transitions::load_stage;
+use crate::verify::transitions::{load_stage, update_stage};
 
 fn arrange(kind: DisputeKind) -> tempfile::TempDir {
     let tmp = tempfile::tempdir().unwrap();
@@ -123,6 +123,33 @@ fn two_recorded_verdicts_hold_until_both_are_applied() {
     let after = load_stage("s1", work).unwrap();
     assert_eq!(after.status, StageStatus::Queued);
     assert_eq!(after.tally.evidence_rounds, 2);
+}
+
+/// A filing that crashed while dispute 1 was being judged left request 2, which
+/// no stage write names. Nothing will ever judge it while the stage is queued,
+/// so it must not hold verdict 1's re-queue.
+#[test]
+fn a_verdict_requeues_past_a_request_no_filing_published() {
+    let tmp = arrange(DisputeKind::criterion(
+        crate::models::dispute::CriterionField::Acceptance,
+        vec![0],
+    ));
+    let work = tmp.path();
+    update_stage("s1", work, |stage| {
+        stage
+            .tally
+            .request_receipts
+            .insert("dispute-published:1".to_string(), 1);
+        Ok(())
+    })
+    .unwrap();
+    write_dispute_request(work, "s1", 2, 0);
+
+    AdjudicatorRegistry::new()
+        .apply_verdict(work, "s1", 1)
+        .unwrap();
+
+    assert_eq!(load_stage("s1", work).unwrap().status, StageStatus::Queued);
 }
 
 #[test]

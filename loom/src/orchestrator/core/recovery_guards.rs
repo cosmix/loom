@@ -21,7 +21,7 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 
 use crate::models::session::Session;
 use crate::models::stage::Stage;
@@ -92,27 +92,22 @@ pub(super) fn queued_writeback_verdict(
     }
 }
 
-/// A session younger than this cannot be judged dead by a failed liveness
-/// probe: its pid identity file and terminal window are written
-/// asynchronously after spawn, so a probe run inside this window observes
-/// "not written yet", not "gone".
-pub(super) const ORPHAN_PROBE_GRACE_SECS: i64 = 30;
-
-/// Whether `session` is too young for a failed liveness probe to be treated
-/// as evidence that it is dead.
-pub(super) fn too_young_to_judge(session: &Session, now: DateTime<Utc>) -> bool {
-    let age = now.signed_duration_since(session.created_at);
-    age < chrono::Duration::seconds(ORPHAN_PROBE_GRACE_SECS)
-}
+pub(super) use crate::orchestrator::session_registry::launch_too_young_to_judge;
+#[cfg(test)]
+pub(super) use crate::orchestrator::session_registry::{
+    too_young_to_judge, ORPHAN_PROBE_GRACE_SECS,
+};
 
 /// Logs and returns `true` when `session` is too young for a failed liveness
 /// probe to be treated as evidence that it is dead — its pid identity file
 /// and terminal window are written asynchronously after spawn, so a probe
 /// run inside that window observes "not written yet", not "gone", and
-/// requeuing now would spawn a duplicate session into the same worktree.
-pub(super) fn skip_too_young_orphan(session: &Session) -> bool {
+/// requeuing now would spawn a duplicate session into the same worktree. The
+/// window also runs from the launch's wrapper script, which a slow launch writes
+/// well after the record.
+pub(super) fn skip_too_young_orphan(work_dir: &Path, session: &Session) -> bool {
     let now = Utc::now();
-    if !too_young_to_judge(session, now) {
+    if !launch_too_young_to_judge(work_dir, session, now) {
         return false;
     }
     tracing::debug!(

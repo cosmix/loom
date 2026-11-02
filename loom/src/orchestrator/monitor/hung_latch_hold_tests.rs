@@ -7,6 +7,81 @@ use super::super::foreground::CommandProgress;
 use super::*;
 use crate::host_verify::{new_job_id, store, JobKind, JobState};
 
+fn isolated_monitor() -> (TempDir, super::super::Monitor) {
+    let temp = TempDir::new().unwrap();
+    let monitor = super::super::Monitor::new(MonitorConfig {
+        work_dir: temp.path().to_path_buf(),
+        ..Default::default()
+    });
+    (temp, monitor)
+}
+
+fn sample_command(
+    monitor: &mut super::super::Monitor,
+    baseline: chrono::DateTime<Utc>,
+    now: chrono::DateTime<Utc>,
+    ticks: u64,
+) -> bool {
+    monitor.detection.record_command_progress(
+        "session-1",
+        CommandProgress {
+            pid: 42,
+            started: Some(7),
+            cpu_ticks: ticks,
+        },
+        baseline,
+        300,
+        now,
+    )
+}
+
+#[test]
+fn progress_after_detection_rearms_escalation_when_the_command_stalls_again() {
+    let now = Utc::now();
+    let baseline = now - ChronoDuration::seconds(900);
+    let (_temp, mut monitor) = isolated_monitor();
+    assert!(!sample_command(&mut monitor, baseline, now, 10));
+    monitor
+        .detection
+        .record_hung_report("session-1", 900, 300, None);
+    assert!(!monitor
+        .detection
+        .hung_report_due("session-1", 900, 300, None));
+
+    // The handler sees CPU growth after detection has already latched the report.
+    assert!(sample_command(&mut monitor, baseline, now, 11));
+    monitor.defer_hung_escalation("session-1");
+    let (reported, escalated) = monitor.detection.hung_latches();
+    assert!(reported.contains("session-1"));
+    assert!(!escalated.contains("session-1"));
+    assert!(!monitor
+        .detection
+        .hung_report_due("session-1", 900, 300, Some(HELD_LINE)));
+    assert!(sample_command(
+        &mut monitor,
+        baseline,
+        now + ChronoDuration::seconds(299),
+        11
+    ));
+
+    // No heartbeat or further CPU growth: the measured progress expires exactly once.
+    assert!(!sample_command(
+        &mut monitor,
+        baseline,
+        now + ChronoDuration::seconds(300),
+        11
+    ));
+    assert!(monitor
+        .detection
+        .hung_report_due("session-1", 1200, 300, None));
+    monitor
+        .detection
+        .record_hung_report("session-1", 1200, 300, None);
+    assert!(!monitor
+        .detection
+        .hung_report_due("session-1", 1500, 300, None));
+}
+
 #[test]
 fn foreground_cpu_growth_holds_but_an_idle_command_expires() {
     let now = Utc::now();

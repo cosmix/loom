@@ -37,6 +37,53 @@ fn retry_refuses_a_verified_live_session_without_force() {
     assert!(ensure_retry_session_safe(temp.path(), "s1", &session.id, true).is_ok());
 }
 
+/// The stage `spent_contract_stage` leaves on disk, as `retry` read it.
+const WRITER_BLOCKED: (&StageStatus, Option<&str>) = (&StageStatus::Blocked, Some("writer-1"));
+
+/// The admission lock covers every launch from its write-ahead through its
+/// backend's answer, so a retry judging the stage's session waits it out.
+#[test]
+fn retry_waits_for_the_launch_holding_the_stage_admission() {
+    let temp = TempDir::new().unwrap();
+    let mut stage = crate::models::stage::Stage::new("s1".to_string(), None);
+    stage.id = "s1".to_string();
+    stage.status = StageStatus::Blocked;
+    create_stage(&stage, temp.path()).unwrap();
+    let admission = crate::fs::stage_admission::lock(temp.path(), "s1").unwrap();
+
+    let work = temp.path().to_path_buf();
+    let retrying = std::thread::spawn(move || retry_in(&work, "s1".to_string(), false, None));
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert_eq!(
+        load_stage("s1", temp.path()).unwrap().status,
+        StageStatus::Blocked,
+        "the retry requeued the stage under a launch in flight"
+    );
+
+    drop(admission);
+    retrying.join().unwrap().unwrap();
+    assert_eq!(
+        load_stage("s1", temp.path()).unwrap().status,
+        StageStatus::Queued
+    );
+}
+
+/// The status alone does not show a launch that finished after `retry` read
+/// the stage: the session it judged is no longer the stage's.
+#[test]
+fn retry_refuses_a_stage_whose_session_changed_after_the_probe() {
+    let temp = TempDir::new().unwrap();
+    let planned = spent_contract_stage(temp.path());
+
+    let read_earlier = (&StageStatus::Blocked, Some("a-dead-session"));
+    let error = persist_retry_delta("s1", temp.path(), &planned, read_earlier, false).unwrap_err();
+
+    assert!(format!("{error:#}").contains("session"), "{error:#}");
+    let stage = load_stage("s1", temp.path()).unwrap();
+    assert_eq!(stage.status, StageStatus::Blocked);
+    assert_eq!(stage.session.as_deref(), Some("writer-1"));
+}
+
 /// A blocked v2 stage whose contract writers spent the whole budget, and the
 /// state `retry` plans for it.
 fn spent_contract_stage(work_dir: &Path) -> crate::models::stage::Stage {
@@ -55,7 +102,7 @@ fn retry_grants_an_unfrozen_stage_a_fresh_contract_budget() {
     let temp = TempDir::new().unwrap();
     let planned = spent_contract_stage(temp.path());
 
-    persist_retry_delta("s1", temp.path(), &planned, &StageStatus::Blocked, false).unwrap();
+    persist_retry_delta("s1", temp.path(), &planned, WRITER_BLOCKED, false).unwrap();
 
     assert_eq!(
         load_stage("s1", temp.path()).unwrap().status,
@@ -70,7 +117,7 @@ fn retry_leaves_a_frozen_stage_budget_alone() {
     let planned = spent_contract_stage(temp.path());
     write_test_freeze(temp.path(), "s1", "writer-1");
 
-    persist_retry_delta("s1", temp.path(), &planned, &StageStatus::Blocked, false).unwrap();
+    persist_retry_delta("s1", temp.path(), &planned, WRITER_BLOCKED, false).unwrap();
 
     assert_eq!(
         load_stage("s1", temp.path()).unwrap().status,
@@ -90,7 +137,8 @@ fn retry_refused_transition_leaves_budget_unspent() {
 
     // The stage is on disk as `Blocked`, but `retry` is told to expect
     // `Executing` — the closure's own re-validation refuses the mismatch.
-    let result = persist_retry_delta("s1", temp.path(), &planned, &StageStatus::Executing, false);
+    let expected = (&StageStatus::Executing, Some("writer-1"));
+    let result = persist_retry_delta("s1", temp.path(), &planned, expected, false);
 
     assert!(result.is_err());
     assert_eq!(

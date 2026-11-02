@@ -137,6 +137,7 @@ fn stale_writer_probe_error_blocks_replacement() {
     };
 
     assert!(super::merge_gate::stale_merge_retirement_blocks_spawn(
+        std::path::Path::new("/nonexistent/work"),
         &session,
         true,
         |session| backend.probe(session),
@@ -155,6 +156,7 @@ fn kill_failure_with_surviving_stale_writer_blocks_replacement() {
     };
 
     assert!(super::merge_gate::stale_merge_retirement_blocks_spawn(
+        std::path::Path::new("/nonexistent/work"),
         &session,
         true,
         |session| backend.probe(session),

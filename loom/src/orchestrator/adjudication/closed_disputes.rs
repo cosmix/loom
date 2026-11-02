@@ -118,6 +118,18 @@ pub(crate) fn close_open_disputes_except_locked(
     }
 }
 
+/// Close one dispute. The caller holds the stage's dispute lock.
+pub(super) fn close_dispute_locked(
+    work_dir: &Path,
+    stage_id: &str,
+    dispute_id: u32,
+) -> anyhow::Result<()> {
+    match write_closed_marker(&work_dir.join("disputes"), stage_id, dispute_id)? {
+        Some(error) => Err(error.into()),
+        None => Ok(()),
+    }
+}
+
 fn write_closed_marker(
     disputes_root: &Path,
     stage_id: &str,

@@ -48,7 +48,7 @@ pub enum CleanupOutcome {
     /// Refused: the stage branch still holds commits that are not in the
     /// target branch, and ancestry could not be verified.
     Refused { reason: String },
-    /// Cleanup ran.
+    /// Git cleanup ran; the result reports retained filesystem paths as warnings.
     Done(CleanupResult),
     /// Cleanup was attempted and failed. NOT fatal.
     Failed(String),
@@ -186,7 +186,9 @@ impl<'a> MergeLifecycle<'a> {
                 // read, but a FAILED cleanup leaves the worktree and branch in
                 // place, and the overlay still describes them.
                 self.discard_overlay();
-                self.record_cleanup_warning(None);
+                self.record_cleanup_warning(
+                    (!result.warnings.is_empty()).then(|| result.warnings.join("; ")),
+                );
                 CleanupOutcome::Done(result)
             }
             Err(failure) => {

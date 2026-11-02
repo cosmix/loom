@@ -53,10 +53,11 @@ pub(super) fn request_contract_review(stage: &mut Stage) -> Result<()> {
 ///
 /// `manual_mode` also leaves the budget alone: a manually-launched writer
 /// carries no PID-identity or window evidence loom wrote itself (loom never
-/// spawned it), so the liveness probe reports it dead unconditionally, and
-/// every `loom run --manual` restart would otherwise burn one respawn on a
-/// writer that may still be alive in the operator's own terminal. The stage
-/// still requeues normally; only the charge is skipped.
+/// spawned it), so the liveness probe reports it dead once it is past the
+/// registry's grace period, and every `loom run --manual` restart would
+/// otherwise burn one respawn on a writer that may still be alive in the
+/// operator's own terminal. The stage still requeues normally; only the charge
+/// is skipped.
 pub(super) fn charge_orphaned_contract_writer(
     stage: &mut Stage,
     session: &Session,

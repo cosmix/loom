@@ -7,6 +7,8 @@
 use chrono::Utc;
 
 use crate::fs::stage_request::StageRequest;
+use crate::git::runner::run_git_checked;
+use crate::git::worktree::capture_main_identity;
 use crate::host_verify::store::load_current;
 use crate::host_verify::{digest, JobKind};
 use crate::models::dispute::{request_file, verdict_file};
@@ -75,6 +77,13 @@ fn run_cell(session_type: SessionType, kind: RequestKind) -> Cell {
         // A v2 stage with a frozen contract to dispute, so a refusal can only
         // come from the matrix.
         RequestKind::FileDispute => fx.frozen_contract_stage(&record.id),
+        // A handoff reads the checkout through the pinned git facade, so a
+        // refusal can only come from the matrix.
+        RequestKind::Handoff => {
+            run_git_checked(&["init", "-q", "-b", "main"], &fx.repo_root).unwrap();
+            capture_main_identity(&fx.repo_root, &fx.work_dir).unwrap();
+            fx.stage(StageStatus::Executing, Some(&record.id));
+        }
         _ => fx.stage(StageStatus::Executing, Some(&record.id)),
     }
     let entry = fx.relay(&record, kind, cell_payload(&fx, kind));
