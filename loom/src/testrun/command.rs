@@ -64,6 +64,12 @@ pub fn exact_regex_literal(value: &str) -> String {
     format!("^{}$", regex_literal(value))
 }
 
+/// A Ruby regex matching the entire RSpec full description, including names
+/// that contain newlines (where `^` and `$` would match a single line).
+pub fn exact_ruby_regex(value: &str) -> String {
+    format!(r"\A{}\z", regex_literal(value))
+}
+
 /// A complete PHPUnit test identifier as an explicit PCRE pattern. Delimiters
 /// prevent PHPUnit from interpreting the input as its abbreviated filter syntax.
 pub fn exact_phpunit_regex(value: &str) -> String {

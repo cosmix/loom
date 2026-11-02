@@ -30,7 +30,11 @@ pub fn transition_stage(stage_id: &str, new_status: StageStatus, work_dir: &Path
     })
 }
 
-/// Queue waiting dependents when all their prerequisites become final.
+/// Queue waiting dependents when all their prerequisites become final. A
+/// dependent that cannot be checked or queued is logged and left waiting for
+/// the next poll: the caller has already recorded the merge, so one dependent's
+/// failure must not cost its siblings their transition or skip the cleanup
+/// that follows.
 pub fn trigger_dependents(
     completed_stage_id: &str,
     work_dir: &Path,
@@ -50,36 +54,50 @@ pub fn trigger_dependents(
             continue;
         }
 
-        if are_all_dependencies_satisfied(&stage, work_dir, repo_root, target_branch)? {
-            let stage_id = stage.id.clone();
-            let expected_dependencies = stage.dependencies.clone();
-            let mut transitioned = false;
-            update_stage(&stage_id, work_dir, |current| {
-                // A concurrent amendment or scheduler may have changed the
-                // record after the dependency probe. Only apply the exact
-                // transition we evaluated; otherwise the next poll rechecks.
-                if current.status != StageStatus::WaitingForDeps
-                    || current.dependencies != expected_dependencies
-                {
-                    return Ok(());
-                }
-                current.try_mark_queued().with_context(|| {
-                    format!(
-                        "Failed to transition stage {} from {:?} to Queued",
-                        current.id, current.status
-                    )
-                })?;
-                transitioned = true;
-                Ok(())
-            })
-            .with_context(|| format!("Failed to update triggered stage: {stage_id}"))?;
-            if transitioned {
-                triggered.push(stage_id);
-            }
+        match queue_if_satisfied(&stage, work_dir, repo_root, target_branch) {
+            Ok(true) => triggered.push(stage.id),
+            Ok(false) => {}
+            Err(error) => tracing::error!(
+                stage_id = %stage.id, completed = %completed_stage_id, error = %format!("{error:#}"),
+                "Could not trigger dependent stage; the next poll rechecks it"
+            ),
         }
     }
 
     Ok(triggered)
+}
+
+/// Queue `stage` if its dependencies are satisfied. `true` means it moved.
+fn queue_if_satisfied(
+    stage: &Stage,
+    work_dir: &Path,
+    repo_root: &Path,
+    target_branch: &str,
+) -> Result<bool> {
+    if !are_all_dependencies_satisfied(stage, work_dir, repo_root, target_branch)? {
+        return Ok(false);
+    }
+    let mut transitioned = false;
+    update_stage(&stage.id, work_dir, |current| {
+        // A concurrent amendment or scheduler may have changed the
+        // record after the dependency probe. Only apply the exact
+        // transition we evaluated; otherwise the next poll rechecks.
+        if current.status != StageStatus::WaitingForDeps
+            || current.dependencies != stage.dependencies
+        {
+            return Ok(());
+        }
+        current.try_mark_queued().with_context(|| {
+            format!(
+                "Failed to transition stage {} from {:?} to Queued",
+                current.id, current.status
+            )
+        })?;
+        transitioned = true;
+        Ok(())
+    })
+    .with_context(|| format!("Failed to update triggered stage: {}", stage.id))?;
+    Ok(transitioned)
 }
 
 /// Why a stage cannot be scheduled, and whether waiting will fix it.

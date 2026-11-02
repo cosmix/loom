@@ -80,11 +80,11 @@ impl Site<'_> {
 
 /// A finished run, shown as `command`: passed, inconclusive, or how it failed.
 fn judge(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Run {
-    if !run.output_complete {
-        return Run::Inconclusive(format!("`{command}` output capture was incomplete"));
-    }
     if run.exit_code == Some(127) {
         return Run::Inconclusive(format!("`{command}` could not start (exit 127)"));
+    }
+    if !run.output_complete {
+        return judge_incomplete_capture(command, run);
     }
     // A certified cache hit keeps only output tails; its recorded count decides.
     if let Some(verdict) = judge_cached(&command, adapter, run) {
@@ -124,6 +124,21 @@ fn judge(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Ru
     Run::Failed(Failure {
         command,
         kind,
+        output: output_tail(run),
+    })
+}
+
+/// A run whose capture lost output. Only a passing exit needs the output its
+/// count would come from. A failing exit fails whatever the capture lost.
+fn judge_incomplete_capture(command: String, run: &ProbeRun) -> Run {
+    if run.exit_code == Some(0) {
+        return Run::Inconclusive(format!("`{command}` output capture was incomplete"));
+    }
+    Run::Failed(Failure {
+        command,
+        kind: FailureKind::Unparsed {
+            exit_code: run.exit_code,
+        },
         output: output_tail(run),
     })
 }

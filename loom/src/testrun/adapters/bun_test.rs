@@ -195,8 +195,24 @@ describe("suite", () => {{
         assert_eq!(parsed.passed, Some(1));
 
         let (parsed, exit_code, stderr) = run_collision_fixture(dir.path(), ".skip");
-        assert_ne!(classify(&parsed, exit_code), RunOutcome::Passed, "{stderr}");
+        assert_eq!(
+            classify(&parsed, exit_code),
+            RunOutcome::NotSelected,
+            "{stderr}"
+        );
         assert_eq!(parsed.failed, Some(0), "a sibling was selected: {stderr}");
+
+        // Both siblings would fail, yet neither satisfies the freeze's red phase.
+        let spec = crate::plan::schema::ContractSpec {
+            file: "collision.test.ts".to_string(),
+            test: "suite value (a)+".to_string(),
+            runner: Some("bun-test".to_string()),
+            ..crate::verify::contracts::test_support::contract()
+        };
+        let refused =
+            crate::verify::contracts::freeze::judge_run(&spec, Some(&ADAPTER), parsed, exit_code)
+                .expect_err("a failing sibling must not stand in for the missing exact test");
+        assert!(refused.contains("did not select"), "{refused}");
     }
 
     #[test]

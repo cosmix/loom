@@ -122,9 +122,11 @@ pub trait TestRunnerAdapter: Sync {
     /// `package_dir` as its cwd. For JavaScript, Dart and Flutter runners,
     /// `test` is the full runner-visible name, including enclosing suite names.
     /// Vitest joins nested titles with ` > `; Bun, Jest and Mocha use spaces.
-    /// PHPUnit expects the fully qualified `Class::method` identifier, including any data set.
-    /// Pest expects its generated PHPUnit identifier in the same form;
-    /// Swift XCTest expects `Module.Case/method`.
+    /// PHPUnit filters on `Class::method` plus ` with data set "name"` for a
+    /// named data set; this differs from its `--list-tests` display. Pest
+    /// filters on the printable ``Class::`suite` → it title`` form, not its
+    /// generated `__pest_evaluable` method name. RSpec uses the full nested
+    /// example description. Swift XCTest expects `Module.Case/method`.
     fn single_test_command(&self, file: &str, test: &str, package_dir: &Path) -> String;
 
     /// [`Self::single_test_command`] restricted to the build target `scope`.

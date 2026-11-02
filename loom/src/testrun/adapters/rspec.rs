@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::testrun::command::{
-    distinct_files, marker_choice, shell_quote, shell_word, shell_words,
+    distinct_files, exact_ruby_regex, marker_choice, shell_quote, shell_word, shell_words,
 };
 use crate::testrun::recognize::{
     combined_output, command_args, has_flag, last_match, pattern, positionals,
@@ -101,8 +101,8 @@ impl TestRunnerAdapter for Rspec {
 
     fn single_test_command(&self, file: &str, test: &str, package_dir: &Path) -> String {
         let file = shell_word(file);
-        let name = shell_quote(test);
-        format!("{} {file} -e {name}", runner(package_dir))
+        let name = shell_quote(&exact_ruby_regex(test));
+        format!("{} {file} -E {name}", runner(package_dir))
     }
 
     /// RSpec accepts all selected files in one invocation; names are omitted
@@ -148,7 +148,7 @@ mod tests {
         let test = "Widget returns a value";
         assert_eq!(
             ADAPTER.single_test_command(file, test, dir.path()),
-            "rspec spec/widget_spec.rb -e 'Widget returns a value'"
+            r"rspec spec/widget_spec.rb -E '\AWidget returns a value\z'"
         );
         std::fs::write(
             dir.path().join("Gemfile"),
@@ -157,7 +157,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             ADAPTER.single_test_command(file, test, dir.path()),
-            "bundle exec rspec spec/widget_spec.rb -e 'Widget returns a value'"
+            r"bundle exec rspec spec/widget_spec.rb -E '\AWidget returns a value\z'"
         );
     }
 
@@ -165,7 +165,54 @@ mod tests {
     fn hostile_test_name_stays_one_example_word() {
         let dir = tempfile::tempdir().unwrap();
         let command = ADAPTER.single_test_command("a_spec.rb", HOSTILE_NAME, dir.path());
-        assert_one_word(&command, HOSTILE_NAME);
+        assert_one_word(&command, &exact_ruby_regex(HOSTILE_NAME));
+    }
+
+    #[test]
+    fn installed_rspec_rejects_exact_name_collisions() {
+        let Some(runner) = std::env::var_os("LOOM_TEST_RSPEC_BIN") else {
+            return;
+        };
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/testrun/fixtures/rspec/collision_spec.rb");
+        let dir = tempfile::Builder::new()
+            .prefix("ver01-")
+            .tempdir_in(fixture.parent().expect("RSpec fixture directory"))
+            .expect("temporary RSpec project");
+        std::fs::copy(&fixture, dir.path().join("collision_spec.rb"))
+            .expect("copy collision fixture");
+
+        for (test, skip_exact, expected) in [
+            ("suite value (a)+", false, RunOutcome::Passed),
+            ("suite value (a)+", true, RunOutcome::NotSelected),
+            ("suite absent (a)+", false, RunOutcome::NotSelected),
+        ] {
+            let mut command = std::process::Command::new(&runner);
+            command
+                .args(["collision_spec.rb", "-E"])
+                .arg(exact_ruby_regex(test))
+                .current_dir(dir.path());
+            if skip_exact {
+                command.env("VER01_SKIP_EXACT", "1");
+            }
+            let output = command.output().expect("run installed RSpec");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let summary = ADAPTER.parse(&RunOutput {
+                stdout: &stdout,
+                stderr: &stderr,
+                exit_code: output.status.code(),
+            });
+            assert_eq!(
+                classify(&summary, output.status.code()),
+                expected,
+                "{stdout}\n{stderr}"
+            );
+            assert_eq!(
+                summary.executed,
+                Some(if expected == RunOutcome::Passed { 1 } else { 0 })
+            );
+        }
     }
 
     #[test]
