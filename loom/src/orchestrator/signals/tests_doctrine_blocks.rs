@@ -40,7 +40,7 @@ pub(super) const BLOCK_B: &str = r#"1. DELEGATION IS A COST DECISION: TOKENS TIM
    the subagent typically finishes under about 400,000 tokens, and never split
    below what that needs: every extra spawn pays the boot cost again. Pick PER
    SUBAGENT by what that piece needs, never once for the whole stage, and
-   default downward: HAIKU (`model: haiku` on loom-software-engineer) for
+   default downward: HAIKU (loom-mechanical-engineer) for
    mechanical edits, boilerplate, scaffolding, and simple unit tests; codex
    gpt-6-luna for that same work only when the user or the plan asks for it;
    codex gpt-6.1-terra or SONNET (loom-software-engineer) for common
