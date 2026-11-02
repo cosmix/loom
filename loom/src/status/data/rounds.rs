@@ -19,7 +19,7 @@ use serde_json::Value;
 
 use crate::fs::work_dir::WorkDir;
 use crate::models::dispute::CLOSED_MARKER;
-use crate::models::stage::{IssueDisposition, IssueKind, Stage, StageIssue};
+use crate::models::stage::{legacy_disposition, IssueKind, Stage, StageIssue};
 
 use super::disputes::{frontmatter, sorted_dispute_ids, text, timestamp};
 use super::sanitize::valid_stage_id;
@@ -115,6 +115,8 @@ fn read_round(root: &Path, dir: &Path, id: u32, stamp: &EndStamp) -> Round {
     };
     let ruling = verdict.get("verdict");
     let (ended_at, ended_by) = ending(&verdict, stamp);
+    // The ending's text decides, so a round reads as an archived issue does.
+    let disposition = Some(legacy_disposition(&ended_by));
     let kind = text(request.get("kind")).unwrap_or_else(|| "dispute".to_owned());
     let reason = text(request.get("reason"));
     let reason_lines: Vec<String> = reason
@@ -133,28 +135,12 @@ fn read_round(root: &Path, dir: &Path, id: u32, stamp: &EndStamp) -> Round {
         evidence,
         ended_at,
         ended_by,
-        disposition: Some(round_disposition(ruling, stamp)),
+        disposition,
         dispute_id: Some(id),
     };
     Round {
         issue,
         reason_lines,
-    }
-}
-
-fn round_disposition(ruling: Option<&Value>, stamp: &EndStamp) -> IssueDisposition {
-    if stamp.applied.is_none() {
-        return IssueDisposition::Closed;
-    }
-    match ruling
-        .and_then(|value| value.get("verdict"))
-        .and_then(Value::as_str)
-    {
-        Some("accept") => IssueDisposition::Accepted,
-        Some("reject") => IssueDisposition::Rejected,
-        Some("needs-more-evidence") => IssueDisposition::NeedsEvidence,
-        Some("rulings") => IssueDisposition::Ruled,
-        _ => IssueDisposition::Unknown,
     }
 }
 

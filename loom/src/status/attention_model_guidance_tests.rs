@@ -61,10 +61,10 @@ fn a_resolver_with_no_recent_tool_call_is_not_automatic_and_says_to_look_first()
         (
             None,
             Some(
-                "merge resolver session-abc made no tool call for 12 min and has not run loom \
+                "merge resolver session-abc has shown no progress for 12 min and has not run loom \
                  stage merge docs --resolved: it may be inside one long command or may have \
-                 stopped (attempt 1 of 6). Look first: it runs in the terminal window titled \
-                 loom-merge-docs. Only if it is stuck, loom sessions kill session-abc ends it and \
+                 stopped (attempt 1 of 6). Look first: look for terminal window loom-v2-merge-docs \
+                 (or loom-merge-docs for an older session). Only if it is stuck, loom sessions kill session-abc ends it and \
                  the daemon starts the next attempt"
             ),
             false

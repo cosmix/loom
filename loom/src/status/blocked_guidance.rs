@@ -5,10 +5,10 @@
 //! stage that has a cause the operator must act on first says so, and a
 //! deliberate block offers the operator's other choices too.
 
-use crate::commands::status::data::StageSummary;
 use crate::context::untrusted::inline_safe;
 use crate::models::failure::FailureType;
 use crate::orchestrator::retry::should_auto_retry;
+use crate::status::data::StageSummary;
 
 use super::attention_model::{failure_label, Alternative, Guidance};
 

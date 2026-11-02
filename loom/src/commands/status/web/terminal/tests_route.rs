@@ -83,7 +83,7 @@ fn resolve_returns_the_target_for_a_live_tmux_session() {
     )
     .expect("live tmux target");
     assert_eq!(target.socket, "loom-session-a");
-    assert_eq!(target.tmux_session, "loom-stage");
+    assert_eq!(target.tmux_session, "loom-v2-stage-stage");
 }
 
 #[test]

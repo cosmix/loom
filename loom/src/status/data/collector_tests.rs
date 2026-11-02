@@ -1,11 +1,11 @@
 use super::*;
-use crate::commands::status::data::{completion_blocker_summary, CompletionBlockerState};
 use crate::handoff::{
     CompletionAttemptEvidence, CompletionBlocker, CompletionCheckpoint, CompletionPhase,
     CriterionResult, HandoffOrigin, HandoffV2, VerificationCheckpoint, COMPLETION_EVIDENCE_VERSION,
 };
 use crate::models::session::{SessionExitReason, SessionStatus};
 use crate::parser::frontmatter::parse_from_markdown;
+use crate::status::data::{completion_blocker_summary, CompletionBlockerState};
 
 pub(super) fn make_test_stage(id: &str, status: StageStatus) -> Stage {
     Stage {
@@ -86,7 +86,7 @@ fn test_build_session_summary() {
 
 #[test]
 fn test_build_merge_summary_from_report() {
-    let mut report = crate::commands::status::merge_status::MergeStatusReport::new();
+    let mut report = crate::status::merge_status::MergeStatusReport::new();
     report.merged.push("stage-1".to_string());
     report.pending.push("stage-2".to_string());
     report.conflicts.push("stage-3".to_string());

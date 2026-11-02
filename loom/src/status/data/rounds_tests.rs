@@ -1,4 +1,5 @@
 use super::*;
+use crate::models::stage::IssueDisposition;
 use std::time::Duration;
 use tempfile::TempDir;
 
@@ -144,4 +145,52 @@ fn worktree_state_root_symlink_keeps_ended_rounds_readable() {
     let rounds = adjudication_rounds(&stage(), &work);
     assert_eq!(rounds.len(), 1);
     assert_eq!(rounds[0].reason_lines, ["recorded"]);
+}
+
+/// Each ending string means one thing, whichever reader interprets it: a round
+/// read here and one archived in `issue_history` (`legacy_disposition`).
+type EndingCase<'a> = (&'a [(&'a str, &'a str)], &'a str, IssueDisposition);
+
+#[test]
+fn every_ending_has_the_disposition_its_text_has_elsewhere() {
+    let unreadable = [("verdict.md", "not frontmatter"), ("applied.marker", "")];
+    let closed_after_apply = [("applied.marker", ""), (CLOSED_MARKER, "")];
+    let closed_with_verdict = [("verdict.md", ACCEPT), (CLOSED_MARKER, "")];
+    let closed = [(CLOSED_MARKER, "")];
+    let accepted = [("verdict.md", ACCEPT), ("applied.marker", "")];
+    let cases: [EndingCase; 5] = [
+        (
+            &unreadable,
+            "ended without a readable verdict",
+            IssueDisposition::Closed,
+        ),
+        (
+            &closed_after_apply,
+            "closed without a verdict",
+            IssueDisposition::Closed,
+        ),
+        (
+            &closed_with_verdict,
+            "closed before its verdict was applied",
+            IssueDisposition::Closed,
+        ),
+        (
+            &closed,
+            "closed without a verdict",
+            IssueDisposition::Closed,
+        ),
+        (
+            &accepted,
+            "adjudicator verdict: accept",
+            IssueDisposition::Accepted,
+        ),
+    ];
+    for (records, ended_by, disposition) in cases {
+        let (_temp, work) = work_dir();
+        dispute(&work, 1, "x", records);
+        let rounds = adjudication_rounds(&stage(), &work);
+        assert_eq!(rounds.len(), 1, "{ended_by}");
+        assert_eq!(rounds[0].issue.ended_by, ended_by);
+        assert_eq!(rounds[0].issue.disposition, Some(disposition), "{ended_by}");
+    }
 }

@@ -3,14 +3,14 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::commands::status::data::{FailingCriterion, StatusData};
-use crate::commands::status::render::attention_model::{Alternative, AttentionEntry};
-use crate::commands::status::render::failure_label;
 use crate::daemon::{DaemonServer, DaemonStatus};
 use crate::models::failure::FailureType;
 use crate::models::stage::StageStatus;
 use crate::orchestrator::scheduling_report::{self, Alert, Severity};
 use crate::orchestrator::tick;
+use crate::status::attention_model::failure_label;
+use crate::status::attention_model::{Alternative, AttentionEntry};
+use crate::status::data::{FailingCriterion, StatusData};
 
 /// One frame of the web dashboard: everything the page renders, as one JSON object.
 /// Served by `/api/status` and pushed as every WebSocket text frame.
@@ -210,7 +210,7 @@ pub fn collect_snapshot(
     terminals: bool,
 ) -> WebSnapshot {
     let daemon = DaemonState::from(DaemonServer::check_status(work_path));
-    let attention = crate::commands::status::render::attention_entries(&status.stages)
+    let attention = crate::status::attention_model::attention_entries(&status.stages)
         .iter()
         .map(WebAttention::from)
         .collect();
@@ -230,7 +230,7 @@ pub fn collect_snapshot(
         tick_age_secs,
         source,
         terminals,
-        notice: None,
+        notice: crate::daemon::completion_diagnostics(work_path),
         generated_at: Utc::now(),
         version: crate::version::VERSION.to_owned(),
     }

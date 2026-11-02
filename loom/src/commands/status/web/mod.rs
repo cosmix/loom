@@ -212,6 +212,10 @@ fn log_adoption(adoption: TmuxTmpdirAdoption) {
 }
 
 /// Serve an already-bound listener until `running` becomes false.
+/// A bounded drain that still has active requests returns
+/// [`web_server::ShutdownPending`]; those requests retain the listening address
+/// and may finish previously admitted configuration updates. Only success
+/// reports that every handler has finished.
 ///
 /// Fails closed rather than serving anything for a non-loopback (including
 /// wildcard) `listener` that carries no valid process token in `options`:

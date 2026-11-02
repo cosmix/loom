@@ -10,10 +10,10 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
-use crate::commands::status::data::{collect_status_data, StatusData};
 use crate::commands::status::ui::tui::daemon_client;
 use crate::daemon::{Response, ResponseFrameReader};
 use crate::fs::work_dir::WorkDir;
+use crate::status::data::{collect_status_data, StatusData};
 use crate::web_server::hub::Hub;
 
 use super::model::{collect_snapshot, SnapshotSource, WebSnapshot};
@@ -278,7 +278,9 @@ pub(super) fn poll_files_once(
         }
     };
     let mut snapshot = collect_snapshot(work_path, data, SnapshotSource::Files, terminals);
-    snapshot.notice = notice.map(str::to_owned);
+    if let Some(notice) = notice {
+        snapshot.notice = Some(notice.to_owned());
+    }
     broadcaster.publish(serde_json::to_string(&snapshot).context("serialize file snapshot")?);
     Ok(())
 }

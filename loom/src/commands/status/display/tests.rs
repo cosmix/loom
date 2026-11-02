@@ -2,6 +2,16 @@ use crate::models::stage::StageStatus;
 use crate::verify::transitions::parse_stage_from_markdown;
 
 #[test]
+fn count_files_only_counts_markdown_files() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("one.md"), "").unwrap();
+    std::fs::write(dir.path().join("other.txt"), "").unwrap();
+    std::fs::create_dir(dir.path().join("directory.md")).unwrap();
+    assert_eq!(super::count_files(dir.path()).unwrap(), 1);
+    assert_eq!(super::count_files(&dir.path().join("missing")).unwrap(), 0);
+}
+
+#[test]
 fn test_parse_stage_with_retry_info() {
     use crate::models::failure::FailureType;
 

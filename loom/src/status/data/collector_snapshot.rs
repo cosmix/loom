@@ -12,7 +12,7 @@ fn collect_merge_summary(stages: &[Stage], work_dir: &WorkDir) -> Result<MergeSu
     let merge_report = if let Some(project_root) = work_dir.project_root() {
         build_merge_report(stages, &merge_point, project_root)?
     } else {
-        crate::commands::status::merge_status::MergeStatusReport::new()
+        crate::status::merge_status::MergeStatusReport::new()
     };
 
     Ok(build_merge_summary_from_report(&merge_report))

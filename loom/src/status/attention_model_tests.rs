@@ -1,10 +1,8 @@
 use super::*;
-use crate::commands::status::data::{
-    ActivityStatus, CompletionBlockerState, CompletionBlockerSummary,
-};
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::session::SessionBackendKind;
 use crate::models::stage::StageStatus;
+use crate::status::data::{ActivityStatus, CompletionBlockerState, CompletionBlockerSummary};
 
 #[path = "blocked_guidance_tests.rs"]
 mod blocked_guidance_tests;
@@ -150,6 +148,20 @@ fn cleanup_warning_wins_over_completed_status() {
 }
 
 #[test]
+fn skipped_cleanup_warning_requires_inspection_and_explicit_confirmation() {
+    let mut stage = make_stage_summary("skipped-stage", StageStatus::Skipped);
+    stage.cleanup_warning = Some("could not remove worktree".to_string());
+
+    let entry = entry_for(stage);
+    assert_eq!(entry.command, None);
+    let note = entry.note.unwrap();
+    assert!(note.contains("inspect the worktree and branch"));
+    assert!(note.contains(
+        "loom worktree remove skipped-stage --force --confirm delete-unmerged-work:skipped-stage"
+    ));
+}
+
+#[test]
 fn a_typed_merge_block_is_automatic_and_names_no_resolver() {
     let mut stage = make_stage_summary("blocked-stage", StageStatus::MergeBlocked);
     stage.merge_block = Some("the target moved".to_string());
@@ -192,7 +204,8 @@ fn stash_warning_outranks_every_other_state() {
     assert!(!entries[0].automatic);
     let note = entries[0].note.as_deref().unwrap();
     assert!(note.contains("the merge of stash-stage stashed your uncommitted changes"));
-    assert!(note.contains("git stash pop"), "{note}");
+    assert!(note.contains("git stash apply <ref>"), "{note}");
+    assert!(!note.contains("git stash pop"), "{note}");
     assert!(
         note.contains("(backups: refs/loom/autostash/stash-stage-9)"),
         "{note}"

@@ -14,7 +14,7 @@ use super::resolver::is_live;
 const MAX_CRITERIA: usize = 100;
 
 /// Why a blocked stage was blocked. It is what the guidance for a block quotes
-/// (`render::blocked_guidance`); no renderer reads the close reason of any other
+/// (`status::blocked_guidance`); no renderer reads the close reason of any other
 /// status, and it runs to `MAX_CLOSE_REASON_CHARS` characters in a payload sent
 /// every second, so every other stage carries none.
 pub(super) fn blocked_close_reason(stage: &Stage) -> Option<String> {
