@@ -36,8 +36,10 @@ them and writes `settings.json` and `guard.json` (0600, no-follow) into the sess
 2. **Permission rules.** `Edit(//<abs>)` allow and deny rules only (`Write(path)` is never emitted:
    [Sandbox Settings Emission](execution-containment.md#sandbox-settings-emission--editpath-never-writepath)),
    the five `Bash(loom ...)` commands of authoring, `WebSearch` allowed, `WebFetch` asking,
-   `AskUserQuestion` and the capsule tools denied, `defaultMode: default`,
-   `disableBypassPermissionsMode`, `autoAllowBashIfSandboxed: false`, `strictAllowlist` with no domains,
+   `AskUserQuestion` and the capsule tools denied, `defaultMode` from `permission_mode(kind)`
+   (`sandbox/permissions.rs`: `auto` for authoring and pressure, `default` for summary, where an
+   unlisted tool is denied at once; the launch command passes the same value as `--permission-mode`
+   and `assert.rs` refuses settings whose mode differs for the kind), `disableBypassPermissionsMode`, `autoAllowBashIfSandboxed: false`, `strictAllowlist` with no domains,
    `worktree.bgIsolation: "none"`.
 3. **The guard**, below.
 
@@ -58,9 +60,18 @@ them and writes `settings.json` and `guard.json` (0600, no-follow) into the sess
 - **No glob rule over `doc/loom/`.** Claude Code matches `Edit` paths with gitignore semantics, so
   `Edit(//<root>/doc/*)` would match the directory `doc/loom` and cover `doc/loom/knowledge/**` whenever
   the guard hook does not answer. Top-level files of `doc/` are therefore listed one literal rule each; a
-  file created later prompts the holder and the guard still decides it. A name holding rule syntax
+  file created later matches no rule, so in auto mode it reaches the classifier while the guard
+  decides it. A name holding rule syntax
   (`* ? [ ] { } ( ) \ !`) is skipped for an allow and refused for the pressure plan or bundle
   (`permissions.rs` `RULE_SYNTAX`).
+- **Auto mode needs explicit asks.** Under `auto` an action no rule lists goes to the classifier, so
+  authoring and pressure carry `Edit` ask rules (`file_tool_asks`): `doc/loom/**` and each top-level
+  entry of the project except `doc` (and a pressure session's omissions file), enumerated at spawn,
+  a directory with everything beneath it; kickoff also asks on its `loom ...` writer commands
+  (`KICKOFF_WRITER_ASKS`) and the team scope on `KNOWLEDGE_BASH`. An ask outranks an allow, so no
+  catch-all covers the root or `doc`; an entry created after spawn stays with the guard. Ask rules
+  match the literal `loom ...` spelling only, so `/abs/path/loom knowledge update` or a shell append
+  into `doc/loom` reaches the classifier (section 12 accepts this).
 - **Why summary sessions deny `doc/` entries.** A summary run's only file-tool write is a draft; the
   seal is a CLI call that needs OS write access to `doc/loom/summaries` and nothing else, so layer 1
   leaves that one path and denies the rest of `doc/`.

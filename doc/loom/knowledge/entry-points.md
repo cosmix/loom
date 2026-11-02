@@ -69,8 +69,9 @@ Each topic file holds the full section for its area; this file only points to th
 
 ## Planner Web Entry Points
 
-- `scripts/plan-screens.sh` (+ `web/scripts/plan-screens.mjs`) — real-browser screenshots of planner routes against a live `loom plan` server ([plan-web](conventions/plan-web.md#visual-stages-and-the-screenshot-script))
+- `scripts/plan-screens.sh` (+ `web/scripts/plan-screens.mjs`) — real-browser screenshots of planner routes against a live `loom plan` server ([plan-web](conventions/plan-web.md#visual-stages-and-the-screenshot-script)); `scripts/plan-journeys.sh` (+ `web/scripts/plan-journeys*.mjs`) — scripted user journeys J1-J8 against the same server
+- `web/src/plan/feature/feature-layout.tsx`, `spine.tsx`, `page-offer.ts`, `landing.ts` — the feature layout route, its spine, offer ownership and landing; `web/src/plan/ui/DESIGN.md` — the design record; `loom/src/plan_session/owner_watch.rs` — reclaims a session's tmux server after its owner stays away
 - `web/src/plan/header/header.tsx`, `dock.tsx`, `chat/session-home.ts`, `concept/column-keys.ts`, `help/pin-placement.ts` — app bar, chat mounting, a chat's home screen, reading-column keys, help pins
 - `loom/src/plan_server/wire/checklist_card.rs` — per-feature card facts; `loom/src/plan_server/summaries/backend.rs` and `codex_spawner.rs` — summary backend dispatch and the Codex job; `loom/src/plan_session/bridge/opening.rs` — Enter re-press and unsubmitted-opening failure
 
-→ [Planner Web Shell and Screens](architecture/planner-web-shell.md), [Summary Store](architecture/summary-store.md#summary-backends-claude-and-codex)
+→ [Planner Web Shell and Screens](architecture/planner-web-shell.md), [Planner Feature Screens](architecture/planner-feature-screens.md), [Summary Store](architecture/summary-store.md#summary-backends-claude-and-codex)
