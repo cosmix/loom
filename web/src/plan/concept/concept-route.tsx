@@ -58,8 +58,8 @@ function rawNameOf(pathname: string): string {
 }
 
 /**
- * The name of the concept page at `pathname`; null outside concept mode. Its only caller is the
- * eyebrow above an overview (a summary page's header shows its own title); the presence list
+ * The name of the concept page at `pathname`; null outside concept mode. It titles an overview and
+ * feeds the eyebrow above it (a summary page's header shows its own title); the presence list
  * does not read it.
  */
 export function conceptPageLabel(pathname: string): string | null {

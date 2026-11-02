@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import { useLocation } from "react-router";
 
 import { useMediaQuery } from "@/lib/use-media-query";
+import { ISOLATED_LTR, Untrusted } from "@/plan/chat/visible-controls";
 import { useFileSocket } from "@/plan/files/api";
 import { DiffPage } from "@/plan/diff";
 import { parseAddress, type FileAddress } from "@/plan/files/address";
@@ -32,9 +33,9 @@ function GapView({
 }): JSX.Element {
   const features = useAtomValue(featuresAtom);
   const crumbs = feature !== null ? [featureCrumb(feature)] : [];
-  const item = features
-    .find((checklist) => checklist.feature === feature)
-    ?.items.find((candidate) => target !== null && candidate.path === target);
+  const checklist = features.find((candidate) => candidate.feature === feature);
+  const item = checklist?.items.find((candidate) => target !== null && candidate.path === target);
+  const stepName = checklist?.steps.find((step) => step.number === item?.step)?.name;
   return (
     <div className="flex flex-col gap-3">
       <DocHeading breadcrumb={[...crumbs, { label: title }]} kind={null} title={title} />
@@ -42,7 +43,12 @@ function GapView({
       {item ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-6 pb-6 text-[13px]">
           <span className="text-muted-foreground">Step {item.step}</span>
-          <span className="font-medium" style={{ unicodeBidi: "isolate", direction: "ltr" }}>
+          {stepName !== undefined && (
+            <span className="text-muted-foreground">
+              <Untrusted text={stepName} />
+            </span>
+          )}
+          <span className="font-medium" style={ISOLATED_LTR}>
             <SentenceText text={item.text} />
           </span>
           {item.offer && <OfferButton offer={item.offer} />}
