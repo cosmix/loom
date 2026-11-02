@@ -35,12 +35,12 @@ out_dir=$2
 repo=$(git rev-parse --show-toplevel)
 script_dir=$(cd "$(dirname "$0")" && pwd)
 mjs="$script_dir/../web/scripts/plan-journeys.mjs"
-scratch=$(mktemp -d "${TMPDIR:-/tmp}/plan-journeys.XXXXXX")
-# Not under $scratch: a socket path is limited to 108 bytes (sun_path), and a long TMPDIR passes it.
-tmux_dir=$(mktemp -d /tmp/lpj.XXXXXX 2>/dev/null || mktemp -d "${TMPDIR:-/tmp}/lpj.XXXXXX")
-export TMUX_TMPDIR=$tmux_dir
-socket_dir="$tmux_dir/tmux-$(id -u)"
 probe="loom-journeys-probe-$$"
+# Empty until created: the trap below is installed before the first mktemp, so a failed one still
+# cleans up whatever the run made so far.
+scratch=""
+tmux_dir=""
+socket_dir=""
 server_pid=""
 
 # `loom plan` names its tmux sockets loom-plan-<id>; the directory holds only this run's.
@@ -69,11 +69,24 @@ cleanup() {
     kill -TERM "$server_pid" 2>/dev/null || true
     wait "$server_pid" 2>/dev/null || true
   fi
-  kill_run_sockets
+  if [[ -n "$socket_dir" ]]; then
+    kill_run_sockets
+  fi
   tmux -f /dev/null -L "$probe" kill-server 2>/dev/null || true
-  rm -rf "$scratch" "$tmux_dir"
+  if [[ -n "$scratch" ]]; then
+    rm -rf "$scratch"
+  fi
+  if [[ -n "$tmux_dir" ]]; then
+    rm -rf "$tmux_dir"
+  fi
 }
 trap cleanup EXIT
+
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/plan-journeys.XXXXXX")
+# Not under $scratch: a socket path is limited to 108 bytes (sun_path), and a long TMPDIR passes it.
+tmux_dir=$(mktemp -d /tmp/lpj.XXXXXX 2>/dev/null || mktemp -d "${TMPDIR:-/tmp}/lpj.XXXXXX")
+export TMUX_TMPDIR=$tmux_dir
+socket_dir="$tmux_dir/tmux-$(id -u)"
 
 # Shallow clone, sparse to doc/. Detached HEAD: `loom plan` refuses a loom/<stage> branch.
 clone="$scratch/clone"
