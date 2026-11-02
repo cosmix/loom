@@ -73,12 +73,20 @@ pub fn lock_plan(path: &Path) -> Result<File> {
 /// A fixed per-user location avoids per-process TMPDIR differences and does
 /// not leave an untracked lock file beside the plan. The mode checks reject a
 /// pre-existing directory another user could manipulate.
+///
+/// A unit test process only contends with itself, and `/tmp` is read-only in a
+/// session sandbox, so a test build uses its own temporary directory.
 fn plan_lock_dir() -> Result<std::path::PathBuf> {
     use std::os::unix::fs::DirBuilderExt;
 
     // SAFETY: geteuid has no preconditions and does not access caller memory.
     let uid = unsafe { libc::geteuid() };
-    let dir = Path::new("/tmp").join(format!("loom-plan-locks-{uid}"));
+    let base = if cfg!(test) {
+        std::env::temp_dir()
+    } else {
+        std::path::PathBuf::from("/tmp")
+    };
+    let dir = base.join(format!("loom-plan-locks-{uid}"));
     let mut builder = std::fs::DirBuilder::new();
     builder.mode(0o700);
     match builder.create(&dir) {
