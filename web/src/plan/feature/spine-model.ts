@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 
 import type { ChecklistView, MarkView, StepView } from "@/plan/api/schema";
 import { featurePage } from "@/plan/feature/page-offer";
+import { STEP } from "@/plan/feature/steps";
 import { featureHref } from "@/plan/feature/use-feature";
 import { PLAN_STATE_GLYPHS, type PlanState } from "@/plan/ui/glyphs";
 
@@ -41,12 +42,12 @@ export interface SpineGroup {
 
 /** The server's step number behind each group; the labels are the groups', not the server's. */
 const GROUPS: { id: GroupId; label: string; step: number; page: string }[] = [
-  { id: "vision", label: "Vision", step: 1, page: "vision" },
-  { id: "product", label: "Product spec", step: 2, page: "product" },
-  { id: "metaplan", label: "Metaplan", step: 3, page: "metaplan" },
-  { id: "plans", label: "Plans", step: 4, page: "engineering" },
-  { id: "pressure", label: "Pressure test", step: 5, page: "pressure" },
-  { id: "run", label: "Run", step: 6, page: "run" },
+  { id: "vision", label: "Vision", step: STEP.vision, page: "vision" },
+  { id: "product", label: "Product spec", step: STEP.product, page: "product" },
+  { id: "metaplan", label: "Metaplan", step: STEP.metaplan, page: "metaplan" },
+  { id: "plans", label: "Plans", step: STEP.plans, page: "engineering" },
+  { id: "pressure", label: "Pressure test", step: STEP.pressure, page: "pressure" },
+  { id: "run", label: "Run", step: STEP.run, page: "run" },
 ];
 
 /** The server labels a count's unit ("Untested", "Done"); a label equal to the name names no unit. */

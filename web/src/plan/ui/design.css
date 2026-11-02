@@ -131,6 +131,41 @@
   border-top: 1px solid var(--hairline);
 }
 
+/* A row's side (state, date, action): pushed to the row's end, wrapping under the name when the
+   row is narrow. The queues and the plan pages share it. */
+[data-loom-plan] .plan-queue__side,
+[data-loom-plan] .plan-page__side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1) var(--space-3);
+  margin-left: auto;
+}
+
+/* A row's name link keeps the text's colour; links in chrome underline on hover only (DESIGN.md,
+   Focus and hover). */
+[data-loom-plan] .plan-queue__name a,
+[data-loom-plan] .plan-page__name a,
+[data-loom-plan] .plan-page__link {
+  color: inherit;
+  text-decoration: none;
+}
+
+[data-loom-plan] .plan-queue__name a:hover,
+[data-loom-plan] .plan-page__name a:hover,
+[data-loom-plan] .plan-page__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+[data-loom-plan] .plan-queue__name a:focus-visible,
+[data-loom-plan] .plan-page__name a:focus-visible,
+[data-loom-plan] .plan-page__link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 /* ── Status ───────────────────────────────────────────────────────────────── */
 
 /* Status is a glyph and a word, inline with the text it describes. The word keeps the text's

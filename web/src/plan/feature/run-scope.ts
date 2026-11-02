@@ -27,7 +27,7 @@ function startTarget(checklist: ChecklistView, preselected: string | null): stri
   return written[0]?.path ?? null;
 }
 
-export type RunScope = "idle" | "own" | "foreign";
+type RunScope = "idle" | "own" | "foreign";
 
 /**
  * The run state covers only the workspace's one active plan, so a run in flight for another
@@ -48,7 +48,7 @@ const HELD = "A run holds the workspace.";
 const UNREAD = "Run state unavailable.";
 
 /** The page's one Start a run button: the plan it opens the run dialog on, and why it is blocked. */
-export type StartControl = { path: string | null; reason: string | null };
+type StartControl = { path: string | null; reason: string | null };
 
 /**
  * The page's Start a run button. A run of this feature that stopped resumes through it, targeting
