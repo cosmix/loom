@@ -22,7 +22,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [adjudication-lifecycle](architecture/adjudication-lifecycle.md) | Verdicts | 166 |
+| [adjudication-lifecycle](architecture/adjudication-lifecycle.md) | Verdicts | 170 |
 | [codex-concurrency](architecture/codex-concurrency.md) | Limits | 110 |
 | [codex-plugin](architecture/codex-plugin.md) |  | 391 |
 | [completion-recovery](architecture/completion-recovery.md) | Attest | 36 |
@@ -62,14 +62,14 @@
 | [signal-generation](architecture/signal-generation.md) |  | 241 |
 | [skill-catalog](architecture/skill-catalog.md) |  | 155 |
 | [source-graph](architecture/source-graph.md) | Contract | 369 |
-| [source-graph-build](architecture/source-graph-build.md) | Builder | 128 |
+| [source-graph-build](architecture/source-graph-build.md) | Builder | 129 |
 | [source-graph-evaluation](architecture/source-graph-evaluation.md) | Evaluator | 68 |
-| [source-graph-resolution](architecture/source-graph-resolution.md) | Bindings | 123 |
+| [source-graph-resolution](architecture/source-graph-resolution.md) | Bindings | 125 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 76 |
 | [status-data-model](architecture/status-data-model.md) | Fields | 239 |
 | [summary-store](architecture/summary-store.md) |  | 273 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
-| [terminal-backends](architecture/terminal-backends.md) |  | 280 |
+| [terminal-backends](architecture/terminal-backends.md) |  | 281 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 57 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 376 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
@@ -156,7 +156,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Merge cleanup, daemon singleton, broker, waiting-state incidents | 343 |
 | [phantom-merges](mistakes/phantom-merges.md) | Plan stages split by compile order instead of merge order | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
-| [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 10 |
+| [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 37 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Delivery slips | 371 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair slips | 94 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
@@ -215,7 +215,7 @@
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 212 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 156 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 384 |
-| [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 85 |
+| [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 86 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Host-verification review suggestions: open and fixed defects by file:line | 329 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 17 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 349 |
