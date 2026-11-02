@@ -1,6 +1,6 @@
 # loom ask --eval fixtures and self-check
 
-The core worker has finished and published `eval::parse_cases` and `EvalCase` in `loom/src/commands/ask/eval.rs`. You own the fixtures and their self-check test. Do not edit `eval.rs`; report any change it needs.
+The core worker has finished and published `eval::parse_cases` and `EvalCase` in `loom/src/commands/ask/eval.rs`. You own the fixtures and their self-check test. Do not edit `eval.rs` except to add the line below; report any change it needs.
 
 ## Frozen fixtures: `loom/tests/fixtures/ask_eval/`
 
@@ -12,9 +12,11 @@ Copy these real documents. They stay frozen here so later edits to the originals
 | `docs/context-retrieval.md` | `doc/loom/knowledge/architecture/context-retrieval.md` |
 | `docs/source-graph.md` | `doc/loom/knowledge/architecture/source-graph.md` |
 | `docs/stage-diff.diff` | `git show 954b401c` |
-| `docs/test-run.log` | A captured `cargo test --manifest-path loom/Cargo.toml --lib commands::usage:: 2>&1` run, trimmed to at most 2,000 lines |
+| `docs/test-run.txt` | A captured `cargo test --manifest-path loom/Cargo.toml --lib commands::usage:: 2>&1` run, trimmed to at most 2,000 lines |
 
-Check that nothing in `git show 954b401c` or the log carries a secret or an absolute home path before finishing. Replace any home path with `/home/user`.
+`.gitignore` ignores `*.log`, so a `.log` fixture never reaches the commit. For the metaplan, copy it from the committed `doc/plans/optim-token/index.md` at the stage's base; if it moved to `archive/`, use that copy.
+
+Check that none of the five fixtures, including `docs/token-optim-metaplan.md`, carries a secret, an absolute home path or the user's name. Replace `/home/<name>` with `/home/user` and `-home-<name>-` with `-home-user-`. Then `rg -n 'dkaponis|/home/' loom/tests/fixtures/ask_eval` must print nothing except `/home/user`. Run the self-check after the scrub, and use none of those strings in a case.
 
 ## `cases.json`
 
@@ -31,9 +33,9 @@ These cases are authored for this trial rather than mined from transcripts, beca
 
 ## Self-check test
 
-In `loom/src/commands/ask/eval_tests.rs`, add a test over the real `cases.json` that needs no provider: every case parses through `parse_cases`, each listed path exists, every `must_contain` string except `not found` occurs in that case's files ignoring ASCII case, and there are 24 cases. This catches a case that no correct answer could pass.
+In `loom/src/commands/ask/eval_tests.rs`, add a test that reads `cases.json` under `env!("CARGO_MANIFEST_DIR")` and needs no provider: every case parses through `parse_cases`, each listed path exists, every `must_contain` string except `not found` occurs in that case's files ignoring ASCII case, and there are 24 cases. This catches a case that no correct answer could pass.
 
-Also test duplicate-id rejection. Declare the test module from `eval.rs` by reporting that one line to the orchestrator, unless the core worker already added it.
+Also test duplicate-id rejection. Declare the test module by adding `#[cfg(test)] mod eval_tests;` to `eval.rs` yourself: core has returned.
 
 ## Check
 

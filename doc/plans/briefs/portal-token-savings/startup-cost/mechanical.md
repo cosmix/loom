@@ -4,7 +4,7 @@ The frozen contract in `loom/tests/mechanical_worker_contracts.rs` must pass. Ne
 
 ## Why this agent exists
 
-Engineer subagents start at about 36,700 tokens and reviewers at about 22,200. `skill_listing` is 7,751 tokens on every session with the `Skill` tool. Dropping `Skill`, `WebFetch`, `WebSearch` and `TodoWrite` from mechanical workers removes that listing. `Bash` stays, even though it brings `sandbox_instructions`, because the subagent preamble requires `loom memory` commands.
+Engineer subagents start at about 36,700 tokens and reviewers at about 22,200. `skill_listing` is 7,751 tokens on every session with the `Skill` tool. Dropping `Skill`, `WebFetch`, `WebSearch` and `TodoWrite` from mechanical workers removes that listing. `Bash` stays because the subagent preamble requires `loom memory` commands.
 
 ## The agent file
 
@@ -33,30 +33,36 @@ Do not copy the `Skills to Leverage`, `Approach` or `Self-Review` sections from 
 
 ## Doctrine surfaces
 
-Replace the Haiku routing on each surface below. Re-grep with `rg -n 'model: haiku'` and `rg -n 'haiku' CLAUDE.md.template skills/loom-orchestration/SKILL.md skills/loom-plan-writer/ loom/src/orchestrator/signals/` to catch anything missed.
+Replace the Haiku routing on each surface below. Re-grep with `rg -n 'model: haiku'` and `rg -n 'haiku' CLAUDE.md.template README.md skills/loom-orchestration/SKILL.md skills/loom-plan-writer/ loom/src/orchestrator/signals/` to catch anything missed.
 
 | Surface | Today | Becomes |
 | --- | --- | --- |
-| `CLAUDE.md.template:113` | `` `loom-software-engineer` (`model: haiku`) `` row | `` `loom-mechanical-engineer` `` row |
-| `README.md:1089` | Same row | Same change |
-| `skills/loom-orchestration/SKILL.md:102-103` | ``(`model: haiku` on loom-software-engineer)`` | `(loom-mechanical-engineer)` |
-| `skills/loom-orchestration/SKILL.md:121` | `model: haiku for mechanical work` | `loom-mechanical-engineer for mechanical work` |
-| `skills/loom-orchestration/SKILL.md:162`, `skills/loom-plan-writer/SKILL.md:171`, `loom/src/orchestrator/signals/tests_doctrine_blocks.rs:43` (BLOCK-B) | ``HAIKU (`model: haiku` on loom-software-engineer)`` | `HAIKU (loom-mechanical-engineer)` |
-| `loom/src/orchestrator/signals/format/codex.rs:63` | ``(`loom-software-engineer` with `model: haiku`)`` | `` (`loom-mechanical-engineer`) `` |
-| `skills/loom-plan-writer/references/codex-implementers.md:12` | Haiku by `model` override | Name the new agent for Haiku work |
-| `skills/loom-plan-writer/references/authoring-detail.md:88` and `skills/loom-plan-writer/SKILL.md:274` | Execution agent list | Add `loom-mechanical-engineer` for mechanical pieces |
-| `loom-hooks/spawn-guard.sh:215` `TYPED_AGENTS` | List of typed agents | Add `loom-mechanical-engineer (haiku)` |
+| `CLAUDE.md.template` | `` `loom-software-engineer` (`model: haiku`) `` row | `` `loom-mechanical-engineer` `` row |
+| `README.md` | Same row | Same change |
+| `README.md` | `5 specialized subagents` | `6 specialized subagents` |
+| `README.md` | "Haiku for mechanical edits" and "luna-tier work to Haiku" | Stay accurate as tier names; name `loom-mechanical-engineer` where the row routes work |
+| `skills/loom-orchestration/SKILL.md` | ``(`model: haiku` on loom-software-engineer)`` | `(loom-mechanical-engineer)` |
+| `skills/loom-orchestration/SKILL.md` | `model: haiku for mechanical work` | `loom-mechanical-engineer for mechanical work` |
+| `skills/loom-orchestration/SKILL.md`, `skills/loom-plan-writer/SKILL.md`, `loom/src/orchestrator/signals/tests_doctrine_blocks.rs` (BLOCK-B) | ``HAIKU (`model: haiku` on loom-software-engineer)`` | `HAIKU (loom-mechanical-engineer)` |
+| `loom/src/orchestrator/signals/format/codex.rs` | ``(`loom-software-engineer` with `model: haiku`)`` | `` (`loom-mechanical-engineer`) `` |
+| `skills/loom-plan-writer/references/codex-implementers.md` | Haiku by `model` override | Name the new agent for Haiku work |
+| `skills/loom-plan-writer/references/authoring-detail.md` and `skills/loom-plan-writer/SKILL.md` | Execution agent list | Add `loom-mechanical-engineer` for mechanical pieces |
+| `loom-hooks/spawn-guard.sh` `TYPED_AGENTS` | List of typed agents | Add `loom-mechanical-engineer (haiku)` |
 
 Constraints:
 
 - **BLOCK-B must be byte-identical on all three surfaces.** `tests_doctrine.rs::block_b_agrees_across_every_surface` enforces it.
-- **`spawn-guard.sh` is over the line limit and in the exact ledger.** Keep its line count unchanged and do not touch `loom/maintainability-baseline.txt`.
-- **Size caps are pinned.** `tests_size.rs` caps `CLAUDE.md.template` at 20,138 bytes and the orchestration skill at 20,530. Trim doctrine before raising a cap.
+- **`spawn-guard.sh` is 401 lines, over Rule 17, and no ledger covers shell hooks.** Edit only the `TYPED_AGENTS` string in place, add no lines, and keep `loom-software-engineer (sonnet, default)` in it, because `hooks_spawn_guard_cases.rs` asserts that substring. Do not touch `loom/maintainability-baseline.txt`.
+- **Size caps are pinned.** `tests_size.rs` caps `CLAUDE.md.template` at 20,138 bytes and the orchestration skill at 20,530. The skill is 20,528 today, and the three replacements plus the Declared-skills sentence below land on exactly 20,530: add nothing else to that file. Never raise a cap.
 - **Do not edit knowledge files.** `doc/loom/knowledge/patterns/subagent-hierarchy.md:83` goes stale: record a `stale-knowledge:` memory and the distill stage fixes it.
 
 ## Declared skills
 
-Near `skills/loom-orchestration/SKILL.md:73`, where declared skills are passed to Claude briefs, add one sentence: `loom-mechanical-engineer` has no `Skill` tool, so quote applicable rules in its brief, as for Codex. Offset the bytes with the shorter wording above.
+In `skills/loom-orchestration/SKILL.md`, replace `For Codex, quote applicable rules in the brief; Codex opens no skill files.` with ``For Codex and `loom-mechanical-engineer`, quote applicable rules in briefs; neither opens skills.``
+
+## The worker-brief hook
+
+`loom hook worker-brief` appends "Required skills for this stage — invoke: Skill(...)" to every non-Codex typed spawn in a stage that declares skills, so the mechanical worker would be told to use a tool it lacks. In `loom/src/commands/hook/worker_brief.rs`, omit `skills_line` when `payload.tool_input.subagent_type` is `loom-mechanical-engineer`, and add a test in `tests_worker_brief.rs` that the line is absent for it and present for `loom-software-engineer`.
 
 ## What stays the same
 
@@ -64,4 +70,4 @@ Near `skills/loom-orchestration/SKILL.md:73`, where declared skills are passed t
 
 ## Check
 
-Run `cargo test --manifest-path loom/Cargo.toml --lib orchestrator::signals::tests_doctrine` once. Report the result to the orchestrator.
+Run `cargo test --manifest-path loom/Cargo.toml --lib orchestrator::signals::` and `--lib commands::hook::` once each. Report the result to the orchestrator.
