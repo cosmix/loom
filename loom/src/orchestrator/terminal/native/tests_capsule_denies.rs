@@ -13,6 +13,54 @@ const DENY_WRITE: &str = "/sandbox/filesystem/denyWrite";
 const DENY_RULES: &str = "/permissions/deny";
 
 #[test]
+fn linked_operator_checkout_is_not_mistaken_for_a_stage_worktree() {
+    let mut checkout = checkout();
+    register_worktrees(&checkout.repo);
+    let common = checkout.repo.join(".git");
+    checkout.repo = checkout.worktree.clone();
+    checkout.work_dir = checkout.repo.join(".loom/work");
+    std::fs::create_dir_all(&checkout.work_dir).unwrap();
+    crate::git::worktree::capture_main_identity(&checkout.repo, &checkout.work_dir).unwrap();
+    checkout.worktree = checkout.repo.join(".worktrees/child");
+    git(
+        &checkout.repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "loom/child",
+            ".worktrees/child",
+        ],
+    );
+    let sandbox = sandbox_with(vec![]);
+    for (kind, cwd, admin_dir) in [
+        (SessionType::Knowledge, &checkout.repo, "s1"),
+        (SessionType::Stage, &checkout.worktree, "child"),
+    ] {
+        let path = write_capsule(
+            &checkout,
+            "session-linked",
+            kind,
+            cwd,
+            &sandbox,
+            Some(&checkout.hooks_dir),
+        )
+        .unwrap();
+        let capsule = read_capsule(&path);
+        let denies = strings(&capsule, DENY_WRITE);
+        let rules = strings(&capsule, DENY_RULES);
+        assert!(denies.contains(checkout.repo.join(".git").to_str().unwrap()));
+        assert!(denies.contains(common.join("config.worktree").to_str().unwrap()));
+        assert!(rules.contains("Edit(.git)"));
+        let own = common.join("worktrees").join(admin_dir);
+        assert!(!denies.contains(own.to_str().unwrap()));
+        assert!(!denies.contains(own.join("index").to_str().unwrap()));
+        assert!(denies.contains(own.join("gitdir").to_str().unwrap()));
+    }
+}
+
+#[test]
 fn stage_capsule_preserves_absolute_plan_write_deny_in_both_layers() {
     let checkout = checkout();
     register_worktrees(&checkout.repo);
@@ -83,6 +131,7 @@ fn register_worktrees(repo: &Path) {
         repo,
         &["worktree", "add", "-q", "-b", "loom/s2", ".worktrees/s2"],
     );
+    crate::git::worktree::capture_main_identity(repo, &repo.join(".loom/work")).unwrap();
 }
 
 /// `human-review --force-complete` has no operator proof of its own: it rests

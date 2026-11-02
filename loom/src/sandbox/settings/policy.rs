@@ -126,6 +126,36 @@ fn push_unique(into: &mut Vec<String>, path: &str) {
     }
 }
 
+/// `allowWrite`, the OS-enforced, additive write grant. Plan entries reach it
+/// directly; package-manager caches are granted to every stage
+/// (`sandbox::package_caches`); codex state directories only when that lane is
+/// licensed.
+fn allow_write_settings(config: &MergedSandboxConfig) -> Vec<String> {
+    let mut allow_write: Vec<String> = Vec::new();
+    for path in config
+        .filesystem
+        .allow_write
+        .iter()
+        .map(|p| p.trim())
+        .filter(|p| {
+            !p.is_empty()
+                && super::super::config::detect_path_escape(p)
+                    == super::super::config::PathEscapeAttempt::Safe
+        })
+    {
+        push_unique(&mut allow_write, path);
+    }
+    for path in PACKAGE_MANAGER_CACHE_WRITE_PATHS {
+        push_unique(&mut allow_write, path);
+    }
+    if config.implementers.includes_codex() {
+        for path in CODEX_SANDBOX_WRITE_PATHS {
+            push_unique(&mut allow_write, path);
+        }
+    }
+    allow_write
+}
+
 fn filesystem_settings(config: &MergedSandboxConfig) -> Option<Value> {
     let mut filesystem = json!({});
     let deny_read = deny_read_patterns(config);
@@ -148,28 +178,7 @@ fn filesystem_settings(config: &MergedSandboxConfig) -> Option<Value> {
     if !deny_write.is_empty() {
         filesystem["denyWrite"] = json!(deny_write);
     }
-    // `allowWrite` is the OS-enforced, additive write grant. Plan entries
-    // reach it directly; package-manager caches are granted to every stage
-    // (`sandbox::package_caches`); codex state directories only when that
-    // lane is licensed.
-    let mut allow_write: Vec<String> = Vec::new();
-    for path in config
-        .filesystem
-        .allow_write
-        .iter()
-        .map(|p| p.trim())
-        .filter(|p| !p.is_empty() && !p.contains("../"))
-    {
-        push_unique(&mut allow_write, path);
-    }
-    for path in PACKAGE_MANAGER_CACHE_WRITE_PATHS {
-        push_unique(&mut allow_write, path);
-    }
-    if config.implementers.includes_codex() {
-        for path in CODEX_SANDBOX_WRITE_PATHS {
-            push_unique(&mut allow_write, path);
-        }
-    }
+    let allow_write = allow_write_settings(config);
     if !allow_write.is_empty() {
         filesystem["allowWrite"] = json!(allow_write);
     }

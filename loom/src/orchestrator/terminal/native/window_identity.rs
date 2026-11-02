@@ -52,7 +52,7 @@ mod tests {
         let other_project_title = native_window_title(project_b, &first).unwrap();
         assert_ne!(first_title, replacement_title);
         assert_ne!(first_title, other_project_title);
-        assert!(first_title.starts_with("loom-shared-stage-"));
+        assert!(first_title.starts_with("loom-v2-stage-shared-stage-"));
         assert!(first_title.ends_with(&first.id));
 
         first.native_window_title = Some(first_title.clone());

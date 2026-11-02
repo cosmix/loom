@@ -323,6 +323,13 @@ struct WrapperInput<'a> {
     host_env: &'a WrapperHostEnv,
 }
 
+fn pid_owner(stage_id: &str, kind: SessionType) -> String {
+    format!(
+        "loom-owner:{}",
+        crate::models::session::Session::derive_tracking_key(stage_id, kind)
+    )
+}
+
 /// Render the wrapper script text without filesystem writes.
 fn build_wrapper_script(input: &WrapperInput<'_>) -> String {
     let WrapperInput {
@@ -344,7 +351,8 @@ fn build_wrapper_script(input: &WrapperInput<'_>) -> String {
     let stage_env = escape(format!("LOOM_STAGE_ID={stage_id}").into());
     let work_dir_env = work_dir_env(work_dir);
     let pid_file = escape(absolute_target(host_pid_file).display().to_string().into());
-    let pid_capture = pid_capture(&pid_file);
+    let owner = escape(pid_owner(stage_id, kind).into());
+    let pid_capture = pid_capture(&pid_file, &owner);
     let stderr_log = stderr_log_escaped(work_dir, session_id);
     let resource_limit_env = resource_limit_env(context_ceiling_tokens);
     let sccache_env = sccache_env(rustc_wrapper_allowed);

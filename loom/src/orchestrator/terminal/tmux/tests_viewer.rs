@@ -36,7 +36,7 @@ fn attachable_panes_drops_sessions_whose_server_is_not_ready() {
         panes,
         vec![(
             "loom-session-ready".to_string(),
-            "loom-stage-ready".to_string()
+            "loom-v2-stage-stage-ready".to_string()
         )],
         "only the attachable session may become a pane, wired to its own \
          socket and tracking key"
@@ -57,7 +57,14 @@ fn attachable_panes_preserves_discovery_order() {
     let panes = attachable_panes(&sessions, |_, _| true);
     let stages: Vec<&str> = panes.iter().map(|(_, key)| key.as_str()).collect();
 
-    assert_eq!(stages, vec!["loom-stage-a", "loom-stage-b", "loom-stage-c"]);
+    assert_eq!(
+        stages,
+        vec![
+            "loom-v2-stage-stage-a",
+            "loom-v2-stage-stage-b",
+            "loom-v2-stage-stage-c"
+        ]
+    );
 }
 
 #[test]
@@ -266,7 +273,7 @@ fn attachable_panes_skips_a_session_whose_id_needs_shell_quoting() {
         panes,
         vec![(
             "loom-session-normal".to_string(),
-            "loom-stage-normal".to_string()
+            "loom-v2-stage-stage-normal".to_string()
         )],
         "only the session with a plain id may become a pane"
     );
@@ -298,7 +305,7 @@ fn attachable_panes_skips_a_session_whose_tracking_key_needs_shell_quoting() {
         panes,
         vec![(
             "loom-session-normal".to_string(),
-            "loom-stage-normal".to_string()
+            "loom-v2-stage-stage-normal".to_string()
         )],
         "only the session with a plain tracking key may become a pane"
     );
