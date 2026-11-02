@@ -166,15 +166,19 @@ fn clean_sessions_and_state(
     }
 
     if will_destroy_state {
-        let work_dir = resolve_state_dir(repo_root);
-        if retire_viewer(&work_dir)? {
-            println!("  {} Retired overview viewer", "✓".green().bold());
-        }
-        println!("\n{}", "State".bold());
-        println!("{}", "─".repeat(40).dimmed());
-        stats.state_removed = clean_state_directory(repo_root)?;
+        retire_viewer_and_clean_state(repo_root, stats)?;
     }
 
+    Ok(())
+}
+
+fn retire_viewer_and_clean_state(repo_root: &Path, stats: &mut CleanStats) -> Result<()> {
+    if retire_viewer(&resolve_state_dir(repo_root))? {
+        println!("  {} Retired overview viewer", "✓".green().bold());
+    }
+    println!("\n{}", "State".bold());
+    println!("{}", "─".repeat(40).dimmed());
+    stats.state_removed = clean_state_directory(repo_root)?;
     Ok(())
 }
 
@@ -310,6 +314,9 @@ fn print_summary(stats: &CleanStats) {
     }
     println!();
 }
+
+#[cfg(test)]
+mod viewer_tests;
 
 #[cfg(test)]
 mod tests {

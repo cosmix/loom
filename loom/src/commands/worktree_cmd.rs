@@ -140,7 +140,12 @@ fn remove_direct(stage_id: String, force: bool, confirmation: Option<String>) ->
         &target_branch,
         &repo_root,
     )?;
-    mark_verified_merge(&actual_stage_id, &completed_commit, &work_dir)?;
+    mark_verified_merge(
+        &actual_stage_id,
+        &completed_commit,
+        &work_dir,
+        &result.warnings,
+    )?;
     print_cleanup_result(&actual_stage_id, &result);
     println!(
         "  {} Stage marked as merged after ancestry verification",
@@ -230,7 +235,12 @@ fn removal_target_branch(work_dir: &Path, repo_root: &Path) -> Result<String> {
     }
 }
 
-fn mark_verified_merge(stage_id: &str, completed_commit: &str, work_dir: &Path) -> Result<()> {
+fn mark_verified_merge(
+    stage_id: &str,
+    completed_commit: &str,
+    work_dir: &Path,
+    warnings: &[String],
+) -> Result<()> {
     update_stage(stage_id, work_dir, |stage| {
         if stage.status != StageStatus::Completed {
             bail!("Stage changed status during cleanup; refusing merge-state update");
@@ -239,7 +249,7 @@ fn mark_verified_merge(stage_id: &str, completed_commit: &str, work_dir: &Path) 
             bail!("Stage completed commit changed during cleanup; refusing merge-state update");
         }
         stage.merged = true;
-        stage.cleanup_warning = None;
+        stage.cleanup_warning = (!warnings.is_empty()).then(|| warnings.join("; "));
         Ok(())
     })?;
     Ok(())
@@ -269,6 +279,9 @@ fn print_cleanup_result(stage_id: &str, result: &CleanupResult) {
     }
     if result.base_branch_deleted {
         println!("  {} Deleted loom/_base/{stage_id}", "✓".green().bold());
+    }
+    for warning in &result.warnings {
+        eprintln!("  Warning: {warning}");
     }
 }
 
@@ -327,5 +340,28 @@ mod relay_tests {
         .unwrap();
 
         assert!(worktree_dir.exists());
+    }
+
+    #[test]
+    fn verified_merge_keeps_warnings_for_retained_cleanup_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let work = temp.path().join(".loom/work");
+        let stage = Stage {
+            id: "retained".to_string(),
+            status: StageStatus::Completed,
+            completed_commit: Some("commit".to_string()),
+            ..Stage::default()
+        };
+        crate::verify::transitions::save_stage(&stage, &work).unwrap();
+        let warnings = vec!["retained .worktrees/retained".to_string()];
+
+        mark_verified_merge("retained", "commit", &work, &warnings).unwrap();
+
+        let updated = load_stage("retained", &work).unwrap();
+        assert!(updated.merged);
+        assert_eq!(
+            updated.cleanup_warning.as_deref(),
+            Some(warnings[0].as_str())
+        );
     }
 }

@@ -1,9 +1,8 @@
 use crate::validation::clap_id_validator;
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
 
 pub use super::types_config::ConfigArgs;
-use super::types_help::{help_template, positive_usize, VERSION_STRING};
+use super::types_help::{help_template, VERSION_STRING};
 pub use super::types_memory::{KnowledgeCommands, MemoryCommands};
 pub use super::types_ops::{
     ContextCommands, HookCommands, PlanCommands, PlanServeArgs, RequestCommands, SessionsCommands,
@@ -14,7 +13,10 @@ pub use super::types_stage::{OutputCommands, StageCommands};
 #[path = "types_status_web.rs"]
 mod status_web;
 pub(super) use status_web::parse_web_host;
-pub(super) use status_web::StatusWebArgs;
+
+#[path = "types_runtime.rs"]
+mod runtime;
+pub use runtime::{CompletionsArgs, RunArgs, StatusArgs};
 
 #[path = "types_project.rs"]
 mod project;
@@ -62,57 +64,10 @@ pub enum Commands {
     },
 
     /// Run stages from a plan (starts orchestrator in background)
-    Run {
-        /// Enable manual approval for each stage
-        #[arg(short, long)]
-        manual: bool,
-
-        /// Maximum number of parallel sessions (default: 4)
-        #[arg(short = 'p', long, value_parser = positive_usize)]
-        max_parallel: Option<usize>,
-
-        /// Run orchestrator in foreground (not recommended)
-        #[arg(long)]
-        foreground: bool,
-
-        /// Watch mode: continuously spawn ready stages until all are terminal
-        #[arg(short, long, requires = "foreground")]
-        watch: bool,
-
-        /// Disable auto-merge of completed stages (merge is enabled by default)
-        #[arg(long)]
-        no_merge: bool,
-
-        /// Terminal backend for sessions (native|tmux); persisted to the `[terminal]` section of the loom config
-        #[arg(long, value_parser = ["native", "tmux"])]
-        backend: Option<String>,
-
-        /// Start although a stage sets `allow_all_unix_sockets`; required on every such run
-        #[arg(long)]
-        accept_unix_socket_risk: bool,
-
-        /// Internal: serve as the daemon for this absolute state directory
-        #[arg(long, hide = true, conflicts_with = "foreground")]
-        daemon_child: Option<PathBuf>,
-    },
+    Run(RunArgs),
 
     /// Show dashboard with context health
-    Status {
-        /// Live mode: subscribe to daemon for real-time updates
-        #[arg(short, long)]
-        live: bool,
-
-        /// Compact mode: single-line output for scripting
-        #[arg(short, long)]
-        compact: bool,
-
-        /// Verbose mode: show detailed failure information
-        #[arg(short, long)]
-        verbose: bool,
-
-        #[command(flatten)]
-        web_args: StatusWebArgs,
-    },
+    Status(StatusArgs),
 
     /// Resume work on a stage
     Resume {
@@ -308,19 +263,7 @@ pub enum Commands {
     SkillIndex,
 
     /// Generate shell completion script
-    Completions {
-        /// Shell to generate completions for (bash, zsh, fish).
-        /// Auto-detected from $SHELL when using --install without specifying a shell.
-        shell: Option<String>,
-
-        /// Install completions to the appropriate system location
-        #[arg(long)]
-        install: bool,
-
-        /// Check for outdated completions and show migration instructions
-        #[arg(long)]
-        migrate: bool,
-    },
+    Completions(CompletionsArgs),
 
     /// Record and inspect per-stage retrieval context
     Context {

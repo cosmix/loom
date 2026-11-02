@@ -1,5 +1,6 @@
 //! Language detection for projects.
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::path::Path;
 
@@ -98,8 +99,34 @@ impl DetectedLanguage {
 ///
 /// Returns empty Vec if no languages detected.
 pub fn detect_project_languages(root: &Path) -> Vec<DetectedLanguage> {
-    use evidence::LanguageEvidence as E;
+    project_languages(&evidence::detect(root))
+}
+
+/// Sandbox network domains suggested for the project at `root`: GitHub plus each
+/// detected ecosystem's registries. Empty when no supported project is detected.
+///
+/// Kotlin stays out of [`DetectedLanguage`], but a Kotlin manifest is a Gradle
+/// Kotlin DSL build, which resolves through the same hosts as a Java Gradle build.
+pub fn suggested_network_domains(root: &Path) -> Vec<String> {
     let found = evidence::detect(root);
+    let mut languages = project_languages(&found);
+    if found.contains(&evidence::LanguageEvidence::Kotlin) {
+        languages.push(DetectedLanguage::Java);
+    }
+    if languages.is_empty() {
+        return Vec::new();
+    }
+    let mut domains = vec!["github.com".to_string(), "api.github.com".to_string()];
+    for domain in languages.iter().flat_map(|lang| lang.registry_domains()) {
+        if !domains.iter().any(|known| known == domain) {
+            domains.push((*domain).to_string());
+        }
+    }
+    domains
+}
+
+fn project_languages(found: &BTreeSet<evidence::LanguageEvidence>) -> Vec<DetectedLanguage> {
+    use evidence::LanguageEvidence as E;
     [
         (E::Rust, DetectedLanguage::Rust),
         (E::TypeScript, DetectedLanguage::TypeScript),

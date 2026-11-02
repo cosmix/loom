@@ -41,6 +41,27 @@ fn changed_command_asset_is_backed_up_once_then_left_alone() {
     assert_eq!(snapshot(temp.path()), before);
 }
 
+/// A backup carries the source's exact mode, neither widened nor narrowed by
+/// the process umask.
+#[test]
+fn asset_backup_keeps_the_source_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = TempDir::new().unwrap();
+    let paths = paths(&temp);
+    install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+    let dest = paths.claude_dir.join("commands/address.md");
+    for mode in [0o600, 0o664] {
+        fs::write(&dest, format!("operator command {mode:o}")).unwrap();
+        fs::set_permissions(&dest, fs::Permissions::from_mode(mode)).unwrap();
+
+        let report = install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+
+        let backup = fs::metadata(&report.backups[0]).unwrap();
+        assert_eq!(backup.permissions().mode() & 0o777, mode);
+    }
+}
+
 /// Every differing version is preserved, including an edit after an upgrade.
 #[test]
 fn later_edits_and_original_backup_are_both_preserved() {

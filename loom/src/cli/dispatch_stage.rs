@@ -5,61 +5,43 @@
 use anyhow::Result;
 
 use super::dispatch::{print_minted_proof, resolve_completion_proof};
-use super::dispatch_args::narrow_family;
-use super::dispatch_stage_args::{
-    AdminProofArgs, CompleteArgs, CriteriaCommand, TransitionCommand,
-};
 use super::types::{OutputCommands, StageCommands};
-use super::types_stage::{ContractsCommands, CriteriaDispute, ReviewCommands};
+use super::types_stage::{
+    AdminProofArgs, AmendArgs, CompleteArgs, ContractsCommands, CriteriaDispute,
+    DisputeCriteriaArgs, ReviewCommands,
+};
 use crate::commands::stage;
 use crate::commands::stage::commit;
 
-/// `loom stage {block,reset,waiting,resume,hold,release,skip}` dispatch.
-fn dispatch_stage_transitions(command: TransitionCommand) -> Result<()> {
-    match command {
-        TransitionCommand::Block(stage_id, reason) => stage::block(stage_id, reason),
-        TransitionCommand::Reset(stage_id, hard, kill_session) => {
-            stage::reset(stage_id, hard, kill_session)
-        }
-        TransitionCommand::Waiting(stage_id) => stage::waiting(stage_id),
-        TransitionCommand::Resume(stage_id) => stage::resume_from_waiting(stage_id),
-        TransitionCommand::Hold(stage_id) => stage::hold(stage_id),
-        TransitionCommand::Release(stage_id) => stage::release(stage_id),
-        TransitionCommand::Skip(stage_id, reason) => stage::skip(stage_id, reason),
+/// `loom stage dispute-criteria` dispatch, by the filing's validated form.
+fn dispatch_dispute_criteria(args: DisputeCriteriaArgs) -> Result<()> {
+    match CriteriaDispute::try_from(args)? {
+        CriteriaDispute::Entry {
+            stage_id,
+            field,
+            criterion_indices,
+            reason,
+            evidence_commit,
+            failure_output,
+        } => stage::dispute_criteria(
+            stage_id,
+            field,
+            criterion_indices,
+            reason,
+            evidence_commit,
+            failure_output,
+        ),
+        CriteriaDispute::ImpactTests(filing) => stage::file_dispute(filing),
     }
 }
 
-/// `loom stage {dispute-criteria,adjudicate,amend}` dispatch.
-fn dispatch_stage_criteria(command: CriteriaCommand) -> Result<()> {
-    match command {
-        CriteriaCommand::Dispute(args) => match CriteriaDispute::try_from(args)? {
-            CriteriaDispute::Entry {
-                stage_id,
-                field,
-                criterion_indices,
-                reason,
-                evidence_commit,
-                failure_output,
-            } => stage::dispute_criteria(
-                stage_id,
-                field,
-                criterion_indices,
-                reason,
-                evidence_commit,
-                failure_output,
-            ),
-            CriteriaDispute::ImpactTests(filing) => stage::file_dispute(filing),
-        },
-        CriteriaCommand::Adjudicate(stage, dispute, verdict_file) => {
-            stage::adjudicate(stage, dispute, verdict_file)
-        }
-        CriteriaCommand::Amend(stage_id, field, op, index, value, reason) => stage::amend(
-            stage_id,
-            field.to_field(),
-            op.to_patch(index, value)?,
-            reason,
-        ),
-    }
+fn dispatch_amend(args: AmendArgs) -> Result<()> {
+    stage::amend(
+        args.stage_id,
+        args.field.to_field(),
+        args.op.to_patch(args.index, args.value)?,
+        args.reason,
+    )
 }
 
 /// Resolve the completion proof before completing the stage.
@@ -100,15 +82,19 @@ fn join_commit_message(parts: &[String]) -> String {
 /// `loom stage <subcommand>` dispatch.
 pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
     match command {
-        cmd @ StageCommands::Complete { .. } => dispatch_complete(narrow_family(cmd)?),
-        cmd @ StageCommands::AdminProof { .. } => dispatch_admin_proof(narrow_family(cmd)?),
-        cmd @ (StageCommands::Block { .. }
-        | StageCommands::Reset { .. }
-        | StageCommands::Waiting { .. }
-        | StageCommands::Resume { .. }
-        | StageCommands::Hold { .. }
-        | StageCommands::Release { .. }
-        | StageCommands::Skip { .. }) => dispatch_stage_transitions(narrow_family(cmd)?),
+        StageCommands::Complete(args) => dispatch_complete(args),
+        StageCommands::AdminProof(args) => dispatch_admin_proof(args),
+        StageCommands::Block { stage_id, reason } => stage::block(stage_id, reason),
+        StageCommands::Reset {
+            stage_id,
+            hard,
+            kill_session,
+        } => stage::reset(stage_id, hard, kill_session),
+        StageCommands::Waiting { stage_id } => stage::waiting(stage_id),
+        StageCommands::Resume { stage_id } => stage::resume_from_waiting(stage_id),
+        StageCommands::Hold { stage_id } => stage::hold(stage_id),
+        StageCommands::Release { stage_id } => stage::release(stage_id),
+        StageCommands::Skip { stage_id, reason } => stage::skip(stage_id, reason),
         StageCommands::Retry {
             stage_id,
             force,
@@ -124,9 +110,13 @@ pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
             force_complete,
             reject,
         } => stage::human_review(stage_id, approve, force_complete, reject),
-        cmd @ (StageCommands::DisputeCriteria(_)
-        | StageCommands::Adjudicate { .. }
-        | StageCommands::Amend { .. }) => dispatch_stage_criteria(narrow_family(cmd)?),
+        StageCommands::DisputeCriteria(args) => dispatch_dispute_criteria(args),
+        StageCommands::Adjudicate {
+            stage,
+            dispute,
+            verdict_file,
+        } => stage::adjudicate(stage, dispute, verdict_file),
+        StageCommands::Amend(args) => dispatch_amend(args),
         StageCommands::DisputeFindings(args) => stage::file_dispute(args.into()),
         StageCommands::DisputeContract(args) => stage::file_dispute(args.into()),
         StageCommands::DisputeIntegrity(args) => stage::file_dispute(args.into()),
@@ -188,6 +178,27 @@ mod tests {
             } => Ok(message),
             _ => panic!("expected StageCommands::Commit"),
         }
+    }
+
+    #[test]
+    fn parsed_skip_keeps_optional_reason() {
+        let parsed = Cli::try_parse_from([
+            "loom",
+            "stage",
+            "skip",
+            "stage-one",
+            "--reason",
+            "operator decision",
+        ])
+        .unwrap();
+        let Commands::Stage {
+            command: StageCommands::Skip { stage_id, reason },
+        } = parsed.command
+        else {
+            panic!("skip routed to another command");
+        };
+        assert_eq!(stage_id, "stage-one");
+        assert_eq!(reason.as_deref(), Some("operator decision"));
     }
 
     #[test]

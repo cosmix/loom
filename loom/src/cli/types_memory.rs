@@ -21,8 +21,46 @@ fn clap_budget_tokens_validator(s: &str) -> Result<usize, String> {
     Ok(value)
 }
 
+#[derive(Args)]
+pub struct KnowledgeContextArgs {
+    /// Seed the query from this stage's dependencies, and name it in output
+    #[arg(long)]
+    pub stage: Option<String>,
+    /// Query text to retrieve context for
+    #[arg(long)]
+    pub query: String,
+    /// Maximum estimated tokens the pack may contain
+    #[arg(long, default_value_t = 2000, value_parser = clap_budget_tokens_validator)]
+    pub budget_tokens: usize,
+    /// Retrieval channels to search: knowledge, source, or all
+    #[arg(long, default_value = "all")]
+    pub scope: String,
+    /// Chunk id that must be included; repeatable
+    #[arg(long = "require-id")]
+    pub require_id: Vec<String>,
+    /// Include deprecated, superseded and historical material (default: current knowledge only)
+    #[arg(long)]
+    pub history: bool,
+    /// Represent --require-id items by their bounded excerpt instead of verbatim; the JSON marks them truncated
+    #[arg(long)]
+    pub require_compact: bool,
+    /// Show per-item scores and selection reasons
+    #[arg(long)]
+    pub explain: bool,
+    /// Machine-readable JSON output (suppresses human text)
+    #[arg(long)]
+    pub json: bool,
+}
+
 #[derive(Subcommand)]
 pub enum KnowledgeCommands {
+    /// Recover a legacy knowledge session using its verified pre-session commit (operator only)
+    RecoverBaseline {
+        /// Knowledge stage whose session needs a baseline
+        stage: String,
+        /// Full commit ID from before that session started
+        commit: String,
+    },
     /// Update (append to) a knowledge file
     Update {
         /// Tier-1 file (entry-points, patterns, conventions, ...) or tier-2 topic (<category>/<slug>)
@@ -61,35 +99,7 @@ pub enum KnowledgeCommands {
     /// Retrieve a token-budgeted context pack for a query (deterministic, offline)
     ///
     /// Exits with code 3 when a --require-id could not be honored.
-    Context {
-        /// Seed the query from this stage's dependencies, and name it in output
-        #[arg(long)]
-        stage: Option<String>,
-        /// Query text to retrieve context for
-        #[arg(long)]
-        query: String,
-        /// Maximum estimated tokens the pack may contain
-        #[arg(long, default_value_t = 2000, value_parser = clap_budget_tokens_validator)]
-        budget_tokens: usize,
-        /// Retrieval channels to search: knowledge, source, or all
-        #[arg(long, default_value = "all")]
-        scope: String,
-        /// Chunk id that must be included; repeatable
-        #[arg(long = "require-id")]
-        require_id: Vec<String>,
-        /// Include deprecated, superseded and historical material (default: current knowledge only)
-        #[arg(long)]
-        history: bool,
-        /// Represent --require-id items by their bounded excerpt instead of verbatim; the JSON marks them truncated
-        #[arg(long)]
-        require_compact: bool,
-        /// Show per-item scores and selection reasons
-        #[arg(long)]
-        explain: bool,
-        /// Machine-readable JSON output (suppresses human text)
-        #[arg(long)]
-        json: bool,
-    },
+    Context(KnowledgeContextArgs),
 
     /// Score retrieval against a checked-in case file (hit@5, precision@5, MRR, mandatory recall, abstention, rendered cost)
     Eval {

@@ -1,12 +1,6 @@
 //! `loom config` CLI args: read or write a key in `~/.loom/config.toml`.
 //!
-//! Split out from `types.rs` for the same reason as `types_ops.rs` /
-//! `types_stage.rs` / `types_memory.rs`: the top-level `Commands` enum sits at
-//! its line budget, so a new subcommand's flags live in their own file.
-//! `Commands::Config` wraps [`ConfigArgs`] as a tuple variant
-//! (`Config(ConfigArgs)`) rather than following `Map`/`Usage`'s
-//! struct-with-`#[command(flatten)]` form — clap 4 supports both identically,
-//! and the tuple form costs three fewer lines here.
+//! `Commands::Config` wraps [`ConfigArgs`] as a tuple variant (`Config(ConfigArgs)`).
 
 /// Flags for `loom config`.
 #[derive(Debug, clap::Args)]

@@ -74,9 +74,19 @@ pub fn execute(
     no_repair: bool,
 ) -> Result<()> {
     let repo_root = std::env::current_dir()?;
+    for state in [repo_root.join(".loom/work"), repo_root.join(".work")] {
+        if holds_orchestration_state(&state) {
+            crate::git::worktree::require_main_identity_at(&repo_root, &state)?;
+        }
+    }
     let preflighted = preflight_plan_if_given(plan_path.as_deref())?;
     prepare_workspace(&repo_root, clean, no_repair)?;
     let (work_dir, mut guard) = create_init_work_dir(&repo_root)?;
+    if crate::git::worktree::main_identity_exists(work_dir.root()) {
+        crate::git::worktree::require_main_identity_at(&repo_root, work_dir.root())?;
+    } else {
+        crate::git::worktree::capture_main_identity(&repo_root, work_dir.root())?;
+    }
     configure_workspace(&repo_root)?;
 
     if let Some(preflighted) = preflighted {
@@ -95,7 +105,16 @@ pub fn execute(
 }
 
 fn prepare_workspace(repo_root: &Path, clean: bool, no_repair: bool) -> Result<()> {
-    let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(repo_root)?;
+    let has_state = [repo_root.join(".loom/work"), repo_root.join(".work")]
+        .iter()
+        .any(|state| {
+            holds_orchestration_state(state) || crate::git::worktree::main_identity_exists(state)
+        });
+    let repo_bootstrap = if has_state {
+        crate::git::repository::ensure_pinned_repo_ready(repo_root)?
+    } else {
+        crate::git::ensure_repo_ready_for_worktrees(repo_root)?
+    };
 
     // Repair the workspace BEFORE the validator judges it - see `startup_repairs`.
     let repairs = startup_repairs(repo_root, no_repair)?;
