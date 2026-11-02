@@ -1,6 +1,6 @@
 # Frontmatter Boundary
 
-> Keep YAML and body offsets distinct when sharing frontmatter boundaries
+> YAML vs body offsets
 
 ## Shadowed frontmatter body offset
 
