@@ -4,6 +4,8 @@
       "src/plan/**",
       "node_modules/@codemirror/**",
       "node_modules/@lezer/**",
+      "assets/cm-view.js",
+      "assets/cm-lang.js",
       "node_modules/@fontsource-variable/source-serif-4/**",
       "node_modules/@fontsource-variable/literata/**",
       "node_modules/@fontsource-variable/piazzolla/**",
@@ -26,6 +28,8 @@
       "src/components/terminal/**",
       "node_modules/@codemirror/**",
       "node_modules/@lezer/**",
+      "assets/cm-view.js",
+      "assets/cm-lang.js",
       "src/plan/editor/codemirror.ts"
     ],
     "forbidText": [
