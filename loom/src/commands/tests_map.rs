@@ -67,6 +67,20 @@ fn map_without_a_view_flag_names_all_available_views() {
 }
 
 #[test]
+fn a_markdown_outline_is_read_directly_only_when_it_is_the_only_view() {
+    let root = Path::new(".");
+    let alone = MapHarness::try_parse_from(["map", "--outline", "x.md"]).unwrap();
+    assert!(markdown_outline_output(&alone.args, root).is_some());
+
+    let combined =
+        MapHarness::try_parse_from(["map", "--outline", "x.md", "--find-all", "sym"]).unwrap();
+    assert!(markdown_outline_output(&combined.args, root).is_none());
+
+    let source = MapHarness::try_parse_from(["map", "--outline", "x.rs"]).unwrap();
+    assert!(markdown_outline_output(&source.args, root).is_none());
+}
+
+#[test]
 fn every_new_view_flag_counts_as_a_view() {
     for argv in [
         vec!["map", "--references", "x"],

@@ -20,8 +20,8 @@ use crate::map::views::eval_edges;
 use crate::map::views::snapshot::{identity_of, SnapshotIdentity};
 use crate::map::views::timings::{timed, Timings};
 use crate::map::views::{
-    human_text, human_views, json_payload, json_views, parse_language, parse_provenance,
-    ViewContext, ViewFilters, ViewOptions, ViewQuery,
+    human_text, human_views, json_payload, json_views, markdown_outline, parse_language,
+    parse_provenance, ViewContext, ViewFilters, ViewOptions, ViewQuery, MAP_SCHEMA,
 };
 
 const EDGE_KIND_NAMES: &str = "contains, imports, calls, references, implements, extends";
@@ -167,7 +167,9 @@ fn execute_graph_views(args: &MapArgs) -> Result<()> {
         .to_path_buf();
 
     let mut timings = Timings::default();
-    let output = if args.census {
+    let output = if let Some(output) = markdown_outline_output(args, &project_root) {
+        output
+    } else if args.census {
         census_output(&work_dir, &project_root, args, &mut timings)?
     } else {
         let loaded = load_graph(&project_root, &work_dir, &mut timings)?;
@@ -186,6 +188,20 @@ fn execute_graph_views(args: &MapArgs) -> Result<()> {
         eprintln!("{}", timings.summary(started.elapsed()));
     }
     Ok(())
+}
+
+/// A Markdown `--outline` that is the only view is read from the file: no graph is loaded.
+fn markdown_outline_output(args: &MapArgs, root: &Path) -> Option<Output> {
+    let path = args
+        .outline
+        .as_deref()
+        .filter(|path| requested_views(args) == 1 && markdown_outline::is_markdown_path(path))?;
+    Some(if args.json {
+        let outline = markdown_outline::to_json(root, path);
+        Output::Json(serde_json::json!({"schema": MAP_SCHEMA, "views": {"outline": outline}}))
+    } else {
+        Output::Text(markdown_outline::render(root, path))
+    })
 }
 
 fn require_view(args: &MapArgs) -> Result<()> {

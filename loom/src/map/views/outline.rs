@@ -30,7 +30,7 @@ pub fn render_outline(graph: &ResolvedGraph, project_root: &Path, arg: &str) -> 
         return format!("no indexed file at {safe_rel}");
     };
 
-    let mut lines = vec![format!("{} Outline: {}", "→".cyan().bold(), safe_rel)];
+    let mut lines = vec![outline_header(&safe_rel)];
     lines.extend(
         symbols_in_order(&entry.nodes)
             .iter()
@@ -63,6 +63,11 @@ fn symbols_in_order(nodes: &[SourceNode]) -> Vec<&SourceNode> {
     symbols
 }
 
+/// The first line of every outline; `safe_rel` is already flattened.
+pub(super) fn outline_header(safe_rel: &str) -> String {
+    format!("{} Outline: {}", "→".cyan().bold(), safe_rel)
+}
+
 /// Format one outline row: line range, kind, scope path, signature.
 ///
 /// `scope` and `signature` both originate in the parsed source file, not in
@@ -70,17 +75,27 @@ fn symbols_in_order(nodes: &[SourceNode]) -> Vec<&SourceNode> {
 /// like every other graph-derived value rendered on this agent-facing
 /// surface (see the module's containment rule).
 fn format_node_line(node: &SourceNode) -> String {
-    let range = format!("L{}-L{}", node.span.line_start, node.span.line_end);
-    let scope = safe(&node.scope.join("::"));
-    let signature = safe(&node.signature);
-    let signature = crate::utils::truncate_for_display(&signature, SIGNATURE_MAX_LEN);
-    format!(
-        "{:<11} {:<11} {:<30} {}",
-        range,
+    format_row(
+        (node.span.line_start, node.span.line_end),
         node.kind.as_str(),
-        scope,
-        signature
+        &node.scope.join("::"),
+        &node.signature,
     )
+}
+
+/// The shared row layout of every outline, without the two-space indent the
+/// caller adds: the pair is the 1-based inclusive line range, and `scope` and
+/// `signature` are flattened and the signature capped here.
+pub(super) fn format_row(
+    (line_start, line_end): (usize, usize),
+    kind: &str,
+    scope: &str,
+    signature: &str,
+) -> String {
+    let range = format!("L{line_start}-L{line_end}");
+    let scope = safe(scope);
+    let signature = crate::utils::truncate_for_display(&safe(signature), SIGNATURE_MAX_LEN);
+    format!("{range:<11} {kind:<11} {scope:<30} {signature}")
 }
 
 /// A file's own coverage status, with the detail that explains a degraded
