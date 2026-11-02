@@ -238,3 +238,11 @@ Records live under `<state root>/verification/<stage>/` (`host_verify/store.rs`)
 ## Host Job Budget Binding
 
 `verify/budget.rs` sums acceptance timeouts and fixed allowances for goal checks, frozen contracts, and impact selection with saturating arithmetic. Check and completion jobs take wiring, dead-code, and regression counts from the active plan definition; completion also takes `after_stage` timeouts from that definition. The persisted stage copy is insufficient for these deadlines. The runner brackets its budget read with the effective policy hash, passes it in `LOOM_VERIFY_BUDGET_POLICY`, and the child checks it after loading its stage and plan inputs before executing those commands. The host runner adds the named 1800-second completion margin and retires an expired child. The monitor uses the shared stage command sum for its separate session silence allowance.
+
+## A Merge Resolver's Check
+
+A live resolver of a stage in `MergeConflict` or `MergeBlocked` may relay `loom check`, so its criteria run on the host. The check is never landing evidence. `host_verify/child_policy.rs::check_cache_policy` gives it `CachePolicy::Bypass`, which neither reads nor stores the pass cache, and landing acceptance (`verify/completion/resolved.rs`) reads no pass cache either. Each landing therefore reruns the criteria and blocks the daemon tick for as long as they take.
+
+Gates and a check must not share a worktree. `--resolved` (after its worktree refusal) and the resolver-exit landing call `orchestrator/core/host_jobs.rs::stop_running_check`, which cancels the job and settles it with `HostJobRunner::settle_held`, starting no other job; a child still held refuses the landing. The operator's `--resolved` refuses a live job while a daemon runs. With no daemon it cancels a queued job and continues, and cancels a running one and asks for a rerun, since `child_watchdog` stops the orphan asynchronously.
+
+`loom knowledge sync` in a capsule can exit non-zero after writing `INDEX.md`: `--structural-only` skips only the semantic reconcile, and the catalog publish to the denied `.loom/cache` still runs and is not tolerated. `loom knowledge check`'s output is the proof there.

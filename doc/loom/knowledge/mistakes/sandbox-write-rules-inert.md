@@ -55,3 +55,13 @@ makes this class hard to see: the rule PARSES, so nothing fails.
 **Caution when fixing:** deny beats allow, so a blanket `Edit(**)` deny cannot be paired with a
 narrower `Edit(<dir>/**)` allow — the deny wins and blocks the directory the session needs.
 Scope blanket denies to read-only modes only.
+
+## Denying Claude Code's TMPDIR fails every sandboxed Bash call
+
+**What happened:** commit 07a62d50 added `/tmp/claude-<uid>` to every capsule's `denyWrite` and `Edit(//tmp/claude-<uid>/**)` to its permission denies, to stop sandboxed commands rewriting background-task output files. Claude Code's Bash wrapper records the shell's cwd at `/tmp/claude-<uid>/cwd-<id>`, so every sandboxed command printed its output and then exited 1 with `read-only file system: /tmp/claude-1000/cwd-1475`. The completion relay hook skips failed Bash calls, so no stage session could finish, and integration-verify blocked.
+
+**Why:** the deny was proven only by capsule-content tests, which pinned the new entry instead of running a command under it. The comment reasoned about task output files and missed the other writers in the same directory.
+
+**Prevention:** a new deny on a directory the harness owns needs one real run first: `claude -p --settings <capsule>` running a Bash command, checking exit status 0. A test that asserts a capsule's literal contents proves the entry exists, and says nothing about whether a session still works.
+
+**Fix:** the deny is gone from `sandbox/control_surfaces/session_denies.rs` and `claude_code_temporary_directory_stays_writable` guards it. Linux skips `denyWrite` globs, so `*/*/tasks` is no alternative. The rewrite risk is open: [State Confinement Gaps](../concerns/state-confinement-gaps.md).
