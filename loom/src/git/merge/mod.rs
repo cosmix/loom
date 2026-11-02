@@ -2,6 +2,7 @@
 
 mod checkout_apply;
 mod checkout_files;
+mod checkout_stash;
 mod checkout_state;
 pub mod control_paths;
 mod fast_forward;
@@ -10,6 +11,7 @@ mod inputs;
 pub mod lock;
 mod operation;
 mod resolved;
+mod stash_report;
 mod status;
 mod tree;
 
@@ -313,6 +315,8 @@ pub fn verify_merge_succeeded(
     is_ancestor_of(completed_commit, &branch_ref(target_branch), repo_root)
 }
 
+#[cfg(test)]
+mod checkout_gitlink_tests;
 #[cfg(test)]
 mod stage_overlap_tests;
 #[cfg(test)]

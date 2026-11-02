@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use super::stash_report::{restore_remedy, spare_copy_remedy};
+pub use super::stash_report::{RollbackChanges, StashReapply};
 use crate::git::branch::branch_ref;
 use crate::git::runner::{run_git, run_git_checked};
 use crate::git::signing;
@@ -46,14 +48,19 @@ pub enum MergeBlock {
     /// and git named no paths; `detail` is git's message on one line.
     FastForwardRefused { detail: String },
     /// The merge did not land and the operator's stashed changes could not
-    /// be put back: they are in the top stash entry and in `backup_ref`.
+    /// be put back: they are in `backup_ref`, and in a stash entry unless
+    /// something removed it.
     StashNotRestored { backup_ref: String },
+    /// The reset after stashing failed with the checkout still as it was, so
+    /// the merge did not land and the changes never left. The stash entry and
+    /// `backup_ref` are spare copies for the operator to remove.
+    StashResetRefused { backup_ref: String },
     /// Rollback could not restore every removed untracked file. The blob in
     /// `source_rev` remains available for manual recovery.
     CheckoutRestoreIncomplete {
         source_rev: String,
         failures: Vec<RestoreFailure>,
-        backup_ref: Option<String>,
+        changes: RollbackChanges,
     },
     /// The target guard holds the target: it moved outside loom from
     /// `accepted` to `observed`, and merges into it wait for the operator.
@@ -93,14 +100,17 @@ impl fmt::Display for MergeBlock {
             ),
             Self::StashNotRestored { backup_ref } => write!(
                 f,
-                "the merge did not land and your uncommitted changes could not be put back: they are in the top `git stash list` entry and in {backup_ref}; restore them with `git stash pop`"
+                "the merge did not land and your uncommitted changes could not be put back: they are in {backup_ref} and, unless it was removed, in a `git stash list` entry; {}",
+                restore_remedy(backup_ref)
             ),
-            Self::CheckoutRestoreIncomplete { source_rev, failures, backup_ref } => {
+            Self::StashResetRefused { backup_ref } => write!(
+                f,
+                "the merge did not land because clearing the checkout failed before changing anything: your uncommitted changes are still in the checkout; {}",
+                spare_copy_remedy(backup_ref)
+            ),
+            Self::CheckoutRestoreIncomplete { source_rev, failures, changes } => {
                 write!(f, "the merge did not land and checkout rollback is incomplete ({}); recover the removed files from git revision {source_rev} after inspecting the listed paths", failures.iter().map(|failure| format!("{}: {}", failure.path, failure.reason)).collect::<Vec<_>>().join(", "))?;
-                if let Some(backup_ref) = backup_ref {
-                    write!(f, "; stashed changes remain in {backup_ref}")?;
-                }
-                Ok(())
+                changes.fmt_note(f)
             }
             Self::TargetHeld {
                 target,
@@ -141,32 +151,6 @@ fn fmt_target_held(
             short(accepted),
             short(observed)
         )
-    }
-}
-
-/// What happened to the operator's stashed changes around a merge that landed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StashReapply {
-    /// Ref holding the stashed changes; kept after a restore as a backup.
-    pub backup_ref: String,
-    /// False when `stash pop --index` and `stash pop` both failed: the
-    /// changes stay in the stash entry and in `backup_ref`.
-    pub restored: bool,
-}
-
-impl StashReapply {
-    /// One sentence for the operator: where the stashed changes are.
-    pub fn notice(&self) -> String {
-        let backup_ref = &self.backup_ref;
-        if self.restored {
-            format!(
-                "uncommitted changes in the main checkout were stashed and reapplied around the merge; backup at {backup_ref}"
-            )
-        } else {
-            format!(
-                "the merge LANDED but your uncommitted changes in the main checkout could not be reapplied: they are in the top `git stash list` entry and in {backup_ref}; restore them with `git stash pop`"
-            )
-        }
     }
 }
 

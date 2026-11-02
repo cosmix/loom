@@ -2,16 +2,9 @@
 //! error text and recovery of a worktree git already half-removed.
 
 use anyhow::{Context, Result};
-use nix::dir::Dir;
-use nix::errno::Errno;
-use nix::fcntl::{OFlag, AT_FDCWD};
-use nix::sys::stat::Mode;
-use nix::unistd::{unlinkat, UnlinkatFlags};
-use std::ffi::OsStr;
-use std::os::fd::AsFd;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::git::runner::{run_git_checked, run_git_with_env};
+use crate::git::worktree::WorktreeGit;
 
 /// Cap on how many paths an error lists verbatim. The message is persisted
 /// into stage frontmatter and shipped in every status frame (2 MiB IPC cap),
@@ -21,10 +14,32 @@ const MAX_BLOCKING_PATHS: usize = 20;
 /// Empty directories left by the worktree scaffold or its runtime writers.
 const SCAFFOLD_DIRS: [&str; 4] = [".claude", ".claude/.cc-writes", ".loom", ".loom/cache"];
 
+/// Git metadata is reconciled, but filesystem ownership remains unproved.
+#[derive(Debug)]
+pub(super) struct RetainedScaffold(PathBuf);
+
+impl std::fmt::Display for RetainedScaffold {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "Git worktree registry reconciled for {}, but directories remain; \
+             their ownership cannot be established, so the retained path was not deleted or moved. \
+             Inspect the retained path and use explicit forced cleanup to remove it",
+            self.0.display()
+        )
+    }
+}
+
+impl std::error::Error for RetainedScaffold {}
+
 /// Build the failure error for a non-forced removal. Only git's dirty-tree
 /// refusal is described as a refusal; any other failure carries git's own
 /// stderr (the underlying error) as the reason.
-pub(super) fn removal_failure(worktree_path: &Path, e: anyhow::Error) -> anyhow::Error {
+pub(super) fn removal_failure(
+    worktree_path: &Path,
+    repo_root: &Path,
+    e: anyhow::Error,
+) -> anyhow::Error {
     let refused = format!("{e:#}").contains("contains modified or untracked files");
     let mut message = if refused {
         format!(
@@ -39,15 +54,15 @@ pub(super) fn removal_failure(worktree_path: &Path, e: anyhow::Error) -> anyhow:
             worktree_path.display()
         )
     };
-    let blocking = blocking_paths(worktree_path);
+    let blocking = blocking_paths(worktree_path, repo_root);
     if !blocking.is_empty() {
         message.push_str(&format!("\n{blocking}"));
     }
     e.context(message)
 }
 
-/// Whether git reports the worktree already dropped from its registry while
-/// the directory is still on disk.
+/// Whether the error and missing checkout pointer suggest half-removal.
+/// The surviving administrative registry is checked separately before recovery.
 fn half_removed(worktree_path: &Path, e: &anyhow::Error) -> bool {
     let text = format!("{e:#}");
     (text.contains("Directory not empty") || text.contains("is not a working tree"))
@@ -60,10 +75,11 @@ fn half_removed(worktree_path: &Path, e: &anyhow::Error) -> bool {
 /// Recover a worktree git half-removed (tracked files and admin dir gone,
 /// directory left behind by a late write from the stage's session).
 ///
-/// Returns `Ok(true)` once only known empty scaffold directories were removed
-/// and the registry pruned; `Ok(false)` when the failure is not that state.
-/// Files and symlinks have no provable ownership once Git's admin dir is gone.
-/// Directory-only removal refuses late files and never follows a symlink.
+/// Returns `Ok(true)` when the directory and registry entry are already gone;
+/// `Ok(false)` when the failure is not that state. Surviving directories
+/// require explicit forced cleanup: their names cannot prove ownership once
+/// Git's admin directory is gone. Even a pinned descriptor cannot make POSIX
+/// `rmdir` conditional on inode identity, and quarantine only moves that race.
 pub(super) fn recover_half_removed(
     worktree_path: &Path,
     repo_root: &Path,
@@ -71,6 +87,14 @@ pub(super) fn recover_half_removed(
 ) -> Result<bool> {
     if !half_removed(worktree_path, e) {
         return Ok(false);
+    }
+    require_unregistered(worktree_path, repo_root)?;
+    match std::fs::symlink_metadata(worktree_path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(true);
+        }
+        Err(error) => return Err(error.into()),
+        Ok(_) => {}
     }
     let unknown = unknown_entries(worktree_path)?;
     if !unknown.is_empty() {
@@ -81,41 +105,59 @@ pub(super) fn recover_half_removed(
             cap_lines(&unknown)
         );
     }
-    remove_empty_scaffold_dirs(worktree_path).with_context(|| {
-        format!(
-            "Failed to remove leftover scaffold in {}",
-            worktree_path.display()
-        )
-    })?;
-    run_git_checked(&["worktree", "prune"], repo_root)?;
-    Ok(true)
+    Err(RetainedScaffold(worktree_path.to_path_buf()).into())
 }
 
-/// Remove only empty known directories, relative to pinned directory handles.
-/// A file created after inspection makes `unlinkat(RemoveDir)` fail closed.
-fn remove_empty_scaffold_dirs(root: &Path) -> Result<()> {
-    let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
-    let parent_path = root.parent().context("Worktree has no parent directory")?;
-    let name = root.file_name().context("Worktree has no directory name")?;
-    let parent = Dir::openat(AT_FDCWD, parent_path, flags, Mode::empty())?;
-    let directory = Dir::openat(parent.as_fd(), name, flags, Mode::empty())?;
-
-    for (outer, inner) in [(".claude", ".cc-writes"), (".loom", "cache")] {
-        match Dir::openat(directory.as_fd(), outer, flags, Mode::empty()) {
-            Ok(child) => remove_empty_dir(&child, inner)?,
-            Err(Errno::ENOENT) => {}
-            Err(error) => return Err(error.into()),
-        }
-        remove_empty_dir(&directory, outer)?;
+/// A missing checkout pointer does not prove Git's administrative HEAD/index
+/// are gone. Never prune a surviving registration to make recovery appear done.
+pub(super) fn require_unregistered(worktree: &Path, repo_root: &Path) -> Result<()> {
+    if let Some(registered) = registered_worktree(worktree, repo_root)? {
+        anyhow::bail!(
+            "Git still retains the registration for {} at HEAD {}; \
+             preserving its administrative refs and index. Repair the worktree's \
+             .git linkage and verify its retained work before cleanup",
+            worktree.display(),
+            registered.head
+        );
     }
-    unlinkat(parent.as_fd(), name, UnlinkatFlags::RemoveDir)?;
     Ok(())
 }
 
-fn remove_empty_dir(parent: &Dir, name: &str) -> Result<()> {
-    match unlinkat(parent.as_fd(), name, UnlinkatFlags::RemoveDir) {
-        Ok(()) | Err(Errno::ENOENT) => Ok(()),
-        Err(error) => Err(error.into()),
+pub(super) fn registered_worktree(
+    worktree: &Path,
+    repo_root: &Path,
+) -> Result<Option<crate::git::worktree::WorktreeInfo>> {
+    let expected = canonical_parent_path(worktree)?;
+    for registered in crate::git::worktree::list_worktrees(repo_root)? {
+        if canonical_parent_path(&registered.path)? == expected {
+            return Ok(Some(registered));
+        }
+    }
+    Ok(None)
+}
+
+fn canonical_parent_path(path: &Path) -> Result<PathBuf> {
+    let absolute = std::path::absolute(path)?;
+    let mut parent = absolute.parent().context("Worktree path has no parent")?;
+    let mut missing = vec![absolute.file_name().context("Worktree path has no name")?];
+    loop {
+        match parent.canonicalize() {
+            Ok(mut resolved) => {
+                for component in missing.into_iter().rev() {
+                    resolved.push(component);
+                }
+                return Ok(resolved);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                missing.push(
+                    parent
+                        .file_name()
+                        .context("Worktree ancestor has no name")?,
+                );
+                parent = parent.parent().context("Worktree ancestor has no parent")?;
+            }
+            Err(error) => return Err(error.into()),
+        }
     }
 }
 
@@ -146,7 +188,7 @@ fn unknown_entries(root: &Path) -> Result<Vec<String>> {
     Ok(found)
 }
 
-/// Only the known empty scaffold directories can be removed safely here.
+/// Recognized scaffold directory names; names alone do not prove ownership.
 fn is_scaffold(rel: &str, meta: &std::fs::Metadata) -> bool {
     meta.is_dir() && SCAFFOLD_DIRS.contains(&rel)
 }
@@ -185,12 +227,12 @@ fn walk(root: &Path, pick: &dyn Fn(&str, &std::fs::Metadata) -> bool) -> Vec<Str
 }
 
 /// Paths blocking removal, labelled by source. Git status runs only when
-/// `<worktree>/.git` exists and is pinned below the worktree's parent so it
-/// can never describe an enclosing repository; otherwise leftover entries
+/// `<worktree>/.git` exists and is pinned to the main repository's registered
+/// administrative directory; otherwise leftover entries
 /// come from a bounded filesystem walk.
-fn blocking_paths(worktree_path: &Path) -> String {
+fn blocking_paths(worktree_path: &Path, repo_root: &Path) -> String {
     if worktree_path.join(".git").exists() {
-        if let Some(status) = git_status(worktree_path) {
+        if let Some(status) = git_status(worktree_path, repo_root) {
             return match cap_lines(&status.lines().map(str::to_string).collect::<Vec<_>>()) {
                 s if s.is_empty() => s,
                 s => format!("Blocking paths (git status --porcelain):\n{s}"),
@@ -207,14 +249,11 @@ fn blocking_paths(worktree_path: &Path) -> String {
     )
 }
 
-fn git_status(worktree_path: &Path) -> Option<String> {
-    let ceiling = worktree_path.parent()?;
-    let output = run_git_with_env(
-        &["status", "--porcelain=v1", "--untracked-files=all"],
-        &[("GIT_CEILING_DIRECTORIES", OsStr::new(ceiling))],
-        worktree_path,
-    )
-    .ok()?;
+fn git_status(worktree_path: &Path, repo_root: &Path) -> Option<String> {
+    let output = WorktreeGit::pinned(repo_root, worktree_path)
+        .ok()?
+        .run(&["status", "--porcelain=v1", "--untracked-files=all"])
+        .ok()?;
     output.status.success().then(|| {
         String::from_utf8_lossy(&output.stdout)
             .trim_end()

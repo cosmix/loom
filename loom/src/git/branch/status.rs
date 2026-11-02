@@ -4,6 +4,7 @@ use anyhow::{bail, Result};
 use std::path::Path;
 
 use crate::git::runner::run_git;
+use crate::git::worktree::WorktreeGit;
 use crate::verify::tool_artifacts::is_tool_artifact;
 
 /// Check if the repository has uncommitted changes (staged or unstaged)
@@ -58,13 +59,9 @@ pub fn has_uncommitted_changes(repo_root: &Path) -> Result<bool> {
 /// * `Ok(paths)` - changed paths, empty when the working tree is pristine
 /// * `Err` if the git command fails
 pub fn list_working_tree_changes(repo_root: &Path) -> Result<Vec<String>> {
-    let output = run_git(&["status", "--porcelain"], repo_root)?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("git status failed: {stderr}");
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(working_tree_changes(repo_root, &stdout))
+    let status =
+        WorktreeGit::pinned_checkout(repo_root)?.run_checked(&["status", "--porcelain"])?;
+    Ok(working_tree_changes(repo_root, &status))
 }
 
 /// The paths in `git status --porcelain` output, as
@@ -99,7 +96,20 @@ pub fn get_uncommitted_changes_summary(repo_root: &Path) -> Result<String> {
         bail!("git status failed: {stderr}");
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(uncommitted_changes_summary(&stdout))
+}
 
+/// Read startup status once through the saved operator checkout identity.
+pub(crate) fn pinned_uncommitted_changes(repo_root: &Path) -> Result<(bool, String)> {
+    crate::git::worktree::require_main_identity(repo_root)?;
+    let status = WorktreeGit::pinned_main(repo_root)?.run_checked(&["status", "--porcelain"])?;
+    let dirty = status
+        .lines()
+        .any(|line| !line.starts_with("??") && !line.is_empty());
+    Ok((dirty, uncommitted_changes_summary(&status)))
+}
+
+fn uncommitted_changes_summary(stdout: &str) -> String {
     let mut staged = Vec::new();
     let mut modified = Vec::new();
 
@@ -136,7 +146,7 @@ pub fn get_uncommitted_changes_summary(repo_root: &Path) -> Result<String> {
         summary.push_str(&format!("Modified: {}\n", modified.join(", ")));
     }
 
-    Ok(summary)
+    summary
 }
 
 #[cfg(test)]

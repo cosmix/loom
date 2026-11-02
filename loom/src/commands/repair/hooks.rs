@@ -9,7 +9,8 @@ use anyhow::{bail, Result};
 use super::{DetectedIssue, RepairAction, Severity};
 use crate::fs::permissions::LOOM_PERMISSIONS;
 use crate::git::hooks::{
-    install_reference_transaction_hook, is_reference_transaction_hook_installed, HookInstall,
+    install_reference_transaction_hook, installable_hooks_dir,
+    is_reference_transaction_hook_installed, reference_transaction_hook_occupied, HookInstall,
 };
 use crate::git::is_pre_commit_hook_installed;
 
@@ -23,14 +24,7 @@ pub(super) fn check(repo_root: &Path) -> Vec<DetectedIssue> {
     // Outside a repository there is nothing to install into; `loom init`
     // bootstraps git first and installs the hooks in its startup repair.
     if repo_root.join(".git").is_dir() {
-        if !is_pre_commit_hook_installed(repo_root) {
-            issues.push(DetectedIssue {
-                action: RepairAction::Workspace(super::workspace::WorkspaceFix::PreCommitHook),
-                severity: Severity::Info,
-                description: "Git pre-commit hook not installed".to_string(),
-                fix_description: "Install loom pre-commit hook".to_string(),
-            });
-        }
+        issues.extend(pre_commit_issue(repo_root));
         issues.extend(reference_transaction_issue(repo_root));
     }
 
@@ -53,6 +47,35 @@ pub(super) fn codex_hooks_issue_for(needs_install: bool) -> Option<DetectedIssue
     })
 }
 
+/// The issue for a hook that is not installed where loom may not write: repair can
+/// do nothing, and the reason names `core.hooksPath`.
+fn unwritable_hooks_dir_issue(repo_root: &Path, hook: &str) -> Option<DetectedIssue> {
+    let reason = installable_hooks_dir(repo_root).err()?;
+    Some(DetectedIssue {
+        action: RepairAction::Manual,
+        severity: Severity::Warning,
+        description: format!("{hook} not installed: {reason:#}"),
+        fix_description: "None: add the hook to that directory by hand, or change \
+                          core.hooksPath"
+            .to_string(),
+    })
+}
+
+fn pre_commit_issue(repo_root: &Path) -> Option<DetectedIssue> {
+    const HOOK: &str = "Git pre-commit hook";
+    if is_pre_commit_hook_installed(repo_root) {
+        return None;
+    }
+    unwritable_hooks_dir_issue(repo_root, HOOK).or_else(|| {
+        Some(DetectedIssue {
+            action: RepairAction::Workspace(super::workspace::WorkspaceFix::PreCommitHook),
+            severity: Severity::Info,
+            description: format!("{HOOK} not installed"),
+            fix_description: "Install loom pre-commit hook".to_string(),
+        })
+    })
+}
+
 /// Description prefix of the reference-transaction hook issues.
 pub(super) const REFERENCE_TRANSACTION_ISSUE: &str = "Git reference-transaction hook";
 
@@ -63,8 +86,10 @@ fn reference_transaction_issue(repo_root: &Path) -> Option<DetectedIssue> {
     if is_reference_transaction_hook_installed(repo_root) {
         return None;
     }
-    let foreign = repo_root.join(".git/hooks/reference-transaction").exists();
-    Some(if foreign {
+    if let Some(issue) = unwritable_hooks_dir_issue(repo_root, REFERENCE_TRANSACTION_ISSUE) {
+        return Some(issue);
+    }
+    Some(if reference_transaction_hook_occupied(repo_root) {
         DetectedIssue {
             action: RepairAction::Manual,
             severity: Severity::Warning,
@@ -91,9 +116,9 @@ pub(super) fn fix_reference_transaction_hook(repo_root: &Path) -> Result<bool> {
     match install_reference_transaction_hook(repo_root)? {
         HookInstall::Installed => Ok(true),
         HookInstall::UpToDate => Ok(false),
-        HookInstall::ForeignHookPresent => bail!(
-            ".git/hooks/reference-transaction belongs to another tool; loom left it untouched"
-        ),
+        HookInstall::ForeignHookPresent => {
+            bail!("The reference-transaction hook belongs to another tool; loom left it untouched")
+        }
     }
 }
 

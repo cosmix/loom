@@ -1,13 +1,16 @@
 //! `merge --ff-only` in the operator's checkout, and the stash restore around
 //! it. A refused fast-forward is always a typed block: rollback failures
 //! name each path left to recover, and stashed changes retain a backup ref.
+//!
+//! `refs/stash` is shared by every worktree of the repository, so the top entry
+//! need not be the merge's: the restore goes by the snapshot's commit id.
 
 use anyhow::Result;
 use std::path::Path;
 
 use super::checkout_files::restore_files;
-use super::tree::{rev_parse, Advance, MergeBlock, StashReapply};
-use crate::git::runner::run_git;
+use super::tree::{rev_parse, Advance, MergeBlock, RollbackChanges, StashReapply};
+use crate::git::runner::{run_git, run_git_checked};
 
 /// Longest `FastForwardRefused` detail, in characters.
 const DETAIL_LIMIT: usize = 300;
@@ -20,8 +23,16 @@ const OVERLAP_HEADERS: [&str; 4] = [
     "Updating the following directories would lose untracked files in them:",
 ];
 
+/// The stash entry made for a fast-forward.
+pub(super) struct StashedChanges {
+    /// The snapshot commit the entry holds.
+    pub commit: String,
+    /// The ref that keeps `commit` reachable whatever happens to the entry.
+    pub backup_ref: String,
+}
+
 /// `merge --ff-only` from `old` to `new`, then restore a stash made for it
-/// (when `backup_ref` is set). After a clean refusal (git exited non-zero
+/// (when `stash` is set). After a clean refusal (git exited non-zero
 /// having changed nothing) the stash is popped and `removed` is restored where
 /// absent. Incomplete restoration names each path; a failed stash pop is a
 /// [`MergeBlock::StashNotRestored`], never an `Err`.
@@ -31,13 +42,13 @@ pub(super) fn fast_forward(
     repo: &Path,
     (old, new): (&str, &str),
     removed: &[String],
-    backup_ref: Option<String>,
+    stash: Option<StashedChanges>,
 ) -> Result<Advance> {
     let stderr = match try_fast_forward(repo, new) {
         Ok(Ok(())) => {
-            let stash = backup_ref.map(|backup_ref| StashReapply {
-                restored: pop_stash(repo),
-                backup_ref,
+            let stash = stash.map(|stash| StashReapply {
+                restored: pop_stash(repo, &stash.commit),
+                backup_ref: stash.backup_ref,
             });
             return Ok(Advance::Advanced { stash });
         }
@@ -47,20 +58,22 @@ pub(super) fn fast_forward(
                 repo,
                 new,
                 removed,
-                backup_ref,
+                stash.map(|stash| stash.backup_ref),
                 &format!("{error:#}"),
             ))
         }
     };
-    let stash_restored = match backup_ref {
-        Some(_) => pop_stash(repo),
-        None => true,
-    };
+    let stash = stash.map(|stash| (pop_stash(repo, &stash.commit), stash.backup_ref));
     let restore = restore_files(repo, new, removed);
     if !restore.failures.is_empty() {
-        return Ok(Advance::Blocked(restore.block(new, backup_ref)));
+        let changes = match stash {
+            Some((true, backup_ref)) => RollbackChanges::Restored { backup_ref },
+            Some((false, backup_ref)) => RollbackChanges::Stashed { backup_ref },
+            None => RollbackChanges::NoBackup,
+        };
+        return Ok(Advance::Blocked(restore.block(new, changes)));
     }
-    if let (false, Some(backup_ref)) = (stash_restored, backup_ref) {
+    if let Some((false, backup_ref)) = stash {
         return Ok(Advance::Blocked(MergeBlock::StashNotRestored {
             backup_ref,
         }));
@@ -76,7 +89,7 @@ pub(super) fn fast_forward(
 /// stays, named by [`MergeBlock::StashNotRestored`]. Rollback attempts every
 /// removed path with exclusive creation; occupied paths are reported as
 /// incomplete recovery. With no stash made, the error is a refusal.
-fn after_errored_fast_forward(
+pub(super) fn after_errored_fast_forward(
     repo: &Path,
     new: &str,
     removed: &[String],
@@ -85,7 +98,10 @@ fn after_errored_fast_forward(
 ) -> Advance {
     let restore = restore_files(repo, new, removed);
     if !restore.failures.is_empty() {
-        return Advance::Blocked(restore.block(new, backup_ref));
+        let changes = backup_ref.map_or(RollbackChanges::NoBackup, |backup_ref| {
+            RollbackChanges::Stashed { backup_ref }
+        });
+        return Advance::Blocked(restore.block(new, changes));
     }
     match backup_ref {
         Some(backup_ref) => Advance::Blocked(MergeBlock::StashNotRestored { backup_ref }),
@@ -103,6 +119,11 @@ fn try_fast_forward(repo: &Path, new: &str) -> Result<std::result::Result<(), St
     if failpoint::fast_forward_error() {
         anyhow::bail!("simulated spawn failure");
     }
+    // Not `WorktreeGit::pinned_main`, whose private git directory would hide the
+    // operator's `index.lock` until the target had moved and lose settings from an
+    // `includeIf "gitdir:"`. So a link planted in the git directory between the
+    // runner's look and git's open is still written through. Revisit if pinned git
+    // can hold the real index's lock for the whole command and carry those settings.
     let output = run_git(&["merge", "--ff-only", "--quiet", new], repo)?;
     if output.status.success() {
         return Ok(Ok(()));
@@ -110,20 +131,56 @@ fn try_fast_forward(repo: &Path, new: &str) -> Result<std::result::Result<(), St
     Ok(Err(String::from_utf8_lossy(&output.stderr).into_owned()))
 }
 
-/// `stash pop --index`, then plain `stash pop`. Returns whether either
-/// worked; on failure the stash entry stays.
-fn pop_stash(repo: &Path) -> bool {
+/// Restore the stash entry holding `commit` and drop it: `stash apply --index`,
+/// then plain `stash apply`. Returns whether either worked; on failure the entry
+/// stays. An entry no longer in the list is refused, since whatever is on top
+/// belongs to someone else; the backup ref still holds the work.
+///
+/// `stash pop` takes only an index into the list, which another worktree's stash
+/// can shift between the lookup and the pop, so the apply goes by commit id. The
+/// drop has no such form: an entry pushed between its lookup and the drop, one
+/// process spawn apart, makes it drop that entry instead.
+fn pop_stash(repo: &Path, commit: &str) -> bool {
     #[cfg(test)]
     if failpoint::pop() {
         return false;
     }
+    if stash_entry(repo, commit).is_none() {
+        tracing::warn!(
+            commit,
+            "The merge's stash entry is gone; nothing was reapplied"
+        );
+        return false;
+    }
     let attempts: [&[&str]; 2] = [
-        &["stash", "pop", "--index", "--quiet"],
-        &["stash", "pop", "--quiet"],
+        &["stash", "apply", "--index", "--quiet", commit],
+        &["stash", "apply", "--quiet", commit],
     ];
-    attempts
+    let applied = attempts
         .iter()
-        .any(|args| run_git(args, repo).is_ok_and(|o| o.status.success()))
+        .any(|args| run_git(args, repo).is_ok_and(|o| o.status.success()));
+    if applied {
+        drop_stash_entry(repo, commit);
+    }
+    applied
+}
+
+/// The `stash@{n}` naming `commit`, when the list holds it.
+fn stash_entry(repo: &Path, commit: &str) -> Option<String> {
+    let listing = run_git_checked(&["stash", "list", "--format=%H"], repo).ok()?;
+    let position = listing.lines().position(|entry| entry == commit)?;
+    Some(format!("stash@{{{position}}}"))
+}
+
+/// The changes are back in the checkout, so a failure here only leaves a spare
+/// entry in the list.
+fn drop_stash_entry(repo: &Path, commit: &str) {
+    let Some(entry) = stash_entry(repo, commit) else {
+        return;
+    };
+    if let Err(error) = run_git_checked(&["stash", "drop", "--quiet", &entry], repo) {
+        tracing::warn!(%error, "Cannot drop the merge's stash entry after restoring it");
+    }
 }
 
 /// The block for a refused fast-forward whose stderr is `stderr`: the paths
