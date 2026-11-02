@@ -7,7 +7,6 @@
 //! legacy temp branches.
 
 use serial_test::serial;
-use std::process::Command;
 
 use loom::git::branch_exists;
 use loom::git::cleanup::cleanup_base_branch;
@@ -67,23 +66,9 @@ fn test_cleanup_all_temp_branches() {
     let temp_dir = init_test_repo();
     let repo_root = temp_dir.path();
 
-    Command::new("git")
-        .args(["branch", "loom/_base/stage-1"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to create branch");
-
-    Command::new("git")
-        .args(["branch", "loom/_base/stage-2"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to create branch");
-
-    Command::new("git")
-        .args(["branch", "loom/_base/stage-3"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to create branch");
+    git_checked(repo_root, &["branch", "loom/_base/stage-1"]);
+    git_checked(repo_root, &["branch", "loom/_base/stage-2"]);
+    git_checked(repo_root, &["branch", "loom/_base/stage-3"]);
 
     assert!(branch_exists("loom/_base/stage-1", repo_root).unwrap());
     assert!(branch_exists("loom/_base/stage-2", repo_root).unwrap());

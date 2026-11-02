@@ -2,7 +2,39 @@
 
 use crate::plan::{AmendmentField, AmendmentPatch};
 use anyhow::{bail, Result};
-use clap::ValueEnum;
+use clap::{Args, ValueEnum};
+
+use crate::validation::{clap_description_validator, clap_id_validator};
+
+#[derive(Args)]
+pub struct AmendArgs {
+    /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
+    #[arg(value_parser = clap_id_validator)]
+    pub stage_id: String,
+
+    /// Which array to mutate.
+    #[arg(long)]
+    pub field: AmendField,
+
+    /// What to do at `--index`.
+    #[arg(long)]
+    pub op: AmendOp,
+
+    /// 0-based index into the array.
+    #[arg(long)]
+    pub index: usize,
+
+    /// The new element: a YAML body for every field except `harness`,
+    /// which takes a plain glob verbatim (trimmed, never parsed as YAML,
+    /// so do not quote it). Required for replace/insert, rejected for
+    /// delete.
+    #[arg(long)]
+    pub value: Option<String>,
+
+    /// Reason recorded in the audit log.
+    #[arg(long, value_parser = clap_description_validator)]
+    pub reason: Option<String>,
+}
 
 /// Which array on a stage `loom stage amend` mutates.
 ///
@@ -93,11 +125,11 @@ mod tests {
         ];
         let cli = Cli::try_parse_from(argv).unwrap();
         let Commands::Stage {
-            command: StageCommands::Amend { field, .. },
+            command: StageCommands::Amend(args),
         } = cli.command
         else {
             panic!("amend parsed as another command");
         };
-        assert_eq!(field.to_field(), AmendmentField::Harness);
+        assert_eq!(args.field.to_field(), AmendmentField::Harness);
     }
 }

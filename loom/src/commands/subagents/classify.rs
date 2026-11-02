@@ -14,14 +14,10 @@
 //! | `user` (a tool result came back, or it was sent a message)    | `generating` |
 //! | anything else                                                 | `unknown`    |
 //!
-//! `tool-wait` NEVER debounces or times out, at any idle time: a tool call
-//! genuinely outstanding for 23+ minutes has been measured in this
-//! codebase's own transcripts (a `Bash` call ran 603s; the overall p99 tool
-//! duration is 9.1s but the max is 1,425s). `tool-wait` means the agent is
-//! busy, full stop -- `harvest` must never emit for it and `watch` must
-//! never call it settled, regardless of how long it has sat idle. Report the
-//! elapsed time and tool name in `list` and let the human judge; do not add
-//! a "tool-wait for too long" escalation.
+//! Diagnostic classification keeps `tool-wait` at any idle time and never
+//! harvests it. Watch applies a separate stall heuristic: Bash uses a floor,
+//! ordinary tools use the budget, and Agent/Task calls are exempt. A stall is
+//! weaker evidence than exact lifecycle termination.
 //!
 //! `unknown` is likewise never harvested and never counts as settled.
 //!
@@ -60,6 +56,8 @@ use super::{ledger, metrics, summary};
 use crate::models::constants::DEFAULT_SUBAGENT_CEILING_TOKENS;
 
 mod entry;
+#[cfg(test)]
+pub(super) use entry::read_count;
 #[path = "classify_forward.rs"]
 pub(super) mod forward;
 pub(super) mod lifecycle;
@@ -92,16 +90,10 @@ pub(super) fn is_done_entry(entry: &Value) -> bool {
 /// Minimum idle time (seconds) a structurally-`done` last entry must sit
 /// unchanged before it is trusted as genuinely turn-final, rather than one
 /// text block flushed mid-turn just before the next block (typically a
-/// `tool_use`) lands. Measured across 1,143 real subagent transcripts /
-/// 136k entry gaps: true intra-turn gaps (n=8,808) were p50 1.4s, p90
-/// 12.3s, p99 53.6s, p99.9 88.9s, max 137.7s -- ZERO of the 8,808 exceeded
-/// 180s. False-`done` rate by threshold: 10s -> 12.6%, 60s -> 0.65%, 120s ->
-/// 0.034%, 180s -> 0%. 180s is the first round number above the observed
-/// max. The cost asymmetry justifies the wait: a false `done` can make an
-/// orchestrator re-dispatch onto a LIVE agent's file set -- two writers,
-/// lost work -- while 3 minutes of extra latency is nothing against the
-/// ~28-minute hangs this command exists to detect. Overridable via
-/// `--debounce` on `list`/`harvest`/`watch`.
+/// `tool_use`) lands. Observed intra-turn gaps reached 137.7 seconds; 180
+/// seconds adds headroom because false completion risks concurrent writers.
+/// Exact lifecycle evidence bypasses this delay. Overridable via `--debounce`
+/// on `list` and `harvest`.
 pub const DEFAULT_DONE_DEBOUNCE_SECS: u64 = 180;
 
 /// A subagent's liveness, inferred from the structural shape of the last
@@ -119,7 +111,7 @@ pub enum SubagentState {
     /// Exact lifecycle evidence reports terminal cancellation.
     Cancelled,
     /// Last entry is `assistant` with a `tool_use` block: waiting on a tool.
-    /// Never debounced or timed out, at any idle time -- see the module doc.
+    /// Diagnostic classification does not time it out; watch applies its own stall policy.
     ToolWait,
     /// Last entry is `user`, OR `assistant` with only a `thinking` block, OR
     /// it structurally looks `done` but hasn't cleared the debounce yet (a
@@ -245,7 +237,9 @@ pub(super) fn analyze_with_evidence_at_ceiling(
     lifecycle: Option<&lifecycle::Context>,
     forward_index: Option<&ForwardIndex>,
 ) -> Result<SubagentSummary> {
-    let entries = entry::read_entries(path)?;
+    let (entries, bytes, trusted) = entry::read_entries(path)?;
+    let forwarding =
+        forward_index.map(|_| super::forward_jobs_transcript::from_bytes(path, &bytes, trusted));
     let lifecycle_evidence = lifecycle.map(|context| context.evidence(path, &agent_id));
     let agent_type = lifecycle_evidence
         .as_ref()
@@ -278,7 +272,7 @@ pub(super) fn analyze_with_evidence_at_ceiling(
     Ok(apply_evidence(
         summary,
         last,
-        path,
+        forwarding.as_ref(),
         lifecycle_evidence,
         forward_index,
     ))
@@ -287,7 +281,7 @@ pub(super) fn analyze_with_evidence_at_ceiling(
 fn apply_evidence(
     mut summary: SubagentSummary,
     last: &Value,
-    path: &Path,
+    forwarding: Option<&super::forward_jobs_transcript::ForwardTranscript>,
     lifecycle_evidence: Option<lifecycle::Evidence>,
     forward_index: Option<&ForwardIndex>,
 ) -> SubagentSummary {
@@ -297,8 +291,8 @@ fn apply_evidence(
     if summary.state == SubagentState::Done && summary.final_report.is_none() {
         summary.final_report = final_report_for(summary.state, last);
     }
-    if let Some(index) = forward_index {
-        forward::apply(&mut summary, index, path);
+    if let (Some(index), Some(transcript)) = (forward_index, forwarding) {
+        forward::apply(&mut summary, index, transcript);
     }
     summary
 }

@@ -53,6 +53,9 @@ pub enum BlockReason {
     DependencyCheckFailed { detail: String },
     /// Base-branch resolution reported the stage as not schedulable.
     SchedulingNotReady { detail: String },
+    /// Nothing proves the stage is free to start: its session inventory, lock
+    /// or file cannot be read, or starting failed. Needs an operator to look.
+    OwnershipUncertain { detail: String },
     /// The target guard holds the stage back: a knowledge stage waits while
     /// the target branch is held, and a stage cut from the target waits
     /// while the guard record cannot be read. Resolves once the operator
@@ -69,6 +72,7 @@ impl BlockReason {
             BlockReason::Dependency { self_resolving, .. } => *self_resolving,
             BlockReason::DependencyCheckFailed { .. } => false,
             BlockReason::SchedulingNotReady { .. } => true,
+            BlockReason::OwnershipUncertain { .. } => false,
             BlockReason::TargetHeld => false,
         }
     }
@@ -87,6 +91,7 @@ impl BlockReason {
                 format!("dependency check failed: {detail}")
             }
             BlockReason::SchedulingNotReady { detail } => detail.clone(),
+            BlockReason::OwnershipUncertain { detail } => detail.clone(),
             BlockReason::TargetHeld => {
                 "waiting while the target branch is held (loom target status)".to_string()
             }
@@ -337,6 +342,14 @@ mod tests {
     fn test_concurrency_limit_is_self_resolving() {
         assert!(BlockReason::ConcurrencyLimit { running: 4, max: 4 }.self_resolving());
         assert!(!BlockReason::Held.self_resolving());
+    }
+
+    #[test]
+    fn test_uncertain_ownership_needs_an_operator() {
+        let detail = "session ownership is uncertain".to_string();
+        let reason = BlockReason::OwnershipUncertain { detail };
+        assert!(!reason.self_resolving());
+        assert_eq!(reason.describe(), "session ownership is uncertain");
     }
 
     #[test]

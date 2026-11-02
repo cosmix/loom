@@ -4,9 +4,9 @@
 //! Loom's costliest recurring defect is the *phantom merge*: recording a stage
 //! as merged, or destroying its branch, without proving in git that its commits
 //! landed. Cleanup inside a merge's own success arms would delete the worktree
-//! and branch *before* the caller could verify ancestry — and the caller
-//! derives a missing `completed_commit` from exactly that branch. This module
-//! makes the ordering structural:
+//! and branch *before* the caller could verify ancestry against certified
+//! completion proof. Missing proof is refused. This module makes the ordering
+//! structural:
 //!
 //! ```text
 //! overlay reconcile -> merge attempt -> verify merged ancestry
@@ -48,7 +48,7 @@ pub enum CleanupOutcome {
     /// Refused: the stage branch still holds commits that are not in the
     /// target branch, and ancestry could not be verified.
     Refused { reason: String },
-    /// Cleanup ran.
+    /// Git cleanup ran; the result reports retained filesystem paths as warnings.
     Done(CleanupResult),
     /// Cleanup was attempted and failed. NOT fatal.
     Failed(String),
@@ -104,7 +104,8 @@ impl<'a> MergeLifecycle<'a> {
         }
     }
 
-    /// STEP 6 — LAST. Discard the stage overlay, then remove worktree + branch.
+    /// STEP 6 — LAST. Remove the worktree and branch, then discard the overlay
+    /// after successful removal.
     ///
     /// Refuses unless the stage's work is provably contained in
     /// `target_branch`: deleting a branch that still holds unmerged commits
@@ -185,7 +186,9 @@ impl<'a> MergeLifecycle<'a> {
                 // read, but a FAILED cleanup leaves the worktree and branch in
                 // place, and the overlay still describes them.
                 self.discard_overlay();
-                self.record_cleanup_warning(None);
+                self.record_cleanup_warning(
+                    (!result.warnings.is_empty()).then(|| result.warnings.join("; ")),
+                );
                 CleanupOutcome::Done(result)
             }
             Err(failure) => {

@@ -12,7 +12,7 @@ fn accepted() -> Option<(String, String)> {
 /// `program` followed by [`ARGS`], parsed against `hooks_dir`.
 fn argv(program: &str, hooks_dir: &str) -> Option<(String, String)> {
     let command = format!("{program} {ARGS}");
-    exact_forward_argv_in(&command, Some(Path::new(hooks_dir)))
+    forward_argv_in(&command, Path::new(hooks_dir)).map(|v| (v.model, v.effort))
 }
 
 #[test]
@@ -20,7 +20,7 @@ fn production_argv_with_quoted_metacharacters_is_accepted() {
     let command = r#"~/.claude/hooks/loom/codex-forward.sh task 'prompt containing '\'' and
 $ ( *' --model gpt-6.1-terra --effort xhigh --write"#;
 
-    let parsed = exact_forward_argv_in(command, Some(Path::new(DEFAULT_HOOKS)));
+    let parsed = forward_argv_in(command, Path::new(DEFAULT_HOOKS)).map(|v| (v.model, v.effort));
     assert_eq!(parsed, accepted());
 }
 
@@ -78,22 +78,16 @@ fn the_absolute_path_is_accepted_in_any_quoting_and_nothing_else_is() {
 }
 
 #[test]
-fn no_resolved_hooks_dir_accepts_nothing() {
-    let command = format!("{DEFAULT_FORWARD_WRAPPER} {ARGS}");
-    assert_eq!(exact_forward_argv_in(&command, None), None);
-}
-
-#[test]
 fn forwarding_argv_with_redirection_is_rejected() {
     let command = format!("{DEFAULT_FORWARD_WRAPPER} {ARGS} 2>&1");
-    let parsed = exact_forward_argv_in(&command, Some(Path::new(DEFAULT_HOOKS)));
+    let parsed = forward_argv_in(&command, Path::new(DEFAULT_HOOKS));
     assert_eq!(parsed, None);
 }
 
 #[test]
 fn forwarding_argv_with_double_quoted_variable_is_rejected() {
     let command = "~/.claude/hooks/loom/codex-forward.sh task \"$var\" --model gpt-6.1-terra --effort xhigh --write";
-    let parsed = exact_forward_argv_in(command, Some(Path::new(DEFAULT_HOOKS)));
+    let parsed = forward_argv_in(command, Path::new(DEFAULT_HOOKS));
     assert_eq!(parsed, None);
 }
 
@@ -132,7 +126,7 @@ fn forward(program: &str, extra: &[&str], hooks_dir: &str) -> Option<(String, St
         command.push(' ');
         command.push_str(part);
     }
-    forward_argv_in(&command, Path::new(hooks_dir))
+    forward_argv_in(&command, Path::new(hooks_dir)).map(|v| (v.model, v.effort))
 }
 
 #[test]
@@ -146,6 +140,13 @@ fn forward_argv_accepts_the_8_10_and_12_word_forms() {
             accepted()
         );
     }
+    let command = format!("{DEFAULT_FORWARD_WRAPPER} {ARGS} {UNIT} {INVOCATION}");
+    let parsed = forward_argv_in(&command, Path::new(DEFAULT_HOOKS)).unwrap();
+    assert_eq!(parsed.unit_id.as_deref(), Some("unit-1.a_b"));
+    assert_eq!(
+        parsed.invocation_id.as_deref(),
+        Some("inv-0123456789abcdef0123456789abcdef")
+    );
 }
 
 #[test]
@@ -166,6 +167,9 @@ fn forward_argv_rejects_malformed_optional_flags() {
             "inv-0123456789ABCDEF0123456789abcdef",
         ],
         vec![INVOCATION],
+        vec![INVOCATION, UNIT],
+        vec![UNIT, "extra"],
+        vec![UNIT, ";", "true"],
         vec![UNIT, "--other", "inv-0123456789abcdef0123456789abcdef"],
     ] {
         assert_eq!(

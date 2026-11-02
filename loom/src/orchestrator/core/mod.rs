@@ -220,7 +220,7 @@ mod tests {
             .validate_knowledge_sandbox(&stage, "knowledge-1")
             .unwrap();
 
-        assert!(result.is_some(), "a default sandbox config must validate");
+        assert!(result, "a default sandbox config must validate");
         assert!(
             !repo_root.join(".claude/settings.local.json").exists(),
             "knowledge-stage spawn setup must not write the main repo's local settings"
@@ -268,10 +268,7 @@ mod tests {
         let result = orchestrator
             .validate_knowledge_sandbox(&stage, "knowledge-1")
             .unwrap();
-        assert!(
-            result.is_none(),
-            "an invalid sandbox config must refuse to spawn"
-        );
+        assert!(!result, "an invalid sandbox config must refuse to spawn");
 
         let after = load_stage("knowledge-1", &work).unwrap();
         assert_eq!(after.status, StageStatus::Blocked);

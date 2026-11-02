@@ -14,7 +14,7 @@ use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
 use super::{HOOK_MARKER, LEDGER_FILE};
-use crate::git::hooks::configured_hooks_path;
+use crate::git::hooks::{configured_hooks_path, installable_hooks_dir};
 use crate::git::runner::run_git_checked;
 
 /// Whether moves made through git on the host are attested in the ledger.
@@ -34,10 +34,18 @@ pub(super) struct LedgerStep {
     pub(super) to: String,
 }
 
-/// `Active` when loom's hook is installed, executable, in the common git
-/// directory, git runs hooks from there (`core.hooksPath` unset), and the
-/// hook finds `work_dir` as its state directory; otherwise `Off` with the
-/// reason.
+/// `Active` when loom's hook is installed and executable where git runs hooks
+/// from, and the hook finds `work_dir` as its state directory; otherwise `Off`
+/// with the reason.
+///
+/// Git runs hooks from the common git directory, or from `core.hooksPath`. A
+/// `core.hooksPath` counts only as loom's own install site
+/// ([`installable_hooks_dir`]): inside this repository and untracked. Active
+/// never trusts more than off does, since the guard only adds the hold on a move
+/// without a ledger line, and a session's hook runs in a sandbox that denies the
+/// ledger. A relative `core.hooksPath` resolves against the checkout git runs
+/// in, so a target moved from a linked worktree, which lacks the hook, holds
+/// until `loom target accept`.
 pub fn attestation_mode(repo_root: &Path, work_dir: &Path) -> AttestationMode {
     match off_reason(repo_root, work_dir) {
         Some(reason) => AttestationMode::Off { reason },
@@ -45,20 +53,44 @@ pub fn attestation_mode(repo_root: &Path, work_dir: &Path) -> AttestationMode {
     }
 }
 
-fn off_reason(repo_root: &Path, work_dir: &Path) -> Option<String> {
-    if let Some(path) = configured_hooks_path(repo_root) {
-        return Some(format!(
-            "core.hooksPath is set to {path}, so git does not run hooks from .git/hooks"
+/// The hook git runs in `repo_root`, or why no hook there can attest.
+fn attesting_hook(repo_root: &Path, common: &Path) -> Result<PathBuf, String> {
+    let Some(configured) = configured_hooks_path(repo_root) else {
+        let hook = common.join("hooks/reference-transaction");
+        return if hook_has_marker(&hook) {
+            Ok(hook)
+        } else {
+            Err("loom's reference-transaction hook is not installed".to_string())
+        };
+    };
+    let directory = installable_hooks_dir(repo_root).map_err(|_| {
+        format!(
+            "core.hooksPath is set to {configured}, outside this repository, in a directory \
+             git tracks, or through a symlink, so loom cannot rely on a hook there"
+        )
+    })?;
+    let hook = directory.join("reference-transaction");
+    if !hook_has_marker(&hook) {
+        return Err(format!(
+            "core.hooksPath is set to {configured}, and loom's reference-transaction hook is \
+             not installed there"
         ));
     }
+    Ok(hook)
+}
+
+fn hook_has_marker(hook: &Path) -> bool {
+    std::fs::read_to_string(hook).is_ok_and(|script| script.contains(HOOK_MARKER))
+}
+
+fn off_reason(repo_root: &Path, work_dir: &Path) -> Option<String> {
     let Ok(common) = common_dir(repo_root) else {
         return Some("the git common directory could not be found".to_string());
     };
-    let hook_path = common.join("hooks/reference-transaction");
-    let hook = std::fs::read_to_string(&hook_path);
-    if !hook.is_ok_and(|script| script.contains(HOOK_MARKER)) {
-        return Some("loom's reference-transaction hook is not installed".to_string());
-    }
+    let hook_path = match attesting_hook(repo_root, &common) {
+        Ok(hook_path) => hook_path,
+        Err(reason) => return Some(reason),
+    };
     // git runs a hook only when `access(X_OK)` allows it.
     if access(&hook_path, AccessFlags::X_OK).is_err() {
         return Some(

@@ -5,10 +5,7 @@ use colored::Colorize;
 use std::path::Path;
 
 use crate::daemon::DaemonServer;
-use crate::fs::memory::{
-    append_entry, append_to_spool, validate_content, validate_evidence, MemoryEntry,
-    MemoryEntryType,
-};
+use crate::fs::memory::{append_entry, append_to_spool, MemoryEntry, MemoryEntryType};
 use crate::git::worktree::find_worktree_root_from_cwd;
 use crate::relay::emit::{mode, EnvSnapshot, RelayContext, RelayMode, RelaySink, StdSink};
 use crate::relay::RequestKind;
@@ -24,11 +21,7 @@ use super::work_dir::{get_or_create_work_dir, validate_stage_id, AD_HOC_STAGE_ID
 /// [`RelayMode`] and an in-memory sink, since tests must never mutate
 /// process-wide environment.
 pub(super) fn record(entry: MemoryEntry, stage_id: Option<String>) -> Result<()> {
-    validate_content(&entry.content)?;
-    if let Some(ref context) = entry.context {
-        validate_content(context)?;
-    }
-    validate_evidence(&entry.evidence)?;
+    entry.validate()?;
     reject_stage_forgery(&stage_id)?;
 
     let relay_mode = mode(&EnvSnapshot::from_process_env());
@@ -107,20 +100,7 @@ fn record_kind(
     record(entry, stage_id)
 }
 
-/// Refuse an explicit `--stage` that disagrees with `LOOM_STAGE_ID`.
-///
-/// Attribution must never be spoofable via a CLI flag, on EITHER write
-/// path: this used to be checked only inside the spool fallback, so a
-/// stage that can write the state directory directly (e.g. a main-repo knowledge stage,
-/// which isn't sandboxed and never hits `is_write_denied`) could still pass
-/// `--stage <someone-else>` and land an entry in another stage's journal.
-/// Checking here, before either write is attempted, closes that regardless
-/// of which path a given call ends up taking.
-///
-/// When `LOOM_STAGE_ID` is unset there is no session identity to forge -
-/// an ad-hoc/interactive/operator session with no active loom stage - so
-/// `--stage` remains a legitimate, freely usable affordance and this is a
-/// no-op.
+/// Require an explicit stage to match the session; ad-hoc callers may select one.
 fn reject_stage_forgery(stage_id: &Option<String>) -> Result<()> {
     let (Some(id), Ok(env_stage)) = (stage_id, std::env::var("LOOM_STAGE_ID")) else {
         return Ok(());

@@ -1,13 +1,7 @@
 //! The semantic prefixes a note's text may open with.
 //!
-//! `mistake:`, `stale-knowledge:`, and `found:`/`gotcha:`/`found/gotcha:` are prompt
-//! conventions the distill procedure and `/distill` command state in
-//! prose — nothing in the note's schema enforced the shape they promise
-//! until now. [`NotePrefix::parse`] names which convention a note opens
-//! with so [`validate_note_shape`] can reject a note that promises a shape
-//! it doesn't deliver - `record_kind` parses once and hands the
-//! [`NotePrefix`] to both the shape check and, eventually, the journal -
-//! and `pending --group` can sort by the same rule.
+//! Prefix conventions let validation enforce note shapes and let pending
+//! reports group notes by the same classification.
 
 use anyhow::{bail, Result};
 
@@ -74,18 +68,7 @@ impl NotePrefix {
     }
 }
 
-/// Reject a note that opens with a documented prefix but doesn't fill in
-/// the shape that prefix promises, before anything is written or spooled -
-/// checking here, ahead of `record_kind`'s direct-write and spool paths,
-/// means both paths see the same rule since neither runs until this
-/// returns. Distillation trusts the prefix to mean the shape is there
-/// (`doc/loom/knowledge/architecture/memory-spool.md`), so a
-/// `mistake:`/`stale-knowledge:` note missing its required field would
-/// otherwise sit in the journal looking usable and not be.
-///
-/// `prefix` is the caller's already-parsed [`NotePrefix::parse`] result for
-/// `text`, so a `stale-knowledge:` note's shape is judged by the same parse
-/// the caller acts on, not a second one done here.
+/// Validate the shape promised by the parsed prefix before recording a note.
 pub(super) fn validate_note_shape(prefix: &NotePrefix, text: &str) -> Result<()> {
     if matches!(prefix, NotePrefix::Mistake) && !text.contains("Prevention:") {
         bail!(

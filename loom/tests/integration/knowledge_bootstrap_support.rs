@@ -92,6 +92,11 @@ impl Sandbox {
     }
 
     pub fn bootstrap(&self, repo: &Path, args: &[&str]) -> Output {
+        if repo.join(".git").exists()
+            && !repo.join(".loom/work/main-checkout-identity.json").exists()
+        {
+            super::helpers::write_main_checkout_identity(repo, &repo.join(".loom/work"));
+        }
         self.command(repo, args)
             .output()
             .expect("run loom knowledge bootstrap")

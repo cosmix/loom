@@ -83,6 +83,7 @@ impl Fixture {
         }
         let work_dir = repo.join(".loom").join("work");
         fs::create_dir_all(work_dir.join("signals")).expect("create state root");
+        crate::git::worktree::capture_main_identity(&repo, &work_dir).expect("capture identity");
         let fixture = Self {
             _dir: dir,
             repo,
@@ -184,6 +185,7 @@ impl Fixture {
         let now = Utc::now();
         let record = JobRecord {
             id: new_job_id(),
+            submission_order: 0,
             stage_id: STAGE.to_string(),
             session_id: SESSION.to_string(),
             kind,

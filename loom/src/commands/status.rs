@@ -15,7 +15,7 @@ use colored::{ColoredString, Colorize};
 use crate::orchestrator::scheduling_report::{self, Alert, Severity};
 use diagnostics::{check_directory_structure, check_parsing_errors};
 use display::count_files;
-use validation::{validate_markdown_files, validate_references};
+use validation::validate_markdown_files;
 
 /// Print the scheduler alerts (loop stalls, stages queued too long).
 ///
@@ -279,8 +279,6 @@ pub fn validate() -> Result<()> {
 
     issues_found += validate_markdown_files(&work_dir.signals_dir(), "signals")?;
     issues_found += validate_markdown_files(&work_dir.handoffs_dir(), "handoffs")?;
-
-    issues_found += validate_references(&work_dir)?;
 
     if issues_found == 0 {
         println!("\n{}", "All validations passed!".green().bold());

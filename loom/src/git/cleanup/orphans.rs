@@ -1,7 +1,7 @@
 //! Conservative discovery and cleanup of orphaned stage worktrees.
 
 use super::branch::branch_exists_strict;
-use super::{prune_worktrees, CleanupConfig, CleanupResult};
+use super::{CleanupConfig, CleanupResult};
 use crate::fs::stage_files::find_stage_file;
 use crate::git::branch::{
     branch_name_for_stage, branch_ref, commits_ahead_of, default_branch, is_ancestor_of,
@@ -26,7 +26,8 @@ pub fn cleanup_orphaned_worktrees(repo_root: &Path) -> Result<()> {
     let worktree_ids = collect_worktree_ids(&worktrees_dir)?;
     if worktree_ids.is_empty() {
         println!("No worktrees found");
-        return finish_cleanup(repo_root);
+        finish_cleanup();
+        return Ok(());
     }
     println!(
         "Found {} worktree(s): {}\n",
@@ -39,7 +40,8 @@ pub fn cleanup_orphaned_worktrees(repo_root: &Path) -> Result<()> {
     let target = target_branch(&work_dir, repo_root)?;
     let (orphaned, active) = partition_worktrees(&worktree_ids, &target, repo_root, &work_dir)?;
     clean_partition(&orphaned, active, repo_root, &target, &work_dir)?;
-    finish_cleanup(repo_root)
+    finish_cleanup();
+    Ok(())
 }
 
 fn collect_worktree_ids(worktrees_dir: &Path) -> Result<Vec<String>> {
@@ -252,9 +254,9 @@ fn print_cleanup_result(stage_id: &str, result: &CleanupResult) {
     if result.base_branch_deleted {
         actions.push("base branch");
     }
-    if actions.is_empty() {
+    if actions.is_empty() && result.warnings.is_empty() {
         println!("  {} {} (already clean)", "─".dimmed(), stage_id);
-    } else {
+    } else if !actions.is_empty() {
         println!(
             "  {} {} (removed: {})",
             "✓".green().bold(),
@@ -262,12 +264,11 @@ fn print_cleanup_result(stage_id: &str, result: &CleanupResult) {
             actions.join(", ")
         );
     }
+    for warning in &result.warnings {
+        eprintln!("  Warning: {warning}");
+    }
 }
 
-fn finish_cleanup(repo_root: &Path) -> Result<()> {
-    println!();
-    prune_worktrees(repo_root)?;
-    println!("{} Pruned stale worktree references", "✓".green().bold());
-    println!("\n{} Cleanup complete!", "✓".green().bold());
-    Ok(())
+fn finish_cleanup() {
+    println!("\n{} Cleanup pass finished.", "✓".green().bold());
 }

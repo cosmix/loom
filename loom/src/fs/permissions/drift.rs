@@ -12,7 +12,7 @@ use std::fs;
 use std::path::Path;
 
 use super::constants::LOOM_HOOKS;
-use super::hooks::{extract_command_basename, is_loom_hook, loom_hooks_config_for_dir};
+use super::hooks::{extract_command_basename, is_loom_hook_in, loom_hooks_config_for_dir};
 use super::settings::{scrub_session_identity_env, scrub_stale_work_dir_env};
 
 /// Drift between a settings document's `hooks` block and the canonical loom
@@ -147,15 +147,18 @@ pub fn hook_drift_for_dir(settings: &Value, hooks_dir: &str) -> HookDrift {
     // directory AND names a script loom no longer ships counts as obsolete.
     // Worktree settings files legitimately carry extra registrations
     // (SessionStart / PostToolUse / PreCompact / SessionEnd / Stop, written by
-    // `crate::hooks::config::HooksConfig::to_settings_hooks`) whose basenames
+    // the session capsule emitter) whose basenames
     // are all in `LOOM_HOOKS`, so this never flags them.
     let mut obsolete: Vec<String> = actual
         .iter()
         .filter(|(_, _, command)| {
-            is_loom_hook(command)
-                && !LOOM_HOOKS
-                    .iter()
-                    .any(|(filename, _)| *filename == extract_command_basename(command))
+            is_loom_hook_in(
+                command,
+                Some(Path::new(hooks_dir)),
+                dirs::home_dir().as_deref(),
+            ) && !LOOM_HOOKS
+                .iter()
+                .any(|(filename, _)| *filename == extract_command_basename(command))
         })
         .map(|(event, matcher, command)| render_hook_triple(event, matcher, command))
         .collect();

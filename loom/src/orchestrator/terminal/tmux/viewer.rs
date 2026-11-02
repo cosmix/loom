@@ -1,17 +1,14 @@
 //! Identity and discovery for the tiled overview viewer.
 //!
-//! This module owns the IDENTITY half of the per-repo overview viewer (its
-//! socket name, its tmux session name, the argv for a single pane's nested
-//! attach command) and the DISCOVERY half (which sessions are live and
-//! attachable, in what order). It is shared by two callers with different
+//! This module owns the per-repo viewer identity, session discovery, and
+//! verified retirement during explicit state cleanup. It is shared by callers with different
 //! lifecycles over the same viewer: `commands::attach` builds the viewer once
 //! and `exec`s into it, while `tmux::reconcile` keeps an already-built viewer
 //! in sync while the daemon runs. The ARGV BUILDER that assembles the initial
 //! `tmux` invocation sequence (`build_overview_argv` and friends) stays in
 //! `commands/attach/overview.rs` — it runs once, at build time, and has no
-//! reconciliation counterpart. Only identity and discovery are shared here,
-//! so the two surfaces cannot drift on who is attachable or what socket to
-//! use.
+//! reconciliation counterpart. Shared identity keeps attach, reconciliation,
+//! and cleanup on the same repository socket.
 
 use anyhow::Result;
 use sha2::{Digest, Sha256};
@@ -25,6 +22,11 @@ use crate::orchestrator::terminal::native::NativeBackend;
 use crate::parser::frontmatter::parse_from_markdown;
 
 use super::{socket_name, socket_path_for, TmuxBackend};
+
+mod retire;
+mod start_lock;
+
+pub(crate) use retire::retire_viewer;
 
 /// tmux session name of the tiled viewer. Fixed; the SOCKET is what varies per
 /// repo. Shared by `commands/attach`, which builds the viewer under this
@@ -143,7 +145,7 @@ pub(crate) fn attachable_panes(
 /// something loom's own id generation can legitimately produce: session ids
 /// are `session-<uuid8>-<unixts>` (`Session::generate_id`,
 /// `models/session/methods.rs`) and tracking keys are
-/// `loom-[<kind>-]<stage_id>` (`Session::derive_tracking_key`, same file).
+/// `loom-v2-<kind>-<stage_id>` (`Session::derive_tracking_key`, same file).
 /// A future reader should not treat the charset as arbitrary and loosen it
 /// without widening `validate_id` first.
 ///
@@ -314,3 +316,6 @@ pub(crate) mod tests;
 #[cfg(test)]
 #[path = "tests_discovery.rs"]
 mod tests_discovery;
+#[cfg(test)]
+#[path = "tests_retire.rs"]
+mod tests_retire;

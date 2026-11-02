@@ -24,6 +24,7 @@
 
 mod capture;
 mod history;
+mod reap;
 mod reconcile;
 pub(crate) mod socket;
 /// `pub` (not `pub(crate)`) rather than re-exported piecemeal: `commands/attach`
@@ -47,6 +48,7 @@ pub(crate) use capture::capture_pane_tail;
 pub use history::{
     has_history, history_dir, history_relpath, read_history, write_history, MAX_HISTORY_BYTES,
 };
+pub use reap::{reap_sockets, SessionReapMode};
 pub(crate) use socket::loom_socket_dir;
 pub use socket::{
     kill_socket_server, list_loom_sockets, socket_path_for, socket_session_is_alive, LoomSocket,
@@ -329,8 +331,8 @@ pub(crate) fn teardown_socket(socket: &str) -> Result<()> {
 /// unit-testable without a tmux server or a claude process — the ordering is
 /// load-bearing (kill the process BEFORE removing the PID file it writes to,
 /// or a slow wrapper can recreate the file behind us) and so is the file
-/// removal (see `TmuxBackend::spawn`'s docs: a surviving PID file makes the
-/// native retry adopt the tmux attempt's PID).
+/// removal (a surviving PID file can make later liveness checks adopt the
+/// abandoned tmux process).
 fn abort_tmux_spawn(work_dir: &Path, socket: &str, pid_key: &str) {
     let socket_path = socket_path_for(socket);
     if socket_path.exists() && !kill_socket_server(&socket_path) {

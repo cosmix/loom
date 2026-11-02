@@ -27,6 +27,18 @@ mod integrity;
 mod sources;
 mod truncate;
 
+/// Quote evidence with a delimiter that cannot occur in its contents.
+fn fenced(lang: &str, text: &str) -> String {
+    let longest = text
+        .split(|c: char| c != '`')
+        .map(str::len)
+        .max()
+        .unwrap_or(0);
+    let fence = "`".repeat(longest.max(2) + 1);
+    let newline = if text.ends_with('\n') { "" } else { "\n" };
+    format!("{fence}{lang}\n{text}{newline}{fence}\n\n")
+}
+
 use std::path::Path;
 
 use crate::models::dispute::{CriterionField, DisputeKind, DisputeRequest};

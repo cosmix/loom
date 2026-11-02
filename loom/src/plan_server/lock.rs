@@ -7,6 +7,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
+use std::sync::Mutex;
 
 use crate::process::process_start_time;
 
@@ -32,6 +33,30 @@ pub enum Acquired {
 
 pub struct ServerLock {
     file: File,
+}
+
+/// Shared by the running server, its transport router and cleanup owner. Keeping the
+/// singleton here lets admitted handlers finish after a bounded stop without
+/// allowing a replacement project server to start in the meantime.
+#[derive(Default)]
+pub(super) struct Ownership(Mutex<Option<ServerLock>>);
+
+impl Ownership {
+    pub(super) fn retain(&self, lock: ServerLock) {
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(lock);
+    }
+
+    pub(super) fn publish(&self, url: &str, token: &str) -> Result<()> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_mut()
+            .context("server singleton is not owned")?
+            .publish(url, token)
+    }
 }
 
 pub fn acquire(path: &Path) -> Result<Acquired> {

@@ -90,7 +90,8 @@ html.dark {
 }
 
 /* ── Default light theme (ledger: stone stock, hue ~100) ──────────────── */
-:root {
+:root,
+.theme-preview {
   --background: oklch(0.925 0.009 102);
   --foreground: oklch(0.21 0.012 262);
   --card: oklch(0.955 0.008 102);
@@ -186,7 +187,8 @@ html.dark {
 }
 
 /* ── Light variant: gray (neutral, near-zero chroma, hue 270) ──────────── */
-:root[data-light-theme="gray"]:not(.dark) {
+:root[data-light-theme="gray"]:not(.dark),
+.theme-preview[data-light-theme="gray"]:not(.dark) {
   --background: oklch(0.962 0.003 270);
   --foreground: oklch(0.20 0.005 270);
   --card: oklch(0.985 0.002 270);
@@ -230,7 +232,8 @@ html.dark {
 }
 
 /* ── Light variant: cool (blue-tinted papery, hue 235) ─────────────────── */
-:root[data-light-theme="cool"]:not(.dark) {
+:root[data-light-theme="cool"]:not(.dark),
+.theme-preview[data-light-theme="cool"]:not(.dark) {
   --background: oklch(0.965 0.006 235);
   --foreground: oklch(0.20 0.012 235);
   --card: oklch(0.987 0.004 235);

@@ -1,9 +1,10 @@
 //! Client connection handling.
 
 use super::super::protocol::{
-    read_request_body, read_request_length, read_request_preface, write_message, Capability,
-    Request, RequestPreface, Response,
+    read_request_body, read_request_length, read_request_preface, Capability, Request,
+    RequestPreface, Response,
 };
+use super::super::wire::encode_response_frame;
 use super::admission::{ByteBudget, DeadlineReader};
 use super::self_service;
 use super::stage_control::serve_stage_control;
@@ -15,13 +16,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// Write timeout applied to each subscriber stream clone at subscription time.
-/// The status/log broadcaster holds the subscriber mutex while writing to every
-/// subscriber. Without a write timeout, a subscriber that stops reading (e.g. a
-/// TUI suspended with Ctrl+Z) fills its socket buffer and blocks the broadcaster
-/// forever while holding the lock, stalling all status updates and every new
-/// `SubscribeStatus`/`SubscribeLogs` (O-15). With a timeout, the blocked write
-/// fails and `retain_mut` in the broadcaster drops that subscriber.
+/// Write timeout applied to each connection writer. A subscriber that stops
+/// reading can fill its socket buffer; the broadcaster then evicts that peer.
 const SUBSCRIBER_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Read timeout applied to each accepted client connection (O-21).
@@ -32,9 +28,30 @@ const SUBSCRIBER_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 /// any real request: the CLI sends one immediately on connect.
 const CLIENT_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Per-stream subscriber cap. Subscriber clones outlive their short request
+/// Per-stream subscriber cap. Subscriber writers outlive their short request
 /// handlers, so they need an explicit bound in addition to the worker queue.
 const MAX_SUBSCRIBERS_PER_STREAM: usize = 32;
+
+pub(super) type Subscriber = Arc<Mutex<UnixStream>>;
+
+#[path = "client_write.rs"]
+mod writer;
+pub(super) use writer::write_bounded_frame;
+#[cfg(test)]
+pub(super) use writer::write_bounded_frame_with_timeout;
+
+fn send_response(writer: &Subscriber, response: &Response) -> Result<()> {
+    let mut stream = writer
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    write_bounded_response(&mut stream, response)
+}
+
+fn write_bounded_response(stream: &mut UnixStream, response: &Response) -> Result<()> {
+    let frame = encode_response_frame(response)?;
+    write_bounded_frame(stream, &frame)?;
+    Ok(())
+}
 
 /// Outcome of checking a request's credential, before its body is read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,28 +172,13 @@ fn authorize_body(
     Ok(())
 }
 
-/// Clone a client stream for use as a broadcast subscriber, applying a write
-/// timeout so a stalled subscriber cannot freeze the broadcaster (O-15).
-///
-/// Returns the configured clone, or a human-readable error message suitable for
-/// a [`Response::Error`] if cloning or setting the timeout fails.
-fn prepare_subscriber_clone(stream: &UnixStream) -> std::result::Result<UnixStream, String> {
-    let clone = stream
-        .try_clone()
-        .map_err(|e| format!("Failed to clone stream: {e}"))?;
-    clone
-        .set_write_timeout(Some(SUBSCRIBER_WRITE_TIMEOUT))
-        .map_err(|e| format!("Failed to set subscriber write timeout: {e}"))?;
-    Ok(clone)
-}
-
 /// Puts an accepted stream into the mode the handler needs. `false` means the
 /// peer has already hung up and there is nothing to serve.
 fn prepare_client_stream(stream: &UnixStream) -> Result<bool> {
     // On macOS, accepted streams from a non-blocking listener may inherit
     // non-blocking mode, making read_message fail with WouldBlock.
     stream.set_nonblocking(false)?;
-    match stream.set_write_timeout(Some(CLIENT_READ_TIMEOUT)) {
+    match stream.set_write_timeout(Some(SUBSCRIBER_WRITE_TIMEOUT)) {
         Ok(()) => Ok(true),
         // macOS answers setsockopt with EINVAL once the peer has closed (a
         // status probe that hung up).
@@ -195,6 +197,7 @@ struct AuthorizedRequest {
 
 fn receive_request(
     stream: &mut UnixStream,
+    writer: &Subscriber,
     work_dir: &Path,
     byte_budget: &Arc<ByteBudget>,
 ) -> Result<Option<AuthorizedRequest>> {
@@ -204,26 +207,26 @@ fn receive_request(
     };
     let authorization = authorize_preface(work_dir, &preface);
     if authorization == Authorization::Denied {
-        write_message(stream, &refuse_unauthenticated(&preface))?;
+        send_response(writer, &refuse_unauthenticated(&preface))?;
         return Ok(None);
     }
     let Ok(length) = read_request_length(&mut reader) else {
         return Ok(None);
     };
     let Some(permit) = byte_budget.try_reserve(length) else {
-        write_message(stream, &capacity_exhausted())?;
+        send_response(writer, &capacity_exhausted())?;
         return Ok(None);
     };
     let request = match read_request_body(&mut reader, length) {
         Ok(request) if preface.matches(&request) => request,
         Ok(_) => {
-            write_message(stream, &Response::AuthenticationFailed)?;
+            send_response(writer, &Response::AuthenticationFailed)?;
             return Ok(None);
         }
         Err(_) => return Ok(None),
     };
     if let Err(refusal) = authorize_body(stream, work_dir, authorization, &preface, &request) {
-        write_message(stream, &refusal)?;
+        send_response(writer, &refusal)?;
         return Ok(None);
     }
     Ok(Some(AuthorizedRequest {
@@ -236,57 +239,95 @@ fn receive_request(
 pub fn handle_client_connection(
     mut stream: UnixStream,
     shutdown_flag: Arc<AtomicBool>,
-    status_subscribers: Arc<Mutex<Vec<UnixStream>>>,
-    log_subscribers: Arc<Mutex<Vec<UnixStream>>>,
+    status_subscribers: Arc<Mutex<Vec<Subscriber>>>,
+    log_subscribers: Arc<Mutex<Vec<Subscriber>>>,
     work_dir: &Path,
     byte_budget: Arc<ByteBudget>,
 ) -> Result<()> {
     if !prepare_client_stream(&stream)? {
         return Ok(());
     }
+    let writer = Arc::new(Mutex::new(stream.try_clone()?));
     let dispatch = dispatch::ClientDispatch {
         shutdown_flag: &shutdown_flag,
         status_subscribers: &status_subscribers,
         log_subscribers: &log_subscribers,
         work_dir,
     };
-    while let Some(request) = receive_request(&mut stream, work_dir, &byte_budget)? {
-        if !dispatch.serve(&mut stream, request)? {
+    while !shutdown_flag.load(Ordering::SeqCst) {
+        let Some(request) = receive_request(&mut stream, &writer, work_dir, &byte_budget)? else {
+            break;
+        };
+        if shutdown_flag.load(Ordering::SeqCst) {
+            break;
+        }
+        if !dispatch.serve(&writer, request)? {
             break;
         }
     }
     Ok(())
 }
 
-fn subscribe(
-    stream: &mut UnixStream,
-    subscribers: &Mutex<Vec<UnixStream>>,
+fn subscribe(writer: &Subscriber, subscribers: &Mutex<Vec<Subscriber>>, label: &str) -> Result<()> {
+    subscribe_with_ack(writer, subscribers, label, |stream, response| {
+        write_bounded_response(stream, response)
+    })
+}
+
+fn subscribe_with_ack(
+    writer: &Subscriber,
+    subscribers: &Mutex<Vec<Subscriber>>,
     label: &str,
+    mut acknowledge: impl FnMut(&mut UnixStream, &Response) -> Result<()>,
 ) -> Result<()> {
-    let stream_clone = match prepare_subscriber_clone(stream) {
-        Ok(clone) => clone,
-        Err(message) => return write_message(stream, &Response::Error { message }),
-    };
-    let added = subscribers.lock().map(|mut subscribers| {
-        if subscribers.len() >= MAX_SUBSCRIBERS_PER_STREAM {
-            return false;
-        }
-        subscribers.push(stream_clone);
-        true
-    });
-    let response = if matches!(added, Ok(true)) {
-        Response::Ok
-    } else {
-        Response::Error {
-            message: format!("{label} subscriber capacity is exhausted"),
-        }
-    };
-    write_message(stream, &response)
+    // Holding this connection's writer across publication keeps its acknowledgement
+    // ahead of broadcasts, without blocking acknowledgements on other connections.
+    let mut stream = writer
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut list = subscribers
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if list.iter().any(|existing| Arc::ptr_eq(existing, writer)) {
+        drop(list);
+        return acknowledge(&mut stream, &Response::Ok);
+    }
+    if list.len() >= MAX_SUBSCRIBERS_PER_STREAM {
+        drop(list);
+        return acknowledge(
+            &mut stream,
+            &Response::Error {
+                message: format!("{label} subscriber capacity is exhausted"),
+            },
+        );
+    }
+    list.push(Arc::clone(writer));
+    drop(list);
+    if let Err(error) = acknowledge(&mut stream, &Response::Ok) {
+        let mut list = subscribers
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        list.retain(|existing| !Arc::ptr_eq(existing, writer));
+        return Err(error);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 #[path = "client_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "client_writer_failure_tests.rs"]
+mod writer_failure_tests;
+
+#[cfg(test)]
+#[path = "client_unsubscribe_tests.rs"]
+mod unsubscribe_tests;
+
+#[cfg(test)]
+#[path = "client_shutdown_tests.rs"]
+mod shutdown_tests;
 
 #[cfg(test)]
 #[path = "tests/self_service_client.rs"]

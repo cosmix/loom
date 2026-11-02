@@ -1,28 +1,89 @@
 //! `loom stage <subcommand>` dispatch.
 //!
-//! Split out of `dispatch.rs` because the stage command group — completion,
-//! admin-proof minting, the transition lifecycle, and the
-//! criteria-adjudication lifecycle — is loom's largest dispatch surface, and
-//! it was crowding every other command group toward `dispatch.rs`'s own line
-//! ceiling. Giving the group its own file gives it a seam to grow into
-//! without pushing the top-level match over the limit again.
+//! Routes stage completion, admin proof, transitions, and adjudication.
 
 use anyhow::Result;
 
 use super::dispatch::{print_minted_proof, resolve_completion_proof};
 use super::types::{OutputCommands, StageCommands};
-use super::types_stage::{ContractsCommands, CriteriaDispute, ReviewCommands};
+use super::types_stage::{
+    AdminProofArgs, AmendArgs, CompleteArgs, ContractsCommands, CriteriaDispute,
+    DisputeCriteriaArgs, ReviewCommands,
+};
 use crate::commands::stage;
 use crate::commands::stage::commit;
 
-/// `loom stage {block,reset,waiting,resume,hold,release,skip}` dispatch.
-///
-/// Split out of `dispatch_stage`, which — like `dispatch_knowledge` before
-/// it — sits at its own line ceiling: this state-transition group is a
-/// coherent seam a new stage subcommand can grow into without pushing the
-/// parent match over the limit again.
-fn dispatch_stage_transitions(command: StageCommands) -> Result<()> {
+/// `loom stage dispute-criteria` dispatch, by the filing's validated form.
+fn dispatch_dispute_criteria(args: DisputeCriteriaArgs) -> Result<()> {
+    match CriteriaDispute::try_from(args)? {
+        CriteriaDispute::Entry {
+            stage_id,
+            field,
+            criterion_indices,
+            reason,
+            evidence_commit,
+            failure_output,
+        } => stage::dispute_criteria(
+            stage_id,
+            field,
+            criterion_indices,
+            reason,
+            evidence_commit,
+            failure_output,
+        ),
+        CriteriaDispute::ImpactTests(filing) => stage::file_dispute(filing),
+    }
+}
+
+fn dispatch_amend(args: AmendArgs) -> Result<()> {
+    stage::amend(
+        args.stage_id,
+        args.field.to_field(),
+        args.op.to_patch(args.index, args.value)?,
+        args.reason,
+    )
+}
+
+/// Resolve the completion proof before completing the stage.
+fn dispatch_complete(args: CompleteArgs) -> Result<()> {
+    let admin_proof = resolve_completion_proof(
+        &args.stage_id,
+        args.no_verify,
+        args.force_unsafe,
+        args.assume_merged,
+    )?;
+    stage::complete(
+        args.stage_id,
+        args.session,
+        args.no_verify,
+        args.force_unsafe,
+        args.assume_merged,
+        args.no_cache,
+        admin_proof,
+    )
+}
+
+fn dispatch_admin_proof(args: AdminProofArgs) -> Result<()> {
+    print_minted_proof(
+        args.stage_id,
+        args.daemon_stop,
+        args.no_verify,
+        args.force_unsafe,
+        args.assume_merged,
+    )
+}
+
+/// Join the repeated `-m` values of `loom stage commit` into one message,
+/// separating paragraphs with a blank line as `git commit` does.
+fn join_commit_message(parts: &[String]) -> String {
+    parts.join("\n\n")
+}
+
+/// `loom stage <subcommand>` dispatch.
+pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
     match command {
+        StageCommands::Complete(args) => dispatch_complete(args),
+        StageCommands::AdminProof(args) => dispatch_admin_proof(args),
         StageCommands::Block { stage_id, reason } => stage::block(stage_id, reason),
         StageCommands::Reset {
             stage_id,
@@ -34,120 +95,6 @@ fn dispatch_stage_transitions(command: StageCommands) -> Result<()> {
         StageCommands::Hold { stage_id } => stage::hold(stage_id),
         StageCommands::Release { stage_id } => stage::release(stage_id),
         StageCommands::Skip { stage_id, reason } => stage::skip(stage_id, reason),
-        _ => unreachable!("dispatch_stage routes only the transition group here"),
-    }
-}
-
-/// `loom stage {dispute-criteria,adjudicate,amend}` dispatch.
-///
-/// Split out of `dispatch_stage` for the same reason as
-/// `dispatch_stage_transitions`: these three commands are the
-/// criteria-adjudication lifecycle — dispute a criterion, adjudicate the
-/// dispute, then amend the stage with the verdict — and grouping them gives
-/// that lifecycle a seam to grow into without pushing the parent match over
-/// its line ceiling again.
-fn dispatch_stage_criteria(command: StageCommands) -> Result<()> {
-    match command {
-        StageCommands::DisputeCriteria(args) => match CriteriaDispute::try_from(args)? {
-            CriteriaDispute::Entry {
-                stage_id,
-                field,
-                criterion_indices,
-                reason,
-                evidence_commit,
-                failure_output,
-            } => stage::dispute_criteria(
-                stage_id,
-                field,
-                criterion_indices,
-                reason,
-                evidence_commit,
-                failure_output,
-            ),
-            CriteriaDispute::ImpactTests(filing) => stage::file_dispute(filing),
-        },
-        StageCommands::Adjudicate {
-            stage,
-            dispute,
-            verdict_file,
-        } => stage::adjudicate(stage, dispute, verdict_file),
-        StageCommands::Amend {
-            stage_id,
-            field,
-            op,
-            index,
-            value,
-            reason,
-        } => stage::amend(
-            stage_id,
-            field.to_field(),
-            op.to_patch(index, value)?,
-            reason,
-        ),
-        _ => unreachable!("dispatch_stage routes only the criteria-adjudication group here"),
-    }
-}
-
-/// `loom stage complete` dispatch, broken out of `dispatch_stage` so its
-/// seven-field destructure doesn't grow the parent match past its line
-/// ceiling.
-fn dispatch_complete(command: StageCommands) -> Result<()> {
-    let StageCommands::Complete {
-        stage_id,
-        session,
-        no_verify,
-        force_unsafe,
-        assume_merged,
-        no_cache,
-    } = command
-    else {
-        unreachable!("dispatch_stage routes only Complete here");
-    };
-    let admin_proof = resolve_completion_proof(&stage_id, no_verify, force_unsafe, assume_merged)?;
-    stage::complete(
-        stage_id,
-        session,
-        no_verify,
-        force_unsafe,
-        assume_merged,
-        no_cache,
-        admin_proof,
-    )
-}
-
-/// Join the repeated `-m` values of `loom stage commit` into one message,
-/// separating paragraphs with a blank line as `git commit` does.
-fn join_commit_message(parts: &[String]) -> String {
-    parts.join("\n\n")
-}
-
-/// `loom stage <subcommand>` dispatch.
-///
-/// Extracted for the same reason as `dispatch_knowledge`: the stage group is
-/// the largest arm in the top-level match, which sits at its line ceiling.
-pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
-    match command {
-        cmd @ StageCommands::Complete { .. } => dispatch_complete(cmd),
-        StageCommands::AdminProof {
-            stage_id,
-            daemon_stop,
-            no_verify,
-            force_unsafe,
-            assume_merged,
-        } => print_minted_proof(
-            stage_id,
-            daemon_stop,
-            no_verify,
-            force_unsafe,
-            assume_merged,
-        ),
-        cmd @ (StageCommands::Block { .. }
-        | StageCommands::Reset { .. }
-        | StageCommands::Waiting { .. }
-        | StageCommands::Resume { .. }
-        | StageCommands::Hold { .. }
-        | StageCommands::Release { .. }
-        | StageCommands::Skip { .. }) => dispatch_stage_transitions(cmd),
         StageCommands::Retry {
             stage_id,
             force,
@@ -163,9 +110,13 @@ pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
             force_complete,
             reject,
         } => stage::human_review(stage_id, approve, force_complete, reject),
-        cmd @ (StageCommands::DisputeCriteria(_)
-        | StageCommands::Adjudicate { .. }
-        | StageCommands::Amend { .. }) => dispatch_stage_criteria(cmd),
+        StageCommands::DisputeCriteria(args) => dispatch_dispute_criteria(args),
+        StageCommands::Adjudicate {
+            stage,
+            dispute,
+            verdict_file,
+        } => stage::adjudicate(stage, dispute, verdict_file),
+        StageCommands::Amend(args) => dispatch_amend(args),
         StageCommands::DisputeFindings(args) => stage::file_dispute(args.into()),
         StageCommands::DisputeContract(args) => stage::file_dispute(args.into()),
         StageCommands::DisputeIntegrity(args) => stage::file_dispute(args.into()),
@@ -176,8 +127,7 @@ pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
     }
 }
 
-/// `loom stage output <subcommand>` dispatch, broken out of `dispatch_stage`
-/// to pay for the `contracts` arm without growing the parent match.
+/// `loom stage output <subcommand>` dispatch.
 fn dispatch_stage_output(command: OutputCommands) -> Result<()> {
     match command {
         OutputCommands::Set {
@@ -228,6 +178,27 @@ mod tests {
             } => Ok(message),
             _ => panic!("expected StageCommands::Commit"),
         }
+    }
+
+    #[test]
+    fn parsed_skip_keeps_optional_reason() {
+        let parsed = Cli::try_parse_from([
+            "loom",
+            "stage",
+            "skip",
+            "stage-one",
+            "--reason",
+            "operator decision",
+        ])
+        .unwrap();
+        let Commands::Stage {
+            command: StageCommands::Skip { stage_id, reason },
+        } = parsed.command
+        else {
+            panic!("skip routed to another command");
+        };
+        assert_eq!(stage_id, "stage-one");
+        assert_eq!(reason.as_deref(), Some("operator decision"));
     }
 
     #[test]

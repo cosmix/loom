@@ -10,14 +10,15 @@ use crate::utils::format_elapsed_verbose;
 
 /// Print completion summary to stdout.
 ///
-/// This function renders a detailed completion summary including:
-/// - Overall status (success/failure)
-/// - Plan path and timing information
-/// - Execution graph showing stage dependencies
-/// - Detailed stage table with status and duration
-///
 /// Used by both the TUI (after exit) and foreground mode.
 pub fn print_completion_summary(summary: &CompletionSummary) {
+    let mut stdout = io::stdout().lock();
+    // A closed stdout must not turn a finished run into a failure.
+    let _ = write_completion_summary(&mut stdout, summary).and_then(|()| stdout.flush());
+}
+
+/// Write the overall status, plan path, timing, execution graph and stage table.
+fn write_completion_summary<W: Write>(w: &mut W, summary: &CompletionSummary) -> io::Result<()> {
     let success = summary.failure_count == 0;
     let status_icon = if success { "\u{2713}" } else { "\u{2717}" };
     let status_text = if success {
@@ -26,29 +27,29 @@ pub fn print_completion_summary(summary: &CompletionSummary) {
         "Orchestration Complete (with failures)"
     };
 
-    println!();
-    println!("{status_icon} {status_text}");
-    println!("══════════════════════════════════════════════════");
-    println!();
+    writeln!(w)?;
+    writeln!(w, "{status_icon} {status_text}")?;
+    writeln!(w, "══════════════════════════════════════════════════")?;
+    writeln!(w)?;
 
-    // Show plan path
-    println!("Plan: {}", summary.plan_path);
+    writeln!(w, "Plan: {}", summary.plan_path)?;
 
     let total_time = format_elapsed_verbose(summary.total_duration_secs);
     let success_count = summary.success_count;
     let failure = summary.failure_count;
-    println!("Total: {total_time} | \u{2713} {success_count} | \u{2717} {failure}");
-    println!();
+    writeln!(
+        w,
+        "Total: {total_time} | \u{2713} {success_count} | \u{2717} {failure}"
+    )?;
+    writeln!(w)?;
 
-    // Build and display execution graph
     if !summary.stages.is_empty() {
-        println!("Execution Graph:");
-        print_execution_graph(&summary.stages);
-        println!();
+        writeln!(w, "Execution Graph:")?;
+        write_execution_graph(w, &summary.stages)?;
+        writeln!(w)?;
     }
 
-    // Print detailed stage table
-    println!("Stages:");
+    writeln!(w, "Stages:")?;
     for stage in &summary.stages {
         let icon = stage.status.icon();
         let status_text = stage.status.label();
@@ -56,19 +57,17 @@ pub fn print_completion_summary(summary: &CompletionSummary) {
             .duration_secs
             .map(format_elapsed_verbose)
             .unwrap_or_else(|| "-".to_string());
-        println!(
+        writeln!(
+            w,
             "  {} {:<30} {:<12} {:>8}",
             icon, stage.id, status_text, duration
-        );
+        )?;
     }
-    println!();
-
-    // Flush stdout to ensure output is visible
-    let _ = io::stdout().flush();
+    writeln!(w)
 }
 
-/// Print a simple ASCII execution graph showing stage dependencies.
-fn print_execution_graph(stages: &[StageCompletionInfo]) {
+/// Write a simple ASCII execution graph showing stage dependencies.
+fn write_execution_graph<W: Write>(w: &mut W, stages: &[StageCompletionInfo]) -> io::Result<()> {
     // Compute dependency levels using shared function
     let levels = levels::compute_all_levels(stages, |s| s.id.as_str(), |s| &s.dependencies);
 
@@ -99,15 +98,77 @@ fn print_execution_graph(stages: &[StageCompletionInfo]) {
             let indent = "  ".repeat(level);
 
             if level == 0 {
-                println!("  {}", stage_names.join(" "));
+                writeln!(w, "  {}", stage_names.join(" "))?;
             } else if level_stages.len() == 1 {
-                println!("  {indent}│");
-                println!("  {indent}▼");
-                println!("  {}", stage_names[0]);
+                writeln!(w, "  {indent}│")?;
+                writeln!(w, "  {indent}▼")?;
+                writeln!(w, "  {}", stage_names[0])?;
             } else {
-                println!("  {indent}│");
-                println!("  {indent}├─► {}", stage_names.join(" "));
+                writeln!(w, "  {indent}│")?;
+                writeln!(w, "  {indent}├─► {}", stage_names.join(" "))?;
             }
         }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::stage::StageStatus;
+
+    fn stage(id: &str, status: StageStatus, dependencies: &[&str]) -> StageCompletionInfo {
+        StageCompletionInfo {
+            id: id.to_string(),
+            name: id.to_string(),
+            status,
+            duration_secs: Some(120),
+            execution_secs: None,
+            retry_count: 0,
+            merged: false,
+            dependencies: dependencies.iter().map(ToString::to_string).collect(),
+        }
+    }
+
+    fn rendered(summary: &CompletionSummary) -> String {
+        let mut out = Vec::new();
+        write_completion_summary(&mut out, summary).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn a_successful_run_shows_its_plan_counts_graph_and_stages() {
+        let text = rendered(&CompletionSummary {
+            stages: vec![
+                stage("bootstrap", StageStatus::Completed, &[]),
+                stage("implement", StageStatus::Completed, &["bootstrap"]),
+            ],
+            total_duration_secs: 180,
+            success_count: 2,
+            failure_count: 0,
+            plan_path: "doc/plans/PLAN-test.md".to_string(),
+        });
+        assert!(text.contains("\u{2713} Orchestration Complete\n"), "{text}");
+        assert!(text.contains("Plan: doc/plans/PLAN-test.md"), "{text}");
+        assert!(text.contains("\u{2713} 2 | \u{2717} 0"), "{text}");
+        assert!(text.contains("[bootstrap]"), "{text}");
+        assert!(text.contains("[implement]"), "{text}");
+    }
+
+    #[test]
+    fn any_failure_changes_the_header_and_count() {
+        let text = rendered(&CompletionSummary {
+            stages: vec![stage("failing", StageStatus::Blocked, &[])],
+            total_duration_secs: 60,
+            success_count: 0,
+            failure_count: 1,
+            plan_path: "unknown".to_string(),
+        });
+        assert!(
+            text.contains("\u{2717} Orchestration Complete (with failures)\n"),
+            "{text}"
+        );
+        assert!(text.contains("\u{2713} 0 | \u{2717} 1"), "{text}");
+        assert!(text.contains("failing"), "{text}");
     }
 }

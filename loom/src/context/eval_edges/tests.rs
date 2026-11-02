@@ -66,7 +66,7 @@ syntax_error_files: [src/broken.rs]
 ";
 
 /// Write `files` under a fresh temp dir.
-fn corpus(files: &[(&str, &str)]) -> TempDir {
+pub(super) fn corpus(files: &[(&str, &str)]) -> TempDir {
     let dir = TempDir::new().expect("tempdir");
     write_files(dir.path(), files);
     dir
@@ -95,7 +95,7 @@ fn perfect_with(labels: &str) -> TempDir {
     ])
 }
 
-fn rust_labels(references: &str) -> String {
+pub(super) fn rust_labels(references: &str) -> String {
     format!("dialect: rust\ndeclarations: []\nreferences:\n{references}impact: []\n")
 }
 
@@ -189,6 +189,16 @@ fn an_ambiguous_label_is_correct_only_when_the_candidates_match() {
 
     assert!(matching.failures.is_empty(), "{matching:#?}");
     assert_eq!(mismatched.failures.len(), 1, "{mismatched:#?}");
+    assert_eq!(mismatched.ambiguous_mismatches, 1);
+    for json in [false, true] {
+        let outcome = eval_edges::run(perfect_with(&wrong).path(), None, json).expect("run");
+        assert_eq!(outcome.exit_code, 1, "{}", outcome.text);
+        assert!(
+            outcome.text.contains("ambiguous_mismatches"),
+            "{}",
+            outcome.text
+        );
+    }
     assert!(
         mismatched.failures[0].contains("src/main.rs:6 save"),
         "{mismatched:#?}"

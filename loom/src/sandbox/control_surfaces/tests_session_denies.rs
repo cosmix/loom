@@ -27,6 +27,17 @@ pub(super) fn has(list: &[String], item: &str) -> bool {
 }
 
 #[test]
+fn task_output_roots_are_denied_without_denying_ordinary_temporary_files() {
+    let denies = denies_for(NESTED, &[], None).unwrap();
+    for root in crate::models::forward_receipt::locator::default_task_output_roots() {
+        assert!(has(&denies.deny_write, root.to_str().unwrap()));
+        assert!(has(&denies.edit, &format!("Edit(/{}/**)", root.display())));
+    }
+    assert!(!has(&denies.deny_write, "/tmp"));
+    assert!(!has(&denies.edit, "Edit(//tmp/**)"));
+}
+
+#[test]
 fn the_legacy_layout_adds_the_work_spellings_in_both_layers() {
     let legacy = denies_for("/repo/.work", &[], None).unwrap();
     assert!(has(&legacy.deny_write, "/repo/.work"), "{legacy:?}");

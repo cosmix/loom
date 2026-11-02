@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # retrieval-ab — before/after measurement harness for
-# doc/PROPOSAL-retrieval-precision.md section 5: precision@5 / MRR / forbid
+# doc/PROPOSAL-retrieval-precision.md section 5: hit@5 / raw-pack precision@5 / MRR / forbid
 # violations on the eval set, mean injected tokens per brief, and p95 hook
 # wall time, for BASELINE (commit d06fd2c2, the last commit before this work
 # started) vs CURRENT (this working tree).
@@ -89,8 +89,7 @@
 #     value — see `context/refresh.rs`'s `semantic_freshness_against_head`
 #     — but the lock is kept fresh anyway, in case a future code change
 #     adds a second staleness path this comment does not know about).
-# $OUT itself defaults to outside the checkout (`$TMPDIR`) for the same
-# reason, and so a plain `rm -rf "$OUT"` can never touch anything tracked.
+# All generated files live in a marked child of the selected output root.
 #
 # Belt-and-suspenders is not proof: the run's LAST act is
 # `verify_real_checkout_untouched`, which fingerprints
@@ -109,7 +108,7 @@ set -euo pipefail
 # Args
 # --------------------------------------------------------------------------
 BASELINE_REV="d06fd2c2"
-OUT="${TMPDIR:-/tmp}/loom-retrieval-ab"
+OUT="$(cd "${TMPDIR:-/tmp}" && pwd -P)/loom-retrieval-ab"
 DO_CLEAN=0
 
 usage() {
@@ -146,7 +145,63 @@ while [[ $# -gt 0 ]]; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+
+# The selected root is never removed. Only a marked child is harness-owned.
+# Reject symlink components before creating anything, and reject dangerous roots.
+OUTPUT_ROOT="$OUT"
+OUT=$(python3 - "$OUTPUT_ROOT" "$REPO_ROOT" "$HOME" <<'PYCODE'
+import os, sys
+root, repo, home = (os.path.abspath(p) for p in sys.argv[1:])
+path = os.path.sep
+for part in root.split(os.path.sep):
+    if not part:
+        continue
+    path = os.path.join(path, part)
+    if os.path.islink(path):
+        sys.exit("retrieval-ab: refusing symlink in output path: " + path)
+for protected in (os.path.realpath(repo), os.path.realpath(home)):
+    if os.path.commonpath((root, protected)) == root:
+        sys.exit("retrieval-ab: refusing repository, home, or ancestor output root: " + root)
+print(os.path.join(root, "retrieval-ab-owned"))
+PYCODE
+) || exit 1
+MARKER="$OUT/.retrieval-ab-owner"
+if [[ -e "$OUT" || -L "$OUT" ]]; then
+	if [[ -L "$OUT" || ! -d "$OUT" || -L "$MARKER" || ! -f "$MARKER" ]] ||
+		[[ "$(<"$MARKER")" != "loom retrieval-ab v1" ]]; then
+		echo "retrieval-ab: refusing unmarked or symlinked harness directory: $OUT" >&2
+		exit 1
+	fi
+elif [[ "$DO_CLEAN" -eq 1 ]]; then
+	echo "retrieval-ab: no owned harness directory at $OUT" >&2
+	exit 1
+else
+	mkdir -p "$OUT"
+	printf '%s\n' 'loom retrieval-ab v1' >"$MARKER"
+fi
+# These paths are reused or removed on each run. Never follow a redirection.
+for path in "$OUT/measure-root" "$OUT/measure-root/baseline" "$OUT/measure-root/current" "$OUT/baseline-src" "$OUT/bin" "$OUT/results" "$OUT/report.md" "$OUT/bin/loom-baseline" "$OUT/bin/loom-current" "$OUT/results/"*; do
+	if [[ -L "$path" ]]; then
+		echo "retrieval-ab: refusing symlink in harness directory: $path" >&2
+		exit 1
+	fi
+done
+
+validate_delete() {
+	local target="$1"
+	python3 - "$OUT" "$target" <<'PYCODE'
+import os, sys
+root, target = sys.argv[1:]
+marker = os.path.join(root, ".retrieval-ab-owner")
+if (os.path.realpath(root) != root or os.path.islink(marker)
+        or not os.path.isfile(marker)
+        or open(marker).read() != "loom retrieval-ab v1\n"
+        or os.path.realpath(target) != target
+        or os.path.commonpath((root, target)) != root):
+    sys.exit("retrieval-ab: refusing unsafe deletion: " + target)
+PYCODE
+}
 
 BASELINE_SRC="$OUT/baseline-src"
 BIN_BASELINE="$OUT/bin/loom-baseline"
@@ -182,7 +237,9 @@ fi
 SOURCE_CHANNEL_REVISION=""
 
 if [[ "$DO_CLEAN" -eq 1 ]]; then
-	if git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null | rg -qF "worktree $BASELINE_SRC"; then
+	validate_delete "$OUT"
+	# Listed first: a pipe into `rg -q` could SIGPIPE git and misreport under pipefail.
+	if rg -qxF "worktree $BASELINE_SRC" <<<"$(git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null)"; then
 		git -C "$REPO_ROOT" worktree remove --force "$BASELINE_SRC" || true
 	fi
 	rm -rf "$OUT"
@@ -228,8 +285,8 @@ python3 -c 'import yaml' 2>/dev/null || {
 # future change to those files.
 #
 # The timeout fallback matches loom-hooks/user-prompt-context.sh's own
-# gtimeout/timeout/none fallback so this harness never wedges on a hung
-# binary.
+# gtimeout/timeout/none fallback. Without either timeout command the invocation
+# is unbounded.
 run_bin() {
 	local secs="$1"
 	shift
@@ -293,6 +350,7 @@ EOF
 # --------------------------------------------------------------------------
 seed_measure_root() {
 	local mirror="$1"
+	validate_delete "$mirror"
 	rm -rf "$mirror"
 	# Both the current (.loom/work) and legacy (.work) empty markers are
 	# planted - whichever layout WorkDir::new checks first at this hint,
@@ -368,7 +426,7 @@ seed_reconcile_lock() {
 }
 
 # --------------------------------------------------------------------------
-# Metric 1 — precision@5 / MRR / forbid violations
+# Metric 1 — hit@5 / raw-pack precision@5 / MRR / forbid violations
 # --------------------------------------------------------------------------
 run_metric1() {
 	: >"$CASE_RESULTS"
@@ -420,9 +478,10 @@ with open(sys.argv[1]) as f:
 			fi
 			jq -nc --arg binary "$binary" --arg case "$name" --argjson ok "$ok" \
 				--argjson item_ids "$item_ids" --argjson status "$status" \
-				--arg err "$(tr '\n' ' ' <"$errfile" | cut -c1-300)" \
+				--arg err "$(<"$errfile")" --arg output "$output" \
 				'{binary:$binary, case:$case, ok:$ok, item_ids:$item_ids, exit_code:$status,
-				  error:(if $err=="" then null else $err end)}' >>"$CASE_RESULTS"
+				  error:(if $err=="" then null else $err end),
+				  failed_stdout:(if $ok then null else $output end)}' >>"$CASE_RESULTS"
 			rm -f "$errfile"
 		done
 	done
@@ -456,15 +515,15 @@ run_metric23() {
 
 				local errfile="$RESULTS_DIR/hook-$binary-$idx-$rep.err"
 				local status=0 start_ns end_ns elapsed_ms output
-				start_ns=$(date +%s%N)
+				start_ns=$(python3 -c 'import time; print(time.monotonic_ns())')
 				output=$(printf '%s' "$payload" | (cd "$mirror" && run_bin 10 "$bin" hook user-prompt) 2>"$errfile") || status=$?
-				end_ns=$(date +%s%N)
+				end_ns=$(python3 -c 'import time; print(time.monotonic_ns())')
 				elapsed_ms=$(((end_ns - start_ns) / 1000000))
 
 				local ok=true empty=false context_bytes=0 tokens_est=0 err=""
 				if [[ "$status" -ne 0 ]]; then
 					ok=false
-					err=$(tr '\n' ' ' <"$errfile" | cut -c1-300)
+					err=$(<"$errfile")
 				elif [[ -z "$output" ]]; then
 					empty=true
 				else
@@ -491,11 +550,12 @@ run_metric23() {
 					--argjson elapsed_ms "$elapsed_ms" \
 					--argjson context_bytes "$context_bytes" --argjson tokens_est "$tokens_est" \
 					--argjson exit_code "$status" --argjson is_cold "$is_cold" \
-					--arg err "$err" \
+					--arg err "$err" --arg output "$output" \
 					'{binary:$binary, class:$class, prompt_index:$prompt_index, rep:$rep,
 					  ok:$ok, empty:$empty, elapsed_ms:$elapsed_ms, context_bytes:$context_bytes,
 					  tokens_est:$tokens_est, exit_code:$exit_code, is_cold:$is_cold,
-					  error:(if $err=="" then null else $err end)}' >>"$HOOK_RESULTS"
+					  error:(if $err=="" then null else $err end),
+					  failed_stdout:(if $ok then null else $output end)}' >>"$HOOK_RESULTS"
 			done
 		done <"$PROMPTS_FILE"
 	done
@@ -517,6 +577,8 @@ score_metric1() {
 	      | ($case.forbid // []) as $forbid
 	      | ($ids[0:5]) as $top5
 	      | (($expect | length) > 0) as $counts
+	      | (($expect + ($case.relevant // [])) | unique) as $relevant
+	      | (if ($relevant | length) == 0 then null elif ($top5 | length) == 0 then 0 else (([$top5[] | select(. as $x | ($relevant | index($x)) != null)] | unique | length) / ($top5 | length)) end) as $raw_precision
 	      # `$expect | index(.)` would be WRONG here: piping into $expect
 	      # rebinds `.` to $expect itself before index() runs, so every top5
 	      # element would test "is $expect a sub-array of itself" (always
@@ -528,24 +590,26 @@ score_metric1() {
 	          if . == null and (($expect | index($ids[$i])) != null) then ($i + 1) else . end)) as $rank
 	      | (if $rank == null then 0 else (1 / $rank) end) as $mrr
 	      | ([$forbid[] as $f | select(($ids | index($f)) != null) | $f]) as $violations
-	      | {counts:$counts, hit5:$hit5, mrr:$mrr, violations:$violations};
+	      | {counts:$counts, hit5:$hit5, mrr:$mrr, raw_precision_at_5:$raw_precision, abstention_correct:null, abstain_expected:($case.abstain // false), violations:$violations};
 	    (["baseline","current"] | map(. as $b
 	      | ($cases | map(. as $case
 	          | find_result($b; $case.name) as $r
 	          | score($case; ($r.item_ids // [])) as $s
 	          | {binary:$b, name:$case.name, ok:$r.ok, error:($r.error // null)} + $s
+	          | if .ok then . else .hit5 = null | .mrr = null | .raw_precision_at_5 = null end
 	        ))
 	    ) | add) as $per_case
 	  | (["baseline","current"] | map(. as $b
 	      | ($per_case | map(select(.binary == $b))) as $rows
-	      | ($rows | map(select(.counts))) as $applicable
+	      | ($rows | map(select(.counts and .ok))) as $applicable
 	      | ($applicable | length) as $n
 	      | ($applicable | map(select(.hit5)) | length) as $hits
 	      | { binary:$b,
-	          precision_at_5:(if $n == 0 then 0 else ($hits / $n) end),
-	          precision_hits:$hits,
-	          precision_applicable:$n,
-	          mean_mrr:(if $n == 0 then 0 else (($applicable | map(.mrr) | add) / $n) end),
+	          hit_at_5:(if $n == 0 then null else ($hits / $n) end),
+	          hit_count:$hits,
+	          hit_applicable:$n,
+	          raw_precision_at_5: (($rows | map(select(.ok and .raw_precision_at_5 != null) | .raw_precision_at_5)) as $p | if ($p | length) == 0 then null else (($p | add) / ($p | length)) end),
+	          mean_mrr:(if $n == 0 then null else (($applicable | map(.mrr) | add) / $n) end),
 	          forbid_violations:($rows | map(.violations | length) | add // 0),
 	          invocation_failures:($rows | map(select(.ok | not)) | length) }
 	    )) as $aggregates
@@ -605,9 +669,10 @@ fmt0() { [[ "$1" == "null" || -z "$1" ]] && echo "n/a" || printf '%.0f' "$1"; }
 render_report() {
 	while IFS= read -r line; do declare "$line"; done < <(
 		jq -r '.aggregates[] |
-		  "m1_\(.binary)_precision=\(.precision_at_5)",
-		  "m1_\(.binary)_hits=\(.precision_hits)",
-		  "m1_\(.binary)_applicable=\(.precision_applicable)",
+		  "m1_\(.binary)_hit=\(.hit_at_5)",
+		  "m1_\(.binary)_raw_precision=\(.raw_precision_at_5)",
+		  "m1_\(.binary)_hits=\(.hit_count)",
+		  "m1_\(.binary)_applicable=\(.hit_applicable)",
 		  "m1_\(.binary)_mrr=\(.mean_mrr)",
 		  "m1_\(.binary)_forbid=\(.forbid_violations)",
 		  "m1_\(.binary)_failures=\(.invocation_failures)"' "$METRIC1_JSON"
@@ -672,13 +737,18 @@ expected to go from violating to clean.
 Violating cases:
 $m1_violations
 
-## Metric 1 — precision@5 / MRR (loom/eval/retrieval-cases.yaml, pass_floor=$pass_floor)
+## Metric 1 — hit@5 / raw-pack precision@5 / MRR (loom/eval/retrieval-cases.yaml, pass_floor=$pass_floor)
 
 | metric | baseline | current | delta |
 | --- | --- | --- | --- |
-| precision@5 | $(fmt2 "$m1_baseline_precision") ($m1_baseline_hits/$m1_baseline_applicable) | $(fmt2 "$m1_current_precision") ($m1_current_hits/$m1_current_applicable) | $(fmt2 "$(python3 -c "print($m1_current_precision - $m1_baseline_precision)")") |
-| mean MRR | $(fmt2 "$m1_baseline_mrr") | $(fmt2 "$m1_current_mrr") | $(fmt2 "$(python3 -c "print($m1_current_mrr - $m1_baseline_mrr)")") |
+| hit@5 | $(fmt2 "$m1_baseline_hit") ($m1_baseline_hits/$m1_baseline_applicable) | $(fmt2 "$m1_current_hit") ($m1_current_hits/$m1_current_applicable) | — |
+| raw-pack precision@5 | $(fmt2 "$m1_baseline_raw_precision") | $(fmt2 "$m1_current_raw_precision") | — |
+| mean MRR | $(fmt2 "$m1_baseline_mrr") | $(fmt2 "$m1_current_mrr") | — |
 | invocation failures | $m1_baseline_failures | $m1_current_failures | — |
+
+Raw-pack precision uses the union of expected and relevant IDs. Prompt-delivered
+precision and abstention correctness are unavailable in this historical comparison.
+The raw case results and per-case JSON retain errors, forbidden IDs and abstain expectations.
 
 ### Per-case breakdown
 
@@ -711,7 +781,8 @@ $m2_class_rows
 ## Metric 3 — hook wall time (ms)
 
 Cold-start is the first \`hook user-prompt\` invocation issued for that
-binary (page-cache-cold read of the measure root); p50/p95/max exclude it.
+binary; p50/p95/max exclude it. Earlier context queries have already accessed
+the measure roots, so this is not a page-cache-cold measurement.
 The shell wrapper (\`loom-hooks/user-prompt-context.sh\`) enforces a 5s ceiling.
 A cold number taken while anything else — another agent, a background
 reconcile, the OS page cache warming from an unrelated process — is writing
@@ -736,8 +807,8 @@ REPORT
 # --------------------------------------------------------------------------
 # Isolation verification — belt-and-suspenders is not proof. Fingerprints
 # the real checkout's own cache/work state before this run touches anything
-# and diffs it after scoring: any change means some invocation resolved past
-# its measure root and mutated the real checkout despite everything above —
+# and diffs it after scoring: a change may have an unrelated concurrent cause, and unchanged second-resolution
+# mtimes do not prove that no content changed —
 # see the ISOLATION CONTRACT header. `stat -c`/`stat -f` mirrors the
 # GNU-vs-BSD fallback loom-hooks/worktree-file-guard.sh already uses.
 # --------------------------------------------------------------------------
@@ -757,8 +828,7 @@ real_checkout_fingerprint() {
 # Delivery-dedupe records under the real checkout's LOCAL overlay scope —
 # reported as a delta, not asserted, because a concurrent, unrelated Claude
 # Code session in this same checkout can legitimately add these while this
-# harness runs; only the catalog/state/work-context mtimes above are proof
-# of an isolation breach.
+# harness runs; the catalog/state/work-context mtimes are also only indicative.
 count_real_retrievals() {
 	local dir="$REAL_WORK_CONTEXT/_local"
 	[[ -d "$dir" ]] || {
@@ -776,8 +846,7 @@ count_real_retrievals() {
 # Compare a fingerprint/retrieval-count pair captured before this run against
 # the same pair captured now. Reports the retrieval-count delta either way
 # (informational — see count_real_retrievals's doc); FAILS LOUDLY, exiting
-# 1, when the fingerprint moved, since that is proof (not a guess) that this
-# run mutated the real checkout it was supposed to leave untouched.
+# 1, when the fingerprint moved, since the measurement may be affected by concurrent changes.
 verify_real_checkout_untouched() {
 	local before_fingerprint="$1" before_retrievals="$2"
 	local after_fingerprint after_retrievals
@@ -789,7 +858,7 @@ verify_real_checkout_untouched() {
 
 	if [[ "$before_fingerprint" != "$after_fingerprint" ]]; then
 		echo "" >&2
-		echo "retrieval-ab: ISOLATION BREACH — the real checkout's own cache/work state" >&2
+		echo "retrieval-ab: real checkout cache/work state changed (cause unknown) —" >&2
 		echo "  (catalog.json mtime / state.json mtime / state-dir context mtime) changed" >&2
 		echo "  during this run:" >&2
 		echo "    before: $before_fingerprint" >&2
@@ -810,7 +879,10 @@ BEFORE_RETRIEVALS="$(count_real_retrievals)"
 ensure_binaries
 mkdir -p "$RESULTS_DIR"
 seed_measure_root "$MIRROR_BASELINE"
-seed_measure_root "$MIRROR_CURRENT"
+validate_delete "$MIRROR_CURRENT"
+rm -rf "$MIRROR_CURRENT"
+cp -a "$MIRROR_BASELINE" "$MIRROR_CURRENT"
+seed_reconcile_lock "$MIRROR_CURRENT"
 
 run_metric1
 run_metric23

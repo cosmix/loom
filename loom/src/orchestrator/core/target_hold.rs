@@ -37,8 +37,8 @@ fn hook_install_line(installed: &anyhow::Result<HookInstall>) -> Result<&'static
         Ok(HookInstall::Installed) => Ok("target guard: reference-transaction hook installed"),
         Ok(HookInstall::UpToDate) => Ok("target guard: reference-transaction hook up to date"),
         Ok(HookInstall::ForeignHookPresent) => Err(
-            "target guard: .git/hooks/reference-transaction belongs to another tool and was \
-             left in place"
+            "target guard: the reference-transaction hook git runs here belongs to another \
+             tool and was left in place"
                 .to_string(),
         ),
         Err(error) => Err(format!(

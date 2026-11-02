@@ -29,6 +29,7 @@ pub mod project;
 pub mod recommend;
 mod types;
 
+pub(crate) use index::after_ascii_marker;
 pub use index::SkillIndex;
 // Only names with a consumer outside `src/skills/` are re-exported here.
 // `crate::assets::install` consumes the placement layout and catalog names;
@@ -37,12 +38,7 @@ pub use index_catalog::{
     catalog_dir_for, installed_skills_dir, is_core_skill, load_from_roots, load_with_catalog,
     skill_invocation, CATALOG_DIR_NAME,
 };
-// `#[cfg(test)] pub(crate)`, not `pub`: its only consumer is the
-// `#[cfg(test)]` check in `assets::tests_table` that every core skill name
-// appears in the embedded SKILLS table. A `pub` re-export here would
-// suppress the dead-code lint entirely, so nothing would flag this if that
-// test were ever removed; gating the import the same way its consumer is
-// gated keeps the lint live.
+// Only the embedded skills table test consumes this name.
 #[cfg(test)]
 pub(crate) use index_catalog::core_skill_names;
 pub use install_layout::SkillLayout;

@@ -61,6 +61,7 @@ struct Prepared {
     git: WorktreeGit,
     scope: CommitScope,
     merge_target: Option<String>,
+    merge_snapshot: Option<String>,
     guarded_paths: Vec<String>,
     _merge_lock: Option<MergeLock>,
 }
@@ -85,6 +86,9 @@ pub(super) fn apply_commit(
         Committer::new(&prepared.git, site.repo_root).guarding_paths(&prepared.guarded_paths);
     if let Some(target) = &prepared.merge_target {
         committer = committer.merging_into(target);
+    }
+    if let Some(snapshot) = &prepared.merge_snapshot {
+        committer = committer.merging_snapshot(snapshot);
     }
     match committer.commit_staged(&prepared.scope, &request) {
         Ok(id) => {
@@ -123,6 +127,7 @@ fn prepare_stage(site: &CommitSite<'_>) -> Result<Prepared, String> {
             stage_id: site.stage_id.to_string(),
         },
         merge_target: None,
+        merge_snapshot: None,
         guarded_paths: Vec::new(),
         _merge_lock: None,
     })
@@ -144,6 +149,7 @@ fn prepare_knowledge(site: &CommitSite<'_>) -> Result<Prepared, String> {
             prefix: PathBuf::from(knowledge_prefix().trim_end_matches('/')),
         },
         merge_target: None,
+        merge_snapshot: None,
         guarded_paths: Vec::new(),
         _merge_lock: Some(merge_lock),
     })
@@ -185,12 +191,20 @@ fn prepare_merge(site: &CommitSite<'_>) -> Result<Prepared, String> {
             site.stage_id, stage.status
         ));
     }
+    let snapshot = crate::orchestrator::signals::load_merge_snapshot(site.work_dir, &record.id)
+        .map_err(|error| {
+            format!(
+                "merge target snapshot unavailable ({error:#}); preserve staged \
+             changes and start a fresh merge resolver, or resolve manually before landing"
+            )
+        })?;
     Ok(Prepared {
         git: pinned_worktree(site.repo_root, &stage)?,
         scope: CommitScope::Merge {
             stage_id: site.stage_id.to_string(),
         },
         merge_target: Some(target_branch(site)?),
+        merge_snapshot: Some(snapshot),
         guarded_paths: guarded_paths(site, &stage)?,
         _merge_lock: None,
     })

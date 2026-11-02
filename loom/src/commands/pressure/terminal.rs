@@ -1,13 +1,13 @@
 //! Terminal execution and presentation for the shared pressure pipeline.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::Colorize;
 use std::io::Write;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
-use crate::pressure::codex_run::{spawn_codex_with_fallback, CodexOutcome, CodexRun};
+use crate::pressure::codex_run::{CodexOutcome, CodexRetirement, CodexRun};
 use crate::pressure::{PressureResult, StepVerdict};
 
 use super::spawn::{claude_should_stop, run_claude_foreground, should_stop};
@@ -20,19 +20,33 @@ pub(super) struct TerminalDriver<'a> {
     pub(super) codex_log: &'a Path,
     pub(super) report: &'a Path,
     pub(super) models: &'a crate::pressure::models::PressureModels,
+    /// Stops the Codex runs below on a termination signal ([`retire_on_signal`]).
+    pub(super) retirement: CodexRetirement,
 }
 
-impl crate::pressure::PressureDriver for TerminalDriver<'_> {
-    fn delete_report(&mut self, report: &Path) -> Result<()> {
-        crate::claude::remove_if_exists(report)
-    }
+/// Stop every run started through `retirement` when this process gets SIGINT,
+/// SIGTERM or SIGHUP (the `ctrlc` crate's `termination` feature), then exit
+/// 130. Codex leads its own process group, so without this a Ctrl-C ends the
+/// driver and leaves Codex running. The crate allows one handler per process,
+/// and `loom pressure` installs no other.
+pub(super) fn retire_on_signal(retirement: CodexRetirement) -> Result<()> {
+    ctrlc::set_handler(move || {
+        if let Err(error) = retirement.retire() {
+            eprintln!("\n{error:#}");
+        }
+        std::process::exit(130);
+    })
+    .context("failed to install the pressure run's signal handler")
+}
 
-    fn run_pressure(&mut self, round: u32, claude: &str, codex: &str) -> Result<PressureResult> {
+impl TerminalDriver<'_> {
+    /// Start the Codex review in the background, through `self.retirement`.
+    fn start_codex(&self, codex: &str) -> Result<CodexRun> {
         let candidates = crate::codex::codex_model_candidates(&self.models.codex)
             .into_iter()
             .map(String::from)
             .collect();
-        let codex_run = spawn_codex_with_fallback(
+        let codex_run = self.retirement.spawn_with_fallback(
             self.codex_path,
             self.repo_root,
             codex,
@@ -45,15 +59,40 @@ impl crate::pressure::PressureDriver for TerminalDriver<'_> {
             "→".cyan().bold(),
             self.codex_log.display()
         );
-        let claude_outcome = run_claude_foreground(
-            self.claude_path,
-            self.repo_root,
-            claude,
-            self.marker,
-            &self.models.claude,
-            &self.models.claude_effort,
-        )?;
+        Ok(codex_run)
+    }
+}
+
+impl crate::pressure::PressureDriver for TerminalDriver<'_> {
+    fn delete_report(&mut self, report: &Path) -> Result<()> {
+        crate::claude::remove_if_exists(report)
+    }
+
+    fn run_pressure(&mut self, round: u32, claude: &str, codex: &str) -> Result<PressureResult> {
+        let codex_run = self.start_codex(codex)?;
+        let (claude_outcome, codex_run) = run_foreground_with_codex(codex_run, || {
+            run_claude_foreground(
+                self.claude_path,
+                self.repo_root,
+                claude,
+                self.marker,
+                &self.models.claude,
+                &self.models.claude_effort,
+            )
+        })?;
         let claude_reason = claude_should_stop(claude_outcome);
+        if claude_reason.is_some() {
+            // Ctrl-C at Claude's prompt is a keystroke, so its exit is the only
+            // sign of it. The run stops here and deletes the report: waiting
+            // would only keep the terminal, and the user, on a discarded review.
+            if let Err(cancel) = codex_run.cancel_and_join() {
+                tracing::warn!(error = %cancel, "failed to stop codex after claude stopped the run");
+            }
+            return Ok(PressureResult {
+                verdict: step_verdict(round, "/pressure", claude_reason),
+                codex_model_used: None,
+            });
+        }
         let outcome = wait_codex(codex_run, self.codex_log)?;
         print_fallbacks(&outcome);
         let codex_reason = should_stop("codex", outcome.status, Some(self.codex_log));
@@ -61,7 +100,7 @@ impl crate::pressure::PressureDriver for TerminalDriver<'_> {
             report_codex_review(self.report, &outcome.model_used);
         }
         Ok(PressureResult {
-            verdict: step_verdict(round, "/pressure", claude_reason.or(codex_reason)),
+            verdict: step_verdict(round, "/pressure", codex_reason),
             codex_model_used: Some(outcome.model_used),
         })
     }
@@ -76,6 +115,23 @@ impl crate::pressure::PressureDriver for TerminalDriver<'_> {
             &self.models.address_effort,
         )?;
         Ok(step_verdict(round, "/address", claude_should_stop(outcome)))
+    }
+}
+
+/// Keep the foreground failure intact after stopping the concurrent worker.
+/// The pipeline deletes the report once this returns, after the worker is gone.
+fn run_foreground_with_codex(
+    codex_run: CodexRun,
+    foreground: impl FnOnce() -> Result<crate::claude::ClaudeOutcome>,
+) -> Result<(crate::claude::ClaudeOutcome, CodexRun)> {
+    match foreground() {
+        Ok(outcome) => Ok((outcome, codex_run)),
+        Err(error) => {
+            if let Err(cancel) = codex_run.cancel_and_join() {
+                tracing::warn!(error = %cancel, "failed to stop codex after foreground error");
+            }
+            Err(error)
+        }
     }
 }
 
@@ -141,21 +197,5 @@ fn print_fallbacks(outcome: &CodexOutcome) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn stop_verdict_identifies_the_round_and_step_and_preserves_the_reason() {
-        let reason = "claude exited with code 130 — stopping pressure run.";
-        for slash in ["/pressure", "/address"] {
-            assert_eq!(
-                step_verdict(2, slash, Some(reason.to_string())),
-                StepVerdict::Stop {
-                    step: format!("round 2 {slash}"),
-                    reason: reason.to_string(),
-                }
-            );
-        }
-        assert_eq!(step_verdict(2, "/address", None), StepVerdict::Continue);
-    }
-}
+#[path = "terminal_tests.rs"]
+mod tests;

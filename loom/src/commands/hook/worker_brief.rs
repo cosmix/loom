@@ -182,12 +182,11 @@ fn retrieve_pack(config: &Config, payload: &HookPayload, paths: &[String]) -> Op
 
 pub(crate) fn scope_pack(pack: &mut ContextPack, required_ids: &[String]) {
     let mut scoped = Vec::with_capacity(pack.items.len());
-    for item in std::mem::take(&mut pack.items) {
-        if worker_material(&item) {
-            scoped.push(item);
+    for item in &pack.items {
+        if worker_material(item) {
+            scoped.push(item.clone());
             continue;
         }
-        pack.omitted.omitted += 1;
         if required_ids.iter().any(|id| id == item.id.as_str()) {
             pack.unmet_required.push(UnmetRequirement {
                 id: item.id.as_str().to_string(),
@@ -197,8 +196,7 @@ pub(crate) fn scope_pack(pack: &mut ContextPack, required_ids: &[String]) {
             });
         }
     }
-    pack.items = scoped;
-    pack.recompute_estimate();
+    pack.retain_items(scoped);
 }
 
 fn worker_material(item: &ContextItem) -> bool {

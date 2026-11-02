@@ -1,14 +1,8 @@
 //! Recovering a stage whose agent stopped answering.
 //!
-//! A `SessionHung` report used to print a warning and nothing else, which made
-//! it the second missed chance in the same failure: a session that ended its
-//! turn without its stage transition landing sat `Executing` forever, and the
-//! one signal that noticed — a live process that had stopped heartbeating —
-//! only said so to a log nobody was reading.
-//!
-//! Acting on it is bounded on three sides, because killing a working agent is
-//! worse than waiting for a stuck one:
-//!
+//! A `SessionHung` report warns first, then recovers or parks an unresponsive
+//! stage once its current attempt crosses a bounded escalation line.
+//! Recovery is bounded on three sides:
 //! 1. the first report about a session that has worked is still only a
 //!    warning; escalation needs the silence to reach [`is_escalation`]'s line,
 //!    three response budgets deep or, while the session's pinned
@@ -18,22 +12,15 @@
 //!    ends or passes its deadline ([`host_job_holds_session`]);
 //! 2. the stage must still be `Executing` and still name this exact session,
 //!    which `begin_handoff` re-checks under the stage lock; and
-//! 3. a stage may be recovered this way [`MAX_STALL_RECOVERIES`] times. The
-//!    next stall parks it in `NeedsHumanReview`, its review reason naming the
-//!    silence and the last pane lines: a stage that stalls every attempt is a
-//!    bug in the stage, and re-queueing it forever hides it.
+//! 3. after [`MAX_STALL_RECOVERIES`] attempts, park in `NeedsHumanReview`
+//!    with the silence and last pane lines.
 //!
-//! A session that never started work ([`never_worked`]) is parked at its first
-//! report instead. With no tool call and no tokens there is nothing waiting
-//! can bring back, and a re-queue would repeat whatever stopped it. When
-//! `claude auth status` in the stage environment answers "not logged in", the
-//! review reason names the login remedy.
-//!
+//! A session that never started work is parked at its first report. A
+//! `claude auth status` result of "not logged in" names the login remedy.
 //! The takedown is the ceiling backstop's: write the outgoing agent's handoff
 //! (a session that never worked has none), kill every agent the stage owns,
 //! and re-queue or park only once they are confirmed gone. A parked stage is
-//! announced by the needs-human-review notice; approving the review re-queues
-//! it.
+//! announced by the needs-human-review notice; approving the review re-queues it.
 
 use anyhow::Result;
 use chrono::Utc;
@@ -49,7 +36,7 @@ use crate::models::session::{Session, SessionExitReason};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::monitor::heartbeat::{heartbeat_path, read_heartbeat};
 use crate::orchestrator::monitor::hung_latch::host_job_holds_session;
-use crate::orchestrator::monitor::never_worked::{is_escalation, never_worked};
+use crate::orchestrator::monitor::never_worked::is_escalation;
 use crate::orchestrator::monitor::parked::hung_warning;
 use crate::orchestrator::monitor::stall_line::running_completion_line;
 use crate::orchestrator::terminal::session_tail;
@@ -69,6 +56,9 @@ const MAX_STALL_RECOVERIES: u32 = 2;
 
 /// How many pane lines a park keeps below its review reason.
 const PANE_TAIL_LINES: usize = 40;
+
+#[path = "recover_hung_forward.rs"]
+mod forward;
 
 pub(super) fn checkpoint_has_current_blocker(
     checkpoint: &CompletionCheckpoint,
@@ -97,6 +87,21 @@ pub(super) struct StallProbes<'a> {
     pub login: &'a dyn Fn() -> Option<AuthProbe>,
     /// The last lines of the session's pane or stderr log.
     pub tail: &'a dyn Fn(&Session) -> Option<String>,
+}
+
+fn print_hung_warning(report: &HungReport<'_>, completion_line: Option<u64>) {
+    eprintln!(
+        "{}",
+        hung_warning(
+            report.session_id,
+            report.stage_id,
+            report.stale_duration_secs,
+            report.timeout_secs,
+            report.last_activity,
+            report.finished_without_completing,
+            completion_line,
+        )
+    );
 }
 
 impl Orchestrator {
@@ -136,36 +141,31 @@ impl Orchestrator {
             .and_then(|stage_id| self.load_stage(stage_id).ok());
         let completion_line =
             running_completion_line(heartbeat.as_ref(), report.session_id, stage.as_ref());
-        eprintln!(
-            "{}",
-            hung_warning(
-                report.session_id,
-                report.stage_id,
-                report.stale_duration_secs,
-                report.timeout_secs,
-                report.last_activity,
-                report.finished_without_completing,
-                completion_line,
-            )
-        );
+        print_hung_warning(&report, completion_line);
 
         // A session naming no stage has nothing to re-queue.
         let Some(stage_id) = report.stage_id else {
             return Ok(());
         };
         let session = self.hung_session(report.session_id);
-        let never_started = session.as_ref().is_some_and(|session| {
-            never_worked(session, heartbeat.as_ref(), Utc::now(), report.timeout_secs)
-        });
-        if !is_escalation(
-            report.stale_duration_secs,
-            report.timeout_secs,
-            never_started,
-            completion_line,
-        ) {
-            return Ok(());
-        }
-        if self.escalation_held(stage.as_ref(), report.session_id) {
+        let now = Utc::now();
+        let (never_started, foreground_held) = self.foreground_stall_facts(
+            stage_id,
+            session.as_ref(),
+            heartbeat.as_ref(),
+            &report,
+            now,
+        );
+        if foreground_held
+            || !is_escalation(
+                report.stale_duration_secs,
+                report.timeout_secs,
+                never_started,
+                completion_line,
+            )
+            || self.escalation_held(stage.as_ref(), report.session_id)
+        {
+            self.monitor.defer_hung_escalation(report.session_id);
             return Ok(());
         }
         self.recover_stalled_stage(stage_id, &report, never_started, session.as_ref(), probes)

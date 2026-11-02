@@ -166,9 +166,9 @@ function that's still under the 400/50-line limit (those never need one).
 
 ## `loom stage complete`'s Unwired-File Check Has a False Positive on `#[path]` Test Modules
 
-**What happened:** `loom/src/commands/status/render/attention_model_tests.rs` is wired at
+**What happened:** `loom/src/status/attention_model_tests.rs` is wired at
 `commands/status/render/attention_model.rs`'s tail as `#[cfg(test)] #[path = "attention_model_tests.rs"] mod tests;` — the
-same pattern `commands/status/render/attention.rs`/`commands/status/render/attention_tests.rs` and `commands/status/data/collector.rs`/`commands/status/data/collector_tests.rs` already use —
+same pattern `commands/status/render/attention.rs`/`commands/status/render/attention_tests.rs` and `status/data/collector.rs`/`status/data/collector_tests.rs` already use —
 but the finalization command's unwired-file checker looks for a `mod attention_model_tests;` declaration
 and finds none, so it flags the file as unwired even though `cargo test --lib
 commands::status::render::attention_model::tests::` reaches it fine.

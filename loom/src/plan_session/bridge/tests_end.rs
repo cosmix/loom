@@ -51,21 +51,6 @@ fn an_end_before_the_opening_tears_down_at_once_without_a_closing_message() {
 }
 
 #[test]
-fn drain_tears_down_a_summary_session_whose_task_never_went_out() {
-    let h = Harness::ready(|c| c.final_write_bound = Duration::from_secs(4));
-    let s = h.start(SessionKind::Summary);
-    wait_until("the start", || started(&h, &s.id));
-    let asked = Instant::now();
-    h.bridge.drain();
-    assert!(
-        asked.elapsed() < Duration::from_secs(3),
-        "drain waited for the bound"
-    );
-    assert_eq!(h.ended(&s.id), Some(EndOutcome::TornDown));
-    assert_eq!(h.host.delivered(&s.socket), Vec::<String>::new());
-}
-
-#[test]
 fn two_subagent_starts_in_one_millisecond_both_count() {
     let h = Harness::ready(|_| {});
     let s = h.idle(Authoring);

@@ -3,7 +3,7 @@
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, OnceLock, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::SystemTime;
 
 use anyhow::Result;
@@ -11,6 +11,7 @@ use anyhow::Result;
 use super::authoring::{Authoring, Refusal, Take};
 use super::extensions::Extensions;
 use super::ids::{BrowserId, ConnCtx, ConnId, PublicId};
+use super::loading::Loading;
 use super::prereq::ReadOnly;
 use super::presence::Presence;
 use super::shutdown::Shutdown;
@@ -65,17 +66,25 @@ pub type BatchHookFn = Box<dyn Fn(&PlanContext, &Batch) + Send + Sync>;
 
 type BatchHook = Arc<dyn Fn(&PlanContext, &Batch) + Send + Sync>;
 
-/// Everything one planning server shares. Built once by `start`; `Send + Sync`.
+/// What the background load sets. Only the load's own install step, and requests released by
+/// [`Loading`], reach it; the accessors panic on any other use.
+struct Loaded {
+    read_only: ReadOnly,
+    project: RwLock<Project>,
+    authoring: Authoring,
+}
+
+/// Everything one planning server shares. Built once by `start_owned`; `Send + Sync`.
 pub struct PlanContext {
+    background: super::background::Background,
     root: PathBuf,
     project_key: String,
     runtime: RuntimePaths,
-    project: RwLock<Project>,
-    authoring: Authoring,
+    loading: Loading,
+    loaded: OnceLock<Loaded>,
     presence: Presence,
     hub: PlanHub,
     shutdown: Arc<Shutdown>,
-    read_only: ReadOnly,
     bind: BindInfo,
     own_writes: OwnWrites,
     batch_hooks: RwLock<Vec<BatchHook>>,
@@ -84,32 +93,64 @@ pub struct PlanContext {
 }
 
 impl PlanContext {
-    /// Load the project under `root` and compute its runtime paths (nothing is created).
-    /// `own_writes` is the registry the `doc/` watcher was built with.
+    /// A context with [`PlanContext::load_project`] already done and nothing to wait for.
+    #[cfg(test)]
     pub(crate) fn new(
         root: PathBuf,
         read_only: ReadOnly,
         bind: BindInfo,
         own_writes: OwnWrites,
     ) -> Result<Self> {
-        let project = Project::load(&root)?;
+        let ctx = Self::unloaded(root, bind, own_writes)?;
+        ctx.load_project(read_only)?;
+        ctx.loading.finish(super::loading::LoadState::Ready);
+        Ok(ctx)
+    }
+
+    /// Compute the runtime paths (nothing is created) and read nothing under `doc/`.
+    /// `own_writes` is the registry the `doc/` watcher is built with.
+    pub(crate) fn unloaded(root: PathBuf, bind: BindInfo, own_writes: OwnWrites) -> Result<Self> {
         let (runtime, _) = server_runtime_paths(&root)?;
         Ok(PlanContext {
+            background: super::background::Background::default(),
             project_key: project_key(&root)?,
             root,
             runtime,
-            project: RwLock::new(project),
-            authoring: Authoring::new(read_only.is_read_only()),
+            loading: Loading::default(),
+            loaded: OnceLock::new(),
             presence: Presence::new(),
             hub: PlanHub::new(),
             shutdown: Arc::new(Shutdown::new()),
-            read_only,
             bind,
             own_writes,
             batch_hooks: RwLock::new(Vec::new()),
             extensions: Extensions::default(),
             next_conn: AtomicU64::new(1),
         })
+    }
+
+    /// Load the project and record the prerequisites' verdict, once.
+    pub(crate) fn load_project(&self, read_only: ReadOnly) -> Result<()> {
+        let project = Project::load(&self.root)?;
+        let loaded = Loaded {
+            authoring: Authoring::new(read_only.is_read_only()),
+            read_only,
+            project: RwLock::new(project),
+        };
+        // `Err` only for a second load, which keeps the first.
+        let _ = self.loaded.set(loaded);
+        Ok(())
+    }
+
+    fn loaded(&self) -> &Loaded {
+        self.loaded
+            .get()
+            .expect("the project loads before anything reads it")
+    }
+
+    /// The background load's state.
+    pub(crate) fn loading(&self) -> &Loading {
+        &self.loading
     }
 
     /// Replace the runtime paths, so a test keeps its sessions out of the user's `~/.loom`.
@@ -134,15 +175,17 @@ impl PlanContext {
 
     /// The loaded project. Hold the guard briefly: the watcher waits on it to refresh.
     pub fn project(&self) -> RwLockReadGuard<'_, Project> {
-        self.project.read().unwrap_or_else(PoisonError::into_inner)
+        let project = &self.loaded().project;
+        project.read().unwrap_or_else(PoisonError::into_inner)
     }
 
     pub(crate) fn project_mut(&self) -> RwLockWriteGuard<'_, Project> {
-        self.project.write().unwrap_or_else(PoisonError::into_inner)
+        let project = &self.loaded().project;
+        project.write().unwrap_or_else(PoisonError::into_inner)
     }
 
     pub fn authoring(&self) -> &Authoring {
-        &self.authoring
+        &self.loaded().authoring
     }
 
     pub fn presence(&self) -> &Presence {
@@ -163,7 +206,7 @@ impl PlanContext {
     }
 
     pub fn read_only(&self) -> &ReadOnly {
-        &self.read_only
+        &self.loaded().read_only
     }
 
     pub fn bind(&self) -> &BindInfo {
@@ -178,7 +221,7 @@ impl PlanContext {
     /// [`Authoring::require`] for `browser`, with its public id and the stopping flag.
     pub fn require_authoring(&self, browser: &BrowserId, take: Take) -> Result<(), Refusal> {
         let public_id = self.presence.public_id(browser);
-        self.authoring
+        self.authoring()
             .require(browser, &public_id, take, self.is_stopping())
     }
 
@@ -186,7 +229,7 @@ impl PlanContext {
     pub fn refusal_message(&self, refusal: &Refusal) -> String {
         match refusal {
             Refusal::NotHolder { .. } => {
-                let holder = self.authoring.view(&self.presence).holder;
+                let holder = self.authoring().view(&self.presence).holder;
                 match holder {
                     Some(holder) => format!("Another browser holds authoring ({})", holder.name),
                     None => "Another browser holds authoring".to_owned(),
@@ -223,6 +266,19 @@ impl PlanContext {
         &self.extensions
     }
 
+    pub(crate) fn own_worker(
+        &self,
+        name: &'static str,
+        handle: std::thread::JoinHandle<()>,
+        stop: Option<Arc<std::sync::atomic::AtomicBool>>,
+    ) {
+        self.background.own(name, handle, stop);
+    }
+
+    pub(super) fn stop_workers(&self) -> Result<()> {
+        self.background.stop_and_join()
+    }
+
     /// A new connection's context for `browser`.
     pub(crate) fn conn_ctx(&self, browser: BrowserId) -> ConnCtx {
         ConnCtx {
@@ -246,7 +302,7 @@ impl PlanContext {
             project_key: self.project_key.clone(),
             port: self.bind.local.port(),
             remote: self.bind.remote,
-            read_only: self.read_only.problems().to_vec(),
+            read_only: self.read_only().problems().to_vec(),
             stopping: self.is_stopping(),
             you: You {
                 public_id: public_id.clone(),
@@ -257,13 +313,13 @@ impl PlanContext {
 
     /// Send the presence list to every connection.
     pub fn broadcast_presence(&self) {
-        let list = self.presence.list(&self.authoring);
+        let list = self.presence.list(self.authoring());
         self.hub.broadcast(&PlanMessage::Presence(list));
     }
 
     /// Send the authoring view and the presence list (which marks the holder) to everyone.
     pub fn broadcast_people(&self) {
-        let view = self.authoring.view(&self.presence);
+        let view = self.authoring().view(&self.presence);
         self.hub.broadcast(&PlanMessage::Authoring(view));
         self.broadcast_presence();
     }
@@ -285,7 +341,7 @@ impl PlanContext {
             }
         }));
         let weak = Arc::downgrade(ctx);
-        ctx.authoring.subscribe(Box::new(move |_| {
+        ctx.authoring().subscribe(Box::new(move |_| {
             if let Some(ctx) = weak.upgrade() {
                 ctx.broadcast_people();
             }
@@ -294,7 +350,7 @@ impl PlanContext {
 
     fn connection_opened(&self, conn: &ConnCtx) -> Vec<PlanMessage> {
         self.presence.opened(conn);
-        self.authoring.connection_opened(&conn.browser);
+        self.authoring().connection_opened(&conn.browser);
         let hello = self.hello(conn);
         self.broadcast_presence();
         vec![PlanMessage::Hello(Box::new(hello))]
@@ -302,7 +358,7 @@ impl PlanContext {
 
     fn connection_closed(&self, conn: &ConnCtx) {
         self.presence.closed(conn.id);
-        self.authoring
+        self.authoring()
             .connection_closed(&conn.browser, SystemTime::now());
         self.broadcast_presence();
     }
@@ -316,8 +372,8 @@ impl PlanContext {
             checklists: planning.checklists,
             standalone: planning.standalone,
             moves: planning.moves,
-            presence: self.presence.list(&self.authoring),
-            authoring: self.authoring.view(&self.presence),
+            presence: self.presence.list(self.authoring()),
+            authoring: self.authoring().view(&self.presence),
         }
     }
 }

@@ -4,6 +4,7 @@
 //! dependency patterns like diamond and fan-out/fan-in.
 
 use super::helpers::complete_stage;
+use crate::stage_fixture::stage as fixture_stage;
 use loom::models::stage::{Stage, StageStatus, StageType};
 use loom::verify::transitions::{
     load_stage, save_stage, transition_stage, trigger_dependents, update_stage,
@@ -25,7 +26,7 @@ fn test_parallel_stages_triggered_together() {
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
     // Create foundation stage (Completed AND merged for dependents to trigger).
-    // Use Knowledge stage type to bypass the git ancestry check added in Fix 9.
+    // Use Knowledge stage type to bypass the Git ancestry check.
     let mut foundation = Stage::new("Foundation".to_string(), None);
     foundation.id = "foundation".to_string();
     foundation.status = StageStatus::Completed;
@@ -39,15 +40,12 @@ fn test_parallel_stages_triggered_together() {
         ("Stage B", "stage-b"),
         ("Stage C", "stage-c"),
     ] {
-        let mut stage = Stage::new(name.to_string(), None);
-        stage.id = id.to_string();
-        stage.status = StageStatus::WaitingForDeps;
-        stage.add_dependency("foundation".to_string());
+        let mut stage = fixture_stage(id, name, None, StageStatus::WaitingForDeps, &["foundation"]);
         stage.parallel_group = Some("parallel".to_string());
         save_stage(&stage, work_dir).unwrap();
     }
 
-    // Verify foundation stage is Ready, A/B/C are Pending
+    // Foundation is completed; its dependents still wait.
     let foundation = load_stage("foundation", work_dir).unwrap();
     assert_eq!(foundation.status, StageStatus::Completed);
 
@@ -69,7 +67,7 @@ fn test_parallel_stages_triggered_together() {
         ]
     );
 
-    // Verify all became Ready simultaneously
+    // Verify all became Queued simultaneously
     for id in ["stage-a", "stage-b", "stage-c"] {
         let stage = load_stage(id, work_dir).unwrap();
         assert_eq!(stage.status, StageStatus::Queued);
@@ -84,7 +82,7 @@ fn test_parallel_group_isolation() {
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
     // Create foundation stage (Completed AND merged for dependents to trigger).
-    // Use Knowledge stage type to bypass the git ancestry check added in Fix 9.
+    // Use Knowledge stage type to bypass the Git ancestry check.
     let mut foundation = Stage::new("Foundation".to_string(), None);
     foundation.id = "foundation".to_string();
     foundation.status = StageStatus::Completed;
@@ -94,20 +92,14 @@ fn test_parallel_group_isolation() {
 
     // Create frontend parallel group (A, B)
     for (name, id) in [("Frontend A", "frontend-a"), ("Frontend B", "frontend-b")] {
-        let mut stage = Stage::new(name.to_string(), None);
-        stage.id = id.to_string();
-        stage.status = StageStatus::WaitingForDeps;
-        stage.add_dependency("foundation".to_string());
+        let mut stage = fixture_stage(id, name, None, StageStatus::WaitingForDeps, &["foundation"]);
         stage.parallel_group = Some("frontend".to_string());
         save_stage(&stage, work_dir).unwrap();
     }
 
     // Create backend parallel group (C, D)
     for (name, id) in [("Backend C", "backend-c"), ("Backend D", "backend-d")] {
-        let mut stage = Stage::new(name.to_string(), None);
-        stage.id = id.to_string();
-        stage.status = StageStatus::WaitingForDeps;
-        stage.add_dependency("foundation".to_string());
+        let mut stage = fixture_stage(id, name, None, StageStatus::WaitingForDeps, &["foundation"]);
         stage.parallel_group = Some("backend".to_string());
         save_stage(&stage, work_dir).unwrap();
     }
@@ -117,7 +109,7 @@ fn test_parallel_group_isolation() {
     triggered.sort();
     assert_eq!(triggered.len(), 4);
 
-    // Verify all 4 stages become Ready
+    // Verify all 4 stages become Queued
     for id in ["frontend-a", "frontend-b", "backend-c", "backend-d"] {
         let stage = load_stage(id, work_dir).unwrap();
         assert_eq!(stage.status, StageStatus::Queued);
@@ -181,14 +173,14 @@ fn test_diamond_dependency_pattern() {
     assert!(triggered.contains(&"stage-b".to_string()));
     assert!(triggered.contains(&"stage-c".to_string()));
 
-    // Verify B and C become Ready
+    // Verify B and C become Queued
     let stage_b = load_stage("stage-b", work_dir).unwrap();
     assert_eq!(stage_b.status, StageStatus::Queued);
 
     let stage_c = load_stage("stage-c", work_dir).unwrap();
     assert_eq!(stage_c.status, StageStatus::Queued);
 
-    // D should still be Pending
+    // D should still be WaitingForDeps
     let stage_d = load_stage("stage-d", work_dir).unwrap();
     assert_eq!(stage_d.status, StageStatus::WaitingForDeps);
 
@@ -198,7 +190,7 @@ fn test_diamond_dependency_pattern() {
     let triggered = trigger_dependents("stage-b", work_dir, work_dir, "main").unwrap();
     assert_eq!(triggered.len(), 0);
 
-    // Verify D is still Pending (C not done)
+    // Verify D is still WaitingForDeps (C not done)
     let stage_d = load_stage("stage-d", work_dir).unwrap();
     assert_eq!(stage_d.status, StageStatus::WaitingForDeps);
 
@@ -209,7 +201,7 @@ fn test_diamond_dependency_pattern() {
     assert_eq!(triggered.len(), 1);
     assert_eq!(triggered[0], "stage-d");
 
-    // Verify D becomes Ready
+    // Verify D becomes Queued
     let stage_d = load_stage("stage-d", work_dir).unwrap();
     assert_eq!(stage_d.status, StageStatus::Queued);
 }
@@ -235,10 +227,7 @@ fn test_fan_out_fan_in() {
         ("Stage C", "stage-c"),
         ("Stage D", "stage-d"),
     ] {
-        let mut stage = Stage::new(name.to_string(), None);
-        stage.id = id.to_string();
-        stage.status = StageStatus::WaitingForDeps;
-        stage.add_dependency("stage-a".to_string());
+        let stage = fixture_stage(id, name, None, StageStatus::WaitingForDeps, &["stage-a"]);
         save_stage(&stage, work_dir).unwrap();
     }
 
@@ -251,7 +240,7 @@ fn test_fan_out_fan_in() {
     stage_e.add_dependency("stage-d".to_string());
     save_stage(&stage_e, work_dir).unwrap();
 
-    // Complete A, verify B/C/D Ready
+    // Complete A, verify B/C/D Queued
     let mut triggered = trigger_dependents("stage-a", work_dir, work_dir, "main").unwrap();
     triggered.sort();
     assert_eq!(triggered.len(), 3);
@@ -269,7 +258,7 @@ fn test_fan_out_fan_in() {
         assert_eq!(stage.status, StageStatus::Queued);
     }
 
-    // E should still be Pending
+    // E should still be WaitingForDeps
     let stage_e = load_stage("stage-e", work_dir).unwrap();
     assert_eq!(stage_e.status, StageStatus::WaitingForDeps);
 
@@ -280,7 +269,7 @@ fn test_fan_out_fan_in() {
         trigger_dependents(id, work_dir, work_dir, "main").unwrap();
     }
 
-    // Verify E still Pending (D not done)
+    // Verify E still WaitingForDeps (D not done)
     let stage_e = load_stage("stage-e", work_dir).unwrap();
     assert_eq!(stage_e.status, StageStatus::WaitingForDeps);
 
@@ -291,7 +280,7 @@ fn test_fan_out_fan_in() {
     assert_eq!(triggered.len(), 1);
     assert_eq!(triggered[0], "stage-e");
 
-    // Verify E becomes Ready
+    // Verify E becomes Queued
     let stage_e = load_stage("stage-e", work_dir).unwrap();
     assert_eq!(stage_e.status, StageStatus::Queued);
 }

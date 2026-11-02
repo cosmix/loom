@@ -78,6 +78,9 @@ pub(super) fn repo_with_worktree() -> TempDir {
     std::fs::write(root.join("other.txt"), "other\n").unwrap();
     git(root, &["add", "seed.txt", "other.txt"]);
     git(root, &["commit", "-q", "-m", "seed"]);
+    let work_dir = root.join(".loom").join("work");
+    std::fs::create_dir_all(&work_dir).unwrap();
+    crate::git::worktree::capture_main_identity(root, &work_dir).unwrap();
     let worktree = worktree(root);
     let path = worktree.to_str().unwrap();
     git(root, &["worktree", "add", "-q", "-b", "loom/s", path]);

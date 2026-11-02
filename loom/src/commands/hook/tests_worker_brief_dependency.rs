@@ -34,6 +34,7 @@ fn git(root: &Path, args: &[&str]) -> String {
 /// changes `src/scoped_dep.rs`; return the branch tip.
 fn merged_upstream(root: &Path) -> String {
     git(root, &["init", "-b", "main"]);
+    crate::git::worktree::capture_main_identity(root, &root.join(".loom/work")).unwrap();
     git(root, &["config", "user.email", "t@t.com"]);
     git(root, &["config", "user.name", "t"]);
     let exclude = root.join(".git/info/exclude");
@@ -97,6 +98,7 @@ fn write_dependency_overlay(root: &Path) {
         files,
         blob_index: BTreeMap::new(),
         schema_version: crate::context::source_graph::GRAPH_SCHEMA_VERSION,
+        complete: false,
     };
     GraphStore::new(store.root(), work_dir.root())
         .save_overlay(PLAN, STAGE, &layer)

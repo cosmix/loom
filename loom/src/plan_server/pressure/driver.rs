@@ -201,15 +201,14 @@ pub(super) fn accept(
     let spawned = thread::Builder::new()
         .name("loom-plan-pressure".into())
         .spawn(move || run_thread(env, holds));
-    if let Err(error) = spawned {
+    let worker = spawned.map_err(|error| {
         ctx.authoring()
             .release_if(starter, FreeReason::Released("pressure run ended"));
         runs.end(&run);
         run.mark_done();
-        return Err(StartRefused::Unavailable(format!(
-            "cannot start the run: {error}"
-        )));
-    }
+        StartRefused::Unavailable(format!("cannot start the run: {error}"))
+    })?;
+    ctx.own_worker("pressure run", worker, None);
     Ok(view)
 }
 

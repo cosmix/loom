@@ -10,8 +10,10 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use crate::fs::session_files::load_session_exact;
-use crate::models::session::{Session, SessionBackendKind, SessionExitReason, SessionType};
+use crate::fs::session_files::{load_session_exact, mark_session_terminal_reason};
+use crate::models::session::{
+    Session, SessionBackendKind, SessionExitReason, SessionStatus, SessionType,
+};
 use crate::models::stage::Stage;
 use crate::orchestrator::core::Orchestrator;
 use crate::orchestrator::signals::{find_live_merge_session_for_stage, remove_signal};
@@ -71,8 +73,14 @@ impl Orchestrator {
         let worktree = match merge_resolver_worktree(&self.config.repo_root, &stage.id) {
             Ok(worktree) => worktree,
             Err(error) => {
-                // Nothing spawned: dropping `attempt` gives it back, and the
-                // signal names no session record.
+                // Nothing spawned: retire the write-ahead record and give
+                // back the attempt before another admission can proceed.
+                let _ = mark_session_terminal_reason(
+                    &self.config.work_dir,
+                    &session.id,
+                    SessionStatus::Crashed,
+                    SessionExitReason::Crashed,
+                );
                 if let Err(remove_error) = remove_signal(&session.id, &self.config.work_dir) {
                     tracing::warn!(
                         session_id = %session.id,
@@ -83,12 +91,22 @@ impl Orchestrator {
                 return Err(error);
             }
         };
-        let spawned = self.backend.spawn_merge_session_in_worktree(
-            stage,
-            &worktree,
+        let spawn = || {
+            self.backend.spawn_merge_session_in_worktree(
+                stage,
+                &worktree,
+                session.clone(),
+                signal_path,
+            )
+        };
+        #[cfg(test)]
+        let spawned = crate::orchestrator::signals::merge_test_backend::spawn(
+            &self.config.work_dir,
             session.clone(),
-            signal_path,
-        );
+        )
+        .unwrap_or_else(spawn);
+        #[cfg(not(test))]
+        let spawned = spawn();
         self.settle_resolver_spawn(&stage.id, session, spawned, attempt)
     }
 
@@ -121,10 +139,9 @@ impl Orchestrator {
     }
 
     /// Settle the failed spawn of resolver `session`, whose teardown proved
-    /// it `gone` or did not. Its signal is removed either way, since no
-    /// session record names it. Proven gone, it gives `attempt` back and
-    /// `error` is retried next tick. Not proven gone, the attempt stays spent
-    /// and `error` carries [`UnstoppedResolver`].
+    /// it `gone` or did not. Proven gone, its signal and record are retired
+    /// and the attempt is returned. Otherwise both remain as evidence that
+    /// blocks another launch.
     fn settle_failed_spawn(
         &self,
         session: Session,
@@ -132,14 +149,18 @@ impl Orchestrator {
         attempt: ReservedAttempt,
         gone: bool,
     ) -> Result<Session> {
-        if let Err(remove_error) = remove_signal(&session.id, &self.config.work_dir) {
-            tracing::warn!(
-                session_id = %session.id,
-                error = %remove_error,
-                "Failed to remove the signal of a merge resolver that did not spawn"
-            );
-        }
         if gone {
+            if let Err(retire_error) = mark_session_terminal_reason(
+                &self.config.work_dir,
+                &session.id,
+                SessionStatus::Crashed,
+                SessionExitReason::Crashed,
+            ) {
+                tracing::warn!(session_id = %session.id, error = %retire_error, "Failed to retire failed merge resolver launch");
+            }
+            if let Err(remove_error) = remove_signal(&session.id, &self.config.work_dir) {
+                tracing::warn!(session_id = %session.id, error = %remove_error, "Failed to remove failed merge resolver signal");
+            }
             return Err(error);
         }
         attempt.keep();

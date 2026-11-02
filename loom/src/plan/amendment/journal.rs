@@ -125,6 +125,8 @@ pub(super) const AUDIT_HEADER: &str = "# Plan Amendment Audit\n\n\
 |---------|----------|-------|----|-------|------------|------------|--------|\n";
 
 /// Read every audit row from `.loom/work/plan_versions/audit.md` (empty if missing).
+/// A present journal must have the published table framing. Its rows are
+/// authoritative evidence for recovery, so damaged rows cannot be skipped.
 pub(super) fn read_audit_rows(work_dir: &Path) -> Result<Vec<AuditRow>> {
     let dir = plan_versions_dir(work_dir);
     let audit_path = dir.join(AUDIT_FILE_NAME);
@@ -133,20 +135,59 @@ pub(super) fn read_audit_rows(work_dir: &Path) -> Result<Vec<AuditRow>> {
     }
     let content = fs::read_to_string(&audit_path)
         .with_context(|| format!("Failed to read audit log {}", audit_path.display()))?;
+    let lines = audit_data_lines(&content, &audit_path)?;
     let mut rows = Vec::new();
-    for line in content.lines() {
-        if !line.starts_with("| ") {
-            continue;
-        }
-        // Skip header / separator rows.
-        if line.starts_with("| version ") || line.starts_with("|---") {
-            continue;
-        }
-        if let Some(row) = parse_audit_row(line) {
-            rows.push(row);
-        }
+    for (number, line) in lines {
+        let row = parse_audit_row(line).with_context(|| {
+            format!(
+                "Malformed audit log {} at line {}",
+                audit_path.display(),
+                number
+            )
+        })?;
+        rows.push(row);
+    }
+    if rows.is_empty() {
+        bail!(
+            "Malformed audit log {}: table has no amendment rows",
+            audit_path.display()
+        );
     }
     Ok(rows)
+}
+
+fn audit_data_lines<'a>(content: &'a str, audit_path: &Path) -> Result<Vec<(usize, &'a str)>> {
+    // Accept CRLF and extra blank lines around the published table, but no
+    // alternate table or prose after it: either could conceal a lost row.
+    let lines: Vec<(usize, &str)> = content
+        .lines()
+        .enumerate()
+        .map(|(index, line)| (index + 1, line.trim()))
+        .filter(|(_, line)| !line.is_empty())
+        .collect();
+    let header: Vec<&str> = AUDIT_HEADER
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    for (index, expected) in header.iter().enumerate() {
+        let Some(&(number, actual)) = lines.get(index) else {
+            bail!(
+                "Malformed audit log {}: missing table header at line {}",
+                audit_path.display(),
+                content.lines().count() + 1
+            );
+        };
+        if actual != *expected {
+            bail!(
+                "Malformed audit log {} at line {}: expected '{}'",
+                audit_path.display(),
+                number,
+                expected
+            );
+        }
+    }
+    Ok(lines.into_iter().skip(header.len()).collect())
 }
 
 /// Append one row under the plan-version lock and atomically publish the table.
@@ -200,35 +241,34 @@ pub(super) fn compute_next_version(work_dir: &Path) -> Result<u64> {
     Ok(max.max(max_file) + 1)
 }
 
-fn parse_audit_row(line: &str) -> Option<AuditRow> {
+fn parse_audit_row(line: &str) -> Result<AuditRow> {
     let cells: Vec<&str> = line.split('|').map(|s| s.trim()).collect();
     // Expected: [empty, version, stage_id, field, op, index, applied_at, dispute_id, reason, empty]
-    if cells.len() < 10 {
-        return None;
+    if cells.len() != 10 || !cells[0].is_empty() || !cells[9].is_empty() {
+        bail!("invalid table row structure");
     }
-    let version: u64 = match cells[1].parse() {
-        Ok(v) => v,
-        Err(_) => return None,
-    };
+    let version: u64 = cells[1].parse().context("invalid version")?;
+    if version == 0 {
+        bail!("invalid version: zero");
+    }
+    if cells[2].is_empty() {
+        bail!("empty stage ID");
+    }
     let stage_id = cells[2].to_string();
-    let field = field_from_name(cells[3])?;
+    let field = field_from_name(cells[3]).context("invalid field")?;
     let patch_op = match cells[4] {
         "replace" => "replace",
         "insert" => "insert",
         "delete" => "delete",
-        _ => return None,
+        _ => bail!("invalid patch operation"),
     };
-    let index: usize = match cells[5].parse() {
-        Ok(v) => v,
-        Err(_) => return None,
-    };
-    let applied_at: DateTime<Utc> = match DateTime::parse_from_rfc3339(cells[6]) {
-        Ok(t) => t.with_timezone(&Utc),
-        Err(_) => return None,
-    };
+    let index: usize = cells[5].parse().context("invalid patch index")?;
+    let applied_at = DateTime::parse_from_rfc3339(cells[6])
+        .context("invalid applied_at timestamp")?
+        .with_timezone(&Utc);
     let dispute_id = (!cells[7].is_empty()).then(|| cells[7].to_string());
     let reason = (!cells[8].is_empty()).then(|| cells[8].to_string());
-    Some(AuditRow {
+    Ok(AuditRow {
         version,
         stage_id,
         field,

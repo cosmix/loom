@@ -48,6 +48,7 @@ fn test_human_review_approve_resets_an_unfrozen_stage_contract_budget() {
     let temp = TempDir::new().unwrap();
     let mut stage = contract_stage("test-stage", "writer-1");
     stage.status = StageStatus::NeedsHumanReview;
+    stage.tally.freeze_refusal_disputes = 3;
     crate::verify::transitions::save_stage(&stage, temp.path()).unwrap();
     for _ in 0..3 {
         spend_attempt(temp.path(), "test-stage").unwrap();
@@ -61,6 +62,53 @@ fn test_human_review_approve_resets_an_unfrozen_stage_contract_budget() {
         StageStatus::Queued
     );
     assert_eq!(attempts_spent(temp.path(), "test-stage").unwrap(), 0);
+    assert_eq!(
+        load_stage("test-stage", temp.path())
+            .unwrap()
+            .tally
+            .freeze_refusal_disputes,
+        0
+    );
+}
+
+#[test]
+fn approval_allows_a_new_freeze_refusal_without_resetting_other_budgets() {
+    use crate::models::stage::dispute_budgets::MAX_DISPUTES_PER_KIND;
+    use crate::stage_service::{file_freeze_refusal, FreezeRefusalFiling};
+
+    let temp = TempDir::new().unwrap();
+    let mut stage = contract_stage("test-stage", "old-writer");
+    stage.status = StageStatus::NeedsHumanReview;
+    stage.session = None;
+    stage.tally.freeze_refusal_disputes = MAX_DISPUTES_PER_KIND;
+    stage.tally.contract_disputes = 2;
+    crate::verify::transitions::save_stage(&stage, temp.path()).unwrap();
+
+    handle_approve("test-stage", temp.path()).unwrap();
+    let writer = Session::new_contract("test-stage");
+    save_session(&writer, temp.path()).unwrap();
+    update_stage("test-stage", temp.path(), |stage| {
+        stage.status = StageStatus::Executing;
+        stage.session = Some(writer.id);
+        Ok(())
+    })
+    .unwrap();
+
+    let result = file_freeze_refusal(
+        temp.path(),
+        "test-stage",
+        vec!["freeze failed".into()],
+        "fresh-refusal",
+    )
+    .unwrap();
+    assert!(
+        matches!(result, FreezeRefusalFiling::Filed(_)),
+        "{result:?}"
+    );
+    let stage = load_stage("test-stage", temp.path()).unwrap();
+    assert_eq!(stage.status, StageStatus::NeedsAdjudication);
+    assert_eq!(stage.tally.freeze_refusal_disputes, 1);
+    assert_eq!(stage.tally.contract_disputes, 2);
 }
 
 /// A refused transition (on-disk status no longer `NeedsHumanReview` by
@@ -102,6 +150,28 @@ fn test_human_review_approve_closes_an_open_dispute() {
 
     handle_approve("test-stage", temp.path()).unwrap();
 
+    assert!(dispute.join("closed.marker").exists());
+}
+
+#[test]
+fn approval_waits_for_dispute_closure_before_requeue() {
+    let temp = TempDir::new().unwrap();
+    setup_stage(&temp, StageStatus::NeedsHumanReview, Some("Escalated"));
+    let dispute = dispute_dir(&temp.path().join("disputes"), "test-stage", 1);
+    std::fs::create_dir_all(&dispute).unwrap();
+    crate::orchestrator::adjudication::fail_close_once(1);
+
+    let error = handle_approve("test-stage", temp.path()).unwrap_err();
+    assert!(format!("{error:#}").contains("injected dispute closure failure"));
+    assert_eq!(
+        crate::verify::transitions::load_stage("test-stage", temp.path())
+            .unwrap()
+            .status,
+        StageStatus::NeedsHumanReview
+    );
+    assert!(!dispute.join("closed.marker").exists());
+
+    handle_approve("test-stage", temp.path()).unwrap();
     assert!(dispute.join("closed.marker").exists());
 }
 
@@ -311,3 +381,6 @@ fn test_human_review_approve_resets_handbacks_and_keeps_the_refusal() {
         Some("tests failed")
     );
 }
+
+#[path = "human_review_identityless_tests.rs"]
+mod identityless_tests;

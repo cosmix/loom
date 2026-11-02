@@ -334,6 +334,49 @@ enforce_forwarder() {
 	exit 0
 }
 
+# The stall monitor treats a minted invocation id in a tool call's kernel-visible
+# argv as proof of the launch this guard authorized (monitor/direct_worker.rs).
+# The ledger is readable from the stage, so that proof holds only while this
+# guard is the sole route for a literal id into a tool call: refuse every other
+# tool command quoting one. Monitor and PowerShell run tool_input.command as a
+# shell command under the agent as Bash does, and a Bash matcher does not cover
+# them. A computed id stays out of the launcher's argv.
+refuse_quoted_invocation() {
+	case "$TOOL_NAME" in
+	Bash | Monitor | PowerShell) ;;
+	*) return 0 ;;
+	esac
+	local command ledger candidate
+	command=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
+	[[ "$command" =~ inv-[0-9a-f]{32} ]] || return 0
+	require_stage_evidence
+	resolve_active_stage || return 0
+	ledger="$ACTIVE_WORK_DIR/subagents/$LOOM_STAGE_ID/codex.jsonl"
+	[[ -f "$ledger" && ! -L "$ledger" ]] || return 0
+	while [[ "$command" =~ inv-[0-9a-f]{32} ]]; do
+		candidate=${BASH_REMATCH[0]}
+		if LC_ALL=C grep -qF "\"invocation_id\":\"$candidate\"" "$ledger" 2>/dev/null; then
+			block_quoted_invocation "$candidate"
+		fi
+		command=${command/"$candidate"/}
+	done
+}
+
+block_quoted_invocation() {
+	# Same exit discipline as block_forwarder: the message must never stop exit 2.
+	trap '' PIPE
+	{
+		printf '%s\n' "⛔ BLOCKED: this $TOOL_NAME command quotes a Codex invocation id minted for this stage." '' \
+			"Id: $1" '' \
+			'The stall monitor reads that id in a launch as proof of an authorized forward,' \
+			'so only the forward guard may place it in a command. Refer to the worker by its' \
+			'unit id, and use loom subagents commands to inspect it.'
+	} >&2 || true
+	exit 2
+}
+
+refuse_quoted_invocation
+
 # A hook payload without either authoritative agent type or transcript metadata
 # cannot establish that the caller is not a forwarder. This fail-closed check
 # stays local rather than folding into loom_codex_forwarder_verdict below:

@@ -25,6 +25,10 @@ pub(super) fn build(hooks_dir: &str) -> Value {
 /// forwarder that relays codex's output through a message and ends its turn
 /// with a summary strips the `--- LOOM-CODEX-EVIDENCE ---` trailer from the
 /// report the orchestrator actually harvests (observed 2026-09-02).
+///
+/// `Monitor` and `PowerShell` run `tool_input.command` as `Bash` does, so a
+/// minted invocation id quoted there is refused too. Capsule sessions deny both
+/// tools (`SESSION_TOOL_DENIES`); this covers an operator's own session.
 const PRE_TOOL_HOOKS: &[(&str, &str)] = &[
     ("AskUserQuestion", "ask-user-pre.sh"),
     ("Bash", "prefer-modern-tools.sh"),
@@ -54,6 +58,8 @@ const PRE_TOOL_HOOKS: &[(&str, &str)] = &[
     ("Edit", "no-preexisting-failures.sh"),
     ("MultiEdit", "no-preexisting-failures.sh"),
     ("Bash", "codex-forward-guard.sh"),
+    ("Monitor", "codex-forward-guard.sh"),
+    ("PowerShell", "codex-forward-guard.sh"),
     ("Bash", "loom-control-complete.sh"),
     ("Edit", "codex-forward-guard.sh"),
     ("MultiEdit", "codex-forward-guard.sh"),
@@ -82,9 +88,18 @@ fn pre_tool_hooks(hooks_dir: &str) -> Vec<Value> {
         .collect()
 }
 
+/// Claude Code runs a hook's command through a shell, so a hooks directory with
+/// a space or other metacharacter is quoted into one word. The unexpanded
+/// `~/...` default stays bare for that shell to expand the tilde.
 fn hook(hooks_dir: &str, matcher: &str, script: &str) -> Value {
+    let path = format!("{hooks_dir}/{script}");
+    let command = if path.starts_with("~/") {
+        path
+    } else {
+        shell_escape::escape(path.into()).into_owned()
+    };
     json!({
         "matcher": matcher,
-        "hooks": [{"type": "command", "command": format!("{hooks_dir}/{script}")}],
+        "hooks": [{"type": "command", "command": command}],
     })
 }

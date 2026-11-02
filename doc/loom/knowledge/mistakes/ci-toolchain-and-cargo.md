@@ -351,3 +351,50 @@ The sweep follow-ups on executable startup, cache coverage, hook-path navigation
 **Prevention:** stop the daemon after the binary and hooks are both installed. When the drift refusal appears, compare the daemon's start time with the binary's install time before assuming the hook files are wrong.
 
 **Fix:** `dev-install.sh` runs its `pkill -x loom` block after `install.sh`.
+
+## Signing test retained porcelain error wording
+
+**What happened:** A completion-commit test expected git commit error wording after the implementation moved to signed commit-tree.
+
+**Why:** The test asserted an incidental command phrase instead of the signing failure contract.
+
+**Prevention:** Update error assertions when changing the owning Git primitive, while retaining checks for unchanged HEAD and index.
+
+**Fix:** Assert the signing failure and preserved state.
+
+## Installer process fixture must preserve executable dispatch
+
+**What happened:** The development-installer regression copied `sleep` to a different basename; on a multicall coreutils system, both fixture processes exited before the assertion.
+
+**Why:** The fixture assumed the executable did not dispatch by its invoked name.
+
+**Prevention:** Use a test-owned process with explicit runtime arguments and verify it is alive before exercising installer behavior.
+
+**Fix:** Run the Python interpreter with a sleep program in each checkout and wait for both child processes during cleanup.
+
+## Deprecated module marks generated test cases deprecated
+
+**What happened:** Deprecating the whole public worktree cleanup module caused warnings on generated Rust test-harness constants, including under warnings-as-errors builds.
+
+**Why:** Deprecation propagated through the module hierarchy rather than only to the obsolete exported operations.
+
+**Prevention:** Deprecate the specific legacy exports and allow deprecation within their compatibility tests; leave canonical re-exports available.
+
+**Fix:** Moved the deprecation attributes to legacy exports and retained their tests.
+
+## Create test module directories before splitting files
+
+**What happened:** A test-module split stopped after the implementation move because its destination directory did not exist.
+
+**Why:** The edit assumed a Rust test module already had a directory beside its file.
+
+**Prevention:** Create or verify the destination directory before writing a new nested module.
+
+**Fix:** Create the directory and finish the split before verification.
+
+## Reinstalling the operator's binary unasked
+
+**What happened:** While diagnosing a stale dashboard bundle during a running plan, the agent started `dev-install.sh` on its own. The operator had asked only why the dashboard failed, and replied that they reinstall themselves. The attempt failed on a missing execute bit, so the binary did not change.
+**Why:** The fix was treated as implied by the complaint. Installing replaces the binary and global configuration every session on the machine uses.
+**Prevention:** Report the diagnosis and the install command. Run an install only on an explicit request.
+**Fix:** The operator runs the install.

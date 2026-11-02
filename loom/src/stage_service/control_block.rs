@@ -31,10 +31,20 @@ use crate::verify::transitions::{load_stage, update_stage};
 /// sandbox, setup error) has no dispute route, so the block stays open.
 /// Operator blocks and the daemon's own signing block call
 /// [`handle_block_stage`] directly.
+#[cfg(test)]
 pub(crate) fn handle_agent_block_stage(
     work_dir: &Path,
     stage_id: &str,
     reason: &str,
+) -> Result<Response> {
+    handle_agent_block_for_session(work_dir, stage_id, reason, None)
+}
+
+pub(crate) fn handle_agent_block_for_session(
+    work_dir: &Path,
+    stage_id: &str,
+    reason: &str,
+    session_id: Option<&str>,
 ) -> Result<Response> {
     crate::validation::validate_id(stage_id).context("invalid block stage id")?;
     let failing = failing_criterion_indices(work_dir, stage_id);
@@ -43,7 +53,7 @@ pub(crate) fn handle_agent_block_stage(
             message: failed_completion_refusal(stage_id, &failing),
         });
     }
-    handle_block_stage(work_dir, stage_id, reason)
+    block_for_session(work_dir, stage_id, reason, session_id)
 }
 
 /// Indices of the `acceptance-<i>` criteria that failed in the current session's
@@ -119,12 +129,25 @@ pub(crate) fn handle_block_stage(
     stage_id: &str,
     reason: &str,
 ) -> Result<Response> {
+    block_for_session(work_dir, stage_id, reason, None)
+}
+
+fn block_for_session(
+    work_dir: &Path,
+    stage_id: &str,
+    reason: &str,
+    session_id: Option<&str>,
+) -> Result<Response> {
     // The id arrives unvalidated from the wire and is resolved to a path
     // below; traversal shapes die before any file is touched.
     crate::validation::validate_id(stage_id).context("invalid block stage id")?;
 
     let mut refusal = None;
     update_stage(stage_id, work_dir, |stage| {
+        if session_id.is_some_and(|id| !super::ownership::matches_attempt(stage, id)) {
+            refusal = Some("request belongs to a stale stage session".to_string());
+            return Ok(());
+        }
         if let Err(error) = apply_block(stage, reason) {
             refusal = Some(format!("cannot block stage '{stage_id}': {error:#}"));
         }
@@ -150,8 +173,14 @@ pub(crate) fn handle_block_stage(
 pub(crate) fn apply_block(stage: &mut Stage, reason: &str) -> Result<()> {
     stage.try_mark_blocked()?;
     stage.close_reason = Some(reason.to_string());
-    stage.retire_failure("blocked by loom stage block");
-    stage.retire_review_reason("blocked by loom stage block");
+    stage.retire_failure(
+        "blocked by loom stage block",
+        crate::models::stage::IssueDisposition::Superseded,
+    );
+    stage.retire_review_reason(
+        "blocked by loom stage block",
+        crate::models::stage::IssueDisposition::Superseded,
+    );
     stage.updated_at = Utc::now();
     Ok(())
 }

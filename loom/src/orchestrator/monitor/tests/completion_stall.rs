@@ -11,8 +11,8 @@ use crate::orchestrator::monitor::heartbeat::{write_heartbeat, Heartbeat, Heartb
 use crate::orchestrator::monitor::stall_line::COMPLETION_ACTIVITY;
 use crate::orchestrator::monitor::{MonitorConfig, MonitorEvent};
 
-/// Two criteria at 300 s each plus the 1800 s margin.
-const COMPLETION_LINE_SECS: i64 = 2_400;
+/// Two criteria and impact selection at 300 s each plus the 1800 s margin.
+const COMPLETION_LINE_SECS: i64 = 2_700;
 
 /// Whether one poll of a session silent for `silence_secs` reports it at the
 /// escalation line, the report the stall recovery acts on.

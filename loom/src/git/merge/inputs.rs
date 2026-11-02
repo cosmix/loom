@@ -1,7 +1,7 @@
 //! A fingerprint of everything a blocked merge's outcome depends on, so the
 //! daemon can skip a retry that would only find the same block again. A
 //! `merge_stage` attempt that reaches the stash dry run writes git objects
-//! (`stash create`) before the target's advance is refused, so retrying an
+//! (the stash snapshot) before the target's advance is refused, so retrying an
 //! unchanged block every tick fills the repository with unreachable objects.
 //!
 //! Computing the fingerprint writes nothing to the repository.

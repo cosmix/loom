@@ -111,7 +111,7 @@ Status icons: Completed=`✓` Executing=`●` Queued=`▶` WaitingForDeps=`○` 
 
 Colors (`colored` crate): Executing=blue.bold, Completed=green, Blocked=red.bold, Pending=dimmed, Queued=cyan, Warning=yellow
 
-Context bar: renders absolute `tokens`/`ceiling` and colours off `context_health(tokens, ceiling)` (`commands/status/render/progress.rs::render_context_bar`) — Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved ceiling, not a fixed percentage of a 200k window.
+Context bar: renders absolute `tokens`/`ceiling` and colours off `context_health(tokens, ceiling)` (`Theme::context_style` in `commands/status/ui/theme.rs`, used by the ledger's `tokens_cell` in `commands/status/ui/tui/ledger/cells.rs`; `render/compact.rs` and `render/graph.rs` call `context_health` directly) — Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved ceiling, not a fixed percentage of a 200k window.
 
 ## Enum Conventions
 

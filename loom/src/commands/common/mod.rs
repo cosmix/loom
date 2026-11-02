@@ -6,6 +6,7 @@
 //! - String truncation for display
 //! - Shared tree-rendering helpers (see [`tree`])
 
+pub(crate) mod model_display;
 pub mod tree;
 
 use anyhow::{bail, Result};

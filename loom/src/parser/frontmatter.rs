@@ -72,6 +72,11 @@ pub fn extract_frontmatter_field(content: &str, field: &str) -> Result<Option<St
 /// - Content is empty or missing opening `---`
 /// - Closing `---` (at the same indentation) is not found
 pub fn extract_frontmatter_raw(content: &str) -> Result<&str> {
+    split_frontmatter_raw(content).map(|(yaml, _)| yaml)
+}
+
+/// The canonical indentation-aware frontmatter boundary and remaining body.
+pub(crate) fn split_frontmatter_raw(content: &str) -> Result<(&str, &str)> {
     if content.is_empty() {
         bail!("No frontmatter delimiter found at start of content");
     }
@@ -103,8 +108,13 @@ pub fn extract_frontmatter_raw(content: &str) -> Result<&str> {
         if trimmed.starts_with("---") {
             let line_indent = line.len() - trimmed.len();
             if line_indent == opening_indent {
-                // Return the slice between the opening and closing delimiters
-                return Ok(&content[body_start..search_offset]);
+                let after_line = search_offset + line_end;
+                let remainder_start =
+                    (after_line + usize::from(after_line < content.len())).min(content.len());
+                return Ok((
+                    &content[body_start..search_offset],
+                    &content[remainder_start..],
+                ));
             }
         }
         if line_end == remaining.len() {

@@ -50,6 +50,10 @@ mkdir -p "$EXTERNAL/terminal-history" "$EXTERNAL/memory" \
 printf 'symlinked transcript\n' >"$EXTERNAL/terminal-history/session-a.terminal"
 ln -s "$EXTERNAL" "$SYMLINKED/.loom/work"
 ln -s "$SYMLINKED/.loom/work" "$SYMLINKED_WORKTREE/.loom/work"
+for state in "$MAIN/.loom/work" "$LEGACY/.work" "$EXTERNAL"; do
+	mkdir -p "$state/capsules"
+	printf '{"sandbox":{"filesystem":{"denyRead":[]}}}\n' >"$state/capsules/session-b.settings.json"
+done
 
 # check <name> <expected exit> <project dir> <payload> [VAR=value ...]
 # The hook runs with <project dir> as its working directory. The extra

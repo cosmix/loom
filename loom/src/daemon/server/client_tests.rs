@@ -1,8 +1,12 @@
 use super::*;
 use crate::commands::stage::admin_proof::{mint_admin_proof, AdminProofRequest};
-use crate::daemon::protocol::read_message;
+use crate::daemon::protocol::{read_message, write_message};
+use crate::daemon::server::broadcast::{
+    broadcast_to_subscribers, broadcast_to_subscribers_with_hook,
+};
 use crate::daemon::server::tokens::{admin_token_path, verify_user_token, USER_TOKEN_FILE};
-use std::io::Cursor;
+use crate::daemon::wire::encode_response_frame;
+use std::io::{Cursor, Write};
 use std::sync::atomic::AtomicBool;
 use std::thread;
 use tempfile::TempDir;
@@ -12,6 +16,177 @@ use tempfile::TempDir;
 /// `PendingPeerIdentity` instead — see
 /// `a_bad_user_token_defers_rather_than_denying`.
 const DENIED: Authorization = Authorization::Denied;
+
+#[test]
+fn subscription_acknowledges_before_first_broadcast() {
+    let (server, mut client) = UnixStream::pair().unwrap();
+    let writer = Arc::new(Mutex::new(server));
+    let subscribers = Arc::new(Mutex::new(Vec::new()));
+    subscribe(&writer, &subscribers, "Status").unwrap();
+    let mut overflow_logged = false;
+    broadcast_to_subscribers(&subscribers, &Response::Pong, &mut overflow_logged);
+
+    assert!(matches!(
+        read_message::<Response, _>(&mut client).unwrap(),
+        Response::Ok
+    ));
+    assert!(matches!(
+        read_message::<Response, _>(&mut client).unwrap(),
+        Response::Pong
+    ));
+}
+
+#[test]
+fn failed_subscription_acknowledgement_removes_pending_writer() {
+    let (server, client) = UnixStream::pair().unwrap();
+    client.shutdown(std::net::Shutdown::Both).unwrap();
+    let writer = Arc::new(Mutex::new(server));
+    let subscribers = Mutex::new(Vec::new());
+
+    assert!(subscribe(&writer, &subscribers, "Status").is_err());
+    assert!(subscribers.lock().unwrap().is_empty());
+}
+
+fn broadcast_after_writer_attempt(
+    subscribers: Arc<Mutex<Vec<Subscriber>>>,
+) -> thread::JoinHandle<()> {
+    let (attempted, ready) = std::sync::mpsc::channel();
+    let handle = thread::spawn(move || {
+        broadcast_to_subscribers_with_hook(&subscribers, &Response::Pong, &mut false, &mut || {
+            attempted.send(()).unwrap()
+        });
+    });
+    ready.recv_timeout(Duration::from_secs(2)).unwrap();
+    handle
+}
+
+#[test]
+fn partial_acknowledgement_orders_broadcast_without_holding_subscriber_list() {
+    let (slow_server, mut slow_client) = UnixStream::pair().unwrap();
+    slow_client
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    let slow_writer = Arc::new(Mutex::new(slow_server));
+    let subscribers = Arc::new(Mutex::new(Vec::new()));
+    let (prefix_sent, prefix_ready) = std::sync::mpsc::channel();
+    let (release, continue_ack) = std::sync::mpsc::channel();
+    let subscribe_thread = {
+        let writer = Arc::clone(&slow_writer);
+        let subscribers = Arc::clone(&subscribers);
+        thread::spawn(move || {
+            subscribe_with_ack(&writer, &subscribers, "Status", |stream, response| {
+                let frame = encode_response_frame(response)?;
+                stream.write_all(&frame[..4])?;
+                prefix_sent.send(()).unwrap();
+                continue_ack.recv_timeout(Duration::from_secs(2)).unwrap();
+                stream.write_all(&frame[4..])?;
+                Ok(())
+            })
+        })
+    };
+    prefix_ready.recv_timeout(Duration::from_secs(2)).unwrap();
+
+    let (fast_server, mut fast_client) = UnixStream::pair().unwrap();
+    let fast_writer = Arc::new(Mutex::new(fast_server));
+    subscribe(&fast_writer, &subscribers, "Status").unwrap();
+    assert!(matches!(
+        read_message::<Response, _>(&mut fast_client).unwrap(),
+        Response::Ok
+    ));
+    let broadcaster = broadcast_after_writer_attempt(Arc::clone(&subscribers));
+    release.send(()).unwrap();
+    subscribe_thread.join().unwrap().unwrap();
+    broadcaster.join().unwrap();
+
+    assert!(matches!(
+        read_message::<Response, _>(&mut slow_client).unwrap(),
+        Response::Ok
+    ));
+    assert!(matches!(
+        read_message::<Response, _>(&mut slow_client).unwrap(),
+        Response::Pong
+    ));
+}
+
+#[test]
+fn simultaneous_connection_writers_emit_complete_frames() {
+    let (server, mut client) = UnixStream::pair().unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(7)))
+        .unwrap();
+    let writer = Arc::new(Mutex::new(server));
+    let held = writer.lock().unwrap();
+    let barrier = Arc::new(std::sync::Barrier::new(3));
+    let handles: Vec<_> = [Response::Ok, Response::Pong]
+        .into_iter()
+        .map(|response| {
+            let writer = Arc::clone(&writer);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                send_response(&writer, &response).unwrap();
+            })
+        })
+        .collect();
+    barrier.wait();
+    drop(held);
+
+    let first: Response = read_message(&mut client).unwrap();
+    let second: Response = read_message(&mut client).unwrap();
+    assert!(matches!(
+        (&first, &second),
+        (Response::Ok, Response::Pong) | (Response::Pong, Response::Ok)
+    ));
+    for handle in handles {
+        handle.join().unwrap();
+    }
+}
+
+#[test]
+fn status_logs_and_ping_share_one_framed_writer() {
+    let (server, mut client) = UnixStream::pair().unwrap();
+    let writer = Arc::new(Mutex::new(server));
+    let status = Arc::new(Mutex::new(Vec::new()));
+    let logs = Arc::new(Mutex::new(Vec::new()));
+    subscribe(&writer, &status, "Status").unwrap();
+    subscribe(&writer, &logs, "Log").unwrap();
+    for _ in 0..2 {
+        assert!(matches!(
+            read_message::<Response, _>(&mut client).unwrap(),
+            Response::Ok
+        ));
+    }
+
+    let status_writer = Arc::clone(&status);
+    let log_writer = Arc::clone(&logs);
+    let ping_writer = Arc::clone(&writer);
+    let status_thread = thread::spawn(move || {
+        broadcast_to_subscribers(&status_writer, &Response::Pong, &mut false);
+    });
+    let log_thread = thread::spawn(move || {
+        broadcast_to_subscribers(
+            &log_writer,
+            &Response::LogLine {
+                line: "ready".into(),
+            },
+            &mut false,
+        );
+    });
+    let ping_thread = thread::spawn(move || send_response(&ping_writer, &Response::Ok).unwrap());
+    let mut seen = [false; 3];
+    for _ in 0..3 {
+        match read_message::<Response, _>(&mut client).unwrap() {
+            Response::Pong => seen[0] = true,
+            Response::LogLine { line } if line == "ready" => seen[1] = true,
+            Response::Ok => seen[2] = true,
+            response => panic!("unexpected response: {response:?}"),
+        }
+    }
+    assert!(seen.into_iter().all(|seen| seen));
+    status_thread.join().unwrap();
+    log_thread.join().unwrap();
+    ping_thread.join().unwrap();
+}
 
 fn request_preface(request: &Request) -> RequestPreface {
     let mut bytes = Vec::new();

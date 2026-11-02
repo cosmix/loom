@@ -163,7 +163,8 @@ mod tests {
             "permissions": {
                 "defaultMode": "default", "disableBypassPermissionsMode": "disable",
                 "allow": ["Edit(//p/doc/product/**)"], "ask": ["WebFetch"],
-                "deny": ["LSP", "RemoteTrigger", "CronCreate", "PushNotification", "Workflow",
+                "deny": ["LSP", "RemoteTrigger", "CronCreate", "PushNotification", "Monitor",
+                         "PowerShell", "Workflow",
                          "SendMessage", "ListAgents", "AskUserQuestion"],
             },
             "worktree": { "bgIsolation": "none" },

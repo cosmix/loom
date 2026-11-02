@@ -322,22 +322,19 @@ it('accepts a plain directory', function (string $jobId) {
 **Single-test command.** Loom runs it with the package directory as cwd:
 
 ```bash
-vendor/bin/phpunit --filter '{test}' {file}
-vendor/bin/pest --filter '{test}' {file}
+vendor/bin/phpunit --filter '~\A{escaped test}\z~' {file}
+vendor/bin/pest --filter '~\A{escaped test}\z~' {file}
 ```
 
-**The `test` field.** The test method name for `phpunit` (`testRejectsSymlinkedSpoolDirectory`), or the Pest description (`rejects a symlinked spool directory`; an `it()` test's description starts with `it`).
+**The `test` field.** Use the fully qualified class and method, for example `Tests\Unit\Spool\WriterTest::testRejectsSymlinkedSpoolDirectory` for PHPUnit. Pest descriptions compile into generated PHPUnit class and method identifiers; provide the full generated identifier, not the description. For a parameterized test include the exact dataset suffix, such as `with data set #0` or `with data set "name"`. A bare method or description does not match. Pest selection has not been verified against a live runner; verify the identifier and selection in the project before freezing.
 
 **No-match behaviour.** Both runners are documented: no fixture was captured, and loom's parsers were written from each runner's documented output (PHPUnit: `OK (N tests, A assertions)`, `Tests: N, Assertions: A, Failures: F`, `No tests executed!`; Pest: `Tests:  F failed, P passed (A assertions)`, `No tests found`). PHPUnit's exit code for an empty run depends on the version and on `--fail-on-empty-test-suite`. Loom reads the runner's summary, so zero executed tests is `NotSelected` whatever the exit code: a contract whose `test` value does not match fails the freeze ("the runner did not select the test").
 
 **Writing contract tests.**
 
 - Keep contracts under `tests/` in files ending `Test.php` (`tests/Unit/Spool/WriterTest.php`), PHPUnit's default suffix, which Pest projects keep. Loom maps a file to its language profile by extension and test-file glob.
-- ⚠ `--filter` is a pattern. PHPUnit wraps a plain value into a case-insensitive regular expression and matches it anywhere in `Class::method` (plus the data-set suffix); Pest hands the filter to PHPUnit. Consequences:
-  - make the name unique in its file and not a prefix of another test (`testRejectsSymlink` also selects `testRejectsSymlinkLoop`);
-  - keep Pest descriptions to letters, digits, spaces, `-` and `_`: `(`, `)`, `.`, `?`, `+`, `*` and `[` are regex syntax, and a `#` or `@` in the filter selects a data set;
-  - loom single-quotes the value, so no single quotes either.
-- Give a contract no data provider or dataset: the filter runs every data set, and one contract should pin one scenario.
+- Loom escapes and anchors the complete PHPUnit or Pest identifier.
+- Prefer one scenario per contract. For a PHPUnit data provider, specify the exact dataset suffix; a method identifier without it will not select the dataset.
 - Put a Pest contract in the directory whose `tests/Pest.php` binding supplies the base test case it needs. A Feature test outside `Feature/` loses Laravel's `TestCase`, fails for the wrong reason at freeze, and keeps failing after the implementation.
 - Reference new classes only inside test bodies. A `use` import of a class that does not exist yet is harmless (PHP resolves it on first use), and instantiating it inside the test raises an `Error` that PHPUnit reports as a test error with a non-zero exit: red.
 
@@ -345,12 +342,12 @@ vendor/bin/pest --filter '{test}' {file}
 contracts:
   - id: rejects-symlinked-spool
     file: tests/Unit/Spool/WriterTest.php
-    test: testRejectsSymlinkedSpoolDirectory
+    test: 'Tests\Unit\Spool\WriterTest::testRejectsSymlinkedSpoolDirectory'
     scenario: creates a temp directory, symlinks the spool root to it, calls Writer::write()
     rejects: a writer that follows the symlink and writes job-1 into the link target
 ```
 
-The Pest form of the same contract uses `test: "rejects a symlinked spool directory"`. Quote YAML values that contain `:` or `#`.
+For Pest, use the generated full PHPUnit identifier for the selected test. Quote YAML values that contain `:` or `#`.
 
 **Build failures.** PHP has no separate build step, so a contract never reports `BuildFailed`. A parse error in the test file stops the run before any summary; loom then treats the run as unparsed and requires a non-zero exit. Keep contract files syntactically valid and let them fail inside the test.
 
@@ -447,6 +444,6 @@ Quick swaps:
 
 **Contract tests for loom:**
 
-- [ ] `test` value is the method name or Pest description, unique in its file, not a prefix of another test, free of regex syntax, `#`, `@` and single quotes
-- [ ] No data provider or dataset on the contract test; Pest contract sits under the directory whose binding it needs
+- [ ] PHPUnit or Pest `test` value is the fully qualified class and method, including any dataset suffix; verify Pest selection with the runner
+- [ ] Pest contract sits under the directory whose binding it needs
 - [ ] The contract fails before the implementation for the reason its `rejects` field names

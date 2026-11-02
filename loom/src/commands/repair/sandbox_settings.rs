@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use super::{RepairIssue, Severity};
+use super::{DetectedIssue, RepairAction, Severity};
 use crate::fs::permissions::state_root::is_loom_written_read_deny;
 
 /// Check 13: stale doc/loom/knowledge deny in .claude/settings.local.json.
@@ -21,11 +21,12 @@ use crate::fs::permissions::state_root::is_loom_written_read_deny;
 /// scrub (`merge_existing_permissions`) that heals this automatically, but
 /// nothing today prompts for one; this check is that prompt. Checked in both
 /// the main repo and every worktree, since each has its own settings.local.json.
-pub(super) fn check_stale_knowledge_denies(repo_root: &Path) -> Vec<RepairIssue> {
+pub(super) fn check_stale_knowledge_denies(repo_root: &Path) -> Vec<DetectedIssue> {
     existing_settings_local_files(repo_root)
         .into_iter()
         .filter(|settings_path| settings_local_has_stale_knowledge_deny(settings_path))
-        .map(|settings_path| RepairIssue {
+        .map(|settings_path| DetectedIssue {
+            action: RepairAction::CleanSettings,
             severity: Severity::Warning,
             description: format!(
                 "Stale knowledge-directory deny in {}",
@@ -96,14 +97,9 @@ fn settings_local_has_stale_knowledge_deny(path: &Path) -> bool {
 /// `permissions`, a `sandbox` block, plugin keys, anything else) is left
 /// exactly as it was.
 ///
-/// A worktree's settings file is the sandbox of a possibly LIVE stage
-/// session, and it legitimately differs from the default: a codex-licensed
-/// stage carries `~/.codex` write grants and the codex domains, and any
-/// stage carries its plan's own `allow_write` entries. Regenerating it would
-/// silently narrow a running stage's sandbox mid-session — a bigger hazard
-/// than the stale deny being healed, and one the stage would not recover
-/// from until its next respawn. So only the offending entries are stripped,
-/// in every file.
+/// Sessions launch from capsules, but worktree settings may contain user or
+/// stage-specific permissions. Regenerating them could discard those settings,
+/// so only the offending entries are stripped.
 fn strip_stale_knowledge_denies(path: &Path) -> Result<()> {
     let content =
         fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
@@ -130,7 +126,7 @@ fn strip_stale_knowledge_denies(path: &Path) -> Result<()> {
 /// capsule, which carries the sandbox, the session hooks and the state reads
 /// (plan section 12; the key list is `crate::sandbox::preflight`'s). A file
 /// with neither is left untouched. `pub(super)`: called by
-/// `settings_checks::fix_settings_issue`.
+/// the typed repair dispatcher.
 pub(super) fn fix_sandbox_settings(repo_root: &Path) -> Result<()> {
     crate::sandbox::preflight::strip_settings_local_loom_keys(repo_root)?;
     for settings_path in existing_settings_local_files(repo_root) {
@@ -158,7 +154,7 @@ pub(super) fn fix_sandbox_settings(repo_root: &Path) -> Result<()> {
 /// prompting hazard is visible, but loom never removes it. Checked in the
 /// main repo's two settings files, every worktree's, and — operator-authored
 /// only, loom never writes there — `~/.claude/settings.json`.
-pub(super) fn check_read_denies(repo_root: &Path) -> Vec<RepairIssue> {
+pub(super) fn check_read_denies(repo_root: &Path) -> Vec<DetectedIssue> {
     let mut issues = Vec::new();
 
     for settings_path in read_deny_settings_files(repo_root) {
@@ -232,7 +228,7 @@ fn read_deny_entries(path: &Path) -> Vec<String> {
 /// out into its own automatically-fixable issue (every other settings file)
 /// or reported as operator-authored regardless of shape (`~/.claude/settings.json`,
 /// which loom never writes to).
-fn read_deny_issues_for(settings_path: &Path, classify_loom_written: bool) -> Vec<RepairIssue> {
+fn read_deny_issues_for(settings_path: &Path, classify_loom_written: bool) -> Vec<DetectedIssue> {
     let mut issues = Vec::new();
     let entries = read_deny_entries(settings_path);
     let (loom_written, operator): (Vec<String>, Vec<String>) = if classify_loom_written {
@@ -244,7 +240,8 @@ fn read_deny_issues_for(settings_path: &Path, classify_loom_written: bool) -> Ve
     };
 
     if !loom_written.is_empty() {
-        issues.push(RepairIssue {
+        issues.push(DetectedIssue {
+            action: RepairAction::ReadDenies,
             severity: Severity::Warning,
             description: format!("Read deny rule in {}", settings_path.display()),
             fix_description: "Claude Code prompts for approval on every relative-path rg, \
@@ -254,7 +251,8 @@ fn read_deny_issues_for(settings_path: &Path, classify_loom_written: bool) -> Ve
         });
     }
     for entry in operator {
-        issues.push(RepairIssue {
+        issues.push(DetectedIssue {
+            action: RepairAction::Manual,
             severity: Severity::Warning,
             description: format!(
                 "Operator-authored Read deny rule {entry} in {}",

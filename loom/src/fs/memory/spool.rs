@@ -22,7 +22,6 @@
 //! forge the worktree it is running in, but it could trivially forge a
 //! field. Keeping the payload stage-less makes that the only path.
 
-use super::persistence::{validate_content, validate_evidence};
 use super::storage::append_entry;
 use super::types::MemoryEntry;
 use crate::fs::jsonl_spool;
@@ -57,6 +56,7 @@ pub fn spool_path(worktree_root: &Path) -> PathBuf {
 /// content plus a 2000-char context can exceed that, so two concurrent
 /// appends could otherwise interleave their bytes on one line.
 pub fn append_to_spool(worktree_root: &Path, entry: &MemoryEntry) -> Result<()> {
+    entry.validate()?;
     jsonl_spool::append(
         worktree_root,
         SPOOL_RELPATH,
@@ -113,7 +113,7 @@ pub fn drain_spool(
 /// they call instead of each carrying its own copy.
 ///
 /// Re-validates `entry.content` (and `entry.context`, if present) with
-/// [`validate_content`] before writing - defense in depth, since the spool is
+/// Entry validation before writing - defense in depth, since the spool is
 /// agent-written and the CLI already validated on the way in. An entry that
 /// fails validation is skipped rather than propagated as an error: returning
 /// `Err` here would stop [`drain_spool`] from truncating the file, so one
@@ -167,12 +167,7 @@ fn sink_into_journal(
 /// (`orchestrator::core::inbox_drain::apply`), so both paths accept or reject
 /// identically.
 pub(crate) fn validate_spooled_entry(entry: &MemoryEntry) -> Result<()> {
-    validate_content(&entry.content)?;
-    if let Some(context) = &entry.context {
-        validate_content(context)?;
-    }
-    validate_evidence(&entry.evidence)?;
-    Ok(())
+    entry.validate()
 }
 
 #[cfg(test)]

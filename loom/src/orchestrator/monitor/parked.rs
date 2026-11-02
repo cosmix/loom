@@ -2,28 +2,10 @@
 //!
 //! Both look identical from the heartbeat alone — a live PID that has stopped
 //! writing `.loom/work/heartbeat/<stage-id>.json` — but they need opposite
-//! responses from the operator:
-//!
-//! - **Hung**: the session is stuck partway through its work. Go look at it.
-//! - **Parked**: the session finished, committed, and ended its turn without
-//!   running `loom stage complete`. The work is done and gate-passing; the
-//!   stage just needs the transition, and every dependent stage is blocked
-//!   behind it until someone notices.
-//!
-//! Parking is not hypothetical and it is not rare. `loom-hooks/commit-guard.sh` used
-//! to refuse a stop that left a stage in `Executing` (`exit 2`), but was
-//! downgraded to an advisory that returns 0, because Claude Code fires `Stop`
-//! hooks during Task/subagent waits and blocking there killed sessions
-//! mid-work. An advisory Stop hook's stderr is not fed back to the model, so
-//! the reminder now reaches nobody: the agent ends its turn and the stage sits
-//! in `Executing` indefinitely. Observed twice on one eight-stage plan
-//! (2026-08-24 and 2026-08-25), the second time parked overnight for 12h45m
-//! with every acceptance criterion already passing.
-//!
-//! This module does not change that policy — hung detection stays advisory,
-//! nothing here kills, retries, or transitions anything. It only lets the
-//! warning say which of the two situations the operator is looking at, and
-//! name the command that resolves the recoverable one.
+//! responses: a session may be stuck, or may have committed and ended its
+//! turn without completing the stage. This module supplies a heuristic for
+//! the warning; the evidence does not prove the work is complete or passes
+//! its gates. Hung-session recovery is handled elsewhere.
 //!
 //! # What "finished" means here
 //!
@@ -34,7 +16,7 @@
 //!
 //! Untracked files are deliberately ignored: every loom worktree carries an
 //! untracked `.claude/` and a `.loom/work` symlink, so a check that counted them
-//! would never fire. [`has_uncommitted_changes`] already excludes them.
+//! would never fire.
 //!
 //! Every probe is best-effort and every failure answers "no". A wrong `false`
 //! costs the operator the sharper half of a warning they are getting anyway; a
@@ -43,7 +25,8 @@
 
 use std::path::Path;
 
-use crate::git::branch::{branch_name_for_stage, commits_ahead_of, has_uncommitted_changes};
+use crate::git::branch::branch_name_for_stage;
+use crate::git::worktree::WorktreeGit;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
 
@@ -66,15 +49,36 @@ pub(super) fn stage_looks_finished(session: &Session, stage: &Stage) -> bool {
 /// The git half, split out so it can be tested against a real repository
 /// without constructing a `Session` and a `Stage`.
 fn finished_in_worktree(worktree: &Path, branch: &str, base: &str) -> bool {
-    let Ok(ahead) = commits_ahead_of(branch, base, worktree) else {
-        return false;
-    };
-    if ahead == 0 {
-        return false;
+    match probe_finished(worktree, branch, base) {
+        Ok(finished) => finished,
+        Err(error) => {
+            eprintln!(
+                "Cannot inspect parked worktree {}: {error:#}",
+                worktree.display()
+            );
+            false
+        }
+    }
+}
+
+fn probe_finished(worktree: &Path, branch: &str, base: &str) -> anyhow::Result<bool> {
+    use anyhow::Context;
+    let parent = worktree
+        .parent()
+        .filter(|p| p.file_name().is_some_and(|n| n == ".worktrees"))
+        .context("worktree is not under .worktrees")?;
+    let root = parent.parent().context("worktree has no project root")?;
+    let git = WorktreeGit::pinned(root, worktree)?;
+    let range = format!("refs/heads/{base}..refs/heads/{branch}");
+    let ahead = git.run_checked(&["rev-list", "--count", &range])?;
+    if ahead.trim().parse::<usize>()? == 0 {
+        return Ok(false);
     }
     // A clean tree is the second half: commits alone would also describe a
     // session that committed once and is still working on the rest.
-    matches!(has_uncommitted_changes(worktree), Ok(false))
+    Ok(git
+        .run_checked(&["status", "--porcelain", "--untracked-files=no"])?
+        .is_empty())
 }
 
 /// Render the operator-facing warning for a hung session.
@@ -213,5 +217,40 @@ mod tests {
             "loom/definitely-not-a-branch",
             "definitely-not-a-base"
         ));
+    }
+
+    #[test]
+    fn parked_probe_pins_the_registered_worktree() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        let worktree = crate::verify::contracts::test_support::contract_worktree(&repo, "s1");
+        std::fs::write(worktree.join("README.md"), "committed\n").unwrap();
+        for args in [
+            ["add", "README.md"].as_slice(),
+            ["commit", "-m", "work"].as_slice(),
+        ] {
+            let output = std::process::Command::new("git")
+                .args([
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args)
+                .current_dir(&worktree)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+        }
+        assert!(finished_in_worktree(&worktree, "loom/s1", "main"));
+        let marker = crate::verify::contracts::test_support::plant_foreign_git_dir(&worktree);
+        assert!(!finished_in_worktree(&worktree, "loom/s1", "main"));
+        assert!(!marker.exists());
+        WorktreeGit::discovered(&worktree)
+            .run(&["status", "--porcelain"])
+            .unwrap();
+        assert!(marker.exists());
     }
 }

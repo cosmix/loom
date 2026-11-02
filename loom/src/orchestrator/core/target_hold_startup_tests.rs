@@ -25,6 +25,8 @@ fn a_foreign_hook_warns_the_operator() {
 
     assert!(line.contains("belongs to another tool"), "{line}");
     assert!(line.contains("left in place"), "{line}");
+    // `core.hooksPath` can put the hook anywhere.
+    assert!(!line.contains(".git/hooks"), "{line}");
 }
 
 #[test]

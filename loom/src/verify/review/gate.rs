@@ -174,7 +174,7 @@ fn stale_review(latest: &ReviewRound, current: &ChangeFingerprint) -> Option<Str
     ))
 }
 
-/// Whether a round covers the current tree, allowing only comment and prose changes.
+/// Whether a round covers the current tree, allowing unprotected prose changes.
 pub fn covers_review(latest: &ReviewRound, current: &ChangeFingerprint) -> bool {
     latest.fingerprint == current.value
         || (!latest.base.is_empty()

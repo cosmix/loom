@@ -180,74 +180,60 @@ fn repair_skips_knowledge_stages() {
     assert!(after.completed_commit.is_none());
 }
 
-/// PLAN-fix-merge-conflict-recovery Step 8 — sync-time phantom-merge
-/// detection covers the case where `completed_commit` is missing AND the
-/// branch HEAD is not an ancestor of target. The recovery sync path must
-/// derive the commit, then revert merged=false rather than leave the
-/// phantom in place.
+/// Without a recorded commit, nothing proves the flag false, even with an
+/// unmerged branch present: repair leaves it for manual review and an idle
+/// merge reconciliation does not touch it. Daemon sync keeps this stage final,
+/// which `final_stage_without_commit_stays_final_when_branch_is_unmerged` in
+/// `orchestrator/core/target_hold_recovery_tests.rs` proves through
+/// `sync_graph_with_stage_files`.
 #[test]
 #[serial]
-fn sync_path_reverts_merged_true_when_completed_commit_missing_and_branch_unmerged() {
-    use loom::orchestrator::merge_attribution::reconcile_main_repo_active_merge;
+fn repair_and_reconcile_leave_uncommitted_merged_flag_when_branch_is_unmerged() {
+    use loom::orchestrator::merge_attribution::{
+        reconcile_main_repo_active_merge, ReconciliationOutcome,
+    };
 
+    let _home = isolate_home();
     let repo = init_repo();
     let repo_root = repo.path();
     let work_dir = init_work_dir(repo_root);
-
-    // Branch exists but never merged into main.
     create_loom_branch_with_commit("merged-flag-only", "x.rs", "stranded", repo_root);
-
-    // Phantom: merged=true with NO completed_commit. Old force-unsafe routes
-    // produced this state. Sync must revert.
+    let head = loom::git::branch::get_branch_head("loom/merged-flag-only", repo_root).unwrap();
+    assert!(!loom::git::branch::is_ancestor_of(&head, "main", repo_root).unwrap());
     write_phantom_stage("merged-flag-only", true, None, &work_dir);
 
-    // Reconcile alone doesn't run the sync block — it handles the active
-    // MERGE_HEAD case. The sync block runs in the daemon's main loop. To
-    // exercise it directly we'd need a live Orchestrator; instead, exercise
-    // the helper path used by the sync block.
-    let stage = load_stage("merged-flag-only", &work_dir).unwrap();
-    let head = loom::git::branch::get_branch_head("loom/merged-flag-only", repo_root).unwrap();
-    let is_anc = loom::git::branch::is_ancestor_of(&head, "main", repo_root).unwrap();
-    assert!(
-        !is_anc,
-        "branch HEAD must NOT be ancestor of main — exercises the revert path"
-    );
+    let outcome = reconcile_main_repo_active_merge(repo_root, &work_dir).unwrap();
+    assert_eq!(outcome, ReconciliationOutcome::NoActiveMerge);
+    with_cwd(repo_root, || {
+        repair::execute(true).expect("repair --fix should succeed");
+    });
 
-    // The sync helper would: derive commit -> ancestry false -> revert merged=false.
-    // Here we just guarantee the helper inputs produce that decision.
-    let _ = reconcile_main_repo_active_merge(repo_root, &work_dir).unwrap();
-    // Reconcile only runs against MERGE_HEAD; the sync helper covers this.
-    // Stage on disk should still report the phantom — only sync (in-orchestrator
-    // call) reverts it. The full revert is exercised via daemon-recovery
-    // integration.
-    assert!(stage.merged);
+    let after = load_stage("merged-flag-only", &work_dir).unwrap();
+    assert!(after.merged);
+    assert_eq!(after.completed_commit, None);
 }
 
-/// PLAN-fix-merge-conflict-recovery Step 8 — phantom with merged=true,
-/// completed_commit=None, branch missing — must revert to merged=false.
+/// With no branch either, repair still has no evidence and keeps the flag.
+/// Daemon sync: `final_stage_without_commit_or_branch_stays_final` in
+/// `orchestrator/core/target_hold_recovery_tests.rs`.
 #[test]
 #[serial]
-fn sync_path_reverts_merged_true_when_branch_and_completed_commit_both_missing() {
+fn repair_leaves_merged_flag_without_commit_or_branch() {
+    let _home = isolate_home();
     let repo = init_repo();
     let repo_root = repo.path();
     let work_dir = init_work_dir(repo_root);
-
-    // No branch, no commit — completely unverifiable phantom.
     write_phantom_stage("ghost-merged", true, None, &work_dir);
+    let branch = loom::git::branch::get_branch_head("loom/ghost-merged", repo_root);
+    assert!(branch.is_err(), "missing branch must produce an error");
 
-    // The sync block (in orchestrator) detects this state and reverts
-    // merged=false. Standalone we verify the helper inputs are wired:
-    let stage = load_stage("ghost-merged", &work_dir).unwrap();
-    assert!(stage.merged);
-    assert!(stage.completed_commit.is_none());
+    with_cwd(repo_root, || {
+        repair::execute(true).expect("repair --fix should succeed");
+    });
 
-    // Branch derivation must fail.
-    let result = loom::git::branch::get_branch_head("loom/ghost-merged", repo_root);
-    assert!(result.is_err(), "missing branch must produce an error");
-
-    // The recovery sync helper, given these inputs, would set merged=false.
-    // End-to-end coverage of the sync path lives in the daemon recovery
-    // integration tests; this case proves the pre-conditions match the spec.
+    let after = load_stage("ghost-merged", &work_dir).unwrap();
+    assert!(after.merged);
+    assert_eq!(after.completed_commit, None);
 }
 
 /// Fix 13 warn-only path: a stage with Completed + !merged and a missing

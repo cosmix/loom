@@ -16,3 +16,11 @@ capture these files, same as bun/node above).
 Notable: `no-match` (`-t 'delta_missing'`) exits **0** — all 3 tests are
 filtered out ("1 skipped" file, "3 skipped" tests) and the run completes
 with 0 executed, exit 0.
+
+`collision.test.mjs` is a live-selection fixture. Its nested test's complete
+Vitest name is `suite > value (a)+`; the ` > ` separator is part of the name.
+Run it with `--globals -t '^suite > value \(a\)\+$'`.
+The exact filter selects one passing test while prefix and suffix siblings
+would fail if selected. With `VER01_SKIP_EXACT=1`, all three tests are skipped
+by the same filter and the adapter classifies zero executed tests as
+`NotSelected` even though Vitest exits 0.

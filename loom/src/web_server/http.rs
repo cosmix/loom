@@ -6,6 +6,10 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 
+mod body;
+pub use body::read_body;
+pub(crate) use body::read_body_within;
+
 /// Largest request head accepted by the server.
 pub const MAX_HEAD_BYTES: usize = 16 * 1024;
 
@@ -145,35 +149,6 @@ pub fn read_head(stream: &mut TcpStream) -> Result<(RequestHead, Vec<u8>)> {
             bail!("request head exceeds {MAX_HEAD_BYTES} bytes");
         }
     }
-}
-
-/// Consume exactly `length` body bytes, counting the `prefix` that already
-/// came off the socket with the head.
-///
-/// `length` is the request's `Content-Length` and is refused outright past
-/// [`MAX_BODY_BYTES`]; nothing beyond it is ever read, so a client whose body
-/// is longer than it declared gets the declared prefix parsed and the rest left
-/// on the socket for the caller's drain, never buffered here. Each individual
-/// read is bounded by the 5-second timeout [`read_head`] installed, and the
-/// whole-request bound is the connection cap, exactly as for the head.
-pub fn read_body(stream: &mut TcpStream, prefix: Vec<u8>, length: usize) -> Result<Vec<u8>> {
-    if length > MAX_BODY_BYTES {
-        bail!("request body exceeds {MAX_BODY_BYTES} bytes");
-    }
-    let mut body = prefix;
-    body.truncate(length);
-    let mut chunk = [0_u8; 1024];
-    while body.len() < length {
-        let wanted = (length - body.len()).min(chunk.len());
-        let read = stream
-            .read(&mut chunk[..wanted])
-            .context("failed to read request body")?;
-        if read == 0 {
-            bail!("client closed connection before completing request body");
-        }
-        body.extend_from_slice(&chunk[..read]);
-    }
-    Ok(body)
 }
 
 /// A declared `Content-Length` as a byte count, or `None` when it is not one.

@@ -124,6 +124,8 @@ fn summary_whole_json_snapshot() {
         "RemoteTrigger",
         "CronCreate",
         "PushNotification",
+        "Monitor",
+        "PowerShell",
         "Workflow",
         "SendMessage",
         "ListAgents",
@@ -134,6 +136,17 @@ fn summary_whole_json_snapshot() {
 
     assert_eq!(f.build(&SessionKind::Summary, &[]).unwrap(), expected);
 }
+
+const PRESSURE_DENIED_TOOLS: [&str; 8] = [
+    "LSP",
+    "RemoteTrigger",
+    "CronCreate",
+    "PushNotification",
+    "Monitor",
+    "PowerShell",
+    "Workflow",
+    "AskUserQuestion",
+];
 
 #[test]
 fn pressure_whole_json_snapshot() {
@@ -174,14 +187,7 @@ fn pressure_whole_json_snapshot() {
     expected["permissions"]["ask"] = json!(std::iter::once("WebFetch".to_owned())
         .chain(asks)
         .collect::<Vec<_>>());
-    expected["permissions"]["deny"] = json!([
-        "LSP",
-        "RemoteTrigger",
-        "CronCreate",
-        "PushNotification",
-        "Workflow",
-        "AskUserQuestion"
-    ]);
+    expected["permissions"]["deny"] = json!(PRESSURE_DENIED_TOOLS);
     expected["teammateMode"] = json!("in-process");
 
     assert_eq!(f.build(&kinds()[2], &[]).unwrap(), expected);
@@ -215,6 +221,8 @@ macro_rules! tool_denies_test {
                 "RemoteTrigger",
                 "CronCreate",
                 "PushNotification",
+                "Monitor",
+                "PowerShell",
                 "Workflow",
             ] {
                 assert!(deny.contains(&json!(tool)), "missing {tool}");

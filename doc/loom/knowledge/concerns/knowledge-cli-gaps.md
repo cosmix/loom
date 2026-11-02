@@ -73,10 +73,7 @@ What remains is discipline, not backlog:
   `--strict` stays green. After `./dev-install.sh`, run `loom knowledge check --strict`: exit 0 means no baseline
   file to generate. If a newer binary reports issues this one does not, record them with
   `loom knowledge check --write-baseline doc/loom/knowledge/check-baseline.txt` and gate with `--baseline`.
-- **Source references resolve only as a fully qualified path relative to a package's src root** (for example
-  `commands/status/data/collector.rs`, `loom-hooks/spawn-guard.sh`). A bare filename or a partial suffix fails even
-  when the suffix is unique, and a sentence quoting a path that does not exist reports `MissingSourceRef`; reword it
-  with an example marker or "does not exist".
+- **Source references accept project-relative and Cargo-module-relative paths, bare basenames, and path suffixes.** `fs/knowledge/catalog/source_roots.rs::repository_source_path_exists` accepts a bare basename when any indexed project file has that name; a slash-containing suffix must identify exactly one file. An unresolved live project reference produces `MissingSourceRef`; example and external-reference classification are handled separately.
 - **A topic's blurb is set with `loom knowledge annotate <target> --blurb "<text>"`** (at most 80 characters), which
   works from inside a stage. `update` still cannot set it, so a new topic takes two calls.
 - **Moving a section between topics has no verb.** The split record used `update <dst>` then `delete-section <src>`. An

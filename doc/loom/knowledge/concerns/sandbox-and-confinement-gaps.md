@@ -8,9 +8,9 @@ CI proves the emitted capsule's denies against bubblewrap, not against a live Cl
 
 No CI job reaches Bash, interpreter, build-script, symlink or file-tool denial under Claude Code itself: CI has no credentialed Claude Code sandbox, so that verification is the manual release checklist `doc/sandbox-release-checklist.md` (fifteen rows, run before a release that touches the capsule and after a Claude Code upgrade). The srt harness that stands in for it outside the sandbox emulates Claude Code's linked-worktree grant and its denies (`tests_confinement_srt.rs`) and skips where `srt` is not on `PATH`, so its reordered settings are unexercised on such a host ([Agent Rule-Bending Hardening](agent-rule-bending-hardening.md), G3). No in-session canary exists; a withdrawn design for one is stage `sandbox-canary` in the deleted PLAN-sandbox-escape-hardening, recoverable with `git show e6f00616^:` plus its `doc/plans` path.
 
-## ReDoS Potential in Plan Pattern Regex
+## Wiring regex resource bounds
 
-User-provided regex patterns in plan wiring checks are compiled and executed without complexity checks. While mitigated by trust model (plan authors = trusted), consider adding regex timeout or complexity limits for defense in depth.
+Wiring patterns compile through `verify/goal_backward/wiring.rs::compile_pattern`, which sets a 1 MiB compiled-size limit (`PATTERN_SIZE_LIMIT`, lines 11-13 and 73-80). Source reads use the bounded, component-safe reader (lines 62-69). Version 2 routes through the same compiler. Remaining resource questions concern aggregate checks and bounded input sizes, rather than an unlimited backtracking regex engine; keep the size limit and bounded reader in any refactor.
 
 ## Three Stage Environment Allowlists
 
@@ -63,36 +63,6 @@ carrying either cannot run. `allow_all_unix_sockets: true` needs the operator's
 widening fields, `allow_write`, `allow_local_binding` and `linux.enable_weaker_nested`
 (`models/stage/types.rs`), need no acknowledgement: `plan/schema/validation.rs` only checks that
 `allow_write` entries are valid globs.
-
-## Uncalled Path-Escape Validators Read As Protection
-
-`sandbox/config.rs` ships three `pub` path-escape validators that **nothing in production
-calls**: `detect_path_escape`, `validate_paths` and
-`is_legitimate_work_access`. They are re-exported from `sandbox/mod.rs::merge_resolver`, and
-`rg` over `loom/src` finds their only callers are their own tests.
-
-`test_validate_paths_detects_escape_in_allow_write` asserts `validate_paths` flags an
-escape in `allow_write` — but `loom init` runs `validate_sandbox` and `validate_emittable` per
-stage, never `validate_paths`, so that escape was in fact emitted unchecked. A green test
-standing in for an absent control (`mistakes/tests-that-cannot-fail.md`).
-
-Two things make it invisible: the items are `pub` and re-exported, so `dead_code` never fires
-(a fresh build emits ZERO warnings), and the test name reads like coverage of a live
-guarantee.
-
-Deliberately not wired in when found: turning `validate_paths` on at plan-validation time
-would start REJECTING plans that load fine today, a behaviour change a verification stage
-should not make. The parent-traversal filter in `sandbox/settings.rs` already blocks this class
-of escape at the point of use, independently of these validators.
-
-**Owner should pick one:** wire it into `loom init` and `plan verify` as a fail-fast check
-(preferred — a clear error beats a silently dropped entry), or delete all three and their
-tests. **Leaving `pub`-but-uncalled validators is the worst of the three, because it reads as
-protection.**
-
-## A Check-Then-Use Window Around the `config.worktree` Check
-
-`WorktreeGit::run` (`git/worktree/pinned.rs`) calls `check_worktree_config` before each git command, for a worktree created after an agent's session spawned (the capsule's administrative-directory denies cover only worktrees that were registered when it was built). An agent with write access to that worktree's admin directory can rewrite `config.worktree` between the check and the command it guards. Closing it needs the file unwritable to the agent for the whole command, which the grant of the git common directory prevents (G2 in [Agent Rule-Bending Hardening](agent-rule-bending-hardening.md)).
 
 ## Accepted Gaps From the State-Confinement Work
 
@@ -165,15 +135,11 @@ prompt-free auto mode. Never reintroduce a `Read(...)` deny of any shape, and ne
 `denyRead` glob whose wildcard-free prefix lies above the project or above a small home
 subdirectory.
 
-## Locked-Write Symlink Fix Was File-Only, Not Directory-Component
+## Locked publication and component-safe traversal
 
-`fs/locking.rs` now opens `<path>.tmp` with `O_NOFOLLOW`, closing the specific
-`<file>.tmp`-as-tracked-symlink redirect found during `knowledge-bootstrap-command` integration
-(`mistakes.md`, "A Tracked Symlink Named `<file>.tmp` Redirected a Locked Write"). Directory
-components of the target path are not similarly checked anywhere in the crate: a tracked
-symlinked `doc/loom/knowledge` or `.loom` directory is still followed and written through by
-`locked_write`, `loom map`'s overlay, and any other writer that resolves a path under it.
-**Open:** no component-wise no-follow check exists for directories, only the final path segment.
+`fs/locking.rs::atomic_write` opens the temporary leaf with `O_NOFOLLOW`, but `lock_parent_dir` creates and opens the parent through pathname resolution (lines 41-58), and publication re-resolves that path (lines 82-123). Parent symlinks therefore remain outside this helper's protection.
+
+The crate also has anchored component-safe filesystem helpers in `fs/safe_fs.rs`; callers do not consistently use that owner. Consolidate publication policies through the anchored helper where the target is untrusted, preserving stable locking, crash-atomic replacement and directory durability. Do not describe all crate writers as lacking component-safe traversal.
 
 ## Bubblewrap Confinement Reads as Stage Evidence in Remote-Tools Mode (unconfirmed)
 
@@ -185,7 +151,7 @@ symlinked `doc/loom/knowledge` or `.loom` directory is still followed and writte
 
 ## A Stage Agent's Bash Allow-List Reaches Outside the Worktree
 
-A stage agent's Bash is confined by the bubblewrap sandbox (the file-tool guard `worktree-file-guard.sh` does not see Bash), but the allow-list still reaches beyond the worktree. The harness adds the whole git common directory, so `HEAD`, `refs/heads/main`, `packed-refs`, `objects` and `info` are writable. Under it the capsule denies `.git/hooks`, `.git/config`, every sibling worktree's administrative directory `<common>/worktrees/<name>` whole, and the session's own `config.worktree` (`partition_admin_dirs` in `git/worktree/config_worktree.rs`, applied by `deny_worktree_admin_dirs` in `sandbox/control_surfaces/session_denies.rs`; [Where a Session's Write Grants Come From](../architecture/security-and-isolation.md#where-a-sessions-write-grants-come-from)). Refs and the object store stay writable: ref denies are unmeasured now that commits are daemon-owned, and sessions still write the object store (G2 in [Agent Rule-Bending Hardening](agent-rule-bending-hardening.md)). `package_caches.rs` grants the operator's cargo, bun and npm caches, so a tampered `~/.cargo/registry/src` crate would run on the host at the next build. The credential reads that stay open are under "Credential Reads: Denied Files, Plain Paths and What Stays Readable". The withdrawn PLAN-sandbox-escape-hardening (recovery above) holds the measurements (Claude Code 2.1.286 adds the git common dir itself; `allowWrite`/`denyWrite` globs are skipped on Linux; a deny on an absent path shows the host an empty placeholder file; a deny cannot be reopened by a nested allow) and a design, D1-D7. The residuals of the sibling-directory denies are under "Residuals of the Sibling Administrative Directory Denies".
+A stage agent's Bash is confined by the bubblewrap sandbox (the file-tool guard `worktree-file-guard.sh` does not see Bash), but the allow-list still reaches beyond the worktree. The harness adds the whole git common directory, so `refs/heads/main`, `objects` and `info` are writable. Under it the capsule denies `.git/hooks`, `.git/config`, `.git/config.worktree`, `.git/logs` whole, `.git/packed-refs`, every sibling worktree's administrative directory `<common>/worktrees/<name>` whole, and the session's own `config.worktree`, `gitdir` and `commondir` with the checkout's `.git/HEAD` and `.git/index` (`partition_admin_dirs` in `git/worktree/config_worktree.rs`, applied by `deny_git_controls` and `deny_worktree_admin_dirs` in `sandbox/control_surfaces/session_denies.rs`; [Where a Session's Write Grants Come From](../architecture/security-and-isolation.md#where-a-sessions-write-grants-come-from)). Refs and the object store stay writable: a `refs/` deny fails `git merge --abort` and `git reset` on a branch, because git takes the ref's lock even for a move to the same commit (measured), and sessions still write the object store (G2 in [Agent Rule-Bending Hardening](agent-rule-bending-hardening.md)). `package_caches.rs` grants the operator's cargo, bun and npm caches, so a tampered `~/.cargo/registry/src` crate would run on the host at the next build. The credential reads that stay open are under "Credential Reads: Denied Files, Plain Paths and What Stays Readable". The withdrawn PLAN-sandbox-escape-hardening (recovery above) holds the measurements (Claude Code 2.1.286 adds the git common dir itself; `allowWrite`/`denyWrite` globs are skipped on Linux; a deny on an absent path shows the host an empty placeholder file; a deny cannot be reopened by a nested allow) and a design, D1-D7. The residuals of the sibling-directory denies are under "Residuals of the Sibling Administrative Directory Denies".
 
 ## Sibling Worktrees and the Main Checkout Are Readable From Bash
 
@@ -208,10 +174,13 @@ open listing).
 
 A capsule whose stage licenses codex adds `codex.rs::CODEX_SANDBOX_WRITE_PATHS` (`~/.codex` and
 `~/.claude/plugins/data/codex-openai-codex`) to `allowWrite`; inside it
-`sandbox/control_surfaces.rs::HOME_SURFACES` denies only `~/.codex/hooks/**`, `~/.codex/hooks.json`
-and `~/.codex/config.toml`. Writable to the stage, and trusted later by the operator's own codex
-sessions: `~/.codex/AGENTS.md` (doctrine), `~/.codex/rules/` (command approval rules),
-`~/.codex/skills/`, `~/.codex/plugins/`, `~/.codex/packages/` and `~/.codex/vendor_imports/`.
+`sandbox/control_surfaces.rs::HOME_SURFACES` denies `~/.codex/hooks/**`, `~/.codex/hooks.json`,
+`~/.codex/config.toml`, `~/.codex/AGENTS.md`, `~/.codex/loom-skill-catalog/**` and
+`~/.codex/prompts/**`. `codex_skill_surfaces` also denies every Loom-installed skill directory.
+The claim that only hooks and config are denied is incorrect. The enclosing grant still
+leaves `~/.codex/rules/`, non-Loom skill directories, `~/.codex/plugins/`,
+`~/.codex/packages/` and `~/.codex/vendor_imports/` writable and potentially trusted by later
+operator Codex sessions.
 `~/.codex/auth.json`, the operator's OpenAI credential, is readable and writable. Codex runs inside
 the stage sandbox (the forwarder's Bash call starts the companion, which spawns `codex app-server`
 itself), so the outer sandbox is the only boundary for its writes.
@@ -221,13 +190,13 @@ host-side code reads job state and forward receipts (`models/forward_receipt/loc
 `codex_lifecycle/authorization.rs`, `codex-forward-guard.sh`); every codex-licensed session can
 write it.
 
-The grant is unchanged and the gap is open: no plan addresses it.
+The whole-directory grant remains; the additional control-surface denies narrow its exposure without closing the remaining writable paths.
 
 ## Tool Routes That Run Outside the Bash Sandbox
 
 The OS sandbox confines only what Claude Code wraps. In Claude Code 2.1.286 the binary calls `wrapWithSandbox`/`wrapWithSandboxArgv` for the Bash tool, for hooks in its "locked" (remote-execution) mode, and for one internal git invocation. Every other tool runs in, or is spawned by, the unsandboxed Claude Code process. (Verified from the binary's strings, 2026-10-01.)
 
-**Denied in every capsule.** `LSP`, `RemoteTrigger`, `CronCreate` and `PushNotification` are bare tool names in the capsule's `permissions.deny` (`SESSION_TOOL_DENIES` in `orchestrator/terminal/native/session_settings/contents.rs`, assembled by `capsule_deny_rules`), as is `Workflow` unless the session is the Stage session of an `ultracode: true` stage (`launch.rs::workflow_licensed`, the one predicate the prompt keyword and the capsule exception both read; a blanket deny would break every ultracode stage, see [the mistake](../mistakes/sandbox-and-settings.md#a-metaplan-denied-the-workflow-tool-that-ultracode-stages-run-on)). `--disallowedTools` is not used: it is variadic and would consume the positional prompt that follows the capsule flags (`build_claude_command`). No `Read(` entry is emitted (see the `Read(...)` section above). The live check is release checklist rows 11 and 12.
+**Denied in every capsule.** `LSP`, `RemoteTrigger`, `CronCreate`, `PushNotification`, `Monitor` and `PowerShell` are bare tool names in the capsule's `permissions.deny` (`SESSION_TOOL_DENIES` in `orchestrator/terminal/native/session_settings/contents.rs`, assembled by `capsule_deny_rules`), as is `Workflow` unless the session is the Stage session of an `ultracode: true` stage (`launch.rs::workflow_licensed`, the one predicate the prompt keyword and the capsule exception both read; a blanket deny would break every ultracode stage, see [the mistake](../mistakes/sandbox-and-settings.md#a-metaplan-denied-the-workflow-tool-that-ultracode-stages-run-on)). `Monitor` and `PowerShell` run a command that skips every guard hook matched on `Bash`; for an operator's own session, where no capsule applies, `codex-forward-guard.sh` is registered on both (`fs/permissions/hooks/config.rs`). Plan sessions share the list (`plan_session/sandbox/permissions.rs`). The denies have not been exercised against a live session. `--disallowedTools` is not used: it is variadic and would consume the positional prompt that follows the capsule flags (`build_claude_command`). No `Read(` entry is emitted (see the `Read(...)` section above). The live check is release checklist rows 11 and 12.
 
 **Still allowed.**
 
@@ -235,14 +204,14 @@ The OS sandbox confines only what Claude Code wraps. In Claude Code 2.1.286 the 
 - **Plugins stay loaded.** `--setting-sources user,project` keeps the user scope's `enabledPlugins`; the same probe loaded 13 plugins, five of them LSP plugins. The `LSP` tool that would start their servers is denied, which closes the route that could run a workspace's `build.rs`, proc macros or a tsconfig language-service plugin on the host; the plugins themselves are not disabled.
 - **Cross-session messaging.** `SendMessage` and `ListAgents` stay, because agent teams need them (`orchestrator/terminal/native/wrapper.rs`). The session advertises a messaging socket under `/run/user/<uid>/cc-socks/`; they run in the Claude Code process, so the seccomp `AF_UNIX` block that confines Bash does not apply. Unverified whether a stage session can address the operator's interactive session, which runs unsandboxed.
 - **`WebFetch` and `WebSearch`** run in the Claude Code process; the sandbox proxy's `allowedDomains` and `strictAllowlist` filter sandboxed Bash only. Permission rules and the auto-mode classifier govern them, and the engineer agents list them. Unverified.
-- **Unmeasured routes.** `Monitor`, `AppifactRepl`, the self-hosted-runner tools, `EnterWorktree` and `ExitWorktree` are allowed and have not been measured (checklist row 15 records which are offered and whether a `Monitor` command runs under the Bash sandbox; a success is an open route, recorded here).
+- **Unmeasured routes.** `AppifactRepl`, the self-hosted-runner tools, `EnterWorktree` and `ExitWorktree` are allowed and have not been measured (checklist row 15 records which are offered; a success is an open route, recorded here).
 - **File tools** are confined by hooks only (`worktree-file-guard.sh`, `credential-guard.sh`), covered above.
 
 An in-session canary that exercises each route does not exist; the manual checklist is the only live check.
 
 ## A File Deny Stops Protecting a Live Session Once the Host Replaces the File
 
-Measured with bwrap 0.11.1, git 2.53.0, Linux 7.1.5. A read-only bind of a single file (`--ro-bind f f`, how a file `denyWrite` is enforced) refuses writes and renames inside the sandbox while the host leaves the file alone. Once a host process replaces the file by rename (`echo new > f.tmp && mv f.tmp f`, which is how git writes refs, `config`, `config.worktree` and `packed-refs`: `open(<ref>.lock, O_EXCL)`, then `rename`), the running sandbox resolves the path to the new file and can write it, and the write lands on the host. So every per-file deny (loom's `.git/config` and the session's own `config.worktree` deny in `sandbox/control_surfaces/session_denies.rs`, and Claude Code's own `config`/`config.worktree`/`commondir` denies) protects a session only until the host first rewrites that file during the session. The sibling administrative directories are denied as directories, which holds against that (rows E2 and E3 below).
+Measured with bwrap 0.11.1, git 2.53.0, Linux 7.1.5. A read-only bind of a single file (`--ro-bind f f`, how a file `denyWrite` is enforced) refuses writes and renames inside the sandbox while the host leaves the file alone. Once a host process replaces the file by rename (`echo new > f.tmp && mv f.tmp f`, which is how git writes refs, `config`, `config.worktree` and `packed-refs`: `open(<ref>.lock, O_EXCL)`, then `rename`), the running sandbox resolves the path to the new file and can write it, and the write lands on the host. So every per-file deny (loom's `.git/config`, `.git/config.worktree`, `.git/packed-refs`, `.git/HEAD`, `.git/index` and the session's own `config.worktree`, `gitdir` and `commondir` denies in `sandbox/control_surfaces/session_denies.rs`, and Claude Code's own `config`/`config.worktree`/`commondir` denies) protects a session only until the host first rewrites that file during the session. The sibling administrative directories and `<common>/logs` are denied as directories, which holds against that (rows E2 and E3 below).
 
 | Host action during the session                                | Bind      | Sandbox write                         |
 | ------------------------------------------------------------- | --------- | ------------------------------------- |
@@ -266,7 +235,7 @@ A git hook is therefore no gate against a sandboxed session, which can skip it. 
 
 ## Session-Planted Replace Refs and Grafts Change What Loom's Git Sees
 
-A session can write `<common>/refs/replace/*`, `<common>/info/grafts`, `<common>/objects/info/commit-graph` and `<common>/shallow`: the capsule denies only `.git/hooks`, `.git/config`, every sibling worktree's administrative directory (whole) and the session's own `config.worktree` in the common dir (`loom/src/sandbox/control_surfaces/session_denies.rs`). Git honors all of them in every `diff`, `merge-base` and ancestry test unless told otherwise.
+A session can write `<common>/refs/replace/*`, `<common>/info/grafts`, `<common>/objects/info/commit-graph` and `<common>/shallow`: the capsule's denies in the common dir do not name them (`loom/src/sandbox/control_surfaces/session_denies.rs`). Git honors all of them in every `diff`, `merge-base` and ancestry test unless told otherwise.
 
 Measured on git 2.53:
 
@@ -275,9 +244,9 @@ Measured on git 2.53:
 - `GIT_NO_REPLACE_OBJECTS=1` (or `--no-replace-objects`) disables replace refs but NOT grafts. Only `GIT_GRAFT_FILE` pointing at a file that cannot be opened disables grafts. `/dev/null` itself makes git 2.53 print a deprecation advice on stderr, so loom uses `/dev/null/loom-no-grafts`.
 - A forged commit-graph entry changes the parents or tree git reads for a commit reached in a walk; a commit named on the command line is parsed from its object, not the graph.
 
-**What the tree does.** `crate::git::runner` (`loom/src/git/runner.rs`) sets `GIT_NO_REPLACE_OBJECTS=1` and `GIT_GRAFT_FILE=/dev/null/loom-no-grafts` (`NO_GRAFT_FILE`) on every command in `git_command`, and `global_args` prepends `-c core.hooksPath=/dev/null -c core.fsmonitor=false` plus `-c core.commitGraph=false` (`NO_COMMIT_GRAPH_ARGS`), so a session-written commit-graph cannot forge parents either. The evaluation, `merged_into_accepted`, `verify_merge_succeeded` and `changed_paths` all run through the runner. See [Target Guard](../architecture/target-guard.md).
+**What the tree does.** `crate::git::runner` (`loom/src/git/runner.rs`) sets `GIT_NO_REPLACE_OBJECTS=1` and `GIT_GRAFT_FILE=/dev/null/loom-no-grafts` (`NO_GRAFT_FILE`) on every command in `git_command`, and `global_args` prepends `-c core.hooksPath=/dev/null -c core.fsmonitor=false`, `-c core.commitGraph=false` (`NO_COMMIT_GRAPH_ARGS`) and `-c gc.auto=0 -c maintenance.auto=false` (`NO_MAINTENANCE_ARGS`), so a session-written commit-graph cannot forge parents either. The evaluation, `merged_into_accepted`, `verify_merge_succeeded` and `changed_paths` all run through the runner. See [Target Guard](../architecture/target-guard.md).
 
-**Still open.** Production git spawned with `Command::new("git")` outside the runner gets none of the three settings: `version/derive.rs`, `verify/criteria/cache_ignore.rs`, `commands/handoff/create.rs`, `orchestrator/adjudication/prompt/sources.rs`, `git/worktree/checks.rs`, `git/cleanup/batch.rs`, `commands/knowledge/annotate.rs`, `commands/pressure/paths.rs`, and `git/branch/cleanup.rs` (`cleanup_merged_branches`, exported and apparently unused). None decides ancestry or a merge. `<common>/shallow` is session-writable and not neutralised: it can only cut history edges (extra holds, or `stage_work` seeing no branches); whether git honors `GIT_SHALLOW_FILE` for the runner is unverified. Git run by the operator honors every one of these files.
+**Still open.** Production git spawned with `Command::new("git")` outside the runner gets none of the three settings: `commands/handoff/create.rs`, `commands/stage/commit.rs::git_in` (running the hooks is its point), `git/worktree/checks.rs`, `commands/knowledge/annotate.rs`, `commands/pressure/paths.rs` and `plan_server/run/commit.rs::user_git`. None decides ancestry or a merge. `<common>/shallow` is session-writable and not neutralised: it can only cut history edges (extra holds, or `stage_work` seeing no branches); whether git honors `GIT_SHALLOW_FILE` for the runner is unverified. Git run by the operator honors every one of these files.
 
 ## What `allow_all_unix_sockets` Still Exposes
 
@@ -298,18 +267,6 @@ Saved tmux scrollback (`.loom/work/terminal-history/<session-id>.terminal`) is i
 In a legacy `.work` checkout the parent rule refuses a plain repo-root Grep, because the state root's parent is the repo root. Rule (a) matches the token files only by the `.loom/work`/`.work` spellings, so with a state root symlinked to a directory of another name `completion-attestation.key` (and, from the main checkout, `admin.token`) is readable; this predates rule (b). `credential-guard.sh` is 575 lines, over the 400-line limit.
 
 Fix direction: keep transcripts outside the repository (a per-user state directory), so no repo-rooted search can reach them and the hook needs only a path-prefix rule and a refusal of searches rooted at that directory's ancestors; check rule (a) against the canonical `$LOOM_WORK_DIR`; move rule (b) into a sourced file. Nothing prunes the directory; each file is capped at 4 MiB.
-
-## Per-Command Package-Manager Caches Start Empty
-
-`verify/criteria/confine_scratch.rs::apply_environment` points `UV_CACHE_DIR`, `BUN_INSTALL_CACHE_DIR` and `XDG_CACHE_HOME` at subdirectories of the per-command scratch. The read-only host caches that `read_roots` exposes are therefore never consulted.
-
-With network denied:
-
-- `uv sync`, `uv run` and resolution fail outright. This was collaterai `shared-contracts`' "no network and an empty UV_CACHE_DIR".
-- An offline `bun install` fails; an already-populated `node_modules` still works.
-- XDG-based caches (Go's build cache, for example) are cold on every command.
-
-The Cargo home was the same defect and is now stable ([execution containment](../architecture/execution-containment.md#read-this-first-what-containment-means-in-loom)). These caches need their own design: a stable per-tree cache reset like the linked Cargo home, or the read-only host cache.
 
 ## Tests and Criteria That Pass in a Session Fail Under the Confined Runner
 
@@ -348,9 +305,8 @@ denyWrite and credential denies in force. The history of this failure is in
 
 ## Host-Side Git Needs a Pin, Not Hardening
 
-- **Hardening does not stop a planted filter.** `NO_HOOKS_ARGS` (`git/runner.rs`: `core.hooksPath=/dev/null`, `core.fsmonitor=false`) does not stop a planted gitdir's `filter.<x>.clean` from running under `git status` or `git diff`. Only `WorktreeGit::pinned` (`git/worktree/pinned.rs`) does. Any git that the host child or the daemon runs in a stage worktree must be pinned.
-- **The main checkout cannot be pinned.** `WorktreeGit::pinned` accepts registered linked worktrees only. Git in a knowledge stage's checkout, in the merge flow and in every daemon git call there runs unpinned, while the session's allowlist grants writes under `<project>/.git`. A knowledge session can therefore plant a `.git/config` that daemon or host-child git reads. Fix direction: a pinned form for the main checkout in `git/worktree/pinned.rs`, plus a knowledge-session deny on `.git/config` and `hooks`.
-- **Possible pin bypass through a gitlink, unreproduced.** A pinned `git status` or `git diff` recurses into any gitlink (mode 160000) index entry, reading the nested repository's own `.git` and config (`is_submodule_modified`). A stage that `git add`s an embedded repository with `filter.x.clean` and a stat-dirty file could make a pinned run in the host child (`tree_digest_in`, `committed_content`, the stage-commit checks) run that filter. Probe: add a gitlink to a stage worktree index, run `tree_digest_in` on the pinned git, and check for the filter's marker. If it fires, refuse an index holding a 160000 entry in the pinned run and `read_isolated`, or pass `--ignore-submodules=dirty`.
+- **Hardening does not stop a planted filter.** `NO_HOOKS_ARGS` (`git/runner.rs`: `core.hooksPath=/dev/null`, `core.fsmonitor=false`) does not stop a planted gitdir's `filter.<x>.clean` from running under `git status` or `git diff`. Only a pinned `WorktreeGit` (`git/worktree/pinned.rs`) does. Any git that the host child or the daemon runs in a stage worktree must be pinned.
+- **The main checkout has a pin, and the merge's index writers skip it.** `WorktreeGit::pinned_main` pins the operator checkout and `deny_git_controls` denies `.git/hooks` and `.git/config` to every session, knowledge sessions included. `merge --ff-only`, `reset --hard` and the stash plumbing stay on the unpinned runner; the reason and the residual are under [Races Left Around Pinned Git](#races-left-around-pinned-git). The unpinned commands stay out of gitlinks: the runner's `--ignore-submodules=dirty` covers `status` and `diff`, and `git/merge/checkout_stash.rs` builds the stash commit from plumbing, because `git stash create` and `git stash push` recurse with no option to stop them.
 
 ## Bubblewrap Hides a Secret Only If It Exists at Command Start
 
@@ -381,4 +337,27 @@ How Claude Code applies a `denyRead` entry on Linux: a file is bound from `/dev/
 
 ## Residuals of the Sibling Administrative Directory Denies
 
-`partition_admin_dirs` denies every sibling worktree administrative directory whole and the session's own `config.worktree`. The open residuals (only registry entries denied, worktrees registered after spawn, symlinked entries, a rewritten `gitdir`, an unclaimed worktree directory refusing the judge and the merge resolver, `target_is_worktree` matching any `.worktrees` component) and the other open items of the route-closure work (ref denies, `loom knowledge bootstrap` without a capsule, unquoted manual-mode paths, the `CONTRIBUTING.md` checklist paths) are in [Agent Rule-Bending Hardening](agent-rule-bending-hardening.md#sibling-directory-denies-residuals).
+`partition_admin_dirs` denies every sibling worktree administrative directory whole and the session's own `config.worktree`, `gitdir` and `commondir`. The open residuals (only registry entries denied, worktrees registered after spawn, symlinked entries, a rewritten `gitdir`, an unclaimed worktree directory refusing the judge and the merge resolver, `target_is_worktree` matching any `.worktrees` component) and the other open items of the route-closure work (`loom knowledge bootstrap` without a capsule, unquoted manual-mode paths, the `CONTRIBUTING.md` checklist paths) are in [Agent Rule-Bending Hardening](agent-rule-bending-hardening.md#sibling-directory-denies-residuals).
+
+## Races Left Around Pinned Git
+
+The `config.worktree` read has no window: pinned git reads a validated private copy ([Loom's `config.worktree` Deny and Check](../architecture/security-and-isolation.md#looms-configworktree-deny-and-check)). These stay open:
+
+- **`packed-refs`.** Its deny is one file, so it drops once the host rewrites the file. Loom's commands run no automatic maintenance, so what rewrites it is a deletion of a packed ref or the operator's own git. The runner then looks for a link ahead of each command; a writer flipping one between that look and git's open is not stopped.
+- **`refs/heads/<dir>` links.** `refs/` stays writable, so a directory link there has the daemon's ref update write an object id to `<link target>/<ref name>`. `refuse_ref_path_links` looks ahead of each ref update, with the same race.
+- **Merges in the main checkout.** `merge --ff-only` and `reset --hard` run unpinned (`try_fast_forward` in `git/merge/fast_forward.rs`, `reset_checkout` in `git/merge/checkout_stash.rs`): a private git directory would hide the operator's `index.lock` until the target had moved and lose settings from an `includeIf "gitdir:"`. A session can plant absent names in `<common>` (`MERGE_MSG`, `COMMIT_EDITMSG`), so a link planted between the runner's look (`refuse_links_in_discovered_git_dir`) and git's open is written through. Revisit if pinned git can hold the real index's lock for the whole command and carry those settings.
+- **Git outside the runner.** The operator's shell and `plan_server/run/commit.rs::user_git` follow every link with no check.
+- **`LINKED_DIRS` are looked at once.** A directory swapped for a link after that look is followed. No pinned command writes beneath one, and a command that creates a state directory is reported as an error.
+- **Single-file binds detach.** The denies on `<common>/config`, `config.worktree`, `gitdir` and `commondir` drop when the host replaces the file by rename ([A File Deny Stops Protecting a Live Session](#a-file-deny-stops-protecting-a-live-session-once-the-host-replaces-the-file)). An operator's `git config` during a session therefore drops the `<common>/config` deny, and the session could then write a filter the host runs. Only `packed-refs` has been measured this way.
+
+## Per-Command Package-Manager Caches
+
+`verify/criteria/confine_scratch.rs::apply_environment` points `UV_CACHE_DIR`, `BUN_INSTALL_CACHE_DIR` and `XDG_CACHE_HOME` at subdirectories of the per-command scratch. On Linux, `cache_lowers` and `overlay_supported` make the uv and Bun ones overlays whose lower is the host's default cache (`~/.cache/uv`, `~/.bun/install/cache`), so a dependency present only there resolves offline and the command's own writes stay in its private upper (`confine_scratch/warm_cache_tests.rs`, `warm_cache_bun_tests.rs`, against real tools).
+
+What still starts cold:
+
+- `XDG_CACHE_HOME`, on purpose, so Go's build cache and the like are empty on every command.
+- uv and Bun under Seatbelt on macOS, bubblewrap before 0.11, or a filesystem that refuses the overlay mount. Warm reuse on macOS is not implemented. Such a command needs a `provision` entry.
+- A cache the command's environment points anywhere but the host default, which warns and uses an empty private cache.
+
+The Cargo home has its own stable reset ([execution containment](../architecture/execution-containment.md#read-this-first-what-containment-means-in-loom)).

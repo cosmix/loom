@@ -108,3 +108,47 @@ fn test_trigger_dependents_already_ready() {
 
     assert_eq!(triggered.len(), 0);
 }
+
+/// One dependent whose ancestry check errors must not cost its siblings their
+/// transition: the caller has already recorded the merge and still has to
+/// clean up. The failing dependent stays waiting for the next poll.
+#[test]
+fn an_ancestry_error_on_one_dependent_still_queues_the_others() {
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path();
+
+    let mut done = create_test_stage("done", "Done", StageStatus::Completed);
+    done.stage_type = StageType::Knowledge;
+    done.merged = true;
+    save_stage(&done, work_dir).unwrap();
+
+    // Not a repository, so `merge-base --is-ancestor` fails instead of answering.
+    let mut unproven = create_test_stage("unproven", "Unproven", StageStatus::Completed);
+    unproven.merged = true;
+    unproven.completed_commit = Some("0123456789abcdef".to_string());
+    save_stage(&unproven, work_dir).unwrap();
+
+    for id in ["a-errors", "z-errors"] {
+        let mut failing = create_test_stage(id, id, StageStatus::WaitingForDeps);
+        failing.add_dependency("done".to_string());
+        failing.add_dependency("unproven".to_string());
+        save_stage(&failing, work_dir).unwrap();
+    }
+    let mut ready = create_test_stage("m-ready", "Ready", StageStatus::WaitingForDeps);
+    ready.add_dependency("done".to_string());
+    save_stage(&ready, work_dir).unwrap();
+
+    let triggered = trigger_dependents("done", work_dir, work_dir, "main").unwrap();
+
+    assert_eq!(triggered, ["m-ready"]);
+    assert_eq!(
+        load_stage("m-ready", work_dir).unwrap().status,
+        StageStatus::Queued
+    );
+    for id in ["a-errors", "z-errors"] {
+        assert_eq!(
+            load_stage(id, work_dir).unwrap().status,
+            StageStatus::WaitingForDeps
+        );
+    }
+}

@@ -3,8 +3,8 @@
 //! hand a `Freeze` job to `freeze::apply_freeze_result`.
 //!
 //! The orchestrator calls [`apply_finished`] for every record the runner
-//! reports and, at startup, for every terminal current record
-//! [`unapplied_terminal_records`] lists. A binding or ownership failure is an
+//! reports and, at startup, for every terminal record the retry owner lists.
+//! A binding or ownership failure is an
 //! `Ok` outcome; `Err` is an I/O or state-file failure a later attempt may
 //! not hit. Every step is safe to repeat after a crash between the stage
 //! transition and the `applied` marker. The marker is written last: the
@@ -81,7 +81,7 @@ pub fn apply_finished(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
     }
     let applied = match record.kind {
         JobKind::Check => Applied::Ignored("a check changes no stage state".to_string()),
-        JobKind::Freeze => freeze::apply_freeze_result(work_dir, record)?,
+        JobKind::Freeze => apply_freeze(work_dir, record)?,
         JobKind::Complete => apply_complete(work_dir, record)?,
     };
     let note = bounded_detail(&describe(&applied));
@@ -93,35 +93,6 @@ pub fn apply_finished(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
         note.as_bytes(),
     )?;
     Ok(applied)
-}
-
-/// Every stage's current record that is terminal and has no `applied`
-/// marker: the jobs a crash or a failed application left unapplied. A stage
-/// whose state cannot be read is logged and skipped.
-pub fn unapplied_terminal_records(work_dir: &Path) -> Result<Vec<JobRecord>> {
-    let mut unapplied = Vec::new();
-    for stage_id in store::stage_ids(work_dir)? {
-        match unapplied_of(work_dir, &stage_id) {
-            Ok(Some(record)) => unapplied.push(record),
-            Ok(None) => {}
-            Err(error) => tracing::warn!(
-                stage_id = %stage_id,
-                error = %format!("{error:#}"),
-                "could not read the stage's host job to find unapplied jobs",
-            ),
-        }
-    }
-    Ok(unapplied)
-}
-
-fn unapplied_of(work_dir: &Path, stage_id: &str) -> Result<Option<JobRecord>> {
-    let Some(record) = store::load_current(work_dir, stage_id)? else {
-        return Ok(None);
-    };
-    if !record.state.is_terminal() || is_applied(work_dir, &record)? {
-        return Ok(None);
-    }
-    Ok(Some(record))
 }
 
 fn is_applied(work_dir: &Path, record: &JobRecord) -> Result<bool> {
@@ -138,6 +109,32 @@ fn describe(applied: &Applied) -> String {
         Applied::FreezeRefused(message) => format!("refused the contract run: {message}"),
         Applied::Ignored(reason) => reason.clone(),
     }
+}
+
+fn apply_freeze(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
+    let stage = load_stage(&record.stage_id, work_dir)?;
+    let session = load_session_exact(work_dir, &record.session_id)?;
+    let owns = session.is_some_and(|session| {
+        owns_stage_as(
+            &stage,
+            &session,
+            &record.stage_id,
+            &record.session_id,
+            &[SessionType::Contract],
+        )
+    });
+    // A writer parked on `AskUserQuestion` still owns the stage, and the freeze
+    // takes it back to `Executing`.
+    let running = matches!(
+        stage.status,
+        StageStatus::Executing | StageStatus::WaitingForInput
+    );
+    if !owns || !running {
+        return Ok(Applied::Ignored(
+            "contract writer no longer owns the stage".to_string(),
+        ));
+    }
+    freeze::apply_freeze_result(work_dir, record)
 }
 
 fn apply_complete(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
@@ -359,12 +356,19 @@ fn retire_session(work_dir: &Path, session: &Session) {
         return;
     }
     let completed = SessionStatus::Completed;
-    if let Err(error) =
-        crate::commands::stage::session::update_session_status(work_dir, &session.id, completed)
-    {
+    if let Err(error) = crate::fs::session_files::mark_session_terminal_reason(
+        work_dir,
+        &session.id,
+        completed,
+        crate::models::session::SessionExitReason::Completed,
+    ) {
         tracing::warn!(session_id = %session.id, error = %format!("{error:#}"), "failed to mark the completed session's record Completed");
     }
     if let Err(error) = crate::orchestrator::signals::remove_signal(&session.id, work_dir) {
         tracing::warn!(session_id = %session.id, error = %format!("{error:#}"), "failed to remove the completed session's signal file");
     }
 }
+
+#[cfg(test)]
+#[path = "apply_waiting_tests.rs"]
+mod waiting_tests;

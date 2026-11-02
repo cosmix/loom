@@ -1,11 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use tempfile::TempDir;
 
 use loom::models::stage::{Stage, StageStatus, StageType};
 use loom::verify::transitions::save_stage;
+
+#[path = "../test_support/mod.rs"]
+mod test_support;
 
 /// Build a real git repo on branch `main` with an initial commit. Returns the
 /// TempDir (callers keep it alive for the duration of the test).
@@ -25,17 +27,7 @@ pub(crate) fn init_repo() -> TempDir {
 }
 
 pub(crate) fn run_git(args: &[&str], cwd: &Path) {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .unwrap_or_else(|e| panic!("failed to run git {args:?}: {e}"));
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: stdout={} stderr={}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
+    test_support::git_checked(cwd, args);
 }
 
 /// Create a branch, add one commit, return the commit SHA. Leaves caller on `main`.
@@ -51,11 +43,7 @@ pub(crate) fn create_loom_branch_with_commit(
     run_git(&["add", filename], repo_root);
     run_git(&["commit", "-m", "stage work"], repo_root);
 
-    let out = Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(repo_root)
-        .output()
-        .unwrap();
+    let out = test_support::git_checked(repo_root, &["rev-parse", "HEAD"]);
     let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
 
     run_git(&["checkout", "main"], repo_root);

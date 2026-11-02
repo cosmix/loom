@@ -317,3 +317,13 @@ before the parent's import can go.
 **Why:** the request was met through the operator's own config rather than the built-in default every surface reads.
 **Prevention:** a change to a default goes into the single source (the enum or constant the config surfaces read), not into one operator's config file.
 **Fix:** `#[default]` moved to `Tmux` in `models/session/types.rs`; CLI, TUI, web and `loom init` read it from there.
+
+## Explain relocated tests before deleting old paths
+
+**What happened:** During VER-03 extraction, the old completion v2 implementation and test paths were deleted after copying them to `verify/completion/`, before the moved tests were run or their destinations were reported. The user asked for the exact mapping and verification state and paused further deletions.
+
+**Why:** The move was treated as an internal compile-preserving step, but deleting the old test path made coverage hard to inspect while the tree was still changing.
+
+**Prevention:** Report the destination, test-name and assertion parity, and verification status before removing a test path in a shared checkout. Keep the old path until the replacement is wired and a focused test passes when practical.
+
+**Fix:** Paused further deletions and reported both moved destinations and unchanged test assertions. Focused VER-03 verification remains pending until the extraction is stable.

@@ -378,7 +378,7 @@ node --test --test-name-pattern='^{test}$' {file}
 
 Facts from `loom/src/testrun/adapters/` (`vitest.rs`, `jest.rs`, `mocha.rs`, `bun_test.rs`, `node_test.rs`, `package_runner` in `command.rs`): loom picks `npx` over `bunx` when the package directory has no Bun lockfile, so an npm-managed package runs `npx` through loom's own command even though this skill does not recommend it. The `-t`, `--grep` and `--test-name-pattern` values are regular expressions matched as substrings, except `node-test`, where loom anchors the name with `^` and `$`.
 
-**The `test` field** is the full test name as the runner joins it: describe titles and the test title separated by spaces (`math adds two numbers`). Keep names to letters, digits, spaces and `_`; a `'` or a `$` in a title is quoted by loom but makes the name hard to match by hand.
+**The `test` field** is the full test name as the runner joins it. Vitest separates nested suite and test titles with ` > ` (`math > adds two numbers`); Jest, Mocha, Bun, and Node use spaces (`math adds two numbers`). Keep names to letters, digits, spaces and `_`; a `'` or a `$` in a title is quoted by loom but makes the name hard to match by hand.
 
 **Writing contract tests:**
 

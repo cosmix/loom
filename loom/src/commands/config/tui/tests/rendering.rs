@@ -4,7 +4,7 @@
 use ratatui::{backend::TestBackend, Terminal};
 
 use super::super::{render, state::ConfigState};
-use super::{focus_by_name, scratch, state};
+use super::{focus_by_name, scratch, scratch_without_workspace, state, Scratch};
 use crate::user_config::keys::KEYS;
 
 fn screen(state: &ConfigState) -> Vec<String> {
@@ -77,6 +77,63 @@ fn the_scope_band_names_both_tiers() {
     state.toggle_scope();
     let rows = screen(&state);
     assert!(contains(&rows, "no .loom/work"), "{rows:?}");
+}
+
+/// Saving acts on all staged scopes, including one hidden by the active tab.
+fn assert_hidden_user_save(scratch: Scratch, has_workspace: bool) {
+    let mut state = scratch.state();
+    focus_by_name(&mut state, "terminal.backend");
+    state.cycle(1);
+    state.toggle_scope();
+
+    let rows = screen(&state);
+    assert!(contains(&rows, "s writes: user"), "{rows:?}");
+    assert!(contains(&rows, "editing project:"), "{rows:?}");
+    assert_eq!(
+        contains(&rows, "editing project: unavailable"),
+        !has_workspace,
+        "{rows:?}"
+    );
+    let strip = screen_sized(&state, 80, 24);
+    assert!(contains(&strip, "s → user"), "{strip:?}");
+
+    if has_workspace {
+        state.cycle(1);
+        assert!(contains(&screen(&state), "s writes: user + project"));
+        assert!(contains(
+            &screen_sized(&state, 80, 24),
+            "s → user + project"
+        ));
+    }
+
+    state.save();
+    assert_eq!(
+        state.status(),
+        if has_workspace {
+            "2 keys written · 1 user · 1 project."
+        } else {
+            "1 key written · 1 user."
+        }
+    );
+    assert!(std::fs::read_to_string(scratch.user_config())
+        .unwrap()
+        .contains("backend = \"native\""));
+    if has_workspace {
+        assert!(std::fs::read_to_string(scratch.project_config())
+            .unwrap()
+            .contains("backend = \"native\""));
+    }
+    assert!(contains(&screen(&state), "s writes: no pending edits"));
+}
+
+#[test]
+fn hidden_user_save_is_named_on_the_project_tab() {
+    assert_hidden_user_save(scratch(), true);
+}
+
+#[test]
+fn hidden_user_save_is_named_without_a_workspace() {
+    assert_hidden_user_save(scratch_without_workspace(), false);
 }
 
 /// The scope tabs' own narrow-width arithmetic, carried through columns the
@@ -199,7 +256,7 @@ fn strip_rows(state: &ConfigState, width: u16) -> Vec<String> {
     rows[rows.len() - 4..].to_vec()
 }
 
-/// The write segment — `s → <file>` — is the one fact on the strip that must
+/// The write segment — `s → <pending scopes>` — is the one fact on the strip that must
 /// never drop, because it is what makes pressing `s` not a guess. It has to
 /// survive at every width the table's own cramped-frame coverage uses, and
 /// at the narrower point right around where the fixed facts alone fill the

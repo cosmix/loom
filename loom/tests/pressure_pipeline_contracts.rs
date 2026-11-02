@@ -247,6 +247,10 @@ fn dry_run_lists_the_record_step() {
         String::from_utf8_lossy(&out.stderr)
     );
     let lines: Vec<&str> = stdout.lines().collect();
+    let first_delete = lines
+        .iter()
+        .position(|l| l.contains("delete report"))
+        .unwrap_or_else(|| panic!("no delete-report step: {stdout}"));
     let last_delete = lines
         .iter()
         .rposition(|l| l.contains("delete report"))
@@ -256,8 +260,8 @@ fn dry_run_lists_the_record_step() {
         .position(|l| l.contains("Pressure tests record"))
         .unwrap_or_else(|| panic!("no record step: {stdout}"));
     assert!(
-        record > last_delete,
-        "record step precedes a delete: {stdout}"
+        first_delete < record && record < last_delete,
+        "record step is not between initial and final report cleanup: {stdout}"
     );
 }
 

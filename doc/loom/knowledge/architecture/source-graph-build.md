@@ -40,7 +40,7 @@ drives the same builder.
 - **`GraphLayer`**: `revision` (a base's commit; for an overlay, the `HEAD` it was
   cut from), `generation` (the tree generation for an overlay, empty for a base),
   `built_at`, `files` (path → `FileEntry`), and `blob_index` (path → the git blob id
-  whose bytes produced that entry). An overlay write is skipped when revision,
+  whose bytes produced that entry). Overlay indexes omit dirty working-tree entries, tombstones and unreadable entries so OID reuse only uses proven content. An overlay write is skipped when revision,
   generation, files and `blob_index` all equal the previous overlay's;
   `GraphStore::publish_base` never overwrites a revision already published.
 - **`SourceGraphOutcome { nodes, edges, freshness, counters }`** describes the layer
@@ -102,8 +102,9 @@ and `spawn_if_needed` calls nothing else:
 A never-built graph is built only by explicit commands: `loom init`, `loom run`, `loom map` and
 `loom knowledge sync`.
 
-**The lease** is one line, `"<epoch> <pid> <failures> <pending>"`, in `reconcile.lock` under the
-context cache; a line that does not parse as four fields is no lock. Every write is a
+**The lease** is one line, `"<epoch> <pid> <failures> <pending> <claim>"`, in `reconcile.lock` under
+the context cache. Legacy four-field records remain readable; new runs use a unique claim to bind
+startup and completion to the holder. Every write is a
 read-modify-write under ONE directory flock (`fs::locking::locked_dir_update` plus
 `atomic_write_locked`, `lock.rs::update_lock`), never a remove / `create_new` / write sequence:
 between those steps a reader sees no file, `decide` returns `Spawn`, and a second reconcile runs

@@ -34,10 +34,9 @@
 use loom::fs::permissions::constants::{HOOK_COMMON, HOOK_SUBAGENT_VERIFY_GUARD};
 use loom::process::sandbox_probe::{process_tree_visible, skip_unless};
 use std::fs;
-use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use tempfile::TempDir;
 
 /// Keep fixture writes under the runner's temporary root while rejecting a
@@ -76,6 +75,38 @@ fn install_hook(dir: &Path) -> PathBuf {
         loom::fs::permissions::constants::HOOK_BOUNDED,
     );
     write_exec(&dir.join("_common.sh"), HOOK_COMMON);
+    write_exec(
+        &dir.join("_parser.sh"),
+        loom::fs::permissions::constants::HOOK_PARSER,
+    );
+    write_exec(
+        &dir.join("_parser_expand.sh"),
+        loom::fs::permissions::constants::HOOK_PARSER_EXPAND,
+    );
+    write_exec(
+        &dir.join("_parser_scan.sh"),
+        loom::fs::permissions::constants::HOOK_PARSER_SCAN,
+    );
+    write_exec(
+        &dir.join("_identity.sh"),
+        loom::fs::permissions::constants::HOOK_IDENTITY,
+    );
+    write_exec(
+        &dir.join("_stage_lookup.sh"),
+        loom::fs::permissions::constants::HOOK_STAGE_LOOKUP,
+    );
+    write_exec(
+        &dir.join("_containment.sh"),
+        loom::fs::permissions::constants::HOOK_CONTAINMENT,
+    );
+    write_exec(
+        &dir.join("_heartbeat.sh"),
+        loom::fs::permissions::constants::HOOK_HEARTBEAT,
+    );
+    write_exec(
+        &dir.join("_spawn_policy.sh"),
+        loom::fs::permissions::constants::HOOK_SPAWN_POLICY,
+    );
     let hook_path = dir.join("subagent-verify-guard.sh");
     write_exec(&hook_path, HOOK_SUBAGENT_VERIFY_GUARD);
     hook_path
@@ -133,23 +164,14 @@ fn run_hook_in_tree(
     );
 
     let mut cmd = Command::new("bash");
-    cmd.arg(dir.join("claude-outer.sh"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        // GOTCHA 2: clear ambient loom env before layering on whatever this
-        // specific test wants. Must happen before the extra_env loop below.
-        .env_remove("LOOM_STAGE_ID")
-        .env_remove("LOOM_WORK_DIR");
+    // GOTCHA 2: clear ambient loom env before layering on whatever this
+    // specific test wants. Must happen before the extra_env loop below.
+    super::helpers::clear_relay_env(&mut cmd).arg(dir.join("claude-outer.sh"));
     for (key, value) in extra_env {
         cmd.env(key, value);
     }
 
-    let mut child = cmd.spawn().expect("spawn process tree");
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(json_input.as_bytes()).ok();
-    }
-    let output = child.wait_with_output().expect("wait for process tree");
+    let output = super::helpers::run_hook_process(&mut cmd, json_input.as_bytes());
 
     (
         output.status.code().unwrap_or(-1),

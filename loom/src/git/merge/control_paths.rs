@@ -9,12 +9,11 @@
 //!
 //! [`merge_stage`]: super::merge_stage
 
-use std::path::Path;
+use std::path::{Component, Path};
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 
 use crate::git::branch::branch_ref;
-use crate::git::read_hooks_path_scope;
 use crate::git::runner::run_git;
 
 /// Whether `merge_stage` checks the control-path gate on the commits it is
@@ -53,7 +52,7 @@ pub fn control_path_violation_as(
 ) -> Result<Option<String>> {
     let base = crate::git::run_git_checked(&["merge-base", target_rev, branch_rev], repo_root)?;
     let changed = changed_paths(repo_root, &base, branch_rev)?;
-    Ok(violation_reason(repo_root, &changed, label))
+    violation_reason(repo_root, &changed, label)
 }
 
 /// [`control_path_violation_as`] over the exact change a merge would land:
@@ -66,12 +65,12 @@ pub fn tree_change_violation(
     label: &str,
 ) -> Result<Option<String>> {
     let changed = changed_paths(repo_root, old, tree)?;
-    Ok(violation_reason(repo_root, &changed, label))
+    violation_reason(repo_root, &changed, label)
 }
 
 /// The human-review reason naming the control paths among `changed`, if any.
-fn violation_reason(repo_root: &Path, changed: &[String], label: &str) -> Option<String> {
-    let hooks_prefix = hooks_dir_prefix(repo_root);
+fn violation_reason(repo_root: &Path, changed: &[String], label: &str) -> Result<Option<String>> {
+    let hooks_prefix = hooks_dir_prefix_checked(repo_root)?;
     let offending: Vec<String> = changed
         .iter()
         .filter(|path| is_control_path(path, hooks_prefix.as_deref()))
@@ -80,12 +79,12 @@ fn violation_reason(repo_root: &Path, changed: &[String], label: &str) -> Option
         .map(|path| format!("{path:?}"))
         .collect();
     if offending.is_empty() {
-        return None;
+        return Ok(None);
     }
-    Some(format!(
+    Ok(Some(format!(
         "branch {label} touches control path(s) requiring human review: {}",
         offending.join(", ")
-    ))
+    )))
 }
 
 /// Paths that differ between `base` and `branch_rev`, unquoted: `-z` output is
@@ -95,6 +94,18 @@ fn violation_reason(repo_root: &Path, changed: &[String], label: &str) -> Option
 /// `.gitmodules`, which a merged branch can set. The trailing `--` keeps a
 /// file named like a revision from making git refuse the call as ambiguous.
 pub(crate) fn changed_paths(repo_root: &Path, base: &str, branch_rev: &str) -> Result<Vec<String>> {
+    changed_paths_with(
+        &crate::git::worktree::WorktreeGit::discovered(repo_root),
+        base,
+        branch_rev,
+    )
+}
+
+pub(crate) fn changed_paths_with(
+    git: &crate::git::worktree::WorktreeGit,
+    base: &str,
+    branch_rev: &str,
+) -> Result<Vec<String>> {
     let args = [
         "diff",
         "-z",
@@ -105,7 +116,7 @@ pub(crate) fn changed_paths(repo_root: &Path, base: &str, branch_rev: &str) -> R
         branch_rev,
         "--",
     ];
-    let output = run_git(&args, repo_root)?;
+    let output = git.run(&args)?;
     if !output.status.success() {
         bail!(
             "git diff {base} {branch_rev} failed: {}",
@@ -189,7 +200,9 @@ fn is_commit_id(value: &str) -> bool {
 /// Whether `path` (repository-relative, forward-slashed, as `git diff -z
 /// --name-only` reports it) is a control path: `.claude`, `.mcp.json`,
 /// `.loom`, the tracked git hooks directory, or anything under a directory
-/// among them. ASCII-case-insensitive, since a case-insensitive filesystem
+/// among them. An ancestor of the hooks directory is also controlled because
+/// replacing it with a symlink can redirect hooks. ASCII-case-insensitive,
+/// since a case-insensitive filesystem
 /// resolves `.CLAUDE/settings.json` to `.claude/settings.json`.
 pub fn is_control_path(path: &str, hooks_prefix: Option<&str>) -> bool {
     let path = path.to_ascii_lowercase();
@@ -203,28 +216,70 @@ pub fn is_control_path(path: &str, hooks_prefix: Option<&str>) -> bool {
         || hooks_prefix.is_some_and(|prefix| {
             let dir = prefix.trim_end_matches('/').to_ascii_lowercase();
             let dir = dir.strip_prefix("./").unwrap_or(&dir);
-            !dir.is_empty() && at_or_under(dir)
+            dir.is_empty()
+                || at_or_under(dir)
+                || dir
+                    .strip_prefix(&path)
+                    .is_some_and(|rest| rest.starts_with('/'))
         })
 }
 
 /// The repo-relative prefix of the tracked git hooks directory
 /// (`core.hooksPath`), or `None` when it is unset at every scope or resolves
-/// outside the repository.
+/// outside the repository. On a query error, returns the root prefix so a
+/// caller using this legacy `Option` API classifies every path as controlled.
+/// The stage and target guards use the checked form and hold on that error.
+/// Existing symlink ancestors are errors because one prefix cannot safely
+/// cover both a link and its destination.
 ///
 /// A `config.worktree` value outranks the local one, as in
 /// `configured_hooks_path`: git runs the hooks it names.
 pub fn hooks_dir_prefix(repo_root: &Path) -> Option<String> {
-    // Scoped reads (see `read_hooks_path_scope` for why), one per scope.
-    let worktree = read_hooks_path_scope(repo_root, "--worktree");
-    let local = read_hooks_path_scope(repo_root, "--local");
-    let global = read_hooks_path_scope(repo_root, "--global");
-    let system = read_hooks_path_scope(repo_root, "--system");
-    resolve_hooks_dir_prefix(
+    hooks_dir_prefix_checked(repo_root).unwrap_or_else(|_| Some(String::new()))
+}
+
+/// Checked form used by gates so path and configuration errors hold the change.
+pub(crate) fn hooks_dir_prefix_checked(repo_root: &Path) -> Result<Option<String>> {
+    // The runner's own -c core.hooksPath=/dev/null precludes an unscoped read.
+    // `--type=bool` applies git's own reading: yes, on and 1 enable the extension.
+    let worktree = config_value(
         repo_root,
-        worktree.as_deref().or(local.as_deref()),
-        global.as_deref(),
-        system.as_deref(),
-    )
+        &["--local", "--type=bool"],
+        "extensions.worktreeConfig",
+    )?
+    .is_some_and(|value| value == "true");
+    let scopes: &[&str] = if worktree {
+        &["--worktree", "--local", "--global", "--system"]
+    } else {
+        &["--local", "--global", "--system"]
+    };
+    for scope in scopes {
+        // `--type=path` expands `~/` as git does when it runs a hook.
+        let typed = [*scope, "--type=path"];
+        if let Some(value) = config_value(repo_root, &typed, "core.hooksPath")? {
+            return resolve_hooks_dir_prefix_checked(repo_root, Some(&value), None, None);
+        }
+    }
+    Ok(None)
+}
+
+fn config_value(repo_root: &Path, scope: &[&str], key: &str) -> Result<Option<String>> {
+    let mut args = vec!["config"];
+    args.extend_from_slice(scope);
+    args.extend(["--includes", "--get", key]);
+    let output = run_git(&args, repo_root)?;
+    if output.status.code() == Some(1) {
+        return Ok(None);
+    }
+    if !output.status.success() {
+        bail!(
+            "git config {} --get {key} failed: {}",
+            scope.join(" "),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let value = String::from_utf8(output.stdout).context("git config returned invalid UTF-8")?;
+    Ok(Some(value.trim().to_string()).filter(|value| !value.is_empty()))
 }
 
 /// Resolves `core.hooksPath` from the three config scopes to a repo-relative
@@ -232,21 +287,85 @@ pub fn hooks_dir_prefix(repo_root: &Path) -> Option<String> {
 /// is set — git's own precedence order, so a global value (even a relative
 /// one, which applies inside every repository) is used only when local is
 /// unset. `None` when every scope is unset, or the winning value is an
-/// absolute path outside `repo_root`.
+/// absolute path outside `repo_root`. An empty prefix denotes the repository
+/// root, where every tracked path is in the hook directory. Query errors also
+/// produce that conservative root prefix; use the checked form to distinguish.
 pub fn resolve_hooks_dir_prefix(
     repo_root: &Path,
     local: Option<&str>,
     global: Option<&str>,
     system: Option<&str>,
 ) -> Option<String> {
-    let configured = local.or(global).or(system)?;
-    let path = Path::new(configured);
-    let relative = if path.is_absolute() {
-        path.strip_prefix(repo_root).ok()?.to_str()?.to_string()
-    } else {
-        configured.to_string()
+    resolve_hooks_dir_prefix_checked(repo_root, local, global, system)
+        .unwrap_or_else(|_| Some(String::new()))
+}
+
+pub(crate) fn resolve_hooks_dir_prefix_checked(
+    repo_root: &Path,
+    local: Option<&str>,
+    global: Option<&str>,
+    system: Option<&str>,
+) -> Result<Option<String>> {
+    let Some(configured) = local.or(global).or(system) else {
+        return Ok(None);
     };
-    Some(format!("{}/", relative.trim_end_matches('/')))
+    let path = Path::new(configured);
+    let root = std::fs::canonicalize(repo_root)
+        .with_context(|| format!("Failed to resolve repository root: {}", repo_root.display()))?;
+    let relative = if path.is_absolute() {
+        if let Ok(relative) = path.strip_prefix(repo_root) {
+            relative
+        } else if let Ok(relative) = path.strip_prefix(&root) {
+            relative
+        } else {
+            return Ok(None);
+        }
+    } else {
+        path
+    };
+    normalized_hooks_path(&root, relative)
+}
+
+fn normalized_hooks_path(root: &Path, relative: &Path) -> Result<Option<String>> {
+    let mut resolved = root.to_path_buf();
+    for part in relative.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                resolved.pop();
+            }
+            Component::Normal(name) => {
+                resolved.push(name);
+                match std::fs::symlink_metadata(&resolved) {
+                    Ok(metadata) if metadata.file_type().is_symlink() => {
+                        bail!(
+                            "core.hooksPath has a symlink ancestor at {}; review it before merging",
+                            resolved.display()
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(error).with_context(|| {
+                            format!("Failed to inspect core.hooksPath at {}", resolved.display())
+                        })
+                    }
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                bail!("invalid core.hooksPath: {}", relative.display())
+            }
+        }
+    }
+    let Ok(relative) = resolved.strip_prefix(root) else {
+        return Ok(None);
+    };
+    let relative = relative.to_str().context("core.hooksPath is not UTF-8")?;
+    Ok(Some(if relative.is_empty() {
+        String::new()
+    } else {
+        format!("{relative}/")
+    }))
 }
 
 #[cfg(test)]
@@ -255,3 +374,7 @@ mod tests;
 #[cfg(test)]
 #[path = "control_paths/tests_accepted.rs"]
 mod tests_accepted;
+
+#[cfg(test)]
+#[path = "control_paths/tests_worktree_config.rs"]
+mod tests_worktree_config;

@@ -283,13 +283,15 @@ fn relative_path(root: &Path, path: &Path) -> std::result::Result<PathBuf, &'sta
     Ok(relative.components().collect())
 }
 
-/// Why `path` would make `loom run` refuse, or `None` when it is committed
-/// and unchanged. Errors mean git could not answer.
-pub(crate) fn uncommitted_reason(root: &Path, path: &Path) -> Result<Option<&'static str>> {
-    if !root.join(path).is_file() {
+/// Why a path would make `loom run` refuse, using its captured Git identity.
+pub(crate) fn uncommitted_reason_pinned(
+    git: &crate::git::worktree::WorktreeGit,
+    path: &Path,
+) -> Result<Option<&'static str>> {
+    if !git.work_tree().join(path).is_file() {
         return Ok(Some("missing file"));
     }
-    Ok(uncommitted_reasons(root, &[path])?
+    Ok(uncommitted_reasons_with(git, &[path])?
         .into_iter()
         .flatten()
         .next())
@@ -303,6 +305,13 @@ pub(crate) fn uncommitted_reasons(
     root: &Path,
     paths: &[&Path],
 ) -> Result<Vec<Option<&'static str>>> {
+    uncommitted_reasons_with(&crate::git::worktree::WorktreeGit::discovered(root), paths)
+}
+
+fn uncommitted_reasons_with(
+    git: &crate::git::worktree::WorktreeGit,
+    paths: &[&Path],
+) -> Result<Vec<Option<&'static str>>> {
     if paths.is_empty() {
         return Ok(Vec::new());
     }
@@ -311,15 +320,15 @@ pub(crate) fn uncommitted_reasons(
         .map(|path| path.to_str().context("Plan input path is not UTF-8"))
         .collect::<Result<_>>()?;
     let literals: Vec<String> = paths.iter().map(|p| format!(":(literal){p}")).collect();
-    let committed = committed_objects(root, &literals)?;
-    let changed = changed_paths(root, &literals)?;
+    let committed = committed_objects(git, &literals)?;
+    let changed = changed_paths(git, &literals)?;
     // `assume-unchanged` and `skip-worktree` can hide edits from git status.
     let unchanged: Vec<&str> = paths
         .iter()
         .copied()
         .filter(|path| committed.contains_key(*path) && !changed.contains(*path))
         .collect();
-    let actual = working_objects(root, &unchanged)?;
+    let actual = working_objects(git, &unchanged)?;
     let reason = |path: &str| match committed.get(path) {
         None => Some("not committed (untracked, ignored, or staged only)"),
         Some(_) if changed.contains(path) => Some("uncommitted changes"),

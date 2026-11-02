@@ -87,6 +87,48 @@ fn description_marker_variants_are_recognized() {
 }
 
 #[test]
+fn unicode_marker_offsets_preserve_keywords_and_precedence() {
+    for marker in [
+        "TrIgGeR KeYwOrDs:",
+        "trigger keywords -",
+        "triggers for this skill:",
+        "triggers for this skill -",
+        "Triggers:",
+        "triggers -",
+        "keywords:",
+        "keywords -",
+    ] {
+        let description = format!("ıİ {marker}é, café. Next sentence.");
+        assert_eq!(extract_description_keywords(&description), ["é", "café"]);
+    }
+    assert_eq!(
+        extract_description_keywords("İ Triggers:wrong. Trigger keywords:é, café."),
+        ["é", "café"]
+    );
+}
+
+#[test]
+fn index_build_handles_unicode_description_and_explicit_triggers() {
+    let dir = tempfile::tempdir().unwrap();
+    for (name, contents) in [
+        ("fallback", "---\ndescription: 'İ Triggers:é, café'\n---\n"),
+        (
+            "explicit",
+            "---\ndescription: 'İ Triggers:é, café'\ntriggers: [alpha, beta]\n---\n",
+        ),
+    ] {
+        let skill_dir = dir.path().join(name);
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(skill_dir.join("SKILL.md"), contents).unwrap();
+    }
+    let (index, count) = build_index(&[dir.path()]).unwrap();
+    assert_eq!(count, 2);
+    assert_eq!(index.get("é"), Some(&vec!["fallback".to_string()]));
+    assert_eq!(index.get("café"), Some(&vec!["fallback".to_string()]));
+    assert_eq!(index.get("alpha"), Some(&vec!["explicit".to_string()]));
+}
+
+#[test]
 fn stopword_name_match_requires_exact_equality() {
     // A stopword keyword is exempted from the stopword filter only on EXACT
     // equality with the effective name - a mere prefix match must not let a

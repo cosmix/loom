@@ -36,6 +36,7 @@
 set -euo pipefail
 
 source "$(dirname "$0")/_common.sh"
+source "$(dirname "$0")/_git-command.sh"
 loom_require_jq "commit-filter.sh"
 
 # Debug tracing comes from _common.sh (`loom_debug`), gated on
@@ -229,6 +230,14 @@ fi
 # this globally installed hook only scopes to loom stage sessions; then the
 # payload's `.agent_type` / `.transcript_path` decide main-vs-subagent.
 
+is_git_commit_command() {
+	if [[ $TOKENS_OK -eq 1 ]]; then
+		loom_git_runs_commit
+	else
+		echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+.*\bcommit\b'
+	fi
+}
+
 # is_subagent_git_operation - True when the command actually INVOKES `git
 # commit`, `loom stage commit`, `git add -A`/`--all` or `git add .`, or shows
 # the var-indirection evasion pattern (indirection_intent). The token path
@@ -236,7 +245,7 @@ fi
 # brief telling a codex subagent not to touch git) never match.
 is_subagent_git_operation() {
 	if [[ $TOKENS_OK -eq 1 ]]; then
-		loom_tokens_cmd_has_arg 'git' 'commit' ||
+		is_git_commit_command ||
 			loom_tokens_cmd_has_arg_pair 'loom' 'stage' 'commit' ||
 			loom_tokens_cmd_has_arg_pair 'git' 'add' '-A|--all' ||
 			loom_tokens_cmd_has_arg_pair 'git' 'add' '\.' ||
@@ -321,54 +330,12 @@ fi
 # Block git commits with AI attribution (per CLAUDE.md rule 9): Co-Authored-By
 # trailers, --trailer, --author, GIT_AUTHOR env vars, attribution text.
 
-# is_git_commit_command - True when the command INVOKES `git` with an argument
-# `commit` (options like -c may sit between), not merely mentions the word.
-is_git_commit_command() {
-	if [[ $TOKENS_OK -eq 1 ]]; then
-		loom_tokens_cmd_has_arg 'git' 'commit'
-	else
-		echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+.*\bcommit\b'
-	fi
-}
-
-# git_runs_commit - True when `commit` is a git segment's SUBCOMMAND, the first
-# non-option word after git's global options (`git -C . commit`; not `git
-# cat-file commit HEAD` or `git log --grep commit`, where it is an argument).
-# Walks LOOM_TOKENS directly, as gate_var_unset_intent does: loom_tokens_cmd_argv
-# probes cannot tie the option words and the subcommand to one segment.
-git_runs_commit() {
-	[[ $TOKENS_OK -eq 1 ]] || { is_git_commit_command; return; }
-	local n=${#LOOM_TOKENS[@]} i=0 at_cmd=1 j k
-	while ((i < n)); do
-		if [[ "${LOOM_TOKENS[$i]}" == "%%SEP%%" ]]; then
-			at_cmd=1
-		elif [[ $at_cmd -eq 1 ]]; then
-			at_cmd=0
-			if j=$(loom_tokens_command_word_index "$i") && [[ "${LOOM_TOKENS[$j]##*/}" == "git" ]]; then
-				k=$((j + 1))
-				while ((k < n)) && [[ "${LOOM_TOKENS[$k]}" == -* ]]; do
-					case "${LOOM_TOKENS[$k]}" in
-					-C | -c | --git-dir | --work-tree | --namespace)
-						[[ "${LOOM_TOKENS[$((k + 1))]:-%%SEP%%}" == "%%SEP%%" ]] && break
-						k=$((k + 2))
-						;;
-					*) k=$((k + 1)) ;;
-					esac
-				done
-				((k < n)) && [[ "${LOOM_TOKENS[$k]}" == "commit" ]] && return 0
-			fi
-		fi
-		i=$((i + 1))
-	done
-	return 1
-}
-
 # === STAGE SESSION: THE MAIN AGENT NEVER RUNS `git commit` ===
 # A stage session's Bash environment carries LOOM_STAGE_ID and LOOM_SESSION_ID.
 # Commits go through `loom stage commit`, which the daemon applies;
 # LOOM_HOOK_CONTEXT=1 marks loom's own hook invocations.
 if [[ -n "${LOOM_STAGE_ID:-}" && -n "${LOOM_SESSION_ID:-}" && "${LOOM_HOOK_CONTEXT:-}" != "1" ]] &&
-	git_runs_commit; then
+	is_git_commit_command; then
 	loom_debug "DEBUG: BLOCKED - git commit in a stage session"
 	cat >&2 <<'EOF'
 ⛔ BLOCKED: no git commit in a loom stage session.

@@ -126,7 +126,8 @@ fn test_render_dry_run_shows_real_argv() {
         &default_models(),
     );
     assert!(out.contains("Dry run: 1 round"));
-    assert!(out.ends_with("  5. write the ## Pressure tests record in doc/plans/PLAN-foo.md\n"));
+    assert!(out.contains("  4. write the ## Pressure tests record in doc/plans/PLAN-foo.md\n"));
+    assert!(out.ends_with("  5. delete report /repo/doc/plans/codex-PLAN-foo.md\n"));
     assert!(out.contains("--permission-mode auto --model opus --effort xhigh"));
     assert!(out.contains("--append-system-prompt"));
     assert!(out.contains("/pressure doc/plans/PLAN-foo.md"));
@@ -332,7 +333,7 @@ fn test_completion_instruction_workspace_preserves_original_text() {
     let expected = format!(
         "AUTONOMOUS RUN: this Claude session was launched by `loom pressure`; no human will end it for you. \
          When the task is FULLY complete and the plan file is fully updated (after every subagent has finished), \
-         your FINAL action MUST be to run exactly this shell command and nothing after it: touch {}. \
+         your FINAL action MUST be to run exactly this shell command and nothing after it: touch -- {}. \
          Do not run it earlier. That path is inside the repo's gitignored `.loom/work/` because the agent sandbox \
          mounts /tmp read-only; creating this one marker is the sanctioned exception to the rule against \
          writing under `.loom/work/` directly. Once that file exists the driver closes this session.",

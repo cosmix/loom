@@ -95,6 +95,33 @@ pub fn complete_flag_choices(
     Ok(filter_owned(names, prefix))
 }
 
+/// Resolve finite values for a visible long or short option at this path.
+pub(super) fn finite_flag_choices(path: &[&str], flag: &str, prefix: &str) -> Option<Vec<String>> {
+    let root = crate::cli::Cli::command();
+    let command = command_at_path(&root, path)?;
+    let argument = command.get_arguments().find(|arg| {
+        !arg.is_hide_set()
+            && (flag
+                .strip_prefix("--")
+                .is_some_and(|name| arg.get_long() == Some(name))
+                || flag
+                    .strip_prefix('-')
+                    .is_some_and(|name| name.len() == 1 && arg.get_short() == name.chars().next()))
+    })?;
+    let values = argument.get_possible_values();
+    if values.is_empty() {
+        return None;
+    }
+    Some(filter_owned(
+        values
+            .iter()
+            .filter(|value| !value.is_hide_set())
+            .map(|value| value.get_name().to_string())
+            .collect(),
+        prefix,
+    ))
+}
+
 /// Complete shell type names (bash, zsh, fish).
 pub fn complete_shell_types(prefix: &str) -> Result<Vec<String>> {
     Ok(filter_prefix(&["bash", "fish", "zsh"], prefix))

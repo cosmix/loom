@@ -5,6 +5,9 @@
 //! backstop's test does it: every proxy for "the agent was taken down" lies in
 //! at least one lane.
 
+#[path = "recover_hung_latch_tests.rs"]
+mod latch_tests;
+
 use super::governor_tests::assign_stage_session;
 use super::recover_hung::{checkpoint_has_current_blocker, HungReport};
 use super::tests::{
@@ -293,8 +296,8 @@ fn a_report_without_a_stage_is_only_a_warning() {
 }
 
 /// The line a stage with two acceptance criteria gets while its pinned
-/// completion runs: one command timeout each, plus the margin for the later checks.
-const COMPLETION_LINE_SECS: u64 = 2 * 300 + 1_800;
+/// completion runs: one timeout each and one for impact selection, plus the margin.
+const COMPLETION_LINE_SECS: u64 = 3 * 300 + 1_800;
 
 /// A stalled stage whose own latest heartbeat says its pinned completion is running.
 fn completing_stage(work: &Path) -> (Session, u32) {

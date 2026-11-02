@@ -187,7 +187,10 @@ impl Stage {
     /// stays.
     pub fn clear_merge_block(&mut self) {
         if self.merge.block.take().is_some() {
-            self.retire_failure("merge block cleared");
+            self.retire_failure(
+                "merge block cleared",
+                crate::models::stage::IssueDisposition::Resolved,
+            );
         }
     }
 

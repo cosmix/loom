@@ -11,6 +11,8 @@ use support::{bootstrap, get, json_body, options, project, serve, serve_with, sk
 
 mod baseline;
 mod embedded;
+mod loading;
+mod shutdown_pending;
 mod socket;
 pub(crate) mod support;
 mod ws;

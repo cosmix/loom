@@ -118,10 +118,14 @@ fn each_step_starts_a_pressure_session_with_its_slots_and_marker() {
             (guidance.model.as_str(), guidance.effort.as_str()),
             (model, effort)
         );
-        let marker = session.dir.marker().display().to_string();
-        assert!(session.dir.marker().is_absolute());
+        let marker = session.dir.marker();
+        assert!(marker.is_absolute());
+        let command = format!(
+            "touch -- {}",
+            shell_escape::escape(marker.to_string_lossy())
+        );
         let brief = &session.brief;
-        assert!(brief.contains(&format!("touch {marker}")), "{brief}");
+        assert!(brief.contains(&command), "{brief}");
     }
 }
 

@@ -7,6 +7,7 @@ use std::thread;
 
 use anyhow::{ensure, Context, Result};
 
+use crate::git::runner::REPO_REDIRECT_ENV;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::request::{ApiRequest, ApiResponse};
 use crate::plan_server::wire::run::{ChangedPath, CommitRequest, OutputStream, RunJob};
@@ -63,6 +64,17 @@ fn addable_paths<'a>(root: &Path, paths: &'a [String]) -> Vec<&'a String> {
         .collect()
 }
 
+/// Git for a step of the user's own commit. The runner's hook suppression would
+/// bypass the user's checks, so this keeps their hooks and signing and only
+/// drops what would point git at a repository other than `root`.
+fn user_git() -> Command {
+    let mut git = Command::new("git");
+    for variable in REPO_REDIRECT_ENV {
+        git.env_remove(variable);
+    }
+    git
+}
+
 fn run_sequence(
     root: &Path,
     paths: &[String],
@@ -72,8 +84,7 @@ fn run_sequence(
     let mut steps = Vec::new();
     let addable = addable_paths(root, paths);
     if !addable.is_empty() {
-        // Do not use run_git: its hook suppression would bypass the user's checks.
-        let mut add = Command::new("git");
+        let mut add = user_git();
         add.args([
             "-c",
             "core.quotepath=off",
@@ -84,7 +95,7 @@ fn run_sequence(
         .args(addable);
         steps.push(("git add", add));
     }
-    let mut commit = Command::new("git");
+    let mut commit = user_git();
     // Explicit pathspecs give --only semantics, preserving everything else staged.
     commit
         .args(["--literal-pathspecs", "commit", "-m", message, "--"])
@@ -142,14 +153,18 @@ pub(super) fn post_commit(req: &ApiRequest<'_>) -> ApiResponse {
 }
 
 fn spawn_commit(ctx: Arc<PlanContext>, body: CommitRequest, guard: child::JobGuard) -> ApiResponse {
+    let worker_ctx = Arc::clone(&ctx);
     let spawned = thread::Builder::new()
         .name("loom-plan-commit".into())
         .spawn(move || {
             let _guard = guard;
-            commit_worker(&ctx, body);
+            commit_worker(&worker_ctx, body);
         });
     match spawned {
-        Ok(_) => ApiResponse::json(202, &serde_json::json!({ "accepted": true })),
+        Ok(worker) => {
+            ctx.own_worker("commit", worker, None);
+            ApiResponse::json(202, &serde_json::json!({ "accepted": true }))
+        }
         Err(error) => {
             tracing::warn!("commit worker could not start: {error}");
             ApiResponse::error(500, "internal", "the commit worker could not start")

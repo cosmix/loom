@@ -101,8 +101,8 @@ fn a_project_scope_unset_removes_the_section_it_empties() {
         r#"{"scope":"project","name":"context.ceiling_tokens","value":null}"#,
     );
     assert_eq!(updated.old, ConfigValue::Number(900_000));
-    // Emptied, so the section goes and the user tier is genuinely restored -
-    // a keyless [context] would still win whole and resolve to the built-in.
+    // An empty section is removed as normalization; resolution falls through
+    // per key whether or not the section remains.
     assert!(!project_text(&scratch).contains("[context]"));
     assert_eq!(updated.entry.effective.source, Source::User);
     assert_eq!(updated.entry.effective.value, ConfigValue::Number(640_000));

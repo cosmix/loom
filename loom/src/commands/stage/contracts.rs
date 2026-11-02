@@ -16,16 +16,15 @@ pub use restore::restore;
 pub use show::show;
 
 use anyhow::{bail, Context, Result};
-use std::path::{Component, Path, PathBuf};
 
 use crate::daemon::{
     current_session_id, try_send_request, user_credential, DaemonReach, Request, Response,
 };
 use crate::fs::stage_request::{append_to_spool, spool_path, spool_target_from_cwd, StageRequest};
 use crate::host_verify::wait::TicketSink;
-use crate::models::stage::Stage;
 use crate::relay::emit::{RelayMode, RelaySink};
 use crate::relay::RequestKind;
+use crate::verify::contracts::site::ContractSite;
 use crate::verify::transitions::load_stage;
 
 use super::acceptance_runner::resolve_stage_execution_paths;
@@ -34,16 +33,6 @@ use super::acceptance_runner::resolve_stage_execution_paths;
 const RUN_REQUESTED: &str = "Contract run requested. End your turn now: the daemon runs the \
      contracts on the host, then freezes them and starts the implementation session, or sends \
      the refusal to an adjudicator, whose verdict a fresh contract writer starts with.";
-
-/// A stage and the places its contract files live.
-pub(crate) struct ContractSite {
-    work_dir: PathBuf,
-    stage: Stage,
-    worktree_root: PathBuf,
-    /// The stage's `working_dir` inside the worktree. Contract files, harness
-    /// globs and frozen paths are all relative to it.
-    working_dir: PathBuf,
-}
 
 impl ContractSite {
     /// Load the stage the way the session's own commands do, from the
@@ -56,37 +45,7 @@ impl ContractSite {
         else {
             bail!("Stage '{stage_id}' has no worktree, so it has no contract files");
         };
-        Ok(Self {
-            work_dir,
-            stage,
-            worktree_root,
-            working_dir,
-        })
-    }
-
-    /// A site the caller has already resolved: the daemon's host run, which
-    /// resolves it from the state root and never from its current directory.
-    pub(crate) fn resolved(
-        work_dir: PathBuf,
-        stage: Stage,
-        worktree_root: PathBuf,
-        working_dir: PathBuf,
-    ) -> Self {
-        Self {
-            work_dir,
-            stage,
-            worktree_root,
-            working_dir,
-        }
-    }
-
-    /// `working_dir` relative to the worktree root; empty when they coincide.
-    fn working_dir_prefix(&self) -> PathBuf {
-        let declared = self.stage.working_dir.as_deref().unwrap_or(".");
-        Path::new(declared)
-            .components()
-            .filter(|component| matches!(component, Component::Normal(_)))
-            .collect()
+        Ok(Self::resolved(work_dir, stage, worktree_root, working_dir))
     }
 }
 

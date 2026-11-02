@@ -14,8 +14,8 @@ use crate::plan::schema::{SandboxConfig, StageDefinition};
 /// It first attempts to load stages from .loom/work/stages/ files, and if none are found,
 /// falls back to loading from the plan file referenced in config.toml.
 ///
-/// Returns the execution graph and the plan-level sandbox configuration. When loading
-/// from stage files (which don't carry plan-level config), `SandboxConfig::default()` is returned.
+/// Returns the execution graph and plan-level sandbox configuration. Stage
+/// files use the persisted plan sandbox snapshot, or defaults when absent.
 pub fn build_execution_graph(work_dir: impl AsWorkDir) -> Result<(ExecutionGraph, SandboxConfig)> {
     work_dir.build_graph()
 }
@@ -30,33 +30,30 @@ pub trait AsWorkDir {
 
 impl AsWorkDir for WorkDir {
     fn build_graph(&self) -> Result<(ExecutionGraph, SandboxConfig)> {
-        build_graph_impl(self.root(), Some(self))
+        build_graph_impl(self.root())
     }
 }
 
 impl AsWorkDir for &WorkDir {
     fn build_graph(&self) -> Result<(ExecutionGraph, SandboxConfig)> {
-        build_graph_impl(self.root(), Some(*self))
+        build_graph_impl(self.root())
     }
 }
 
 impl AsWorkDir for Path {
     fn build_graph(&self) -> Result<(ExecutionGraph, SandboxConfig)> {
-        build_graph_impl(self, None)
+        build_graph_impl(self)
     }
 }
 
 impl AsWorkDir for &Path {
     fn build_graph(&self) -> Result<(ExecutionGraph, SandboxConfig)> {
-        build_graph_impl(self, None)
+        build_graph_impl(self)
     }
 }
 
 /// Internal implementation that handles both WorkDir and Path cases.
-fn build_graph_impl(
-    work_dir_path: &Path,
-    work_dir: Option<&WorkDir>,
-) -> Result<(ExecutionGraph, SandboxConfig)> {
+fn build_graph_impl(work_dir_path: &Path) -> Result<(ExecutionGraph, SandboxConfig)> {
     let stages_dir = work_dir_path.join("stages");
 
     // First try to load from .loom/work/stages/ files. Stage files don't carry
@@ -79,20 +76,12 @@ fn build_graph_impl(
     }
 
     // Fall back to reading from plan file
-    load_graph_from_plan_file(work_dir_path, work_dir)
+    load_graph_from_plan_file(work_dir_path)
 }
 
 /// Load execution graph from the plan file referenced in config.toml.
-fn load_graph_from_plan_file(
-    work_dir_path: &Path,
-    work_dir: Option<&WorkDir>,
-) -> Result<(ExecutionGraph, SandboxConfig)> {
-    // Load config - use WorkDir method if available, otherwise use fs module directly
-    let config = if let Some(wd) = work_dir {
-        wd.load_config_required()?
-    } else {
-        crate::fs::load_config_required(work_dir_path)?
-    };
+fn load_graph_from_plan_file(work_dir_path: &Path) -> Result<(ExecutionGraph, SandboxConfig)> {
+    let config = crate::fs::load_config_required(work_dir_path)?;
 
     let source_path = config
         .source_path()

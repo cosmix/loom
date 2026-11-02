@@ -253,9 +253,8 @@ fn working_tree_paths(
 fn git_output(project_root: &Path, args: Vec<String>) -> Result<Output, EvidenceUnavailableReason> {
     let refs: Vec<_> = args.iter().map(String::as_str).collect();
     let output = run_git(&refs, project_root).map_err(classify_git_error)?;
-    // `run_bounded_output` bounds wall-clock time and drains pipes fully, so this caps the
-    // accepted result rather than peak memory; memory is bounded in practice because every call
-    // restricts output to declared literal paths.
+    // Reject results exceeding the evidence cap; this check does not bound
+    // process-output allocation.
     if output.stdout.len() > MAX_GIT_OUTPUT_BYTES || output.stderr.len() > MAX_GIT_OUTPUT_BYTES {
         return Err(EvidenceUnavailableReason::ResourceLimit);
     }

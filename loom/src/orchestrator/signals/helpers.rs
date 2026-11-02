@@ -1,44 +1,30 @@
 //! Shared helpers for signal generation, formatting, and parsing.
 //!
-//! This module consolidates duplicated patterns across the signal types
-//! (standard, merge, knowledge, recovery, and metrics).
+//! Owns signal publication and the constrained Markdown readers the signal
+//! kinds share (section, field and numbered-list recognizers).
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-// Retrieval/delivery glue (knowledge-brief lookup and its persistence record)
-// lives in the `retrieval` sibling module; re-exported here so every existing
-// `helpers::` call site keeps working unchanged.
+// Shared knowledge retrieval and delivery helpers.
 pub(super) use super::retrieval::{
     ensure_trailing_newline, knowledge_tree_is_empty, persist_delivery, retrieve_stage_pack,
 };
 
-// Markdown section formatters (Target / Execution Rules / Stage Context /
-// Conflicting Files / knowledge Target) live in the `section_formatters`
-// sibling module - a cohesive cluster of "render one outgoing signal
-// section" functions, split out to keep this grab-bag file under the line
-// budget. Re-exported here so every existing `helpers::format_*_section`
-// call site (merge.rs, knowledge.rs) keeps working
-// unchanged.
+// Shared markdown section formatters.
 pub(super) use super::section_formatters::{
     format_conflicting_files_section, format_execution_rules_section,
     format_knowledge_target_section, format_stage_context_section, format_target_section,
 };
 
-/// Handoff trigger, replacing the retired percentage-threshold line: the
-/// PostToolUse hook reports the ceiling, so the agent never estimates it. The
-/// second line states the handoff's real cost so a session does not reach for
-/// it as a routine checkpoint - see the 2026-08-31 incident where one fired
-/// at 15% of its real budget and threw away a session with full context
-/// already loaded for nothing.
+/// Handoff trigger: the PostToolUse hook reports the ceiling, so the agent never
+/// estimates it. The second line states the handoff's cost so a session does not
+/// use it as a routine checkpoint.
 pub(super) const CONTEXT_CEILING_HANDOFF: &str = "- When the PostToolUse hook reports the context ceiling, finish the current unit and run `loom handoff --stage <id> --session <id> --trigger ceiling`, then stop.\n- A handoff discards a loaded session: a rare last resort, triggered only by the hook.\n";
 
 /// Write a signal file to the signals directory, creating it if needed.
-///
-/// Replaces the duplicated dir-create + path-build + write pattern
-/// found across all signal generators.
 pub(super) fn write_signal_file(
     session_id: &str,
     content: &str,
@@ -58,20 +44,97 @@ pub(super) fn write_signal_file(
     Ok(signal_path)
 }
 
-/// Parse markdown content into sections keyed by `## ` headers.
+/// Publish a signal, then record its optional context delivery receipt: a failed
+/// write leaves no receipt, and a failed receipt leaves the signal usable. The
+/// receipt proves publication, never that the recipient read the signal.
+pub(super) fn publish_signal(
+    session_id: &str,
+    content: &str,
+    work_dir: &Path,
+    stage: &crate::models::stage::Stage,
+    embedded_context: &super::types::EmbeddedContext,
+) -> Result<PathBuf> {
+    let path = write_signal_file(session_id, content, work_dir)?;
+    persist_delivery(work_dir, stage, session_id, embedded_context);
+    Ok(path)
+}
+
+/// Lines paired with whether they are outside a fenced code block.
+pub(super) fn signal_lines(content: &str) -> impl Iterator<Item = (&str, bool)> {
+    let mut fence: Option<(char, usize)> = None;
+    content.lines().map(move |line| {
+        let trimmed = line.trim_start();
+        let marker = trimmed.chars().next().filter(|c| *c == '`' || *c == '~');
+        if let Some(marker) = marker {
+            let count = trimmed.chars().take_while(|c| *c == marker).count();
+            // A backtick run followed by more backticks is inline code: it must
+            // not swallow the signal structure after it as an unclosed fence.
+            let inline_code = marker == '`' && trimmed[count..].contains('`');
+            if count >= 3 && !inline_code {
+                match fence {
+                    None => fence = Some((marker, count)),
+                    Some((open, len))
+                        if marker == open && count >= len && trimmed[count..].trim().is_empty() =>
+                    {
+                        fence = None
+                    }
+                    _ => {}
+                }
+                return (line, false);
+            }
+        }
+        (line, fence.is_none())
+    })
+}
+
+/// Iterate lines with their structural heading, excluding headings inside fences.
+pub(super) fn signal_sections(
+    content: &str,
+) -> impl Iterator<Item = (&str, bool, Option<(usize, &str)>)> {
+    signal_lines(content).map(|(line, outside)| {
+        let trimmed = line.trim();
+        let depth = trimmed.bytes().take_while(|b| *b == b'#').count();
+        let heading = (outside && depth > 0 && trimmed.as_bytes().get(depth) == Some(&b' '))
+            .then(|| (depth, trimmed[depth + 1..].trim()));
+        (line, outside, heading)
+    })
+}
+
+pub(super) fn numbered_item(line: &str) -> Option<&str> {
+    let digits = line.bytes().take_while(u8::is_ascii_digit).count();
+    if digits == 0 {
+        return None;
+    }
+    line[digits..]
+        .strip_prefix(". ")
+        .or_else(|| line[digits..].strip_prefix(") "))
+}
+
+pub(super) fn field_value<'a>(line: &'a str, field: &str) -> Option<&'a str> {
+    let line = line.trim().strip_prefix("- ").unwrap_or(line.trim());
+    let bold = format!("**{field}**:");
+    let plain = format!("{field}:");
+    line.strip_prefix(&bold)
+        .or_else(|| line.strip_prefix(&plain))
+        .map(str::trim)
+}
+
+/// Parse markdown content into sections keyed by structural `## ` headers.
 ///
-/// Returns a map from section name to the non-empty trimmed lines in that section.
-/// Lines before the first `## ` header are stored under the empty string key.
-///
-/// Replaces the near-identical section-parsing loops of the signal parsers.
+/// Returns a map from section name to the non-empty trimmed lines in that section,
+/// fenced lines excluded. Lines before the first `## ` header are stored under the
+/// empty string key.
 pub(super) fn parse_signal_sections(content: &str) -> HashMap<String, Vec<String>> {
     let mut sections: HashMap<String, Vec<String>> = HashMap::new();
     let mut current_section = String::new();
 
-    for line in content.lines() {
+    for (line, outside_fence, heading) in signal_sections(content) {
+        if !outside_fence {
+            continue;
+        }
         let trimmed = line.trim();
 
-        if let Some(header) = trimmed.strip_prefix("## ") {
+        if let Some((2, header)) = heading {
             current_section = header.to_string();
             sections.entry(current_section.clone()).or_default();
             continue;
@@ -94,9 +157,8 @@ pub(super) fn parse_signal_sections(content: &str) -> HashMap<String, Vec<String
 /// Useful in combination with `parse_signal_sections` for extracting
 /// specific fields from a section.
 pub(super) fn extract_field_from_lines<'a>(lines: &'a [String], field: &str) -> Option<&'a str> {
-    let prefix = format!("- **{field}**: ");
     for line in lines {
-        if let Some(value) = line.strip_prefix(&prefix) {
+        if let Some(value) = field_value(line, field) {
             return Some(value);
         }
     }
@@ -119,8 +181,8 @@ pub(super) fn extract_backtick_items(lines: &[String]) -> Vec<String> {
 }
 
 /// Append the commit-timing doctrine: commits are the ORCHESTRATOR's, made ONLY
-/// as the final step of the stage, after every subagent has returned and all
-/// verification is green — never mid-stage.
+/// at completion after every subagent has returned and verification is green,
+/// or before filing a block or dispute when the stage cannot finish.
 ///
 /// `gate` names the verification gate for the stage type (code stages: build,
 /// tests, lint, format, acceptance; documentation stages: acceptance only) and
@@ -137,10 +199,8 @@ pub(super) fn append_commit_timing_rules(
     review: &str,
     add_target: &str,
 ) {
-    content.push_str(
-        "**When to Commit (ORCHESTRATOR ONLY — AT THE END — AFTER ALL VERIFICATION):**\n\n",
-    );
-    content.push_str("Commits are yours alone and ONLY as the final step of the stage — never mid-stage, never \"what is done so far\". Legitimate only once ALL of these hold:\n\n");
+    content.push_str("**When to Commit (ORCHESTRATOR ONLY — AT EXIT):**\n\n");
+    content.push_str("Commits are yours alone and ONLY as the final step of the stage — never mid-stage, never \"what is done so far\". Exception: commit before filing a block or dispute when the stage cannot finish. For completion, commit only once ALL of these hold:\n\n");
     content.push_str("1. Every subagent, coordinator, team, and Workflow you spawned has RETURNED and its result is absorbed.\n");
     content.push_str(&format!(
         "2. The full verification gate is GREEN on the complete tree: {gate}.\n"
@@ -176,7 +236,7 @@ pub(super) fn append_knowledge_commit_bullet(content: &mut String) {
     ));
 }
 
-/// The knowledge stage's mission block (moved out of `cache.rs` unchanged).
+/// The knowledge stage's mission block.
 pub(super) fn append_knowledge_mission(content: &mut String) {
     content.push_str("**Your Mission:**\n\n");
     content.push_str(
@@ -199,12 +259,8 @@ pub(super) fn append_knowledge_mission(content: &mut String) {
 
 /// Append the shared "settled stage" completion doctrine: `loom stage
 /// complete` is the session's LAST act, run only once the stage is SETTLED,
-/// plus the "verify acceptance criteria" line shared by both callers.
-///
-/// Duplicated verbatim between `append_completion_rules` (standard and
-/// integration-verify prefixes) and `generate_knowledge_stable_prefix`
-/// (`cache.rs`) - extracted here so the doctrine text lives in exactly one
-/// place.
+/// plus the "verify acceptance criteria" line, for the standard,
+/// integration-verify and knowledge prefixes.
 pub(super) fn append_settled_completion_rules(content: &mut String) {
     content.push_str(
         "- **`loom stage complete` is the LAST act of your session.** Run it ONLY when SETTLED: every subagent returned and absorbed, every defect fixed and re-verified, all work committed (`git status` clean).\n",
@@ -286,6 +342,17 @@ Some preamble
 
         let empty = sections.get("Empty Section").unwrap();
         assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn inline_triple_backticks_do_not_open_a_fence() {
+        let sections = parse_signal_sections(
+            "## Assignment\nuse ```x``` here\n```y```\n## Target\n- Stage: a\n",
+        );
+        assert_eq!(
+            extract_field_from_lines(&sections["Target"], "Stage"),
+            Some("a")
+        );
     }
 
     #[test]

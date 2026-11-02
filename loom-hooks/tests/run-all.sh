@@ -3,6 +3,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PASS=0
 FAIL=0
+SKIPS=0
 ERRORS=()
 
 # LOOM_HOOK_TEST_BSD=1 runs every test with the BSD tool shims first on PATH
@@ -34,6 +35,15 @@ run_test() {
         bash "$script" 2>&1); then
         echo "  PASS: $name"
         ((PASS++)) || true
+        # A test that skipped a case still exits 0; its reason must stay visible.
+        while IFS= read -r line; do
+            case "$line" in
+            skip:* | SKIP:*)
+                echo "    $line"
+                ((SKIPS++)) || true
+                ;;
+            esac
+        done <<<"$output"
     else
         echo "  FAIL: $name"
         echo "    Output: $output"
@@ -70,10 +80,12 @@ run_test "ask-user hooks: act only on AskUserQuestion, record the trigger" "$SCR
 run_test "worktree-file-guard: malformed non-empty input is blocked" "$SCRIPT_DIR/worktree-file-guard-truncated-input.sh"
 run_test "worktree-file-guard: MultiEdit honours the worktree boundary" "$SCRIPT_DIR/worktree-file-guard-multiedit.sh"
 run_test "worktree-file-guard: the session scratchpad is open, its surroundings stay blocked" "$SCRIPT_DIR/worktree-file-guard-scratchpad.sh"
+run_test "worktree guards: an inherited LOOM_WORKTREE_PATH binds only its own session" "$SCRIPT_DIR/worktree-guards-inherited-env.sh"
 run_test "spawn-guard: agent tier falls back to ~/.claude/agents" "$SCRIPT_DIR/spawn-guard-home-agent-tier.sh"
 run_test "spawn-guard: loom-code-reviewer runs the configured model and effort" "$SCRIPT_DIR/spawn-guard-reviewer-model.sh"
 run_test "credential-guard: capability tokens blocked through the state-root symlink" "$SCRIPT_DIR/credential-guard-tokens.sh"
 run_test "credential-guard: sandbox denyRead gates file tools, search roots above a denial run" "$SCRIPT_DIR/credential-guard-deny-read.sh"
+run_test "credential-guard: effective session policy and aliased state root" "$SCRIPT_DIR/credential-guard-session-policy.sh"
 run_test "credential-guard: a saved terminal history is closed to a loom session, open to the operator" "$SCRIPT_DIR/credential-guard-terminal-history.sh"
 run_test "credential-guard: a .. after a nonexistent component is normalized, not treated as unresolvable" "$SCRIPT_DIR/credential-guard-dotdot.sh"
 run_test "plans-path-guard: blocks ~/.claude/plans write" "$SCRIPT_DIR/plans-path-guard-blocks-claude-plans.sh"
@@ -86,15 +98,18 @@ run_test "poll-guard: owned subagent waits are bounded" "$SCRIPT_DIR/poll-guard-
 run_test "poll-guard: git show/diff pathless rule treats -s/--no-patch as bounded" "$SCRIPT_DIR/poll-guard-git-pathless.sh"
 run_test "subagent-gate-payload: agent_type/transcript_path decide before the process-tree fallback" "$SCRIPT_DIR/subagent-gate-payload.sh"
 run_test "subagent-start: ledger rows retain parent session identity" "$SCRIPT_DIR/subagent-start-ledger.sh"
+run_test "subagent review: documented payloads record a round through the real binary" "$SCRIPT_DIR/subagent-review-real-binary.sh"
+run_test "subagent review: a job that builds the binary cannot skip the real-binary test" "$SCRIPT_DIR/subagent-review-real-binary-required.sh"
 run_test "codex-forward-guard: blocks Edit by a forwarder" "$SCRIPT_DIR/codex-forward-guard-blocks-edit.sh"
 run_test "codex-forward-guard: companion Bash allowed, other Bash blocked" "$SCRIPT_DIR/codex-forward-guard-bash-companion-only.sh"
 run_test "codex-forward-guard: plain subagents, main sessions, no-path all untouched" "$SCRIPT_DIR/codex-forward-guard-ignores-others.sh"
+run_test "codex-forward-guard: only the guard may place a minted invocation id in a command" "$SCRIPT_DIR/codex-forward-guard-quoted-invocation.sh"
 run_test "codex-forward-guard: authorized forwards record requested model" "$SCRIPT_DIR/codex-forward-records-model.sh"
 run_test "codex-forward-guard: tests isolate ambient live identity" "$SCRIPT_DIR/codex-forward-guard-live-identity.sh"
 run_test "codex-forward: exact job lifecycle markers and argv" "$SCRIPT_DIR/codex-forward-wrapper.sh"
 run_test "codex-forward: bounded direct process supervision" "$SCRIPT_DIR/codex-forward-direct.sh"
 run_test "codex-forward-result: correlated direct lifecycle evidence" "$SCRIPT_DIR/codex-forward-result.sh"
-run_test "codex apply_patch: file guards and source-graph edit recording" "$SCRIPT_DIR/codex-apply-patch.sh"
+run_test "codex apply_patch: file guards and no post-patch recording" "$SCRIPT_DIR/codex-apply-patch.sh"
 run_test "codex-forward-guard: quoted and escaped prompts round-trip" "$SCRIPT_DIR/codex-forward-guard-quoting.sh"
 run_test "codex-forward-guard: enforcement needs unforgeable stage evidence" "$SCRIPT_DIR/codex-forward-guard-stage-evidence.sh"
 run_test "git-add-guard: quoted prose allowed, real args blocked" "$SCRIPT_DIR/git-add-guard-quoting.sh"
@@ -102,6 +117,7 @@ run_test "_common: token helpers scan argv values, not quoted prose" "$SCRIPT_DI
 run_test "commit-filter: quoted prose about git is allowed, real commits blocked" "$SCRIPT_DIR/commit-filter-quoted-payload.sh"
 run_test "commit-filter: git commit blocked in a stage session, only as git's subcommand" "$SCRIPT_DIR/commit-filter-session-git-commit.sh"
 run_test "worktree-isolation: quoted prose paths allowed, real traversal blocked" "$SCRIPT_DIR/worktree-isolation-quoted-payload.sh"
+run_test "worktree guards consume shared policy and reject missing data" "$SCRIPT_DIR/worktree-shared-policy.sh"
 run_test "prefer-modern-tools: grep/find inside a quoted payload is not a command" "$SCRIPT_DIR/prefer-modern-tools-quoted-payload.sh"
 run_test "prefer-modern-tools: missing rg/fd allows grep/find with a warning" "$SCRIPT_DIR/prefer-modern-tools-missing-rg-fd.sh"
 run_test "require-jq: blocking guard fails closed without jq" "$SCRIPT_DIR/require-jq-blocking.sh"
@@ -119,11 +135,12 @@ run_test "user-prompt-context: no LOOM_WORK_DIR exits silently" "$SCRIPT_DIR/use
 run_test "user-prompt-context: malformed JSON fails open" "$SCRIPT_DIR/user-prompt-context-malformed-json.sh"
 run_test "user-prompt-context: output is a single JSON object" "$SCRIPT_DIR/user-prompt-context-single-json-line.sh"
 run_test "user-prompt-context: oversized delegate output is suppressed" "$SCRIPT_DIR/user-prompt-context-oversized-output.sh"
-run_test "post-tool-use: records Write/Edit path via loom context record-edit" "$SCRIPT_DIR/post-tool-use-write-edit-record.sh"
+run_test "retrieval wrapper: bounded fallback and failed output suppression" "$SCRIPT_DIR/retrieval-wrapper-bounds.sh"
+run_test "post-tool-use: Write/Edit heartbeat without edit recording" "$SCRIPT_DIR/post-tool-use-write-edit-record.sh"
 run_test "post-tool-use: exits 0 when loom is absent from PATH" "$SCRIPT_DIR/post-tool-use-no-loom-binary.sh"
 run_test "post-tool-use: symlinked heartbeat skips only the heartbeat write" "$SCRIPT_DIR/post-tool-use-symlinked-heartbeat.sh"
-run_test "post-tool-use: records MultiEdit file_path via loom context record-edit" "$SCRIPT_DIR/post-tool-use-multiedit-record.sh"
-run_test "post-tool-use: records NotebookEdit notebook_path via loom context record-edit" "$SCRIPT_DIR/post-tool-use-notebookedit-record.sh"
+run_test "post-tool-use: MultiEdit without edit recording" "$SCRIPT_DIR/post-tool-use-multiedit-record.sh"
+run_test "post-tool-use: NotebookEdit without edit recording" "$SCRIPT_DIR/post-tool-use-notebookedit-record.sh"
 run_test "post-tool-use: canonical context-ceiling pair is cached and selected by role" "$SCRIPT_DIR/post-tool-use-ceiling-resolution.sh"
 run_test "post-tool-use: context ceiling hard block fires on every call at 100%" "$SCRIPT_DIR/post-tool-use-ceiling-hard-block.sh"
 run_test "post-tool-use: context ceiling 80% warning fires once per session" "$SCRIPT_DIR/post-tool-use-ceiling-warn-once.sh"
@@ -135,6 +152,8 @@ run_test "subagent-stop: lifecycle heartbeat tags subagent:true with no last_too
 run_test "subagent-stop: only a loom-code-reviewer stop reaches review-harvest, silently" "$SCRIPT_DIR/subagent-stop-review-harvest.sh"
 run_test "subagent-stop: a FIFO at stop-skips.jsonl or lifecycle.jsonl never blocks the hook" "$SCRIPT_DIR/subagent-stop-fifo-journal.sh"
 run_test "heartbeat protocol: ownership, SessionStart lock, abandoned recovery, atomic JSON" "$SCRIPT_DIR/heartbeat-protocol.sh"
+run_test "heartbeat reclaim: killed reclaimer recovers, needs only Bash and coreutils" "$SCRIPT_DIR/heartbeat-reclaimer-crash.sh"
+run_test "heartbeat reclaim: creator that lost its directory never shares the lock" "$SCRIPT_DIR/heartbeat-aborted-creator.sh"
 run_test "heartbeat protocol: subagent tool calls are tagged, main-agent calls are not" "$SCRIPT_DIR/heartbeat-subagent-flag.sh"
 run_test "post-tool-use: resident-token arithmetic (last record wins, torn line survives)" "$SCRIPT_DIR/post-tool-use-resident-tokens.sh"
 run_test "post-tool-use: heartbeat write survives a ceiling exit 2" "$SCRIPT_DIR/post-tool-use-ceiling-heartbeat-survives.sh"
@@ -152,7 +171,7 @@ run_test "loom-relay: kind derivation per loom command segment, no control kinds
 run_test "loom-relay: fast path, jq and LOOM_HOOK_PATH gates, helper call contract" "$SCRIPT_DIR/loom-relay-gates.sh"
 
 echo ""
-echo "Results: $PASS passed, $FAIL failed"
+echo "Results: $PASS passed, $FAIL failed, $SKIPS skipped cases"
 
 if [[ $FAIL -gt 0 ]]; then
     echo "Failed tests: ${ERRORS[*]}"

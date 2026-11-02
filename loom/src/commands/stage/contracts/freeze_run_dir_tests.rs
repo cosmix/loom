@@ -106,7 +106,14 @@ fn freeze_into(tmp: &Path, name: &str, contract: FrozenContract) -> PathBuf {
 fn freeze_red(root: &Path) -> FrozenContract {
     let contract = spec();
     let prepared = prepare_contract(root, root, &contract).unwrap();
-    let ran = run_prepared(root, &contract, &prepared, CommandConfinement::Confined).unwrap();
+    let ran = run_prepared(
+        root,
+        &contract,
+        &prepared,
+        CommandConfinement::Confined,
+        |_| {},
+    )
+    .unwrap();
     let report = ran
         .judged
         .unwrap_or_else(|problem| panic!("freeze refused: {problem}"));

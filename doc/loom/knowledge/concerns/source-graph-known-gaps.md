@@ -29,7 +29,8 @@ Reviewer suggestions that are small, local fixes live in [Review Backlog](source
 - **Go** methods are not reachable by bare name and `import` paths are matched by directory suffix, so a slashed
   stdlib path such as `net/http` can still suffix-match a local `x/net/http` directory (accepted design behaviour,
   pinned by `tests_paths.rs`). `last_segment` splits on `.`, so `gopkg.in/yaml.v3` has local name `v3`.
-- **One-segment specs match anywhere** in Python, Ruby and Go: a local `utils/os.py` captures `import os`.
+- **One-segment specs match anywhere** in Python, Ruby and Go: for example, a local file named
+  os.py under a utils directory can capture `import os`.
   The same suffix match applies to Java `a.b.C`.
 - **Kotlin and Swift** have no grammar under `github.com/tree-sitter` and are not supported; shell and
   configuration languages (proposal wave D) are out of scope. A build without a wave pack reports its

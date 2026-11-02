@@ -10,18 +10,7 @@ Every v2 gate reads `stage.plan_version == 2` (a `Stage` field, default 1, set t
 `PlanIdentity` in `Stage::from_definition`); none re-reads the plan file for the version. A v1 stage runs
 none of them.
 
-**Completion order** (`commands/stage/complete_verification.rs::run`): goal-backward checks
-(`run_goal_checks`), then `complete_verification_v2::run_v2` for v2 stages, then `after_stage`, the unwired
-and duplicate checks, the aggregated check (integration-verify only). Inside `run_v2`
-(`complete_verification_v2.rs`): contract check (standard stages with contracts), test integrity (standard and
-integration-verify), impact-selected tests (standard), reachable re-verification (integration-verify), and
-the review gate last. A host completion job (`checks.daemon_gates`, the child run in `host_verify/child_complete.rs`)
-skips test integrity and the review gate in `run_v2`; the daemon runs both when it applies the job
-(`daemon/server/observer.rs::check_completion_gates`, called from `host_verify/apply.rs::check_outside_lock`)
-before it completes the stage. See "Review gate and harvest" below. `complete_verification.rs` sits at 399 lines, so new v2 calls go in `run_v2`.
-`complete_verification_v2` is a `#[path]` child of `complete_verification.rs`, so its tests run as
-`commands::stage::complete::complete_verification::complete_verification_v2::tests::*`; a filter
-`commands::stage::complete_verification_v2` selects zero tests.
+**Completion order** (`verify/completion/mod.rs::run_checks`): goal-backward checks, then `verify/completion/complete_verification_v2.rs::run_v2` for v2 stages, then `after_stage`, unwired and duplicate checks, and the aggregated integration check. The command module `commands/stage/complete_verification.rs` prints operator guidance. The host child calls the same service; daemon gates defer integrity and review checks until the daemon applies the result. The preserved test file `commands/stage/complete_verification_v2_tests.rs` is loaded through its command wrapper and tests the shared v2 service.
 
 **No gate has a verifier subagent.** Integration-verify: the orchestrator runs `loom check integration-verify`
 once, and that check carries the complete suite; reviewers run only targeted checks (`INTEGRATION_VERIFY_OVERRIDE`,
@@ -242,3 +231,7 @@ Records live under `<state root>/verification/<stage>/` (`host_verify/store.rs`)
 - `check`: changes no stage state.
 - `freeze`: `freeze::apply_freeze_result` freezes the contracts only while the binding holds; otherwise it records the refusal in `contracts/<stage>/refused.json` for the `dispute_refused_freezes` tick step to file as a freeze-refusal dispute (see [Refused Freezes Are Disputed](contract-phase.md#refused-freezes-are-disputed)). An interrupted or daemon-stopped run, or unreadable reports or binding, records a first problem starting `infrastructure:`.
 - An application that fails with an I/O or state error is retried at each later tick, up to `MAX_APPLY_ATTEMPTS` (`orchestrator/core/host_jobs.rs`). The last failure writes the marker as `apply failed: <error>`, so it is never retried again.
+
+## Host Job Budget Binding
+
+`verify/budget.rs` sums acceptance timeouts and fixed allowances for goal checks, frozen contracts, and impact selection with saturating arithmetic. Check and completion jobs take wiring, dead-code, and regression counts from the active plan definition; completion also takes `after_stage` timeouts from that definition. The persisted stage copy is insufficient for these deadlines. The runner brackets its budget read with the effective policy hash, passes it in `LOOM_VERIFY_BUDGET_POLICY`, and the child checks it after loading its stage and plan inputs before executing those commands. The host runner adds the named 1800-second completion margin and retires an expired child. The monitor uses the shared stage command sum for its separate session silence allowance.

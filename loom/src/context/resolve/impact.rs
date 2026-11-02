@@ -86,6 +86,17 @@ impl Default for ImpactOptions {
     }
 }
 
+impl ImpactOptions {
+    /// Whether a kind is included in this traversal's edge allow-list.
+    pub fn accepts_kind(&self, kind: SourceEdgeKind) -> bool {
+        if self.kinds.is_empty() {
+            !matches!(kind, SourceEdgeKind::Contains | SourceEdgeKind::Imports)
+        } else {
+            self.kinds.contains(&kind)
+        }
+    }
+}
+
 /// Reverse-impact hits plus the numbers removed by [`ImpactOptions::limit`] and
 /// [`ImpactOptions::path_prefix`].
 #[derive(Debug, Clone, PartialEq)]
@@ -289,14 +300,7 @@ impl<'a> Walk<'a> {
 /// to otherwise-matching nodes farther away.
 fn step_is_allowed(step: Step<'_>, options: &ImpactOptions) -> bool {
     let edge = step.edge;
-    let kind_allowed = if options.kinds.is_empty() {
-        !matches!(
-            edge.kind,
-            SourceEdgeKind::Contains | SourceEdgeKind::Imports
-        )
-    } else {
-        options.kinds.contains(&edge.kind)
-    };
+    let kind_allowed = options.accepts_kind(edge.kind);
     let provenance_allowed =
         options.provenances.is_empty() || options.provenances.contains(&edge.provenance);
     kind_allowed && provenance_allowed && step.confidence() >= options.min_confidence

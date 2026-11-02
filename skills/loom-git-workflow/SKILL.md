@@ -141,6 +141,12 @@ git branch recovered <sha>         # or resurrect a lost branch/commit
 git cherry-pick <sha>              # pull back a single lost commit
 ```
 
+In a loom session the sandbox denies `<common dir>/logs`, and the session runs with `core.logAllRefUpdates=false`:
+
+- A stage branch has no reflog of its own. `git reflog` and `HEAD@{n}` work; `@{n}` and `git reflog show <branch>` find nothing.
+- `git stash` refuses with `Cannot save the current status` and leaves the tree alone.
+- A reset, merge or cherry-pick that fails with `unable to append to .../logs/...` moved the index and work tree but not the branch. This happens in a session rooted in the main checkout, whose branch keeps its reflog, or in a command run without that setting. Do not `git add` that state: it reverses the branch's work. `git reset --hard HEAD` is the way back, and it discards uncommitted edits, so check `git status` first.
+
 `reset` variants: `--soft` (keep changes staged) · `--mixed`/default (keep unstaged) · `--hard` (discard — the only destructive one). `git revert <sha>` undoes a commit *with a new commit* — the safe choice on shared history (no rewrite).
 
 ## Bisect (find the commit that introduced a bug)
@@ -157,7 +163,7 @@ Bisect is only reliable if history is bisectable — every commit builds/tests. 
 
 ## Gotchas
 
-- ⚠ `reset --hard` and `checkout -- <file>` discard uncommitted work with **no reflog entry** — it's gone. `git stash` first if unsure.
+- ⚠ `reset --hard` and `checkout -- <file>` discard uncommitted work with **no reflog entry** — it's gone. `git stash` first if unsure (a loom session cannot stash: copy the file instead).
 - ⚠ `git clean -fd` deletes untracked files irreversibly; always `git clean -n` (dry run) first.
 - ⚠ `pull` defaults to merge, creating noise commits on feature branches. `git pull --rebase` (or set `pull.rebase = true`) keeps them linear — but only on unshared branches.
 - ⚠ `cherry-pick` duplicates a commit under a new sha; cherry-picking across branches you'll later merge causes "already applied" conflicts.

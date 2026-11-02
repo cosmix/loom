@@ -10,10 +10,10 @@
 
 use anyhow::Result;
 
-use crate::commands::stage::contracts::freeze::{JudgedRun, BUILD_FAILED};
 use crate::daemon::ContractRunReport;
 use crate::plan::schema::ContractSpec;
 use crate::verify::contracts::failed_builds::{BuildKey, FailedBuilds};
+use crate::verify::contracts::freeze::{JudgedRun, BUILD_FAILED};
 
 /// One contract's judged run.
 pub(super) struct Verdict {

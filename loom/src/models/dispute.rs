@@ -286,16 +286,13 @@ pub struct Citation {
     pub claim: String,
 }
 
-/// Forward-declaration of the typed plan amendment shape that Stage 3
-/// will introduce. The placeholder accepts an opaque JSON object so
-/// the schema can be tightened in Stage 3 without breaking Stage 2.
-///
-/// Stage 3 will replace this with structured `AmendmentField` + `AmendmentPatch`
-/// types. Stage 2 only persists the JSON so deserialisation remains
-/// stable across the transition.
+/// Persisted verdict envelope decoded according to the dispute kind.
+/// Criterion and contract patches are decoded by adjudication's `plan_patch`
+/// module; freeze-refusal patches use `verdict_freeze_refusal`. Accepted
+/// impact disputes may carry an empty object.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlanPatch {
-    /// Opaque JSON until Stage 3 lands the typed amendment schema.
+    /// JSON in the compatible shape for the verdict's dispute kind.
     #[serde(flatten)]
     pub inner: serde_json::Value,
 }

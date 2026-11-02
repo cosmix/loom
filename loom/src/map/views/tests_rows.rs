@@ -374,6 +374,14 @@ fn window_header_names_state_base_and_generation() {
     );
     assert!(clean.contains("two"));
     assert!(clean.ends_with("... truncated (raise --window-lines)"));
+    let unusual = SourceWindow {
+        path: "src/`tab\tline\n.rs".into(),
+        ..window
+    };
+    let json: serde_json::Value =
+        serde_json::from_str(&window_json(&unusual, &identity(false)).to_string()).unwrap();
+    assert_eq!(json["path"], unusual.path);
+    assert!(!render_window(&unusual, &identity(false)).contains('`'));
 }
 
 #[test]

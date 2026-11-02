@@ -22,7 +22,7 @@
 
 ## Rewriting Tests Under the Replaced-Copy Rule Lost Guards
 
-**What happened:** `next-step.test.tsx` inverted the base guard that the card must not repeat the `write_plan` button label and dropped the `h-auto` and no-clamp assertions, while the integrity dispute named only `aria-describedby`. Features raised 11 test-integrity events in one stage, one per pre-existing test file the briefs ordered rewritten.
+**What happened:** the former next-step.test.tsx inverted the base guard that the card must not repeat the `write_plan` button label and dropped the `h-auto` and no-clamp assertions, while the integrity dispute named only `aria-describedby`. Features raised 11 test-integrity events in one stage, one per pre-existing test file the briefs ordered rewritten.
 
 **Why:** the rewrite treated the guard as replaced copy when a distinct title existed. A brief that orders tests rewritten ("tests that pin replaced copy change in the same edit") always raises integrity events at completion.
 

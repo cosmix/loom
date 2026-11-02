@@ -4,8 +4,7 @@
 # regex-match the raw command with GNU-only `\s`/`\S`, which both failed to
 # fire at all on a non-GNU grep and fired on any prose mentioning "git
 # commit". It now strips heredoc bodies (strip_embedded_content) and
-# tokenizes what remains (loom_tokenize_command + loom_tokens_cmd_has_arg),
-# exactly as commit-filter.sh's is_git_commit_command() does.
+# tokenizes what remains and checks the Git subcommand as commit-filter does.
 #
 # Three cases:
 #   (a) a heredoc BODY whose text happens to start a line with "git commit"
@@ -76,7 +75,8 @@ if ! echo "$STDERR_D" | grep -q "POST-COMMIT REMINDER"; then
 fi
 
 # --- (e) prose, or other loom segments, never fire it -----------------------
-for prose in 'loom memory note "loom stage commit later"' 'loom stage list && loom log commit'; do
+for prose in 'loom memory note "loom stage commit later"' 'loom stage list && loom log commit' \
+	'git cat-file commit HEAD' 'git log --grep commit'; do
 	STDERR_E=$(run_hook "$prose")
 	if echo "$STDERR_E" | grep -q "POST-COMMIT REMINDER"; then
 		echo "FAIL: (e) '$prose' fired the reminder"

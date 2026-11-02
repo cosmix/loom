@@ -118,3 +118,26 @@ fn codex_model_candidates_parse_rejects_ids_outside_the_shape() {
     assert_eq!(parse_codex_model("gpt-6.x-sol"), None);
     assert_eq!(parse_codex_model("claude-6-sol"), None);
 }
+#[test]
+fn companion_preflight_requires_the_supported_regular_file() {
+    use std::os::unix::fs::symlink;
+
+    let home = tempfile::tempdir().unwrap();
+    let root = home.path().join(".claude/plugins/cache/openai-codex/codex");
+    let supported = root
+        .join(super::companion_version().unwrap())
+        .join("scripts/codex-companion.mjs");
+    let unsupported = root.join("99.0.0/scripts/codex-companion.mjs");
+    assert!(!super::codex_companion_installed_in(home.path()));
+    std::fs::create_dir_all(unsupported.parent().unwrap()).unwrap();
+    std::fs::write(&unsupported, "other").unwrap();
+    assert!(!super::codex_companion_installed_in(home.path()));
+    std::fs::create_dir_all(supported.parent().unwrap()).unwrap();
+    symlink(&unsupported, &supported).unwrap();
+    assert!(!super::codex_companion_installed_in(home.path()));
+    std::fs::remove_file(&supported).unwrap();
+    std::fs::write(&supported, "supported").unwrap();
+    assert!(super::codex_companion_installed_in(home.path()));
+    std::fs::remove_file(unsupported).unwrap();
+    assert!(super::codex_companion_installed_in(home.path()));
+}

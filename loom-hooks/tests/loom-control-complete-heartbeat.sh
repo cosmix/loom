@@ -12,6 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOOK="$SCRIPT_DIR/../loom-control-complete.sh"
 POST_HOOK="$SCRIPT_DIR/../post-tool-use.sh"
 STALL_LINE="$SCRIPT_DIR/../../loom/src/orchestrator/monitor/stall_line.rs"
+export LOOM_BIN="${LOOM_BIN:-$SCRIPT_DIR/../../loom/target/debug/loom}"
 TMP=""
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-control-complete-heartbeat.XXXXXX") && [[ -n "$TMP" ]] || {
 	echo "FAIL: could not create scratch directory"

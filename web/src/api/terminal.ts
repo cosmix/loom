@@ -152,8 +152,8 @@ export class TerminalConnection {
     if (event.code === 1000) this.emit("ended", event.reason);
     else if (event.code === 1001) this.emit("dropped", "server stopping");
     // 1009 is the server's `CLOSE_TOO_LARGE`: a frame past its 64 KiB cap left
-    // the input stream out of sync. Refused rather than dropped, because
-    // reconnecting sends the same oversized frame again.
+    // the input stream out of sync. Refuse automatic retry and let the user
+    // reconnect deliberately after the server rejects the input.
     else if (event.code === 1009) this.emit("refused", "input too large");
     else if (event.code === 4004 || event.code === 4008) this.emit("refused", event.reason);
     else if (event.code === 4009) {

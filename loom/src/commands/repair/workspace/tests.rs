@@ -17,12 +17,14 @@ fn workspace_repair_returns_nothing_for_a_clean_workspace() {
 fn workspace_repair_adds_the_missing_gitignore_entries() {
     let root = tempfile::tempdir().unwrap();
     let issues = vec![
-        RepairIssue {
+        DetectedIssue {
+            action: RepairAction::Workspace(WorkspaceFix::GitignoreWork),
             severity: Severity::Warning,
             description: ".loom/work not found in .gitignore".to_string(),
             fix_description: "Add .loom/work/ and .loom/work to .gitignore".to_string(),
         },
-        RepairIssue {
+        DetectedIssue {
+            action: RepairAction::Workspace(WorkspaceFix::GitignoreWorktrees),
             severity: Severity::Warning,
             description: ".worktrees not found in .gitignore".to_string(),
             fix_description: "Add .worktrees/ and .worktrees to .gitignore".to_string(),
@@ -56,7 +58,8 @@ fn workspace_repair_removes_a_corrupted_work_symlink() {
         "a main-repo .loom/work symlink must fail validation before the repair"
     );
 
-    let issue = RepairIssue {
+    let issue = DetectedIssue {
+        action: RepairAction::Workspace(WorkspaceFix::WorkSymlink),
         severity: Severity::Critical,
         description: format!(
             ".loom/work is a symlink (-> {}) in main repo",
@@ -82,7 +85,8 @@ fn workspace_repair_leaves_the_invalid_work_shape_to_an_explicit_repair() {
     fs::create_dir_all(root.path().join(".loom")).unwrap();
     fs::write(root.path().join(".loom/work"), "not a directory").unwrap();
 
-    let issue = RepairIssue {
+    let issue = DetectedIssue {
+        action: RepairAction::Workspace(WorkspaceFix::InvalidWork),
         severity: Severity::Critical,
         description: ".loom/work exists but is neither directory nor symlink".to_string(),
         fix_description: "Remove .loom/work and reinitialize".to_string(),
@@ -101,14 +105,16 @@ fn workspace_repair_leaves_the_invalid_work_shape_to_an_explicit_repair() {
 fn workspace_repair_leaves_home_and_state_fixes_to_an_explicit_repair() {
     let root = tempfile::tempdir().unwrap();
     let issues = vec![
-        RepairIssue {
+        DetectedIssue {
+            action: RepairAction::OldSkill(root.path().join(".claude/skills/rust")),
             severity: Severity::Warning,
             description: "Old unprefixed skill 'rust' found (superseded by 'loom-rust')"
                 .to_string(),
             fix_description: "Remove ~/.claude/skills/rust (loom-rust already installed)"
                 .to_string(),
         },
-        RepairIssue {
+        DetectedIssue {
+            action: RepairAction::PhantomMerge("some-stage".into()),
             severity: Severity::Critical,
             description: "Phantom merge: some-stage marked merged but commit not in main"
                 .to_string(),
@@ -116,7 +122,8 @@ fn workspace_repair_leaves_home_and_state_fixes_to_an_explicit_repair() {
                 "Revert merged flag to false (manual investigation needed for lost work)"
                     .to_string(),
         },
-        RepairIssue {
+        DetectedIssue {
+            action: RepairAction::SkillRefs,
             severity: Severity::Info,
             description: "Settings.json references old-style skill names".to_string(),
             fix_description: "Update skill references from 'name' to 'loom-name' in settings"
@@ -133,28 +140,19 @@ fn workspace_repair_leaves_home_and_state_fixes_to_an_explicit_repair() {
 }
 
 #[test]
-fn workspace_repair_classification_matches_the_repair_dispatch() {
-    let allow_listed = [
-        ".loom/work is a symlink (-> /tmp/x) in main repo",
-        ".loom/work not found in .gitignore",
-        ".work not found in .gitignore",
-        ".worktrees not found in .gitignore",
-        "Git pre-commit hook not installed",
-        "Project .claude/settings.json incomplete (file missing)",
-        "Hooks found in .claude/settings.json (should be in settings.local.json)",
-        "Loom hook scripts missing or outdated in ~/.claude/hooks/loom (1 of 5)",
-    ];
-    for description in allow_listed {
-        assert!(
-            WorkspaceFix::classify(description).is_some(),
-            "{description} must classify as a workspace fix"
-        );
-    }
-
-    assert!(WorkspaceFix::classify(
-        "Old unprefixed skill 'rust' found (superseded by 'loom-rust')"
-    )
-    .is_none());
+fn workspace_action_ignores_description_wording() {
+    let root = tempfile::tempdir().unwrap();
+    let issue = DetectedIssue {
+        action: RepairAction::Workspace(WorkspaceFix::GitignoreWorktrees),
+        severity: Severity::Warning,
+        description: "Completely rewritten wording".into(),
+        fix_description: String::new(),
+    };
+    let applied = repair_workspace_from(root.path(), vec![issue]).unwrap();
+    assert_eq!(applied.len(), 1);
+    assert!(fs::read_to_string(root.path().join(".gitignore"))
+        .unwrap()
+        .contains(".worktrees"));
 }
 
 #[test]

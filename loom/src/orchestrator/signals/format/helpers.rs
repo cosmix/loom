@@ -5,11 +5,8 @@ use super::super::types::DependencyStatus;
 
 /// Format the per-subagent response-budget block.
 ///
-/// Emitted only for stages that set `subagent_timeout_secs` explicitly, so a
-/// plan that never opts in gets a byte-identical signal to before this field
-/// existed. It lives here rather than in `sections.rs` because both the
-/// semi-stable path and the recovery path emit it, and `sections.rs` is already
-/// well over the file-size ceiling.
+/// Emitted only for stages that set `subagent_timeout_secs` explicitly, by both
+/// the semi-stable path and the recovery path.
 ///
 /// This carries the stage's specific number and just enough framing to keep it
 /// from being misread as the watch's `--timeout`: the budget is the IDLE
@@ -26,9 +23,9 @@ pub(crate) fn format_subagent_timeout_section(timeout_secs: u64) -> String {
          This stage's advisory heartbeat budget is {timeout_secs}s. Run ONE \
          `loom subagents watch --worker ... --timeout 3600` through the Bash tool's \
          `run_in_background`, naming every worker in that single owned wait; never issue another \
-         watch. The budget is the idle threshold you judge death against, \
+         watch. The budget is the idle threshold for a stall, \
          never a deadline on the subagent's own work: only idle time past {timeout_secs}s with no \
-         transcript growth is positive evidence of death. ADVISORY ONLY: the orchestrator's own \
+         transcript growth signals a stall, and a stall is no proof of death. ADVISORY ONLY: the orchestrator's own \
          hung warning never kills or retries anything — recovery stays with you.\n\n"
     )
 }
@@ -85,7 +82,7 @@ pub(super) fn format_dependency_outputs(deps: &[&DependencyStatus]) -> String {
 }
 
 /// Extract task list from stage definition
-pub(super) fn extract_tasks_from_stage(stage: &Stage) -> Vec<String> {
+pub(in crate::orchestrator::signals) fn extract_tasks_from_stage(stage: &Stage) -> Vec<String> {
     let mut tasks = Vec::new();
 
     if let Some(desc) = &stage.description {
@@ -114,10 +111,8 @@ pub fn extract_tasks_from_description(description: &str) -> Vec<String> {
 
         if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
             tasks.push(trimmed[2..].trim().to_string());
-        } else if let Some(rest) = trimmed.strip_prefix(|c: char| c.is_ascii_digit()) {
-            if let Some(task) = rest.strip_prefix(". ").or_else(|| rest.strip_prefix(") ")) {
-                tasks.push(task.trim().to_string());
-            }
+        } else if let Some(task) = super::super::helpers::numbered_item(trimmed) {
+            tasks.push(task.trim().to_string());
         }
     }
 
@@ -250,6 +245,16 @@ pub(super) fn append_package_cache_note(content: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extracts_multi_digit_numbered_tasks() {
+        let text = (1..=12)
+            .map(|i| format!("{i}. task {i}\n"))
+            .collect::<String>();
+        let tasks = extract_tasks_from_description(&text);
+        assert_eq!(tasks.len(), 12);
+        assert_eq!(tasks[11], "task 12");
+    }
 
     #[test]
     fn the_package_cache_note_names_loom_stage_block() {

@@ -155,6 +155,41 @@ fn a_crate_rooted_path_can_land_on_the_crate_root_file() {
 }
 
 #[test]
+fn crate_qualified_call_uses_only_the_citing_crate() {
+    let caller_file = "a/src/app.rs";
+    let caller = func_id(caller_file, "invoke");
+    for own_definition in [false, true] {
+        let own = if own_definition {
+            vec!["helper"]
+        } else {
+            vec![]
+        };
+        let mut graph = graph_of(vec![
+            ("a/src/lib.rs", source_file("a/src/lib.rs", &own, vec![])),
+            (
+                "b/src/lib.rs",
+                source_file("b/src/lib.rs", &["helper"], vec![]),
+            ),
+            (
+                caller_file,
+                source_file(
+                    caller_file,
+                    &["invoke"],
+                    seeking(&caller, SourceEdgeKind::Calls, "crate::helper"),
+                ),
+            ),
+        ]);
+        resolve_graph(&mut graph);
+        let expected = if own_definition {
+            func_id("a/src/lib.rs", "helper")
+        } else {
+            UNRESOLVED_TARGET.to_string()
+        };
+        assert_eq!(graph.files[caller_file].edges[0].to, expected);
+    }
+}
+
+#[test]
 fn a_qualified_call_picks_the_definition_its_path_names() {
     let caller = func_id("src/app.rs", "invoke");
     let mut graph = graph_of(vec![

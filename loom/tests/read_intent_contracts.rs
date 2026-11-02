@@ -21,6 +21,35 @@ fn install_read_guard() -> (TempDir, PathBuf) {
     for (name, content) in [
         ("_bounded.sh", HOOK_BOUNDED),
         ("_common.sh", HOOK_COMMON),
+        ("_parser.sh", loom::fs::permissions::constants::HOOK_PARSER),
+        (
+            "_parser_expand.sh",
+            loom::fs::permissions::constants::HOOK_PARSER_EXPAND,
+        ),
+        (
+            "_parser_scan.sh",
+            loom::fs::permissions::constants::HOOK_PARSER_SCAN,
+        ),
+        (
+            "_identity.sh",
+            loom::fs::permissions::constants::HOOK_IDENTITY,
+        ),
+        (
+            "_stage_lookup.sh",
+            loom::fs::permissions::constants::HOOK_STAGE_LOOKUP,
+        ),
+        (
+            "_containment.sh",
+            loom::fs::permissions::constants::HOOK_CONTAINMENT,
+        ),
+        (
+            "_heartbeat.sh",
+            loom::fs::permissions::constants::HOOK_HEARTBEAT,
+        ),
+        (
+            "_spawn_policy.sh",
+            loom::fs::permissions::constants::HOOK_SPAWN_POLICY,
+        ),
         ("_read_discipline.sh", HOOK_READ_DISCIPLINE),
         ("_read_ledger.sh", HOOK_READ_LEDGER),
         ("read-guard.sh", HOOK_READ_GUARD),

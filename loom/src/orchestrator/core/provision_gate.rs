@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use chrono::Utc;
 
-use crate::git::runner::run_git;
+use crate::git::worktree::WorktreeGit;
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::provision::{display_safe, read_provision_snapshot, run_provision};
@@ -93,11 +93,11 @@ fn provision_worktree(
     entries: &[ProvisionEntry],
     worktree_path: &Path,
 ) -> Result<(), String> {
-    let before = status_entries(worktree_path);
+    let before = status_entries(work_dir, worktree_path);
     run_with_fresh_tick(work_dir, entries, worktree_path)?;
-    // A listing that failed (a plain directory, a worktree git cannot read) skips the
+    // A listing that failed (a plain directory, a worktree that cannot be pinned) skips the
     // comparison, as `find_prior_stage_work` does.
-    let (Some(before), Some(after)) = (before, status_entries(worktree_path)) else {
+    let (Some(before), Some(after)) = (before, status_entries(work_dir, worktree_path)) else {
         return Ok(());
     };
     let known: HashSet<&str> = before.iter().map(String::as_str).collect();
@@ -161,12 +161,15 @@ fn keep_tick_fresh(work_dir: &Path, done: &AtomicBool) {
 }
 
 /// The worktree's `git status` entries, untracked files listed one by one and ignored
-/// files not at all. `None` when git cannot list them.
-fn status_entries(worktree_path: &Path) -> Option<Vec<String>> {
+/// files not at all. `None` when git cannot list them. Pinned: this runs on the host,
+/// and the stage controls the worktree's `.git` file.
+fn status_entries(work_dir: &Path, worktree_path: &Path) -> Option<Vec<String>> {
     let args = ["status", "--porcelain=v1", "-z", "--untracked-files=all"];
-    // `run_git`, not `run_git_checked`: that one trims stdout, which would eat the
-    // leading space of a first ` M <path>` entry and shift every column after it.
-    let output = match run_git(&args, worktree_path) {
+    let listed =
+        WorktreeGit::pinned_in_project_of(work_dir, worktree_path).and_then(|git| git.run(&args));
+    // Raw output: a trimmed listing would eat the leading space of a first ` M <path>`
+    // entry and shift every column after it.
+    let output = match listed {
         Ok(output) if output.status.success() => output,
         Ok(output) => {
             warn_status_unreadable(worktree_path, &String::from_utf8_lossy(&output.stderr));

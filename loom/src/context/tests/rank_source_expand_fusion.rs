@@ -1,9 +1,6 @@
 //! Fusion tests: how an expanded graph neighbour's score interacts with
 //! `fuse`'s exact-rung floor once a high-scoring seed pulls it in.
 //!
-//! Split out of `rank_source_expand.rs` (already near its own line budget)
-//! into a sibling wired the same way `brief.rs` wires `brief_tests.rs`:
-//! `#[path = "rank_source_expand_fusion.rs"] mod fusion_tests;`.
 
 use super::{
     candidate, expand, full_node, function, graph_with_edges, local_edge, NEIGHBOUR, SEED,

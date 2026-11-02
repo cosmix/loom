@@ -17,7 +17,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use super::{RepairIssue, Severity};
+use super::{DetectedIssue, RepairAction, Severity};
 use crate::fs::work_dir::{load_config, WorkDir};
 use crate::git::branch::{branch_ref, is_ancestor_of, resolve_target_branch};
 use crate::git::{branch_exists, branch_name_for_stage};
@@ -26,7 +26,7 @@ use crate::verify::transitions::{list_all_stages, update_stage};
 
 /// Check 11: the phantom-merge audit. See the module doc comment for the
 /// full rationale and per-case behavior.
-pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
+pub(super) fn check(repo_root: &Path) -> Vec<DetectedIssue> {
     let mut issues = Vec::new();
 
     let work_dir = WorkDir::new(repo_root)
@@ -48,7 +48,8 @@ pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
         Err(_) => {
             // Cannot enumerate stages (e.g., stages dir missing or unparseable).
             // Push an INFO rather than failing the whole repair run.
-            issues.push(RepairIssue {
+            issues.push(DetectedIssue {
+                action: RepairAction::Manual,
                 severity: Severity::Info,
                 description: "Could not audit stage merge status (stages directory unreadable)"
                     .to_string(),
@@ -72,7 +73,7 @@ fn audit_stage(
     stage: &Stage,
     target_branch: &str,
     repo_root: &Path,
-    issues: &mut Vec<RepairIssue>,
+    issues: &mut Vec<DetectedIssue>,
 ) {
     // Knowledge stages legitimately have merged=true with no commit —
     // they have no branch and no git work to verify.
@@ -96,12 +97,13 @@ fn audit_merged_stage(
     stage: &Stage,
     target_branch: &str,
     repo_root: &Path,
-    issues: &mut Vec<RepairIssue>,
+    issues: &mut Vec<DetectedIssue>,
 ) {
     let Some(ref commit) = stage.completed_commit else {
         // WARNING: merged=true but no commit SHA to verify against.
         // Cannot confirm whether the work actually landed.
-        issues.push(RepairIssue {
+        issues.push(DetectedIssue {
+            action: RepairAction::Manual,
             severity: Severity::Warning,
             description: format!(
                 "Stage {} marked merged but has no completed_commit (cannot verify)",
@@ -122,7 +124,8 @@ fn audit_merged_stage(
         }
         Ok(false) => {
             // Phantom merge: commit exists but is not in target branch.
-            issues.push(RepairIssue {
+            issues.push(DetectedIssue {
+                action: RepairAction::PhantomMerge(stage.id.clone()),
                 severity: Severity::Critical,
                 description: format!(
                     "Phantom merge: {} marked merged but commit not in {}",
@@ -142,11 +145,12 @@ fn audit_merged_stage(
 
 /// Completed + !merged: warn if the branch was deleted without a merge
 /// being recorded, suggesting the work may have been merged manually.
-fn audit_completed_unmerged(stage: &Stage, repo_root: &Path, issues: &mut Vec<RepairIssue>) {
+fn audit_completed_unmerged(stage: &Stage, repo_root: &Path, issues: &mut Vec<DetectedIssue>) {
     let branch = branch_name_for_stage(&stage.id);
     match branch_exists(&branch, repo_root) {
         Ok(false) => {
-            issues.push(RepairIssue {
+            issues.push(DetectedIssue {
+                action: RepairAction::Manual,
                 severity: Severity::Warning,
                 description: format!(
                     "Stale: {} completed but branch deleted without merge confirmation",
@@ -174,13 +178,7 @@ fn audit_completed_unmerged(stage: &Stage, repo_root: &Path, issues: &mut Vec<Re
 /// We deliberately do NOT attempt a re-merge here. The user's repository may be in
 /// an inconsistent state (conflicting later stages, stranded commits) that requires
 /// manual investigation before another merge is safe.
-pub(super) fn fix_phantom_merge(repo_root: &Path, description: &str) -> Result<()> {
-    // Parse stage ID from description: "Phantom merge: <stage-id> marked merged but ..."
-    let stage_id = description
-        .strip_prefix("Phantom merge: ")
-        .and_then(|s| s.split(' ').next())
-        .with_context(|| format!("Cannot parse stage ID from: {description}"))?;
-
+pub(super) fn fix_phantom_merge(repo_root: &Path, stage_id: &str) -> Result<()> {
     let work_dir = WorkDir::new(repo_root)?.root().to_path_buf();
     update_stage(stage_id, &work_dir, |stage| {
         stage.merged = false;
@@ -250,11 +248,34 @@ mod tests {
     #[test]
     fn a_merged_stage_missing_from_the_target_is_still_a_phantom_merge() {
         let (dir, commit) = repo_with_stranded_commit();
-        completed_stage(dir.path(), &commit, false);
+        let (work_dir, id) = completed_stage(dir.path(), &commit, false);
 
-        let issues = check(dir.path());
+        let mut issues = check(dir.path());
 
         assert_eq!(issues.len(), 1);
         assert!(issues[0].description.starts_with("Phantom merge: "));
+        assert!(matches!(&issues[0].action, RepairAction::PhantomMerge(target) if target == &id));
+        issues[0].description = "Changed diagnostic wording".into();
+        assert!(super::super::fix_issue(dir.path(), &issues[0]).unwrap());
+        assert!(
+            !crate::verify::transitions::load_stage(&id, &work_dir)
+                .unwrap()
+                .merged
+        );
+    }
+
+    #[test]
+    fn completed_stage_with_missing_branch_is_manual() {
+        let (dir, _) = repo_with_stranded_commit();
+        let work = WorkDir::new(dir.path()).unwrap().root().to_path_buf();
+        let mut stage = Stage::new("missing-branch".into(), None);
+        stage.status = StageStatus::Completed;
+        crate::verify::transitions::save_stage(&stage, &work).unwrap();
+        let issues = check(dir.path());
+        let issue = issues
+            .iter()
+            .find(|issue| issue.description.starts_with("Stale:"))
+            .expect("missing branch must be reported");
+        assert_eq!(issue.action, RepairAction::Manual);
     }
 }

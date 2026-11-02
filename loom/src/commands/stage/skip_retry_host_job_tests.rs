@@ -31,7 +31,14 @@ fn retry_cancels_the_stages_host_job() {
         panic!("expected a queued job");
     };
 
-    persist_retry_delta("s1", temp.path(), &stage, &StageStatus::Blocked, false).unwrap();
+    persist_retry_delta(
+        "s1",
+        temp.path(),
+        &stage,
+        (&StageStatus::Blocked, None),
+        false,
+    )
+    .unwrap();
 
     let stage = load_stage("s1", temp.path()).unwrap();
     assert_eq!(stage.status, StageStatus::Queued);

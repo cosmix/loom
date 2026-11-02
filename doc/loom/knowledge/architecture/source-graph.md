@@ -212,7 +212,7 @@ structural instead of a rule twelve `extract()` implementations each have to rem
 
 Three layers of identity stop a cached extraction from an older build being reused.
 
-**Graph schema.** `GRAPH_SCHEMA_VERSION` (`context/source_graph/mod.rs`, currently 3) is stamped
+**Graph schema.** `GRAPH_SCHEMA_VERSION` (`context/source_graph/mod.rs`, currently 4) is stamped
 into every `GraphLayer.schema_version`. A layer whose version differs is never current and never a
 reuse source: `layer_is_current`, `build_layer` (as a previous layer) and `build_worktree_graph`
 (treats it as absent) all refuse it. A layer file that fails to deserialize is **corrupt**, not an
@@ -301,8 +301,10 @@ degrade retrieval, never block a run.
 
 A base for `HEAD` is reused when it exists and is `layer_is_current` (current schema version
 and every entry current under `entries_are_current`); a stale or corrupt base is replaced in
-place through `replace_base`. An overlay is reused when its `generation` equals the tree's and
-it is `layer_is_current`. The result is a
+place through `replace_base`. An overlay is reused when its `generation` equals the tree's,
+it is `layer_is_current`, and it is either complete (`GraphLayer.complete`, built with no base, read alone) or a delta
+whose recorded base exists at the current schema; a delta whose base was pruned no longer describes the tree, and
+reconciling rebuilds it complete. The result is a
 `SnapshotOutcome { action, reason, revision, generation, overlay, counters, elapsed, persisted,
 serving }` whose `SnapshotAction` is `Reused`, `Updated` (some files reused), `Rebuilt` or
 `Unavailable`. `persisted` is false when the memory fallback served the layer, when

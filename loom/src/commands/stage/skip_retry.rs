@@ -1,25 +1,21 @@
 //! Skip and retry commands for stages
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use std::path::Path;
 
-use crate::fs::work_dir::resolve_context_ceiling_tokens;
-use crate::git::worktree::find_repo_root_from_cwd;
-use crate::hooks::read_stage_events;
 use crate::models::stage::StageStatus;
-use crate::orchestrator::merge_lifecycle::MergeLifecycle;
-use crate::orchestrator::monitor::failure_tracking::FailureTracker;
-use crate::orchestrator::signals::{
-    generate_recovery_signal, RecoveryReason, RecoverySignalContent,
-};
+use crate::orchestrator::signals::RecoveryReason;
 use crate::orchestrator::skip::skip_stage;
 use crate::verify::contracts::store::reset_attempts;
 use crate::verify::transitions::{load_stage, update_stage};
 
-use super::recover::{
-    determine_recovery_reason, extract_context_tokens, find_crash_report,
-    generate_recovery_session_id, load_last_heartbeat, recovery_close_reason, with_operator_answer,
-};
+#[path = "skip_retry_report.rs"]
+mod report;
+
+#[path = "skip_retry_recovery.rs"]
+mod recovery;
+
+use super::recover::determine_recovery_reason;
 
 /// Skip a stage
 pub fn skip(stage_id: String, reason: Option<String>) -> Result<()> {
@@ -41,33 +37,61 @@ pub fn skip(stage_id: String, reason: Option<String>) -> Result<()> {
 /// Generates a recovery signal with context when the stage was crashed or
 /// hung, or when --context is provided. Replaces the old `recover` command.
 pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<()> {
-    let work_dir_buf = crate::commands::common::work_dir_path()?;
-    let work_dir: &Path = &work_dir_buf;
+    let work_dir = crate::commands::common::work_dir_path()?;
+    retry_in(&work_dir, stage_id, force, context)
+}
 
+fn retry_in(work_dir: &Path, stage_id: String, force: bool, context: Option<String>) -> Result<()> {
+    // Every launch holds this from its write-ahead record through its backend's
+    // answer. Holding it here, no launch is in flight while the session is
+    // judged and none can start until the requeue is written.
+    let _admission = crate::fs::stage_admission::lock(work_dir, &stage_id)?;
     let mut stage = load_stage(&stage_id, work_dir)?;
     let original_status = stage.status.clone();
+    let original_session = stage.session.clone();
 
-    // Defense-in-depth: refuse to spawn a parallel session only if the recorded
-    // session is genuinely still alive. A stale session *file* left behind by a
-    // crashed/orphaned session must not force `--force` (C-22): probe liveness
-    // via the configured session backend, not file existence.
+    // A confirmed dead session does not block retry. Unknown ownership does,
+    // unless the operator explicitly requests the force override.
     if let Some(ref session_id) = stage.session {
-        if session_is_live(work_dir, session_id) {
-            eprintln!(
-                "WARNING: Stage '{}' has an active (live) session ({})",
-                stage_id, session_id
-            );
-            eprintln!("  If the session is still running, retry will create a parallel session.");
-            eprintln!(
-                "  Fix issues in the current session and run 'loom stage complete {stage_id}'."
-            );
-            if !force {
-                bail!("Stage has a live session. Use --force to override.");
-            }
-            eprintln!("  --force used, proceeding with retry despite live session.");
-        }
+        ensure_retry_session_safe(work_dir, &stage_id, session_id, force)?;
     }
 
+    ensure_retry_allowed(&stage, &stage_id, force)?;
+    let recovery_reason = recovery_reason_for(&stage, context.as_deref());
+
+    // Get previous session info before we overwrite it
+    let previous_session_id = stage
+        .session
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // Count execution retries separately from stall and contract budgets. Capture
+    // the next attempt before --force resets the execution retry budget.
+    let recovery_attempt = stage.retry_count.saturating_add(1);
+
+    plan_requeue(&mut stage, force)?;
+
+    let original = (&original_status, original_session.as_deref());
+    if let Some(reason) = recovery_reason {
+        let recovery = recovery::Recovery {
+            reason,
+            previous_session_id: &previous_session_id,
+            attempt: recovery_attempt,
+            context: context.as_deref(),
+        };
+        recovery::requeue_with_recovery(work_dir, &stage_id, &mut stage, original, force, &recovery)
+    } else {
+        requeue_without_recovery(work_dir, &stage_id, &mut stage, original, force)
+    }
+}
+
+/// Refuse a stage whose status cannot be retried, or whose retry budget is
+/// spent without `--force`.
+fn ensure_retry_allowed(
+    stage: &crate::models::stage::Stage,
+    stage_id: &str,
+    force: bool,
+) -> Result<()> {
     // Allow retry for Blocked, CompletedWithFailures, MergeBlocked, NeedsHandoff,
     // and Executing states (the latter two were previously only in `recover`)
     let retryable = matches!(
@@ -97,32 +121,32 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
             max
         );
     }
+    Ok(())
+}
 
-    // Determine whether we need a recovery signal.
-    // Generate one if explicit --context is provided, or if the close_reason
-    // suggests a crash/hung/context-exhaustion scenario.
-    let recovery_reason = if context.is_some() {
-        Some(RecoveryReason::Manual)
-    } else {
-        let auto_reason = determine_recovery_reason(&stage);
-        // Only auto-generate recovery signal for non-manual reasons
-        if auto_reason != RecoveryReason::Manual {
-            Some(auto_reason)
-        } else {
-            None
-        }
-    };
+/// Whether the retry needs a recovery signal: explicit --context asks for one,
+/// and a close_reason suggesting a crash/hung/context-exhaustion scenario does.
+fn recovery_reason_for(
+    stage: &crate::models::stage::Stage,
+    context: Option<&str>,
+) -> Option<RecoveryReason> {
+    if context.is_some() {
+        return Some(RecoveryReason::Manual);
+    }
+    // Only auto-generate recovery signal for non-manual reasons
+    let auto_reason = determine_recovery_reason(stage);
+    (auto_reason != RecoveryReason::Manual).then_some(auto_reason)
+}
 
-    // Get previous session info before we overwrite it
-    let previous_session_id = stage
-        .session
-        .clone()
-        .unwrap_or_else(|| "unknown".to_string());
-
+/// Apply the retry to the in-memory stage the requeue is planned from.
+fn plan_requeue(stage: &mut crate::models::stage::Stage, force: bool) -> Result<()> {
     // Reset or increment for retry
     if force {
         stage.retry_count = 0;
-        stage.retire_failure("loom stage retry --force");
+        stage.retire_failure(
+            "loom stage retry --force",
+            crate::models::stage::IssueDisposition::Retried,
+        );
     } else {
         stage.retry_count += 1;
     }
@@ -141,124 +165,69 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
         stage.try_mark_blocked()?;
     }
     stage.try_mark_queued()?;
+    Ok(())
+}
 
-    // Generate recovery signal if needed
-    if let Some(reason) = recovery_reason {
-        let last_heartbeat = load_last_heartbeat(work_dir, &stage_id);
+/// Simple retry without recovery signal. Clear the stale session pointer so the
+/// executor spawns a fresh session rather than mistaking the dead session's ID
+/// for a live/recovery one (C-22).
+fn requeue_without_recovery(
+    work_dir: &Path,
+    stage_id: &str,
+    stage: &mut crate::models::stage::Stage,
+    original: (&StageStatus, Option<&str>),
+    force: bool,
+) -> Result<()> {
+    stage.session = None;
+    stage.updated_at = chrono::Utc::now();
+    persist_retry_delta(stage_id, work_dir, stage, original, force)?;
 
-        let recent_events = read_stage_events(work_dir, &stage_id).unwrap_or_default();
-        let last_event = recent_events
-            .last()
-            .map(|e| format!("{}: {}", e.event, e.timestamp));
+    println!("Stage '{stage_id}' queued for retry.");
+    if force {
+        println!("Retry count reset (--force used).");
+    }
+    Ok(())
+}
 
-        let mut failure_tracker = FailureTracker::new();
-        let _ = failure_tracker.load_from_work_dir(work_dir);
-        let recovery_attempt = failure_tracker.failure_count(&stage_id) + 1;
-
-        let new_session_id = generate_recovery_session_id(&stage_id);
-
-        let signal_content = match reason {
-            RecoveryReason::Crash => RecoverySignalContent::for_crash(
-                new_session_id.clone(),
-                stage_id.clone(),
-                previous_session_id.clone(),
-                find_crash_report(work_dir, &previous_session_id),
-                recovery_attempt,
-            ),
-            RecoveryReason::Hung => RecoverySignalContent::for_hung(
-                new_session_id.clone(),
-                stage_id.clone(),
-                previous_session_id.clone(),
-                last_heartbeat,
-                recovery_attempt,
-            ),
-            RecoveryReason::ContextExhaustion => {
-                let context_tokens = stage
-                    .close_reason
-                    .as_ref()
-                    .and_then(|r| extract_context_tokens(r))
-                    .unwrap_or_else(|| {
-                        resolve_context_ceiling_tokens(work_dir, stage.context_ceiling_tokens)
-                    });
-                RecoverySignalContent::for_context_exhaustion(
-                    new_session_id.clone(),
-                    stage_id.clone(),
-                    previous_session_id.clone(),
-                    context_tokens,
-                    recovery_attempt,
-                )
+fn ensure_retry_session_safe(
+    work_dir: &Path,
+    stage_id: &str,
+    session_id: &str,
+    force: bool,
+) -> Result<()> {
+    match crate::orchestrator::session_registry::assigned_session_is_live_admitted(
+        work_dir, stage_id, session_id,
+    ) {
+        Ok(false) => Ok(()),
+        Ok(true) => {
+            eprintln!("WARNING: Stage '{stage_id}' has an active (live) session ({session_id})");
+            eprintln!("  If the session is still running, retry will create a parallel session.");
+            eprintln!("  Fix issues in the current session and run 'loom stage complete {stage_id}'.");
+            if !force {
+                bail!("Stage has a live session. Use --force to override.");
             }
-            RecoveryReason::Manual => RecoverySignalContent::for_manual(
-                new_session_id.clone(),
-                stage_id.clone(),
-                previous_session_id.clone(),
-                recovery_attempt,
-            ),
-        };
-
-        // The retrieval pack is embedded into `signal_content` at
-        // signal-WRITE time here, not at the next spawn - unlike a fresh
-        // spawn, `start_stage` reuses these bytes verbatim from disk and
-        // never regenerates them. So the overlay must be current NOW, or
-        // this retry (and crash/hang auto-recovery, which share this path)
-        // briefs the agent from the pre-crash tree. `reconcile_overlay`
-        // already early-returns when the worktree is missing
-        // (merge_lifecycle.rs:76-79), which is correct here: a stage whose
-        // worktree was cleaned up has nothing to reconcile.
-        let cwd = std::env::current_dir().context("Failed to get current directory")?;
-        let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
-        MergeLifecycle::new(&stage_id, &repo_root, work_dir).reconcile_overlay();
-
-        let signal_content = with_operator_answer(signal_content, context.as_deref());
-        generate_recovery_signal(&signal_content, &stage, work_dir)
-            .context("Failed to generate recovery signal")?;
-
-        stage.session = Some(new_session_id.clone());
-        stage.close_reason = Some(recovery_close_reason(recovery_attempt, context.as_deref()));
-        stage.updated_at = chrono::Utc::now();
-
-        persist_retry_delta(&stage_id, work_dir, &stage, &original_status, force)?;
-
-        println!("Recovery initiated for stage '{stage_id}'");
-        println!("  Previous session: {previous_session_id}");
-        println!("  New session: {new_session_id}");
-        println!("  Recovery reason: {reason}");
-        println!("  Attempt: #{recovery_attempt}");
-        if let Some(ref ctx_msg) = context {
-            println!("  Context: {ctx_msg}");
+            eprintln!("  --force used, proceeding with retry despite live session.");
+            Ok(())
         }
-        if let Some(event) = &last_event {
-            println!("  Last hook event: {event}");
-        }
-        println!();
-        println!("The stage will be picked up by the next orchestrator poll.");
-        println!("Run 'loom run' to start the orchestrator if not running.");
-    } else {
-        // Simple retry without recovery signal. Clear the stale session pointer
-        // so the executor spawns a fresh session rather than mistaking the dead
-        // session's ID for a live/recovery one (C-22).
-        stage.session = None;
-        stage.updated_at = chrono::Utc::now();
-        persist_retry_delta(&stage_id, work_dir, &stage, &original_status, force)?;
-
-        println!("Stage '{stage_id}' queued for retry.");
-        if force {
-            println!("Retry count reset (--force used).");
+        Err(error) if !force => bail!(
+            "Cannot establish whether session '{session_id}' is live: {error:#}. Use --force to override."
+        ),
+        Err(error) => {
+            eprintln!("WARNING: Session '{session_id}' liveness is unknown: {error:#}");
+            Ok(())
         }
     }
-
-    Ok(())
 }
 
 fn persist_retry_delta(
     stage_id: &str,
     work_dir: &Path,
     planned: &crate::models::stage::Stage,
-    original_status: &StageStatus,
+    original: (&StageStatus, Option<&str>),
     force: bool,
 ) -> Result<()> {
     update_stage(stage_id, work_dir, |current| {
-        validate_retry_transition(stage_id, current, original_status, force)?;
+        validate_retry_transition(stage_id, current, original, force)?;
         apply_retry_delta(current, planned, force)?;
         // Reset last, once every check above has succeeded and the requeue
         // itself is settled: a refused transition (status changed, retry
@@ -278,12 +247,12 @@ fn persist_retry_delta(
 }
 
 /// Refuse a retry whose on-disk state no longer matches what the caller
-/// planned against: the stage changed status while retry was being prepared,
-/// or it has exceeded its retry limit without `--force`.
+/// planned against: the stage changed status or session while retry was being
+/// prepared, or it has exceeded its retry limit without `--force`.
 fn validate_retry_transition(
     stage_id: &str,
     current: &crate::models::stage::Stage,
-    original_status: &StageStatus,
+    (original_status, original_session): (&StageStatus, Option<&str>),
     force: bool,
 ) -> Result<()> {
     if &current.status != original_status {
@@ -293,6 +262,9 @@ fn validate_retry_transition(
             original_status,
             current.status
         );
+    }
+    if current.session.as_deref() != original_session {
+        bail!("Stage '{stage_id}' changed session while retry was being prepared; retry again");
     }
 
     let max = current.max_retries.unwrap_or(3);
@@ -317,7 +289,10 @@ pub(super) fn apply_retry_delta(
 ) -> Result<()> {
     if force {
         current.retry_count = 0;
-        current.retire_failure("loom stage retry --force");
+        current.retire_failure(
+            "loom stage retry --force",
+            crate::models::stage::IssueDisposition::Retried,
+        );
     } else {
         current.retry_count += 1;
     }
@@ -352,32 +327,6 @@ pub(super) fn reset_contract_budget(
         return Ok(());
     }
     reset_attempts(work_dir, &stage.id)
-}
-
-/// Probe whether a recorded session is genuinely still running.
-///
-/// Returns `true` only if the session file parses AND the configured session backend
-/// reports the session alive (PID-based). A missing/unparseable file or a dead
-/// process returns `false` — a stale session file must not block retry (C-22).
-fn session_is_live(work_dir: &Path, session_id: &str) -> bool {
-    use crate::models::session::Session;
-    use crate::orchestrator::terminal::backend::SessionBackend;
-    use crate::parser::frontmatter::parse_from_markdown;
-
-    let session_path = work_dir.join("sessions").join(format!("{session_id}.md"));
-    let Ok(content) = std::fs::read_to_string(&session_path) else {
-        return false;
-    };
-    let Ok(session) = parse_from_markdown::<Session>(&content, "Session") else {
-        return false;
-    };
-    let Ok(backend) = SessionBackend::from_config(work_dir.to_path_buf()) else {
-        return false;
-    };
-    // A probe error is treated as "not live": the worst case is creating a
-    // parallel session, which `--force` already guards, and stale files (the
-    // common case) must not require `--force`.
-    backend.is_session_alive(&session).unwrap_or(false)
 }
 
 #[cfg(test)]

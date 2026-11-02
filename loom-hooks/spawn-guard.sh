@@ -46,6 +46,7 @@ PATH="${LOOM_HOOK_PATH:-$PATH}"
 set -euo pipefail
 
 source "$(dirname "$0")/_common.sh"
+source "$(dirname "$0")/_spawn_policy.sh"
 source "$(dirname "$0")/_read_discipline.sh"
 loom_warn_no_jq "spawn-guard.sh"
 
@@ -268,11 +269,17 @@ fi
 
 # --- 4b. REVIEWER MODEL FROM CONFIG ------------------------------------------
 # loom-code-reviewer runs the operator-configured model and effort over any
-# caller `model` (loom_reviewer_model_override, _common.sh); a failure keeps the
+# caller `model` (loom_reviewer_model_override, _spawn_policy.sh); a failure keeps the
 # frontmatter behavior above and sets WARN_REVIEWER.
 EFFORT=""
 if [[ "$AGENT_TYPE_REQ" == loom-code-reviewer ]]; then
-	loom_reviewer_model_override
+	LOOM_SPAWN_MODEL="$MODEL" LOOM_SPAWN_EFFORT="$EFFORT"
+	LOOM_SPAWN_MODEL_SOURCE="$MODEL_SOURCE" LOOM_SPAWN_NEEDS_REWRITE="$NEEDS_REWRITE"
+	LOOM_SPAWN_WARN_ESCALATION="$WARN_ESCALATION" LOOM_SPAWN_WARN_REVIEWER="$WARN_REVIEWER"
+	loom_reviewer_model_override "$MODEL_REQ"
+	MODEL="$LOOM_SPAWN_MODEL" EFFORT="$LOOM_SPAWN_EFFORT"
+	MODEL_SOURCE="$LOOM_SPAWN_MODEL_SOURCE" NEEDS_REWRITE="$LOOM_SPAWN_NEEDS_REWRITE"
+	WARN_ESCALATION="$LOOM_SPAWN_WARN_ESCALATION" WARN_REVIEWER="$LOOM_SPAWN_WARN_REVIEWER"
 fi
 
 # --- 5. PREPEND THE SUBAGENT PREAMBLE ---------------------------------------
@@ -304,8 +311,9 @@ WARN_TEXT="$WARN_ESCALATION"
 if [[ -n "$WARN_REVIEWER" ]]; then WARN_TEXT="${WARN_TEXT:+${WARN_TEXT} | }${WARN_REVIEWER}"; fi
 if [[ -n "$WARN_PREAMBLE" ]]; then WARN_TEXT="${WARN_TEXT:+${WARN_TEXT} | }${WARN_PREAMBLE}"; fi
 
-# A scoped brief is optional (loom_worker_brief, _common.sh): any failure changes nothing.
-loom_worker_brief
+# A scoped brief is optional (loom_worker_brief, _spawn_policy.sh): any failure changes nothing.
+loom_worker_brief "$INPUT_JSON" "$TOOL_INPUT" "$GATE_PASSED" "$AGENT_TYPE_REQ"
+WORKER_BRIEF_JSON="$LOOM_SPAWN_WORKER_BRIEF_JSON"
 
 if [[ -n "$WORKER_BRIEF_JSON" ]]; then
 	UPDATED_INPUT=$(printf '%s' "$UPDATED_INPUT" | jq -c --argjson brief "$WORKER_BRIEF_JSON" \

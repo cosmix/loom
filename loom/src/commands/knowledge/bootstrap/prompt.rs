@@ -81,16 +81,16 @@ pub(super) fn initial_prompt(brief: &Path) -> String {
     )
 }
 
-/// `commands/pressure/spawn.rs::completion_instruction`, worded for bootstrap.
+/// The shared marker command with bootstrap's completion conditions.
 fn completion_instruction(marker: &Path) -> String {
     format!(
         "AUTONOMOUS RUN: this Claude session was launched by `loom knowledge bootstrap`; no human will end it for you. \
          When the knowledge base is FULLY written (after every subagent has finished) and `loom knowledge check` shows \
          no new structural issue you caused, your FINAL action MUST be to run exactly this shell command and nothing \
-         after it: touch {}. Do not run it earlier. That path is inside the repo's gitignored `.loom/work/` because the \
+         after it: {}. Do not run it earlier. That path is inside the repo's gitignored `.loom/work/` because the \
          agent sandbox mounts /tmp read-only; creating this one marker is the sanctioned exception to the rule against \
          writing under `.loom/work/` directly. Once that file exists the driver closes this session.",
-        marker.display()
+        crate::pressure::instruction::marker_command(marker)
     )
 }
 

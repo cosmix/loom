@@ -1,5 +1,6 @@
 use super::super::types::SandboxSummary;
 use super::helpers::append_package_cache_note;
+use crate::models::stage::FilesystemConfig;
 
 /// Format sandbox restrictions for agent awareness
 pub(super) fn format_sandbox_section(summary: &SandboxSummary) -> String {
@@ -12,36 +13,8 @@ pub(super) fn format_sandbox_section(summary: &SandboxSummary) -> String {
     }
 
     content.push_str("## Sandbox Restrictions\n\n");
-    content.push_str("The following restrictions are in effect for this session:\n\n");
 
-    // Filesystem restrictions
-    if !summary.deny_read.is_empty() || !summary.deny_write.is_empty() {
-        content.push_str("### Filesystem\n\n");
-
-        if !summary.deny_read.is_empty() {
-            content.push_str("**Cannot Read:**\n");
-            for path in &summary.deny_read {
-                content.push_str(&format!("- `{}`\n", path));
-            }
-            content.push('\n');
-        }
-
-        if !summary.deny_write.is_empty() {
-            content.push_str("**Cannot Write:**\n");
-            for path in &summary.deny_write {
-                content.push_str(&format!("- `{}`\n", path));
-            }
-            content.push('\n');
-        }
-
-        if !summary.allow_write.is_empty() {
-            content.push_str("**Exceptions (CAN Write):**\n");
-            for path in &summary.allow_write {
-                content.push_str(&format!("- `{}`\n", path));
-            }
-            content.push('\n');
-        }
-    }
+    append_filesystem_section(&mut content, summary);
 
     content.push_str(&format_missing_grants_note(&summary.missing_allow_write));
 
@@ -61,10 +34,55 @@ pub(super) fn format_sandbox_section(summary: &SandboxSummary) -> String {
     content
 }
 
+/// The `**Cannot Read:**` list. An inherited default list stays one line, since
+/// every stage pays this text (`tests_size.rs` caps the floor); a partial default
+/// list is printed whole so the line never claims a deny the session lacks.
+fn append_deny_read(content: &mut String, deny_read: &[String]) {
+    let defaults = FilesystemConfig::default().deny_read;
+    let inherits_defaults = defaults.iter().all(|path| deny_read.contains(path));
+    content.push_str("**Cannot Read:**\n");
+    if inherits_defaults {
+        content.push_str("- the default credential, state-root secret and worktree-escape paths\n");
+    }
+    for path in deny_read {
+        if !inherits_defaults || !defaults.contains(path) {
+            content.push_str(&format!("- `{}`\n", path));
+        }
+    }
+    content.push('\n');
+}
+
+fn append_filesystem_section(content: &mut String, summary: &SandboxSummary) {
+    if !summary.deny_read.is_empty()
+        || !summary.deny_write.is_empty()
+        || !summary.allow_write.is_empty()
+    {
+        content.push_str("### Filesystem\n\n");
+
+        if !summary.deny_read.is_empty() {
+            append_deny_read(content, &summary.deny_read);
+        }
+
+        if !summary.deny_write.is_empty() {
+            content.push_str("**Cannot Write:**\n");
+            for path in &summary.deny_write {
+                content.push_str(&format!("- `{}`\n", path));
+            }
+            content.push('\n');
+        }
+
+        if !summary.allow_write.is_empty() {
+            content.push_str("**Exceptions (CAN Write):**\n");
+            for path in &summary.allow_write {
+                content.push_str(&format!("- `{}`\n", path));
+            }
+            content.push('\n');
+        }
+    }
+}
+
 /// Format the `### Network` block: allowed domains, or an explicit "no
-/// network access" line when none are configured. Split out of
-/// `format_sandbox_section` to keep that function under the file's line
-/// ceiling.
+/// network access" line when none are configured.
 fn format_network_section(summary: &SandboxSummary) -> String {
     let mut content = String::new();
     if !summary.allowed_domains.is_empty() {
@@ -142,6 +160,33 @@ mod tests {
             unix_sockets_allowed: false,
             excluded_commands: vec![],
         }
+    }
+
+    #[test]
+    fn inherited_default_deny_read_collapses_and_keeps_additions() {
+        let mut summary = summary_with(vec![], vec![]);
+        summary.deny_read = FilesystemConfig::default().deny_read;
+        summary.deny_read.push("secret/**".into());
+        let rendered = format_sandbox_section(&summary);
+        assert!(rendered.contains("- the default credential"), "{rendered}");
+        assert!(rendered.contains("- `secret/**`"), "{rendered}");
+        assert!(!rendered.contains("~/.ssh"), "{rendered}");
+    }
+
+    #[test]
+    fn partial_default_deny_read_is_listed_without_the_default_claim() {
+        let mut summary = summary_with(vec![], vec![]);
+        summary.deny_read = vec!["~/.ssh/**".into()];
+        let rendered = format_sandbox_section(&summary);
+        assert!(rendered.contains("- `~/.ssh/**`"), "{rendered}");
+        assert!(!rendered.contains("the default credential"), "{rendered}");
+    }
+
+    #[test]
+    fn allow_only_filesystem_grants_are_rendered() {
+        let mut summary = summary_with(vec!["output/**".into()], vec![]);
+        summary.deny_write.clear();
+        assert!(format_sandbox_section(&summary).contains("`output/**`"));
     }
 
     #[test]

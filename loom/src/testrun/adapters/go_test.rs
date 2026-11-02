@@ -23,6 +23,9 @@ const VALUE_FLAGS: &[&str] = &[
     "-run",
     "-skip",
     "-bench",
+    "-benchtime",
+    "-test.bench",
+    "-test.benchtime",
     "-fuzz",
     "-list",
     "-count",
@@ -45,15 +48,7 @@ const VALUE_FLAGS: &[&str] = &[
 ];
 
 /// Options that select tests or change a run into a listing or fuzz run.
-const FILTER_FLAGS: &[&str] = &[
-    "-run",
-    "-skip",
-    "-bench",
-    "-fuzz",
-    "-list",
-    "-test.run",
-    "-test.skip",
-];
+const FILTER_FLAGS: &[&str] = &["-run", "-skip", "-fuzz", "-list", "-test.run", "-test.skip"];
 
 /// Top-level results start at column 0; `t.Run` subtest results are indented.
 static PASSED: LazyLock<Regex> = LazyLock::new(|| pattern(r"(?m)^--- PASS: "));
@@ -233,6 +228,26 @@ mod tests {
         assert!(ADAPTER.is_full_run(&words("go test")));
         assert!(!ADAPTER.is_full_run(&words("go test ./... -run TestAlpha")));
         assert!(!ADAPTER.is_full_run(&words("go test ./pkg/")));
+    }
+
+    #[test]
+    fn benchmark_selection_does_not_scope_regular_tests() {
+        for command in [
+            "go test -bench .",
+            "go test ./... -bench=.",
+            "go test -bench . -benchtime 1s",
+            "go test ./... -bench=. -benchtime=1s",
+            "go test -test.bench . -test.benchtime 1s",
+        ] {
+            assert!(ADAPTER.is_full_run(&words(command)), "{command}");
+        }
+        for command in [
+            "go test -bench . -run TestAlpha",
+            "go test ./... -bench=. -test.run=TestAlpha",
+            "go test ./pkg -bench . -benchtime 1s",
+        ] {
+            assert!(!ADAPTER.is_full_run(&words(command)), "{command}");
+        }
     }
 
     #[test]

@@ -142,6 +142,7 @@ fn build_fixture() -> Fixture {
     let repo_root = repo.path().to_path_buf();
     let work_dir = repo_root.join(".loom").join("work");
     fs::create_dir_all(&work_dir).expect("create work dir");
+    helpers::write_main_checkout_identity(&repo_root, &work_dir);
     // A stage worktree reaches the shared state through this symlink.
     fs::create_dir_all(worktree_path.join(".loom")).expect("create worktree .loom dir");
     std::os::unix::fs::symlink(&work_dir, worktree_path.join(".loom/work"))

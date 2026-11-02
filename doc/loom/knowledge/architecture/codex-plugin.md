@@ -275,27 +275,11 @@ directory find a phantom repository.
 
 ## Availability fallback: codex CLI/plugin not installed
 
-Stage licensing (`implementers` listing `codex`) says a stage MAY use the lane; it says nothing
-about whether the lane is actually reachable on this machine. `loom/src/codex.rs` adds a second,
-independent gate for that: `codex_lane_status()` does the real check (codex CLI resolvable via
-`find_codex_path()`, and the plugin's companion runtime present at
-`~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`), and a memoized
-`codex_lane_available()` wraps it as a cheap per-spawn boolean — the same
-capability/preflight/resolve shape as [Remote Control](remote-control.md)'s `preflight()` /
-`resolve()`.
+Stage licensing (`implementers` listing `codex`) permits the lane; availability additionally requires a resolvable Codex CLI and a regular, non-symlink companion file at the version pinned by `loom-hooks/codex-forward.sh`. `loom/src/codex.rs` reads that same embedded wrapper pin and `codex_lane_available()` caches the result for the daemon lifetime. The check conservatively requires the companion even where the direct lane can run.
 
-- **`commands/run/`** runs the check once at startup and prints an advisory warning when the lane
-  is unavailable, mirroring `run_startup_preflight` for Remote Control: informative, never a hard
-  failure — a missing codex install must not block a run that never intended to use codex on most
-  of its stages.
-- **Signal doctrine.** When the lane is unavailable, `format_codex_implementers_section` emits a
-  fallback note in place of the normal codex doctrine block: terra-tier work routes to
-  sonnet and luna-tier work to haiku for the run, and the orchestrator must NOT spawn `loom-codex-forwarder` — spawning it
-  against a missing companion runtime would just fail the one Bash call the forwarder is allowed
-  to make.
-- **Scope.** The check does not mutate `implementers` or stage state; it only changes what the
-  signal tells the orchestrator to do at spawn time, the same way Remote Control's `resolve()`
-  gates the `--remote-control` flag without touching `.loom/work/config.toml`.
+- `commands/run/` emits an advisory warning when the lane is unavailable; it does not block a run.
+- Signal generation supplies fallback guidance instead of licensing `loom-codex-forwarder` when the lane is unavailable.
+- The check does not mutate stage state or the `implementers` list.
 
 ## What Codex Actually Reads
 
@@ -379,6 +363,9 @@ through its receipt first (`codex_lifecycle/direct.rs::receipt_outcome`, matched
   `authorized_at` (the wrapper's 1500 s job deadline plus the receipt write), then is Unknown;
 - a damaged receipt journal (truncated or malformed rows), a receipt that disagrees with its authorization,
   or a `queued`/`unknown` direct receipt is Unknown and records nothing, companion rows included.
+
+Reconcile's Active is lifecycle state and earns no stall hold. A hold takes host-observed progress of the authorized
+launch (`codex_lifecycle.rs::forward_is_fresh`; [Long Codex Runs](../concerns/codex-heartbeat-starvation.md#long-codex-runs-starve-the-loom-heartbeat)).
 
 A direct record's `turn_id` is optional (`subagent_lifecycle/codex_evidence.rs`); a companion record's is
 exact. `loom subagents watch` binds a stage's codex children the same way (`wait/codex_binding.rs::receipt_matches`

@@ -4,9 +4,10 @@
 use anyhow::Result;
 use std::path::Path;
 
+use crate::models::dispute::{applied_marker, dispute_dir, request_file};
 use crate::models::stage::{Stage, StageStatus};
 
-use super::AdjudicatorRegistry;
+use super::{apply_receipt::verdict_receipt, dispute_ids, is_closed};
 
 fn transition_to_queued(stage: &mut Stage) -> Result<()> {
     let target = StageStatus::Queued;
@@ -27,13 +28,15 @@ fn transition_to_queued(stage: &mut Stage) -> Result<()> {
     Ok(())
 }
 
-/// Re-queue the stage, unless another dispute on it still has no verdict.
+/// Re-queue the stage, unless another open dispute has no applied outcome.
 ///
 /// `job_for_dispute` only schedules a dispute whose stage is
 /// `NeedsAdjudication`, so the stage must stay there until the LAST
-/// unanswered dispute is judged; only that verdict re-queues it. The
-/// dispute currently being applied already has its `verdict.md` on disk, so
-/// `scan_pending_requests` does not count it among the remainder.
+/// unapplied dispute is judged; only that verdict re-queues it. This includes
+/// siblings whose verdicts were recorded before the current one was applied.
+/// The current dispute is the one open, unapplied entry excluded from count.
+/// A request no filing published is not counted: `job_for_dispute` will never
+/// judge it, so holding for it would leave the stage waiting with nothing open.
 pub(super) fn requeue_or_hold_for_remaining_disputes(
     work_dir: &Path,
     stage: &mut Stage,
@@ -48,7 +51,25 @@ pub(super) fn requeue_or_hold_for_remaining_disputes(
         );
         return Ok(());
     }
-    let remaining = AdjudicatorRegistry::new().unanswered_disputes(work_dir, &stage.id)?;
+    let root = work_dir.join("disputes");
+    let all_unapplied = dispute_ids(&root.join(&stage.id))
+        .into_iter()
+        .filter(|id| {
+            request_file(&root, &stage.id, *id).exists()
+                && !is_closed(&dispute_dir(&root, &stage.id, *id))
+                && !applied_marker(&root, &stage.id, *id).exists()
+                && !stage
+                    .tally
+                    .request_receipts
+                    .contains_key(&verdict_receipt(*id))
+                && !crate::stage_service::dispute_is_orphaned(stage, *id)
+        })
+        .count();
+    anyhow::ensure!(
+        all_unapplied > 0,
+        "no open dispute owns verdict application"
+    );
+    let remaining = all_unapplied - 1;
     if remaining == 0 {
         return transition_to_queued(stage);
     }

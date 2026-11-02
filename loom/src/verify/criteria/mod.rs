@@ -56,6 +56,7 @@ mod config;
 mod confine;
 mod criterion_eval;
 mod executor;
+pub(crate) mod output;
 mod probe;
 mod result;
 mod runner;
@@ -80,7 +81,8 @@ pub use executor::{
     run_single_criterion, run_single_criterion_with_timeout, run_spec_in_optional_tree,
     run_spec_with_timeout,
 };
+pub(crate) use output::format_criterion_result;
 pub(in crate::verify) use probe::{CachedRun, CriteriaProbe, ProbeRun, ProbeRunner};
 pub use result::{AcceptanceResult, CriterionResult};
 pub use runner::{run_acceptance, run_acceptance_with_config};
-pub use spawn_observer::{set_spawn_observer, SpawnObserver, SpawnObserverGuard};
+pub use spawn_observer::{set_spawn_observer, GroupAnchor, SpawnObserver, SpawnObserverGuard};

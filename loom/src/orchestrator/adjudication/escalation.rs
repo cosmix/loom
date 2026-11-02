@@ -16,7 +16,8 @@ use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::update_stage;
 
-use super::{close_open_disputes, MAX_EVIDENCE_ROUNDS};
+use super::{close_open_disputes_except_locked, lock_stage_dispute_dir, MAX_EVIDENCE_ROUNDS};
+use std::os::fd::OwnedFd;
 
 /// A stage the dispute loop hands to a human, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,12 +115,60 @@ impl Escalation {
     /// escalating from any other one could hand a human a stage whose agent
     /// is still live. Best effort: a failed write is logged, never fatal.
     pub fn write(&self, work_dir: &Path) {
+        let _lifecycle = match lock_stage_dispute_dir(
+            &work_dir.join("disputes").join(&self.stage_id),
+        ) {
+            Ok(lock) => lock,
+            Err(error) => {
+                tracing::warn!(stage = %self.stage_id, %error, "failed to lock dispute lifecycle for escalation");
+                return;
+            }
+        };
+        match self.write_claimed(work_dir, &_lifecycle, None) {
+            Ok(true) => {
+                if let Err(error) =
+                    close_open_disputes_except_locked(work_dir, &self.stage_id, None)
+                {
+                    tracing::warn!(stage = %self.stage_id, %error,
+                        "escalation persisted but open disputes could not all be closed");
+                }
+            }
+            Ok(false) => {}
+            Err(error) => tracing::warn!(
+                target: "loom::adjudication",
+                stage = %self.stage_id,
+                %error,
+                "failed to escalate stage to NeedsHumanReview",
+            ),
+        }
+    }
+
+    /// Caller holds the dispute lock through cap disposition and marker write.
+    pub(crate) fn write_claimed(
+        &self,
+        work_dir: &Path,
+        _claim: &OwnedFd,
+        receipt: Option<(String, u32)>,
+    ) -> anyhow::Result<bool> {
         let mut escalated = false;
-        let result = update_stage(&self.stage_id, work_dir, |stage| {
+        update_stage(&self.stage_id, work_dir, |stage| {
+            if let Some((key, _)) = &receipt {
+                if stage.tally.request_receipts.contains_key(key) {
+                    escalated = true;
+                    return Ok(());
+                }
+            }
             if stage.status != StageStatus::NeedsAdjudication {
                 return Ok(());
             }
             stage.try_request_human_review(self.reason.clone())?;
+            if let Some((key, id)) = &receipt {
+                anyhow::ensure!(
+                    stage.tally.request_receipts.len() < 1024,
+                    "stage receipt capacity exhausted; refusing to lose apply-cap recovery"
+                );
+                stage.tally.request_receipts.insert(key.clone(), *id);
+            }
             if let Some(failure_type) = &self.failure_type {
                 stage.replace_failure(FailureInfo {
                     failure_type: failure_type.clone(),
@@ -129,16 +178,7 @@ impl Escalation {
             }
             escalated = true;
             Ok(())
-        });
-        match result {
-            Ok(_) if escalated => close_open_disputes(work_dir, &self.stage_id),
-            Ok(_) => {}
-            Err(error) => tracing::warn!(
-                target: "loom::adjudication",
-                stage = %self.stage_id,
-                %error,
-                "failed to escalate stage to NeedsHumanReview",
-            ),
-        }
+        })?;
+        Ok(escalated)
     }
 }

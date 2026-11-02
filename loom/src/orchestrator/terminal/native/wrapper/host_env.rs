@@ -12,11 +12,12 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use super::CONTINUATION;
+use crate::git::worktree::WorktreeGit;
 
 /// Mode bits that let anyone but the owner write a file.
 const GROUP_OR_WORLD_WRITE: u32 = 0o022;
 
-/// The wrapper's host exports; the default renders nothing.
+/// The wrapper's host exports; the default renders only the session's git setting.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct WrapperHostEnv {
     /// `<scratch_root>/<session-id>`, exported as `LOOM_SCRATCH_DIR`.
@@ -33,6 +34,7 @@ impl WrapperHostEnv {
     /// Shell-escaped `exec env` assignments, one continuation line each, in
     /// the shape of the wrapper's other exports.
     pub(super) fn render(&self) -> String {
+        let (git_setting_name, git_setting_value) = WorktreeGit::SESSION_GIT_PARAMETERS;
         let hook_path = (!self.hook_path.is_empty()).then(|| {
             self.hook_path
                 .iter()
@@ -53,6 +55,9 @@ impl WrapperHostEnv {
             ),
             ("LOOM_HOOK_PATH", hook_path),
             ("LOOM_BOOT_ID", self.boot_id.clone()),
+            // No reflog for a branch without one, so a session's ref updates finish
+            // under the capsule's deny on `<common>/logs`.
+            (git_setting_name, Some(git_setting_value.to_string())),
         ]
         .into_iter()
         .filter_map(|(name, value)| {
@@ -269,5 +274,26 @@ mod tests {
     #[test]
     fn a_default_host_env_renders_no_boot_id() {
         assert!(!WrapperHostEnv::default().render().contains("LOOM_BOOT_ID"));
+    }
+
+    /// Through the shell, as the wrapper's `exec env -i` line runs it: the quotes
+    /// the value carries must survive escaping for git to read it.
+    #[test]
+    fn the_rendered_exports_give_git_the_sessions_reflog_setting() {
+        let rendered = WrapperHostEnv::default().render();
+        let script = format!(
+            "exec env -i \"PATH=$PATH\" {CONTINUATION}{rendered}    \
+             git config --get core.logAllRefUpdates"
+        );
+        let cwd = TempDir::new().unwrap();
+
+        let output = std::process::Command::new("bash")
+            .args(["-c", &script])
+            .current_dir(cwd.path())
+            .output()
+            .unwrap();
+
+        assert!(output.status.success(), "{script}: {output:?}");
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "false");
     }
 }

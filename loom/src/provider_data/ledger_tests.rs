@@ -11,6 +11,55 @@ fn stage(work_dir: &tempfile::TempDir) -> std::path::PathBuf {
 }
 
 #[test]
+fn ledger_rejects_oversize_and_preserves_complete_rows_before_a_torn_line() {
+    let work_dir = tempfile::tempdir().unwrap();
+    let path = stage(&work_dir).join("starts.jsonl");
+    let row = "{\"agent_id\":\"a\",\"agent_type\":\"review\"}\n";
+    fs::write(&path, format!("{row}{{\"agent_id\":")).unwrap();
+    assert_eq!(
+        agent_type(Some(work_dir.path()), "a"),
+        Some("review".into())
+    );
+    fs::write(&path, format!("{row}{}", " ".repeat(MAX_LEDGER_BYTES))).unwrap();
+    assert_eq!(agent_type(Some(work_dir.path()), "a"), None);
+}
+
+#[test]
+fn ledger_refuses_fifo_and_intermediate_symlink() {
+    use std::os::unix::ffi::OsStrExt;
+    let work_dir = tempfile::tempdir().unwrap();
+    let path = stage(&work_dir).join("starts.jsonl");
+    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    // SAFETY: c_path is a valid NUL-terminated pathname.
+    assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+    assert!(json_lines(&path).is_empty());
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("starts.jsonl"), "{}\n").unwrap();
+    let link = work_dir.path().join("subagents/link");
+    std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+    assert!(json_lines(&link.join("starts.jsonl")).is_empty());
+}
+
+/// A linked worktree reaches the work directory through its `.loom/work` symlink.
+#[test]
+fn ledger_reads_through_a_symlinked_work_directory_and_refuses_below_it() {
+    let work_dir = tempfile::tempdir().unwrap();
+    let row = "{\"agent_id\":\"a\",\"agent_type\":\"review\"}\n";
+    fs::write(stage(&work_dir).join("starts.jsonl"), row).unwrap();
+    let checkout = tempfile::tempdir().unwrap();
+    let alias = checkout.path().join("work");
+    std::os::unix::fs::symlink(work_dir.path(), &alias).unwrap();
+
+    assert_eq!(agent_type(Some(&alias), "a"), Some("review".into()));
+
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("starts.jsonl"), row).unwrap();
+    let link = work_dir.path().join("subagents/link");
+    std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+    assert!(json_lines(&alias.join("subagents/link/starts.jsonl")).is_empty());
+}
+
+#[test]
 fn starts_ledger_resolves_matching_agent_type() {
     let work_dir = tempfile::tempdir().unwrap();
     fs::write(

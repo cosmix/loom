@@ -1,4 +1,10 @@
-import type { ConfigEntry, ConfigKind, ConfigScope, ConfigValue } from "@/api/config";
+import type {
+  ConfigEntry,
+  ConfigKind,
+  ConfigScope,
+  ConfigSnapshot,
+  ConfigValue,
+} from "@/api/config";
 
 export const USER_CONFIG_PATH = "~/.loom/config.toml";
 
@@ -257,6 +263,14 @@ export function formatValue(kind: ConfigKind, value: ConfigValue): string {
 /// Writes one key's value at one scope, or clears it (`null`) to fall back
 /// to the tier below.
 export type OnWrite = (scope: ConfigScope, name: string, value: ConfigValue | null) => void;
+
+export interface SettingsTableProps {
+  data: ConfigSnapshot;
+  sections: SectionRows[];
+  query: string;
+  statuses: Record<string, WriteStatus>;
+  onWrite: OnWrite;
+}
 
 /// One key's write in flight or just settled; the control shows the pending
 /// value until the server answers, then the entry it returned.

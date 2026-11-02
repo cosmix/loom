@@ -93,6 +93,7 @@ impl Fixture {
     pub(super) fn job(&self, state: JobState) -> JobRecord {
         let record = JobRecord {
             id: new_job_id(),
+            submission_order: 0,
             stage_id: STAGE.to_string(),
             session_id: self.session_id.clone(),
             kind: JobKind::Freeze,

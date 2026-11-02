@@ -103,7 +103,9 @@ fn init_preflight_repo() -> TempDir {
     fs::write(root.join("src.rs"), "fn main() {}\n").unwrap();
     run_git(root, &["add", "src.rs"]);
     run_git(root, &["commit", "-m", "seed"]);
-    fs::create_dir_all(root.join(".loom").join("work")).unwrap();
+    let work = root.join(".loom").join("work");
+    fs::create_dir_all(&work).unwrap();
+    crate::git::worktree::capture_main_identity(root, &work).unwrap();
     temp
 }
 

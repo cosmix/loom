@@ -183,7 +183,7 @@ fn append_exempt_changes(
     if round.fingerprint != current.value
         && crate::verify::review::gate::covers_review(round, current)
     {
-        lines.push("Matches the worktree through comment or prose changes alone:".to_string());
+        lines.push("Matches the worktree through prose changes alone:".to_string());
         for path in fingerprint::changed_since(&round.files, &current.files) {
             lines.push(format!("  {}", single_line(&path)));
         }

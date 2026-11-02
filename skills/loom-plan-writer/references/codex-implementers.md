@@ -26,7 +26,7 @@ license the better fit; the stage's orchestrator still picks the lane per subage
 | Heartbeat | A forward is one long Bash call: raise `subagent_timeout_secs` and read `appears hung` as advisory | SubagentStop refreshes the parent's heartbeat |
 | Availability | Needs the codex CLI and plugin; on Linux also `exclude_slash_tmp` in `~/.codex/config.toml` (`loom repair --fix`). Missing at run time, the signal reroutes terra-tier work to sonnet and luna-tier work to haiku | Always available |
 
-Sources: BLOCK-A (subagent preamble), BLOCK-B (`SKILL.md` Section 4), and knowledge
+Sources: BLOCK-A (subagent preamble), orchestration Rule 7, and knowledge
 `architecture/codex-concurrency.md`, `architecture/owned-waits.md` (unit deadline, unit verification
 limit), `architecture/codex-plugin.md`, `concerns/codex-heartbeat-starvation.md`,
 `mistakes/codex-navigation.md`, `mistakes/codex-worker-briefing.md`.
@@ -51,7 +51,7 @@ usually pass, and they make up a large share of implementation work.
 
 - the change is unknown until someone explores the code, or the design is unsettled;
 - the piece converges only by running fixture-backed tests, which a codex unit cannot run;
-- visual or UI design (fable, per BLOCK-B);
+- visual or UI design (fable, per orchestration Rule 7);
 - debugging, or a fix that already failed once;
 - architectural judgment (opus, whatever the list says).
 

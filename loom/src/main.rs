@@ -27,8 +27,8 @@ const MACHINE_PROTOCOL_COMMANDS: [&str; 3] = ["hook", "context", "config"];
 /// value in checking on every single hook call, so they are excluded too.
 /// `loom plan hook` runs on every file-tool call of a planning session and is
 /// excluded the same way through [`is_plan_hook`], while `loom plan` itself
-/// keeps its notice. `complete` runs at the tail of a stage and should stay
-/// quiet. `run` covers both `loom run` and the daemon itself, which `loom run`
+/// keeps its notice. `complete` emits shell completions and should stay quiet.
+/// `run` covers both `loom run` and the daemon itself, which `loom run`
 /// starts by re-executing the binary as `loom run --daemon-child`
 /// (`daemon/server/launch.rs`), so the daemon needs no entry of its own.
 const UPDATE_SILENT_COMMANDS: [&str; 4] = ["hook", "context", "complete", "run"];

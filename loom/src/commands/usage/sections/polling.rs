@@ -17,9 +17,9 @@ pub struct Polling {
     pub observation: ObservationTokens,
 }
 
-/// Requests whose every tool use only observes: waiting on a subagent,
-/// checking status, sleeping, or repeating a command. Their resident tokens
-/// are what a wait or an event would save.
+/// Requests classified as observation or repeated activity. Repeated commands
+/// and shell prefixes can include writes, so token totals are a heuristic upper
+/// bound rather than known savings from waiting or events.
 #[derive(Debug, serde::Serialize, Default)]
 pub struct ObservationTokens {
     pub requests: usize,

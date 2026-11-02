@@ -230,53 +230,14 @@ impl LexicalCache {
     }
 }
 
-/// Identity of the resolved source layer a source index describes.
+/// Identifies the indexed resolved graph by base revision and each file’s path,
+/// content hash, and parser version. Parser changes can alter indexed tokens
+/// without changing file content or node IDs. One node supplies each file’s
+/// parser version because all of its nodes come from the same extraction.
 ///
-/// The proposal specified `sha256(base_revision + ":" + overlay_fingerprint)`
-/// over the overlay FILE's content hash. This hashes the resolved view instead —
-/// the base revision plus every resolved file's path and content hash — for two
-/// reasons. It is what is actually indexed: `GraphStore::resolved` shadows base
-/// entries with overlay entries per path, so two different overlays that resolve
-/// to the same files must share an index, and one overlay whose bytes changed
-/// without its path set changing must NOT. And it is derivable from the
-/// [`ResolvedGraph`] the ranker already holds, so the key cannot drift from the
-/// corpus it names — there is no second code path computing it from other
-/// inputs.
-///
-/// The extractor identity is mixed in for a case the content hashes cannot
-/// see: a parser upgrade re-derives different `scope` and `signature` text from
-/// byte-identical files, and a node id (`<path>#<kind>:<scope>`) does not always
-/// change with it. Without this, an index built by the old extractor would keep
-/// serving its old tokens against the new graph. One node per file is enough to
-/// carry it, because extraction is per FILE: every node in a
-/// [`crate::context::graph_store::FileEntry`] was
-/// produced by one pass of one parser, so they all share a `parser_version` and
-/// the first is a faithful representative of the rest.
-///
-/// ## Order, and why it is not an accident
-///
-/// [`ResolvedGraph::files`] is a `BTreeMap`, so this iterates in sorted path
-/// order on every machine and every run. That is load-bearing, not incidental:
-/// a key that varied with iteration order would hash differently each time and
-/// miss the cache FOREVER, silently, while every test that only checks
-/// correctness still passed. Do not change this container to a `HashMap`, and
-/// do not "optimize" the loop into anything that does not preserve its order.
-///
-/// ## Cost
-///
-/// This runs once per query and hashes O(files) short strings — a path, a
-/// content hash and a parser version per resolved file, on the order of 100 KB
-/// of sha256 input for this repository. What it buys is skipping O(documents ×
-/// terms) tokenization: `tokenize` over the scope and signature of every one of
-/// ~7,900 source nodes, scanning per character, lowercasing, and allocating a
-/// `String` per emitted token. The two are not close — the key is microseconds
-/// against tens of milliseconds — and the key is paid on hits AND misses while
-/// the tokenization is what the hit avoids entirely.
-///
-/// Truncated to 16 hex characters: this is a cache-collision domain, not a
-/// security one, and 64 bits over a per-repository population of a few thousand
-/// revisions is far past the point where a collision is the least likely thing
-/// that could go wrong. `doc_ids` validation on load catches one anyway.
+/// `ResolvedGraph::files` iterates in sorted path order for a stable digest.
+/// The digest is truncated to 64 bits for this non-security cache key; loading
+/// also validates document IDs.
 pub fn source_layer_key(graph: &ResolvedGraph) -> String {
     let mut hasher = Sha256::new();
     hasher.update(graph.base_revision.as_bytes());

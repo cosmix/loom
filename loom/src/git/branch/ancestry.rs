@@ -83,9 +83,8 @@ pub fn get_branch_head(branch: &str, repo_root: &Path) -> Result<String> {
 /// Count commits on `branch` that are not on `base`.
 ///
 /// Uses `git rev-list --count <base>..<branch>`. Returns 0 if the branch
-/// is fully merged into base, or if either ref is missing (treated as "no
-/// new commits" — callers that need to distinguish "no commits" from
-/// "branch missing" should check `branch_exists` first).
+/// is fully merged into base, or if the branch is missing. A missing base
+/// with a resolvable branch is an error.
 ///
 /// # Arguments
 /// * `branch` - The branch with potentially new commits (e.g., `loom/<stage>`)
@@ -164,10 +163,10 @@ fn branch_exists_ref(reference: &str, repo_root: &Path) -> bool {
 /// * `Ok(false)` if the branch has not been merged
 /// * `Err` if git command fails
 pub fn is_branch_merged(branch: &str, target: &str, repo_root: &Path) -> Result<bool> {
-    let stdout = run_git_checked(&["branch", "--merged", target, "--list", branch], repo_root)?;
-    Ok(stdout
-        .lines()
-        .any(|line| line.trim().trim_start_matches('*').trim() == branch))
+    let reference = branch_ref(branch);
+    Ok(super::info::list_refs(repo_root, Some(target))?
+        .iter()
+        .any(|entry| branch_ref(&entry.name) == reference))
 }
 
 #[cfg(test)]

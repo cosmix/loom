@@ -69,13 +69,16 @@ fn fixture_with(plan_version: u32, write: impl FnOnce(&Path)) -> Fixture {
         .join(PARENT)
         .join("subagents")
         .join(format!("agent-{AGENT}.jsonl"));
-    write(&transcript);
     let input = HarvestInput {
         stage_id: STAGE.to_string(),
         session_id: PARENT.to_string(),
         agent_id: AGENT.to_string(),
         transcript_path: transcript,
     };
+    // SubagentStart's order: evidence first, before any worker transcript exists.
+    assert!(!input.transcript_path.exists());
+    crate::commands::hook::review_start::capture(&work_dir, &input.invocation()).unwrap();
+    write(&input.transcript_path);
     Fixture {
         _temp: temp,
         work_dir,
@@ -231,6 +234,27 @@ fn harvest_records_a_malformed_round_without_a_review_block() {
 }
 
 #[test]
+fn harvest_rejects_a_report_without_reviewer_start_evidence() {
+    let fixture = fixture(2, REVIEW);
+    let start = fs::read_dir(reviews_dir(&fixture))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("start-")
+        })
+        .unwrap();
+    fs::remove_file(start).unwrap();
+
+    assert!(harvest(&fixture.work_dir, &fixture.input).is_err());
+    assert!(store::load_rounds(&fixture.work_dir, STAGE)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn harvest_records_only_the_suggestion_ids_it_journaled() {
     let fixture = fixture(2, REVIEW);
     // A directory where the journal file belongs makes every append fail.
@@ -259,7 +283,9 @@ fn harvest_rejects_a_transcript_of_another_agent() {
     fixture.input.agent_id = "other-agent".to_string();
 
     assert!(harvest(&fixture.work_dir, &fixture.input).is_err());
-    assert!(!fixture.work_dir.join("reviews").exists());
+    assert!(store::load_rounds(&fixture.work_dir, STAGE)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -274,7 +300,27 @@ fn harvest_rejects_a_symlinked_transcript() {
     fixture.input.transcript_path = link;
 
     assert!(harvest(&fixture.work_dir, &fixture.input).is_err());
-    assert!(!fixture.work_dir.join("reviews").exists());
+    assert!(store::load_rounds(&fixture.work_dir, STAGE)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn harvest_rejects_a_reviewer_transcript_fifo_without_a_writer() {
+    let fixture = fixture(2, REVIEW);
+    fs::remove_file(&fixture.input.transcript_path).unwrap();
+    let path = &fixture.input.transcript_path;
+    let c_path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
+    // SAFETY: c_path is a valid NUL-terminated path, and mkfifo only reads it.
+    assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+
+    assert!(harvest(&fixture.work_dir, &fixture.input).is_err());
+    assert!(!fixture
+        .work_dir
+        .join("reviews")
+        .join(STAGE)
+        .join("round-1.json")
+        .exists());
 }
 
 #[test]

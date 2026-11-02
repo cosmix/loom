@@ -118,10 +118,10 @@ void series_free(Series *s) {
 #include <stdlib.h>
 
 int *grow(int *buf, size_t *cap) {
-    size_t new_cap = *cap ? *cap * 2 : 16;
-    if (new_cap > SIZE_MAX / sizeof *buf) {
+    if (*cap > SIZE_MAX / 2 || (*cap ? *cap * 2 : 16) > SIZE_MAX / sizeof *buf) {
         return NULL;
     }
+    size_t new_cap = *cap ? *cap * 2 : 16; /* nonzero, including when cap is zero */
     int *tmp = realloc(buf, new_cap * sizeof *tmp);
     if (tmp == NULL) {
         return NULL;                 /* buf is still valid; the caller still owns it */

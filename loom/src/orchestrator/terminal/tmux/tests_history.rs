@@ -203,3 +203,54 @@ fn a_second_kill_leaves_the_first_history_alone() {
         Some(&b"saved by the first kill\n"[..])
     );
 }
+
+/// `PATH` led by `dir` until dropped.
+struct PathGuard(Option<std::ffi::OsString>);
+
+impl PathGuard {
+    fn lead_with(dir: &Path) -> Self {
+        let original = std::env::var_os("PATH");
+        let mut paths = vec![dir.to_path_buf()];
+        paths.extend(std::env::split_paths(
+            original.as_deref().unwrap_or_default(),
+        ));
+        std::env::set_var("PATH", std::env::join_paths(paths).unwrap());
+        Self(original)
+    }
+}
+
+impl Drop for PathGuard {
+    fn drop(&mut self) {
+        match self.0.take() {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
+    }
+}
+
+#[test]
+#[serial]
+fn a_scrollback_past_the_capture_limit_keeps_its_tail() {
+    let socket_dir = tempfile::TempDir::new().unwrap();
+    let _tmux_tmpdir = TmuxTmpDirGuard::set(socket_dir.path());
+    let work = tempfile::TempDir::new().unwrap();
+    let session = staged_session();
+    let socket = socket_path_for(&socket_name(&session));
+    std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
+    std::fs::write(&socket, b"").unwrap();
+    let bin = tempfile::TempDir::new().unwrap();
+    write_script(
+        bin.path(),
+        "tmux",
+        "#!/bin/sh\nhead -c 17000000 /dev/zero | tr '\\0' x\necho\necho SCROLLBACK-LAST-LINE\n",
+    );
+    let _path = PathGuard::lead_with(bin.path());
+
+    history::save_history(work.path(), &session);
+
+    let saved = read_history(work.path(), &session.id)
+        .unwrap()
+        .expect("an oversized capture still leaves a history");
+    assert!(saved.len() <= MAX_HISTORY_BYTES);
+    assert!(saved.ends_with(b"SCROLLBACK-LAST-LINE\n"));
+}

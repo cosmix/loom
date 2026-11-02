@@ -6,11 +6,10 @@
 //! an error - a bad cache entry must never take down status reporting.
 
 use crate::context::untrusted::inline_safe;
+use crate::fs::cache_io::{atomic_write, create_dir, reject_symlink};
 use crate::fs::safe_read::read_to_string_bounded;
 use crate::quota::model::{ProviderQuota, QuotaWindow, WindowKind};
-use anyhow::{bail, Context, Result};
-use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Write};
+use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
 /// Cached files are never trusted past this size; a body at or above the cap
@@ -33,7 +32,7 @@ pub fn provider_path(work_root: &Path, provider: &str) -> PathBuf {
 /// a concurrent reader never observes a partially written file.
 pub fn write_provider(work_root: &Path, provider: &str, quota: &ProviderQuota) -> Result<()> {
     let dir = quota_dir(work_root);
-    create_quota_dir(&dir)?;
+    create_dir(&dir)?;
 
     let path = provider_path(work_root, provider);
     reject_symlink(&path)?;
@@ -101,94 +100,6 @@ pub(crate) fn sanitize(mut quota: ProviderQuota) -> ProviderQuota {
     quota.plan = quota.plan.map(|plan| inline_safe(&plan));
     quota.error = quota.error.map(|error| inline_safe(&error));
     quota
-}
-
-#[cfg(unix)]
-pub(crate) fn create_quota_dir(dir: &Path) -> Result<()> {
-    use std::os::unix::fs::DirBuilderExt;
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(dir)
-        .with_context(|| format!("failed to create quota directory: {}", dir.display()))
-}
-
-#[cfg(not(unix))]
-pub(crate) fn create_quota_dir(dir: &Path) -> Result<()> {
-    std::fs::create_dir_all(dir)
-        .with_context(|| format!("failed to create quota directory: {}", dir.display()))
-}
-
-/// Crash-atomic write: `<path>.tmp` is written, fsynced, then renamed over
-/// `path`; the containing directory is fsynced so the rename itself survives
-/// a crash. Single-writer (the quota poller thread), so no advisory lock is
-/// taken - readers already tolerate a torn or missing file.
-pub(crate) fn atomic_write(path: &Path, content: &str) -> Result<()> {
-    let mut tmp_os = path.as_os_str().to_os_string();
-    tmp_os.push(".tmp");
-    let tmp_path = PathBuf::from(tmp_os);
-
-    write_temp_file(&tmp_path, content)?;
-
-    std::fs::rename(&tmp_path, path).with_context(|| {
-        format!(
-            "failed to rename {} to {}",
-            tmp_path.display(),
-            path.display()
-        )
-    })?;
-
-    if let Some(parent) = path.parent() {
-        if let Ok(dir_file) = File::open(parent) {
-            let _ = dir_file.sync_all();
-        }
-    }
-
-    Ok(())
-}
-
-/// Refuse a target symlink before replacing a cache, history, or token file.
-pub(crate) fn reject_symlink(path: &Path) -> Result<()> {
-    if let Ok(metadata) = std::fs::symlink_metadata(path) {
-        if metadata.file_type().is_symlink() {
-            bail!("refusing to write through a symlink: {}", path.display());
-        }
-    }
-    Ok(())
-}
-
-/// Writes and fsyncs `content` into `tmp_path`, unlinking any stale temp file first.
-fn write_temp_file(tmp_path: &Path, content: &str) -> Result<()> {
-    // Unlink whatever is at the temp path first rather than opening it with
-    // `truncate(true)`: a planted symlink there would otherwise have its
-    // target truncated instead of being replaced. This also clears a stale
-    // temp file left behind by a prior crash. `create_new` below then fails
-    // loudly instead of following anything recreated in between.
-    if let Err(e) = std::fs::remove_file(tmp_path) {
-        if e.kind() != std::io::ErrorKind::NotFound {
-            return Err(e).with_context(|| {
-                format!("failed to remove stale temp file: {}", tmp_path.display())
-            });
-        }
-    }
-
-    let tmp = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(tmp_path)
-        .with_context(|| format!("failed to open temp file: {}", tmp_path.display()))?;
-    let mut writer = BufWriter::new(&tmp);
-    writer
-        .write_all(content.as_bytes())
-        .with_context(|| format!("failed to write temp file: {}", tmp_path.display()))?;
-    writer
-        .flush()
-        .with_context(|| format!("failed to flush temp file: {}", tmp_path.display()))?;
-    drop(writer);
-    tmp.sync_all()
-        .with_context(|| format!("failed to sync temp file: {}", tmp_path.display()))?;
-
-    Ok(())
 }
 
 #[cfg(test)]

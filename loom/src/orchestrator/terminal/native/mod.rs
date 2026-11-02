@@ -12,8 +12,13 @@ mod pid_tracking;
 mod session_log;
 pub(crate) mod session_settings;
 mod spawner;
+mod window_identity;
 mod window_ops;
 mod wrapper;
+
+#[cfg(test)]
+#[path = "tests_capsule_probe.rs"]
+mod tests_capsule_probe;
 
 use anyhow::Result;
 use shell_escape::escape;
@@ -195,18 +200,15 @@ impl NativeBackend {
         // it is not operator-facing news. `tracing::debug!` (the level the rest
         // of this cluster uses — see `window_ops`) keeps it off stderr unless
         // it was asked for; `eprintln!` here printed a line on every
-        // construction, which after a tmux fallback meant once per session per
-        // monitor tick.
+        // construction, which would otherwise print on repeated lane checks.
         tracing::debug!(terminal = %terminal.display_name(), "Detected terminal");
         Ok(Self { terminal, work_dir })
     }
 
     /// Build a backend around an already-chosen terminal, bypassing detection.
     ///
-    /// Test-only: sibling modules need a deterministically AVAILABLE native
-    /// lane to exercise the tmux-fallback decision, and a headless test runner
-    /// (where [`Self::new`] bails in `detect_terminal`) would otherwise make
-    /// that path untestable exactly where it matters most.
+    /// Test-only: sibling modules need an available native lane even on a
+    /// headless runner, where [`Self::new`] cannot detect a terminal.
     #[cfg(test)]
     pub(crate) fn with_terminal(
         terminal: super::emulator::TerminalEmulator,
@@ -220,24 +222,16 @@ impl NativeBackend {
         &self.terminal
     }
 
-    /// Returns `(window_title, pid_file_key)` for a session.
-    ///
-    /// - `window_title` is the session's `tracking_key` (`loom-[<kind>-]<id>`),
-    ///   matched EXACTLY against OS window titles (O-5).
-    /// - `pid_file_key` is `tracking_key + session.id` — the per-session key the
-    ///   spawn path used to name the PID file, so two consecutive sessions for
-    ///   the same stage never collide (O-14).
-    ///
-    /// Falls back to the bare stage id for legacy sessions with no
-    /// `tracking_key`.
+    /// Return the friendly stage title and the existing per-session PID-file key.
+    /// Tmux and PID tracking use this stable legacy contract.
     pub(crate) fn window_title_and_pid_key(session: &Session) -> Option<(String, String)> {
-        let title = if !session.tracking_key.is_empty() {
+        let tracking_key = if !session.tracking_key.is_empty() {
             session.tracking_key.clone()
         } else {
             format!("loom-{}", session.stage_id.as_ref()?)
         };
-        let pid_key = format!("{}-{}", title, session.id);
-        Some((title, pid_key))
+        let pid_key = format!("{}-{}", tracking_key, session.id);
+        Some((tracking_key, pid_key))
     }
 
     /// Spawn a session that runs in the stage worktree: the stage's own
@@ -253,12 +247,8 @@ impl NativeBackend {
         self.spawn(kind, stage, session, signal_path, &worktree.path, true)
     }
 
-    /// Spawn a session that runs in the MAIN REPOSITORY rather than in a
-    /// stage worktree: knowledge gathering and adjudication.
-    ///
-    /// `kind` is the only thing that varies between them — it selects the
-    /// prompt, the model/effort policy and the window title — so one entry
-    /// point serves both.
+    /// Spawn a session in the main repository. `kind` selects its prompt,
+    /// model/effort policy and window title.
     pub fn spawn_main_repo_session(
         &self,
         kind: SessionType,
@@ -274,9 +264,8 @@ impl NativeBackend {
     ///
     /// The per-kind variation (window title / PID-file key prefix, prompt,
     /// model/effort source, working directory) is derived from `kind` and the
-    /// session's `tracking_key`, collapsing what used to be four ~85% identical
-    /// methods (A-12 / D-3). The four public `spawn_*` methods are thin
-    /// wrappers so out-of-cluster callers keep their signatures.
+    /// session's `tracking_key`. The two public spawn methods select the
+    /// worktree or main-repository launch context.
     ///
     /// * `kind` — selects the prompt and the model/effort policy.
     /// * `cwd` — the directory the wrapper `cd`s into and the terminal spawns
@@ -303,8 +292,10 @@ impl NativeBackend {
         // Everything up to "have a wrapper script ready to run" is shared
         // with the tmux lane (see native::launch) so the two can never
         // silently diverge on prompt/model/permission-mode/wrapper behavior.
-        let (mut session, title, pid_key, wrapper_path_abs) =
+        let (mut session, _tmux_title, pid_key, wrapper_path_abs) =
             launch::prepare_session_launch(&self.work_dir, kind, stage, session, signal_path, cwd)?;
+        let title = window_identity::native_window_title(&self.work_dir, &session)
+            .expect("prepared session has a tracking key");
         // Spawn the terminal with PID tracking constrained by this session's
         // LOOM_SESSION_ID marker (O-14).
         let pid = spawn_in_terminal(
@@ -321,6 +312,7 @@ impl NativeBackend {
         if set_worktree_path {
             session.set_worktree_path(cwd.to_path_buf());
         }
+        session.native_window_title = Some(title);
         session.set_pid(pid);
         session.try_mark_running()?;
 
@@ -328,21 +320,19 @@ impl NativeBackend {
     }
 
     pub fn kill_session(&self, session: &Session) -> Result<()> {
-        // First, try to close the window by title (more reliable for all terminals).
+        // First, try to close this session's window by its exact title.
         // This approach works correctly even for terminal emulators like gnome-terminal
         // that use a server process, where killing by PID would kill all windows.
-        // The title is the session's tracking_key, so merge/knowledge/base-conflict
-        // sessions (which use prefixed titles) are killed correctly too.
-        if let Some((title, _)) = Self::window_title_and_pid_key(session) {
-            if close_window_for_terminal(&title, &self.terminal) {
+        if let Some(title) = window_identity::attributable_title(&self.work_dir, session) {
+            if close_window_for_terminal(title, &self.terminal) {
                 // Closing a window is asynchronous too. Retain PID identity so
                 // the caller can confirm the process actually exited.
                 return Ok(());
             }
         }
 
-        // Window teardown is title-keyed and does not require process identity.
-        // PID signaling remains fail-closed: an absent or unverifiable identity
+        // Legacy records have no attributable window title. PID signaling
+        // remains fail-closed: an absent or unverifiable identity
         // must not turn an idempotent cleanup request into an error.
         match session_process_status(&self.work_dir, session) {
             SessionProcessStatus::VerifiedAlive => pid_only_terminate(&self.work_dir, session),
@@ -350,11 +340,11 @@ impl NativeBackend {
             // `loom clean` reaps it once the corresponding session is terminal.
             SessionProcessStatus::Dead => Ok(()),
             SessionProcessStatus::Missing => {
-                tracing::warn!(session_id = %session.id, "no PID identity evidence while killing session; window close was attempted");
+                tracing::warn!(session_id = %session.id, "no PID identity evidence while killing session");
                 Ok(())
             }
             SessionProcessStatus::Unverifiable => {
-                tracing::warn!(session_id = %session.id, "refusing unverified signal for session; window close was attempted");
+                tracing::warn!(session_id = %session.id, "refusing unverified signal for session");
                 Ok(())
             }
         }
@@ -373,8 +363,8 @@ impl NativeBackend {
             SessionProcessStatus::Missing => {}
         }
 
-        if let Some((title, _)) = Self::window_title_and_pid_key(session) {
-            if window_exists_for_terminal(&title, &self.terminal) {
+        if let Some(title) = window_identity::attributable_title(&self.work_dir, session) {
+            if window_exists_for_terminal(title, &self.terminal) {
                 return Ok(true);
             }
         }

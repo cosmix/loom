@@ -41,16 +41,9 @@ const QUERY: &str = concat!(
 (method_definition
   name: (property_identifier) @name) @definition.function
 
-[
-  (lexical_declaration
-    (variable_declarator
-      name: (identifier) @name
-      value: [(arrow_function) (function_expression) (generator_function)]))
-  (variable_declaration
-    (variable_declarator
-      name: (identifier) @name
-      value: [(arrow_function) (function_expression) (generator_function)]))
-] @definition.function
+(variable_declarator
+  name: (identifier) @name
+  value: [(arrow_function) (function_expression) (generator_function)]) @definition.function
 
 (class_declaration
   name: (identifier) @name) @definition.type
@@ -108,7 +101,7 @@ impl QueryHarness for JavaScriptExtractor {
             dialect: "javascript",
             grammar_version: "0.25.0",
             query_digest: crate::context::source_graph::body_hash(QUERY.as_bytes()),
-            extractor_version: 2,
+            extractor_version: 6,
         }
     }
 

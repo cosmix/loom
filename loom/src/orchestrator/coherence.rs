@@ -16,7 +16,7 @@ use chrono::Utc;
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::{Stage, StageStatus, StageType};
-use crate::orchestrator::session_registry::live_sessions_for_stage_of_type;
+use crate::orchestrator::session_registry::live_sessions_for_stage;
 
 /// The session kind that works a stage of this type.
 pub fn worker_session_type(stage: &Stage) -> SessionType {
@@ -43,11 +43,20 @@ pub fn is_worker_session_type(stage: &Stage, kind: SessionType) -> bool {
 /// no live worker session is in that phase, so its live contract writers are
 /// returned instead.
 pub fn live_worker_sessions(work_dir: &Path, stage: &Stage) -> Result<Vec<Session>> {
-    let live = live_sessions_for_stage_of_type(work_dir, &stage.id, worker_session_type(stage))?;
-    if !live.is_empty() || !has_contract_phase(stage) {
-        return Ok(live);
+    let sessions = live_sessions_for_stage(work_dir, &stage.id)?;
+    let worker_kind = worker_session_type(stage);
+    let workers: Vec<_> = sessions
+        .iter()
+        .filter(|session| session.session_type == worker_kind)
+        .cloned()
+        .collect();
+    if !workers.is_empty() || !has_contract_phase(stage) {
+        return Ok(workers);
     }
-    live_sessions_for_stage_of_type(work_dir, &stage.id, SessionType::Contract)
+    Ok(sessions
+        .into_iter()
+        .filter(|session| session.session_type == SessionType::Contract)
+        .collect())
 }
 
 /// Why an `Executing` stage does not describe a working agent, if it does

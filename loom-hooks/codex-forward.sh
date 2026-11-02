@@ -2,6 +2,8 @@
 # codex-forward.sh - trusted argv boundary for the codex companion runtime
 
 set -euo pipefail
+# This literal is also read from the embedded wrapper by the Rust preflight.
+SUPPORTED_CODEX_COMPANION_VERSION=1.0.6
 export LOOM_CODEX_FORWARD=1
 usage_error() {
 	printf '%s\n' \
@@ -130,6 +132,7 @@ command_log=
 output_log=
 plugin_probe=
 mode=companion
+direct_reason=
 deferred_notes=
 state_root=
 cleanup() {
@@ -184,7 +187,7 @@ print_evidence() {
 		fi
 		printf 'record: %s\n' "${record_path:-not found}"
 	else
-		printf 'mode: direct (codex exec --sandbox danger-full-access; nested Seatbelt refused)\n'
+		printf 'mode: direct (codex exec --sandbox danger-full-access; nested %s refused)\n' "$direct_reason"
 		printf 'thread: %s\n' "${backend_id:-none observed}"
 		printf 'unit: %s\n' "$unit_id"
 		printf 'invocation: %s\n' "$invocation_id"
@@ -246,9 +249,11 @@ if ! provider_log=$(make_private_temp) || ! command_log=$(make_private_temp) ||
 fi
 if nested_seatbelt_refused; then
 	mode=direct
+	direct_reason=Seatbelt
 	deferred_notes='note: the outer sandbox refuses a nested Seatbelt profile; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)'
 elif nested_bubblewrap_refused; then
 	mode=direct
+	direct_reason=bubblewrap
 	deferred_notes='note: the outer sandbox refuses a nested bubblewrap sandbox; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)'
 fi
 if ! command -v jq >/dev/null 2>&1; then
@@ -313,12 +318,12 @@ if [[ -z "${HOME:-}" || ! -d "$HOME" ]]; then
 fi
 home_root=$(cd "$HOME" 2>/dev/null && pwd -P) || finish_without_end 1 '' 'HOME cannot be canonicalized'
 versions_dir=${home_root}/.claude/plugins/cache/openai-codex/codex
-companion=${versions_dir}/1.0.6/scripts/codex-companion.mjs
+companion=${versions_dir}/${SUPPORTED_CODEX_COMPANION_VERSION}/scripts/codex-companion.mjs
 if [[ ! -f "$companion" || -L "$companion" ]]; then
-	finish_without_end 1 '' "Supported codex companion 1.0.6 is missing or unsafe: $companion"
+	finish_without_end 1 '' "Supported codex companion $SUPPORTED_CODEX_COMPANION_VERSION is missing or unsafe: $companion"
 fi
 companion_dir=$(cd "$(dirname "$companion")" 2>/dev/null && pwd -P) ||
-	finish_without_end 1 '' "Supported codex companion 1.0.6 cannot be canonicalized: $companion"
+	finish_without_end 1 '' "Supported codex companion $SUPPORTED_CODEX_COMPANION_VERSION cannot be canonicalized: $companion"
 companion=$companion_dir/codex-companion.mjs
 
 CLAUDE_PLUGIN_DATA=${home_root}/.codex/plugin-data

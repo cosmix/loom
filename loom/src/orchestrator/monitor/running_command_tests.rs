@@ -21,6 +21,55 @@ fn row(pid: u32, ppid: u32, name: &str) -> ProcessRow {
     }
 }
 
+fn first_command(
+    agent_pid: u32,
+    rows: &[ProcessRow],
+    start_of: impl Fn(u32) -> Option<u64>,
+) -> Option<&ProcessRow> {
+    agent_commands(agent_pid, rows, start_of).into_iter().next()
+}
+
+/// Parallel tool calls keep the oldest at the head whatever order the table
+/// lists them in, so a wrapped PID cannot change which one names them.
+#[test]
+fn commands_run_oldest_first_and_a_later_one_does_not_replace_the_head() {
+    let rows = [
+        row(90, AGENT, "bash"),
+        row(91, 90, "sleep"),
+        row(101, AGENT, "bash"),
+        row(102, 101, "sleep"),
+        row(103, AGENT, "tee"),
+    ];
+    let start_of = |pid| match pid {
+        AGENT => Some(1),
+        101 => Some(5),
+        90 => Some(9),
+        _ => Some(7),
+    };
+    let pids: Vec<u32> = agent_commands(AGENT, &rows, start_of)
+        .iter()
+        .map(|row| row.pid)
+        .collect();
+    assert_eq!(pids, [101, 90]);
+}
+
+/// The sum sees a busy command beside an idle one, and every root must be live.
+#[test]
+fn the_ticks_of_parallel_commands_add_up_and_a_gone_root_is_no_sample() {
+    let rows = [
+        row(101, AGENT, "bash"),
+        row(102, 101, "sleep"),
+        row(201, AGENT, "bash"),
+        row(202, 201, "cargo"),
+    ];
+    let ticks = |pid| Some(u64::from(pid));
+    assert_eq!(
+        tree_cpu_ticks(&[101, 201], &rows, ticks),
+        Some(101 + 102 + 201 + 202)
+    );
+    assert_eq!(tree_cpu_ticks(&[101, 999], &rows, ticks), None);
+}
+
 /// Every process in the synthetic tables started after the agent.
 fn later_than_agent(pid: u32) -> Option<u64> {
     Some(if pid == AGENT { 1 } else { 2 })
@@ -224,4 +273,47 @@ fn the_session_wrapper_reads_as_a_command_only_while_a_tool_call_runs() {
     wait_until("the tool call", || dir.join("started").exists());
     let command = running_command(dir, &session).expect("the tool call's shell is a command");
     assert!(is_command_launcher(&command.name), "{command:?}");
+}
+
+#[test]
+fn portable_cpu_time_parser_rejects_unknown_and_counts_days() {
+    assert_eq!(parse_ps_cpu_time("1-02:03:04.25"), Some(93_784));
+    assert_eq!(parse_ps_cpu_time("03:04"), Some(184));
+    assert_eq!(parse_ps_cpu_time("unavailable"), None);
+}
+
+/// Sequential work in one shell: the finished child's ticks move into the
+/// shell's reaped-children counters, so the total does not fall. Not on macOS,
+/// whose task counters have no such figure.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_reaped_child_leaves_its_work_in_the_command_total() {
+    let mut shell = std::process::Command::new("sh")
+        .args([
+            "-c",
+            "sh -c 'i=0; while [ $i -lt 3000000 ]; do i=$((i+1)); done'; exec sleep 30",
+        ])
+        .spawn()
+        .unwrap();
+    let pid = shell.id();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut peak = 0;
+    let finished = loop {
+        peak = peak.max(command_cpu_ticks(&[pid]).unwrap_or(0));
+        let exec_done = std::fs::read_to_string(format!("/proc/{pid}/comm"))
+            .is_ok_and(|comm| comm.trim() == "sleep");
+        if exec_done {
+            break true;
+        }
+        if Instant::now() > deadline {
+            break false;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    let after = command_cpu_ticks(&[pid]);
+    let _ = shell.kill();
+    let _ = shell.wait();
+    assert!(finished, "the child never finished");
+    assert!(peak > 0, "the child's work was never sampled");
+    assert!(after.unwrap() >= peak, "{after:?} fell below {peak}");
 }

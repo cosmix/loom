@@ -123,7 +123,10 @@ pub fn validate_subagent_stop<S: ClaudeStarts + ?Sized>(
     let parent_id = required(payload, "session_id")?;
     let agent_id = required(payload, "agent_id")?;
     let agent_type = required(payload, "agent_type")?;
-    validate_ids(&[parent_id, agent_id, agent_type])?;
+    validate_ids(&[parent_id, agent_id])?;
+    if !is_safe_agent_type(agent_type) {
+        return Err(ClaudeEvidenceError::Unsafe("invalid agent type".into()));
+    }
     let worker = plain_absolute(Path::new(required(payload, "agent_transcript_path")?))?;
     let parent = plain_absolute(Path::new(required(payload, "transcript_path")?))?;
     validate_transcript_layout(&worker, &parent, parent_id, agent_id)?;
@@ -239,13 +242,10 @@ fn validate_stop_start(
         ));
     }
     validate_current_binding(work_dir, stage_id, loom_session_id)?;
-    validate_ids(&[
-        stage_id,
-        loom_session_id,
-        parent_session_id,
-        agent_id,
-        agent_type,
-    ])?;
+    validate_ids(&[stage_id, loom_session_id, parent_session_id, agent_id])?;
+    if !is_safe_agent_type(agent_type) {
+        return Err(ClaudeEvidenceError::Unsafe("invalid agent type".into()));
+    }
     let starts = StartedAgentTypeIndex::load(Some(work_dir));
     let start = ClaudeStarts::resolve_exact(
         &starts,
@@ -339,6 +339,15 @@ fn required<'a>(payload: &'a Value, field: &str) -> Result<&'a str, ClaudeEviden
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| malformed(format!("missing {field}")))
+}
+
+fn is_safe_agent_type(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    (1..=128).contains(&bytes.len())
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
 }
 
 fn validate_ids(ids: &[&str]) -> Result<(), ClaudeEvidenceError> {

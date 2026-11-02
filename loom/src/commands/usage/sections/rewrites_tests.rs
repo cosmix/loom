@@ -1,8 +1,4 @@
-//! Regression test for the `<synthetic>`-row pairing defect in
-//! `collect_transcript`: a synthetic API-error request has all-zero usage,
-//! so pairing it as the `current` side of a rewrite window used to turn the
-//! ENTIRE prior request's residency into a phantom rewrite. Split out to
-//! keep `rewrites.rs` legible (CLAUDE.md Rule 17).
+//! Tests for excluding synthetic requests from rewrite pairing.
 
 use super::*;
 use crate::commands::usage::transcript::{Request, TokenUsage};

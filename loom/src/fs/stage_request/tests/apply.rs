@@ -1,6 +1,6 @@
 use super::*;
 use crate::daemon::handle_dispute_criteria;
-use crate::fs::stage_request::{append_to_spool, read_pending, spool_path};
+use crate::fs::stage_request::{read_pending, spool_path};
 use crate::fs::work_dir::WorkDir;
 use crate::models::dispute::DisputeRequest;
 use crate::models::stage::{Stage, StageStatus};
@@ -8,6 +8,10 @@ use crate::plan::schema::AcceptanceCriterion;
 use crate::verify::transitions::{load_stage, save_stage};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
+
+fn append_to_spool(root: &Path, request: &StageRequest) -> anyhow::Result<()> {
+    super::super::spool::append_to_spool_for_session(root, request, "session-test")
+}
 
 /// An initialized `.loom/work` plus a worktree directory for `stage_id`, with the
 /// stage saved in `status` and `acceptance_len` acceptance criteria.
@@ -24,6 +28,7 @@ fn setup(
     let mut stage = Stage::new(stage_id.to_string(), None);
     stage.id = stage_id.to_string();
     stage.status = status;
+    stage.session = Some("session-test".into());
     for i in 0..acceptance_len {
         stage
             .acceptance
@@ -44,6 +49,49 @@ fn dispute_request(criterion_index: usize) -> StageRequest {
         evidence_commit: Some("abc1234".to_string()),
         failure_output: Some("loom: command not found".to_string()),
     }
+}
+
+#[test]
+fn requests_from_a_previous_attempt_and_legacy_records_are_discarded() {
+    let (_temp, work_dir, root) = setup("stale", StageStatus::Executing, 1);
+    append_to_spool(
+        &root,
+        &StageRequest::Block {
+            reason: "old block".into(),
+        },
+    )
+    .unwrap();
+    append_to_spool(&root, &dispute_request(0)).unwrap();
+    append_to_spool(
+        &root,
+        &StageRequest::FreezeContracts {
+            head: "a".repeat(40),
+            tree_digest: "b".repeat(64),
+        },
+    )
+    .unwrap();
+    crate::fs::jsonl_spool::append(
+        &root,
+        super::super::spool::SPOOL_RELPATH,
+        &crate::stage_service::QueuedRequest::new(StageRequest::Block {
+            reason: "legacy".into(),
+        }),
+        crate::stage_service::MAX_REQUEST_BYTES,
+    )
+    .unwrap();
+    crate::verify::transitions::update_stage("stale", &work_dir, |stage| {
+        stage.session = Some("session-new".into());
+        Ok(())
+    })
+    .unwrap();
+
+    let result = drain_requests(&work_dir, "stale", &root).unwrap();
+    assert_eq!(result.applied, 0);
+    assert_eq!(result.skipped, 4);
+    let stage = load_stage("stale", &work_dir).unwrap();
+    assert_eq!(stage.status, StageStatus::Executing);
+    assert_eq!(stage.dispute_count, 0);
+    assert!(read_pending(&root).unwrap().is_empty());
 }
 
 /// The single dispute on disk for `stage_id`, with `created_at` normalised
@@ -302,3 +350,6 @@ fn a_spooled_file_dispute_the_daemon_refuses_is_skipped() {
 
 #[path = "replay.rs"]
 mod replay;
+
+#[path = "attempt_tests.rs"]
+mod attempt_tests;

@@ -40,8 +40,8 @@ class StartAnnouncer:
         if self.fd is None or self.attempted:
             return
         self.attempted = True
-        body = json.dumps({"v": 1, "backend": "direct", "thread_id": thread_id},
-                          separators=(",", ":"))
+        marker = {"v": 1, "backend": "direct", "thread_id": thread_id}
+        body = json.dumps(marker, separators=(",", ":"))
         line = memoryview((START_PREFIX + body + "\n").encode())
         # os.write may write part of the line; finish it, or leave thread_id
         # unset so the wrapper fails closed on a START it cannot vouch for.
@@ -194,6 +194,29 @@ def _wait_until(proc: subprocess.Popen[bytes], deadline: float, tick) -> bool:
     return proc.poll() is not None
 
 
+class Cancellation:
+    """Record termination requests without interrupting child registration or cleanup."""
+    def __init__(self) -> None:
+        self.requested = False
+        self.previous = {}
+
+    def __enter__(self):
+        try:
+            for sig in (signal.SIGTERM, signal.SIGHUP):
+                self.previous[sig] = signal.signal(sig, self._request)
+        except BaseException:
+            self.__exit__(None, None, None)
+            raise
+        return self
+
+    def _request(self, _sig, _frame) -> None:
+        self.requested = True
+
+    def __exit__(self, _type, _value, _traceback) -> None:
+        for sig, handler in self.previous.items():
+            signal.signal(sig, handler)
+
+
 def _reap_adopted() -> None:
     while True:
         try:
@@ -258,14 +281,19 @@ def _close_streams(proc: subprocess.Popen[bytes], selector: selectors.BaseSelect
 def supervise(command: list[str], timeout_ms: int, grace_ms: int = 5000,
               start_fd: int | None = None) -> DirectResult:
     announcer = StartAnnouncer(start_fd)
-    result = _supervise(command, timeout_ms, grace_ms, announcer)
+    with Cancellation() as cancellation:
+        result = _supervise(command, timeout_ms, grace_ms, announcer, cancellation)
+        if cancellation.requested and not result.ownership_retained:
+            result = dataclasses.replace(result, state="cancelled", exit_code=124, terminal_at=utc_now())
     return dataclasses.replace(result, announced_thread_id=announcer.thread_id)
 
 
 def _supervise(command: list[str], timeout_ms: int, grace_ms: int,
-               announcer: StartAnnouncer) -> DirectResult:
+               announcer: StartAnnouncer, cancellation: Cancellation) -> DirectResult:
     _enable_subreaper()
     events, stderr = EventState(), [0]
+    if cancellation.requested:
+        return DirectResult("cancelled", None, None, utc_now(), 124, False)
     try:
         proc = subprocess.Popen(
             command,
@@ -291,7 +319,7 @@ def _supervise(command: list[str], timeout_ms: int, grace_ms: int,
 
     try:
         return _collect_result(proc, tracker, events, selector, stream, stderr,
-                               timeout_ms, grace_ms, tick)
+                               timeout_ms, grace_ms, tick, cancellation)
     except BaseException:
         _retire(proc, tracker, time.monotonic() + grace_ms / 1000,
                 lambda: time.sleep(0.005))
@@ -300,16 +328,18 @@ def _supervise(command: list[str], timeout_ms: int, grace_ms: int,
         _close_streams(proc, selector)
 
 
-def _collect_result(proc, tracker, events, selector, stream, stderr, timeout_ms, grace_ms, tick):
-    joined = _wait_until(proc, time.monotonic() + timeout_ms / 1000, tick)
-    timed_out = not joined
+def _collect_result(proc, tracker, events, selector, stream, stderr, timeout_ms, grace_ms, tick, cancellation):
+    deadline = time.monotonic() + timeout_ms / 1000
+    while proc.poll() is None and time.monotonic() < deadline and not cancellation.requested:
+        tick()
+    timed_out = proc.poll() is None or cancellation.requested
     end = time.monotonic() + grace_ms / 1000
     retired = _retire(proc, tracker, end, tick)
     while selector.get_map() and time.monotonic() < end:
         _drain(selector, stream, stderr)
     retired = retired and not selector.get_map()
     tracker.refresh()
-    if timed_out:
+    if timed_out or cancellation.requested:
         result = DirectResult("cancelled" if retired else "unknown", events.thread_id,
                               events.turn_id, utc_now(), 124 if retired else 125, not retired)
     else:

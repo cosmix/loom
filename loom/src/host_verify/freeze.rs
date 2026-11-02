@@ -27,23 +27,26 @@ use super::freeze_memo::run_memoized;
 use super::freeze_refuse::{failure_message, REFUSAL_MAX_BYTES};
 use super::runner::DAEMON_STOPPED;
 use super::{child, digest, store, CriterionOutcome, JobRecord, JobResult, JobState};
-use crate::commands::stage::contracts::freeze::{
-    check_formatting, check_site_changes, prepare_contract, refused_problems, run_prepared,
-    PreparedContract,
-};
-use crate::commands::stage::contracts::ContractSite;
 use crate::daemon::ContractRunReport;
 use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::{CommandConfinement, Stage};
 use crate::relay::sha256_hex;
 use crate::stage_service::contracts::{freeze_with_reports, locate, read_files, Site};
 use crate::stage_service::Response;
-use crate::verify::contracts::refusal::{
-    problem_lines, record_daemon_refusal, run_output_line, RefusalSource, INFRASTRUCTURE_PREFIX,
+use crate::verify::contracts::freeze::{
+    check_site_changes, prepare_contract, run_prepared, PreparedContract,
 };
+use crate::verify::contracts::refusal::{
+    problem_lines, record_job_refusal, run_output_line, JobRefusalOrigin, INFRASTRUCTURE_PREFIX,
+};
+use crate::verify::contracts::site::ContractSite;
 use crate::verify::contracts::store::load_freeze;
 use crate::verify::criteria::{plan_confinement, resolve_confinement};
 use crate::verify::transitions::load_stage;
+
+#[path = "freeze_format.rs"]
+mod format;
+use format::{format_outcome, outcome, verdict_line};
 
 /// The job file a passing run leaves for its application.
 pub(crate) const REPORTS_FILE: &str = "contract-reports.json";
@@ -152,6 +155,7 @@ fn run(
 ) -> Result<Option<String>> {
     let stage = load_stage(&record.stage_id, work_dir)
         .with_context(|| format!("Failed to load stage '{}'", record.stage_id))?;
+    super::child_policy::ensure_bound_stage(&stage, work_dir)?;
     let site = locate(work_dir, &stage)?;
     let contract_site = ContractSite::resolved(
         work_dir.to_path_buf(),
@@ -214,7 +218,15 @@ fn run_contracts(
         &stage.contracts,
         |contract| prepare_contract(&site.worktree_root, &site.working_dir, contract),
         PreparedContract::build_key,
-        |contract, prepared| run_prepared(&site.worktree_root, contract, prepared, confinement),
+        |contract, prepared| {
+            run_prepared(
+                &site.worktree_root,
+                contract,
+                prepared,
+                confinement,
+                |line| println!("{line}"),
+            )
+        },
         |contract, verdict| {
             let (passed, summary) = match verdict.judged {
                 Ok(report) => {
@@ -239,50 +251,6 @@ fn run_contracts(
         },
     )?;
     Ok(reports)
-}
-
-/// The summary of a contract the run classified red; `shared_from` names the
-/// contract whose failed build it took instead of running its own.
-fn verdict_line(report: &ContractRunReport, shared_from: Option<&str>) -> String {
-    let id = &report.contract_id;
-    let exit = report
-        .exit_code
-        .map_or_else(|| "no exit code".to_string(), |code| format!("exit {code}"));
-    let shared = shared_from.map_or_else(String::new, |first| {
-        format!("; shares the failed build of contract `{first}`, not run again")
-    });
-    format!(
-        "contract `{id}` is red ({}, {exit}), as the freeze requires{shared}",
-        report.outcome
-    )
-}
-
-/// The format gate as outcome `format`. A gate that could not run is an
-/// error of the run, never a failed outcome.
-fn format_outcome(
-    site: &ContractSite,
-    confinement: CommandConfinement,
-) -> Result<CriterionOutcome> {
-    let (passed, summary) = match check_formatting(site, confinement) {
-        Ok(()) => (
-            true,
-            "every contract and harness file passes the stage's formatter checks".to_string(),
-        ),
-        Err(error) => match refused_problems(&error) {
-            Some(problems) => (false, problems.join("\n")),
-            None => return Err(error),
-        },
-    };
-    Ok(outcome("format".to_string(), passed, &summary))
-}
-
-fn outcome(label: String, passed: bool, summary: &str) -> CriterionOutcome {
-    CriterionOutcome {
-        label,
-        passed,
-        summary: truncate_to_byte_limit(summary, child::SUMMARY_MAX_BYTES),
-        log: None,
-    }
 }
 
 /// Apply a finished freeze job: freeze from a passing run whose binding
@@ -375,14 +343,23 @@ fn load_reports(work_dir: &Path, record: &JobRecord) -> Result<ContractReports> 
 /// stage's contract writer, and drops it otherwise.
 fn refuse(work_dir: &Path, record: &JobRecord, message: &str) -> Result<Applied> {
     let message = truncate_to_byte_limit(message, REFUSAL_MAX_BYTES);
-    record_daemon_refusal(
+    let recorded = record_job_refusal(
         work_dir,
         &record.stage_id,
         &record.session_id,
+        JobRefusalOrigin {
+            job_id: record.id.clone(),
+            submission_order: record.submission_order,
+        },
         &problem_lines(&message),
-        RefusalSource::Daemon,
     )?;
-    Ok(Applied::FreezeRefused(message))
+    if recorded {
+        Ok(Applied::FreezeRefused(message))
+    } else {
+        Ok(Applied::Ignored(
+            "a newer freeze refusal is recorded".to_string(),
+        ))
+    }
 }
 
 /// [`refuse`] a run that failed through no one's change.

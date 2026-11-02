@@ -76,21 +76,42 @@ expect_allow "loom memory note documenting the traversal trap" "$MEMORY_NOTE_CMD
 
 expect_allow "current stage's own worktree path is not cross-worktree access" \
     "cat .worktrees/$STAGE/src/main.rs"
+expect_allow "ordinary in-tree command" "cat src/main.rs"
+for cmd in 'cargo build' 'cargo test' 'git status' 'git add src/main.rs' \
+    "git commit -m 'test'" 'ls -la' 'pwd' 'cat file.txt' 'rg pattern src/'; do
+    expect_allow "ordinary command: $cmd" "$cmd"
+done
+expect_allow "one parent component in a Bash command" "cat ../file.txt"
+expect_allow "commit message mentioning worktree directories" 'git commit -m "Add .worktrees/ to .gitignore"'
+expect_allow "commit message describing an override" 'git commit -m "Use git -C for directory changes"'
+expect_allow "commit message mentioning traversal" 'git commit -m "Fixed ../../path issue"'
+expect_allow "heredoc prose containing guarded patterns" $'cat <<EOF\ngit -C ../other status\n../../escape\n.worktrees/other-stage/\nEOF'
+expect_allow "quoted heredoc marker hides its body" $'cat <<\'EOF\'\ngit -C ../other status\n../../escape\n.worktrees/other-stage/\nEOF'
+expect_allow "an indented terminator does not close a heredoc" $'cat <<\'EOF\'\n    EOF\ncat ../../still-in-body\nEOF'
+# Bash removes unquoted backslashes, so this names `....file.txt` in the cwd.
+expect_allow "unquoted backslashes leave no parent component" 'cat ..\..\file.txt'
 
 # --- MUST BE BLOCKED (exit 2), no regressions -------------------------------
 
 expect_block "bare path traversal" "cat ../../foo"
+expect_block "three parent components" "ls ../../../"
+expect_block "traversal before a compound command" "cd ../../other && ls"
 
 # Quoting changes how bash PARSES the command, never the argument's VALUE - a
 # quoted but genuinely word-shaped path argument must still block. This is
 # what proves quoting alone is not the discriminator; whitespace inside the
 # token is.
 expect_block "quoted real traversal path argument" 'cat "../../foo"'
+expect_block "quoted backslash traversal path argument" 'cat "..\..\file.txt"'
+expect_block "traversal after a closed heredoc" $'cat <<\'EOF\'\nprose\nEOF\ncat ../../bad'
 
 expect_block "git -C directory override" "git -C /somewhere status"
+expect_block "git -C relative override" "git -C ../other status"
+expect_block "git -C current directory override" "git -C . status"
 expect_block "GIT_DIR= env assignment" "GIT_DIR=/x git status"
 expect_block "eval-reached git" 'eval "git status"'
 expect_block "git --work-tree override" "git --work-tree=/somewhere status"
+expect_block "git --work-tree relative override" "git --work-tree=../parent status"
 expect_block "git --git-dir override" "git --git-dir=/somewhere/.git log"
 expect_block "GIT_WORK_TREE= env assignment" "GIT_WORK_TREE=/x git status"
 

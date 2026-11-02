@@ -53,11 +53,13 @@ markdownlint fixer, leaving an unstaged edit to the plan file after every commit
 
 ## `rustfmt` Reformats More Than the File It Was Given
 
-**What happened:** a worker ran `rustfmt --edition 2024` on `sandbox/settings/tests.rs` in the 2021-edition crate; it reflowed `assert!` chains and reordered imports, growing the file from 1565 to 1571 lines against a ledger that pinned 1565. `rustfmt` on `launch.rs`, `runner.rs` or `config_worktree.rs` also rewrote their out-of-line `tests_*.rs` children.
+**What happened:** Formatting `mod.rs` during parallel resolver work also visited child modules being edited by other workers. Earlier runs on module roots likewise reflowed their out-of-line tests.
 
-**Why:** subagents cannot run `cargo fmt` (a hook blocks it) and guessed the edition; `rustfmt` follows `mod` declarations into child files.
+**Why:** `rustfmt` follows out-of-line `mod` declarations by default, including in the correct Rust edition.
 
-**Prevention:** worker briefs say `rustfmt --edition 2021` (`loom/Cargo.toml:4`) or leave formatting to the orchestrator's `cargo fmt --all`; check one file with `rustfmt --check`, which reports instead of rewriting its children.
+**Prevention:** For scoped formatting use `rustfmt --edition 2021 --config skip_children=true` on the assigned files; coordinate whole-tree formatting after concurrent edits settle.
+
+**Fix:** Preserve the concurrent edits and review any incidental formatting in the affected descendants.
 
 ## Filtering `loom check` Output Hid the Relay Line
 

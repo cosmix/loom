@@ -5,6 +5,8 @@ use clap::Subcommand;
 
 #[path = "types_stage_amend.rs"]
 mod amend;
+#[path = "types_stage_complete.rs"]
+mod complete;
 #[path = "types_stage_contracts.rs"]
 mod contracts;
 #[path = "types_stage_disputes.rs"]
@@ -12,7 +14,8 @@ mod disputes;
 #[path = "types_stage_review.rs"]
 mod review;
 
-pub use amend::{AmendField, AmendOp};
+pub use amend::AmendArgs;
+pub use complete::{AdminProofArgs, CompleteArgs};
 pub use contracts::ContractsCommands;
 pub use disputes::{
     CriteriaDispute, DisputeContractArgs, DisputeCriteriaArgs, DisputeFindingsArgs,
@@ -25,70 +28,12 @@ pub enum StageCommands {
     /// Mark a stage as complete (runs acceptance criteria by default).
     /// Privileged flags authorize themselves from the daemon token, which
     /// only an operator shell can read.
-    Complete {
-        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
-        #[arg(value_parser = clap_id_validator)]
-        stage_id: String,
-
-        /// Session ID to also mark as completed
-        #[arg(long, value_parser = clap_id_validator)]
-        session: Option<String>,
-
-        /// Skip acceptance criteria verification; the committed branch tip is
-        /// recorded for landing. Refuses a branch with zero commits.
-        /// Redundant with --force-unsafe, which runs no checks either.
-        #[arg(long)]
-        no_verify: bool,
-
-        /// UNSAFE: Force completion from any state, bypassing state machine validation.
-        /// Records the committed branch tip, if any, so the daemon's auto-merge
-        /// can land it; a zero-commit branch records nothing.
-        /// WARNING: This can corrupt dependency tracking. Use only for recovery.
-        #[arg(long = "force-unsafe")]
-        force_unsafe: bool,
-
-        /// When using --force-unsafe, also mark stage as merged (assumes manual merge was done;
-        /// the stage's commit must be in the target). Without this, dependents are triggered
-        /// only once the recorded commit lands.
-        #[arg(long = "assume-merged", requires = "force_unsafe")]
-        assume_merged: bool,
-
-        /// Re-run every acceptance criterion even when a pass is cached for this tree
-        #[arg(long)]
-        no_cache: bool,
-    },
+    Complete(CompleteArgs),
 
     /// Mint a one-time proof to hand to another process.
     /// Operators do not need this: privileged commands authorize themselves.
     /// Supply the daemon token through LOOM_ADMIN_TOKEN; only the proof is printed.
-    AdminProof {
-        /// Stage ID the proof authorizes
-        #[arg(required_unless_present = "daemon_stop", value_parser = clap_id_validator)]
-        stage_id: Option<String>,
-
-        /// Authorize one daemon shutdown instead of a stage completion
-        #[arg(
-            long = "daemon-stop",
-            conflicts_with_all = ["stage_id", "no_verify", "force_unsafe", "assume_merged"]
-        )]
-        daemon_stop: bool,
-
-        /// Authorize --no-verify for this stage completion
-        #[arg(long, conflicts_with = "daemon_stop")]
-        no_verify: bool,
-
-        /// Authorize --force-unsafe for this stage completion
-        #[arg(long = "force-unsafe", conflicts_with = "daemon_stop")]
-        force_unsafe: bool,
-
-        /// Authorize --assume-merged together with --force-unsafe
-        #[arg(
-            long = "assume-merged",
-            requires = "force_unsafe",
-            conflicts_with = "daemon_stop"
-        )]
-        assume_merged: bool,
-    },
+    AdminProof(AdminProofArgs),
 
     /// Block a stage with a reason
     Block {
@@ -279,34 +224,7 @@ pub enum StageCommands {
     /// rewrites both the plan file and the stage file. Use when a criterion
     /// is impossible rather than merely failing -- an agent inside a stage
     /// should file `loom stage dispute-criteria` instead.
-    Amend {
-        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
-        #[arg(value_parser = clap_id_validator)]
-        stage_id: String,
-
-        /// Which array to mutate.
-        #[arg(long)]
-        field: AmendField,
-
-        /// What to do at `--index`.
-        #[arg(long)]
-        op: AmendOp,
-
-        /// 0-based index into the array.
-        #[arg(long)]
-        index: usize,
-
-        /// The new element: a YAML body for every field except `harness`,
-        /// which takes a plain glob verbatim (trimmed, never parsed as YAML,
-        /// so do not quote it). Required for replace/insert, rejected for
-        /// delete.
-        #[arg(long)]
-        value: Option<String>,
-
-        /// Reason recorded in the audit log.
-        #[arg(long, value_parser = clap_description_validator)]
-        reason: Option<String>,
-    },
+    Amend(AmendArgs),
 
     /// Manage stage outputs (structured values passed to dependent stages)
     Output {

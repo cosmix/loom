@@ -87,7 +87,7 @@ impl QueryHarness for RubyExtractor {
             dialect: "ruby",
             grammar_version: "0.23.1",
             query_digest: crate::context::source_graph::body_hash(QUERY.as_bytes()),
-            extractor_version: 1,
+            extractor_version: 2,
         }
     }
 

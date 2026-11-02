@@ -100,13 +100,13 @@ fn subagent_budget_is_cadence_not_deadline_in_emitted_signal() {
 
     assert!(
         content.contains("never a deadline on the subagent's own work"),
-        "the block must say the budget is the idle threshold death is judged \
-         against, never a deadline on the subagent's own work"
+        "the block must say the budget is the idle threshold for a stall, never a \
+         deadline on the subagent's own work"
     );
     assert!(
-        content.contains("positive evidence of death"),
-        "the block must require positive evidence before a takeover, not elapsed \
-         time alone"
+        content.contains("a stall is no proof of death"),
+        "the block must describe idle time as a stall signal, matching the \
+         orchestration skill, since the runtime proves death with separate probes"
     );
     assert!(
         content.contains("loom subagents watch"),
@@ -219,7 +219,7 @@ fn integration_verify_prefix_assigns_one_canonical_gate_owner() {
     for needle in [
         "runs `loom check integration-verify` ONCE",
         "immutable tree, environment, and criterion contract",
-        "Rule 5's complete-suite instruction",
+        "Give reviewers the check summaries and evidence pointers",
         "Reviewers inspect independently and run only targeted",
         "targeted checks are additional evidence, never a substitute",
         "command, real exit, criterion verdict, input/contract identity, elapsed time",

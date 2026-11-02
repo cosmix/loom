@@ -75,6 +75,9 @@ pub fn save_document(
     if req.text.len() > MAX_EDIT_BYTES {
         return Err(SaveRefusal::TooLarge);
     }
+    // Pressure and amendment writers use this stable lock across replacement.
+    let _plan_lock = crate::fs::locking::lock_plan(&root.join(&rel))
+        .map_err(|error| SaveRefusal::Io(format!("{error:#}")))?;
     // Re-read now: the stored text may trail the watcher.
     let current = read_doc(root, &rel).map_err(|error| SaveRefusal::Io(format!("{error:#}")))?;
     if current.len() > MAX_EDIT_BYTES {

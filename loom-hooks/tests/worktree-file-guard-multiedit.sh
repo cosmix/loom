@@ -58,4 +58,39 @@ if ! run_hook "$(edit_payload "$WORKTREE/src/main.rs")" >/dev/null; then
 	exit 1
 fi
 
+# Shared state is readable but only handoffs can be written through its link.
+SHARED="$TMP/repo/.loom/work"
+mkdir -p "$SHARED/handoffs" "$SHARED/heartbeat" "$SHARED/signals" "$SHARED/stages" "$SHARED/sessions" "$WORKTREE/.loom"
+ln -s "$SHARED" "$WORKTREE/.loom/work"
+for path in heartbeat/stage.json signals/event.json stages/stage.md sessions/session.md; do
+	set +e
+	run_hook "$(edit_payload ".loom/work/$path")" >/dev/null
+	CODE=$?
+	set -e
+	if [[ $CODE -ne 2 ]]; then
+		echo "FAIL: expected shared $path write to be blocked, got $CODE"
+		exit 1
+	fi
+done
+if ! run_hook "$(edit_payload ".loom/work/handoffs/notes.md")" >/dev/null; then
+	echo "FAIL: expected a shared handoff write to be allowed"
+	exit 1
+fi
+
+# The legacy workspace link must enforce the same boundary.
+rm "$WORKTREE/.loom/work"
+ln -s "$SHARED" "$WORKTREE/.work"
+set +e
+run_hook "$(edit_payload ".work/stages/stage.md")" >/dev/null
+CODE=$?
+set -e
+if [[ $CODE -ne 2 ]]; then
+	echo "FAIL: expected legacy shared stage write to be blocked, got $CODE"
+	exit 1
+fi
+if ! run_hook "$(edit_payload ".work/handoffs/notes.md")" >/dev/null; then
+	echo "FAIL: expected legacy handoff write to be allowed"
+	exit 1
+fi
+
 echo "PASS"

@@ -6,7 +6,7 @@ use std::path::Path;
 use super::excluded;
 use crate::context::source_graph::body_hash;
 use crate::context::source_graph::read::read_source;
-use crate::git::runner::{run_git_checked, run_git_records};
+use crate::git::worktree::WorktreeGit;
 
 pub(crate) struct WorkingTree {
     pub head: String,
@@ -17,11 +17,9 @@ pub(crate) struct WorkingTree {
 }
 
 pub(crate) fn working_tree(project_root: &Path) -> Result<WorkingTree> {
-    let head = run_git_checked(&["rev-parse", "HEAD"], project_root)?;
-    let status = run_git_records(
-        &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
-        project_root,
-    )?;
+    let git = WorktreeGit::pinned_checkout(project_root)?;
+    let head = git.run_checked(&["rev-parse", "HEAD"])?.trim().to_string();
+    let status = git.run_checked(&["status", "--porcelain=v1", "-z", "--untracked-files=all"])?;
     let dirty = parse_status(&status);
     let generation = generation(project_root, &head, &dirty)?;
     Ok(WorkingTree {

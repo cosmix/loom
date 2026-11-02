@@ -34,8 +34,7 @@ pub(super) fn awaits_merge(status: &StageStatus) -> bool {
 /// `failure_type` as its `failure_info` when given; the failure it replaces
 /// goes into `issue_history`.
 fn record_review(stage: &mut Stage, reason: &str, failure_type: Option<FailureType>) {
-    stage.force_status_with_reason(StageStatus::NeedsHumanReview, reason);
-    stage.replace_review_reason(reason.to_string());
+    crate::stage_service::merge_outcome::apply_review(stage, reason);
     if let Some(failure_type) = failure_type {
         stage.replace_failure(FailureInfo {
             failure_type,
@@ -69,7 +68,19 @@ impl Orchestrator {
         reason: String,
         failure_type: Option<FailureType>,
     ) -> ReviewRoute {
-        self.route_to_review_if(stage_id, reason, failure_type, awaits_merge)
+        self.route_to_review_if(stage_id, reason, failure_type, |stage| {
+            awaits_merge(&stage.status)
+        })
+    }
+
+    pub(super) fn route_claimed_to_review(
+        &mut self,
+        expected: &Stage,
+        reason: String,
+    ) -> ReviewRoute {
+        self.route_to_review_if(&expected.id, reason, None, |current| {
+            crate::stage_service::merge_outcome::check_stage(current, expected).is_ok()
+        })
     }
 
     fn route_to_review_if(
@@ -77,11 +88,11 @@ impl Orchestrator {
         stage_id: &str,
         reason: String,
         failure_type: Option<FailureType>,
-        may_route: fn(&StageStatus) -> bool,
+        may_route: impl Fn(&Stage) -> bool,
     ) -> ReviewRoute {
         let mut moved_on = None;
         let updated = self.update_stage(stage_id, |stage| {
-            if stage.is_final_merged() || !may_route(&stage.status) {
+            if stage.is_final_merged() || !may_route(stage) {
                 moved_on = Some(stage.status.clone());
                 anyhow::bail!("stage '{stage_id}' is {} on disk", stage.status);
             }
@@ -92,7 +103,7 @@ impl Orchestrator {
             tracing::info!(
                 stage_id = %stage_id,
                 %status,
-                "Stage left its merge state meanwhile; not routing it to human review"
+                "Stage changed meanwhile; not routing it to human review"
             );
             return ReviewRoute::StageMovedOn;
         }

@@ -1,11 +1,7 @@
 //! Turn one retrieved [`ContextPack`] into the hook's single stdout line, or
 //! into nothing.
 //!
-//! Split out of `user_prompt.rs` to keep that file under the maintainability
-//! line limit: recipient resolution and delivery filing are one concern,
-//! composing a pack into a payload is another, and this file owns only the
-//! second. Items must first earn admission individually, then survive the
-//! recipient's per-epoch dedupe, and finally fit the serialized byte ceiling.
+//! Items must earn admission, survive per-epoch dedupe, and fit the byte ceiling.
 
 use crate::context::config::RetrievalConfig;
 use crate::context::schema::{ContextItem, ContextPack, SelectionReason};
@@ -118,62 +114,18 @@ fn admits(item: &ContextItem, pack: &ContextPack, config: &RetrievalConfig) -> b
 
 /// Narrow `pack` to individually admitted items and account for every drop.
 fn admitted(pack: &ContextPack, config: &RetrievalConfig) -> Option<ContextPack> {
-    let (kept, dropped): (Vec<ContextItem>, Vec<ContextItem>) = pack
+    let kept: Vec<ContextItem> = pack
         .items
         .iter()
+        .filter(|item| admits(item, pack, config))
         .cloned()
-        .partition(|item| admits(item, pack, config));
-    carrying_after_drop(pack, kept, dropped.len())
+        .collect();
+    carrying_after_drop(pack, kept)
 }
 
-/// True when `pack` is worth emitting at all.
-///
-/// Silence is cheaper than a low-confidence brief that says nothing, and —
-/// the real point — once silence is meaningful, a reader can trust PRESENCE as
-/// signal. A brief that appears for every prompt carries no information by
-/// appearing, so this only clears for a pack that actually found something.
-///
-/// Only ONE item needs to clear the bar: an exact-rung [`SelectionReason`]
-/// (see [`is_exact_rung`] — these are post-gating reasons now, so a hit on one
-/// of them means something a bare lexical score does not), or a prompt that
-/// NAMED the item with at least `config.min_knowledge_terms` distinct query
-/// terms — `matched_term_count` is exactly that per-item strength signal,
-/// carried on the item for this reason.
-///
-/// For a knowledge chunk the ranker counts only the terms its heading or
-/// aliases carry (`context/rank/candidacy.rs::named_terms`), never a rescued
-/// term or a function word. A prompt that merely shares words with a section's
-/// body — "no, use the repository version of those files", "thanks, that is
-/// all for now" — shares them with hundreds of bodies, and a brief built on
-/// that says nothing; a prompt sharing two words with a heading has named the
-/// section. A prompt whose surviving terms were all put back by the rescue
-/// floor, or that matches no heading, therefore clears no lexical floor here.
-///
-/// The term-count clause applies to ANY item, not just a `KnowledgeChunk` —
-/// deliberately, not as a loosening. A source node counts every term it
-/// matched, and its BM25 document is only its scope segments plus a one-line
-/// signature (`rank_source.rs::node_document`); lexical admission already
-/// requires the prompt to have supplied every word of its multi-word name
-/// (`rank_source/candidacy.rs`), so two matched terms there is a name, too.
-///
-/// A knowledge-only clause would silently blackout a real configuration: a
-/// checkout with a mapped source graph (`loom map`) but no curated knowledge
-/// tree has no `KnowledgeChunk` items at all, so a knowledge-only second
-/// clause could never fire — every prompt that does not spell an identifier
-/// in identifier form (most of them; see the identifier-shaped-evidence
-/// gating behind [`is_exact_rung`]) would retrieve nothing, permanently, for
-/// exactly the questions people actually ask. The floor's job is "is there
-/// enough signal to say anything", not "did this come from curated prose".
-///
-/// **This floor applies only to this hook's unsolicited injection.**
-/// `loom knowledge context` is NOT floor-gated — it prints what it found
-/// because a human asked for exactly that — and the stage spawn brief is NOT
-/// floor-gated either, because an autonomous session should see the best
-/// available retrieval even when every match is weak. Both live outside this
-/// file (`commands::knowledge::context`, `orchestrator::signals`), so this
-/// predicate does not special-case them — that omission is deliberate, not an
-/// oversight: do not "unify" the three paths by adding this floor to the
-/// other two.
+/// Emit when any item has an exact or symbol-question reason, or enough
+/// distinct matched terms. This floor applies only to unsolicited prompt hooks;
+/// explicit knowledge queries and stage/worker briefs use their own policies.
 fn clears_emit_floor(pack: &ContextPack, config: &RetrievalConfig) -> bool {
     pack.items
         .iter()
@@ -244,32 +196,23 @@ fn without_omitted_line(mut brief: String, omitted: usize) -> String {
 /// everything retrieval found, when some of it was simply repeated from an
 /// earlier prompt this epoch.
 fn undelivered(pack: &ContextPack, delivered: &BTreeSet<(String, String)>) -> Option<ContextPack> {
-    let (kept, dropped): (Vec<ContextItem>, Vec<ContextItem>) =
-        pack.items.iter().cloned().partition(|item| {
+    let kept: Vec<ContextItem> = pack
+        .items
+        .iter()
+        .filter(|item| {
             let key = (item.id.as_str().to_string(), item.content_hash.clone());
             !delivered.contains(&key)
-        });
-    carrying_after_drop(pack, kept, dropped.len())
+        })
+        .cloned()
+        .collect();
+    carrying_after_drop(pack, kept)
 }
 
-fn carrying_after_drop(
-    pack: &ContextPack,
-    kept: Vec<ContextItem>,
-    dropped: usize,
-) -> Option<ContextPack> {
+fn carrying_after_drop(pack: &ContextPack, kept: Vec<ContextItem>) -> Option<ContextPack> {
     if kept.is_empty() {
         return None;
     }
-    let mut narrowed = carrying(pack, kept);
-    narrowed.omitted.omitted += dropped;
-    if dropped > 0 {
-        narrowed.omitted.weakest_included_score = narrowed
-            .items
-            .iter()
-            .map(|item| item.score)
-            .fold(f32::INFINITY, f32::min);
-    }
-    Some(narrowed)
+    Some(carrying(pack, kept))
 }
 
 /// `pack` without its lowest-scoring unit, or `None` when a single unit is all
@@ -288,35 +231,13 @@ fn without_weakest(pack: &ContextPack) -> Option<ContextPack> {
 
     let mut items = pack.items.clone();
     items.remove(weakest);
-    let mut narrowed = carrying(pack, items);
-    // A unit dropped for size is a ranked candidate that did not fit, which is
-    // exactly what the `PromptBrief` telemetry's omitted count reports. Left
-    // alone it would record that the session had been given everything.
-    narrowed.omitted.omitted += 1;
-    narrowed.omitted.weakest_included_score = narrowed
-        .items
-        .iter()
-        .map(|item| item.score)
-        .fold(f32::INFINITY, f32::min);
-    Some(narrowed)
+    Some(carrying(pack, items))
 }
 
-/// `pack` carrying exactly `items`, with the token estimate that describes
-/// them.
-///
-/// `coverage.included`/`coverage.included_tokens` are recomputed from `items`
-/// too, alongside the caller's own `omitted.omitted` bump: `pack.omitted` as
-/// retrieval built it describes the pack this narrowed from, and left alone
-/// it would tell the reader more candidates fit than actually shipped —
-/// breaking the `included + omitted == candidates` invariant the packer's own
-/// property test holds it to (`context::tests::pack::property_pack_never_exceeds_budget`).
+/// Clone a pack with accounting for the retained items.
 fn carrying(pack: &ContextPack, items: Vec<ContextItem>) -> ContextPack {
     let mut narrowed = pack.clone();
-    narrowed.items = items;
-    narrowed.recompute_estimate();
-    narrowed.omitted.coverage.included = narrowed.items.len();
-    narrowed.omitted.coverage.included_tokens =
-        narrowed.items.iter().map(|item| item.token_count).sum();
+    narrowed.retain_items(items);
     narrowed
 }
 

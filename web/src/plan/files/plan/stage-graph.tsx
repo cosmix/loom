@@ -96,21 +96,25 @@ const edgeTypes: EdgeTypes = { thread: ThreadEdge };
 function useStageFlow(stages: StageRow[]): { nodes: PlanNode[]; edges: ThreadEdgeType[] } {
   const summaries = useMemo(() => stages.map(toSummary), [stages]);
   const layout = useMemo(() => layoutStages(summaries), [summaries]);
+  const byId = useMemo(() => {
+    const result = new Map<string, StageSummary>();
+    for (const stage of summaries) if (!result.has(stage.id)) result.set(stage.id, stage);
+    return result;
+  }, [summaries]);
   const nodes = useMemo<PlanNode[]>(
     () =>
-      layout.nodes.map(({ stage, x, y, width, height }) => ({
-        id: stage.id,
+      layout.nodes.map(({ id, x, y, width, height }) => ({
+        id,
         type: "plan-stage",
         position: { x, y },
         width,
         height,
         measured: { width, height },
-        data: { stage },
+        data: { stage: byId.get(id)! },
       })),
-    [layout],
+    [layout, byId],
   );
   const edges = useMemo<ThreadEdgeType[]>(() => {
-    const byId = new Map(layout.nodes.map((node) => [node.stage.id, node.stage]));
     return layout.edges.map(({ source, target, points }) => ({
       id: `${source}->${target}`,
       source,
@@ -118,7 +122,7 @@ function useStageFlow(stages: StageRow[]): { nodes: PlanNode[]; edges: ThreadEdg
       type: "thread",
       data: { thread: threadOf(byId.get(source)!), emphasis: "plain", points },
     }));
-  }, [layout]);
+  }, [layout, byId]);
   return { nodes, edges };
 }
 

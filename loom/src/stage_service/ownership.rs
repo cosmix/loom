@@ -5,6 +5,12 @@ use crate::verify::transitions::load_stage;
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 const MAX_SESSION_FILE_BYTES: usize = 1024 * 1024;
+
+/// Check attempt ownership while holding the stage mutation lock.
+pub(crate) fn matches_attempt(stage: &Stage, session_id: &str) -> bool {
+    !session_id.is_empty() && stage.session.as_deref() == Some(session_id)
+}
+
 pub(crate) fn session_owns_stage_as(
     work_dir: &Path,
     stage_id: &str,
@@ -17,7 +23,7 @@ pub(crate) fn session_owns_stage_as(
     crate::validation::validate_id(session_id).context("invalid session id")?;
 
     let stage = load_stage(stage_id, work_dir)?;
-    if stage.session.as_deref() != Some(session_id) {
+    if !matches_attempt(&stage, session_id) {
         bail!("session '{session_id}' is not active for stage '{stage_id}'");
     }
 
@@ -44,7 +50,7 @@ pub(crate) fn owns_stage_as(
     session_id: &str,
     allowed: &[SessionType],
 ) -> bool {
-    stage.session.as_deref() == Some(session_id)
+    matches_attempt(stage, session_id)
         && session.id == session_id
         && session.stage_id.as_deref() == Some(stage_id)
         && allowed.contains(&session.session_type)

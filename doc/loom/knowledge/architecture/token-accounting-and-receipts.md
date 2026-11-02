@@ -100,6 +100,7 @@ clap surface is `UsageArgs` in `commands/usage/args.rs`. Rules:
   normalize `token_count` `last_token_usage` and use the last/total pair only to suppress consecutive duplicate
   snapshots (`loom/src/commands/usage/codex_provider.rs::direct_row`). Fallback rows remain coverage evidence, tagged
   `FallbackCoverage` and reported as `fallback_coverage_totals`; they are not derived cumulative deltas.
+  Project, stage and plan scope filter eligible threads and rows before response-ID classification, so foreign copies cannot change selected-row provenance.
 - **Execution receipts** (`--receipts-root`, `loom/src/models/execution_receipt.rs`, schema 1) are
   a protocol for an external producer; nothing in the tree writes them. A 5m/1h split mismatch
   marks the split unknown instead of rejecting the receipt (`receipt_provider.rs`).
@@ -114,7 +115,7 @@ clap surface is `UsageArgs` in `commands/usage/args.rs`. Rules:
 - **Completeness and Codex scope.** Each provider reads `measured` or `partial` with reason codes,
   including the evidence-loss reasons for unparseable lines, unreadable session records and
   damaged forward receipts. `fallback_coverage_rows` is a coverage count, never a reason. A Codex
-  row counts for a project only through the threads its forward receipts name; without readable
+  row counts for a project only through the threads its forward receipts name, with stage and plan selection resolved from the selected project root; without readable
   receipts the scope is `Unavailable`, and `--all` is unscoped. Scope and session-record
   reading use only the current `.loom/work`, so a window before the last `loom init` reads 0
   Codex tokens. Reasons, windows and the session-record read:
@@ -251,9 +252,8 @@ a miss or key stability must be `#[serial]` against tests that rewrite `PATH`.
   so a hook retry appends nothing. A companion END marker with outcome
   `timed_out` records `timed_out` with exit 124. It appends under its own sidecar lock with an
   `O_NOFOLLOW` regular-file append, since `fs::locking` opens targets with a plain `File::open`
-  that follows symlinks. `exact_forward_argv` (8 words only) is separate and still serves the
-  transcript classifier in `commands/subagents/forward_jobs_transcript.rs`
-  ([Delivery-Proof and Quota-Continuity Defects](../concerns/token-accounting-and-proof-defects.md#delivery-proof-and-quota-continuity-defects)).
+  that follows symlinks. The transcript classifier in `commands/subagents/forward_jobs_transcript.rs`
+  uses the same `forward_argv` parser as receipt formation, including optional unit and invocation identities.
   Stderr of the delegate is discarded by the shell. A damaged line in the receipts file stops all
   receipt formation for that stage (persist refuses to append) and fails every Codex wait on it.
 - **Wait.** `loom subagents wait --receipt <64 hex> [--timeout <secs>] [--json]`

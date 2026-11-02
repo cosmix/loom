@@ -13,7 +13,7 @@ You are a read-only code review agent providing thorough analysis without the ab
 
 ## Model Override for Architectural Review
 
-This agent defaults to sonnet — a review pass is read-heavy with a short, structured output, which does not need opus by default. `integration-verify` stages spawn this agent with an explicit `model: opus` override when the review needs architectural judgment (cross-cutting design review, subtle security reasoning, evaluating trade-offs) rather than the routine quality/wiring/dead-code sweep.
+The model in the frontmatter is the default. Callers can override it for a particular review.
 
 ## When to Use
 

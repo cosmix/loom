@@ -55,3 +55,53 @@ match.
 **Prevention:** what `update_stage` runs while it holds the stages lock (the modify closure and `record_status_change`) takes no `locked_*` lock of its own: a caller may already hold that directory exclusively, and a stages→sessions order inverts `complete_stage`'s sessions→stages order. A change to what runs under a lock gets a test that holds the caller's lock and asserts the call returns within a timeout, so a deadlock fails the suite instead of hanging it.
 
 **Fix:** `record_status_change` reads the session type without the directory lock; session files are replaced by rename, so an unlocked read sees one whole version.
+
+## Nested stage updates in dispute admission
+
+**What happened:** Moving dispute admission under the stage lock also moved budget escalation into a nested stage update that would deadlock.
+
+**Why:** The refusal helper hides a state mutation behind a response constructor.
+
+**Prevention:** Trace refusal and error helpers for lock acquisition before calling them within a stage transaction.
+
+**Fix:** Escalate directly on the already locked stage, with the same transition and refusal semantics.
+
+## Heartbeat reclaim ownership uses an inherited kernel lock
+
+**What happened:** A pathname-only reclaim claim could be stranded by a killed reclaimer, while recursively reclaiming markers introduced PID-reuse and successor-deletion races.
+
+**Why:** Durable filenames do not provide process-lifetime ownership or atomic identity-bound removal.
+
+**Prevention:** Use a kernel advisory lock whose open-file description remains held by the shell and is released automatically on process death; verify helper inheritance and crash recovery on supported platforms.
+
+**Fix:** The heartbeat hook holds the inherited flock through reclamation and fails closed when the helper is unavailable. Native macOS execution remains a CI check.
+
+## Aborted heartbeat creator could remove a successor lock
+
+**What happened:** A creator that aborted after seeing a reclaimer marker could pause before unlinking its owner file; a reclaimer could rename the old directory and a successor could create a new one at the same pathname before the creator resumed.
+
+**Why:** The inherited kernel guard serialized reclaimers but did not cover the aborted creator’s release path.
+
+**Prevention:** Serialize every pathname-based release with reclamation and test the creator, reclaimer and successor interleaving explicitly.
+
+**Fix:** Hold the same kernel guard during release and add a deterministic three-actor regression.
+
+## Rearming deferred hung escalation preserves observations
+
+**What happened:** A freshly observed foreground or host-job hold could cause the handler to defer after the monitor had already latched escalation, suppressing a later real stall.
+
+**Why:** Event detection and handler revalidation had separate lifecycle ownership for the escalation latch.
+
+**Prevention:** Rearm only the deferred escalation latch; retain the first-warning latch and CPU observation baseline so a deferral does not create repeated warnings or an artificial new grace period.
+
+**Fix:** Clear the escalation latch when the handler defers for current progress or an extended hold, and cover progress followed by a stall.
+
+## Generic foreground activity shares host progress history
+
+**What happened:** The monitor could retain a progressing foreground process for longer than the status badge reported Busy, because the two consumers used different wall-window rules and the badge lacked CPU history.
+
+**Why:** Monitor and status projected separate transient observations rather than sharing one identity-bound checkpoint and budget.
+
+**Prevention:** Use host-owned checkpoints keyed by session and verified PID/start identity, with the same bounded CPU-progress and wall-window decision for both consumers; transcript data supplies display text only.
+
+**Fix:** Share the foreground observation store and verify equal-clock growth and no-growth cases across monitor and status.

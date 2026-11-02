@@ -35,7 +35,7 @@ pub(super) fn default_plan_version() -> u32 {
 ///
 /// Used in goal-backward verification to ensure critical connections
 /// between components are in place.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WiringCheck {
     /// Source file path (relative to working_dir)

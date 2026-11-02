@@ -1,7 +1,4 @@
-//! Tests for the window-filtering defect: `build` used to count every
-//! subagent transcript file, including ones the `--since` window filtered
-//! down to zero in-window entries. Split out to keep `lifecycle.rs` legible
-//! (CLAUDE.md Rule 17).
+//! Tests for lifecycle counts within the selected time window.
 
 use super::*;
 use crate::commands::usage::transcript::{Request, TokenUsage, UserEntry};

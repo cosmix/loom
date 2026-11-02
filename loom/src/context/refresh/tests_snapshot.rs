@@ -22,7 +22,8 @@ pub(super) fn git_ok(root: &Path, args: &[&str]) {
     );
 }
 
-pub(super) fn init_repo() -> TempDir {
+/// A committed repository with no loom state at all.
+fn repo_without_state() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
     git_ok(root, &["init", "-b", "main"]);
@@ -31,6 +32,15 @@ pub(super) fn init_repo() -> TempDir {
     std::fs::write(root.join("src.rs"), "fn committed() {}\n").unwrap();
     git_ok(root, &["add", "src.rs"]);
     git_ok(root, &["commit", "-m", "seed"]);
+    temp
+}
+
+pub(super) fn init_repo() -> TempDir {
+    let temp = repo_without_state();
+    let root = temp.path();
+    let work = root.join(".loom").join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    crate::git::worktree::capture_main_identity(root, &work).unwrap();
     temp
 }
 
@@ -243,7 +253,7 @@ fn outline_src_rs_args() -> crate::commands::map::MapArgs {
 fn map_answers_in_a_checkout_that_never_ran_init() {
     use crate::commands::map::execute;
 
-    let temp = init_repo();
+    let temp = repo_without_state();
     let root = temp.path();
     let _guard = CwdGuard::new();
     std::env::set_current_dir(root).unwrap();

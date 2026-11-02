@@ -3,7 +3,6 @@
 //! Note: Session finding functions (find_session_for_stage, find_sessions_for_stage)
 //! are now in `crate::fs::session_files`. Import from there instead.
 
-use anyhow::{bail, Result};
 use std::fs;
 use std::path::Path;
 
@@ -42,24 +41,4 @@ pub fn cleanup_session_resources(_stage_id: &str, session_id: &str, work_dir: &P
             );
         }
     }
-}
-
-/// Update a session's status in the state directory's sessions/
-///
-/// Reads through the shared file lock (`locked_read`) and writes through the
-/// canonical `save_session` (`locked_write` + atomic rename) so this CLI path
-/// cannot race the daemon/monitor readers and writers that touch the same
-/// session files under locks.
-pub(crate) fn update_session_status(
-    work_dir: &Path,
-    session_id: &str,
-    status: SessionStatus,
-) -> Result<()> {
-    let reason = match status {
-        SessionStatus::Completed => SessionExitReason::Completed,
-        SessionStatus::Crashed => SessionExitReason::Crashed,
-        SessionStatus::ContextExhausted => SessionExitReason::ContextCeiling,
-        _ => bail!("Session status update requires a terminal status"),
-    };
-    mark_session_terminal_reason(work_dir, session_id, status, reason)
 }

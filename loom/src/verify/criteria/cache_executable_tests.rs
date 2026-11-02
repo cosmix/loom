@@ -69,6 +69,20 @@ fn env_doing_anything_else_stays_uncertain() {
 }
 
 #[test]
+fn adjacent_control_tokens_find_each_command() {
+    let expected = Some(vec![("tool".to_string(), Search::Command)]);
+    for line in [
+        "printf ok;tool",
+        "printf ok&&tool",
+        "printf ok|tool",
+        "printf ok >out;tool",
+    ] {
+        assert_eq!(names(line), expected, "{line}");
+    }
+    assert_eq!(names("printf 'ok;tool'"), Some(vec![]));
+}
+
+#[test]
 fn a_command_env_runs_without_path_resolves_in_the_default_search_path() {
     let default = Some(OsStr::new(DEFAULT_EXEC_PATH));
     let resolved = resolve_named(OsStr::new("sh"), default, Path::new("/")).unwrap();

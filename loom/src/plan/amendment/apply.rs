@@ -9,6 +9,7 @@ pub fn apply_amendment(
 ) -> Result<AmendmentResult> {
     let _lock = PlanVersionsLock::acquire(work_dir)?;
     let plan_path = checked_plan_path(plan_path, work_dir)?;
+    let _plan_lock = crate::fs::locking::lock_plan(&plan_path)?;
     finish_pending(&plan_path, work_dir)?;
     let rows = read_audit_rows(work_dir)?;
     if let Some(row) = rows.iter().find(|row| {

@@ -11,7 +11,7 @@ use super::retrieval::STAGE_QUERY_INPUTS;
 use super::types::EmbeddedContext;
 
 /// Render the "### Last Known State" block from the previous session's last
-/// heartbeat, split out of [`format_recovery_header`] to keep it short.
+/// heartbeat.
 fn format_last_known_state(hb: &LastHeartbeatInfo) -> String {
     let mut section = String::from("### Last Known State\n\n");
     section.push_str(&format!(
@@ -34,9 +34,6 @@ fn format_last_known_state(hb: &LastHeartbeatInfo) -> String {
 /// Render the "## Recovery Context" / "### Last Known State" / "### Recovery
 /// Actions" block: what triggered this recovery, the previous session's last
 /// heartbeat, and the suggested next actions.
-///
-/// Extracted from [`format_recovery_signal`] so that function stays under its
-/// line-count ceiling as new sections are added.
 fn format_recovery_header(content: &RecoverySignalContent) -> String {
     let mut header = String::new();
 
@@ -146,8 +143,8 @@ pub fn format_recovery_signal(
     // Acceptance criteria
     if !stage.acceptance.is_empty() {
         signal.push_str("## Acceptance Criteria\n\n");
-        for criteria in &stage.acceptance {
-            signal.push_str(&format!("- [ ] {criteria}\n"));
+        for criterion in &stage.acceptance {
+            signal.push_str(&super::format::format_criterion(criterion));
         }
         signal.push('\n');
     }

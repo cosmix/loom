@@ -5,7 +5,8 @@
 //! reused by an unrelated process (the daemon, `loom stage complete`). The
 //! holder is signalled only when its argv holds both `hook` and
 //! `reconcile-graph` AND it started no later than the lock's epoch (the
-//! reconciler stamps the epoch after it starts). Anything else is left alone.
+//! reconciler stamps the epoch after it starts). Unknown identity leaves the
+//! lease in place.
 
 use std::fs;
 use std::path::Path;
@@ -28,33 +29,68 @@ const START_SKEW_SECS: u64 = 2;
 /// marker with a dead pid, which the next hook takes over at once instead of
 /// waiting out a debounce a fresh release would start.
 pub(super) fn cancel_holder(lock_path: &Path, now: u64) {
-    let Some(holder) = read_lock(lock_path)
-        .filter(|state| state.pid != 0 && crate::process::is_process_alive(state.pid))
-    else {
-        return;
-    };
-    if is_reconciler(holder.pid, holder.epoch, now) {
-        if let Err(error) = crate::process::terminate(holder.pid) {
-            tracing::debug!(%error, pid = holder.pid, "reconcile-graph: could not signal the holder");
-        }
-    }
-    release_lease(lock_path, now, holder.pid);
+    cancel_holder_with(
+        lock_path,
+        now,
+        crate::process::is_process_alive,
+        |pid, epoch| is_reconciler(pid, epoch, now),
+        crate::process::terminate,
+        terminated,
+    );
 }
 
-/// Whether `pid` is a `loom hook reconcile-graph` process that started no
-/// later than `epoch`. Unknown facts (no such process, no `ps`) count as no.
-fn is_reconciler(pid: u32, epoch: u64, now: u64) -> bool {
-    let Some(argv) = process_argv(pid) else {
-        return false;
+fn cancel_holder_with(
+    lock_path: &Path,
+    now: u64,
+    alive: impl Fn(u32) -> bool,
+    identity: impl Fn(u32, u64) -> Option<bool>,
+    signal: impl Fn(u32) -> anyhow::Result<bool>,
+    stopped: impl Fn(u32) -> bool,
+) {
+    let Some(holder) = read_lock(lock_path).filter(|state| state.pid != 0) else {
+        return;
     };
+    if !alive(holder.pid) {
+        return; // The next claimant can immediately recover a dead holder.
+    }
+    match identity(holder.pid, holder.epoch) {
+        None => return,   // A failed identity query cannot justify release.
+        Some(false) => {} // A confirmed unrelated PID cannot own this lease.
+        Some(true) => match signal(holder.pid) {
+            Ok(false) => {} // ESRCH confirms the holder has exited.
+            Ok(true) if stopped(holder.pid) => {}
+            Ok(true) => return,
+            Err(error) => {
+                tracing::debug!(%error, pid = holder.pid, "reconcile-graph: could not signal the holder");
+                return;
+            }
+        },
+    }
+    release_lease(lock_path, now, holder.pid, holder.claim);
+}
+
+/// `None` means an identity query failed; `Some(false)` proves another process
+/// owns the PID or it began after the lease.
+fn is_reconciler(pid: u32, epoch: u64, now: u64) -> Option<bool> {
+    let argv = process_argv(pid)?;
     let names = |word: &str| argv.iter().any(|arg| arg == word);
     if !(names("hook") && names("reconcile-graph")) {
-        return false;
+        return Some(false);
     }
-    let Some(elapsed) = ps_field(pid, "etime=").as_deref().and_then(parse_etime) else {
-        return false;
-    };
-    now.saturating_sub(elapsed) <= epoch.saturating_add(START_SKEW_SECS)
+    let elapsed = ps_field(pid, "etime=").as_deref().and_then(parse_etime)?;
+    Some(now.saturating_sub(elapsed) <= epoch.saturating_add(START_SKEW_SECS))
+}
+
+fn terminated(pid: u32) -> bool {
+    // A child can remain as a zombie until its parent reaps it. It cannot run
+    // another graph pass, so that state is also safe to release.
+    for _ in 0..10 {
+        if !crate::process::is_process_alive(pid) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    ps_field(pid, "stat=").is_some_and(|status| status.starts_with('Z'))
 }
 
 /// The process's argv: NUL-split from `/proc/<pid>/cmdline`, else the
@@ -108,7 +144,10 @@ fn parse_etime(text: &str) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_stdout, parse_etime};
+    use super::{bounded_stdout, cancel_holder_with, is_reconciler, parse_etime, START_SKEW_SECS};
+    use crate::commands::hook::reconcile_graph::lock::{
+        begin_run, read_lock, unix_now, update_lock, LockState,
+    };
     use std::process::Command;
     use std::time::{Duration, Instant};
 
@@ -145,5 +184,73 @@ mod tests {
         assert_eq!(parse_etime(""), None);
         assert_eq!(parse_etime("a:b"), None);
         assert_eq!(parse_etime("1:2:3:4"), None);
+    }
+
+    /// A child that began well after its parent's claim is not `--cancel`'s
+    /// holder until its startup re-stamps the epoch; a lock left at the claim's
+    /// epoch made a live reconciler look like a reused pid, whose lease
+    /// `--cancel` would release under it for a second reconcile to take.
+    #[test]
+    fn a_late_child_is_the_reconciler_once_it_restamps_the_epoch() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("reconcile.lock");
+        // `read` is a builtin, so this argv stays in place until the kill below.
+        let mut child = Command::new("bash")
+            .args(["-c", "read -r _", "hook", "reconcile-graph"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let now = unix_now();
+        let claimed_at = now - START_SKEW_SECS - 30;
+        let state = LockState {
+            epoch: claimed_at,
+            pid,
+            failures: 0,
+            pending: false,
+            claim: 7,
+        };
+        update_lock(&path, |_| (Some(state), ())).unwrap();
+
+        let before = is_reconciler(pid, read_lock(&path).unwrap().epoch, now);
+        let began = begin_run(&path, pid, 7, unix_now());
+        let after = is_reconciler(pid, read_lock(&path).unwrap().epoch, unix_now());
+        child.kill().unwrap();
+        child.wait().unwrap();
+
+        assert_eq!(
+            before,
+            Some(false),
+            "the premise: the claim's epoch is too old"
+        );
+        assert!(began);
+        assert_eq!(after, Some(true));
+    }
+
+    #[test]
+    fn unknown_identity_or_failed_signal_retains_the_lease() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("reconcile.lock");
+        let state = LockState {
+            epoch: 100,
+            pid: 4242,
+            failures: 1,
+            pending: true,
+            claim: 77,
+        };
+        update_lock(&path, |_| (Some(state), ())).unwrap();
+        let signal = |_| -> anyhow::Result<bool> { panic!("unknown identity must not signal") };
+        cancel_holder_with(&path, 101, |_| true, |_, _| None, signal, |_| false);
+        assert_eq!(read_lock(&path), Some(state));
+
+        cancel_holder_with(
+            &path,
+            101,
+            |_| true,
+            |_, _| Some(true),
+            |_| anyhow::bail!("signal refused"),
+            |_| false,
+        );
+        assert_eq!(read_lock(&path), Some(state));
     }
 }

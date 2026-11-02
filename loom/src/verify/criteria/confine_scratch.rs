@@ -8,6 +8,19 @@
 //! Cargo home must not change from one command to the next: a fresh one per
 //! command marks every dependency dirty and rebuilds it. Temporary and package
 //! manager cache directories stay per command.
+//!
+//! uv and Bun read their configured caches, `UV_CACHE_DIR` and
+//! `BUN_INSTALL_CACHE_DIR`, from this scratch. Under bubblewrap each is an
+//! overlay whose lower is the host's default cache for that tool, so an offline
+//! dependency present only there resolves while the command's own writes stay in
+//! its private upper and go with its scratch. Without overlay support (Seatbelt,
+//! bubblewrap before 0.11, or a filesystem that refuses the mount) the cache
+//! starts empty: such a command needs a `provision` entry instead.
+//!
+//! `XDG_CACHE_HOME` starts empty every time. A cache kept for the next command
+//! would have to live outside the working tree where a stage session could write
+//! it, and tools there can certify results (Go's test cache) that verification
+//! must produce itself. Revisit if a stage-unwritable location becomes available.
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -22,6 +35,8 @@ mod linked_home;
 pub(super) struct CargoScratch {
     directory: tempfile::TempDir,
     cargo: CargoHome,
+    #[cfg(target_os = "linux")]
+    cache_lowers: Vec<(&'static str, PathBuf)>,
 }
 
 enum CargoHome {
@@ -53,7 +68,30 @@ impl CargoScratch {
                 sources: linked_sources(host.as_deref()),
             },
         };
-        Ok(Self { directory, cargo })
+        #[cfg(target_os = "linux")]
+        let cache_lowers = if mount {
+            cache_lowers(command)
+                .into_iter()
+                .filter(|(name, source)| {
+                    let supported = overlay_supported(directory.path(), name, source);
+                    if !supported {
+                        tracing::warn!(
+                            cache = name,
+                            "cache overlay unavailable; using empty private cache"
+                        );
+                    }
+                    supported
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        Ok(Self {
+            directory,
+            cargo,
+            #[cfg(target_os = "linux")]
+            cache_lowers,
+        })
     }
 
     /// The per-command scratch root: temporary files and package-manager caches.
@@ -95,7 +133,29 @@ impl CargoScratch {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    pub(super) fn cache_overlays(&self) -> Vec<(PathBuf, PathBuf, PathBuf, PathBuf)> {
+        self.cache_lowers
+            .iter()
+            .map(|(name, source)| {
+                let root = self.path().join(format!("overlay-{name}"));
+                (
+                    source.clone(),
+                    root.join("upper"),
+                    root.join("work"),
+                    self.path().join(name),
+                )
+            })
+            .collect()
+    }
+
     pub(super) fn populate(&self) -> Result<()> {
+        #[cfg(target_os = "linux")]
+        for (_, upper, work, target) in self.cache_overlays() {
+            for path in [upper, work, target] {
+                std::fs::create_dir_all(path).context("create private cache overlay")?;
+            }
+        }
         match &self.cargo {
             CargoHome::Mounted(_) => std::fs::create_dir_all(self.path().join("cargo"))
                 .context("create private Cargo home"),
@@ -103,6 +163,34 @@ impl CargoScratch {
             CargoHome::Linked { home, sources } => linked_home::populate(home, sources),
             #[cfg(not(unix))]
             CargoHome::Linked { .. } => Ok(()),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for CargoScratch {
+    fn drop(&mut self) {
+        for (_, _, work, _) in self.cache_overlays() {
+            restore_overlay_work_permissions(&work);
+        }
+    }
+}
+
+/// Overlayfs leaves `work/work` mode 000 after unmount. Restore owner access
+/// before TempDir recursively removes the private scratch directory.
+#[cfg(target_os = "linux")]
+fn restore_overlay_work_permissions(work: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let internal = work.join("work");
+    let Ok(metadata) = std::fs::symlink_metadata(&internal) else {
+        return;
+    };
+    if metadata.file_type().is_dir() {
+        if let Err(error) =
+            std::fs::set_permissions(&internal, std::fs::Permissions::from_mode(0o700))
+        {
+            tracing::warn!(path = %internal.display(), %error, "cannot restore overlay work permissions");
         }
     }
 }
@@ -167,3 +255,91 @@ fn stable_cargo_home(tree: &Path) -> Result<PathBuf> {
         .map(|root| root.join(name))
         .context("command Cargo home must be outside its working tree")
 }
+
+#[cfg(target_os = "linux")]
+fn cache_lowers(command: &Command) -> Vec<(&'static str, PathBuf)> {
+    let value = |key: &str| super::host::environment_path(command, key);
+    // Reuse only roots already exposed by the host policy. An arbitrary
+    // command-provided cache path must not grant access to private host files.
+    let Some(home) = value("HOME") else {
+        return Vec::new();
+    };
+    let uv = home.join(".cache/uv");
+    let bun = home.join(".bun/install/cache");
+    let uv_requested =
+        value("UV_CACHE_DIR").or_else(|| value("XDG_CACHE_HOME").map(|p| p.join("uv")));
+    let bun_requested = value("BUN_INSTALL_CACHE_DIR");
+    [
+        ("uv-cache", uv, uv_requested),
+        ("bun-cache", bun, bun_requested),
+    ]
+    .into_iter()
+    .filter_map(|(name, default, requested)| {
+        let source = default.canonicalize().ok().filter(|p| p.is_dir())?;
+        if requested.is_some_and(|p| p.canonicalize().ok().as_ref() != Some(&source)) {
+            tracing::warn!(
+                cache = name,
+                "custom cache is outside the allowed host roots; using empty private cache"
+            );
+            return None;
+        }
+        Some((name, source))
+    })
+    .collect()
+}
+
+/// Test this lower and upper filesystem together; overlay support varies by mount.
+/// The probe reads the cache but its private namespace never writes to it.
+#[cfg(target_os = "linux")]
+fn overlay_supported(scratch: &Path, name: &str, source: &Path) -> bool {
+    let Ok(bwrap) = which::which("bwrap") else {
+        return false;
+    };
+    let root = scratch.join(format!("overlay-{name}"));
+    let upper = root.join("upper");
+    let work = root.join("work");
+    let target = scratch.join(name);
+    if [&upper, &work, &target]
+        .into_iter()
+        .any(|p| std::fs::create_dir_all(p).is_err())
+    {
+        return false;
+    }
+    use wait_timeout::ChildExt;
+    let child = Command::new(bwrap)
+        .args([
+            "--die-with-parent",
+            "--unshare-all",
+            "--ro-bind",
+            "/",
+            "/",
+            "--overlay-src",
+        ])
+        .arg(source)
+        .arg("--overlay")
+        .arg(&upper)
+        .arg(&work)
+        .arg(&target)
+        .args(["--", "/usr/bin/true"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    let Ok(mut child) = child else {
+        return false;
+    };
+    let supported = match child.wait_timeout(std::time::Duration::from_secs(3)) {
+        Ok(Some(status)) => status.success(),
+        _ => {
+            let _ = child.kill();
+            let _ = child.wait();
+            false
+        }
+    };
+    restore_overlay_work_permissions(&work);
+    supported
+}
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "confine_scratch/cache_tests.rs"]
+mod cache_tests;

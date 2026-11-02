@@ -8,49 +8,13 @@ use loom::commands::run;
 use serial_test::serial;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 use tempfile::TempDir;
 
 use super::fixtures::plans::minimal_plan;
 
 /// Create a temporary git repository for testing
 fn create_test_git_repo() -> Result<TempDir> {
-    let temp = TempDir::new().context("Failed to create temp directory")?;
-
-    Command::new("git")
-        .args(["init"])
-        .current_dir(temp.path())
-        .output()
-        .context("Failed to run git init")?;
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(temp.path())
-        .output()
-        .context("Failed to set git user.email")?;
-
-    Command::new("git")
-        .args(["config", "user.name", "Test User"])
-        .current_dir(temp.path())
-        .output()
-        .context("Failed to set git user.name")?;
-
-    fs::write(temp.path().join("README.md"), "# Test Repository\n")
-        .context("Failed to write README.md")?;
-
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(temp.path())
-        .output()
-        .context("Failed to git add")?;
-
-    Command::new("git")
-        .args(["commit", "-m", "Initial commit"])
-        .current_dir(temp.path())
-        .output()
-        .context("Failed to git commit")?;
-
-    Ok(temp)
+    super::helpers::create_temp_git_repo()
 }
 
 /// Initialize loom with a plan and create necessary config
@@ -92,6 +56,7 @@ base_branch = "main"
 
     let config_path = loom_work_dir.join("config.toml");
     fs::write(config_path, config_content).context("Failed to write config.toml")?;
+    super::helpers::write_main_checkout_identity(repo_root, &loom_work_dir);
 
     Ok(())
 }
@@ -132,11 +97,7 @@ fn test_loom_run_fails_with_staged_changes() {
     // Create and stage changes
     fs::write(repo_root.join("staged.txt"), "Staged content\n").expect("Should write test file");
 
-    Command::new("git")
-        .args(["add", "staged.txt"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Should git add");
+    super::helpers::git_checked(repo_root, &["add", "staged.txt"]);
 
     // Change to the test repo directory for the run command
     let original_dir = std::env::current_dir().expect("Should get current dir");
@@ -177,15 +138,11 @@ fn test_loom_run_fails_with_mixed_changes() {
     // Create staged changes
     fs::write(repo_root.join("staged.txt"), "Staged content\n").expect("Should write staged file");
 
-    Command::new("git")
-        .args(["add", "staged.txt"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Should git add");
+    super::helpers::git_checked(repo_root, &["add", "staged.txt"]);
 
-    // Create unstaged changes
-    fs::write(repo_root.join("unstaged.txt"), "Unstaged content\n")
-        .expect("Should write unstaged file");
+    // Modify a tracked file alongside the staged change.
+    fs::write(repo_root.join("README.md"), "Unstaged content\n")
+        .expect("Should modify tracked file");
 
     // Change to the test repo directory for the run command
     let original_dir = std::env::current_dir().expect("Should get current dir");
@@ -226,17 +183,9 @@ fn test_loom_run_passes_check_with_clean_repo() {
     fs::write(repo_root.join("committed.txt"), "Committed content\n")
         .expect("Should write test file");
 
-    Command::new("git")
-        .args(["add", "committed.txt"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Should git add");
+    super::helpers::git_checked(repo_root, &["add", "committed.txt"]);
 
-    Command::new("git")
-        .args(["commit", "-m", "Add committed file"])
-        .current_dir(repo_root)
-        .output()
-        .expect("Should git commit");
+    super::helpers::git_checked(repo_root, &["commit", "-m", "Add committed file"]);
 
     // Verify the git check passes (no uncommitted changes)
     let has_changes =

@@ -160,6 +160,61 @@ fn a_final_merged_stage_outside_the_accepted_tip_stays_merged() {
 
     let why = "a merged stage whose commit is not in the accepted tip was reopened";
     assert_still_final(&mut orchestrator, true, why);
+    let stage = load_stage(ID, &orchestrator.config.work_dir).unwrap();
+    assert_eq!(stage.completed_commit.as_deref(), Some(side.as_str()));
+    assert!(orchestrator.graph.get_node(ID).unwrap().merged);
+}
+
+/// Even without recorded evidence, the completed merged flag is final.
+/// Sync must neither derive a commit from an unmerged branch nor reopen it.
+#[test]
+#[serial]
+fn final_stage_without_commit_stays_final_when_branch_is_unmerged() {
+    let repo = repo();
+    let root = repo.path();
+    let side = side_commit(root);
+    assert_ne!(side, git(root, &["rev-parse", "main"]));
+    let mut orchestrator = orchestrator(root);
+    let stage = Stage {
+        id: ID.to_string(),
+        status: StageStatus::Completed,
+        merged: true,
+        completed_commit: None,
+        ..Stage::default()
+    };
+    save_stage(&stage, &orchestrator.config.work_dir).unwrap();
+
+    orchestrator.sync_graph_with_stage_files().unwrap();
+
+    let after = load_stage(ID, &orchestrator.config.work_dir).unwrap();
+    assert_eq!(after.status, StageStatus::Completed);
+    assert!(after.merged);
+    assert_eq!(after.completed_commit, None);
+    assert!(orchestrator.graph.get_node(ID).unwrap().merged);
+}
+
+#[test]
+#[serial]
+fn final_stage_without_commit_or_branch_stays_final() {
+    let repo = repo();
+    assert!(crate::git::branch::get_branch_head("loom/s", repo.path()).is_err());
+    let mut orchestrator = orchestrator(repo.path());
+    let stage = Stage {
+        id: ID.to_string(),
+        status: StageStatus::Completed,
+        merged: true,
+        completed_commit: None,
+        ..Stage::default()
+    };
+    save_stage(&stage, &orchestrator.config.work_dir).unwrap();
+
+    orchestrator.sync_graph_with_stage_files().unwrap();
+
+    let after = load_stage(ID, &orchestrator.config.work_dir).unwrap();
+    assert_eq!(after.status, StageStatus::Completed);
+    assert!(after.merged);
+    assert_eq!(after.completed_commit, None);
+    assert!(orchestrator.graph.get_node(ID).unwrap().merged);
 }
 
 /// `main` moved onto `commit` the way an agent would, with hooks off.

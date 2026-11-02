@@ -108,6 +108,12 @@ fn direct_forward_bound_watch_ends_on_unknown_receipt() -> Result<()> {
     let execution =
         resolve_wait_codex_execution(&fixture.work_dir, LIQUIDMON_STAGE, &authorization)?;
     let worker = bound_worker(execution.identity, authorization);
+    let replay_count = crate::subagent_lifecycle::replay_count();
+    let before = evidence(&fixture).poll(&[worker.clone(), worker.clone()]);
+    assert_eq!(crate::subagent_lifecycle::replay_count(), replay_count + 1);
+    assert!(before
+        .iter()
+        .all(|(outcome, settled)| *outcome == WorkerOutcome::Active && !settled));
     assert_eq!(evidence(&fixture).outcome(&worker), WorkerOutcome::Active);
     let held = wait(&fixture, &worker, Duration::from_secs(6));
     assert_eq!(held.outcome, TerminalOutcome::TimedOut);
@@ -117,6 +123,10 @@ fn direct_forward_bound_watch_ends_on_unknown_receipt() -> Result<()> {
     fixture.write_receipts(&[LIQUIDMON_RUNNING, unknown.as_str()])?;
     let report = reconcile_at(&fixture.work_dir, sessions, &fixture.state_root, now)?;
     assert_eq!(report.appended, 1);
+    let after = evidence(&fixture).poll(&[worker.clone(), worker.clone()]);
+    assert!(after
+        .iter()
+        .all(|(outcome, settled)| matches!(outcome, WorkerOutcome::Unknown(_)) && *settled));
     assert!(matches!(
         evidence(&fixture).outcome(&worker),
         WorkerOutcome::Unknown(_)
@@ -125,8 +135,7 @@ fn direct_forward_bound_watch_ends_on_unknown_receipt() -> Result<()> {
     assert_eq!(ended.outcome, TerminalOutcome::Unknown);
     assert_eq!(ended.polls, 0);
     let detail = ended.detail.context("unknown detail")?;
-    assert!(detail.starts_with("codex:"), "{detail}");
-    assert!(detail.contains("unknown:"), "{detail}");
+    assert_unknown_detail(&detail);
 
     let later = unknown.replace("17:00:37.322417869Z", "17:00:41.000000000Z");
     fixture.write_receipts(&[LIQUIDMON_RUNNING, later.as_str()])?;
@@ -137,6 +146,11 @@ fn direct_forward_bound_watch_ends_on_unknown_receipt() -> Result<()> {
         WorkerOutcome::Unknown(_)
     ));
     Ok(())
+}
+
+fn assert_unknown_detail(detail: &str) {
+    assert!(detail.starts_with("codex:"), "{detail}");
+    assert!(detail.contains("unknown:"), "{detail}");
 }
 
 /// A bound direct worker with no lifecycle record yet is unknown for want of

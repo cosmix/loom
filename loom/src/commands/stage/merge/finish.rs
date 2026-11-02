@@ -10,11 +10,6 @@ use crate::orchestrator::merge_lifecycle::{self, CleanupOutcome};
 /// Run the primitive's post-merge base-reconcile + cleanup for a stage whose
 /// merge was already verified, and print what cleanup actually did. Every case
 /// where cleanup did not finish prints its own reason.
-///
-/// `result.warnings` is not surfaced here: `MergeLifecycle::cleanup` reaches
-/// `CleanupOutcome::Done` only via `cleanup_after_merge`, which always
-/// builds an empty `warnings` vec on its `Ok` path (only
-/// `cleanup_multiple_stages` ever populates it) — dead on this path.
 pub(super) fn finish_merge_and_report(
     stage_id: &str,
     repo_root: &Path,
@@ -51,6 +46,9 @@ fn unfinished_cleanup_message(stage_id: &str, outcome: &CleanupOutcome) -> Optio
             "Worktree cleanup deferred: {reason}. The daemon removes .worktrees/{stage_id} \
              once nothing uses it (or run `loom worktree remove {stage_id}`)"
         )),
+        CleanupOutcome::Done(result) if !result.warnings.is_empty() => {
+            Some(format!("Worktree cleanup: {}", result.warnings.join("; ")))
+        }
         CleanupOutcome::Done(_) | CleanupOutcome::NothingToDo => None,
     }
 }
@@ -97,5 +95,19 @@ mod tests {
     #[test]
     fn finished_cleanup_prints_nothing_extra() {
         assert!(unfinished_cleanup_message("s", &CleanupOutcome::NothingToDo).is_none());
+    }
+
+    #[test]
+    fn retained_paths_are_reported_after_successful_git_reconciliation() {
+        let outcome = CleanupOutcome::Done(crate::git::cleanup::CleanupResult {
+            worktree_removed: false,
+            branch_deleted: true,
+            warnings: vec!["retained .worktrees/s".to_string()],
+            ..Default::default()
+        });
+        assert_eq!(
+            unfinished_cleanup_message("s", &outcome).unwrap(),
+            "Worktree cleanup: retained .worktrees/s"
+        );
     }
 }

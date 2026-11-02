@@ -6,6 +6,7 @@ mod check_lines;
 pub mod context;
 mod context_render;
 pub mod eval;
+pub mod recovery;
 pub mod sync;
 pub mod telemetry;
 

@@ -18,7 +18,7 @@ mod progressive_complete;
 // Shared test utilities
 use crate::models::stage::{Stage, StageStatus};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 pub(crate) fn create_test_stage(id: &str, status: StageStatus) -> Stage {
@@ -37,6 +37,15 @@ pub(crate) fn setup_work_dir() -> TempDir {
     let work_dir = WorkDir::new(temp_dir.path()).unwrap();
     work_dir.initialize().unwrap();
     temp_dir
+}
+
+/// The shared failing-signer repository with the checkout identity a landing
+/// demands.
+pub(crate) fn failing_signer_repo() -> (TempDir, PathBuf, String) {
+    let fixture = crate::stage_service::merge_test_fixtures::failing_signer_repo();
+    fs::create_dir_all(&fixture.1).unwrap();
+    crate::git::worktree::capture_main_identity(fixture.0.path(), &fixture.1).unwrap();
+    fixture
 }
 
 pub(crate) fn save_test_stage(work_dir: &Path, stage: &Stage) {

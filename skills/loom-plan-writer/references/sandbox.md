@@ -113,13 +113,11 @@ loom:
   JS package with a test runner and at least one `dependencies` or `devDependencies` entry that no
   provision entry covers is an error. A package that declares neither needs no install.
 
-## The pre-commit hook needs the network too
+## Commit hooks
 
-Every stage commits, so the repository's pre-commit hook (from `core.hooksPath`, else `.git/hooks`)
-runs inside every stage's sandbox. A hook that runs `bunx` fetches from the npm registry: every
-sandboxed stage then needs `registry.npmjs.org` in `allowed_domains`, including stages whose own
-acceptance needs no network. `loom plan verify` errors when a stage's sandbox omits a registry the
-hook fetches from.
+Stage commits relay to the daemon host path. Account for pre-commit dependencies at that
+execution boundary; committing does not by itself require session network grants. `loom plan verify`
+still errors when a stage's sandbox omits a registry that the repository's pre-commit hook fetches from.
 
 ## Where criteria run
 

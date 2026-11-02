@@ -152,6 +152,7 @@ fn worktree_over(repo_root: &Path, stage_id: &str, base: &[(&str, &str)]) -> Pat
     std::fs::write(contract_file, CONTRACT_CONTENT).unwrap();
     let work_dir = repo_root.join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
+    crate::git::worktree::capture_main_identity(repo_root, &work_dir).unwrap();
     std::fs::write(work_dir.join("orchestrator.lock"), b"").unwrap();
     worktree
 }

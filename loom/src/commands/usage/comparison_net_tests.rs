@@ -2,10 +2,23 @@ use serde_json::{json, Map, Value};
 
 use super::super::comparison_schema::{ComparisonPair, Outcome};
 use super::super::provider_types::Provider;
-use super::evaluate;
+use super::{evaluate, Classification};
 
 const VALID: &str =
     include_str!("../../../tests/fixtures/token_optimization/comparison/valid_improvement.json");
+
+#[test]
+fn classifications_keep_their_json_names() {
+    for (classification, name) in [
+        (Classification::MissingDimension, "missing-dimension"),
+        (Classification::InsufficientPairs, "insufficient-pairs"),
+        (Classification::Reduction, "reduction"),
+        (Classification::Regression, "regression"),
+        (Classification::WithinNoise, "within-noise"),
+    ] {
+        assert_eq!(serde_json::to_value(classification).unwrap(), json!(name));
+    }
+}
 
 #[test]
 fn reductions_are_supported_per_provider() {
@@ -15,7 +28,10 @@ fn reductions_are_supported_per_provider() {
 
     assert_eq!(summary.verdict, Outcome::SupportedCandidate);
     assert_eq!(summary.reason_codes, Vec::<&str>::new());
-    assert_eq!(summary.providers[0].classification, "reduction");
+    assert_eq!(
+        summary.providers[0].classification,
+        Classification::Reduction
+    );
 }
 
 #[test]
@@ -26,7 +42,10 @@ fn unchanged_totals_are_within_noise() {
 
     assert_eq!(summary.verdict, Outcome::Inconclusive);
     assert_eq!(summary.reason_codes, vec!["net-total-within-noise"]);
-    assert_eq!(summary.providers[0].classification, "within-noise");
+    assert_eq!(
+        summary.providers[0].classification,
+        Classification::WithinNoise
+    );
 }
 
 #[test]
@@ -37,7 +56,10 @@ fn a_single_pair_is_insufficient() {
 
     assert_eq!(summary.verdict, Outcome::Inconclusive);
     assert_eq!(summary.reason_codes, vec!["insufficient-pairs"]);
-    assert_eq!(summary.providers[0].classification, "insufficient-pairs");
+    assert_eq!(
+        summary.providers[0].classification,
+        Classification::InsufficientPairs
+    );
 }
 
 #[test]
@@ -65,7 +87,10 @@ fn rising_totals_are_rejected() {
 
     assert_eq!(summary.verdict, Outcome::Rejected);
     assert_eq!(summary.reason_codes, vec!["net-total-regression"]);
-    assert_eq!(summary.providers[0].classification, "regression");
+    assert_eq!(
+        summary.providers[0].classification,
+        Classification::Regression
+    );
 }
 
 #[test]
@@ -81,7 +106,10 @@ fn a_missing_net_dimension_is_inconclusive() {
 
     assert_eq!(summary.verdict, Outcome::Inconclusive);
     assert_eq!(summary.reason_codes, vec!["missing-token-dimension"]);
-    assert_eq!(summary.providers[0].classification, "missing-dimension");
+    assert_eq!(
+        summary.providers[0].classification,
+        Classification::MissingDimension
+    );
 }
 
 #[test]
@@ -133,7 +161,7 @@ fn a_mean_inside_twice_the_standard_error_is_within_noise() {
         (provider.standard_error.expect("standard error") - (7_250.0_f64 / 12.0).sqrt()).abs()
             < 1e-9
     );
-    assert_eq!(provider.classification, "within-noise");
+    assert_eq!(provider.classification, Classification::WithinNoise);
     assert_eq!(summary.verdict, Outcome::Inconclusive);
     assert_eq!(summary.reason_codes, vec!["net-total-within-noise"]);
 }
@@ -148,7 +176,10 @@ fn a_mean_between_one_and_two_standard_errors_is_within_noise_in_both_directions
     for pairs in [reduced, raised] {
         let summary = evaluate_pairs(&pairs);
 
-        assert_eq!(summary.providers[0].classification, "within-noise");
+        assert_eq!(
+            summary.providers[0].classification,
+            Classification::WithinNoise
+        );
         assert_eq!(summary.verdict, Outcome::Inconclusive);
     }
 }
@@ -161,7 +192,7 @@ fn two_usable_pairs_are_insufficient_even_when_they_agree() {
     let provider = &summary.providers[0];
 
     assert_eq!(provider.pairs, 2);
-    assert_eq!(provider.classification, "insufficient-pairs");
+    assert_eq!(provider.classification, Classification::InsufficientPairs);
     assert_eq!(provider.mean_reduction, None);
     assert_eq!(provider.standard_error, None);
     assert_eq!(summary.verdict, Outcome::Inconclusive);
@@ -182,7 +213,7 @@ fn three_tight_reduction_pairs_are_evaluated() {
     assert!(
         (provider.standard_error.expect("standard error") - (100.0_f64 / 3.0).sqrt()).abs() < 1e-9
     );
-    assert_eq!(provider.classification, "reduction");
+    assert_eq!(provider.classification, Classification::Reduction);
     assert_eq!(summary.verdict, Outcome::SupportedCandidate);
     assert_eq!(summary.reason_codes, Vec::<&str>::new());
 }

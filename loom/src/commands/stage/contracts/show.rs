@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 
-use crate::verify::contracts::store::{frozen_file_path, load_freeze};
+use crate::verify::contracts::store::{frozen_file_path_for_record, load_freeze};
 
 /// `loom stage contracts show <stage-id>`.
 pub fn show(stage_id: String) -> Result<()> {
@@ -38,10 +38,55 @@ pub fn show(stage_id: String) -> Result<()> {
     );
     for file in &record.files {
         println!("  {}  sha256={}", file.path, file.sha256);
-        println!(
-            "    frozen copy: {}",
-            frozen_file_path(&work_dir, &stage_id, &file.path).display()
-        );
+        println!("{}", frozen_copy_line(&work_dir, &record, &file.path));
     }
     Ok(())
+}
+
+fn frozen_copy_line(
+    work_dir: &std::path::Path,
+    record: &crate::verify::contracts::store::FreezeRecord,
+    path: &str,
+) -> String {
+    format!(
+        "    frozen copy: {}",
+        frozen_file_path_for_record(work_dir, record, path).display()
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::verify::contracts::store::{self, FreezeRecord, FrozenFile, FREEZE_RECORD_VERSION};
+
+    #[test]
+    fn show_names_the_copy_in_the_loaded_generation() {
+        let temp = tempfile::tempdir().unwrap();
+        let record = FreezeRecord {
+            version: FREEZE_RECORD_VERSION,
+            stage_id: "s1".into(),
+            session_id: "session".into(),
+            frozen_at: chrono::Utc::now(),
+            base: "base".into(),
+            files: vec![FrozenFile {
+                path: "test.rs".into(),
+                sha256: crate::relay::sha256_hex(b"old"),
+            }],
+            contracts: Vec::new(),
+        };
+        store::write_freeze(temp.path(), &record, &[("test.rs".into(), b"old".to_vec())]).unwrap();
+        store::refreeze_set(
+            temp.path(),
+            "s1",
+            &[("test.rs".into(), b"new".to_vec())],
+            &[],
+        )
+        .unwrap();
+        let current = load_freeze(temp.path(), "s1").unwrap().unwrap();
+        let line = frozen_copy_line(temp.path(), &current, "test.rs");
+        let path = frozen_file_path_for_record(temp.path(), &current, "test.rs");
+        assert!(line.contains(&path.display().to_string()));
+        assert_eq!(std::fs::read(path).unwrap(), b"new");
+        assert_ne!(line, frozen_copy_line(temp.path(), &record, "test.rs"));
+    }
 }

@@ -37,8 +37,8 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::verify::transitions::{load_stage, update_stage};
 
 use super::{
-    attempt_count, close_open_disputes, is_closed, persist_verdict, read_request, resolve_model,
-    verdict,
+    close_open_disputes_except_locked, is_closed, lock_stage_dispute_dir, persist_verdict,
+    read_request, resolve_model, verdict,
 };
 
 /// What recording the verdict did.
@@ -76,12 +76,9 @@ pub fn record_verdict(
     verdict_path: &Path,
     session_id: Option<String>,
 ) -> Result<AdjudicateOutcome> {
-    let (stage, kind) = ensure_recordable(work_dir, stage_id, dispute_id)?;
-
     let raw = std::fs::read_to_string(verdict_path)
         .with_context(|| format!("Failed to read verdict file: {}", verdict_path.display()))?;
-    let outcome = validated(work_dir, &stage, &kind, &raw)?;
-    record_outcome(work_dir, stage_id, dispute_id, outcome, session_id)
+    record_verdict_text(work_dir, stage_id, dispute_id, &raw, session_id)
 }
 
 /// The guarded write for a verdict already read — the raw JSON a judge
@@ -94,6 +91,8 @@ pub fn record_verdict_text(
     raw: &str,
     session_id: Option<String>,
 ) -> Result<AdjudicateOutcome> {
+    let stage_dir = work_dir.join("disputes").join(stage_id);
+    let _lifecycle = lock_stage_dispute_dir(&stage_dir)?;
     let (stage, kind) = ensure_recordable(work_dir, stage_id, dispute_id)?;
     let outcome = validated(work_dir, &stage, &kind, raw)?;
     record_outcome(work_dir, stage_id, dispute_id, outcome, session_id)
@@ -129,7 +128,8 @@ fn record_outcome(
 ) -> Result<AdjudicateOutcome> {
     match outcome {
         verdict::ValidationOutcome::Verdict(v) => {
-            let attempt = attempt_count(work_dir, stage_id, dispute_id).max(1);
+            let attempt =
+                super::session::checked_attempt_count(work_dir, stage_id, dispute_id)?.max(1);
             persist_verdict(
                 work_dir,
                 stage_id,
@@ -148,12 +148,16 @@ fn record_outcome(
         // it leaves open are closed, as for any escalation.
         verdict::ValidationOutcome::Escalate { reason } => {
             let stage = update_stage(stage_id, work_dir, |s| {
-                s.try_request_human_review(reason.clone()).ok();
+                anyhow::ensure!(
+                    s.status == StageStatus::NeedsAdjudication,
+                    "stage left adjudication before the verdict was recorded"
+                );
+                s.try_request_human_review(reason.clone())?;
                 Ok(())
             })
             .context("Failed to escalate the stage after a degenerate verdict")?;
             if stage.status == StageStatus::NeedsHumanReview {
-                close_open_disputes(work_dir, stage_id);
+                close_open_disputes_except_locked(work_dir, stage_id, None)?;
             }
             Ok(AdjudicateOutcome::Escalated(reason))
         }

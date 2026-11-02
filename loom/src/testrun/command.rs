@@ -59,6 +59,23 @@ pub fn regex_literal(value: &str) -> String {
     escaped
 }
 
+/// A JavaScript regex matching the entire runner-visible test name.
+pub fn exact_regex_literal(value: &str) -> String {
+    format!("^{}$", regex_literal(value))
+}
+
+/// A Ruby regex matching the entire RSpec full description, including names
+/// that contain newlines (where `^` and `$` would match a single line).
+pub fn exact_ruby_regex(value: &str) -> String {
+    format!(r"\A{}\z", regex_literal(value))
+}
+
+/// A complete PHPUnit test identifier as an explicit PCRE pattern. Delimiters
+/// prevent PHPUnit from interpreting the input as its abbreviated filter syntax.
+pub fn exact_phpunit_regex(value: &str) -> String {
+    format!(r"~\A{}\z~", regex_literal(value).replace('~', r"\~"))
+}
+
 /// The items of `items` without repeats, in first-seen order.
 pub fn distinct<T: PartialEq>(items: impl IntoIterator<Item = T>) -> Vec<T> {
     let mut found = Vec::new();
@@ -190,6 +207,26 @@ mod tests {
             r"a\.b\*c\+d\?e\(f\)\[g\]\{h\}\|i\^j\$k\\l"
         );
         assert_eq!(regex_literal("adds #1 - ~/x & y"), "adds #1 - ~/x & y");
+    }
+
+    #[test]
+    fn exact_regex_rejects_overlapping_names() {
+        let pattern = exact_regex_literal("suite adds (values)+");
+        let regex = regex::Regex::new(&pattern).expect("valid literal regex");
+        assert!(regex.is_match("suite adds (values)+"));
+        assert!(!regex.is_match("prefix suite adds (values)+"));
+        assert!(!regex.is_match("suite adds (values)+ suffix"));
+    }
+
+    #[test]
+    fn phpunit_pattern_matches_the_complete_identifier_and_data_set() {
+        let name = r#"Tests\ExampleTest::testThing with data set "a~(b)""#;
+        let pattern = exact_phpunit_regex(name);
+        let regex = regex::Regex::new(&pattern[1..pattern.len() - 1]).unwrap();
+        assert!(regex.is_match(name));
+        assert!(!regex.is_match(&format!("{name} extra")));
+        assert!(!regex.is_match(&format!("Other{name}")));
+        assert!(!regex.is_match(r#"Tests\ExampleTest::testThings with data set "a~(b)""#));
     }
 
     #[test]

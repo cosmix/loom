@@ -1,16 +1,78 @@
 //! Process-wide observer of confined spawns.
 //!
-//! The host child (`loom stage verify-host`) records the process group of
-//! every confined command it starts, so the daemon can kill a job's criteria
-//! when it retires the job: a criterion runs in its own process group, which
-//! killing the child's group does not reach. Every other process installs no
-//! observer, and a spawn then notifies nothing.
+//! The host child (`loom stage verify-host`) installs an observer that starts a
+//! persistent group guardian before each confined command. Other processes
+//! install no observer and retain the normal one-command process group.
 
+use std::process::Child;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
 
-/// Callback told the pid of each confined command right after it spawns. The
-/// pid is also the command's process-group id (`process_group(0)`).
-pub struct SpawnObserver(pub Box<dyn Fn(u32) + Send + Sync>);
+use anyhow::Result;
+
+/// Callback starts and records a guardian before the confined command spawns.
+pub struct SpawnObserver(pub Box<dyn Fn() -> Result<GroupAnchor> + Send + Sync>);
+
+/// A separate leader kept alive after the observed command exits. Its stop
+/// callback addresses the leader through the host job's private control FIFO.
+pub struct GroupAnchor {
+    child: Child,
+    stop: Box<dyn Fn() -> Result<()> + Send + Sync>,
+    retired: bool,
+}
+
+impl GroupAnchor {
+    pub fn new(child: Child, stop: Box<dyn Fn() -> Result<()> + Send + Sync>) -> Self {
+        Self {
+            child,
+            stop,
+            retired: false,
+        }
+    }
+
+    pub fn pgid(&self) -> u32 {
+        self.child.id()
+    }
+
+    pub fn retire(&mut self) {
+        if self.retired {
+            return;
+        }
+        self.retired = true;
+        // This direct child has not been reaped, so the kernel cannot recycle
+        // its PID. Its numeric process group is safe to signal while held.
+        let mut signalled = false;
+        if let Ok(raw) = i32::try_from(self.pgid()) {
+            if raw > 1 && raw != nix::unistd::getpgrp().as_raw() {
+                signalled = nix::sys::signal::killpg(
+                    nix::unistd::Pid::from_raw(raw),
+                    nix::sys::signal::Signal::SIGKILL,
+                )
+                .is_ok();
+            }
+        }
+        if !signalled {
+            let _ = (self.stop)();
+        }
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while Instant::now() < deadline {
+            if self.child.try_wait().ok().flatten().is_some() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        tracing::warn!(pgid = self.pgid(), "criterion group anchor did not stop");
+        // A still-owned, unreaped direct child cannot have a recycled PID.
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl Drop for GroupAnchor {
+    fn drop(&mut self) {
+        self.retire();
+    }
+}
 
 impl std::fmt::Debug for SpawnObserver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -46,10 +108,8 @@ pub fn set_spawn_observer(observer: SpawnObserver) -> SpawnObserverGuard {
     SpawnObserverGuard { _private: () }
 }
 
-/// Tell the current observer, if any, that a confined command spawned.
-pub(crate) fn notify_spawned(pid: u32) {
+/// Start an observed command's guardian, if one is installed.
+pub(crate) fn prepare_group() -> Result<Option<GroupAnchor>> {
     let observer = slot().clone();
-    if let Some(observer) = observer {
-        (observer.0)(pid);
-    }
+    observer.map(|observer| (observer.0)()).transpose()
 }

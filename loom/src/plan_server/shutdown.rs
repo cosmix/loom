@@ -67,6 +67,14 @@ pub struct Shutdown {
     inner: Arc<Inner>,
 }
 
+pub(crate) struct DrainWait(Arc<Inner>);
+
+impl DrainWait {
+    pub(crate) fn wait(self) {
+        self.0.wait_idle();
+    }
+}
+
 impl Shutdown {
     pub fn new() -> Self {
         Self::default()
@@ -105,11 +113,23 @@ impl Shutdown {
         self.inner.stopping.load(Ordering::SeqCst)
     }
 
+    pub(crate) fn mark_stopping(&self) {
+        self.inner.stopping.store(true, Ordering::SeqCst);
+    }
+
     /// First signal: mark stopping and run every registered drain on its own
     /// thread. `report` gets `waiting on: a, b` once, then `finished: a` as
     /// each drain returns. The handle joins once no drain is running. Later
     /// calls start nothing and return a handle that waits for the same.
     pub fn begin(&self, report: impl Fn(&str) + Send + Sync + 'static) -> JoinHandle<()> {
+        let waiting = self.start_drains(report);
+        thread::Builder::new()
+            .name("plan-shutdown".into())
+            .spawn(move || waiting.wait())
+            .expect("spawn the shutdown join thread")
+    }
+
+    pub(crate) fn start_drains(&self, report: impl Fn(&str) + Send + Sync + 'static) -> DrainWait {
         self.inner.stopping.store(true, Ordering::SeqCst);
         let report: Report = Arc::new(report);
         let started = self.take_drains(&report);
@@ -120,11 +140,26 @@ impl Shutdown {
         for (index, name, drain) in started {
             spawn_drain(&self.inner, index, name, drain, Arc::clone(&report));
         }
-        let inner = Arc::clone(&self.inner);
-        thread::Builder::new()
-            .name("plan-shutdown".into())
-            .spawn(move || inner.wait_idle())
-            .expect("spawn the shutdown join thread")
+        DrainWait(Arc::clone(&self.inner))
+    }
+
+    #[cfg(test)]
+    pub(super) fn begin_with_failed_spawns(&self) {
+        self.mark_stopping();
+        let report: Report = Arc::new(|_| {});
+        for (index, name, drain) in self.take_drains(&report) {
+            spawn_drain_with(
+                &self.inner,
+                index,
+                name,
+                drain,
+                Arc::clone(&report),
+                |task| {
+                    drop(task);
+                    Err(io::Error::other("injected drain spawn failure"))
+                },
+            );
+        }
     }
 
     /// Second signal: run every abort not yet run whose drain has not
@@ -172,18 +207,31 @@ impl Shutdown {
 /// [`DrainDone`], dropped when the drain returns or panics, or with the
 /// closure when the thread cannot be spawned.
 fn spawn_drain(inner: &Arc<Inner>, index: usize, name: &'static str, drain: Task, report: Report) {
+    spawn_drain_with(inner, index, name, drain, report, |task| {
+        thread::Builder::new()
+            .name(format!("plan-drain-{name}"))
+            .spawn(task)
+    });
+}
+
+fn spawn_drain_with(
+    inner: &Arc<Inner>,
+    index: usize,
+    name: &'static str,
+    drain: Task,
+    report: Report,
+    spawn: impl FnOnce(Task) -> io::Result<JoinHandle<()>>,
+) {
     let done = DrainDone {
         inner: Arc::clone(inner),
         index,
         name,
         report,
     };
-    let spawned = thread::Builder::new()
-        .name(format!("plan-drain-{name}"))
-        .spawn(move || {
-            let _done = done;
-            drain();
-        });
+    let spawned = spawn(Box::new(move || {
+        let _done = done;
+        drain();
+    }));
     if let Err(error) = spawned {
         tracing::warn!("could not start the {name} shutdown drain: {error}");
     }

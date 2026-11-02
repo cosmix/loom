@@ -26,8 +26,9 @@ fn the_installed_hook_with_this_state_directory_is_active() {
     );
 }
 
+/// The hook in `.git/hooks` proves nothing once git runs hooks from elsewhere.
 #[test]
-fn a_hooks_path_turns_attestation_off() {
+fn a_hooks_path_without_the_hook_turns_attestation_off() {
     let repo = repo();
     activate(&repo.root);
     git(&repo.root, &["config", "core.hooksPath", "loom/.githooks"]);
@@ -37,6 +38,76 @@ fn a_hooks_path_turns_attestation_off() {
         reason.contains("core.hooksPath is set to loom/.githooks"),
         "{reason}"
     );
+    assert!(reason.contains("not installed there"), "{reason}");
+}
+
+#[test]
+fn the_real_hook_in_a_repository_hooks_path_attests_a_host_commit() {
+    let repo = repo();
+    git(&repo.root, &["config", "core.hooksPath", "local-hooks"]);
+    crate::git::hooks::install_reference_transaction_hook(&repo.root).unwrap();
+    assert!(repo
+        .root
+        .join("local-hooks/reference-transaction")
+        .is_file());
+    assert_eq!(
+        attestation_mode(&repo.root, &repo.work),
+        AttestationMode::Active
+    );
+    record(&repo);
+
+    let moved = commit(&repo.root, "src/x.rs");
+
+    assert_eq!(guard(&repo), GuardState::Clear { accepted: moved });
+}
+
+/// The same move without the hook has no ledger line, so the mode above is what
+/// cleared it.
+#[test]
+fn a_host_commit_that_skips_the_hook_in_a_repository_hooks_path_holds() {
+    let repo = repo();
+    git(&repo.root, &["config", "core.hooksPath", "local-hooks"]);
+    crate::git::hooks::install_reference_transaction_hook(&repo.root).unwrap();
+    record(&repo);
+
+    std::fs::write(repo.root.join("x.rs"), "x").unwrap();
+    git(&repo.root, &["add", "x.rs"]);
+    git(
+        &repo.root,
+        &["-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "x"],
+    );
+
+    assert!(is_unattested(guard(&repo)));
+}
+
+/// A marked hook does not turn attestation on from another repository's
+/// directory, from tracked content, or through a link.
+#[test]
+fn a_hook_loom_may_not_install_at_turns_attestation_off() {
+    use std::os::unix::fs::{symlink, PermissionsExt};
+    let install = |dir: &Path| {
+        std::fs::create_dir_all(dir).unwrap();
+        let hook = dir.join("reference-transaction");
+        std::fs::write(&hook, format!("#!/bin/sh\n# {HOOK_MARKER}\nexit 0\n")).unwrap();
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    let outside = tempfile::TempDir::new().unwrap();
+    install(outside.path());
+    let repo = repo();
+    git(
+        &repo.root,
+        &["config", "core.hooksPath", outside.path().to_str().unwrap()],
+    );
+    assert!(off_reason(&repo.root, &repo.work).contains("loom cannot rely on a hook"));
+
+    install(&repo.root.join("tracked-hooks"));
+    git(&repo.root, &["add", "tracked-hooks"]);
+    git(&repo.root, &["config", "core.hooksPath", "tracked-hooks"]);
+    assert!(off_reason(&repo.root, &repo.work).contains("loom cannot rely on a hook"));
+
+    symlink(outside.path(), repo.root.join("linked-hooks")).unwrap();
+    git(&repo.root, &["config", "core.hooksPath", "linked-hooks"]);
+    assert!(off_reason(&repo.root, &repo.work).contains("loom cannot rely on a hook"));
 }
 
 #[test]

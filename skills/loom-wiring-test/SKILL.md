@@ -157,9 +157,11 @@ artifacts:
   - "src/auth/jwt.rs"
 wiring:
   - source: "src/orchestrator/core.rs"
-    pattern: "use crate::auth"             # a REAL consumer, not just `pub mod auth` in lib.rs
-    description: "Auth used by orchestrator"
+    pattern: "auth::authorize("           # actual invocation at the consumer
+    description: "Orchestrator invokes authorization"
 ```
+
+The pattern checks syntactic presence only. Add an integration test that drives the orchestrator and asserts authorization behavior to establish runtime reachability.
 
 ### UI component
 

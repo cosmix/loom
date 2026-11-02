@@ -143,72 +143,14 @@ Never give a knowledge stage a heading-presence grep on a tier-1 file: an establ
 
 ## 4. Model Selection Per Stage (REQUIRED)
 
-> ⚠️ **A stage OMITS `model` and `reasoning_effort` by default**, so the stage type's configured default applies — `knowledge` and `integration-verify` default to opus, `standard` and `knowledge-distill` to sonnet; default effort is `high` (`standard`), `medium` (`knowledge`), `xhigh` (`integration-verify`), and `high` (`knowledge-distill`), configurable per stage type in `[models]` of `~/.loom/config.toml` or `.loom/work/config.toml`. Set either field only as a DELIBERATE OVERRIDE, and say why in the stage description. Subagent model choice happens at spawn time (BLOCK-B), never in the YAML.
+> ⚠️ **A stage OMITS `model` and `reasoning_effort` by default**, so the stage type's configured default applies — `knowledge` and `integration-verify` default to opus, `standard` and `knowledge-distill` to sonnet; default effort is `high` (`standard`), `medium` (`knowledge`), `xhigh` (`integration-verify`), and `high` (`knowledge-distill`), configurable per stage type in `[models]` of `~/.loom/config.toml` or `.loom/work/config.toml`. Set either field only as a DELIBERATE OVERRIDE, and say why in the stage description. Subagent model choice happens at spawn time (orchestration Rule 7), never in the YAML.
 
-BLOCK-B — model allocation playbook:
-
-```text
-1. DELEGATION IS A COST DECISION: TOKENS TIMES MODEL TIER (hard stop 6). A
-   stage's main agent decomposes the work, briefs subagents, owns the gate and
-   commits. A spawn costs a written brief, the subagent's boot (about 28,000
-   tokens before it reads anything) and a harvest turn. The main agent makes a
-   change itself only when ALL of these hold: at most 20 changed lines, in at
-   most 2 files it has already read this session, no further exploration, and
-   one command proves it. Anything larger is delegated. A main session running
-   FABLE delegates even those: a cheaper tier can do them, and every fable turn
-   costs more than the spawn.
-2. INVESTIGATION ENDS IN A BRIEF OR IN A SMALL CHANGE. The moment you finish
-   reading the code and know what the fix is, apply point 1's test. If it
-   fails, you are at the delegation boundary: write the understanding down
-   (file:line, root cause, the change to make, signatures, patterns to match,
-   acceptance) and spawn. The diagnosis being yours does not make a large
-   change yours.
-3. EVERYTHING BEYOND POINT 1 IS DELEGATED, to as FEW subagents as the work
-   allows, at the CHEAPEST tier that can do the piece. Size each assignment so
-   the subagent typically finishes under about 400,000 tokens, and never split
-   below what that needs: every extra spawn pays the boot cost again. Pick PER
-   SUBAGENT by what that piece needs, never once for the whole stage, and
-   default downward: HAIKU (`model: haiku` on loom-software-engineer) for
-   mechanical edits, boilerplate, scaffolding, and simple unit tests; codex
-   gpt-6-luna for that same work only when the user or the plan asks for it;
-   codex gpt-6.1-terra or SONNET (loom-software-engineer) for common
-   implementation and integration tests — most work belongs at this tier, and
-   neither lane is the default; OPUS (loom-senior-software-engineer, effort
-   high) for mainstream architecture and algorithm implementation, spawned
-   with `effort: xhigh` for hard debugging, core algorithmic or architectural
-   work, distributed systems, heavily multithreaded or parallel code, and
-   systems engineering; FABLE only for visual/UI design, a bug that survived a
-   delegated fix attempt, or extremely challenging algorithmic design. Codex
-   tiers (effort xhigh, via loom-codex-forwarder) exist only on stages listing
-   codex in implementers AND when the codex CLI + plugin are installed;
-   otherwise terra-tier work goes to sonnet and luna-tier work to haiku (loom
-   warns at startup when a stage lists codex it cannot use). In a standard
-   stage the GATE is the orchestrator's single `loom check` (a fix round
-   re-checks with `--criterion <n>`); an integration-verify stage runs the
-   gate its own signal names. Either way the orchestrator owns fixes and the
-   commit. Spawn BY AGENT TYPE.
-4. ESCALATE ON EVIDENCE, NOT ON HUNCH. Start at the cheapest plausible tier. A
-   fix that failed ONCE against clear acceptance criteria moves up exactly one
-   tier — haiku to sonnet, sonnet to opus, opus to fable — with the failed
-   attempt and its evidence in the new brief; never rerun the same tier on the
-   same bug. "This feels subtle" does not justify escalation. When a cheap
-   subagent's output is wrong, first ask whether the brief was detailed enough
-   — a vague brief is an orchestrator failure, not evidence the tier was too
-   small.
-5. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
-   narrow scope, full detail supplied by the orchestrator, advice returned, no
-   writes. Its diagnosis then feeds a sonnet or opus implementer per point 2.
-   Do not let an implementer thrash on the same failure twice.
-```
-
-**Fable-tier mechanics.** No agent type pins fable — pass the model override at spawn. Routine UI wiring to an existing design stays at the sonnet or terra tier.
-
-**Lowest tier, fullest brief.** For each worker, write the lowest tier that can do its piece without losing quality in the worker table's `Tier` column (Section 5); the orchestrator escalates only on evidence. The `Tier` column may read `opus/xhigh` for hard debugging, core algorithmic or architectural work, distributed systems, heavily multithreaded or parallel code, and systems engineering (BLOCK-B point 3); plain `opus` runs at effort high. The cheaper the tier, the more the brief settles — exact paths and `file:line` ranges, signatures, the pattern to mirror, every decision made, every trap named, the proof command. Never paste code the worker can open. A piece whose brief cannot settle every decision is judgment work: settle it in the plan, or raise the tier.
+The executable allocation policy belongs to `../loom-orchestration/SKILL.md#rule-7--model-allocation`. Apply it when selecting worker tiers, and quote applicable rules in each dispatch brief so the worker has self-contained instructions.
 
 **Sizing rubric — group by cost.** About 400,000 tokens is a Claude worker ceiling, not a target. Measured sonnet workers peak at a median of 86,000. Merge task B into worker A when B's turns
 times A's leftover context times the cache-read rate (0.1) is less than 1.25 times B's startup
 and orientation (about 55,000 tokens). Bundle short tasks and keep long ones apart. Send all
-findings of one review round to ONE fix worker. Assign implementation to subagents within BLOCK-B point 1's small-change rule.
+findings of one review round to ONE fix worker. Assign implementation to subagents within orchestration Rule 7's small-change rule.
 
 **Stage descriptions carry decomposable detail:** exact file paths, signatures, `file:line` patterns to follow (and which property of the pattern NOT to copy), step-by-step subtasks, integration wiring (`mod.rs`, registry, route), and the error-handling approach. If you cannot write that, go back to Section 1. Full text, a worked example, `subagent_timeout_secs` (an idle budget, default 300) and the waiting protocol: `references/stage-sizing.md`.
 
@@ -263,7 +205,7 @@ EVERY non-bookend stage MUST name, in the plan prose, which of Q1-Q4 forced it i
 ### Subagent file exclusivity (CRITICAL)
 
 - Each subagent has EXCLUSIVE write access to its files — **two subagents writing one file = LOST WORK.**
-- **Check TYPE/import dependencies too.** If A's file DEFINES a contract B's file imports, assign it to a FOUNDATION worker that finishes BEFORE the consumers fan out; the main agent writes it only when it passes BLOCK-B point 1's small-change test.
+- **Check TYPE/import dependencies too.** If A's file DEFINES a contract B's file imports, assign it to a FOUNDATION worker that finishes BEFORE the consumers fan out; the main agent writes it only when it passes orchestration Rule 7's small-change test.
 
 ### Briefs as files
 
@@ -306,13 +248,13 @@ The v2 rows need `version: 2`; a v1 plan using one is rejected. In a v2 plan eve
 
 - Errors: `|| true` / `|| :` masking an exit status; `HOME=` assigned from a variable or substitution (logged: `HOME=""` wrote the operator's real `~/.loom/config.toml`); a bare `mktemp -d` (denied in the sandbox; write `mktemp -d "${TMPDIR:-/tmp}/<name>.XXXXXX"`); a `TMPDIR=` override, a `/tmp/` path, or a write aimed outside the worktree.
 - Warnings: a network binary in a criterion (`curl`, `wget`, `gh`, `npm install`, `bun install`, `cargo install`, `cargo audit` without `--no-fetch`); a read of a `doc/plans/` path, which the plan lifecycle renames; `vitest -t`, whose unmatched filter exits 0; `PIPESTATUS` (criteria run under `sh -c`); `rg -r` (it means `--replace`); a test runner inside `wiring_tests`; a simple `rg`/`grep` criterion that already passes at HEAD, so it cannot tell a stage that did its work from one that did nothing.
-- Plan-version lints, errors in a `version: 2` plan and warnings in v1: a `loom` subcommand the CLI lacks (a warning when the stage or one it depends on changes `loom/src/cli`); a wiring regex, or an `rg`/`grep` pattern without `-F`, that does not compile or would be read as a flag; a network binary while the stage allows no network domain; a resource no sandbox grant reaches (`tmux`, `docker`, `loom map`, `loom knowledge context`); a knowledge check that cannot pass without `--baseline`; a contract `runner` no adapter answers to; an integration-verify stage with no full test command; a plan without exactly one `knowledge-distill` stage, a distill stage with dependents, a stage the distill stage does not follow; a `standard` stage that is not an ancestor of an `integration-verify` stage. Warnings in both: `[[` in a pattern, a Rust test filter that matches no module, a contract whose runner cannot be detected.
+- Plan-version lints, errors in a `version: 2` plan and warnings in v1: a `loom` subcommand the CLI lacks (a warning when the stage or one it depends on changes `loom/src/cli`); a wiring regex, or an `rg`/`grep` pattern without `-F`, that does not compile or would be read as a flag; a network binary while the stage allows no network domain, or in a confined runner, which has no network whatever the stage allows (there a bare version probe is exempt and a `curl`/`wget` aimed only at loopback stays a warning); a resource no sandbox grant reaches (`tmux`, `docker`, `loom map`, `loom knowledge context`); a knowledge check that cannot pass without `--baseline`; a contract `runner` no adapter answers to; an integration-verify stage with no full test command; a plan without exactly one `knowledge-distill` stage, a distill stage with dependents, a stage the distill stage does not follow; a `standard` stage that is not an ancestor of an `integration-verify` stage. Warnings in both: `[[` in a pattern, a Rust test filter that matches no module, a contract whose runner cannot be detected.
 - **The full suite runs once, in integration-verify.** A standard stage's acceptance proves its own code (`cargo test --lib <module>::`, `--test <target>`, a name filter), plus build and lint; `loom plan verify` warns on an unfiltered run elsewhere.
 
 **Three rules no check enforces:**
 
 - **A criterion whose paths are disjoint from the stage's `files:` is a repo-wide gate on a narrow stage.** It goes red on work the stage cannot touch. Point it at the stage's own files or move it to integration-verify.
-- **Timeouts:** each `wiring_tests` command has a 30 s cap and each acceptance command 300 s. A command that can run longer belongs in a checked-in script with its own scope, or in a narrower filter.
+- **Timeouts:** each `wiring_tests` command has a 30 s cap and a string acceptance command defaults to 300 s; the extended form can set a timeout up to 3600 s. See `references/sandbox.md#where-criteria-run`. Prefer focused commands.
 - **A merged plan's pinned criteria go red after later renames.** Pin behaviour (a command's output, a test name) over paths and line text where possible.
 
 Realizability (expressible, executes the code, right strength, actually selected, grounded), per-stage gate coverage, the green-at-baseline rule, and the rules for criteria about a to-be-PRODUCED artifact (invariants over measured constants, two-fixture dry runs, jq hygiene, numbers that agree) are in `references/verification-rules.md`. Read it before writing any criterion.
@@ -366,7 +308,7 @@ Per-stage `sandbox:` overrides are allowed. **Criteria run in the daemon's host 
 - Implementation fetches: `cargo add`, `bun add`, `uv add`, `go get` need their registry domains in the stage's `allowed_domains`.
 - Acceptance commands: `bunx`, `npx`, `cargo install` and the like fetch from a registry; `loom plan verify` errors when the stage's sandbox does not allow it.
 - Impact-selected test runners, one per package: a JS package needs `node_modules` in the worktree, so provision it.
-- The repository's git hooks: a pre-commit hook that runs `bunx` needs `registry.npmjs.org` in every sandboxed stage, because every stage commits.
+- The repository's git hooks: commits relay to the daemon host path. Account for hook dependencies at that execution boundary; a commit alone does not require session network grants, though `loom plan verify` still errors when a stage's sandbox omits a registry the hook fetches from.
 - Audit databases: `cargo audit` fetches from github.com unless run with `--no-fetch` against a host copy.
 - Unix sockets: list every acceptance command that starts something opening a Unix socket (postgres's default socket, SeaweedFS `weed filer`/`weed s3`, Chrome's process singleton, tmux, the docker CLI, sccache); by default creating one fails with `Operation not permitted`. Each ends in one of: a TCP-only option (postgres `-c unix_socket_directories=''`); `allow_all_unix_sockets: true` on that stage only, which needs the operator to run `loom run --accept-unix-socket-risk` and leaves sockets created under `/tmp` after spawn, and those under `$HOME`, reachable; or the command moved to an operator-gated stage. `allow_unix_sockets` does nothing on Linux.
 - Credentials and tokens: a stage session never gets them; ask the user how the need is met.

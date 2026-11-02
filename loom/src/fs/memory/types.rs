@@ -166,6 +166,47 @@ pub struct MemoryEntry {
 }
 
 impl MemoryEntry {
+    /// Check that canonical persistence can read the entry without losing it.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        super::persistence::validate_content(&self.content)?;
+        if let Some(context) = &self.context {
+            super::persistence::validate_content(context)?;
+        }
+        super::persistence::validate_evidence(&self.evidence)?;
+        if !super::parser::is_event_id(&self.id) {
+            anyhow::bail!("memory event id must be 32 lowercase hexadecimal characters");
+        }
+        if (self.entry_type == MemoryEntryType::Receipt) != self.receipt.is_some() {
+            anyhow::bail!("receipt payload must occur exactly on receipt entries");
+        }
+        if self
+            .receipt
+            .as_ref()
+            .is_some_and(|r| !super::parser::is_event_id(&r.event_id))
+        {
+            anyhow::bail!("receipt event id must be 32 lowercase hexadecimal characters");
+        }
+        let encoded = super::parser::format_entry(self);
+        let journal = super::parser::parse_journal(&encoded, "validation")?;
+        if journal.entries.len() != 1 {
+            anyhow::bail!("memory entry cannot be read as one journal entry");
+        }
+        let restored = journal
+            .entries
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("memory entry cannot be read after formatting"))?;
+        if restored.id != self.id
+            || restored.entry_type != self.entry_type
+            || restored.content != self.content
+            || restored.receipt != self.receipt
+        {
+            anyhow::bail!(
+                "memory entry content or receipt does not round-trip through the journal"
+            );
+        }
+        Ok(())
+    }
+
     /// Create a new memory entry
     pub fn new(entry_type: MemoryEntryType, content: String) -> Self {
         Self {

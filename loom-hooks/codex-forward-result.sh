@@ -153,12 +153,14 @@ validate_outer_result() {
 }
 
 validate_wrapper_output() {
-	local trailer protocol
-	trailer=$(printf '%s\n' '--- LOOM-CODEX-EVIDENCE ---' "exit: $RESULT_STATUS" \
-		'mode: direct (codex exec --sandbox danger-full-access; nested Seatbelt refused)' \
-		"thread: $THREAD_ID" "unit: $UNIT" "invocation: $INVOCATION" "state: $STATE")
-	trailer=${trailer%$'\n'}
-	[[ "$OUTPUT" == *$'\n'"$trailer" ]] || return 1
+	local trailer protocol reason matched=false
+	for reason in Seatbelt bubblewrap; do
+		trailer=$(printf '%s\n' '--- LOOM-CODEX-EVIDENCE ---' "exit: $RESULT_STATUS" \
+			"mode: direct (codex exec --sandbox danger-full-access; nested $reason refused)" \
+			"thread: $THREAD_ID" "unit: $UNIT" "invocation: $INVOCATION" "state: $STATE")
+		[[ "$OUTPUT" == *$'\n'"$trailer" ]] && matched=true
+	done
+	[[ "$matched" == true ]] || return 1
 	protocol=$(printf '%s' "$OUTPUT" | jq -Rser --arg thread "$THREAD_ID" --arg state "$STATE" \
 		--argjson status "$RESULT_STATUS" '
 		split("\n") as $lines |

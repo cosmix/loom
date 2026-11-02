@@ -10,7 +10,7 @@ use crate::models::session::Session;
 use crate::models::stage::Stage;
 
 use super::cache::generate_knowledge_stable_prefix;
-use super::format::{extract_tasks_from_description, format_stage_brief};
+use super::format::{extract_tasks_from_stage, format_stage_brief};
 use super::generate::build_embedded_context_for_stage;
 use super::retrieval::STAGE_QUERY_INPUTS;
 use super::types::DependencyStatus;
@@ -47,10 +47,7 @@ pub fn generate_knowledge_signal(
         &embedded_context,
     );
 
-    // Record before writing, as both spawn paths in `generate.rs` do: a session
-    // that was briefed must never read back as having received nothing.
-    super::helpers::persist_delivery(work_dir, stage, &session.id, &embedded_context);
-    super::helpers::write_signal_file(&session.id, &content, work_dir)
+    super::helpers::publish_signal(&session.id, &content, work_dir, stage, &embedded_context)
 }
 
 /// Format the content for a knowledge stage signal
@@ -132,13 +129,8 @@ fn format_knowledge_signal_content(
     content
 }
 
-/// Format the "## Acceptance Criteria" and "## Files to Explore" sections
-/// shared by knowledge-stage signals.
-///
-/// Extracted out of `format_knowledge_signal_content` to keep that function
-/// under the file's line budget: the two sections are always emitted
-/// together, right after Dependencies Status, so they read as one cohesive
-/// unit rather than two unrelated pieces split apart for their own sake.
+/// Format the "## Acceptance Criteria" and "## Files to Explore" sections of a
+/// knowledge-stage signal.
 fn format_knowledge_criteria_and_files(stage: &Stage) -> String {
     let mut content = String::new();
 
@@ -150,7 +142,7 @@ fn format_knowledge_criteria_and_files(stage: &Stage) -> String {
         content.push_str("- [ ] Coding conventions documented\n");
     } else {
         for criterion in &stage.acceptance {
-            content.push_str(&format!("- [ ] {criterion}\n"));
+            content.push_str(&super::format::format_criterion(criterion));
         }
     }
     content.push('\n');
@@ -165,23 +157,6 @@ fn format_knowledge_criteria_and_files(stage: &Stage) -> String {
     }
 
     content
-}
-
-/// Extract tasks from stage description
-fn extract_tasks_from_stage(stage: &Stage) -> Vec<String> {
-    let mut tasks = Vec::new();
-
-    if let Some(desc) = &stage.description {
-        tasks.extend(extract_tasks_from_description(desc));
-    }
-
-    if tasks.is_empty() && !stage.acceptance.is_empty() {
-        for criterion in &stage.acceptance {
-            tasks.push(criterion.command().to_string());
-        }
-    }
-
-    tasks
 }
 
 #[cfg(test)]

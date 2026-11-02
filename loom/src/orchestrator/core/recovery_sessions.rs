@@ -5,7 +5,7 @@ use super::orphan_adoption::{
 use super::recovery_guards;
 use super::{clear_status_line, Orchestrator};
 use crate::models::{
-    session::Session,
+    session::{Session, SessionType},
     stage::{Stage, StageStatus},
 };
 use crate::parser::frontmatter::parse_from_markdown;
@@ -35,6 +35,12 @@ impl Orchestrator {
             else {
                 continue;
             };
+            if session.session_type == SessionType::Merge
+                && !session_is_current_for_stage(stage, &session)
+            {
+                self.recover_merge_record(stage, &session);
+                continue;
+            }
             if !self.current_session_is_orphan(stage, &session) {
                 continue;
             }
@@ -61,7 +67,7 @@ impl Orchestrator {
                 register_live_current_session(&mut self.active_sessions, stage, session);
                 false
             }
-            Ok(false) => !recovery_guards::skip_too_young_orphan(session),
+            Ok(false) => !recovery_guards::skip_too_young_orphan(&self.config.work_dir, session),
             Err(error) => {
                 tracing::warn!(session_id = %session.id, %error,
                     "Unknown session liveness during recovery; leaving ownership intact");

@@ -64,17 +64,10 @@ fn test_pid_one_behavior() {
 }
 
 #[test]
-fn test_pid_zero_kernel_process() {
-    // PID 0 is the kernel scheduler process. We don't have permission to
-    // signal it, so kill returns EPERM. The function should return true
-    // because the process exists (EPERM means "exists but no permission").
+fn test_pid_zero_checks_current_process_group() {
+    // Signal target zero selects the caller's process group, which includes us.
     let result = is_process_alive(0);
-    // On macOS and Linux, PID 0 exists (kernel) but we get EPERM.
-    // With our EPERM handling, this should return true.
-    assert!(
-        result,
-        "PID 0 (kernel) should be detected as alive via EPERM"
-    );
+    assert!(result, "the current process group should be alive");
 }
 
 #[test]
@@ -140,6 +133,69 @@ fn run_bounded_collects_large_stderr_too() {
 
     assert!(output.status.success());
     assert_eq!(output.stderr.len(), 300_000);
+}
+
+#[test]
+fn reader_caps_capture_at_exact_limit_and_drains_overflow() {
+    struct CountingReader {
+        input: std::io::Cursor<Vec<u8>>,
+        consumed: Arc<std::sync::atomic::AtomicUsize>,
+    }
+    impl Read for CountingReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let n = self.input.read(buf)?;
+            self.consumed.fetch_add(n, Ordering::Relaxed);
+            Ok(n)
+        }
+    }
+    for extra in [0, 16_384] {
+        let overflow = Arc::new(AtomicU8::new(0));
+        let consumed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let input = CountingReader {
+            input: std::io::Cursor::new(vec![b'x'; OUTPUT_LIMIT + extra]),
+            consumed: Arc::clone(&consumed),
+        };
+        let receiver = drain(Some(input), Arc::clone(&overflow), 1)
+            .unwrap()
+            .unwrap();
+        let captured = receiver
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap();
+        assert_eq!(captured.len(), OUTPUT_LIMIT);
+        assert!(captured.iter().all(|byte| *byte == b'x'));
+        assert_eq!(consumed.load(Ordering::Relaxed), OUTPUT_LIMIT + extra);
+        assert_eq!(overflow.load(Ordering::Relaxed), u8::from(extra > 0));
+    }
+}
+
+#[test]
+fn run_bounded_reports_output_overflow_on_each_stream() {
+    for (redirect, expected) in [("", "stdout"), (" >&2", "stderr")] {
+        let script = format!("head -c {} /dev/zero{redirect}", OUTPUT_LIMIT + 1);
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", &script]);
+        let error = run_bounded(&mut cmd, Duration::from_secs(10)).unwrap_err();
+        let overflow = error.downcast_ref::<ProcessOutputLimitError>().unwrap();
+        assert_eq!(overflow.stream, expected);
+        assert_eq!(overflow.limit, OUTPUT_LIMIT);
+    }
+}
+
+#[test]
+fn output_overflow_takes_precedence_over_timeout_and_retires_descendants() {
+    let temp = tempfile::tempdir().unwrap();
+    let guard = super::lifecycle_tests::InheritorGuard::new(temp.path());
+    let script = format!(
+        "{} head -c {} /dev/zero; sleep 30",
+        guard.shell(),
+        OUTPUT_LIMIT + 1
+    );
+    let mut cmd = Command::new("sh");
+    cmd.args(["-c", &script]);
+    let error = run_bounded(&mut cmd, Duration::from_secs(2)).unwrap_err();
+    assert!(error.downcast_ref::<ProcessOutputLimitError>().is_some());
+    guard.assert_retired();
 }
 
 #[test]

@@ -1,46 +1,8 @@
 //! Why a query occurrence is allowed to claim an exact-match rung.
 //!
-//! The exact rungs (`ExactSymbol`, and the bare-stem arm of `ExactPath` —
-//! [`crate::context::schema::SelectionReason`]) search the RAW prompt for a candidate's own
-//! name with identifier boundaries — see `contains_whole_term`'s doc in the
-//! parent module for why boundaries and not substrings. Boundaries fixed the
-//! *candidate* side: a symbol named `n` stopped matching "generation". Nothing
-//! fixed the *query* side, and that is the larger hole: an ordinary English
-//! word in a prompt still earns an 80-point boost and a `high` confidence label
-//! whenever some symbol happens to be spelled the same way. Measured, all real:
-//! "why doesn't loom repair --fix do it, the point is" pulled in `lerpPoint`,
-//! `repairGini` and `type Point`; "write the recommendation in
-//! /home/dkaponis/src/loom/doc" pulled in five `write` helpers and three
-//! `home()` functions; "improve … performance … quality" pulled in
-//! `BALANCED_GLOBE_QUALITY`.
-//!
-//! [`TermEvidence`] is the fix: before a match may claim an exact rung, the
-//! occurrence has to look like a code reference. Three independent signals
-//! admit it, and any one is enough because each is, on its own, evidence the
-//! writer meant a symbol rather than a word:
-//!
-//! - **backticked** — the writer explicitly marked it as code;
-//! - **shaped** — the name itself cannot be an English word (`snake_case`,
-//!   `camelCase`, `Foo::Bar`);
-//! - **rare** — the name occurs in so few documents that it cannot be the
-//!   ordinary vocabulary of this corpus, AND it is not spelled like an ordinary
-//!   word ([`is_plain_word`]).
-//!
-//! That second half of the rarity test is the one this file learned last, and
-//! the hole it closes was measured: `read the remaining knowledge files that
-//! are relevant` put `daemon/server/admission.rs#function:remaining` FIRST, at
-//! 94.7 points, because `remaining` occurs in few enough source nodes to look
-//! corpus-rare. Rarity cannot tell an uncommon symbol from an uncommon English
-//! word — only spelling can, and `remaining` is spelled like a word. Rarity is
-//! therefore left to do the job it was added for: admitting a name the
-//! tokenizer never emits as a term at all, because it carries punctuation or
-//! digits (`Foo::Bar`, `kebab-case`, `sha256`). Such a name is absent from the
-//! document-frequency map, counts as frequency `0`, and is not something a
-//! prompt says by accident.
-//!
-//! Nothing here excludes a candidate from the results. A word that fails every
-//! test still competes on its BM25 score; it just cannot buy an 80-point boost
-//! and a `high` label with a coincidence.
+//! Exact symbol and bare path-stem rungs require a whole-term match with
+//! backticked, identifier-shaped, or rare non-plain-word evidence. A candidate
+//! without that evidence may still compete on its lexical score.
 
 use crate::context::lexical::whole_term_ranges;
 use std::collections::BTreeMap;

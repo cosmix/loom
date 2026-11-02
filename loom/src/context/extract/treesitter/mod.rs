@@ -61,6 +61,7 @@ mod binding;
 mod build;
 mod collect;
 mod ids;
+mod receiver_context;
 
 use binding::BindingRules;
 use build::build;

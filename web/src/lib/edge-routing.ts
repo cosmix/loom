@@ -31,7 +31,7 @@ function rowBounds(nodes: LaidOutNode[]): Map<number, RowBounds> {
 // changing x only in the empty rank gaps keeps curves clear of every card.
 export function routeEdges(edges: LaidOutEdge[], nodes: LaidOutNode[]): LaidOutEdge[] {
   const rows = rowBounds(nodes);
-  const byId = new Map(nodes.map((node) => [node.stage.id, node]));
+  const byId = new Map(nodes.map((node) => [node.id, node]));
   return edges.map((edge) => {
     const source = byId.get(edge.source)!;
     const target = byId.get(edge.target)!;

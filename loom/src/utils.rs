@@ -4,6 +4,8 @@ use std::sync::{Once, OnceLock};
 
 use colored::Colorize;
 
+mod terminal_recovery;
+
 /// Print the loom logo with a subtitle for human-facing commands.
 pub fn print_logo_header(subtitle: &str) {
     println!();
@@ -71,13 +73,15 @@ pub fn format_elapsed_verbose(seconds: i64) -> String {
 
 /// Write a TUI marker file so we can detect unclean exits.
 ///
-/// The marker contains the current PID. On the next loom command,
-/// if the PID is dead, we know the TUI exited without cleanup
-/// (e.g., SIGKILL) and can restore the terminal.
+/// The marker records the PID and the exact terminal used by this TUI. A
+/// later process may restore that terminal only if it is still attached to it.
 pub fn write_tui_marker(work_path: &Path) {
     let marker = work_path.join("tui.pid");
-    let _ = std::fs::write(&marker, std::process::id().to_string());
-    TUI_MARKER_PATH.set(marker).ok();
+    if let Some(record) = terminal_recovery::marker_record() {
+        if std::fs::write(&marker, record).is_ok() {
+            TUI_MARKER_PATH.set(marker).ok();
+        }
+    }
 }
 
 /// Remove the TUI marker file (called during normal cleanup).
@@ -91,8 +95,8 @@ pub fn remove_tui_marker() {
 ///
 /// If a previous `loom status --live` was killed (SIGKILL, OOM, etc.)
 /// without cleanup, the terminal may still be in raw mode with mouse
-/// capture enabled. This function detects that situation and resets
-/// the terminal.
+/// capture enabled. Recovery only touches the terminal recorded by the
+/// previous process, and leaves the marker for retry if restoration fails.
 ///
 /// Call this early in main() before dispatching any command.
 pub fn recover_terminal_if_needed() {
@@ -107,27 +111,17 @@ pub fn recover_terminal_if_needed() {
         return;
     }
 
-    let contents = match std::fs::read_to_string(&marker) {
-        Ok(c) => c,
-        Err(_) => {
-            // Can't read marker — remove it and reset just in case
-            let _ = std::fs::remove_file(marker);
-            cleanup_terminal_crossterm();
-            return;
-        }
+    let Ok(contents) = std::fs::read_to_string(&marker) else {
+        return;
     };
-
-    if let Ok(pid) = contents.trim().parse::<u32>() {
-        if !crate::process::is_process_alive(pid) {
-            // Previous TUI process is dead — terminal likely corrupted
-            cleanup_terminal_crossterm();
-            let _ = std::fs::remove_file(marker);
-        }
-        // If still alive, another TUI instance is running — don't interfere
-    } else {
-        // Malformed marker — clean up
-        let _ = std::fs::remove_file(marker);
+    let Some(pid) = terminal_recovery::marker_pid(&contents) else {
+        return;
+    };
+    if !crate::process::is_process_alive(pid)
+        && terminal_recovery::restore_stale_terminal(&contents).is_ok()
+    {
         cleanup_terminal_crossterm();
+        let _ = std::fs::remove_file(marker);
     }
 }
 
@@ -177,13 +171,14 @@ pub fn install_terminal_panic_hook() {
 /// Restore terminal from crossterm TUI state.
 ///
 /// This handles the full crossterm cleanup:
-/// - Disables raw mode
+/// - Restores raw mode only when this process enabled it
 /// - Disables mouse capture
 /// - Leaves alternate screen
 /// - Shows cursor
 ///
 /// Use this for TUI applications that use crossterm.
-/// Safe to call even if terminal wasn't in TUI mode.
+/// Safe to call even if terminal wasn't in TUI mode. Fresh-process recovery
+/// first repairs termios through `terminal_recovery` on the marked PTY.
 pub fn cleanup_terminal_crossterm() {
     use crossterm::{
         cursor::Show,

@@ -11,7 +11,7 @@ use crate::context::store::canonical_json;
 
 /// Version of the cross-file resolution rules. Any change to rules 1-7 bumps
 /// it, so a view resolved under the old rules is never served or relinked.
-pub const RESOLVER_VERSION: u32 = 3;
+pub const RESOLVER_VERSION: u32 = 4;
 
 /// The inputs a view is a pure function of: the revision and overlay it
 /// describes, and the graph schema, extractors and resolver that produced it.

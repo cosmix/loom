@@ -12,11 +12,13 @@ use loom::plan_session::sandbox::assert_planning_settings;
 use serde_json::json;
 use support::*;
 
-const CAPSULE_TOOLS: [&str; 5] = [
+const CAPSULE_TOOLS: [&str; 7] = [
     "LSP",
     "RemoteTrigger",
     "CronCreate",
     "PushNotification",
+    "Monitor",
+    "PowerShell",
     "Workflow",
 ];
 

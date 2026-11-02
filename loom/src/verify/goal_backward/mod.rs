@@ -8,6 +8,7 @@
 pub mod artifacts;
 pub mod dead_code;
 mod definition_sites;
+pub(crate) mod plan;
 pub mod reachable;
 pub mod result;
 pub mod truths;

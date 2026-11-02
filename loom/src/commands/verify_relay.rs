@@ -123,8 +123,8 @@ fn request_or_wait(
         Ok(line.id)
     };
     let outcome = wait::wait_or_request(&site, &mut relay, out)?;
-    if outcome == WaitOutcome::Requested {
-        sink.print_line(out)?;
+    if let WaitOutcome::Requested { request_id } = &outcome {
+        sink.publish_request(&site, request_id, out)?;
     }
     out.flush().context("failed to flush loom check output")?;
     Ok(wait::exit_code(&outcome))

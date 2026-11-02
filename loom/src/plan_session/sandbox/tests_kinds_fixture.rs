@@ -126,7 +126,8 @@ pub(super) fn expected_permissions(root: &Path, rt: &RuntimePaths) -> Value {
         ],
         "ask": std::iter::once("WebFetch".to_owned()).chain(asks).collect::<Vec<_>>(),
         "deny": [
-            "LSP", "RemoteTrigger", "CronCreate", "PushNotification", "Workflow",
+            "LSP", "RemoteTrigger", "CronCreate", "PushNotification", "Monitor", "PowerShell",
+            "Workflow",
             "SendMessage", "ListAgents", "AskUserQuestion",
             format!("Edit(/{root}/doc/plans/IN_PROGRESS-PLAN-b.md)"),
             format!("Edit(/{root}/doc/plans/REVIEW-*.md)"),

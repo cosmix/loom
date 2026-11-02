@@ -9,7 +9,6 @@ use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
-
 const STAGE: &str = "stage-a";
 const LOOM_SESSION: &str = "loom-session-a";
 const PARENT: &str = "parent-uuid-a";
@@ -57,6 +56,8 @@ fn shell_literal_jsonl_line_replays_as_success() -> Result<()> {
     Ok(())
 }
 
+#[path = "tests_qualified.rs"]
+mod qualified;
 #[test]
 fn transcript_growth_invalidates_stop_terminality() -> Result<()> {
     let fixture = Fixture::new("growth")?;

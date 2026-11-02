@@ -91,6 +91,36 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_absence_probes_share_the_lock_and_exclude_daemon_start() {
+        let work_dir = tempfile::tempdir().unwrap();
+        let daemon = acquire_lock(work_dir.path()).unwrap();
+        drop(daemon);
+        assert_eq!(poll_until_free(work_dir.path()), "free");
+
+        let first = match inspect_lock(work_dir.path()) {
+            LockState::Free(Some(file)) => file,
+            _ => panic!("first absence probe could not acquire the lock"),
+        };
+        let second = match inspect_lock(work_dir.path()) {
+            LockState::Free(Some(file)) => file,
+            _ => panic!("second absence probe must share the first lock"),
+        };
+        assert!(DaemonServer::proven_stopped(work_dir.path()));
+        assert!(!DaemonServer::is_running(work_dir.path()));
+        assert!(acquire_lock(work_dir.path()).is_err());
+        drop(first);
+        assert!(acquire_lock(work_dir.path()).is_err());
+        drop(second);
+        assert_eq!(poll_until_free(work_dir.path()), "free");
+
+        let daemon = acquire_lock(work_dir.path()).unwrap();
+        assert!(matches!(inspect_lock(work_dir.path()), LockState::Held(_)));
+        assert!(matches!(inspect_lock(work_dir.path()), LockState::Held(_)));
+        drop(daemon);
+        assert_eq!(poll_until_free(work_dir.path()), "free");
+    }
+
+    #[test]
     fn symlink_lock_is_indeterminate() {
         let work_dir = tempfile::tempdir().unwrap();
         let outside = tempfile::NamedTempFile::new().unwrap();

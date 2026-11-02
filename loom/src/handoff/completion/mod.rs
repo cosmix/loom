@@ -24,6 +24,10 @@ mod checkpoint_tests;
 #[cfg(test)]
 mod checkpoint_trust_tests;
 #[cfg(test)]
+mod conflict_tests;
+#[cfg(test)]
 mod schema_tests;
 #[cfg(test)]
 mod shared_tests;
+#[cfg(test)]
+mod unsigned_artifact_tests;

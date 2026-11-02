@@ -239,12 +239,25 @@ impl CompletionCheckpoint {
         let replace = match (&self.latest, &other.latest) {
             (_, None) => false,
             (None, Some(_)) => true,
-            (Some(left), Some(right)) => right.observed_at_utc()? >= left.observed_at_utc()?,
+            (Some(left), Some(right)) => {
+                self.has_no_agreeing_observation(right)
+                    || right.observed_at_utc()? >= left.observed_at_utc()?
+            }
         };
         if replace {
             self.latest.clone_from(&other.latest);
         }
         Ok(())
+    }
+
+    /// Evidence `merge_observation` could not record: it disagrees with the
+    /// observation kept for its nonce, or capacity left it none. The conflict
+    /// and capacity flags are unsigned, so this evidence is the only signed
+    /// record of either, and it takes `latest` whatever its time for `trusted`
+    /// to recompute them from.
+    fn has_no_agreeing_observation(&self, evidence: &CompletionAttemptEvidence) -> bool {
+        self.observation_index(&evidence.evidence_nonce)
+            .is_none_or(|index| evidence_disagrees(&self.observations[index], evidence))
     }
 
     fn merge_blocker(&mut self, other: &CompletionCheckpoint) {
@@ -290,6 +303,17 @@ fn new_observation(
         last_observed_at: evidence.observed_at.clone(),
         attestation: None,
     }
+}
+
+fn evidence_disagrees(
+    observation: &NonceObservation,
+    evidence: &CompletionAttemptEvidence,
+) -> bool {
+    let fingerprint = CompletionBlocker::from_attempt(evidence)
+        .ok()
+        .map(|blocker| blocker.fingerprint);
+    observation.identity_digest != evidence.identity_digest()
+        || fingerprints_conflict(observation.fingerprint.as_ref(), fingerprint.as_ref())
 }
 
 fn fingerprints_conflict(left: Option<&String>, right: Option<&String>) -> bool {

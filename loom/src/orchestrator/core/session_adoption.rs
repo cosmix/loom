@@ -10,9 +10,17 @@ use chrono::Utc;
 use crate::models::failure::FailureType;
 use crate::models::stage::StageStatus;
 use crate::orchestrator::coherence::live_worker_sessions;
+use crate::orchestrator::scheduling_report::BlockReason;
 
 use super::persistence::Persistence;
 use super::Orchestrator;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum AdoptionResult {
+    Adopted,
+    Absent,
+    Unknown,
+}
 
 impl Orchestrator {
     /// Bring the graph node of a stage the executor was handed as `Queued`
@@ -60,14 +68,27 @@ impl Orchestrator {
     /// adjudication session carries the stage's own `stage_id` and is not the
     /// agent doing the work, so it must never be adopted into the worker slot.
     ///
-    /// Returns `Ok(true)` if a live session was found (and the spawn attempt
-    /// should stop here, whether or not the adoption itself fully
-    /// succeeded), `Ok(false)` if there is no live session to adopt.
-    pub(super) fn adopt_live_session_if_present(&mut self, stage_id: &str) -> Result<bool> {
+    /// Unknown inventory defers this spawn attempt without stopping the daemon.
+    pub(super) fn adopt_live_session_if_present(
+        &mut self,
+        stage_id: &str,
+    ) -> Result<AdoptionResult> {
         let stage = self.load_stage(stage_id)?;
-        let live_sessions = live_worker_sessions(&self.config.work_dir, &stage)?;
+        let live_sessions = match live_worker_sessions(&self.config.work_dir, &stage) {
+            Ok(sessions) => sessions,
+            Err(error) => {
+                tracing::warn!(stage_id = %stage_id, %error,
+                    "Session ownership is uncertain; deferring stage spawn");
+                let detail = format!("session ownership is uncertain: {error:#}");
+                self.spawn_blocks.insert(
+                    stage_id.to_string(),
+                    BlockReason::OwnershipUncertain { detail },
+                );
+                return Ok(AdoptionResult::Unknown);
+            }
+        };
         let Some(newest) = live_sessions.into_iter().max_by_key(|s| s.created_at) else {
-            return Ok(false);
+            return Ok(AdoptionResult::Absent);
         };
 
         // Check the incumbent BEFORE mutating anything: a different session
@@ -77,7 +98,7 @@ impl Orchestrator {
         let already_tracked = match self.active_sessions.get(stage_id) {
             Some(existing) if existing.id != newest.id => {
                 self.escalate_adoption_conflict(stage_id, &newest.id, &existing.id.clone());
-                return Ok(true);
+                return Ok(AdoptionResult::Adopted);
             }
             Some(_) => true,
             None => false,
@@ -85,7 +106,7 @@ impl Orchestrator {
 
         let session_id = newest.id.clone();
         if !self.link_adopted_session_to_stage(stage_id, &session_id) {
-            return Ok(true);
+            return Ok(AdoptionResult::Adopted);
         }
         if !already_tracked && !self.insert_active_session(stage_id, newest) {
             tracing::error!(
@@ -94,7 +115,7 @@ impl Orchestrator {
                 "Adopted session could not be tracked; an active session already exists for this stage"
             );
         }
-        Ok(true)
+        Ok(AdoptionResult::Adopted)
     }
 
     /// Escalate instead of adopting: a different session is already tracked

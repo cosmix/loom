@@ -63,3 +63,9 @@ repository path that fits. `loom run` refuses a background run whose resolved pa
 refusal never leaves the plan in progress; `--foreground` binds no socket and is not refused;
 `loom init` warns from `create_or_adopt_work_dir`. Clients treat a path past the limit as
 `DaemonReach::Unreachable`: see [Stage-to-Daemon Channels](../patterns/stage-daemon-channels.md).
+
+## Daemon socket exchange and subscriber framing
+
+One-shot RPC and stop requests use `daemon/deadline_transport.rs::DeadlineStream`. It starts one monotonic deadline before nonblocking Unix connect and carries it through poll-based writes and framed reads. A timeout after connection is an uncertain exchange and is never a reason to retry a mutating request or route around a live daemon.
+
+Live status and web subscribers use `daemon/wire.rs::ResponseFrameReader`, which retains partial prefix and body bytes across idle socket timeouts and limits both frame size and incomplete-frame lifetime. The daemon keeps one shared writer lock per connection across request replies, status and log broadcasts. Subscription acknowledgement is written before adding the connection to that subscriber list; broadcasts encode once, snapshot subscribers, write outside the list lock, and evict only failed peers.

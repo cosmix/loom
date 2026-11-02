@@ -25,7 +25,14 @@ import { ThreadEdge, type ThreadEdgeType } from "@/components/graph/thread-edge"
 import { useOpenStage, useOpenTerminal } from "@/components/stage-modal";
 import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
-import { layoutStages, lineage, threadOf, type GraphLayout } from "@/lib/graph";
+import {
+  layoutGeometry,
+  lineage,
+  stageGeometry,
+  threadOf,
+  type GraphLayout,
+  type StageGeometry,
+} from "@/lib/graph";
 import { stageFlow } from "@/lib/tokens";
 import { snapshotAtom } from "@/state/atoms";
 
@@ -74,8 +81,8 @@ function Canvas({ stages, flow }: { stages: StageSummary[]; flow: TokenFlow | un
   const [hovered, setHovered] = useState<Focus>(null);
   const focus = hovered ?? pinned;
 
-  // The layout keys on which stages have a flow, not on the flow itself: every
-  // status frame carries a new flow object, and dagre must not re-run each second.
+  // Geometry depends on ordered IDs, dependencies and rendered heights, not
+  // telemetry values in each new status frame.
   const tokenKey = stages
     .filter((stage) => stageFlow(flow, stage.id) !== undefined)
     .map((stage) => stage.id)
@@ -84,7 +91,11 @@ function Canvas({ stages, flow }: { stages: StageSummary[]; flow: TokenFlow | un
     () => new Set(tokenKey === "" ? [] : tokenKey.split("\n")),
     [tokenKey],
   );
-  const layout = useMemo(() => layoutStages(stages, withTokens), [stages, withTokens]);
+  const geometryKey = JSON.stringify(stageGeometry(stages, withTokens));
+  const layout = useMemo(
+    () => layoutGeometry(JSON.parse(geometryKey) as StageGeometry[]),
+    [geometryKey],
+  );
   const nodes = useMemo(
     () => buildNodes(layout, stages, focus, flow),
     [layout, stages, focus, flow],
@@ -121,9 +132,9 @@ function Canvas({ stages, flow }: { stages: StageSummary[]; flow: TokenFlow | un
     );
   }, []);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Enter") {
-      const id = (event.target as HTMLElement).closest<HTMLElement>(".react-flow__node-stage")
-        ?.dataset.id;
+    if (event.key === "Enter" && !event.defaultPrevented) {
+      const target = event.target as HTMLElement;
+      const id = target.matches(".react-flow__node-stage") ? target.dataset.id : undefined;
       if (id) {
         event.preventDefault();
         open(id);
@@ -206,7 +217,9 @@ export function buildNodes(
     traced === null ? "plain" : traced.has(id) ? "traced" : "dim";
   // Reveal order sweeps top to bottom, left to right.
   const sweep = [...layout.nodes].sort((a, b) => a.y - b.y || a.x - b.x);
-  const index = new Map(sweep.map((node, position) => [node.stage.id, position]));
+  const index = new Map(sweep.map((node, position) => [node.id, position]));
+  const byId = new Map<string, StageSummary>();
+  for (const stage of stages) if (!byId.has(stage.id)) byId.set(stage.id, stage);
 
   // Every node declares the size it renders at: React Flow drops a node's
   // handle bounds when a node object arrives without `measured`, and it draws
@@ -226,18 +239,18 @@ export function buildNodes(
     connectable: false,
     zIndex: -1,
   }));
-  const cards: StageNodeType[] = layout.nodes.map(({ stage, x, y, width, height, hasTokens }) => ({
-    id: stage.id,
+  const cards: StageNodeType[] = layout.nodes.map(({ id, x, y, width, height, hasTokens }) => ({
+    id,
     type: "stage",
     position: { x, y },
     width,
     height,
     measured: { width, height },
     data: {
-      stage,
-      index: index.get(stage.id) ?? 0,
-      emphasis: emphasis(stage.id),
-      tokens: hasTokens ? (stageFlow(flow, stage.id) ?? null) : null,
+      stage: byId.get(id)!,
+      index: index.get(id) ?? 0,
+      emphasis: emphasis(id),
+      tokens: hasTokens ? (stageFlow(flow, id) ?? null) : null,
     },
   }));
   return [...captions, ...cards];
@@ -249,7 +262,8 @@ export function buildEdges(
   focus: Focus,
 ): ThreadEdgeType[] {
   const traced = tracedIds(stages, focus);
-  const byId = new Map(layout.nodes.map((node) => [node.stage.id, node.stage]));
+  const byId = new Map<string, StageSummary>();
+  for (const stage of stages) if (!byId.has(stage.id)) byId.set(stage.id, stage);
   // A stage's thread includes only edges with both ends on it; a state focus
   // keeps every thread touching one of its stages.
   const emphasis = (source: string, target: string): Emphasis => {

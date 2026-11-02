@@ -86,8 +86,7 @@ fn build_evidence(input: &KindPromptInput<'_>) -> String {
         _ => s.push_str("(findings evidence unavailable: dispute is another kind)\n\n"),
     }
     s.push_str("## Agent's reason\n\n");
-    s.push_str(&input.request.reason);
-    s.push_str("\n\n");
+    s.push_str(&super::fenced("text", &input.request.reason));
     s
 }
 
@@ -163,18 +162,18 @@ fn push_source_excerpt(s: &mut String, source: &str, line: u32) {
     let start = usize::try_from(line.saturating_sub(20)).unwrap_or(usize::MAX);
     let end = usize::try_from(line.saturating_add(20)).unwrap_or(usize::MAX);
     let mut found = false;
-    s.push_str("```text\n");
+    let mut excerpt = String::new();
     for (index, content) in source.lines().enumerate() {
         let number = index.saturating_add(1);
         if number >= start && number <= end {
-            s.push_str(&format!("{number}: {content}\n"));
+            excerpt.push_str(&format!("{number}: {content}\n"));
             found = true;
         }
     }
     if !found {
-        s.push_str("(cited line is beyond the end of the file)\n");
+        excerpt.push_str("(cited line is beyond the end of the file)\n");
     }
-    s.push_str("```\n\n");
+    s.push_str(&super::fenced("text", &excerpt));
 }
 
 /// The cited file's diff from the stage base, read with git pinned to the
@@ -193,12 +192,7 @@ fn push_diff(s: &mut String, root: &Path, work_dir: &Path, file: &str) {
             s.push_str("(no diff against stage base for cited file)\n\n");
         }
         Ok(diff) => {
-            s.push_str("```diff\n");
-            s.push_str(&diff);
-            if !diff.ends_with('\n') {
-                s.push('\n');
-            }
-            s.push_str("```\n\n");
+            s.push_str(&super::fenced("diff", &diff));
         }
         Err(error) => s.push_str(&format!(
             "(diff unavailable: {})\n\n",

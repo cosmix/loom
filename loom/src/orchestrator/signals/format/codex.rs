@@ -1,15 +1,4 @@
-//! The codex-implementer doctrine block.
-//!
-//! Split out of `sections.rs` as a pure move: `sections.rs` was growing past
-//! its maintainability-ledger line count, and this function's generated-prose
-//! doctrine text is the natural thing to lift out on its own. The doctrine
-//! text is NOT pinned byte-for-byte: `tests_doctrine.rs` and `tests_cache.rs`
-//! pin specific needles (the sentinel, the model/effort constants, the
-//! evidence trailer, the blast-radius rules, "MIXED FAN-OUT", "PER SUBAGENT")
-//! rather than the surrounding prose, so wording may be tightened as long as
-//! those needles survive. Most of what this block used to spell out is now
-//! carried by `loom-hooks/codex-forward.sh` itself, prepended to every forwarded
-//! prompt - this doctrine only needs to tell the orchestrator that kit exists.
+//! Codex implementer guidance for stage signals.
 
 use crate::codex::{
     CODEX_FORWARD_SENTINEL, CODEX_IMPLEMENTER_EFFORT, CODEX_IMPLEMENTER_MODEL_LUNA,

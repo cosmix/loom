@@ -66,6 +66,34 @@ fn completion_checkpoint_round_trips_without_leaking_command_into_summary() {
     assert!(!section.contains(&exact_command));
 }
 
+#[test]
+fn formatter_round_trips_embedded_delimiters_and_checkpoint_attestations() {
+    use crate::handoff::git_handoff::{CommitInfo, GitHistory};
+    let (mut checkpoint, _) = completion_checkpoint_fixture("cargo test before---after");
+    checkpoint.latest.as_mut().unwrap().attestation = Some("a".repeat(64));
+    checkpoint.observations[0].attestation = Some("b".repeat(64));
+    let content = HandoffContent::new("session-123".into(), "stage-456".into())
+        .with_goals("stage description before---after".into())
+        .with_origin(HandoffOrigin::CompletionEvidence)
+        .with_completion_checkpoint(Some(checkpoint))
+        .with_completed_work(vec!["compare before---after".into()])
+        .with_decisions(vec![(
+            "choose before---after".into(),
+            "reason---why".into(),
+        )])
+        .with_git_history(Some(GitHistory {
+            commits: vec![CommitInfo {
+                hash: "abc1234".into(),
+                message: "commit before---after".into(),
+            }],
+            ..GitHistory::default()
+        }));
+    let markdown = format_handoff_markdown(&content).unwrap();
+    assert!(markdown.contains("stage description before---after"));
+    let parsed = ParsedHandoff::parse(&markdown);
+    assert_eq!(parsed.as_v2(), Some(&content.to_v2()));
+}
+
 fn completion_checkpoint_fixture(exact_command: &str) -> (CompletionCheckpoint, CompletionBlocker) {
     let evidence = completion_evidence_fixture(exact_command);
     let blocker = CompletionBlocker::from_attempt(&evidence).unwrap();
@@ -141,8 +169,8 @@ fn test_format_handoff_markdown() {
 fn test_format_handoff_markdown_escapes_pipes() {
     let content = HandoffContent::new("session-1".to_string(), "stage-1".to_string())
         .with_decisions(vec![(
-            "Choice with | pipe".to_string(),
-            "Reason with | pipe".to_string(),
+            "Choice with | pipe\nand newline".to_string(),
+            "Reason with | pipe\r\nand newline".to_string(),
         )]);
 
     let markdown = format_handoff_markdown(&content).unwrap();
@@ -150,6 +178,8 @@ fn test_format_handoff_markdown_escapes_pipes() {
     // Should escape pipes in table cells
     assert!(markdown.contains(r"Choice with \| pipe"));
     assert!(markdown.contains(r"Reason with \| pipe"));
+    assert!(markdown.contains(r"Choice with \| pipe<br>and newline"));
+    assert!(markdown.contains(r"Reason with \| pipe<br>and newline"));
 }
 
 #[test]

@@ -93,6 +93,8 @@ CURRENT_WORKTREE=$(loom_current_worktree) || {
 # Derive the stage from the worktree path itself — authoritative for which
 # worktree this session owns, and immune to a stale LOOM_STAGE_ID.
 CURRENT_STAGE=$(basename "$CURRENT_WORKTREE")
+source "$(dirname "${BASH_SOURCE[0]}")/_worktree_policy.sh" || exit 2
+loom_load_worktree_policy || exit 2
 
 # === BLOCK MESSAGES ===
 # Factored out so both the token-scan path and the legacy regex fallback path
@@ -186,12 +188,7 @@ EOF
 # word-shaped, so a prose sentence that happens to contain that substring
 # never matches either. Returns 0 when this pattern is present.
 check_git_override_tokens() {
-    loom_tokens_cmd_has_arg 'git' '-C' ||
-        loom_tokens_cmd_has_arg 'git' '--work-tree(=.*)?' ||
-        loom_tokens_cmd_has_arg 'git' '--git-dir(=.*)?' ||
-        loom_tokens_word_matches '^GIT_DIR=' ||
-        loom_tokens_word_matches '^GIT_WORK_TREE=' ||
-        loom_tokens_invoke 'eval'
+    loom_policy_git_tokens
 }
 
 # Pattern 2 (token path): ../../ path traversal. THE HEADLINE FIX -
@@ -212,8 +209,7 @@ check_git_override_tokens() {
 #
 # Returns 0 when this pattern is present.
 check_path_traversal_tokens() {
-    loom_tokens_word_matches '\.\./\.\.' ||
-        loom_tokens_word_matches '\.\.[\\/]\.\.' ||
+    loom_tokens_word_matches "$LOOM_POLICY_PARENT_PAIR" ||
         check_path_traversal_prefix_tokens
 }
 
@@ -227,11 +223,11 @@ check_path_traversal_tokens() {
 check_path_traversal_prefix_tokens() {
     local n=${#LOOM_TOKENS[@]}
     ((n > 0)) || return 1
-    local i tok
+    local i tok prefix="^$LOOM_POLICY_PARENT_PAIR"
     for ((i = 0; i < n; i++)); do
         tok="${LOOM_TOKENS[$i]}"
         [[ "$tok" == "%%SEP%%" ]] && continue
-        [[ "$tok" =~ ^\.\.[\\/]\.\. ]] && return 0
+        [[ "$tok" =~ $prefix ]] && return 0
     done
     return 1
 }
@@ -255,14 +251,14 @@ check_path_traversal_prefix_tokens() {
 check_cross_worktree_tokens() {
     local n=${#LOOM_TOKENS[@]}
     ((n > 0)) || return 1
-    local own_re="\\.worktrees/${CURRENT_STAGE}(/|\$)"
-    local i tok
+    local own_re="${LOOM_POLICY_WORKTREE_MARKER}${CURRENT_STAGE}(/|\$)"
+    local i tok prefix="^$LOOM_POLICY_WORKTREE_MARKER"
     for ((i = 0; i < n; i++)); do
         tok="${LOOM_TOKENS[$i]}"
         if loom_token_is_word "$tok"; then
-            [[ "$tok" =~ \.worktrees/ ]] || continue
+            [[ "$tok" =~ $LOOM_POLICY_WORKTREE_MARKER ]] || continue
         else
-            [[ "$tok" == .worktrees/* ]] || continue
+            [[ "$tok" =~ $prefix ]] || continue
         fi
         [[ "$tok" =~ $own_re ]] && continue
         return 0
@@ -303,26 +299,21 @@ validate_bash_command_regex_fallback() {
     #   - `GIT_DIR=...` / `GIT_WORK_TREE=...` env assignments (retarget any git)
     #   - `eval ... git ...` — the regex cannot see inside an eval'd string, so we
     #     refuse the whole command rather than let it through unparsed.
-    if echo "$stripped" | grep -qE 'git[[:space:]]+-C[[:space:]]' || \
-       echo "$stripped" | grep -qE 'git[[:space:]]+--work-tree([=[:space:]]|$)' || \
-       echo "$stripped" | grep -qE 'git[[:space:]]+--git-dir([=[:space:]]|$)' || \
-       echo "$stripped" | grep -qE '(^|[[:space:];&|(])GIT_DIR=' || \
-       echo "$stripped" | grep -qE '(^|[[:space:];&|(])GIT_WORK_TREE=' || \
-       echo "$stripped" | grep -qE '(^|[[:space:];&|(])eval([[:space:]]|$)'; then
+    if loom_policy_git_fallback "$stripped"; then
         print_git_override_block
         return 1
     fi
 
     # Pattern 2: Block ../../ path traversal (escaping worktree)
-    if echo "$stripped" | grep -qE '\.\./\.\.' || echo "$stripped" | grep -qE '\.\.[\\/]\.\.'; then
+    if [[ "$stripped" =~ $LOOM_POLICY_PARENT_PAIR ]]; then
         print_path_traversal_block
         return 1
     fi
 
     # Pattern 3: Block .worktrees/ access (except current worktree)
     # Allow references to current stage, block others
-    if echo "$stripped" | grep -qE '\.worktrees/' && \
-       ! echo "$stripped" | grep -qE "\.worktrees/${CURRENT_STAGE}[/[:space:]]|\.worktrees/${CURRENT_STAGE}\$"; then
+    if echo "$stripped" | grep -qE "$LOOM_POLICY_WORKTREE_MARKER" && \
+       ! echo "$stripped" | grep -qE "${LOOM_POLICY_WORKTREE_MARKER}${CURRENT_STAGE}[/[:space:]]|${LOOM_POLICY_WORKTREE_MARKER}${CURRENT_STAGE}\$"; then
         print_cross_worktree_block
         return 1
     fi

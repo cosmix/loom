@@ -28,12 +28,12 @@
 mod config;
 pub mod events;
 mod generator;
-pub mod validators;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
-pub use config::{HookEvent, HooksConfig};
+pub(crate) use config::session_event_rules;
+pub use config::HookEvent;
 pub use events::{
     log_hook_event, read_recent_events, read_session_events, read_stage_events, HookEventLog,
     HookEventPayload,

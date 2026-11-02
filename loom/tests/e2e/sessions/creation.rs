@@ -41,16 +41,3 @@ fn test_session_default_trait() {
     assert_eq!(session.status, SessionStatus::Spawning);
     assert_eq!(session.context_tokens, 0);
 }
-
-#[test]
-fn test_session_clone() {
-    let mut session = Session::new();
-    session.assign_to_stage("stage-1".to_string());
-    session.try_mark_running().expect("Spawning -> Running");
-
-    let cloned = session.clone();
-
-    assert_eq!(cloned.id, session.id);
-    assert_eq!(cloned.stage_id, session.stage_id);
-    assert_eq!(cloned.status, session.status);
-}

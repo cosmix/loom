@@ -135,6 +135,47 @@ fn bounded_prefix_drops_torn_trailing_utf8() -> anyhow::Result<()> {
 }
 
 #[test]
+fn bounded_prefix_and_job_reader_reject_fifo_without_blocking() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let fifo = temp.path().join("fifo");
+    nix::unistd::mkfifo(&fifo, nix::sys::stat::Mode::S_IRWXU)?;
+
+    for read_job in [false, true] {
+        let path = fifo.clone();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            let rejected = if read_job {
+                super::super::job_record::read_companion_job(&path, JOB).is_err()
+            } else {
+                read_bounded_prefix(&path, 64).is_err()
+            };
+            let _ = sender.send(rejected);
+        });
+        let result = receiver.recv_timeout(std::time::Duration::from_secs(5));
+        let _writer = if result.is_err() {
+            // Unblock a regressed reader before failing, so no test thread is left behind.
+            Some(File::options().read(true).write(true).open(&fifo)?)
+        } else {
+            None
+        };
+        reader.join().expect("reader thread panicked");
+        assert!(result.expect("reader blocked on FIFO"));
+    }
+    Ok(())
+}
+
+#[test]
+fn bounded_prefix_rejects_symlink() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let target = temp.path().join("target");
+    let link = temp.path().join("link");
+    fs::write(&target, "content")?;
+    symlink(&target, &link)?;
+    assert!(read_bounded_prefix(&link, 64).is_err());
+    Ok(())
+}
+
+#[test]
 fn default_companion_state_roots_include_temp_fallbacks_without_duplicates() {
     let home = Path::new("/home/tester");
     let temp_root = std::env::temp_dir().join("codex-companion");

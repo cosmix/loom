@@ -2,6 +2,7 @@
 // only loom_cmd() is used; the shared module serves the integration target
 #[allow(dead_code)]
 mod helpers;
+use crate::helpers::test_support;
 
 use serde_json::Value;
 use std::fs;
@@ -58,6 +59,7 @@ fn changed_evidence_project() -> TempDir {
     fs::create_dir_all(root.join("doc/loom/knowledge")).expect("create knowledge directory");
     fs::write(root.join("src/evidence.rs"), "pub const VALUE: u8 = 1;\n").expect("write source");
     git(root, &["init", "-q"]);
+    test_support::write_main_checkout_identity(root, &root.join(".loom/work"));
     commit_all(root, "initial source");
     let verified = git(root, &["rev-parse", "HEAD"]);
     fs::write(

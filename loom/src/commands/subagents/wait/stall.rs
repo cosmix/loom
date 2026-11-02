@@ -6,7 +6,7 @@
 //! own deadline with nothing to say. This module supplies the missing evidence
 //! from transcript growth. A Codex companion job gets the equivalent treatment
 //! from `codex_lifecycle::companion_outcome_with_progress`, called directly by
-//! `engine::codex_outcome` rather than through this module, so the job is
+//! `evidence::LifecycleEvidence::codex_outcome` rather than through this module, so the job is
 //! located once per poll instead of twice; see that function's doc for its
 //! process-liveness and log-freshness evidence.
 //!
@@ -14,15 +14,10 @@
 //! record, which is why it produces its own [`WorkerOutcome::Stalled`]
 //! (exit 6) rather than `Failed`.
 //!
-//! **Tool-wait is not a timeout.** `classify`'s module doc records that a tool
-//! call outstanding for 23 minutes is real and normal, so a long `tool-wait` is
-//! never on its own a stall. Two rules keep that intact while still catching a
-//! dead worker: an `Agent`/`Task` call is never stalled at any idle time,
-//! because a nested spawn has no cap of its own, and a `Bash` call is measured
-//! against [`BASH_STALL_FLOOR_SECS`] rather than the ordinary budget. Every
-//! other tool is bounded tightly enough to measure against the budget itself --
-//! across 19,007 sampled tool-waits the longest non-`Bash`, non-`Agent` call
-//! was a 121-second `WebFetch`.
+//! Diagnostic tool-wait classification does not time out. Watch independently
+//! treats ordinary tool waits beyond the budget and Bash waits beyond the
+//! greater of the budget or the floor as stalled. Agent/Task waits are exempt;
+//! none of these heuristics proves that a worker is dead.
 
 use std::path::Path;
 use std::time::Duration;
@@ -65,7 +60,7 @@ pub(super) fn detect(
             ..
         } => claude_stall(transcript_path, agent_id, work_dir, budget)
             .map(|detail| WorkerOutcome::Stalled(format!("claude worker {agent_id}: {detail}"))),
-        // A companion job is classified by `engine::codex_outcome`, which calls
+        // A companion job is classified by `evidence::LifecycleEvidence::codex_outcome`, which calls
         // `codex_lifecycle::companion_outcome_with_progress` directly so the job
         // is located once per poll instead of twice. A direct Codex invocation
         // is killed by its own supervisor at 1500s, and a teammate has no
@@ -160,7 +155,7 @@ fn tool_wait_reason(idle_secs: i64, last_tool: Option<&str>, budget_secs: i64) -
             let threshold = budget_secs.max(BASH_STALL_FLOOR_SECS);
             (idle_secs > threshold).then(|| {
                 format!(
-                    "Bash call outstanding {idle_secs}s, past the {threshold}s ceiling on a real one"
+                    "Bash call outstanding {idle_secs}s, past the configured stall threshold of {threshold}s"
                 )
             })
         }

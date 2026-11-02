@@ -71,8 +71,15 @@ enum Binding {
 pub(super) fn call_edges(calls: &[Reference], binder: &Binder, edges: &mut Vec<SourceEdge>) {
     for call in calls {
         let caller = binder.caller(call.site);
+        let caller = binder.outer_caller(caller.as_deref(), call.receiver_context.outer_types);
         let caller = caller.as_deref();
         let binding = match call.receiver.as_deref() {
+            Some(receiver)
+                if call.receiver_context.shadowed
+                    && binder.rules.self_receivers.contains(&receiver) =>
+            {
+                binder.shadowed_receiver(caller, &call.symbol)
+            }
             Some(receiver) if binder.rules.self_receivers.contains(&receiver) => binder
                 .receiver(caller, &call.symbol)
                 .unwrap_or_else(|| binder.top_level_self(caller, &call.symbol)),
@@ -103,6 +110,26 @@ impl Binder<'_> {
         enclosing(&self.scopes.spans, site.start_byte)
     }
 
+    /// Class heritage and computed keys execute in the surrounding scope. A
+    /// class declaration covers the site in the tree and graph, so leave its
+    /// definition before choosing the call origin and self receiver.
+    fn outer_caller(&self, caller: Option<&str>, mut outer_types: usize) -> Option<String> {
+        let mut current = caller?;
+        if outer_types == 0 {
+            return Some(current.to_string());
+        }
+        loop {
+            let info = self.info(current)?;
+            if is_type_like(info.kind) {
+                outer_types -= 1;
+                if outer_types == 0 {
+                    return info.parent.clone();
+                }
+            }
+            current = info.parent.as_deref()?;
+        }
+    }
+
     fn info(&self, id: &str) -> Option<&DefinitionInfo> {
         self.scopes.by_id.get(id)
     }
@@ -126,6 +153,16 @@ impl Binder<'_> {
             return Some(Binding::Bound(id.clone(), EdgeProvenance::Receiver));
         }
         Some(Binding::Unbound(ids))
+    }
+
+    /// A nested ECMAScript receiver owner can still be called with the outer
+    /// class as `this`. Keep that member as a candidate, never a certain bind.
+    fn shadowed_receiver(&self, caller: Option<&str>, symbol: &str) -> Binding {
+        match caller.and_then(|caller| self.receiver(Some(caller), symbol)) {
+            Some(Binding::Bound(id, _)) => Binding::Unbound(vec![id]),
+            Some(unbound) => unbound,
+            None => Binding::Unbound(Vec::new()),
+        }
     }
 
     /// Scope of the innermost type, implementation or interface around
