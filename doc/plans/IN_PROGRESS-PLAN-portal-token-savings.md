@@ -174,7 +174,7 @@ loom usage --all --since 14d
 
 A smaller first request or fewer reads alone is not a saving, by the `optim-token` metaplan's evidence rule. Both defaults below are operator decisions with no replay behind them, so these checks decide whether they stay.
 
-**Mechanical worker.** After a run that used `loom-mechanical-engineer`, read the Attribution section for its median first-request resident, then compare its whole cost per transcript with Haiku `loom-software-engineer` transcripts: divide its `by_agent_model` usage row by that type's `transcripts` in `startup_by_agent`, and count any task respawned at a higher tier against it. Route mechanical work back if the whole cost does not fall.
+**Mechanical worker.** After a run that used `loom-mechanical-engineer`, read the Attribution section for its median first-request resident, then compare its whole cost per transcript with Haiku `loom-software-engineer` transcripts: divide each type's `by_agent_model` usage row by that row's `transcripts`, and count any task respawned at a higher tier against it. Route mechanical work back if the whole cost does not fall.
 
 **Read gate.** Compare the reads section and the Attribution `read:*` rows for 14 days before and after install, and count the rows under `.loom/work/hooks/read-denials/`. Each row is a denied call that cost one request, and `same_transcript_rereads` counts a retry. Turn the gate off unless the `read:*` cost falls by more than those denied calls cost, about 15K units each at 150K resident.
 

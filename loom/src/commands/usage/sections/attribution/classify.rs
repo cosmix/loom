@@ -3,6 +3,7 @@
 use crate::commands::usage::transcript::ToolUse;
 
 use super::super::reads::{is_knowledge_path, read_path};
+use super::super::tools::program_words;
 
 const BUILD_TEST: [&str; 9] = [
     "cargo", "bun", "bunx", "pytest", "uv", "go", "make", "tsc", "eslint",
@@ -52,7 +53,7 @@ fn bash_class(tool: &ToolUse) -> &'static str {
         .get("command")
         .and_then(|command| command.as_str())
         .unwrap_or_default();
-    let word = leading_word(command);
+    let word = program_words(command).first().copied().unwrap_or_default();
     if BUILD_TEST.contains(&word) {
         "bash:build-test"
     } else if word == "loom" {
@@ -66,16 +67,4 @@ fn bash_class(tool: &ToolUse) -> &'static str {
     } else {
         "bash:other"
     }
-}
-
-/// The command word, after any leading `cd <dir> &&`.
-fn leading_word(command: &str) -> &str {
-    let mut rest = command.trim_start();
-    while rest.starts_with("cd ") {
-        match rest.split_once("&&") {
-            Some((_, after)) => rest = after.trim_start(),
-            None => break,
-        }
-    }
-    rest.split_whitespace().next().unwrap_or_default()
 }

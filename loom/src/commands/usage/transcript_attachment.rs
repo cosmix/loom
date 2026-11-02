@@ -6,12 +6,12 @@
 
 use serde_json::Value;
 
-use super::transcript_types::{AttachmentEntry, Entry, SYNTHETIC_MODEL};
+use super::transcript_types::AttachmentEntry;
 
-/// The attachment a row carries, placed after the non-synthetic requests in
-/// `entries`. The caller applies the `since` cutoff, so `entries` and the
-/// result stay in the same window.
-pub(super) fn attachment_entry(value: &Value, entries: &[Entry]) -> Option<AttachmentEntry> {
+/// The attachment a row carries, placed after `requests_before` non-synthetic
+/// requests. The caller applies the `since` cutoff, so that count and the result
+/// stay in the same window.
+pub(super) fn attachment_entry(value: &Value, requests_before: usize) -> Option<AttachmentEntry> {
     if value.get("type").and_then(Value::as_str) != Some("attachment") {
         return None;
     }
@@ -21,10 +21,7 @@ pub(super) fn attachment_entry(value: &Value, entries: &[Entry]) -> Option<Attac
         return None;
     }
     Some(AttachmentEntry {
-        requests_before: entries
-            .iter()
-            .filter(|entry| matches!(entry, Entry::Assistant(request) if request.model != SYNTHETIC_MODEL))
-            .count(),
+        requests_before,
         kind: kind.to_owned(),
         chars,
     })
