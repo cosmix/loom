@@ -134,7 +134,7 @@ of the file's style.
 
 ## Install a New loom Binary Only After the Running Plan Completes
 
-The operator installs a freshly built `loom` (`dev-install.sh`) only once the plan being executed has completed, never between its stages: `dev-install.sh` stops the daemon, and a plan runs to completion on the binary it started with. Fixes committed to `main` mid-plan therefore take effect only for the next plan. Anything measured with the installed binary before then, such as `loom knowledge eval` scores, measures the older code. Re-measure after the install.
+The operator installs a freshly built `loom` (`dev-install.sh`) once the plan being executed has completed. `dev-install.sh` does not stop the daemon: it prints a restart hint, and a running daemon keeps the binary it started with while sessions and hooks pick up the new install. Mid-plan, that mismatch is only safe when the new build has the same code as the daemon's. Fixes committed mid-plan therefore take effect for the next plan. Anything measured with the installed binary before then, such as `loom knowledge eval` scores, measures the older code. Re-measure after the install.
 
 `dev-install.sh` keeps release optimization but overrides the build invocation with LTO off, 16 codegen units, and incremental compilation. Cargo jobs default to the available CPU count (`nproc`, then `getconf _NPROCESSORS_ONLN`, then four); an explicit `CARGO_BUILD_JOBS` takes precedence. These command-local environment overrides preserve the ordinary release profile (fat LTO and one codegen unit) and the installer contract at `loom/target/release/loom`. The first build with these settings rebuilds affected artifacts; later dev installs reuse the incremental cache.
 
@@ -233,3 +233,7 @@ inside a live stage session and not in a clean shell.
 ## Push Tooling Keeps No Cached Copy of the Repository
 
 The operator pushes with plain `git push`, never a wrapper script, so the pre-push hook must finish before GitHub closes the idle push connection: it runs fast gates and a smoke test only, and the full suite and flake-check run in CI. Push tooling keeps no persistent copy of the repository (a cached worktree, clone or second build directory) to check a commit in; see [CI toolchain and cargo mistakes](../mistakes/ci-toolchain-and-cargo.md).
+
+## Servers Announce Before They Load
+
+A server command prints its URL and opens the browser as soon as it has bound its port. Loading, indexing and checks run in the background, and routes that depend on them report an in-progress state until they finish.
