@@ -57,7 +57,13 @@ it("opening a row's diff marks it seen", async () => {
     commit: "c1",
     hashes: { [A]: "new", [GONE]: "gone", [SAME]: "same" },
   });
-  expect(within(screen.getByRole("list")).queryByText(A)).toBeNull();
+  // The open document stays listed as the current row, now seen; the count drops.
+  const row = within(screen.getByRole("list")).getByText(A).closest("li");
+  expect(row?.getAttribute("aria-current")).toBe("true");
+  expect(row?.textContent).toContain("seen");
+  expect(
+    screen.getByRole("button", { name: "Changed since you looked · 2", hidden: true }),
+  ).toBeTruthy();
 });
 
 it("diff before from at-commit", async () => {
@@ -95,14 +101,11 @@ it("ref comparison lists and does not store", async () => {
   expect(localStorage.length).toBe(1);
 });
 
-it("uncommitted note on row", async () => {
+it("a row without a seen copy names the checkpoint commit it diffs from", async () => {
   mount();
   const list = await openList();
 
-  expect(within(list).getByText(A).closest("li")?.textContent).toContain(
-    "uncommitted edits at the checkpoint",
-  );
-  expect(within(list).getByText(A).closest("li")?.textContent).toContain("committed text");
+  expect(within(list).getByText(A).closest("li")?.textContent).toContain("Changes since commit c1");
 });
 
 it("unavailable commit offers only uncommitted and ref diffs", async () => {
@@ -126,9 +129,9 @@ it("limits text shown", async () => {
   mount();
   await openList();
 
-  expect(screen.getByText(/Local storage belongs/).textContent).toMatch(/origin.*port.*browser/);
-  expect(screen.getByText(/An unavailable checkpoint commit/)).toBeTruthy();
-  expect(screen.getByText(/Uncommitted edits at the checkpoint/)).toBeTruthy();
+  const note = screen.getByText(/kept in this browser/).textContent;
+  expect(note).toMatch(/browser.*origin.*port/);
+  expect(note).toMatch(/checkpoint commit.*uncommitted edits/);
 });
 
 it("resync refetches the compare list", async () => {
