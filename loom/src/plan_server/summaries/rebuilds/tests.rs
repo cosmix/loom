@@ -30,6 +30,8 @@ pub(super) struct Probe {
     next_id: Mutex<Option<String>>,
     /// An end the next start delivers for its own session before it returns.
     end_first: Mutex<Option<(Arc<Bridge>, EndOutcome)>>,
+    /// Every start goes to this bridge, as the real spawner's does.
+    bridge: OnceLock<Arc<Bridge>>,
 }
 
 impl Probe {
@@ -53,6 +55,11 @@ impl Probe {
     pub(super) fn end_next_start_first(&self, bridge: &Arc<Bridge>, outcome: EndOutcome) {
         *self.end_first.lock().unwrap() = Some((Arc::clone(bridge), outcome));
     }
+
+    /// Start every session in `bridge` and answer the bridge's session id.
+    pub(super) fn start_in(&self, bridge: &Arc<Bridge>) {
+        self.bridge.set(Arc::clone(bridge)).ok();
+    }
 }
 
 impl SessionSpawner for Probe {
@@ -66,6 +73,12 @@ impl SessionSpawner for Probe {
             starts.push(ids.to_vec());
             format!("s{}", starts.len())
         };
+        if let Some(bridge) = self.bridge.get() {
+            let request = super::tests_alive::start_request(SessionKind::Summary);
+            return bridge
+                .start_session(request)
+                .map_err(|error| anyhow::anyhow!(error));
+        }
         let session = self.next_id.lock().unwrap().take().unwrap_or(own);
         let end_first = self.end_first.lock().unwrap().take();
         let rebuilds = self.rebuilds.get().and_then(Weak::upgrade);

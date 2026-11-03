@@ -25,9 +25,9 @@ use crate::process::{IdentityStatus, ProcessIdentity};
 
 /// Launches nothing: a spawn succeeds, or fails when told to; every process stays alive.
 #[derive(Default)]
-struct QuietHost {
+pub(super) struct QuietHost {
     fail_spawn: AtomicBool,
-    spawns: AtomicUsize,
+    pub(super) spawns: AtomicUsize,
 }
 
 impl SessionHost for QuietHost {
@@ -58,7 +58,7 @@ impl SessionHost for QuietHost {
     }
 }
 
-fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
+pub(super) fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(10);
     while !done() {
         assert!(Instant::now() < deadline, "timed out waiting for {what}");
@@ -66,21 +66,45 @@ fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
     }
 }
 
+/// A start request of `kind` with fixed guidance and an opening pasted after `SessionStart`.
+pub(super) fn start_request(kind: SessionKind) -> StartRequest {
+    let guidance = Box::new(|dir: &SessionDir| {
+        Ok::<_, anyhow::Error>(LaunchGuidance {
+            brief_path: dir.brief(),
+            plugin_dir: dir.plugin(),
+            opening_message: "OPEN".to_owned(),
+            model: "opus".to_owned(),
+            effort: "medium".to_owned(),
+            display_name: "loom plan: tests".to_owned(),
+            opening_on_argv: false,
+        })
+    });
+    StartRequest {
+        kind,
+        guidance,
+        opening_origin: None,
+        offer: None,
+        feature: None,
+        plan: None,
+        extra_env: Vec::new(),
+    }
+}
+
 /// A rig whose bridge has recovered and runs its driver.
-struct Live {
-    rig: Rig,
-    host: Arc<QuietHost>,
+pub(super) struct Live {
+    pub(super) rig: Rig,
+    pub(super) host: Arc<QuietHost>,
     stop: Arc<AtomicBool>,
     driver: Option<JoinHandle<()>>,
 }
 
 impl Live {
-    fn new() -> Live {
+    pub(super) fn new() -> Live {
         Live::build(SchedulerConfig::standard(None), false)
     }
 
     /// A live rig whose scheduler runs on `config`, with attribution when `attributed`.
-    fn build(config: SchedulerConfig, attributed: bool) -> Live {
+    pub(super) fn build(config: SchedulerConfig, attributed: bool) -> Live {
         let host = Arc::new(QuietHost::default());
         let rig = Rig::build(host.clone(), true, config, attributed);
         rig.bridge.recover();
@@ -95,27 +119,8 @@ impl Live {
     }
 
     /// Start a session of `kind` in the bridge and return its id.
-    fn start(&self, kind: SessionKind) -> String {
-        let guidance = Box::new(|dir: &SessionDir| {
-            Ok::<_, anyhow::Error>(LaunchGuidance {
-                brief_path: dir.brief(),
-                plugin_dir: dir.plugin(),
-                opening_message: "OPEN".to_owned(),
-                model: "opus".to_owned(),
-                effort: "medium".to_owned(),
-                display_name: "loom plan: tests".to_owned(),
-                opening_on_argv: false,
-            })
-        });
-        let request = StartRequest {
-            kind,
-            guidance,
-            opening_origin: None,
-            offer: None,
-            feature: None,
-            plan: None,
-            extra_env: Vec::new(),
-        };
+    pub(super) fn start(&self, kind: SessionKind) -> String {
+        let request = start_request(kind);
         self.rig.bridge.start_session(request).expect("the start")
     }
 
@@ -125,7 +130,7 @@ impl Live {
     }
 
     /// The bridge's main transcript of session `id` holds `records`.
-    fn give_transcript(&self, id: &str, records: &[Value]) {
+    pub(super) fn give_transcript(&self, id: &str, records: &[Value]) {
         let path = self.rig.tmp.path().join(format!("{id}.jsonl"));
         let body: String = records.iter().map(|record| format!("{record}\n")).collect();
         std::fs::write(&path, body).expect("transcript");
@@ -262,7 +267,7 @@ fn a_session_the_bridge_runs_is_never_ended_by_the_tick() {
 }
 
 /// One assistant record that used `output` output tokens.
-fn usage_records(output: u64) -> Vec<Value> {
+pub(super) fn usage_records(output: u64) -> Vec<Value> {
     let usage = json!({"input_tokens": 10, "cache_creation_input_tokens": 200,
         "cache_read_input_tokens": 3000, "output_tokens": output});
     let message = json!({"id": "msg-1", "model": "claude-opus-4-1", "role": "assistant",

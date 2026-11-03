@@ -23,6 +23,8 @@ mod tests_bridge;
 mod tests_codex;
 #[cfg(test)]
 mod tests_ordering;
+#[cfg(test)]
+mod tests_press;
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
@@ -258,8 +260,11 @@ impl Rebuilds {
             }
             evaluation::keep_terminal_claims(&mut state.scheduler, &eval);
             evaluation::detect_seals(state, &eval, now);
-            let events = state.scheduler.on_update(invalidated, stale, now, spawner);
-            state.events.extend(events);
+            state
+                .scheduler
+                .set_known(eval.summaries.keys().cloned().collect());
+            // Claims first: the prune in `on_update` keeps the unsealed mark of an id the
+            // running session claimed, which this evaluation may be the first to show.
             if let Some(session) = state.running_session() {
                 let held = evaluation::held_by(&eval, &session);
                 state.tick_claims = Some(held.clone());
@@ -267,6 +272,8 @@ impl Rebuilds {
                     .scheduler
                     .claims_changed(&session, &held, now, spawner);
             }
+            let events = state.scheduler.on_update(invalidated, stale, now, spawner);
+            state.events.extend(events);
             state.latest = Some(eval);
         });
     }
