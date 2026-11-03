@@ -57,7 +57,7 @@ afterEach(() => {
 
 it.each([
   ["written", "pencil-line"],
-  ["running", "play"],
+  ["running", "refresh-cw"],
   ["done", "circle-check-big"],
   ["retired", "archive"],
 ] as const)("shows the plan DocMark alongside the shared %s glyph", (state, glyph) => {

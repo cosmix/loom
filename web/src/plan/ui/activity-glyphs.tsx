@@ -1,4 +1,4 @@
-import { BellRing, LoaderCircle, PenLine, Play, RefreshCw } from "lucide-react";
+import { BellRing, LoaderCircle, PenLine, RefreshCw } from "lucide-react";
 import type { JSX, ReactNode } from "react";
 
 import "./activity-glyphs.css";
@@ -73,12 +73,8 @@ function ActivityShape({ kind }: { kind: ActivityKind }): JSX.Element {
     case "drafting":
       return <PenLine className="activity-glyph__motion" />;
     case "running":
-      return (
-        <>
-          <span className="activity-glyph__pulse" />
-          <Play />
-        </>
-      );
+      // Rotating arrows mean "running" across the planner.
+      return <RefreshCw className="activity-glyph__motion" />;
     case "starting":
       return <LoaderCircle className="activity-glyph__motion" />;
     case "waiting":
@@ -123,7 +119,7 @@ export const ACTIVITY_TONES: Record<ActivityKind, ActivityTone> = {
 };
 
 /**
- * The 26px tile that leads an activity row. A kind gives its glyph and tone; `children` replace
+ * The glyph cell that leads an activity row (a 20px column, no fill of its own). A kind gives its glyph and tone; `children` replace
  * the glyph, and a tile with neither kind draws in the muted tone.
  */
 export function ActivityTile({

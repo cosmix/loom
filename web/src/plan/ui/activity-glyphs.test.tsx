@@ -68,10 +68,15 @@ describe("activity glyphs", () => {
     expect(container.firstElementChild?.hasAttribute("data-paused")).toBe(false);
   });
 
-  it("includes the outgoing ring alongside the running icon", () => {
+  it("draws running as rotating arrows, with no play icon or pulse ring", () => {
     const { container } = render(<ActivityGlyph kind="running" />);
-    expect(container.querySelector(".activity-glyph > .activity-glyph__pulse")).not.toBeNull();
-    expect(container.querySelector(".activity-glyph > svg")).not.toBeNull();
+    expect(container.querySelector(".activity-glyph > svg.lucide-refresh-cw")).not.toBeNull();
+    expect(container.querySelector(".activity-glyph__motion")).not.toBeNull();
+    expect(container.querySelector(".lucide-play, .activity-glyph__pulse")).toBeNull();
+    expect(css).toMatch(
+      /\[data-kind="running"\] > \.activity-glyph__motion\s*\{[^}]*activity-glyph-running [\d.]+s linear infinite/,
+    );
+    expect(css).toMatch(/@keyframes activity-glyph-running\s*\{[^}]*rotate\(360deg\)/);
   });
 
   it("draws the gauge with ticks and a needle pivoting at 12px 15px", () => {
@@ -83,9 +88,9 @@ describe("activity glyphs", () => {
     expect(css).toMatch(/\.activity-glyph__needle\s*\{[^}]*activity-glyph-pressure 1\.8s/);
   });
 
-  it("gives the waiting LED the completed tone and the running ring its measures", () => {
+  it("gives the waiting LED the completed tone and the bell its pivot", () => {
     expect(css).toMatch(/\[data-kind="waiting"\]\s*\{\s*color:\s*var\(--tone-completed\)/);
-    expect(css).toMatch(/\.activity-glyph__pulse\s*\{[^}]*inset:\s*-2px;[^}]*border:\s*1\.5px/);
+    expect(css).not.toMatch(/activity-glyph__pulse/);
     expect(css).toMatch(/transform-origin:\s*50% 10%/);
   });
 

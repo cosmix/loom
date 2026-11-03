@@ -12,7 +12,9 @@
   background: var(--background);
 }
 
-/* About 60px high. The identity column gives way first; the cluster never wraps. */
+/* About 60px high, 72px from 1024px where the logo is 56px; the 8px block padding is equal above
+   and below, so every column centres on the logo's centre line. The identity column gives way
+   first; the cluster never wraps. */
 .plan-appbar {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -27,10 +29,28 @@
   color: var(--foreground);
 }
 
+/* The dashboard's sizes (components/header.tsx: h-8 sm:h-10 lg:h-14), so the mark reads the same
+   on both screens. */
 .plan-logo {
   display: block;
-  height: 26px;
+  height: 32px;
   width: auto;
+}
+
+@media (min-width: 640px) {
+  .plan-logo {
+    height: 40px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .plan-appbar {
+    min-height: 72px;
+  }
+
+  .plan-logo {
+    height: 56px;
+  }
 }
 
 .plan-identity {
@@ -210,16 +230,12 @@
   }
 }
 
-/* A compact row on phones: the eyebrow goes (nothing sets type below 13px there) and the logo
-   and gaps tighten so logo, identity, activity, chat and overflow fit 390px without scrolling. */
+/* A compact row on phones: the eyebrow goes (nothing sets type below 13px there) and the gaps
+   tighten so logo, identity, activity, chat and overflow fit 390px without scrolling. */
 @media (max-width: 479.98px) {
   .plan-appbar {
     gap: var(--space-2);
     min-height: 52px;
-  }
-
-  .plan-logo {
-    height: 22px;
   }
 
   .plan-identity .plan-eyebrow {

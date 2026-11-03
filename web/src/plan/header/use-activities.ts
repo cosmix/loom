@@ -2,7 +2,7 @@ import { useAtomValue } from "jotai/react";
 
 import type { Item, SessionView } from "@/plan/api/schema-chat";
 import type { PressureRunView } from "@/plan/api/schema-pressure";
-import type { RunStateView, RunStrip } from "@/plan/api/schema-run";
+import type { RunStateView, RunStrip as Strip } from "@/plan/api/schema-run";
 import type { SummaryPanel } from "@/plan/api/schema-summaries";
 import { pendingPermissionsAtom, sessionAtom } from "@/plan/chat/model";
 import { pressureRunAtom } from "@/plan/chat/pressure/use-pressure";
@@ -24,7 +24,7 @@ export interface ActivitiesInput {
   summaryPanel: Pick<SummaryPanel, "running"> | null;
   runState: Pick<RunStateView, "workspace" | "active_plan"> | null;
   runStrip:
-    | (Pick<RunStrip, "daemon_running" | "plan"> & Partial<Pick<RunStrip, "merged" | "total">>)
+    | (Pick<Strip, "daemon_running" | "plan"> & Partial<Pick<Strip, "merged" | "total">>)
     | null;
   pressureRun: PressureRunView | null;
   session: SessionView | null;
@@ -133,11 +133,20 @@ export function deriveActivities(input: ActivitiesInput): Activity[] {
 /** The plan, with merge progress once the run strip reports a stage count. */
 function runSubject({ runStrip, runState }: ActivitiesInput): string | null {
   const path = runStrip?.plan ?? runState?.active_plan ?? null;
-  const total = runStrip?.total ?? 0;
   // The file name keeps the progress visible when the row truncates.
   const plan = path?.split("/").at(-1) ?? path;
-  if (plan === null || total === 0) return plan;
-  return `${plan} · ${runStrip?.merged ?? 0} of ${total} stages merged`;
+  const progress = runStrip ? stagesMerged(runStrip) : null;
+  if (plan === null || progress === null) return plan;
+  return `${plan} · ${progress}`;
+}
+
+/** "M of N stages merged" once the strip reports a stage count; no count is better than a guess. */
+export function stagesMerged({
+  merged,
+  total,
+}: Partial<Pick<Strip, "merged" | "total">>): string | null {
+  if (merged === undefined || !total) return null;
+  return `${merged} of ${total} stages merged`;
 }
 
 export function useActivities(): Activity[] {

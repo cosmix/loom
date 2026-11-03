@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Check, Minus, PenLine, Plus, type LucideIcon } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,12 @@ import type { changedSince } from "./checkpoint";
 
 export type Change = ReturnType<typeof changedSince>[number];
 export type Comparison = { commit: string; name: string };
+/** A listed row: a change, or "seen" for the open document once its diff marked it seen. */
+export type Row = { path: string; change: Change["change"] | "seen" };
+/** What a row's diff starts from; null when it has none (only its uncommitted diff). */
+export type RowSource = "seen" | "commit" | "ref" | null;
+
+export const shortSha = (commit: string) => commit.slice(0, 7);
 
 function useResolveRef(onCompare: (value: Comparison | null) => void) {
   const [name, setName] = useState("");
@@ -43,23 +50,33 @@ function useResolveRef(onCompare: (value: Comparison | null) => void) {
   return { name, setName, error, busy, submit, reset };
 }
 
+/** "Compare with a ref…": a quiet disclosure in the dialog's foot holding the ref form. */
 export function RefForm({ onCompare }: { onCompare: (value: Comparison | null) => void }) {
   const { name, setName, error, busy, submit, reset } = useResolveRef(onCompare);
   return (
-    <div className="space-y-2">
-      <form onSubmit={(event) => void submit(event)} className="flex flex-wrap items-center gap-2">
-        <label htmlFor="changed-since-ref">Compare with ref</label>
+    <details className="changed-since__ref">
+      <summary className="changed-since__link">Compare with a ref…</summary>
+      <form onSubmit={(event) => void submit(event)} className="changed-since__ref-form">
+        <label htmlFor="changed-since-ref" className="plan-fine">
+          Compare with ref
+        </label>
         <input
           id="changed-since-ref"
-          className="min-w-0 rounded border px-2 py-1 font-mono"
+          className="changed-since__input"
           value={name}
           onChange={(event) => setName(event.target.value)}
           placeholder="main or a tag"
         />
-        <Button type="submit" size="sm" disabled={busy || !name.trim()}>
+        <Button
+          type="submit"
+          size="sm"
+          className="plan-button"
+          data-look="secondary"
+          disabled={busy || !name.trim()}
+        >
           Compare
         </Button>
-        <Button type="button" size="sm" variant="ghost" onClick={reset}>
+        <Button type="button" size="sm" className="plan-button" data-look="quiet" onClick={reset}>
           Use checkpoint
         </Button>
       </form>
@@ -70,72 +87,107 @@ export function RefForm({ onCompare }: { onCompare: (value: Comparison | null) =
           message={visibleControls(error)}
         />
       )}
-    </div>
+    </details>
   );
 }
 
+/** The foot's note: where the record lives, and what a diff without a seen copy can include. */
 export function Limits() {
   return (
-    <div className="space-y-1 text-[12px] text-muted-foreground">
-      <p>
-        Uncommitted edits at the checkpoint are compared with committed text; a diff can include
-        edits you already saw.
-      </p>
-      <p>
-        An unavailable checkpoint commit cannot supply old text. Use an uncommitted diff or compare
-        with a ref.
-      </p>
-      <p>
-        Local storage belongs to this page’s origin, including its port, and to this browser.
-        Another browser or cleared storage starts fresh.
-      </p>
-    </div>
+    <p className="changed-since__note plan-fine">
+      What you saw is kept in this browser, per origin and port. Without it, a diff starts at the
+      checkpoint commit and can repeat uncommitted edits.
+    </p>
   );
 }
+
+const STATUS: Record<Row["change"], { icon: LucideIcon; tone: string }> = {
+  added: { icon: Plus, tone: "tone-completed" },
+  changed: { icon: PenLine, tone: "tone-executing" },
+  removed: { icon: Minus, tone: "tone-blocked" },
+  seen: { icon: Check, tone: "tone-dimmed" },
+};
+
+function RowStatus({ change }: { change: Row["change"] }) {
+  const { icon: Icon, tone } = STATUS[change];
+  return (
+    <span className="plan-status changed-since__status">
+      <Icon className={tone} aria-hidden="true" />
+      {change}
+    </span>
+  );
+}
+
+/** A path in mono on one line, truncated from its start so the file name stays in view. */
+export function PathText({ path }: { path: string }) {
+  return (
+    <span className="changed-since__path" title={visibleControls(path)}>
+      <bdi>
+        <Untrusted text={path} />
+      </bdi>
+    </span>
+  );
+}
+
+function RowAction({ row, source, onOpen }: RowProps) {
+  if (source === null) {
+    return (
+      <Link className="changed-since__link" to={openDiff("head", row.path)}>
+        Uncommitted diff
+      </Link>
+    );
+  }
+  return (
+    <Button
+      size="sm"
+      className="plan-button"
+      data-look="quiet"
+      onClick={() => onOpen(row)}
+      aria-label={`Show diff for ${visibleControls(row.path)}`}
+    >
+      View changes
+    </Button>
+  );
+}
+
+type RowProps = { row: Row; source: RowSource; onOpen: (row: Row) => void };
 
 export function ChangeRows({
   rows,
-  available,
-  checkpointMode,
+  selected,
+  sourceOf,
+  since,
   onOpen,
 }: {
-  rows: Change[];
-  available: boolean;
-  checkpointMode: boolean;
-  onOpen: (path: string) => void;
+  rows: Row[];
+  selected: string | null;
+  sourceOf: (path: string) => RowSource;
+  /** The fine line under a row whose diff starts from the checkpoint commit. */
+  since: ReactNode;
+  onOpen: (row: Row) => void;
 }) {
   if (!rows.length) return <LoadState state="empty" title="No changed documents" />;
   return (
-    <ul aria-label="Changed documents" className="divide-y divide-hairline">
-      {rows.map((row) => (
-        <li key={row.path} className="space-y-1 py-2">
-          <div className="flex flex-wrap items-baseline gap-2">
-            <span className="break-all font-mono">
-              <Untrusted text={row.path} />
+    <ul aria-label="Changed documents" className="changed-since__list">
+      {rows.map((row) => {
+        const source = sourceOf(row.path);
+        return (
+          <li
+            key={row.path}
+            className="changed-since__row"
+            aria-current={row.path === selected || undefined}
+          >
+            <PathText path={row.path} />
+            <span className="changed-since__meta">
+              <RowStatus change={row.change} />
+              {source === "commit" && row.change !== "seen" && (
+                <span className="plan-fine">{since}</span>
+              )}
             </span>
-            <span>{row.change}</span>
-            {available && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => onOpen(row.path)}
-                aria-label={`Show diff for ${visibleControls(row.path)}`}
-              >
-                Show diff
-              </Button>
-            )}
-            <Link className="underline" to={openDiff("head", row.path)}>
-              Uncommitted diff
-            </Link>
-          </div>
-          {checkpointMode && (
-            <p className="text-[12px] text-muted-foreground">
-              If this document had uncommitted edits at the checkpoint, its diff uses committed text
-              and can include edits you already saw.
-            </p>
-          )}
-        </li>
-      ))}
+            <RowAction row={row} source={source} onOpen={onOpen} />
+          </li>
+        );
+      })}
     </ul>
   );
 }

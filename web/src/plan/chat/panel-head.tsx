@@ -2,12 +2,11 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { MoreHorizontal, PanelRightClose, X } from "lucide-react";
 
 import type { SessionView } from "@/plan/api/schema-chat";
-import { canAuthorAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { STATE_NAME } from "./chat-state-glyph";
 import { ContextLine } from "./context-line";
 import { EndChatMenuItem, useCanEndChat } from "./end-chat";
 import { panelCollapsedAtom } from "./prefs";
-import { isActiveSession, panelSessionAtom } from "./session-home";
+import { panelSessionAtom } from "./session-home";
 import { chatSheetOpenAtom } from "./sheet-state";
 import { NewChatButton } from "./start-chat";
 import { useSessionBrief, type BriefState } from "./use-session-brief";
@@ -37,21 +36,20 @@ function StateWord({ state }: { state: SessionView["state"] }) {
   );
 }
 
-/** The ⋯ menu exists only when it holds an item. Beside a running chat it carries New chat. */
-function ChatMenu({ session }: { session: SessionView | null }) {
+/**
+ * The ⋯ menu exists only while a chat is live, and holds End chat alone. Starting fresh is End chat,
+ * then New chat: New chat is never drawn beside a live chat.
+ */
+function ChatMenu() {
   const canEnd = useCanEndChat();
-  const canAuthor = useAtomValue(canAuthorAtom);
-  const readOnly = (useAtomValue(serverInfoAtom)?.read_only.length ?? 0) > 0;
-  const canStart = isActiveSession(session) && canAuthor && !readOnly;
-  if (!canEnd && !canStart) return null;
+  if (!canEnd) return null;
   return (
     <details className="chat-menu relative">
       <summary aria-label="Chat menu" className="chat-head-button">
         <MoreHorizontal size={15} aria-hidden="true" />
       </summary>
       <div className="chat-menu-pop">
-        {canEnd && <EndChatMenuItem />}
-        {canStart && <NewChatButton />}
+        <EndChatMenuItem />
       </div>
     </details>
   );
@@ -83,7 +81,7 @@ export function PanelHead({ sheet }: { sheet: boolean }) {
         </h2>
         <div className="chat-head-side">
           {session ? <StateWord state={session.state} /> : <NewChatButton />}
-          <ChatMenu session={session} />
+          <ChatMenu />
           <button
             type="button"
             className="chat-head-button"

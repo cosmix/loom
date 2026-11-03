@@ -1,4 +1,10 @@
-import { atom, type createStore, type SetStateAction, type WritableAtom } from "jotai/vanilla";
+import {
+  atom,
+  type createStore,
+  type PrimitiveAtom,
+  type SetStateAction,
+  type WritableAtom,
+} from "jotai/vanilla";
 
 import { z } from "@/api/zod";
 import { safeStorage, storageKey } from "@/plan/chat/storage";
@@ -12,10 +18,11 @@ const checkpointSchema = z.object({
 });
 
 type CheckpointState = WritableAtom<Checkpoint | null, [SetStateAction<Checkpoint | null>], void>;
+type ProjectCheckpoint = { value: CheckpointState; generation: PrimitiveAtom<number> };
 
-const checkpoints = new Map<string, CheckpointState>();
+const checkpoints = new Map<string, ProjectCheckpoint>();
 
-function checkpointFor(projectKey: string): CheckpointState {
+function checkpointFor(projectKey: string): ProjectCheckpoint {
   const existing = checkpoints.get(projectKey);
   if (existing) return existing;
 
@@ -35,20 +42,49 @@ function checkpointFor(projectKey: string): CheckpointState {
       safeStorage.setItem(key, next);
     },
   );
-  checkpoints.set(projectKey, state);
-  return state;
+  const project = { value: state, generation: atom(0) };
+  checkpoints.set(projectKey, project);
+  return project;
 }
 
+/** The checkpoint of the current project. Every write replaces it and moves its generation. */
 export const checkpointAtom: CheckpointState = atom(
   (get) => {
     const key = get(serverInfoAtom)?.project_key;
-    return key == null ? null : get(checkpointFor(key));
+    return key == null ? null : get(checkpointFor(key).value);
   },
   (get, set, update) => {
     const key = get(serverInfoAtom)?.project_key;
-    if (key != null) set(checkpointFor(key), update);
+    if (key == null) return;
+    const project = checkpointFor(key);
+    set(project.generation, (n) => n + 1);
+    set(project.value, update);
   },
 );
+
+/**
+ * Counts replacements of the current project's checkpoint (first visit, Mark all seen) in this
+ * store. A diff fetch or an acknowledgment captures it when it starts and writes nothing once it
+ * has moved, so a response cut before a replacement never lands after it. `markSeen` leaves it.
+ */
+export const checkpointGenerationAtom = atom((get) => {
+  const key = get(serverInfoAtom)?.project_key;
+  return key == null ? 0 : get(checkpointFor(key).generation);
+});
+
+const seenHashAtom = atom(null, (get, set, path: string, hash: string | null) => {
+  const key = get(serverInfoAtom)?.project_key;
+  if (key == null) return;
+  const { value } = checkpointFor(key);
+  const checkpoint = get(value);
+  // First-visit initialization belongs to the review UI.
+  if (checkpoint === null) return;
+  const hashes = { ...checkpoint.hashes };
+  // A reviewed deletion removes the old hash rather than inventing a current one.
+  if (hash === null) delete hashes[path];
+  else hashes[path] = hash;
+  set(value, { ...checkpoint, hashes });
+});
 
 export function changedSince(
   cp: Checkpoint,
@@ -68,12 +104,11 @@ export function changedSince(
   return changes;
 }
 
-export function markSeen(store: ReturnType<typeof createStore>, path: string, hash: string): void {
-  const checkpoint = store.get(checkpointAtom);
-  // First-visit initialization belongs to the review UI.
-  if (checkpoint === null) return;
-  store.set(checkpointAtom, {
-    ...checkpoint,
-    hashes: { ...checkpoint.hashes, [path]: hash },
-  });
+/** Moves one document's seen hash (null: seen as removed), keeping the checkpoint's generation. */
+export function markSeen(
+  store: ReturnType<typeof createStore>,
+  path: string,
+  hash: string | null,
+): void {
+  store.set(seenHashAtom, path, hash);
 }
