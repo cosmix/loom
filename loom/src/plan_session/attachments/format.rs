@@ -11,8 +11,9 @@ const CUT_TAIL: &str = " more characters; read the source]";
 
 /// The delivered text: the user's text, then (when there are attachments) a blank line and the
 /// `<loom-attachments>` block. A text line that looks like a block tag is escaped even when no
-/// block follows, so `parse_message` reads every text back unchanged and a typed fake block is
-/// never read as chips.
+/// block follows, so `parse_unwrapped` reads every text back unchanged and a typed fake block is
+/// never read as chips. This output was never wrapped by Claude Code: read it back with
+/// `parse_unwrapped`, since `parse_message` would unwrap a typed `<pasted_content>` wrapper.
 pub fn format_message(text: &str, attachments: &[Attachment]) -> String {
     let mut out = escape_text(text);
     if attachments.is_empty() {

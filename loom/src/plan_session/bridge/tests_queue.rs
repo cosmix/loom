@@ -97,6 +97,38 @@ fn an_unconfirmed_paste_turns_undelivered_and_a_late_prompt_delivers_it() {
 }
 
 #[test]
+fn a_late_prompt_in_a_pasted_content_wrapper_delivers_its_message() {
+    let h = Harness::ready(|c| c.delivery_timeout = Duration::from_millis(400));
+    let s = h.idle(Authoring);
+    assert!(matches!(
+        send(&h, &s, "A b"),
+        SendOutcome::Delivering { .. }
+    ));
+    wait_until("A b undelivered", || {
+        delivery(&h, "A b") == Some(Delivery::Undelivered)
+    });
+    let wrapped = "\n\n<pasted_content id=\"f3a0\">\nA b\n</pasted_content id=\"f3a0\">\n";
+    h.spool(&s, "UserPromptSubmit", json!({"prompt": wrapped}));
+    wait_until("A b delivered", || {
+        delivery(&h, "A b") == Some(Delivery::Delivered)
+    });
+}
+
+#[test]
+fn a_typed_pasted_content_wrapper_is_queued_and_shown_as_typed() {
+    let typed = "<pasted_content id=\"f3a0\">\nA b\n</pasted_content id=\"f3a0\">";
+    let h = Harness::ready(|_| {});
+    let s = h.idle(Authoring);
+    h.working(&s);
+    assert!(matches!(send(&h, &s, typed), SendOutcome::Queued { .. }));
+    let queued = h.bridge.chat_snapshot(true).queue;
+    assert_eq!(queued[0].text.as_deref(), Some(typed), "the queue entry");
+    h.spool(&s, "Stop", json!({}));
+    wait_until("pasted", || h.sent(&s) == [typed]);
+    assert_eq!(delivery(&h, typed), Some(Delivery::Sent), "the sent item");
+}
+
+#[test]
 fn an_unsubmitted_authoring_opening_waits_undelivered_and_a_late_prompt_delivers_it() {
     let h = Harness::ready(|c| c.delivery_timeout = Duration::from_millis(2500));
     let s = h.start(Authoring);

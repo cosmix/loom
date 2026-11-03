@@ -10,6 +10,7 @@ use super::parse::parse_message;
 use super::{Attachment, AttachmentKind, LockedTag, QUOTE_CHARS};
 
 mod forge;
+mod pasted;
 mod resolve;
 
 #[derive(Deserialize)]
