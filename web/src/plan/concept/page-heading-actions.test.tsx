@@ -14,9 +14,15 @@ import { authorStore, makeDoc } from "@/plan/files/doc-heading-kit";
 import { PageHeading } from "./page-heading";
 
 const kept = vi.hoisted(() => ({ doc: null as DocView | null, failed: false }));
-vi.mock("./open-all", () => ({ useOpenAll: () => vi.fn() }));
+vi.mock("./open-all", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./open-all")>()),
+  useOpenAll: () => vi.fn(),
+}));
 vi.mock("./passage-doc", () => ({ useKeptDoc: () => ({ doc: kept.doc, failed: kept.failed }) }));
-vi.mock("./page-header-extras", () => ({ PageHeaderExtras: () => null }));
+vi.mock("./page-header-extras", () => ({
+  PageHeaderExtras: () => null,
+  SummaryAction: () => null,
+}));
 
 afterEach(() => {
   cleanup();
@@ -84,10 +90,11 @@ it("keeps Edit and Discuss disabled until the source loads and hides both for a 
   expect(screen.queryByRole("button", { name: "Discuss" })).toBeNull();
 });
 
-it("renders neither Edit nor Discuss without a source path, and no Open all over an empty page", () => {
+it("renders neither Edit nor Discuss without a source path, and no Open all without an openable sentence", () => {
   showWithDoc(makeDoc(), {
     path: null,
     empty: { kind: "no_vision", count: null, offer: null, docs: [] },
+    blocks: [],
   });
 
   expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();

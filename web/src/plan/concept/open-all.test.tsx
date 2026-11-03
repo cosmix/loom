@@ -2,14 +2,11 @@ import { act, renderHook } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import type { ReactNode } from "react";
-import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { pageHref } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
 
-import { useOpenAll } from "./open-all";
-import { conceptPageAtom } from "./page-state";
+import { hasOpenable, useAllOpen, useFoldAll, useOpenAll } from "./open-all";
 import { cite, pageOf, S1, S2, sent, src } from "./reading-column-fixtures";
 import { notesAtom, openRunsAtom } from "./view-state";
 
@@ -18,17 +15,15 @@ type Store = ReturnType<typeof createStore>;
 const SUMMARY = "demo/product/section_01";
 const OVERVIEW = "overview/demo/product";
 
-/** Calls Open all once at `path`, with `key`'s page loaded (or still loading when null). */
-function openAllAt(path: string, key: string, page: ConceptPage | null, seed?: (s: Store) => void) {
+function wrapperOf(store: Store) {
+  return ({ children }: { children: ReactNode }) => <Provider store={store}>{children}</Provider>;
+}
+
+/** Calls Open all once over `page`. */
+function openAllOn(page: ConceptPage, seed?: (s: Store) => void) {
   const store = createStore();
-  store.set(conceptPageAtom(key), { page, previous: null, error: null });
   seed?.(store);
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <Provider store={store}>
-      <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>
-    </Provider>
-  );
-  const { result } = renderHook(() => useOpenAll(), { wrapper });
+  const { result } = renderHook(() => useOpenAll(page), { wrapper: wrapperOf(store) });
   act(() => result.current());
   return store;
 }
@@ -42,7 +37,7 @@ describe("useOpenAll", () => {
       sent("b", "Plain claim."),
       sent("c", "Opens to detail.", [src(S2, "detail")]),
     ]);
-    const store = openAllAt(pageHref(SUMMARY), SUMMARY, page, (seeded) => {
+    const store = openAllOn(page, (seeded) => {
       const intro = [{ path: S1, anchor: "intro" }];
       seeded.set(openRunsAtom(SUMMARY), [
         { level: 1, sentenceId: "a", restsOn: intro, parent: null },
@@ -64,19 +59,70 @@ describe("useOpenAll", () => {
       sent("o", "Overview opens.", [cite("section_01", "x")]),
       sent("p", "Plain overview line."),
     ]);
-    const store = openAllAt(pageHref(OVERVIEW), OVERVIEW, page);
+    const store = openAllOn(page);
 
     expect(store.get(openRunsAtom(OVERVIEW))).toEqual([
       { level: 0, sentenceId: "o", restsOn: [], parent: null },
     ]);
   });
 
-  it("does nothing off a concept page or before the page loads", () => {
-    const page = pageOf(SUMMARY, [sent("a", "Opens.", [src(S1, "intro")])]);
-    const off = openAllAt("/", SUMMARY, page);
-    expect(off.get(openRunsAtom(SUMMARY))).toEqual([]);
+  it("leaves the open runs alone when nothing is closed", () => {
+    const page = pageOf(SUMMARY, [sent("b", "Plain claim.")]);
+    const store = openAllOn(page);
+    expect(store.get(openRunsAtom(SUMMARY))).toEqual([]);
+    expect(hasOpenable(page)).toBe(false);
+  });
+});
 
-    const loading = openAllAt(pageHref(SUMMARY), SUMMARY, null);
-    expect(loading.get(openRunsAtom(SUMMARY))).toEqual([]);
+describe("useAllOpen and useFoldAll", () => {
+  beforeEach(() => window.sessionStorage.clear());
+
+  const page = pageOf(OVERVIEW, [
+    sent("o", "Overview opens.", [cite("section_01", "x")]),
+    sent("p", "Plain overview line."),
+    sent("q", "Overview opens too.", [cite("section_02", "y")]),
+  ]);
+
+  function hooksOn(store: Store) {
+    return renderHook(
+      () => ({ allOpen: useAllOpen(page), open: useOpenAll(page), fold: useFoldAll(page) }),
+      { wrapper: wrapperOf(store) },
+    );
+  }
+
+  it("reports all open only once every openable sentence is open, by hand or by Open all", () => {
+    const store = createStore();
+    const { result } = hooksOn(store);
+    expect(result.current.allOpen).toBe(false);
+
+    act(() =>
+      store.set(openRunsAtom(OVERVIEW), [{ level: 0, sentenceId: "o", restsOn: [], parent: null }]),
+    );
+    expect(result.current.allOpen).toBe(false);
+
+    act(() => result.current.open());
+    expect(result.current.allOpen).toBe(true);
+  });
+
+  it("folds every run at every level, nested member runs included", () => {
+    const store = createStore();
+    const { result } = hooksOn(store);
+    act(() => result.current.open());
+    act(() =>
+      store.set(openRunsAtom(OVERVIEW), (open) => [
+        ...open,
+        { level: 1, sentenceId: "m1", restsOn: [{ path: S1, anchor: "intro" }], parent: "o" },
+      ]),
+    );
+
+    act(() => result.current.fold());
+    expect(store.get(openRunsAtom(OVERVIEW))).toEqual([]);
+    expect(result.current.allOpen).toBe(false);
+  });
+
+  it("never reports all open for a page with no openable sentence", () => {
+    const plain = pageOf(SUMMARY, [sent("b", "Plain claim.")]);
+    const { result } = renderHook(() => useAllOpen(plain), { wrapper: wrapperOf(createStore()) });
+    expect(result.current).toBe(false);
   });
 });

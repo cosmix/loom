@@ -34,11 +34,13 @@ import { conceptPageAtom } from "./page-state";
 const extras = vi.hoisted(() => ({
   header: vi.fn(() => null),
   chip: vi.fn(() => null),
-  row: vi.fn(() => null),
+  action: vi.fn(() => null),
 }));
-vi.mock("./page-header-extras", () => ({ PageHeaderExtras: extras.header }));
+vi.mock("./page-header-extras", () => ({
+  PageHeaderExtras: extras.header,
+  SummaryAction: extras.action,
+}));
 vi.mock("./key-chip-extras", () => ({ KeyChipExtras: extras.chip }));
-vi.mock("./key-row-extras", () => ({ KeyRowExtras: extras.row }));
 
 let pages: Record<string, unknown> = {};
 let docs: Record<string, unknown> = {};
@@ -64,7 +66,7 @@ beforeEach(() => {
   fetched.length = 0;
   extras.header.mockClear();
   extras.chip.mockClear();
-  extras.row.mockClear();
+  extras.action.mockClear();
   window.sessionStorage.clear();
   vi.stubGlobal("fetch", vi.fn(makeStubFetch(() => ({ pages, docs, failing }), fetched)));
 });
@@ -161,7 +163,7 @@ describe("overviews and the document key", () => {
     await readingColumn();
     expect(within(keyList()).getByText("no plan").className).toContain("text-muted-foreground");
   });
-  it("the key has no Fold all button; the hint row names the keys that fold", async () => {
+  it("no Fold all shows while a sentence stays closed; the hint row names the keys that fold", async () => {
     serveOverview();
     renderAt("/f/demo/product", canAuthor);
     await openFirstRun();
@@ -386,12 +388,12 @@ describe("wiring", () => {
     expect(conceptPageLabel("/f/demo/product/a%2Fb")).toBeNull();
     expect(conceptPageLabel("/files/doc/x.md")).toBeNull();
   });
-  it("PageHeaderExtras, KeyChipExtras and KeyRowExtras mounted", async () => {
+  it("PageHeaderExtras, SummaryAction and KeyChipExtras mounted", async () => {
     serveOverview();
     renderAt("/f/demo/product/section_01");
     await screen.findByRole("heading", { level: 1, name: "Planning" });
     expect(extras.header).toHaveBeenCalled();
-    expect(extras.row).toHaveBeenCalled();
+    expect(extras.action).toHaveBeenCalled();
     expect(extras.chip).toHaveBeenCalled();
   });
 });

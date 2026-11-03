@@ -11,8 +11,8 @@ import { DocMark } from "@/plan/ui/doc-mark";
 
 import "./concept-page.css";
 import { KeyChipExtras } from "./key-chip-extras";
-import { KeyRowExtras } from "./key-row-extras";
 import { docColour } from "./marks";
+import { pageSentences } from "./open-state";
 import { conceptPageAtom } from "./page-state";
 import { SentenceText } from "./sentence-text";
 import { outOfDateText } from "./summary-text";
@@ -59,6 +59,17 @@ function ChipMark({ chip, rebuilding }: { chip: KeyChip; rebuilding: boolean }) 
   );
 }
 
+/** A section reads by its number ("§05"); any other document by its label as sent (a plan slug). */
+function shortLabel(chip: KeyChip): string {
+  const section = docKindOfPageKey(chip.doc.page) === "section" && /^\d+$/.test(chip.label);
+  return section ? `§${chip.label}` : chip.label;
+}
+
+/**
+ * A document in the key: its mark in the document colour and its short label. The full title is
+ * not drawn; it is part of the link's accessible name (visually hidden) and heads the tooltip,
+ * above the out-of-date or implements note when there is one.
+ */
 function ChipLink({
   chip,
   rebuilding,
@@ -70,28 +81,32 @@ function ChipLink({
   description: string;
   descriptionId: string;
 }) {
-  const link = (
-    <Link
-      to={pageHref(chip.doc.page)}
-      data-dashed={chip.out_of_date ? "true" : undefined}
-      aria-describedby={description ? descriptionId : undefined}
-      className="concept-key-doc"
-    >
-      <ChipMark chip={chip} rebuilding={rebuilding} />
-      <span className="concept-key-label font-mono">
-        <Untrusted text={chip.label} />
-      </span>
-      <span className="concept-key-title" style={{ unicodeBidi: "isolate", direction: "ltr" }}>
-        <SentenceText text={chipTitle(chip.doc.title)} />
-      </span>
-    </Link>
-  );
-  if (!description) return link;
+  const title = chipTitle(chip.doc.title);
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{link}</TooltipTrigger>
-      <TooltipContent>
-        <Untrusted text={description} />
+      <TooltipTrigger asChild>
+        <Link
+          to={pageHref(chip.doc.page)}
+          data-dashed={chip.out_of_date ? "true" : undefined}
+          aria-describedby={description ? descriptionId : undefined}
+          className="concept-key-doc"
+        >
+          <ChipMark chip={chip} rebuilding={rebuilding} />
+          <span className="concept-key-label font-mono">
+            <Untrusted text={shortLabel(chip)} />
+          </span>{" "}
+          <span className="sr-only" style={{ unicodeBidi: "isolate", direction: "ltr" }}>
+            <SentenceText text={title} />
+          </span>
+        </Link>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[48ch] flex-col items-start">
+        <SentenceText text={title} />
+        {description && (
+          <span className="block opacity-80">
+            <Untrusted text={description} />
+          </span>
+        )}
       </TooltipContent>
     </Tooltip>
   );
@@ -157,11 +172,16 @@ function MoreChip({
   );
 }
 
+/** Whether any sentence on the page carries a mark, so the mark legend has something to explain. */
+function hasMarks(page: ConceptPage): boolean {
+  return pageSentences(page).some((sentence) => sentence.marks.length > 0);
+}
+
 /**
  * What the spine cannot show: which colour is which document, and what the squares after a
- * sentence mean. One quiet run of documents on the page ground (a swatch and a name each), the
- * first four with "more" for the rest, then the mark legend and the key row's extras. No chips,
- * no box (DESIGN.md, Surfaces).
+ * sentence mean. One quiet line on the page ground: the lead word, then a mark and a short label
+ * per document, the first four with "more" for the rest; under it, the one-line mark legend when
+ * the page has marks. No chips, no box (DESIGN.md, Surfaces).
  */
 export function DocumentKey({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   // Expansion belongs to one page: another page opens collapsed without remounting the key row,
@@ -173,25 +193,31 @@ export function DocumentKey({ page, pageKey }: { page: ConceptPage; pageKey: str
   const dashed = page.key_chips.some((chip) => chip.out_of_date !== null);
   return (
     <div className="concept-key">
-      <ul role="list" aria-label="Document key" className="concept-key-list">
-        {shown.map((chip) => (
-          <Chip key={chip.doc.id} chip={chip} />
-        ))}
-        {hidden > 0 && (
-          <MoreChip
-            hidden={hidden}
-            expanded={expanded}
-            onToggle={() => setExpandedOn(expanded ? null : pageKey)}
-          />
-        )}
-      </ul>
-      <p className="plan-fine concept-key-legend">
-        <span aria-hidden="true" className="concept-key-square" />
-        {dashed
-          ? "A square after a sentence names a document it draws on. Dashed means out of date."
-          : "A square after a sentence names a document it draws on."}
-      </p>
-      <KeyRowExtras page={page} />
+      <div className="concept-key-row">
+        <span aria-hidden="true" className="plan-fine concept-key-lead">
+          Sources
+        </span>
+        <ul role="list" aria-label="Document key" className="concept-key-list">
+          {shown.map((chip) => (
+            <Chip key={chip.doc.id} chip={chip} />
+          ))}
+          {hidden > 0 && (
+            <MoreChip
+              hidden={hidden}
+              expanded={expanded}
+              onToggle={() => setExpandedOn(expanded ? null : pageKey)}
+            />
+          )}
+        </ul>
+      </div>
+      {hasMarks(page) && (
+        <p className="plan-fine concept-key-legend">
+          <span aria-hidden="true" className="concept-key-square" />
+          {dashed
+            ? "A square after a sentence names a document it draws on. Dashed means out of date."
+            : "A square after a sentence names a document it draws on."}
+        </p>
+      )}
     </div>
   );
 }

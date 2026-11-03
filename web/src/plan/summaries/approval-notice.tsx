@@ -8,6 +8,11 @@ import { DisabledReason } from "@/plan/ui/disabled-reason";
 
 import { summaryQuestionAtom, useSummaryActions } from "./state";
 
+/**
+ * An above-budget rebuild waiting for approval, as one line beside the summary status: "Rebuild
+ * all" for an author, then one fine-print sentence with the count, the reason and the estimate.
+ * A reader sees the sentence alone.
+ */
 export function ApprovalNotice({
   question,
   canAnswer,
@@ -18,24 +23,30 @@ export function ApprovalNotice({
   onAnswer: (rebuild: boolean) => void;
 }) {
   return (
-    <section aria-label="Rebuild approval" className="w-full min-w-0 space-y-2 text-sm">
-      <p>
-        <span className="font-medium tabular-nums">{question.count}</span> summaries out of date.
-        The rebuild is above the budget and waiting for approval.
-      </p>
-      <p className="text-muted-foreground">
-        Estimate:{" "}
+    <span
+      role="group"
+      aria-label="Rebuild approval"
+      className="inline-flex max-w-full min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1"
+    >
+      {canAnswer && (
+        <DisabledReason
+          reason={null}
+          size="sm"
+          reasonPlacement="inline"
+          onClick={() => onAnswer(true)}
+        >
+          Rebuild all
+        </DisabledReason>
+      )}
+      <span className="plan-fine">
+        <span className="tabular-nums">{question.count}</span> summaries out of date. The rebuild is
+        above the budget and waiting for approval:{" "}
         <span className="tabular-nums">
           {question.estimate_tokens.toLocaleString("en-US")} tokens
         </span>
         .
-      </p>
-      {canAnswer && (
-        <DisabledReason reason={null} onClick={() => onAnswer(true)}>
-          Rebuild all
-        </DisabledReason>
-      )}
-    </section>
+      </span>
+    </span>
   );
 }
 
@@ -62,13 +73,13 @@ export function PendingApprovalNotice() {
   };
 
   return (
-    <div className="w-full min-w-0 space-y-2">
+    <span className="inline-flex max-w-full min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
       <ApprovalNotice question={question} canAnswer={canAnswer} onAnswer={onAnswer} />
       {failure?.questionId === question.id && (
-        <p role="alert" className="text-sm text-destructive">
+        <span role="alert" className="text-xs text-destructive">
           <Untrusted text={failure.message} />
-        </p>
+        </span>
       )}
-    </div>
+    </span>
   );
 }

@@ -6,29 +6,43 @@ import { Untrusted } from "@/plan/chat/visible-controls";
 /** The three button looks of `ui/design.css` (DESIGN.md, Buttons). Primary is one per screen. */
 export type ButtonLook = "quiet" | "secondary" | "primary";
 
+/** Where a blocked control's reason goes: beneath it (the default), or after it on its line. */
+export type ReasonPlacement = "below" | "inline";
+
+const PLACEMENT: Record<ReasonPlacement, string> = {
+  below: "flex flex-col items-start gap-1",
+  // Inline: the reason follows the button on its baseline and wraps under it only when the line
+  // is too narrow. The document header's status line uses it.
+  inline: "inline-flex max-w-full flex-wrap items-baseline gap-x-2 gap-y-1",
+};
+
 /*
- * The planner's button, secondary unless its owner passes `look="primary"`: `.plan-button` in `ui/design.css` sets the scale (28px, 13px/500, one
- * line) over Button's own utilities, and `data-look` picks the look. `size` passes through to
- * Button, whose `data-size="sm"` the stylesheet reads for the compact row variant.
+ * The planner's button, secondary unless its owner passes `look="primary"`: `.plan-button` in
+ * `ui/design.css` sets the scale (28px, 13px/500, one line) over Button's own utilities, and
+ * `data-look` picks the look. `size` passes through to Button, whose `data-size="sm"` the
+ * stylesheet reads for the compact row variant.
  */
 export function DisabledReason({
   reason,
   onClick,
   size,
   look = "secondary",
+  reasonPlacement = "below",
   children,
 }: {
   reason: string | null;
   onClick: () => void;
   size?: ComponentProps<typeof Button>["size"];
   look?: ButtonLook;
+  reasonPlacement?: ReasonPlacement;
   children: ReactNode;
 }) {
   const reasonId = useId();
   const blocked = reason !== null;
+  const Wrapper = reasonPlacement === "inline" ? "span" : "div";
 
   return (
-    <div className="flex flex-col items-start gap-1">
+    <Wrapper className={PLACEMENT[reasonPlacement]}>
       {/* Button styles only `disabled`; this stays focusable, so `aria-disabled` needs its own. */}
       <Button
         type="button"
@@ -47,6 +61,6 @@ export function DisabledReason({
           <Untrusted text={reason} />
         </span>
       )}
-    </div>
+    </Wrapper>
   );
 }

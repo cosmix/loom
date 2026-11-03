@@ -1,7 +1,6 @@
-import { UnfoldVertical } from "lucide-react";
-import type { JSX } from "react";
+import { FoldVertical, UnfoldVertical } from "lucide-react";
+import type { JSX, ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
 import { docKindOfPageKey, overviewKey, pageHref, parsePageKey } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
 import { toAddress } from "@/plan/files/address";
@@ -26,9 +25,9 @@ import {
   type HeadingCrumb,
 } from "@/plan/ui/doc-heading";
 
-import { useOpenAll } from "./open-all";
+import { hasOpenable, useAllOpen, useFoldAll, useOpenAll } from "./open-all";
 import { useKeptDoc } from "./passage-doc";
-import { PageHeaderExtras } from "./page-header-extras";
+import { PageHeaderExtras, SummaryAction } from "./page-header-extras";
 
 const RUN_NOTICE =
   "This plan is running. `loom run` works from the committed copy, so the app keeps it read-only.";
@@ -81,6 +80,11 @@ function implementsChips(page: ConceptPage): HeadingChip[] {
   ];
 }
 
+/** The summary status chip, with its Rebuild action on the same line. */
+function statusChips(page: ConceptPage, rebuilding: boolean, action: ReactNode): HeadingChip[] {
+  return summaryChips(page, rebuilding).map((chip) => ({ ...chip, after: action }));
+}
+
 function pageChips(page: ConceptPage, rebuilding: boolean, questions: HeadingChip[]) {
   const plan = page.plan_state;
   const showPressure = plan !== null || page.last_pressure !== null;
@@ -88,7 +92,7 @@ function pageChips(page: ConceptPage, rebuilding: boolean, questions: HeadingChi
     ...(plan === null ? [] : [planStateChip(plan)]),
     ...(showPressure ? [pressureChip(page.last_pressure, false)] : []),
     ...implementsChips(page),
-    ...summaryChips(page, rebuilding),
+    ...statusChips(page, rebuilding, <SummaryAction page={page} />),
     ...questions,
     ...builtByChips(page),
   ];
@@ -107,13 +111,20 @@ function SourceActions({ path }: { path: string }): JSX.Element | null {
   return <HeadingActions doc={doc} pressureActive={pressureActive} />;
 }
 
-function OpenAllButton(): JSX.Element {
-  const openAll = useOpenAll();
+/**
+ * Open all while any openable sentence is closed, Fold all once none is. One element under both
+ * labels, so focus stays on it when the label turns.
+ */
+export function OpenAllButton({ page }: { page: ConceptPage }): JSX.Element {
+  const allOpen = useAllOpen(page);
+  const openAll = useOpenAll(page);
+  const foldAll = useFoldAll(page);
+  const Icon = allOpen ? FoldVertical : UnfoldVertical;
   return (
-    <Button type="button" {...HEADING_BUTTON} onClick={openAll}>
-      <UnfoldVertical aria-hidden="true" />
-      Open all
-    </Button>
+    <button type="button" {...HEADING_BUTTON} onClick={allOpen ? foldAll : openAll}>
+      <Icon aria-hidden="true" />
+      {allOpen ? "Fold all" : "Open all"}
+    </button>
   );
 }
 
@@ -139,7 +150,7 @@ export function PageHeading({ page }: { page: ConceptPage }): JSX.Element {
       actions={
         <>
           {page.path && <SourceActions key={page.path} path={page.path} />}
-          {!page.empty && <OpenAllButton />}
+          {hasOpenable(page) && <OpenAllButton page={page} />}
         </>
       }
       chips={pageChips(page, rebuilding, questions)}
