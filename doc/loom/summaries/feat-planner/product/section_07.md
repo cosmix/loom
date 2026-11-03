@@ -1,9 +1,9 @@
 ---
 kind: document
 of: doc/product/feat-planner/section_07.md
-file: sha256:d2f14a458bcc752093ee3b6a5649e8e79dae6d07522ae72d197f4d5b897cbadb
+file: sha256:dd991c9e5f175969662d6d8a0eb2c1b83060eaa459c0a40b8a7716fb3f1e4cbf
 cites:
-  "doc/product/feat-planner/section_07.md#crashes-and-kills": "sha256:0d94e58012b74843880e175b0a93e714e5877034ad63837758393a3440f4e3ed"
+  "doc/product/feat-planner/section_07.md#crashes-and-kills": "sha256:3bd5cc733b6ec4cbeb998814edb024e891b42f4b98b928bb2579e234c0ff2413"
   "doc/product/feat-planner/section_07.md#delivering-input": "sha256:afc256f63b7d39a3fce86ef4c3f4573a3d063af02ffec46900dce2dae1212135"
   "doc/product/feat-planner/section_07.md#hooks-and-the-event-spool": "sha256:2b6451031c3862cebb4b249c0259c0e269f4a189e23722e999463c52f5b20ed3"
   "doc/product/feat-planner/section_07.md#kickoff": "sha256:1e93aba3df74e3463a07c20642145f928c1d609962db69ed33123d613b359071"
@@ -54,4 +54,4 @@ Permission decisions go through the `PermissionRequest` hook, which polls for th
 
 Sessions start cold and the bridge never uses `claude --resume`, so reattaching means a browser rejoining a session still running in the same server. [Reattaching and resume](../../../../product/feat-planner/section_07.md#reattaching-and-resume)
 
-When the server dies its sessions keep running, and the next server delivers the closing message only to sessions whose process identity verifies as alive, leaving unverifiable records alone and printing their socket names. [Crashes and kills](../../../../product/feat-planner/section_07.md#crashes-and-kills)
+When the server dies its sessions keep running, and the next `loom plan` on the project delivers the closing message to each session whose process identity verifies as alive, waits up to 10 minutes, and tears it down before accepting any new chat, leaving unverifiable records alone and printing their socket names. [Crashes and kills](../../../../product/feat-planner/section_07.md#crashes-and-kills)
