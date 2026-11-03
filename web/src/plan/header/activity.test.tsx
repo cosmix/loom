@@ -236,6 +236,31 @@ it("a stopped run keeps one dashboard line and no activity", async () => {
   expect(dialog.textContent).not.toContain("daemon stopped");
 });
 
+it.each([true, false])(
+  "escapes a bidi control in the plan name for a run (daemon running: %s)",
+  async (running) => {
+    await useRealActivities();
+    setRun({ plan: "doc/plans/PLAN-‮exe.md", daemon_running: running, attention: 2 });
+    render(<ActivityPill compact={false} />);
+    fireEvent.click(screen.getByRole("button", { name: /^(1 in progress|Activity)/ }));
+
+    const dialog = await screen.findByRole("dialog", { name: "In progress" });
+    expect(within(dialog).getAllByText(/PLAN-⟨U\+202E⟩exe\.md/).length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toContain("‮");
+  },
+);
+
+it("renders no run row or footer line without a plan", async () => {
+  await useRealActivities();
+  setRun({ plan: null, daemon_running: false });
+  render(<ActivityPill compact={false} />);
+  fireEvent.click(screen.getByRole("button", { name: /^Activity/ }));
+
+  const dialog = await screen.findByRole("dialog", { name: "In progress" });
+  expect(within(dialog).queryByRole("link", { name: "Open dashboard" })).toBeNull();
+  expect(dialog.querySelector(".activity-foot")?.textContent ?? "").not.toMatch(/stages merged/);
+});
+
 function setPanel(patch: object): PanelLoad {
   const load: PanelLoad = {
     status: "ready",
