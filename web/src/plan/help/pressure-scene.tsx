@@ -95,7 +95,7 @@ export function PressureRunScene() {
   );
 }
 
-// The run strip is not shown: DashboardButton POSTs /api/run/dashboard on mount; revisit when the fetch can be injected.
+// The activity popover's run row is not shown: its RunRow mounts DashboardButton, which POSTs /api/run/dashboard on mount; revisit when the fetch can be injected.
 export const PRESSURE_SCENES: readonly PlannerHelpScene[] = [
   {
     title: "A run in the chat",

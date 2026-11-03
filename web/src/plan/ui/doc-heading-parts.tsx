@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 
 import type { HeadingChip, HeadingTone } from "./doc-heading";
+import { INLINE_BASELINE } from "./disabled-reason";
 
 export const FOCUS =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
@@ -145,10 +146,7 @@ export function ChipRow({ chips }: { chips: readonly HeadingChip[] }): JSX.Eleme
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
       {chips.map((chip) =>
         chip.after ? (
-          <span
-            key={chip.key}
-            className="inline-flex max-w-full flex-wrap items-baseline gap-x-2 gap-y-1"
-          >
+          <span key={chip.key} className={INLINE_BASELINE}>
             <Chip chip={chip} />
             {chip.after}
           </span>

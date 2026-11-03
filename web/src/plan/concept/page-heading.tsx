@@ -80,7 +80,12 @@ function implementsChips(page: ConceptPage): HeadingChip[] {
   ];
 }
 
-/** The summary status chip, with its Rebuild action on the same line. */
+/**
+ * The summary status chip, with its Rebuild action on the same line. A page whose state is null
+ * gets no chip and so no Rebuild: the server sets state for every expected id
+ * (`plan_server/concept/evaluate.rs`), so null occurs only while a cached evaluation predates a
+ * new document.
+ */
 function statusChips(page: ConceptPage, rebuilding: boolean, action: ReactNode): HeadingChip[] {
   return summaryChips(page, rebuilding).map((chip) => ({ ...chip, after: action }));
 }

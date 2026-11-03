@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { authorBlockReasonAtom } from "@/plan/state/atoms";
-import { DisabledReason } from "@/plan/ui/disabled-reason";
+import { DisabledReason, INLINE_BASELINE } from "@/plan/ui/disabled-reason";
 
 import { useSummaryActions } from "./state";
 
@@ -25,8 +25,10 @@ export function RebuildButton({ ids }: { ids: string[] }) {
   }
 
   // One line beside the summary status: the button, then a blocked reason or a failure after it.
+  // The wrapper stays: it holds the failure beside DisabledReason's own inline wrapper, so the
+  // alert shares the baseline line instead of landing outside it.
   return (
-    <span className="inline-flex max-w-full flex-wrap items-baseline gap-x-2 gap-y-1">
+    <span className={INLINE_BASELINE}>
       <DisabledReason
         reason={reason}
         size="sm"

@@ -340,3 +340,16 @@ fn cross_feature_summary_link_resolves_and_is_rejected_outside_scope() {
         ["7: other/product/section_01 is not a member of summary overview/demo/product"]
     );
 }
+
+#[test]
+fn sentence_citing_one_member_twice_reports_one_restatement() {
+    let f = sealed_sections();
+    let link = member(ID1, A1);
+    let draft = format!(
+        "# Overview\n\n{A1} {link} {link}\n\nSecond. {}\n\nVision. {VISION_LINK}\n",
+        member(ID2, A2)
+    );
+    let messages = rejections(seal_text(&f, PRODUCT, &draft));
+    let restated = messages.iter().filter(|m| m.contains("restates")).count();
+    assert_eq!(restated, 1, "{messages:?}");
+}
