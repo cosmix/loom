@@ -81,7 +81,8 @@
 
 - **Silent exit 0.** `web/scripts/plan-screens.mjs` guarded `main()` with `import.meta.url === file://argv[1]`, which exits 0 without running on a path with spaces or a symlink. Call `main` unconditionally in CLI scripts.
 - **Searches in guessed paths.** Two workers searched `loom/src/fs/user_config` and an assumed test path that did not exist. Locate with `rg --files` before narrowing a path.
-- **Background `loom check`.** The first gate ran with `run_in_background`, so its `LOOM_RELAY_V1` line went to a task file the relay hook does not read (a recurrence of [the live-state entry](live-state-pollution.md); the hook proposal is in [concerns](../concerns/code-quality-and-hook-debt.md#no-hook-refuses-a-relayed-loom-command-run-in-the-background-or-through-a-pipe)). Build screenshots from a `git archive` export in scratch so the live worktree stays untouched while the host gate reads it.
+- **Background `loom check`.** The first gate ran with `run_in_background`, so its `LOOM_RELAY_V1` line went to a task file the relay hook does not read (a recurrence of [the live-state entry](live-state-pollution.md); the hook proposal is in [concerns](../concerns/code-quality-and-hook-debt.md#no-hook-refuses-a-relayed-loom-command-run-in-the-background-or-through-a-pipe)). Build screenshots from a `git archive` export in scratch so the live worktree stays untouched while the host gate reads it. It recurred in the issue-fixes integration-verify stage: the request sat in "pending relay" and its host job came back "refused: the request never reached the daemon". Run `loom check` in the foreground and rerun the same command to keep waiting.
+- **Chained `loom memory` commands.** The relay hook refuses a Bash call whose `loom memory` commands are joined with backslash-newline continuations or preceded by a shell variable assignment (`S=... &&`), then recovers those requests on the next relayed call, so a retry duplicates every entry. Chain `loom` commands on one line with `&&`, never retry a refused batch, and wait for the recovery.
 
 ## The Repair Passed Every Gate While the Feature Screen Stayed Unusable
 
@@ -92,3 +93,39 @@
 **Prevention:** a UI plan's acceptance includes scripted journeys in a real browser against real documents: start a feature, review a finished one down to source, change a section by chat and by direct edit. A mockup that overrides the spec changes the spec in the same plan.
 
 **Fix:** `PLAN-feat-planner-13-planner-redesign` rebuilt the feature screen as a layout route with a spine over the real documents ([Planner Feature Screens](../architecture/planner-feature-screens.md)). Its design source was a `DESIGN.md` set by a designer worker, not a locked mockup (plan 12's procedure in [Visual Stages](../conventions/plan-web.md#visual-stages-and-the-screenshot-script) is one option), and its driver was a journey script that walks user tasks in a real browser. The slips that plan still made are in [Planner Redesign](planner-redesign.md).
+
+## A Pressed Rebuild Waited Behind an Open Question (2026-11-03)
+
+**What happened:** issue #16 reported that a Rebuild press did not start a session and that the cost ledger logged every summary session as background. The transport (the bridge, the 200 ms tick, recovery) was the obvious suspect.
+
+**Why:** a timeline rig (fake host, real bridge, driver at a 20 ms tick, facade) showed an idle press and a Rebuild-all answer reaching `host.spawn` at the next tick, so the transport was sound. The scheduler held the press: `try_start` returned while a question about a background batch was open, which contradicted the documented rule that Button and approved ids skip the limit; and `prune` dropped a pressed id whose summary was current when a batch arrived during a running session, so the press never started. The ledger rule required every id of a line to be pressed, and `running_triggers` mapped approved ids to background, so a Rebuild-all answer and a press joined by a background id both logged background.
+
+**Prevention:** before blaming transport for a lost action, build the timeline and list every state that defers it; pin each with a named test that fails at base. Whoever writes "X always starts" checks the guards in `try_start` and `prune`, not only the happy path.
+
+**Fix:** [Rebuild Scheduler](../architecture/summary-store.md#rebuild-scheduler) (press path, suspension guards, pruning) and [Cost Ledger](../architecture/summary-store.md#cost-ledger-and-estimates). One press during a running session still waits, by design.
+
+## An after_stage Pattern Matched TypeScript Generics (2026-11-03)
+
+**What happened:** the check `! rg -q "<RunStrip\b" src/plan`, meant to prove no JSX mounts the deleted component, also matched type arguments such as `atom<RunStrip | null>` in `run/use-run.ts` (outside the stage's files) and `Pick<RunStrip, ...>`, so it stayed red until another stage's file changed.
+
+**Why:** `<Name\b` is the shape of a generic as well as of an element.
+
+**Prevention:** anchor an absence check on an element to what only JSX has (`<RunStrip[ />]` followed by an attribute or `/>`), or alias the imported type, and run the pattern at plan-writing time with `rg` over the whole tree to see what it matches. A check that spans files a stage does not own is an ownership conflict.
+
+## Claude Code Wrapped Delivered Prompts and Every Text Match Broke Silently (2026-11-03)
+
+**What happened:** Claude Code began recording a delivered prompt in the transcript and in the `UserPromptSubmit` hook as `<pasted_content id="X">`, the text and `</pasted_content id="X">`. Every match on the delivered text compared against the wrapped form and stopped matching: a chat's opening appeared twice (the sent item and the transcript item, which never replaced it), and a message with an attached document showed the `<loom-attachments>` block as raw markup. No test failed and no log line appeared, because the fixtures carried the bare format.
+
+**Why:** the parsers matched text Claude Code produces, and the fixtures were written by hand in the format that existed when the code was written. Nothing compared them with a real transcript after Claude Code changed.
+
+**Prevention:** after a Claude Code upgrade, capture fixtures from real session transcripts and hook payloads and diff them against the fixtures the parsers use; test a match on Claude Code's output with a recorded wrapped case and a bare case. Unwrap only the exact whole-message shape and treat the tag id as untrusted input (`unwrap_pasted` bounds it to 32 ASCII alphanumerics, `_` and `-`). Unwrap before any length cap, or the close tag of a maximum-size delivery is lost.
+
+**Fix:** `plan_session/attachments/pasted.rs`, the transcript mapper and the hook path ([Delivery](../architecture/planning-session-bridge.md#delivery)). Contracts: `wrapped_message_parses_typed_text_and_attachments`, `wrapped_opening_replaces_the_sent_item`, `wrapped_closing_keeps_its_origin` (`transcript/paste_contract_tests.rs`). A real New chat with no markup and a message with an attached document showing a chip are operator checks ([follow-ups](../concerns/planner-ui-repair-followups.md#planner-issue-fixes-unchecked-here)).
+
+## The Signal Omits a Stage's after_stage Commands (2026-11-03)
+
+**What happened:** the knowledge-distill stage of the planner issue-fixes plan passed both listed acceptance criteria and failed at completion on an `after_stage` check, `! rg -q 'RunStrip' doc/loom/knowledge/architecture/planner-web-shell.md`, because the stage's own corrected text said that no such component exists. The signal lists acceptance criteria only, so the check stayed invisible until the completion host job ran. It repeats [the dropped `exit_code`](verification-v2-delivery.md#the-signals-acceptance-list-drops-exit_code).
+
+**Why:** `after_stage` commands live in the stage file and the plan YAML, not in the signal.
+
+**Prevention:** before writing, read `.loom/work/stages/<n>-<stage-id>.md` and run `rg -n 'command:'` over it; in a knowledge stage never write a word an absence check forbids, even to say the thing is gone. A hook or `loom plan verify` check that prints `after_stage` commands and `exit_code` in the signal would end the recurrence.
