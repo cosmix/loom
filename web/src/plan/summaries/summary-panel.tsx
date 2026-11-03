@@ -14,7 +14,7 @@ import { useSummaryActions } from "./state";
 
 export function SummaryPanel({ panel, nowSecs }: { panel: SummaryPanelData; nowSecs: number }) {
   return (
-    <div className="w-full min-w-0 max-w-full space-y-4 text-[13px] [overflow-wrap:anywhere]">
+    <div className="w-full min-w-0 max-w-full space-y-[var(--space-4)] text-[13px] [overflow-wrap:anywhere]">
       {panel.read_only !== null && (
         <p className="text-muted-foreground">
           <Untrusted text={panel.read_only} />
@@ -104,14 +104,24 @@ function RunningRebuildSection({ running }: { running: RunningRebuild }) {
   );
 }
 
+/**
+ * The ids a pending question already lists (rebuild-question.tsx, drawn above this panel) are
+ * left out of the queue, so each id shows once. Ids queued for another reason stay.
+ */
+function queueBesideQuestion(panel: SummaryPanelData): string[] {
+  const asked = new Set(panel.question?.ids ?? []);
+  return panel.queue.filter((id) => !asked.has(id));
+}
+
 function RebuildActivity({ panel }: { panel: SummaryPanelData }) {
+  const queue = queueBesideQuestion(panel);
   return (
     <>
       {panel.running !== null && <RunningRebuildSection running={panel.running} />}
-      {panel.queue.length > 0 && (
+      {queue.length > 0 && (
         <Section title="Queue">
           <ul className="space-y-1 font-mono text-xs">
-            {panel.queue.map((id) => (
+            {queue.map((id) => (
               <li key={id}>
                 <Untrusted text={id} />
               </li>

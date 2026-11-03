@@ -31,7 +31,7 @@ Hierarchy is made with size, weight and space, in that order. A surface uses the
 - The page ground is `--background`. One level of surface exists: `.plan-surface` (`--card`, hairline edge, 10px corners) standing on the ground. Nothing inside a surface draws a border, a shadow or another surface. A box in a box is not allowed.
 - A border is allowed around: an input, a surface standing alone on the page, a popover or dialog. A border is not allowed around: a button row, a list that sits on the page, a status, a heading, a notice.
 - Lists divide with hairlines (`.plan-list`, `.plan-rule`); their edges are the page's edges. A hairline separates; it never encloses.
-- Shadows exist only on things that float: popovers and dialogs (`--plan-shadow`, `--dialog-shadow`). Nothing in the page flow casts one.
+- Shadows exist only on things that float: popovers and dialogs (`--plan-shadow`, `--dialog-shadow`; the activity popover layers `--popover-lift`, a longer drop, under `--plan-shadow`). Nothing in the page flow casts one.
 - An open block in the reading column (a sentence opened to its source passages) draws a 2px edge down its start in its document's hue (`--doc-n`, through `--run-colour`). It is the one coloured border on the page: the hue says which document, never a status.
 - The chat composer is a bordered input inside the chat panel, so the place to type stands apart from the transcript around it.
 

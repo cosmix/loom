@@ -102,14 +102,16 @@ function StatusContent({ load, reload }: { load: PanelLoad; reload: () => void }
       />
     );
   }
+  // One gap between the question and the panel's sections, the same gap SummaryPanel sets
+  // between its own sections.
   return (
-    <>
+    <div className="space-y-[var(--space-4)]">
       {/* The question comes first so its answer buttons stay above the fold on a phone. */}
       {load.panel.question && (
         <QuestionAnswer key={load.panel.question.id} question={load.panel.question} />
       )}
       <SummaryPanel panel={load.panel} nowSecs={nowSecs} />
-    </>
+    </div>
   );
 }
 
@@ -186,9 +188,20 @@ export function QuestionAnnouncement({ question }: { question: SummaryQuestion |
   );
 }
 
-/** The accessible name every summary row in the activity popover carries. */
+/** The visible title of every summary row in the activity popover: the start of its name. */
+const SUMMARY_ROW_TITLE = "Summary rebuilds";
+
+/**
+ * The accessible name of a summary row in the activity popover: the shared prefix, then the text
+ * the row shows, so the visible label stays inside the name (WCAG 2.5.3).
+ */
+export function summaryRowName(shown: string): string {
+  return `${SUMMARY_ROW_TITLE}: ${shown}`;
+}
+
+/** The idle row's name: it shows the prefix as its title and the status as its subtitle. */
 export function summaryRowLabel(load: PanelLoad): string {
-  return `Summary rebuilds: ${statusText(load).label}`;
+  return summaryRowName(statusText(load).label);
 }
 
 export interface SummaryExpansion {
@@ -249,11 +262,14 @@ export function SummaryStatusRow({
       >
         <ActivityTile kind="summaries" paused={!running} />
         <span className="activity-row__body">
-          <span className="activity-row__title">Summaries</span>
+          <span className="activity-row__title">{SUMMARY_ROW_TITLE}</span>
           <span className="activity-row__sub">{label}</span>
         </span>
+        {/* The right column carries a running rebuild's progress (`1/3`). An idle row's count is
+            already in its status line, so only the chevron sits there. */}
         <span className="activity-row__time">
-          {count} <Chevron aria-hidden="true" className="activity-row__chevron" />
+          {running ? `${count} ` : null}
+          <Chevron aria-hidden="true" className="activity-row__chevron" />
         </span>
       </button>
       {expanded && <SummaryDetail load={load} reload={reload} />}
