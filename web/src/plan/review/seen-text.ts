@@ -108,13 +108,18 @@ function writeOther(key: string, entries: SeenTexts): void {
   else safeStorage.setItem(key, entries);
 }
 
+/** Whether `recordSeen` would keep this read: a document over `DOC_LIMIT` is dropped. */
+export function fitsDocLimit(path: string, read: NonNullable<SeenRead>): boolean {
+  return entryBytes(path, { ...read, seen: Date.now() }) <= DOC_LIMIT;
+}
+
 /**
  * Replaces one document's entry. A gone, unreadable or over-cap document keeps no text, so its
  * diff falls back to the checkpoint commit and an older text never pairs with a newer hash.
  */
 function withSeen(entries: SeenTexts, path: string, read: SeenRead, now: number): SeenTexts {
   const entry = read && { hash: read.hash, text: read.text, seen: now };
-  if (entry === null || entryBytes(path, entry) > DOC_LIMIT) {
+  if (entry === null || !fitsDocLimit(path, entry)) {
     if (!Object.hasOwn(entries, path)) return entries;
     const rest = { ...entries };
     delete rest[path];
