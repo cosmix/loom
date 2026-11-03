@@ -140,8 +140,9 @@ function DeliveryState({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JS
 function UserItem({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   const bodyId = useId();
+  // A collapsed origin draws its label and Show only. The prompt is not in the DOM until Show, so
+  // no text query or screen reader reads it; `bodyId` still names the paragraph Show controls.
   const collapsed = item.origin !== null && !expanded;
-  const shown = collapsed ? (item.text.split(/\r\n?|\n/, 1)[0] ?? "") : item.text;
   return (
     <div className="chat-user group/message">
       <div className="chat-user-body">
@@ -171,7 +172,7 @@ function UserItem({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JSX.Ele
           </div>
         )}
         <p id={bodyId} className="whitespace-pre-wrap break-words">
-          <Untrusted text={shown} />
+          {!collapsed && <Untrusted text={item.text} />}
         </p>
       </div>
       <DeliveryState item={item} turn={turn} />

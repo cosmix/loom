@@ -1,4 +1,5 @@
-/* The composer: part of the panel, under its one hairline. The text box has no box of its own.
+/* The composer: part of the panel, under its one hairline. The text box is a bordered input on
+ * the page ground (DESIGN.md, Surfaces), so the place to type stands apart from the transcript.
  * Imported by chat-surface.css; see its header for why these rules are unlayered.
  */
 
@@ -17,20 +18,19 @@
   gap: var(--space-2);
 }
 
-/* Side padding with an equal negative margin keeps the text on the gutter and gives the focus
- * ring room around it. */
+/* The box's edge sits on the gutter, so it lines up with the transcript and the actions below. */
 .chat-composer-box {
   display: block;
   box-sizing: border-box;
-  width: calc(100% + 2 * var(--space-2));
+  width: 100%;
   /* Two lines of body text and the padding: the longest placeholder shows in full. */
   min-height: calc(2 * var(--type-body) * var(--leading-body) + 2 * var(--space-2));
-  margin-inline: calc(-1 * var(--space-2));
+  margin-inline: 0;
   padding: var(--space-2);
   overflow-y: auto;
-  border: 0;
+  border: 1px solid var(--border);
   border-radius: var(--corner-control);
-  background: transparent;
+  background: var(--background);
   color: var(--foreground);
   font-size: var(--type-body);
   line-height: var(--leading-body);
@@ -42,6 +42,7 @@
 }
 
 .chat-composer-box:focus-visible {
+  border-color: var(--ring);
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }

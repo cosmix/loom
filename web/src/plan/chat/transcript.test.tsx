@@ -137,7 +137,7 @@ it("offer origin collapsed with brief label", async () => {
     item("user", { origin: "offer", attachments: [], text: "Opening line\nHidden instructions" }),
   ]);
   await within(log).findByText(brief.label);
-  expect(within(log).queryByText(/Hidden instructions/)).toBeNull();
+  expect(within(log).queryByText(/Opening line|Hidden instructions/)).toBeNull();
   fireEvent.click(within(log).getByRole("button", { name: /show/i }));
   expect(within(log).getByText(/Hidden instructions/)).toBeTruthy();
 });

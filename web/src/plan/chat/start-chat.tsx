@@ -22,6 +22,8 @@ import { chatSheetOpenAtom } from "./sheet-state";
 import { useSessionBrief } from "./use-session-brief";
 import { Untrusted, visibleControls } from "./visible-controls";
 
+// New chat renders only without an active session, but another tab can start one between render and
+// click; the end branch stays as a guard for that race. start-chat-brief.test drives it.
 async function beginChat(store: Store, owner: StartOwner, signal: AbortSignal): Promise<void> {
   const current = store.get(sessionAtom);
   if (isActiveSession(current)) await endCurrentChat(store, current, signal, "start a new chat");

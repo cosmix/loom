@@ -178,6 +178,8 @@ async function replayItems(store: Store, chat: HTMLElement): Promise<void> {
   const text = recordedSnapshot.turns[0]!.items.find((item) => item.type === "text")!;
   replay(store, { frame: "delta", op: "item_added", turn_id: "t1", item: user });
   const log = within(chat).getByRole("log");
+  // An offer's prompt stays folded behind its label until Show.
+  fireEvent.click(within(log).getByRole("button", { name: "Show" }));
   present(within(log).getByText("Please update the bridge plan.", { exact: true }));
   replay(store, { frame: "delta", op: "item_added", turn_id: "t1", item: text });
   present(within(log).getByText("I will update the plan and check the result."));
