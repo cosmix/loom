@@ -6,26 +6,36 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { initClient } from "@/plan/api/client";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import panelFixture from "@/plan/api/fixtures/summary-panel.json";
+import questionFixture from "@/plan/api/fixtures/summary-question.json";
 import { conceptPageSchema } from "@/plan/api/schema-concept";
+import { summaryPanelSchema } from "@/plan/api/schema-summaries";
+import { panelLoadAtom } from "@/plan/summaries/state";
 import { authoringAtom, youAtom } from "@/plan/state/atoms";
 
-import { PageHeaderExtras } from "./page-header-extras";
+import { PageHeaderExtras, SummaryAction } from "./page-header-extras";
 
-// The build marker fetches its own data; this test is about the Rebuild button's ids.
+// The build marker fetches its own data; these tests are about the summary action and the extras.
 vi.mock("@/plan/review/built-marker", () => ({ BuiltMarker: () => null }));
 
 const ADA = { public_id: "0123456789abcdef", name: "Ada" };
 const fetchMock = vi.fn<typeof fetch>();
 
-function show(key: string) {
+function show(key: string, overrides: Record<string, unknown> = {}, pending = false) {
   const store = createStore();
+  if (pending) {
+    const panel = summaryPanelSchema.parse({ ...panelFixture, question: questionFixture });
+    store.set(panelLoadAtom, { status: "ready", panel });
+  }
   initClient(store);
   store.set(youAtom, ADA);
   store.set(authoringAtom, { holder: { ...ADA, away_since: null, frees_at: null } });
-  const page = conceptPageSchema.parse({ ...structuredClone(summaryFixture), key });
-  render(
+  const page = conceptPageSchema.parse({ ...structuredClone(summaryFixture), key, ...overrides });
+  return render(
     <Provider store={store}>
-      <PageHeaderExtras page={page} />
+      <SummaryAction page={page} />
+      <div data-testid="extras">
+        <PageHeaderExtras page={page} />
+      </div>
     </Provider>,
   );
 }
@@ -61,4 +71,25 @@ it.each([
     "/api/summaries/rebuild",
     expect.objectContaining({ method: "POST", body: JSON.stringify({ ids }) }),
   );
+});
+
+it("leaves Rebuild out of the extras, which render nothing without plan actions", () => {
+  show("overview/demo/product");
+  expect(screen.getByTestId("extras").textContent).toBe("");
+  expect(
+    screen.getByTestId("extras").contains(screen.getByRole("button", { name: "Rebuild" })),
+  ).toBe(false);
+});
+
+it("offers no summary action for a page without a source path", () => {
+  show("demo/product/section_01", { path: null });
+  expect(screen.queryByRole("button", { name: /Rebuild/ })).toBeNull();
+});
+
+it("offers Rebuild all with its one-line reason while an approval is pending", () => {
+  show("demo/product/section_01", {}, true);
+  const approval = screen.getByRole("group", { name: "Rebuild approval" });
+  expect(approval.querySelector("button")?.textContent).toBe("Rebuild all");
+  expect(approval.textContent).toMatch(/above the budget and waiting for approval/);
+  expect(screen.queryByRole("button", { name: "Rebuild" })).toBeNull();
 });

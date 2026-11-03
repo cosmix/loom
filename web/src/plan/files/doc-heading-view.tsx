@@ -11,7 +11,6 @@ import { useState, type JSX } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { useNow } from "@/components/hooks/use-now";
-import { Button } from "@/components/ui/button";
 import { overviewKey, pageHref, summaryKey } from "@/plan/api/page-key";
 import type { DocView, EntryKind, PlanView, ValidationView } from "@/plan/api/schema-files";
 import { addAttachmentAtom, docAttachment } from "@/plan/attachments";
@@ -160,7 +159,7 @@ function EditAction({ doc, hidden }: { doc: DocView; hidden: boolean }): JSX.Ele
   const [params] = useSearchParams();
   if (doc.lock !== null) {
     return (
-      <Button
+      <button
         type="button"
         {...HEADING_BUTTON}
         aria-disabled="true"
@@ -168,17 +167,15 @@ function EditAction({ doc, hidden }: { doc: DocView; hidden: boolean }): JSX.Ele
       >
         <Lock aria-hidden="true" />
         Edit
-      </Button>
+      </button>
     );
   }
   if (!doc.editable || !canAuthor || params.get("edit") === "1" || hidden) return null;
   return (
-    <Button asChild {...HEADING_BUTTON}>
-      <Link to={`${toAddress(doc.path)}?edit=1`}>
-        <Pencil aria-hidden="true" />
-        Edit
-      </Link>
-    </Button>
+    <Link to={`${toAddress(doc.path)}?edit=1`} {...HEADING_BUTTON}>
+      <Pencil aria-hidden="true" />
+      Edit
+    </Link>
   );
 }
 
@@ -206,10 +203,10 @@ export function usePressureActive(doc: DocView | null): boolean {
 /** A disabled stand-in while a summary page's source document loads, so the row keeps its width. */
 function PendingAction({ icon: Icon, label }: { icon: LucideIcon; label: string }): JSX.Element {
   return (
-    <Button type="button" {...HEADING_BUTTON} disabled>
+    <button type="button" {...HEADING_BUTTON} disabled>
       <Icon aria-hidden="true" />
       {label}
-    </Button>
+    </button>
   );
 }
 
@@ -235,10 +232,10 @@ export function HeadingActions({
     <>
       <EditAction doc={doc} hidden={pressureActive} />
       {canAuthor && (
-        <Button type="button" {...HEADING_BUTTON} onClick={() => discussDoc(store, doc)}>
+        <button type="button" {...HEADING_BUTTON} onClick={() => discussDoc(store, doc)}>
           <MessageSquarePlus aria-hidden="true" />
           Discuss
-        </Button>
+        </button>
       )}
     </>
   );

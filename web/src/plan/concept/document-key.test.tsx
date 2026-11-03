@@ -73,7 +73,43 @@ it("shows a format character in the chip's label and title as its code point", (
   chip.doc.title = "01 — Plan\u202Ening";
   const link = showChip(chip);
 
-  expect(link.textContent).toBe("0⟨U+202E⟩1Plan⟨U+202E⟩ning");
+  expect(link.textContent).toBe("0⟨U+202E⟩1 Plan⟨U+202E⟩ning");
+});
+
+it("draws a section by its number and keeps the full title out of sight, in the link's name", () => {
+  const link = showChip(chipOf());
+
+  expect(link.querySelector(".concept-key-label")?.textContent).toBe("§01");
+  const title = screen.getByText("Planning");
+  expect(title.closest(".sr-only")).not.toBeNull();
+  expect(screen.getByRole("link", { name: "§01 Planning" })).toBe(link);
+});
+
+it("draws a plan by its label as sent", () => {
+  const chip = chipOf({ label: "feat-planner-13" });
+  chip.doc.page = "demo/engineering/feat-planner-13";
+  const link = showChip(chip);
+
+  expect(link.querySelector(".concept-key-label")?.textContent).toBe("feat-planner-13");
+});
+
+it("leads the row with the word Sources and draws the mark legend only over marks", () => {
+  showChip(chipOf());
+  expect(screen.getByText("Sources").getAttribute("aria-hidden")).toBe("true");
+  expect(screen.getByText(/A square after a sentence/)).toBeTruthy();
+  cleanup();
+
+  const page = conceptPageSchema.parse({ ...overviewFixture, key_chips: [chipOf()], blocks: [] });
+  render(
+    <Provider store={createStore()}>
+      <MemoryRouter>
+        <TooltipProvider>
+          <DocumentKey page={page} pageKey={page.key} />
+        </TooltipProvider>
+      </MemoryRouter>
+    </Provider>,
+  );
+  expect(screen.queryByText(/A square after a sentence/)).toBeNull();
 });
 
 it("renders a section DocMark in the chip's colour", () => {
@@ -129,7 +165,7 @@ it("renders inline Markdown in titles after the mono number without nested links
   chip.doc.title = "02 — `loom plan` *Command* and **Server** [guide](https://example.com)";
   const link = showChip(chip);
 
-  expect(link.querySelector(".font-mono")?.textContent).toBe("02");
+  expect(link.querySelector(".font-mono")?.textContent).toBe("§02");
   expect(link.querySelector("code")?.textContent).toBe("loom plan");
   expect(link.querySelector("em")?.textContent).toBe("Command");
   expect(link.querySelector("strong")?.textContent).toBe("Server");
