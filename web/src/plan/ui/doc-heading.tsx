@@ -123,12 +123,12 @@ function Breadcrumbs({ crumbs }: { crumbs: readonly HeadingCrumb[] }): JSX.Eleme
 
 /**
  * Summary and Source: a segmented pair of quiet controls with no edge around it, the current one
- * on the `--muted` wash (`doc-heading.css`). The pair touches, so it reads as one control among
+ * on the `--muted` wash (the `.plan-button[aria-current="page"]` rule in `doc-heading.css`). The pair touches, so it reads as one control among
  * the row's others.
  */
 function ViewSwitch({ views }: { views: HeadingViews }): JSX.Element {
   return (
-    <div role="group" aria-label="View" className="doc-heading-views inline-flex">
+    <div role="group" aria-label="View" className="inline-flex">
       {(["summary", "source"] as const).map((view) => {
         const current = views.current === view;
         const to = view === "summary" ? views.summaryTo : views.sourceTo;

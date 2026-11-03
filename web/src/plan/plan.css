@@ -32,14 +32,17 @@
 }
 
 /*
- * Card lift for surfaces that sit on the page (the kickoff card, the starter pills, the activity
- * popover). `--dialog-shadow` is a deep drop for modals and darkens whatever it falls on. On :root
+ * Card lift for the activity popover, which floats over the page; nothing in the page flow casts a
+ * shadow. `--popover-lift` is its second, longer drop, layered under `--plan-shadow`
+ * (`var(--plan-shadow), var(--popover-lift)`, header/activity.tsx); it is the same in both themes.
+ * `--dialog-shadow` (src/index.css) is a deep drop for modals and darkens whatever it falls on. On :root
  * and .dark, not on [data-loom-plan], because the popover portals out of the shell. Every dark
  * variant keeps the `.dark` class (`.dark[data-dark-theme=...]`), so one dark rule covers them; it
  * comes after :root, which it ties on specificity.
  */
 :root {
   --plan-shadow: 0 1px 2px oklch(0.2 0.02 100 / 0.06), 0 8px 24px oklch(0.2 0.02 100 / 0.08);
+  --popover-lift: 0 18px 50px oklch(0 0 0 / 0.18);
 }
 
 .dark {

@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 /// Dice similarity at or above which an overview sentence restates a member sentence.
-pub(super) const RESTATE_THRESHOLD: f64 = 0.75;
+const RESTATE_THRESHOLD: f64 = 0.75;
 
 /// True when `overview_text` and `member_text` (both without links) share enough words to be
 /// the same statement. Similarity is `2|A∩B| / (|A|+|B|)` over the lowercase ASCII

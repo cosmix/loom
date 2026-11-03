@@ -287,7 +287,7 @@ it("a running rebuild's row opens its queue and errors", async () => {
   const rows = within(dialog).getAllByRole("button", { name: /^Summary rebuilds:/ });
   expect(rows).toHaveLength(1);
   const row = rows[0]!;
-  expect(row.getAttribute("aria-label")).toBe("Summary rebuilds: Rebuilding 1 of 3");
+  expect(row.getAttribute("aria-label")).toBe("Summary rebuilds: 3 summaries rebuilding, 1 of 3");
   expect(row.closest("ul")?.getAttribute("aria-label")).toBe("In progress");
   expect(row.getAttribute("aria-expanded")).toBe("false");
   expect(within(dialog).queryByText("demo/product/section_09")).toBeNull();

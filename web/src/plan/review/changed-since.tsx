@@ -51,9 +51,13 @@ function caption(baseline: Baseline, ref: Comparison | null) {
         Compared with <Untrusted text={ref.name} />
       </>
     );
-  return baseline.kind === "seen"
-    ? "Since you viewed it"
-    : `Since commit ${shortSha(baseline.commit)}`;
+  return baseline.kind === "seen" ? (
+    "Since you viewed it"
+  ) : (
+    <>
+      Since commit <Untrusted text={shortSha(baseline.commit)} />
+    </>
+  );
 }
 
 function SelectedDiff({ selection }: { selection: Selection }) {
@@ -207,7 +211,13 @@ function ComparisonList({ changes }: { changes: Change[] }) {
             rows={rows}
             selected={selection?.path ?? null}
             sourceOf={sourceOf}
-            since={commit && `Changes since commit ${shortSha(commit)}`}
+            since={
+              commit && (
+                <>
+                  Changes since commit <Untrusted text={shortSha(commit)} />
+                </>
+              )
+            }
             onOpen={(row) => {
               // The open document refetches as it changes, so opening it again changes nothing.
               if (row.path !== selection?.path) setSelection({ path: row.path, ref });

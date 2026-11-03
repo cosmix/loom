@@ -47,7 +47,7 @@ export function ChatGlyph() {
         </span>
       </span>
     );
-  // An idle chat, or no chat, is a plain chat glyph: the roundel means work in progress.
+  // An idle chat, or no chat, is a plain chat glyph: the activity glyph means work in progress.
   return (
     <span role="img" aria-label={label} className="inline-flex">
       <MessageSquare size={16} aria-hidden="true" />

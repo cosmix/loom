@@ -10,13 +10,20 @@ import { getAtCommit, getCompare, type CompareResponse } from "./api";
 import type { Change, Comparison } from "./changed-since-parts";
 import { changedSince, checkpointAtom, checkpointGenerationAtom, markSeen } from "./checkpoint";
 import { hashesAtom, loadHashes } from "./live";
-import { recordSeen, seenBaseline, seenTextsAtom, type SeenRead } from "./seen-text";
+import {
+  TOTAL_LIMIT,
+  fitsDocLimit,
+  recordSeen,
+  seenBaseline,
+  seenTextsAtom,
+  type SeenRead,
+} from "./seen-text";
 
 /** One open diff: the document and the ref it compares with, if any. */
 export type Selection = { path: string; ref: Comparison | null };
 /** Where a diff's before side came from: what this browser saw, or a commit. */
 export type Baseline = { kind: "seen"; text: string } | { kind: "commit"; commit: string };
-export type DiffLoad =
+type DiffLoad =
   | { before: string | null; after: string | null; baseline: Baseline }
   | { error: string }
   | null;
@@ -157,6 +164,35 @@ async function readSeen(path: string): Promise<SeenRead> {
   return { hash: result.value.hash, text: result.value.text };
 }
 
+/** Most `/api/doc` reads of Mark all seen in flight at once. */
+const READ_CONCURRENCY = 4;
+
+/**
+ * Reads the listed documents with at most `READ_CONCURRENCY` requests in flight. Once the storable
+ * texts read so far pass the store's total cap no further read is issued: the store would evict
+ * them. A text over the per-document cap is not stored, so it does not count. No further read is
+ * issued once `current` says the checkpoint moved. The size counts UTF-16 bytes of path and text,
+ * without the JSON overhead.
+ */
+async function readAll(
+  paths: string[],
+  current: () => boolean,
+): Promise<Array<readonly [string, SeenRead]>> {
+  const reads: Array<readonly [string, SeenRead]> = [];
+  let next = 0;
+  let bytes = 0;
+  const worker = async () => {
+    while (next < paths.length && bytes <= TOTAL_LIMIT && current()) {
+      const path = paths[next++]!;
+      const read = await readSeen(path);
+      if (read && fitsDocLimit(path, read)) bytes += (path.length + read.text.length) * 2;
+      reads.push([path, read]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(READ_CONCURRENCY, paths.length) }, worker));
+  return reads;
+}
+
 /**
  * Stores the current text of each listed document, unless the checkpoint was replaced meanwhile.
  * `markSeen` leaves the generation, so a document acknowledged while its read was pending is also
@@ -168,15 +204,19 @@ async function storeSeenTexts(store: Store, paths: string[]): Promise<void> {
   const started = guardOf(store);
   const startedAt = Date.now();
   const hashesAtStart = { ...store.get(checkpointAtom)?.hashes };
-  const reads = await Promise.all(paths.map(async (path) => [path, await readSeen(path)] as const));
+  const reads = await readAll(paths, () => sameGuard(guardOf(store), started));
   if (!sameGuard(guardOf(store), started)) return;
   const entries = store.get(seenTextsAtom);
   const hashes = store.get(checkpointAtom)?.hashes ?? {};
-  const current = reads.filter(([path, read]) => {
-    if (Object.hasOwn(entries, path) && entries[path]!.seen >= startedAt) return false;
-    return hashes[path] === (read ? read.hash : hashesAtStart[path]);
-  });
-  recordSeen(store, Object.fromEntries(current));
+  const next: Record<string, SeenRead> = {};
+  for (const [path, read] of reads) {
+    const entry = Object.hasOwn(entries, path) ? entries[path] : undefined;
+    if (entry && entry.seen >= startedAt) continue;
+    if (hashes[path] === (read ? read.hash : hashesAtStart[path])) next[path] = read;
+    // A read at another hash is skipped; an entry that no longer matches the checkpoint is dead.
+    else if (read && entry && entry.hash !== hashes[path]) next[path] = null;
+  }
+  recordSeen(store, next);
 }
 
 type MarkState = { pending: boolean; error: string | null };

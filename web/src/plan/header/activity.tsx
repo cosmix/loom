@@ -17,8 +17,8 @@ import { ActivityList, RunLine, type LiveRows } from "./activity-rows";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { mostUrgent, useActivities, type Activity } from "./use-activities";
 
-/** `--plan-shadow` is defined in plan.css for both themes; the second layer adds lift. */
-const POPOVER_SHADOW = "var(--plan-shadow), 0 18px 50px oklch(0 0 0 / 0.18)";
+/** The card lift plus the popover's longer drop; both layers are tokens in plan.css. */
+const POPOVER_SHADOW = "var(--plan-shadow), var(--popover-lift)";
 
 /** What `useQuestionPopover` returns; a sample pill supplies only the open state. */
 interface PopoverControl {
@@ -94,41 +94,63 @@ function Pill({
           <PillBody activities={activities} compact={compact} open={control.open} />
         </button>
       </PopoverTrigger>
-      <PopoverContent
-        ref={control.contentRef}
-        aria-label="In progress"
-        align="end"
-        sideOffset={8}
-        collisionPadding={16}
-        className="activity-popover max-h-[80vh] w-[min(380px,92vw)] max-w-none gap-0 overflow-x-hidden overflow-y-auto rounded-[12px] border border-border bg-card p-1 font-sans ring-0"
-        style={{ boxShadow: POPOVER_SHADOW }}
-        onOpenAutoFocus={control.onOpenAutoFocus}
-        onCloseAutoFocus={control.onCloseAutoFocus}
-      >
+      <PillContent control={control} activities={activities} live={live} footer={footer} />
+    </Popover>
+  );
+}
+
+function PillContent({
+  control,
+  activities,
+  live,
+  footer,
+}: {
+  control: PopoverControl;
+  activities: Activity[];
+  live?: LiveRows;
+  footer: ReactNode;
+}): JSX.Element {
+  return (
+    <PopoverContent
+      ref={control.contentRef}
+      aria-label="In progress"
+      align="end"
+      sideOffset={8}
+      collisionPadding={16}
+      className="activity-popover max-h-[80vh] w-[min(380px,92vw)] max-w-none gap-0 overflow-hidden rounded-[12px] border border-border bg-card p-1 font-sans ring-0"
+      style={{ boxShadow: POPOVER_SHADOW }}
+      onOpenAutoFocus={control.onOpenAutoFocus}
+      onCloseAutoFocus={control.onCloseAutoFocus}
+    >
+      {/* The list and any detail it opens scroll here; the footer below stays in view. */}
+      <div className="activity-scroll">
         {activities.length > 0 ? (
           <ActivityList activities={activities} live={live} />
         ) : (
           <p className="activity-empty">Nothing in progress.</p>
         )}
-        {footer}
-      </PopoverContent>
-    </Popover>
+      </div>
+      {footer}
+    </PopoverContent>
   );
 }
 
 /**
  * Controls only: what is in progress is listed above, once. The run and summary controls step
- * aside while their operation is listed, so each thing has one line.
+ * aside while their operation is listed, so each thing has one line. The summary row comes first
+ * and its detail scrolls under it, so the run and review lines keep the popover's bottom edge.
  */
 function Footer({ activities, live }: { activities: Activity[]; live: LiveRows }): JSX.Element {
   const listed = (kind: Activity["kind"]) => activities.some((entry) => entry.kind === kind);
   return (
     <div className="activity-foot">
+      {!listed("summaries") && (
+        <div className="activity-foot__scroll">
+          <SummaryStatusRow load={live.load} reload={live.reload} expansion={live.expansion} />
+        </div>
+      )}
       <RunLine listed={listed("running")} />
       <ChangedSinceControl />
-      {!listed("summaries") && (
-        <SummaryStatusRow load={live.load} reload={live.reload} expansion={live.expansion} />
-      )}
     </div>
   );
 }

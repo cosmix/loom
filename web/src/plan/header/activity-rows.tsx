@@ -9,7 +9,7 @@ import { runStripAtom } from "@/plan/run/use-run";
 import type { PanelLoad } from "@/plan/summaries/state";
 import {
   SummaryDetail,
-  summaryRowLabel,
+  summaryRowName,
   type SummaryExpansion,
 } from "@/plan/summaries/summary-status";
 import { ActivityTile } from "@/plan/ui/activity-glyphs";
@@ -26,10 +26,14 @@ export interface LiveRows {
 
 const PlanGlyph = DOC_KIND_GLYPHS.plan;
 
-/** `m:ss` under an hour, whole minutes (`65m`) from then on. */
+const HOUR_SECS = 3600;
+const DAY_SECS = 24 * HOUR_SECS;
+
+/** `m:ss` under an hour, whole minutes (`65m`) under a day, whole days (`5d`) from then on. */
 function elapsedLabel(since: number, now: number): string {
   const seconds = Math.max(0, Math.floor((now - since) / 1000));
-  if (seconds >= 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds >= DAY_SECS) return `${Math.floor(seconds / DAY_SECS)}d`;
+  if (seconds >= HOUR_SECS) return `${Math.floor(seconds / 60)}m`;
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
@@ -130,7 +134,9 @@ function SummaryRow({ activity, now, live }: { activity: Activity; now: number; 
         type="button"
         className="activity-row"
         aria-expanded={expanded}
-        aria-label={summaryRowLabel(live.load)}
+        aria-label={summaryRowName(
+          activity.subject ? `${activity.title}, ${activity.subject}` : activity.title,
+        )}
         onClick={toggle}
       >
         <ActivityTile kind="summaries" />
