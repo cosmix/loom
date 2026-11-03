@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import type { SummaryQuestion } from "@/plan/api/schema-summaries";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { canAuthorAtom } from "@/plan/state/atoms";
-import { DisabledReason } from "@/plan/ui/disabled-reason";
+import { DisabledReason, INLINE_BASELINE } from "@/plan/ui/disabled-reason";
 
 import { summaryQuestionAtom, useSummaryActions } from "./state";
 
@@ -23,11 +23,7 @@ export function ApprovalNotice({
   onAnswer: (rebuild: boolean) => void;
 }) {
   return (
-    <span
-      role="group"
-      aria-label="Rebuild approval"
-      className="inline-flex max-w-full min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1"
-    >
+    <span role="group" aria-label="Rebuild approval" className={`${INLINE_BASELINE} min-w-0`}>
       {canAnswer && (
         <DisabledReason
           reason={null}
@@ -73,7 +69,7 @@ export function PendingApprovalNotice() {
   };
 
   return (
-    <span className="inline-flex max-w-full min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+    <span className={`${INLINE_BASELINE} min-w-0`}>
       <ApprovalNotice question={question} canAnswer={canAnswer} onAnswer={onAnswer} />
       {failure?.questionId === question.id && (
         <span role="alert" className="text-xs text-destructive">
