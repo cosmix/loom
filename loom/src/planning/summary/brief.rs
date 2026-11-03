@@ -218,6 +218,9 @@ fn write_rules(out: &mut String, overview: bool) -> Result<()> {
             "only the source document and its valid anchors"
         }
     )?;
+    if overview {
+        writeln!(out, "- Rewrite a sentence that repeats the sentence it cites to say what the cited sentences add up to, even when it is marked [keep].")?;
+    }
     Ok(())
 }
 

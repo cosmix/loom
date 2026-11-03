@@ -10,7 +10,7 @@ pub const DEFAULT_PLAN_DOCUMENT_SUMMARY_MODEL: &str = "haiku";
 /// Default reasoning effort for document summaries.
 pub const DEFAULT_PLAN_DOCUMENT_SUMMARY_EFFORT: &str = "high";
 /// Default model for overviews and summary sessions.
-pub const DEFAULT_PLAN_OVERVIEW_MODEL: &str = "haiku";
+pub const DEFAULT_PLAN_OVERVIEW_MODEL: &str = "sonnet";
 /// Default reasoning effort for overviews and summary sessions.
 pub const DEFAULT_PLAN_OVERVIEW_EFFORT: &str = "high";
 /// Backends that can build summaries and overviews.

@@ -8,6 +8,7 @@ use super::tests::{
 };
 use super::RecordMark;
 use crate::plan_session::attachments::{Attachment, AttachmentKind};
+use crate::plan_session::input::MAX_DELIVERED_BYTES;
 use crate::plan_session::model::{
     ChatDelta, Delivery, DenyReason, Item, NoticeKind, Origin, PermissionStatus, ToolStatus,
 };
@@ -288,6 +289,18 @@ fn closing_origin_and_server_item_replacement() {
     assert_eq!(only_turn(&mapper).items, [expected, item]);
     let unknown = notice("n-x", NoticeKind::Info, "x");
     assert!(mapper.replace_server_item(unknown).is_empty());
+}
+
+#[test]
+fn a_wrapped_delivery_at_the_size_limit_keeps_no_wrapper() {
+    let body = "a".repeat(MAX_DELIVERED_BYTES);
+    let content = format!("<pasted_content id=\"f3a0\">\n{body}\n</pasted_content id=\"f3a0\">");
+    let record = json!({"type": "user", "uuid": "u1", "timestamp": "2026-10-27T10:00:00.000Z",
+        "message": {"role": "user", "content": content}, "origin": {"kind": "human"}});
+    let mut mapper = mapper();
+    let out = mapper.ingest_main(&record.to_string());
+    assert_eq!(only_turn(&mapper).items, [user("u-u1", &body, None)]);
+    assert_eq!(out.marks, [human(0, &body)]);
 }
 
 #[test]

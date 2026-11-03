@@ -6,19 +6,52 @@ use std::time::Instant;
 use super::{QuestionView, Queued, Running, Scheduler, SchedulerEvent, SessionSpawner, Via};
 
 impl Scheduler {
-    /// Drop every queued, declined, failed, unsealed and asked id that is no longer out of date.
+    /// Every summary the latest evaluation lists: a pressed id waits in the queue while its
+    /// summary is listed, out of date or not.
+    pub fn set_known(&mut self, known: BTreeSet<String>) {
+        self.known = Some(known);
+    }
+
+    /// Drop every queued, declined, failed, unsealed and asked id that is no longer out of
+    /// date, except a pressed id whose summary is still known: a press rebuilds a current
+    /// summary too, and the batches that arrive while it waits must not take it away.
     pub(super) fn prune(&mut self, out_of_date: &[String]) {
         let keep: BTreeSet<&str> = out_of_date.iter().map(String::as_str).collect();
-        self.queue
-            .retain(|queued| keep.contains(queued.id.as_str()));
+        let known = self.known.as_ref();
+        let listed = |id: &String| known.is_none_or(|known| known.contains(id));
+        self.queue.retain(|queued| {
+            keep.contains(queued.id.as_str()) || (queued.via == Via::Button && listed(&queued.id))
+        });
         self.declined.retain(|id| keep.contains(id.as_str()));
         self.failed.retain(|id, _| keep.contains(id.as_str()));
-        self.unsealed.retain(|id| keep.contains(id.as_str()));
+        let unsealed = std::mem::take(&mut self.unsealed);
+        self.unsealed = unsealed
+            .into_iter()
+            .filter(|id| keep.contains(id.as_str()) || self.keeps_mark(id))
+            .collect();
+        self.retain_asked(|id| keep.contains(id.as_str()));
+    }
+
+    /// An unsealed mark outlives a batch that lists its summary current while the summary is
+    /// queued (a press waits for its rebuild whether current or not), pressed in the running
+    /// session, or claimed by it (a claimed summary reads `Rebuilding`, not out of date).
+    /// Clearing it there would let every end requeue the summary again, without bound.
+    fn keeps_mark(&self, id: &str) -> bool {
+        let held = |running: &Running| {
+            let pressed = running.vias.get(id) == Some(&Via::Button);
+            running.pending(id) && (pressed || running.claimed.contains(id))
+        };
+        self.is_queued(id) || self.running.as_ref().is_some_and(held)
+    }
+
+    /// Keep the asked ids `keep` holds: a question that loses ids is asked again with the rest
+    /// and closes when none remain.
+    pub(super) fn retain_asked(&mut self, keep: impl Fn(&String) -> bool) {
         let Some(open) = self.question.as_mut() else {
             return;
         };
         let asked = open.ids.len();
-        open.ids.retain(|id| keep.contains(id.as_str()));
+        open.ids.retain(|id| keep(id));
         if open.ids.is_empty() {
             let id = open.id.clone();
             self.question = None;
@@ -139,13 +172,13 @@ impl Scheduler {
     }
 
     /// Start the queue when nothing blocks it: all of it within the limit or when every id
-    /// skips the limit, else the Button and approved ids alone, else ask about the queue.
+    /// skips the limit, else the Button and approved ids alone, else ask about the queue. An
+    /// open question holds the batch only: a press never waits for an answer about other ids.
     pub(super) fn try_start(&mut self, now: Instant, spawner: &dyn SessionSpawner) {
         let blocked = self.config.read_only.is_some()
             || self.stopping
             || !self.suspensions.is_empty()
-            || self.running.is_some()
-            || self.question.is_some();
+            || self.running.is_some();
         if blocked || self.queue.is_empty() {
             return;
         }
@@ -154,10 +187,13 @@ impl Scheduler {
             .iter()
             .map(|queued| queued.id.clone())
             .collect();
-        let ids = if all.len() <= self.config.limit || front.len() == all.len() {
+        let asking = self.question.is_some();
+        let ids = if !asking && (all.len() <= self.config.limit || front.len() == all.len()) {
             all
         } else if !front.is_empty() {
             front
+        } else if asking {
+            return;
         } else {
             self.asked += 1;
             let question = QuestionView {

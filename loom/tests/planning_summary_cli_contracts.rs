@@ -239,7 +239,7 @@ fn plan_summary_keys_resolve() {
     let user = with_loom_home(empty.path(), UserConfig::load);
     let project = PlanConfig::from_section_toml("").expect("empty planning table");
     let defaults = SummaryModels::resolve(&project, &user);
-    assert_eq!(models(&defaults), ["haiku", "high", "haiku", "high"]);
+    assert_eq!(models(&defaults), ["haiku", "high", "sonnet", "high"]);
 }
 
 #[test]

@@ -182,10 +182,11 @@ fn one_summary_is_its_own_line_and_a_set_shares_one() {
             Some(6_000)
         )
     );
+    // The session is a press's: its background ids ran because of it, so their line is too.
     let second = (&log[1].summaries, log[1].trigger, log[1].source_bytes);
     assert_eq!(
         second,
-        (&owned(&["plans/b", "plans/c"]), Trigger::Background, None)
+        (&owned(&["plans/b", "plans/c"]), Trigger::Button, None)
     );
     assert_eq!(log[1].model.as_deref(), Some("claude-haiku-4-5"));
     assert_eq!((x.lines, y.lines), (log[..1].to_vec(), log[1..].to_vec()));

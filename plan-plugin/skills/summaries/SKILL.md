@@ -40,7 +40,9 @@ Never stage, commit, branch, or run `loom init`, `loom run`, or `loom pressure`.
    `loom plan summary brief <id>` to claim it and obtain its sources, current
    text, body rules, draft path, and seal command. Read only what the brief names.
    Preserve sentences it identifies as current word for word to keep their ids
-   and the overview links into them. Write only the draft path it names.
+   and the overview links into them. Rewrite an overview sentence that repeats the
+   sentence it cites to say what the cited sentences add up to, even when the brief
+   marks it `[keep]`. Write only the draft path it names.
 5. Run `loom plan summary seal <id>`. On exit 1, read each
    `<draft path>:<line>: <message>` problem, correct the draft, and seal again.
    Seal only when every citation resolves to a current source sentence; never

@@ -6,8 +6,8 @@ use super::session::ENDED_UNSEALED;
 use super::tests::{ids, question_of, setup, Stub};
 use super::*;
 
-/// A step that clears an id's unsealed mark and names the session the next start gets.
-type ClearMark<'a> = dyn Fn(&mut Scheduler, &Stub, Instant) -> &'static str + 'a;
+/// A step between two claimed unsealed ends of an id; names the session the second end closes.
+type Between<'a> = dyn Fn(&mut Scheduler, &Stub, Instant) -> &'static str + 'a;
 
 fn minutes(at: Instant, minutes: u64) -> Instant {
     at + Duration::from_secs(minutes * 60)
@@ -258,7 +258,7 @@ fn a_seal_a_button_or_a_current_summary_clears_the_unsealed_mark() {
         s.on_update(&[], &[], now, stub);
         "s2"
     };
-    let clears: [&ClearMark<'_>; 3] = [&seal, &press, &current];
+    let clears: [&Between<'_>; 3] = [&seal, &press, &current];
     for (case, clear) in clears.into_iter().enumerate() {
         let (mut s, stub, now) = setup();
         s.on_update(&a, &a, now, &stub);
@@ -268,6 +268,46 @@ fn a_seal_a_button_or_a_current_summary_clears_the_unsealed_mark() {
         end_unsealed(&mut s, &stub, session, &a, now);
         assert_eq!(stub.starts().len(), started + 1, "case {case}: requeued");
         assert!(s.panel_state().failed.is_empty(), "case {case}");
+    }
+}
+
+#[test]
+fn a_current_batch_keeps_the_mark_of_a_pressed_or_claimed_summary() {
+    let a = ids(&["a"]);
+    let queued = |s: &mut Scheduler, stub: &Stub, now: Instant| {
+        s.press(&a, now, stub);
+        let token = s.suspend(SuspendReason::PressureRun);
+        end_unsealed(s, stub, "s1", &a, now);
+        s.on_update(&[], &[], now, stub);
+        s.resume(token, &[], now, stub);
+        "s2"
+    };
+    let pressed_running = |s: &mut Scheduler, stub: &Stub, now: Instant| {
+        s.press(&a, now, stub);
+        end_unsealed(s, stub, "s1", &a, now);
+        s.on_update(&[], &[], now, stub);
+        "s2"
+    };
+    let claimed = |s: &mut Scheduler, stub: &Stub, now: Instant| {
+        s.on_update(&a, &a, now, stub);
+        end_unsealed(s, stub, "s1", &a, now);
+        s.claims_changed("s2", &a, now, stub);
+        s.on_update(&[], &[], now, stub);
+        "s2"
+    };
+    let keeps: [&Between<'_>; 3] = [&queued, &pressed_running, &claimed];
+    for (case, keep) in keeps.into_iter().enumerate() {
+        let (mut s, stub, now) = setup();
+        let session = keep(&mut s, &stub, now);
+        end_unsealed(&mut s, &stub, session, &a, now);
+        assert_eq!(stub.starts().len(), 2, "case {case}: no third session");
+        let view = s.panel_state();
+        let failed = vec![(a[0].clone(), ENDED_UNSEALED.to_owned())];
+        assert_eq!(view.failed, failed, "case {case}");
+        assert!(
+            view.queue.is_empty() && view.running.is_none(),
+            "case {case}"
+        );
     }
 }
 

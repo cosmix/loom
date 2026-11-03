@@ -15,7 +15,7 @@ use crate::plan_session::model::{Item, ToolStatus};
 pub(super) const ID_CHARS: usize = 128;
 /// Longest markdown text or pretty-printed tool input kept on an item.
 pub(super) const ITEM_CHARS: usize = 64 * 1024;
-/// Longest user text handed to `parse_message` (a delivered message is at most 100 KB).
+/// Longest user text handed to `parse_unwrapped` (a delivered message is at most 100 KB).
 pub(super) const USER_TEXT_CHARS: usize = 100_000;
 /// Longest notice text or `error_line`.
 const LINE_CHARS: usize = 500;

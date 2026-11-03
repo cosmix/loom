@@ -214,6 +214,8 @@ pub struct Scheduler {
     start_error: Option<String>,
     stopping: bool,
     asked: u64,
+    /// Every summary the latest evaluation lists; `None` until one is given.
+    known: Option<BTreeSet<String>>,
     out: Vec<SchedulerEvent>,
 }
 
@@ -234,6 +236,7 @@ impl Scheduler {
             start_error: None,
             stopping: false,
             asked: 0,
+            known: None,
             out: Vec::new(),
         }
     }
@@ -342,10 +345,12 @@ impl Scheduler {
         Ok(())
     }
 
-    /// A rebuild button: undecline the ids, queue them first and start without asking.
+    /// A rebuild button: undecline the ids, take them out of the question, queue them first
+    /// and start without asking.
     pub fn press(&mut self, ids: &[String], now: Instant, spawner: &dyn SessionSpawner) {
         self.forget(ids);
         self.promote(ids, Via::Button);
+        self.retain_asked(|id| !ids.iter().any(|pressed| pressed == id));
         self.try_start(now, spawner);
     }
 
