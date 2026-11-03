@@ -121,3 +121,11 @@
 **Prevention:** after a Claude Code upgrade, capture fixtures from real session transcripts and hook payloads and diff them against the fixtures the parsers use; test a match on Claude Code's output with a recorded wrapped case and a bare case. Unwrap only the exact whole-message shape and treat the tag id as untrusted input (`unwrap_pasted` bounds it to 32 ASCII alphanumerics, `_` and `-`). Unwrap before any length cap, or the close tag of a maximum-size delivery is lost.
 
 **Fix:** `plan_session/attachments/pasted.rs`, the transcript mapper and the hook path ([Delivery](../architecture/planning-session-bridge.md#delivery)). Contracts: `wrapped_message_parses_typed_text_and_attachments`, `wrapped_opening_replaces_the_sent_item`, `wrapped_closing_keeps_its_origin` (`transcript/paste_contract_tests.rs`). A real New chat with no markup and a message with an attached document showing a chip are operator checks ([follow-ups](../concerns/planner-ui-repair-followups.md#planner-issue-fixes-unchecked-here)).
+
+## The Signal Omits a Stage's after_stage Commands (2026-11-03)
+
+**What happened:** the knowledge-distill stage of the planner issue-fixes plan passed both listed acceptance criteria and failed at completion on an `after_stage` check, `! rg -q 'RunStrip' doc/loom/knowledge/architecture/planner-web-shell.md`, because the stage's own corrected text said that no such component exists. The signal lists acceptance criteria only, so the check stayed invisible until the completion host job ran. It repeats [the dropped `exit_code`](verification-v2-delivery.md#the-signals-acceptance-list-drops-exit_code).
+
+**Why:** `after_stage` commands live in the stage file and the plan YAML, not in the signal.
+
+**Prevention:** before writing, read `.loom/work/stages/<n>-<stage-id>.md` and run `rg -n 'command:'` over it; in a knowledge stage never write a word an absence check forbids, even to say the thing is gone. A hook or `loom plan verify` check that prints `after_stage` commands and `exit_code` in the signal would end the recurrence.
