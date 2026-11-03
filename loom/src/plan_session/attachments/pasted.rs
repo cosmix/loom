@@ -7,6 +7,10 @@ const CLOSE_PREFIX: &str = "</pasted_content id=\"";
 const TAG_SUFFIX: &str = "\">";
 const ID_MAX: usize = 32;
 
+/// Known limit: a message the user typed as a complete three-line wrapper, if Claude Code records
+/// it bare, is unwrapped on the transcript and hook paths and would miss the sent item's match
+/// text. Rare by construction; revisit if Claude Code stops wrapping pastes.
+///
 /// The pasted text inside the wrapper, or `delivered` unchanged. Only a message that is, after
 /// its surrounding blank lines, exactly an open tag line, a body and a close tag line with the
 /// same well-formed id is unwrapped; a wrapper amid typed text, a missing close or a mismatched
