@@ -227,22 +227,46 @@
     line-height: var(--activity-line, 20px);
   }
 
-  /* The stopped run, review and summary controls, under one hairline. */
+  /* The list and any detail it opens. The popover caps its height (max-h on PopoverContent) and
+     does not scroll itself: this region scrolls, so the hairline and the footer stay in view. */
+  .activity-scroll {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  /* The summary, stopped run and review controls, under one hairline. The footer keeps its full
+     height unless the idle summary row's detail is open; then that detail (`__scroll`) gives way
+     first and scrolls, and the run and review lines below it keep the bottom edge. */
   .activity-foot {
     display: flex;
+    flex: none;
     flex-direction: column;
     gap: var(--space-1);
+    margin-top: var(--space-1);
+    padding-top: var(--space-1);
+    border-top: 1px solid var(--hairline);
   }
 
   .activity-foot:empty {
     display: none;
   }
 
-  .activity-list + .activity-foot,
-  .activity-empty + .activity-foot {
-    margin-top: var(--space-1);
-    padding-top: var(--space-1);
-    border-top: 1px solid var(--hairline);
+  .activity-foot > * {
+    flex: none;
+  }
+
+  .activity-foot:has(> .activity-foot__scroll) {
+    flex: 0 1000 auto;
+    min-height: 0;
+  }
+
+  .activity-foot > .activity-foot__scroll {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .activity-foot__detail {
