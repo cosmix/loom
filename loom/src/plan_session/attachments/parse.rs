@@ -4,13 +4,22 @@ use std::iter::Peekable;
 use std::str::Split;
 
 use super::format::{kind_from, locked_from, tag_line, CLOSE_TAG, OPEN_TAG};
+use super::pasted::unwrap_pasted;
 use super::{Attachment, AttachmentKind, LockedTag};
 
-/// The user's text and the attachments of a delivered message. The block starts at the first
-/// line equal to `<loom-attachments>` (preceded by a blank line) and runs to the last line
-/// `</loom-attachments>`. A block that does not parse leaves the delivered text whole with no
-/// attachments; a message with no tag line only has its escaped tag lines restored.
+/// The user's text and the attachments of a message Claude Code recorded (a hook prompt), after
+/// removing a pasted-content wrapper ([`unwrap_pasted`]); see [`parse_unwrapped`].
 pub fn parse_message(delivered: &str) -> (String, Vec<Attachment>) {
+    parse_unwrapped(unwrap_pasted(delivered))
+}
+
+/// [`parse_message`] of a message already unwrapped, so a body that itself looks like a
+/// wrapper is not unwrapped twice, or of the server's own `format_message` output, which Claude
+/// Code never wrapped, so a wrapper the user typed stays in the text. The block starts at the first line equal to
+/// `<loom-attachments>` (preceded by a blank line) and runs to the last line
+/// `</loom-attachments>`. A block that does not parse leaves the text whole with no
+/// attachments; a message with no tag line only has its escaped tag lines restored.
+pub fn parse_unwrapped(delivered: &str) -> (String, Vec<Attachment>) {
     let lines: Vec<&str> = delivered.split('\n').collect();
     let Some(open) = lines.iter().position(|line| *line == OPEN_TAG) else {
         return (unescape_text(&lines), Vec::new());

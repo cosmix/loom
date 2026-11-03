@@ -7,7 +7,7 @@ use std::time::Instant;
 use super::commands::Step;
 use super::session::{Closing, Delivering, Phase, Session};
 use super::{Bridge, BridgeConfig, EndMode};
-use crate::plan_session::attachments::{parse_message, Attachment};
+use crate::plan_session::attachments::{parse_message, parse_unwrapped, Attachment};
 use crate::plan_session::input::{check_delivered, sanitize};
 use crate::plan_session::model::{
     Activity, Delivery, FailureKind, Item, NoticeKind, Origin, SessionState,
@@ -147,7 +147,8 @@ impl Session {
         origin: Option<Origin>,
         step: &mut Step,
     ) -> Delivering {
-        let (user_text, _) = parse_message(&text);
+        // The server's own `format_message` output, never wrapped: a typed wrapper stays.
+        let (user_text, _) = parse_unwrapped(&text);
         let match_text = sanitize(&user_text);
         let item_id = self.next_id("s-");
         let item = Item::User {
@@ -316,7 +317,7 @@ impl Session {
         if unsent.is_some_and(|d| d.sent_at.is_none() && !d.closing) {
             if let Some(unsent) = self.flow.delivering.take() {
                 self.set_delivery(&unsent.item_id, Delivery::Undelivered, step);
-                texts.insert(0, parse_message(&unsent.text).0);
+                texts.insert(0, parse_unwrapped(&unsent.text).0);
             }
         }
         texts

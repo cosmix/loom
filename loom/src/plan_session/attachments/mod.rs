@@ -2,12 +2,14 @@
 
 mod format;
 mod parse;
+mod pasted;
 mod resolve;
 #[cfg(test)]
 mod tests;
 
 pub use format::format_message;
-pub use parse::parse_message;
+pub use parse::{parse_message, parse_unwrapped};
+pub use pasted::unwrap_pasted;
 pub use resolve::resolve;
 
 use serde::{Deserialize, Serialize};
