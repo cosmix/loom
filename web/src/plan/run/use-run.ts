@@ -10,14 +10,14 @@ import {
   type RunOutput,
   type RunStartRequest,
   type RunStateView,
-  type RunStrip,
+  type RunStrip as RunSummary,
   type UnmergedBranch,
 } from "@/plan/api/schema-run";
 import { planSocketAtom } from "@/plan/state/atoms";
 import type { Store } from "@/state/store";
 
 export const runStateAtom = atom<RunStateView | null>(null);
-export const runStripAtom = atom<RunStrip | null>(null);
+export const runStripAtom = atom<RunSummary | null>(null);
 export const runOutputAtom = atom<Record<RunJob, string[]>>({
   commit: [],
   start: [],

@@ -2,24 +2,18 @@ import { useAtomValue } from "jotai/react";
 import { ChevronDown, ChevronUp, CircleCheck } from "lucide-react";
 import { useState, type JSX, type ReactNode, type Ref } from "react";
 
-import { useNow } from "@/components/hooks/use-now";
-import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { ChangedSinceControl } from "@/plan/review/changed-since";
-import { RunStrip } from "@/plan/run/run-strip";
-import { summaryQuestionAtom, useSummaryFeed, type PanelLoad } from "@/plan/summaries/state";
+import { summaryQuestionAtom, useSummaryFeed } from "@/plan/summaries/state";
 import {
   QuestionAnnouncement,
   SummaryStatusRow,
   useQuestionPopover,
+  useSummaryExpansion,
 } from "@/plan/summaries/summary-status";
-import {
-  ACTIVITY_LABELS,
-  ACTIVITY_TONES,
-  ActivityGlyph,
-  ActivityTile,
-} from "@/plan/ui/activity-glyphs";
+import { ACTIVITY_LABELS, ACTIVITY_TONES, ActivityGlyph } from "@/plan/ui/activity-glyphs";
 
 import "./activity.css";
+import { ActivityList, RunLine, type LiveRows } from "./activity-rows";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { mostUrgent, useActivities, type Activity } from "./use-activities";
 
@@ -33,40 +27,6 @@ interface PopoverControl {
   contentRef?: Ref<HTMLDivElement>;
   onOpenAutoFocus?: (event: Event) => void;
   onCloseAutoFocus?: (event: Event) => void;
-}
-
-/** `m:ss` under an hour, whole minutes (`65m`) from then on. */
-function elapsedLabel(since: number, now: number): string {
-  const seconds = Math.max(0, Math.floor((now - since) / 1000));
-  if (seconds >= 3600) return `${Math.floor(seconds / 60)}m`;
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-function ActivityList({ activities }: { activities: Activity[] }) {
-  const now = useNow();
-
-  return (
-    <ul aria-label="In progress" className="activity-list">
-      {activities.map((activity) => (
-        <li key={activity.id} className="activity-row">
-          <ActivityTile kind={activity.kind} />
-          <div className="activity-row__body">
-            <p className="activity-row__title" title={visibleControls(activity.title)}>
-              <Untrusted text={activity.title} />
-            </p>
-            {activity.subject !== null && (
-              <p className="activity-row__sub" title={visibleControls(activity.subject)}>
-                <Untrusted text={activity.subject} />
-              </p>
-            )}
-          </div>
-          {activity.since !== null && (
-            <span className="activity-row__time">{elapsedLabel(activity.since, now)}</span>
-          )}
-        </li>
-      ))}
-    </ul>
-  );
 }
 
 function PillBody({
@@ -101,20 +61,22 @@ function PillBody({
 }
 
 /**
- * The pill and its popover. The pill stays mounted when nothing runs, because the popover also
- * holds the run, review and summary rows. Those rows (and the run row's "daemon stopped" text)
- * exist only while the popover is open.
+ * The pill and its popover. The pill stays mounted when nothing runs, because the popover's
+ * footer also holds the stopped run, review and summary controls; those mount only while open.
  */
 function Pill({
   compact,
   control,
+  activities,
+  live,
   footer,
 }: {
   compact: boolean;
   control: PopoverControl;
+  activities: Activity[];
+  live?: LiveRows;
   footer: ReactNode;
 }): JSX.Element {
-  const activities = useActivities();
   const urgent = mostUrgent(activities);
   const label = urgent
     ? `${activities.length} in progress: ${ACTIVITY_LABELS[urgent.kind]}`
@@ -138,13 +100,13 @@ function Pill({
         align="end"
         sideOffset={8}
         collisionPadding={16}
-        className="max-h-[80vh] w-[min(360px,86vw)] max-w-none gap-0 overflow-y-auto rounded-[12px] border border-border bg-card p-1.5 font-sans ring-0"
+        className="activity-popover max-h-[80vh] w-[min(380px,92vw)] max-w-none gap-0 overflow-x-hidden overflow-y-auto rounded-[12px] border border-border bg-card p-1 font-sans ring-0"
         style={{ boxShadow: POPOVER_SHADOW }}
         onOpenAutoFocus={control.onOpenAutoFocus}
         onCloseAutoFocus={control.onCloseAutoFocus}
       >
         {activities.length > 0 ? (
-          <ActivityList activities={activities} />
+          <ActivityList activities={activities} live={live} />
         ) : (
           <p className="activity-empty">Nothing in progress.</p>
         )}
@@ -154,12 +116,19 @@ function Pill({
   );
 }
 
-function Footer({ load, reload }: { load: PanelLoad; reload: () => void }): JSX.Element {
+/**
+ * Controls only: what is in progress is listed above, once. The run and summary controls step
+ * aside while their operation is listed, so each thing has one line.
+ */
+function Footer({ activities, live }: { activities: Activity[]; live: LiveRows }): JSX.Element {
+  const listed = (kind: Activity["kind"]) => activities.some((entry) => entry.kind === kind);
   return (
     <div className="activity-foot">
-      <RunStrip />
+      <RunLine listed={listed("running")} />
       <ChangedSinceControl />
-      <SummaryStatusRow load={load} reload={reload} />
+      {!listed("summaries") && (
+        <SummaryStatusRow load={live.load} reload={live.reload} expansion={live.expansion} />
+      )}
     </div>
   );
 }
@@ -172,9 +141,18 @@ function LivePill({ compact }: { compact: boolean }): JSX.Element {
   const { load, reload } = useSummaryFeed();
   const question = useAtomValue(summaryQuestionAtom);
   const popover = useQuestionPopover(question);
+  const expansion = useSummaryExpansion();
+  const activities = useActivities();
+  const live: LiveRows = { load, reload, expansion };
   return (
     <>
-      <Pill compact={compact} control={popover} footer={<Footer load={load} reload={reload} />} />
+      <Pill
+        compact={compact}
+        control={popover}
+        activities={activities}
+        live={live}
+        footer={<Footer activities={activities} live={live} />}
+      />
       <QuestionAnnouncement question={question} />
     </>
   );
@@ -182,7 +160,15 @@ function LivePill({ compact }: { compact: boolean }): JSX.Element {
 
 function SamplePill({ compact }: { compact: boolean }): JSX.Element {
   const [open, setOpen] = useState(false);
-  return <Pill compact={compact} control={{ open, onOpenChange: setOpen }} footer={null} />;
+  const activities = useActivities();
+  return (
+    <Pill
+      compact={compact}
+      control={{ open, onOpenChange: setOpen }}
+      activities={activities}
+      footer={null}
+    />
+  );
 }
 
 /**
