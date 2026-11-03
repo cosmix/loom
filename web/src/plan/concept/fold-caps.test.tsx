@@ -3,6 +3,7 @@ import { expect, it } from "vitest";
 
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import { conceptPageSchema } from "@/plan/api/schema-concept";
+import runsSheet from "@/plan/concept/concept-runs.css?raw";
 
 import {
   blurOnRemoval,
@@ -153,4 +154,29 @@ it("the enclosing start cap shares the first passage's chip line when its first 
   expect(caps[1]!.nextElementSibling).toBe(firstPassage.querySelector(".concept-passage-chip"));
   expect(caps[0]!.getAttribute("aria-describedby")).toBe(outer.id);
   expect(caps[3]!.parentElement).toBe(outer);
+});
+
+/** Every declaration of every rule whose selector list names `selector` on its own. */
+function declarationsOf(sheet: string, selector: string): string[] {
+  const css = sheet.replace(/\/\*[\s\S]*?\*\//g, "");
+  const found: string[] = [];
+  for (const [, selectors = "", body = ""] of css.matchAll(/([^{};]+)\{([^{}]*)\}/g)) {
+    if (!selectors.split(",").some((part) => part.trim() === selector)) continue;
+    for (const decl of body.split(";")) {
+      const normal = decl.replace(/\s+/g, " ").trim().toLowerCase();
+      if (normal) found.push(normal.replace(/\s*:\s*/, ": "));
+    }
+  }
+  return found;
+}
+
+it("each cited sentence keeps its level 1 hairline after an earlier member opens to passages", () => {
+  const css = runsSheet.replace(/\/\*[\s\S]*?\*\//g, "");
+  // The run-wide rule that dropped the hairline once the first member opened is gone...
+  expect(css).not.toMatch(/\.concept-run:has\(\s*>\s*\.concept-passages:first-child\s*\)/);
+  // ...and the hairline is drawn under each sentence the run holds, not under the run's span.
+  expect(declarationsOf(runsSheet, ".concept-run > .concept-sentence-wrap")).toContain(
+    "border-bottom: 1px solid var(--run-edge)",
+  );
+  expect(declarationsOf(runsSheet, ".concept-run").join(";")).not.toMatch(/border-bottom/);
 });

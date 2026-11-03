@@ -21,6 +21,7 @@ import { elsewhereSessionAtom } from "@/plan/chat/session-home";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { PageHead } from "@/plan/feature/plan-page";
 import { activeFeatureAtom, canAuthorAtom, featuresAtom } from "@/plan/state/atoms";
+import { PendingApprovalNotice } from "@/plan/summaries/approval-notice";
 import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
 
@@ -29,7 +30,8 @@ import { foldedWith } from "./column-model";
 import { DocumentKey } from "./document-key";
 import { ConceptNotFound, EmptyStates } from "./empty-states";
 import { pageSentences } from "./open-state";
-import { PageHeading } from "./page-heading";
+import { hasOpenable } from "./open-all";
+import { OpenAllButton, PageHeading } from "./page-heading";
 import {
   conceptPageAtom,
   isMissing,
@@ -256,12 +258,26 @@ function KeyHints() {
   );
 }
 
-/** An overview's head: the eyebrow over the page title (ui/DESIGN.md, Page rhythm). */
-function OverviewHead({ pageKey }: { pageKey: string }) {
+/**
+ * An overview's head: the eyebrow over the page title (ui/DESIGN.md, Page rhythm), with Open all
+ * / Fold all at the end of the title's line when the page has a sentence that opens. A rebuild
+ * waiting for approval shows its "Rebuild all" and sentence on a line under the title.
+ */
+function OverviewHead({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   const { pathname } = useLocation();
   const eyebrow = useOverviewEyebrow(pageKey, pathname);
   const title = conceptPageLabel(pathname);
-  return title === null ? null : <PageHead eyebrow={eyebrow ?? title} title={title} />;
+  if (title === null) return null;
+  return (
+    <div className="concept-overview-head">
+      <PageHead eyebrow={eyebrow ?? title} title={title} />
+      {hasOpenable(page) && <OpenAllButton page={page} />}
+      {/* Empty (and hidden by CSS) unless a rebuild is waiting for approval. */}
+      <div className="concept-overview-head__notice">
+        <PendingApprovalNotice />
+      </div>
+    </div>
+  );
 }
 
 /** `above` (the gaps) sits between the page's head and its document key, so the head comes first. */
@@ -277,7 +293,7 @@ function LoadedPage({
   const summary = !isOverviewKey(pageKey);
   return (
     <>
-      {summary ? <PageHeading page={page} /> : <OverviewHead pageKey={pageKey} />}
+      {summary ? <PageHeading page={page} /> : <OverviewHead page={page} pageKey={pageKey} />}
       {above}
       {page.key_chips.length > 0 && <DocumentKey page={page} pageKey={pageKey} />}
       {page.empty ? (
@@ -338,7 +354,7 @@ export function ConceptRoute({ above }: { above?: ReactNode }) {
   const key = pageKeyOfPath(pathname);
   return (
     <div className="w-full px-[clamp(16px,4vw,56px)] pt-8 pb-12">
-      <div className="mx-auto max-w-[68ch]">
+      <div className="concept-page-column mx-auto max-w-[68ch]">
         {key === null ? (
           <>
             {above}

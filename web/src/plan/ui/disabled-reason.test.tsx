@@ -94,4 +94,33 @@ describe("DisabledReason", () => {
     expect(sized.getAttribute("data-look")).toBe("secondary");
     expect(sized.getAttribute("data-size")).toBe("sm");
   });
+
+  it("sets the reason beneath the button by default", () => {
+    render(
+      <DisabledReason reason="Read-only" onClick={vi.fn()}>
+        Write
+      </DisabledReason>,
+    );
+
+    const wrapper = screen.getByRole("button", { name: "Write" }).parentElement as HTMLElement;
+    expect(wrapper.tagName).toBe("DIV");
+    expect(wrapper.classList.contains("flex-col")).toBe(true);
+    expect(wrapper.lastElementChild?.textContent).toBe("Read-only");
+  });
+
+  it("sets the reason after the button on its baseline when placed inline", () => {
+    render(
+      <DisabledReason reason="Read-only" reasonPlacement="inline" onClick={vi.fn()}>
+        Rebuild
+      </DisabledReason>,
+    );
+
+    const button = screen.getByRole("button", { name: "Rebuild", description: "Read-only" });
+    const wrapper = button.parentElement as HTMLElement;
+    expect(wrapper.tagName).toBe("SPAN");
+    expect(wrapper.classList.contains("flex-col")).toBe(false);
+    expect(wrapper.classList.contains("items-baseline")).toBe(true);
+    expect(button.nextElementSibling?.classList.contains("plan-fine")).toBe(true);
+    expect(button.nextElementSibling?.textContent).toBe("Read-only");
+  });
 });

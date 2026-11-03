@@ -9,9 +9,15 @@ import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import { featureOfKey } from "@/plan/api/page-key";
 import { checklistViewSchema } from "@/plan/api/schema";
+import panelFixture from "@/plan/api/fixtures/summary-panel.json";
+import questionFixture from "@/plan/api/fixtures/summary-question.json";
 import { conceptPageSchema, type ConceptPage } from "@/plan/api/schema-concept";
+import { summaryPanelSchema } from "@/plan/api/schema-summaries";
 import { authorStore, makeDoc } from "@/plan/files/doc-heading-kit";
-import { checklistAtom } from "@/plan/state/atoms";
+import { authoringAtom, checklistAtom, youAtom } from "@/plan/state/atoms";
+import { panelLoadAtom } from "@/plan/summaries/state";
+import headingSheet from "@/plan/ui/doc-heading.css?raw";
+import pageSheet from "@/plan/concept/concept-page.css?raw";
 
 import { PageHeading } from "./page-heading";
 import {
@@ -29,11 +35,13 @@ import {
 const extras = vi.hoisted(() => ({
   header: vi.fn(() => null),
   chip: vi.fn(() => null),
-  row: vi.fn(() => null),
+  action: vi.fn(() => null),
 }));
-vi.mock("./page-header-extras", () => ({ PageHeaderExtras: extras.header }));
+vi.mock("./page-header-extras", () => ({
+  PageHeaderExtras: extras.header,
+  SummaryAction: extras.action,
+}));
 vi.mock("./key-chip-extras", () => ({ KeyChipExtras: extras.chip }));
-vi.mock("./key-row-extras", () => ({ KeyRowExtras: extras.row }));
 
 let pages: Record<string, unknown> = {};
 let docs: Record<string, unknown> = {};
@@ -59,7 +67,7 @@ beforeEach(() => {
   fetched.length = 0;
   extras.header.mockClear();
   extras.chip.mockClear();
-  extras.row.mockClear();
+  extras.action.mockClear();
   window.sessionStorage.clear();
   vi.stubGlobal("fetch", vi.fn(makeStubFetch(() => ({ pages, docs, failing }), fetched)));
 });
@@ -82,6 +90,21 @@ describe("summary page header", () => {
     const link = within(header).getByRole("link", { name: "Source" });
     expect(link.getAttribute("href")).toBe("/files/product/demo/section_01.md");
     expect(extras.header).toHaveBeenCalled();
+  });
+  it("the summary header shares the page column's edges", async () => {
+    serveOverview();
+    renderAt("/f/demo/product/section_01");
+    const title = await screen.findByRole("heading", { level: 1, name: "Planning" });
+    const header = title.closest("header") as HTMLElement;
+    // The inset is the column's: none of its own utilities, and the page column zeroes it.
+    expect(header.className).not.toMatch(/(?:^|\s)px-/);
+    expect(header.classList.contains("doc-heading")).toBe(true);
+    expect(header.closest(".concept-page-column")).not.toBeNull();
+    const strip = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+    expect(strip(headingSheet)).toContain(
+      ".doc-heading { padding-inline: var(--doc-heading-inset, var(--space-5)); }",
+    );
+    expect(strip(pageSheet)).toContain(".concept-page-column { --doc-heading-inset: 0; }");
   });
   it("plan header shows state and pressure date", async () => {
     pages = {
@@ -289,5 +312,28 @@ describe("overview head", () => {
     const title = screen.getByRole("heading", { level: 1, name: "Product overview" });
     expect(eyebrow.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(title.compareDocumentPosition(column) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+  it("an overview with a rebuild waiting for approval offers Rebuild all under its title", async () => {
+    serveOverview();
+    const panel = summaryPanelSchema.parse({ ...panelFixture, question: questionFixture });
+    // The header's summary feed reloads the panel from the server; serve the same question.
+    const stub = vi.mocked(fetch).getMockImplementation()!;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        String(input).includes("/api/summaries/panel") ? Promise.resolve(json(panel)) : stub(input),
+      ),
+    );
+    const ada = { public_id: "0123456789abcdef", name: "Ada" };
+    renderAt("/f/demo/product", (store) => {
+      store.set(checklistAtom, checklistViewSchema.parse(checklistFixture.checklists[0]!));
+      store.set(youAtom, ada);
+      store.set(authoringAtom, { holder: { ...ada, away_since: null, frees_at: null } });
+      store.set(panelLoadAtom, { status: "ready", panel });
+    });
+    await readingColumn();
+    const head = document.querySelector(".concept-overview-head") as HTMLElement;
+    expect(within(head).getByRole("button", { name: "Rebuild all" })).toBeTruthy();
+    expect(within(head).getByText(/waiting for approval/)).toBeTruthy();
   });
 });

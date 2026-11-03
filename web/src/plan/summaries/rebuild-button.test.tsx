@@ -89,6 +89,9 @@ it.each([
   const button = screen.getByRole("button", { name: "Rebuild", description: reason });
   expect(button.getAttribute("aria-disabled")).toBe("true");
   expect(screen.getByText(reason).textContent).toBe(reason);
+  // The reason follows the button on its line, beside the summary status, never stacked under it.
+  expect(button.nextElementSibling?.textContent).toBe(reason);
+  expect(button.parentElement?.classList.contains("flex-col")).toBe(false);
   button.focus();
   expect(document.activeElement).toBe(button);
   fireEvent.click(button);

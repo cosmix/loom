@@ -1,23 +1,75 @@
 /*
- * The chrome around a summary's reading column: the document key and the empty states. Both sit
- * on the page ground in the chrome face with no box, no border and no fill (DESIGN.md, Surfaces).
+ * The chrome around a summary's reading column: the overview head's row, the document key and the
+ * empty states. All sit on the page ground in the chrome face with no box, no border and no fill
+ * (DESIGN.md, Surfaces).
  */
+
+/* ── Page column ──────────────────────────────────────────────────────────── */
+
+/* A summary page's document heading takes no inset of its own: its breadcrumb, title and status
+   start on the column's left edge with the key and the text, and its action row ends on the
+   column's right edge, where the overview head's Open all ends (doc-heading.css). */
+.concept-page-column {
+  --doc-heading-inset: 0;
+}
+
+/* ── Overview head ────────────────────────────────────────────────────────── */
+
+/* The overview's eyebrow and title, with Open all / Fold all at the end of the title's line. The
+   head's own bottom margin moves to this row so the control can sit on the title's line. */
+.concept-overview-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+/* The pending-approval notice takes its own line under the title row; with no notice the
+   wrapper is empty and takes no gap. */
+.concept-overview-head__notice {
+  flex-basis: 100%;
+}
+
+.concept-overview-head__notice:empty {
+  display: none;
+}
+
+[data-loom-plan] .concept-overview-head > .plan-page__head {
+  margin-bottom: 0;
+}
 
 /* ── Document key ─────────────────────────────────────────────────────────── */
 
 .concept-key {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
   margin-block: var(--space-1) var(--space-5);
   font-family: var(--font-sans);
+}
+
+/* One line: the lead word, then the documents. At 390px the documents wrap under the lead word's
+   line rather than scrolling. */
+.concept-key-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-3);
+  min-width: 0;
+}
+
+.concept-key-lead {
+  flex: none;
 }
 
 .concept-key-list {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1) var(--space-4);
+  gap: 0 var(--space-4);
+  min-width: 0;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -31,14 +83,12 @@
   max-width: 100%;
 }
 
-/* A document: swatch, number, name. The height follows the text, so a name that wraps at 390px
-   grows the entry instead of running over its neighbour. */
+/* A document: its mark and its short label, one control-high line. The full title is in the
+   link's name and tooltip, never drawn. */
 .concept-key-doc {
   display: inline-flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  row-gap: 0;
   min-width: 0;
   max-width: 100%;
   min-height: var(--control-height);
@@ -51,6 +101,7 @@
   font-size: var(--type-ui);
   font-weight: 500;
   line-height: var(--leading-ui);
+  white-space: nowrap;
   text-decoration: none;
   transition: color 120ms;
 }
@@ -69,18 +120,14 @@ a.concept-key-doc:hover {
   outline-offset: 2px;
 }
 
+/* A long plan slug is cut with an ellipsis; its full name stays in the link's name. */
 .concept-key-label {
-  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-family: var(--font-mono);
   font-size: var(--type-fine);
   font-weight: 400;
-}
-
-/* With under 14ch of room beside the slug the title drops under it as one run, not a 90px column. */
-.concept-key-title {
-  flex: 1 1 14ch;
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 
 .concept-key-more {
@@ -107,7 +154,7 @@ a.concept-key-doc:hover {
 /* The legend for the squares after sentences: one sample square, then one sentence. */
 .concept-key-legend {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-2);
   max-width: 68ch;
   margin: 0;
