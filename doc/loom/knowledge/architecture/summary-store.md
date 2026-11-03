@@ -244,8 +244,9 @@ Source: `plan_server/summaries/scheduler.rs`, `scheduler/queue.rs`, `scheduler/s
   those ids (`attribution/scan.rs`); when it stops, its tokens are one line for the ids it briefed. A summary session's own
   transcript, costed when it ends, is one line for the ids no subagent briefed (the overviews it built itself), else for
   all of them. A line with one id is an individual cost; a line shared by several cannot be split, so the turn footer shows
-  tokens only for single-id lines and `tokens unknown` otherwise. The trigger is Button when any id was pressed, else
-  Background; refinement subagents log Refinement.
+  tokens only for single-id lines and `tokens unknown` otherwise. The trigger is Button only when every id of the line
+  was pressed (`attribution.rs::pressed_or_background`), else Background; `scheduler/session.rs::running_triggers` maps
+  only `Via::Button` to Button, so ids approved through a question log Background. Refinement subagents log Refinement.
 - **Estimates.** `estimate` sums one figure per pending summary, counting fresh tokens (cache reads excluded) and the
   weakest basis used: `Last` (the summary's latest single-summary line with every fresh component known), else `PerByte`
   (the median tokens-per-source-byte of single-summary lines at the same level, rounded up), else `Starting`: 40,000

@@ -12,12 +12,12 @@ members:
   "feat-planner/product/section_04": "sha256:0472610608f90e74d8b729681374a179af9b8d3ab936a51847ff40781362b096"
   "feat-planner/product/section_05": "sha256:70959f3062922c236d4e3a964bc973446b00e6a5b7262e8b5b9071014226d322"
   "feat-planner/product/section_06": "sha256:52acfaf0406393f59afa2a5b89257b5710cde667af18288fd4226d7b638778e2"
-  "feat-planner/product/section_07": "sha256:d56654aa22b6832970d11ce16f96a2b3c362455f761b640a745fb1389ee8d49d"
+  "feat-planner/product/section_07": "sha256:6526e4481586adfac88b7875d3a87f321000d5cb178710b0672666fe1bc5b43c"
   "feat-planner/product/section_08": "sha256:7498be33b5b2fffc1bb2a8769661b63e32ca75c2211ccf02eb8a613e0ebf31cb"
   "feat-planner/product/section_09": "sha256:18c4acff559940acbd8a4230371102915acfb19f65b1f6a88f108b3b67341795"
   "feat-planner/product/section_10": "sha256:95d11c8478cf0c42a71c6988182725ff457a12dd3d071cf7dbb6bf3e66ea65e3"
   "feat-planner/product/section_11": "sha256:e2129a23cc1f3939b5dda3bd3dc6ee89a43acc3dc9b09231044b6aae249a24a7"
-  "feat-planner/product/section_12": "sha256:2cede91a7cd7317906b08b44bb9d8a9bcdf199174185df241e010900adfd43a4"
+  "feat-planner/product/section_12": "sha256:7080b18c019ea7091d6f609e31bbdcf5c580441ca628e08f42c0ae02fca844fd"
 ---
 
 # Planner Product Overview
@@ -88,4 +88,4 @@ A pressure run takes the authoring slot until it ends, and starting a run execut
 
 Every start mints a token that sets an access cookie, and the cookie is required on every API route and WebSocket. [12](../../feat-planner/product/section_12.md#s-9a0d1e1f) [12](../../feat-planner/product/section_12.md#s-465bfa4e)
 
-Sessions write under `doc/` outside the locked set, and the OS sandbox, permission rules and planning hook enforce that table together. [12](../../feat-planner/product/section_12.md#s-2deab04f) [12](../../feat-planner/product/section_12.md#s-bc501e36)
+Sessions write under `doc/` outside the locked set, and the OS sandbox, permission rules and planning hook enforce that table together. [12](../../feat-planner/product/section_12.md#s-2deab04f) [12](../../feat-planner/product/section_12.md#s-489509f3)

@@ -70,7 +70,7 @@
 | [source-graph-resolution](architecture/source-graph-resolution.md) | Bindings | 125 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 78 |
 | [status-data-model](architecture/status-data-model.md) | Fields | 241 |
-| [summary-store](architecture/summary-store.md) |  | 273 |
+| [summary-store](architecture/summary-store.md) |  | 274 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 285 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 56 |
@@ -128,7 +128,7 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 230 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 176 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 397 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 399 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift | 400 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 177 |
@@ -161,7 +161,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Merge, daemon, broker incidents | 355 |
 | [phantom-merges](mistakes/phantom-merges.md) | Split by compile order | 349 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
-| [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 49 |
+| [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 69 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Delivery slips | 371 |
 | [planner-redesign](mistakes/planner-redesign.md) | Redesign slips | 80 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair slips | 94 |
@@ -226,7 +226,7 @@
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 204 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 363 |
-| [session-tmpdir-deny](concerns/session-tmpdir-deny.md) | Read-only TMPDIR | 11 |
+| [session-tmpdir-deny](concerns/session-tmpdir-deny.md) | Read-only TMPDIR | 7 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 86 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Host-verify review items | 303 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
