@@ -16,9 +16,9 @@ fn defaults_apply_when_no_tier_sets_values() {
         GuidanceModels {
             spec: pair("opus", "medium"),
             plan: pair("opus", "high"),
-            summary_session: pair("haiku", "high"),
+            summary_session: pair("sonnet", "high"),
             document_agent: pair("haiku", "high"),
-            overview_agent: pair("haiku", "high"),
+            overview_agent: pair("sonnet", "high"),
         }
     );
 }
@@ -122,9 +122,9 @@ plan_authoring_effort = "high"
         GuidanceModels {
             spec: pair("opus", "low"),
             plan: pair("haiku", "high"),
-            summary_session: pair("haiku", "high"),
+            summary_session: pair("sonnet", "high"),
             document_agent: pair("haiku", "high"),
-            overview_agent: pair("haiku", "high"),
+            overview_agent: pair("sonnet", "high"),
         }
     );
 }

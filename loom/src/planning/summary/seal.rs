@@ -6,6 +6,9 @@
 //! deletes the draft and the claim of the summary it wrote.
 
 mod links;
+mod restate;
+#[cfg(test)]
+mod restate_contract_tests;
 #[cfg(test)]
 mod tests;
 

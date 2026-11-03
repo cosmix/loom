@@ -2,7 +2,7 @@
 name: overview
 description: Rebuild the assigned overviews from current document summaries and seal their drafts.
 tools: Read, Write, Edit, Bash, Glob, Grep
-model: haiku
+model: sonnet
 effort: high
 ---
 
@@ -22,6 +22,8 @@ summaries or delegate work. Work without asking the user anything.
    for a product overview or metaplan passages for an engineering overview. Check every claim
    against these sources. Preserve current sentences word for word unless the assigned
    correction requires changing them. Replace stale or incorrect claims with supported prose.
+   Rewrite a sentence that repeats the sentence it cites to say what the cited sentences add
+   up to, even when the brief marks it `[keep]`.
    Require cited document-summary sentences to exist and be current; if a dependency is stale
    or missing and prevents sealing, release your overview claim instead of rebuilding it.
 3. Write only the draft file named by the brief, in the runtime directory. Write the overview

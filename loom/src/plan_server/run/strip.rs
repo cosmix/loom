@@ -20,10 +20,13 @@ pub fn build_strip(work_dir: &WorkDir, dashboard_url: Option<&str>) -> anyhow::R
         return Ok(empty_strip());
     }
     let data = collect_status_data(work_dir)?;
+    // The stage's own flag, as the dashboard counts it. `data.merge.merged` needs a verifiable
+    // ancestry to the base branch, which squash merges and cleaned-up branches never give.
+    let merged = data.stages.iter().filter(|stage| stage.merged).count();
     Ok(RunStrip {
         plan: get_plan_source_path(work_dir)?.map(|path| path.to_string_lossy().into_owned()),
         daemon_running: DaemonServer::is_running(work_dir.root()),
-        merged: u32::try_from(data.merge.merged.len())?,
+        merged: u32::try_from(merged)?,
         total: u32::try_from(data.progress.total)?,
         attention: u32::try_from(attention_entries(&data.stages).len())?,
         dashboard_url: dashboard_url.map(super::dashboard_parse::strip_token),
@@ -136,5 +139,7 @@ fn sleep_unless_stopped(ctx: &PlanContext) {
     }
 }
 
+#[cfg(test)]
+mod merged_contract_tests;
 #[cfg(test)]
 mod tests;

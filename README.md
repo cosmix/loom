@@ -657,7 +657,7 @@ The keys, with their built-in defaults:
 | `pressure.rounds`                  | `1`           | integer, at least 1                                                      | per key       |
 | `plan.document_summary_model`      | `haiku`         | `haiku`, `sonnet`, `opus`, `fable`                                      | per key       |
 | `plan.document_summary_effort`     | `high`          | `low`, `medium`, `high`, `xhigh`, `max`                                 | per key       |
-| `plan.overview_model`              | `haiku`         | `haiku`, `sonnet`, `opus`, `fable`                                      | per key       |
+| `plan.overview_model`              | `sonnet`        | `haiku`, `sonnet`, `opus`, `fable`                                      | per key       |
 | `plan.overview_effort`             | `high`          | `low`, `medium`, `high`, `xhigh`, `max`                                 | per key       |
 | `plan.summary_backend`             | `claude`        | `claude`, `codex`                                                       | per key       |
 | `plan.summary_codex_model`         | `gpt-6.1-terra` | `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6.1-terra`, `gpt-6-luna` | per key       |

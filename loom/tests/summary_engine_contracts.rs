@@ -23,11 +23,11 @@ fn empty_user_config() -> UserConfig {
 }
 
 #[test]
-fn summary_models_default_to_haiku_high() {
+fn summary_models_default_to_haiku_for_documents_and_sonnet_for_overviews() {
     let resolved = SummaryModels::resolve(&PlanConfig::default(), &empty_user_config());
     assert_eq!(resolved.document_model, "haiku", "{resolved:?}");
     assert_eq!(resolved.document_effort, "high", "{resolved:?}");
-    assert_eq!(resolved.overview_model, "haiku", "{resolved:?}");
+    assert_eq!(resolved.overview_model, "sonnet", "{resolved:?}");
     assert_eq!(resolved.overview_effort, "high", "{resolved:?}");
     assert_eq!(resolved.backend, "claude", "{resolved:?}");
     assert_eq!(resolved.codex_model, "gpt-6.1-terra", "{resolved:?}");
