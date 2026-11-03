@@ -186,20 +186,56 @@ export function QuestionAnnouncement({ question }: { question: SummaryQuestion |
   );
 }
 
+/** The accessible name every summary row in the activity popover carries. */
+export function summaryRowLabel(load: PanelLoad): string {
+  return `Summary rebuilds: ${statusText(load).label}`;
+}
+
+export interface SummaryExpansion {
+  expanded: boolean;
+  toggle: () => void;
+}
+
 /**
- * The footer row of the activity popover. The caller owns the feed (the pill needs the panel
- * while the popover is closed), so the row takes its load state; it expands in place, and a
- * question that arrives expands it, since the popover has no nested popover to open. The caller
- * renders QuestionAnnouncement outside the popover, which mounts this row only while open.
+ * Whether the summary detail is open. The activity popover owns one state for the footer row and
+ * the running rebuild's list row, so the detail stays open when a rebuild starts or ends. A
+ * question that arrives opens it, since the popover has no nested popover to open.
  */
-export function SummaryStatusRow({ load, reload }: { load: PanelLoad; reload: () => void }) {
-  const question = useAtomValue(summaryQuestionAtom);
-  const questionId = question?.id ?? null;
+export function useSummaryExpansion(): SummaryExpansion {
+  const questionId = useAtomValue(summaryQuestionAtom)?.id ?? null;
   const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     if (questionId !== null) setExpanded(true);
   }, [questionId]);
+  return { expanded, toggle: () => setExpanded((value) => !value) };
+}
+
+/** The rebuild question, queue, failures and start error, set on the row's text column. */
+export function SummaryDetail({ load, reload }: { load: PanelLoad; reload: () => void }) {
+  return (
+    <div className="activity-foot__detail [overflow-wrap:anywhere]">
+      <StatusContent load={load} reload={reload} />
+    </div>
+  );
+}
+
+/**
+ * The footer row of the activity popover while no rebuild runs (a running rebuild's list row
+ * takes over then). The caller owns the feed (the pill needs the panel while the popover is
+ * closed) and the expansion; the row expands in place. The caller renders QuestionAnnouncement
+ * outside the popover, which mounts this row only while open.
+ */
+export function SummaryStatusRow({
+  load,
+  reload,
+  expansion,
+}: {
+  load: PanelLoad;
+  reload: () => void;
+  expansion: SummaryExpansion;
+}) {
   const { label, count } = statusText(load);
+  const { expanded, toggle } = expansion;
   const running = load.status === "ready" && load.panel.running !== null;
   const Chevron = expanded ? ChevronUp : ChevronDown;
   return (
@@ -208,8 +244,8 @@ export function SummaryStatusRow({ load, reload }: { load: PanelLoad; reload: ()
         type="button"
         className="activity-row"
         aria-expanded={expanded}
-        aria-label={`Summary rebuilds: ${label}`}
-        onClick={() => setExpanded((value) => !value)}
+        aria-label={summaryRowLabel(load)}
+        onClick={toggle}
       >
         <ActivityTile kind="summaries" paused={!running} />
         <span className="activity-row__body">
@@ -217,14 +253,10 @@ export function SummaryStatusRow({ load, reload }: { load: PanelLoad; reload: ()
           <span className="activity-row__sub">{label}</span>
         </span>
         <span className="activity-row__time">
-          {count} <Chevron aria-hidden="true" className="activity-row__chevron inline" />
+          {count} <Chevron aria-hidden="true" className="activity-row__chevron" />
         </span>
       </button>
-      {expanded && (
-        <div className="activity-foot__detail [overflow-wrap:anywhere]">
-          <StatusContent load={load} reload={reload} />
-        </div>
-      )}
+      {expanded && <SummaryDetail load={load} reload={reload} />}
     </>
   );
 }

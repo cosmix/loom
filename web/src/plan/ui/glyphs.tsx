@@ -19,7 +19,6 @@ import {
   MessageCircleQuestion,
   Minus,
   PencilLine,
-  Play,
   RefreshCw,
   SlidersHorizontal,
   StickyNote,
@@ -53,9 +52,11 @@ export const DOC_KIND_GLYPHS: Record<DocKind, LucideIcon> = {
   review: FileSearch,
 };
 
+// Running is the rotating arrows everywhere in the planner, so it shares SUMMARY_STATE_GLYPHS'
+// `rebuilding` icon on purpose: both say "work in progress". Only doc kinds must stay distinct.
 export const PLAN_STATE_GLYPHS: Record<PlanState, LucideIcon> = {
   written: PencilLine,
-  running: Play,
+  running: RefreshCw,
   done: CircleCheckBig,
   retired: Archive,
 };

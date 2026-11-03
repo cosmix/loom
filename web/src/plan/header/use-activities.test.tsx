@@ -177,6 +177,13 @@ it("names the plan run with its merge progress, by file name", () => {
       runStrip: { daemon_running: true, plan: "doc/plans/PLAN-example.md", merged: 0, total: 0 },
     }),
   ).toMatchObject([{ subject: "PLAN-example.md" }]);
+  // A total without a merged count invents no "0 of N": the plan name stands alone.
+  expect(
+    deriveActivities({
+      ...empty,
+      runStrip: { daemon_running: true, plan: "doc/plans/PLAN-example.md", total: 6 },
+    }),
+  ).toMatchObject([{ subject: "PLAN-example.md" }]);
 });
 
 it("uses the singular for a one-summary rebuild", () => {
