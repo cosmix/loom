@@ -164,7 +164,7 @@
 | [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 69 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Delivery slips | 371 |
 | [planner-redesign](mistakes/planner-redesign.md) | Redesign slips | 80 |
-| [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair slips | 123 |
+| [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair slips | 131 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 329 |
