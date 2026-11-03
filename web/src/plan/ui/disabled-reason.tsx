@@ -9,11 +9,14 @@ export type ButtonLook = "quiet" | "secondary" | "primary";
 /** Where a blocked control's reason goes: beneath it (the default), or after it on its line. */
 export type ReasonPlacement = "below" | "inline";
 
+/** One baseline line that wraps only when too narrow: a button, then what follows it. */
+export const INLINE_BASELINE = "inline-flex max-w-full flex-wrap items-baseline gap-x-2 gap-y-1";
+
 const PLACEMENT: Record<ReasonPlacement, string> = {
   below: "flex flex-col items-start gap-1",
   // Inline: the reason follows the button on its baseline and wraps under it only when the line
   // is too narrow. The document header's status line uses it.
-  inline: "inline-flex max-w-full flex-wrap items-baseline gap-x-2 gap-y-1",
+  inline: INLINE_BASELINE,
 };
 
 /*
