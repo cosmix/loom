@@ -9,7 +9,7 @@ fn defaults_apply_when_no_tier_sets_values() {
         SummaryModels {
             document_model: "haiku".into(),
             document_effort: "high".into(),
-            overview_model: "haiku".into(),
+            overview_model: "sonnet".into(),
             overview_effort: "high".into(),
             backend: "claude".into(),
             codex_model: "gpt-6.1-terra".into(),

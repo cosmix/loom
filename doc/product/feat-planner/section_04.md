@@ -309,7 +309,7 @@ summaries it held are shown as failed with the last `seal` error. (My call.)
 
 **Models.** Document summaries (one per product section, one per plan) are built on Haiku at
 high effort by default. Overviews (product and engineering) and the background summary session
-also default to Haiku at high effort. The user selects the background summary backend with
+default to Sonnet at high effort, because an overview joins many documents. The user selects the background summary backend with
 `[plan] summary_backend`: `claude` (default) or `codex`. The Claude backend uses the interactive
 session above. The Codex backend runs `codex exec` in the background with the workspace-write
 sandbox rooted at the project, plus write access to `drafts/` and `claims/` in the runtime
