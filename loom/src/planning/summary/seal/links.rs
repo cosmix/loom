@@ -76,6 +76,8 @@ pub(super) fn check(rules: &Rules<'_>, body: &SummaryBody) -> (Cited, Vec<Format
     });
     for sentence in paragraphs.flatten() {
         let line = sentence.line + 1;
+        // A sentence citing one target twice reports each problem once.
+        let mut reported = BTreeSet::new();
         for link in &sentence.links {
             let problem = match &link.resolved {
                 LinkTarget::Unresolved(href) => Some(format!(
@@ -88,7 +90,8 @@ pub(super) fn check(rules: &Rules<'_>, body: &SummaryBody) -> (Cited, Vec<Format
                     sentence_problem(rules, sentence, summary, id, &mut cited)
                 }
             };
-            errors.extend(problem.map(|message| FormatError { line, message }));
+            let fresh = problem.filter(|message| reported.insert(message.clone()));
+            errors.extend(fresh.map(|message| FormatError { line, message }));
         }
     }
     errors.extend(uncited(rules, &allowed, &cited));

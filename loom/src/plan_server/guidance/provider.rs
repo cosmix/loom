@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use super::brief_route::SessionBriefView;
 use crate::plan_server::chat::guidance::{validate_feature, GuidanceProvider};
 use crate::plan_server::context::PlanContext;
-use crate::plan_session::attachments::parse_message;
+use crate::plan_session::attachments::parse_unwrapped;
 use crate::plan_session::bridge::LaunchGuidance;
 use crate::plan_session::kind::SessionDir;
 use crate::planning::guidance::{
@@ -131,7 +131,7 @@ fn authoring_start(
             AuthoringStart::from_offer_id(id, project, feature).map_err(anyhow::Error::from)
         }
         (None, Some(text)) => Ok(AuthoringStart::Message {
-            paths: parse_message(text)
+            paths: parse_unwrapped(text)
                 .1
                 .into_iter()
                 .map(|attachment| PathBuf::from(attachment.path))
