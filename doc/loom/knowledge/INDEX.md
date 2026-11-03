@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 81 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 208 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 212 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 115 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 226 |
 
@@ -51,10 +51,10 @@
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 257 |
 | [plan-server](architecture/plan-server.md) | Chat | 245 |
 | [planner-feature-screens](architecture/planner-feature-screens.md) | Layout route, spine, offers | 25 |
-| [planner-web-shell](architecture/planner-web-shell.md) | Shell and screens | 46 |
+| [planner-web-shell](architecture/planner-web-shell.md) | Shell and screens | 61 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 180 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 35 |
-| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 249 |
+| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 264 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 146 |
 | [pressure](architecture/pressure.md) | Pipeline | 42 |
 | [quota-poller](architecture/quota-poller.md) |  | 37 |
@@ -70,7 +70,7 @@
 | [source-graph-resolution](architecture/source-graph-resolution.md) | Bindings | 125 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 78 |
 | [status-data-model](architecture/status-data-model.md) | Fields | 241 |
-| [summary-store](architecture/summary-store.md) |  | 274 |
+| [summary-store](architecture/summary-store.md) |  | 285 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 285 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 56 |
@@ -118,7 +118,7 @@
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 239 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 139 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 143 |
-| [plan-web](conventions/plan-web.md) |  | 77 |
+| [plan-web](conventions/plan-web.md) |  | 81 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 62 |
 
@@ -164,7 +164,7 @@
 | [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 69 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Delivery slips | 371 |
 | [planner-redesign](mistakes/planner-redesign.md) | Redesign slips | 80 |
-| [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair slips | 94 |
+| [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair slips | 131 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 329 |
@@ -219,7 +219,7 @@
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) | loom ask, read gate gaps | 112 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 40 |
-| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 103 |
+| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 124 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 143 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 42 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 185 |

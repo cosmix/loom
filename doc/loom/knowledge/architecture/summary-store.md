@@ -93,6 +93,7 @@ draft, then in one hold of the store lock check every link and write the canonic
   vision; `engineering`: the metaplans) and an existing anchor, and records its span hash under `cites`;
 - a `Sentence` link is allowed only in an overview, only to a member, and only to a current sentence of a non-missing
   member; a document summary cites only its source (a `stage:` anchor counts as a source anchor);
+- an overview sentence may not restate the member sentence it cites (`seal/restate.rs`, called from `links.rs` as `restate::restates(`): opening it would show the same text twice. The measure is the Dice similarity `2|A∩B| / (|A|+|B|)` over the lowercase ASCII letter-and-digit word sets of the two texts (links removed), rejected at `RESTATE_THRESHOLD` 0.75 or above against any single cited member; an empty text restates nothing. The threshold was measured over the 103 resolvable overview-to-member pairs stored at the plan's HEAD: 2 were byte-identical, 18 scored 0.75 or more, and a reworded copy scored 0.78 ("File mode adds the server's document, tree, save, diff and search routes, with in-process plan validation." against the member's longer sentence), while a two-member compression scores under 0.75 against each member and passes. A sentence citing one member twice reports one restatement (`check()` keeps a per-sentence set). Known limit: the word set is ASCII-only, so non-ASCII prose is never flagged. Overviews sealed before the check keep their near-copies until the next rebuild;
 - an overview must cite every member and every source document at least once, or the seal is refused;
 - the front matter is computed, never taken from the draft: `file` from the source's content hash, `members` from each
   member's `members_hash` at seal time.
@@ -193,7 +194,10 @@ Source: `plan_server/summaries/scheduler.rs`, `scheduler/queue.rs`, `scheduler/s
 - **Auto-rebuild switch.** `POST /api/summaries/auto {enabled}` (`summaries/routes.rs`; holder-only, refused in read-only mode) sets the scheduler's start-without-asking limit to `AUTO_LIMIT` or 0; with it off every background batch opens the question first. The Settings toggle "Rebuild summaries automatically" is a per-browser preference (`web/src/plan/summaries/state.ts`) that the holder's browser posts after `hello` and on every change, because a browser-only preference cannot change a server-side rebuild.
 - **Newly invalidated counting.** `on_update` queues only the `invalidated` ids (newly out of date in this batch), minus
   the declined, the running session's pending ids and the queued ones, and first drops every id no longer out of date from
-  the queue, declined, failed, unsealed and question sets. A question that loses ids is re-sent with the rest and closes
+  the queue, declined, failed, unsealed and question sets, except a pressed id whose summary the latest evaluation still
+  lists (`Scheduler::set_known`, fed by `Rebuilds::apply_evaluation`): a press rebuilds a current summary too, so the
+  batches that arrive while it waits must not take it away. An id missing from the known set is dropped, so a pressed
+  id whose document was removed cannot restart sessions without bound. A question that loses ids is re-sent with the rest and closes
   when none remain. The ids already out of date when the server starts, or when a turn or suspension ends, enter through
   `refresh`.
 - **Decline memory.** No to a question moves its ids to `declined`. A declined id is skipped by `on_update` and `refresh`
@@ -201,8 +205,9 @@ Source: `plan_server/summaries/scheduler.rs`, `scheduler/queue.rs`, `scheduler/s
   is skipped by `refresh`, and `on_update` clears the failure of an id that is newly invalidated.
 - **Suspension guards.** Nothing starts while any of these holds: `read_only` is set, the server is stopping, a
   suspension token is live (`AuthoringTurn` from `turn_started` until `turn_ended`, or the authoring session going Idle
-  or Ended with its turn open; `PressureRun`), a session is running, or a question is open. Releasing the last token
-  runs `refresh` and `try_start`.
+  or Ended with its turn open; `PressureRun`), or a session is running. Releasing the last token runs `refresh` and
+  `try_start`. An open question holds only the batch: pressed and approved ids start beside it, and `Scheduler::press`
+  takes its ids out of the question (`retain_asked` re-asks the rest or closes it).
 - **One session at a time.** `try_start` returns while `running` is set. A start that errors keeps the ids queued and
   shows the error in the panel until the next start.
 - **The ends of a summary session.**
@@ -216,9 +221,13 @@ Source: `plan_server/summaries/scheduler.rs`, `scheduler/queue.rs`, `scheduler/s
     and only reports the stop; the bridge drain ends the session.
 - **Unsealed twice.** An id the session claimed and left unsealed at a normal end is marked; a second such end moves it to
   `failed` with `ENDED_UNSEALED`, so a summary whose seal never validates does not rebuild forever at a token cost per
-  round. A seal, a prune, a Button press or a failure clears the mark; an id the session never claimed requeues and
-  keeps its mark. Limits: a session that keeps ending without claiming anything restarts without bound, and `on_update`
+  round. A seal, a Button press or a failure clears the mark; a prune clears it unless `keeps_mark` holds (the id is
+  queued, or pressed and pending in the running session, or claimed by it: a pressed id is current all along and a
+  claimed one reads `Rebuilding`, so being listed current says nothing about them, and clearing the mark there would let
+  each claimed-unsealed end requeue without bound). `apply_evaluation` calls `claims_changed` before `on_update` so the
+  prune sees a claim the evaluation is first to show. An id the session never claimed requeues and keeps its mark. Limits: a session that keeps ending without claiming anything restarts without bound, and `on_update`
   clears `failed` but not the mark of a newly invalidated id, so after a source edit one more claimed unsealed end fails it.
+- **Press path** (`rebuilds/tests_press.rs`: `a_pressed_rebuild_reaches_the_spawner_within_one_tick`, `a_pressed_session_is_costed_as_button`, `a_press_during_a_running_session_joins_the_next_start`). An idle press or a Rebuild-all answer runs `Rebuilds::enqueue(Button)`, `Scheduler::press`, `try_start`, `carry_out` and `start_summary`; `Bridge::start_session` returns with the session Spawning and `host.spawn` runs at the next driver tick (20 ms in the test rig, under 1 s, no other event needed), so the bridge, the 200 ms tick and recovery add no delay. What defers a press: a running session (one at a time; the panel names it, and the pressed ids join the next start at the session's `Ended`, after a claims-done stop or its own end), an authoring turn or pressure run (the panel shows only the queue until the turn ends), and a bridge refusal during recovery (`Busy` keeps the ids queued with `start_error` until `after_recovery` supplies a batch). An open question about a background batch does not defer it.
 - **Claim clearing.** `Attribution::on_session_ended` deletes every claim the session holds; a stopped subagent's claims
   on the ids it briefed are deleted first. `sweep_after_recovery` deletes the claims of sessions that are neither live
   nor left alone and returns the terminal (session-less) claims, which stay and are offered for release in the panel. The
@@ -244,9 +253,11 @@ Source: `plan_server/summaries/scheduler.rs`, `scheduler/queue.rs`, `scheduler/s
   those ids (`attribution/scan.rs`); when it stops, its tokens are one line for the ids it briefed. A summary session's own
   transcript, costed when it ends, is one line for the ids no subagent briefed (the overviews it built itself), else for
   all of them. A line with one id is an individual cost; a line shared by several cannot be split, so the turn footer shows
-  tokens only for single-id lines and `tokens unknown` otherwise. The trigger is Button only when every id of the line
-  was pressed (`attribution.rs::pressed_or_background`), else Background; `scheduler/session.rs::running_triggers` maps
-  only `Via::Button` to Button, so ids approved through a question log Background. Refinement subagents log Refinement.
+  tokens only for single-id lines and `tokens unknown` otherwise. Every line of a summary session is Button when any of
+  its ids was pressed or approved through a question (`scheduler/session.rs::running_triggers` maps `Via::Button` and
+  `Via::Approved` to `Trigger::Button`; `attribution.rs::pressed_or_background` reads the session's triggers), else
+  Background: background ids that joined a press ran because of it, so its lines cannot be split by id. Refinement
+  subagents log Refinement.
 - **Estimates.** `estimate` sums one figure per pending summary, counting fresh tokens (cache reads excluded) and the
   weakest basis used: `Last` (the summary's latest single-summary line with every fresh component known), else `PerByte`
   (the median tokens-per-source-byte of single-summary lines at the same level, rounded up), else `Starting`: 40,000

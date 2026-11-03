@@ -124,6 +124,21 @@ submitted within <timeout>", so the scheduler requeues its ids. An opening whose
 were both lost therefore keeps delivering until the session next goes `Idle`, then fails once. `Delivering.opening` is
 `Option<u8>` (`Some(n)` = the opening, `n` re-presses; `session.rs`).
 
+**The pasted-content wrapper.** Claude Code records a delivered prompt, in the transcript and in the `UserPromptSubmit`
+hook, as an `<pasted_content id="X">` line, the text and a `</pasted_content id="X">` line; older records carry the text
+bare. `attachments/pasted.rs::unwrap_pasted` returns the inside only when the message is, after its surrounding blank
+lines, exactly an open tag line, a body and a close tag line with the same id (1 to 32 ASCII alphanumerics, `_` or `-`);
+a wrapper amid typed text, a missing close or a mismatched or malformed id leaves the message whole. `parse_message` is
+`unwrap_pasted` then `parse_unwrapped`. The transcript mapper (`transcript/mod.rs`) unwraps before `cap_chars`, because
+unwrapping after the 100 000-character cap would lose the close tag of a maximum-size delivery, then calls
+`parse_unwrapped` so a body that is itself a wrapper is not unwrapped twice; the hook path (`bridge/flow.rs` prompt
+hook) calls `parse_message`. Text the server formatted itself (`format_message` output: the chat commands, the resend
+path, `guidance/provider.rs`) is read with `parse_unwrapped`, since a typed `<pasted_content>` wrapper in it is typed
+text. Known limits: a message the user typed as a complete three-line wrapper, if Claude Code records it bare, is
+unwrapped on the transcript and hook paths, misses the sent item's `match_text` in `confirm_text`/`late_confirm` and
+shows twice (a contract test for a bare typed wrapper waits on confirming Claude Code's wrapping rule); a
+CRLF-terminated tag line is not unwrapped and fails safe, leaving the message whole ([the mistake](../mistakes/planner-ui-repair.md#claude-code-wrapped-delivered-prompts-and-every-text-match-broke-silently-2026-11-03)).
+
 The delivered text, with the attachment block, is capped at `MAX_DELIVERED_BYTES` = 100 000. `check_send` refuses text whose
 first non-whitespace character, after skipping a leading U+FEFF, is `/`, except `/compact`. Attachments: at most 10, quotes
 cut at 2,000 characters on a line boundary with `[…N more characters; read the source]` where N is the quote's characters

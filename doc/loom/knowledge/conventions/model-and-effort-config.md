@@ -120,7 +120,7 @@ Claude Code `/fast`; it is not a model id and never belongs in `CODEX_MODELS`.
 
 Eleven string keys pick the model, reasoning effort and backend of planning sessions. Summary keys (`planning/summary/config.rs`,
 `SummaryModels::resolve`; defaults `DEFAULT_PLAN_*` in `user_config/plan.rs`): `plan.document_summary_model` haiku and
-`plan.document_summary_effort` high for a document summary; `plan.overview_model` haiku and `plan.overview_effort` high for an
+`plan.document_summary_effort` high for a document summary; `plan.overview_model` sonnet (`DEFAULT_PLAN_OVERVIEW_MODEL`, `user_config/plan.rs`) and `plan.overview_effort` high for an
 overview and the summary session that rebuilds them. `plan.summary_backend` (`claude` default, or `codex`) picks the agent that
 builds summaries; `plan.summary_codex_model` (`gpt-6.1-terra`) and `plan.summary_codex_effort` (`high`) apply only to the `codex`
 backend (the key list is `user_config/keys.rs`; backend rules in [Summary Rebuilds and Cost](../architecture/summary-store.md#rebuilds-and-cost)).
