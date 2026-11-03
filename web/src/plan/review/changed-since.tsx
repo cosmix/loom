@@ -1,6 +1,6 @@
-import { atom, useAtomValue, useStore } from "jotai";
+import { useAtomValue } from "jotai";
 import { History } from "lucide-react";
-import { useEffect, useRef, useState, type ComponentProps } from "react";
+import { useRef, useState, type ComponentProps } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,221 +13,106 @@ import {
 import "@/plan/header/activity.css";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { DiffView } from "@/plan/diff/diff-view";
-import { fetchDoc } from "@/plan/files/api";
-import { planSocketAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { serverInfoAtom } from "@/plan/state/atoms";
 import { ActivityTile } from "@/plan/ui/activity-glyphs";
 import { LoadState } from "@/plan/ui/load-state";
 
-import { getAtCommit, getCompare, type CompareResponse } from "./api";
-import { changedSince, checkpointAtom, markSeen, type Checkpoint } from "./checkpoint";
-import { ChangeRows, Limits, RefForm, type Change, type Comparison } from "./changed-since-parts";
+import "./changed-since.css";
+import {
+  useChangedSince,
+  useCompare,
+  useMarkAllSeen,
+  useSelectedDiff,
+  type Baseline,
+  type MarkAll,
+  type Selection,
+} from "./changed-since-data";
+import {
+  ChangeRows,
+  Limits,
+  PathText,
+  RefForm,
+  shortSha,
+  type Change,
+  type Comparison,
+  type Row,
+  type RowSource,
+} from "./changed-since-parts";
+import { checkpointAtom } from "./checkpoint";
 import { focusReadingRegion } from "./focus-return";
-import { hashesAtom, loadHashes } from "./live";
+import { seenBaseline, seenTextsAtom } from "./seen-text";
 
-type Selection = { path: string; commit: string; checkpoint: Checkpoint | null };
-type CompareLoad = { value?: CompareResponse; error?: string; loading: boolean };
-type DiffLoad = { before: string | null; after: string | null } | { error: string } | null;
+export { useChangedSince } from "./changed-since-data";
 
-// One computation shared by every tree row, key chip and the header control.
-const changesAtom = atom((get) => {
-  const checkpoint = get(checkpointAtom);
-  const current = get(hashesAtom);
-  return checkpoint && current ? changedSince(checkpoint, current.docs) : [];
-});
-
-export function useChangedSince(): Change[] {
-  const store = useStore();
-  const current = useAtomValue(hashesAtom);
-  const projectKey = useAtomValue(serverInfoAtom)?.project_key;
-  useEffect(() => {
-    if (projectKey && current && store.get(checkpointAtom) === null) {
-      store.set(checkpointAtom, { commit: current.head, hashes: { ...current.docs } });
-    }
-  }, [store, current, projectKey]);
-  return useAtomValue(changesAtom);
-}
-
-function useCompare(commit: string | null) {
-  const socket = useAtomValue(planSocketAtom);
-  const hashes = useAtomValue(hashesAtom);
-  const [attempt, setAttempt] = useState(0);
-  const [load, setLoad] = useState<CompareLoad>({ loading: true });
-  useEffect(() => socket?.onResync(() => setAttempt((n) => n + 1)), [socket]);
-  useEffect(() => {
-    let active = true;
-    if (commit === null) {
-      setLoad({ loading: false });
-      return;
-    }
-    setLoad({ loading: true });
-    void getCompare(commit).then((result) => {
-      if (!active) return;
-      setLoad(
-        result.ok
-          ? { loading: false, value: result.value }
-          : { loading: false, error: result.message },
-      );
-    });
-    return () => {
-      active = false;
-    };
-  }, [commit, hashes, attempt]);
-  return { ...load, retry: () => setAttempt((n) => n + 1) };
-}
-
-function acknowledge(
-  store: ReturnType<typeof useStore>,
-  selection: Selection,
-  hash: string | null,
-) {
-  if (!selection.checkpoint || store.get(checkpointAtom) !== selection.checkpoint) return;
-  if (hash !== null) {
-    markSeen(store, selection.path, hash);
-  } else {
-    // markSeen accepts a hash; a reviewed deletion removes the old hash instead.
-    const hashes = { ...selection.checkpoint.hashes };
-    delete hashes[selection.path];
-    store.set(checkpointAtom, { ...selection.checkpoint, hashes });
-  }
-}
-
-function useSelectedDiff(selection: Selection) {
-  const store = useStore();
-  const [load, setLoad] = useState<DiffLoad>(null);
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    let active = true;
-    const projectKey = store.get(serverInfoAtom)?.project_key;
-    setLoad(null);
-    void Promise.all([
-      getAtCommit(selection.commit, selection.path),
-      fetchDoc(selection.path),
-    ]).then(([before, after]) => {
-      if (!active || store.get(serverInfoAtom)?.project_key !== projectKey) return;
-      if (!before.ok) return setLoad({ error: before.message });
-      if (!after.ok && after.status !== 404) return setLoad({ error: after.message });
-      if (after.ok && (after.value.too_large || after.value.truncated)) {
-        return setLoad({ error: "This document is too large to show a complete diff." });
-      }
-      setLoad({ before: before.value.text, after: after.ok ? after.value.text : null });
-      acknowledge(store, selection, after.ok ? after.value.hash : null);
-    });
-    return () => {
-      active = false;
-    };
-  }, [store, selection, attempt]);
-  return { load, retry: () => setAttempt((n) => n + 1) };
+function caption(baseline: Baseline, ref: Comparison | null) {
+  if (ref)
+    return (
+      <>
+        Compared with <Untrusted text={ref.name} />
+      </>
+    );
+  return baseline.kind === "seen"
+    ? "Since you viewed it"
+    : `Since commit ${shortSha(baseline.commit)}`;
 }
 
 function SelectedDiff({ selection }: { selection: Selection }) {
   const { load, retry } = useSelectedDiff(selection);
-  if (!load) return <LoadState state="loading" title="Loading the diff" />;
-  if ("error" in load)
-    return (
+  let body;
+  if (!load) body = <LoadState state="loading" title="Loading the diff" />;
+  else if ("error" in load)
+    body = (
       <LoadState
         state="error"
         message={visibleControls(load.error)}
         action={{ label: "Retry diff", onClick: retry }}
       />
     );
+  else body = <DiffView path={selection.path} before={load.before} after={load.after} />;
   return (
-    <div className="flex min-h-64 flex-col border-t border-hairline pt-3">
-      <p className="mb-2 font-mono text-[12px]">
-        <Untrusted text={selection.path} />
-      </p>
-      <DiffView path={selection.path} before={load.before} after={load.after} />
-    </div>
+    <section className="changed-since__diff" aria-label="Selected document's changes">
+      <div className="changed-since__diff-head">
+        <PathText path={selection.path} />
+        {load && !("error" in load) && (
+          <span className="plan-fine">{caption(load.baseline, selection.ref)}</span>
+        )}
+      </div>
+      {body}
+    </section>
   );
 }
 
-type MarkState = { pending: boolean; error: string | null };
-type MarkAll = MarkState & { markAll: () => void };
-
-/**
- * Stores what the server holds when the button is pressed. `hashesAtom` reloads on load, reconnect
- * and `doc_changed`, and a commit sends none of them, so its `head` can predate the commit HEAD
- * points to now; the checkpoint must hold that commit. The load goes through the serial queue of
- * `loadHashes`, which also replaces `hashesAtom` with the response the checkpoint is cut from; a
- * `doc_changed` reload that starts meanwhile queues behind it, so an older response never lands
- * after a newer one.
- */
-function useMarkAllSeen(): MarkAll {
-  const store = useStore();
-  const [state, setState] = useState<MarkState>({ pending: false, error: null });
-  const mounted = useRef(true);
-  const busy = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  const markAll = () => {
-    if (busy.current) return;
-    busy.current = true;
-    setState({ pending: true, error: null });
-    void loadHashes(store).then((result) => {
-      busy.current = false;
-      if (!mounted.current) return;
-      if (result.ok) {
-        store.set(checkpointAtom, { commit: result.value.head, hashes: { ...result.value.docs } });
-      }
-      setState({ pending: false, error: result.ok ? null : result.message });
-    });
-  };
-  return { ...state, markAll };
-}
-
-function CompareControls({
-  comparison,
-  mark,
-  onRef,
-}: {
-  comparison: Comparison | null;
-  mark: MarkAll;
-  onRef: (value: Comparison | null) => void;
-}) {
+function MarkAllButton({ mark, paths }: { mark: MarkAll; paths: string[] }) {
   return (
-    <>
-      <RefForm onCompare={onRef} />
-      {comparison && (
-        <p>
-          Comparing with <Untrusted text={comparison.name} />. This ref is not stored.
-        </p>
-      )}
-      {!comparison && (
-        // `aria-disabled`, not `disabled`: the button holds focus inside the modal while it loads, and
-        // a disabled button drops it to the page body. `markAll` ignores presses while pending.
-        <Button
-          size="sm"
-          variant="outline"
-          className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
-          aria-disabled={mark.pending || undefined}
-          onClick={mark.markAll}
-        >
-          {mark.pending ? "Marking all seen…" : "Mark all seen"}
-        </Button>
-      )}
-      {mark.error && (
-        <LoadState
-          state="error"
-          title="Could not mark all seen"
-          message={visibleControls(mark.error)}
-        />
-      )}
-    </>
+    // `aria-disabled`, not `disabled`: the button holds focus inside the modal while it loads, and
+    // a disabled button drops it to the page body. `markAll` ignores presses while pending.
+    <Button
+      className="plan-button aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+      data-look="secondary"
+      aria-disabled={mark.pending || undefined}
+      onClick={() => mark.markAll(paths)}
+    >
+      {mark.pending ? "Marking all seen…" : "Mark all seen"}
+    </Button>
   );
 }
 
 function CompareStatus({
   compare,
+  comparison,
   unavailable,
 }: {
   compare: ReturnType<typeof useCompare>;
+  comparison: Comparison | null;
   unavailable: boolean;
 }) {
   return (
     <>
+      {comparison && (
+        <p className="changed-since__state">
+          Comparing with <Untrusted text={comparison.name} />. This ref is not stored.
+        </p>
+      )}
       {compare.loading && <LoadState state="loading" title="Loading comparison" />}
       {compare.error && (
         <LoadState
@@ -237,48 +122,117 @@ function CompareStatus({
         />
       )}
       {unavailable && (
-        <p role="status">
-          The checkpoint commit is unavailable. Only uncommitted and ref diffs are available.
+        <p role="status" className="changed-since__state">
+          The checkpoint commit is unavailable, so documents you have not viewed here offer only
+          their uncommitted diff.
         </p>
       )}
     </>
   );
 }
 
-function ComparisonList({ changes }: { changes: Change[] }) {
+/** The open document stays listed, marked current, after its diff marked it seen. */
+function withSelected(rows: Row[], selection: Selection | null): Row[] {
+  if (!selection || selection.ref || rows.some((row) => row.path === selection.path)) return rows;
+  const seen: Row = { path: selection.path, change: "seen" };
+  return [...rows, seen].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/**
+ * The rows the list shows and where each row's diff starts. In checkpoint mode a row with an
+ * intact seen text has its own baseline, so it offers a diff even when the commit is unavailable;
+ * ref mode keeps one rule for every row.
+ */
+function useComparisonRows(changes: Change[], ref: Comparison | null, selection: Selection | null) {
   const checkpoint = useAtomValue(checkpointAtom);
+  const entries = useAtomValue(seenTextsAtom);
+  const commit = ref ? ref.commit : (checkpoint?.commit ?? null);
+  const compare = useCompare(commit);
+  const commitReady = commit !== null && compare.value?.available === true && !compare.loading;
+  const unavailable = commit === null || compare.value?.available === false;
+  const listed: Row[] = ref ? (compare.value?.docs ?? []) : changes;
+  const rows = withSelected(
+    unavailable ? listed.map((row): Row => ({ ...row, change: "changed" })) : listed,
+    selection,
+  );
+  const sourceOf = (path: string): RowSource => {
+    if (ref) return commitReady ? "ref" : null;
+    if (seenBaseline(entries, checkpoint, path) !== null) return "seen";
+    return commitReady ? "commit" : null;
+  };
+  return { commit, compare, unavailable, rows, sourceOf };
+}
+
+function ComparisonFoot({
+  mark,
+  paths,
+  onRef,
+}: {
+  mark: MarkAll;
+  /** The listed documents in checkpoint mode; null while a ref is compared. */
+  paths: string[] | null;
+  onRef: (value: Comparison | null) => void;
+}) {
+  return (
+    <footer className="changed-since__foot">
+      {paths && <MarkAllButton mark={mark} paths={paths} />}
+      <RefForm onCompare={onRef} />
+      {mark.error && (
+        <LoadState
+          state="error"
+          title="Could not mark all seen"
+          message={visibleControls(mark.error)}
+        />
+      )}
+      <Limits />
+    </footer>
+  );
+}
+
+function ComparisonList({ changes }: { changes: Change[] }) {
   const mark = useMarkAllSeen();
   const [ref, setRef] = useState<Comparison | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
-  const commit = ref ? ref.commit : (checkpoint?.commit ?? null);
-  const compare = useCompare(commit);
-  const available = commit !== null && compare.value?.available === true && !compare.loading;
-  const unavailable = commit === null || compare.value?.available === false;
-  const rows = ref ? (compare.value?.docs ?? []) : changes;
-  const shown = unavailable ? rows.map((row): Change => ({ ...row, change: "changed" })) : rows;
+  const { commit, compare, unavailable, rows, sourceOf } = useComparisonRows(
+    changes,
+    ref,
+    selection,
+  );
   return (
     <>
-      <CompareControls
-        comparison={ref}
+      <div className="changed-since__body">
+        <div className="changed-since__index">
+          <CompareStatus compare={compare} comparison={ref} unavailable={unavailable} />
+          <ChangeRows
+            rows={rows}
+            selected={selection?.path ?? null}
+            sourceOf={sourceOf}
+            since={commit && `Changes since commit ${shortSha(commit)}`}
+            onOpen={(row) => {
+              // The open document refetches as it changes, so opening it again changes nothing.
+              if (row.path !== selection?.path) setSelection({ path: row.path, ref });
+            }}
+          />
+        </div>
+        {selection ? (
+          <SelectedDiff
+            key={`${selection.ref?.commit ?? ""}:${selection.path}`}
+            selection={selection}
+          />
+        ) : (
+          <p className="plan-empty changed-since__placeholder">
+            Choose a document to see what changed in it.
+          </p>
+        )}
+      </div>
+      <ComparisonFoot
         mark={mark}
+        paths={ref ? null : rows.map((row) => row.path)}
         onRef={(value) => {
           setRef(value);
           setSelection(null);
         }}
       />
-      <CompareStatus compare={compare} unavailable={unavailable} />
-      <ChangeRows
-        rows={shown}
-        available={available}
-        checkpointMode={!ref}
-        onOpen={(path) => {
-          if (commit) setSelection({ path, commit, checkpoint: ref ? null : checkpoint });
-        }}
-      />
-      <Limits />
-      {selection && (
-        <SelectedDiff key={`${selection.commit}:${selection.path}`} selection={selection} />
-      )}
     </>
   );
 }
@@ -300,9 +254,9 @@ function RowTrigger({ count, ...props }: ComponentProps<"button"> & { count: num
       </ActivityTile>
       <span className="activity-row__body">
         <span className="activity-row__title">Changed since you looked</span>{" "}
-        <span className="activity-row__sub">Review against your checkpoint or a git ref</span>
+        <span className="activity-row__sub">Documents edited since you last viewed them</span>
       </span>{" "}
-      {/* The spaces keep the row's text readable ("… ref 2"); grid and flex layout ignore them. */}
+      {/* The spaces keep the row's text readable ("… them 2"); grid and flex layout ignore them. */}
       <span className="activity-row__time">{count}</span>
     </button>
   );
@@ -320,7 +274,7 @@ function ChangedSinceWidget({ changes }: { changes: Change[] }) {
         </DialogTrigger>
       )}
       <DialogContent
-        className="max-h-[85vh] overflow-y-auto text-[13px] motion-reduce:animate-none sm:max-w-3xl"
+        className="changed-since motion-reduce:animate-none"
         onCloseAutoFocus={(event) => {
           // "Mark all seen" removes the opener; Radix would leave focus on the page body.
           if (opener.current?.isConnected) return;
@@ -328,10 +282,15 @@ function ChangedSinceWidget({ changes }: { changes: Change[] }) {
           focusReadingRegion();
         }}
       >
-        <DialogTitle>Changed since you looked</DialogTitle>
-        <DialogDescription>
-          Review documents against your checkpoint or a git ref.
-        </DialogDescription>
+        <header className="changed-since__head">
+          <DialogTitle className="plan-section-title">Changed since you looked</DialogTitle>
+          <DialogDescription className="changed-since__lede">
+            Documents that changed since you last looked at them in this browser.
+          </DialogDescription>
+          <p className="plan-fine">
+            Opening a document’s changes marks it seen. Mark all seen starts over from now.
+          </p>
+        </header>
         {open && <ComparisonList changes={changes} />}
       </DialogContent>
     </Dialog>
