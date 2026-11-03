@@ -205,7 +205,7 @@ impl Attribution {
         model: Option<String>,
     ) -> Result<Attributed> {
         let tokens = cost::transcript_tokens(transcript)?;
-        let trigger = trigger_of(self.sessions.get(session), &ids);
+        let trigger = trigger_of(self.sessions.get(session));
         let line = self.cost_line(ids.clone(), tokens, model, trigger);
         cost::append(&self.paths, &line)?;
         let turn_cost = self.name_on_turn(session, &ids).map(|turn| {
@@ -261,7 +261,7 @@ impl Attribution {
             ids = triggers.keys().cloned().collect();
         }
         let tokens = cost::transcript_tokens(&main)?;
-        let trigger = pressed_or_background(&triggers, &ids);
+        let trigger = pressed_or_background(&triggers);
         let line = self.cost_line(ids, tokens, scan::scan(&main).model, trigger);
         cost::append(&self.paths, &line)?;
         Ok(vec![line])
@@ -348,19 +348,21 @@ impl Attribution {
     }
 }
 
-/// A chat rebuilds in refinement; a summary session's ids are a Button's when all were
-/// pressed; an unknown session counts as background.
-fn trigger_of(role: Option<&Role>, ids: &[String]) -> Trigger {
+/// A chat rebuilds in refinement; every line of a summary session carries the session's
+/// trigger; an unknown session counts as background.
+fn trigger_of(role: Option<&Role>) -> Trigger {
     match role {
         Some(Role::Chat { .. }) => Trigger::Refinement,
-        Some(Role::Summary { triggers, .. }) => pressed_or_background(triggers, ids),
+        Some(Role::Summary { triggers, .. }) => pressed_or_background(triggers),
         None => Trigger::Background,
     }
 }
 
-fn pressed_or_background(triggers: &BTreeMap<String, Trigger>, ids: &[String]) -> Trigger {
-    let pressed = |id: &String| triggers.get(id) == Some(&Trigger::Button);
-    if ids.iter().all(pressed) {
+/// A summary session is the operator's (Button) when any of its ids was pressed or approved
+/// (`running_triggers` maps both to Button), else Background: background ids that joined a
+/// press ran because of it, so its lines cannot be split by id.
+fn pressed_or_background(triggers: &BTreeMap<String, Trigger>) -> Trigger {
+    if triggers.values().any(|trigger| *trigger == Trigger::Button) {
         Trigger::Button
     } else {
         Trigger::Background

@@ -35,14 +35,15 @@ impl Scheduler {
         Some((running.sealed.len(), running.ids.len()))
     }
 
-    /// What queued each id of the running session: a Button, else a batch.
+    /// What queued each id of the running session: a press or a "Rebuild all" answer is the
+    /// operator's (Button), a batch is Background.
     pub fn running_triggers(&self) -> BTreeMap<String, Trigger> {
         let Some(running) = &self.running else {
             return BTreeMap::new();
         };
         let trigger = |id: &String| match running.vias.get(id) {
-            Some(Via::Button) => Trigger::Button,
-            _ => Trigger::Background,
+            Some(Via::Button | Via::Approved) => Trigger::Button,
+            Some(Via::Batch) | None => Trigger::Background,
         };
         running
             .ids

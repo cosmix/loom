@@ -235,6 +235,37 @@ fn buttons_skip_the_limit_and_the_batch_waits() {
 }
 
 #[test]
+fn a_press_starts_beside_an_open_question_and_leaves_it() {
+    let (mut s, stub, now) = setup();
+    let six = names(6);
+    let asked = question_of(&s.on_update(&six, &six, now, &stub)).expect("asks");
+    s.press(&six[..1], now, &stub);
+    assert_eq!(stub.starts(), vec![six[..1].to_vec()], "no answer needed");
+    let open = s.panel_state().question.expect("the rest are still asked");
+    assert_eq!((open.id, open.ids), (asked.id, six[1..].to_vec()));
+}
+
+#[test]
+fn a_pressed_summary_waits_until_its_summary_is_gone() {
+    let (mut s, stub, now) = setup();
+    let token = s.suspend(SuspendReason::PressureRun);
+    s.set_known(ids(&["a", "b", "c"]).into_iter().collect());
+    s.press(&ids(&["a", "b"]), now, &stub);
+    s.on_update(&ids(&["c"]), &ids(&["c"]), now, &stub);
+    s.on_update(&[], &[], now, &stub);
+    assert_eq!(
+        s.panel_state().queue,
+        ids(&["a", "b"]),
+        "c's batch is pruned"
+    );
+    s.set_known(ids(&["a", "c"]).into_iter().collect());
+    s.on_update(&[], &[], now, &stub);
+    assert_eq!(s.panel_state().queue, ids(&["a"]), "b's summary is gone");
+    s.resume(token, &[], now, &stub);
+    assert_eq!(stub.starts(), vec![ids(&["a"])]);
+}
+
+#[test]
 fn a_button_undeclines() {
     let (mut s, stub, now) = setup();
     let six = names(6);
