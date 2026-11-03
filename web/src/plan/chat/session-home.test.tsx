@@ -305,9 +305,9 @@ it("the head reads Chat with New chat when empty, and the state pill with a sess
   setup("/f/alpha/product", session({ state: "permission" }));
   const pill = within(head()).getByText("Needs a decision");
   expect(pill.getAttribute("data-state")).toBe("permission");
-  // Beside a running chat New chat moves into the menu; the pill holds its place.
-  const newChat = within(head()).getByRole("button", { name: "New chat" });
-  expect(newChat.closest("details")).not.toBeNull();
+  // Beside a running chat the head offers no New chat; the pill holds its place, the menu holds End.
+  expect(within(head()).queryByRole("button", { name: "New chat", hidden: true })).toBeNull();
+  expect(within(head()).getByLabelText("Chat menu").closest("details")).not.toBeNull();
 });
 
 const draft = {

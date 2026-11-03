@@ -57,7 +57,7 @@ describe("FileDocHeading chips and crumbs", () => {
   });
 
   it.each<[PlanView["state"], string, string]>([
-    ["running", "accent", "svg.lucide-play"],
+    ["running", "accent", "svg.lucide-refresh-cw"],
     ["done", "ok", "svg.lucide-circle-check-big"],
     ["written", "neutral", "svg.lucide-pencil-line"],
   ])("tones the %s state chip %s", (state, tone, glyph) => {

@@ -258,35 +258,49 @@ places:
 
 ## What changed since you last looked
 
-The app stores no state, so "since you last looked" is kept by each browser for itself, and git
-supplies the old text.
+The app stores no state, so "since you last looked" is kept by each browser for itself: what the
+reviewer saw of each document, and a commit to fall back on.
 
 **The checkpoint.** Each browser keeps in local storage, per project, a checkpoint: the commit
-`HEAD` pointed to and the content hash (section 04) of every document file mode shows, taken when
-the checkpoint was set. The first visit sets it silently. After that it moves only when the
-reviewer presses **Mark all seen**; opening one file's "since you looked" diff marks that file
-seen alone, by updating its hash in the checkpoint.
+`HEAD` pointed to and the content hash (section 04) of every document file mode shows. The first
+visit sets it silently. **Mark all seen** moves the whole checkpoint to now. Opening one
+document's diff marks that document seen alone: its hash in the checkpoint moves to the text the
+diff showed.
 
-**What the reviewer sees.** A header control, "Changed since you looked · 4", opens a list of the
-documents whose current hash differs from the checkpoint's, plus documents added and removed since.
-Each row has a diff, a fourth kind beside section 06's three: before is the document's text at the
-checkpoint commit, after is the current file. Concept mode marks the key chip (section 05) of
-every changed document with a small dot labelled "changed since you looked", and file mode's tree
-marks the entry the same way.
+**What was seen.** Beside the checkpoint the browser keeps the text it showed of each document,
+paired with the hash it was read at: the text of the document's last diff, or its text when Mark
+all seen was pressed (read for every document the list showed then; one that cannot be read keeps
+no text). A stored text is a document's baseline while its hash is the checkpoint's. Each text is
+capped at 256 KiB and all of them at 2 MiB, the least recently seen dropped first. A document with
+no stored text (over the cap, unreadable, or never viewed) falls back to the checkpoint commit,
+and its row says "Changes since commit <short sha>".
+
+**What the reviewer sees.** The activity popover's row "Changed since you looked · 4" opens a
+dialog that states what it compares: documents that changed since the reviewer last looked at
+them in this browser. Its list holds the documents whose current hash differs from the
+checkpoint's, plus documents added and removed since, each with its status as a glyph and a word.
+Each row has a diff, a fourth kind beside section 06's three: before is what this browser saw of
+the document (else its text at the checkpoint commit), after is the current file. While a diff is
+open it follows the document, so a later edit shows from what was just seen; the open document
+stays in the list, marked seen, until another is chosen. Concept mode marks the key chip (section
+05) of every changed document with a small dot labelled "changed since you looked", and file
+mode's tree marks the entry the same way.
 
 **Comparing with a ref.** The same list can compare against any git ref the reviewer types, such
 as `main` or a tag, using that ref's text and hashes instead of the checkpoint's. A reviewer
-checking a branch before it merges compares with `main`. The ref is not stored. (My call.)
+checking a branch before it merges compares with `main`. The ref is not stored, and a ref diff
+marks nothing seen. (My call.)
 
-**Limits**, stated where the list is shown:
+**Limits**, stated in a short note at the dialog's foot:
 
-- A document that had uncommitted edits when the checkpoint was set diffs against its committed
-  text, so the diff can include edits the reviewer already saw; its row says so.
+- A document diffed from the checkpoint commit that had uncommitted edits when the checkpoint was
+  set diffs against its committed text, so the diff can include edits the reviewer already saw.
 - A checkpoint commit no longer in the repository (after a rebase or a reset) cannot supply old
-  text; those rows list the file as changed, with only the uncommitted and ref diffs offered.
+  text; a document with a stored text still diffs from it, and the others offer only their
+  uncommitted diff.
 - Local storage belongs to the page's origin, which includes the port. A server that bound a
   different port (section 02, "Port") starts with no checkpoint.
-- The checkpoint belongs to the browser; another browser or a cleared storage starts fresh.
+- The record belongs to the browser; another browser or a cleared storage starts fresh.
 
 ## Out of scope for this section
 

@@ -106,7 +106,7 @@ it.each([
   [
     "running",
     "Running",
-    "play",
+    "refresh-cw",
     "accent",
     "This plan is running. loom run works from the committed copy, so the app keeps it read-only.",
   ],

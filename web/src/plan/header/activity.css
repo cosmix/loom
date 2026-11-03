@@ -64,11 +64,26 @@
     color: var(--tone-warning);
   }
 
-  /* Rows: the operations in the list and the run, review and summary rows in the footer. */
+  /* The popover. Every row shares one anatomy: a 20px glyph column, then one text column (title,
+     one subject line) and a right column for the elapsed time or one quiet control. The glyph,
+     title and right column sit on the title's 20px line, so they share its centre line. The
+     footer's controls, the empty state and the expanded summary detail start on the same text
+     column. */
+  .activity-popover {
+    --activity-row-pad: var(--space-2);
+    --activity-glyph-col: 20px;
+    --activity-col-gap: var(--space-2);
+    --activity-line: 20px;
+    /* Where every row's text starts, measured from the popover's content edge. */
+    --activity-text-start: calc(
+      var(--activity-row-pad) + var(--activity-glyph-col) + var(--activity-col-gap)
+    );
+  }
+
   .activity-list {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-1);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -76,27 +91,30 @@
 
   .activity-row {
     display: grid;
-    grid-template-columns: 26px minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 10px;
+    grid-template-columns: var(--activity-glyph-col, 20px) minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: var(--activity-col-gap, var(--space-2));
     width: 100%;
     min-width: 0;
-    padding: var(--space-2);
+    padding: var(--activity-row-pad, var(--space-2));
     border: 0;
     border-radius: var(--corner-control);
     background: transparent;
     color: var(--foreground);
     font: inherit;
     font-size: var(--type-ui);
+    line-height: var(--activity-line, 20px);
     text-align: left;
   }
 
-  .activity-row:hover {
-    background: var(--muted);
-  }
-
+  /* Only a row that opens something washes on hover; a status row is not a target. */
   button.activity-row {
     cursor: pointer;
+    transition: background-color 120ms;
+  }
+
+  button.activity-row:hover {
+    background: var(--muted);
   }
 
   button.activity-row:focus-visible {
@@ -104,74 +122,132 @@
     outline-offset: -2px;
   }
 
+  .activity-row > .activity-tile {
+    height: var(--activity-line, 20px);
+  }
+
   .activity-row__body {
     display: grid;
     min-width: 0;
-    gap: 1px;
   }
 
   .activity-row__title {
     overflow: hidden;
     font-size: var(--type-ui);
-    font-weight: 600;
+    font-weight: 500;
+    line-height: var(--activity-line, 20px);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  /* One fine line under the title; it truncates rather than wraps. */
   .activity-row__sub {
     overflow: hidden;
     color: var(--muted-foreground);
+    font-size: var(--type-fine);
+    font-weight: 400;
+    line-height: var(--leading-ui);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .activity-row__sub--wrap {
-    overflow: visible;
-    white-space: normal;
-    overflow-wrap: anywhere;
+  /* A subject with a trailing fact: the subject gives way first, the fact stays whole. */
+  .activity-row__facts {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .activity-row__subject {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .activity-attention {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--foreground);
+  }
+
+  .activity-attention__glyph {
+    width: 13px;
+    height: 13px;
+    color: var(--tone-warning);
   }
 
   .activity-row__time {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: var(--activity-line, 20px);
     color: var(--muted-foreground);
-    font-family: var(--font-mono, monospace);
     font-size: var(--type-fine);
-    text-align: right;
     font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
   }
 
   .activity-row__chevron {
     width: 14px;
     height: 14px;
+    flex: none;
     color: var(--muted-foreground);
+  }
+
+  /* One quiet control in the right column: a link in chrome, underlined on hover only. */
+  .activity-row__action {
+    display: inline-flex;
+    align-items: center;
+    height: var(--activity-line, 20px);
+    font-size: var(--type-fine);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .activity-row__action a {
+    color: var(--foreground);
+  }
+
+  .activity-row__action a:focus-visible {
+    border-radius: 2px;
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
 
   .activity-empty {
     margin: 0;
-    padding: var(--space-2);
+    padding: var(--activity-row-pad, var(--space-2));
+    padding-inline-start: var(--activity-text-start, 36px);
     color: var(--muted-foreground);
     font-size: var(--type-ui);
+    line-height: var(--activity-line, 20px);
   }
 
-  /* The run, review and summary rows below the operations. */
+  /* The stopped run, review and summary controls, under one hairline. */
   .activity-foot {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-1);
+  }
+
+  .activity-foot:empty {
+    display: none;
   }
 
   .activity-list + .activity-foot,
   .activity-empty + .activity-foot {
-    margin-top: 6px;
-    padding-top: 6px;
+    margin-top: var(--space-1);
+    padding-top: var(--space-1);
     border-top: 1px solid var(--hairline);
   }
 
   .activity-foot__detail {
-    padding: var(--space-1) var(--space-2) var(--space-2) 44px;
+    padding: var(--space-1) var(--activity-row-pad, var(--space-2)) var(--space-2)
+      var(--activity-text-start, 36px);
     font-size: var(--type-ui);
-  }
-
-  .activity-run {
-    position: relative;
   }
 }

@@ -2,10 +2,14 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { getDefaultStore } from "jotai/vanilla";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
 import fixture from "@/plan/api/fixtures/run-strip.json";
+import panelFixture from "@/plan/api/fixtures/summary-panel.json";
+import questionFixture from "@/plan/api/fixtures/summary-question.json";
 import { runStripSchema } from "@/plan/api/schema-run";
+import { summaryPanelSchema } from "@/plan/api/schema-summaries";
 import { runStripAtom } from "@/plan/run/use-run";
-import { useSummaryFeed } from "@/plan/summaries/state";
+import { panelLoadAtom, useSummaryFeed, type PanelLoad } from "@/plan/summaries/state";
 
 import { ActivityPill } from "./activity";
 import { useActivities, type Activity } from "./use-activities";
@@ -58,6 +62,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   getDefaultStore().set(runStripAtom, null);
+  getDefaultStore().set(panelLoadAtom, { status: "loading" });
   vi.useRealTimers();
   vi.clearAllMocks();
 });
@@ -169,7 +174,13 @@ function setRun(patch: object) {
   getDefaultStore().set(runStripAtom, { ...runStripSchema.parse(fixture), ...patch });
 }
 
-it("keeps the loom run row out of the closed pill and shows it in the popover footer", async () => {
+/** The named tests below drive the pill from the atoms, through the real hook. */
+async function useRealActivities() {
+  const actual = await vi.importActual<typeof import("./use-activities")>("./use-activities");
+  vi.mocked(useActivities).mockImplementation(actual.useActivities);
+}
+
+it("keeps a stopped run out of the closed pill and shows it as one footer control", async () => {
   setRun({ plan: "doc/plans/DONE-PLAN-x.md", daemon_running: false, merged: 0, total: 10 });
   const { container } = render(<ActivityPill compact={false} />);
   expect(container.textContent).not.toContain("daemon stopped");
@@ -178,10 +189,148 @@ it("keeps the loom run row out of the closed pill and shows it in the popover fo
   fireEvent.click(screen.getByRole("button", { name: "3 in progress: Needs permission" }));
 
   const dialog = await screen.findByRole("dialog", { name: "In progress" });
-  expect(within(dialog).getByText("loom run")).toBeTruthy();
-  expect(dialog.textContent).toContain("DONE-PLAN-x.md · daemon stopped · 0/10 merged");
-  expect(within(dialog).getByRole("link", { name: "Open dashboard" })).toBeTruthy();
+  const foot = dialog.querySelector<HTMLElement>(".activity-foot")!;
+  expect(within(foot).getByText("DONE-PLAN-x.md")).toBeTruthy();
+  expect(within(foot).getByText("0 of 10 stages merged")).toBeTruthy();
+  expect(within(foot).getByRole("link", { name: "Open dashboard" })).toBeTruthy();
+  expect(foot.querySelector('[data-kind="running"]')).toBeNull();
+  expect(dialog.textContent).not.toContain("daemon stopped");
+  expect(within(dialog).queryByText("loom run")).toBeNull();
+  expect(within(dialog).queryByRole("progressbar")).toBeNull();
   expect(within(dialog).getByRole("button", { name: /^Summary rebuilds:/ })).toBeTruthy();
+});
+
+it("a stopped run keeps one dashboard line and no activity", async () => {
+  await useRealActivities();
+  setRun({ plan: "doc/plans/PLAN-x.md", daemon_running: true, merged: 2, total: 6, attention: 0 });
+  render(<ActivityPill compact={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "1 in progress: Plan running" }));
+
+  const dialog = await screen.findByRole("dialog", { name: "In progress" });
+  const list = within(dialog).getByRole("list", { name: "In progress" });
+  expect(within(dialog).getAllByText(/PLAN-x\.md/)).toHaveLength(1);
+  expect(within(list).getByText("PLAN-x.md · 2 of 6 stages merged")).toBeTruthy();
+  expect(within(dialog).getAllByRole("link", { name: "Open dashboard" })).toHaveLength(1);
+  expect(dialog.querySelector(".activity-foot")?.textContent).not.toContain("PLAN-x.md");
+
+  act(() =>
+    setRun({
+      plan: "doc/plans/PLAN-x.md",
+      daemon_running: false,
+      merged: 2,
+      total: 6,
+      attention: 2,
+    }),
+  );
+
+  expect(screen.getByRole("button", { name: "Activity: idle" })).toBeTruthy();
+  const foot = dialog.querySelector<HTMLElement>(".activity-foot")!;
+  expect(within(dialog).getAllByText(/PLAN-x\.md/)).toHaveLength(1);
+  expect(within(foot).getByText("PLAN-x.md")).toBeTruthy();
+  expect(within(foot).getByText("2 need attention")).toBeTruthy();
+  expect(within(dialog).getAllByRole("link", { name: "Open dashboard" })).toHaveLength(1);
+  expect(within(foot).getByRole("link", { name: "Open dashboard" })).toBeTruthy();
+  const remaining = within(dialog).queryByRole("list", { name: "In progress" });
+  expect(remaining ? within(remaining).queryAllByRole("listitem") : []).toHaveLength(0);
+  expect(dialog.querySelector('[data-kind="running"]')).toBeNull();
+  expect(dialog.textContent).not.toContain("daemon stopped");
+});
+
+it.each([true, false])(
+  "escapes a bidi control in the plan name for a run (daemon running: %s)",
+  async (running) => {
+    await useRealActivities();
+    setRun({ plan: "doc/plans/PLAN-‮exe.md", daemon_running: running, attention: 2 });
+    render(<ActivityPill compact={false} />);
+    fireEvent.click(screen.getByRole("button", { name: /^(1 in progress|Activity)/ }));
+
+    const dialog = await screen.findByRole("dialog", { name: "In progress" });
+    expect(within(dialog).getAllByText(/PLAN-⟨U\+202E⟩exe\.md/).length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toContain("‮");
+  },
+);
+
+it("renders no run row or footer line without a plan", async () => {
+  await useRealActivities();
+  setRun({ plan: null, daemon_running: false });
+  render(<ActivityPill compact={false} />);
+  fireEvent.click(screen.getByRole("button", { name: /^Activity/ }));
+
+  const dialog = await screen.findByRole("dialog", { name: "In progress" });
+  expect(within(dialog).queryByRole("link", { name: "Open dashboard" })).toBeNull();
+  expect(dialog.querySelector(".activity-foot")?.textContent ?? "").not.toMatch(/stages merged/);
+});
+
+function setPanel(patch: object): PanelLoad {
+  const load: PanelLoad = {
+    status: "ready",
+    panel: summaryPanelSchema.parse({ ...panelFixture, ...patch }),
+  };
+  getDefaultStore().set(panelLoadAtom, load);
+  vi.mocked(useSummaryFeed).mockReturnValue({ load, reload: vi.fn() });
+  return load;
+}
+
+it("a running rebuild's row opens its queue and errors", async () => {
+  await useRealActivities();
+  const start = { queue: ["demo/product/section_09"], start_error: "Could not start a rebuild" };
+  setPanel(start);
+  const pill = (
+    <TooltipProvider>
+      <ActivityPill compact={false} />
+    </TooltipProvider>
+  );
+  const { rerender } = render(pill);
+  fireEvent.click(screen.getByRole("button", { name: "1 in progress: Rebuilding summaries" }));
+
+  const dialog = await screen.findByRole("dialog", { name: "In progress" });
+  const rows = within(dialog).getAllByRole("button", { name: /^Summary rebuilds:/ });
+  expect(rows).toHaveLength(1);
+  const row = rows[0]!;
+  expect(row.getAttribute("aria-label")).toBe("Summary rebuilds: Rebuilding 1 of 3");
+  expect(row.closest("ul")?.getAttribute("aria-label")).toBe("In progress");
+  expect(row.getAttribute("aria-expanded")).toBe("false");
+  expect(within(dialog).queryByText("demo/product/section_09")).toBeNull();
+
+  fireEvent.click(row);
+
+  expect(row.getAttribute("aria-expanded")).toBe("true");
+  expect(within(dialog).getByText("demo/product/section_09")).toBeTruthy();
+  expect(within(dialog).getByText("Could not start a rebuild")).toBeTruthy();
+
+  act(() => void setPanel({ ...start, question: questionFixture }));
+  rerender(pill);
+
+  expect(within(dialog).getAllByRole("button", { name: /^Summary rebuilds:/ })).toHaveLength(1);
+  expect(within(dialog).getByText(/summaries out of date\.\s+Rebuild all\?/)).toBeTruthy();
+});
+
+it("an expanded running row stays expanded as the footer row once the rebuild ends", async () => {
+  await useRealActivities();
+  const start = { queue: ["demo/product/section_09"], start_error: "Could not start a rebuild" };
+  setPanel(start);
+  const pill = (
+    <TooltipProvider>
+      <ActivityPill compact={false} />
+    </TooltipProvider>
+  );
+  const { rerender } = render(pill);
+  fireEvent.click(screen.getByRole("button", { name: "1 in progress: Rebuilding summaries" }));
+  const dialog = await screen.findByRole("dialog", { name: "In progress" });
+  const running = within(dialog).getByRole("button", { name: /^Summary rebuilds:/ });
+  fireEvent.click(running);
+  expect(running.getAttribute("aria-expanded")).toBe("true");
+  expect(within(dialog).getByText("demo/product/section_09")).toBeTruthy();
+
+  act(() => void setPanel({ ...start, running: null }));
+  rerender(pill);
+
+  expect(within(dialog).queryByRole("list", { name: "In progress" })).toBeNull();
+  const foot = dialog.querySelector<HTMLElement>(".activity-foot")!;
+  const row = within(foot).getByRole("button", { name: /^Summary rebuilds:/ });
+  expect(row).not.toBe(running);
+  expect(row.getAttribute("aria-expanded")).toBe("true");
+  expect(within(dialog).getByText("demo/product/section_09")).toBeTruthy();
 });
 
 it("omits the footer and the summary feed for a sample pill", async () => {
@@ -197,13 +346,13 @@ it("omits the footer and the summary feed for a sample pill", async () => {
   expect(useSummaryFeed).not.toHaveBeenCalled();
 });
 
-it("sets the popover width, offset and surface from the brief", async () => {
+it("sets the popover width and surface", async () => {
   render(<ActivityPill compact={false} />);
 
   fireEvent.click(screen.getByRole("button", { name: "3 in progress: Needs permission" }));
 
   const dialog = await screen.findByRole("dialog", { name: "In progress" });
-  expect(dialog.classList.contains("w-[min(360px,86vw)]")).toBe(true);
+  expect(dialog.classList.contains("w-[min(380px,92vw)]")).toBe(true);
   expect(dialog.classList.contains("bg-card")).toBe(true);
   expect(dialog.style.boxShadow).toContain("var(--plan-shadow)");
 });

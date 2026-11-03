@@ -1,6 +1,6 @@
 import { useAtomValue } from "jotai";
+import { MessageSquare } from "lucide-react";
 
-import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 import type { SessionView } from "@/plan/api/schema-chat";
 import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
 import { pendingPermissionsAtom } from "./model";
@@ -47,5 +47,10 @@ export function ChatGlyph() {
         </span>
       </span>
     );
-  return <BusyRoundel busy={false} busyLabel={label} idleLabel={label} size={14} />;
+  // An idle chat, or no chat, is a plain chat glyph: the roundel means work in progress.
+  return (
+    <span role="img" aria-label={label} className="inline-flex">
+      <MessageSquare size={16} aria-hidden="true" />
+    </span>
+  );
 }

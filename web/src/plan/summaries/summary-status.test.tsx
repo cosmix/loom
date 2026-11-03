@@ -20,7 +20,7 @@ import {
 } from "@/plan/state/atoms";
 
 import { panelLoadAtom, type PanelLoad } from "./state";
-import { SummaryStatus, SummaryStatusRow } from "./summary-status";
+import { SummaryStatus, SummaryStatusRow, useSummaryExpansion } from "./summary-status";
 
 type Message = Record<string, unknown>;
 type Handler = (message: Message) => void;
@@ -70,13 +70,18 @@ function seededStore(canAnswer: boolean) {
   return store;
 }
 
+/** The activity popover owns the expansion; this stands in for it. */
+function Row({ load }: { load: PanelLoad }) {
+  return <SummaryStatusRow load={load} reload={() => {}} expansion={useSummaryExpansion()} />;
+}
+
 function showRow(load: PanelLoad) {
   const store = seededStore(true);
   store.set(panelLoadAtom, load);
   render(
     <Provider store={store}>
       <TooltipProvider>
-        <SummaryStatusRow load={load} reload={() => {}} />
+        <Row load={load} />
       </TooltipProvider>
     </Provider>,
   );

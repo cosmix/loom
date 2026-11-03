@@ -1,0 +1,187 @@
+import { useAtomValue } from "jotai/react";
+import { ChevronDown, ChevronUp, TriangleAlert } from "lucide-react";
+import type { JSX, ReactNode } from "react";
+
+import { useNow } from "@/components/hooks/use-now";
+import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
+import { DashboardButton } from "@/plan/run/dashboard-button";
+import { runStripAtom } from "@/plan/run/use-run";
+import type { PanelLoad } from "@/plan/summaries/state";
+import {
+  SummaryDetail,
+  summaryRowLabel,
+  type SummaryExpansion,
+} from "@/plan/summaries/summary-status";
+import { ActivityTile } from "@/plan/ui/activity-glyphs";
+import { DOC_KIND_GLYPHS } from "@/plan/ui/glyphs";
+
+import { stagesMerged, type Activity } from "./use-activities";
+
+/** What only the live pill has: the summary feed and the one summary expansion state. */
+export interface LiveRows {
+  load: PanelLoad;
+  reload: () => void;
+  expansion: SummaryExpansion;
+}
+
+const PlanGlyph = DOC_KIND_GLYPHS.plan;
+
+/** `m:ss` under an hour, whole minutes (`65m`) from then on. */
+function elapsedLabel(since: number, now: number): string {
+  const seconds = Math.max(0, Math.floor((now - since) / 1000));
+  if (seconds >= 3600) return `${Math.floor(seconds / 60)}m`;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function Elapsed({ since, now }: { since: number | null; now: number }) {
+  return since === null ? null : <span>{elapsedLabel(since, now)}</span>;
+}
+
+/** The text column every row shares: a title, then one subject line that truncates. */
+function RowText({
+  title,
+  subject,
+  extra,
+}: {
+  title: string;
+  subject: string | null;
+  extra?: ReactNode;
+}): JSX.Element {
+  return (
+    <span className="activity-row__body">
+      <span className="activity-row__title" title={visibleControls(title)}>
+        <Untrusted text={title} />
+      </span>
+      {(subject !== null || extra) && (
+        <span className="activity-row__sub activity-row__facts">
+          {subject !== null && (
+            <span className="activity-row__subject" title={visibleControls(subject)}>
+              <Untrusted text={subject} />
+            </span>
+          )}
+          {extra}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** "n need attention": the glyph takes the warning tone, the words keep the line's colour. */
+function attention(count: number | undefined): ReactNode {
+  if (!count || count <= 0) return undefined;
+  return (
+    <span className="activity-attention">
+      <TriangleAlert aria-hidden="true" className="activity-attention__glyph" />
+      {count} need attention
+    </span>
+  );
+}
+
+function RunDashboard({ url }: { url: string | null }) {
+  if (!url) return null;
+  return (
+    <div className="activity-row__action">
+      <DashboardButton variant="link" />
+    </div>
+  );
+}
+
+function PlainRow({ activity, now }: { activity: Activity; now: number }) {
+  return (
+    <li className="activity-row">
+      <ActivityTile kind={activity.kind} />
+      <RowText title={activity.title} subject={activity.subject} />
+      <span className="activity-row__time">
+        <Elapsed since={activity.since} now={now} />
+      </span>
+    </li>
+  );
+}
+
+/** The one place a running plan shows: its plan and merged count, attention and dashboard. */
+function RunRow({ activity, now }: { activity: Activity; now: number }) {
+  const strip = useAtomValue(runStripAtom);
+  return (
+    <li className="activity-row">
+      <ActivityTile kind="running" />
+      <RowText
+        title={activity.title}
+        subject={activity.subject}
+        extra={attention(strip?.attention)}
+      />
+      {strip?.dashboard_url ? (
+        <RunDashboard url={strip.dashboard_url} />
+      ) : (
+        <span className="activity-row__time">
+          <Elapsed since={activity.since} now={now} />
+        </span>
+      )}
+    </li>
+  );
+}
+
+/** A running rebuild's row opens the queue, failures and any question below it. */
+function SummaryRow({ activity, now, live }: { activity: Activity; now: number; live: LiveRows }) {
+  const { expanded, toggle } = live.expansion;
+  const Chevron = expanded ? ChevronUp : ChevronDown;
+  return (
+    <li>
+      <button
+        type="button"
+        className="activity-row"
+        aria-expanded={expanded}
+        aria-label={summaryRowLabel(live.load)}
+        onClick={toggle}
+      >
+        <ActivityTile kind="summaries" />
+        <RowText title={activity.title} subject={activity.subject} />
+        <span className="activity-row__time">
+          <Elapsed since={activity.since} now={now} />
+          <Chevron aria-hidden="true" className="activity-row__chevron" />
+        </span>
+      </button>
+      {expanded && <SummaryDetail load={live.load} reload={live.reload} />}
+    </li>
+  );
+}
+
+/** A sample pill (`live` absent) draws every row plain: its rows must not fetch. */
+export function ActivityList({
+  activities,
+  live,
+}: {
+  activities: Activity[];
+  live?: LiveRows;
+}): JSX.Element {
+  const now = useNow();
+  return (
+    <ul aria-label="In progress" className="activity-list">
+      {activities.map((activity) => {
+        if (live && activity.kind === "running")
+          return <RunRow key={activity.id} activity={activity} now={now} />;
+        if (live && activity.kind === "summaries")
+          return <SummaryRow key={activity.id} activity={activity} now={now} live={live} />;
+        return <PlainRow key={activity.id} activity={activity} now={now} />;
+      })}
+    </ul>
+  );
+}
+
+/**
+ * A plan whose daemon stopped keeps its name, counts and dashboard here, as a control: it draws
+ * no running glyph and counts in no list. Absent while the run is listed, so one line shows it.
+ */
+export function RunLine({ listed }: { listed: boolean }) {
+  const strip = useAtomValue(runStripAtom);
+  if (listed || !strip?.plan) return null;
+  const plan = strip.plan.split("/").at(-1) ?? strip.plan;
+  return (
+    <div className="activity-row">
+      <ActivityTile>
+        <PlanGlyph aria-hidden="true" />
+      </ActivityTile>
+      <RowText title={plan} subject={stagesMerged(strip)} extra={attention(strip.attention)} />
+      <RunDashboard url={strip.dashboard_url} />
+    </div>
+  );
+}
