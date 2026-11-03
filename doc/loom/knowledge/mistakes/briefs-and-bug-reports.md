@@ -378,9 +378,11 @@ sibling's files.
 
 **What happened:** a pressure-pipeline stage froze a contract `builtin-backend-default-is-tmux` that expected `Native` at freeze, and four tasks (T1 to T4) to make tmux the default. `SessionBackendKind` already defaulted to `Tmux` (`types.rs`), with the tests, README lines and fixtures; only a README and skill sentence audit remained.
 
-**Why:** the plan was written from an earlier reading of the default backend.
+**Recurrence (caught by a pressure test):** the planner-issue-fixes plan specified its merged-count contract "on the strip/tests.rs fixture". That fixture writes `StageType::Knowledge` stages, which `git/merge/status.rs::check_merge_state` already counts as merged from their flag, so six merged stages read 6 at base and the contract would have been green at freeze. The same plan's restatement contract asserted a bare `SealError::Rejected`, which a one-sentence overview draft already gets at base for its missing member and vision citations.
 
-**Prevention:** before freezing a "change the default" contract, read the `#[default]` and its tests at the stage base; a contract that is already green at freeze proves nothing.
+**Why:** the plan was written from an earlier reading of the default backend; the recurrence borrowed an existing fixture and an error variant without checking what they already produce at base.
+
+**Prevention:** before freezing a "change the default" contract, read the `#[default]` and its tests at the stage base; a contract that is already green at freeze proves nothing. A contract that reuses an existing fixture names the fixture field that makes it fail at base, and a rejection contract asserts the specific message, on an input that is valid in every other respect.
 
 ## Commit scope for quota repair
 

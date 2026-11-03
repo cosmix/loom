@@ -47,3 +47,23 @@
 **Prevention:** Print the URL as soon as the port is bound, and treat input from the document tree as unbounded when writing per-line scans.
 
 **Fix:** `plan_server/loading.rs` runs the load on its own thread. `sentence_ends` in `fs/knowledge/chunker/references.rs` computes sentence ends once per line.
+
+## A plan rebuilt its bundle after the final review round
+
+**What happened:** the planner-issue-fixes plan told integration-verify to rebuild and commit web/dist after its final loom-code-reviewer round. The pressure test caught it before the run.
+
+**Why:** the review gate records each round's change fingerprint and refuses completion when the tree differs (verify/review/gate.rs, covers_review); only *.md prose is exempt, so a rebuilt bundle makes the final round stale.
+
+**Prevention:** a stage that commits a rebuilt web/dist rebuilds it before its final review round, and any fix after that round means a rebuild and another round. A web stage that only builds dist to shoot screens restores it (git restore, git clean -fdq -- web/dist, then an empty git status --untracked-files=all web/dist) before its final round.
+
+**Fix:** the plan's integration-verify order became gate, build, journeys, screens, issue walk, dist rebuild, review, commits.
+
+## A plan declared files repository-relative under a working_dir
+
+**What happened:** PLAN-planner-issue-fixes gave its stages `working_dir: loom` or `web` and declared `files` and the worker tables repository-relative (`loom/src/...`, `web/src/...`), with a note saying so. Retrieval (`context/rank_source/paths.rs::join_working_dir`) and the plan lints (`v2_lints/mod.rs::stage_touches_dir`) join each `files` entry to `working_dir`, so they read `web/web/src/...` and `loom/loom/src/...`. `loom plan verify` raised no error, and the worker-table lint passed only because table and `files` shared the wrong base. A pressure review caught it.
+
+**Why:** older plans in `doc/plans/DONE-*` used repository-relative `files` under a `working_dir`, and the author copied that form.
+
+**Prevention:** every YAML path in a stage with a `working_dir` is relative to it, `files` and the worker table's Files owned cells included; a file outside the package takes `../`. Only briefs, Brief path cells and prose stay repository-relative.
+
+**Fix:** the plan's `files` and worker tables were rewritten to the working_dir base before any run.
