@@ -39,7 +39,8 @@ For each id, complete these steps before moving to the next id:
    vision passages for a product overview or metaplan passages for an engineering
    overview. Preserve current sentences word for word; their text determines the
    sentence ids overviews cite. Replace only stale or incorrect claims, with
-   supported prose.
+   supported prose. Rewrite an overview sentence that repeats the sentence it cites
+   to say what the cited sentences add up to, even when the brief marks it `[keep]`.
 3. Write only the draft file named by the brief. Write the summary body without
    store frontmatter, hashes, or sentence ids; sealing generates the metadata.
    Follow every body rule in the brief and the format below.

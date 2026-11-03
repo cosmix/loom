@@ -7,8 +7,10 @@ use std::path::{Path, PathBuf};
 use crate::planning::kinds::vision_path;
 use crate::planning::project::Project;
 use crate::planning::summary::evaluate::{cite_key, Evaluation, SentenceState, SummaryState};
-use crate::planning::summary::format::{Block, FormatError, LinkTarget, SummaryBody};
+use crate::planning::summary::format::{Block, FormatError, LinkTarget, Sentence, SummaryBody};
 use crate::planning::summary::store;
+
+use super::restate;
 
 /// The citations of a checked draft.
 #[derive(Debug, Default)]
@@ -83,7 +85,7 @@ pub(super) fn check(rules: &Rules<'_>, body: &SummaryBody) -> (Cited, Vec<Format
                     source_problem(rules, &allowed, path, anchor, &mut cited)
                 }
                 LinkTarget::Sentence { summary, id } => {
-                    sentence_problem(rules, summary, id, &mut cited)
+                    sentence_problem(rules, sentence, summary, id, &mut cited)
                 }
             };
             errors.extend(problem.map(|message| FormatError { line, message }));
@@ -123,8 +125,11 @@ fn source_problem(
     None
 }
 
+/// Problem with the overview `sentence` citing sentence `id` of member `summary`: a bad target,
+/// a stale member sentence, or a sentence that only repeats the one it cites.
 fn sentence_problem(
     rules: &Rules<'_>,
+    sentence: &Sentence,
     summary: &str,
     id: &str,
     cited: &mut Cited,
@@ -136,17 +141,23 @@ fn sentence_problem(
         return Some(format!("{summary} is not a member of summary {}", rules.id));
     }
     let eval = rules.evaluation.and_then(|e| e.summaries.get(summary));
-    let sentence = eval
+    let member = eval
         .filter(|e| e.state != SummaryState::Missing)
         .and_then(|e| e.sentences.iter().find(|s| s.id == id));
-    match sentence {
+    match member {
         None => Some(format!("{summary} has no sentence {id}")),
         Some(s) if s.state != SentenceState::Current => {
             Some(format!("sentence {id} of {summary} is stale"))
         }
-        Some(_) => {
+        Some(s) => {
             cited.members.insert(summary.to_string());
-            None
+            restate::restates(&sentence.text, &s.text).then(|| {
+                format!(
+                    "sentence {} restates {summary}#{id}; say what the cited sentences add up \
+                     to instead of repeating one",
+                    sentence.id
+                )
+            })
         }
     }
 }

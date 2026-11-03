@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use super::registry::ChildRecord;
 use super::session::{Closing, EndPlan, Phase, Queued, Session};
 use super::{Bridge, BridgeConfig, BridgeError, BridgeEvent, EndCause, EndMode, SendOutcome};
-use crate::plan_session::attachments::{parse_message, Attachment};
+use crate::plan_session::attachments::{parse_unwrapped, Attachment};
 use crate::plan_session::input::{check_delivered, sanitize};
 use crate::plan_session::kind::SessionKind;
 use crate::plan_session::model::{ChatDelta, DenyReason, NoticeKind, SessionState};
@@ -297,7 +297,7 @@ impl Session {
             return Err(BridgeError::Refused(why));
         }
         let queue_id = self.next_id("q-");
-        let (user_text, _) = parse_message(&text);
+        let (user_text, _) = parse_unwrapped(&text);
         let id = queue_id.clone();
         let queued = Queued {
             id,

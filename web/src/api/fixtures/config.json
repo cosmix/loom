@@ -575,17 +575,17 @@
         "variants": ["haiku", "sonnet", "opus", "fable"]
       },
       "scopes": ["user", "project"],
-      "default": "haiku",
+      "default": "sonnet",
       "user": {
-        "value": "haiku",
+        "value": "sonnet",
         "set": false
       },
       "project": {
-        "value": "haiku",
+        "value": "sonnet",
         "set": false
       },
       "effective": {
-        "value": "haiku",
+        "value": "sonnet",
         "source": "default"
       }
     },

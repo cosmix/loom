@@ -41,7 +41,7 @@ it("the plan section rows carry a caption and pair model with effort", () => {
       .map((entry) => [entry.name, entry.default]),
   ).toEqual([
     ["plan.document_summary_effort", "high"],
-    ["plan.overview_model", "haiku"],
+    ["plan.overview_model", "sonnet"],
     ["plan.summary_backend", "claude"],
     ["plan.summary_codex_model", "gpt-6.1-terra"],
     ["plan.summary_codex_effort", "high"],

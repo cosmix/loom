@@ -7,6 +7,8 @@
 //! applies a Stop.
 
 mod content;
+#[cfg(test)]
+mod paste_contract_tests;
 mod records;
 #[cfg(test)]
 mod tests;
@@ -23,7 +25,7 @@ use chrono::{DateTime, Utc};
 
 use self::records::{cap_chars, item_id, Kind};
 use self::usage::MessageUsage;
-use crate::plan_session::attachments::parse_message;
+use crate::plan_session::attachments::{parse_unwrapped, unwrap_pasted};
 use crate::plan_session::input::sanitize;
 use crate::plan_session::model::{ChatDelta, Delivery, Item, NoticeKind, Origin, Turn};
 
@@ -328,8 +330,8 @@ impl Mapper {
     /// A human prompt: a delivered user item with its attachment chips, replacing the server's
     /// "sent" item of the same sanitised text.
     fn human(&mut self, uuid: &str, at: Option<DateTime<Utc>>, delivered: &str, out: &mut Ingest) {
-        let delivered = cap_chars(delivered, records::USER_TEXT_CHARS);
-        let (text, attachments) = parse_message(&delivered);
+        let delivered = cap_chars(unwrap_pasted(delivered), records::USER_TEXT_CHARS);
+        let (text, attachments) = parse_unwrapped(&delivered);
         let clean = sanitize(&text);
         let origin = self.take_origin(&clean);
         let server_origin = self.take_server_item(&clean, &mut out.deltas);
