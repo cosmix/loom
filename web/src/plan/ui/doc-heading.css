@@ -1,8 +1,36 @@
 /*
- * The document heading's own rules, over the shared scales of design.css. The current view (Summary
- * or Source) takes the `--muted` wash a hovered quiet button takes; `--primary` stays off it
- * (DESIGN.md, Colour). Unlayered, so it outranks the utilities a shared Button carries.
+ * The document heading's own rules, over the shared scales of design.css. Unlayered, so they
+ * outrank the utilities a shared component carries.
+ *
+ * One line band runs through the title row: the 30px document mark, the title's first line and
+ * the action row are all 30px tall and start at the row's top, so every control centres on the
+ * title's first line whether the title wraps or not. `.plan-page-title` keeps its size and
+ * weight; only its line height takes the band.
  */
+/*
+ * The heading's side inset is the column's own, so breadcrumb, title, actions and status start
+ * and end on the edges the text below them uses. In a pane (the source view) that is the body's
+ * `--space-5` padding; a host that already sets its content in a column (the concept pages' 68ch
+ * column) sets `--doc-heading-inset: 0`, and the action row ends on the column's right edge.
+ */
+.doc-heading {
+  padding-inline: var(--doc-heading-inset, var(--space-5));
+}
+
+.doc-heading-title-row {
+  --heading-line: 30px;
+}
+
+.doc-heading-title-row .plan-page-title {
+  line-height: var(--heading-line);
+}
+
+.doc-heading-actions {
+  min-height: var(--heading-line);
+}
+
+/* The current view takes the `--muted` wash a hovered quiet button takes; `--primary` stays off
+   it (DESIGN.md, Colour). */
 .plan-button[aria-current="page"] {
   background: var(--muted);
   color: var(--foreground);

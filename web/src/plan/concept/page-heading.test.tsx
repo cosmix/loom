@@ -14,13 +14,17 @@ import { PageHeading } from "./page-heading";
 import { outOfDateText, planStateText, summaryStatus } from "./summary-text";
 
 const openAll = vi.hoisted(() => vi.fn());
-vi.mock("./open-all", () => ({ useOpenAll: () => openAll }));
+vi.mock("./open-all", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./open-all")>()),
+  useOpenAll: () => openAll,
+}));
 vi.mock("./page-header-extras", () => ({
   PageHeaderExtras: ({ page }: { page: ConceptPage }) => (
     <div role="group" aria-label="Header extras">
       {page.key}
     </div>
   ),
+  SummaryAction: () => <span>Summary action</span>,
 }));
 
 afterEach(() => {
@@ -72,10 +76,21 @@ it.each([
   expect(chip?.querySelector(`svg.lucide-${glyph}`)).toBeTruthy();
 });
 
+it("sets the summary action right after the status chip, on its baseline", () => {
+  show({ state: { state: "current", out_of_date: null } });
+
+  const chip = screen.getByText("Summary current").closest("[data-chip]") as HTMLElement;
+  expect(chip.nextElementSibling?.textContent).toBe("Summary action");
+  const pair = chip.parentElement as HTMLElement;
+  expect(pair.classList.contains("items-baseline")).toBe(true);
+  expect(pair.children).toHaveLength(2);
+});
+
 it("omits summary status when no state is available", () => {
   const { container } = show();
 
   expect(container.querySelectorAll("[data-chip]")).toHaveLength(0);
+  expect(screen.queryByText("Summary action")).toBeNull();
 });
 
 it("warns for a stale state without an out-of-date reason", () => {
@@ -250,7 +265,7 @@ it("sets a plan summary's slug crumb in mono", () => {
   );
 });
 
-it("opens every sentence from the Open all outline button", () => {
+it("opens every sentence from the quiet Open all heading button", () => {
   show();
 
   const button = screen.getByRole("button", { name: "Open all" });

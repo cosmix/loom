@@ -276,27 +276,34 @@
   border-color: var(--border);
 }
 
-/* A blocked control keeps its look, dims, and ignores hover; DisabledReason explains beneath. */
-.plan-button:where([aria-disabled="true"]) {
+/* A blocked control keeps its look, dims, and ignores hover; DisabledReason explains beside or
+   beneath. A natively `disabled` button (one waiting for its data) dims the same way. */
+.plan-button:where([aria-disabled="true"], :disabled) {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.plan-button:where([aria-disabled="true"]:hover) {
+.plan-button:where([aria-disabled="true"]:hover, :disabled:hover) {
   background: transparent;
   color: var(--foreground);
 }
 
-.plan-button:where([aria-disabled="true"][data-look="quiet"]:hover) {
+.plan-button:where(
+  [aria-disabled="true"][data-look="quiet"]:hover,
+  [data-look="quiet"]:disabled:hover
+) {
   color: var(--muted-foreground);
 }
 
-.plan-button:where([aria-disabled="true"][data-look="primary"]:hover) {
+.plan-button:where(
+  [aria-disabled="true"][data-look="primary"]:hover,
+  [data-look="primary"]:disabled:hover
+) {
   background: var(--primary);
   color: var(--primary-foreground);
 }
 
-.plan-button:where([aria-disabled="true"]:active) {
+.plan-button:where([aria-disabled="true"]:active, :disabled:active) {
   transform: none;
 }
 

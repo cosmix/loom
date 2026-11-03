@@ -1,6 +1,7 @@
 import { useAtomValue } from "jotai/react";
 import { useRef, useState } from "react";
 
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { authorBlockReasonAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 
@@ -23,16 +24,22 @@ export function RebuildButton({ ids }: { ids: string[] }) {
     }
   }
 
+  // One line beside the summary status: the button, then a blocked reason or a failure after it.
   return (
-    <div className="flex flex-col items-start gap-1">
-      <DisabledReason reason={reason} size="sm" onClick={() => void handleRebuild()}>
+    <span className="inline-flex max-w-full flex-wrap items-baseline gap-x-2 gap-y-1">
+      <DisabledReason
+        reason={reason}
+        size="sm"
+        reasonPlacement="inline"
+        onClick={() => void handleRebuild()}
+      >
         Rebuild
       </DisabledReason>
       {error !== null && (
-        <p role="alert" className="text-xs text-destructive">
-          {error}
-        </p>
+        <span role="alert" className="text-xs text-destructive">
+          <Untrusted text={error} />
+        </span>
       )}
-    </div>
+    </span>
   );
 }

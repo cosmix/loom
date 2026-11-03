@@ -1,6 +1,5 @@
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import type { PlanView, StageRow as StageRowData } from "@/plan/api/schema-files";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { StageGraph } from "@/plan/files/plan/stage-graph";
@@ -51,9 +50,9 @@ export function StagesPanel({ plan }: { plan: PlanView }) {
     <section aria-label="Stages" className="my-6 space-y-3">
       <div className="flex items-baseline justify-between">
         <h2 className="text-(length:--type-title) font-semibold">Stages</h2>
-        <Button type="button" {...HEADING_BUTTON} onClick={() => setShowYaml((value) => !value)}>
+        <button type="button" {...HEADING_BUTTON} onClick={() => setShowYaml((value) => !value)}>
           {showYaml ? "Show stages" : "Show YAML"}
-        </Button>
+        </button>
       </div>
       {showYaml ? (
         <pre className="overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs">

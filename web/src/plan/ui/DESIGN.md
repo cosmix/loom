@@ -32,6 +32,8 @@ Hierarchy is made with size, weight and space, in that order. A surface uses the
 - A border is allowed around: an input, a surface standing alone on the page, a popover or dialog. A border is not allowed around: a button row, a list that sits on the page, a status, a heading, a notice.
 - Lists divide with hairlines (`.plan-list`, `.plan-rule`); their edges are the page's edges. A hairline separates; it never encloses.
 - Shadows exist only on things that float: popovers and dialogs (`--plan-shadow`, `--dialog-shadow`). Nothing in the page flow casts one.
+- An open block in the reading column (a sentence opened to its source passages) draws a 2px edge down its start in its document's hue (`--doc-n`, through `--run-colour`). It is the one coloured border on the page: the hue says which document, never a status.
+- The chat composer is a bordered input inside the chat panel, so the place to type stands apart from the transcript around it.
 
 ## Buttons
 
@@ -41,13 +43,13 @@ Hierarchy is made with size, weight and space, in that order. A surface uses the
 - `secondary`: hairline edge, transparent. Every offer and action by default.
 - `primary`: `--primary` fill. At most one per screen, and only its owner passes `look="primary"`: the surface that draws `checklist.primary` (the spine's next step, or the pace card holding it on `product` and `engineering` while pace shows), a dialog's confirm (a dialog floats and owns its own), and the Start of the home and kickoff screens. `DisabledReason` is secondary unless told otherwise.
 
-`size="sm"` is the 24px/12px row variant for an action inside a list row or a panel head. A label is a verb plus at most two words (`Start`, `Move`, `Rebuild`), except that an offer's server label is drawn as sent (`Write plan feat-planner-01-documents`); a label carrying a document's slug truncates and never wraps. The sentence beside the button explains, so the button never carries the explanation. A screen never draws one offer twice: each offer has one owner, decided by its id.
+`size="sm"` is the 24px/12px row variant for an action inside a list row, a panel head or the document heading's action row, where every control (Summary, Source, Edit, Discuss, Open all) is a bare `.plan-button` of that size on one 30px line band with the title. A label is a verb plus at most two words (`Start`, `Move`, `Rebuild`), except that an offer's server label is drawn as sent (`Write plan feat-planner-01-documents`); a label carrying a document's slug truncates and never wraps. The sentence beside the button explains, so the button never carries the explanation. A screen never draws one offer twice: each offer has one owner, decided by its id.
 
-Blocked: `aria-disabled`, 50% opacity, no hover change, and the reason beneath in `.plan-fine`. The reason is the control's accessible description, so it is drawn once per blocked control and never repeated in a second line or a banner under the same control.
+Blocked: `aria-disabled`, 50% opacity, no hover change, and the reason beneath in `.plan-fine`, or after the button on its line in the document header's summary status line (`reasonPlacement="inline"`). The reason is the control's accessible description, so it is drawn once per blocked control and never repeated in a second line or a banner under the same control.
 
 ## Status
 
-Status is a glyph and a word (`.plan-status`), inline with the text it describes: `✓ done`, `○ not written`, `· optional`, and the current item marked with `--primary`. The word keeps the text's colour; only the glyph takes a tone. No coloured chips, no pill backgrounds, no segmented progress bars, no coloured left borders. A count reads as text (`12/12`, `3 plans`) in `.plan-fine`. An out-of-date item is dashed, not recoloured.
+Status is a glyph and a word (`.plan-status`), inline with the text it describes: `✓ done`, `○ not written`, `· optional`, and the current item marked with `--primary`. The word keeps the text's colour; only the glyph takes a tone. No coloured chips, no pill backgrounds, no segmented progress bars, no coloured left borders for a status (an open block's edge, under Surfaces, names a document). A count reads as text (`12/12`, `3 plans`) in `.plan-fine`. An out-of-date item is dashed, not recoloured.
 
 ## Page rhythm
 
