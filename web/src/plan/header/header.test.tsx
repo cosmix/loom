@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "jotai/react";
 import { createStore } from "jotai/vanilla";
 import { MemoryRouter } from "react-router";
@@ -8,7 +8,7 @@ import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
 import { checklistViewSchema, serverInfoSchema } from "@/plan/api/schema";
 import { PlanHeader } from "@/plan/header/header";
-import { activeFeatureAtom, checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { activeFeatureAtom, checklistAtom, kickoffAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 const NEXT_STEP = "Section 05 is the next product spec document to write.";
 const OFFER_LABEL = checklistFixture.checklists[0]!.primary!.label;
@@ -76,7 +76,7 @@ it("shows the route feature's slug under the Planning eyebrow", () => {
 
   expect(screen.getByText("Planning · feature")).toBeTruthy();
   const switcher = screen.getByRole("button", { name: "Switch feature, current: demo" });
-  expect(switcher.textContent).toBe("demo");
+  expect(switcher.querySelector(".plan-switcher-title")?.textContent).toBe("demo");
 });
 
 it.each([
@@ -88,7 +88,30 @@ it.each([
   show(pathname);
 
   expect(screen.getByText(eyebrow)).toBeTruthy();
-  expect(screen.getByRole("button", { name: `${title}, switch feature` }).textContent).toBe(title);
+  const switcher = screen.getByRole("button", { name: `${title}, switch feature` });
+  expect(switcher.querySelector(".plan-switcher-title")?.textContent).toBe(title);
+});
+
+it("names /new by the live kickoff's name once it has one", () => {
+  const { store } = show("/new");
+  act(() =>
+    store.set(kickoffAtom, {
+      session: "kickoff",
+      target: null,
+      shape: {
+        size: "feature",
+        name: "planner-search",
+        proposal: false,
+        problem: "",
+        decisions: [],
+        questions: [],
+        sections: [],
+      },
+    }),
+  );
+
+  expect(screen.getByText("Planning · new feature")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "planner-search, switch feature" })).toBeTruthy();
 });
 
 it("keeps the route feature name before the server info arrives", () => {

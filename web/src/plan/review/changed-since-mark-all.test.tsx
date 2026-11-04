@@ -50,7 +50,7 @@ it("stores the head and hashes of a fresh /api/hashes, not the cached ones", asy
 
   markAllSeen();
 
-  expect(await screen.findByText("No changed documents")).toBeTruthy();
+  expect(await screen.findByText("Nothing changed since you looked.")).toBeTruthy();
   expect(store.get(checkpointAtom)).toEqual({ commit: "c3", hashes: fresh.docs });
   expect(store.get(hashesAtom)).toEqual(fresh);
 });
@@ -65,7 +65,7 @@ it("shows a pending state and ignores a second press while the hashes load", asy
   markAllSeen();
 
   const pending = await screen.findByRole("button", { name: "Marking all seen…" });
-  // `aria-disabled`, not `disabled`: a disabled button cannot keep the focus it holds in the modal.
+  // `aria-disabled`, not `disabled`: a disabled button cannot keep the focus it holds.
   expect(pending).toBe(button);
   expect(pending.hasAttribute("disabled")).toBe(false);
   expect(pending.getAttribute("aria-disabled")).toBe("true");
@@ -79,9 +79,10 @@ it("shows a pending state and ignores a second press while the hashes load", asy
   await waitFor(() =>
     expect(store.get(checkpointAtom)).toEqual({ commit: "c2", hashes: current.docs }),
   );
-  const idle = screen.getByRole("button", { name: "Mark all seen" });
-  expect(idle.hasAttribute("aria-disabled")).toBe(false);
-  expect(document.activeElement).toBe(idle);
+  // Nothing is left to mark: the button goes with the list, and its focus moves to the way back.
+  expect(screen.queryByRole("button", { name: /Mark all seen|Marking all seen/ })).toBeNull();
+  const back = await screen.findByRole("link", { name: "Go to Home" });
+  expect(document.activeElement).toBe(back);
 });
 
 it("a doc_changed reload that starts after Mark all seen does not land before it", async () => {
@@ -127,36 +128,16 @@ it("shows the error and stores nothing when the hashes fail, then a retry works"
   expect(screen.queryByText("Hashes are unavailable")).toBeNull();
 });
 
-it("closing the dialog before the hashes arrive stores nothing", async () => {
-  const { store } = mount();
+it("leaving the page before the hashes arrive stores nothing", async () => {
+  const { store, view } = mount();
   await openList();
   const release = holdNextRequest();
   markAllSeen();
   await screen.findByRole("button", { name: "Marking all seen…" });
 
-  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  view.unmount();
   release(fresh);
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   expect(store.get(checkpointAtom)).toEqual(checkpoint);
-});
-
-it("closing after mark all seen focuses the scroll region inside main, not main", async () => {
-  const main = document.createElement("main");
-  const region = document.createElement("div");
-  region.setAttribute("data-reading-scroll", "");
-  main.append(region);
-  document.body.append(main);
-  mount();
-  await openList();
-  markAllSeen();
-  await screen.findByText("No changed documents");
-
-  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  await waitFor(() => expect(document.activeElement).toBe(region));
-  expect(main.hasAttribute("tabindex")).toBe(false);
-  main.remove();
 });

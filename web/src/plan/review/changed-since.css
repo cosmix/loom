@@ -1,57 +1,58 @@
 /*
- * "Changed since you looked": one dialog, the only surface. Inside it nothing draws a box: the
- * head, the list, the diff and the foot are divided by space and hairlines (DESIGN.md, Surfaces).
- * Narrow: the diff sits under the list. From 1024px: the list and the diff side by side, each
- * scrolling on its own, the foot fixed under both. The rules are unlayered so they win over the
- * utility classes DialogContent carries (DESIGN.md, design.css header).
+ * "Changed since you looked", a page at /changes. Nothing on it draws a box: the head, the list,
+ * the diff and the foot are divided by space and hairlines (DESIGN.md, Surfaces). The page spans
+ * the main column's full width, so a side-by-side diff has room. Narrow: the list, with the open
+ * document's diff under its row. From 1024px: a 22rem list beside the diff, each scrolling on its
+ * own inside the page's height, the foot fixed under both.
  */
-.changed-since {
+.changes-page {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  width: min(1120px, calc(100vw - 2rem));
-  max-width: none;
-  max-height: 88dvh;
-  padding: 0;
-  overflow: hidden;
-  border-radius: var(--corner-surface);
-  background: var(--card);
+  width: 100%;
+  padding: var(--space-6) var(--page-gutter) 0;
   color: var(--foreground);
   font-family: var(--font-sans);
   font-size: var(--type-ui);
   line-height: var(--leading-ui);
 }
 
-/* The right padding keeps the title clear of the dialog's close button. */
-.changed-since__head {
-  padding: var(--space-5) var(--space-7) var(--space-4) var(--space-5);
+/* Eyebrow, title, the lede, then --space-5 to the content (DESIGN.md, Page rhythm). */
+.changes-page__head {
+  display: grid;
+  flex: none;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
 }
 
-.changed-since__head .plan-section-title {
-  margin: 0;
-}
-
-.changed-since__lede {
-  margin: var(--space-2) 0 0;
-  max-width: 64ch;
-  color: var(--foreground);
+.changes-page__lede {
+  max-width: 48ch;
+  margin: var(--space-1) 0 0;
   font-size: var(--type-body);
   line-height: var(--leading-body);
 }
 
-.changed-since__head .plan-fine {
-  margin: var(--space-1) 0 0;
+.changes-page__head .plan-fine {
+  margin: 0;
+  max-width: 48ch;
+}
+
+.changes-page__empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+  padding-bottom: var(--space-5);
+}
+
+.changes-page__empty > .plan-empty {
+  margin: 0;
 }
 
 .changed-since__body {
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
   gap: var(--space-5);
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 0 var(--space-5) var(--space-5);
+  padding-bottom: var(--space-5);
 }
 
 .changed-since__index {
@@ -101,7 +102,8 @@
 }
 
 /* The hairline is inset by the row's negative margin, so its ends sit on the text column. */
-.changed-since__row + .changed-since__row::before {
+.changed-since__row + .changed-since__row::before,
+.changed-since__detail + .changed-since__row::before {
   content: "";
   position: absolute;
   top: 0;
@@ -186,8 +188,12 @@
   flex-direction: column;
   gap: var(--space-3);
   min-width: 0;
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--hairline);
+}
+
+/* Narrow: the open document's diff is the list item under its row, on the row's text column. */
+.changed-since__detail {
+  min-width: 0;
+  padding: var(--space-3) 0 var(--space-5);
 }
 
 .changed-since__diff-head {
@@ -207,11 +213,6 @@
   white-space: nowrap;
 }
 
-/* The "choose a document" line holds the diff's place only where the two sit side by side. */
-.changed-since__placeholder {
-  display: none;
-}
-
 /* ── The foot ─────────────────────────────────────────────────────────────── */
 
 .changed-since__foot {
@@ -220,7 +221,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-4);
-  padding: var(--space-3) var(--space-5) var(--space-4);
+  padding: var(--space-3) 0 var(--space-4);
   border-top: 1px solid var(--hairline);
 }
 
@@ -275,16 +276,16 @@
 }
 
 @media (min-width: 1024px) {
-  .changed-since {
-    height: min(760px, 88dvh);
+  /* The page fills the main column's height; the list and the diff scroll inside it. */
+  .changes-page {
+    height: 100%;
   }
 
   .changed-since__body {
     display: grid;
-    /* The list takes about 44% of the dialog and never less than 420px, so most paths show in
-       full; the diff keeps the rest. */
-    grid-template-columns: minmax(26.25rem, 4fr) minmax(0, 5fr);
-    column-gap: var(--space-5);
+    flex: 1 1 auto;
+    grid-template-columns: 22rem minmax(0, 1fr);
+    min-height: 16rem;
     overflow: hidden;
     padding-bottom: 0;
   }
@@ -302,18 +303,13 @@
   .changed-since__placeholder {
     min-height: 0;
     overflow-y: auto;
+    overscroll-behavior: contain;
     padding-bottom: var(--space-5);
   }
 
-  .changed-since__diff {
-    padding-top: 0;
-    padding-left: var(--space-5);
-    border-top: 0;
-    border-left: 1px solid var(--hairline);
-  }
-
+  .changed-since__diff,
   .changed-since__placeholder {
-    display: block;
+    margin: 0 0 0 var(--space-5);
     padding-left: var(--space-5);
     border-left: 1px solid var(--hairline);
   }

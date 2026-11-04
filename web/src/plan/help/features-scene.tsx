@@ -150,8 +150,12 @@ export const FEATURES_SCENES: readonly PlannerHelpScene[] = [
         text: "A standalone plan row opens the plan document.",
       },
       {
-        target: "section[aria-labelledby] button",
-        text: "The shelf buttons start a conversation for a new standalone plan or open a dialog to move a plan into a feature.",
+        target: "section[aria-labelledby] summary button",
+        text: "New standalone plan starts a conversation about a change that needs one plan.",
+      },
+      {
+        target: 'input[type="checkbox"][aria-label="Select all shown plans"]',
+        text: "Select plans in the table, then move them into a feature together in one conversation.",
       },
     ],
   },
@@ -189,5 +193,5 @@ export const FEATURES_SCENES: readonly PlannerHelpScene[] = [
 
 export const FEATURES_TIPS: readonly string[] = [
   "Nothing is written under doc/ until you say so in the kickoff conversation.",
-  "Moving a standalone plan into a feature starts a conversation to relocate the document and fix its references.",
+  "Selected standalone plans move into a feature together: one conversation relocates them and fixes their references.",
 ];

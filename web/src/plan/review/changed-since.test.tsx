@@ -1,9 +1,12 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { useState, type ReactNode } from "react";
 import { expect, it, vi } from "vitest";
 
 import { storageKey } from "@/plan/chat/storage";
 import { openDiff } from "@/plan/diff/open-diff";
+import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
 import { serverInfoAtom } from "@/plan/state/atoms";
+import { changesFrom } from "./changed-since";
 import { checkpointAtom } from "./checkpoint";
 import {
   A,
@@ -40,10 +43,7 @@ it("lists added, changed and removed documents, never unchanged ones", async () 
   expect(within(list).getByText(A).closest("li")?.textContent).toContain("changed");
   expect(within(list).getByText(ADDED).closest("li")?.textContent).toContain("added");
   expect(within(list).getByText(GONE).closest("li")?.textContent).toContain("removed");
-  // The open dialog hides the trigger from the accessibility tree, hence `hidden`.
-  expect(
-    screen.getByRole("button", { name: /Changed since you looked · 3/, hidden: true }),
-  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Changed since you looked · 3/ })).toBeTruthy();
 });
 
 it("opening a row's diff marks it seen", async () => {
@@ -61,9 +61,7 @@ it("opening a row's diff marks it seen", async () => {
   const row = within(screen.getByRole("list")).getByText(A).closest("li");
   expect(row?.getAttribute("aria-current")).toBe("true");
   expect(row?.textContent).toContain("seen");
-  expect(
-    screen.getByRole("button", { name: "Changed since you looked · 2", hidden: true }),
-  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Changed since you looked · 2" })).toBeTruthy();
 });
 
 it("diff before from at-commit", async () => {
@@ -111,7 +109,6 @@ it("a row without a seen copy names the checkpoint commit it diffs from", async 
 it("unavailable commit offers only uncommitted and ref diffs", async () => {
   replies["/api/compare?commit=c1"] = { commit: "c1", available: false, docs: [] };
   mount();
-  fireEvent.click(screen.getByRole("button", { name: /Changed since you looked/ }));
 
   await screen.findByText(/The checkpoint commit is unavailable/);
   const list = screen.getByRole("list");
@@ -218,45 +215,90 @@ it("a failed diff leaves the document unseen", async () => {
   expect(store.get(checkpointAtom)).toEqual(checkpoint);
 });
 
-it("closing the dialog returns focus to the control that opened it", async () => {
-  mount();
-  const opener = await screen.findByRole("button", { name: /Changed since you looked/ });
-  fireEvent.click(opener);
-  await screen.findByRole("button", { name: `Show diff for ${A}` });
+/** The activity popover's shape: non-modal, open, the trigger in its content. */
+function InPopover({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger>Activity</PopoverTrigger>
+      <PopoverContent aria-label="In progress">{children}</PopoverContent>
+    </Popover>
+  );
+}
 
-  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+const pageHeading = () =>
+  screen.findByRole("heading", { level: 1, name: "Changed since you looked" });
 
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  await waitFor(() => expect(document.activeElement).toBe(opener));
-});
-
-it("closing after mark all seen puts focus on the page main, not the body", async () => {
-  const main = document.createElement("main");
-  document.body.append(main);
-  mount();
-  await openList();
-  fireEvent.click(screen.getByRole("button", { name: "Mark all seen" }));
-  await screen.findByText("No changed documents");
-
-  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  await waitFor(() => expect(document.activeElement).toBe(main));
-  main.remove();
-});
-
-it("the row shows the title and count, and opens the dialog and returns focus", async () => {
-  mount();
+it("the row shows the title and count and opens the page with focus on its heading", async () => {
+  mount({ path: "/f/demo/product" });
+  expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
 
   const opener = await screen.findByRole("button", { name: "Changed since you looked · 3" });
   expect(opener.textContent).toContain("Changed since you looked");
   expect(opener.textContent).toContain("3");
   expect(opener.classList.contains("activity-row")).toBe(true);
-
   fireEvent.click(opener);
-  await screen.findByRole("button", { name: `Show diff for ${A}` });
-  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
 
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  await waitFor(() => expect(document.activeElement).toBe(opener));
+  const heading = await pageHeading();
+  await waitFor(() => expect(document.activeElement).toBe(heading));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(await screen.findByRole("list", { name: "Changed documents" })).toBeTruthy();
+});
+
+it("opening the page from the popover closes it without returning focus to its trigger", async () => {
+  mount({ path: "/f/demo/product", wrap: (trigger) => <InPopover>{trigger}</InPopover> });
+  fireEvent.click(await screen.findByRole("button", { name: /Changed since you looked/ }));
+
+  const heading = await pageHeading();
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "In progress" })).toBeNull());
+  // Radix returns focus on close after a timeout; let it pass before checking where focus is.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(document.activeElement).toBe(heading);
+});
+
+it("after mark all seen the page says so and leads back to where the reader came from", async () => {
+  mount({ path: "/f/demo/product?view=source#s2" });
+  fireEvent.click(await screen.findByRole("button", { name: /Changed since you looked/ }));
+  await openList();
+  const markAll = screen.getByRole("button", { name: "Mark all seen" });
+  markAll.focus();
+
+  fireEvent.click(markAll);
+
+  expect(await screen.findByText("Nothing changed since you looked.")).toBeTruthy();
+  expect(screen.queryByRole("list", { name: "Changed documents" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Mark all seen" })).toBeNull();
+  const back = screen.getByRole("link", { name: "Back to where you were" });
+  expect(back.getAttribute("href")).toBe("/f/demo/product?view=source#s2");
+  // The emptied list took the focused button with it; the way back holds the focus instead.
+  await waitFor(() => expect(document.activeElement).toBe(back));
+});
+
+it("a page reached directly with nothing changed leads Home and keeps focus on its heading", async () => {
+  mount({ checkpoint: { commit: "c2", hashes: { ...current.docs } } });
+
+  expect(await screen.findByText("Nothing changed since you looked.")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Go to Home" }).getAttribute("href")).toBe("/");
+  expect(document.activeElement).toBe(await pageHeading());
+});
+
+it("reopening from the page keeps the way back to the first page", async () => {
+  mount({ path: "/plans/demo" });
+  fireEvent.click(await screen.findByRole("button", { name: /Changed since you looked/ }));
+  await openList();
+  fireEvent.click(screen.getByRole("button", { name: /Changed since you looked/ }));
+  await openList();
+
+  fireEvent.click(screen.getByRole("button", { name: "Mark all seen" }));
+
+  const back = await screen.findByRole("link", { name: "Back to where you were" });
+  expect(back.getAttribute("href")).toBe("/plans/demo");
+});
+
+it("changesFrom takes only an in-app path", () => {
+  expect(changesFrom({ from: "/f/demo/product" })).toBe("/f/demo/product");
+  expect(changesFrom({ from: "//host" })).toBeNull();
+  expect(changesFrom({ from: "/\\host" })).toBeNull();
+  expect(changesFrom({ from: 7 })).toBeNull();
+  expect(changesFrom(null)).toBeNull();
 });

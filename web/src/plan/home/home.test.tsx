@@ -217,7 +217,7 @@ it("renders the invitation followed by feature cards and the standalone shelf", 
   expect(within(cards).getByRole("link", { name: "billing" }).getAttribute("href")).toBe(
     "/f/billing",
   );
-  expect(within(shelf).getByRole("link", { name: "Fix search fix-search written" })).toBeTruthy();
+  expect(within(shelf).getByRole("link", { name: "Fix search" })).toBeTruthy();
   expect(cards.contains(invitation)).toBe(true);
   expect(within(cards).getAllByRole("listitem")[0]?.contains(invitation)).toBe(true);
   expect(cards.compareDocumentPosition(shelf) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

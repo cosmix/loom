@@ -136,6 +136,28 @@ export function useSummaryFeed(): { load: PanelLoad; reload: () => void } {
   return { load, reload };
 }
 
+/**
+ * The reload of the feed the shell runs. A Retry button anywhere reads it from here, so it can
+ * trigger a reload without starting a second feed. Wrapped in an object because a bare function
+ * handed to `set` would be read as an updater.
+ */
+export const summaryReloadAtom: PrimitiveAtom<{ reload: () => void }> = atom({
+  reload: () => {},
+});
+
+/**
+ * Runs the one summary feed for the planner: the footer's limits and the activity pill both read
+ * `panelLoadAtom`, which this keeps filled. Mounted by the shell while it is signed in.
+ */
+export function SummaryFeedHost(): null {
+  const store = useStore();
+  const { reload } = useSummaryFeed();
+  useEffect(() => {
+    store.set(summaryReloadAtom, { reload });
+  }, [store, reload]);
+  return null;
+}
+
 export type SummaryActions = {
   rebuild(ids: string[]): Promise<string | null>;
   answer(questionId: string, rebuild: boolean): Promise<string | null>;

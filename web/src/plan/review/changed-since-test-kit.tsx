@@ -1,13 +1,15 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Provider, createStore } from "jotai";
-import { MemoryRouter } from "react-router";
+import type { ReactNode } from "react";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, vi } from "vitest";
 
 import docFixture from "@/plan/api/fixtures/files-doc.json";
 import serverFixture from "@/plan/api/fixtures/server-info.json";
 import { serverInfoSchema } from "@/plan/api/schema";
 import { planSocketAtom, serverInfoAtom } from "@/plan/state/atoms";
-import { ChangedSinceControl } from "./changed-since";
+import { CHANGES_PATH, ChangedSinceControl } from "./changed-since";
+import { ChangesPage } from "./changes-page";
 import { checkpointAtom, type Checkpoint } from "./checkpoint";
 import { hashesAtom, useReviewLive } from "./live";
 
@@ -79,10 +81,16 @@ function Live() {
   return null;
 }
 
+/**
+ * Renders the popover's trigger beside the router's outlet, at `/changes` unless `path` names
+ * another page; `wrap` places the trigger (inside a popover, say).
+ */
 export function mount(
   options: {
     checkpoint?: Checkpoint | null;
     live?: boolean;
+    path?: string;
+    wrap?: (trigger: ReactNode) => ReactNode;
   } = {},
 ) {
   const store = createStore();
@@ -112,9 +120,13 @@ export function mount(
   store.set(planSocketAtom, socket);
   const view = render(
     <Provider store={store}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[options.path ?? CHANGES_PATH]}>
         {options.live && <Live />}
-        <ChangedSinceControl />
+        {options.wrap ? options.wrap(<ChangedSinceControl />) : <ChangedSinceControl />}
+        <Routes>
+          <Route path={CHANGES_PATH} element={<ChangesPage />} />
+          <Route path="*" element={null} />
+        </Routes>
       </MemoryRouter>
     </Provider>,
   );
@@ -127,8 +139,9 @@ export function mount(
   return { store, projectKey, listeners, view, emit };
 }
 
+/** Resolves once the page lists the changed documents and A's diff can be opened. */
 export async function openList() {
-  fireEvent.click(await screen.findByRole("button", { name: /Changed since you looked/ }));
+  await screen.findByRole("list", { name: "Changed documents" });
   await screen.findByRole("button", { name: `Show diff for ${A}` });
   return screen.getByRole("list", { name: "Changed documents" });
 }

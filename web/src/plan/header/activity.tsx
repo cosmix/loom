@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp, CircleCheck } from "lucide-react";
 import { useState, type JSX, type ReactNode, type Ref } from "react";
 
 import { ChangedSinceControl } from "@/plan/review/changed-since";
-import { summaryQuestionAtom, useSummaryFeed } from "@/plan/summaries/state";
+import { panelLoadAtom, summaryQuestionAtom, summaryReloadAtom } from "@/plan/summaries/state";
 import {
   QuestionAnnouncement,
   SummaryStatusRow,
@@ -156,11 +156,13 @@ function Footer({ activities, live }: { activities: Activity[]; live: LiveRows }
 }
 
 /**
- * Owns the summary feed: the pill reads rebuild progress while the popover is closed, so the feed
- * cannot live in the popover's footer. A rebuild question opens the popover without taking focus.
+ * Reads the summary feed the shell runs (`SummaryFeedHost`): the pill needs rebuild progress while
+ * the popover is closed, so it cannot be read from the popover's footer. A rebuild question opens
+ * the popover without taking focus.
  */
 function LivePill({ compact }: { compact: boolean }): JSX.Element {
-  const { load, reload } = useSummaryFeed();
+  const load = useAtomValue(panelLoadAtom);
+  const { reload } = useAtomValue(summaryReloadAtom);
   const question = useAtomValue(summaryQuestionAtom);
   const popover = useQuestionPopover(question);
   const expansion = useSummaryExpansion();

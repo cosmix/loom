@@ -185,6 +185,26 @@
   flex: none;
 }
 
+/* ── Shell ────────────────────────────────────────────────────────────────── */
+
+/* The footer pairs with the app bar (header/header.css): a hairline on the edge facing the page,
+   the page gutter, and fine type, so the provider limits read as chrome, never as content. */
+.plan-footer {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+  min-width: 0;
+  min-height: 36px;
+  padding: var(--space-2) var(--page-gutter);
+  border-top: 1px solid var(--hairline);
+  background: var(--background);
+  font-size: var(--type-fine);
+  line-height: var(--leading-ui);
+  color: var(--muted-foreground);
+}
+
 /* ── Buttons ──────────────────────────────────────────────────────────────── */
 
 /* One scale for every button: 28px high, 13px/500, one line. `data-look` picks quiet (no edge,

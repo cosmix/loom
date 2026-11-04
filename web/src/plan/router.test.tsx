@@ -106,6 +106,14 @@ describe("plan routes", () => {
     expect(within(shell!).getByText("Kickoff page")).toBeTruthy();
   });
 
+  it("renders the Changed since you looked page at /changes, not a dialog", () => {
+    const shell = renderRoute("/changes");
+    expect(
+      within(shell!).getByRole("heading", { level: 1, name: "Changed since you looked" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("renders a registered tab route inside the shell", () => {
     const shell = renderRoute("/files/doc/example.md");
     expect(shell).not.toBeNull();

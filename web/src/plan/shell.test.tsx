@@ -153,12 +153,9 @@ describe("PlanShell", () => {
 
   it("keeps the chat panel off the home screen and the kickoff only", () => {
     expect(["/", "/new"].map(hasChatPanel)).toEqual([false, false]);
-    expect(["/f/demo", "/f/demo/product", "/files", "/plans/x"].map(hasChatPanel)).toEqual([
-      true,
-      true,
-      true,
-      true,
-    ]);
+    expect(
+      ["/f/demo", "/f/demo/product", "/files", "/plans/x", "/changes"].map(hasChatPanel),
+    ).toEqual([true, true, true, true, true]);
   });
 
   it("mounts a tooltip inside the shell", () => {

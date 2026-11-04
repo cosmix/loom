@@ -1,15 +1,10 @@
 import { useAtomValue } from "jotai";
 import { History } from "lucide-react";
-import { useRef, useState, type ComponentProps } from "react";
+import { useState, type ReactNode } from "react";
+import { useInRouterContext, useLocation, useNavigate, type Location } from "react-router";
 
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { useMediaQuery } from "@/lib/use-media-query";
 import "@/plan/header/activity.css";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { DiffView } from "@/plan/diff/diff-view";
@@ -39,10 +34,32 @@ import {
   type RowSource,
 } from "./changed-since-parts";
 import { checkpointAtom } from "./checkpoint";
-import { focusReadingRegion } from "./focus-return";
 import { seenBaseline, seenTextsAtom } from "./seen-text";
 
 export { useChangedSince } from "./changed-since-data";
+
+/** The route of the "Changed since you looked" page. */
+export const CHANGES_PATH = "/changes";
+
+/** From 1024px the list and the diff sit side by side; under it the diff opens under its row. */
+const SIDE_BY_SIDE = "(min-width: 1024px)";
+
+/**
+ * Where the page's way back leads: the in-app path the trigger stored in the location state, or
+ * null. Only a same-origin path is taken, so a crafted history entry cannot point the link away.
+ */
+export function changesFrom(state: unknown): string | null {
+  const from = (state as { from?: unknown } | null)?.from;
+  // Browsers read "/\" as "//", so a leading backslash after the slash is rejected too.
+  const external = typeof from === "string" && (from.startsWith("//") || from.startsWith("/\\"));
+  return typeof from === "string" && from.startsWith("/") && !external ? from : null;
+}
+
+/** The state the trigger navigates with: the page it was opened from, kept across reopening. */
+function returnState(location: Location): { from: string | null } {
+  if (location.pathname === CHANGES_PATH) return { from: changesFrom(location.state) };
+  return { from: `${location.pathname}${location.search}${location.hash}` };
+}
 
 function caption(baseline: Baseline, ref: Comparison | null) {
   if (ref)
@@ -60,7 +77,8 @@ function caption(baseline: Baseline, ref: Comparison | null) {
   );
 }
 
-function SelectedDiff({ selection }: { selection: Selection }) {
+/** `underRow`: drawn as the item under its row, which already names the path. */
+function SelectedDiff({ selection, underRow }: { selection: Selection; underRow: boolean }) {
   const { load, retry } = useSelectedDiff(selection);
   let body;
   if (!load) body = <LoadState state="loading" title="Loading the diff" />;
@@ -76,7 +94,7 @@ function SelectedDiff({ selection }: { selection: Selection }) {
   return (
     <section className="changed-since__diff" aria-label="Selected document's changes">
       <div className="changed-since__diff-head">
-        <PathText path={selection.path} />
+        {!underRow && <PathText path={selection.path} />}
         {load && !("error" in load) && (
           <span className="plan-fine">{caption(load.baseline, selection.ref)}</span>
         )}
@@ -88,8 +106,8 @@ function SelectedDiff({ selection }: { selection: Selection }) {
 
 function MarkAllButton({ mark, paths }: { mark: MarkAll; paths: string[] }) {
   return (
-    // `aria-disabled`, not `disabled`: the button holds focus inside the modal while it loads, and
-    // a disabled button drops it to the page body. `markAll` ignores presses while pending.
+    // `aria-disabled`, not `disabled`: the button keeps its focus while it loads, and a disabled
+    // button drops it to the page body. `markAll` ignores presses while pending.
     <Button
       className="plan-button aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
       data-look="secondary"
@@ -173,7 +191,7 @@ function ComparisonFoot({
   onRef,
 }: {
   mark: MarkAll;
-  /** The listed documents in checkpoint mode; null while a ref is compared. */
+  /** The listed documents in checkpoint mode; null while a ref is compared or none is left. */
   paths: string[] | null;
   onRef: (value: Comparison | null) => void;
 }) {
@@ -193,7 +211,58 @@ function ComparisonFoot({
   );
 }
 
-function ComparisonList({ changes }: { changes: Change[] }) {
+function ComparisonBody({
+  rows,
+  selection,
+  since,
+  sourceOf,
+  status,
+  onOpen,
+}: {
+  rows: Row[];
+  selection: Selection | null;
+  since: ReactNode;
+  sourceOf: (path: string) => RowSource;
+  status: ReactNode;
+  onOpen: (row: Row) => void;
+}) {
+  const sideBySide = useMediaQuery(SIDE_BY_SIDE);
+  const diff = selection && (
+    <SelectedDiff
+      key={`${selection.ref?.commit ?? ""}:${selection.path}`}
+      selection={selection}
+      underRow={!sideBySide}
+    />
+  );
+  return (
+    <div className="changed-since__body">
+      <div className="changed-since__index">
+        {status}
+        <ChangeRows
+          rows={rows}
+          selected={selection?.path ?? null}
+          sourceOf={sourceOf}
+          since={since}
+          detail={sideBySide ? null : diff}
+          onOpen={onOpen}
+        />
+      </div>
+      {sideBySide &&
+        (diff || (
+          <p className="plan-empty changed-since__placeholder">
+            Choose a document to see what changed in it.
+          </p>
+        ))}
+    </div>
+  );
+}
+
+/**
+ * The list of changed documents, the open document's diff and the page foot. `empty` stands in
+ * for the list once nothing is left to review in checkpoint mode (at arrival, or after Mark all
+ * seen); the foot stays, so a ref can still be compared.
+ */
+export function ComparisonList({ changes, empty }: { changes: Change[]; empty: ReactNode }) {
   const mark = useMarkAllSeen();
   const [ref, setRef] = useState<Comparison | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -202,42 +271,33 @@ function ComparisonList({ changes }: { changes: Change[] }) {
     ref,
     selection,
   );
+  const nothing = !ref && rows.length === 0;
   return (
     <>
-      <div className="changed-since__body">
-        <div className="changed-since__index">
-          <CompareStatus compare={compare} comparison={ref} unavailable={unavailable} />
-          <ChangeRows
-            rows={rows}
-            selected={selection?.path ?? null}
-            sourceOf={sourceOf}
-            since={
-              commit && (
-                <>
-                  Changes since commit <Untrusted text={shortSha(commit)} />
-                </>
-              )
-            }
-            onOpen={(row) => {
-              // The open document refetches as it changes, so opening it again changes nothing.
-              if (row.path !== selection?.path) setSelection({ path: row.path, ref });
-            }}
-          />
-        </div>
-        {selection ? (
-          <SelectedDiff
-            key={`${selection.ref?.commit ?? ""}:${selection.path}`}
-            selection={selection}
-          />
-        ) : (
-          <p className="plan-empty changed-since__placeholder">
-            Choose a document to see what changed in it.
-          </p>
-        )}
-      </div>
+      {nothing ? (
+        empty
+      ) : (
+        <ComparisonBody
+          rows={rows}
+          selection={selection}
+          sourceOf={sourceOf}
+          status={<CompareStatus compare={compare} comparison={ref} unavailable={unavailable} />}
+          since={
+            commit && (
+              <>
+                Changes since commit <Untrusted text={shortSha(commit)} />
+              </>
+            )
+          }
+          onOpen={(row) => {
+            // The open document refetches as it changes, so opening it again changes nothing.
+            if (row.path !== selection?.path) setSelection({ path: row.path, ref });
+          }}
+        />
+      )}
       <ComparisonFoot
         mark={mark}
-        paths={ref ? null : rows.map((row) => row.path)}
+        paths={ref || nothing ? null : rows.map((row) => row.path)}
         onRef={(value) => {
           setRef(value);
           setSelection(null);
@@ -247,17 +307,14 @@ function ComparisonList({ changes }: { changes: Change[] }) {
   );
 }
 
-/**
- * The footer row of the activity popover: a tile, the title and the count, in one button. It
- * spreads the props DialogTrigger hands its child (handlers, ARIA state and the ref).
- */
-function RowTrigger({ count, ...props }: ComponentProps<"button"> & { count: number }) {
+/** The footer row of the activity popover: a tile, the title and the count, in one button. */
+function RowTrigger({ count, onClick }: { count: number; onClick: () => void }) {
   return (
     <button
       type="button"
       className="activity-row"
       aria-label={`Changed since you looked · ${count}`}
-      {...props}
+      onClick={onClick}
     >
       <ActivityTile>
         <History />
@@ -272,44 +329,27 @@ function RowTrigger({ count, ...props }: ComponentProps<"button"> & { count: num
   );
 }
 
-function ChangedSinceWidget({ changes }: { changes: Change[] }) {
-  const [open, setOpen] = useState(false);
-  const opener = useRef<HTMLButtonElement>(null);
-  if (!changes.length && !open) return null;
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      {changes.length > 0 && (
-        <DialogTrigger asChild>
-          <RowTrigger ref={opener} count={changes.length} />
-        </DialogTrigger>
-      )}
-      <DialogContent
-        className="changed-since motion-reduce:animate-none"
-        onCloseAutoFocus={(event) => {
-          // "Mark all seen" removes the opener; Radix would leave focus on the page body.
-          if (opener.current?.isConnected) return;
-          event.preventDefault();
-          focusReadingRegion();
-        }}
-      >
-        <header className="changed-since__head">
-          <DialogTitle className="plan-section-title">Changed since you looked</DialogTitle>
-          <DialogDescription className="changed-since__lede">
-            Documents that changed since you last looked at them in this browser.
-          </DialogDescription>
-          <p className="plan-fine">
-            Opening a document’s changes marks it seen. Mark all seen starts over from now.
-          </p>
-        </header>
-        {open && <ComparisonList changes={changes} />}
-      </DialogContent>
-    </Dialog>
-  );
+/**
+ * The activity popover's footer row, which opens the "Changed since you looked" page. The page
+ * focuses its heading on arrival; that focus lands outside the popover, which dismisses it, and a
+ * non-modal Radix popover dismissed from outside does not return focus to its trigger.
+ */
+export function ChangedSinceControl() {
+  // The row navigates, so it needs a router. A pill mounted without one (the popover's own tests)
+  // has no page to open and draws no row.
+  return useInRouterContext() ? <RoutedChangedSinceControl /> : null;
 }
 
-/** The activity popover's footer row, which opens the comparison dialog. */
-export function ChangedSinceControl() {
+function RoutedChangedSinceControl() {
   const changes = useChangedSince();
   const projectKey = useAtomValue(serverInfoAtom)?.project_key;
-  return projectKey ? <ChangedSinceWidget key={projectKey} changes={changes} /> : null;
+  const navigate = useNavigate();
+  const location = useLocation();
+  if (!projectKey || !changes.length) return null;
+  return (
+    <RowTrigger
+      count={changes.length}
+      onClick={() => void navigate(CHANGES_PATH, { state: returnState(location) })}
+    />
+  );
 }

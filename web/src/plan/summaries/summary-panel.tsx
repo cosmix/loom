@@ -113,7 +113,8 @@ function queueBesideQuestion(panel: SummaryPanelData): string[] {
   return panel.queue.filter((id) => !asked.has(id));
 }
 
-function RebuildActivity({ panel }: { panel: SummaryPanelData }) {
+/** The running rebuild, the queue, failed rebuilds and the start error. */
+export function RebuildActivity({ panel }: { panel: SummaryPanelData }) {
   const queue = queueBesideQuestion(panel);
   return (
     <>

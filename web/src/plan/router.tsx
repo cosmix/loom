@@ -8,6 +8,7 @@ import { PressurePage } from "@/plan/feature/pressure-page";
 import { RunPage } from "@/plan/feature/run-page";
 import { HomeRoute } from "@/plan/home/home";
 import { KickoffRoute } from "@/plan/new/kickoff-route";
+import { ChangesPage } from "@/plan/review/changes-page";
 import { PlanShell } from "@/plan/shell";
 import { PLAN_TAB_ROUTES } from "@/plan/tabs";
 import { LoadState } from "@/plan/ui/load-state";
@@ -48,6 +49,7 @@ export const routes: RouteObject[] = [
       { index: true, element: <HomeRoute /> },
       featureRoutes,
       { path: "new", element: <KickoffRoute /> },
+      { path: "changes", element: <ChangesPage /> },
       { path: "plans/:doc", element: <ConceptRoute /> },
       ...PLAN_TAB_ROUTES,
     ],

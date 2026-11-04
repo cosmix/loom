@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { MemoryRouter, useLocation } from "react-router";
 import { describe, expect, it } from "vitest";
@@ -52,11 +52,11 @@ function Where() {
   return <output data-testid="where">{useLocation().pathname}</output>;
 }
 
-function DialogHost({ path }: { path: string | null }) {
+function DialogHost({ paths }: { paths: string[] }) {
   const [open, setOpen] = useState(true);
   return (
     <MemoryRouter initialEntries={["/"]}>
-      <MoveIntoFeatureDialog path={path} open={open} onOpenChange={setOpen} />
+      <MoveIntoFeatureDialog paths={paths} open={open} onOpenChange={setOpen} />
       <Where />
     </MemoryRouter>
   );
@@ -64,14 +64,15 @@ function DialogHost({ path }: { path: string | null }) {
 
 const where = () => screen.getByTestId("where").textContent;
 
-function mount(path: string | null = source, current: typeof session | null = null) {
+function mount(path: string | string[] = source, current: typeof session | null = null) {
   const h = harness(current);
   h.store.set(projectAtom, project);
-  return { ...h, ...h.mount(<DialogHost path={path} />) };
+  const paths = typeof path === "string" ? [path] : path;
+  return { ...h, ...h.mount(<DialogHost paths={paths} />) };
 }
 
 function confirmButton() {
-  return screen.getByRole("button", { name: "Move into feature" });
+  return screen.getByRole("button", { name: "Move" });
 }
 
 function enterName(name: string) {
@@ -144,17 +145,39 @@ describe("MoveIntoFeatureDialog", () => {
     await waitFor(() => expect(where()).toBe("/f/search"));
   });
 
-  it("selects a standalone plan when no path is supplied", async () => {
-    const h = mount(null);
-    enterName("search");
-    expect(confirmButton().getAttribute("aria-disabled")).toBe("true");
+  it("moves several plans in one message and lists them by title", async () => {
+    const h = mount([source, "doc/plans/PLAN-cache.md"]);
+    const dialog = screen.getByRole("dialog", { name: "Move into a feature" });
+    expect(dialog.textContent).toContain("Moving 2 plans");
+    expect(within(dialog).getByText("Fix search")).toBeTruthy();
+    expect(within(dialog).getByText("doc/plans/PLAN-cache.md")).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "search" }));
 
-    fireEvent.click(screen.getByRole("radio", { name: "Fix search doc/plans/PLAN-fix-search.md" }));
     fireEvent.click(confirmButton());
 
-    expect(h.send).toHaveBeenCalledWith(expect.objectContaining({ text: expectedText }));
+    expect(h.send).toHaveBeenCalledTimes(1);
+    expect(h.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        feature: "search",
+        text:
+          'Move these plans into the feature "search": ' +
+          "doc/plans/PLAN-fix-search.md, doc/plans/PLAN-cache.md. " +
+          "Use git mv into doc/plans/search/, keep file names, and fix every reference to them.",
+      }),
+    );
     h.result();
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(where()).toBe("/f/search"));
+  });
+
+  it("refuses to confirm with nothing to move", () => {
+    const h = mount([]);
+    enterName("search");
+
+    fireEvent.click(confirmButton());
+
+    expect(confirmButton().getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByText("Choose a standalone plan to move")).toBeTruthy();
+    expect(h.send).not.toHaveBeenCalled();
   });
 
   it("opens the plan's page when the destination feature is new, and stays put on a refusal", async () => {
@@ -199,7 +222,7 @@ describe("MoveIntoFeatureDialog", () => {
     h.store.set(authoringAtom, {
       holder: { public_id: "other", name: "Alex", away_since: null, frees_at: null },
     });
-    h.mount(<DialogHost path={source} />);
+    h.mount(<DialogHost paths={[source]} />);
     enterName("search");
 
     fireEvent.click(confirmButton());
