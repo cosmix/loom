@@ -4,7 +4,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 
 use super::chat::{ChatCommand, ChatFrame};
-use super::message::ClientMessage;
+use super::message::{ClientMessage, PlanMessage};
 use crate::plan_session::attachments::{AttachmentInput, AttachmentKind, LockedTag};
 use crate::plan_session::model::{
     ChatDelta, ChatSnapshot, Delivery, DenyReason, FailureKind, Item, NoticeKind, Origin,
@@ -15,6 +15,8 @@ const SNAPSHOT: &str = include_str!("../../../../web/src/plan/api/fixtures/chat-
 const DELTAS: &str = include_str!("../../../../web/src/plan/api/fixtures/chat-deltas.json");
 const COMMANDS: &str = include_str!("../../../../web/src/plan/api/fixtures/chat-commands.json");
 const FRAMES: &str = include_str!("../../../../web/src/plan/api/fixtures/chat-frames.json");
+const KICKOFF_DRAFTS: &str =
+    include_str!("../../../../web/src/plan/api/fixtures/kickoff-drafts.json");
 
 fn assert_parity<T: DeserializeOwned + Serialize>(fixture: &str) {
     let expected: Value = serde_json::from_str(fixture).unwrap();
@@ -58,6 +60,12 @@ fixture_tests!(
     chat_frames_fixture_deserializes,
     FRAMES,
     Vec<ChatFrame>
+);
+fixture_tests!(
+    kickoff_drafts_fixture_matches_serde_output,
+    kickoff_drafts_fixture_deserializes,
+    KICKOFF_DRAFTS,
+    PlanMessage
 );
 
 // Search only the specified field, optionally restricting the containing object by its tag.
@@ -225,6 +233,10 @@ fn chat_command_variants_in_fixtures() {
             ChatCommand::Start { .. }
             | ChatCommand::Send { .. }
             | ChatCommand::ConfirmKickoff { .. }
+            | ChatCommand::RenameKickoff { .. }
+            | ChatCommand::SetAsideKickoff { .. }
+            | ChatCommand::ContinueKickoff { .. }
+            | ChatCommand::DiscardKickoff { .. }
             | ChatCommand::Withdraw { .. }
             | ChatCommand::Permission { .. }
             | ChatCommand::Interrupt { .. }
@@ -237,6 +249,10 @@ fn chat_command_variants_in_fixtures() {
         &[
             "start",
             "send",
+            "rename_kickoff",
+            "set_aside_kickoff",
+            "continue_kickoff",
+            "discard_kickoff",
             "withdraw",
             "permission",
             "interrupt",

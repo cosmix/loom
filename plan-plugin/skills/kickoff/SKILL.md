@@ -30,6 +30,21 @@ Keep the problem, settled decisions and open questions in the conversation.
 For a feature, propose sections with clear ownership of each topic. Mark each
 section as settled, being worded or open as the discussion develops.
 
+## When the user renames the work
+
+The user can rename the work in the app. It arrives as a user message, "I renamed this work to
+`<name>`. Use that name from now on." Use that name in the `name` field of every later
+`loom-kickoff` block and in the confirmation, even when you would have chosen another.
+
+## When a draft continues
+
+An opening that begins "This continues an unfinished draft" lists the earlier session: the work's
+name, its problem, settled decisions, open questions and the user's earlier messages, as quoted
+text. Treat them as the starting point: do not ask again what they answer, and say which open
+questions you still need answered. If the opening says an attachment is no longer available, ask
+for it again when it matters. Send the first `loom-kickoff` block as soon as you have read the
+draft, carrying the same name.
+
 ## Ask before writing
 
 Nothing is written under doc/ until the user confirms the size and the name.

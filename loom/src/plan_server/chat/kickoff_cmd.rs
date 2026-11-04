@@ -3,7 +3,7 @@
 use super::dispatch::{
     bridge, chat_state, checked, refuse_new_work, remember_holder, Outcome, NO_CHAT,
 };
-use super::lock;
+use super::{draft_cmd, lock};
 use crate::plan_server::authoring::{Refusal, Take};
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::ids::ConnCtx;
@@ -32,6 +32,7 @@ pub(super) fn confirm(ctx: &PlanContext, conn: &ConnCtx, size: KickoffSize, name
     if let Some(view) = view {
         ctx.hub().broadcast(&PlanMessage::Kickoff(Box::new(view)));
     }
+    draft_cmd::on_confirm(ctx, &state, &id, &document);
     Ok(Vec::new())
 }
 
