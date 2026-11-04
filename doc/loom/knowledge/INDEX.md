@@ -161,7 +161,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Merge, daemon, broker incidents | 355 |
 | [phantom-merges](mistakes/phantom-merges.md) | Split by compile order | 349 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
-| [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 69 |
+| [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 79 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Delivery slips | 371 |
 | [planner-redesign](mistakes/planner-redesign.md) | Redesign slips | 80 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair slips | 131 |
