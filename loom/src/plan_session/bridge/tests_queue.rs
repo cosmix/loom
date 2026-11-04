@@ -351,3 +351,33 @@ fn a_compact_boundary_with_no_stop_after_it_goes_idle() {
     );
     h.wait_state(&s, SessionState::Idle);
 }
+
+#[test]
+fn a_sent_message_is_one_item_after_delivery() {
+    let text = "Make this a feature instead.";
+    let h = Harness::ready(|_| {});
+    let s = h.idle(Authoring);
+    assert!(matches!(send(&h, &s, text), SendOutcome::Delivering { .. }));
+    wait_until("pasted", || h.sent(&s) == [text]);
+    // The hook confirms the paste before Claude Code writes the user record.
+    h.spool(&s, "UserPromptSubmit", json!({"prompt": text}));
+    wait_until("delivered", || {
+        delivery(&h, text) == Some(Delivery::Delivered)
+    });
+    let user = json!({"type": "user", "origin": {"kind": "human"},
+        "message": {"role": "user", "content": text}});
+    let reply = json!({"type": "assistant", "message": {"id": "m-1", "role": "assistant",
+        "content": [{"type": "text", "text": "Done."}]}});
+    // Records apply in order: the reply showing means the user record was mapped.
+    h.record(&s, user);
+    h.record(&s, reply);
+    wait_until("the reply", || {
+        let turns = h.bridge.chat_snapshot(true).turns;
+        let mut items = turns.iter().flat_map(|turn| &turn.items);
+        items.any(|item| matches!(item, Item::Text { markdown, .. } if markdown == "Done."))
+    });
+    let turns = h.bridge.chat_snapshot(true).turns;
+    let shown = turns.iter().flat_map(|turn| &turn.items);
+    let users = shown.filter(|item| matches!(item, Item::User { text: t, .. } if t == text));
+    assert_eq!(users.count(), 1, "the message shows once");
+}

@@ -2,17 +2,19 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::os::fd::AsRawFd;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 use anyhow::{Context, Result};
 
 use super::brief_route::SessionBriefView;
+use crate::fs::safe_fs::{safe_open_dirfd, safe_write_with_mode_in_workdir};
 use crate::plan_server::chat::guidance::{validate_feature, GuidanceProvider};
 use crate::plan_server::context::PlanContext;
 use crate::plan_session::attachments::parse_unwrapped;
 use crate::plan_session::bridge::LaunchGuidance;
-use crate::plan_session::kind::SessionDir;
+use crate::plan_session::kind::{SessionDir, OPENING_TYPED_FILE};
 use crate::planning::guidance::{
     render_session_guidance, AuthoringStart, GuidanceModels, SessionGuidance, SessionGuidanceKind,
     CLOSING_MESSAGE,
@@ -95,6 +97,9 @@ impl PlanGuidance {
             (None, Some(text)) => guidance.opening_message = text.to_owned(),
             (Some(_), Some(text)) => {
                 guidance.opening_message = format!("{}\n\n{text}", guidance.opening_message);
+                // The bridge shows the guidance and the typed part as two items; it learns
+                // the split here, never by searching the joined text.
+                write_opening_typed(dir, text)?;
             }
             _ => {}
         }
@@ -118,6 +123,18 @@ impl GuidanceProvider for PlanGuidance {
     fn closing_message(&self) -> String {
         CLOSING_MESSAGE.to_owned()
     }
+}
+
+/// Leaves the typed part of an offer opening where `SessionDir::opening_typed` names it.
+fn write_opening_typed(dir: &SessionDir, text: &str) -> Result<()> {
+    let dirfd = safe_open_dirfd(dir.path())?;
+    safe_write_with_mode_in_workdir(
+        dirfd.as_raw_fd(),
+        Path::new(OPENING_TYPED_FILE),
+        text.as_bytes(),
+        0o600,
+    )
+    .with_context(|| format!("cannot write {}", dir.opening_typed().display()))
 }
 
 fn authoring_start(

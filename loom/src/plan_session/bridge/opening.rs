@@ -7,8 +7,9 @@
 use std::time::{Duration, Instant};
 
 use super::commands::Step;
-use super::session::{Phase, Session};
+use super::session::{Delivering, Opening, Phase, Session};
 use super::Bridge;
+use crate::plan_session::attachments::parse_unwrapped;
 use crate::plan_session::kind::SessionKind;
 use crate::plan_session::model::{Activity, Delivery, FailureKind};
 use crate::plan_session::state::Input;
@@ -50,6 +51,29 @@ impl Bridge {
 }
 
 impl Session {
+    /// The sent items of the opening: one, or, when it carries typed text after the guidance,
+    /// the guidance as an origin item and the typed text (with its attachments) as a plain user
+    /// item. The paste is the whole opening either way.
+    pub(super) fn opening_delivery(&mut self, opening: Opening, step: &mut Step) -> Delivering {
+        let Opening {
+            text,
+            origin,
+            typed,
+        } = opening;
+        let guidance = typed.as_deref().and_then(|typed| {
+            let head = text.strip_suffix(typed)?.strip_suffix("\n\n")?;
+            Some(head.to_owned())
+        });
+        let (Some(typed), Some(guidance)) = (typed, guidance) else {
+            let chips = parse_unwrapped(&text).1;
+            return self.delivery(text, chips, origin, step);
+        };
+        let guidance_id = self.sent_item(parse_unwrapped(&guidance).0, Vec::new(), origin, step);
+        let (typed_text, chips) = parse_unwrapped(&typed);
+        let typed_id = self.sent_item(typed_text, chips, None, step);
+        self.delivering(vec![guidance_id, typed_id], text)
+    }
+
     /// How long the pasted delivery has waited for its `UserPromptSubmit`.
     pub(super) fn waited(&self, now: Instant) -> Option<Duration> {
         let sent = self.flow.delivering.as_ref().and_then(|d| d.sent_at)?;
@@ -81,7 +105,7 @@ impl Session {
             return None;
         }
         let late = self.flow.delivering.take()?;
-        self.set_delivery(&late.item_id, Delivery::Undelivered, step);
+        self.set_delivery(&late.item_ids, Delivery::Undelivered, step);
         Some(format!("{OPENING_NOT_SUBMITTED} within {timeout:?}"))
     }
 

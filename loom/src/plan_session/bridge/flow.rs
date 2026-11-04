@@ -104,7 +104,7 @@ impl Session {
             return None;
         }
         if let Some(opening) = self.flow.opening.take() {
-            let mut delivering = self.delivery(opening.text, Vec::new(), opening.origin, step);
+            let mut delivering = self.opening_delivery(opening, step);
             delivering.opening = Some(0);
             return Some(delivering);
         }
@@ -149,20 +149,37 @@ impl Session {
     ) -> Delivering {
         // The server's own `format_message` output, never wrapped: a typed wrapper stays.
         let (user_text, _) = parse_unwrapped(&text);
-        let match_text = sanitize(&user_text);
-        let item_id = self.next_id("s-");
+        let item_id = self.sent_item(user_text, attachments, origin, step);
+        self.delivering(vec![item_id], text)
+    }
+
+    /// Adds the `sent` user item `s-<n>` showing `text` and returns its id.
+    pub(super) fn sent_item(
+        &mut self,
+        text: String,
+        attachments: Vec<Attachment>,
+        origin: Option<Origin>,
+        step: &mut Step,
+    ) -> String {
+        let id = self.next_id("s-");
         let item = Item::User {
-            id: item_id.clone(),
-            text: user_text,
+            id: id.clone(),
+            text,
             attachments,
             delivery: Delivery::Sent,
             origin,
         };
         let deltas = self.mapper.add_server_item(item);
         self.emit(deltas, step);
+        id
+    }
+
+    /// The delivery of the pasted `text`, whose sent items are `item_ids`.
+    pub(super) fn delivering(&self, item_ids: Vec<String>, text: String) -> Delivering {
+        let match_text = sanitize(&parse_unwrapped(&text).0);
         let compact = match_text.split_whitespace().next() == Some("/compact");
         Delivering {
-            item_id,
+            item_ids,
             text,
             match_text,
             sent_at: None,
@@ -186,7 +203,7 @@ impl Session {
             Err(error) => {
                 tracing::warn!(session = %self.id, %error, "cannot paste into the session");
                 let failed = self.flow.delivering.take()?;
-                self.set_delivery(&failed.item_id, Delivery::Undelivered, step);
+                self.set_delivery(&failed.item_ids, Delivery::Undelivered, step);
                 self.flow.paused = true;
                 let why = format!("the opening message cannot be sent: {error}");
                 failed.opening.is_some().then_some(why)
@@ -209,8 +226,8 @@ impl Session {
             return;
         }
         if let Some(late) = self.flow.delivering.take() {
-            self.set_delivery(&late.item_id, Delivery::Undelivered, step);
-            let undelivered = (late.item_id, late.match_text, late.closing);
+            self.set_delivery(&late.item_ids, Delivery::Undelivered, step);
+            let undelivered = (late.item_ids, late.match_text, late.closing);
             self.flow.undelivered.push(undelivered);
             if self.flow.undelivered.len() > UNDELIVERED_KEPT {
                 self.flow.undelivered.remove(0);
@@ -228,7 +245,7 @@ impl Session {
             .is_some_and(|d| d.sent_at.is_some())
         {
             if let Some(done) = self.flow.delivering.take() {
-                self.delivered(&done.item_id, done.closing, step);
+                self.delivered(&done.item_ids, done.closing, step);
             }
         } else if let Some(prompt) = prompt {
             let text = sanitize(&parse_message(prompt).0);
@@ -245,7 +262,7 @@ impl Session {
             .is_some_and(|d| d.compact && d.sent_at.is_some())
         {
             if let Some(done) = self.flow.delivering.take() {
-                self.delivered(&done.item_id, done.closing, step);
+                self.delivered(&done.item_ids, done.closing, step);
             }
         }
     }
@@ -255,7 +272,7 @@ impl Session {
         let ours = |d: &Delivering| d.sent_at.is_some() && d.match_text == text;
         if self.flow.delivering.as_ref().is_some_and(ours) {
             if let Some(done) = self.flow.delivering.take() {
-                self.delivered(&done.item_id, done.closing, step);
+                self.delivered(&done.item_ids, done.closing, step);
             }
         } else {
             self.late_confirm(text, step);
@@ -270,19 +287,30 @@ impl Session {
             .iter()
             .rposition(|(_, waiting, _)| waiting == text);
         if let Some(at) = found {
-            let (item_id, _, closing) = self.flow.undelivered.remove(at);
-            self.delivered(&item_id, closing, step);
+            let (item_ids, _, closing) = self.flow.undelivered.remove(at);
+            self.delivered(&item_ids, closing, step);
         }
     }
 
-    fn delivered(&mut self, item_id: &str, closing: bool, step: &mut Step) {
-        self.set_delivery(item_id, Delivery::Delivered, step);
+    fn delivered(&mut self, item_ids: &[String], closing: bool, step: &mut Step) {
+        self.set_delivery(item_ids, Delivery::Delivered, step);
         if let Some(plan) = self.flow.end.as_mut().filter(|_| closing) {
             plan.closing = Closing::Confirmed;
         }
     }
 
-    pub(super) fn set_delivery(&mut self, item_id: &str, delivery: Delivery, step: &mut Step) {
+    pub(super) fn set_delivery(
+        &mut self,
+        item_ids: &[String],
+        delivery: Delivery,
+        step: &mut Step,
+    ) {
+        for item_id in item_ids {
+            self.set_item_delivery(item_id, delivery, step);
+        }
+    }
+
+    fn set_item_delivery(&mut self, item_id: &str, delivery: Delivery, step: &mut Step) {
         let found = self
             .mapper
             .turns()
@@ -316,7 +344,7 @@ impl Session {
         let unsent = self.flow.delivering.as_ref();
         if unsent.is_some_and(|d| d.sent_at.is_none() && !d.closing) {
             if let Some(unsent) = self.flow.delivering.take() {
-                self.set_delivery(&unsent.item_id, Delivery::Undelivered, step);
+                self.set_delivery(&unsent.item_ids, Delivery::Undelivered, step);
                 texts.insert(0, parse_unwrapped(&unsent.text).0);
             }
         }

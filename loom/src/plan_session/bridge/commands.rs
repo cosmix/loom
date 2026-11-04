@@ -288,7 +288,7 @@ impl Session {
         let busy = self.flow.delivering.is_some() || self.flow.opening.is_some();
         if idle && !waits && !busy && self.flow.queue.is_empty() {
             let delivering = self.delivery(text, attachments, None, step);
-            let item_id = delivering.item_id.clone();
+            let item_id = delivering.item_ids.first().cloned().unwrap_or_default();
             self.flow.delivering = Some(delivering);
             return Ok(SendOutcome::Delivering { item_id });
         }
