@@ -62,6 +62,7 @@ pub mod delivery;
 pub mod eval_edges;
 pub mod extract;
 pub mod fingerprint;
+pub(crate) mod format_chars;
 pub mod freshness;
 pub mod fuse;
 pub mod graph_store;

@@ -6,7 +6,7 @@ import { Link } from "react-router";
 import type { SourceAnchor } from "@/plan/api/schema-concept";
 import type { DocView } from "@/plan/api/schema-files";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { featureOfDocPath, featureSourceHref, sourceHref } from "@/plan/feature/source-href";
+import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
 import { Markdown } from "@/plan/markdown";
 
 import { passageKey, useColumn } from "./column-context";
@@ -22,11 +22,10 @@ type Passage = NonNullable<ReturnType<typeof passageOf>>;
  * the feature the document belongs to, in file mode for a document outside any feature.
  */
 export function passageHref(anchor: SourceAnchor, lines: { start: number; end: number } | null) {
-  const feature = featureOfDocPath(anchor.path);
-  const options = { lines, anchor: anchor.anchor };
-  return feature === null
-    ? sourceHref(anchor.path, options)
-    : featureSourceHref(feature, anchor.path, options);
+  return featureSourceHref(featureOfDocPath(anchor.path), anchor.path, {
+    lines,
+    anchor: anchor.anchor,
+  });
 }
 
 function fileName(path: string): string {

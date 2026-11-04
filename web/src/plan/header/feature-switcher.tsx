@@ -1,12 +1,14 @@
 import { useAtomValue } from "jotai/react";
 import { Check } from "lucide-react";
 import { useRef, useState, type KeyboardEvent } from "react";
-import { Link, useLocation, useMatch } from "react-router";
+import { Link, useLocation, useMatch, useSearchParams } from "react-router";
 
 import { featureOfKey, pageKeyOfPath } from "@/plan/api/page-key";
+import { sessionAtom } from "@/plan/chat/model";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
-import { featuresAtom, kickoffAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { kindOf } from "@/plan/new/kickoff-state";
+import { featuresAtom, kickoffAtom, kickoffDraftsAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { OTHER_GLYPHS } from "@/plan/ui/glyphs";
 
 const SwitcherIcon = OTHER_GLYPHS.switcher;
@@ -39,22 +41,47 @@ function isFilesRoute(pathname: string): boolean {
   return ["/files", "/plans"].some((root) => pathname === root || pathname.startsWith(`${root}/`));
 }
 
+const NEW_EYEBROW = { feature: "Planning · new feature", plan: "Planning · new plan" } as const;
+
 /**
- * What the app bar names: the route's feature (by slug), the live kickoff on `/new` (by the name
- * it has so far, the rename included), or the project.
+ * The work `/new?session=<id>` shows: the live kickoff when it is that session, else its draft.
+ * `/new` alone is an empty form, so it names no one's work.
+ */
+function useNewWork(): { name: string | null; size: "feature" | "plan" | null } {
+  const [params] = useSearchParams();
+  const session = params.get("session");
+  const kickoff = useAtomValue(kickoffAtom);
+  const chat = useAtomValue(sessionAtom);
+  const drafts = useAtomValue(kickoffDraftsAtom);
+  if (session === null) return { name: null, size: null };
+  if (kickoff?.session === session) {
+    // Before the conversation settles a size, the kickoff's start offer says it, as on the page head.
+    const offer = chat?.id === session ? chat.offer : null;
+    return { name: kickoff.shape.name, size: kindOf(kickoff.shape.size, offer) };
+  }
+  return drafts.find((draft) => draft.session === session) ?? { name: null, size: null };
+}
+
+/**
+ * What the app bar names: the route's feature (by slug), the work `/new?session=` continues (by the
+ * name it has so far, the rename included), or the project.
  */
 function useIdentity(): Identity {
   const { pathname } = useLocation();
   const featureRoute = useMatch("/f/:feature/*");
   const serverInfo = useAtomValue(serverInfoAtom);
-  const kickoff = useAtomValue(kickoffAtom);
+  const work = useNewWork();
   const pageKey = pageKeyOfPath(pathname);
   const feature = (pageKey === null ? null : featureOfKey(pageKey)) ?? featureRoute?.params.feature;
   if (feature !== undefined) {
     return { feature, eyebrow: "Planning · feature", title: feature };
   }
   if (pathname === "/new") {
-    return { feature, eyebrow: "Planning · new feature", title: kickoff?.shape.name || "Untitled" };
+    return {
+      feature,
+      eyebrow: work.size === null ? "Planning · new work" : NEW_EYEBROW[work.size],
+      title: work.name || "Untitled",
+    };
   }
   return {
     feature,

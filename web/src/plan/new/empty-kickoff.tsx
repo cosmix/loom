@@ -260,7 +260,7 @@ export function EmptyKickoff({ small = false }: { small?: boolean }) {
   const canAuthor = useAtomValue(canAuthorAtom);
   const blockReason = useAtomValue(authorBlockReasonAtom);
   // The form is always empty; a kickoff still running is offered above it, never reopened here.
-  const open = useAtomValue(kickoffDraftsAtom).find((draft) => draft.live);
+  const open = useAtomValue(kickoffDraftsAtom).find((entry) => entry.live);
   const disabled = !canAuthor || pending;
   const reason = !canAuthor
     ? (blockReason ?? "Authoring is unavailable")

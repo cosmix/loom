@@ -1,6 +1,6 @@
 import { atom } from "jotai/vanilla";
 
-import type { KickoffDraftView } from "@/plan/api/schema-kickoff";
+import type { KickoffDraftView, KickoffSize } from "@/plan/api/schema-kickoff";
 import { sessionAtom } from "@/plan/chat/model";
 import type { Store } from "@/state/store";
 
@@ -10,6 +10,13 @@ import type { Store } from "@/state/store";
  * route shows: the query id does.
  */
 export const kickoffSessionAtom = atom<string | null>(null);
+
+/** The size the conversation settled, else the one the kickoff was started as. */
+export function kindOf(size: KickoffSize | null, offer: string | null): KickoffSize | null {
+  if (size !== null) return size;
+  if (offer === "kickoff-small") return "plan";
+  return offer === "kickoff" ? "feature" : null;
+}
 
 /** Whether the chat session is the kickoff the address names (`/new?session=<id>`). */
 export function isKickoffSession(sessionId: string | null, requested: string | null): boolean {

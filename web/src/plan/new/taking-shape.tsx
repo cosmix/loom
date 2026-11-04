@@ -65,22 +65,51 @@ export function TakingShape({
         <ShapeSize size={size} />
       </ShapeRow>
       <ShapeIdentity shape={shape} target={target} />
-      <ShapeRow
-        title="Open questions"
-        icon={
-          questions.length > 0 ? (
-            <MessageCircleQuestion aria-hidden="true" />
-          ) : (
-            <CircleCheck aria-hidden="true" />
-          )
-        }
-        tone={questions.length > 0 ? "warn" : "ok"}
-      >
-        <ShapeList items={questions} empty="No open questions" />
-      </ShapeRow>
+      <QuestionsRow questions={questions} />
       {shape?.size === "feature" && <ShapeSections sections={shape.sections} />}
       {shape !== null && <ShapeFoot size={size} target={target} />}
     </aside>
+  );
+}
+
+/** The Problem, Settled decisions and Open questions rows, shared with the ended draft's page. */
+export function ProblemRow({ problem }: { problem: string | null }) {
+  return (
+    <ShapeRow title="Problem" {...presence(Boolean(problem))}>
+      <p className="whitespace-pre-wrap">
+        {problem ? (
+          <Untrusted text={problem} />
+        ) : (
+          <span className="kickoff-muted">Not stated yet</span>
+        )}
+      </p>
+    </ShapeRow>
+  );
+}
+
+export function DecisionsRow({ decisions }: { decisions: string[] }) {
+  return (
+    <ShapeRow title="Settled decisions" {...presence(decisions.length > 0)}>
+      <ShapeList items={decisions} empty="Nothing settled yet" />
+    </ShapeRow>
+  );
+}
+
+export function QuestionsRow({ questions }: { questions: string[] }) {
+  return (
+    <ShapeRow
+      title="Open questions"
+      icon={
+        questions.length > 0 ? (
+          <MessageCircleQuestion aria-hidden="true" />
+        ) : (
+          <CircleCheck aria-hidden="true" />
+        )
+      }
+      tone={questions.length > 0 ? "warn" : "ok"}
+    >
+      <ShapeList items={questions} empty="No open questions" />
+    </ShapeRow>
   );
 }
 
@@ -91,18 +120,8 @@ function ShapeIdentity({ shape, target }: { shape: KickoffShape | null; target: 
       <ShapeRow title="Name" {...presence(Boolean(shape?.name))}>
         <NameRow name={shape?.name ?? null} editable={shape !== null && target === null} />
       </ShapeRow>
-      <ShapeRow title="Problem" {...presence(Boolean(shape?.problem))}>
-        <p className="whitespace-pre-wrap">
-          {shape?.problem ? (
-            <Untrusted text={shape.problem} />
-          ) : (
-            <span className="kickoff-muted">Not stated yet</span>
-          )}
-        </p>
-      </ShapeRow>
-      <ShapeRow title="Settled decisions" {...presence((shape?.decisions.length ?? 0) > 0)}>
-        <ShapeList items={shape?.decisions ?? []} empty="Nothing settled yet" />
-      </ShapeRow>
+      <ProblemRow problem={shape?.problem ?? null} />
+      <DecisionsRow decisions={shape?.decisions ?? []} />
     </>
   );
 }

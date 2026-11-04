@@ -314,6 +314,25 @@ it("Settings shows the summary totals", async () => {
   expect(within(dialog).getByRole("img", { name: /^claude 5h window/ })).toBeTruthy();
 });
 
+it("Settings keeps the heading outline: the panel's h3 sections sit under an h2 Summaries", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(JSON.stringify(panelFixture), { status: 200 })),
+  );
+  render(
+    <Provider store={createStore()}>
+      <TooltipProvider>
+        <SummaryFeedHost />
+        <SettingsDialog open onOpenChange={() => {}} />
+      </TooltipProvider>
+    </Provider>,
+  );
+  const dialog = screen.getByRole("dialog", { name: "Settings" });
+  expect(within(dialog).getByRole("heading", { name: "Summaries", level: 2 })).toBeTruthy();
+  const totals = await within(dialog).findByRole("region", { name: "Token totals" });
+  expect(within(totals).getByRole("heading", { level: 3 })).toBeTruthy();
+});
+
 it("Settings offers a retry when the summary feed failed", async () => {
   const reload = vi.fn();
   const store = createStore();

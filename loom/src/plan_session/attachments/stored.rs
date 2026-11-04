@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::context::format_chars::is_format;
 use crate::fs::safe_read::read_bounded;
 
 /// Hex characters of the content hash that name a file.
@@ -15,12 +16,30 @@ pub const ID_LEN: usize = 16;
 /// Longest display name kept, in `char`s.
 pub const NAME_CHARS: usize = 120;
 
+/// The name shown when a display name cleans to nothing.
+pub const DEFAULT_NAME: &str = "attachment";
+
 /// Whether `c` may not appear in a display name: a control character (Cc), or any whitespace but
 /// a plain space. U+2028, U+2029, NEL and a tab read as a line break to the model and could fake
-/// a chip line in the delivered attachments block. Format characters (Cf) are dropped by the
-/// upload handler (`plan_server::presence::is_format`), which `plan_session` cannot reach.
+/// a chip line in the delivered attachments block.
 pub fn is_unsafe_name_char(c: char) -> bool {
     c.is_control() || (c.is_whitespace() && c != ' ')
+}
+
+/// `raw` as a display name: without control, format or non-space whitespace characters, trimmed,
+/// at most [`NAME_CHARS`] characters, and [`DEFAULT_NAME`] when nothing (or only `.` or `..`) is
+/// left. Display text only; it never reaches a path.
+pub fn clean_name(raw: &str) -> String {
+    let kept: String = raw
+        .chars()
+        .filter(|&c| !is_unsafe_name_char(c) && !is_format(c))
+        .collect();
+    let name: String = kept.trim().chars().take(NAME_CHARS).collect();
+    let name = name.trim_end();
+    match name {
+        "" | "." | ".." => DEFAULT_NAME.to_owned(),
+        _ => name.to_owned(),
+    }
 }
 
 /// The media types an upload may have.

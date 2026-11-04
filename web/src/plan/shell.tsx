@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai/react";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router";
 
 import { ErrorBoundary } from "@/aurora-ui/feedback/ErrorBoundary";
@@ -8,13 +8,18 @@ import { isTyping } from "@/lib/is-typing";
 import { Dock } from "@/plan/dock";
 import { Banners } from "@/plan/header/banners";
 import { PlanHeader } from "@/plan/header/header";
-import { PlannerHelpDialog } from "@/plan/help/help-dialog";
 import { readingFaceAtom, readingSizeAtom } from "@/plan/settings/preferences";
 import { SettingsDialog } from "@/plan/settings/settings-dialog";
 import { PlanFooter } from "@/plan/shell-footer";
 import { unauthorizedAtom } from "@/plan/state/atoms";
 import { SummaryFeedHost, useAutoRebuildSync } from "@/plan/summaries/state";
 import { Unauthorized } from "@/plan/unauthorized";
+
+// Help is a separate chunk, fetched after the shell renders: its topics and scenes kept plan.js
+// over vite's 500 kB chunk warning. Revisit if help must be available offline from the start.
+const PlannerHelpDialog = lazy(() =>
+  import("@/plan/help/help-dialog").then((module) => ({ default: module.PlannerHelpDialog })),
+);
 
 /** The help dialog's open state, toggled by `?` outside typing targets and without modifiers. */
 function useHelpKey() {
@@ -32,7 +37,7 @@ function useHelpKey() {
   return [open, setOpen] as const;
 }
 
-/** Header, banners, routed page and dock; a 401 replaces all of it with the sign-in notice. */
+/** Header, banners, routed page, dock and footer; a 401 replaces all of it with the sign-in notice. */
 export function PlanShell() {
   useAutoRebuildSync();
   const unauthorized = useAtomValue(unauthorizedAtom);
@@ -68,7 +73,9 @@ export function PlanShell() {
             </div>
             <PlanFooter />
             <SummaryFeedHost />
-            <PlannerHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+            <Suspense fallback={null}>
+              <PlannerHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+            </Suspense>
             <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
           </>
         )}

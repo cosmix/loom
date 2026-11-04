@@ -248,7 +248,8 @@ pub(super) fn create(
 }
 
 /// Apply `change` to the stored draft of `session` and write it back; false when there is no
-/// such draft (never started, discarded or landed) or it could not be written.
+/// such draft (never started, discarded or landed) or it could not be written. A draft that
+/// lands through `change` is removed and counts as changed: it returns true and publishes.
 pub(super) fn update(
     ctx: &PlanContext,
     state: &ChatState,
@@ -281,13 +282,17 @@ pub(super) fn update(
 /// The stored draft of `session`, unless it has landed (then it is deleted).
 pub(super) fn get(ctx: &PlanContext, state: &ChatState, session: &str) -> Option<Draft> {
     let files = Files::new(ctx);
-    let _held = drafts_lock(state);
-    let draft = files.load(session)?;
-    if files.landed(&draft) {
+    {
+        let _held = drafts_lock(state);
+        let draft = files.load(session)?;
+        if !files.landed(&draft) {
+            return Some(draft);
+        }
         files.remove(session);
-        return None;
     }
-    Some(draft)
+    // Other tabs still list the landed draft on their shelf until they are told.
+    publish(ctx, state);
+    None
 }
 
 /// Delete the draft of `session`.

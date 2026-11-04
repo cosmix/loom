@@ -37,6 +37,16 @@ function extensionOf(name: string): string {
   return dot < 0 ? "" : name.slice(dot + 1).toLowerCase();
 }
 
+/**
+ * The server keeps the first 120 characters of a name but refuses one over 1024 bytes once decoded,
+ * so a long name is cut here, by code point, before it is sent.
+ */
+const NAME_LIMIT = 120;
+
+function sentName(name: string): string {
+  return Array.from(name).slice(0, NAME_LIMIT).join("");
+}
+
 /** The media type to send for this file, or null when the server would not take it. */
 export function uploadType(file: Pick<File, "name" | "type">): string | null {
   const declared = file.type.split(";")[0]?.trim().toLowerCase() ?? "";
@@ -75,7 +85,7 @@ export async function uploadAttachment(file: File): Promise<UploadedFile> {
   const contentType = uploadType(file)!;
   let response: Response;
   try {
-    response = await fetch(`/api/attachments?name=${encodeURIComponent(file.name)}`, {
+    response = await fetch(`/api/attachments?name=${encodeURIComponent(sentName(file.name))}`, {
       method: "POST",
       headers: { "Content-Type": contentType },
       body: file,

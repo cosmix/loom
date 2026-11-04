@@ -57,7 +57,7 @@ function SortHeader({
   const Icon =
     direction === "ascending" ? ArrowUp : direction === "descending" ? ArrowDown : ChevronsUpDown;
   return (
-    <th scope="col" aria-sort={direction} className={`shelf-table__${column}`}>
+    <th role="columnheader" scope="col" aria-sort={direction} className={`shelf-table__${column}`}>
       <button
         type="button"
         className="shelf-table__sort"
@@ -87,8 +87,8 @@ function PlanRow({
   const titleId = useId();
   const Glyph = PLAN_STATE_GLYPHS[plan.state];
   return (
-    <tr data-selected={checked || undefined}>
-      <td className="shelf-table__select">
+    <tr role="row" data-selected={checked || undefined}>
+      <td role="cell" className="shelf-table__select">
         {/* Named "Select <title>": the title can carry inline markup, so it is referenced, not
             copied into an attribute. */}
         <input
@@ -98,7 +98,7 @@ function PlanRow({
           onChange={() => onToggle(plan.path)}
         />
       </td>
-      <td className="shelf-table__title">
+      <td role="cell" className="shelf-table__title">
         <div className="shelf-table__plan">
           <Link to={toAddress(plan.path)} className="shelf-table__link">
             <span id={titleId}>
@@ -110,7 +110,7 @@ function PlanRow({
           </span>
         </div>
       </td>
-      <td className="shelf-table__state">
+      <td role="cell" className="shelf-table__state">
         <span className="plan-status">
           <Glyph aria-hidden="true" className={STATE_TONE[plan.state]} />
           <Untrusted text={plan.state} />
@@ -185,7 +185,9 @@ export function StandaloneTable({
       <span id={selectLabel} hidden>
         Select
       </span>
-      <table className="shelf-table">
+      {/* The phone layout sets display:block on the table parts, which WebKit reads as dropping their
+          semantics; the explicit roles keep them. */}
+      <table role="table" className="shelf-table">
         <TableHead
           shown={shown}
           selected={selected}
@@ -247,9 +249,9 @@ function TableHead({
   onSort: (sort: Sort) => void;
 }) {
   return (
-    <thead>
-      <tr>
-        <th scope="col" className="shelf-table__select">
+    <thead role="rowgroup">
+      <tr role="row">
+        <th role="columnheader" scope="col" className="shelf-table__select">
           <SelectAll plans={shown} selected={selected} onChange={onSelect} />
         </th>
         <SortHeader label="Plan" column="title" sort={sort} onSort={onSort} />
@@ -273,7 +275,7 @@ function TableBody({
   onToggle: (path: string) => void;
 }) {
   return (
-    <tbody>
+    <tbody role="rowgroup">
       {shown.map((plan) => (
         <PlanRow
           key={plan.path}
@@ -284,8 +286,8 @@ function TableBody({
         />
       ))}
       {shown.length === 0 && (
-        <tr>
-          <td colSpan={3} className="plan-empty shelf-table__none">
+        <tr role="row">
+          <td role="cell" colSpan={3} className="plan-empty shelf-table__none">
             No plan matches “<Untrusted text={query.trim()} />
             ”.
           </td>

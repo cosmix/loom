@@ -1,10 +1,16 @@
 import { useId } from "react";
 
+import { KIND_WORD } from "@/plan/new/kickoff-head";
+
 import "./kind-control.css";
 
 const CHOICES = [
-  { small: false, label: "Feature", hint: "A vision, product sections, a metaplan and plans" },
-  { small: true, label: "Standalone plan", hint: "One plan in doc/plans/" },
+  {
+    small: false,
+    label: KIND_WORD.feature,
+    hint: "A vision, product sections, a metaplan and plans",
+  },
+  { small: true, label: KIND_WORD.plan, hint: "One plan in doc/plans/" },
 ] as const;
 
 /**

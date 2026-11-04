@@ -185,6 +185,10 @@ pub(super) struct Swept {
 pub(super) fn sweep(dir: &Path, now: u64) -> Swept {
     let _lock = lock();
     let mut swept = Swept::default();
+    // The dirfd refuses a symlinked store directory, and every removal goes through it.
+    let Ok(dirfd) = safe_open_dirfd(dir) else {
+        return swept;
+    };
     let Ok(entries) = fs::read_dir(dir) else {
         return swept;
     };
@@ -203,7 +207,7 @@ pub(super) fn sweep(dir: &Path, now: u64) -> Swept {
         if now.saturating_sub(stamp) <= KEEP_SECONDS {
             continue;
         }
-        match fs::remove_file(entry.path()) {
+        match safe_remove_in_workdir(dirfd.as_raw_fd(), Path::new(&name)) {
             Ok(()) => swept.removed += 1,
             Err(error) => {
                 swept.failed += 1;

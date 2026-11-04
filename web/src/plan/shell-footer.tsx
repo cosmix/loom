@@ -28,12 +28,7 @@ export function PlanFooter(): JSX.Element | null {
     <footer className="plan-footer">
       <QuotaMeters snapshot={panel.quota} quotaLeft={[]} nowSecs={nowSecs} />
       {missing.map(({ name, label }) => (
-        <span
-          key={name}
-          className="plan-footer__note text-[length:var(--type-fine)] text-muted-foreground"
-        >
-          {`${label} limits unavailable`}
-        </span>
+        <span key={name}>{`${label} limits unavailable`}</span>
       ))}
     </footer>
   );

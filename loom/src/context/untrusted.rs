@@ -32,6 +32,8 @@
 //! This is the ONE definition all these surfaces call. A second copy would
 //! duplicate a security rule that must never drift between them.
 
+use super::format_chars::is_format;
+
 /// Longest inline value either surface renders before eliding the rest.
 ///
 /// Ids and pointers are identifiers, not content: past a couple of lines'
@@ -67,30 +69,11 @@ pub(crate) fn flatten_char(ch: char) -> char {
         // no line-shaped character survives; `is_control` catches the rest,
         // including the ESC that would start an ANSI sequence.
         _ if ch.is_control() || ch.is_whitespace() => ' ',
-        // Unicode category Cf (format characters) is neither control nor
-        // whitespace, so it survives the two checks above untouched — and
-        // it includes the bidi override/embedding controls (U+202A..U+202E,
-        // U+2066..U+2069), zero-width and word-joining marks
-        // (U+200B..U+200F, U+2060..U+2064), the Arabic letter mark
-        // (U+061C), soft hyphen (U+00AD), and the byte-order mark
-        // (U+FEFF). A value carrying e.g. U+202E (RIGHT-TO-LEFT OVERRIDE)
-        // visually reverses everything rendered after it, so what a
-        // reviewer reads on an agent-facing surface would not match what
-        // was actually written. No crate dependency is added for this —
-        // the ranges below are the specific code points this codebase's
-        // untrusted sources are known to carry unvalidated.
-        _ if is_bidi_control(ch)
-            || matches!(
-                ch,
-                '\u{00AD}'
-                    | '\u{061C}'
-                    | '\u{200B}'..='\u{200F}'
-                    | '\u{2060}'..='\u{2064}'
-                    | '\u{FEFF}'
-            ) =>
-        {
-            ' '
-        }
+        // Unicode category Cf (format characters) is neither control nor whitespace. It
+        // includes the bidi override/embedding controls (U+202E reverses everything rendered
+        // after it), zero-width and joining marks, and the tag characters, so what a reviewer
+        // reads on an agent-facing surface could differ from what was written.
+        _ if is_format(ch) => ' ',
         _ => ch,
     }
 }
@@ -341,6 +324,13 @@ mod tests {
         assert_eq!(flatten_char('`'), '`');
         assert_eq!(neutralize('`'), BACKTICK_SUBSTITUTE);
         assert_eq!(flatten_char('x'), 'x');
+    }
+
+    #[test]
+    fn flatten_char_spaces_tag_characters_and_deprecated_format_characters() {
+        for ch in ['\u{E0041}', '\u{E007F}', '\u{206A}', '\u{206F}'] {
+            assert_eq!(flatten_char(ch), ' ', "{ch:?}");
+        }
     }
 
     #[test]

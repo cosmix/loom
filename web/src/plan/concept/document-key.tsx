@@ -181,11 +181,14 @@ function sourceNoun(chips: readonly KeyChip[]): string {
   return chips.length === 1 ? noun : `${chips.length} ${noun}s`;
 }
 
-/** The key's one-line lede: what the documents below are to this page. */
+/**
+ * The key's one-line lede. An overview summarizes the key's documents; any other page summarizes
+ * its own document, so there the key is only the colour legend of the feature.
+ */
 export function keyLede(page: ConceptPage): string {
   const chips = page.key_chips;
-  const relation = isOverviewKey(page.key) ? "this overview summarizes" : "this summary draws on";
-  return `${chips.length === 1 ? "Source" : "Sources"}: the ${sourceNoun(chips)} ${relation}`;
+  if (!isOverviewKey(page.key)) return `Key: the ${sourceNoun(chips)} of this feature`;
+  return `${chips.length === 1 ? "Source" : "Sources"}: the ${sourceNoun(chips)} this overview summarizes`;
 }
 
 /** Whether any sentence on the page carries a mark, so the mark legend has something to explain. */

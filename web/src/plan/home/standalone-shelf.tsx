@@ -22,7 +22,7 @@ function MoveRows({ onMove, reason }: { onMove: (path: string) => void; reason: 
   const moves = useAtomValue(movesAtom);
   if (moves.length === 0) return null;
   return (
-    <ul className="plan-list shelf__moves">
+    <ul className="plan-list">
       {moves.map((offer) => {
         const path = offer.target;
         if (path === null) return null;
@@ -131,6 +131,17 @@ function ShelfSummary({ count, reason }: { count: number; reason: string | null 
   );
 }
 
+/** The explanation an empty shelf opens with, unless misplaced documents already fill it. */
+function ShelfEmpty() {
+  const moves = useAtomValue(movesAtom);
+  if (moves.length > 0) return null;
+  return (
+    <p className="plan-empty shelf__empty">
+      Bugfixes and small changes that need no product spec live here.
+    </p>
+  );
+}
+
 /**
  * Collapsed by default; an empty shelf opens so its explanation shows. `defaultOpen` lets a host
  * (the help scene) show the table without a click.
@@ -138,7 +149,6 @@ function ShelfSummary({ count, reason }: { count: number; reason: string | null 
 export function StandaloneShelf({ defaultOpen = false }: { defaultOpen?: boolean }) {
   const headingId = useId();
   const { plans, selected, toggle, select, clear } = useSelection();
-  const moves = useAtomValue(movesAtom);
   const canAuthor = useAtomValue(canAuthorAtom);
   const blockReason = useAtomValue(authorBlockReasonAtom);
   const [moving, setMoving] = useState<string[] | null>(null);
@@ -153,11 +163,7 @@ export function StandaloneShelf({ defaultOpen = false }: { defaultOpen?: boolean
       <MoveRows reason={reason} onMove={(path) => setMoving([path])} />
       <details className="shelf__details" open={defaultOpen || plans.length === 0}>
         <ShelfSummary count={plans.length} reason={reason} />
-        {plans.length === 0 && moves.length === 0 && (
-          <p className="plan-empty shelf__empty">
-            Bugfixes and small changes that need no product spec live here.
-          </p>
-        )}
+        {plans.length === 0 && <ShelfEmpty />}
         {plans.length > 0 && (
           <StandaloneTable
             plans={plans}

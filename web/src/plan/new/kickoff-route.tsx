@@ -44,6 +44,8 @@ export function KickoffRoute() {
     store.set(kickoffSessionAtom, null);
     if (requested !== tab) void navigate(kickoffHref(tab), { replace: true });
   }, [tab, session, requested, store, navigate]);
+  // Leaving /new before the session arrived must not leave the start to redirect a later visit.
+  useEffect(() => () => void store.set(kickoffSessionAtom, null), [store]);
   if (requested === null) return <EmptyKickoff small={location.state?.small === true} />;
   if (!active) return <DraftView id={requested} />;
   return (

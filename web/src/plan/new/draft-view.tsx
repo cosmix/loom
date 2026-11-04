@@ -11,8 +11,9 @@ import { continueKickoff, discardKickoff, setAsideKickoff } from "@/plan/chat/co
 import { sessionAtom } from "@/plan/chat/model";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { draftTitle, kickoffHref, waitForKickoffSession } from "@/plan/new/kickoff-state";
-import { presence, ShapeList, ShapeRow } from "@/plan/new/taking-shape";
-import { authorBlockReasonAtom, canAuthorAtom } from "@/plan/state/atoms";
+import { KIND_UNDECIDED, KIND_WORD } from "@/plan/new/kickoff-head";
+import { DecisionsRow, ProblemRow, QuestionsRow } from "@/plan/new/taking-shape";
+import { authorBlockReasonAtom, canAuthorAtom, kickoffDraftsAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { LoadState } from "@/plan/ui/load-state";
 
@@ -73,7 +74,7 @@ export function OpenDraftNotice({ draft }: { draft: KickoffDraftView }) {
   return (
     <div className="kickoff-open">
       <p className="kickoff-open__text">
-        <Untrusted text={draft.name ?? "Untitled"} /> is still open
+        <Untrusted text={draftTitle(draft)} /> is still open
       </p>
       <div className="kickoff-open__actions">
         <Link to={kickoffHref(draft.session)} data-look="secondary" className="plan-button">
@@ -93,7 +94,18 @@ export function OpenDraftNotice({ draft }: { draft: KickoffDraftView }) {
 }
 
 function useDraftDetail(id: string): Load {
+  // The list says when the server stopped running this kickoff; the detail fetched while it ran
+  // still reads live, so the change is the cue to fetch again.
+  const live = useAtomValue(kickoffDraftsAtom).find((entry) => entry.session === id)?.live;
   const [loaded, setLoaded] = useState<{ id: string; state: Load } | null>(null);
+  // Only turning not running refetches. Continuing a draft deletes it (live becomes undefined); a
+  // fetch then would 404 under the actions that are waiting for the new session.
+  const [stops, setStops] = useState(0);
+  const before = useRef(live);
+  useEffect(() => {
+    if (before.current !== false && live === false) setStops((count) => count + 1);
+    before.current = live;
+  }, [live]);
   useEffect(() => {
     let active = true;
     void getKickoffDraft(id).then((result) => {
@@ -108,7 +120,7 @@ function useDraftDetail(id: string): Load {
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, stops]);
   return loaded?.id === id ? loaded.state : { status: "loading" };
 }
 
@@ -183,24 +195,11 @@ function DraftMessages({ messages }: { messages: string[] }) {
 
 function DraftShape({ detail }: { detail: KickoffDraftDetail }) {
   const { draft, shape } = detail;
-  const problem = shape?.problem || draft.problem;
   return (
     <div className="kickoff-shape kickoff-draft__shape font-sans">
-      <ShapeRow title="Problem" {...presence(Boolean(problem))}>
-        <p className="whitespace-pre-wrap">
-          {problem ? (
-            <Untrusted text={problem} />
-          ) : (
-            <span className="kickoff-muted">Not stated yet</span>
-          )}
-        </p>
-      </ShapeRow>
-      <ShapeRow title="Settled decisions" {...presence((shape?.decisions.length ?? 0) > 0)}>
-        <ShapeList items={shape?.decisions ?? []} empty="Nothing settled yet" />
-      </ShapeRow>
-      <ShapeRow title="Open questions" {...presence((shape?.questions.length ?? 0) === 0)}>
-        <ShapeList items={shape?.questions ?? []} empty="No open questions" />
-      </ShapeRow>
+      <ProblemRow problem={shape?.problem || draft.problem} />
+      <DecisionsRow decisions={shape?.decisions ?? []} />
+      <QuestionsRow questions={shape?.questions ?? []} />
     </div>
   );
 }
@@ -212,12 +211,7 @@ function DraftShape({ detail }: { detail: KickoffDraftDetail }) {
 function DraftBody({ detail }: { detail: KickoffDraftDetail }) {
   const headingId = useId();
   const { draft } = detail;
-  const kind =
-    draft.size === null
-      ? "Kind not decided"
-      : draft.size === "plan"
-        ? "Standalone plan"
-        : "Feature";
+  const kind = draft.size === null ? KIND_UNDECIDED : KIND_WORD[draft.size];
   return (
     <div className="kickoff-page kickoff-draft" data-state="draft">
       <section aria-labelledby={headingId} className="kickoff-main">
