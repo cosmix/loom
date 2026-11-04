@@ -50,10 +50,71 @@ pub struct KickoffView {
     pub target: Option<String>,
 }
 
+/// One unfinished kickoff as the server lists it. `name` is the user's rename, else the name the
+/// agent proposed; `live` is true only while that session is the running chat.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KickoffDraftView {
+    pub session: String,
+    pub name: Option<String>,
+    pub size: Option<KickoffSize>,
+    pub problem: Option<String>,
+    pub started_at: String,
+    pub updated_at: String,
+    pub live: bool,
+}
+
+/// The body of `GET /api/kickoffs`, newest `updated_at` first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KickoffDraftList {
+    pub drafts: Vec<KickoffDraftView>,
+}
+
+/// The body of `GET /api/kickoffs/<session>`: the entry, the agent's last shape (its name
+/// already replaced by a rename) and the texts the user typed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KickoffDraftDetail {
+    pub draft: KickoffDraftView,
+    pub shape: Option<KickoffShape>,
+    pub messages: Vec<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn draft_detail_round_trips_with_null_optionals() {
+        let detail = KickoffDraftDetail {
+            draft: KickoffDraftView {
+                session: "11111111-1111-4111-8111-111111111111".into(),
+                name: None,
+                size: None,
+                problem: None,
+                started_at: "2026-11-04T10:47:11Z".into(),
+                updated_at: "2026-11-04T10:50:00Z".into(),
+                live: true,
+            },
+            shape: None,
+            messages: vec!["first".into()],
+        };
+        let expected = json!({
+            "draft": {"session": "11111111-1111-4111-8111-111111111111", "name": null,
+                "size": null, "problem": null, "started_at": "2026-11-04T10:47:11Z",
+                "updated_at": "2026-11-04T10:50:00Z", "live": true},
+            "shape": null,
+            "messages": ["first"]
+        });
+
+        assert_eq!(serde_json::to_value(&detail).unwrap(), expected);
+        assert_eq!(
+            serde_json::from_value::<KickoffDraftDetail>(expected).unwrap(),
+            detail
+        );
+    }
 
     #[test]
     fn shape_round_trips_every_field() {

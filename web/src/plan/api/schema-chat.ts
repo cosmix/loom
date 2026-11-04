@@ -273,6 +273,10 @@ export const chatCommandSchema = z.discriminatedUnion("command", [
     size: kickoffSizeSchema,
     name: z.string(),
   }),
+  z.strictObject({ command: z.literal("rename_kickoff"), ...clientId, name: z.string() }),
+  z.strictObject({ command: z.literal("set_aside_kickoff"), ...clientId, session: z.string() }),
+  z.strictObject({ command: z.literal("continue_kickoff"), ...clientId, session: z.string() }),
+  z.strictObject({ command: z.literal("discard_kickoff"), ...clientId, session: z.string() }),
   z.strictObject({ command: z.literal("withdraw"), ...clientId, queue_id: z.string() }),
   z.strictObject({
     command: z.literal("permission"),

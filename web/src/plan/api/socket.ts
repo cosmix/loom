@@ -11,6 +11,7 @@ import {
   connectionEpochAtom,
   draftTeamAtom,
   kickoffAtom,
+  kickoffDraftsAtom,
   presenceAtom,
   projectAtom,
   serverInfoAtom,
@@ -162,6 +163,9 @@ class PlanSocketConnection {
         this.store.set(kickoffAtom, kickoff);
         break;
       }
+      case "kickoff_drafts":
+        this.store.set(kickoffDraftsAtom, message.drafts);
+        break;
       case "draft_team": {
         const { type: _type, ...draftTeam } = message;
         this.store.set(draftTeamAtom, draftTeam);

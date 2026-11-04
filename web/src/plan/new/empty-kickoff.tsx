@@ -7,8 +7,10 @@ import { sessionAtom } from "@/plan/chat/model";
 import { noPanelRefusal, startError } from "@/plan/chat/offer-flow";
 import { isActiveSession } from "@/plan/chat/session-home";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { kickoffSessionAtom } from "@/plan/new/kickoff-state";
-import { authorBlockReasonAtom, canAuthorAtom } from "@/plan/state/atoms";
+import { OpenDraftNotice } from "@/plan/new/draft-view";
+import { KindControl } from "@/plan/new/kind-control";
+import { kickoffSessionAtom, waitForKickoffSession } from "@/plan/new/kickoff-state";
+import { authorBlockReasonAtom, canAuthorAtom, kickoffDraftsAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { LoomDoodle } from "@/plan/ui/doodle";
 import type { Store } from "@/state/store";
@@ -39,41 +41,6 @@ const STARTERS = [
     Icon: FolderInput,
   },
 ];
-
-function waitForKickoffSession(
-  store: Store,
-  previousId: string | null,
-  signal: AbortSignal,
-  onTimeout: () => void,
-) {
-  return new Promise<void>((resolve) => {
-    const cleanups: Array<() => void> = [];
-    let finished = false;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      cleanups.splice(0).forEach((stop) => stop());
-      resolve();
-    };
-    const check = () => {
-      if (signal.aborted) return finish();
-      const session = store.get(sessionAtom);
-      // An ended session may remain in the snapshot until its replacement arrives.
-      if (session !== null && session.id !== previousId) {
-        store.set(kickoffSessionAtom, session.id);
-        finish();
-      }
-    };
-    cleanups.push(store.sub(sessionAtom, check));
-    // A slow snapshot can still arrive after the UI offers a retry.
-    const timeout = setTimeout(onTimeout, 5000);
-    cleanups.push(() => clearTimeout(timeout));
-    const abort = () => finish();
-    signal.addEventListener("abort", abort, { once: true });
-    cleanups.push(() => signal.removeEventListener("abort", abort));
-    check();
-  });
-}
 
 async function beginKickoff(
   store: Store,
@@ -152,7 +119,7 @@ function useKickoffDraft(initialSmall: boolean) {
     composer.current?.focus();
   };
   const remove = (id: string) => setDocuments((previous) => previous.filter((d) => d.id !== id));
-  return { small, text, setText, documents, composer, choose, attach, remove };
+  return { small, setSmall, text, setText, documents, composer, choose, attach, remove };
 }
 
 function KickoffComposer({
@@ -274,11 +241,26 @@ function KickoffCard({
   );
 }
 
+function KickoffTitle() {
+  return (
+    <header className="kickoff-title">
+      <p className="plan-eyebrow">New work</p>
+      <h1 className="plan-page-title">What do you want to build?</h1>
+      <p className="kickoff-lead">
+        Describe it the way you would to a colleague: the problem, who has it, what you have in
+        mind. Loom asks questions, pushes back, and suggests a name and the sections a spec needs.
+      </p>
+    </header>
+  );
+}
+
 export function EmptyKickoff({ small = false }: { small?: boolean }) {
   const draft = useKickoffDraft(small);
   const { start, pending, error } = useKickoffStart();
   const canAuthor = useAtomValue(canAuthorAtom);
   const blockReason = useAtomValue(authorBlockReasonAtom);
+  // The form is always empty; a kickoff still running is offered above it, never reopened here.
+  const open = useAtomValue(kickoffDraftsAtom).find((draft) => draft.live);
   const disabled = !canAuthor || pending;
   const reason = !canAuthor
     ? (blockReason ?? "Authoring is unavailable")
@@ -290,28 +272,32 @@ export function EmptyKickoff({ small = false }: { small?: boolean }) {
   const submit = () => {
     void start(draft.small, draft.text, draft.documents);
   };
+  // The same page grid as the live conversation (kickoff-route.tsx): the head sits where the
+  // conversation's head will, and the doodle holds the column Taking shape takes over.
   return (
-    <section className="kickoff-empty" aria-label="Start something new">
-      <LoomDoodle className="text-muted-foreground" />
-      <h1 className="plan-page-title">What do you want to build?</h1>
-      <p className="kickoff-lead">
-        Describe it the way you would to a colleague: the problem, who has it, what you have in
-        mind. Loom asks questions, pushes back, and suggests a name and the sections a spec needs.
-      </p>
-      <KickoffCard
-        draft={draft}
-        disabled={disabled}
-        reason={reason}
-        error={error}
-        submit={submit}
-      />
-      {error && (
-        <p role="status">
-          <Untrusted text={error} />
-        </p>
-      )}
-      <KickoffStarters draft={draft} disabled={disabled} />
-      <p className="plan-fine kickoff-note">Nothing is written until you say so.</p>
-    </section>
+    <div className="kickoff-page" data-state="empty">
+      <section className="kickoff-main kickoff-empty" aria-label="Start something new">
+        <KickoffTitle />
+        {open && <OpenDraftNotice draft={open} />}
+        <KindControl small={draft.small} onChange={draft.setSmall} disabled={disabled} />
+        <KickoffCard
+          draft={draft}
+          disabled={disabled}
+          reason={reason}
+          error={error}
+          submit={submit}
+        />
+        {error && (
+          <p role="status" className="kickoff-error">
+            <Untrusted text={error} />
+          </p>
+        )}
+        <KickoffStarters draft={draft} disabled={disabled} />
+        <p className="plan-fine kickoff-note">Nothing is written until you say so.</p>
+      </section>
+      <div className="kickoff-side kickoff-side--art">
+        <LoomDoodle className="text-muted-foreground" />
+      </div>
+    </div>
   );
 }

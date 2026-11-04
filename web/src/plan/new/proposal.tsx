@@ -1,12 +1,12 @@
 import { atom, useAtomValue, useStore } from "jotai";
 import { Check, ListPlus, Pencil, Sparkles, Wrench } from "lucide-react";
-import { Fragment, useEffect, useId, useRef, useState } from "react";
+import { Fragment, useState } from "react";
 
 import type { KickoffShape, KickoffSize } from "@/plan/api/schema-kickoff";
-import { sendChatCommand, sendMessage } from "@/plan/chat/commands";
+import { renameKickoff, sendChatCommand, sendMessage } from "@/plan/chat/commands";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { plural } from "@/plan/ui/plural";
-import { FEATURE_NAME_HINT, isFeatureName } from "@/plan/new/feature-name";
+import { RenameForm } from "@/plan/new/rename-field";
 import { authorBlockReasonAtom, canAuthorAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 
@@ -15,18 +15,6 @@ import "./proposal.css";
 type ProposedTarget = { size: KickoffSize; name: string };
 type ProposalContentProps = ProposedTarget & { sections: string[] };
 type ProposalActions = ReturnType<typeof useProposalActions>;
-type RenameFormProps = {
-  name: string;
-  reason: string | null;
-  onConfirm: (name: string) => void;
-  onCancel: () => void;
-};
-type RenameFieldProps = {
-  value: string;
-  onChange: (value: string) => void;
-  disabled: boolean;
-  valid: boolean;
-};
 
 /**
  * Whether a proposal command waits for its answer. It belongs to the store, not to the hook: the
@@ -66,6 +54,13 @@ export function useProposalActions() {
     status,
     confirm: (size: KickoffSize, name: string) => {
       void run(() => sendChatCommand(store, { command: "confirm_kickoff", size, name }));
+    },
+    /** Renames the work in the running kickoff (`rename_kickoff`); refused once it is confirmed. */
+    rename: (name: string, onDone?: () => void) => {
+      void run(async () => {
+        await renameKickoff(store, name);
+        onDone?.();
+      });
     },
     message: (text: string) => {
       void run(() => sendMessage(store, text));
@@ -113,6 +108,8 @@ function ProposalContent({ size, name, sections }: ProposalContentProps) {
       {renaming ? (
         <RenameForm
           key={`${size}:${name}`}
+          className="kickoff-proposal__form"
+          actionsClass="kickoff-proposal__actions"
           name={name}
           reason={actions.reason}
           onConfirm={(value) => actions.confirm(size, value)}
@@ -198,64 +195,5 @@ function ProposalAlternatives({ size, actions }: { size: KickoffSize; actions: P
         {feature ? "Make standalone" : "Make a feature"}
       </DisabledReason>
     </div>
-  );
-}
-
-function RenameForm({ name, reason, onConfirm, onCancel }: RenameFormProps) {
-  const [value, setValue] = useState(name);
-  const valid = isFeatureName(value);
-  const confirm = () => {
-    if (reason === null && valid) onConfirm(value);
-  };
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        confirm();
-      }}
-      className="kickoff-proposal__form"
-    >
-      <RenameField value={value} onChange={setValue} disabled={reason !== null} valid={valid} />
-      <div className="kickoff-proposal__actions">
-        <DisabledReason reason={reason ?? (valid ? null : "Choose a valid name")} onClick={confirm}>
-          Confirm
-        </DisabledReason>
-        <DisabledReason reason={reason} onClick={onCancel}>
-          Cancel
-        </DisabledReason>
-      </div>
-    </form>
-  );
-}
-
-function RenameField({ value, onChange, disabled, valid }: RenameFieldProps) {
-  const hintId = useId();
-  const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-  return (
-    <>
-      <label className="flex flex-col gap-1">
-        Name
-        <input
-          ref={inputRef}
-          type="text"
-          autoCapitalize="none"
-          spellCheck={false}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          disabled={disabled}
-          aria-invalid={!valid || undefined}
-          aria-describedby={valid ? undefined : hintId}
-          className="min-w-0 rounded-md border border-input bg-background px-3 py-2 font-mono text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
-      </label>
-      {!valid && (
-        <p id={hintId} role="alert" className="text-destructive">
-          {FEATURE_NAME_HINT}
-        </p>
-      )}
-    </>
   );
 }

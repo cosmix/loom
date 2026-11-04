@@ -143,6 +143,36 @@ it.each([
   expect(view(pathname)).toEqual(NO_DOCUMENT);
 });
 
+it("a feature's source page is the same file document as its /files address", () => {
+  const source = "/f/demo/source/product/demo/section_01.md";
+  expect(view(source)).toEqual({
+    kind: "file",
+    path: "doc/product/demo/section_01.md",
+    name: "section_01.md",
+  });
+  expect(view(source)).toEqual(view("/files/product/demo/section_01.md"));
+  expect(view("/f/demo/source/plans/demo/index.md").path).toBe("doc/plans/demo/index.md");
+  expect(view("/f/atlas/source/product/atlas/note%20one.md")).toEqual({
+    kind: "file",
+    path: "doc/product/atlas/note one.md",
+    name: "note one.md",
+  });
+});
+
+it.each([
+  "/f/demo/source",
+  "/f/demo/source/",
+  "/f/demo/source/product/demo/..%2Fother/x.md",
+  "/f/demo/source/product/demo/a%5Cb.md",
+  "/f/demo/source/product/demo/../x.md",
+  "/f/demo/source/x",
+  "/f/demo/source/product/other/section_01.md",
+  "/f/demo/source/plans/PLAN-solo.md",
+  "/f/demo/source/%E0%A4%A",
+])("the source page %j is not a document", (pathname) => {
+  expect(view(pathname)).toEqual(NO_DOCUMENT);
+});
+
 it("a file address never leaves doc/", () => {
   for (const pathname of ["/files/doc/product/x.md", "/files/product/x.md", "/files/x.md"]) {
     expect(view(pathname).path).toMatch(/^doc\/[^.]/);

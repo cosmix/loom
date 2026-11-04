@@ -1,20 +1,26 @@
 //! Chat wiring of the planning server: installs the bridge, dispatches browser chat commands and publishes chat frames.
 
 mod dispatch;
+mod draft_cmd;
+mod drafts;
 pub mod guidance;
 mod kickoff;
 mod kickoff_cmd;
 pub mod lease;
 pub mod pins;
 mod publish;
+mod release;
 mod team;
 
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_dispatch;
+#[cfg(test)]
+mod tests_drafts;
 
 pub use dispatch::dispatch;
+pub use drafts::routes;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -51,11 +57,13 @@ struct ChatState {
     /// The last browser seen holding authoring: the hub addresses the holder by browser.
     holder: Mutex<Option<BrowserId>>,
     /// Held by a start from its take of authoring to its give-back, so another start's take,
-    /// reserve and listing check cannot fall in between (dispatch's `give_back`).
+    /// reserve and listing check cannot fall in between (`release::give_back`).
     starting: Mutex<()>,
     kickoff: Mutex<kickoff::KickoffTracker>,
     kickoff_scopes: Mutex<HashMap<String, bool>>,
     team: Mutex<Option<DraftTeamView>>,
+    /// Held across every read-modify-write of a draft file (`drafts`).
+    drafts: Mutex<()>,
 }
 
 impl ChatState {
@@ -120,6 +128,7 @@ pub(crate) fn install_with(
     let slot = Arc::new(GuidanceSlot::new(Arc::new(ChecklistGuidance)));
     let leases = Arc::new(AuthoringLeases::default());
     let state = Arc::new(ChatState::default());
+    drafts::sweep(ctx);
     let mut config = bridge_config(ctx, &slot);
     config_overrides(&mut config);
     let runtime = config.runtime.clone();
@@ -200,6 +209,7 @@ fn open_snapshots(ctx: &Arc<PlanContext>, bridge: &Arc<Bridge>, state: &Arc<Chat
         snapshot.session = snapshot.session.map(|view| with_holder(&ctx, view));
         let mut messages = vec![PlanMessage::Chat(Box::new(ChatFrame::Snapshot(snapshot)))];
         messages.extend(team::snapshots(&state));
+        messages.push(drafts::snapshot(&ctx, &state));
         messages
     }));
 }
@@ -264,12 +274,13 @@ fn follow_sessions(
             }
             BridgeEvent::Ended { id, kind, outcome } => {
                 team::clear(&state, id);
+                draft_cmd::ended(&ctx, &state, id);
                 let (name, socket) = describe(&bridge, &runtime, id, kind);
                 lifecycle::line(&ended_line(id, kind, &name, &socket, outcome));
                 let starter = state.take_starter(id);
                 // Only the starter's hold ends with its chat, and never under a lease (px-state-R02).
                 if let Some(starter) = starter.filter(|_| *kind == SessionKind::Authoring) {
-                    dispatch::release_ended(&ctx, &state, &bridge, &leases, starter);
+                    release::release_ended(&ctx, &state, &bridge, &leases, starter);
                 }
             }
             _ => {}

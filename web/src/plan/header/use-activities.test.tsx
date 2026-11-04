@@ -3,10 +3,13 @@ import { Provider } from "jotai/react";
 import { createStore } from "jotai/vanilla";
 import { afterEach, expect, it } from "vitest";
 
+import draftsFixture from "@/plan/api/fixtures/kickoff-drafts.json";
 import panelFixture from "@/plan/api/fixtures/summary-panel.json";
 import type { SessionView } from "@/plan/api/schema-chat";
 import type { PressureRunView, PressureStepView } from "@/plan/api/schema-pressure";
+import { kickoffDraftViewSchema } from "@/plan/api/schema-kickoff";
 import { summaryPanelSchema } from "@/plan/api/schema-summaries";
+import { kickoffDraftsAtom } from "@/plan/state/atoms";
 import { snapshotAtom } from "@/plan/chat/model";
 import { pressureRunAtom } from "@/plan/chat/pressure/use-pressure";
 import { runStripAtom } from "@/plan/run/use-run";
@@ -201,7 +204,6 @@ it("returns no activities for empty state and no most urgent activity", () => {
 
 it.each([
   ["starting", "starting"],
-  ["idle", "waiting"],
   ["ending", "drafting"],
   ["permission", "permission"],
 ] as const)("derives %s sessions from existing state", (state, kind) => {
@@ -242,12 +244,8 @@ it.each(["working", "ended", "failed"] as const)(
 
 it("does not show automatic pressure sessions as waiting or drafting", () => {
   for (const state of ["idle", "ending"] as const) {
-    expect(
-      deriveActivities({
-        ...empty,
-        session: { ...session(state), kind: "pressure" },
-      }),
-    ).toEqual([]);
+    const pressure = { ...session(state), kind: "pressure" };
+    expect(deriveActivities({ ...empty, session: pressure })).toEqual([]);
   }
 });
 
@@ -369,8 +367,15 @@ it("reads existing atoms from a Jotai store and reacts when operations end", () 
   });
   store.set(pressureRunAtom, pressure([codexStep(1, startedMs)]));
   store.set(snapshotAtom, { session: session("idle"), turns: [], queue: [], previous: null });
+  const draft = { ...draftsFixture.drafts[0], session: "chat-1" };
+  store.set(kickoffDraftsAtom, [kickoffDraftViewSchema.parse(draft)]);
   const { result } = renderHook(useActivities, {
     wrapper: ({ children }) => <Provider store={store}>{children}</Provider>,
+  });
+  // The waiting row takes its draft's name and stands for that kickoff.
+  expect(result.current[0]).toMatchObject({
+    title: "microvm-test-env",
+    session: { kickoff: true },
   });
   expect(result.current.map((item) => item.kind)).toEqual([
     "waiting",

@@ -1,0 +1,140 @@
+/*
+ * The two segmented choices of the kickoff: the kind of work on the empty form (kind-control.tsx)
+ * and the size row in Taking shape (shape-size.tsx). Both are one hairline track around their
+ * segments, the chosen one filled in --muted and set in --foreground at 600, so the choice shows at
+ * rest in every theme (ui/DESIGN.md, Surfaces).
+ */
+
+/* ---- Kind of work: two radios, each with a one-line description ---------------------------- */
+
+[data-loom-plan] .kickoff-kind {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+[data-loom-plan] .kickoff-kind:disabled {
+  opacity: 0.5;
+}
+
+/* Floated, the legend is an ordinary grid item, so it takes a row of its own above the track. */
+[data-loom-plan] .kickoff-kind__legend {
+  float: left;
+  grid-column: 1 / -1;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+}
+
+[data-loom-plan] .kickoff-kind__choice {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--corner-control) 0 0 var(--corner-control);
+  color: var(--muted-foreground);
+  transition: background-color 120ms;
+}
+
+[data-loom-plan] .kickoff-kind__choice + .kickoff-kind__choice {
+  border-inline-start: 0;
+  border-radius: 0 var(--corner-control) var(--corner-control) 0;
+}
+
+[data-loom-plan] .kickoff-kind:not(:disabled) .kickoff-kind__choice:hover {
+  background: var(--muted);
+}
+
+[data-loom-plan] .kickoff-kind__choice:has(> input:checked) {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+/* The radio stays in the accessibility tree and takes the keys; its segment draws its state. */
+[data-loom-plan] .kickoff-kind__choice > input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+[data-loom-plan] .kickoff-kind__choice:has(> input:focus-visible) {
+  z-index: 1;
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+[data-loom-plan] .kickoff-kind__label {
+  font-size: var(--type-body);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+[data-loom-plan] .kickoff-kind__choice:has(> input:checked) .kickoff-kind__label {
+  font-weight: 600;
+}
+
+/* The label's hit area covers the whole segment, description included. */
+[data-loom-plan] .kickoff-kind__label::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+[data-loom-plan] .kickoff-kind:disabled .kickoff-kind__label {
+  cursor: default;
+}
+
+[data-loom-plan] .kickoff-kind__hint {
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+/* ---- Size in Taking shape: Feature | Standalone plan --------------------------------------- */
+
+[data-loom-plan] .kickoff-seg {
+  display: inline-flex;
+  justify-self: start;
+  max-width: 100%;
+  border: 1px solid var(--hairline);
+  border-radius: var(--corner-control);
+}
+
+[data-loom-plan] .kickoff-seg__choice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  border-radius: 0;
+}
+
+[data-loom-plan] .kickoff-seg__choice:first-child {
+  border-radius: calc(var(--corner-control) - 1px) 0 0 calc(var(--corner-control) - 1px);
+}
+
+[data-loom-plan] .kickoff-seg__choice:last-child {
+  border-radius: 0 calc(var(--corner-control) - 1px) calc(var(--corner-control) - 1px) 0;
+}
+
+[data-loom-plan] .kickoff-seg__choice[aria-pressed="true"] {
+  background: var(--muted);
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-loom-plan] .kickoff-kind__choice {
+    transition: none;
+  }
+}

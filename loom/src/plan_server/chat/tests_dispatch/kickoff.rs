@@ -27,7 +27,7 @@ pub(super) fn offer(id: &str, feature: Option<&str>) -> ChatCommand {
     }
 }
 
-fn confirm(size: KickoffSize, name: &str) -> ChatCommand {
+pub(super) fn confirm(size: KickoffSize, name: &str) -> ChatCommand {
     ChatCommand::ConfirmKickoff {
         client_id: Some("c1".into()),
         size,
@@ -68,6 +68,20 @@ pub(super) fn shape(f: &Fixture, s: &LaunchSpec, tab: &Tab, problem: &str) -> Va
             .into_iter()
             .rev()
             .find(|frame| frame["type"] == "kickoff" && frame["shape"]["problem"] == problem)
+    })
+}
+
+/// Append an assistant `loom-kickoff` block holding `shape`; the kickoff frame it produces.
+pub(super) fn block(f: &Fixture, s: &LaunchSpec, tab: &Tab, shape: Value) -> Value {
+    let markdown = format!("```loom-kickoff\n{shape}\n```");
+    let content = json!([{"type": "text", "text": markdown}]);
+    let message =
+        json!({"id": "block", "role": "assistant", "content": content, "stop_reason": "end_turn"});
+    append(f, s, json!({"type": "assistant", "message": message}));
+    wait_for("the kickoff frame", || {
+        tab.frames().into_iter().rev().find(|frame| {
+            frame["type"] == "kickoff" && frame["shape"]["problem"] == shape["problem"]
+        })
     })
 }
 

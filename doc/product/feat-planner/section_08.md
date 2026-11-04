@@ -73,6 +73,31 @@ with **Taking shape** in place of the chat dock. The transcript uses the selecte
 Taking shape uses Inter and lists the size, name, problem, settled decisions, open questions and,
 for a feature, proposed sections. On narrow screens the panel follows the transcript.
 
+`/new` always opens the empty form. While a kickoff is open the form also says "<name or
+Untitled> is still open", with Continue and Set it aside. A kickoff persists as a draft under the
+runtime directory (`kickoffs/<session id>.json`): the user's typed texts (at most 40 of 4 KiB),
+the agent's last shape, the start's attachments, the user's rename and the confirmed target. The
+draft is written at start and on every shape change, send, rename and confirmation, and it
+survives the session and a server restart. Home lists drafts under "Unfinished", titled by name,
+else "Untitled · <date>". A draft is live only while its session is the running chat; after a
+restart every draft reads as ended.
+
+- **Rename.** The Name row in Taking shape is editable until the work is confirmed. The user's
+  name wins over the agent's in every later view, and the agent is told the new name in one user
+  message. Before the agent has proposed a shape there is nothing to rename, and once the work is
+  confirmed the name is fixed, because the write grant names it.
+- **Set aside.** Ends the open kickoff and keeps its draft.
+- **Continue.** `/new?session=<id>` opens a draft. A live draft shows its conversation. An ended
+  draft shows its problem, decisions, questions and the user's messages, with "Continue this
+  draft", which starts a new kickoff carrying the effective name, the size, the whole shape and
+  the attachments that still resolve; one that does not is named in the opening as no longer
+  available. The old draft is deleted only after the new session started and its draft is
+  written; a refused or failed start leaves it as it was.
+- **Discard.** Deletes an ended draft; a live one is set aside first.
+- **Landed.** A draft whose confirmed document exists (a plan under any lifecycle prefix, or in
+  `archive/`) is deleted, never listed. Ended drafts untouched for 30 days are removed when the
+  server starts.
+
 ## Message rendering
 
 Each item in section 07's model renders as follows. Type is 14px with a 1.5 line height for

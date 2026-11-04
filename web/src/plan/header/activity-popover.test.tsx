@@ -1,19 +1,24 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { getDefaultStore } from "jotai/vanilla";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import activityCss from "@/plan/header/activity.css?raw";
+import snapshotFixture from "@/plan/api/fixtures/chat-snapshot.json";
 import fixture from "@/plan/api/fixtures/run-strip.json";
+import briefFixture from "@/plan/api/fixtures/session-brief.json";
 import panelFixture from "@/plan/api/fixtures/summary-panel.json";
 import questionFixture from "@/plan/api/fixtures/summary-question.json";
+import { sessionViewSchema } from "@/plan/api/schema-chat";
 import { runStripSchema } from "@/plan/api/schema-run";
 import { summaryPanelSchema } from "@/plan/api/schema-summaries";
+import { snapshotAtom } from "@/plan/chat/model";
 import { runStripAtom } from "@/plan/run/use-run";
 import { panelLoadAtom, useSummaryFeed, type PanelLoad } from "@/plan/summaries/state";
 
 import { ActivityPill } from "./activity";
-import { useActivities, type Activity } from "./use-activities";
+import { deriveActivities, useActivities, type Activity } from "./use-activities";
 
 vi.mock("@/plan/run/dashboard-button", () => ({
   DashboardButton: () => <a href="/dashboard">Open dashboard</a>,
@@ -85,6 +90,7 @@ afterEach(() => {
   cleanup();
   getDefaultStore().set(runStripAtom, null);
   getDefaultStore().set(panelLoadAtom, { status: "loading" });
+  getDefaultStore().set(snapshotAtom, { session: null, turns: [], queue: [], previous: null });
   vi.useRealTimers();
   vi.clearAllMocks();
 });
@@ -205,5 +211,120 @@ describe("elapsed time", () => {
 
     const list = await screen.findByRole("list", { name: "In progress" });
     expect(within(list).getByText(label)).toBeTruthy();
+  });
+});
+
+describe("a waiting session's activity", () => {
+  const chat = sessionViewSchema.parse({
+    ...snapshotFixture.session,
+    id: "chat-1",
+    kind: "authoring",
+    state: "idle",
+    name: "loom plan: kickoff",
+  });
+  const input = {
+    summaryPanel: null,
+    runState: null,
+    runStrip: null,
+    pressureRun: null,
+    session: chat,
+    pendingPermissions: [],
+  };
+
+  it("takes a kickoff's name from its draft and says the state beneath it", () => {
+    const [row] = deriveActivities({ ...input, kickoff: { name: "microvm-test-env" } });
+    expect(row).toMatchObject({
+      title: "microvm-test-env",
+      subject: "Waiting for you",
+      session: { id: "chat-1", kickoff: true, named: true },
+    });
+  });
+
+  it.each([null, { name: null }, { name: "" }])("never shows the tmux name: %j", (kickoff) => {
+    const [row] = deriveActivities({ ...input, kickoff });
+    expect(row).toMatchObject({
+      title: "Waiting for you",
+      subject: null,
+      session: { id: "chat-1", kickoff: kickoff !== null, named: false },
+    });
+    expect(JSON.stringify(row)).not.toContain("loom plan");
+  });
+});
+
+describe("a waiting session's row", () => {
+  const waiting = (kickoff: boolean): Activity[] => [
+    {
+      id: "waiting:chat-1",
+      kind: "waiting",
+      title: kickoff ? "microvm-test-env" : "Write section 2",
+      subject: "Waiting for you",
+      since: NOW,
+      session: { id: "chat-1", kickoff, named: true },
+    },
+  ];
+
+  async function openWaiting(activities: Activity[]): Promise<HTMLElement> {
+    vi.mocked(useActivities).mockReturnValue(activities);
+    render(
+      <MemoryRouter>
+        <ActivityPill compact={false} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^1 in progress:/ }));
+    return screen.findByRole("dialog", { name: "In progress" });
+  }
+
+  it("links a kickoff to its screen, titled by its name", async () => {
+    const dialog = await openWaiting(waiting(true));
+    const link = within(dialog).getByRole("link", { name: /microvm-test-env/ });
+    expect(link.getAttribute("href")).toBe("/new?session=chat-1");
+    expect(within(link).getByText("Waiting for you")).toBeTruthy();
+  });
+
+  it("links another chat to its home screen", async () => {
+    const session = sessionViewSchema.parse({
+      ...snapshotFixture.session,
+      id: "chat-1",
+      feature: "atlas",
+      plan: null,
+    });
+    getDefaultStore().set(snapshotAtom, { session, turns: [], queue: [], previous: null });
+    const dialog = await openWaiting(waiting(false));
+    const link = within(dialog).getByRole("link", { name: /Write section 2/ });
+    expect(link.getAttribute("href")).toBe("/f/atlas");
+  });
+
+  it("takes the session brief's label as the title of a chat nothing else names", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ ...briefFixture, session_id: "chat-1" }))),
+    );
+    const unnamed = {
+      ...waiting(true)[0]!,
+      title: "Waiting for you",
+      subject: null,
+      session: { id: "chat-1", kickoff: true, named: false },
+    };
+    try {
+      const dialog = await openWaiting([unnamed]);
+      const name = new RegExp(briefFixture.label);
+      const link = await within(dialog).findByRole("link", { name });
+      expect(link.getAttribute("href")).toBe("/new?session=chat-1");
+      expect(within(link).getByText("Waiting for you")).toBeTruthy();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("closes the popover when its link is followed", async () => {
+    const dialog = await openWaiting(waiting(true));
+    fireEvent.click(within(dialog).getByRole("link", { name: /microvm-test-env/ }));
+    expect(screen.queryByRole("dialog", { name: "In progress" })).toBeNull();
+  });
+
+  it("is plain text when the chat belongs to no screen", async () => {
+    const dialog = await openWaiting(waiting(false));
+    expect(within(dialog).queryByRole("link")).toBeNull();
+    expect(within(dialog).getByText("Write section 2")).toBeTruthy();
   });
 });
