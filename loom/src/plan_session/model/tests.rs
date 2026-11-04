@@ -22,6 +22,7 @@ fn attachment() -> Attachment {
         quote: "quoted text".into(),
         changed_since_selected: true,
         locked: Some(LockedTag::Running),
+        file: None,
     }
 }
 

@@ -8,7 +8,8 @@ use tempfile::TempDir;
 use super::read_fixture;
 use crate::plan_session::attachments::resolve::resolve;
 use crate::plan_session::attachments::{
-    Attachment, AttachmentError, AttachmentInput, AttachmentKind, LockedTag, MAX_QUOTE_BYTES,
+    Attachment, AttachmentError, AttachmentKind, DocumentAttachmentInput, LockedTag,
+    MAX_QUOTE_BYTES,
 };
 use crate::planning::project::Project;
 use crate::planning::sections::normalized_hash;
@@ -54,8 +55,8 @@ fn project() -> (TempDir, Project) {
     (dir, project)
 }
 
-fn input(kind: AttachmentKind, path: &str, anchor: &str) -> AttachmentInput {
-    AttachmentInput {
+fn input(kind: AttachmentKind, path: &str, anchor: &str) -> DocumentAttachmentInput {
+    DocumentAttachmentInput {
         kind,
         path: path.to_owned(),
         anchor: Some(anchor.to_owned()),
@@ -68,11 +69,11 @@ fn input(kind: AttachmentKind, path: &str, anchor: &str) -> AttachmentInput {
     }
 }
 
-fn source(path: &str) -> AttachmentInput {
+fn source(path: &str) -> DocumentAttachmentInput {
     input(AttachmentKind::Source, path, "goals")
 }
 
-fn summary(path: &str, hash: Option<String>) -> AttachmentInput {
+fn summary(path: &str, hash: Option<String>) -> DocumentAttachmentInput {
     let mut summary = input(AttachmentKind::Summary, path, "s-3fa9c2d1");
     summary.summary_sentence = Some("s-3fa9c2d1".into());
     summary.selected_hash = hash;
@@ -82,7 +83,7 @@ fn summary(path: &str, hash: Option<String>) -> AttachmentInput {
 #[test]
 fn resolve_matches_the_summary_fixture_pair() {
     let (_dir, project) = project();
-    let given: AttachmentInput =
+    let given: DocumentAttachmentInput =
         serde_json::from_str(&read_fixture("resolve-summary.input.json")).unwrap();
     let expected: Attachment =
         serde_json::from_str(&read_fixture("resolve-summary.resolved.json")).unwrap();

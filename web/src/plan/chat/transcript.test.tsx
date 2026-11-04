@@ -34,7 +34,7 @@ it("user item layout and chips", () => {
   expect(text.closest(".chat-user-body")).not.toBeNull();
   expect(text.closest(".chat-user-body")?.firstElementChild?.className).toBe("chat-user-quote");
   expect(log.querySelector(".chat-user")).not.toBeNull();
-  expect(within(log).getByRole("button", { name: /reference-0.md/ })).toBeTruthy();
+  expect(within(log).getByRole("button", { name: /Plan the session bridge/ })).toBeTruthy();
 });
 
 it("thinking markers merge", () => {
@@ -316,6 +316,39 @@ it("ended tools fold while errors remain visible", () => {
   expect(within(log).getByText("File not found")).toBeTruthy();
   fireEvent.click(summary);
   expect(summary.closest("details")?.open).toBe(true);
+});
+
+it("a running turn folds a single tool row into one line that ends with the activity glyph", () => {
+  const { log } = mount([
+    item("tool", { id: "only", name: "Read", summary: "Read notes", status: "pending" }),
+  ]);
+
+  const summary = within(log).getByText("Used 1 tool · edited 0 files").closest("summary")!;
+  expect(summary.closest("details")?.open).toBe(false);
+  expect(summary.querySelector(".chat-tool-fold-busy .activity-glyph")).not.toBeNull();
+  // The row stays in the details, so expanding the line shows it.
+  expect(
+    within(log)
+      .getByRole("button", { name: /Read notes/ })
+      .closest("details"),
+  ).toBe(summary.closest("details"));
+});
+
+it("a finished tool row folds without the glyph, and a Skill row never renders", () => {
+  const { log } = mount([
+    item("tool", {
+      id: "skill",
+      name: "Skill",
+      summary: "Skill loom-plan:kickoff",
+      status: "done",
+    }),
+    item("tool", { id: "bash", name: "Bash", summary: "Run ls", status: "done" }),
+  ]);
+
+  const summary = within(log).getByText("Used 1 tool · edited 0 files").closest("summary")!;
+  expect(summary.querySelector(".chat-tool-fold-busy")).toBeNull();
+  expect(log.textContent).not.toContain("loom-plan:kickoff");
+  expect(within(log).getByText(/Run ls/)).toBeTruthy();
 });
 
 it("subagent rows render once under their Agent", () => {

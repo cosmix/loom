@@ -21,6 +21,7 @@ import {
   unconfirmedSendsAtom,
 } from "./model";
 import { sameMessage } from "./model-identity";
+import { toWire } from "./wire-input-test-kit";
 
 const initial = chatSnapshotSchema.parse(snapshotFixture);
 type UserItem = Extract<Item, { type: "user" }>;
@@ -38,14 +39,7 @@ const attached = (fields: Partial<Attachment> = {}): Attachment => ({
   locked: null,
   ...fields,
 });
-const wire = ({
-  changed_since_selected: _c,
-  locked: _l,
-  ...rest
-}: Attachment): AttachmentInput => ({
-  ...rest,
-  selected_hash: null,
-});
+const wire = (chip: Attachment) => toWire(chip);
 const user = (fields: Partial<UserItem> = {}): UserItem => ({
   type: "user",
   id: "u",

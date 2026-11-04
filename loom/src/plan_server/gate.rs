@@ -167,6 +167,10 @@ fn check_body(head: &RequestHead, spec: &RouteSpec) -> Result<(), Denied> {
         BodyKind::None => (true, 0),
         BodyKind::Json => (is_json(head.content_type.as_deref()), MAX_BODY_BYTES),
         BodyKind::Text { max } => (is_utf8_text(head.content_type.as_deref()), max),
+        BodyKind::Bytes { max, types } => {
+            let media = media_type(head.content_type.as_deref());
+            (types.contains(&media.as_str()), max)
+        }
     };
     if !accepted {
         return Err(denied(
@@ -202,6 +206,13 @@ fn normalized(content_type: Option<&str>) -> String {
         .filter(|c| !c.is_ascii_whitespace())
         .collect::<String>()
         .to_ascii_lowercase()
+}
+
+/// A `Content-Type` without its parameters, lowercased and trimmed: `image/PNG; q=1` is
+/// `image/png`.
+pub(crate) fn media_type(content_type: Option<&str>) -> String {
+    let essence = content_type.unwrap_or("").split(';').next().unwrap_or("");
+    essence.trim().to_ascii_lowercase()
 }
 
 fn is_json(content_type: Option<&str>) -> bool {

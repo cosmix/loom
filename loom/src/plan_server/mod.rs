@@ -36,6 +36,7 @@ pub mod server_info;
 pub mod shutdown;
 pub mod startup;
 pub mod summaries;
+pub mod uploads;
 pub mod watch;
 pub mod wire;
 mod worker_owner;

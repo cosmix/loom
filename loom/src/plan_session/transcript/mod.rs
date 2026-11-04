@@ -7,11 +7,16 @@
 //! applies a Stop.
 
 mod content;
+mod opening;
+#[cfg(test)]
+mod opening_contract_tests;
 #[cfg(test)]
 mod paste_contract_tests;
 mod records;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_opening;
 #[cfg(test)]
 mod tests_server;
 mod tools;
@@ -25,9 +30,8 @@ use chrono::{DateTime, Utc};
 
 use self::records::{cap_chars, item_id, Kind};
 use self::usage::MessageUsage;
-use crate::plan_session::attachments::{parse_unwrapped, unwrap_pasted};
 use crate::plan_session::input::sanitize;
-use crate::plan_session::model::{ChatDelta, Delivery, Item, NoticeKind, Origin, Turn};
+use crate::plan_session::model::{ChatDelta, Item, NoticeKind, Origin, Turn};
 
 /// What one ingested line produced.
 #[derive(Debug, Default)]
@@ -324,68 +328,6 @@ impl Mapper {
         if let Some(at) = at {
             self.last_main = self.last_main.max(Some(at));
             out.marks.push(RecordMark::Main { at });
-        }
-    }
-
-    /// A human prompt: a delivered user item with its attachment chips, replacing the server's
-    /// "sent" item of the same sanitised text.
-    fn human(&mut self, uuid: &str, at: Option<DateTime<Utc>>, delivered: &str, out: &mut Ingest) {
-        let delivered = cap_chars(unwrap_pasted(delivered), records::USER_TEXT_CHARS);
-        let (text, attachments) = parse_unwrapped(&delivered);
-        let clean = sanitize(&text);
-        let origin = self.take_origin(&clean);
-        let server_origin = self.take_server_item(&clean, &mut out.deltas);
-        let turn = self.turn_for(at, &mut out.deltas);
-        let item = Item::User {
-            id: format!("u-{uuid}"),
-            text,
-            attachments,
-            delivery: Delivery::Delivered,
-            origin: origin.or(server_origin.flatten()),
-        };
-        self.push_item(turn, item, &mut out.deltas);
-        if let Some(at) = at {
-            out.marks.push(RecordMark::HumanUser { at, text: clean });
-        }
-    }
-
-    fn take_origin(&mut self, clean: &str) -> Option<Origin> {
-        if self.closing.as_deref() == Some(clean) {
-            self.closing = None;
-            return Some(Origin::Closing);
-        }
-        self.opening.take().flatten()
-    }
-
-    /// Removes the not yet delivered server user item `s-<n>` with this sanitised text, latest
-    /// turn first; returns its origin when one matched.
-    fn take_server_item(
-        &mut self,
-        clean: &str,
-        deltas: &mut Vec<ChatDelta>,
-    ) -> Option<Option<Origin>> {
-        let pending = |item: &Item| {
-            matches!(item, Item::User { id, text, delivery, .. }
-                if id.starts_with("s-")
-                    && *delivery != Delivery::Delivered
-                    && sanitize(text) == clean)
-        };
-        let (turn, at) = self
-            .turns
-            .iter()
-            .enumerate()
-            .rev()
-            .find_map(|(turn, entry)| {
-                let at = entry.items.iter().position(pending)?;
-                Some((turn, at))
-            })?;
-        let removed = self.turns[turn].items.remove(at);
-        let turn_id = self.turns[turn].id.clone();
-        let id = item_id(&removed).to_owned();
-        deltas.push(ChatDelta::ItemRemoved { turn_id, id });
-        match removed {
-            Item::User { origin, .. } => Some(origin),
-            _ => None,
         }
     }
 }

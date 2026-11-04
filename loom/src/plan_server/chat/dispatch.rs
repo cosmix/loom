@@ -16,7 +16,7 @@ use crate::plan_server::ids::{ConnCtx, PublicId};
 use crate::plan_server::wire::chat::{ChatCommand, ChatFrame, CommandResult};
 use crate::plan_server::wire::message::PlanMessage;
 use crate::plan_session::attachments::{
-    format_message, resolve, Attachment, AttachmentInput, MAX_ATTACHMENTS,
+    format_message, resolve_input, without_file_paths, Attachment, AttachmentInput, MAX_ATTACHMENTS,
 };
 use crate::plan_session::bridge::{
     Bridge, BridgeError, EndCause, EndMode, LaunchGuidance, StartRequest,
@@ -373,10 +373,10 @@ pub(super) fn checked(
         return Err(InputRefusal::TooManyAttachments.to_string());
     }
     let resolved: Result<Vec<Attachment>, _> = {
-        let project = ctx.project();
+        let (project, files) = (ctx.project(), &ctx.runtime().attachments);
         inputs
             .into_iter()
-            .map(|input| resolve(&project, input))
+            .map(|input| resolve_input(&project, files, input))
             .collect()
     };
     let attachments = resolved.map_err(|error| error.to_string())?;
@@ -385,6 +385,8 @@ pub(super) fn checked(
     check_send(&text).map_err(|refusal| refusal.to_string())?;
     let formatted = sanitize(&format_message(&text, &attachments));
     check_delivered(&formatted).map_err(|refusal| refusal.to_string())?;
+    // The block names a file's absolute path; the chips browsers get never do.
+    let attachments = without_file_paths(attachments);
     Ok(Message {
         formatted,
         attachments,

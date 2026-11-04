@@ -1,7 +1,13 @@
 import type { PlanMessage } from "@/plan/api/schema";
-import type { ChatCommand, CommandResult, AttachmentInput } from "@/plan/api/schema-chat";
+import type {
+  AnyAttachmentInput,
+  AttachmentInput,
+  ChatCommand,
+  CommandResult,
+  FileAttachmentInput,
+} from "@/plan/api/schema-chat";
 import type { connectPlanSocket } from "@/plan/api/socket";
-import type { AttachmentDraft } from "@/plan/attachments/types";
+import type { AttachmentDraft, ChatAttachment, FileDraft } from "@/plan/attachments/types";
 import { repoRel } from "@/plan/files/address";
 import type { ReviewCommand, SuggestedPassage } from "@/plan/review/api";
 import { connectionAtom, planSocketAtom } from "@/plan/state/atoms";
@@ -30,7 +36,12 @@ type PendingCommands = {
 const commands = new WeakMap<Store, PendingCommands>();
 const NOT_CONNECTED = "Not connected; the message is kept";
 
-export function toAttachmentInput(draft: AttachmentDraft): AttachmentInput {
+export function toAttachmentInput(draft: FileDraft): FileAttachmentInput;
+export function toAttachmentInput(draft: AttachmentDraft): AttachmentInput;
+export function toAttachmentInput(draft: ChatAttachment): AnyAttachmentInput;
+export function toAttachmentInput(draft: ChatAttachment): AnyAttachmentInput {
+  // An upload goes by the id the server issued: no path, no quote.
+  if (draft.kind === "file") return { kind: "file", id: draft.id, name: draft.name };
   if (draft.kind === "source") {
     return {
       kind: "source",
@@ -164,7 +175,7 @@ export function startChat(
   store: Store,
   offer: string | null = null,
   text: string | null = null,
-  attachments: AttachmentInput[] = [],
+  attachments: AnyAttachmentInput[] = [],
   feature?: string,
   plan?: string,
 ): Promise<CommandResult> {
@@ -178,7 +189,7 @@ export function startChat(
   });
 }
 
-export function sendMessage(store: Store, text: string, attachments: AttachmentInput[] = []) {
+export function sendMessage(store: Store, text: string, attachments: AnyAttachmentInput[] = []) {
   return sendChatCommand(store, { command: "send", text, attachments });
 }
 

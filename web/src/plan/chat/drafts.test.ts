@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import helloJson from "@/plan/api/fixtures/hello.json";
 import { planMessageSchema } from "@/plan/api/schema";
-import type { AttachmentDraft } from "@/plan/attachments/types";
+import type { AttachmentDraft, FileDraft } from "@/plan/attachments/types";
 import { serverInfoAtom } from "@/plan/state/atoms";
 import { draftAtom, mergeAttachments } from "./drafts";
 import { storageFullAtom, storageKey } from "./storage";
@@ -179,4 +179,40 @@ it("merging keeps the saved attachments, then only the pending ones not already 
 
   expect(mergeAttachments(attachments, [copy, extra])).toEqual([...attachments, extra]);
   expect(mergeAttachments([], [extra])).toEqual([extra]);
+});
+
+const uploaded: FileDraft = {
+  kind: "file",
+  id: "0123456789abcdef",
+  name: "sketch.png",
+  media_type: "image/png",
+  bytes: 1234,
+};
+
+it("keeps a file chip's metadata across a remount and stores no bytes", () => {
+  const store = mountedStore("draft-file-remount");
+  store.set(draftAtom, { text: "See the sketch", attachments: [uploaded] });
+  subscriptions.pop()?.();
+
+  const remounted = mountedStore("draft-file-remount");
+
+  expect(remounted.get(draftAtom).attachments).toEqual([uploaded]);
+  const saved = localStorage.getItem(storageKey("draft-file-remount", "draft"))!;
+  expect(JSON.parse(saved).attachments).toEqual([uploaded]);
+});
+
+it("drops a stored draft whose file chip has an extra field such as a path", () => {
+  const projectKey = "draft-file-path";
+  localStorage.setItem(
+    storageKey(projectKey, "draft"),
+    JSON.stringify({ text: "Draft", attachments: [{ ...uploaded, path: "/etc/passwd" }] }),
+  );
+
+  const store = mountedStore(projectKey);
+
+  expect(store.get(draftAtom)).toEqual(emptyDraft);
+});
+
+it("merging treats two copies of one file chip as the same by content", () => {
+  expect(mergeAttachments([uploaded], [{ ...uploaded }])).toEqual([uploaded]);
 });

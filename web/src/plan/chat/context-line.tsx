@@ -1,5 +1,5 @@
 import { useAtomValue, useSetAtom } from "jotai";
-import { X } from "lucide-react";
+import { FileText, X } from "lucide-react";
 import type { JSX } from "react";
 
 import { isActiveSession, panelSessionAtom } from "./session-home";
@@ -7,10 +7,11 @@ import { contextDismissedAtom, contextDocumentAtom } from "./viewed-document";
 import { Untrusted, visibleControls } from "./visible-controls";
 
 /**
- * What the chat knows the user is reading: "About section_05", or "Now viewing section_05" while
- * a chat runs, where the next message carries the page. It follows the route, is not a live
- * region (it changes on every navigation), and goes away with its dismiss button until the user
- * moves to another document. Its name is "Viewing <name>", which the visible words do not repeat.
+ * What the chat knows the user is reading, as a quiet chip inside the composer box: "About
+ * section_05", or "Now viewing section_05" while a chat runs, where the next message carries the
+ * page. It follows the route, is not a live region (it changes on every navigation), and goes
+ * away with its dismiss button until the user moves to another document. Its name is
+ * "Viewing <name>", which the visible words do not repeat.
  */
 export function ContextLine(): JSX.Element | null {
   const viewed = useAtomValue(contextDocumentAtom);
@@ -21,8 +22,9 @@ export function ContextLine(): JSX.Element | null {
     <div
       role="group"
       aria-label={`Viewing ${visibleControls(viewed.name)}`}
-      className="chat-context-line"
+      className="chat-context-chip"
     >
+      <FileText size={13} aria-hidden="true" />
       <span>
         {running ? "Now viewing" : "About"}{" "}
         <span className="chat-context-name">

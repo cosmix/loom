@@ -1,7 +1,7 @@
 import { act, fireEvent, screen } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 
-import type { Attachment, AttachmentInput, Item } from "@/plan/api/schema-chat";
+import type { Attachment, Item } from "@/plan/api/schema-chat";
 import { authoringAtom, connectionAtom, serverInfoAtom, stoppingAtom } from "@/plan/state/atoms";
 import { ComposerArea } from "./composer";
 import {
@@ -23,6 +23,7 @@ import {
   unconfirmedSendsAtom,
 } from "./model";
 import { Transcript } from "./transcript";
+import { toWire } from "./wire-input-test-kit";
 
 installComposerLifecycle();
 beforeEach(() => {
@@ -187,14 +188,7 @@ const passage = (path: string): Attachment => ({
   changed_since_selected: false,
   locked: null,
 });
-const wire = ({
-  changed_since_selected: _c,
-  locked: _l,
-  ...rest
-}: Attachment): AttachmentInput => ({
-  ...rest,
-  selected_hash: null,
-});
+const wire = (chip: Attachment) => toWire(chip);
 
 /** The entry for a send of "yes" with `attached` that a dropped connection left unconfirmed. */
 function loseSend(h: Harness, attached: Attachment) {
@@ -229,6 +223,35 @@ it("two undelivered messages with the same text and different attachments resend
   await h.result();
   expect(h.store.get(unconfirmedSendsAtom)).toEqual([]);
   expect(resends()).toHaveLength(0);
+});
+
+const file = { id: "up-1", name: "notes.md", media_type: "text/markdown", bytes: 12 };
+const fileChip = (): Attachment => ({ ...passage(""), kind: "file", quote: "", file });
+
+it("an undelivered message with a file chip resends the file by id", async () => {
+  const h = setup("working");
+  mount(h.store, panel);
+  snapshot(h, [lost({ text: "see file", attachments: [fileChip()] })]);
+  fireEvent.click(resends()[0]);
+  // Exact shape: a spread chip adds path/quote/file, which the server refuses.
+  expect(sends(h)[0]?.attachments).toEqual([{ kind: "file", id: "up-1", name: "notes.md" }]);
+  await h.result();
+});
+
+it("a file send lost to a drop pairs with its undelivered item without crashing", async () => {
+  const h = setup("working");
+  mount(h.store, panel);
+  const input = { kind: "file", id: "up-1", name: "notes.md" } as const;
+  act(() => {
+    registerPending(h.store, "lost-file", { text: "see file", attachments: [input] }).catch(
+      () => {},
+    );
+    rejectAllPending(h.store, CONNECTION_LOST, true);
+  });
+  snapshot(h, [lost({ text: "see file", attachments: [fileChip()] })]);
+  fireEvent.click(resends()[0]);
+  await h.result();
+  expect(h.store.get(unconfirmedSendsAtom)).toEqual([]);
 });
 
 it("a lost entry whose attachments match no undelivered item keeps the composer Resend", async () => {

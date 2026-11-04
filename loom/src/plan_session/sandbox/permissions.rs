@@ -208,6 +208,7 @@ fn runtime_rules(build: &Build<'_>) -> Vec<String> {
         path_rule("Edit", &rt.drafts, "/**"),
         path_rule("Read", &rt.drafts, "/**"),
         path_rule("Read", &rt.claims, "/**"),
+        path_rule("Read", &rt.attachments, "/**"),
     ]
 }
 

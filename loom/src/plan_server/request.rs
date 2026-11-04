@@ -162,6 +162,7 @@ pub(crate) fn reason_phrase(status: u16) -> &'static str {
         422 => "Unprocessable Content",
         429 => "Too Many Requests",
         503 => "Service Unavailable",
+        507 => "Insufficient Storage",
         _ if status >= 500 => "Internal Server Error",
         _ => "Unknown",
     }
@@ -248,7 +249,12 @@ pub(crate) fn read_body(
 
 #[cfg(test)]
 mod tests {
-    use super::QueryParams;
+    use super::{reason_phrase, QueryParams};
+
+    #[test]
+    fn insufficient_storage_has_its_own_reason_phrase() {
+        assert_eq!(reason_phrase(507), "Insufficient Storage");
+    }
 
     #[test]
     fn percent_escape_needs_two_hex_digits_not_a_sign() {

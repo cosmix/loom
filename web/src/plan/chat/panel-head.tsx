@@ -3,7 +3,6 @@ import { MoreHorizontal, PanelRightClose, X } from "lucide-react";
 
 import type { SessionView } from "@/plan/api/schema-chat";
 import { STATE_NAME } from "./chat-state-glyph";
-import { ContextLine } from "./context-line";
 import { EndChatMenuItem, useCanEndChat } from "./end-chat";
 import { panelCollapsedAtom } from "./prefs";
 import { panelSessionAtom } from "./session-home";
@@ -56,9 +55,9 @@ function ChatMenu() {
 }
 
 /**
- * The panel's head: a title row (what this chat is, what it is doing, the window controls) and,
- * under it, the context line (`<ContextLine />`, context-line.tsx: "About section_05"), drawn
- * with or without a session. Both bodies of panel.tsx render this head.
+ * The panel's head: one line holding what this chat is, what it is doing and the window
+ * controls, drawn with or without a session. Both bodies of panel.tsx render this head. What the
+ * user is reading is not here: the composer carries it (`ContextLine`, context-line.tsx).
  */
 export function PanelHead({ sheet }: { sheet: boolean }) {
   const session = useAtomValue(panelSessionAtom);
@@ -68,31 +67,28 @@ export function PanelHead({ sheet }: { sheet: boolean }) {
   const title = headTitle(session, useSessionBrief(session?.id ?? null));
   return (
     <header className="chat-head">
-      <div className="chat-head-row">
-        {/* The focus fallback for dialogs whose opener has left the page (see BriefDialog). */}
-        {/* The title wraps to two lines; `title` keeps the whole text when it is clamped. */}
-        <h2
-          className="chat-head-title"
-          tabIndex={-1}
-          data-chat-heading
-          title={visibleControls(title)}
+      {/* The focus fallback for dialogs whose opener has left the page (see BriefDialog). */}
+      {/* The title keeps one line; `title` holds the whole text when it is cut short. */}
+      <h2
+        className="chat-head-title"
+        tabIndex={-1}
+        data-chat-heading
+        title={visibleControls(title)}
+      >
+        <Untrusted text={title} />
+      </h2>
+      <div className="chat-head-side">
+        {session ? <StateWord state={session.state} /> : <NewChatButton />}
+        <ChatMenu />
+        <button
+          type="button"
+          className="chat-head-button"
+          aria-label={sheet ? "Close chat" : "Collapse chat"}
+          onClick={() => (sheet ? setOpen(false) : setCollapsed(true))}
         >
-          <Untrusted text={title} />
-        </h2>
-        <div className="chat-head-side">
-          {session ? <StateWord state={session.state} /> : <NewChatButton />}
-          <ChatMenu />
-          <button
-            type="button"
-            className="chat-head-button"
-            aria-label={sheet ? "Close chat" : "Collapse chat"}
-            onClick={() => (sheet ? setOpen(false) : setCollapsed(true))}
-          >
-            <Close size={15} aria-hidden="true" />
-          </button>
-        </div>
+          <Close size={15} aria-hidden="true" />
+        </button>
       </div>
-      <ContextLine />
     </header>
   );
 }

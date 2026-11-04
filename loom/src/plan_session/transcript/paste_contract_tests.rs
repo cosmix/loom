@@ -46,6 +46,7 @@ fn wrapped_message_parses_typed_text_and_attachments() {
         quote: "# Loom Plan — Product Vision".into(),
         changed_since_selected: false,
         locked: None,
+        file: None,
     };
     assert_eq!(text, "What are the main decisions here?");
     assert_eq!(attachments, [expected]);

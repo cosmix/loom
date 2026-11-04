@@ -15,6 +15,10 @@ mod loading;
 mod shutdown_pending;
 mod socket;
 pub(crate) mod support;
+#[cfg(test)]
+mod uploads_authoring;
+#[cfg(test)]
+mod uploads_contract;
 mod ws;
 
 #[test]

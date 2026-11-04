@@ -239,5 +239,36 @@
       "feature": null,
       "plan": null
     }
+  },
+  {
+    "op": "item_added",
+    "turn_id": "t1",
+    "item": {
+      "type": "user",
+      "id": "u-00000000-0000-4000-8000-000000000013",
+      "text": "The sketch shows the layout I mean.",
+      "attachments": [
+        {
+          "kind": "file",
+          "path": "",
+          "anchor": null,
+          "lines": null,
+          "stage": null,
+          "summary_sentence": null,
+          "rests_on": [],
+          "quote": "",
+          "changed_since_selected": false,
+          "locked": null,
+          "file": {
+            "id": "0123456789abcdef",
+            "name": "sketch.png",
+            "media_type": "image/png",
+            "bytes": 1234
+          }
+        }
+      ],
+      "delivery": "delivered",
+      "origin": null
+    }
   }
 ]

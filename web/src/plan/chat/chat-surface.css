@@ -25,25 +25,19 @@
   border-block-end: 1px solid var(--hairline);
 }
 
-/* Two rows: the title row, then the context line (About section_05) under it. */
+/* One line: title, state word, menu and the window control share one centre line. */
 .chat-head {
-  display: grid;
-  gap: var(--space-1);
-  box-sizing: border-box;
-  padding: var(--space-3) var(--chat-gutter) var(--space-2);
-}
-
-.chat-head-row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: 28px;
+  box-sizing: border-box;
+  min-height: calc(var(--control-height) + 2 * var(--space-2));
+  padding: var(--space-2) var(--chat-gutter);
 }
 
 .chat-head-title {
   flex: 1 1 auto;
   min-width: 0;
-  display: -webkit-box;
   overflow: hidden;
   margin: 0;
   font-family: var(--font-sans);
@@ -51,9 +45,8 @@
   font-weight: 600;
   line-height: var(--leading-ui);
   letter-spacing: -0.01em;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-head-side {
@@ -63,7 +56,7 @@
   gap: var(--space-1);
 }
 
-/* Quiet icon buttons: the window controls, the menu and the context line's dismiss. */
+/* Quiet icon buttons: the window controls, the menu and the context chip's dismiss. */
 .chat-head-button,
 .chat-context-dismiss {
   display: inline-flex;
@@ -128,8 +121,9 @@
 /* Status in the head: a glyph and a word, no pill. The LED takes the state's tone. */
 .chat-state {
   color: var(--muted-foreground);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .chat-led {
@@ -163,40 +157,62 @@
   }
 }
 
+/* ── Collapsed rail (CollapsedRail in panel.tsx) ──────────────────────────────── */
+
+/* The whole strip is the tab: the glyph, "Chat" set vertically, then the state word. */
+.chat-rail-tab {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4) 0;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background-color 120ms;
+}
+
+.chat-rail-tab:hover {
+  background: var(--muted);
+}
+
+.chat-rail-tab:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.chat-rail-word,
+.chat-rail-state {
+  writing-mode: vertical-rl;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.chat-rail-word {
+  font-size: var(--type-ui);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.chat-rail-state {
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+}
+
 /* Decisions waiting, on the collapsed rail and the sheet button: a count, not a badge. */
 .chat-permission-badge {
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
   font-weight: 600;
   line-height: 1;
   color: var(--foreground);
 }
 
-/* ── Context line and prompts (components in context-line.tsx, context-prompts.tsx) ── */
-
-/* The quiet line under the title: "About section_05" with its dismiss at the end. */
-.chat-context-line {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--control-height-sm);
-  margin: 0;
-  color: var(--muted-foreground);
-  font-size: var(--type-fine);
-  line-height: var(--leading-ui);
-}
-
-.chat-context-line > :first-child {
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-context-name {
-  color: var(--foreground);
-  font-weight: 500;
-}
+/* ── Context prompts (context-prompts.tsx); the context chip is in chat-composer.css ── */
 
 /* Prompts sit on the panel as a list of quiet text buttons; no card, no edge. The list
  * carries the gutter unless a padded block (the composer) already does. */
@@ -252,7 +268,7 @@
 .chat-panel .chat-state-line > [aria-live="off"] {
   padding: 0 var(--chat-gutter) var(--space-2);
   color: var(--muted-foreground);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
   font-weight: 400;
   line-height: var(--leading-ui);
 }
@@ -264,6 +280,15 @@
   .chat-state-line[data-state="working"]
   :is(.chat-state-glyph, .chat-state-words, .chat-state-sep) {
   display: none;
+}
+
+/* The type floor: no chat text under 13px. The shared fine print, a blocked control's reason and
+ * the compact button are 12px elsewhere; here they take the chrome size. A chip's source and a
+ * file's size stay fine print, the one secondary text the chips are given. */
+:is(.chat-panel, .chat-transcript, .chat-composer)
+  .plan-fine:not(.chat-chip-source, .chat-chip-size),
+:is(.chat-panel, .chat-transcript, .chat-composer) .plan-button[data-size="sm"] {
+  font-size: var(--type-ui);
 }
 
 /* A failure notice: a toned glyph, a 600 title, body in --foreground. No box. */
@@ -343,7 +368,8 @@
 
   .chat-head-button,
   .chat-context-dismiss,
-  .chat-context-prompt {
+  .chat-context-prompt,
+  .chat-rail-tab {
     transition: none;
   }
 }

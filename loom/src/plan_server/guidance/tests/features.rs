@@ -212,3 +212,37 @@ fn draft_all_renders_a_team_opening_and_file_move_keeps_its_refusal() {
         "move-into-feature:doc/product/index.md is a file move, not a session"
     );
 }
+
+#[test]
+#[serial_test::serial]
+fn a_kickoff_offer_with_typed_text_writes_opening_typed() {
+    let fixture = Fixture::new();
+    let typed = concat!(
+        "add support for a microvm test environment\n\n<loom-attachments>\n",
+        "[1] source doc/product/demo/section_01.md\n> # Alpha\n</loom-attachments>",
+    );
+
+    let guidance = fixture.render(Some("kickoff"), Some(typed)).unwrap();
+
+    let written = std::fs::read_to_string(fixture.session.opening_typed()).unwrap();
+    assert_eq!(written, typed);
+    let joined = guidance.opening_message.strip_suffix(typed);
+    assert!(
+        joined.is_some_and(|head| head.ends_with("\n\n") && head.len() > 2),
+        "{}",
+        guidance.opening_message
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn a_guidance_only_opening_writes_no_opening_typed() {
+    for (offer, message) in [(Some("kickoff"), None), (None, Some("just a question"))] {
+        let fixture = Fixture::new();
+        fixture.render(offer, message).unwrap();
+        assert!(
+            !fixture.session.opening_typed().exists(),
+            "{offer:?} {message:?}"
+        );
+    }
+}
