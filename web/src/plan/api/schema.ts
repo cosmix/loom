@@ -75,7 +75,6 @@ export const serverInfoSchema = z.strictObject({
 export const shareLinkSchema = z.strictObject({
   url: z.string(),
   bind: bindKindSchema,
-  tunnel: z.string().nullable(),
 });
 export const refusedSchema = z.strictObject({ command: z.string(), reason: z.string() });
 export const presenceEntrySchema = z.strictObject({

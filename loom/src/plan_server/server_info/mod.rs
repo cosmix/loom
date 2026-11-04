@@ -3,7 +3,6 @@
 
 use super::request::{ApiRequest, ApiResponse};
 use super::routes::{BodyKind, Method, Role, RouteSpec};
-use super::startup::tunnel_hint;
 use super::wire::server::{BindKind, ShareLink};
 
 #[cfg(test)]
@@ -32,8 +31,7 @@ fn server(req: &ApiRequest<'_>) -> ApiResponse {
     ApiResponse::json(200, &req.ctx.server_info(req.browser, req.public_id))
 }
 
-/// The first bind URL. A loopback bind adds the SSH tunnel command for another machine; a
-/// remote bind is reachable as bound.
+/// The first bind URL and whether it is loopback or remote.
 fn share(req: &ApiRequest<'_>) -> ApiResponse {
     let bind = req.ctx.bind();
     let link = ShareLink {
@@ -43,7 +41,6 @@ fn share(req: &ApiRequest<'_>) -> ApiResponse {
         } else {
             BindKind::Loopback
         },
-        tunnel: (!bind.remote).then(|| tunnel_hint(bind.local.port(), &super::hostname())),
     };
     ApiResponse::json(200, &link)
 }

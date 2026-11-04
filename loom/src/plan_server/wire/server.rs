@@ -45,7 +45,6 @@ pub struct You {
 pub struct ShareLink {
     pub url: String,
     pub bind: BindKind,
-    pub tunnel: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,7 +127,7 @@ mod tests {
         }))
         .is_err());
         assert!(serde_json::from_value::<ShareLink>(json!({
-            "url": "http://localhost", "bind": "loopback", "tunnel": null, "unexpected": true
+            "url": "http://localhost", "bind": "loopback", "unexpected": true
         }))
         .is_err());
     }
