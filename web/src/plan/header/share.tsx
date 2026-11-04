@@ -72,14 +72,6 @@ function ShareBody({ link }: { link: ShareLink }) {
   return (
     <>
       <CopyRow text={link.url} noun="link" />
-      {link.bind === "loopback" && link.tunnel && (
-        <>
-          <p className="text-xs text-muted-foreground">
-            Works on this machine. From another machine, tunnel first:
-          </p>
-          <CopyRow text={link.tunnel} noun="tunnel command" />
-        </>
-      )}
       {link.bind === "remote" && (
         <p className="flex items-start gap-1.5 text-xs font-medium text-(--tone-warning)">
           <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
