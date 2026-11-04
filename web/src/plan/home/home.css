@@ -1,15 +1,19 @@
+/* One column of sections on the page ground: the head, Unfinished, the cards (the invitation
+   first), then the standalone shelf. Sections follow at --space-6; the head sits --space-5 above
+   what it titles (ui/DESIGN.md, Page rhythm). */
 .home {
   display: grid;
-  gap: var(--space-5);
+  gap: var(--space-6);
   width: 100%;
   max-width: 80rem;
   margin: 0 auto;
-  padding: var(--space-5) var(--page-gutter) var(--space-6);
+  padding: var(--space-6) var(--page-gutter) var(--space-7);
 }
 
 .home__head {
   display: grid;
   gap: var(--space-1);
+  margin-bottom: calc(var(--space-5) - var(--space-6));
 }
 
 /* The invitation is a card among the cards: the same surface, with the doodle and the screen's

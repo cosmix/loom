@@ -9,17 +9,13 @@ import questionFixture from "@/plan/api/fixtures/summary-question.json";
 import { runStripSchema } from "@/plan/api/schema-run";
 import { summaryPanelSchema } from "@/plan/api/schema-summaries";
 import { runStripAtom } from "@/plan/run/use-run";
-import { panelLoadAtom, useSummaryFeed, type PanelLoad } from "@/plan/summaries/state";
+import { panelLoadAtom, type PanelLoad } from "@/plan/summaries/state";
 
 import { ActivityPill } from "./activity";
 import { useActivities, type Activity } from "./use-activities";
 
 vi.mock("@/plan/run/dashboard-button", () => ({
   DashboardButton: () => <a href="/dashboard">Open dashboard</a>,
-}));
-vi.mock("@/plan/summaries/state", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/plan/summaries/state")>()),
-  useSummaryFeed: vi.fn(),
 }));
 
 vi.mock("./use-activities", async (importOriginal) => ({
@@ -56,7 +52,6 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
   vi.setSystemTime(NOW);
   vi.mocked(useActivities).mockReturnValue(activities);
-  vi.mocked(useSummaryFeed).mockReturnValue({ load: { status: "loading" }, reload: vi.fn() });
 });
 
 afterEach(() => {
@@ -267,7 +262,6 @@ function setPanel(patch: object): PanelLoad {
     panel: summaryPanelSchema.parse({ ...panelFixture, ...patch }),
   };
   getDefaultStore().set(panelLoadAtom, load);
-  vi.mocked(useSummaryFeed).mockReturnValue({ load, reload: vi.fn() });
   return load;
 }
 
@@ -333,7 +327,7 @@ it("an expanded running row stays expanded as the footer row once the rebuild en
   expect(within(dialog).getByText("demo/product/section_09")).toBeTruthy();
 });
 
-it("omits the footer and the summary feed for a sample pill", async () => {
+it("omits the footer for a sample pill", async () => {
   setRun({});
   render(<ActivityPill compact={false} sample />);
 
@@ -343,7 +337,6 @@ it("omits the footer and the summary feed for a sample pill", async () => {
   expect(within(dialog).getAllByRole("listitem")).toHaveLength(3);
   expect(within(dialog).queryByText("loom run")).toBeNull();
   expect(within(dialog).queryByRole("button", { name: /^Summary rebuilds:/ })).toBeNull();
-  expect(useSummaryFeed).not.toHaveBeenCalled();
 });
 
 it("sets the popover width and surface", async () => {

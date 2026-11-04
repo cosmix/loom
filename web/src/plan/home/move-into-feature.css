@@ -1,0 +1,135 @@
+/* The move dialog: what moves, then where to. The dialog floats and owns its one primary (Move);
+   inside it nothing draws a second box (ui/DESIGN.md, Surfaces). */
+
+.move-dialog__form,
+.move-dialog__fields {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  justify-items: start;
+}
+
+.move-dialog__fields {
+  justify-items: stretch;
+}
+
+.move-dialog__group {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.move-dialog__label {
+  margin: 0 0 var(--space-1);
+  padding: 0;
+  font-size: var(--type-ui);
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.move-dialog__path,
+.move-dialog__slug {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
+.move-dialog__path {
+  margin: 0;
+}
+
+/* The moving plans: title over slug, divided by hairlines, capped so a long selection scrolls
+   inside the dialog rather than pushing the destinations out of view. */
+.move-dialog__subjects {
+  max-height: 12rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.move-dialog__subjects > li {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-2) 0;
+  font-size: var(--type-ui);
+}
+
+.move-dialog__subjects > li + li {
+  border-top: 1px solid var(--hairline);
+}
+
+.move-dialog__title {
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.move-dialog__subjects .move-dialog__slug {
+  color: var(--muted-foreground);
+}
+
+.move-dialog__choices {
+  display: grid;
+}
+
+.move-dialog__choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+  font-size: var(--type-ui);
+  cursor: pointer;
+}
+
+.move-dialog__choice input {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  accent-color: var(--foreground);
+}
+
+.move-dialog__choice input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.move-dialog__name {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.move-dialog__input {
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+}
+
+.move-dialog__input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.move-dialog__input:disabled {
+  opacity: 0.5;
+}
+
+.move-dialog__error {
+  margin: 0;
+  font-size: var(--type-ui);
+  color: var(--destructive);
+}

@@ -11,8 +11,6 @@ import {
 import { SAMPLE_SERVER } from "@/plan/help/sample";
 import { serverInfoAtom } from "@/plan/state/atoms";
 
-const SHELF_BUTTONS = "section[aria-labelledby] button";
-
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Help must not request live data")));
   vi.stubGlobal("WebSocket", vi.fn());
@@ -62,7 +60,7 @@ it.each(FEATURES_SCENES)(
   },
 );
 
-it("rings one element per note, except the two shelf buttons that share a note", () => {
+it("rings one element per note", () => {
   for (const { Scene, notes } of FEATURES_SCENES) {
     const { container, unmount } = render(<Scene />);
     for (const { target } of notes) {
@@ -71,7 +69,7 @@ it("rings one element per note, except the two shelf buttons that share a note",
         (sum, selector) => sum + container.querySelectorAll(selector).length,
         0,
       );
-      expect(count, selectors.join(", ")).toBe(selectors[0] === SHELF_BUTTONS ? 2 : 1);
+      expect(count, selectors.join(", ")).toBe(1);
     }
     unmount();
   }
@@ -137,7 +135,9 @@ it("renders the feature progress and standalone shelf", () => {
   expect(within(progress).getAllByRole("listitem", { hidden: true })).toHaveLength(6);
   expect(scene.getByRole("region", { name: "Standalone plans", hidden: true })).toBeDefined();
   expect(
-    scene.getByRole("button", { name: "Add plan", hidden: true }).getAttribute("aria-disabled"),
+    scene
+      .getByRole("button", { name: "New standalone plan", hidden: true })
+      .getAttribute("aria-disabled"),
   ).not.toBe("true");
 });
 

@@ -43,6 +43,12 @@ Hierarchy is made with size, weight and space, in that order. A surface uses the
 - exception: a chat chip's source and a file chip's size are set at `--type-fine` (12px), under the 13px floor of panel text: they are secondary to the chip's quote or name and sit on its one line beside it.
 - exception: while a file is dragged over the chat composer, the composer box's edge dashes and turns `--foreground` (`chat-composer.css`, `[data-dragging]`), so the box reads as the one drop target; only the edge's style and colour change, so nothing shifts.
 - exception: the collapsed chat rail's tab draws its focus ring at `-2px` offset, inside its box: the rail sits against the viewport edge, where an outward ring is clipped.
+- exception: the app bar (`header/header.css`, `.plan-header`) is washed from `--card` at its top to `--background` at its hairline, the dashboard header's `bg-linear-to-b from-card to-background`. It is the one gradient in the planner: the two headers belong to one product and have to read as one.
+- exception: the app bar's Home and Files links (`.plan-view-switch`, `header/header.css`) sit in a hairline-edged track the control height tall, the current view filled in `--muted` and set in `--foreground` at 600, as the document heading's switch is and as the dashboard's view switch is. The current view has to read at rest in every theme beside the cluster's quiet buttons.
+- exception: a selected row of the standalone plans table (`home/standalone-shelf.css`, `tr[data-selected]`) keeps the `--muted` hover wash while it is selected, so the selection reads across the row and not only in its box.
+- exception: the changes page (`review/changed-since.css`, `.changes-page`) spans the main column's full width, with no 68ch or 80rem cap, and from 1024px fills the main column's height with a fixed 22rem list beside the diff, each scrolling on its own and the foot fixed under both. A side-by-side diff needs the width, and the list has to stay in view beside a long diff.
+- exception: on the changes page under 1024px (`.changed-since__detail`) the open document's diff is drawn inside the list item under its row, without repeating the path, so the diff reads next to the row that opened it.
+- The footer (`.plan-footer`, `ui/design.css`) pairs with the app bar: a hairline on its top edge, the page gutter, `--type-fine` in `--muted-foreground`.
 
 ## Buttons
 
