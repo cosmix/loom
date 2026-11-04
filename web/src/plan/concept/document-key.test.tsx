@@ -8,8 +8,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import { conceptPageSchema, type ConceptPage, type KeyChip } from "@/plan/api/schema-concept";
+import pageSheet from "@/plan/concept/concept-page.css?raw";
 
-import { chipTitle, DocumentKey } from "./document-key";
+import { chipTitle, DocumentKey, keyLede } from "./document-key";
 import { conceptPageAtom } from "./page-state";
 
 afterEach(cleanup);
@@ -76,13 +77,16 @@ it("shows a format character in the chip's label and title as its code point", (
   expect(link.textContent).toBe("0⟨U+202E⟩1 Plan⟨U+202E⟩ning");
 });
 
-it("draws a section by its number and keeps the full title out of sight, in the link's name", () => {
+it("draws a section by its number and its whole title, which CSS alone cuts", () => {
   const link = showChip(chipOf());
 
   expect(link.querySelector(".concept-key-label")?.textContent).toBe("§01");
   const title = screen.getByText("Planning");
-  expect(title.closest(".sr-only")).not.toBeNull();
+  expect(title.closest(".concept-key-title")).not.toBeNull();
+  expect(link.querySelector(".sr-only")).toBeNull();
   expect(screen.getByRole("link", { name: "§01 Planning" })).toBe(link);
+  const css = pageSheet.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+  expect(css).toMatch(/\.concept-key-title \{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/);
 });
 
 it("draws a plan by its label as sent", () => {
@@ -93,9 +97,13 @@ it("draws a plan by its label as sent", () => {
   expect(link.querySelector(".concept-key-label")?.textContent).toBe("feat-planner-13");
 });
 
-it("leads the row with the word Sources and draws the mark legend only over marks", () => {
+it("leads the key with a lede describing the list, and the mark legend only over marks", () => {
   showChip(chipOf());
-  expect(screen.getByText("Sources").getAttribute("aria-hidden")).toBe("true");
+  const lede = screen.getByText("Source: the section this overview summarizes");
+  expect(lede.classList.contains("plan-fine")).toBe(true);
+  expect(screen.getByRole("list", { name: "Document key" }).getAttribute("aria-describedby")).toBe(
+    lede.id,
+  );
   expect(screen.getByText(/A square after a sentence/)).toBeTruthy();
   cleanup();
 
@@ -224,5 +232,43 @@ describe("long keys", () => {
     showKey(4);
     expect(screen.getAllByRole("link")).toHaveLength(4);
     expect(screen.queryByRole("button")).toBeNull();
+  });
+});
+
+describe("keyLede", () => {
+  const pageWith = (key: string, pages: string[]) =>
+    conceptPageSchema.parse({
+      ...overviewFixture,
+      key,
+      key_chips: pages.map((page, index) => {
+        const chip = chipOf({ label: String(index + 1).padStart(2, "0") });
+        chip.doc = { ...chip.doc, id: `doc_${index}`, page };
+        return chip;
+      }),
+    });
+
+  it.each([
+    [
+      "overview/demo/product",
+      ["demo/product/section_01", "demo/product/section_02"],
+      "Sources: the 2 sections this overview summarizes",
+    ],
+    [
+      "overview/demo/engineering",
+      ["demo/engineering/a", "demo/engineering/b", "demo/engineering/c"],
+      "Sources: the 3 plans this overview summarizes",
+    ],
+    [
+      "demo/product/section_01",
+      ["demo/product/section_01", "demo/engineering/a"],
+      "Sources: the 2 documents this summary draws on",
+    ],
+    [
+      "demo/engineering/a",
+      ["demo/product/section_02"],
+      "Source: the section this summary draws on",
+    ],
+  ])("names the documents of %s", (key, pages, expected) => {
+    expect(keyLede(pageWith(key, pages))).toBe(expected);
   });
 });

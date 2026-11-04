@@ -1,8 +1,15 @@
 import { FoldVertical, UnfoldVertical } from "lucide-react";
 import type { JSX, ReactNode } from "react";
 
-import { docKindOfPageKey, overviewKey, pageHref, parsePageKey } from "@/plan/api/page-key";
+import {
+  VISION_DOC,
+  docKindOfPageKey,
+  overviewKey,
+  pageHref,
+  parsePageKey,
+} from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
+import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
 import { toAddress } from "@/plan/files/address";
 import {
   builtByChips,
@@ -44,6 +51,9 @@ function breadcrumb(page: ConceptPage, facts: ReturnType<typeof useFeatureFacts>
   const crumbs: HeadingCrumb[] = page.feature === null ? [] : [featureCrumb(page.feature)];
   if (parts === null || parts.kind === "standalone") {
     return [...crumbs, { label: "Plans" }, { label: parts?.doc ?? page.title, mono: true }];
+  }
+  if (parts.kind === "summary" && parts.scope === "product" && parts.doc === VISION_DOC) {
+    return [...crumbs, { label: page.title }];
   }
   const product = parts.scope === "product";
   const overview = parts.kind === "overview";
@@ -109,6 +119,12 @@ function pageChips(page: ConceptPage, rebuilding: boolean, questions: HeadingChi
  * so a reused instance would act on the previous page's file until the new one loads. Neither
  * action shows when the source failed to load (the file is gone or unreadable).
  */
+/** The page's source: inside its feature when the path belongs to one, else in file mode. */
+function sourceAddress(path: string): string {
+  const feature = featureOfDocPath(path);
+  return feature === null ? toAddress(path) : featureSourceHref(feature, path);
+}
+
 function SourceActions({ path }: { path: string }): JSX.Element | null {
   const { doc, failed } = useKeptDoc(path);
   const pressureActive = usePressureActive(doc);
@@ -136,7 +152,7 @@ export function OpenAllButton({ page }: { page: ConceptPage }): JSX.Element {
 /** Summary metadata and navigation adapted to the shared document heading. */
 export function PageHeading({ page }: { page: ConceptPage }): JSX.Element {
   const facts = useFeatureFacts(page.feature);
-  const questions = useOpenQuestionChips(page.path);
+  const questions = useOpenQuestionChips(page.path, true);
   const rebuilding = isRebuilding(page);
   const notice = page.plan_state === null ? null : LOCKED_NOTICES[page.plan_state];
   return (
@@ -150,7 +166,7 @@ export function PageHeading({ page }: { page: ConceptPage }): JSX.Element {
       views={{
         current: "summary",
         summaryTo: null,
-        sourceTo: page.path ? toAddress(page.path) : null,
+        sourceTo: page.path ? sourceAddress(page.path) : null,
       }}
       actions={
         <>

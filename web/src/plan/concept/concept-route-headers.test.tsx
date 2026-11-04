@@ -88,7 +88,7 @@ describe("summary page header", () => {
     expect((title.previousElementSibling as HTMLElement).style.color).toBe("var(--doc-2)");
     expect(within(header).getByText("Out of date: the source changed")).toBeTruthy();
     const link = within(header).getByRole("link", { name: "Source" });
-    expect(link.getAttribute("href")).toBe("/files/product/demo/section_01.md");
+    expect(link.getAttribute("href")).toBe("/f/demo/source/product/demo/section_01.md");
     expect(extras.header).toHaveBeenCalled();
   });
   it("the summary header shares the page column's edges", async () => {

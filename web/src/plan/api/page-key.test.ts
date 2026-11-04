@@ -32,6 +32,11 @@ const pages: { key: string; parts: PageKeyParts; href: string }[] = [
     href: "/f/demo/product/section_01",
   },
   {
+    key: "demo/product/vision",
+    parts: { kind: "summary", feature: "demo", scope: "product", doc: "vision" },
+    href: "/f/demo/vision",
+  },
+  {
     key: "demo/engineering/feat-x.v2",
     parts: { kind: "summary", feature: "demo", scope: "engineering", doc: "feat-x.v2" },
     href: "/f/demo/engineering/feat-x.v2",
@@ -121,6 +126,7 @@ describe("concept page keys", () => {
     ["overview/demo/product", "vision"],
     ["overview/demo/engineering", "metaplan"],
     ["demo/product/section_01", "section"],
+    ["demo/product/vision", "vision"],
     ["demo/engineering/plan", "plan"],
     ["plans/standalone", "plan"],
   ])("maps %s to document kind %s", (key, kind) => {
@@ -137,6 +143,7 @@ describe("concept page URLs", () => {
 
   it.each([
     ["/f/%64emo/%70roduct", "overview/demo/product"],
+    ["/f/%64emo/vision", "demo/product/vision"],
     ["/f/demo/product/section%5F01", "demo/product/section_01"],
     ["/plans/feat%2Dx%2Ev2", "plans/feat-x.v2"],
   ])("decodes segments in %s", (pathname, key) => {
@@ -170,6 +177,7 @@ describe("summary ids", () => {
     "overview/demo/engineering",
     "demo/product/section_01",
     "demo/product/section_123",
+    "demo/product/vision",
   ])("preserves summary id %s", (id) => {
     expect(pageKeyOfSummaryId(id, () => null)).toBe(id);
   });
