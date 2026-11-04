@@ -3,6 +3,9 @@ import { createStore, Provider } from "jotai";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
+import panelFixture from "@/plan/api/fixtures/summary-panel.json";
+import { panelLoadAtom, summaryReloadAtom, SummaryFeedHost } from "@/plan/summaries/state";
 import { notificationsEnabledAtom } from "@/state/notifications";
 import {
   autoRebuildAtom,
@@ -288,4 +291,42 @@ describe("planner settings focus", () => {
       await waitFor(() => expect(document.activeElement).toBe(opener));
     },
   );
+});
+
+it("Settings shows the summary totals", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(JSON.stringify(panelFixture), { status: 200 })),
+  );
+  const store = createStore();
+  render(
+    <Provider store={store}>
+      <TooltipProvider>
+        <SummaryFeedHost />
+        <SettingsDialog open onOpenChange={() => {}} />
+      </TooltipProvider>
+    </Provider>,
+  );
+  const dialog = screen.getByRole("dialog", { name: "Settings" });
+  expect(within(dialog).getByRole("heading", { name: "Summaries" })).toBeTruthy();
+
+  expect(await within(dialog).findByRole("region", { name: "Token totals" })).toBeTruthy();
+  expect(within(dialog).getByRole("img", { name: /^claude 5h window/ })).toBeTruthy();
+});
+
+it("Settings offers a retry when the summary feed failed", async () => {
+  const reload = vi.fn();
+  const store = createStore();
+  store.set(panelLoadAtom, { status: "error", message: "HTTP 500" });
+  store.set(summaryReloadAtom, { reload });
+  render(
+    <Provider store={store}>
+      <SettingsDialog open onOpenChange={() => {}} />
+    </Provider>,
+  );
+
+  const dialog = screen.getByRole("dialog", { name: "Settings" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
+
+  expect(reload).toHaveBeenCalledOnce();
 });

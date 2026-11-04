@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Provider, createStore } from "jotai";
 import type { ReactNode } from "react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
@@ -22,7 +22,8 @@ import { PLANNER_SHORTCUT_GROUPS } from "@/plan/help/shortcuts";
 import { planSocketAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 import type { BuiltResponse } from "./api";
-import { ChangedSinceControl } from "./changed-since";
+import { CHANGES_PATH, ChangedSinceControl } from "./changed-since";
+import { ChangesPage } from "./changes-page";
 import { checkpointAtom, type Checkpoint } from "./checkpoint";
 import { hashesAtom, openQuestionsAtom, useReviewLive } from "./live";
 
@@ -135,6 +136,10 @@ function mount(
       <MemoryRouter>
         {options.live && <Live />}
         {children}
+        <Routes>
+          <Route path={CHANGES_PATH} element={<ChangesPage />} />
+          <Route path="*" element={null} />
+        </Routes>
       </MemoryRouter>
     </Provider>,
   );
@@ -177,7 +182,7 @@ it("mark all seen", async () => {
     commit: "c2",
     hashes: current.docs,
   });
-  expect(await screen.findByText("No changed documents")).toBeTruthy();
+  expect(await screen.findByText("Nothing changed since you looked.")).toBeTruthy();
 });
 
 it("resolveRef refusal shown", async () => {

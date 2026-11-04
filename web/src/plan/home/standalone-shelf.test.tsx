@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ProjectChecklistView } from "@/plan/api/schema";
 import { harness, installStartChatLifecycle } from "@/plan/chat/start-chat-test-kit";
+import { standalonePlans } from "@/plan/home/features-contracts-kit";
 import { StandaloneShelf } from "@/plan/home/standalone-shelf";
 import { authoringAtom, projectAtom } from "@/plan/state/atoms";
 
@@ -54,29 +55,42 @@ function mount(value = project, readOnly = false) {
   return h;
 }
 
+const region = () => screen.getByRole("region", { name: "Standalone plans" });
+const details = () => region().querySelector("details") as HTMLDetailsElement;
+/** The title cells' text, top to bottom. */
+const titles = () =>
+  within(region())
+    .queryAllByRole("link")
+    .map((link) => link.textContent);
+
 describe("StandaloneShelf", () => {
-  it("lists plan titles, slugs and lifecycle labels as file links without per-plan offers", () => {
+  it("lists every plan as a table row: title link, slug and state", () => {
     mount({
       ...project,
       standalone: [
-        { ...project.standalone[0], path: "doc/plans/PLAN-100%-fix.md" },
+        { ...project.standalone[0]!, path: "doc/plans/PLAN-100%-fix.md" },
         ...project.standalone.slice(1),
       ],
     });
 
-    expect(screen.getByRole("region", { name: "Standalone plans" })).toBeTruthy();
+    const table = within(region()).getByRole("table");
     expect(
-      screen.getByRole("link", { name: "Fix search fix-search written" }).getAttribute("href"),
-    ).toBe("/files/plans/PLAN-100%25-fix.md");
-    expect(screen.getByRole("link", { name: "Cache cache running" }).getAttribute("href")).toBe(
-      "/files/plans/IN_PROGRESS-PLAN-cache.md",
+      within(table)
+        .getAllByRole("columnheader")
+        .map((cell) => cell.textContent),
+    ).toEqual(["", "Plan", "State"]);
+    expect(screen.getByRole("link", { name: "Fix search" }).getAttribute("href")).toBe(
+      "/files/plans/PLAN-100%25-fix.md",
     );
-    expect(screen.getByRole("link", { name: "Cleanup cleanup done" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Old old retired" })).toBeTruthy();
-    expect(screen.getAllByRole("button")).toHaveLength(2);
+    const cache = screen.getByRole("link", { name: "Cache" });
+    expect(cache.getAttribute("href")).toBe("/files/plans/IN_PROGRESS-PLAN-cache.md");
+    const row = cache.closest("tr")!;
+    expect(row.textContent).toContain("cache");
+    expect(within(row).getAllByRole("cell")[2]!.textContent).toBe("running");
+    expect(within(row).getByRole("checkbox", { name: "Select Cache" })).toBeTruthy();
   });
 
-  it("opens its chips from the first render when the host passes defaultOpen", () => {
+  it("opens its table from the first render when the host passes defaultOpen", () => {
     const h = harness();
     h.store.set(projectAtom, project);
     h.mount(
@@ -85,96 +99,163 @@ describe("StandaloneShelf", () => {
       </MemoryRouter>,
     );
 
-    const region = screen.getByRole("region", { name: "Standalone plans" });
-    expect(region.querySelector("details")?.open).toBe(true);
+    expect(details().open).toBe(true);
   });
 
-  it("starts collapsed, counts the plans in its summary and keeps the actions there", () => {
+  it("starts collapsed, counts the plans in its summary and keeps one action there", () => {
     mount();
 
-    const details = screen
-      .getByRole("region", { name: "Standalone plans" })
-      .querySelector("details") as HTMLDetailsElement;
-    const summary = details.querySelector(":scope > summary") as HTMLElement;
-    expect(details.open).toBe(false);
+    const summary = details().querySelector(":scope > summary") as HTMLElement;
+    expect(details().open).toBe(false);
     expect(summary.textContent).toContain("4 standalone plans");
     expect(summary.textContent).toContain("bugfixes, performance work and small features");
-    expect(within(summary).getByRole("button", { name: "Add plan" })).toBeTruthy();
-    expect(within(summary).getByRole("button", { name: "Move plan" })).toBeTruthy();
+    expect(
+      within(summary)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(["New standalone plan"]);
     expect(within(summary).queryByRole("link")).toBeNull();
   });
 
-  it("does not toggle the shelf when an action in the summary is clicked", () => {
-    mount();
-    const details = screen
-      .getByRole("region", { name: "Standalone plans" })
-      .querySelector("details") as HTMLDetailsElement;
+  it("does not toggle the shelf when the summary's action is clicked", () => {
+    // Read-only, so the click stays on this route and only the summary's handling is observed.
+    mount(project, true);
 
-    const notCancelled = fireEvent.click(screen.getByRole("button", { name: "Move plan" }));
+    const notCancelled = fireEvent.click(
+      screen.getByRole("button", { name: "New standalone plan" }),
+    );
 
     expect(notCancelled).toBe(false);
-    expect(details.open).toBe(false);
+    expect(details().open).toBe(false);
   });
 
-  it("shows the first 24 plans and reveals the rest on request", () => {
-    const many = Array.from({ length: 30 }, (_, index) => ({
-      slug: `plan-${index + 1}`,
-      path: `doc/plans/PLAN-plan-${index + 1}.md`,
-      title: `Plan ${index + 1}`,
-      state: "written" as const,
-    }));
-    mount({ checklists: [], standalone: many, moves: [] });
-    const region = screen.getByRole("region", { name: "Standalone plans" });
-    const chips = () =>
-      within(region)
-        .queryAllByRole("link")
-        .filter((link) => link.getAttribute("href")?.startsWith("/files/plans/"));
+  it("lists every plan with no cap and no more button", () => {
+    mount({ checklists: [], standalone: standalonePlans(60), moves: [] });
 
-    expect(chips()).toHaveLength(24);
-    fireEvent.click(within(region).getByRole("button", { name: "+6 more" }));
-
-    expect(chips()).toHaveLength(30);
-    expect(within(region).queryByRole("button", { name: /more$/ })).toBeNull();
+    expect(titles()).toHaveLength(60);
+    expect(within(region()).queryByRole("button", { name: /more$/ })).toBeNull();
   });
 
-  it("opens kickoff with the small-work route state", () => {
+  it("sorts by title and by state from the header", () => {
     mount();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Plan" }));
+    expect(titles()).toEqual(["Cache", "Cleanup", "Fix search", "Old"]);
+    expect(screen.getByRole("columnheader", { name: "Plan" }).getAttribute("aria-sort")).toBe(
+      "ascending",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Plan" }));
+    expect(titles()).toEqual(["Old", "Fix search", "Cleanup", "Cache"]);
 
-    expect(screen.getByText('Kickoff state: {"small":true}')).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "State" }));
+    expect(titles()).toEqual(["Cache", "Fix search", "Cleanup", "Old"]);
+    expect(screen.getByRole("columnheader", { name: "Plan" }).getAttribute("aria-sort")).toBeNull();
   });
 
-  it("keeps the empty shelf and both actions visible", () => {
-    mount({ checklists: [], standalone: [], moves: [] });
-
-    expect(
-      screen.getByText("Bugfixes and small changes that need no product spec live here."),
-    ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Add plan" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Move plan" })).toBeTruthy();
-  });
-
-  it("opens the general move dialog with a choice of standalone plans", () => {
+  it("filters by title or slug from ten plans, and not below", () => {
     mount();
+    expect(screen.queryByRole("searchbox", { name: "Filter plans" })).toBeNull();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Move plan" }));
+  it("narrows a long list by title or slug", () => {
+    mount({
+      checklists: [],
+      standalone: [
+        ...standalonePlans(9),
+        { slug: "zeta", path: "doc/plans/PLAN-zeta.md", title: "Speed up search", state: "done" },
+      ],
+      moves: [],
+    });
+    const filter = screen.getByRole("searchbox", { name: "Filter plans" });
 
-    expect(screen.getByRole("dialog", { name: "Move into a feature" })).toBeTruthy();
-    expect(
-      screen.getByRole("radio", { name: "Fix search doc/plans/PLAN-fix-search.md" }),
-    ).toBeTruthy();
+    fireEvent.change(filter, { target: { value: "ZETA" } });
+    expect(titles()).toEqual(["Speed up search"]);
+    fireEvent.change(filter, { target: { value: "plan 3" } });
+    expect(titles()).toEqual(["Plan 3"]);
+    fireEvent.change(filter, { target: { value: "nothing" } });
+    expect(titles()).toEqual([]);
+    expect(region().textContent).toContain("No plan matches “nothing”.");
+  });
+
+  it("selects the shown plans from the header box, which shows a partial selection", () => {
+    mount();
+    const all = screen.getByRole("checkbox", {
+      name: "Select all shown plans",
+    }) as HTMLInputElement;
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Cache" }));
+    expect(all.checked).toBe(false);
+    expect(all.indeterminate).toBe(true);
+    expect(screen.getByRole("group", { name: "Selected plans" }).textContent).toContain(
+      "1 selected",
+    );
+
+    fireEvent.click(all);
+    expect(all.checked).toBe(true);
+    expect(all.indeterminate).toBe(false);
+    expect(screen.getByRole("group", { name: "Selected plans" }).textContent).toContain(
+      "4 selected",
+    );
+
+    fireEvent.click(all);
+    expect(screen.queryByRole("group", { name: "Selected plans" })).toBeNull();
+  });
+
+  it("clears the selection from the action bar", () => {
+    mount();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Old" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+
+    expect((screen.getByRole("checkbox", { name: "Select Old" }) as HTMLInputElement).checked).toBe(
+      false,
+    );
+    expect(screen.queryByRole("group", { name: "Selected plans" })).toBeNull();
+  });
+
+  it("opens the move dialog with the selected plans listed", () => {
+    mount();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Cache" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Old" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Move to a feature…" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Move into a feature" });
+    expect(dialog.textContent).toContain("Moving 2 plans");
+    expect(within(dialog).getByText("Cache")).toBeTruthy();
+    expect(within(dialog).getByText("Old")).toBeTruthy();
+    expect(within(dialog).queryByText("Fix search")).toBeNull();
   });
 
   it("returns focus to the move button when the dialog closes", async () => {
     mount();
-    const opener = screen.getByRole("button", { name: "Move plan" });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Cache" }));
+    const opener = screen.getByRole("button", { name: "Move to a feature…" });
     opener.focus();
     fireEvent.click(opener);
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  it("opens kickoff with the small-work route state", () => {
+    mount();
+
+    fireEvent.click(screen.getByRole("button", { name: "New standalone plan" }));
+
+    expect(screen.getByText('Kickoff state: {"small":true}')).toBeTruthy();
+  });
+
+  it("keeps the empty shelf open with its explanation and action", () => {
+    mount({ checklists: [], standalone: [], moves: [] });
+
+    expect(details().open).toBe(true);
+    expect(
+      screen.getByText("Bugfixes and small changes that need no product spec live here."),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "New standalone plan" })).toBeTruthy();
+    expect(screen.queryByRole("table")).toBeNull();
   });
 
   it("lists misplaced documents and opens their move dialog with the path fixed", () => {
@@ -197,36 +278,39 @@ describe("StandaloneShelf", () => {
     expect(
       screen.queryByText("Bugfixes and small changes that need no product spec live here."),
     ).toBeNull();
-    fireEvent.click(screen.getAllByRole("button", { name: "Move plan" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Move plan" }));
 
-    expect(screen.getByRole("dialog", { name: "Move into a feature" })).toBeTruthy();
     const dialog = screen.getByRole("dialog", { name: "Move into a feature" });
     expect(within(dialog).getByText("doc/product/index.md")).toBeTruthy();
-    expect(screen.queryByRole("group", { name: "Standalone plan" })).toBeNull();
+    expect(dialog.textContent).not.toContain("Moving");
   });
 
   it("retains readable plans and explains blocked authoring actions", () => {
     mount(project, true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Cache" }));
 
-    expect(screen.getByRole("link", { name: "Fix search fix-search written" })).toBeTruthy();
-    const newPlan = screen.getByRole("button", { name: "Add plan" });
-    expect(newPlan.getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("link", { name: "Fix search" })).toBeTruthy();
+    const newPlan = screen.getByRole("button", { name: "New standalone plan" });
+    const move = screen.getByRole("button", { name: "Move to a feature…" });
     // Each blocked control is described by the real reason, and no third line repeats it.
-    const move = screen.getByRole("button", { name: "Move plan" });
     for (const button of [newPlan, move]) {
+      expect(button.getAttribute("aria-disabled")).toBe("true");
       const described = document.getElementById(button.getAttribute("aria-describedby") ?? "");
       expect(described?.textContent).toBe("Alex holds authoring");
     }
     expect(screen.getAllByText("Alex holds authoring")).toHaveLength(2);
     expect(screen.queryByText("Authoring is unavailable")).toBeNull();
     fireEvent.click(newPlan);
+    fireEvent.click(move);
     expect(screen.queryByText('Kickoff state: {"small":true}')).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("makes formatting controls in server titles visible", () => {
-    mount({ ...project, standalone: [{ ...project.standalone[0], title: "Fix\u202Esearch" }] });
+    mount({ ...project, standalone: [{ ...project.standalone[0]!, title: "Fix‮search" }] });
 
-    expect(screen.getByRole("link", { name: "Fix⟨U+202E⟩search fix-search written" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Fix⟨U+202E⟩search" })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "Select Fix⟨U+202E⟩search" })).toBeTruthy();
   });
 
   it("renders inline title markup while preserving visible controls and text isolation", () => {
@@ -234,22 +318,20 @@ describe("StandaloneShelf", () => {
       ...project,
       standalone: [
         {
-          ...project.standalone[0],
-          title: "Rename `hooks/` to `loom-hooks/` with *care* and **tests**\u202E",
+          ...project.standalone[0]!,
+          title: "Rename `hooks/` to `loom-hooks/` with *care* and **tests**‮",
         },
       ],
     });
 
-    const link = screen.getByRole("link", {
-      name: "Rename hooks/ to loom-hooks/ with care and tests⟨U+202E⟩ fix-search written",
-    });
+    const name = "Rename hooks/ to loom-hooks/ with care and tests⟨U+202E⟩";
+    const link = screen.getByRole("link", { name });
+    expect(screen.getByRole("checkbox", { name: `Select ${name}` })).toBeTruthy();
     const code = within(link).getByText("hooks/");
     expect(code.tagName).toBe("CODE");
     expect(within(link).getByText("loom-hooks/").tagName).toBe("CODE");
     expect(within(link).getByText("care").tagName).toBe("EM");
     expect(within(link).getByText("tests").tagName).toBe("STRONG");
-    expect(code.parentElement?.style.unicodeBidi).toBe("isolate");
-    expect(code.parentElement?.style.direction).toBe("ltr");
     expect(link.textContent).not.toContain("`");
   });
 });

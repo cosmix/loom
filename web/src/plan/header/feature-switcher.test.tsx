@@ -8,9 +8,14 @@ import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
 import { checklistViewSchema, serverInfoSchema } from "@/plan/api/schema";
 import { FeatureSwitcher } from "@/plan/header/feature-switcher";
-import { activeFeatureAtom, projectAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { activeFeatureAtom, kickoffAtom, projectAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 afterEach(cleanup);
+
+/** The switcher's title, without the eyebrow the button also holds. */
+function titleOf(button: HTMLElement): string | null {
+  return button.querySelector(".plan-switcher-title")?.textContent ?? null;
+}
 
 /** A list link by its target. */
 function linkTo(dialog: HTMLElement, href: string): HTMLElement {
@@ -26,13 +31,30 @@ function show({
   project = "Example repository",
   features = ["demo", "Feature / one"],
   pathname = activeFeature === null ? "/" : `/f/${encodeURIComponent(activeFeature)}`,
+  kickoff = null,
 }: {
   activeFeature?: string | null;
   project?: string | null;
   features?: string[];
   pathname?: string;
+  kickoff?: string | null;
 } = {}) {
   const store = createStore();
+  if (kickoff !== null) {
+    store.set(kickoffAtom, {
+      session: "kickoff",
+      target: null,
+      shape: {
+        size: "feature",
+        name: kickoff,
+        proposal: false,
+        problem: "",
+        decisions: [],
+        questions: [],
+        sections: [],
+      },
+    });
+  }
   const checklist = checklistViewSchema.parse(checklistFixture.checklists[0]);
   store.set(activeFeatureAtom, activeFeature);
   store.set(projectAtom, {
@@ -70,17 +92,33 @@ it("shows the active feature's slug instead of the repository name", () => {
 it("shows the repository name when no feature is active", () => {
   show({ activeFeature: null });
 
-  expect(
-    screen.getByRole("button", { name: "Example repository, switch feature" }).textContent,
-  ).toBe("Example repository");
+  expect(titleOf(screen.getByRole("button", { name: "Example repository, switch feature" }))).toBe(
+    "Example repository",
+  );
 });
 
 it("shows Untitled on the kickoff route", () => {
   show({ pathname: "/new" });
 
-  expect(screen.getByRole("button", { name: "Untitled, switch feature" }).textContent).toBe(
+  expect(titleOf(screen.getByRole("button", { name: "Untitled, switch feature" }))).toBe(
     "Untitled",
   );
+});
+
+it("shows the live kickoff's name on the kickoff route", () => {
+  show({ pathname: "/new", kickoff: "planner-search" });
+
+  expect(titleOf(screen.getByRole("button", { name: "planner-search, switch feature" }))).toBe(
+    "planner-search",
+  );
+});
+
+it("holds the eyebrow and the title in the one switcher button", () => {
+  show();
+
+  const button = screen.getByRole("button", { name: "Switch feature, current: demo" });
+  expect(button.querySelector(".plan-eyebrow")?.textContent).toBe("Planning · feature");
+  expect(titleOf(button)).toBe("demo");
 });
 
 it.each(["/", "/files", "/files/product/demo/index.md", "/plans/example"])(
@@ -89,7 +127,7 @@ it.each(["/", "/files", "/files/product/demo/index.md", "/plans/example"])(
     show({ pathname });
 
     expect(
-      screen.getByRole("button", { name: "Example repository, switch feature" }).textContent,
+      titleOf(screen.getByRole("button", { name: "Example repository, switch feature" })),
     ).toBe("Example repository");
   },
 );
@@ -109,9 +147,7 @@ it.each([
 it("uses Project before server info arrives when no feature is active", () => {
   show({ activeFeature: null, project: null });
 
-  expect(screen.getByRole("button", { name: "Project, switch feature" }).textContent).toBe(
-    "Project",
-  );
+  expect(titleOf(screen.getByRole("button", { name: "Project, switch feature" }))).toBe("Project");
 });
 
 it("opens the feature list and marks only the active feature", async () => {
@@ -131,7 +167,7 @@ it("opens the feature list and marks only the active feature", async () => {
   expect(other.querySelector("svg")).toBeNull();
 });
 
-it("links to encoded feature routes and project navigation", async () => {
+it("lists features only, at encoded feature routes", async () => {
   show();
 
   fireEvent.click(screen.getByRole("button", { name: "Switch feature, current: demo" }));
@@ -139,9 +175,14 @@ it("links to encoded feature routes and project navigation", async () => {
   const dialog = await screen.findByRole("dialog", { name: "Switch feature" });
   expect(linkTo(dialog, "/f/demo").textContent).toContain("demo");
   expect(linkTo(dialog, "/f/Feature%20%2F%20one").textContent).toContain("Feature / one");
-  expect(within(dialog).getByRole("link", { name: "Home" }).getAttribute("href")).toBe("/");
-  expect(within(dialog).getByRole("link", { name: "New work…" }).getAttribute("href")).toBe("/new");
-  expect(within(dialog).getByRole("separator")).toBeTruthy();
+  expect(
+    within(dialog)
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("href")),
+  ).toEqual(["/f/demo", "/f/Feature%20%2F%20one"]);
+  expect(within(dialog).queryByRole("link", { name: "Home" })).toBeNull();
+  expect(within(dialog).queryByRole("link", { name: /New work/ })).toBeNull();
+  expect(within(dialog).queryByRole("separator")).toBeNull();
 });
 
 it("lists each feature by its slug in mono", async () => {
@@ -162,7 +203,7 @@ it.each(["/", "/files"])("marks no feature current on the project route %s", asy
 
   const dialog = await screen.findByRole("dialog", { name: "Switch feature" });
   expect(dialog.querySelector("[aria-current]")).toBeNull();
-  expect(dialog.querySelector("svg")).toBeNull();
+  expect(dialog.querySelector("a svg")).toBeNull();
 });
 
 it("marks the route's feature current despite a different active feature", async () => {
@@ -178,26 +219,25 @@ it("marks the route's feature current despite a different active feature", async
   expect(previous.querySelector("svg")).toBeNull();
 });
 
-it("moves focus through feature and project links with arrow keys", async () => {
-  show();
+it("moves focus through the feature links with arrow keys", async () => {
+  show({ features: ["demo", "Feature / one", "third"] });
   fireEvent.click(screen.getByRole("button", { name: "Switch feature, current: demo" }));
   const dialog = await screen.findByRole("dialog", { name: "Switch feature" });
   const active = linkTo(dialog, "/f/demo");
   const other = linkTo(dialog, "/f/Feature%20%2F%20one");
-  const home = within(dialog).getByRole("link", { name: "Home" });
-  const newWork = within(dialog).getByRole("link", { name: "New work…" });
+  const third = linkTo(dialog, "/f/third");
   await waitFor(() => expect(document.activeElement).toBe(active));
 
   fireEvent.keyDown(active, { key: "ArrowDown" });
   expect(document.activeElement).toBe(other);
   fireEvent.keyDown(other, { key: "ArrowDown" });
-  expect(document.activeElement).toBe(home);
-  fireEvent.keyDown(home, { key: "ArrowDown" });
-  expect(document.activeElement).toBe(newWork);
-  fireEvent.keyDown(newWork, { key: "ArrowDown" });
+  expect(document.activeElement).toBe(third);
+  fireEvent.keyDown(third, { key: "ArrowDown" });
   expect(document.activeElement).toBe(active);
   fireEvent.keyDown(active, { key: "ArrowUp" });
-  expect(document.activeElement).toBe(newWork);
+  expect(document.activeElement).toBe(third);
+  fireEvent.keyDown(third, { key: "Home" });
+  expect(document.activeElement).toBe(active);
 });
 
 it("closes on Escape and returns focus to the title button", async () => {
@@ -219,8 +259,6 @@ it("closes on Escape and returns focus to the title button", async () => {
 it.each([
   ["demo", "/f/demo"],
   ["Feature / one", "/f/Feature%20%2F%20one"],
-  ["Home", "/"],
-  ["New work…", "/new"],
 ])("closes after selecting %s", async (_name, href) => {
   show();
   const trigger = screen.getByRole("button", { name: "Switch feature, current: demo" });
@@ -233,25 +271,21 @@ it.each([
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
 });
 
-it("shows only Home and New work in an empty project", async () => {
+it("says there are no features in an empty project", async () => {
   show({ activeFeature: null, features: [] });
 
   fireEvent.click(screen.getByRole("button", { name: "Example repository, switch feature" }));
 
   const dialog = await screen.findByRole("dialog", { name: "Switch feature" });
-  expect(
-    within(dialog)
-      .getAllByRole("link")
-      .map((link) => link.textContent),
-  ).toEqual(["Home", "New work…"]);
-  expect(within(dialog).queryByRole("separator")).toBeNull();
+  expect(within(dialog).queryAllByRole("link")).toEqual([]);
+  expect(dialog.textContent).toContain("No features yet.");
 });
 
 it("includes the visible project name in the trigger name with control characters escaped", () => {
   show({ pathname: "/files", project: "Example\u202e repository" });
 
   expect(
-    screen.getByRole("button", { name: "Example⟨U+202E⟩ repository, switch feature" }).textContent,
+    titleOf(screen.getByRole("button", { name: "Example⟨U+202E⟩ repository, switch feature" })),
   ).toBe("Example⟨U+202E⟩ repository");
 });
 

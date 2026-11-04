@@ -5,23 +5,24 @@
  * `.view-tab` look, whose 40px touch sizing would otherwise apply.
  */
 
+/* The dashboard's wash (components/header.tsx: `bg-linear-to-b from-card to-background`), so the
+   two headers read as one product: a deliberate DESIGN.md exception (Surfaces). */
 .plan-header {
   min-width: 0;
   flex-shrink: 0;
   border-bottom: 1px solid var(--hairline);
-  background: var(--background);
+  background: linear-gradient(to bottom, var(--card), var(--background));
 }
 
-/* About 60px high, 72px from 1024px where the logo is 56px; the 8px block padding is equal above
-   and below, so every column centres on the logo's centre line. The identity column gives way
-   first; the cluster never wraps. */
+/* The dashboard's spacing: 16px block padding, equal above and below, so every column centres on
+   the logo's centre line and the 56px logo keeps 16px to the bottom border from 1024px. The
+   identity column gives way first; the cluster never wraps. */
 .plan-appbar {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-4);
-  min-height: 60px;
-  padding: var(--space-2) var(--page-gutter);
+  gap: var(--space-5);
+  padding: var(--space-4) var(--page-gutter);
 }
 
 .plan-logo-link {
@@ -44,18 +45,13 @@
 }
 
 @media (min-width: 1024px) {
-  .plan-appbar {
-    min-height: 72px;
-  }
-
   .plan-logo {
     height: 56px;
   }
 }
 
 .plan-identity {
-  display: grid;
-  gap: 1px;
+  display: flex;
   min-width: 0;
 }
 
@@ -67,28 +63,37 @@
   letter-spacing: 0.08em;
 }
 
+/* One hover surface: the eyebrow over the title and its chevron. The text sits on the column's
+   edge at rest; the wash reaches 8px past it, as the dashboard's ghost buttons do. */
 .plan-switcher {
-  display: flex;
+  display: grid;
+  gap: 2px;
   min-width: 0;
   max-width: 100%;
-  align-items: center;
-  gap: var(--space-1);
-  justify-self: start;
-  margin-left: calc(var(--space-1) * -1);
-  padding: 1px var(--space-1);
+  margin-inline: calc(var(--space-2) * -1);
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--corner-control);
   text-align: left;
   color: var(--foreground);
+  cursor: pointer;
   transition: background-color 120ms;
 }
 
-.plan-switcher:hover {
+.plan-switcher:hover,
+.plan-switcher[aria-expanded="true"] {
   background: var(--muted);
 }
 
 .plan-switcher:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+.plan-switcher-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .plan-switcher-title {
@@ -100,6 +105,77 @@
   line-height: 1.3;
   font-weight: 600;
   letter-spacing: -0.01em;
+}
+
+/* The menu's chevron: muted at rest, the text's colour while the surface is hovered or open. */
+.plan-switcher-chevron {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--muted-foreground);
+  transition: color 120ms;
+}
+
+.plan-switcher:hover .plan-switcher-chevron,
+.plan-switcher[aria-expanded="true"] .plan-switcher-chevron {
+  color: var(--foreground);
+}
+
+/* The menu: an eyebrow, then one row per feature; the current one carries a check. */
+.plan-switcher-head {
+  padding: var(--space-1) var(--space-2) 0;
+}
+
+.plan-switcher-menu {
+  display: grid;
+  gap: 1px;
+  max-height: min(60vh, 24rem);
+  overflow-y: auto;
+}
+
+.plan-switcher-item {
+  display: flex;
+  min-width: 0;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 0 var(--space-2);
+  border-radius: var(--corner-control);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.plan-switcher-item:hover,
+.plan-switcher-item:focus-visible {
+  background: var(--muted);
+}
+
+.plan-switcher-item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.plan-switcher-slug {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-switcher-item > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.plan-switcher-empty {
+  margin: 0;
+  padding: var(--space-1) var(--space-2) var(--space-2);
+  font-size: var(--type-ui);
+  color: var(--muted-foreground);
 }
 
 .plan-header-controls {
@@ -120,23 +196,28 @@
   padding: 0;
 }
 
-/* Home and Files: quiet links, the current one on a wash. The dashboard's pill is not used. */
+/* Home and Files: a hairline-edged track the control height tall, as the dashboard's view switch
+   is, with the current view filled in --muted and set in --foreground at 600 (a DESIGN.md
+   exception, Surfaces). The track keeps the cluster's one centre line. */
 .plan-view-switch {
   display: inline-flex;
+  align-items: center;
   gap: 2px;
-  padding: 0;
-  border-radius: 0;
+  height: var(--control-height);
+  padding: 1px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--corner-control);
   background: transparent;
   box-shadow: none;
 }
 
 .plan-view-switch .view-tab {
-  height: var(--control-height);
+  height: 100%;
   min-height: 0;
   min-width: 0;
   gap: var(--space-1);
-  padding: 0 10px;
-  border-radius: var(--corner-control);
+  padding: 0 var(--space-2);
+  border-radius: calc(var(--corner-control) - 2px);
   background: transparent;
   box-shadow: none;
   font-size: var(--type-ui);
@@ -149,13 +230,13 @@
 }
 
 .plan-view-switch .view-tab:hover {
-  background: color-mix(in oklch, var(--muted) 60%, transparent);
   color: var(--foreground);
 }
 
 .plan-view-switch .view-tab.is-active {
   background: var(--muted);
   color: var(--foreground);
+  font-weight: 600;
   box-shadow: none;
 }
 
@@ -234,8 +315,7 @@
    tighten so logo, identity, activity, chat and overflow fit 390px without scrolling. */
 @media (max-width: 479.98px) {
   .plan-appbar {
-    gap: var(--space-2);
-    min-height: 52px;
+    gap: var(--space-3);
   }
 
   .plan-identity .plan-eyebrow {

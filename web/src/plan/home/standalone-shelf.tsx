@@ -1,14 +1,11 @@
 import { useAtomValue } from "jotai";
-import { ChevronRight, FolderInput, Plus, Wrench } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
 import { useId, useState, type SyntheticEvent } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 
-import type { StandalonePlanView } from "@/plan/api/schema";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { SentenceText } from "@/plan/concept/sentence-text";
-import { plural } from "@/plan/ui/plural";
-import { toAddress } from "@/plan/files/address";
 import { MoveIntoFeatureDialog } from "@/plan/home/move-into-feature";
+import { StandaloneTable } from "@/plan/home/standalone-table";
 import {
   authorBlockReasonAtom,
   canAuthorAtom,
@@ -16,52 +13,11 @@ import {
   standaloneAtom,
 } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
+import { plural } from "@/plan/ui/plural";
 
 import "./standalone-shelf.css";
 
-const CHIPS_SHOWN = 24;
-
-function PlanChip({ plan }: { plan: StandalonePlanView }) {
-  return (
-    <li>
-      <Link to={toAddress(plan.path)} className="shelf__chip">
-        {/* The chip shows the slug; the title and state are there for screen readers. */}
-        <span className="sr-only" style={{ unicodeBidi: "isolate", direction: "ltr" }}>
-          <SentenceText text={plan.title} />
-        </span>{" "}
-        <span className="shelf__slug">
-          <Untrusted text={plan.slug} />
-        </span>{" "}
-        <span className="shelf__dot" data-state={plan.state} aria-hidden="true" />
-        <span className="sr-only">
-          <Untrusted text={plan.state} />
-        </span>
-      </Link>
-    </li>
-  );
-}
-
-function PlanChips({ plans }: { plans: StandalonePlanView[] }) {
-  const [all, setAll] = useState(false);
-  const shown = all ? plans : plans.slice(0, CHIPS_SHOWN);
-  const hidden = plans.length - shown.length;
-
-  return (
-    <ul className="shelf__chips">
-      {shown.map((plan) => (
-        <PlanChip key={plan.path} plan={plan} />
-      ))}
-      {hidden > 0 && (
-        <li>
-          <button type="button" className="shelf__more" onClick={() => setAll(true)}>
-            {`+${hidden} more`}
-          </button>
-        </li>
-      )}
-    </ul>
-  );
-}
-
+/** Misplaced documents (visions, sections, metaplans): each keeps its own one-path move. */
 function MoveRows({ onMove, reason }: { onMove: (path: string) => void; reason: string | null }) {
   const moves = useAtomValue(movesAtom);
   if (moves.length === 0) return null;
@@ -85,8 +41,8 @@ function MoveRows({ onMove, reason }: { onMove: (path: string) => void; reason: 
   );
 }
 
-/** The actions live in the summary row; their clicks must not open or close the shelf. */
-function ShelfActions({ reason, onMove }: { reason: string | null; onMove: () => void }) {
+/** The one action in the summary row; its click must not open or close the shelf. */
+function NewPlanAction({ reason }: { reason: string | null }) {
   const navigate = useNavigate();
   const keep = (event: SyntheticEvent) => {
     event.preventDefault();
@@ -100,27 +56,92 @@ function ShelfActions({ reason, onMove }: { reason: string | null; onMove: () =>
         onClick={() => navigate("/new", { state: { small: true } })}
       >
         <Plus aria-hidden="true" />
-        Add plan
-      </DisabledReason>
-      <DisabledReason reason={reason} size="sm" onClick={onMove}>
-        <FolderInput aria-hidden="true" />
-        Move plan
+        New standalone plan
       </DisabledReason>
     </div>
   );
 }
 
+/** "<n> selected · Move to a feature… · Clear", or, with nothing selected, what selecting does. */
+function SelectionBar({
+  count,
+  reason,
+  onMove,
+  onClear,
+}: {
+  count: number;
+  reason: string | null;
+  onMove: () => void;
+  onClear: () => void;
+}) {
+  if (count === 0) {
+    return <p className="shelf-bar__hint">Select plans to move them into a feature together.</p>;
+  }
+  return (
+    <div role="group" aria-label="Selected plans" className="shelf-bar">
+      <span className="shelf-bar__count" aria-live="polite">{`${count} selected`}</span>
+      <span aria-hidden="true" className="shelf-bar__sep">
+        ·
+      </span>
+      <DisabledReason reason={reason} size="sm" look="quiet" onClick={onMove}>
+        Move to a feature…
+      </DisabledReason>
+      <span aria-hidden="true" className="shelf-bar__sep">
+        ·
+      </span>
+      <DisabledReason reason={null} size="sm" look="quiet" onClick={onClear}>
+        Clear
+      </DisabledReason>
+    </div>
+  );
+}
+
+/** The selected paths that still name a listed plan, in the list's order. */
+function useSelection() {
+  const plans = useAtomValue(standaloneAtom);
+  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
+  const selected = new Set(plans.filter((plan) => picked.has(plan.path)).map((plan) => plan.path));
+  const toggle = (path: string) =>
+    setPicked((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  const select = (paths: string[], on: boolean) =>
+    setPicked((current) => {
+      const next = new Set(current);
+      for (const path of paths) {
+        if (on) next.add(path);
+        else next.delete(path);
+      }
+      return next;
+    });
+  return { plans, selected, toggle, select, clear: () => setPicked(new Set()) };
+}
+
+function ShelfSummary({ count, reason }: { count: number; reason: string | null }) {
+  return (
+    <summary className="shelf__summary">
+      <ChevronRight aria-hidden="true" className="shelf__chevron" />
+      <span className="shelf__count">{plural(count, "standalone plan")}</span>
+      <span className="shelf__hint">bugfixes, performance work and small features</span>
+      <NewPlanAction reason={reason} />
+    </summary>
+  );
+}
+
 /**
  * Collapsed by default; an empty shelf opens so its explanation shows. `defaultOpen` lets a host
- * (the help scene) show the chips without a click.
+ * (the help scene) show the table without a click.
  */
 export function StandaloneShelf({ defaultOpen = false }: { defaultOpen?: boolean }) {
   const headingId = useId();
-  const plans = useAtomValue(standaloneAtom);
+  const { plans, selected, toggle, select, clear } = useSelection();
   const moves = useAtomValue(movesAtom);
   const canAuthor = useAtomValue(canAuthorAtom);
   const blockReason = useAtomValue(authorBlockReasonAtom);
-  const [dialog, setDialog] = useState<{ path: string | null } | null>(null);
+  const [moving, setMoving] = useState<string[] | null>(null);
   // The server's reason is each control's own description; no second line repeats it.
   const reason = canAuthor ? null : (blockReason ?? "Authoring is unavailable");
   return (
@@ -129,32 +150,36 @@ export function StandaloneShelf({ defaultOpen = false }: { defaultOpen?: boolean
       <h2 id={headingId} className="sr-only">
         Standalone plans
       </h2>
-      <MoveRows reason={reason} onMove={(path) => setDialog({ path })} />
+      <MoveRows reason={reason} onMove={(path) => setMoving([path])} />
       <details className="shelf__details" open={defaultOpen || plans.length === 0}>
-        <summary className="shelf__summary">
-          <ChevronRight aria-hidden="true" className="shelf__chevron" />
-          <Wrench aria-hidden="true" className="shelf__wrench" />
-          <span>{plural(plans.length, "standalone plan")}</span>
-          <span className="shelf__hint">
-            <span aria-hidden="true" className="shelf__sep">
-              ·{" "}
-            </span>
-            bugfixes, performance work and small features in doc/plans/
-          </span>
-          <ShelfActions reason={reason} onMove={() => setDialog({ path: null })} />
-        </summary>
+        <ShelfSummary count={plans.length} reason={reason} />
         {plans.length === 0 && moves.length === 0 && (
           <p className="plan-empty shelf__empty">
             Bugfixes and small changes that need no product spec live here.
           </p>
         )}
-        {plans.length > 0 && <PlanChips plans={plans} />}
+        {plans.length > 0 && (
+          <StandaloneTable
+            plans={plans}
+            selected={selected}
+            onToggle={toggle}
+            onSelect={select}
+            actions={
+              <SelectionBar
+                count={selected.size}
+                reason={reason}
+                onMove={() => setMoving([...selected])}
+                onClear={clear}
+              />
+            }
+          />
+        )}
       </details>
       <MoveIntoFeatureDialog
-        path={dialog?.path ?? null}
-        open={dialog !== null}
+        paths={moving ?? []}
+        open={moving !== null}
         onOpenChange={(open) => {
-          if (!open) setDialog(null);
+          if (!open) setMoving(null);
         }}
       />
     </section>

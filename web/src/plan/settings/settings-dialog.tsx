@@ -15,6 +15,7 @@ import {
   ReadingSizeGroup,
   ReadingTogglesGroup,
   SettingsGroup,
+  SummariesGroup,
 } from "./settings-sections";
 import "./settings.css";
 
@@ -54,6 +55,7 @@ export function SettingsDialog({
           <ReadingFaceGroup />
           <ReadingSizeGroup />
           <ReadingTogglesGroup />
+          <SummariesGroup />
         </div>
       </DialogContent>
     </Dialog>

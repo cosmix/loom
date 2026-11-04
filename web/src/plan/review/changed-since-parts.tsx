@@ -1,5 +1,5 @@
 import { Check, Minus, PenLine, Plus, type LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
@@ -50,7 +50,7 @@ function useResolveRef(onCompare: (value: Comparison | null) => void) {
   return { name, setName, error, busy, submit, reset };
 }
 
-/** "Compare with a ref…": a quiet disclosure in the dialog's foot holding the ref form. */
+/** "Compare with a ref…": a quiet disclosure in the page foot holding the ref form. */
 export function RefForm({ onCompare }: { onCompare: (value: Comparison | null) => void }) {
   const { name, setName, error, busy, submit, reset } = useResolveRef(onCompare);
   return (
@@ -157,6 +157,7 @@ export function ChangeRows({
   selected,
   sourceOf,
   since,
+  detail,
   onOpen,
 }: {
   rows: Row[];
@@ -164,6 +165,8 @@ export function ChangeRows({
   sourceOf: (path: string) => RowSource;
   /** The fine line under a row whose diff starts from the checkpoint commit. */
   since: ReactNode;
+  /** The selected row's diff, drawn as the next item under that row (narrow screens). */
+  detail: ReactNode;
   onOpen: (row: Row) => void;
 }) {
   if (!rows.length) return <LoadState state="empty" title="No changed documents" />;
@@ -171,21 +174,21 @@ export function ChangeRows({
     <ul aria-label="Changed documents" className="changed-since__list">
       {rows.map((row) => {
         const source = sourceOf(row.path);
+        const current = row.path === selected;
         return (
-          <li
-            key={row.path}
-            className="changed-since__row"
-            aria-current={row.path === selected || undefined}
-          >
-            <PathText path={row.path} />
-            <span className="changed-since__meta">
-              <RowStatus change={row.change} />
-              {source === "commit" && row.change !== "seen" && (
-                <span className="plan-fine">{since}</span>
-              )}
-            </span>
-            <RowAction row={row} source={source} onOpen={onOpen} />
-          </li>
+          <Fragment key={row.path}>
+            <li className="changed-since__row" aria-current={current || undefined}>
+              <PathText path={row.path} />
+              <span className="changed-since__meta">
+                <RowStatus change={row.change} />
+                {source === "commit" && row.change !== "seen" && (
+                  <span className="plan-fine">{since}</span>
+                )}
+              </span>
+              <RowAction row={row} source={source} onOpen={onOpen} />
+            </li>
+            {current && detail && <li className="changed-since__detail">{detail}</li>}
+          </Fragment>
         );
       })}
     </ul>
