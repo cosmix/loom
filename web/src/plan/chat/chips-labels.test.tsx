@@ -85,7 +85,7 @@ it("a file chip reads its name and size, and removing it frees its thumbnail", (
   });
   const tray = screen.getByLabelText("Pending attachments");
   expect(tray.textContent).toContain("sketch.png");
-  expect(tray.textContent).toContain("1.2 KB");
+  expect(tray.textContent).toContain("1.2 KiB");
   expect(tray.querySelector("img")?.getAttribute("src")).toBe("blob:thumb");
   fireEvent.click(screen.getByRole("button", { name: "Remove sketch.png" }));
   expect(revoke).toHaveBeenCalledWith("blob:thumb");
@@ -134,7 +134,7 @@ it("a sent file chip shows the name and size and fetches no section status", () 
   );
   const tray = screen.getByLabelText("Sent attachments");
   expect(tray.textContent).toContain("notes.pdf");
-  expect(tray.textContent).toContain("2 KB");
+  expect(tray.textContent).toContain("2.0 KiB");
   expect(screen.queryByRole("button", { name: /remove/i })).toBeNull();
   expect(request).not.toHaveBeenCalled();
 });

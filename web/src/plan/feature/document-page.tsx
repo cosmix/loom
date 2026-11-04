@@ -5,7 +5,7 @@ import { Link, useLocation, useParams } from "react-router";
 import type { ChecklistView } from "@/plan/api/schema";
 import { ConceptRoute } from "@/plan/concept/concept-route";
 import { EmptyOffer } from "@/plan/concept/empty-offer";
-import { decode, repoRel } from "@/plan/files/address";
+import { hashAnchor, repoRel } from "@/plan/files/address";
 import { useFileSocket } from "@/plan/files/api";
 import { treeAtom } from "@/plan/files/atoms";
 import { ReadingColumn } from "@/plan/files/reading-column";
@@ -98,10 +98,6 @@ export function MetaplanPage() {
     : checklist.metaplans[0];
   if (!metaplan) return <LoadState state="not_found" title="No such metaplan" />;
   return <SourcePage path={metaplan.path} />;
-}
-
-function hashAnchor(hash: string): string | null {
-  return hash ? decode(hash.slice(1)) : null;
 }
 
 /**

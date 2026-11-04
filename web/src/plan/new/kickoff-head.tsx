@@ -6,6 +6,7 @@ import type { KickoffSize } from "@/plan/api/schema-kickoff";
 import { STATE_NAME } from "@/plan/chat/chat-state-glyph";
 import { sessionAtom } from "@/plan/chat/model";
 import { Untrusted } from "@/plan/chat/visible-controls";
+import { kindOf } from "@/plan/new/kickoff-state";
 import { kickoffAtom } from "@/plan/state/atoms";
 import { ActivityGlyph, type ActivityKind } from "@/plan/ui/activity-glyphs";
 
@@ -20,14 +21,12 @@ const STATE_GLYPH: Record<SessionView["state"], ActivityKind | null> = {
   failed: null,
 };
 
-const KIND_WORD: Record<KickoffSize, string> = { feature: "Feature", plan: "Standalone plan" };
+export const KIND_WORD: Record<KickoffSize, string> = {
+  feature: "Feature",
+  plan: "Standalone plan",
+};
 
-/** The size the conversation settled, else the one the kickoff was started as. */
-function kindOf(size: KickoffSize | null, offer: string | null): KickoffSize | null {
-  if (size !== null) return size;
-  if (offer === "kickoff-small") return "plan";
-  return offer === "kickoff" ? "feature" : null;
-}
+export const KIND_UNDECIDED = "Kind not decided";
 
 /**
  * The live kickoff's page head, in the slot the empty form's head holds: the kind of work as the
@@ -42,7 +41,7 @@ export function KickoffHead() {
   const kind = kindOf(shape?.size ?? null, session?.offer ?? null);
   return (
     <header className="kickoff-title">
-      <p className="plan-eyebrow">{kind ? KIND_WORD[kind] : "Kind not decided"}</p>
+      <p className="plan-eyebrow">{kind ? KIND_WORD[kind] : KIND_UNDECIDED}</p>
       <div className="kickoff-title__row">
         <h1 className="plan-page-title">
           {shape?.name ? <Untrusted text={shape.name} /> : "Untitled"}

@@ -150,8 +150,14 @@ function dispatch(store: Store, request: Request): Promise<CommandResult> {
       : undefined;
   const result = registerPending(store, entry.clientId, content);
   pending.entries.push(entry);
-  // The server returns the unsent queue to the asking tab on interrupt and on end.
-  if (request.type === "chat" && (request.command === "interrupt" || request.command === "end")) {
+  // The server returns the unsent queue to the asking tab on interrupt, on end and on setting a
+  // kickoff aside.
+  if (
+    request.type === "chat" &&
+    (request.command === "interrupt" ||
+      request.command === "end" ||
+      request.command === "set_aside_kickoff")
+  ) {
     markInterruptPending(store, entry.clientId);
   }
   try {

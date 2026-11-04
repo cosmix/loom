@@ -13,7 +13,7 @@ import { snapshotAtom } from "@/plan/chat/model";
 import { storeFor } from "@/plan/chat/panel-test-kit";
 import { resetKickoffLanding } from "@/plan/new/kickoff-landing";
 import { KickoffRoute } from "@/plan/new/kickoff-route";
-import { kickoffSessionAtom } from "@/plan/new/kickoff-state";
+import { draftTitle, kickoffSessionAtom } from "@/plan/new/kickoff-state";
 import { kickoffDraftsAtom, planSocketAtom, projectAtom } from "@/plan/state/atoms";
 
 vi.mock("@/plan/chat/panel", () => ({
@@ -144,6 +144,32 @@ it("a draft the server still runs waits for its conversation, no Continue", asyn
   expect(screen.queryByRole("button", { name: "Continue this draft" })).toBeNull();
 });
 
+it("a draft that stops running while its page waits is fetched again and shown", async () => {
+  served = { status: 200, body: { ...detail, draft: { ...draft, live: true } } };
+  const { store } = mount(`?session=${ID}`, null, [{ ...draft, live: true }]);
+  expect(await screen.findByRole("status", { name: "Opening the conversation" })).toBeTruthy();
+
+  served = { status: 200, body: detail };
+  act(() => store.set(kickoffDraftsAtom, [{ ...draft, live: false }]));
+
+  expect(await screen.findByRole("heading", { name: "microvm-test-env" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Continue this draft" })).toBeTruthy();
+});
+
+it("the draft leaving the list does not refetch it; only its stopping does", async () => {
+  const { store } = mount(`?session=${ID}`);
+  const fetched = () =>
+    vi.mocked(fetch).mock.calls.filter(([url]) => String(url).startsWith("/api/kickoffs/")).length;
+  await waitFor(() => expect(fetched()).toBe(1));
+
+  act(() => store.set(kickoffDraftsAtom, []));
+  await act(async () => {});
+  expect(fetched()).toBe(1);
+
+  act(() => store.set(kickoffDraftsAtom, [{ ...draft, live: false }]));
+  await waitFor(() => expect(fetched()).toBe(2));
+});
+
 it("Continue this draft sends continue_kickoff and follows the new conversation", async () => {
   const { store, socket, router } = mount(`?session=${ID}`);
   fireEvent.click(await screen.findByRole("button", { name: "Continue this draft" }));
@@ -198,7 +224,9 @@ it("this tab's own start moves to its address once; /new then stays empty", asyn
 it("a running kickoff is offered above the empty form and can be set aside", async () => {
   const running = { ...draft, name: null, live: true };
   const { socket } = mount("", liveSession(ID), [running]);
-  const note = screen.getByText((_, element) => element?.textContent === "Untitled is still open");
+  const note = screen.getByText(
+    (_, element) => element?.textContent === `${draftTitle(running)} is still open`,
+  );
   expect(note).toBeTruthy();
   expect(screen.getByRole("textbox", { name: /What do you want to build/ })).toBeTruthy();
 

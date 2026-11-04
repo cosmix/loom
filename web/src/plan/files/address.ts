@@ -28,6 +28,11 @@ export function decode(value: string): string | null {
   }
 }
 
+/** The heading anchor a location hash names (`#a%20b` gives `a b`); null for no hash or a bad escape. */
+export function hashAnchor(hash: string): string | null {
+  return hash ? decode(hash.slice(1)) : null;
+}
+
 export function toAddress(path: string, anchor?: string | null): string {
   const encodedPath = docRel(path).split("/").map(encodeURIComponent).join("/");
   return `/files/${encodedPath}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
@@ -42,7 +47,7 @@ export function parseAddress(
   const diff = value === "turn" || value === "open" || value === "head" ? value : null;
   return {
     path: repoRel(path),
-    anchor: location.hash ? decode(location.hash.slice(1)) : null,
+    anchor: hashAnchor(location.hash),
     diff,
     turn: params.get("turn"),
   };

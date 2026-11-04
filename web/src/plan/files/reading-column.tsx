@@ -15,13 +15,8 @@ import { PlanView } from "@/plan/files/plan/plan-view";
 import { planSlug, renamedPlan, treeDocs } from "@/plan/files/tree";
 import { useDocMarkdownProps } from "@/plan/files/use-doc-markdown";
 import { Markdown } from "@/plan/markdown";
+import { formatBytes } from "@/plan/ui/format-bytes";
 import { LoadState } from "@/plan/ui/load-state";
-
-function formatSize(bytes: number): string {
-  if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)} MiB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
-  return `${bytes} bytes`;
-}
 
 type Props = {
   path: string;
@@ -64,7 +59,7 @@ function DocBody({ doc, tree, marks }: { doc: DocView; tree: FileTree | null; ma
     return (
       <>
         <p role="note" className="px-6 pb-2 text-[13px] text-muted-foreground">
-          This file is {formatSize(doc.size)}; file mode shows the first 1 MiB and does not edit
+          This file is {formatBytes(doc.size)}; file mode shows the first 1 MiB and does not edit
           files over 1 MiB.
         </p>
         <pre className="overflow-x-auto px-6 pb-8 font-mono text-xs whitespace-pre-wrap">
