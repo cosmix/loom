@@ -237,7 +237,7 @@ pub fn origin_allowed(origin: Option<&str>) -> bool {
 /// WebSocket: CSP3 matches a same-origin `ws://` URL against `'self'`, and
 /// `web/src/api/ws.ts` builds its URL from `location`. `style-src` keeps
 /// `'unsafe-inline'` for React's inline styles.
-const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 /// Encode the status line, the fixed security headers and any
 /// `extra_headers` for a body of `content_length` bytes.

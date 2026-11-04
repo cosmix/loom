@@ -11,6 +11,7 @@ fn paths(dir: &Path) -> RuntimePaths {
         lock: dir.join("lock"),
         drafts: dir.join("drafts"),
         claims: dir.join("claims"),
+        attachments: dir.join("attachments"),
         summaries_lock: dir.join("summaries.lock"),
         summary_cost: dir.join("summary-cost.jsonl"),
         sessions: dir.join("sessions"),

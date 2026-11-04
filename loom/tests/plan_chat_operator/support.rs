@@ -15,7 +15,7 @@ use loom::plan_server::prereq::ReadOnly;
 use loom::plan_server::wire::chat::ChatCommand;
 use loom::plan_server::wire::message::{ClientMessage, PlanMessage};
 use loom::plan_server::{start, RunningServer, ServerOptions};
-use loom::plan_session::attachments::{AttachmentInput, AttachmentKind};
+use loom::plan_session::attachments::{AttachmentInput, AttachmentKind, DocumentAttachmentInput};
 use loom::plan_session::bridge::registry::read_record;
 use loom::plan_session::bridge::Bridge;
 use loom::plan_session::kind::SessionDir;
@@ -205,7 +205,7 @@ pub fn http_client() -> Result<Client> {
 }
 
 pub fn attachment() -> AttachmentInput {
-    AttachmentInput {
+    AttachmentInput::Document(DocumentAttachmentInput {
         kind: AttachmentKind::Source,
         path: TARGET.into(),
         anchor: None,
@@ -215,7 +215,7 @@ pub fn attachment() -> AttachmentInput {
         rests_on: vec![],
         quote: SOURCE.into(),
         selected_hash: None,
-    }
+    })
 }
 
 // Cookie bootstrap and handshake mirror plan_server_contracts and plan_server/tests/support.

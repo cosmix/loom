@@ -10,7 +10,7 @@ use crate::plan_server::authoring::Refusal;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::wire::chat::{ChatCommand, ChatFrame, CommandResult};
 use crate::plan_server::wire::message::PlanMessage;
-use crate::plan_session::attachments::{AttachmentError, AttachmentInput, AttachmentKind};
+use crate::plan_session::attachments::{self, AttachmentError, AttachmentInput, AttachmentKind};
 use crate::plan_session::bridge::host::LaunchSpec;
 use crate::plan_session::bridge::LaunchGuidance;
 use crate::plan_session::input::InputRefusal;
@@ -18,6 +18,7 @@ use crate::plan_session::kind::SessionDir;
 use crate::plan_session::model::{Item, Origin, SessionState};
 use crate::planning::project::Project;
 
+mod files;
 mod kickoff;
 mod owner;
 mod regressions;
@@ -40,7 +41,7 @@ fn fixture(read_only: bool) -> Fixture {
 }
 
 fn attachment(path: &str) -> AttachmentInput {
-    AttachmentInput {
+    AttachmentInput::Document(attachments::DocumentAttachmentInput {
         kind: AttachmentKind::Source,
         path: path.into(),
         anchor: Some("demo".into()),
@@ -50,7 +51,7 @@ fn attachment(path: &str) -> AttachmentInput {
         rests_on: Vec::new(),
         quote: "# Demo".into(),
         selected_hash: None,
-    }
+    })
 }
 
 fn send(text: &str, attachments: Vec<AttachmentInput>) -> ChatCommand {

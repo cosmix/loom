@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use super::chat::{ChatCommand, ChatFrame};
 use super::message::ClientMessage;
-use crate::plan_session::attachments::{AttachmentKind, LockedTag};
+use crate::plan_session::attachments::{AttachmentInput, AttachmentKind, LockedTag};
 use crate::plan_session::model::{
     ChatDelta, ChatSnapshot, Delivery, DenyReason, FailureKind, Item, NoticeKind, Origin,
     PermissionStatus, SessionState, ToolStatus,
@@ -179,7 +179,7 @@ scalar_coverage!(
     AttachmentKind,
     "kind",
     None,
-    [Source, Summary]
+    [Source, Summary, File]
 );
 scalar_coverage!(
     locked_tag_variants_in_fixtures,
@@ -336,7 +336,10 @@ fn a_start_whose_attachment_has_a_misspelt_field_is_refused() {
     };
     let hashes: Vec<Option<&str>> = attachments
         .iter()
-        .map(|attachment| attachment.selected_hash.as_deref())
+        .map(|attachment| match attachment {
+            AttachmentInput::Document(document) => document.selected_hash.as_deref(),
+            AttachmentInput::File(_) => None,
+        })
         .collect();
     assert_eq!(hashes, [Some("sha256:ab")]);
 }

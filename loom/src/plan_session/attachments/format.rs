@@ -2,7 +2,7 @@
 //!
 //! Also holds the block's shared syntax (tags, names, escaping) that `parse` reads back.
 
-use super::{Attachment, AttachmentKind, LockedTag, QUOTE_CHARS};
+use super::{Attachment, AttachmentKind, FileMeta, LockedTag, QUOTE_CHARS};
 
 pub(super) const OPEN_TAG: &str = "<loom-attachments>";
 pub(super) const CLOSE_TAG: &str = "</loom-attachments>";
@@ -25,7 +25,12 @@ pub fn format_message(text: &str, attachments: &[Attachment]) -> String {
     for (index, attachment) in attachments.iter().enumerate() {
         out.push_str(&header(index + 1, attachment));
         out.push('\n');
-        for line in quote_lines(&attachment.quote) {
+        // A file chip is one line: the file travels by path, not as a quote.
+        let quoted = match attachment.file {
+            Some(_) => Vec::new(),
+            None => quote_lines(&attachment.quote),
+        };
+        for line in quoted {
             out.push_str("> ");
             out.push_str(&line);
             out.push('\n');
@@ -39,6 +44,7 @@ pub(super) fn kind_name(kind: &AttachmentKind) -> &'static str {
     match kind {
         AttachmentKind::Source => "source",
         AttachmentKind::Summary => "summary",
+        AttachmentKind::File => "file",
     }
 }
 
@@ -46,6 +52,7 @@ pub(super) fn kind_from(name: &str) -> Option<AttachmentKind> {
     match name {
         "source" => Some(AttachmentKind::Source),
         "summary" => Some(AttachmentKind::Summary),
+        "file" => Some(AttachmentKind::File),
         _ => None,
     }
 }
@@ -105,6 +112,9 @@ fn escape_text(text: &str) -> String {
 }
 
 fn header(number: usize, attachment: &Attachment) -> String {
+    if let Some(file) = &attachment.file {
+        return file_header(number, &attachment.path, file);
+    }
     let kind = kind_name(&attachment.kind);
     let mut header = format!("[{number}] {kind} {}", address(attachment));
     if let Some((from, to)) = attachment.lines {
@@ -120,6 +130,17 @@ fn header(number: usize, attachment: &Attachment) -> String {
         header.push_str(" changed-since-selected");
     }
     header
+}
+
+/// `[n] file <absolute path> (<media type>, <bytes> bytes) "<name>"`. The name is quoted with
+/// `\` and `"` escaped, so no name can end the quote early or add a field; `parse` reads it
+/// back. The path is the stored file's, which the session reads with its Read tool.
+fn file_header(number: usize, path: &str, file: &FileMeta) -> String {
+    let name = file.name.replace('\\', "\\\\").replace('"', "\\\"");
+    format!(
+        "[{number}] file {path} ({}, {} bytes) \"{name}\"",
+        file.media_type, file.bytes
+    )
 }
 
 /// `path#anchor`: `path#stage:<id>` for a stage, the sentence id for a summary without an anchor.

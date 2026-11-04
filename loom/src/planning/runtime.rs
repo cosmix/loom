@@ -21,6 +21,8 @@ const STATE_VAR: &str = "LOOM_PLAN_STATE";
 const SESSION_VAR: &str = "LOOM_PLAN_SESSION";
 /// Name of the drafts directory inside the runtime directory.
 pub(crate) const DRAFTS_DIR: &str = "drafts";
+/// Name of the uploaded chat attachments directory inside the runtime directory.
+pub(crate) const ATTACHMENTS_DIR: &str = "attachments";
 
 /// Every runtime path of one project's planning state.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +37,8 @@ pub struct RuntimePaths {
     pub drafts: PathBuf,
     /// Directory of claims.
     pub claims: PathBuf,
+    /// Directory of uploaded chat attachments (read-only to a planning session).
+    pub attachments: PathBuf,
     /// Lock file serialising summary writes.
     pub summaries_lock: PathBuf,
     /// Append-only summary cost ledger.
@@ -49,6 +53,7 @@ impl RuntimePaths {
             lock: dir.join("lock"),
             drafts: dir.join(DRAFTS_DIR),
             claims: dir.join("claims"),
+            attachments: dir.join(ATTACHMENTS_DIR),
             summaries_lock: dir.join("summaries.lock"),
             summary_cost: dir.join("summary-cost.jsonl"),
             sessions: dir.join("sessions"),

@@ -5,7 +5,8 @@ use std::str::Split;
 
 use super::format::{kind_from, locked_from, tag_line, CLOSE_TAG, OPEN_TAG};
 use super::pasted::unwrap_pasted;
-use super::{Attachment, AttachmentKind, LockedTag};
+use super::stored::{extension, valid_id, MEDIA_TYPES};
+use super::{Attachment, AttachmentKind, FileMeta, LockedTag};
 
 /// The user's text and the attachments of a message Claude Code recorded (a hook prompt), after
 /// removing a pasted-content wrapper ([`unwrap_pasted`]); see [`parse_unwrapped`].
@@ -93,11 +94,14 @@ fn parse_entries(lines: &[&str]) -> Option<Vec<Attachment>> {
 
 /// `[n] <kind> <address>[ lines a-b][ rests-on a,b][ locked=<tag>][ changed-since-selected]`.
 fn parse_header(line: &str, number: usize) -> Option<Attachment> {
+    if let Some(rest) = line.strip_prefix(&format!("[{number}] file ")) {
+        return parse_file_header(rest);
+    }
     let mut tokens = line.split(' ').peekable();
     if tokens.next()? != format!("[{number}]") {
         return None;
     }
-    let kind = kind_from(tokens.next()?)?;
+    let kind = kind_from(tokens.next()?).filter(|kind| *kind != AttachmentKind::File)?;
     let mut entry = with_address(kind, tokens.next()?)?;
     if tokens.next_if_eq(&"lines").is_some() {
         entry.lines = Some(parse_range(tokens.next()?)?);
@@ -146,7 +150,69 @@ fn with_address(kind: AttachmentKind, address: &str) -> Option<Attachment> {
         quote: String::new(),
         changed_since_selected: false,
         locked: None,
+        file: None,
     })
+}
+
+/// `<absolute path> (<media type>, <bytes> bytes) "<name>"` of a file chip. The path may hold
+/// spaces, so each ` (` is tried as the start of the metadata; the first that parses wins. The
+/// chip keeps no path (browsers never get it): its id is the stored file's name stem.
+fn parse_file_header(rest: &str) -> Option<Attachment> {
+    rest.match_indices(" (")
+        .find_map(|(at, _)| file_chip(&rest[..at], &rest[at + 2..]))
+}
+
+fn file_chip(path: &str, tail: &str) -> Option<Attachment> {
+    let (media_type, bytes, name) = parse_file_meta(tail)?;
+    let stored = std::path::Path::new(path).file_name()?.to_str()?;
+    let (id, ext) = stored.split_once('.')?;
+    if !valid_id(id) || extension(&media_type) != Some(ext) {
+        return None;
+    }
+    Some(Attachment {
+        kind: AttachmentKind::File,
+        path: String::new(),
+        anchor: None,
+        lines: None,
+        stage: None,
+        summary_sentence: None,
+        rests_on: Vec::new(),
+        quote: String::new(),
+        changed_since_selected: false,
+        locked: None,
+        file: Some(FileMeta {
+            id: id.to_owned(),
+            name,
+            media_type,
+            bytes,
+        }),
+    })
+}
+
+/// `<media type>, <bytes> bytes) "<name>"`: the media type must be one the store allows.
+fn parse_file_meta(tail: &str) -> Option<(String, u64, String)> {
+    let (media, rest) = tail.split_once(", ")?;
+    if !MEDIA_TYPES.contains(&media) {
+        return None;
+    }
+    let (size, quoted) = rest.split_once(" bytes) \"")?;
+    let name = unescape_name(quoted.strip_suffix('"')?)?;
+    Some((media.to_owned(), size.parse().ok()?, name))
+}
+
+/// The name between the quotes: `\\` and `\"` stand for themselves, any other backslash or a
+/// bare quote is not a name this crate wrote.
+fn unescape_name(text: &str) -> Option<String> {
+    let mut name = String::new();
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => name.push(chars.next().filter(|n| matches!(n, '\\' | '"'))?),
+            '"' => return None,
+            other => name.push(other),
+        }
+    }
+    Some(name)
 }
 
 fn parse_range(token: &str) -> Option<(u32, u32)> {

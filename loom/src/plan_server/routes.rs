@@ -26,6 +26,13 @@ pub enum BodyKind {
     Json,
     /// `text/plain; charset=utf-8`, at most `max` bytes.
     Text { max: usize },
+    /// A raw body of one of `types` (compared without parameters, case-insensitively), at most
+    /// `max` bytes. The gate checks only the declared type and length; the handler checks the
+    /// bytes.
+    Bytes {
+        max: usize,
+        types: &'static [&'static str],
+    },
 }
 
 /// Who may call a route.
@@ -72,6 +79,7 @@ pub fn all_routes() -> Vec<RouteSpec> {
     routes.extend(super::summaries::routes());
     routes.extend(super::pressure::routes());
     routes.extend(super::run::routes());
+    routes.extend(super::uploads::routes());
     routes
 }
 
@@ -91,6 +99,7 @@ pub fn install_all(ctx: &Arc<PlanContext>) {
     super::review::install(ctx);
     super::pressure::install(ctx);
     super::run::install(ctx);
+    super::uploads::install(ctx);
 }
 
 /// The outcome of looking a request up in the route table.

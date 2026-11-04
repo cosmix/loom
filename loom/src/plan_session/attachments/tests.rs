@@ -9,6 +9,7 @@ use super::format::format_message;
 use super::parse::parse_message;
 use super::{Attachment, AttachmentKind, LockedTag, QUOTE_CHARS};
 
+mod files;
 mod forge;
 mod pasted;
 mod resolve;
@@ -134,6 +135,7 @@ fn sample(index: usize, quote: &str) -> Attachment {
         quote: quote.to_owned(),
         changed_since_selected: index.is_multiple_of(2),
         locked: None,
+        file: None,
     };
     match index % 4 {
         1 => attachment.lines = Some((index as u32, index as u32 + 3)),
