@@ -365,3 +365,20 @@ it("preserves the extracted null status and plan state formatting", () => {
   expect(summaryStatus(null)).toBeNull();
   expect(planStateText("in_progress_now")).toBe("in progress now");
 });
+
+it("heads the vision's summary with the feature and the vision, and opens its source in the feature", () => {
+  show({
+    key: "demo/product/vision",
+    title: "Vision",
+    path: "doc/product/demo/index.md",
+  });
+
+  const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
+  expect(
+    within(crumbs)
+      .getAllByRole("listitem")
+      .map((item) => item.textContent),
+  ).toEqual(["demo", "Vision"]);
+  const source = screen.getByRole("link", { name: "Source" });
+  expect(source.getAttribute("href")).toBe("/f/demo/source/product/demo/index.md");
+});

@@ -219,6 +219,41 @@
   font-weight: 500;
 }
 
+/* On a document's source (`data-view="source"`, set by spine.tsx) the current row says "Source" on
+   a quiet line under its name, so the sidebar keeps the document and names the view. The row is
+   the current link when the route marks one; otherwise the head of the group the route is in.
+   The word is drawn by CSS: the heading's Summary / Source switch already names the view to
+   assistive technology, so a second announcement in the spine would repeat it. */
+[data-loom-plan] .plan-spine[data-view="source"] .plan-spine__link[aria-current="page"],
+[data-loom-plan]
+  .plan-spine[data-view="source"]
+  .plan-spine__group[data-here]:not(:has([aria-current="page"]))
+  > .plan-spine__row
+  > .plan-spine__head {
+  flex-wrap: wrap;
+  row-gap: 0;
+  padding-block: var(--space-1);
+}
+
+[data-loom-plan] .plan-spine[data-view="source"] .plan-spine__link[aria-current="page"]::after,
+[data-loom-plan]
+  .plan-spine[data-view="source"]
+  .plan-spine__group[data-here]:not(:has([aria-current="page"]))
+  > .plan-spine__row
+  > .plan-spine__head::after {
+  content: "Source";
+  flex-basis: 100%;
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  font-weight: 400;
+  line-height: var(--leading-ui);
+}
+
+/* A group head's sub-line starts under its name, past the mark and its gap. */
+[data-loom-plan] .plan-spine[data-view="source"] .plan-spine__head::after {
+  padding-inline-start: calc(14px + var(--space-2));
+}
+
 @media (max-width: 759.98px) {
   [data-loom-plan] .plan-spine {
     position: static;

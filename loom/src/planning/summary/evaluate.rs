@@ -11,6 +11,8 @@ mod feature_tests;
 pub(crate) mod fixtures;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod vision_tests;
 
 pub use cite::cite_key;
 

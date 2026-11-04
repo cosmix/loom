@@ -122,13 +122,14 @@ function Breadcrumbs({ crumbs }: { crumbs: readonly HeadingCrumb[] }): JSX.Eleme
 }
 
 /**
- * Summary and Source: a segmented pair of quiet controls with no edge around it, the current one
- * on the `--muted` wash (the `.plan-button[aria-current="page"]` rule in `doc-heading.css`). The pair touches, so it reads as one control among
- * the row's others.
+ * Summary and Source: one two-state segmented control, a hairline track the height of the row's
+ * other controls with the current view filled (`.doc-heading-views` in `doc-heading.css`). Both
+ * states stay on screen, so the way back from the source is always the segment beside the one
+ * the reader is on.
  */
 function ViewSwitch({ views }: { views: HeadingViews }): JSX.Element {
   return (
-    <div role="group" aria-label="View" className="inline-flex">
+    <div role="group" aria-label="View" className="doc-heading-views">
       {(["summary", "source"] as const).map((view) => {
         const current = views.current === view;
         const to = view === "summary" ? views.summaryTo : views.sourceTo;

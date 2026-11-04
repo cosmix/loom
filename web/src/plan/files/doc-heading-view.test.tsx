@@ -238,13 +238,13 @@ describe("FileDocHeading", () => {
       "/f/demo/engineering/file-mode",
     );
     const source = within(views).getByRole("link", { name: "Source" });
-    expect(source.getAttribute("href")).toBe("/files/plans/demo/PLAN-file-mode.md");
+    expect(source.getAttribute("href")).toBe("/f/demo/source/plans/demo/PLAN-file-mode.md");
     expect(source.getAttribute("aria-current")).toBe("page");
   });
 
   it.each<[EntryKind, string | null, string | null]>([
     ["section", "demo", "/f/demo/product/section_03"],
-    ["vision", "demo", "/f/demo/product"],
+    ["vision", "demo", "/f/demo/vision"],
     ["metaplan", "demo", "/f/demo/engineering"],
     ["plan", null, "/plans/file-mode"],
     ["section", null, null],

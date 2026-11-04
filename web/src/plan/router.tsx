@@ -1,7 +1,7 @@
 import { createBrowserRouter, type RouteObject } from "react-router";
 
 import { ConceptRoute } from "@/plan/concept/concept-route";
-import { MetaplanPage, VisionPage } from "@/plan/feature/document-page";
+import { FeatureSourcePage, MetaplanPage, VisionPage } from "@/plan/feature/document-page";
 import { FeatureLanding, FeatureLayout } from "@/plan/feature/feature-layout";
 import { Gaps } from "@/plan/feature/gaps";
 import { PressurePage } from "@/plan/feature/pressure-page";
@@ -27,6 +27,7 @@ const featureRoutes: RouteObject = {
   children: [
     { index: true, element: <FeatureLanding /> },
     { path: "vision", element: <VisionPage /> },
+    { path: "source/*", element: <FeatureSourcePage /> },
     ...conceptRoutes("product"),
     { path: "metaplan", element: <MetaplanPage /> },
     { path: "metaplan/:file", element: <MetaplanPage /> },

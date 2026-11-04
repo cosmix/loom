@@ -57,7 +57,7 @@ whichever step the feature is at: vision, product sections, metaplan, plans, pre
   folds back to the sentence it replaced. The user decides how deep to go and where. Nobody has to
   read the full text to form a view, and anybody can reach the full text from any claim in the
   summary. Concept mode is where every document with a summary opens: the feature's spine links
-  each section and plan straight to it, with Source on the same page. The vision and the
+  each section, plan and the vision straight to it, with Source on the same page. The
   metaplans have no summaries (Summary levels, below), so they read as source.
 
 Review and authoring connect: from either mode, the user can point at a passage and take it into
@@ -289,7 +289,8 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
   - _Overviews_: two per feature: one for the product, built from
     `doc/product/<feature>/index.md` and its sections; one for the engineering decisions, built
     from its metaplans and plans.
-  - _Document summaries_: one per product section and one per plan.
+  - _Document summaries_: one for the vision (at most 8 sentences in at most 3 paragraphs), one per
+    product section and one per plan.
 
   An overview sentence links to the document summaries it draws on (one or several); a document
   summary sentence links to the heading section of the raw document it draws on. Briefs are

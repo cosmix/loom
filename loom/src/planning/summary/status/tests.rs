@@ -30,9 +30,9 @@ fn status_json_reports_sentences_claims_and_order() {
     assert_eq!(json["schema"], 1);
     let rows = json["summaries"].as_array().unwrap();
     let ids: Vec<_> = rows.iter().map(|row| row["id"].as_str().unwrap()).collect();
-    assert_eq!(ids, [ID1, ID2, PRODUCT, "plans/gone"]);
+    assert_eq!(ids, [VISION_ID, ID1, ID2, PRODUCT, "plans/gone"]);
     assert_eq!(
-        json_keys(&rows[0]),
+        json_keys(&rows[1]),
         [
             "claim",
             "error",
@@ -44,24 +44,24 @@ fn status_json_reports_sentences_claims_and_order() {
         ]
     );
     assert_eq!(
-        json_keys(&rows[0]["sentences"][0]),
+        json_keys(&rows[1]["sentences"][0]),
         ["id", "line", "state", "text"]
     );
-    assert_eq!(rows[0]["state"], "current");
-    assert_eq!(rows[0]["source"], S1);
+    assert_eq!(rows[1]["state"], "current");
+    assert_eq!(rows[1]["source"], S1);
     assert_eq!(
-        rows[0]["path"],
+        rows[1]["path"],
         "doc/loom/summaries/demo/product/section_01.md"
     );
-    assert_eq!(rows[0]["sentences"][0]["text"], "Alpha holds.");
-    assert!(rows[0]["sentences"][0]["line"].as_u64().unwrap() > 0);
-    assert_eq!(rows[1]["state"], "rebuilding");
+    assert_eq!(rows[1]["sentences"][0]["text"], "Alpha holds.");
+    assert!(rows[1]["sentences"][0]["line"].as_u64().unwrap() > 0);
+    assert_eq!(rows[2]["state"], "rebuilding");
     assert_eq!(
-        json_keys(&rows[1]["claim"]),
+        json_keys(&rows[2]["claim"]),
         ["created_at", "pid", "session"]
     );
-    assert_eq!(rows[1]["claim"]["session"], "session-2");
-    assert_eq!(rows[3]["state"], "missing");
+    assert_eq!(rows[2]["claim"]["session"], "session-2");
+    assert_eq!(rows[4]["state"], "missing");
 }
 
 #[test]

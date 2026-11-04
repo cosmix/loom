@@ -171,7 +171,7 @@ export const READING_SCENES: readonly PlannerHelpScene[] = [
       },
       {
         target: ".concept-passage-chip",
-        text: "The source passage, with its file and heading. It opens in file mode.",
+        text: "The source passage, with its file and heading. It opens the full source, and Summary brings you back.",
       },
     ],
   },
@@ -181,5 +181,5 @@ export const READING_SCENES: readonly PlannerHelpScene[] = [
 export const READING_TIPS: readonly string[] = [
   "A dashed mark can mean that a source changed, a rebuild is running, approval is pending, or a build cannot finish.",
   "Selecting text in a summary sentence leaves its detail closed so you can use the selection in chat.",
-  "Opening detail preserves the scroll position unless the opened point would be outside the viewport.",
+  "The Sources line above a summary names each document it draws on by number and title, and says changed beside one that changed since you looked.",
 ];

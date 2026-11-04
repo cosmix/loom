@@ -18,8 +18,8 @@ Never write under `doc/` or anywhere in the repository except through
 Run `loom plan summary status --json` to inspect the assigned summaries and their
 dependencies. Separate document summaries from overviews without adding ids to the
 batch. Leave another session's claims alone. A feature summary's id names its feature:
-feature ids are `overview/<feature>/product`, `overview/<feature>/engineering`, and
-`<feature>/product/section_<nn>`. Plan summary ids are `plans/<slug>` with
+feature ids are `overview/<feature>/product`, `overview/<feature>/engineering`,
+`<feature>/product/vision`, and `<feature>/product/section_<nn>`. Plan summary ids are `plans/<slug>` with
 repository-wide unique slugs; plan document ids remain `plan/<slug>`.
 
 Process document summaries first, one at a time in the listed order. Then process
@@ -59,7 +59,11 @@ For each id, complete these steps before moving to the next id:
 
 Use this exact draft body format for document summaries:
 
-- Use at most 15 sentences, one sentence per line, with blank lines between paragraphs.
+- Use at most 15 sentences for a section or plan summary. A vision summary (id
+  `<feature>/product/vision`) takes at most 8 sentences in at most 3 paragraphs, distilling the
+  vision so a reader grasps it in under a minute. Write one sentence per line, with blank lines
+  between paragraphs.
+- A sentence compresses its cited section; never copy a sentence of the source.
 - Use only `#` and `##` headings to group prose; headings carry no links.
 - End every sentence with one or more plain Markdown links to heading sections of this
   summary's own source document. Use a link without a fragment only for text before the
@@ -75,6 +79,8 @@ Use this exact draft body format for overviews:
   or metaplans directly. Do not replace document-summary citations with raw section or
   plan citations. Resolve links relative to the final overview file, not the runtime draft.
 - Cite every document in the overview's scope with at least one overview sentence.
+- An overview sentence that cites member sentences cites at least two of them, and says what
+  they add up to. Cite one only when that member's summary holds a single sentence.
 - Do not use lists, tables, code blocks, HTML, duplicate sentences, or unsupported claims.
 
 Seal only when every citation resolves to a current source sentence. Stop when every

@@ -50,23 +50,19 @@
   font-family: var(--font-sans);
 }
 
-/* One line: the lead word, then the documents. At 390px the documents wrap under the lead word's
-   line rather than scrolling. */
-.concept-key-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0 var(--space-3);
-  min-width: 0;
+/* The lede says what the documents are to this page ("Sources: the 12 sections this overview
+   summarizes"); one fine line, its weight the legend's. */
+.concept-key-lede {
+  max-width: 68ch;
+  margin: 0;
 }
 
-.concept-key-lead {
-  flex: none;
-}
-
+/* Every document sits on one fixed-width track, so a long key reads as aligned columns and a
+   title is cut at the same width wherever it falls: three tracks across the 68ch column at
+   1440px, two at 390px, where four documents take two lines and "more" a third. */
 .concept-key-list {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 10rem), 1fr));
   align-items: center;
   gap: 0 var(--space-4);
   min-width: 0;
@@ -80,11 +76,10 @@
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  max-width: 100%;
 }
 
-/* A document: its mark and its short label, one control-high line. The full title is in the
-   link's name and tooltip, never drawn. */
+/* A document: its mark, its number and its title on one control-high line. The title is cut with
+   an ellipsis at the track's end; the DOM, the link's name and the tooltip keep all of it. */
 .concept-key-doc {
   display: inline-flex;
   align-items: center;
@@ -120,9 +115,31 @@ a.concept-key-doc:hover {
   outline-offset: 2px;
 }
 
-/* A long plan slug is cut with an ellipsis; its full name stays in the link's name. */
-.concept-key-label {
+/* The title reads in the chrome's foreground so it, not the number, names the document. */
+.concept-key-title {
   min-width: 0;
+  overflow: hidden;
+  color: var(--foreground);
+  text-overflow: ellipsis;
+}
+
+a.concept-key-doc:hover .concept-key-title {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* "changed" and "no plan" follow the link on its line and keep their width; the title gives way. */
+.concept-key-changed,
+.concept-key-list > li > .plan-fine {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* A section number never shrinks; a long plan slug is cut with an ellipsis at 14 characters so its
+   title still shows, and its full name stays in the link's name. */
+.concept-key-label {
+  flex: none;
+  max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: var(--font-mono);
@@ -166,6 +183,39 @@ a.concept-key-doc:hover {
   height: 8px;
   border-radius: 2px;
   background: var(--muted-foreground);
+}
+
+/* ── Source link ──────────────────────────────────────────────────────────── */
+
+/* The link under a short summary to its whole source ("Read the full vision"): one chrome line a
+   paragraph's gap under the text, its arrow after the words. A link in chrome underlines on hover
+   only (DESIGN.md, Focus and hover). */
+.concept-read-source {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.concept-read-source:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.concept-read-source:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.concept-read-source svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* ── Empty states ─────────────────────────────────────────────────────────── */

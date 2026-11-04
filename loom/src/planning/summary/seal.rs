@@ -11,6 +11,8 @@ mod restate;
 mod restate_contract_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod two_member_contract_tests;
 
 use std::cell::RefCell;
 use std::fmt;

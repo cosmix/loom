@@ -8,7 +8,7 @@ import { initClient } from "@/plan/api/client";
 import authoringFixture from "@/plan/api/fixtures/authoring.json";
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
-import docFixture from "@/plan/api/fixtures/files-doc.json";
+import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import treeFixture from "@/plan/api/fixtures/files-tree.json";
 import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
 import {
@@ -34,9 +34,7 @@ vi.mock("@/plan/chat/panel", async (original) => ({
 type Store = ReturnType<typeof createStore>;
 
 const SPINE = "Feature documents";
-const VISION_PATH = "product/atlas/index.md";
-const VISION_BODY = "Operators read one calm screen first.";
-const OVERVIEW_BODY = "Teams plan work together";
+const VISION_SENTENCE = "A plan starts from a short statement of intent.";
 const WIDE_QUERY = "(min-width: 1024px)";
 const SECTION_NAMES = { "01": "Workflow model", "02": "Command surface", "03": "Review path" };
 
@@ -50,7 +48,6 @@ const SPINE_ROWS = [
   /\bRun\b/,
 ];
 
-let fetchedDocs: string[] = [];
 let unregister: (() => void)[] = [];
 
 function json(body: unknown, status = 200): Response {
@@ -65,18 +62,14 @@ function requestUrl(input: RequestInfo | URL): URL {
   return new URL(raw, "http://localhost");
 }
 
-/** The server: the atlas overview, the atlas vision and the file tree, and 404 for the rest. */
+/** The server: the atlas overview, the atlas vision summary and the file tree, and 404 for the rest. */
 function stubServer(): void {
   const notFound = () => json({ error: "not_found", message: "no such page" }, 404);
   vi.stubGlobal("fetch", (input: RequestInfo | URL): Promise<Response> => {
     const url = requestUrl(input);
     if (url.pathname === "/api/tree") return Promise.resolve(json(treeFixture));
-    if (url.pathname === "/api/doc") {
-      const path = url.searchParams.get("path") ?? "";
-      fetchedDocs.push(path);
-      return Promise.resolve(path === VISION_PATH ? json(visionDoc()) : notFound());
-    }
     const key = decodeURIComponent(url.pathname.replace("/api/concept/", ""));
+    if (key === "atlas/product/vision") return Promise.resolve(json(visionPage()));
     return Promise.resolve(key === "overview/atlas/product" ? json(overview()) : notFound());
   });
 }
@@ -90,14 +83,13 @@ function overview(): unknown {
   };
 }
 
-function visionDoc(): unknown {
+function visionPage(): unknown {
   return {
-    ...docFixture,
-    path: "doc/product/atlas/index.md",
-    title: "Atlas vision",
-    text: `# Atlas vision\n\n${VISION_BODY}\n`,
-    sections: [],
+    ...summaryFixture,
+    key: "atlas/product/vision",
+    title: "Vision",
     feature: "atlas",
+    path: "doc/product/atlas/index.md",
   };
 }
 
@@ -240,7 +232,6 @@ function queueRow(queue: HTMLElement, name: string): HTMLElement {
 
 beforeEach(() => {
   window.localStorage.clear();
-  fetchedDocs = [];
   stubMedia(true);
   stubServer();
   unregister = [
@@ -255,14 +246,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("finished feature opens the product overview", async () => {
+it("a feature opens its vision", async () => {
   const { router } = renderRoutes("/f/atlas", finishedChecklist());
 
-  await waitFor(() => expect(router.state.location.pathname).toBe("/f/atlas/product"));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/f/atlas/vision"));
   expect(router.state.location.search).toBe("");
 
   const column = await screen.findByRole("document", { name: "Reading column" });
-  expect(column.textContent).toContain(OVERVIEW_BODY);
+  await waitFor(() => expect(column.textContent).toContain(VISION_SENTENCE));
 
   const rows = within(spine());
   for (const name of SPINE_ROWS) expect(rows.getByRole("link", { name })).toBeTruthy();
@@ -280,9 +271,9 @@ it("the Vision row opens the vision document", async () => {
 
   await waitFor(() => expect(router.state.location.pathname).toBe("/f/atlas/vision"));
   expect(router.state.location.search).toBe("");
-  // The body comes from /api/doc, so a page naming only the document's path never shows it.
-  expect(await screen.findByText(VISION_BODY)).toBeTruthy();
-  expect(fetchedDocs).toContain(VISION_PATH);
+  // The body comes from the vision's summary page, so a page naming only the path never shows it.
+  const column = await screen.findByRole("document", { name: "Reading column" });
+  await waitFor(() => expect(column.textContent).toContain(VISION_SENTENCE));
   expect(spine()).toBeTruthy();
 });
 

@@ -227,7 +227,10 @@ it("count links to open-questions anchor with a decorative legend glyph", () => 
   );
   const anchor = "/files/product/demo/section_01.md#open-questions";
   const chip = within(screen.getByRole("banner")).getByRole("link", { name: "3 open questions" });
-  expect(chip.getAttribute("href")).toBe(anchor);
+  // The summary page's chip opens the source inside the feature; the tree entry opens file mode.
+  expect(chip.getAttribute("href")).toBe(
+    "/f/demo/source/product/demo/section_01.md#open-questions",
+  );
   const links = screen.getAllByRole("link", { name: "Open questions · 3" });
   expect(links).toHaveLength(1);
   for (const link of links) {

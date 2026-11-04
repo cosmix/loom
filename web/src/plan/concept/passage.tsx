@@ -6,7 +6,7 @@ import { Link } from "react-router";
 import type { SourceAnchor } from "@/plan/api/schema-concept";
 import type { DocView } from "@/plan/api/schema-files";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { toAddress } from "@/plan/files/address";
+import { featureOfDocPath, featureSourceHref, sourceHref } from "@/plan/feature/source-href";
 import { Markdown } from "@/plan/markdown";
 
 import { passageKey, useColumn } from "./column-context";
@@ -17,11 +17,16 @@ import { passageOf } from "./passages";
 
 type Passage = NonNullable<ReturnType<typeof passageOf>>;
 
-/** The address file mode opens, carrying the passage's lines so it can highlight them. */
+/**
+ * The address of the passage's source, carrying its lines so the page can highlight them: inside
+ * the feature the document belongs to, in file mode for a document outside any feature.
+ */
 export function passageHref(anchor: SourceAnchor, lines: { start: number; end: number } | null) {
-  const query = lines ? `?lines=${lines.start}-${lines.end}` : "";
-  const hash = anchor.anchor ? `#${encodeURIComponent(anchor.anchor)}` : "";
-  return `${toAddress(anchor.path)}${query}${hash}`;
+  const feature = featureOfDocPath(anchor.path);
+  const options = { lines, anchor: anchor.anchor };
+  return feature === null
+    ? sourceHref(anchor.path, options)
+    : featureSourceHref(feature, anchor.path, options);
 }
 
 function fileName(path: string): string {

@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
 import { checklistViewSchema, serverInfoSchema, type ChecklistView } from "@/plan/api/schema";
-import { Spine } from "@/plan/feature/spine";
+import { isSourcePath, Spine } from "@/plan/feature/spine";
+import spineSheet from "@/plan/feature/spine.css?raw";
 import { projectAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 beforeEach(() => window.localStorage.clear());
@@ -273,5 +274,67 @@ describe("the next step", () => {
     const body = spine().querySelector(".plan-spine__body");
     expect(body?.firstElementChild?.className).toBe("plan-spine-next");
     expect(body?.lastElementChild?.tagName).toBe("OL");
+  });
+});
+
+describe("a document's source", () => {
+  it.each([
+    ["/f/atlas/source/product/atlas/index.md", true],
+    ["/f/atlas/source/plans/atlas/PLAN-atlas-01.md", true],
+    ["/f/atlas/vision", false],
+    ["/f/source/vision", false],
+    ["/files/product/atlas/index.md", false],
+  ])("reads %s as a source route: %s", (pathname, expected) => {
+    expect(isSourcePath(pathname)).toBe(expected);
+  });
+
+  it("marks the spine on a source route, and only there", () => {
+    renderSpine("/f/atlas/source/product/atlas/index.md");
+    expect(spine().getAttribute("data-view")).toBe("source");
+    cleanup();
+
+    renderSpine("/f/atlas/vision");
+    expect(spine().hasAttribute("data-view")).toBe(false);
+  });
+
+  it("draws Source under the current row, or the group's head when no row is current", () => {
+    const css = spineSheet.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+    expect(css).toContain(
+      '.plan-spine[data-view="source"] .plan-spine__link[aria-current="page"]::after',
+    );
+    expect(css).toContain('.plan-spine__group[data-here]:not(:has([aria-current="page"]))');
+    expect(css).toContain('content: "Source";');
+  });
+
+  it.each([
+    ["/f/atlas/source/product/atlas/index.md", "Vision", "/f/atlas/vision"],
+    [
+      "/f/atlas/source/product/atlas/section_01.md",
+      "01 The Run loop",
+      "/f/atlas/product/section_01",
+    ],
+    [
+      "/f/atlas/source/plans/atlas/PLAN-atlas-02.md",
+      "atlas-02 running",
+      "/f/atlas/engineering/atlas-02",
+    ],
+  ])("marks the row of the document shown at %s as the one current link", (path, name, href) => {
+    renderSpine(path);
+    const [only, ...rest] = current();
+    expect(rest).toEqual([]);
+    expect(only!.getAttribute("href")).toBe(href);
+    expect(only!.textContent?.startsWith(name.split(" ")[0]!)).toBe(true);
+  });
+
+  it("marks the group's head for a lone metaplan, and no row for a file with no row", () => {
+    renderSpine(
+      "/f/atlas/source/plans/atlas/index.md",
+      atlas({ metaplans: [{ path: "doc/plans/atlas/index.md", title: "Roadmap" }] }),
+    );
+    expect(current().map((anchor) => anchor.getAttribute("href"))).toEqual(["/f/atlas/metaplan"]);
+    cleanup();
+
+    renderSpine("/f/atlas/source/product/atlas/notes.md");
+    expect(within(spine()).queryAllByRole("link", { current: "page" })).toEqual([]);
   });
 });

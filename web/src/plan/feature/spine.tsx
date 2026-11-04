@@ -11,6 +11,7 @@ import { GroupRow, Name } from "@/plan/feature/spine-row";
 import {
   groupOfPathname,
   spineGroups,
+  summaryPathnameOfSource,
   type GroupId,
   type NameStyle,
   type SpineGroup,
@@ -41,6 +42,12 @@ function currentRow(
   return null;
 }
 
+/** Whether the route shows a feature document's source: `/f/<feature>/source/<path>`. */
+export function isSourcePath(pathname: string): boolean {
+  const [root, , page] = pathname.split("/").filter(Boolean);
+  return root === "f" && page === "source";
+}
+
 /** The reader's expanded groups for one feature, and the toggle that changes them. */
 function useExpandedGroups(feature: string): { opened: string[]; toggle: (id: GroupId) => void } {
   const [expanded, setExpanded] = useAtom(expandedAtom);
@@ -61,11 +68,14 @@ function MenuButton({
   open,
   controls,
   row,
+  source,
   onClick,
 }: {
   open: boolean;
   controls: string;
   row: { name: string; style: NameStyle } | null;
+  /** The route shows the row's source, which the control names after the row. */
+  source: boolean;
   onClick: () => void;
 }) {
   return (
@@ -81,6 +91,7 @@ function MenuButton({
       {row && (
         <span className="plan-spine__here">
           <Name name={row.name} style={row.style} />
+          {source && " · Source"}
         </span>
       )}
       <ChevronDown aria-hidden="true" />
@@ -105,16 +116,23 @@ export function Spine() {
 
   const groups = spineGroups(checklist);
   const here = groupOfPathname(pathname);
+  const source = isSourcePath(pathname);
+  // On a document's source its summary row is the current one, with "Source" drawn under it.
+  const rowPath = summaryPathnameOfSource(checklist, pathname) ?? pathname;
   return (
     <nav
       aria-label="Feature documents"
       className="plan-spine"
       data-open={menuOpen ? "" : undefined}
+      // A document's source inside the feature (`/f/<f>/source/…`): its row stays current and
+      // says "Source" under its name (spine.css), so the reader sees which view of it is open.
+      data-view={source ? "source" : undefined}
     >
       <MenuButton
         open={menuOpen}
         controls={bodyId}
-        row={currentRow(groups, pathname)}
+        row={currentRow(groups, rowPath)}
+        source={source}
         onClick={() => setMenuOpen(!menuOpen)}
       />
       <div id={bodyId} className="plan-spine__body">
@@ -124,7 +142,7 @@ export function Spine() {
             <GroupRow
               key={group.id}
               group={group}
-              pathname={pathname}
+              pathname={rowPath}
               here={group.id === here}
               open={group.id === here || opened.includes(group.id)}
               onToggle={() => toggle(group.id)}
