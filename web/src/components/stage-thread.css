@@ -5,8 +5,10 @@
 @layer components {
   /* The thread as beads on one string: the waits-for run hangs right of the
    * left column, the feeds run left of the right one, so this stage sits on
-   * the centre line whatever either side holds. A narrow container turns the
-   * string vertical. `--tone` is the stage's own, from the header. */
+   * the centre line whatever either side holds. A side with several
+   * neighbours fans out: its chips stack and a rail joins them where the
+   * string ends. A narrow container turns the string vertical. `--tone` is
+   * the stage's own, from the header. */
   .fulcrum {
     container-type: inline-size;
     min-width: 0;
@@ -21,29 +23,29 @@
       "run-l arrow-l self arrow-r run-r"
       "cap-l .       .    .       cap-r";
     align-items: center;
-    column-gap: 10px;
     row-gap: 7px;
+    --rail: color-mix(in oklch, var(--tone, var(--foreground)) 30%, var(--hairline));
+    --fan-inset: 16px;
   }
-  /* The string: hairline at the edges, the stage's tone where it meets the
-   * centre bead. It runs through the chip row only. */
-  .fulcrum-track::before {
-    content: "";
-    position: absolute;
-    inset-inline: 0;
-    top: 15px;
+  /* The string between the two sides: the stage's tone where it meets the
+   * centre bead. Each side draws its own continuation: a tail fading out
+   * behind a lone chip, or a rail across a fan. */
+  .fulcrum-string {
+    grid-row: 1;
+    grid-column: 2 / 5;
+    align-self: center;
     height: 1px;
     background: linear-gradient(
       90deg,
-      transparent,
-      var(--hairline) 14%,
+      var(--rail),
       color-mix(in oklch, var(--tone, var(--foreground)) 55%, var(--hairline)) 50%,
-      var(--hairline) 86%,
-      transparent
+      var(--rail)
     );
     pointer-events: none;
   }
   .fulcrum-run {
     grid-area: run-l;
+    position: relative;
     display: flex;
     min-width: 0;
     flex-wrap: wrap;
@@ -54,6 +56,69 @@
   .fulcrum-run-end {
     grid-area: run-r;
     justify-content: flex-start;
+  }
+  .fulcrum-run:not(.fulcrum-run-fan)::before {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    top: 50%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--hairline) 45%, var(--rail));
+    pointer-events: none;
+  }
+  .fulcrum-run-end:not(.fulcrum-run-fan)::before {
+    background: linear-gradient(270deg, transparent, var(--hairline) 45%, var(--rail));
+  }
+  /* A fan: chips stacked in a column against a rail on the string's side,
+   * each on its own short branch tinted with its state. The string meets
+   * the rail at its midpoint, since the row centres on the fan. */
+  .fulcrum-run-fan {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: flex-end;
+    padding-inline-end: var(--fan-inset);
+  }
+  .fulcrum-run-end.fulcrum-run-fan {
+    align-items: flex-start;
+    padding-inline: var(--fan-inset) 0;
+  }
+  .fulcrum-run-fan::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 13px;
+    bottom: 13px;
+    width: 1px;
+    border-radius: 1px;
+    background: var(--rail);
+    pointer-events: none;
+  }
+  .fulcrum-run-end.fulcrum-run-fan::after {
+    right: auto;
+    left: 0;
+  }
+  .fulcrum-run-fan > ::before {
+    content: "";
+    position: absolute;
+    right: calc(-1 * var(--fan-inset) - 1px);
+    top: 50%;
+    width: var(--fan-inset);
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--tone, var(--foreground)) 55%, var(--hairline)),
+      var(--rail)
+    );
+    pointer-events: none;
+  }
+  .fulcrum-run-end.fulcrum-run-fan > ::before {
+    right: auto;
+    left: calc(-1 * var(--fan-inset) - 1px);
+    background: linear-gradient(
+      90deg,
+      var(--rail),
+      color-mix(in oklch, var(--tone, var(--foreground)) 55%, var(--hairline))
+    );
   }
   .fulcrum-caption {
     grid-area: cap-l;
@@ -67,6 +132,13 @@
   .fulcrum-caption-end {
     grid-area: cap-r;
     justify-self: start;
+  }
+  /* Under a fan the caption lines up with the chips, clear of the rail. */
+  .fulcrum-run-fan + .fulcrum-caption {
+    padding-inline-end: var(--fan-inset);
+  }
+  .fulcrum-run-fan + .fulcrum-caption-end {
+    padding-inline: var(--fan-inset) 0;
   }
   .fulcrum-chip,
   .fulcrum-fold {
@@ -167,6 +239,7 @@
   .fulcrum-arrow {
     grid-area: arrow-l;
     position: relative;
+    margin-inline: 8px;
     width: 14px;
     height: 14px;
     flex-shrink: 0;
@@ -176,8 +249,6 @@
     grid-area: arrow-r;
   }
   .fulcrum-cap {
-    grid-area: run-l;
-    justify-self: end;
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -191,16 +262,12 @@
     text-transform: uppercase;
     color: var(--muted-foreground);
   }
-  .fulcrum-cap-end {
-    grid-area: run-r;
-    justify-self: start;
-  }
   .fulcrum-cap svg {
     width: 12px;
     height: 12px;
     color: var(--tone-completed);
   }
-  .fulcrum-cap-end svg {
+  .fulcrum-run-end .fulcrum-cap svg {
     color: var(--primary);
   }
 
@@ -213,7 +280,16 @@
       justify-items: center;
       row-gap: 8px;
     }
+    .fulcrum-string,
+    .fulcrum-run::before,
+    .fulcrum-run::after,
+    .fulcrum-run-fan > ::before {
+      display: none;
+    }
     .fulcrum-track::before {
+      content: "";
+      position: absolute;
+      pointer-events: none;
       inset-inline: auto;
       left: 50%;
       top: 0;
@@ -230,14 +306,21 @@
       );
     }
     .fulcrum-run,
-    .fulcrum-run-end {
+    .fulcrum-run-end,
+    .fulcrum-run-fan,
+    .fulcrum-run-end.fulcrum-run-fan {
+      flex-direction: row;
+      flex-wrap: wrap;
       justify-content: center;
+      align-items: center;
+      padding-inline: 0;
     }
     .fulcrum-caption,
     .fulcrum-caption-end,
-    .fulcrum-cap,
-    .fulcrum-cap-end {
+    .fulcrum-run-fan + .fulcrum-caption,
+    .fulcrum-run-fan + .fulcrum-caption-end {
       justify-self: center;
+      padding-inline: 6px;
     }
     .fulcrum-caption,
     .fulcrum-caption-end {
@@ -246,6 +329,7 @@
       padding-inline: 6px;
     }
     .fulcrum-arrow {
+      margin-inline: 0;
       rotate: 90deg;
       background: var(--bead);
     }
