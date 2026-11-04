@@ -155,6 +155,18 @@ it("sheet below lg", () => {
   expect(store.get(chatSheetOpenAtom)).toBe(false);
 });
 
+it("the header button shows the attachment count while the sheet is closed", () => {
+  media(false);
+  const store = storeFor();
+  store.set(pendingAttachmentsAtom, [draft]);
+  mount(store);
+  expect(store.get(chatSheetOpenAtom)).toBe(false);
+  expect(screen.getByRole("button", { name: "Open chat, 1 attachment" }).textContent).toContain(
+    "1",
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
 it("adding a chip opens the chat sheet and holds the attachment", () => {
   media(false);
   const { store } = mount(storeFor(), <AddToChat draft={draft} rect={rect} onAdded={() => {}} />);
