@@ -1,6 +1,6 @@
 # Source Graph Review Backlog
 >
-> Host-verify review items
+> Host verify
 >
 >
 
