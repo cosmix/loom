@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use serde_json::{json, Value};
 
 use super::drafts::{self, Seed, MAX_FILE_BYTES, MAX_MESSAGES, MAX_MESSAGE_BYTES};
-use super::tests::Fixture;
+use super::tests::{browser, wait_for, Fixture};
 use super::ChatState;
 
 const SESSION: &str = "11111111-1111-4111-8111-111111111111";
@@ -265,4 +265,28 @@ fn a_draft_over_the_file_cap_loses_its_oldest_messages_and_still_reads_back() {
     );
     let last = draft.messages.last().unwrap();
     assert!(last.starts_with("39"), "the newest message is kept");
+}
+
+#[test]
+fn reading_a_landed_draft_deletes_it_and_tells_the_open_tabs() {
+    let f = Fixture::new(false);
+    let state = ChatState::default();
+    drafts::create(&f.ctx, &state, SESSION, Seed::default()).unwrap();
+    drafts::update(&f.ctx, &state, SESSION, |d| {
+        d.target = Some("doc/product/landed/index.md".to_owned());
+    });
+    let tab = f.connect(&browser());
+    let document = f.ctx.root().join("doc/product/landed/index.md");
+    fs::create_dir_all(document.parent().unwrap()).unwrap();
+    fs::write(&document, "# Landed\n").unwrap();
+
+    assert!(drafts::get(&f.ctx, &state, SESSION).is_none());
+
+    let shelf = wait_for("the shelf update", || {
+        let frames = tab.frames();
+        frames
+            .into_iter()
+            .find(|frame| frame["type"] == "kickoff_drafts")
+    });
+    assert_eq!(shelf["drafts"], json!([]));
 }

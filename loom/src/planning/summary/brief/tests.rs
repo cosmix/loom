@@ -70,7 +70,7 @@ fn vision_brief_caps_at_eight_sentences_and_cites_only_the_vision() {
     assert!(!text.contains("At most 15"), "{text}");
     let overview = brief(&f.root, &f.paths, &[PRODUCT.into()], None).unwrap();
     assert!(
-        overview.contains("- An overview sentence that cites member sentences cites at least two of them and says what they add up to."),
+        overview.contains("- An overview sentence that cites member sentences cites at least two of them and says what they add up to; it may cite one only when that member's summary holds a single sentence."),
         "{overview}"
     );
     assert!(!text.contains("cites at least two"), "{text}");

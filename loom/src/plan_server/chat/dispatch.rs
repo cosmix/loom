@@ -138,10 +138,7 @@ fn start(
     inputs: Vec<AttachmentInput>,
     owner: ChatOwner,
 ) -> Outcome {
-    refuse_new_work(ctx)?;
-    if ctx.read_only().is_read_only() {
-        return Err(ctx.refusal_message(&Refusal::ReadOnlyMode));
-    }
+    draft_cmd::writable(ctx)?;
     let typed = text.is_some() || !inputs.is_empty();
     let text = text.unwrap_or_default();
     let draft = draft_cmd::StartDraft::of(offer.as_deref(), &text, &inputs);

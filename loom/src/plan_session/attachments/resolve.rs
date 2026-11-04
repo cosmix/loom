@@ -10,7 +10,7 @@ use crate::planning::summary::store::{validate_id, STORE_DIR};
 use crate::planning::summary::write::read_summary;
 
 use super::parse::is_sentence_id;
-use super::stored::{self, NAME_CHARS};
+use super::stored;
 use super::{
     Attachment, AttachmentError, AttachmentInput, AttachmentKind, DocumentAttachmentInput,
     FileAttachmentInput, FileMeta, LockedTag, MAX_QUOTE_BYTES,
@@ -45,17 +45,7 @@ pub fn resolve_file(
         .to_str()
         .filter(|text| !has_control(text))
         .ok_or_else(unknown)?;
-    let name: String = sidecar
-        .name
-        .chars()
-        .filter(|&c| !stored::is_unsafe_name_char(c))
-        .collect();
-    let name = name.trim().chars().take(NAME_CHARS).collect::<String>();
-    let name = if name.is_empty() {
-        "attachment".to_owned()
-    } else {
-        name
-    };
+    let name = stored::clean_name(&sidecar.name);
     Ok(Attachment {
         kind: AttachmentKind::File,
         path: path.to_owned(),

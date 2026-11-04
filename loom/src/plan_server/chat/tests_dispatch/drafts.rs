@@ -295,6 +295,20 @@ fn every_spelling_of_a_landed_plan_counts() {
     assert!(!draft_file(&f, "22222222-2222-4222-8222-222222222222").exists());
 }
 
+/// The rename's message pasted and its turn run to Idle, as a real session takes it. The fake
+/// host never submits a paste: one left waiting for its prompt holds the closing message of a
+/// later final write back until the delivery timeout, past the fixture's final-write bound.
+fn rename_turn(f: &Fixture, s: &LaunchSpec, name: &str) {
+    let named = format!("`{name}`");
+    let notice = wait_for("the rename paste", || {
+        let delivered = f.host.delivered_to(&s.socket).into_iter();
+        delivered.rev().find(|text| text.contains(&named))
+    });
+    f.spool(s, "UserPromptSubmit", json!({"prompt": notice}));
+    f.wait_state(s, SessionState::Working);
+    idle(f, s);
+}
+
 /// A small kickoff with a file attached, shaped, renamed and set aside; returns its session.
 fn set_aside_small_kickoff(f: &Fixture, tab: &Tab) -> LaunchSpec {
     store_file(f);
@@ -305,6 +319,7 @@ fn set_aside_small_kickoff(f: &Fixture, tab: &Tab) -> LaunchSpec {
     block(f, &s, tab, shape);
     idle(f, &s);
     assert_eq!(f.command(tab, rename_cmd("my-plan")), ok_result());
+    rename_turn(f, &s, "my-plan");
     assert_eq!(f.command(tab, set_aside_cmd(&s.id)), ok_result());
     f.finish_final_write(&s);
     wait_until("the ended session", || !f.ended(&s.id).is_empty());
