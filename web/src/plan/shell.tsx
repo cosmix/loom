@@ -11,9 +11,26 @@ import { PlanHeader } from "@/plan/header/header";
 import { PlannerHelpDialog } from "@/plan/help/help-dialog";
 import { readingFaceAtom, readingSizeAtom } from "@/plan/settings/preferences";
 import { SettingsDialog } from "@/plan/settings/settings-dialog";
+import { PlanFooter } from "@/plan/shell-footer";
 import { unauthorizedAtom } from "@/plan/state/atoms";
-import { useAutoRebuildSync } from "@/plan/summaries/state";
+import { SummaryFeedHost, useAutoRebuildSync } from "@/plan/summaries/state";
 import { Unauthorized } from "@/plan/unauthorized";
+
+/** The help dialog's open state, toggled by `?` outside typing targets and without modifiers. */
+function useHelpKey() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "?" || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (isTyping(event.target)) return;
+      event.preventDefault();
+      setOpen((current) => !current);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+  return [open, setOpen] as const;
+}
 
 /** Header, banners, routed page and dock; a 401 replaces all of it with the sign-in notice. */
 export function PlanShell() {
@@ -21,19 +38,9 @@ export function PlanShell() {
   const unauthorized = useAtomValue(unauthorizedAtom);
   const face = useAtomValue(readingFaceAtom);
   const size = useAtomValue(readingSizeAtom);
-  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useHelpKey();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { pathname } = useLocation();
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "?" || event.altKey || event.ctrlKey || event.metaKey) return;
-      if (isTyping(event.target)) return;
-      event.preventDefault();
-      setHelpOpen((open) => !open);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
   return (
     <TooltipProvider delayDuration={250}>
       <div
@@ -59,6 +66,8 @@ export function PlanShell() {
               </main>
               <Dock />
             </div>
+            <PlanFooter />
+            <SummaryFeedHost />
             <PlannerHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
             <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
           </>

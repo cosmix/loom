@@ -1,6 +1,11 @@
 import { useAtom, useAtomValue } from "jotai";
 import { useId, type ReactElement, type ReactNode } from "react";
 
+import { useNow } from "@/components/hooks/use-now";
+import { Button } from "@/components/ui/button";
+import { Untrusted } from "@/plan/chat/visible-controls";
+import { panelLoadAtom, summaryReloadAtom } from "@/plan/summaries/state";
+import { SummaryPanel } from "@/plan/summaries/summary-panel";
 import { notificationStatus, useNotificationToggle } from "@/state/notifications";
 import {
   autoRebuildAtom,
@@ -173,6 +178,35 @@ function NotificationRow(): ReactElement {
       onChange={toggle}
       status={notificationStatus(support, on)}
     />
+  );
+}
+
+/**
+ * The whole summary panel (last rebuild, token totals, limits, terminal claims), read from the
+ * feed the shell runs. Plain text stands in for the panel until the feed answers; a status
+ * role here would collide with the notification row's.
+ */
+export function SummariesGroup(): ReactElement {
+  const load = useAtomValue(panelLoadAtom);
+  const { reload } = useAtomValue(summaryReloadAtom);
+  const nowSecs = Math.floor(useNow() / 1000);
+  return (
+    <SettingsGroup title="Summaries" hint="Rebuild totals and provider limits">
+      {load.status === "ready" ? (
+        <SummaryPanel panel={load.panel} nowSecs={nowSecs} />
+      ) : load.status === "loading" ? (
+        <p className="ps-hint">Loading summaries</p>
+      ) : (
+        <div className="space-y-2 text-[13px]">
+          <p role="alert">
+            <Untrusted text={load.message} />
+          </p>
+          <Button type="button" variant="outline" size="sm" onClick={reload}>
+            Retry
+          </Button>
+        </div>
+      )}
+    </SettingsGroup>
   );
 }
 

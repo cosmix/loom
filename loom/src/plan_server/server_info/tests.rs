@@ -76,8 +76,8 @@ fn server_without_a_browser_cookie_records_no_presence() {
 }
 
 #[test]
-fn share_on_loopback_returns_tokenized_url_and_tunnel() {
-    if skip("share_on_loopback_returns_tokenized_url_and_tunnel") {
+fn share_on_loopback_returns_tokenized_url() {
+    if skip("share_on_loopback_returns_tokenized_url") {
         return;
     }
     let project = project();
@@ -93,7 +93,6 @@ fn share_on_loopback_returns_tokenized_url_and_tunnel() {
         json!({
             "url": format!("http://127.0.0.1:{port}/?token={}", server.token),
             "bind": "loopback",
-            "tunnel": crate::plan_server::startup::tunnel_hint(port, &crate::plan_server::hostname()),
         })
     );
     server.stop().expect("stop");
@@ -118,7 +117,6 @@ fn share_on_wildcard_bind_returns_first_url_without_tunnel() {
         json!({
             "url": server.ctx.bind().urls.first().cloned().unwrap_or_default(),
             "bind": "remote",
-            "tunnel": null,
         })
     );
     server.stop().expect("stop");

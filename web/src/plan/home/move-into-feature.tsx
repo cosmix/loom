@@ -14,6 +14,7 @@ import { noPanelRefusal, startError } from "@/plan/chat/offer-flow";
 import { panelCollapsedAtom } from "@/plan/chat/prefs";
 import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
 import { Untrusted } from "@/plan/chat/visible-controls";
+import { IsolatedSentence } from "@/plan/concept/sentence-text";
 import { repoRel, toAddress } from "@/plan/files/address";
 import { FEATURE_NAME_HINT, isFeatureName } from "@/plan/new/feature-name";
 import {
@@ -23,29 +24,47 @@ import {
   standaloneAtom,
 } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
+import { plural } from "@/plan/ui/plural";
 import type { Store } from "@/state/store";
+
+import "./move-into-feature.css";
+
+/**
+ * One document keeps the move text the misplaced-document offers have always sent; several plans
+ * (the shelf's selection) travel in ONE message, so one conversation moves them together.
+ */
+function moveText(paths: string[], name: string): string {
+  if (paths.length === 1) {
+    return (
+      `Move ${repoRel(paths[0]!)} into the feature "${name}": ` +
+      `use git mv into the matching doc/product/${name}/ or doc/plans/${name}/ directory, ` +
+      "keep file names, and fix every reference to it."
+    );
+  }
+  return (
+    `Move these plans into the feature "${name}": ${paths.map(repoRel).join(", ")}. ` +
+    `Use git mv into doc/plans/${name}/, keep file names, and fix every reference to them.`
+  );
+}
 
 /**
  * Starts the move's chat and returns the route where its session shows: `/` mounts no chat panel,
  * so the dialog closing would otherwise leave nothing visibly changed. The chat belongs to the
  * destination feature when it exists, else to the whole project, which every panel shows, so the
- * moved plan's page is where it is reached. Any other source is reached at its own document.
+ * first moved plan's page is where it is reached. Any other source is reached at its own document.
  */
-async function beginMove(store: Store, path: string, name: string, signal: AbortSignal) {
-  const text =
-    `Move ${repoRel(path)} into the feature "${name}": ` +
-    `use git mv into the matching doc/product/${name}/ or doc/plans/${name}/ directory, ` +
-    "keep file names, and fix every reference to it.";
+async function beginMove(store: Store, paths: string[], name: string, signal: AbortSignal) {
   // The chat belongs to its destination. A new feature's name is refused as a start's owner until
   // the move has written it, so that chat starts for the whole project.
   const known = store.get(featuresAtom).some((item) => item.feature === name);
-  await startChat(store, null, text, [], known ? name : undefined);
+  await startChat(store, null, moveText(paths, name), [], known ? name : undefined);
   if (signal.aborted) return null;
   store.set(panelCollapsedAtom, false);
   store.set(chatSheetOpenAtom, true);
   if (known) return `/f/${encodeURIComponent(name)}`;
-  const plan = store.get(standaloneAtom).find((item) => item.path === path);
-  return plan ? `/plans/${encodeURIComponent(plan.slug)}` : toAddress(path);
+  const first = paths[0]!;
+  const plan = store.get(standaloneAtom).find((item) => item.path === first);
+  return plan ? `/plans/${encodeURIComponent(plan.slug)}` : toAddress(first);
 }
 
 function useMoveChat(onClose: () => void) {
@@ -55,7 +74,7 @@ function useMoveChat(onClose: () => void) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => () => request.current?.abort(), []);
-  const start = async (path: string, name: string) => {
+  const start = async (paths: string[], name: string) => {
     if (request.current || !store.get(canAuthorAtom)) return;
     const refusal = noPanelRefusal(store);
     if (refusal) {
@@ -67,7 +86,7 @@ function useMoveChat(onClose: () => void) {
     setPending(true);
     setError(null);
     try {
-      const destination = await beginMove(store, path, name, controller.signal);
+      const destination = await beginMove(store, paths, name, controller.signal);
       if (!controller.signal.aborted) {
         if (destination) void navigate(destination);
         onClose();
@@ -82,32 +101,43 @@ function useMoveChat(onClose: () => void) {
   return { start, pending, error };
 }
 
-function PlanChoice({ value, onChange }: { value: string; onChange: (path: string) => void }) {
+/** What moves: each listed plan by its title over its slug, any other document by its path. */
+function MoveSubject({ paths }: { paths: string[] }) {
   const plans = useAtomValue(standaloneAtom);
-  const group = useId();
+  if (paths.length === 1 && !plans.some((plan) => plan.path === paths[0])) {
+    return (
+      <p className="move-dialog__path">
+        <Untrusted text={paths[0]!} />
+      </p>
+    );
+  }
   return (
-    <fieldset className="space-y-2">
-      <legend className="mb-2 font-medium">Standalone plan</legend>
-      {plans.map((plan) => (
-        <label key={plan.path} className="flex items-start gap-2">
-          <input
-            type="radio"
-            name={group}
-            value={plan.path}
-            checked={value === plan.path}
-            onChange={() => onChange(plan.path)}
-            className="mt-1 accent-primary"
-          />
-          <span className="min-w-0 break-words">
-            <Untrusted text={plan.title} />{" "}
-            <span className="block text-xs text-muted-foreground">
-              <Untrusted text={plan.path} />
-            </span>
-          </span>
-        </label>
-      ))}
-      {plans.length === 0 && <p className="text-muted-foreground">No standalone plans to move.</p>}
-    </fieldset>
+    <div className="move-dialog__group">
+      <p className="move-dialog__label">{`Moving ${plural(paths.length, "plan")}`}</p>
+      <ul className="move-dialog__subjects">
+        {paths.map((path) => {
+          const plan = plans.find((item) => item.path === path);
+          return (
+            <li key={path}>
+              {plan ? (
+                <>
+                  <span className="move-dialog__title">
+                    <IsolatedSentence text={plan.title} />
+                  </span>
+                  <span className="move-dialog__slug">
+                    <Untrusted text={plan.slug} />
+                  </span>
+                </>
+              ) : (
+                <span className="move-dialog__slug">
+                  <Untrusted text={path} />
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -122,8 +152,8 @@ function FeatureName({
 }) {
   const id = useId();
   return (
-    <div className="space-y-2">
-      <label htmlFor={id} className="block">
+    <div className="move-dialog__name">
+      <label htmlFor={id} className="move-dialog__label">
         New feature name
       </label>
       <input
@@ -133,9 +163,9 @@ function FeatureName({
         disabled={disabled}
         aria-invalid={(!disabled && value !== "" && !isFeatureName(value)) || undefined}
         aria-describedby={`${id}-help`}
-        className="w-full rounded-md border border-input bg-background px-3 py-2 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
+        className="move-dialog__input"
       />
-      <p id={`${id}-help`} className="text-xs text-muted-foreground">
+      <p id={`${id}-help`} className="plan-fine">
         {FEATURE_NAME_HINT}
       </p>
     </div>
@@ -149,57 +179,51 @@ interface FeatureChoiceProps {
   onNameChange: (name: string) => void;
 }
 
+/** Each destination is a radio named by the feature's slug; the last one names a new feature. */
 function FeatureChoice({ feature, name, onFeatureChange, onNameChange }: FeatureChoiceProps) {
   const features = useAtomValue(featuresAtom);
   const group = useId();
   return (
-    <fieldset className="space-y-2">
-      <legend className="mb-2 font-medium">Destination feature</legend>
-      {features.map((item) => (
-        <label key={item.feature} className="flex items-center gap-2">
+    <fieldset className="move-dialog__group">
+      <legend className="move-dialog__label">Destination feature</legend>
+      <div className="move-dialog__choices">
+        {features.map((item) => (
+          <label key={item.feature} className="move-dialog__choice">
+            <input
+              type="radio"
+              name={group}
+              value={item.feature}
+              checked={feature === item.feature}
+              onChange={() => onFeatureChange(item.feature)}
+            />
+            <span className="move-dialog__slug">
+              <Untrusted text={item.feature} />
+            </span>
+          </label>
+        ))}
+        <label className="move-dialog__choice">
           <input
             type="radio"
             name={group}
-            value={item.feature}
-            checked={feature === item.feature}
-            onChange={() => onFeatureChange(item.feature)}
-            className="accent-primary"
+            value=""
+            checked={feature === ""}
+            onChange={() => onFeatureChange("")}
           />
-          <Untrusted text={item.feature} />
+          New feature
         </label>
-      ))}
-      <label className="flex items-center gap-2">
-        <input
-          type="radio"
-          name={group}
-          value=""
-          checked={feature === ""}
-          onChange={() => onFeatureChange("")}
-          className="accent-primary"
-        />
-        New feature
-      </label>
+      </div>
       <FeatureName value={name} disabled={feature !== ""} onChange={onNameChange} />
     </fieldset>
   );
 }
 
-function useMoveReason(
-  path: string | null,
-  source: string,
-  feature: string,
-  name: string,
-  pending: boolean,
-) {
-  const plans = useAtomValue(standaloneAtom);
+function useMoveReason(paths: string[], feature: string, name: string, pending: boolean) {
   const features = useAtomValue(featuresAtom);
   const canAuthor = useAtomValue(canAuthorAtom);
   const blockReason = useAtomValue(authorBlockReasonAtom);
   if (!canAuthor) return blockReason ?? "Authoring is unavailable";
   if (pending) return "Starting the move conversation";
-  if (!source || (path === null && !plans.some((plan) => plan.path === source))) {
-    return "Choose a standalone plan to move";
-  }
+  if (paths.length === 0) return "Choose a standalone plan to move";
   if (
     !isFeatureName(feature || name) ||
     (feature !== "" && !features.some((item) => item.feature === feature))
@@ -209,24 +233,16 @@ function useMoveReason(
   return null;
 }
 
-function MoveForm({ path, onClose }: { path: string | null; onClose: () => void }) {
-  const [selectedPath, setSelectedPath] = useState("");
+function MoveForm({ paths, onClose }: { paths: string[]; onClose: () => void }) {
   const [feature, setFeature] = useState("");
   const [name, setName] = useState("");
   const { start, pending, error } = useMoveChat(onClose);
-  const source = path ?? selectedPath;
-  const reason = useMoveReason(path, source, feature, name, pending);
+  const reason = useMoveReason(paths, feature, name, pending);
   return (
-    <div className="space-y-5">
-      <fieldset disabled={pending} className="space-y-5">
-        <legend className="sr-only">Document and destination</legend>
-        {path === null ? (
-          <PlanChoice value={selectedPath} onChange={setSelectedPath} />
-        ) : (
-          <p className="break-words">
-            <Untrusted text={path} />
-          </p>
-        )}
+    <div className="move-dialog__form">
+      <fieldset disabled={pending} className="move-dialog__fields">
+        <legend className="sr-only">Documents and destination</legend>
+        <MoveSubject paths={paths} />
         <FeatureChoice
           feature={feature}
           name={name}
@@ -235,7 +251,7 @@ function MoveForm({ path, onClose }: { path: string | null; onClose: () => void 
         />
       </fieldset>
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="move-dialog__error">
           <Untrusted text={error} />
         </p>
       )}
@@ -243,21 +259,22 @@ function MoveForm({ path, onClose }: { path: string | null; onClose: () => void 
         reason={reason}
         look="primary"
         onClick={() => {
-          void start(source, feature || name);
+          void start(paths, feature || name);
         }}
       >
-        Move into feature
+        Move
       </DisabledReason>
     </div>
   );
 }
 
+/** `paths` is what moves: one misplaced document, or the standalone plans the shelf selected. */
 export function MoveIntoFeatureDialog({
-  path,
+  paths,
   open,
   onOpenChange,
 }: {
-  path: string | null;
+  paths: string[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -265,7 +282,7 @@ export function MoveIntoFeatureDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[85vh] overflow-y-auto motion-reduce:animate-none"
+        className="max-h-[85vh] overflow-y-auto motion-reduce:animate-none sm:max-w-md"
         onOpenAutoFocus={() => {
           returnFocus.current =
             document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -278,11 +295,11 @@ export function MoveIntoFeatureDialog({
         <DialogHeader>
           <DialogTitle>Move into a feature</DialogTitle>
           <DialogDescription>
-            Start a conversation to move the document and fix its references.
+            Start a conversation that moves the documents and fixes their references.
           </DialogDescription>
         </DialogHeader>
         {open && (
-          <MoveForm key={path ?? "choose-plan"} path={path} onClose={() => onOpenChange(false)} />
+          <MoveForm key={paths.join("\n")} paths={paths} onClose={() => onOpenChange(false)} />
         )}
       </DialogContent>
     </Dialog>

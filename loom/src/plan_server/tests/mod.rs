@@ -26,8 +26,8 @@ mod uploads_contract;
 mod ws;
 
 #[test]
-fn share_on_loopback_gives_the_tokenized_url_and_a_tunnel() {
-    if skip("share_on_loopback_gives_the_tokenized_url_and_a_tunnel") {
+fn share_on_loopback_gives_the_tokenized_url() {
+    if skip("share_on_loopback_gives_the_tokenized_url") {
         return;
     }
     let project = project();
@@ -40,11 +40,6 @@ fn share_on_loopback_gives_the_tokenized_url_and_a_tunnel() {
     let url = format!("http://127.0.0.1:{port}/?token={}", server.token);
     assert_eq!(link["url"], url.as_str());
     assert_eq!(link["bind"], "loopback");
-    let tunnel = link["tunnel"].as_str().expect("a tunnel command");
-    assert!(
-        tunnel.starts_with(&format!("ssh -L {port}:127.0.0.1:{port} ")),
-        "{tunnel}"
-    );
     let info = json_body(&get(&server, "/api/server", &cookies));
     assert_eq!(info["remote"], false);
     assert_eq!(info["port"], port);
@@ -69,7 +64,7 @@ fn a_wildcard_bind_is_remote_and_offers_no_tunnel() {
     assert_eq!(info["remote"], true, "{info}");
     let link = json_body(&get(&server, "/api/share", &cookies));
     assert_eq!(link["bind"], "remote");
-    assert!(link["tunnel"].is_null(), "{link}");
+    assert!(link.get("tunnel").is_none(), "{link}");
     assert!(link["url"].as_str().unwrap_or("").contains(&server.token));
     server.stop().expect("stop");
 }

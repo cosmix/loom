@@ -1,5 +1,4 @@
 {
   "url": "http://127.0.0.1:7272/",
-  "bind": "loopback",
-  "tunnel": "ssh -L 7272:localhost:7272 host"
+  "bind": "loopback"
 }

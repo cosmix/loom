@@ -2,7 +2,6 @@ import { useAtomValue } from "jotai/react";
 import { ChevronDown, ChevronUp, RefreshCwIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { useNow } from "@/components/hooks/use-now";
 import { Button } from "@/components/ui/button";
 import type { SummaryPanel as Panel, SummaryQuestion } from "@/plan/api/schema-summaries";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
@@ -14,7 +13,7 @@ import { LoadState } from "@/plan/ui/load-state";
 
 import { RebuildQuestion } from "./rebuild-question";
 import { summaryQuestionAtom, useSummaryActions, useSummaryFeed, type PanelLoad } from "./state";
-import { SummaryPanel } from "./summary-panel";
+import { RebuildActivity } from "./summary-panel";
 
 function staleCount(panel: Panel): number {
   const questionIds = new Set(panel.question?.ids ?? []);
@@ -91,7 +90,6 @@ function QuestionAnswer({ question }: { question: SummaryQuestion }) {
 }
 
 function StatusContent({ load, reload }: { load: PanelLoad; reload: () => void }) {
-  const nowSecs = Math.floor(useNow() / 1000);
   if (load.status === "loading") return <LoadState state="loading" title="Loading summaries" />;
   if (load.status === "error") {
     return (
@@ -102,15 +100,21 @@ function StatusContent({ load, reload }: { load: PanelLoad; reload: () => void }
       />
     );
   }
-  // One gap between the question and the panel's sections, the same gap SummaryPanel sets
-  // between its own sections.
+  // The popover shows what needs attention: the question, queue and failures. The token totals and
+  // limits live in the footer and in Settings (SummaryPanel). One gap between sections, the gap
+  // SummaryPanel sets between its own.
   return (
-    <div className="space-y-[var(--space-4)]">
+    <div className="space-y-[var(--space-4)] text-[13px] [overflow-wrap:anywhere]">
       {/* The question comes first so its answer buttons stay above the fold on a phone. */}
       {load.panel.question && (
         <QuestionAnswer key={load.panel.question.id} question={load.panel.question} />
       )}
-      <SummaryPanel panel={load.panel} nowSecs={nowSecs} />
+      {load.panel.read_only !== null && (
+        <p className="text-muted-foreground">
+          <Untrusted text={load.panel.read_only} />
+        </p>
+      )}
+      <RebuildActivity panel={load.panel} />
     </div>
   );
 }

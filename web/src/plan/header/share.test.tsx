@@ -40,20 +40,20 @@ async function openShare() {
 }
 
 describe("Share", () => {
-  it("shows the tunnel line on a loopback bind", async () => {
+  it("shows only the link on a loopback bind", async () => {
     stubShare(shareFixture);
     render(<Share />);
     fireEvent.click(screen.getByRole("button", { name: /^share/i }));
     expect(await screen.findByText(shareFixture.url)).toBeTruthy();
     expect(screen.getByRole("dialog", { name: "Share link" })).toBeTruthy();
-    expect(screen.getByText(/From another machine, tunnel first:/)).toBeTruthy();
-    expect(screen.getByText(shareFixture.tunnel)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Copy tunnel command" })).toBeTruthy();
+    expect(screen.queryByText(/tunnel/i)).toBeNull();
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Copy tunnel command" })).toBeNull();
     expect(screen.queryByText(/plain HTTP/)).toBeNull();
   });
 
   it("shows the plain-HTTP warning on a remote bind", async () => {
-    stubShare({ url: "http://10.0.0.5:7272/", bind: "remote", tunnel: null });
+    stubShare({ url: "http://10.0.0.5:7272/", bind: "remote" });
     render(<Share />);
     fireEvent.click(screen.getByRole("button", { name: /^share/i }));
     expect(await screen.findByText("http://10.0.0.5:7272/")).toBeTruthy();
