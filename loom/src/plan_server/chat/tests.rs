@@ -225,7 +225,7 @@ impl Fixture {
     }
 
     /// Wait for the closing message, then run its turn to the Stop that ends the chat.
-    fn finish_final_write(&self, s: &LaunchSpec) {
+    pub(super) fn finish_final_write(&self, s: &LaunchSpec) {
         let closing = self.ctx.extensions().get::<GuidanceSlot>().unwrap();
         let closing = closing.get().closing_message();
         let pasted = || self.host.delivered_to(&s.socket).contains(&closing);

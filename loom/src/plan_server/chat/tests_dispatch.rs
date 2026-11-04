@@ -1,31 +1,30 @@
 //! Tests of chat command dispatch: refusals, start forms and queue return.
 
-use std::sync::{Arc, Mutex};
-
 use serde_json::{json, Value};
 
-use super::guidance::{FixedGuidance, GuidanceProvider, GuidanceSlot};
 use super::tests::{browser, ok_result, start, wait_for, wait_until, Fixture, Tab};
 use crate::plan_server::authoring::Refusal;
-use crate::plan_server::context::PlanContext;
 use crate::plan_server::wire::chat::{ChatCommand, ChatFrame, CommandResult};
 use crate::plan_server::wire::message::PlanMessage;
 use crate::plan_session::attachments::{self, AttachmentError, AttachmentInput, AttachmentKind};
 use crate::plan_session::bridge::host::LaunchSpec;
-use crate::plan_session::bridge::LaunchGuidance;
 use crate::plan_session::input::InputRefusal;
-use crate::plan_session::kind::SessionDir;
 use crate::plan_session::model::{Item, Origin, SessionState};
 use crate::planning::project::Project;
 
+mod draft_commands;
+mod drafts;
 mod files;
 mod kickoff;
 mod owner;
+mod recording;
 mod regressions;
 mod scopes;
 mod start;
 mod team;
 mod wiring;
+
+use recording::record_guidance;
 
 fn fixture(read_only: bool) -> Fixture {
     let f = Fixture::new(read_only);
@@ -65,45 +64,6 @@ fn send(text: &str, attachments: Vec<AttachmentInput>) -> ChatCommand {
 fn refused(error: impl ToString) -> Value {
     json!({"type": "chat", "frame": "result", "client_id": "c1",
         "ok": false, "error": error.to_string()})
-}
-
-type GuidanceCall = (Option<String>, Option<String>, Option<String>);
-
-#[derive(Default)]
-struct RecordingGuidance {
-    calls: Mutex<Vec<GuidanceCall>>,
-}
-
-impl GuidanceProvider for RecordingGuidance {
-    fn authoring(
-        &self,
-        ctx: &PlanContext,
-        dir: &SessionDir,
-        offer: Option<&str>,
-        first_message: Option<&str>,
-        feature: Option<&str>,
-    ) -> anyhow::Result<LaunchGuidance> {
-        self.calls.lock().unwrap().push((
-            offer.map(str::to_owned),
-            first_message.map(str::to_owned),
-            feature.map(str::to_owned),
-        ));
-        FixedGuidance.authoring(ctx, dir, offer, first_message, feature)
-    }
-
-    fn closing_message(&self) -> String {
-        FixedGuidance.closing_message()
-    }
-}
-
-fn record_guidance(f: &Fixture) -> Arc<RecordingGuidance> {
-    let provider = Arc::new(RecordingGuidance::default());
-    f.ctx
-        .extensions()
-        .get::<GuidanceSlot>()
-        .unwrap()
-        .set(provider.clone());
-    provider
 }
 
 fn opening(f: &Fixture, s: &LaunchSpec) -> Item {

@@ -24,9 +24,6 @@ use crate::plan_session::attachments::stored::MEDIA_TYPES;
 use crate::planning::runtime::create_runtime_dir;
 use store::StoreError;
 
-// The kickoff draft store calls `touch` on every draft write that names a file attachment.
-// Remove the allow once that call is wired.
-#[allow(unused_imports)]
 pub(crate) use store::touch;
 
 /// The route's path.

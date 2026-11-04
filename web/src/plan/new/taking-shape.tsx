@@ -6,13 +6,16 @@ import {
   MessageCircleQuestion,
   Telescope,
 } from "lucide-react";
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 
 import type { KickoffShape } from "@/plan/api/schema-kickoff";
 import { Untrusted } from "@/plan/chat/visible-controls";
+import { useProposalActions } from "@/plan/new/proposal";
+import { RenameForm } from "@/plan/new/rename-field";
 import { ShapeSize } from "@/plan/new/shape-size";
 import { WriteKickoff } from "@/plan/new/write-kickoff";
 import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
+import { DisabledReason } from "@/plan/ui/disabled-reason";
 
 import "./taking-shape.css";
 
@@ -24,7 +27,7 @@ const SECTION_STATES = {
   open: { label: "Open", icon: <Circle aria-hidden="true" /> },
 } as const;
 
-function presence(present: boolean): { icon: ReactNode; tone: Tone } {
+export function presence(present: boolean): { icon: ReactNode; tone: Tone } {
   return present
     ? { icon: <CircleCheck aria-hidden="true" />, tone: "ok" }
     : { icon: <CircleDashed aria-hidden="true" />, tone: "muted" };
@@ -61,7 +64,7 @@ export function TakingShape({
       <ShapeRow title="Size" {...presence(size !== null)}>
         <ShapeSize size={size} />
       </ShapeRow>
-      <ShapeIdentity shape={shape} />
+      <ShapeIdentity shape={shape} target={target} />
       <ShapeRow
         title="Open questions"
         icon={
@@ -82,19 +85,11 @@ export function TakingShape({
 }
 
 /** The Name, Problem and Decisions rows, which read straight from the shape. */
-function ShapeIdentity({ shape }: { shape: KickoffShape | null }) {
+function ShapeIdentity({ shape, target }: { shape: KickoffShape | null; target: string | null }) {
   return (
     <>
       <ShapeRow title="Name" {...presence(Boolean(shape?.name))}>
-        {shape?.name ? (
-          <p>
-            <span className="kickoff-chip font-mono">
-              <Untrusted text={shape.name} />
-            </span>
-          </p>
-        ) : (
-          <p className="kickoff-muted">Not named yet</p>
-        )}
+        <NameRow name={shape?.name ?? null} editable={shape !== null && target === null} />
       </ShapeRow>
       <ShapeRow title="Problem" {...presence(Boolean(shape?.problem))}>
         <p className="whitespace-pre-wrap">
@@ -112,7 +107,59 @@ function ShapeIdentity({ shape }: { shape: KickoffShape | null }) {
   );
 }
 
-function ShapeRow({
+/**
+ * The agent's name for the work, editable until the work is confirmed (`target` set): the server
+ * refuses a rename after that, because the write grant already names the old one.
+ */
+function NameRow({ name, editable }: { name: string | null; editable: boolean }) {
+  const actions = useProposalActions();
+  const [renaming, setRenaming] = useState(false);
+  const close = () => setRenaming(false);
+  const editing = renaming && editable;
+  return (
+    <>
+      {editing ? (
+        <RenameForm
+          className="kickoff-rename"
+          actionsClass="kickoff-rename__actions"
+          name={name ?? ""}
+          reason={actions.reason}
+          onConfirm={(value) => actions.rename(value, close)}
+          onCancel={close}
+        />
+      ) : (
+        // The value, then its one action at the value's end.
+        <div className="kickoff-name">
+          {name ? (
+            <span className="kickoff-chip font-mono">
+              <Untrusted text={name} />
+            </span>
+          ) : (
+            <span className="kickoff-muted">Not named yet</span>
+          )}
+          {editable && (
+            <DisabledReason
+              reason={actions.reason}
+              look="quiet"
+              size="sm"
+              reasonPlacement="inline"
+              onClick={() => setRenaming(true)}
+            >
+              {name ? "Rename" : "Name it"}
+            </DisabledReason>
+          )}
+        </div>
+      )}
+      {actions.status !== null && (
+        <p role="status" className="plan-fine">
+          <Untrusted text={actions.status} />
+        </p>
+      )}
+    </>
+  );
+}
+
+export function ShapeRow({
   title,
   icon,
   tone,
@@ -137,7 +184,7 @@ function ShapeRow({
   );
 }
 
-function ShapeList({ items, empty }: { items: string[]; empty: string }) {
+export function ShapeList({ items, empty }: { items: string[]; empty: string }) {
   if (items.length === 0) return <p className="kickoff-muted">{empty}</p>;
   return (
     <ul className="kickoff-row__list">

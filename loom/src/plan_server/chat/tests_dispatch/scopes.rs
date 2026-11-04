@@ -4,11 +4,13 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use super::super::guidance::{GuidanceProvider, GuidanceSlot};
 use super::super::tests::{browser, wait_for};
 use super::super::{lock, ChatState};
 use super::kickoff::offer;
+use super::ok_result;
+use super::recording::RecordingGuidance;
 use super::team::team_fixture;
-use super::{ok_result, GuidanceProvider, GuidanceSlot, RecordingGuidance};
 use crate::plan_server::context::PlanContext;
 use crate::plan_session::bridge::LaunchGuidance;
 use crate::plan_session::kind::SessionDir;

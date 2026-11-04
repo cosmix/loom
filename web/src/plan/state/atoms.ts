@@ -10,7 +10,7 @@ import type {
   StandalonePlanView,
   You,
 } from "@/plan/api/schema";
-import type { DraftTeamView, KickoffView } from "@/plan/api/schema-kickoff";
+import type { DraftTeamView, KickoffDraftView, KickoffView } from "@/plan/api/schema-kickoff";
 import type { connectPlanSocket } from "@/plan/api/socket";
 
 export type ConnectionPhase = "connecting" | "open" | "reconnecting" | "unauthorized";
@@ -31,6 +31,8 @@ export const standaloneAtom = atom<StandalonePlanView[]>(
 );
 export const movesAtom = atom<OfferView[]>((get) => get(projectAtom)?.moves ?? []);
 export const kickoffAtom = atom<KickoffView | null>(null);
+/** Unfinished kickoffs, newest first as the server lists them; replaced whole by each frame. */
+export const kickoffDraftsAtom = atom<KickoffDraftView[]>([]);
 export const draftTeamAtom = atom<DraftTeamView | null>(null);
 
 // Preserve the single-checklist seam for existing consumers and fixtures.

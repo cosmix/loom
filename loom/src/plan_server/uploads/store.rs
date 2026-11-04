@@ -118,7 +118,6 @@ pub(super) fn put_within(
 /// Refresh the `stored_at` of the stored file `id` under `runtime_dir` to now, so a file that an
 /// unfinished draft still names outlives the expiry sweep. `Ok(false)` for an id of the wrong
 /// shape or with no stored file; an error only when the sidecar cannot be rewritten.
-#[allow(dead_code)] // wired by the kickoff draft store; see `uploads::touch`
 pub(crate) fn touch(runtime_dir: &Path, id: &str) -> io::Result<bool> {
     touch_at(runtime_dir, id, now())
 }

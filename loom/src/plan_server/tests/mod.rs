@@ -10,6 +10,10 @@ use super::{start, DEFAULT_PORT};
 use support::{bootstrap, get, json_body, options, project, serve, serve_with, skip, status};
 
 mod baseline;
+#[cfg(test)]
+mod drafts_contract;
+#[cfg(test)]
+mod drafts_routes;
 mod embedded;
 mod loading;
 mod shutdown_pending;

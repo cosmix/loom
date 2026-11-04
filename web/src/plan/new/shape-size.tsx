@@ -1,14 +1,17 @@
 import type { KickoffSize } from "@/plan/api/schema-kickoff";
 import { useProposalActions } from "@/plan/new/proposal";
 
+import "./kind-control.css";
+
 const CHOICES: ReadonlyArray<{ size: KickoffSize; label: string; message: string }> = [
   { size: "feature", label: "Feature", message: "Make this a feature instead." },
   { size: "plan", label: "Standalone plan", message: "Make this a standalone plan instead." },
 ];
 
 /**
- * Feature | Standalone plan. Neither is pressed until the conversation settles a size; a click
- * asks the session to change it, the same message the proposal's alternative sends.
+ * Feature | Standalone plan, one segmented track (kind-control.css). Neither is pressed until the
+ * conversation settles a size; a click asks the session to change it, the same message the
+ * proposal's alternative sends.
  */
 export function ShapeSize({ size }: { size: KickoffSize | null }) {
   const actions = useProposalActions();
@@ -19,7 +22,7 @@ export function ShapeSize({ size }: { size: KickoffSize | null }) {
           <button
             key={choice.size}
             type="button"
-            data-look={size === choice.size ? "secondary" : "quiet"}
+            data-look="quiet"
             data-size="sm"
             className="plan-button kickoff-seg__choice"
             aria-pressed={size === choice.size}

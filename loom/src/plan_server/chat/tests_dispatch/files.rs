@@ -13,9 +13,9 @@ use crate::plan_session::attachments::{
 use crate::plan_session::input::InputRefusal;
 use crate::plan_session::model::Item;
 
-const ID: &str = "0123456789abcdef";
+pub(super) const ID: &str = "0123456789abcdef";
 
-fn file_input(id: &str) -> AttachmentInput {
+pub(super) fn file_input(id: &str) -> AttachmentInput {
     AttachmentInput::File(FileAttachmentInput {
         kind: FileTag::File,
         id: id.into(),
@@ -24,7 +24,7 @@ fn file_input(id: &str) -> AttachmentInput {
 }
 
 /// Store a 4-byte PNG named `sketch.png` under `ID`.
-fn store_file(f: &Fixture) -> String {
+pub(super) fn store_file(f: &Fixture) -> String {
     let dir = &f.ctx.runtime().attachments;
     fs::create_dir_all(dir).unwrap();
     fs::write(dir.join(format!("{ID}.png")), [0x89, b'P', b'N', b'G']).unwrap();

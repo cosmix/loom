@@ -1,6 +1,6 @@
 //! Scope setup and publishing for kickoff and team authoring sessions.
 
-use super::{lock, ChatState};
+use super::{draft_cmd, lock, ChatState};
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::wire::message::PlanMessage;
 use crate::plan_server::wire::team::DraftTeamView;
@@ -69,8 +69,15 @@ pub(super) fn observe_kickoff(
             .chat_session_id()
             .filter(|id| is_kickoff(ctx, state, id))
         {
-            let view = lock(&state.kickoff).observe(&id, markdown);
+            let (view, raw) = {
+                let mut tracker = lock(&state.kickoff);
+                (tracker.observe(&id, markdown), tracker.raw_shape())
+            };
             if let Some(view) = view {
+                // The draft first: a browser that hears the shape finds it stored.
+                if let Some(shape) = raw {
+                    draft_cmd::on_shape(ctx, state, &id, shape);
+                }
                 ctx.hub().broadcast(&PlanMessage::Kickoff(Box::new(view)));
             }
         }
