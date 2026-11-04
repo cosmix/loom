@@ -59,7 +59,7 @@ For each id, complete these steps before moving to the next id:
 
 Use this exact draft body format for document summaries:
 
-- Use at most 15 sentences for a section or plan summary. A vision summary (id
+- A section or plan summary takes at most 15 sentences. A vision summary (id
   `<feature>/product/vision`) takes at most 8 sentences in at most 3 paragraphs, distilling the
   vision so a reader grasps it in under a minute. Write one sentence per line, with blank lines
   between paragraphs.
