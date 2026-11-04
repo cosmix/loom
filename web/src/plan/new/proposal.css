@@ -1,13 +1,13 @@
-/* The proposal block shown above the shape rows: hairlines above and below, no box, no tint. Its
-   "Use this" is the screen's primary until a target is settled (write-kickoff.tsx). */
+/* The proposal block above the shape rows in Taking shape: hairlines above and below, no box, no
+   tint. Its "Use this" is the screen's primary until a target is settled (write-kickoff.tsx). */
 
 [data-loom-plan] .kickoff-proposal {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-3);
   min-width: 0;
   padding: var(--space-3) 0;
   border-block: 1px solid var(--hairline);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }
@@ -19,7 +19,7 @@
 [data-loom-plan] .kickoff-proposal__title {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
   margin: 0;
 }
 
@@ -29,13 +29,19 @@
   color: var(--muted-foreground);
 }
 
+[data-loom-plan] .kickoff-proposal .font-mono {
+  font-size: var(--type-ui);
+}
+
 [data-loom-plan] .kickoff-proposal__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
   gap: var(--space-2);
 }
 
 [data-loom-plan] .kickoff-proposal__form {
   display: grid;
   gap: var(--space-2);
+  font-size: var(--type-ui);
 }
