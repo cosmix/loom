@@ -12,7 +12,7 @@ Slips from the planner review-fixes plan (kickoff, chat, drafts, uploads, vision
 
 **Prevention:** whenever an opening, a delivered prompt or a structured block in assistant text changes, replay a captured kickoff transcript (the real record shapes, the `isMeta` skill-body record after a Skill tool result included) through the mapper and render the transcript, and read what a user sees. A new block the server parses needs its own "never rendered" test beside its parser.
 
-**Fix:** the mapper splits a kickoff opening with typed text into a collapsed guidance item and a visible user item, which one recorded prompt replaces (`transcript/opening.rs`); `withoutKickoffFence` drops the fence, streaming included; Skill tool rows and `isMeta` records never render.
+**Fix:** the bridge sends a kickoff opening with typed text as a collapsed guidance item and a visible user item (the `opening_typed` file), which one recorded prompt replaces (`transcript/opening.rs`); `withoutKickoffFence` drops the fence, streaming included; Skill tool rows and `isMeta` records never render.
 
 ## A Sent Item and Its Record Arrived in the Opposite Order
 
