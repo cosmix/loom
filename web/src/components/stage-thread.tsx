@@ -32,6 +32,7 @@ export function ThreadChips({
   return (
     <div className={cn("fulcrum", className)}>
       <div className="fulcrum-track">
+        <span aria-hidden="true" className="fulcrum-string" />
         {stage.dependencies.length === 0 ? (
           <ThreadCap icon={Sprout} text="start" title="No dependencies: this stage starts first" />
         ) : (
@@ -75,10 +76,12 @@ function ThreadCap({
   end?: boolean;
 }) {
   return (
-    <span className={cn("fulcrum-cap", end && "fulcrum-cap-end")} title={title}>
-      <Icon aria-hidden="true" />
-      {text}
-    </span>
+    <div className={cn("fulcrum-run", end && "fulcrum-run-end")}>
+      <span className="fulcrum-cap" title={title}>
+        <Icon aria-hidden="true" />
+        {text}
+      </span>
+    </div>
   );
 }
 
@@ -93,9 +96,12 @@ function ThreadRun({
   pick: (id: string) => void;
   end?: boolean;
 }) {
-  const runClass = cn("fulcrum-run", end && "fulcrum-run-end");
   const [open, setOpen] = useState(false);
   const foldable = stages.length > FOLD_ABOVE;
+  // Two or more chips stack into a fan joined by a rail; one chip or the
+  // folded count stays on the string.
+  const fan = stages.length > 1 && (!foldable || open);
+  const runClass = cn("fulcrum-run", end && "fulcrum-run-end", fan && "fulcrum-run-fan");
   if (foldable && !open) {
     return (
       <div className={runClass} role="group" aria-label={label}>
