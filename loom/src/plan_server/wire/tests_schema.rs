@@ -204,6 +204,7 @@ fn assert_exhaustive(message: &PlanMessage) {
         | PlanMessage::Chat(_)
         | PlanMessage::Kickoff(_)
         | PlanMessage::DraftTeam(_)
+        | PlanMessage::KickoffDrafts { .. }
         | PlanMessage::Review(_)
         | PlanMessage::PressureRun(_)
         | PlanMessage::PressureOptionsChanged
@@ -225,6 +226,10 @@ fn all_plan_messages() -> Vec<PlanMessage> {
         "../../../../web/src/plan/api/fixtures/files-validation.json"
     ))
     .unwrap();
+    let kickoff_drafts = serde_json::from_str(include_str!(
+        "../../../../web/src/plan/api/fixtures/kickoff-drafts.json"
+    ))
+    .unwrap();
     let hello = serde_json::from_str(include_str!("fixtures/hello.json")).unwrap();
     let checklist = serde_json::from_str(include_str!("fixtures/checklist-message.json")).unwrap();
     vec![
@@ -233,6 +238,7 @@ fn all_plan_messages() -> Vec<PlanMessage> {
         PlanMessage::Authoring(AuthoringView { holder: None }),
         checklist,
         PlanMessage::ServerStopping,
+        kickoff_drafts,
         PlanMessage::PressureOptionsChanged,
         PlanMessage::Refused(Refused {
             command: String::new(),

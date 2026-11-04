@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::checklist::{ChecklistView, OfferView, ProjectChecklistView, StandalonePlanView};
 use super::concept::ConceptChanged;
 use super::files::{DocChanged, FileTree, ValidationChanged};
-use super::kickoff::KickoffView;
+use super::kickoff::{KickoffDraftView, KickoffView};
 use super::presence::{AuthoringView, PresenceList};
 use super::pressure::PressureRunView;
 use super::run::{RunOutput, RunStateView, RunStrip};
@@ -72,6 +72,10 @@ pub enum PlanMessage {
     Chat(Box<crate::plan_server::wire::chat::ChatFrame>),
     Kickoff(Box<KickoffView>),
     DraftTeam(Box<DraftTeamView>),
+    /// Every unfinished kickoff, newest first; sent on hello and after every change.
+    KickoffDrafts {
+        drafts: Vec<KickoffDraftView>,
+    },
     /// A review suggestion, status, open-question count or refusal.
     Review(crate::plan_server::wire::review::ReviewMessage),
     /// Current pressure run progress.

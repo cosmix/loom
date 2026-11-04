@@ -6,11 +6,11 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
+use super::super::guidance::{FixedGuidance, GuidanceProvider};
 use super::super::tests::{browser, wait_for, wait_until, Fixture};
 use super::super::{lock, ChatState};
 use super::kickoff::{launch, offer};
 use super::{fixture, opening, received_frames, record_guidance, refused};
-use super::{FixedGuidance, GuidanceProvider};
 use crate::plan_session::bridge::host::LaunchSpec;
 use crate::plan_session::bridge::{BridgeEvent, EndCause, EndMode, StartRequest};
 use crate::plan_session::kind::{SessionDir, SessionKind};

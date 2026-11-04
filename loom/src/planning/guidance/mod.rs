@@ -10,6 +10,7 @@ use crate::planning::runtime::RuntimePaths;
 
 mod blocks;
 mod brief;
+mod continuation;
 pub mod models;
 pub mod opening;
 mod plugin;
@@ -17,6 +18,7 @@ pub mod start;
 pub mod team;
 
 pub use blocks::{ConfigBlock, StartBlocks};
+pub use continuation::{continuation_message, DraftContinuation};
 pub use models::{GuidanceModels, ModelEffort};
 pub use opening::opening_message;
 pub use start::{step_class, AuthoringStart, StartError, StepClass};
