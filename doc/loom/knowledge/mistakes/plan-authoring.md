@@ -67,3 +67,13 @@
 **Prevention:** every YAML path in a stage with a `working_dir` is relative to it, `files` and the worker table's Files owned cells included; a file outside the package takes `../`. Only briefs, Brief path cells and prose stay repository-relative.
 
 **Fix:** the plan's `files` and worker tables were rewritten to the working_dir base before any run.
+
+## A plan changed behaviour that unlisted frozen tests pin
+
+**What happened:** the planner-review-fixes plan allowed one planned edit of a frozen test. Its own decisions broke six more: a spine test reading the raw vision body, a concept contract pinning passage hrefs to `/files/`, the header test asserting a link named "Home", a chat contract finding the changed-since trigger by role button, the summaries contract asserting quota meters on `SummaryPanel`, and the fold label "Used 3 tools · edited 2 files". It also added a field to `Attachment` without counting the frozen struct literals. The pressure test caught all of them before the run.
+
+**Why:** the author listed frozen contracts from memory of what each one is about, not by reading the assertions that each changed route, name, label or struct appears in.
+
+**Prevention:** for every behaviour a plan changes (route, accessible name, label text, component output, struct field), run rg for that literal over the frozen test files: web contract files, Rust contract_tests modules and the tests/ contract targets with their support directories. Then either keep the frozen behaviour or list the edit, file and owner in a "Planned edits of frozen tests" table. For a new struct field, also run rg for its literal sites ("TypeName {") and give every site to one worker.
+
+**Fix:** the plan kept the Home tab, the button trigger and the whole `SummaryPanel`, and listed the remaining edits in common.md "Planned edits of frozen tests".
