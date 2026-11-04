@@ -18,6 +18,22 @@
       "_react.js"
     ]
   },
+  "_help-shortcuts.css": {
+    "file": "assets/help-shortcuts.css",
+    "src": "_help-shortcuts.css"
+  },
+  "_help-shortcuts.js": {
+    "file": "assets/help-shortcuts.js",
+    "name": "help-shortcuts",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_store.js"
+    ],
+    "css": [
+      "assets/help-shortcuts.css"
+    ]
+  },
   "_markdown.js": {
     "file": "assets/markdown.js",
     "name": "markdown",
@@ -80,6 +96,7 @@
       "_store.js",
       "_router.js",
       "_zod.js",
+      "_help-shortcuts.js",
       "_flow.js"
     ],
     "dynamicImports": [
@@ -215,7 +232,8 @@
       "_markdown.js"
     ],
     "dynamicImports": [
-      "src/plan/editor/codemirror.ts"
+      "src/plan/editor/codemirror.ts",
+      "src/plan/help/help-dialog.tsx"
     ],
     "css": [
       "assets/plan.css"
@@ -251,6 +269,23 @@
     "imports": [
       "_cm-view.js",
       "_cm-lang.js"
+    ]
+  },
+  "src/plan/help/help-dialog.tsx": {
+    "file": "assets/help-dialog.js",
+    "name": "help-dialog",
+    "src": "src/plan/help/help-dialog.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_store.js",
+      "_router.js",
+      "_help-shortcuts.js",
+      "plan.html"
+    ],
+    "css": [
+      "assets/help-dialog.css"
     ]
   }
 }
