@@ -145,6 +145,13 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* Chrome otherwise draws its wide native bar with arrow buttons; thin
+     * matches what Firefox shows by default. Not inherited, hence `*`. */
+    scrollbar-width: thin;
+  }
+  /* Inherited: a tinted thumb on a clear track, in every theme. */
+  html {
+    scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
   }
   body {
     @apply bg-background text-foreground font-sans;
