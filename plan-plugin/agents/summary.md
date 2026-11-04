@@ -24,7 +24,7 @@ anything.
 3. Write only the draft file named by the brief, in the runtime directory. Write the summary
    body without store frontmatter, hashes, or sentence ids; sealing generates the metadata.
    Follow every body rule in the brief:
-   - Use at most 15 sentences for a section or plan summary. A vision summary (id
+   - A section or plan summary takes at most 15 sentences. A vision summary (id
      `<feature>/product/vision`) takes at most 8 sentences in at most 3 paragraphs, distilling
      the vision so a reader grasps it in under a minute. Write one sentence per line, with blank
      lines between paragraphs.
