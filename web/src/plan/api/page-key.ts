@@ -2,6 +2,9 @@ import type { DocKind } from "@/plan/ui/glyphs";
 
 import { isFeatureName } from "../new/feature-name";
 
+/** The document name of the vision's summary: key `<feature>/product/vision`, page `/f/<feature>/vision`. */
+export const VISION_DOC = "vision";
+
 /** The document family of a feature's concept page. */
 export type ConceptScope = "product" | "engineering";
 
@@ -49,7 +52,10 @@ export function docKindOfPageKey(key: string): DocKind | null {
   const parts = parsePageKey(key);
   if (parts === null) return null;
   if (parts.kind === "overview") return parts.scope === "product" ? "vision" : "metaplan";
-  return parts.kind === "summary" && parts.scope === "product" ? "section" : "plan";
+  if (parts.kind === "summary" && parts.scope === "product") {
+    return parts.doc === VISION_DOC ? "vision" : "section";
+  }
+  return "plan";
 }
 
 /** Whether a string identifies a valid concept page. */
@@ -89,6 +95,9 @@ export function featureOfKey(key: string): string | null {
 export function pageHref(key: string): string {
   const parts = parsePageKey(key);
   if (parts === null) return "/";
+  if (parts.kind === "summary" && parts.scope === "product" && parts.doc === VISION_DOC) {
+    return `/f/${encodeURIComponent(parts.feature)}/${VISION_DOC}`;
+  }
   const segments =
     parts.kind === "standalone"
       ? ["plans", parts.doc]
@@ -111,7 +120,8 @@ export function pageKeyOfPath(pathname: string): string | null {
   if (route === "plans" && segments.length === 3) {
     key = summaryKey(null, "engineering", feature);
   } else if (route === "f" && segments.length === 4) {
-    key = `overview/${feature}/${scope}`;
+    key =
+      scope === VISION_DOC ? `${feature}/product/${VISION_DOC}` : `overview/${feature}/${scope}`;
   } else if (route === "f" && segments.length === 5) {
     key = `${feature}/${scope}/${doc}`;
   } else {
@@ -129,7 +139,8 @@ export function pageKeyOfSummaryId(
   if (parts === null) return null;
   if (parts.kind === "overview") return id;
   if (parts.kind === "summary") {
-    return parts.scope === "product" && /^section_[0-9]{2,}$/.test(parts.doc) ? id : null;
+    const listed = parts.doc === VISION_DOC || /^section_[0-9]{2,}$/.test(parts.doc);
+    return parts.scope === "product" && listed ? id : null;
   }
   if (!/^[A-Za-z0-9]/.test(parts.doc) || parts.doc.includes("..")) return null;
   const key = summaryKey(planFeature(parts.doc), "engineering", parts.doc);

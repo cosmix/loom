@@ -4,7 +4,7 @@ import { isTyping } from "@/lib/is-typing";
 import { pageHref } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
 import type { AttachmentDraft } from "@/plan/attachments/types";
-import { toAddress } from "@/plan/files/address";
+import { sourceHref } from "@/plan/feature/source-href";
 import type { Store } from "@/state/store";
 
 import { sentenceCitations, targetKey, type SentenceSite } from "./column-context";
@@ -77,7 +77,7 @@ function firstSource(env: KeyEnv, target: ColumnTarget): { path: string; anchor:
 
 function openFile(env: KeyEnv, target: ColumnTarget): void {
   const source = firstSource(env, target);
-  if (source) env.openAddress(toAddress(source.path, source.anchor));
+  if (source) env.openAddress(sourceHref(source.path, { anchor: source.anchor }));
 }
 
 /**

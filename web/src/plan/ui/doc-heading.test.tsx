@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { LockNotice } from "@/plan/files/lock-notice";
 
 import { DocHeading, type DocHeadingProps } from "./doc-heading";
+import headingSheet from "@/plan/ui/doc-heading.css?raw";
 
 const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
 
@@ -109,6 +110,21 @@ it.each([
   expect(active?.getAttribute("aria-disabled")).toBeNull();
   expect(active?.getAttribute("data-look")).toBe("quiet");
   expect(within(group).queryAllByRole("link")).toHaveLength(0);
+});
+
+it("draws the views as one segmented control at the row's height, the current one filled", () => {
+  renderHeading({ views: { current: "source", summaryTo: "/summary", sourceTo: "/source" } });
+
+  const group = screen.getByRole("group", { name: "View" });
+  expect(group.className).toBe("doc-heading-views");
+  const css = headingSheet.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+  expect(css).toContain("height: var(--control-height-sm); padding: 1px;");
+  expect(css).toContain("border: 1px solid var(--border);");
+  expect(css).toContain(
+    '.doc-heading-views > .plan-button[aria-current="page"] { background: var(--muted); color: var(--foreground);',
+  );
+  // Hovering the other segment never gives it the current segment's fill.
+  expect(css).toContain(".doc-heading-views > .plan-button:hover { background: transparent; }");
 });
 
 it("renders actions after the view switch", () => {

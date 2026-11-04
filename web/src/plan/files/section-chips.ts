@@ -1,7 +1,7 @@
 import { atom, useAtomValue, useStore } from "jotai";
 import { useEffect } from "react";
 
-import { summaryKey } from "@/plan/api/page-key";
+import { summaryKey, VISION_DOC } from "@/plan/api/page-key";
 import type { DocView } from "@/plan/api/schema-files";
 import {
   conceptPageAtom,
@@ -31,22 +31,27 @@ export function stemOf(path: string): string | null {
   );
 }
 
-/** The key of the summary page of a section document; null for any other document. */
-export function sectionSummaryKey(doc: DocView): string | null {
-  if (doc.kind !== "section" || doc.feature === null) return null;
+/**
+ * The key of the summary page of a feature's vision or of one of its sections; null for any other
+ * document. The vision's summary is its own page, not the product overview.
+ */
+export function docSummaryKey(doc: DocView): string | null {
+  if (doc.feature === null) return null;
+  if (doc.kind === "vision") return summaryKey(doc.feature, "product", VISION_DOC);
+  if (doc.kind !== "section") return null;
   const stem = stemOf(doc.path);
   return stem ? summaryKey(doc.feature, "product", stem) : null;
 }
 
 /**
- * The chips of a document. A section also carries its summary's state and its builders (read
- * from the summary page the "Summary" view opens) and when its file last changed; the open
- * questions come first for every document kind.
+ * The chips of a document. A section or the vision also carries its summary's state and its
+ * builders (read from the summary page the "Summary" view opens) and when its file last changed;
+ * the open questions come first for every document kind.
  */
 export function useDocChips(doc: DocView, now: number): HeadingChip[] {
   const store = useStore();
   const questions = useOpenQuestionChips(doc.path);
-  const key = sectionSummaryKey(doc);
+  const key = docSummaryKey(doc);
   useConceptSubscription();
   useEffect(() => {
     if (key !== null) void loadConceptPage(store, key);
