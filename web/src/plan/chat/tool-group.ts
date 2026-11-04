@@ -18,22 +18,33 @@ function editedPath(item: ToolItem): string | null {
 }
 
 function foldRun(items: ToolItem[]): Array<Item | ToolGroup> {
-  if (items.length < 3) return items;
+  if (items.length === 0) return [];
   const paths = new Set<string>();
   for (const item of items) {
     const path = editedPath(item);
     if (path !== null) paths.add(path);
   }
+  const tools = items.length === 1 ? "tool" : "tools";
   return [
-    { kind: "group", items, label: `Used ${items.length} tools · edited ${paths.size} files` },
+    { kind: "group", items, label: `Used ${items.length} ${tools} · edited ${paths.size} files` },
   ];
 }
 
-export function groupToolRows(items: Item[], turnEnded: boolean): Array<Item | ToolGroup> {
-  if (!turnEnded) return items;
+/** The Skill tool only loads instructions for the agent; its row tells the reader nothing. */
+function isSkillRow(item: Item): boolean {
+  return item.type === "tool" && item.name === "Skill";
+}
+
+/**
+ * Every run of one or more plain tool rows folds into one group, while the turn is open and after
+ * it ends. Errors, denials, subagent rows and everything else that is not a tool stay outside,
+ * and Skill rows are dropped.
+ */
+export function groupToolRows(items: Item[]): Array<Item | ToolGroup> {
   const rows: Array<Item | ToolGroup> = [];
   let run: ToolItem[] = [];
   for (const item of items) {
+    if (isSkillRow(item)) continue;
     if (
       item.type === "tool" &&
       item.subagent === null &&

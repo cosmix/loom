@@ -117,6 +117,7 @@ fn summary_whole_json_snapshot() {
         format!("Edit(/{}/**)", f.runtime.drafts.display()),
         format!("Read(/{}/**)", f.runtime.drafts.display()),
         format!("Read(/{}/**)", f.runtime.claims.display()),
+        format!("Read(/{}/**)", f.runtime.attachments.display()),
         "Bash(loom plan summary *)"
     ]);
     expected["permissions"]["deny"] = json!([

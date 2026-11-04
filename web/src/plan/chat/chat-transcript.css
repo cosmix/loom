@@ -1,5 +1,8 @@
 /* The transcript's parts: turns, the user's words, the assistant's prose, notices and tool
  * runs. Imported by chat-surface.css; see its header for why these rules are unlayered.
+ * Every size is set here, on classes the transcript carries wherever it mounts (the panel, the
+ * kickoff screen, the help scene), so it never shrinks outside the panel. Nothing in it is set
+ * below --type-ui: the user's words are --type-body, the assistant's prose the reading face.
  */
 
 .chat-panel-middle {
@@ -11,6 +14,10 @@
 
 .chat-transcript {
   padding: var(--space-4) var(--chat-gutter) var(--space-5);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  line-height: var(--leading-body);
 }
 
 /* Turns are set apart by space alone. */
@@ -26,10 +33,14 @@
   gap: var(--space-3);
 }
 
-/* Items inside a turn: consecutive tool rows touch, so their rails join into one run. */
+/* Items inside a turn: consecutive tool rows touch, so their rails join into one run. The
+ * column is pinned to the turn's width: an auto track grows to the widest item's min-content
+ * (an unbroken chip quote, a tool row), and every item, the assistant's lists with them, would
+ * then run past the transcript's right gutter. */
 .chat-turn-items {
   display: grid;
   min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .chat-turn-items > * + * {
@@ -49,7 +60,7 @@
   border-radius: var(--corner-control);
   background: transparent;
   color: var(--muted-foreground);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
   text-align: start;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -79,7 +90,7 @@
   border-radius: 999px;
   background: var(--card);
   color: var(--foreground);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
   font-weight: 500;
   transform: translateX(-50%);
   cursor: pointer;
@@ -95,6 +106,7 @@
 .chat-user {
   display: grid;
   min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
 }
 
@@ -134,7 +146,7 @@
   justify-content: space-between;
   gap: var(--space-2);
   color: var(--muted-foreground);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
   font-weight: 400;
 }
 
@@ -143,7 +155,7 @@
   align-items: center;
   gap: var(--space-2);
   color: var(--muted-foreground);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
 }
 
 /* ── The assistant's prose ─────────────────────────────────────────────────── */
@@ -163,7 +175,7 @@
 .chat-thinking {
   margin: 0;
   color: var(--muted-foreground);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
 }
 
 /* A notice is a centred muted line. A stop (auto mode, interrupt) is drawn as a break in the
@@ -175,7 +187,7 @@
   gap: var(--space-3);
   margin: 0;
   color: var(--muted-foreground);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
 }
 
 .chat-notice-item > span {
@@ -198,16 +210,27 @@
 
 /* ── Tool runs ─────────────────────────────────────────────────────────────── */
 
-/* A quiet run of lines beside a hairline rail that divides the run from the prose. Folded runs
- * and nested tools drop the rail so rails never double. */
-.chat-tool-run,
-.chat-tool-fold {
+/* A quiet run of lines beside a hairline rail that divides the run from the prose. A folded run
+ * is one line with no rail; opened, its rows hang under the glyph on the rail. Nested tools drop
+ * the rail so rails never double. */
+.chat-tool-run {
   min-width: 0;
   padding-inline-start: var(--space-3);
   border-inline-start: 1px solid var(--hairline);
 }
 
-.chat-tool-fold .chat-tool-run,
+.chat-tool-fold {
+  min-width: 0;
+}
+
+.chat-tool-fold > .chat-tool-run {
+  margin-inline-start: calc(0.5ch - 0.5px);
+}
+
+.chat-tool-fold > summary + .chat-tool-run {
+  margin-block-start: var(--space-1);
+}
+
 .chat-tool-nested .chat-tool-run {
   padding-inline-start: 0;
   border-inline-start: 0;
@@ -216,7 +239,7 @@
 .chat-tool {
   min-width: 0;
   color: var(--muted-foreground);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
   line-height: var(--leading-ui);
 }
 
@@ -261,7 +284,7 @@
   min-width: 0;
   flex: 1 1 auto;
   font-family: var(--font-mono);
-  font-size: var(--type-fine);
+  font-size: inherit;
   overflow-wrap: anywhere;
 }
 
@@ -295,11 +318,38 @@
   font-weight: 500;
 }
 
+/* The fold line: one quiet line, a glyph then the words ("Used 3 tools · edited 2 files"),
+ * that opens in place to the rows it holds. The glyph turns as it opens. */
 .chat-tool-fold > summary {
-  padding: 3px 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: var(--control-height-sm);
+  border-radius: var(--corner-control);
   color: var(--muted-foreground);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+  list-style: none;
   cursor: pointer;
+}
+
+.chat-tool-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-tool-fold > summary::before {
+  content: "›" / "";
+  display: inline-block;
+  width: 1ch;
+  flex-shrink: 0;
+  text-align: center;
+  transition: transform 120ms;
+}
+
+.chat-tool-fold[open] > summary::before {
+  transform: rotate(90deg);
 }
 
 .chat-tool-fold > summary:hover {
@@ -308,7 +358,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .chat-tool-head,
-  .chat-tool-chevron {
+  .chat-tool-chevron,
+  .chat-tool-fold > summary::before {
     transition: none;
   }
 }

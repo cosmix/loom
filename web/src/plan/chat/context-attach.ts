@@ -1,6 +1,6 @@
 import { atom } from "jotai/vanilla";
 
-import type { AttachmentDraft } from "@/plan/attachments/types";
+import type { ChatAttachment } from "@/plan/attachments/types";
 import { repoRel } from "@/plan/files/address";
 import type { Store } from "@/state/store";
 import { draftAtom, MAX_ATTACHMENTS } from "./drafts";
@@ -33,7 +33,7 @@ export type ContextWish = {
   held: boolean;
 };
 
-function holdsSource(drafts: AttachmentDraft[], path: string): boolean {
+function holdsSource(drafts: ChatAttachment[], path: string): boolean {
   return drafts.some((item) => item.kind === "source" && repoRel(item.path) === repoRel(path));
 }
 

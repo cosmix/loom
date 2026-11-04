@@ -62,7 +62,7 @@ it("attach fills chip and composer", async () => {
 
   await attach();
 
-  expect(screen.getByRole("button", { name: "section_02.md › port" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "“Old port text.”" })).toBeTruthy();
   expect(store.get(draftAtom)).toEqual({
     text: "Existing draft\n\nSam asks: Clarify this port",
     attachments: [

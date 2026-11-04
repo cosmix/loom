@@ -25,6 +25,7 @@ fn cited() -> Attachment {
         quote: "`loom plan` starts the daemon if it is not running.".into(),
         changed_since_selected: false,
         locked: None,
+        file: None,
     }
 }
 

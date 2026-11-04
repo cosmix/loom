@@ -4,6 +4,9 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::planning::slug::{plan_home, plan_slug};
 
+/// The file name of [`SessionDir::opening_typed`] inside the session directory.
+pub const OPENING_TYPED_FILE: &str = "opening-typed.txt";
+
 /// The purpose of a planning session.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -99,6 +102,12 @@ impl SessionDir {
     /// Return the session brief path.
     pub fn brief(&self) -> PathBuf {
         self.0.join("brief.md")
+    }
+
+    /// Return the path of the typed part of a kickoff opening (the guidance excluded). The
+    /// guidance provider writes it and the bridge reads it, so both name it only here.
+    pub fn opening_typed(&self) -> PathBuf {
+        self.0.join(OPENING_TYPED_FILE)
     }
 
     /// Return the session plugin directory path.

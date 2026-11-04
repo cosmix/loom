@@ -1,4 +1,4 @@
-import { useAtomValue, useStore } from "jotai";
+import { atom, useAtomValue, useStore } from "jotai";
 import { Check, ListPlus, Pencil, Sparkles, Wrench } from "lucide-react";
 import { Fragment, useEffect, useId, useRef, useState } from "react";
 
@@ -28,25 +28,29 @@ type RenameFieldProps = {
   valid: boolean;
 };
 
+/**
+ * Whether a proposal command waits for its answer. It belongs to the store, not to the hook: the
+ * size choice (ShapeSize) and the proposal both call the hook, and a click on either must hold the
+ * other until the command answers, or two controls send the same message twice.
+ */
+const commandPendingAtom = atom(false);
+
 export function useProposalActions() {
   const store = useStore();
   const canAuthor = useAtomValue(canAuthorAtom);
   const blockReason = useAtomValue(authorBlockReasonAtom);
-  const inFlight = useRef(false);
-  const [pending, setPending] = useState(false);
+  const pending = useAtomValue(commandPendingAtom);
   const [status, setStatus] = useState<string | null>(null);
   const run = async (action: () => Promise<unknown>) => {
-    if (!store.get(canAuthorAtom) || inFlight.current) return;
-    inFlight.current = true;
-    setPending(true);
+    if (!store.get(canAuthorAtom) || store.get(commandPendingAtom)) return;
+    store.set(commandPendingAtom, true);
     setStatus(null);
     try {
       await action();
     } catch (cause) {
       setStatus(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      inFlight.current = false;
-      setPending(false);
+      store.set(commandPendingAtom, false);
     }
   };
   // These reasons are fixed strings; the server's own wording (`blockReason`) shows in

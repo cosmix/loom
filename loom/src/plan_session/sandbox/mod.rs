@@ -166,11 +166,11 @@ pub fn build_settings(
     Ok(settings)
 }
 
-/// Create the runtime directory and its grants: `drafts/` and `claims/` (0700) and an empty
-/// `summaries.lock` (0600) when absent. An existing lock file is never truncated or locked.
+/// Create the runtime directory and its grants: `drafts/`, `claims/` and `attachments/` (0700)
+/// and an empty `summaries.lock` (0600) when absent. An existing lock file is never truncated or locked.
 pub fn ensure_runtime_grants(runtime: &RuntimePaths) -> Result<()> {
     create_runtime_dir(runtime)?;
-    for dir in [&runtime.drafts, &runtime.claims] {
+    for dir in [&runtime.drafts, &runtime.claims, &runtime.attachments] {
         safe_create_dir_all(&runtime.dir, relative(&runtime.dir, dir)?, PRIVATE_DIR_MODE)
             .with_context(|| format!("cannot create {}", dir.display()))?;
     }

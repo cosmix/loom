@@ -64,7 +64,10 @@ pub(super) fn expected_common_for(f: &Fixture, kind: &SessionKind) -> Value {
             "filesystem": {
                 "denyWrite": [], "allowWrite": [],
                 "denyRead": expected_read_denies(&f.root, &f.home, &f.runtime),
-                "allowRead": [f.runtime.drafts, f.runtime.claims, f.runtime.summaries_lock]
+                "allowRead": [
+                    f.runtime.drafts, f.runtime.claims, f.runtime.summaries_lock,
+                    f.runtime.attachments
+                ]
             }
         },
         "permissions": {
@@ -89,7 +92,7 @@ pub(super) fn expected_filesystem(root: &Path, home: &Path, rt: &RuntimePaths) -
         ],
         "allowWrite": [rt.claims, rt.drafts, rt.summaries_lock],
         "denyRead": expected_read_denies(root, home, rt),
-        "allowRead": [rt.drafts, rt.claims, rt.summaries_lock],
+        "allowRead": [rt.drafts, rt.claims, rt.summaries_lock, rt.attachments],
     })
 }
 
@@ -120,6 +123,7 @@ pub(super) fn expected_permissions(root: &Path, rt: &RuntimePaths) -> Value {
             format!("Edit(/{}/**)", rt.drafts.display()),
             format!("Read(/{}/**)", rt.drafts.display()),
             format!("Read(/{}/**)", rt.claims.display()),
+            format!("Read(/{}/**)", rt.attachments.display()),
             "Bash(loom knowledge *)", "Bash(loom plan summary *)",
             "Bash(loom plan verify *)", "Bash(loom plan check*)", "Bash(loom map *)",
             "WebSearch",

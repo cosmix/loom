@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Provider, createStore } from "jotai";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import hello from "@/plan/api/fixtures/hello.json";
@@ -8,6 +9,7 @@ import type { KickoffShape } from "@/plan/api/schema-kickoff";
 import type { connectPlanSocket } from "@/plan/api/socket";
 import { FEATURE_NAME_HINT } from "@/plan/new/feature-name";
 import { Proposal } from "@/plan/new/proposal";
+import { ShapeSize } from "@/plan/new/shape-size";
 import {
   authoringAtom,
   connectionAtom,
@@ -36,7 +38,7 @@ function proposalStore() {
   return store;
 }
 
-function mount(shape = featureShape, store = proposalStore()) {
+function mount(shape = featureShape, store = proposalStore(), beside: ReactNode = null) {
   const listeners = new Map<string, Set<(message: unknown) => void>>();
   const send = vi.fn((_message: unknown) => true);
   const socket = {
@@ -56,6 +58,7 @@ function mount(shape = featureShape, store = proposalStore()) {
   const view = render(
     <Provider store={store}>
       <Proposal shape={shape} />
+      {beside}
     </Provider>,
   );
   const result = async (error: string | null = null) => {
@@ -216,6 +219,40 @@ it.each([
   expect(screen.getByRole("button", { name: label }).getAttribute("aria-disabled")).toBe("true");
   await result();
   expect(screen.getByRole("button", { name: label }).hasAttribute("aria-disabled")).toBe(false);
+});
+
+it("one click on a shape choice sends one message", async () => {
+  // Taking shape draws the size choice and the proposal side by side; both ask for the same message.
+  // A second send gets its own client id, as in the app: one id would make the guard-less path fail
+  // inside registerPending and hide a doubled send.
+  vi.mocked(crypto.randomUUID)
+    .mockReturnValueOnce(clientId)
+    .mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
+  const { send, result } = mount(
+    { ...featureShape, size: "plan" },
+    undefined,
+    <ShapeSize size="plan" />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Feature" }));
+  expect(send).toHaveBeenCalledExactlyOnceWith({
+    type: "chat",
+    command: "send",
+    text: "Make this a feature instead.",
+    attachments: [],
+    client_id: clientId,
+  });
+  // The first command has not answered: the proposal's equivalent button must not send it again.
+  fireEvent.click(screen.getByRole("button", { name: "Make a feature" }));
+
+  expect(send).toHaveBeenCalledOnce();
+  expect(screen.getByRole("button", { name: "Make a feature" }).getAttribute("aria-disabled")).toBe(
+    "true",
+  );
+  await result();
+  expect(screen.getByRole("button", { name: "Make a feature" }).hasAttribute("aria-disabled")).toBe(
+    false,
+  );
 });
 
 it("keeps actions blocked when the shape changes before the command result", async () => {

@@ -274,9 +274,12 @@ impl Session {
         self.mapper.expect_opening(start.origin);
         if argv.is_none() {
             let text = sanitize(&opening);
+            let typed = read_opening_typed(&self.dir);
+            let origin = start.origin;
             self.flow.opening = Some(Opening {
                 text,
-                origin: start.origin,
+                origin,
+                typed,
             });
         }
         let spec = LaunchSpec {
@@ -316,6 +319,21 @@ impl Session {
                 self.phase = other;
                 None
             }
+        }
+    }
+}
+
+/// The typed part of the opening the guidance provider left in the session directory: absent
+/// for an opening without typed text. Unreadable or blank counts as absent, and the opening
+/// then shows as one item.
+fn read_opening_typed(dir: &SessionDir) -> Option<String> {
+    let path = dir.opening_typed();
+    match std::fs::read_to_string(&path) {
+        Ok(typed) => Some(sanitize(&typed)).filter(|typed| !typed.trim().is_empty()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "cannot read the typed opening text");
+            None
         }
     }
 }

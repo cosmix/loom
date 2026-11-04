@@ -2,19 +2,15 @@ import { useAtomValue, useStore } from "jotai/react";
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 
-import type { Attachment, Item, Turn } from "@/plan/api/schema-chat";
-import {
-  docKindOfPageKey,
-  pageKeyOfPath,
-  pageKeyOfSummaryId,
-  parsePageKey,
-} from "@/plan/api/page-key";
+import type { Item, Turn } from "@/plan/api/schema-chat";
+import { docKindOfPageKey, pageKeyOfPath, pageKeyOfSummaryId } from "@/plan/api/page-key";
 import type { TreeEntry } from "@/plan/api/schema-files";
-import { pendingAttachmentsAtom, type AttachmentDraft } from "@/plan/attachments";
+import { forgetPreview, uploadStatusAtom } from "@/plan/attachments/intake";
+import { pendingAttachmentsAtom, type ChatAttachment } from "@/plan/attachments";
 import { docColour } from "@/plan/concept/marks";
 import { conceptPageAtom } from "@/plan/concept/page-state";
 import { openDiff } from "@/plan/diff/open-diff";
-import { docRel, toAddress } from "@/plan/files/address";
+import { toAddress } from "@/plan/files/address";
 import { openDocAtom, treeAtom } from "@/plan/files/atoms";
 import { treeDocs } from "@/plan/files/tree";
 import { getTurnSections, type TurnSectionsResponse } from "@/plan/review/api";
@@ -22,47 +18,24 @@ import { hashesAtom } from "@/plan/review/live";
 import { connectionEpochAtom } from "@/plan/state/atoms";
 import { DocMark } from "@/plan/ui/doc-mark";
 import { DOC_KIND_GLYPHS, OTHER_GLYPHS } from "@/plan/ui/glyphs";
+import { chipLabel, chipSource, summaryIdOf, type LabelInput } from "./chip-label";
 import { toAttachmentInput } from "./commands";
 import { ErrorLine } from "./error-line";
+import { FileChip } from "./file-chip";
 import { snapshotAtom } from "./model";
 import { usePendingDraft } from "./pending-draft";
 import { usePlanFeature } from "./turn-footer-plans";
 import { summaryLink } from "./turn-footer-rebuilt";
 import { Untrusted, visibleControls } from "./visible-controls";
 
-type LabelInput = Pick<
-  Attachment,
-  "path" | "anchor" | "lines" | "stage" | "summary_sentence" | "kind"
->;
+export { chipLabel, chipSource, summaryIdOf };
 
 const ReadOnlyGlyph = OTHER_GLYPHS.readOnly;
-
-export function chipLabel(a: LabelInput): string {
-  const file = docRel(a.path).split("/").pop() ?? a.path;
-  if (a.kind === "summary") {
-    const page = parsePageKey(summaryIdOf(a.path));
-    if (page?.kind === "overview") {
-      return page.scope === "product" ? "Product overview" : "Engineering overview";
-    }
-    const stem = file.replace(/\.md$/, "");
-    return `Summary · ${stem}`;
-  }
-  const passage = a.stage ? ` › stage ${a.stage}` : a.anchor ? ` › ${a.anchor}` : "";
-  const lines = a.lines ? ` · lines ${a.lines[0]}–${a.lines[1]}` : "";
-  return `${file}${passage}${lines}`;
-}
 
 function lockedPath(path: string, entries: TreeEntry[]): boolean {
   return entries.some(
     (entry) => (entry.path === path && entry.locked) || lockedPath(path, entry.children),
   );
-}
-
-/** The summary id a `doc/loom/summaries/<id>.md` path names. */
-export function summaryIdOf(path: string): string {
-  return docRel(path)
-    .replace(/^loom\/summaries\//, "")
-    .replace(/\.md$/, "");
 }
 
 function useOpenChip() {
@@ -174,6 +147,7 @@ type ChipProps = {
 
 function Chip({ attachment, quote, changed, locked, onOpen, onRemove, children }: ChipProps) {
   const label = visibleControls(chipLabel(attachment));
+  const source = chipSource(attachment);
   const [preview, setPreview] = useState(false);
   const previewId = useId();
   return (
@@ -201,6 +175,11 @@ function Chip({ attachment, quote, changed, locked, onOpen, onRemove, children }
         )}
         <ChipTrailing label={label} locked={locked} onRemove={onRemove} />
       </div>
+      {source !== null && (
+        <span className="chat-chip-source plan-fine">
+          <Untrusted text={source} />
+        </span>
+      )}
       {changed && <span className="chat-chip-note">△ changed</span>}
       {children}
       {preview && <ChipTooltip id={previewId} quote={quote} />}
@@ -209,18 +188,32 @@ function Chip({ attachment, quote, changed, locked, onOpen, onRemove, children }
 }
 
 // Content keys survive removal of an earlier chip; an occurrence counter separates duplicates.
-function chipKeys(drafts: AttachmentDraft[]): string[] {
+function chipKeys(drafts: ChatAttachment[]): string[] {
   const seen = new Map<string, number>();
   return drafts.map((draft) => {
     // The quote can be large; its length plus the identity fields is enough with the counter.
-    const base = JSON.stringify({ ...draft, text: draft.text.length });
+    const base =
+      draft.kind === "file"
+        ? JSON.stringify(draft)
+        : JSON.stringify({ ...draft, text: draft.text.length });
     const occurrence = seen.get(base) ?? 0;
     seen.set(base, occurrence + 1);
     return `${occurrence}:${base}`;
   });
 }
 
-function PendingChip({ draft, onRemove }: { draft: AttachmentDraft; onRemove: () => void }) {
+function PendingChip({ draft, onRemove }: { draft: ChatAttachment; onRemove: () => void }) {
+  if (draft.kind === "file") return <FileChip file={draft} onRemove={onRemove} />;
+  return <PendingDocumentChip draft={draft} onRemove={onRemove} />;
+}
+
+function PendingDocumentChip({
+  draft,
+  onRemove,
+}: {
+  draft: Exclude<ChatAttachment, { kind: "file" }>;
+  onRemove: () => void;
+}) {
   const hashes = useAtomValue(hashesAtom);
   const tree = useAtomValue(treeAtom);
   const open = useOpenChip();
@@ -241,24 +234,41 @@ function PendingChip({ draft, onRemove }: { draft: AttachmentDraft; onRemove: ()
   );
 }
 
+/** Uploads under way and the files that were refused, each reason through Untrusted. */
+function UploadNotes() {
+  const { busy, problems } = useAtomValue(uploadStatusAtom);
+  return (
+    <>
+      {busy > 0 && <p role="status">Uploading {busy === 1 ? "a file" : `${busy} files`}…</p>}
+      {problems.map((problem, index) => (
+        <p key={index} role="alert" className="text-destructive">
+          <Untrusted text={problem} />
+        </p>
+      ))}
+    </>
+  );
+}
+
 export function PendingChips() {
   const note = usePendingDraft();
   const pending = useAtomValue(pendingAttachmentsAtom);
+  const upload = useAtomValue(uploadStatusAtom);
   const store = useStore();
   const [expanded, setExpanded] = useState(false);
   const count = !expanded && pending.length > 4 ? 3 : pending.length;
   const keys = chipKeys(pending);
-  if (!pending.length && !note) return null;
+  if (!pending.length && !note && upload.busy === 0 && upload.problems.length === 0) return null;
   return (
-    <div aria-label="Pending attachments" className="text-xs">
+    <div aria-label="Pending attachments" className="text-[13px]">
       <div className="chat-chip-list" data-scroll={expanded || undefined}>
         {pending.slice(0, count).map((draft, index) => (
           <PendingChip
             key={keys[index]}
             draft={draft}
-            onRemove={() =>
-              store.set(pendingAttachmentsAtom, (all) => all.filter((_, at) => at !== index))
-            }
+            onRemove={() => {
+              if (draft.kind === "file") forgetPreview(draft.id);
+              store.set(pendingAttachmentsAtom, (all) => all.filter((_, at) => at !== index));
+            }}
           />
         ))}
         {count < pending.length && (
@@ -283,6 +293,7 @@ export function PendingChips() {
         </button>
       )}
       {note && <p role="status">{note}</p>}
+      <UploadNotes />
     </div>
   );
 }
@@ -330,6 +341,7 @@ export function SentChips({ item, turn }: { item: Extract<Item, { type: "user" }
   return (
     <div aria-label="Sent attachments" className="chat-chips">
       {item.attachments.map((a, index) => {
+        if (a.kind === "file" && a.file) return <FileChip key={index} file={a.file} />;
         const changed = result?.files?.some(
           (file) => file.path === a.path && (a.anchor === null || file.anchors.includes(a.anchor)),
         );

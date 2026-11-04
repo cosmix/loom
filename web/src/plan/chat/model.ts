@@ -2,7 +2,7 @@ import { atom } from "jotai/vanilla";
 import { useEffect } from "react";
 
 import type {
-  AttachmentInput,
+  AnyAttachmentInput,
   ChatDelta,
   ChatFrame,
   ChatSnapshot,
@@ -36,7 +36,29 @@ export const pendingPermissionsAtom = atom((get) =>
 );
 export const queueReturnedAtom = atom<string[]>([]);
 
-export type PendingSend = { text: string; attachments?: AttachmentInput[] };
+export type PendingSend = { text: string; attachments?: AnyAttachmentInput[] };
+
+/**
+ * A file chip in the transcript has no path, anchor or quote, and a file input on the wire has
+ * none of those fields; this is the one shape both reduce to for comparing messages.
+ */
+const FILE_IDENTITY = {
+  kind: "file",
+  path: "",
+  anchor: null,
+  stage: null,
+  summary_sentence: null,
+  lines: null,
+  quote: "",
+} as const;
+
+/** The send as `messageIdentity` reads it: file inputs take the file chip's identity. */
+export function contentOf(send: PendingSend): MessageContent {
+  return {
+    text: send.text,
+    attachments: send.attachments?.map((a) => (a.kind === "file" ? FILE_IDENTITY : a)),
+  };
+}
 /**
  * `known` is how many identical messages the current chat's transcript and queue already showed
  * when the send was issued, `knownPrevious` how many the previous chat showed (absent means
@@ -88,7 +110,7 @@ export const composerUnconfirmedAtom = atom((get) => {
     (send) =>
       !resending.has(send.client_id) &&
       !isQueued(send, queue) &&
-      !carried.some((message) => sameMessage(message, send)),
+      !carried.some((message) => sameMessage(message, contentOf(send))),
   );
 });
 export const RESEND_OFFLINE = "Reconnect to check delivery before resending";
@@ -148,7 +170,9 @@ function markUnconfirmed(store: Store, clientId: string, send: PendingSend, know
     ...(known.queued.length > 0 ? { knownQueuedIds: known.queued } : {}),
   };
   store.set(unconfirmedSendsAtom, (sends) => [
-    ...sends.filter((other) => other.client_id !== clientId && !sameMessage(other, entry)),
+    ...sends.filter(
+      (other) => other.client_id !== clientId && !sameMessage(contentOf(other), contentOf(entry)),
+    ),
     entry,
   ]);
 }
@@ -250,8 +274,8 @@ function shownCounts(turns: Turn[], queue: ChatSnapshot["queue"] = []): Map<stri
   return counts;
 }
 
-function knownCopies(snapshot: ChatSnapshot, send: MessageContent): Known {
-  const key = messageIdentity(send);
+function knownCopies(snapshot: ChatSnapshot, send: PendingSend): Known {
+  const key = messageIdentity(contentOf(send));
   return {
     current: shownCounts(snapshot.turns, snapshot.queue).get(key) ?? 0,
     previous: shownCounts(snapshot.previous?.turns ?? []).get(key) ?? 0,
@@ -274,7 +298,7 @@ function confirmSends(store: Store): void {
   const current = shownCounts(snapshot.turns, snapshot.queue);
   const previous = shownCounts(snapshot.previous?.turns ?? []);
   const settle = (send: UnconfirmedSend): UnconfirmedSend[] => {
-    const key = messageIdentity(send);
+    const key = messageIdentity(contentOf(send));
     if (
       (current.get(key) ?? 0) > (send.known ?? 0) ||
       (previous.get(key) ?? 0) > (send.knownPrevious ?? 0)

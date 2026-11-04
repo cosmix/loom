@@ -155,16 +155,25 @@ it("sheet below lg", () => {
   expect(store.get(chatSheetOpenAtom)).toBe(false);
 });
 
-it("header button shows attachment count and adding a chip leaves the sheet closed", () => {
+it("the header button shows the attachment count while the sheet is closed", () => {
+  media(false);
+  const store = storeFor();
+  store.set(pendingAttachmentsAtom, [draft]);
+  mount(store);
+  expect(store.get(chatSheetOpenAtom)).toBe(false);
+  expect(screen.getByRole("button", { name: "Open chat, 1 attachment" }).textContent).toContain(
+    "1",
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("adding a chip opens the chat sheet and holds the attachment", () => {
   media(false);
   const { store } = mount(storeFor(), <AddToChat draft={draft} rect={rect} onAdded={() => {}} />);
   fireEvent.click(screen.getByRole("button", { name: "Add to chat" }));
   expect(store.get(pendingAttachmentsAtom)).toHaveLength(1);
-  expect(screen.getByRole("button", { name: "Open chat, 1 attachment" }).textContent).toContain(
-    "1",
-  );
-  expect(store.get(chatSheetOpenAtom)).toBe(false);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(store.get(chatSheetOpenAtom)).toBe(true);
+  expect(screen.getByRole("dialog", { name: "Chat" })).toBeTruthy();
 });
 
 it("reduced motion stops the roundel", () => {
@@ -335,4 +344,22 @@ it("the button name carries the session state", () => {
   mount(store);
   fireEvent.click(screen.getByRole("button", { name: "Collapse chat" }));
   expect(screen.getByRole("button", { name: "Expand chat, Working" })).toBeTruthy();
+});
+
+it("the collapsed rail spells out Chat and the state, and opens in one click", () => {
+  const store = storeFor();
+  const { session } = chatSnapshotSchema.parse(fixture);
+  store.set(snapshotAtom, {
+    session: { ...session!, state: "idle" as const },
+    turns: [],
+    queue: [],
+    previous: null,
+  });
+  mount(store);
+  fireEvent.click(screen.getByRole("button", { name: "Collapse chat" }));
+  const expand = screen.getByRole("button", { name: "Expand chat, Waiting for you" });
+  expect(expand.querySelector(".chat-rail-word")?.textContent).toBe("Chat");
+  expect(expand.querySelector(".chat-rail-state")?.textContent).toBe("Waiting for you");
+  fireEvent.click(expand);
+  expect(screen.getByRole("log")).toBeTruthy();
 });

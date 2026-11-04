@@ -1,5 +1,6 @@
 import { getDefaultStore, useAtomValue, useStore } from "jotai";
-import { useCallback, useEffect, useId, useLayoutEffect, useRef } from "react";
+import { Paperclip } from "lucide-react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, type ReactNode } from "react";
 
 import {
   authorBlockReasonAtom,
@@ -20,8 +21,10 @@ import {
   useComposerBox,
   useDeliveredAttachments,
   useFirstHoldNote,
+  useFileIntake,
   useSendDraft,
 } from "./composer-hooks";
+import { ContextLine } from "./context-line";
 import { ContextPrompts } from "./context-prompts";
 import { draftAtom } from "./drafts";
 import { messageProblem } from "./message-problem";
@@ -47,7 +50,7 @@ const HOLD_NOTE =
 function DraftKept() {
   const draft = useAtomValue(draftAtom);
   if (!draft.text && draft.attachments.length === 0) return null;
-  return <p className="text-xs text-muted-foreground">Your draft is kept</p>;
+  return <p className="text-[13px] text-muted-foreground">Your draft is kept</p>;
 }
 
 /** The banner carries the server's message and fix; this line names the state once. */
@@ -56,7 +59,7 @@ function ReadOnlyLine() {
   const serverReadOnly = !!useAtomValue(serverInfoAtom)?.read_only.length;
   return (
     <div>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-[13px] text-muted-foreground">
         {holder && !serverReadOnly ? (
           <>
             Read-only · <Untrusted text={holder.name} /> is authoring
@@ -96,16 +99,16 @@ function StorageNotes() {
   return (
     <>
       {(localFull || globalFull) && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           Unsaved text is not being kept: browser storage is full
         </p>
       )}
-      {firstHold && <p className="text-xs text-muted-foreground">{HOLD_NOTE}</p>}
+      {firstHold && <p className="text-[13px] text-muted-foreground">{HOLD_NOTE}</p>}
     </>
   );
 }
 
-/** The text box and its placeholder, which names the page the context line shows. */
+/** The text box and its placeholder, which names the page the context chip shows. */
 function MessageBox({
   reason,
   send,
@@ -136,7 +139,7 @@ function MessageBox({
       rows={Math.min(8, Math.max(1, draft.text.split("\n").length))}
       value={draft.text}
       aria-describedby={describedBy}
-      className="chat-composer-box font-sans"
+      className="chat-composer-field font-sans"
       style={{ maxHeight: "186px" }}
       onChange={(event) => store.set(draftAtom, (old) => ({ ...old, text: event.target.value }))}
       onKeyDown={(event) => {
@@ -169,6 +172,31 @@ function NewChatBesideBox() {
   );
 }
 
+/**
+ * The bordered box the user types in: what the next message carries (the context chip, the
+ * pending chips) above the text, and the drop target. Files dropped or pasted anywhere on it
+ * attach. While a file is dragged over it, "Drop to attach" covers the box inside its own edge,
+ * so nothing around it moves.
+ */
+function ComposerBox({ children }: { children: ReactNode }) {
+  const { dragging, ...intake } = useFileIntake();
+  return (
+    <div className="chat-composer-box" data-dragging={dragging || undefined} {...intake}>
+      <div className="chat-composer-attached">
+        <ContextLine />
+        <PendingChips />
+      </div>
+      {children}
+      {dragging && (
+        <p className="chat-drop-target">
+          <Paperclip size={15} aria-hidden="true" />
+          Drop to attach
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** `afterConcluded`: the chat shown is over, so sending starts a new one and offers no Resend. */
 function ComposerInput({ afterConcluded }: { afterConcluded: boolean }) {
   const { pending, error, send } = useSendDraft();
@@ -179,8 +207,9 @@ function ComposerInput({ afterConcluded }: { afterConcluded: boolean }) {
   const describedBy = [afterConcluded ? noteId : null, error ? id : null].filter(Boolean).join(" ");
   return (
     <div className="chat-composer-input">
-      <PendingChips />
-      <MessageBox reason={reason} send={send} describedBy={describedBy || undefined} />
+      <ComposerBox>
+        <MessageBox reason={reason} send={send} describedBy={describedBy || undefined} />
+      </ComposerBox>
       <div className="chat-composer-actions">
         <AttachDocument />
         {afterConcluded && <NewChatBesideBox />}
@@ -196,7 +225,7 @@ function ComposerInput({ afterConcluded }: { afterConcluded: boolean }) {
         </p>
       )}
       {error && (
-        <p id={id} role="status" className="text-xs text-muted-foreground">
+        <p id={id} role="status" className="text-[13px] text-muted-foreground">
           <Untrusted text={error} />
         </p>
       )}
@@ -221,7 +250,7 @@ function UnconfirmedSends({
   const sends = useAtomValue(composerUnconfirmedAtom);
   const connection = useAtomValue(connectionAtom);
   return (
-    <div className="max-h-24 overflow-y-auto text-xs">
+    <div className="max-h-24 overflow-y-auto text-[13px]">
       {sends.map((item) => (
         <div key={item.client_id}>
           <p>

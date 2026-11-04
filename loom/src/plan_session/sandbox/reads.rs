@@ -16,8 +16,9 @@ use crate::sandbox::settings::policy::mandatory_deny_read;
 const TERMINAL_HISTORY_DIR: &str = "terminal-history";
 
 /// The runtime grants under the runtime directory, as `RuntimePaths` names them
-/// (`planning/runtime.rs`, `RuntimePaths::new`): `drafts`, `claims`, `summaries.lock`.
-const RUNTIME_GRANTS: [&str; 3] = [DRAFTS_DIR, "claims", "summaries.lock"];
+/// (`planning/runtime.rs`, `RuntimePaths::new`): `drafts`, `claims`, `summaries.lock`, and the
+/// uploaded `attachments`, which a session reads and never writes (no write grant names it).
+const RUNTIME_GRANTS: [&str; 4] = [DRAFTS_DIR, "claims", "summaries.lock", "attachments"];
 
 /// The strings a planning session's settings emit for reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
