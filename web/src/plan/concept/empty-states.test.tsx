@@ -199,6 +199,38 @@ it("keeps never-built documents linked to file mode", () => {
   );
 });
 
+function showNeverBuilt(key: string, docs: (typeof doc)[]) {
+  const empty: EmptyState = { kind: "never_built", count: 1, offer: null, docs };
+  const page = conceptPageSchema.parse({
+    ...overviewFixture,
+    key,
+    estimate: "about 1410000 tokens to build, an estimate",
+    key_chips: [{ doc, colour: 1, label: "01", out_of_date: null, no_plan: false }],
+    empty,
+  });
+  render(
+    <Provider store={createStore()}>
+      <MemoryRouter>
+        <EmptyStates page={page} empty={empty} />
+      </MemoryRouter>
+    </Provider>,
+  );
+}
+
+it("shows a never-built section page with no document list and no estimate", () => {
+  showNeverBuilt("demo/product/section_01", []);
+
+  expect(screen.getByText(/1 document without a summary\./).textContent).not.toMatch(/tokens/);
+  expect(screen.queryByRole("list", { name: "Documents" })).toBeNull();
+});
+
+it("keeps the key documents and the estimate on a never-built overview", () => {
+  showNeverBuilt("overview/demo/product", []);
+
+  expect(screen.getByText(/about 1410000 tokens to build, an estimate/)).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Planning" })).toBeTruthy();
+});
+
 it.each(["overview/demo/product", "overview/demo/engineering"])(
   "links back to the feature's overviews from missing page %s",
   async (pageKey) => {

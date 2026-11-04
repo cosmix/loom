@@ -71,6 +71,17 @@ describe("uploadAttachment", () => {
     expect(init?.headers).toEqual({ "Content-Type": "text/markdown" });
   });
 
+  it("cuts a long name to 120 code points before encoding it", async () => {
+    const fetchMock = stubFetch(new Response(JSON.stringify(stored)));
+    const name = `${"é".repeat(60)}${"😀".repeat(80)}.md`;
+
+    await uploadAttachment(fileOf(name, "text/markdown"));
+
+    const sent = String(fetchMock.mock.calls[0]![0]).replace("/api/attachments?name=", "");
+    expect(Array.from(decodeURIComponent(sent))).toHaveLength(120);
+    expect(decodeURIComponent(sent)).toBe(Array.from(name).slice(0, 120).join(""));
+  });
+
   it("refuses before sending a type outside the list or a file over the limit", async () => {
     const fetchMock = stubFetch(new Response("{}"));
     const big = sized(fileOf("big.png", "image/png"), MAX_UPLOAD_BYTES + 1);

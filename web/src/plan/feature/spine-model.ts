@@ -5,7 +5,7 @@ import { featurePage } from "@/plan/feature/page-offer";
 import { STEP } from "@/plan/feature/steps";
 import { featureOfDocPath } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
-import { docRel } from "@/plan/files/address";
+import { decode, docRel } from "@/plan/files/address";
 import { PLAN_STATE_GLYPHS, type PlanState } from "@/plan/ui/glyphs";
 
 export type GroupId = "vision" | "product" | "metaplan" | "plans" | "pressure" | "run";
@@ -82,7 +82,7 @@ function groupOfDocPath(repoPath: string): GroupId | null {
  */
 function groupOfSource(pathname: string): GroupId | null {
   const repoPath = sourceRepoPath(pathname);
-  const feature = pathname.split("/").filter(Boolean)[1];
+  const [, feature] = pathname.split("/").filter(Boolean);
   if (repoPath === null || featureOfDocPath(repoPath) !== feature) return null;
   return groupOfDocPath(repoPath);
 }
@@ -182,12 +182,8 @@ function wordOf(id: GroupId, mark: MarkView, checklist: ChecklistView): string {
 function sourceRepoPath(pathname: string): string | null {
   const [root, , page, ...rel] = pathname.split("/").filter(Boolean);
   if (root !== "f" || page !== "source") return null;
-  try {
-    return `doc/${rel.map(decodeURIComponent).join("/")}`;
-  } catch (error) {
-    if (error instanceof URIError) return null;
-    throw error;
-  }
+  const parts = rel.map(decode);
+  return parts.includes(null) ? null : `doc/${parts.join("/")}`;
 }
 
 /** The key (see `SpineChild.key`) of the child that lists a document of `group`, if any does. */

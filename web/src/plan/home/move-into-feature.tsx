@@ -30,20 +30,25 @@ import type { Store } from "@/state/store";
 import "./move-into-feature.css";
 
 /**
- * One document keeps the move text the misplaced-document offers have always sent; several plans
- * (the shelf's selection) travel in ONE message, so one conversation moves them together.
+ * A misplaced document keeps the move text its offer has always sent (its feature directory is
+ * under doc/product or doc/plans). Standalone plans, one or several, name doc/plans/<feature>/ as
+ * the destination; several travel in ONE message so one conversation moves them together, listed
+ * one per line so a file name holding ", " stays unambiguous.
  */
-function moveText(paths: string[], name: string): string {
+function moveText(paths: string[], name: string, standalone: boolean): string {
   if (paths.length === 1) {
+    const where = standalone
+      ? `doc/plans/${name}/`
+      : `the matching doc/product/${name}/ or doc/plans/${name}/ directory`;
     return (
       `Move ${repoRel(paths[0]!)} into the feature "${name}": ` +
-      `use git mv into the matching doc/product/${name}/ or doc/plans/${name}/ directory, ` +
-      "keep file names, and fix every reference to it."
+      `use git mv into ${where}, keep file names, and fix every reference to it.`
     );
   }
   return (
-    `Move these plans into the feature "${name}": ${paths.map(repoRel).join(", ")}. ` +
-    `Use git mv into doc/plans/${name}/, keep file names, and fix every reference to them.`
+    `Move these plans into the feature "${name}" with git mv into doc/plans/${name}/, ` +
+    "keeping file names and fixing every reference to them:\n" +
+    paths.map((path) => `- ${repoRel(path)}`).join("\n")
   );
 }
 
@@ -57,13 +62,15 @@ async function beginMove(store: Store, paths: string[], name: string, signal: Ab
   // The chat belongs to its destination. A new feature's name is refused as a start's owner until
   // the move has written it, so that chat starts for the whole project.
   const known = store.get(featuresAtom).some((item) => item.feature === name);
-  await startChat(store, null, moveText(paths, name), [], known ? name : undefined);
+  const plans = store.get(standaloneAtom);
+  const standalone = paths.every((path) => plans.some((item) => item.path === path));
+  await startChat(store, null, moveText(paths, name, standalone), [], known ? name : undefined);
   if (signal.aborted) return null;
   store.set(panelCollapsedAtom, false);
   store.set(chatSheetOpenAtom, true);
   if (known) return `/f/${encodeURIComponent(name)}`;
   const first = paths[0]!;
-  const plan = store.get(standaloneAtom).find((item) => item.path === first);
+  const plan = plans.find((item) => item.path === first);
   return plan ? `/plans/${encodeURIComponent(plan.slug)}` : toAddress(first);
 }
 

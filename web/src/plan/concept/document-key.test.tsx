@@ -261,12 +261,33 @@ describe("keyLede", () => {
     [
       "demo/product/section_01",
       ["demo/product/section_01", "demo/engineering/a"],
-      "Sources: the 2 documents this summary draws on",
+      "Key: the 2 documents of this feature",
+    ],
+    ["demo/engineering/a", ["demo/product/section_02"], "Key: the section of this feature"],
+    [
+      "demo/product/section_05",
+      Array.from(
+        { length: 12 },
+        (_, i) => `demo/product/section_${String(i + 1).padStart(2, "0")}`,
+      ),
+      "Key: the 12 sections of this feature",
+    ],
+    [
+      "demo/product/vision",
+      ["demo/product/section_01", "demo/product/section_02"],
+      "Key: the 2 sections of this feature",
     ],
     [
       "demo/engineering/a",
-      ["demo/product/section_02"],
-      "Source: the section this summary draws on",
+      [
+        "demo/engineering/a",
+        "demo/engineering/b",
+        "demo/engineering/c",
+        "demo/engineering/d",
+        "demo/engineering/e",
+        "demo/engineering/f",
+      ],
+      "Key: the 6 plans of this feature",
     ],
   ])("names the documents of %s", (key, pages, expected) => {
     expect(keyLede(pageWith(key, pages))).toBe(expected);

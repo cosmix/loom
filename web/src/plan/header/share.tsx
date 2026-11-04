@@ -26,7 +26,7 @@ function selectContents(element: HTMLElement | null): void {
  * The clipboard API is missing outside secure contexts (a remote plain-HTTP
  * bind), so a failed copy selects the text for a manual copy and says so.
  */
-function CopyRow({ text, noun }: { text: string; noun: string }) {
+function CopyRow({ text }: { text: string }) {
   const [state, setState] = useState<CopyState>("idle");
   const code = useRef<HTMLElement>(null);
   const copy = async () => {
@@ -49,11 +49,11 @@ function CopyRow({ text, noun }: { text: string; noun: string }) {
         >
           {text}
         </code>
-        {/* The name follows the visible text (WCAG 2.5.3) and keeps the two buttons apart. */}
+        {/* The name follows the visible text (WCAG 2.5.3). */}
         <Button
           variant="outline"
           size="sm"
-          aria-label={copied ? "Copied" : `Copy ${noun}`}
+          aria-label={copied ? "Copied" : "Copy link"}
           onClick={() => void copy()}
         >
           {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}
@@ -61,8 +61,8 @@ function CopyRow({ text, noun }: { text: string; noun: string }) {
         </Button>
       </div>
       <p role="status" className={failed ? "text-xs font-medium text-(--tone-blocked)" : "sr-only"}>
-        {copied && `Copied the ${noun} to the clipboard.`}
-        {failed && `Copy failed. Select the ${noun} and copy it.`}
+        {copied && "Copied the link to the clipboard."}
+        {failed && "Copy failed. Select the link and copy it."}
       </p>
     </div>
   );
@@ -71,7 +71,7 @@ function CopyRow({ text, noun }: { text: string; noun: string }) {
 function ShareBody({ link }: { link: ShareLink }) {
   return (
     <>
-      <CopyRow text={link.url} noun="link" />
+      <CopyRow text={link.url} />
       {link.bind === "remote" && (
         <p className="flex items-start gap-1.5 text-xs font-medium text-(--tone-warning)">
           <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />

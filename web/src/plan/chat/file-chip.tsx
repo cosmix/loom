@@ -2,20 +2,8 @@ import { File, FileImage } from "lucide-react";
 
 import type { FileMeta } from "@/plan/api/schema-chat";
 import { previewUrl } from "@/plan/attachments/intake";
+import { formatBytes } from "@/plan/ui/format-bytes";
 import { Untrusted, visibleControls } from "./visible-controls";
-
-/** 1,234 bytes read as "1.2 KB": one decimal, binary steps, the unit a person expects on a file. */
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${Number(value.toFixed(1))} ${units[unit]}`;
-}
 
 /**
  * An uploaded file's chip: its name and size, and for an image attached in this tab a thumbnail

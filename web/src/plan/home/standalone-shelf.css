@@ -178,9 +178,9 @@
   background: var(--muted);
 }
 
-/* The box's column: the 14px box plus the cell's padding. */
+/* The box's column: the 14px box plus the cell's padding on both sides (border-box). */
 .shelf-table__select {
-  width: 18px;
+  width: calc(14px + 2 * var(--space-2));
 }
 
 .shelf-table input[type="checkbox"] {

@@ -25,12 +25,16 @@ function suffix(options: SourceOptions): string {
   return `${query}${hash}`;
 }
 
-/** `/f/<feature>/source/<repo path without doc/>`: a feature document's source, spine included. */
+/**
+ * `/f/<feature>/source/<repo path without doc/>`: a feature document's source, spine included.
+ * With no feature (a path outside every feature) it is the file-mode address of the path.
+ */
 export function featureSourceHref(
-  feature: string,
+  feature: string | null,
   repoPath: string,
   options: SourceOptions = {},
 ): string {
+  if (feature === null) return `${toAddress(repoPath)}${suffix(options)}`;
   const rel = docRel(repoPath).split("/").map(encodeURIComponent).join("/");
   return `/f/${encodeURIComponent(feature)}/source/${rel}${suffix(options)}`;
 }
@@ -40,8 +44,5 @@ export function featureSourceHref(
  * one, in file mode otherwise.
  */
 export function sourceHref(repoPath: string, options: SourceOptions = {}): string {
-  const feature = featureOfDocPath(repoPath);
-  return feature === null
-    ? `${toAddress(repoPath)}${suffix(options)}`
-    : featureSourceHref(feature, repoPath, options);
+  return featureSourceHref(featureOfDocPath(repoPath), repoPath, options);
 }
