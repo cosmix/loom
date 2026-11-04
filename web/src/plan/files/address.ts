@@ -20,7 +20,7 @@ export function repoRel(path: string): string {
   return `doc/${docRel(path)}`;
 }
 
-function decode(value: string): string | null {
+export function decode(value: string): string | null {
   try {
     return decodeURIComponent(value);
   } catch {

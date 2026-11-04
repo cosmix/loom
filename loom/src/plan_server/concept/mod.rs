@@ -31,6 +31,8 @@ mod state_tests;
 mod tests;
 #[cfg(test)]
 mod tests_rebuilds;
+#[cfg(test)]
+mod vision_tests;
 
 #[cfg(test)]
 mod feature_tests;

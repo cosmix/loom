@@ -55,7 +55,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("expansion chain from overview to passage to file mode", async () => {
+it("expansion chain from overview to passage to its source", async () => {
   const store = createStore();
   initClient(store);
   const router = createMemoryRouter(routes, { initialEntries: ["/f/demo/product"] });
@@ -74,7 +74,7 @@ it("expansion chain from overview to passage to file mode", async () => {
   expect(await within(column).findByText("intent", { selector: "strong" })).toBeTruthy();
   fireEvent.click(header);
   await waitFor(() =>
-    expect(router.state.location.pathname).toBe("/files/product/demo/section_01.md"),
+    expect(router.state.location.pathname).toBe("/f/demo/source/product/demo/section_01.md"),
   );
   expect(router.state.location.hash).toBe("#intent");
 });

@@ -29,9 +29,40 @@
   min-height: var(--heading-line);
 }
 
-/* The current view takes the `--muted` wash a hovered quiet button takes; `--primary` stays off
-   it (DESIGN.md, Colour). */
-.plan-button[aria-current="page"] {
+/*
+ * The Summary / Source switch: a segmented control. The track carries a secondary button's
+ * hairline edge and is exactly a row control's height (24px), so it sits on the action row's
+ * centre line beside Edit and Discuss; the two segments are inset 1px inside it. The current view
+ * is filled with `--muted` and set in `--foreground` at 600; the other is a quiet segment that
+ * only recolours on hover, so hovering never makes the two states look alike. `--primary` stays
+ * off it (DESIGN.md, Colour). A deliberate exception: DESIGN.md, Surfaces.
+ */
+.doc-heading-views {
+  display: inline-flex;
+  flex: none;
+  align-items: stretch;
+  height: var(--control-height-sm);
+  padding: 1px;
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
+}
+
+.doc-heading-views > .plan-button {
+  height: auto;
+  border: 0;
+  border-radius: calc(var(--corner-control) - 2px);
+}
+
+.doc-heading-views > .plan-button:hover {
+  background: transparent;
+}
+
+.doc-heading-views > .plan-button[aria-current="page"] {
   background: var(--muted);
   color: var(--foreground);
+  font-weight: 600;
+}
+
+.doc-heading-views > .plan-button[aria-current="page"]:hover {
+  background: var(--muted);
 }

@@ -65,10 +65,10 @@ fn only_valid_feature_overview_ids_are_overviews() {
     }
 }
 
-#[test]
-fn document_ids_use_the_winning_plans_own_feature() {
-    let (_dir, project) = project();
-    let cases = [
+type IdCase = (&'static str, Option<&'static str>);
+
+fn document_id_cases() -> [IdCase; 19] {
+    [
         (
             "doc/product/alpha/section_01.md",
             Some("alpha/product/section_01"),
@@ -97,13 +97,36 @@ fn document_ids_use_the_winning_plans_own_feature() {
         ("doc/plans/alpha/archive/DONE-PLAN-foreign-only.md", None),
         ("doc/plans/alpha/archive/DONE-PLAN-unnamed.md", None),
         ("doc/plans/beta/index.md", None),
-        ("doc/product/alpha/index.md", None),
+        ("doc/product/alpha/index.md", Some("alpha/product/vision")),
+        ("doc/product/beta/index.md", Some("beta/product/vision")),
         ("doc/plans/briefs/solo/note.md", None),
         ("doc/product/index.md", None),
         ("doc/product/section_01.md", None),
         ("doc/plans/index.md", None),
-    ];
-    for (path, expected) in cases {
+    ]
+}
+
+#[test]
+fn vision_feature_names_only_a_valid_features_vision_id() {
+    assert_eq!(vision_feature("alpha/product/vision"), Some("alpha"));
+    for id in [
+        "",
+        "product/vision",
+        "Bad/product/vision",
+        "alpha/product/vision/extra",
+        "alpha/engineering/vision",
+        "overview/alpha/product",
+    ] {
+        assert_eq!(vision_feature(id), None, "{id}");
+        assert!(!is_vision(id), "{id}");
+    }
+    assert!(is_vision("beta/product/vision"));
+}
+
+#[test]
+fn document_ids_use_the_winning_plans_own_feature() {
+    let (_dir, project) = project();
+    for (path, expected) in document_id_cases() {
         assert_eq!(
             summary_id_for(&project, Path::new(path)).as_deref(),
             expected,
@@ -128,8 +151,10 @@ fn expected_ids_cover_two_features_and_the_standalone_shelf() {
             "alpha/product/section_01",
             "alpha/product/section_02",
             "alpha/product/section_03",
+            "alpha/product/vision",
             "beta/product/section_01",
             "beta/product/section_02",
+            "beta/product/vision",
             "overview/alpha/engineering",
             "overview/alpha/product",
             "overview/beta/engineering",
@@ -210,6 +235,7 @@ fn overview_sources_may_be_empty_or_present_on_only_one_side() {
             "overview/eng/engineering",
             "overview/spec/product",
             "spec/product/section_01",
+            "spec/product/vision",
         ]
     );
     assert_eq!(scope(&project, "spec").outside, ["spec/product/section_01"]);
@@ -232,6 +258,7 @@ fn assert_valid_summary_paths() {
         "overview/feature-2/engineering",
         "a/product/section_01",
         "a/product/section_123",
+        "a/product/vision",
         "0/product/section_00",
         "plans/A.b_c-1",
         "plans/product",
@@ -246,43 +273,51 @@ fn assert_valid_summary_paths() {
     }
 }
 
+const INVALID_IDS: &[&str] = &[
+    "",
+    "product",
+    "engineering",
+    "product/section_01",
+    "../x",
+    "plans/../../etc",
+    "plans/",
+    "plans/a/b",
+    "plans/product/section_01",
+    "/overview/a/product",
+    "overview/Bad/product",
+    "overview/a/other",
+    "overview/a/product/extra",
+    "overview//product",
+    "overview/../product",
+    "overview/plans/product",
+    "overview/overview/product",
+    "overview/archive/product",
+    "overview/briefs/product",
+    "a/product/section_1",
+    "a/product/section_1x",
+    "a/product/vision/extra",
+    "a/product/Vision",
+    "a/engineering/vision",
+    "product/vision",
+    "Bad/product/vision",
+    "overview/product/vision",
+    "a/product/section_01/../../x",
+    "../product/section_01",
+    "a/../product/section_01",
+    "a_b/product/section_01",
+    "overview/product/section_01",
+    "Bad/product/section_01",
+    "a/product/section_０１",
+    "plans/.hidden",
+    "plans/a..b",
+    "plans/a\\b",
+    "plans/é",
+];
+
 #[test]
 fn validates_ids_before_paths() {
     assert_valid_summary_paths();
-    for id in [
-        "",
-        "product",
-        "engineering",
-        "product/section_01",
-        "../x",
-        "plans/../../etc",
-        "plans/",
-        "plans/a/b",
-        "plans/product/section_01",
-        "/overview/a/product",
-        "overview/Bad/product",
-        "overview/a/other",
-        "overview/a/product/extra",
-        "overview//product",
-        "overview/../product",
-        "overview/plans/product",
-        "overview/overview/product",
-        "overview/archive/product",
-        "overview/briefs/product",
-        "a/product/section_1",
-        "a/product/section_1x",
-        "a/product/section_01/../../x",
-        "../product/section_01",
-        "a/../product/section_01",
-        "a_b/product/section_01",
-        "overview/product/section_01",
-        "Bad/product/section_01",
-        "a/product/section_０１",
-        "plans/.hidden",
-        "plans/a..b",
-        "plans/a\\b",
-        "plans/é",
-    ] {
+    for &id in INVALID_IDS {
         assert!(validate_id(id).unwrap_err().to_string().contains(id));
         assert!(summary_path(id).as_os_str().is_empty());
     }

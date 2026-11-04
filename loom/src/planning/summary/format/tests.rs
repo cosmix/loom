@@ -246,6 +246,26 @@ fn sentence_caps_depend_on_the_id() {
 }
 
 #[test]
+fn a_vision_draft_holds_at_most_eight_sentences() {
+    let many = |n: usize| {
+        let lines: Vec<_> = (0..n).map(|i| format!("S{i}. {LINK}")).collect();
+        format!("# T\n\n{}\n", lines.join("\n"))
+    };
+    assert!(parse_draft("alpha/product/vision", &many(8)).is_ok());
+    let errors = parse_draft("alpha/product/vision", &many(9)).unwrap_err();
+    assert_eq!(lines_of(&errors), vec![11]);
+    for (id, limit) in [
+        ("alpha/product/vision", MAX_VISION_SENTENCES),
+        ("alpha/product/section_01", MAX_DOCUMENT_SENTENCES),
+        ("plans/p", MAX_DOCUMENT_SENTENCES),
+        ("overview/alpha/product", MAX_OVERVIEW_SENTENCES),
+    ] {
+        assert_eq!(sentence_limit(id), limit, "{id}");
+    }
+    assert_eq!(MAX_VISION_SENTENCES, 8);
+}
+
+#[test]
 fn draft_with_front_matter_or_conflicts_is_rejected() {
     assert_eq!(
         lines_of(&draft("---\nkind: document\n---\n").unwrap_err()),

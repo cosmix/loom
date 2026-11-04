@@ -4,7 +4,7 @@ import { useAtomValue } from "jotai/react";
 import { Link } from "react-router";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { docKindOfPageKey, pageHref, parsePageKey } from "@/plan/api/page-key";
+import { docKindOfPageKey, isOverviewKey, pageHref, parsePageKey } from "@/plan/api/page-key";
 import type { ConceptPage, ImplementsView, KeyChip } from "@/plan/api/schema-concept";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { DocMark } from "@/plan/ui/doc-mark";
@@ -66,9 +66,10 @@ function shortLabel(chip: KeyChip): string {
 }
 
 /**
- * A document in the key: its mark in the document colour and its short label. The full title is
- * not drawn; it is part of the link's accessible name (visually hidden) and heads the tooltip,
- * above the out-of-date or implements note when there is one.
+ * A document in the key: its mark in the document colour, its short label and its title. The
+ * title is drawn whole in the DOM and cut to the chip's width by CSS alone (`.concept-key-title`),
+ * so the link's accessible name keeps all of it; the tooltip repeats it in full, above the
+ * out-of-date or implements note when there is one.
  */
 function ChipLink({
   chip,
@@ -95,7 +96,7 @@ function ChipLink({
           <span className="concept-key-label font-mono">
             <Untrusted text={shortLabel(chip)} />
           </span>{" "}
-          <span className="sr-only" style={{ unicodeBidi: "isolate", direction: "ltr" }}>
+          <span className="concept-key-title" style={{ unicodeBidi: "isolate", direction: "ltr" }}>
             <SentenceText text={title} />
           </span>
         </Link>
@@ -172,6 +173,21 @@ function MoreChip({
   );
 }
 
+/** What the key's documents are, by kind: all sections, all plans, or a mix of documents. */
+function sourceNoun(chips: readonly KeyChip[]): string {
+  const kinds = new Set(chips.map((chip) => docKindOfPageKey(chip.doc.page)));
+  const only = kinds.size === 1 ? [...kinds][0] : null;
+  const noun = only === "section" || only === "plan" ? only : "document";
+  return chips.length === 1 ? noun : `${chips.length} ${noun}s`;
+}
+
+/** The key's one-line lede: what the documents below are to this page. */
+export function keyLede(page: ConceptPage): string {
+  const chips = page.key_chips;
+  const relation = isOverviewKey(page.key) ? "this overview summarizes" : "this summary draws on";
+  return `${chips.length === 1 ? "Source" : "Sources"}: the ${sourceNoun(chips)} ${relation}`;
+}
+
 /** Whether any sentence on the page carries a mark, so the mark legend has something to explain. */
 function hasMarks(page: ConceptPage): boolean {
   return pageSentences(page).some((sentence) => sentence.marks.length > 0);
@@ -179,37 +195,41 @@ function hasMarks(page: ConceptPage): boolean {
 
 /**
  * What the spine cannot show: which colour is which document, and what the squares after a
- * sentence mean. One quiet line on the page ground: the lead word, then a mark and a short label
- * per document, the first four with "more" for the rest; under it, the one-line mark legend when
- * the page has marks. No chips, no box (DESIGN.md, Surfaces).
+ * sentence mean. On the page ground: a one-line lede, then per document its mark, number and
+ * title on a fixed-width track, the first four with "more" for the rest; under them, the one-line
+ * mark legend when the page has marks. No chips, no box (DESIGN.md, Surfaces).
  */
 export function DocumentKey({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   // Expansion belongs to one page: another page opens collapsed without remounting the key row,
   // which would drop focus from the chip that navigated. Coming straight back finds it expanded.
   const [expandedOn, setExpandedOn] = useState<string | null>(null);
+  const ledeId = useId();
   const expanded = expandedOn === pageKey;
   const hidden = Math.max(0, page.key_chips.length - VISIBLE_CHIPS);
   const shown = expanded ? page.key_chips : page.key_chips.slice(0, VISIBLE_CHIPS);
   const dashed = page.key_chips.some((chip) => chip.out_of_date !== null);
   return (
     <div className="concept-key">
-      <div className="concept-key-row">
-        <span aria-hidden="true" className="plan-fine concept-key-lead">
-          Sources
-        </span>
-        <ul role="list" aria-label="Document key" className="concept-key-list">
-          {shown.map((chip) => (
-            <Chip key={chip.doc.id} chip={chip} />
-          ))}
-          {hidden > 0 && (
-            <MoreChip
-              hidden={hidden}
-              expanded={expanded}
-              onToggle={() => setExpandedOn(expanded ? null : pageKey)}
-            />
-          )}
-        </ul>
-      </div>
+      <p id={ledeId} className="plan-fine concept-key-lede">
+        {keyLede(page)}
+      </p>
+      <ul
+        role="list"
+        aria-label="Document key"
+        aria-describedby={ledeId}
+        className="concept-key-list"
+      >
+        {shown.map((chip) => (
+          <Chip key={chip.doc.id} chip={chip} />
+        ))}
+        {hidden > 0 && (
+          <MoreChip
+            hidden={hidden}
+            expanded={expanded}
+            onToggle={() => setExpandedOn(expanded ? null : pageKey)}
+          />
+        )}
+      </ul>
       {hasMarks(page) && (
         <p className="plan-fine concept-key-legend">
           <span aria-hidden="true" className="concept-key-square" />

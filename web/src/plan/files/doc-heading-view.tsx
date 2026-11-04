@@ -23,6 +23,7 @@ import { elsewhereSessionAtom } from "@/plan/chat/session-home";
 import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
 import { IsolatedSentence } from "@/plan/concept/sentence-text";
 import { openDiff } from "@/plan/diff/open-diff";
+import { sourceHref } from "@/plan/feature/source-href";
 import { canAuthorAtom } from "@/plan/state/atoms";
 import {
   DocHeading,
@@ -47,7 +48,7 @@ import {
 import { LockNotice } from "./lock-notice";
 import { PlanActionsExtras } from "./plan/plan-actions-extras";
 import { ValidationList, warningCount } from "./plan/validation-list";
-import { sectionSummaryKey, stemOf, useDocChips } from "./section-chips";
+import { docSummaryKey, stemOf, useDocChips } from "./section-chips";
 
 function docKind(kind: EntryKind): DocKind | null {
   switch (kind) {
@@ -91,11 +92,8 @@ function summaryTarget(doc: DocView): string | null {
       : pageHref(summaryKey(doc.feature, "engineering", doc.plan.slug));
   }
   if (doc.feature === null) return null;
-  if (doc.kind === "vision" || doc.kind === "metaplan") {
-    return pageHref(overviewKey(doc.feature, doc.kind === "vision" ? "product" : "engineering"));
-  }
-  if (doc.kind !== "section") return null;
-  const key = sectionSummaryKey(doc);
+  if (doc.kind === "metaplan") return pageHref(overviewKey(doc.feature, "engineering"));
+  const key = docSummaryKey(doc);
   return key ? pageHref(key) : null;
 }
 
@@ -268,7 +266,7 @@ export function FileDocHeading({ doc }: { doc: DocView }): JSX.Element {
       changes={{ to: openDiff("head", doc.path) }}
       views={{
         current: "source",
-        sourceTo: toAddress(doc.path),
+        sourceTo: sourceHref(doc.path),
         summaryTo: summaryTarget(doc),
       }}
       actions={<HeadingActions doc={doc} pressureActive={pressureActive} />}

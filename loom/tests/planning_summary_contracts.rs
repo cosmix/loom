@@ -231,6 +231,7 @@ fn summary_scope_table() {
     let want = [
         ID,
         "demo/product/section_02",
+        "demo/product/vision",
         ENGINEERING,
         PRODUCT,
         "plans/a",

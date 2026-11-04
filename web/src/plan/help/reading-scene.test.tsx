@@ -32,7 +32,7 @@ it("exports the one reading scene with four pins", () => {
     "A sentence that opens. Hover shows its document's colour; click or press Enter.",
     "Which document the sentence draws on. A dashed mark is being rebuilt.",
     "Fold back to the sentence you opened. Esc folds one level, Shift+Esc all.",
-    "The source passage, with its file and heading. It opens in file mode.",
+    "The source passage, with its file and heading. It opens the full source, and Summary brings you back.",
   ]);
 });
 

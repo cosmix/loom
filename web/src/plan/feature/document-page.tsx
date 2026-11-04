@@ -1,25 +1,28 @@
 import { useAtomValue, useStore } from "jotai/react";
-import { useParams } from "react-router";
+import { ArrowRight } from "lucide-react";
+import { Link, useLocation, useParams } from "react-router";
 
 import type { ChecklistView } from "@/plan/api/schema";
+import { ConceptRoute } from "@/plan/concept/concept-route";
 import { EmptyOffer } from "@/plan/concept/empty-offer";
-import { repoRel } from "@/plan/files/address";
+import { decode, repoRel } from "@/plan/files/address";
 import { useFileSocket } from "@/plan/files/api";
 import { treeAtom } from "@/plan/files/atoms";
 import { ReadingColumn } from "@/plan/files/reading-column";
 import { missingDocumentOffer } from "@/plan/feature/page-offer";
+import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
 import { metaplanFile } from "@/plan/feature/spine-model";
 import { useFeature } from "@/plan/feature/use-feature";
 import { LoadState } from "@/plan/ui/load-state";
 
-/** The vision and the metaplans have no summaries, so these pages read the source. */
-function SourcePage({ path }: { path: string }) {
+/** A document's source, read in the reading column; `anchor` scrolls to one of its sections. */
+function SourcePage({ path, anchor = null }: { path: string; anchor?: string | null }) {
   const store = useStore();
   useFileSocket(store);
   const tree = useAtomValue(treeAtom);
   return (
     <div className="plan-document">
-      <ReadingColumn key={path} path={repoRel(path)} anchor={null} tree={tree} />
+      <ReadingColumn key={path} path={repoRel(path)} anchor={anchor} tree={tree} />
     </div>
   );
 }
@@ -43,7 +46,7 @@ function MissingDocument({
   );
 }
 
-/** `/f/:feature/vision`: the vision's source, or the offer to write it. */
+/** `/f/:feature/vision`: the vision's summary page, or the offer to write the vision. */
 export function VisionPage() {
   const { checklist } = useFeature();
   if (!checklist) return <LoadState state="loading" title="Loading the feature" />;
@@ -56,7 +59,24 @@ export function VisionPage() {
       />
     );
   }
-  return <SourcePage path={`product/${checklist.feature}/index.md`} />;
+  return (
+    <>
+      <ConceptRoute />
+      {/* ConceptRoute draws its own column and bottom padding; this one matches the column and
+          pulls the link up under the summary. */}
+      <div className="-mt-8 w-full px-[clamp(16px,4vw,56px)] pb-12">
+        <div className="mx-auto max-w-[68ch]">
+          <Link
+            to={featureSourceHref(checklist.feature, `doc/product/${checklist.feature}/index.md`)}
+            className="concept-read-source"
+          >
+            Read the full vision
+            <ArrowRight aria-hidden="true" />
+          </Link>
+        </div>
+      </div>
+    </>
+  );
 }
 
 /** `/f/:feature/metaplan[/:file]`: a metaplan's source; the first one when no file is named. */
@@ -78,4 +98,31 @@ export function MetaplanPage() {
     : checklist.metaplans[0];
   if (!metaplan) return <LoadState state="not_found" title="No such metaplan" />;
   return <SourcePage path={metaplan.path} />;
+}
+
+function hashAnchor(hash: string): string | null {
+  return hash ? decode(hash.slice(1)) : null;
+}
+
+/**
+ * `/f/:feature/source/*`: the source of one of the feature's documents (its vision, anything under
+ * `doc/product/<feature>/` or `doc/plans/<feature>/`), with the spine around it. Any other path is
+ * refused rather than shown under this feature.
+ */
+export function FeatureSourcePage() {
+  const { checklist } = useFeature();
+  const { "*": rel = "" } = useParams();
+  const { hash } = useLocation();
+  if (!checklist) return <LoadState state="loading" title="Loading the feature" />;
+  const path = `doc/${rel}`;
+  if (featureOfDocPath(path) !== checklist.feature) {
+    return (
+      <LoadState
+        state="error"
+        title="Not a document of this feature"
+        message="Only the feature's vision, sections, metaplans and plans open here."
+      />
+    );
+  }
+  return <SourcePage path={path} anchor={hashAnchor(hash)} />;
 }

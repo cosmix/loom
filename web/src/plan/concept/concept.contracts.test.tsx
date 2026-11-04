@@ -163,7 +163,7 @@ it("concept opening a summary sentence shows its source passages as inset blocks
   fireEvent.click(within(column).getByRole("button", { name: /^A plan starts from/ }));
   const header = await within(column).findByRole("link", { name: /section_01\.md.*Intent/ });
   const href = header.getAttribute("href") ?? "";
-  expect(href.startsWith("/files/product/demo/section_01.md")).toBe(true);
+  expect(href.startsWith("/f/demo/source/product/demo/section_01.md")).toBe(true);
   expect(href).toContain("intent");
   const strong = await within(column).findByText("intent", { selector: "strong" });
   let block: HTMLElement | null = header.parentElement;

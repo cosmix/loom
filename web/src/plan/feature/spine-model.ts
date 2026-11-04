@@ -3,7 +3,9 @@ import type { LucideIcon } from "lucide-react";
 import type { ChecklistView, MarkView, StepView } from "@/plan/api/schema";
 import { featurePage } from "@/plan/feature/page-offer";
 import { STEP } from "@/plan/feature/steps";
+import { featureOfDocPath } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
+import { docRel } from "@/plan/files/address";
 import { PLAN_STATE_GLYPHS, type PlanState } from "@/plan/ui/glyphs";
 
 export type GroupId = "vision" | "product" | "metaplan" | "plans" | "pressure" | "run";
@@ -62,9 +64,33 @@ const GROUP_OF_PAGE: Record<string, GroupId> = Object.fromEntries(
   GROUPS.map((group) => [group.page, group.id]),
 );
 
+/** A plan file name, lifecycle prefix included (`PLAN-x.md`, `IN_PROGRESS-PLAN-x.md`). */
+const PLAN_FILE = /^(?:[A-Z_]+-)?PLAN-/;
+
+/** The group a feature document belongs to: its vision, a section, a plan or a metaplan file. */
+function groupOfDocPath(repoPath: string): GroupId | null {
+  const [root, , ...rest] = docRel(repoPath).split("/");
+  const file = rest.at(-1) ?? "";
+  if (root === "product") return rest.length === 1 && file === "index.md" ? "vision" : "product";
+  if (root === "plans") return PLAN_FILE.test(file) ? "plans" : "metaplan";
+  return null;
+}
+
+/**
+ * The group of `/f/<feature>/source/<rel>`: the one of the document it shows, none when the
+ * document belongs to another feature than the route's.
+ */
+function groupOfSource(pathname: string): GroupId | null {
+  const repoPath = sourceRepoPath(pathname);
+  const feature = pathname.split("/").filter(Boolean)[1];
+  if (repoPath === null || featureOfDocPath(repoPath) !== feature) return null;
+  return groupOfDocPath(repoPath);
+}
+
 export function groupOfPathname(pathname: string): GroupId | null {
   const page = featurePage(pathname)?.page;
-  return page === undefined ? null : (GROUP_OF_PAGE[page] ?? null);
+  if (page === undefined) return null;
+  return page === "source" ? groupOfSource(pathname) : (GROUP_OF_PAGE[page] ?? null);
 }
 
 function overviewChild(feature: string, page: string): SpineChild {
@@ -150,6 +176,49 @@ function wordOf(id: GroupId, mark: MarkView, checklist: ChecklistView): string {
   if (id === "vision" || id === "metaplan") return "not written";
   if (id === "plans") return checklist.plan_rows.length === 0 ? "not started" : "has gaps";
   return id === "product" ? "has gaps" : "not started";
+}
+
+/** The repository path a source route shows, or null for a route that is not one or is unreadable. */
+function sourceRepoPath(pathname: string): string | null {
+  const [root, , page, ...rel] = pathname.split("/").filter(Boolean);
+  if (root !== "f" || page !== "source") return null;
+  try {
+    return `doc/${rel.map(decodeURIComponent).join("/")}`;
+  } catch (error) {
+    if (error instanceof URIError) return null;
+    throw error;
+  }
+}
+
+/** The key (see `SpineChild.key`) of the child that lists a document of `group`, if any does. */
+function childKeyOf(checklist: ChecklistView, group: GroupId, repoPath: string): string | null {
+  const same = (path: string) => docRel(path) === docRel(repoPath);
+  if (group === "plans") return checklist.plan_rows.find((plan) => same(plan.path))?.slug ?? null;
+  if (group === "metaplan")
+    return checklist.metaplans.find((item) => same(item.path))?.path ?? null;
+  if (group !== "product") return null;
+  const parts = docRel(repoPath).split("/");
+  return parts.length === 3 ? (/^section_(.+)\.md$/.exec(parts[2]!)?.[1] ?? null) : null;
+}
+
+/**
+ * The summary route of the document a source route shows (`/f/<f>/source/<rel>`): the `to` of the
+ * spine child that lists it, the group's own target for a vision or a lone metaplan (which has no
+ * child), and null when no row stands for the document.
+ */
+export function summaryPathnameOfSource(checklist: ChecklistView, pathname: string): string | null {
+  const repoPath = sourceRepoPath(pathname);
+  if (repoPath === null || featureOfDocPath(repoPath) !== checklist.feature) return null;
+  const id = groupOfDocPath(repoPath);
+  const group = spineGroups(checklist).find((candidate) => candidate.id === id);
+  if (!group) return null;
+  if (group.id === "vision") return group.to;
+  const key = childKeyOf(checklist, group.id, repoPath);
+  if (key === null) return null;
+  if (group.id === "metaplan" && group.children.length === 0) return group.to;
+  // The overview child (first, where a group has one) shares the group's target and lists no document.
+  const listed = group.overview ? group.children.slice(1) : group.children;
+  return listed.find((candidate) => candidate.key === key)?.to ?? null;
 }
 
 function childrenOf(id: GroupId, checklist: ChecklistView, page: string): SpineChild[] {

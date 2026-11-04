@@ -4,6 +4,7 @@ import { Clock, FlaskConical, Gauge, Layers } from "lucide-react";
 import { pageHref, summaryKey } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
 import { planStateText, summaryStatus } from "@/plan/concept/summary-text";
+import { sourceHref } from "@/plan/feature/source-href";
 import { repoRel, toAddress } from "@/plan/files/address";
 import { openQuestionsAtom } from "@/plan/review/live";
 import { featuresAtom } from "@/plan/state/atoms";
@@ -107,8 +108,12 @@ export function changedChip(stamp: string, now: number): HeadingChip {
   };
 }
 
-/** "<n> open questions" (warn) linking to the document's questions; nothing when it has none. */
-export function useOpenQuestionChips(path: string | null): HeadingChip[] {
+/**
+ * "<n> open questions" (warn) linking to the document's questions; nothing when it has none. A
+ * summary page passes `inFeature` so the link stays inside the feature (spine included); file mode
+ * links to its own address.
+ */
+export function useOpenQuestionChips(path: string | null, inFeature = false): HeadingChip[] {
   const counts = useAtomValue(openQuestionsAtom);
   const count = path === null ? undefined : counts[repoRel(path)];
   if (path === null || count === undefined || count === 0) return [];
@@ -118,7 +123,9 @@ export function useOpenQuestionChips(path: string | null): HeadingChip[] {
       label: plural(count, "open question"),
       icon: <OpenQuestionsIcon data-other-glyph="openQuestions" />,
       tone: "warning",
-      to: toAddress(path, "open-questions"),
+      to: inFeature
+        ? sourceHref(path, { anchor: "open-questions" })
+        : toAddress(path, "open-questions"),
     },
   ];
 }
