@@ -207,6 +207,10 @@ A path-convention move that left hardcoded homes in the crate, jsdom tests green
 Parallel review repairs need explicit ownership, retained user data, and finding-specific verification.
 See [review-continuation-verification](mistakes/review-continuation-verification.md) for coordination and test lessons, and [review-final-wave](mistakes/review-final-wave.md) for fixtures that could not fail, git internals assumed from memory, and capping open-ended review rounds.
 
+## Planner Review Fixes
+
+A `loom-kickoff` fence and a composite opening reached the transcript because no test replayed a captured kickoff; a sent item and its record arrived in the opposite order and doubled a row; a fix worker satisfied a text wiring check with a comment; a chat fixture asked for a final write before the turn finished. Prevention: replay real record shapes through the mapper and the transcript, read each wiring match, run a turn to Idle before a final write. → [Planner Review Fixes Mistakes](mistakes/planner-review-fixes.md)
+
 ## Claude Code Changed Its Record Format and Text Matches Broke Silently
 
 Claude Code began wrapping a delivered prompt in `<pasted_content id="X">` tags in the transcript and the prompt hook; every match on the delivered text stopped matching with no failing test, because the fixtures carried the old bare format. Prevention: capture fixtures from real transcripts after a Claude Code upgrade, and test a match on Claude Code's output with both forms. → [Claude Code wrapped delivered prompts](mistakes/planner-ui-repair.md#claude-code-wrapped-delivered-prompts-and-every-text-match-broke-silently-2026-11-03)

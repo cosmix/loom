@@ -1,6 +1,6 @@
 # Review Final Wave
 
-> Final repair wave lessons
+> Final wave
 
 ## A hook lock depended on a loom subcommand the PATH binary lacks
 

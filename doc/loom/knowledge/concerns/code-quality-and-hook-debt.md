@@ -1,6 +1,6 @@
 # Code Quality And Hook Debt
 >
-> Recovery sync; unrun branches
+> Recovery sync
 >
 >
 
