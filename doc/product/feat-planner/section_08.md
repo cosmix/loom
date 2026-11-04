@@ -557,12 +557,8 @@ how to install, log in, or fix it, and no offers.
 
 Every authenticated browser has a **Share** control beside the header's presence list (section
 02). It opens a popover that asks the server for the tokenized link (section 12, "Sharing
-access") and shows it in monospace with a Copy button, under the line section 12 sets for the
-bind:
-
-- on a loopback bind, "Works on this machine. From another machine, tunnel first:" and the
-  `ssh -L <port>:127.0.0.1:<port> <hostname>` command, with its own Copy button;
-- on a remote bind, the link as bound and the plain-HTTP warning in `--tone-warning`.
+access") and shows it in monospace with a Copy button. The popover shows the URL only, with no
+tunnel instructions; on a remote bind it adds the plain-HTTP warning in `--tone-warning`.
 
 The popover holds the link only while open. (My call: a link left on screen is a link in a
 screenshot.)
