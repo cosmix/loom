@@ -347,7 +347,7 @@ fn summary_cli_status_json() {
     assert_eq!(v["schema"], 1);
     let summaries = v["summaries"].as_array().expect("summaries array");
     let ids: Vec<&str> = summaries.iter().filter_map(|s| s["id"].as_str()).collect();
-    assert_eq!(ids, [ID, PRODUCT]);
+    assert_eq!(ids, ["demo/product/vision", ID, PRODUCT]);
     for s in summaries {
         assert_keys(
             s,
@@ -363,9 +363,10 @@ fn summary_cli_status_json() {
         );
         assert!(s["claim"].is_null(), "{s}");
     }
-    assert_eq!(summaries[0]["state"], "current");
-    assert_eq!(summaries[1]["state"], "missing");
-    let sentence = &summaries[0]["sentences"][0];
+    assert_eq!(summaries[0]["state"], "missing");
+    assert_eq!(summaries[1]["state"], "current");
+    assert_eq!(summaries[2]["state"], "missing");
+    let sentence = &summaries[1]["sentences"][0];
     assert_keys(sentence, &["id", "line", "state", "text"]);
     assert_eq!(sentence["id"], sid("Alpha holds."));
     assert_eq!(sentence["text"], "Alpha holds.");

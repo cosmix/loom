@@ -4,7 +4,7 @@ use super::brief;
 use crate::planning::summary::claims::{create_claim, list_claims};
 use crate::planning::summary::evaluate::fixtures::{
     fixture, metaplan, put, seal_document, section, two_sections, vision, write_file, ENGINEERING,
-    ID1, ID2, META, PRODUCT, S1,
+    ID1, ID2, META, PRODUCT, S1, VISION_ID,
 };
 
 #[test]
@@ -55,6 +55,25 @@ fn missing_document_brief_names_its_source_and_the_document_cap() {
                 Current summary:\n(none)\nBody rules:\n";
     assert!(text.contains(head), "{text}");
     assert!(text.contains("- At most 15 sentences; cite only the source document"));
+}
+
+#[test]
+fn vision_brief_caps_at_eight_sentences_and_cites_only_the_vision() {
+    let f = two_sections();
+    let text = brief(&f.root, &f.paths, &[VISION_ID.into()], None).unwrap();
+    let head = "# demo/product/vision (document)\nSources:\n- doc/product/demo/index.md\n";
+    assert!(text.contains(head), "{text}");
+    assert!(
+        text.contains("- At most 8 sentences; cite only the source document"),
+        "{text}"
+    );
+    assert!(!text.contains("At most 15"), "{text}");
+    let overview = brief(&f.root, &f.paths, &[PRODUCT.into()], None).unwrap();
+    assert!(
+        overview.contains("- An overview sentence that cites member sentences cites at least two of them and says what they add up to."),
+        "{overview}"
+    );
+    assert!(!text.contains("cites at least two"), "{text}");
 }
 
 #[test]

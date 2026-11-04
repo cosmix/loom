@@ -353,3 +353,25 @@ fn sentence_citing_one_member_twice_reports_one_restatement() {
     let restated = messages.iter().filter(|m| m.contains("restates")).count();
     assert_eq!(restated, 1, "{messages:?}");
 }
+
+#[test]
+fn an_overview_sentence_citing_two_member_sentences_seals() {
+    let f = two_sections();
+    seal_document(&f.root, ID1, &[(A1, "a"), (A2, "b")]);
+    seal_document(&f.root, ID2, &[("Beta one holds.", "a")]);
+    let draft = format!(
+        "# Overview\n\nThe planner keeps two things. {} {}\n\nThe second section is covered. {}\n\n\
+         Vision. {VISION_LINK}\n",
+        member(ID1, A1),
+        member(ID1, A2),
+        member(ID2, "Beta one holds."),
+    );
+    seal_text(&f, PRODUCT, &draft).expect("two member sentences seal");
+}
+
+#[test]
+fn a_sentence_citing_the_only_sentence_of_a_member_seals() {
+    let f = sealed_sections();
+    let links = [member(ID1, A1), member(ID2, A2), VISION_LINK.to_string()];
+    seal_text(&f, PRODUCT, &overview_draft(&links)).expect("one-sentence members seal");
+}

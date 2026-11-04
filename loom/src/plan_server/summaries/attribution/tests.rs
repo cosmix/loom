@@ -319,3 +319,9 @@ fn only_terminal_claims_are_released() {
     assert_eq!(released, ["plans/a"]);
     assert_eq!(claimed(&paths), ["plans/b"]);
 }
+
+#[test]
+fn a_vision_summary_is_a_document_level_rebuild() {
+    assert_eq!(level_of("demo/product/vision"), Level::Document);
+    assert_eq!(level_of("overview/demo/product"), Level::Overview);
+}

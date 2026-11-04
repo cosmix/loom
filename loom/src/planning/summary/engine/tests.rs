@@ -171,8 +171,8 @@ fn invalidated_lists_only_newly_out_of_date_ids() {
     let first = batch(&fx.root);
     assert_eq!(
         first.invalidated,
-        vec![PRODUCT.to_string()],
-        "the missing overview"
+        vec![VISION_ID.to_string(), PRODUCT.to_string()],
+        "the missing vision summary and overview"
     );
     put(&fx.root, S1, &section(1, "Alpha edited.", "Beta."));
     let second = batch(&fx.root);
@@ -192,7 +192,9 @@ fn expected_work_includes_both_features_and_the_standalone_shelf() {
     let fx = two_features();
     let expected = [
         ID1,
+        VISION_ID,
         "other/product/section_01",
+        "other/product/vision",
         ENGINEERING,
         PRODUCT,
         "overview/other/engineering",

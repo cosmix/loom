@@ -20,6 +20,19 @@ pub use front::{FrontMatter, SummaryKind};
 pub const MAX_DOCUMENT_SENTENCES: usize = 15;
 /// Most sentences an overview may hold.
 pub const MAX_OVERVIEW_SENTENCES: usize = 30;
+/// Most sentences a vision summary may hold.
+pub const MAX_VISION_SENTENCES: usize = 8;
+
+/// Most sentences the summary `id` may hold.
+pub fn sentence_limit(id: &str) -> usize {
+    if store::is_overview(id) {
+        MAX_OVERVIEW_SENTENCES
+    } else if store::is_vision(id) {
+        MAX_VISION_SENTENCES
+    } else {
+        MAX_DOCUMENT_SENTENCES
+    }
+}
 
 /// One problem in a summary or draft; `line` is 1-based.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -205,10 +218,7 @@ pub fn parse(summary_rel: &Path, text: &str) -> Result<SummaryFile, Vec<FormatEr
     };
     let (yaml, body_offset) = split_front(text)?;
     let front = front::parse_front(&yaml, 2)?;
-    let limit = match front.kind {
-        SummaryKind::Document => MAX_DOCUMENT_SENTENCES,
-        SummaryKind::Overview => MAX_OVERVIEW_SENTENCES,
-    };
+    let limit = sentence_limit(&id);
     let body_text = text
         .lines()
         .skip(body_offset)
@@ -236,13 +246,8 @@ pub fn parse_draft(id: &str, text: &str) -> Result<SummaryBody, Vec<FormatError>
             "a draft is the body only, without front matter",
         ));
     }
-    let limit = if store::is_overview(id) {
-        MAX_OVERVIEW_SENTENCES
-    } else {
-        MAX_DOCUMENT_SENTENCES
-    };
     let resolve = |href: &str| classify_href(id, href);
-    body::parse_body(text, 0, limit, &resolve)
+    body::parse_body(text, 0, sentence_limit(id), &resolve)
 }
 
 /// Renders a summary file deterministically: front matter, one blank line,

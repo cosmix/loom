@@ -78,6 +78,8 @@ pub(super) fn check(rules: &Rules<'_>, body: &SummaryBody) -> (Cited, Vec<Format
         let line = sentence.line + 1;
         // A sentence citing one target twice reports each problem once.
         let mut reported = BTreeSet::new();
+        // Member sentences this sentence cites without a problem: what opening it shows.
+        let mut drawn = BTreeSet::new();
         for link in &sentence.links {
             let problem = match &link.resolved {
                 LinkTarget::Unresolved(href) => Some(format!(
@@ -90,9 +92,14 @@ pub(super) fn check(rules: &Rules<'_>, body: &SummaryBody) -> (Cited, Vec<Format
                     sentence_problem(rules, sentence, summary, id, &mut cited)
                 }
             };
+            if let (None, LinkTarget::Sentence { summary, id }) = (&problem, &link.resolved) {
+                drawn.insert((summary.as_str(), id.as_str()));
+            }
             let fresh = problem.filter(|message| reported.insert(message.clone()));
             errors.extend(fresh.map(|message| FormatError { line, message }));
         }
+        let thin = single_member_problem(rules, sentence, &drawn);
+        errors.extend(thin.map(|message| FormatError { line, message }));
     }
     errors.extend(uncited(rules, &allowed, &cited));
     errors.sort_by_key(|e| e.line);
@@ -163,6 +170,27 @@ fn sentence_problem(
             })
         }
     }
+}
+
+/// An overview sentence that opens to a single member sentence shows the reader little more
+/// than itself, so it must cite at least two. The exemption is a member whose summary holds only
+/// that one sentence: there is nothing else to cite.
+fn single_member_problem(
+    rules: &Rules<'_>,
+    sentence: &Sentence,
+    drawn: &BTreeSet<(&str, &str)>,
+) -> Option<String> {
+    let (summary, _) = drawn.first().filter(|_| drawn.len() == 1)?;
+    let only_sentence = rules
+        .evaluation
+        .and_then(|e| e.summaries.get(*summary))
+        .is_some_and(|e| e.sentences.len() == 1);
+    (!only_sentence).then(|| {
+        format!(
+            "sentence {} cites one member sentence; an overview sentence draws on at least two",
+            sentence.id
+        )
+    })
 }
 
 /// Overviews cite every member and every source document at least once.
