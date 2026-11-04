@@ -1,11 +1,12 @@
 import { useAtomValue, useStore } from "jotai/react";
 import { useRef, useState, type JSX } from "react";
 
-import type { Attachment, AttachmentInput, Item, Turn } from "@/plan/api/schema-chat";
+import type { AnyAttachmentInput, Attachment, Item, Turn } from "@/plan/api/schema-chat";
 import { sendMessage } from "@/plan/chat/commands";
 import { composerBlock } from "@/plan/chat/composer-gate";
 import {
   CONNECTION_LOST,
+  contentOf,
   RESEND_OFFLINE,
   resendingEntriesAtom,
   resendKey,
@@ -33,9 +34,24 @@ type UserItem = Extract<Item, { type: "user" }>;
 const CHANGED_SINCE_SELECTED = "changed-since-selected";
 
 /** The wire form of a delivered attachment: the lock flag is the server's to compute. */
-function toInput({ locked: _locked, changed_since_selected: changed, ...rest }: Attachment) {
-  const selected_hash = changed ? CHANGED_SINCE_SELECTED : null;
-  return { ...rest, selected_hash } satisfies AttachmentInput;
+function toInput(a: Attachment): AnyAttachmentInput {
+  const { kind } = a;
+  // A file chip resends by the id the server issued; the document form is refused for it.
+  if (kind === "file") {
+    if (!a.file) throw new Error("A file attachment has no stored file to resend");
+    return { kind, id: a.file.id, name: a.file.name };
+  }
+  return {
+    kind,
+    path: a.path,
+    anchor: a.anchor,
+    lines: a.lines,
+    stage: a.stage,
+    summary_sentence: a.summary_sentence,
+    rests_on: a.rests_on,
+    quote: a.quote,
+    selected_hash: a.changed_since_selected ? CHANGED_SINCE_SELECTED : null,
+  };
 }
 
 /** Whether this message may offer Resend: may author, own message, current chat, composer open. */
@@ -73,7 +89,9 @@ function setMember(store: Store, target: typeof resentItemsAtom, key: string, me
  */
 function useResend(item: UserItem, turn: Turn) {
   const store = useStore();
-  const unconfirmed = useAtomValue(unconfirmedSendsAtom).find((send) => sameMessage(send, item));
+  const unconfirmed = useAtomValue(unconfirmedSendsAtom).find((send) =>
+    sameMessage(contentOf(send), item),
+  );
   const inFlight = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

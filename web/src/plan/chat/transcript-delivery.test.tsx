@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { Attachment, AttachmentInput, Delivery } from "@/plan/api/schema-chat";
+import type { Attachment, Delivery } from "@/plan/api/schema-chat";
 import type { connectPlanSocket } from "@/plan/api/socket";
 import { authoringAtom, connectionAtom, planSocketAtom, youAtom } from "@/plan/state/atoms";
 import {
@@ -13,6 +13,7 @@ import {
   unconfirmedSendsAtom,
 } from "./model";
 import { item, mount } from "./transcript-test-kit";
+import { toWire } from "./wire-input-test-kit";
 
 const me = { public_id: "me", name: "Me" };
 const attachment: Attachment = {
@@ -27,12 +28,11 @@ const attachment: Attachment = {
   changed_since_selected: true,
   locked: "done",
 };
-const { changed_since_selected: _changed, locked: _locked, ...fields } = attachment;
 // A lost entry keeps the composer's own input; an item has no real hash left, so the server's
 // "changed since selected" flag is carried by a hash no document can have.
-const entryWire: AttachmentInput = { ...fields, selected_hash: "hash-at-selection" };
-const flaggedWire: AttachmentInput = { ...fields, selected_hash: "changed-since-selected" };
-const unflaggedWire: AttachmentInput = { ...fields, selected_hash: null };
+const entryWire = toWire(attachment, "hash-at-selection");
+const flaggedWire = toWire(attachment, "changed-since-selected");
+const unflaggedWire = toWire(attachment);
 
 type Harness = ReturnType<typeof mount> & { sent: Record<string, unknown>[] };
 

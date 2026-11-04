@@ -9,6 +9,7 @@ import { SentChips } from "@/plan/chat/chips";
 import { snapshotAtom } from "@/plan/chat/model";
 import { PermissionCard } from "@/plan/chat/permission-card";
 import { ResendControl } from "@/plan/chat/resend-control";
+import { withoutKickoffFence } from "@/plan/chat/kickoff-fence";
 import { ToolRow } from "@/plan/chat/tool-row";
 import { useSessionBrief } from "@/plan/chat/use-session-brief";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
@@ -182,12 +183,15 @@ function UserItem({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JSX.Ele
   );
 }
 
-function TextItem({ item, turn }: { item: ItemOf<"text">; turn: Turn }): JSX.Element {
+function TextItem({ item, turn }: { item: ItemOf<"text">; turn: Turn }): JSX.Element | null {
   const navigate = useNavigate();
   const tree = useAtomValue(treeAtom);
   const opened = useAtomValue(openDocAtom);
   const paths = useMemo(() => docPathsOf(tree, CHAT_PATH), [tree]);
-  const source = useMemo(() => chatSource(item.markdown), [item.markdown]);
+  // The kickoff block is for the server; the reader sees the prose around it.
+  const shown = useMemo(() => withoutKickoffFence(item.markdown), [item.markdown]);
+  const source = useMemo(() => chatSource(shown), [shown]);
+  if (shown === "") return null;
   return (
     <div className="chat-assistant-text group/message w-full min-w-0">
       <div style={{ unicodeBidi: "plaintext", direction: "ltr" }}>
@@ -207,7 +211,7 @@ function TextItem({ item, turn }: { item: ItemOf<"text">; turn: Turn }): JSX.Ele
           }
         />
       </div>
-      <MessageControls source={item.markdown} turn={turn} />
+      <MessageControls source={shown} turn={turn} />
     </div>
   );
 }

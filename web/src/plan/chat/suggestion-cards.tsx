@@ -178,6 +178,7 @@ function SuggestionCard({ suggestion }: { suggestion: Suggestion }) {
   const reason = pending ? "Answering suggestion" : authorReason;
   const label = chipLabel({
     ...suggestion.passage,
+    quote: suggestion.passage.text,
     kind: suggestion.passage.summary_sentence === null ? "source" : "summary",
   });
   return (

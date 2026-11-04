@@ -63,7 +63,7 @@
   display: grid;
   gap: var(--space-2);
   color: var(--muted-foreground);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
   font-weight: 400;
   line-height: var(--leading-ui);
 }
@@ -89,7 +89,7 @@
   min-width: 0;
   color: var(--foreground);
   font-family: var(--font-mono);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
   font-weight: 400;
   overflow-wrap: anywhere;
 }

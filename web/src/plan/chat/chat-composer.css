@@ -1,10 +1,13 @@
-/* The composer: part of the panel, under its one hairline. The text box is a bordered input on
- * the page ground (DESIGN.md, Surfaces), so the place to type stands apart from the transcript.
- * Imported by chat-surface.css; see its header for why these rules are unlayered.
+/* The composer: part of the panel, under its one hairline. The box is a bordered input on the
+ * page ground (DESIGN.md, Surfaces), so the place to type stands apart from the transcript. It
+ * holds what the next message carries (the context chip, pending chips) above the text, and is
+ * the drop target for files. Imported by chat-surface.css; see its header for why these rules
+ * are unlayered.
  */
 
 .chat-composer {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
   flex-shrink: 0;
   gap: var(--space-2);
@@ -14,37 +17,129 @@
 
 .chat-composer-input {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   gap: var(--space-2);
 }
 
 /* The box's edge sits on the gutter, so it lines up with the transcript and the actions below. */
 .chat-composer-box {
-  display: block;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
   box-sizing: border-box;
-  width: 100%;
-  /* Two lines of body text and the padding: the longest placeholder shows in full. */
-  min-height: calc(2 * var(--type-body) * var(--leading-body) + 2 * var(--space-2));
-  margin-inline: 0;
+  min-width: 0;
   padding: var(--space-2);
-  overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--corner-control);
   background: var(--background);
   color: var(--foreground);
+}
+
+.chat-composer-box:has(> .chat-composer-field:focus-visible) {
+  border-color: var(--ring);
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* While a file is dragged over it the edge dashes and the words cover the box from inside, so
+ * nothing moves. The cover takes no pointer events: the drag stays on the box under it. */
+.chat-composer-box[data-dragging] {
+  border-style: dashed;
+  border-color: var(--foreground);
+}
+
+.chat-drop-target {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0;
+  border-radius: calc(var(--corner-control) - 1px);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  pointer-events: none;
+}
+
+/* The text itself: no edge of its own, the box draws it. */
+.chat-composer-field {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  /* Two lines of body text: the longest placeholder shows in full. */
+  min-height: calc(2 * var(--type-body) * var(--leading-body));
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
   font-size: var(--type-body);
   line-height: var(--leading-body);
   resize: none;
 }
 
-.chat-composer-box::placeholder {
+.chat-composer-field::placeholder {
   color: var(--muted-foreground);
 }
 
-.chat-composer-box:focus-visible {
-  border-color: var(--ring);
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
+.chat-composer-field:focus-visible {
+  outline: none;
+}
+
+/* What the next message carries, stacked above the text; empty, it takes no space. */
+.chat-composer-attached {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* Each sits at its own width from the start, never past the box: a chip's one-line quote has a
+ * min-content as wide as the whole quote, which would otherwise carry the row out of the panel. */
+.chat-composer-attached > * {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.chat-composer-attached:empty {
+  display: none;
+}
+
+/* "About section_05": a quiet chip, words and a dismiss, no fill and no edge. */
+.chat-context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  min-width: 0;
+  min-height: var(--control-height-sm);
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+.chat-context-chip > svg {
+  flex-shrink: 0;
+}
+
+.chat-context-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-context-name {
+  color: var(--foreground);
+  font-weight: 500;
 }
 
 .chat-composer-actions {
@@ -81,10 +176,13 @@
   display: none;
 }
 
-/* Pending attachments stack as quiet rows; sent ones flow inline under the message. */
+/* Pending and sent attachments flow as quiet chips that wrap; none scrolls sideways. */
 .chat-chip-list {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
 }
 
 .chat-chip-list[data-scroll="true"] {
@@ -101,9 +199,37 @@
 .chat-chip {
   position: relative;
   min-width: 0;
+  max-width: 100%;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+/* A selection chip: the quote on one line, its source under it in the fine size. The source
+ * wraps rather than widen the chip; what follows it (a change note) keeps a gap on its line, and
+ * the gap falls at the line's end, unseen, when the note wraps under it. */
+.chat-chip-source {
+  margin-inline-end: var(--space-2);
   color: var(--muted-foreground);
   font-size: var(--type-fine);
-  line-height: var(--leading-ui);
+  overflow-wrap: anywhere;
+}
+
+/* A file chip's size, after its name on the chip's one row. */
+.chat-chip-size {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  white-space: nowrap;
+}
+
+/* An image chip shows the picture itself, 32px square. */
+.chat-chip-thumb {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  object-fit: cover;
 }
 
 .chat-chip-row {

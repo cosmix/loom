@@ -190,4 +190,86 @@ describe("DocumentStarter", () => {
     expect(screen.getByRole("button", { name: "Notes⟨U+202E⟩" })).toBeTruthy();
     expect(screen.getByText("doc/notes⟨U+202E⟩.md")).toBeTruthy();
   });
+
+  describe("a file from this computer", () => {
+    const stored = {
+      id: "0123456789abcdef",
+      name: "notes.md",
+      media_type: "text/markdown",
+      bytes: 5,
+    };
+    const chosen = () => document.querySelector<HTMLInputElement>('input[type="file"]')!;
+
+    it("offers both choices, and the file input accepts the supported types and several files", () => {
+      mount();
+
+      expect(screen.getByRole("button", { name: "A file from this computer…" })).toBeTruthy();
+      expect(screen.getByText("A document in this project")).toBeTruthy();
+      expect(chosen().multiple).toBe(true);
+      expect(chosen().accept).toContain("image/png");
+      expect(chosen().accept).toContain(".md");
+    });
+
+    it("uploads the chosen file and picks it by id, then closes the menu", async () => {
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response(JSON.stringify(stored)));
+      vi.stubGlobal("fetch", fetchMock);
+      const onPick = mount();
+
+      fireEvent.change(chosen(), {
+        target: { files: [new File(["hello"], "notes.md", { type: "" })] },
+      });
+
+      await waitFor(() => expect(onPick).toHaveBeenCalledTimes(1));
+      expect(onPick).toHaveBeenCalledWith({
+        label: "notes.md",
+        attachment: { kind: "file", id: "0123456789abcdef", name: "notes.md" },
+        file: stored,
+      });
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(url).toBe("/api/attachments?name=notes.md");
+      expect(init?.headers).toEqual({ "Content-Type": "text/markdown" });
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: "Choose a starter document" })).toBeNull(),
+      );
+    });
+
+    it("keeps the menu open and shows the server's reason when the upload is refused", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn<typeof fetch>().mockResolvedValue(
+          new Response(JSON.stringify({ error: "too_large", message: "Over 10 MiB <b>" }), {
+            status: 413,
+          }),
+        ),
+      );
+      const onPick = mount();
+
+      fireEvent.change(chosen(), {
+        target: { files: [new File(["x"], "big.png", { type: "image/png" })] },
+      });
+
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toBe("big.png: Over 10 MiB <b>");
+      expect(alert.querySelector("b")).toBeNull();
+      expect(onPick).not.toHaveBeenCalled();
+      expect(screen.getByRole("dialog", { name: "Choose a starter document" })).toBeTruthy();
+    });
+
+    it("refuses a type outside the list without sending it", async () => {
+      const fetchMock = vi.fn<typeof fetch>();
+      vi.stubGlobal("fetch", fetchMock);
+      mount();
+
+      fireEvent.change(chosen(), {
+        target: { files: [new File(["x"], "a.zip", { type: "application/zip" })] },
+      });
+
+      expect((await screen.findByRole("alert")).textContent).toContain(
+        "a.zip is not a supported type",
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
 });

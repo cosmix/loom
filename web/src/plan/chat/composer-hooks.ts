@@ -1,18 +1,26 @@
 import { atom, useAtom, useAtomValue, useStore } from "jotai";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type DragEvent,
+} from "react";
 
-import type { Attachment, AttachmentInput } from "@/plan/api/schema-chat";
+import type { AnyAttachmentInput, Attachment } from "@/plan/api/schema-chat";
 import type { TreeEntry } from "@/plan/api/schema-files";
 import { MAX_ATTACHMENT_BYTES, type AttachmentDraft } from "@/plan/attachments";
 import { docAttachment } from "@/plan/attachments/doc-attachment";
+import { attachFiles, uploadStatusAtom } from "@/plan/attachments/intake";
 import { fetchDoc } from "@/plan/files/api";
 import { treeAtom } from "@/plan/files/atoms";
 import { hashesAtom } from "@/plan/review/live";
-import { isHolderAtom } from "@/plan/state/atoms";
+import { canAuthorAtom, isHolderAtom } from "@/plan/state/atoms";
 import type { Store } from "@/state/store";
 import { sendMessage, startChat, toAttachmentInput } from "./commands";
 import { contextWish, recordGiven, withinLimit } from "./context-attach";
-import { draftAtom } from "./drafts";
+import { draftAtom, MAX_ATTACHMENTS } from "./drafts";
 import { messageProblem } from "./message-problem";
 import { sessionAtom, unconfirmedSendsAtom, type UnconfirmedSend } from "./model";
 import { holdNoteSeenAtom, panelCollapsedAtom } from "./prefs";
@@ -111,14 +119,19 @@ async function fetchContext(path: string): Promise<AttachmentDraft | null> {
 }
 
 /** The gate's view of an input: the server computes the lock and the change flag, not the browser. */
-function asDelivered({ selected_hash: _hash, ...input }: AttachmentInput): Attachment {
-  return { ...input, locked: null, changed_since_selected: false };
+function asDelivered(input: AnyAttachmentInput): Attachment {
+  const none = { anchor: null, lines: null, stage: null, summary_sentence: null, rests_on: [] };
+  const flags = { locked: null, changed_since_selected: false };
+  // A file travels by id and carries no quote, so only its header line counts toward the limit.
+  if (input.kind === "file") return { kind: "file", path: "", quote: "", ...none, ...flags };
+  const { selected_hash: _hash, ...rest } = input;
+  return { ...rest, ...flags };
 }
 
-const problemWith = (text: string, inputs: AttachmentInput[]) =>
+const problemWith = (text: string, inputs: AnyAttachmentInput[]) =>
   messageProblem(text, inputs.map(asDelivered));
 
-type Outgoing = { text: string; attachments: AttachmentInput[]; withViewed: boolean };
+type Outgoing = { text: string; attachments: AnyAttachmentInput[]; withViewed: boolean };
 
 /**
  * The server refuses a quote over its limit and the whole message with it. `quoteLines` leaves a
@@ -240,6 +253,7 @@ export function useDeliveredAttachments(): Attachment[] {
   const tree = useAtomValue(treeAtom);
   const entries = tree ? flattened(Object.values(tree).flat()) : [];
   return draft.attachments.map((item) => {
+    if (item.kind === "file") return asDelivered(toAttachmentInput(item));
     const input = toAttachmentInput(item);
     return {
       ...input,
@@ -250,4 +264,55 @@ export function useDeliveredAttachments(): Attachment[] {
         hashes.docs[input.path] !== item.hash,
     };
   });
+}
+
+const hasFiles = (event: DragEvent) => Array.from(event.dataTransfer.types).includes("Files");
+
+/**
+ * Files dropped on the composer and images pasted into it become uploaded chips. Spread the
+ * handlers on the composer box and draw the drop target from `dragging`. An upload counts toward
+ * the attachment cap, so only as many files as fit are sent; the rest are named in a refusal.
+ */
+export function useFileIntake() {
+  const store = useStore();
+  const [dragging, setDragging] = useState(false);
+  const take = (files: File[]) => {
+    if (files.length === 0) return;
+    if (!store.get(canAuthorAtom)) {
+      store.set(uploadStatusAtom, (status) => ({
+        ...status,
+        problems: ["Attaching a file needs authoring, which another browser holds."],
+      }));
+      return;
+    }
+    const room = Math.max(0, MAX_ATTACHMENTS - store.get(draftAtom).attachments.length);
+    void attachFiles(store, files, room);
+  };
+  return {
+    dragging,
+    onDragOver: (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      setDragging(true);
+    },
+    onDragLeave: (event: DragEvent) => {
+      // Entering a child of the box fires a leave on the box; only leaving the box ends the drag.
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
+    },
+    onDrop: (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      setDragging(false);
+      take(Array.from(event.dataTransfer.files));
+    },
+    onPaste: (event: ClipboardEvent) => {
+      const files = Array.from(event.clipboardData.files);
+      if (files.length === 0) return;
+      // Copying cells or a rich selection puts text and a picture on the clipboard
+      // together; the text is what the person meant, so only a files-only paste is taken.
+      if (event.clipboardData.getData("text/plain") !== "") return;
+      event.preventDefault();
+      take(files);
+    },
+  };
 }

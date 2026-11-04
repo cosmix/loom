@@ -1,4 +1,5 @@
-/* Chat uses the dashboard body face. Chrome is compact; transcript prose has a 1.5 rhythm.
+/* Chat uses the dashboard body face. Chrome is compact; the transcript sets its own sizes
+ * (chat-transcript.css), so the kickoff screen, which mounts it outside the panel, reads the same.
  * Import beside the panel, as concept.css is imported by its reading column.
  */
 .chat-panel,
@@ -14,23 +15,23 @@
   line-height: 1.5;
 }
 
-/* minmax(0, 1fr): a bare 1fr track grows with the transcript and pushes it under the head. */
+/* minmax(0, 1fr): a bare 1fr track grows with the transcript and pushes it under the head. The
+ * column is held the same way, so a long unbroken line (a chip's quote) never widens the panel. */
 .chat-panel {
   position: relative;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   height: 100%;
   border-inline-start: 1px solid var(--hairline);
 }
 
+/* The collapsed panel is one tab the height of the page; its look is in chat-surface.css. */
 .chat-rail {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
   width: 2.5rem;
   height: 100%;
-  padding-block: 12px;
   border-inline-start: 1px solid var(--hairline);
 }
 
@@ -45,15 +46,12 @@
 .chat-panel [role="log"],
 .chat-sheet [role="log"] {
   min-width: 0;
-  font-family: var(--font-sans), Inter, sans-serif;
-  font-size: 13px;
-  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
 .chat-connection-banner,
 .chat-last-update {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
 }
 
