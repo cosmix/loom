@@ -10,17 +10,100 @@ use crate::planning::summary::store::{validate_id, STORE_DIR};
 use crate::planning::summary::write::read_summary;
 
 use super::parse::is_sentence_id;
+use super::stored::{self, NAME_CHARS};
 use super::{
-    Attachment, AttachmentError, AttachmentInput, AttachmentKind, LockedTag, MAX_QUOTE_BYTES,
+    Attachment, AttachmentError, AttachmentInput, AttachmentKind, DocumentAttachmentInput,
+    FileAttachmentInput, FileMeta, LockedTag, MAX_QUOTE_BYTES,
 };
 
 const KNOWLEDGE_DIR: &str = "doc/loom/knowledge";
+
+/// Resolve one attachment a browser sent: a document against `project`, an uploaded file
+/// against the store in `attachments`.
+pub fn resolve_input(
+    project: &Project,
+    attachments: &Path,
+    input: AttachmentInput,
+) -> Result<Attachment, AttachmentError> {
+    match input {
+        AttachmentInput::File(file) => resolve_file(attachments, file),
+        AttachmentInput::Document(document) => resolve(project, document),
+    }
+}
+
+/// The attachment of a stored file. The id is the only thing taken from the browser: it must be
+/// 16 lowercase hex characters naming a stored file, and the returned `path` is that file's
+/// absolute path, for the delivered block only (see [`without_file_paths`]). The name, media
+/// type and size come from the store.
+pub fn resolve_file(
+    attachments: &Path,
+    input: FileAttachmentInput,
+) -> Result<Attachment, AttachmentError> {
+    let unknown = || AttachmentError::UnknownFile(input.id.clone());
+    let (path, sidecar) = stored::locate(attachments, &input.id).ok_or_else(unknown)?;
+    let path = path
+        .to_str()
+        .filter(|text| !has_control(text))
+        .ok_or_else(unknown)?;
+    let name: String = sidecar
+        .name
+        .chars()
+        .filter(|&c| !stored::is_unsafe_name_char(c))
+        .collect();
+    let name = name.trim().chars().take(NAME_CHARS).collect::<String>();
+    let name = if name.is_empty() {
+        "attachment".to_owned()
+    } else {
+        name
+    };
+    Ok(Attachment {
+        kind: AttachmentKind::File,
+        path: path.to_owned(),
+        anchor: None,
+        lines: None,
+        stage: None,
+        summary_sentence: None,
+        rests_on: Vec::new(),
+        quote: String::new(),
+        changed_since_selected: false,
+        locked: None,
+        file: Some(FileMeta {
+            id: input.id.clone(),
+            name,
+            media_type: sidecar.media_type,
+            bytes: sidecar.bytes,
+        }),
+    })
+}
+
+fn has_control(text: &str) -> bool {
+    text.chars().any(char::is_control)
+}
+
+/// `attachments` as browsers receive them: a file chip keeps its `file` and loses the absolute
+/// path the delivered block needed.
+pub fn without_file_paths(mut attachments: Vec<Attachment>) -> Vec<Attachment> {
+    for attachment in attachments
+        .iter_mut()
+        .filter(|a| a.kind == AttachmentKind::File)
+    {
+        attachment.path.clear();
+    }
+    attachments
+}
 
 /// Validate `input` and return the attachment to deliver. Nothing in `input` is trusted: the
 /// paths must be discovered documents (a summary: a file in the summary store), the summary
 /// sentence must match its anchor, and `changed_since_selected`, `locked` and the repo-relative
 /// `rests_on` are computed here.
-pub fn resolve(project: &Project, input: AttachmentInput) -> Result<Attachment, AttachmentError> {
+pub fn resolve(
+    project: &Project,
+    input: DocumentAttachmentInput,
+) -> Result<Attachment, AttachmentError> {
+    if input.kind == AttachmentKind::File {
+        // A document input never names a stored file; those arrive as `AttachmentInput::File`.
+        return Err(AttachmentError::NotADocument);
+    }
     let rel = repo_path(&input.path).ok_or_else(|| AttachmentError::Path(input.path.clone()))?;
     check_tokens(&input)?;
     check_sentence(&input)?;
@@ -51,6 +134,7 @@ pub fn resolve(project: &Project, input: AttachmentInput) -> Result<Attachment, 
         quote: input.quote,
         changed_since_selected: changed,
         locked: locked_tag(project, &rel),
+        file: None,
     })
 }
 
@@ -70,7 +154,7 @@ fn is_token(text: &str) -> bool {
     !text.is_empty() && !text.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
-fn check_tokens(input: &AttachmentInput) -> Result<(), AttachmentError> {
+fn check_tokens(input: &DocumentAttachmentInput) -> Result<(), AttachmentError> {
     let mut fields = input.anchor.iter().chain(&input.stage);
     match fields.find(|field| !is_token(field)) {
         Some(field) => Err(AttachmentError::Path(field.clone())),
@@ -78,10 +162,11 @@ fn check_tokens(input: &AttachmentInput) -> Result<(), AttachmentError> {
     }
 }
 
-fn check_sentence(input: &AttachmentInput) -> Result<(), AttachmentError> {
+fn check_sentence(input: &DocumentAttachmentInput) -> Result<(), AttachmentError> {
     let sentence = input.summary_sentence.as_deref();
     let valid = match input.kind {
         AttachmentKind::Source => sentence.is_none(),
+        AttachmentKind::File => false,
         AttachmentKind::Summary => {
             sentence == input.anchor.as_deref() && sentence.is_some_and(is_sentence_id)
         }
@@ -114,7 +199,7 @@ fn check_rests_on(project: &Project, entries: &[String]) -> Result<(), Attachmen
 /// hashed like `ConceptPage.file_hash`. `None` for a discovered document with no hash.
 fn current_hash(
     project: &Project,
-    input: &AttachmentInput,
+    input: &DocumentAttachmentInput,
     rel: &Path,
 ) -> Result<Option<String>, AttachmentError> {
     match input.kind {
@@ -125,6 +210,7 @@ fn current_hash(
         AttachmentKind::Summary => summary_hash(project, &input.path)
             .map(Some)
             .ok_or(AttachmentError::NotADocument),
+        AttachmentKind::File => Err(AttachmentError::NotADocument),
     }
 }
 

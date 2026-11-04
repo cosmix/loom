@@ -149,6 +149,33 @@ fn writes_to_the_planning_root_and_runtime_never_reach_the_host() {
     );
 }
 
+/// The attachments directory is an `allowRead` carve-out with no write grant: a session reads
+/// an uploaded file with its tools and cannot change it or add to the directory.
+#[test]
+#[serial]
+fn an_attachment_is_readable_and_not_writable() {
+    let Some((fx, confined)) = confined("an_attachment_is_readable_and_not_writable") else {
+        return;
+    };
+    let file = fx.runtime.attachments.join("0123456789abcdef.txt");
+    let probe = fx.runtime.attachments.join("probe");
+    fs::write(&file, "attached text\n").unwrap();
+
+    let read = confined.run(&format!("cat {}", quote(&file)), &[]);
+    assert_ok(&read, "reading an attachment");
+    assert!(read.stdout().contains("attached text"), "{}", read.diag());
+
+    let script = format!("echo x > {}; touch {}", quote(&file), quote(&probe));
+    let write = confined.run(&script, &[]);
+    assert!(
+        write.rc.is_some(),
+        "the shell did not finish: {}",
+        write.diag()
+    );
+    assert_eq!(fs::read_to_string(&file).unwrap(), "attached text\n");
+    assert!(!probe.exists(), "{} was created", probe.display());
+}
+
 #[test]
 #[serial]
 fn map_prints_an_outline_with_the_cache_write_denied() {

@@ -263,6 +263,29 @@ fn guard_denies_reads_of_the_runtime_lock_and_allows_drafts() {
 }
 
 #[test]
+fn guard_allows_reads_of_attachments_and_denies_writes() {
+    let f = Fixture::new();
+    f.sandbox(&SessionKind::Authoring);
+    let upload = f.runtime.attachments.join("0123456789abcdef.png");
+    fs::create_dir_all(&f.runtime.attachments).unwrap();
+    fs::write(&upload, "x").unwrap();
+    let read = f.guard("Read", file_input(&upload));
+    assert_eq!(read, None, "attachments are an allowRead carve-out");
+    let write = f.guard("Write", file_input(&upload));
+    assert_denied(&write, "a write to an attachment");
+    let fresh = f.guard("Write", file_input(&f.runtime.attachments.join("new.png")));
+    assert_denied(&fresh, "a new file in the attachments directory");
+    let settings = f.settings(&SessionKind::Authoring);
+    let allow_write = list(&settings, "/sandbox/filesystem/allowWrite");
+    assert!(
+        !allow_write
+            .iter()
+            .any(|entry| entry.contains("attachments")),
+        "no write grant names attachments: {allow_write:?}"
+    );
+}
+
+#[test]
 fn authoring_and_pressure_settings_deny_the_capsule_tools() {
     let f = Fixture::new();
     f.write("doc/plans/PLAN-a.md", "# a\n");

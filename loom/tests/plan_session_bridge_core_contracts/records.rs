@@ -211,6 +211,7 @@ pub fn attachment(kind: AttachmentKind, path: &str, anchor: &str, quote: &str) -
         quote: quote.to_string(),
         changed_since_selected: false,
         locked: None,
+        file: None,
     }
 }
 

@@ -55,7 +55,8 @@ pub fn sanitize_name(raw: &str) -> String {
     truncated.trim_end().to_owned()
 }
 
-fn is_format(c: char) -> bool {
+/// Whether `c` is a Unicode format (Cf) character, among them the bidirectional controls.
+pub(crate) fn is_format(c: char) -> bool {
     let code = u32::from(c);
     FORMAT_CHARS
         .iter()

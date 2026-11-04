@@ -217,6 +217,41 @@ fn bodies_are_checked_by_type_then_length() {
 }
 
 #[test]
+fn a_bytes_body_is_refused_by_type_then_length_before_it_is_read() {
+    let (_dir, ctx) = context(Vec::new());
+    let browser = BrowserId::mint().expect("browser");
+    let bytes = spec(
+        Method::Post,
+        "/api/b",
+        BodyKind::Bytes {
+            max: 16,
+            types: &["image/png", "text/plain"],
+        },
+        Role::Viewer,
+    );
+    let check = |content_type: Option<&str>, length: Option<&str>| {
+        let mut head = admitted_head("POST", bytes.path, &browser);
+        head.content_type = content_type.map(str::to_owned);
+        head.content_length = length.map(str::to_owned);
+        status(admit_route(&head, &ctx, &bytes))
+    };
+    assert_eq!(check(Some("image/png"), Some("16")), 200);
+    assert_eq!(check(Some("IMAGE/PNG; charset=binary"), Some("16")), 200);
+    assert_eq!(check(Some(" text/plain "), Some("1")), 200);
+    assert_eq!(check(Some("image/png"), Some("17")), 413);
+    assert_eq!(check(Some("image/png"), Some("99999999")), 413);
+    assert_eq!(check(Some("image/svg+xml"), Some("2")), 415);
+    assert_eq!(check(Some("image/png+x"), Some("2")), 415);
+    assert_eq!(check(Some(""), Some("2")), 415);
+    assert_eq!(check(None, Some("2")), 415);
+    // A wrong type is judged before the length, as for the other kinds.
+    assert_eq!(
+        check(Some("application/x-msdownload"), Some("99999999")),
+        415
+    );
+}
+
+#[test]
 fn content_length_is_digits_only() {
     let (_dir, ctx) = context(Vec::new());
     let browser = BrowserId::mint().expect("browser");
