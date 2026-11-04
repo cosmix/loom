@@ -7,7 +7,7 @@ use anyhow::{bail, Context, Result};
 
 use super::claims::{create_claim, delete_claim, draft_path, ClaimHeld};
 use super::evaluate::{evaluate, SentenceState, SummaryEval};
-use super::format::{MAX_DOCUMENT_SENTENCES, MAX_OVERVIEW_SENTENCES};
+use super::format::sentence_limit;
 use super::lock::with_store_lock;
 use super::store::{self, validate_id};
 use super::write::read_summary;
@@ -111,7 +111,7 @@ fn write_summary_brief(
     } else {
         writeln!(out, "(none)")?;
     }
-    write_rules(out, overview)?;
+    write_rules(out, id, overview)?;
     let draft = draft_path(paths, id);
     let absolute = if draft.is_absolute() {
         draft
@@ -196,7 +196,7 @@ fn one_line(text: &str) -> String {
     terminal_safe(text).replace(['\n', '\t'], " ")
 }
 
-fn write_rules(out: &mut String, overview: bool) -> Result<()> {
+fn write_rules(out: &mut String, id: &str, overview: bool) -> Result<()> {
     writeln!(out, "Body rules:")?;
     writeln!(
         out,
@@ -207,11 +207,7 @@ fn write_rules(out: &mut String, overview: bool) -> Result<()> {
     writeln!(
         out,
         "- At most {} sentences; cite {}.",
-        if overview {
-            MAX_OVERVIEW_SENTENCES
-        } else {
-            MAX_DOCUMENT_SENTENCES
-        },
+        sentence_limit(id),
         if overview {
             "every member summary and the vision or every metaplan; member citations must point to current sentences"
         } else {
@@ -220,6 +216,7 @@ fn write_rules(out: &mut String, overview: bool) -> Result<()> {
     )?;
     if overview {
         writeln!(out, "- Rewrite a sentence that repeats the sentence it cites to say what the cited sentences add up to, even when it is marked [keep].")?;
+        writeln!(out, "- An overview sentence that cites member sentences cites at least two of them and says what they add up to.")?;
     }
     Ok(())
 }

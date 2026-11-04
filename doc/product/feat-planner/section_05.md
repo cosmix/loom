@@ -12,15 +12,18 @@ section states only what the reader sees and what the reader needs from the summ
 
 Concept mode has three levels of text, each a step closer to the files:
 
-| Level | Text                                                        | A sentence opens to                                |
-| ----- | ----------------------------------------------------------- | -------------------------------------------------- |
-| 0     | An overview: product, or engineering                        | The level 1 sentences it cites, from one or more documents |
-| 1     | A document summary: one per product section, one per plan   | The source passages it cites                       |
-| 2     | A source passage: one heading section of a file under `doc/` | Nothing further; it links to file mode            |
+| Level | Text                                                                               | A sentence opens to                                        |
+| ----- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| 0     | An overview: product, or engineering                                               | The level 1 sentences it cites, from one or more documents |
+| 1     | A document summary: the vision, one per product section, one per plan              | The source passages it cites                               |
+| 2     | A source passage: one heading section of a file under `doc/`                       | Nothing further; it links to file mode                     |
 
-The vision and the metaplan have no document summary of their own (vision, Decisions, "Summary
-levels"). An overview sentence that draws on either opens straight to its source passage, one
-level down instead of two. (My call: this follows from the vision's two summary levels.)
+The vision has a document summary of its own: at most 8 sentences in at most 3 paragraphs, short
+enough to read in under a minute (vision, Decisions, "Summary levels"). The metaplan has none. A
+product overview sentence that draws on the vision still opens straight to its source passage,
+one level down instead of two, and the vision's summary is not one of the overview's members. An
+engineering overview sentence that draws on a metaplan does the same. (My call: this follows from
+the vision's two summary levels.)
 
 Depth is fixed at these three levels. A passage is the end of the chain; the only way further is
 file mode. A reader starting from a document summary page (below) has two levels: summary and
@@ -35,7 +38,7 @@ these pages by section 01's landing rule. The routes:
 
 | Route                            | Renders                                                                                   | Spine row              |
 | -------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------- |
-| `/f/<feature>/vision`            | the vision's source                                                                       | Vision                 |
+| `/f/<feature>/vision`            | the vision's summary, with **Source** on the same page                                    | Vision                 |
 | `/f/<feature>/product`           | the product overview, with the pace and section queue above it while sections are missing | Product spec, Overview |
 | `/f/<feature>/product/<doc>`     | a section's summary                                                                       | that section           |
 | `/f/<feature>/metaplan[/<file>]` | a metaplan's source                                                                       | Metaplan               |
@@ -44,8 +47,8 @@ these pages by section 01's landing rule. The routes:
 | `/f/<feature>/pressure`          | one row per plan with its pressure-test date (section 11)                                 | Pressure test          |
 | `/f/<feature>/run`               | run state and a finished feature's follow-up offers (section 11)                          | Run                    |
 
-The vision and the metaplans have no summaries (vision, "Summary levels"), so their routes read
-the source. File mode is section 06. Standalone plans keep `/plans/<slug>`.
+The metaplans have no summaries (vision, "Summary levels"), so their routes read the source. The
+vision's summary reads like a section's: its sentences open to the vision's own passages. File mode is section 06. Standalone plans keep `/plans/<slug>`.
 
 - **Product overview**: built from `doc/product/<feature>/index.md` and the sections it names.
   Sections of that feature the vision does not name are listed under its overview as unlisted

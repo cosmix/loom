@@ -24,7 +24,11 @@ anything.
 3. Write only the draft file named by the brief, in the runtime directory. Write the summary
    body without store frontmatter, hashes, or sentence ids; sealing generates the metadata.
    Follow every body rule in the brief:
-   - Use at most 15 sentences, one sentence per line, with blank lines between paragraphs.
+   - Use at most 15 sentences for a section or plan summary. A vision summary (id
+     `<feature>/product/vision`) takes at most 8 sentences in at most 3 paragraphs, distilling
+     the vision so a reader grasps it in under a minute. Write one sentence per line, with blank
+     lines between paragraphs.
+   - A sentence compresses its cited section; never copy a sentence of the source.
    - Use only `#` and `##` headings to group prose; headings carry no links.
    - End every sentence with one or more plain Markdown links to heading sections of this
      summary's own source document. Use a link without a fragment only for text before the

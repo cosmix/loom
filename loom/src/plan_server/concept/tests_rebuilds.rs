@@ -192,10 +192,10 @@ fn concept_pages_show_progress_and_estimate_during_a_rebuild() {
         },
     ] {
         let page = load_page(&project, &evaluation, &key, &ctx).expect("page");
-        assert_eq!(page.building, Some(Progress { done: 1, total: 3 }));
+        assert_eq!(page.building, Some(Progress { done: 1, total: 4 }));
         assert_eq!(
             page.estimate.as_deref(),
-            Some("about 190000 tokens to build, an estimate")
+            Some("about 230000 tokens to build, an estimate")
         );
     }
 }
@@ -221,7 +221,7 @@ fn a_never_built_project_shows_an_estimate_without_running_progress() {
     assert_eq!(page.building, None);
     assert_eq!(
         page.estimate.as_deref(),
-        Some("about 230000 tokens to build, an estimate")
+        Some("about 270000 tokens to build, an estimate")
     );
 }
 

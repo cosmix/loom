@@ -3,8 +3,8 @@
 //! Public API (paths are repository-relative):
 //! - `STORE_DIR: &str` is `doc/loom/summaries`.
 //! - `validate_id(id: &str) -> anyhow::Result<()>` accepts only
-//!   `overview/<feature>/{product,engineering}`, `<feature>/product/section_<2+ digits>`
-//!   and `plans/<slug>`. Features use `kinds::is_feature_name`; slugs start with an ASCII
+//!   `overview/<feature>/{product,engineering}`, `<feature>/product/section_<2+ digits>`,
+//!   `<feature>/product/vision` and `plans/<slug>`. Features use `kinds::is_feature_name`; slugs start with an ASCII
 //!   alphanumeric, continue with `[A-Za-z0-9._-]` and cannot contain `..`.
 //! - `is_overview(id: &str) -> bool` recognizes valid feature overview ids.
 //! - `summary_path(id: &str) -> PathBuf` returns `<STORE_DIR>/<id>.md`, empty if invalid.
@@ -16,7 +16,8 @@
 //! - `expected_ids(project: &Project) -> Vec<String>` includes eligible documents and
 //!   each feature's overviews with existing vision/metaplan sources, including empty ones.
 //! - `scope(project: &Project, feature: &str) -> Scope` computes one feature's ordered
-//!   `product` and `engineering` members and sorted `outside` documents. `Scope.feature`
+//!   `product` and `engineering` members and sorted `outside` documents. The vision
+//!   summary (`<feature>/product/vision`) is in none of the three lists. `Scope.feature`
 //!   is the requested name; unknown features have empty lists. Other features and standalone
 //!   plans are excluded. Standalone plans remain in `expected_ids`.
 //! - `Scope::of(project: &Project, overview_id: &str) -> Option<Scope>` selects that
@@ -48,6 +49,17 @@ fn overview_parts(id: &str) -> Option<(&str, &str)> {
         .then_some((feature, kind))
 }
 
+/// The feature of a vision summary id `<feature>/product/vision`, else `None`.
+pub fn vision_feature(id: &str) -> Option<&str> {
+    id.strip_suffix("/product/vision")
+        .filter(|feature| is_feature_name(feature))
+}
+
+/// Whether `id` is a feature's vision summary, `<feature>/product/vision`.
+pub fn is_vision(id: &str) -> bool {
+    vision_feature(id).is_some()
+}
+
 /// Validate a summary id before using it as a path.
 pub fn validate_id(id: &str) -> Result<()> {
     let valid = if is_overview(id) {
@@ -63,11 +75,12 @@ pub fn validate_id(id: &str) -> Result<()> {
                 .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
     } else if let Some((feature, section)) = id.split_once('/') {
         is_feature_name(feature)
-            && section
-                .strip_prefix("product/section_")
-                .is_some_and(|digits| {
-                    digits.len() >= 2 && digits.bytes().all(|b| b.is_ascii_digit())
-                })
+            && (section == "product/vision"
+                || section
+                    .strip_prefix("product/section_")
+                    .is_some_and(|digits| {
+                        digits.len() >= 2 && digits.bytes().all(|b| b.is_ascii_digit())
+                    }))
     } else {
         false
     };
@@ -108,6 +121,9 @@ pub fn summary_id_for(project: &Project, rel: &Path) -> Option<String> {
         } => {
             format!("{feature}/product/{}", rel.file_stem()?.to_str()?)
         }
+        DocKind::Vision {
+            feature: Some(feature),
+        } => format!("{feature}/product/vision"),
         DocKind::Plan { slug, .. } => {
             let plan = project.tree.plans.get(slug)?;
             if plan.path != rel
@@ -219,7 +235,7 @@ pub fn scope(project: &Project, feature: &str) -> Scope {
         .tree
         .feature_docs(&feature.name)
         .filter_map(|doc| summary_id_for(project, &doc.path))
-        .filter(|id| seen.insert(id.clone()))
+        .filter(|id| !is_vision(id) && seen.insert(id.clone()))
         .collect();
     result.outside.sort();
     result
