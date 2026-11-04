@@ -310,3 +310,5 @@ pub fn resolve_link(summary_id: &str, href: &str) -> Option<(PathBuf, Option<Str
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod vision_contract_tests;
