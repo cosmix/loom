@@ -1,10 +1,8 @@
 //! Holder confirmation of the kickoff's one creation grant.
 
-use super::dispatch::{
-    bridge, chat_state, checked, refuse_new_work, remember_holder, Outcome, NO_CHAT,
-};
+use super::dispatch::{bridge, chat_state, checked, remember_holder, Outcome, NO_CHAT};
 use super::{draft_cmd, lock};
-use crate::plan_server::authoring::{Refusal, Take};
+use crate::plan_server::authoring::Take;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::ids::ConnCtx;
 use crate::plan_server::wire::message::PlanMessage;
@@ -13,10 +11,7 @@ use crate::plan_session::kind::SessionDir;
 use crate::plan_session::scope::{self, ArmRefusal, ArmedTarget, KickoffSize};
 
 pub(super) fn confirm(ctx: &PlanContext, conn: &ConnCtx, size: KickoffSize, name: &str) -> Outcome {
-    refuse_new_work(ctx)?;
-    if ctx.read_only().is_read_only() {
-        return Err(ctx.refusal_message(&Refusal::ReadOnlyMode));
-    }
+    draft_cmd::writable(ctx)?;
     let (bridge, state) = (bridge(ctx)?, chat_state(ctx)?);
     // Scope arming is a read/replace operation: serialize competing confirmations.
     let _starting = state.starting();

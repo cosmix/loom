@@ -6,6 +6,7 @@ import { useLocation } from "react-router";
 import { z } from "@/api/zod";
 import { Button } from "@/components/ui/button";
 import { projectPref } from "@/plan/chat/prefs";
+import { featurePage } from "@/plan/feature/page-offer";
 import { NextAction } from "@/plan/feature/next-action";
 import { GroupRow, Name } from "@/plan/feature/spine-row";
 import {
@@ -44,8 +45,7 @@ function currentRow(
 
 /** Whether the route shows a feature document's source: `/f/<feature>/source/<path>`. */
 export function isSourcePath(pathname: string): boolean {
-  const [root, , page] = pathname.split("/").filter(Boolean);
-  return root === "f" && page === "source";
+  return featurePage(pathname)?.page === "source";
 }
 
 /** The reader's expanded groups for one feature, and the toggle that changes them. */

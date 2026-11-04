@@ -84,19 +84,22 @@ describe("PlanShell", () => {
     expect(screen.queryByTestId("settings-dialog")).toBeNull();
   });
 
-  it("toggles help with the question mark key", () => {
+  it("toggles help with the question mark key", async () => {
     renderShell();
     expect(screen.queryByTestId("help-dialog")).toBeNull();
     fireEvent.keyDown(window, { key: "?" });
+    // The help dialog is a lazy chunk: the first open resolves after a tick.
+    await screen.findByTestId("help-dialog");
     expect(screen.getByTestId("help-dialog")).toBeTruthy();
     fireEvent.keyDown(window, { key: "?" });
     expect(screen.queryByTestId("help-dialog")).toBeNull();
   });
 
-  it("opens help from the header", () => {
+  it("opens help from the header", async () => {
     renderShell();
     expect(screen.queryByTestId("help-dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Help" }));
+    await screen.findByTestId("help-dialog");
     expect(screen.getByTestId("help-dialog")).toBeTruthy();
     expect(screen.queryByTestId("settings-dialog")).toBeNull();
   });

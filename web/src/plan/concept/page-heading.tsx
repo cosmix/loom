@@ -10,7 +10,6 @@ import {
 } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
 import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
-import { toAddress } from "@/plan/files/address";
 import {
   builtByChips,
   featureCrumb,
@@ -113,18 +112,17 @@ function pageChips(page: ConceptPage, rebuilding: boolean, questions: HeadingChi
   ];
 }
 
+/** The page's source: inside its feature when the path belongs to one, else in file mode. */
+function sourceAddress(path: string): string {
+  return featureSourceHref(featureOfDocPath(path), path);
+}
+
 /**
  * Edit and Discuss over the page's source document, read through the store the passages use.
  * Rendered with `key={path}`: `useKeptDoc` keeps the last loaded document across a path change,
  * so a reused instance would act on the previous page's file until the new one loads. Neither
  * action shows when the source failed to load (the file is gone or unreadable).
  */
-/** The page's source: inside its feature when the path belongs to one, else in file mode. */
-function sourceAddress(path: string): string {
-  const feature = featureOfDocPath(path);
-  return feature === null ? toAddress(path) : featureSourceHref(feature, path);
-}
-
 function SourceActions({ path }: { path: string }): JSX.Element | null {
   const { doc, failed } = useKeptDoc(path);
   const pressureActive = usePressureActive(doc);

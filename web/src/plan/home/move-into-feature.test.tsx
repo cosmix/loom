@@ -45,7 +45,7 @@ const project: ProjectChecklistView = {
 const source = "doc/plans/PLAN-fix-search.md";
 const expectedText =
   'Move doc/plans/PLAN-fix-search.md into the feature "search": ' +
-  "use git mv into the matching doc/product/search/ or doc/plans/search/ directory, " +
+  "use git mv into doc/plans/search/, " +
   "keep file names, and fix every reference to it.";
 
 function Where() {
@@ -160,9 +160,9 @@ describe("MoveIntoFeatureDialog", () => {
       expect.objectContaining({
         feature: "search",
         text:
-          'Move these plans into the feature "search": ' +
-          "doc/plans/PLAN-fix-search.md, doc/plans/PLAN-cache.md. " +
-          "Use git mv into doc/plans/search/, keep file names, and fix every reference to them.",
+          'Move these plans into the feature "search" with git mv into doc/plans/search/, ' +
+          "keeping file names and fixing every reference to them:\n" +
+          "- doc/plans/PLAN-fix-search.md\n- doc/plans/PLAN-cache.md",
       }),
     );
     h.result();

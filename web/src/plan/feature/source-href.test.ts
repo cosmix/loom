@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { toAddress } from "@/plan/files/address";
+
 import { featureOfDocPath, featureSourceHref, sourceHref } from "./source-href";
 
 describe("featureOfDocPath", () => {
@@ -41,6 +43,15 @@ describe("featureSourceHref", () => {
         anchor: "the intent",
       }),
     ).toBe("/f/atlas/source/product/atlas/section_01.md?lines=3-9#the%20intent");
+  });
+
+  it("gives the file-mode address, with the same suffix, for no feature", () => {
+    expect(
+      featureSourceHref(null, "doc/plans/PLAN-x.md", {
+        lines: { start: 1, end: 2 },
+        anchor: "a b",
+      }),
+    ).toBe(`${toAddress("doc/plans/PLAN-x.md")}?lines=1-2#a%20b`);
   });
 
   it("omits a null lines and anchor", () => {

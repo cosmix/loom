@@ -301,3 +301,28 @@ fn result_text_caps_combined_blocks_and_stops_at_first_cut() {
 
     assert_eq!(result_text(&content), ("x".repeat(65_535), true));
 }
+
+#[test]
+fn read_of_a_stored_attachment_hides_the_runtime_path() {
+    let path = "/run/user/1000/loom/plan/attachments/0123456789abcdef.png";
+    assert_eq!(
+        summarize("Read", json!({"file_path": path})),
+        "attachment 0123456789abcdef.png"
+    );
+    for other in [
+        "/run/x/attachments/0123456789ABCDEF.png",
+        "/run/x/attachments/0123456789abcdef.sh",
+        "/run/x/other/0123456789abcdef.png",
+    ] {
+        assert_eq!(summarize("Read", json!({"file_path": other})), other);
+    }
+}
+
+#[test]
+fn grep_of_a_stored_attachment_hides_the_runtime_path() {
+    let path = "/run/user/1000/loom/plan/attachments/0123456789abcdef.txt";
+    assert_eq!(
+        summarize("Grep", json!({"pattern": "todo", "path": path})),
+        "todo in attachment 0123456789abcdef.txt"
+    );
+}

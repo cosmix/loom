@@ -7,8 +7,16 @@ import { afterEach, expect, it } from "vitest";
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
 import { checklistViewSchema, serverInfoSchema } from "@/plan/api/schema";
+import type { SessionView } from "@/plan/api/schema-chat";
+import { snapshotAtom } from "@/plan/chat/model";
 import { FeatureSwitcher } from "@/plan/header/feature-switcher";
-import { activeFeatureAtom, kickoffAtom, projectAtom, serverInfoAtom } from "@/plan/state/atoms";
+import {
+  activeFeatureAtom,
+  kickoffAtom,
+  kickoffDraftsAtom,
+  projectAtom,
+  serverInfoAtom,
+} from "@/plan/state/atoms";
 
 afterEach(cleanup);
 
@@ -32,20 +40,34 @@ function show({
   features = ["demo", "Feature / one"],
   pathname = activeFeature === null ? "/" : `/f/${encodeURIComponent(activeFeature)}`,
   kickoff = null,
+  kickoffSize = "feature",
+  offer = null,
+  drafts = [],
 }: {
   activeFeature?: string | null;
   project?: string | null;
   features?: string[];
   pathname?: string;
   kickoff?: string | null;
+  kickoffSize?: "feature" | "plan" | null;
+  offer?: string | null;
+  drafts?: { session: string; name: string | null; size: "feature" | "plan" | null }[];
 } = {}) {
   const store = createStore();
+  if (offer !== null) {
+    store.set(snapshotAtom, {
+      session: { id: "kickoff", offer } as SessionView,
+      turns: [],
+      queue: [],
+      previous: null,
+    });
+  }
   if (kickoff !== null) {
     store.set(kickoffAtom, {
       session: "kickoff",
       target: null,
       shape: {
-        size: "feature",
+        size: kickoffSize,
         name: kickoff,
         proposal: false,
         problem: "",
@@ -55,6 +77,16 @@ function show({
       },
     });
   }
+  store.set(
+    kickoffDraftsAtom,
+    drafts.map((draft) => ({
+      ...draft,
+      problem: null,
+      started_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      live: false,
+    })),
+  );
   const checklist = checklistViewSchema.parse(checklistFixture.checklists[0]);
   store.set(activeFeatureAtom, activeFeature);
   store.set(projectAtom, {
@@ -97,20 +129,51 @@ it("shows the repository name when no feature is active", () => {
   );
 });
 
-it("shows Untitled on the kickoff route", () => {
-  show({ pathname: "/new" });
-
-  expect(titleOf(screen.getByRole("button", { name: "Untitled, switch feature" }))).toBe(
-    "Untitled",
-  );
-});
-
-it("shows the live kickoff's name on the kickoff route", () => {
+it("shows an empty kickoff form as Untitled new work, even with a live kickoff", () => {
   show({ pathname: "/new", kickoff: "planner-search" });
 
-  expect(titleOf(screen.getByRole("button", { name: "planner-search, switch feature" }))).toBe(
-    "planner-search",
-  );
+  const button = screen.getByRole("button", { name: "Untitled, switch feature" });
+  expect(titleOf(button)).toBe("Untitled");
+  expect(button.querySelector(".plan-eyebrow")?.textContent).toBe("Planning · new work");
+});
+
+it("shows the live kickoff's name on /new?session= its id", () => {
+  show({ pathname: "/new?session=kickoff", kickoff: "planner-search" });
+
+  const button = screen.getByRole("button", { name: "planner-search, switch feature" });
+  expect(titleOf(button)).toBe("planner-search");
+  expect(button.querySelector(".plan-eyebrow")?.textContent).toBe("Planning · new feature");
+});
+
+it("falls back to the start offer for the size until the conversation settles one", () => {
+  show({
+    pathname: "/new?session=kickoff",
+    kickoff: "planner-search",
+    kickoffSize: null,
+    offer: "kickoff-small",
+  });
+
+  const button = screen.getByRole("button", { name: "planner-search, switch feature" });
+  expect(button.querySelector(".plan-eyebrow")?.textContent).toBe("Planning · new plan");
+});
+
+it("shows a draft's name and size on /new?session= its id", () => {
+  show({
+    pathname: "/new?session=d1",
+    kickoff: "planner-search",
+    drafts: [{ session: "d1", name: "fix-login", size: "plan" }],
+  });
+
+  const button = screen.getByRole("button", { name: "fix-login, switch feature" });
+  expect(titleOf(button)).toBe("fix-login");
+  expect(button.querySelector(".plan-eyebrow")?.textContent).toBe("Planning · new plan");
+});
+
+it("shows Untitled new work for a session no kickoff or draft has", () => {
+  show({ pathname: "/new?session=gone" });
+
+  const button = screen.getByRole("button", { name: "Untitled, switch feature" });
+  expect(button.querySelector(".plan-eyebrow")?.textContent).toBe("Planning · new work");
 });
 
 it("holds the eyebrow and the title in the one switcher button", () => {

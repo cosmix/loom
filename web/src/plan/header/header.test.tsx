@@ -81,7 +81,7 @@ it("shows the route feature's slug under the Planning eyebrow", () => {
 
 it.each([
   ["/", "Planning · project", "Example project"],
-  ["/new", "Planning · new feature", "Untitled"],
+  ["/new", "Planning · new work", "Untitled"],
   ["/files", "Planning · files", "Example project"],
   ["/plans/standalone", "Planning · files", "Example project"],
 ])("names %s with the eyebrow %s over %s", (pathname, eyebrow, title) => {
@@ -93,7 +93,7 @@ it.each([
 });
 
 it("names /new by the live kickoff's name once it has one", () => {
-  const { store } = show("/new");
+  const { store } = show("/new?session=kickoff");
   act(() =>
     store.set(kickoffAtom, {
       session: "kickoff",

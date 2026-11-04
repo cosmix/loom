@@ -220,3 +220,26 @@ fn the_sweep_of_a_missing_directory_is_empty() {
     let rt = runtime();
     assert_eq!(sweep(&store_dir(&rt), u64::MAX), Swept::default());
 }
+
+#[test]
+fn the_same_bytes_under_another_media_type_keep_the_first_file() {
+    let rt = runtime();
+    let body = b"# same bytes\n";
+    let id = stored(put(rt.path(), "a.txt", "text/plain", body, 1));
+    assert_eq!(stored(put(rt.path(), "a.md", "text/markdown", body, 2)), id);
+    let first = store_dir(&rt).join(format!("{id}.txt"));
+    assert_eq!(fs::read(first).unwrap(), body, "a delivered path went away");
+}
+
+#[test]
+fn the_sweep_does_not_follow_a_symlinked_store_directory() {
+    let rt = runtime();
+    let outside = rt.path().join("outside");
+    fs::create_dir(&outside).unwrap();
+    let victim = outside.join(format!("{}.png", id_of(&PNG)));
+    fs::write(&victim, PNG).unwrap();
+    std::os::unix::fs::symlink(&outside, store_dir(&rt)).unwrap();
+    let swept = sweep(&store_dir(&rt), 10 * KEEP_SECONDS);
+    assert_eq!(swept, Swept::default());
+    assert!(victim.is_file(), "a file behind the symlink was removed");
+}

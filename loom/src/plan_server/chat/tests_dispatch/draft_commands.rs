@@ -9,7 +9,7 @@ use super::super::tests::{browser, ok_result, wait_for};
 use super::super::ChatState;
 use super::drafts::{
     continue_cmd, discard_cmd, draft_file, idle, rename_cmd, set_aside_cmd, start_cmd,
-    start_kickoff, working, write_draft, OLD,
+    start_kickoff, stored, working, write_draft, OLD,
 };
 use super::kickoff::{block, confirm};
 use super::{fixture, record_guidance, refused};
@@ -146,6 +146,24 @@ fn a_full_draft_continues_within_the_delivery_limit() {
     assert!(first.contains("(earlier messages omitted)"));
     assert!(first.contains("message 00 ") && first.contains("message 39 "));
     assert!(!draft_file(&f, OLD).exists());
+}
+
+#[test]
+fn an_unrenamed_draft_continues_without_pinning_the_agents_name() {
+    let f = fixture(false);
+    let tab = f.connect(&browser());
+    write_draft(&f, OLD, json!({}));
+
+    assert_eq!(f.command(&tab, continue_cmd(OLD)), ok_result());
+
+    let id = wait_for("the continuation", || f.bridge.chat_session_id());
+    assert!(stored(&f, &id)["name_override"].is_null());
+    let spec = f.launched(&id);
+    working(&f, &spec);
+    let later = json!({"size": "feature", "name": "agent-two", "problem": "B"});
+    let frame = block(&f, &spec, &tab, later);
+    assert_eq!(frame["shape"]["name"], "agent-two", "the broadcast view");
+    assert!(stored(&f, &id)["name_override"].is_null());
 }
 
 #[test]

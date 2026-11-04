@@ -24,12 +24,14 @@ command validates them and computes every hash, so no agent ever writes a hash.
 doc/loom/summaries/
   overview/<f>/product.md          one product overview per feature with a vision
   overview/<f>/engineering.md      one engineering overview per feature with a metaplan
+  <f>/product/vision.md            one per feature's vision
   <f>/product/section_01.md         one per feature's product section, named after the section file
   plans/<slug>.md                  one per eligible plan, named by the plan's slug
 ```
 
 A summary's **id** is its path under `doc/loom/summaries/` without `.md`:
-`overview/<f>/product`, `overview/<f>/engineering`, `<f>/product/section_<nn>`, or `plans/<slug>`.
+`overview/<f>/product`, `overview/<f>/engineering`, `<f>/product/vision`,
+`<f>/product/section_<nn>`, or `plans/<slug>`.
 Here `<f>` is a feature name (section 03), and `<nn>` has at least two digits. `plans` and
 `overview` are reserved feature names, so plan and overview ids cannot collide with a feature's
 section ids. For example: `overview/feat-planner/product`, `feat-planner/product/section_01`,
@@ -39,20 +41,23 @@ Which documents get a summary:
 
 | Source                                                                                          | Summary                    |
 | ----------------------------------------------------------------------------------------------- | -------------------------- |
+| `doc/product/<f>/index.md`, the feature's vision                                                | `<f>/product/vision`       |
 | `doc/product/<f>/section_<nn>.md`, listed or unlisted (section 01)                              | `<f>/product/section_<nn>` |
 | A plan directly in its feature home, `doc/plans/<f>/`, in any lifecycle state                   | `plans/<slug>`             |
 | A plan directly in the standalone home, `doc/plans/`, in any lifecycle state                    | `plans/<slug>`             |
 | A plan in `doc/plans/<f>/archive/` named by a metaplan of feature `<f>`                         | `plans/<slug>`             |
 | An archived plan no metaplan of its feature names, including every plan in `doc/plans/archive/` | none                       |
-| Visions, metaplans, briefs, knowledge                                                           | none                       |
+| Metaplans, briefs, knowledge                                                                    | none                       |
 
 Plan summaries are keyed by slug, unique repository-wide, so lifecycle renames and moves between
 homes keep the same id; a move into an archive keeps the summary only while the plan is eligible.
 Archived plans that no metaplan of their feature names are left out because an older project
 can hold dozens of them and summarizing them would cost more than any reader gains; they stay
 readable in file mode. Standalone plans have no metaplan, so their archived plans get no summary.
-Visions and metaplans have no document summary of their own: their feature's overviews cite them
-directly (below).
+The vision's summary is built and rebuilt like a section summary. It is not a member of the
+product overview and not listed among the documents outside it: the product overview cites the
+vision's heading sections directly. Metaplans have no document summary of their own: their feature's engineering
+overview cites them directly (below).
 
 **Overview scope.** Each feature has its own scope. Its product overview covers its vision and
 the product sections that vision's table lists (section 01); its engineering overview covers
@@ -121,11 +126,15 @@ Rules for the body, enforced when the summary is sealed (below):
   anchors section 03 defines. A link with no fragment cites the text before the first heading.
 - **An overview cites document-summary sentences and raw passages.** It links a document
   summary's sentence by the sentence's id as fragment (`#s-3fa9c2d1`), and links heading
-  sections of its feature's vision (product overview) or metaplans (engineering overview) directly,
-  since those documents have no summary. Every document in the overview's scope must be cited by
+  sections of its feature's vision (product overview) or metaplans (engineering overview) directly;
+  the vision's own summary is not one of its members. Every document in the overview's scope must be cited by
   at least one overview sentence, so no section or plan drops out of the overview silently.
-- **Length.** A document summary holds at most 15 sentences, an overview at most 30. (My call:
-  the overview has to be readable in the few minutes the vision's reviewer goal allows.)
+- **An overview sentence draws on at least two member sentences.** A sentence that cites member
+  sentences cites at least two of them and says what they add up to; the seal rejects a sentence
+  that cites exactly one, unless that member's summary holds a single sentence.
+- **Length.** A section or plan summary holds at most 15 sentences, a vision summary at most 8 in
+  at most 3 paragraphs, an overview at most 30. (My call: the overview has to be readable in the
+  few minutes the vision's reviewer goal allows.)
 
 A **sentence id** is `s-` plus the first 8 hex digits of the SHA-256 of the sentence's text with
 its links removed and its whitespace collapsed. The id is never written into the file; anyone can

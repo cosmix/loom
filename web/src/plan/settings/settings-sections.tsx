@@ -24,19 +24,23 @@ const PREVIEW_GREEK = "Η εφαρμογή δεν αποθηκεύει κατά�
 export function SettingsGroup({
   title,
   hint,
+  level = 3,
   children,
 }: {
   title: string;
   hint?: string;
+  /** The heading level; a group whose body has its own h3 sections takes 2 to keep the outline. */
+  level?: 2 | 3;
   children: ReactNode;
 }): ReactElement {
   const heading = useId();
+  const Title = level === 2 ? "h2" : "h3";
   return (
     <section aria-labelledby={heading} className="ps-group">
       <div className="ps-group-head">
-        <h3 id={heading} className="ps-group-title">
+        <Title id={heading} className="ps-group-title">
           {title}
-        </h3>
+        </Title>
         {hint && <span className="ps-hint">{hint}</span>}
       </div>
       {children}
@@ -191,7 +195,7 @@ export function SummariesGroup(): ReactElement {
   const { reload } = useAtomValue(summaryReloadAtom);
   const nowSecs = Math.floor(useNow() / 1000);
   return (
-    <SettingsGroup title="Summaries" hint="Rebuild totals and provider limits">
+    <SettingsGroup title="Summaries" hint="Rebuild totals and provider limits" level={2}>
       {load.status === "ready" ? (
         <SummaryPanel panel={load.panel} nowSecs={nowSecs} />
       ) : load.status === "loading" ? (

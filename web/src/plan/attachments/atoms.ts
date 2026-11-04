@@ -1,5 +1,6 @@
 import { atom } from "jotai/vanilla";
 
+import { forgetPreview } from "./previews";
 import type { ChatAttachment } from "./types";
 
 export const pendingAttachmentsAtom = atom<ChatAttachment[]>([]);
@@ -37,5 +38,8 @@ export const addAttachmentAtom = atom(null, (get, set, draft: ChatAttachment) =>
   const pending = get(pendingAttachmentsAtom);
   if (!pending.some((existing) => identical(existing, draft))) {
     set(pendingAttachmentsAtom, [...pending, draft]);
+  } else if (draft.kind === "file") {
+    // The upload took a hold on the thumbnail for a chip that is already there.
+    forgetPreview(draft.id);
   }
 });

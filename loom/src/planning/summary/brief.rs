@@ -216,7 +216,7 @@ fn write_rules(out: &mut String, id: &str, overview: bool) -> Result<()> {
     )?;
     if overview {
         writeln!(out, "- Rewrite a sentence that repeats the sentence it cites to say what the cited sentences add up to, even when it is marked [keep].")?;
-        writeln!(out, "- An overview sentence that cites member sentences cites at least two of them and says what they add up to.")?;
+        writeln!(out, "- An overview sentence that cites member sentences cites at least two of them and says what they add up to; it may cite one only when that member's summary holds a single sentence.")?;
     }
     Ok(())
 }

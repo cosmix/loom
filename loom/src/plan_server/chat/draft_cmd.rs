@@ -15,7 +15,9 @@ use crate::plan_server::context::PlanContext;
 use crate::plan_server::ids::ConnCtx;
 use crate::plan_server::wire::kickoff::{KickoffShape, KickoffView};
 use crate::plan_server::wire::message::PlanMessage;
-use crate::plan_session::attachments::{resolve_input, AttachmentInput, MAX_ATTACHMENTS};
+use crate::plan_session::attachments::{
+    format_message, resolve_input, AttachmentInput, MAX_ATTACHMENTS,
+};
 use crate::plan_session::bridge::{Bridge, BridgeError, EndCause, EndMode};
 use crate::plan_session::input::sanitize;
 use crate::plan_session::scope::{ArmRefusal, KickoffSize};
@@ -78,7 +80,7 @@ pub(super) fn ended(ctx: &PlanContext, state: &ChatState, session: &str) {
 }
 
 /// Refuse a command the stopping server or read-only mode does not take.
-fn writable(ctx: &PlanContext) -> Result<(), String> {
+pub(super) fn writable(ctx: &PlanContext) -> Result<(), String> {
     refuse_new_work(ctx)?;
     match ctx.read_only().is_read_only() {
         true => Err(ctx.refusal_message(&Refusal::ReadOnlyMode)),
@@ -180,10 +182,10 @@ fn continue_draft(
     state: &Arc<ChatState>,
     draft: &Draft,
 ) -> Result<String, String> {
-    let (inputs, unavailable) = available(ctx, &draft.attachments);
+    let (inputs, unavailable, reserved) = available(ctx, &draft.attachments);
     let small = draft.shape.as_ref().and_then(|shape| shape.size) == Some(KickoffSize::Plan);
     let offer = if small { "kickoff-small" } else { "kickoff" };
-    let text = continuation(draft, &unavailable);
+    let text = continuation(draft, &unavailable, reserved);
     let message = checked(ctx, &text, inputs.clone())?;
     let owner = ChatOwner::default();
     let id = launch(
@@ -199,7 +201,7 @@ fn continue_draft(
         messages: draft.messages.clone(),
         attachments: inputs,
         shape: draft.shape.clone(),
-        name_override: draft.name().map(str::to_owned),
+        name_override: draft.name_override.clone(),
     };
     if let Err(error) = drafts::create(ctx, state, &id, seed) {
         // A running session with no draft is lost at the next restart: end it and refuse.
@@ -209,7 +211,7 @@ fn continue_draft(
         return Err(error);
     }
     if let Some(shape) = draft.shape.clone() {
-        let name = draft.name().map(str::to_owned);
+        let name = draft.name_override.clone();
         let view = lock(&state.kickoff).seed(&id, shape, name);
         announce(ctx, view);
     }
@@ -217,7 +219,7 @@ fn continue_draft(
     Ok(id)
 }
 
-fn continuation(draft: &Draft, unavailable: &[String]) -> String {
+fn continuation(draft: &Draft, unavailable: &[String], reserved: usize) -> String {
     let shape = draft.shape.as_ref();
     let none: &[String] = &[];
     continuation_message(&DraftContinuation {
@@ -227,22 +229,30 @@ fn continuation(draft: &Draft, unavailable: &[String]) -> String {
         questions: shape.map_or(none, |shape| shape.questions.as_slice()),
         messages: &draft.messages,
         unavailable,
+        reserved,
     })
 }
 
-/// The inputs that still resolve, and the names of those that do not (a stored file that was
-/// swept, a document that was removed): one missing attachment must not refuse the rest.
-fn available(ctx: &PlanContext, inputs: &[AttachmentInput]) -> (Vec<AttachmentInput>, Vec<String>) {
+/// The inputs that still resolve, the names of those that do not (a stored file that was
+/// swept, a document that was removed: one missing attachment must not refuse the rest), and the
+/// bytes the attachment block of the resolved ones adds to a message.
+fn available(
+    ctx: &PlanContext,
+    inputs: &[AttachmentInput],
+) -> (Vec<AttachmentInput>, Vec<String>, usize) {
     let project = ctx.project();
-    let (mut kept, mut missing) = (Vec::new(), Vec::new());
+    let (mut kept, mut missing, mut resolved) = (Vec::new(), Vec::new(), Vec::new());
     for input in inputs {
         match resolve_input(&project, &ctx.runtime().attachments, input.clone()) {
-            Ok(_) => kept.push(input.clone()),
+            Ok(attachment) => {
+                kept.push(input.clone());
+                resolved.push(attachment);
+            }
             Err(_) => missing.push(match input {
                 AttachmentInput::File(file) => file.name.clone(),
                 AttachmentInput::Document(document) => document.path.clone(),
             }),
         }
     }
-    (kept, missing)
+    (kept, missing, format_message("", &resolved).len())
 }

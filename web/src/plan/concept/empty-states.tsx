@@ -2,7 +2,13 @@ import { useAtomValue } from "jotai";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 
-import { featureOfKey, overviewKey, pageHref, parsePageKey } from "@/plan/api/page-key";
+import {
+  featureOfKey,
+  isOverviewKey,
+  overviewKey,
+  pageHref,
+  parsePageKey,
+} from "@/plan/api/page-key";
 import type { ConceptPage, DocLink, EmptyState as EmptyData } from "@/plan/api/schema-concept";
 import { Button } from "@/components/ui/button";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
@@ -38,8 +44,9 @@ function copyFor(page: ConceptPage, empty: EmptyData): Copy {
     case "never_built":
       return {
         title: "Summaries not built",
+        // The server's estimate covers every missing summary: it describes an overview only.
         description: `${plural(empty.count ?? 0, "document")} without a summary.${
-          page.estimate ? ` ${visibleControls(page.estimate)}` : ""
+          page.estimate && isOverviewKey(page.key) ? ` ${visibleControls(page.estimate)}` : ""
         }`,
       };
     case "building":
@@ -103,8 +110,12 @@ export function EmptyStates({ page, empty }: { page: ConceptPage; empty: EmptyDa
   const primary = useFeature().checklist?.primary;
   const checklist = useScreenChecklist();
   const copy = copyFor(page, empty);
-  // The server lists no documents for a never-built overview; its key chips are them.
-  const keyDocs = empty.kind === "never_built" ? page.key_chips.map((chip) => chip.doc) : [];
+  // The server lists no documents for a never-built overview; its key chips are them. A document
+  // summary page lists none: its key is the whole feature, and the heading reaches its document.
+  const keyDocs =
+    empty.kind === "never_built" && isOverviewKey(page.key)
+      ? page.key_chips.map((chip) => chip.doc)
+      : [];
   const docs = empty.docs.length > 0 ? empty.docs : keyDocs;
   // The server sends no offer with a plans-without-metaplan list; section 05 still offers one.
   const offer = empty.offer ?? (empty.kind === "plans_no_metaplan" ? "start-metaplan" : null);

@@ -98,12 +98,8 @@ in the lock file (mode 0600, section 02) and the process's memory; the runtime d
 There is one token and one level of access. A second person gets the tokenized URL from
 someone who has it. Any authenticated browser can copy it from a "Share" control beside the
 presence list; the server returns it only to a request that carries the access cookie, so
-sharing reveals nothing that browser did not already hold. Beside the link the
-control states where it works:
-
-- on a loopback bind: "Works on this machine. From another machine, tunnel first:"
-  followed by `ssh -L <port>:127.0.0.1:<port> <hostname>`;
-- on a remote bind: the link as bound, with the plain-HTTP warning.
+sharing reveals nothing that browser did not already hold. The control shows the link as
+bound and nothing about tunnels; on a remote bind it adds the plain-HTTP warning.
 
 Everyone with the link has the same rights. Read-only is a role: it means someone else holds
 authoring. A separate read-only link was considered and left out: the

@@ -1,11 +1,12 @@
 import type { KickoffSize } from "@/plan/api/schema-kickoff";
+import { KIND_WORD } from "@/plan/new/kickoff-head";
 import { useProposalActions } from "@/plan/new/proposal";
 
 import "./kind-control.css";
 
 const CHOICES: ReadonlyArray<{ size: KickoffSize; label: string; message: string }> = [
-  { size: "feature", label: "Feature", message: "Make this a feature instead." },
-  { size: "plan", label: "Standalone plan", message: "Make this a standalone plan instead." },
+  { size: "feature", label: KIND_WORD.feature, message: "Make this a feature instead." },
+  { size: "plan", label: KIND_WORD.plan, message: "Make this a standalone plan instead." },
 ];
 
 /**
