@@ -94,6 +94,9 @@ pub(super) struct Shown {
 pub(super) struct Opening {
     pub(super) text: String,
     pub(super) origin: Option<Origin>,
+    /// The typed part (attachment block included), sanitised: `text` ends with it after a blank
+    /// line, and the delivery shows the guidance before it and the typed text as two items.
+    pub(super) typed: Option<String>,
 }
 
 pub(super) struct Queued {
@@ -106,7 +109,8 @@ pub(super) struct Queued {
 }
 
 pub(super) struct Delivering {
-    pub(super) item_id: String,
+    /// Every sent item of the delivery: one, or the guidance and the typed text of an opening.
+    pub(super) item_ids: Vec<String>,
     pub(super) text: String,
     /// The sanitised user text a transcript record of this delivery carries.
     pub(super) match_text: String,
@@ -162,8 +166,8 @@ pub(super) struct Flow {
     pub(super) opening: Option<Opening>,
     pub(super) queue: VecDeque<Queued>,
     pub(super) delivering: Option<Delivering>,
-    /// `(item id, match text, closing)` of deliveries that timed out, latest last.
-    pub(super) undelivered: Vec<(String, String, bool)>,
+    /// `(item ids, match text, closing)` of deliveries that timed out, latest last.
+    pub(super) undelivered: Vec<(Vec<String>, String, bool)>,
     /// After a delivery timeout the queue waits for the next Stop or idle prompt.
     pub(super) paused: bool,
     /// After an Escape the queue waits for the interrupt's idle, at most until this instant.
