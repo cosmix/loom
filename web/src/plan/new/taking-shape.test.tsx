@@ -1,8 +1,12 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { Provider } from "jotai";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { KickoffShape } from "@/plan/api/schema-kickoff";
+import type { connectPlanSocket } from "@/plan/api/socket";
+import { storeFor } from "@/plan/chat/panel-test-kit";
 import { TakingShape } from "@/plan/new/taking-shape";
+import { planSocketAtom } from "@/plan/state/atoms";
 
 afterEach(cleanup);
 
@@ -176,5 +180,87 @@ describe("TakingShape", () => {
       expect(text.style.direction).toBe("ltr");
       expect(text.childElementCount).toBe(0);
     }
+  });
+});
+
+describe("the Name row", () => {
+  function mountRename(shape: KickoffShape | null, target: string | null = null) {
+    const store = storeFor();
+    const listeners: Array<(message: unknown) => void> = [];
+    const send = vi.fn((_message: unknown) => true);
+    const socket = {
+      send,
+      subscribe: (type: string, handler: (message: unknown) => void) => {
+        if (type === "chat") listeners.push(handler);
+        return () => {};
+      },
+      onResync: () => () => {},
+      dispose: () => {},
+    };
+    store.set(planSocketAtom, socket as unknown as ReturnType<typeof connectPlanSocket>);
+    render(
+      <Provider store={store}>
+        <TakingShape shape={shape} target={target} />
+      </Provider>,
+    );
+    const answer = async (error: string | null) => {
+      const sent = send.mock.calls.at(-1)?.[0] as { client_id: string };
+      const frame = { type: "chat", frame: "result", client_id: sent.client_id };
+      const result = { ...frame, ok: !error, error };
+      await act(async () => listeners.forEach((handler) => handler(result)));
+    };
+    return { send, answer };
+  }
+
+  it("offers Rename once a shape exists and Name it while the name is empty", () => {
+    mountRename(featureShape);
+    expect(screen.getByRole("button", { name: "Rename" })).toBeTruthy();
+    cleanup();
+    mountRename({ ...featureShape, name: null });
+    expect(screen.getByRole("button", { name: "Name it" })).toBeTruthy();
+  });
+
+  it("offers nothing before any shape and nothing once the work is confirmed", () => {
+    mountRename(null);
+    expect(screen.queryByRole("button", { name: /^(Rename|Name it)$/ })).toBeNull();
+    cleanup();
+    mountRename(featureShape, "doc/product/planner-search/index.md");
+    expect(screen.queryByRole("button", { name: /^(Rename|Name it)$/ })).toBeNull();
+  });
+
+  it("sends rename_kickoff for a valid name and closes the field when it is accepted", async () => {
+    const { send, answer } = mountRename(featureShape);
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "better-name" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(send).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ command: "rename_kickoff", name: "better-name" }),
+    );
+    await answer(null);
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("refuses an invalid name and cancels on Escape", () => {
+    const { send } = mountRename(featureShape);
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Not A Name" } });
+    expect(screen.getByRole("alert")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(send).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Escape" });
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByRole("button", { name: "Rename" })).toBeTruthy();
+  });
+
+  it("keeps the field open and shows the server's refusal", async () => {
+    const { answer } = mountRename(featureShape);
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "better-name" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await answer("The name is fixed once the work is confirmed");
+    expect(screen.getByRole("status").textContent).toBe(
+      "The name is fixed once the work is confirmed",
+    );
+    expect(screen.getByRole("textbox")).toBeTruthy();
   });
 });

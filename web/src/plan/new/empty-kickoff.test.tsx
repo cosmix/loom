@@ -51,6 +51,8 @@ function mount(small = false, current: typeof session | null = null) {
   return { ...h, ...h.mount(<EmptyKickoff small={small} />) };
 }
 
+const radio = (name: string) => screen.getByRole("radio", { name }) as HTMLInputElement;
+
 function composer() {
   return screen.getByRole("textbox", { name: "What do you want to build?" }) as HTMLTextAreaElement;
 }
@@ -136,32 +138,30 @@ it("captures a snapshot that arrived before the start acknowledgement", async ()
   await waitFor(() => expect(h.store.get(kickoffSessionAtom)).toBe(session.id));
 });
 
-it("uses the small kickoff offer after choosing the small starter", () => {
+it("uses the small kickoff offer after choosing the small starter, shown in the radios", () => {
   const h = mount();
   fireEvent.click(screen.getByRole("button", { name: "A small fix or improvement" }));
-
+  expect(radio("Standalone plan").checked).toBe(true);
   fireEvent.click(submitButton());
-
   expect(h.send).toHaveBeenCalledWith(
     expect.objectContaining({ offer: "kickoff-small", text: "I want to fix or improve: " }),
   );
 });
 
-it("uses the small kickoff offer when opened for standalone work", () => {
-  const h = mount(true);
+it("uses the small kickoff offer when the Standalone plan radio is chosen", () => {
+  const h = mount();
+  fireEvent.click(radio("Standalone plan"));
   enterText();
-
   fireEvent.click(submitButton());
-
   expect(h.send).toHaveBeenCalledWith(expect.objectContaining({ offer: "kickoff-small" }));
 });
 
 it("switches back to feature kickoff when choosing the feature starter", () => {
   const h = mount(true);
+  expect(radio("Standalone plan").checked).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "A new feature for this project" }));
-
+  expect(radio("Feature").checked).toBe(true);
   fireEvent.click(submitButton());
-
   expect(h.send).toHaveBeenCalledWith(expect.objectContaining({ offer: "kickoff" }));
 });
 

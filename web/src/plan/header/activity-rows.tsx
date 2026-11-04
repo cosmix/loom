@@ -1,8 +1,12 @@
 import { useAtomValue } from "jotai/react";
 import { ChevronDown, ChevronUp, TriangleAlert } from "lucide-react";
+import { Popover as PopoverPrimitive } from "radix-ui";
 import type { JSX, ReactNode } from "react";
+import { Link } from "react-router";
 
 import { useNow } from "@/components/hooks/use-now";
+import { sessionHomeAtom } from "@/plan/chat/session-home";
+import { useSessionBrief } from "@/plan/chat/use-session-brief";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { DashboardButton } from "@/plan/run/dashboard-button";
 import { runStripAtom } from "@/plan/run/use-run";
@@ -12,7 +16,7 @@ import {
   summaryRowName,
   type SummaryExpansion,
 } from "@/plan/summaries/summary-status";
-import { ActivityTile } from "@/plan/ui/activity-glyphs";
+import { ACTIVITY_LABELS, ActivityTile } from "@/plan/ui/activity-glyphs";
 import { DOC_KIND_GLYPHS } from "@/plan/ui/glyphs";
 
 import { stagesMerged, type Activity } from "./use-activities";
@@ -90,16 +94,48 @@ function RunDashboard({ url }: { url: string | null }) {
   );
 }
 
+/** Where a waiting chat's row leads: a kickoff to its screen, any other chat to its home. */
+function useRowHref(activity: Activity): string | null {
+  const home = useAtomValue(sessionHomeAtom);
+  if (!activity.session) return null;
+  return activity.session.kickoff ? `/new?session=${activity.session.id}` : (home?.href ?? null);
+}
+
 function PlainRow({ activity, now }: { activity: Activity; now: number }) {
-  return (
-    <li className="activity-row">
+  const href = useRowHref(activity);
+  const content = (
+    <>
       <ActivityTile kind={activity.kind} />
       <RowText title={activity.title} subject={activity.subject} />
       <span className="activity-row__time">
         <Elapsed since={activity.since} now={now} />
       </span>
+    </>
+  );
+  if (href === null) return <li className="activity-row">{content}</li>;
+  return (
+    <li>
+      {/* Following the link leaves the popover behind it, so the link closes it. */}
+      <PopoverPrimitive.Close asChild>
+        <Link to={href} className="activity-row">
+          {content}
+        </Link>
+      </PopoverPrimitive.Close>
     </li>
   );
+}
+
+/**
+ * A waiting chat with no name of its own (no draft name yet) takes its session brief's label as
+ * its title. Only the live list draws this row: a sample pill must not fetch.
+ */
+function BriefTitledRow({ activity, now }: { activity: Activity; now: number }) {
+  const brief = useSessionBrief(activity.session?.id ?? null);
+  const titled =
+    brief.status === "ready"
+      ? { ...activity, title: brief.brief.label, subject: ACTIVITY_LABELS.waiting }
+      : activity;
+  return <PlainRow activity={titled} now={now} />;
 }
 
 /** The one place a running plan shows: its plan and merged count, attention and dashboard. */
@@ -165,6 +201,8 @@ export function ActivityList({
       {activities.map((activity) => {
         if (live && activity.kind === "running")
           return <RunRow key={activity.id} activity={activity} now={now} />;
+        if (live && activity.session && !activity.session.named)
+          return <BriefTitledRow key={activity.id} activity={activity} now={now} />;
         if (live && activity.kind === "summaries")
           return <SummaryRow key={activity.id} activity={activity} now={now} live={live} />;
         return <PlainRow key={activity.id} activity={activity} now={now} />;

@@ -49,6 +49,7 @@ export const PLAN_MESSAGE_TYPES = [
   "run_strip",
   "kickoff",
   "draft_team",
+  "kickoff_drafts",
 ] as const;
 export const CLIENT_MESSAGE_TYPES = ["set_name", "reading"] as const;
 

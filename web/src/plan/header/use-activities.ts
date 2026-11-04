@@ -7,6 +7,7 @@ import type { SummaryPanel } from "@/plan/api/schema-summaries";
 import { pendingPermissionsAtom, sessionAtom } from "@/plan/chat/model";
 import { pressureRunAtom } from "@/plan/chat/pressure/use-pressure";
 import { runStateAtom, runStripAtom } from "@/plan/run/use-run";
+import { kickoffAtom, kickoffDraftsAtom } from "@/plan/state/atoms";
 import { summaryPanelAtom } from "@/plan/summaries/state";
 import { ACTIVITY_KINDS, ACTIVITY_LABELS, type ActivityKind } from "@/plan/ui/activity-glyphs";
 
@@ -16,6 +17,11 @@ export interface Activity {
   title: string;
   subject: string | null;
   since: number | null; // Epoch milliseconds; null when the operation's start is unknown.
+  /**
+   * The chat a waiting row stands for; its row links to that chat's screen. `named` is false while
+   * the title is the state's own words, which the live row replaces with the session brief's label.
+   */
+  session?: { id: string; kickoff: boolean; named: boolean };
 }
 
 type Permission = Extract<Item, { type: "permission" }>;
@@ -29,6 +35,8 @@ export interface ActivitiesInput {
   pressureRun: PressureRunView | null;
   session: SessionView | null;
   pendingPermissions: readonly Pick<Permission, "tool">[];
+  /** The session's kickoff, with the name its draft or shape carries; null for any other chat. */
+  kickoff?: { name: string | null } | null;
 }
 
 function timestamp(value: string): number | null {
@@ -74,9 +82,22 @@ function pressureActivities(run: PressureRunView | null): Activity[] {
   return activities;
 }
 
+/** A waiting chat is named by its kickoff's name, never by the tmux label `session.name`. */
+function waitingActivity(
+  session: SessionView,
+  since: number | null,
+  kickoff: ActivitiesInput["kickoff"] = null,
+): Activity {
+  const label = ACTIVITY_LABELS.waiting;
+  const name = kickoff?.name || null;
+  const row = activity(`waiting:${session.id}`, "waiting", name && label, since, name ?? label);
+  return { ...row, session: { id: session.id, kickoff: kickoff !== null, named: name !== null } };
+}
+
 function sessionActivities(
   session: SessionView | null,
   pending: ActivitiesInput["pendingPermissions"],
+  kickoff: ActivitiesInput["kickoff"] = null,
 ): Activity[] {
   if (!session || session.state === "ended" || session.state === "failed") return [];
   const since = timestamp(session.state_since);
@@ -97,7 +118,7 @@ function sessionActivities(
     return [activity(`starting:${session.id}`, "starting", session.name, since)];
   }
   if (session.state === "idle" && session.kind !== "pressure") {
-    return [activity(`waiting:${session.id}`, "waiting", session.name, since)];
+    return [waitingActivity(session, since, kickoff)];
   }
   // The ending state explicitly writes final notes; working alone does not imply a draft.
   if (session.state === "ending" && session.kind === "authoring") {
@@ -109,7 +130,7 @@ function sessionActivities(
 export function deriveActivities(input: ActivitiesInput): Activity[] {
   const activities = [
     ...pressureActivities(input.pressureRun),
-    ...sessionActivities(input.session, input.pendingPermissions),
+    ...sessionActivities(input.session, input.pendingPermissions, input.kickoff),
   ];
   const rebuild = input.summaryPanel?.running;
   if (rebuild) {
@@ -149,6 +170,16 @@ export function stagesMerged({
   return `${merged} of ${total} stages merged`;
 }
 
+/** The session's kickoff: its draft first (it carries the user's rename), else the live shape. */
+function useKickoffOf(session: SessionView | null): { name: string | null } | null {
+  const drafts = useAtomValue(kickoffDraftsAtom);
+  const view = useAtomValue(kickoffAtom);
+  if (session === null) return null;
+  const draft = drafts.find((item) => item.session === session.id);
+  if (draft) return { name: draft.name };
+  return view?.session === session.id ? { name: view.shape.name } : null;
+}
+
 export function useActivities(): Activity[] {
   const summaryPanel = useAtomValue(summaryPanelAtom);
   const runState = useAtomValue(runStateAtom);
@@ -156,6 +187,7 @@ export function useActivities(): Activity[] {
   const pressureRun = useAtomValue(pressureRunAtom);
   const session = useAtomValue(sessionAtom);
   const pendingPermissions = useAtomValue(pendingPermissionsAtom);
+  const kickoff = useKickoffOf(session);
   return deriveActivities({
     summaryPanel,
     runState,
@@ -163,6 +195,7 @@ export function useActivities(): Activity[] {
     pressureRun,
     session,
     pendingPermissions,
+    kickoff,
   });
 }
 

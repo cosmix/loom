@@ -1,6 +1,7 @@
 import { atom } from "jotai/vanilla";
 
 import type { ChecklistView, StandalonePlanView } from "@/plan/api/schema";
+import { featureOfDocPath } from "@/plan/feature/source-href";
 import { parseAddress } from "@/plan/files/address";
 
 export type ViewedKind =
@@ -72,6 +73,18 @@ function fileOfPath(pathname: string): ViewedDocument {
 }
 
 /**
+ * `/f/<feature>/source/<path relative to doc/>`: the same file `/files/<path>` names, kept inside
+ * its feature. Only a path the source page itself shows counts (`featureOfDocPath`), so a path
+ * under another feature or outside the feature layout is no document here either.
+ */
+function sourceOf(feature: string, rest: string[]): ViewedDocument {
+  if (rest.length === 0 || rest.some(unsafeSegment)) return NO_DOCUMENT;
+  const path = `doc/${rest.join("/")}`;
+  if (featureOfDocPath(path) !== feature) return NO_DOCUMENT;
+  return { kind: "file", path, name: rest.at(-1)! };
+}
+
+/**
  * The checklist belongs to the page only when it is the page's own feature: `checklistAtom` keeps
  * the last visited feature's checklist while the route has already moved to another one, and a
  * path read from it would attach the wrong feature's document.
@@ -126,7 +139,9 @@ function engineeringPage(segments: string[], own: ChecklistView | null): ViewedD
 /** Pages under `/f/:feature/<page>`; `segments` is the whole decoded pathname. */
 function featurePageOf(segments: string[], checklist: ChecklistView | null): ViewedDocument {
   const [, feature, page, ...rest] = segments;
-  if (feature === undefined || page === undefined || rest.length > 1) return NO_DOCUMENT;
+  if (feature === undefined || page === undefined) return NO_DOCUMENT;
+  if (page === "source") return sourceOf(feature, rest);
+  if (rest.length > 1) return NO_DOCUMENT;
   const own = ownChecklist(feature, checklist);
   switch (page) {
     case "vision":
