@@ -1,69 +1,186 @@
 /*
- * The kickoff screen: the empty invitation and the conversation. The "Taking shape" panel and the
- * proposal card have their own files (taking-shape.css, proposal.css). Colours come from theme
- * tokens only, and nothing in the page flow casts a shadow (ui/DESIGN.md).
+ * The kickoff screen: the empty form, the live conversation and an ended draft. All three are one
+ * page grid with one text column, so the head never moves between them; Taking shape (or, on the
+ * empty form, the doodle) takes the second column at 1024px and up and follows the text below
+ * that. Taking shape and the proposal have their own files (taking-shape.css, proposal.css).
+ * Colours come from theme tokens only, and nothing in the page flow casts a shadow (ui/DESIGN.md).
  */
 
-/* ---- Empty state ---------------------------------------------------------------------------- */
+/* ---- Page grid ------------------------------------------------------------------------------ */
 
-[data-loom-plan] .kickoff-empty {
+[data-loom-plan] .kickoff-page {
+  --kickoff-column: 44rem;
   display: grid;
-  justify-items: center;
+  grid-template-columns: minmax(0, var(--kickoff-column));
+  justify-content: center;
   align-content: start;
-  gap: var(--space-3);
+  gap: var(--space-6);
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  margin-inline: auto;
   padding: var(--space-6) var(--page-gutter);
 }
 
-[data-loom-plan] .kickoff-empty .loom-doodle {
-  width: min(420px, 100%);
-  height: auto;
+[data-loom-plan] .kickoff-main {
+  display: grid;
+  align-content: start;
+  gap: var(--space-5);
+  min-width: 0;
 }
 
-[data-loom-plan] .kickoff-empty h1 {
-  text-align: center;
+[data-loom-plan] .kickoff-side {
+  min-width: 0;
 }
+
+/* The doodle keeps the second column on wide screens and gives way to the form below that. */
+[data-loom-plan] .kickoff-side--art {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  [data-loom-plan] .kickoff-page {
+    grid-template-columns: minmax(0, 1fr) minmax(0, var(--kickoff-column)) minmax(17rem, 1fr);
+    justify-content: stretch;
+  }
+
+  [data-loom-plan] .kickoff-main {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  [data-loom-plan] .kickoff-side {
+    grid-column: 3;
+    grid-row: 1;
+    max-width: 22rem;
+  }
+
+  [data-loom-plan] .kickoff-side--art {
+    display: block;
+    padding-top: var(--space-7);
+    color: var(--muted-foreground);
+  }
+
+  [data-loom-plan] .kickoff-side--art .loom-doodle {
+    width: 100%;
+    height: auto;
+  }
+}
+
+/* ---- Head: eyebrow, the one heading, the state ----------------------------------------------- */
+
+[data-loom-plan] .kickoff-title {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+[data-loom-plan] .kickoff-title__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
+[data-loom-plan] .kickoff-title h1 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Status is a glyph and a word: no pill, no border, and only the glyph takes a tone. */
+[data-loom-plan] .kickoff-pill {
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+[data-loom-plan] .kickoff-pill__glyph {
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .kickoff-pill[data-state="permission"] .activity-glyph {
+  color: var(--tone-warning);
+}
+
+[data-loom-plan] .kickoff-pill__alert {
+  width: 14px;
+  height: 14px;
+  color: var(--tone-blocked);
+}
+
+/* ---- Empty form ----------------------------------------------------------------------------- */
 
 [data-loom-plan] .kickoff-lead {
-  max-width: 48ch;
-  margin: 0;
+  max-width: 60ch;
+  margin: var(--space-1) 0 0;
   color: var(--muted-foreground);
   font-size: var(--type-body);
   line-height: var(--leading-body);
-  text-align: center;
 }
 
-/* The composer is an input, so it keeps its edge. Focus is the ring, as everywhere else. */
+/* A kickoff still running: one quiet line with its two ways on. It is news, never an error. */
+[data-loom-plan] .kickoff-open {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+  font-size: var(--type-body);
+}
+
+[data-loom-plan] .kickoff-open__text {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .kickoff-open__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+[data-loom-plan] .kickoff-open__actions > a {
+  display: inline-flex;
+  align-items: center;
+}
+
+[data-loom-plan] .kickoff-open > [role="status"] {
+  flex-basis: 100%;
+}
+
+/* The composer is an input, so it keeps its edge; it matches the conversation's composer. */
 [data-loom-plan] .kickoff-card {
   display: grid;
   gap: var(--space-2);
-  width: min(640px, 100%);
+  min-width: 0;
   padding: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: var(--corner-surface);
-  background: var(--card);
+  border-radius: var(--corner-control);
+  background: var(--background);
 }
 
-[data-loom-plan] .kickoff-card:focus-within {
+[data-loom-plan] .kickoff-card:has(> .kickoff-composer:focus-visible) {
+  border-color: var(--ring);
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
+/* The words typed here become the conversation's first turn, set the same way (below). */
 [data-loom-plan] .kickoff-composer {
   display: block;
   width: 100%;
-  min-height: 70px;
-  padding: var(--space-1) var(--space-1) 0;
+  min-height: calc(3 * var(--type-title) * var(--leading-body));
+  padding: 0;
   resize: vertical;
   border: 0;
   outline: 0;
   background: transparent;
   color: var(--foreground);
-  font-family: var(--font-reading);
-  font-size: 16px;
-  line-height: 1.5;
+  font-family: var(--font-sans);
+  font-size: var(--type-title);
+  line-height: var(--leading-body);
 }
 
 [data-loom-plan] .kickoff-composer:disabled {
@@ -78,7 +195,7 @@
   gap: var(--space-2);
 }
 
-/* DisabledReason puts its reason under the button; keep it hugging the card's right edge. */
+/* DisabledReason puts its reason under the button; keep it hugging the box's right edge. */
 [data-loom-plan] .kickoff-start > div {
   align-items: flex-end;
   max-width: 30ch;
@@ -86,11 +203,10 @@
 }
 
 [data-loom-plan] .kickoff-attachments {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: var(--space-1);
   margin: 0;
-  padding: 0 var(--space-1);
+  padding: 0;
   list-style: none;
   font-size: var(--type-ui);
 }
@@ -110,7 +226,7 @@
 [data-loom-plan] .kickoff-attachment__remove {
   flex-shrink: 0;
   color: var(--muted-foreground);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
   text-decoration: underline;
 }
 
@@ -123,13 +239,16 @@
   outline-offset: 2px;
 }
 
+[data-loom-plan] .kickoff-error {
+  margin: 0;
+  font-size: var(--type-body);
+}
+
 [data-loom-plan] .kickoff-starters {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
   gap: var(--space-2);
   min-width: 0;
-  max-width: 720px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -148,6 +267,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  max-width: 100%;
 }
 
 [data-loom-plan] .kickoff-starter svg {
@@ -156,151 +276,120 @@
 
 [data-loom-plan] .kickoff-note {
   margin: 0;
-  text-align: center;
-}
-
-@keyframes kickoff-rise {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-}
-
-[data-loom-plan] .kickoff-empty > * {
-  animation: kickoff-rise 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
-}
-
-[data-loom-plan] .kickoff-empty > :nth-child(2) {
-  animation-delay: 60ms;
-}
-
-[data-loom-plan] .kickoff-empty > :nth-child(3) {
-  animation-delay: 110ms;
-}
-
-[data-loom-plan] .kickoff-empty > :nth-child(n + 4) {
-  animation-delay: 160ms;
 }
 
 /* ---- Conversation --------------------------------------------------------------------------- */
 
-[data-loom-plan] .kickoff-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
+/* The conversation fills the screen's height: the head on top, the transcript scrolling, the
+   composer at the foot. Below 1024px Taking shape follows under it, so the page scrolls on. */
+[data-loom-plan] .kickoff-page[data-state="live"] {
   height: 100%;
-  min-height: 600px;
-  flex: 1;
-}
-
-@media (min-width: 1024px) {
-  [data-loom-plan] .kickoff-grid {
-    grid-template-columns: minmax(0, 1fr) 330px;
-    grid-template-rows: minmax(0, 1fr);
-  }
+  grid-template-rows: minmax(28rem, 100%) auto;
+  padding-block-end: var(--space-4);
 }
 
 [data-loom-plan] .kickoff-transcript {
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  min-height: 24rem;
+  min-height: 0;
 }
 
 @media (min-width: 1024px) {
-  [data-loom-plan] .kickoff-transcript {
-    min-height: 0;
+  [data-loom-plan] .kickoff-page[data-state="live"] {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  [data-loom-plan] .kickoff-page[data-state="live"] .kickoff-side {
+    max-height: 100%;
+    overflow-y: auto;
   }
 }
 
-[data-loom-plan] .kickoff-head {
+/* The transcript and composer sit on the page's text column, so they keep no gutter of their own. */
+[data-loom-plan] .kickoff-transcript :is(.chat-transcript, .chat-composer) {
+  --chat-gutter: 0px;
+}
+
+[data-loom-plan] .kickoff-transcript .chat-transcript {
+  padding-top: 0;
+}
+
+/* The assistant's prose is reading prose at the reading size; the user's words match the form. */
+[data-loom-plan] .kickoff-transcript .chat-assistant-text .md {
+  --text-sm: var(--reading-size);
+  --leading-normal: var(--reading-line);
+  max-width: min(100%, 68ch);
+  font-size: var(--reading-size);
+  line-height: var(--reading-line);
+}
+
+[data-loom-plan] .kickoff-transcript .chat-user-body {
+  font-size: var(--type-title);
+}
+
+/* ---- Ended draft ---------------------------------------------------------------------------- */
+
+[data-loom-plan] .kickoff-draft__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+[data-loom-plan] .kickoff-draft__confirm {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--hairline);
-  font-size: var(--type-ui);
+  gap: var(--space-2) var(--space-3);
 }
 
-[data-loom-plan] .kickoff-head > svg {
-  width: 16px;
-  height: 16px;
-  color: var(--muted-foreground);
-}
-
-[data-loom-plan] .kickoff-head h2 {
+[data-loom-plan] .kickoff-draft__confirm > p,
+[data-loom-plan] .kickoff-draft__actions > p {
+  flex-basis: 100%;
   margin: 0;
+  font-size: var(--type-body);
+}
+
+[data-loom-plan] .kickoff-draft__confirm > p {
+  flex-basis: auto;
+}
+
+[data-loom-plan] .kickoff-draft__list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding-inline-start: var(--space-5);
   font-size: var(--type-title);
-  font-weight: 600;
+  line-height: var(--leading-body);
 }
 
-[data-loom-plan] .kickoff-head__sub {
+[data-loom-plan] .kickoff-draft__list > li::marker {
   color: var(--muted-foreground);
-}
-
-/* Status is a glyph and a word: no pill, no border, and only the glyph takes a tone. */
-[data-loom-plan] .kickoff-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin-left: auto;
   font-size: var(--type-ui);
-  font-weight: 500;
-  white-space: nowrap;
 }
 
-[data-loom-plan] .kickoff-pill[data-state="permission"] .activity-glyph {
-  color: var(--tone-warning);
-}
+/* ---- Motion: the form arrives once, and only where motion is wanted -------------------------- */
 
-[data-loom-plan] .kickoff-pill__alert {
-  color: var(--tone-blocked);
-}
-
-[data-loom-plan] .kickoff-side {
-  min-width: 0;
-  border-top: 1px solid var(--hairline);
-  background: var(--card);
-}
-
-@media (min-width: 1024px) {
-  [data-loom-plan] .kickoff-side {
-    overflow-y: auto;
-    border-top: 0;
-    border-left: 1px solid var(--hairline);
+@keyframes kickoff-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
   }
 }
 
-/* The shared transcript centres in a 70ch column; the reading face is set per speaker. */
-[data-loom-plan] .kickoff-transcript [role="log"] > div {
-  max-width: 70ch;
-  margin-inline: auto;
+/* The head holds still: it is where the conversation's head will be. */
+[data-loom-plan] .kickoff-empty > :not(.kickoff-title),
+[data-loom-plan] .kickoff-side--art {
+  animation: kickoff-rise 360ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
-[data-loom-plan] .kickoff-transcript [role="log"],
-[data-loom-plan] .kickoff-transcript [class~="group/message"] {
-  font-family: var(--font-reading);
-  font-size: 16.5px;
-  line-height: 1.55;
-}
-
-[data-loom-plan] .kickoff-transcript [class~="group/message"][class~="ml-auto"] {
-  font-size: 16px;
-}
-
-/* Message Markdown carries its own compact text utilities inside the shared transcript. */
-[data-loom-plan] .kickoff-transcript [role="log"] .md {
-  --text-sm: 16.5px;
-  --leading-normal: 1.55;
-}
-
-[data-loom-plan] .kickoff-transcript [class~="ml-auto"] .md {
-  --text-sm: 16px;
+[data-loom-plan] .kickoff-side--art {
+  animation-delay: 80ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-loom-plan] .kickoff-empty > * {
+  [data-loom-plan] .kickoff-empty > :not(.kickoff-title),
+  [data-loom-plan] .kickoff-side--art {
     animation: none;
   }
 }
