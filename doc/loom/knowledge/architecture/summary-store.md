@@ -7,15 +7,15 @@
 ## Store Layout and Ids
 
 Summaries of the planning documents live in `doc/loom/summaries/` (`store::STORE_DIR`), one Markdown file per id, all
-under `loom/src/planning/summary/`. `store::validate_id` accepts only `overview/<feature>/product` and `overview/<feature>/engineering` (the overviews,
-`store::is_overview`), `<feature>/product/section_<2+ digits>` and `plans/<slug>` (first byte alphanumeric, rest
+under `loom/src/planning/summary/`. `store::validate_id` accepts `overview/<feature>/product` and `overview/<feature>/engineering` (the overviews,
+`store::is_overview`), `<feature>/product/section_<2+ digits>`, `<feature>/product/vision` (a feature's vision, `store::is_vision` and `vision_feature`) and `plans/<slug>` (first byte alphanumeric, rest
 `[A-Za-z0-9._-]`, no `..`); a feature name follows `kinds::is_feature_name`; the file is `<id>.md`. `summary_id_for` makes an id for a
-product section of a feature, or for a plan that is the winning copy of its slug and either sits directly in its home
+product section of a feature, for the feature's vision document (`DocKind::Vision`, `doc/product/<feature>/index.md`), or for a plan that is the winning copy of its slug and either sits directly in its home
 (`plans_dir(feature)`: `doc/plans/<feature>/`, or `doc/plans/` for a standalone plan) or is named by one of its
-feature's metaplan entries. `expected_ids` is every such document plus `overview/<f>/product` (when the feature's vision
+feature's metaplan entries. `expected_ids` is every such document (the vision summary is listed whenever the vision document exists and sorts first, because `index.md` precedes `section_NN` in path order) plus `overview/<f>/product` (when the feature's vision
 exists) and `overview/<f>/engineering` (when it has a metaplan). `Scope` is per feature (`Scope::of(project, overview_id)`):
 it lists the overview members in source order (`product`: the vision's rows; `engineering`: the metaplans' entries whose
-plan belongs to the feature) and the feature's eligible documents outside both. `validate_id`'s slug rule is stricter than `planning::slug::plan_slug`, so a plan whose slug holds a space silently gets no summary. `summary_path` returns an empty path for an invalid id; every caller
+plan belongs to the feature) and the feature's eligible documents outside both. The vision summary is in neither member list nor in `Scope.outside`: the product overview keeps citing the vision's sections directly, so overview sealing does not involve it. A vision summary holds at most 8 sentences (`format::MAX_VISION_SENTENCES`, chosen by `format::sentence_limit(id)`, which the rebuild brief also states) in at most 3 paragraphs; the paragraph limit is a prompt rule only, because no parser counts paragraphs. `validate_id`'s slug rule is stricter than `planning::slug::plan_slug`, so a plan whose slug holds a space silently gets no summary. `summary_path` returns an empty path for an invalid id; every caller
 validates first.
 
 The runtime directory (`planning-document-model.md`, Runtime Directory) holds the store's session state outside the
@@ -35,7 +35,8 @@ A summary file is front matter, one `#` title, then headings (`#`, `##`) and par
 Body rules, each a rejection with a 1-based line: no indented lines, list items, table rows, code fences, block quotes,
 headings deeper than level 2, HTML or conflict markers; a heading holds no link; a sentence is one line whose citation
 links are a trailing run (`[label](target)` separated only by whitespace) with no link before them. At most 15
-sentences in a document summary and 30 in an overview (`MAX_DOCUMENT_SENTENCES`, `MAX_OVERVIEW_SENTENCES`).
+sentences in a document summary, 8 in a vision summary and 30 in an overview (`MAX_DOCUMENT_SENTENCES`,
+`MAX_VISION_SENTENCES`, `MAX_OVERVIEW_SENTENCES`; `sentence_limit(id)` picks one).
 
 A sentence id is `s-` plus the first 8 hex digits of the SHA-256 of the whitespace-collapsed text with its links
 removed, so rewording changes the id and a link edit does not. Identical text twice in one summary is a duplicate-id
@@ -94,6 +95,7 @@ draft, then in one hold of the store lock check every link and write the canonic
 - a `Sentence` link is allowed only in an overview, only to a member, and only to a current sentence of a non-missing
   member; a document summary cites only its source (a `stage:` anchor counts as a source anchor);
 - an overview sentence may not restate the member sentence it cites (`seal/restate.rs`, called from `links.rs` as `restate::restates(`): opening it would show the same text twice. The measure is the Dice similarity `2|A∩B| / (|A|+|B|)` over the lowercase ASCII letter-and-digit word sets of the two texts (links removed), rejected at `RESTATE_THRESHOLD` 0.75 or above against any single cited member; an empty text restates nothing. The threshold was measured over the 103 resolvable overview-to-member pairs stored at the plan's HEAD: 2 were byte-identical, 18 scored 0.75 or more, and a reworded copy scored 0.78 ("File mode adds the server's document, tree, save, diff and search routes, with in-process plan validation." against the member's longer sentence), while a two-member compression scores under 0.75 against each member and passes. A sentence citing one member twice reports one restatement (`check()` keeps a per-sentence set). Known limit: the word set is ASCII-only, so non-ASCII prose is never flagged. Overviews sealed before the check keep their near-copies until the next rebuild;
+- **two-member rule** (`single_member_problem` in `seal/links.rs`): an overview sentence that cites member sentences draws on at least two of them, because a sentence that opens to one member sentence shows the reader the same thing twice. The seal refuses a sentence whose problem-free citations name exactly one member sentence ("an overview sentence draws on at least two"), unless that member's summary holds a single sentence, where there is nothing else to cite. The brief's overview rule (`brief.rs`) and the agent and codex prompts state the same rule and exemption. Measured over the stored overviews before the rule: 7 of 25 member-citing sentences in `feat-planner/product` and 12 of 27 in `feat-planner/engineering` cited exactly one member sentence; stored overviews change on their next rebuild. Known gap: `drawn` counts only problem-free citations, so a sentence citing one current and one stale member sentence also gets this error beside the stale error ([follow-up](../concerns/planner-ui-repair-followups.md#planner-review-fixes-unchecked-here-and-reviewer-suggestions));
 - an overview must cite every member and every source document at least once, or the seal is refused;
 - the front matter is computed, never taken from the draft: `file` from the source's content hash, `members` from each
   member's `members_hash` at seal time.

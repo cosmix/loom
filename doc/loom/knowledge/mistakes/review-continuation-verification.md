@@ -1,6 +1,6 @@
 # Review Continuation Verification
 
-> Astra review repair lessons
+> Repair
 
 ## Global formatting during parallel edits
 

@@ -1,6 +1,6 @@
 # `loom ask` and Read Gate Concerns
 >
-> loom ask, read gate gaps
+> Ask, read gate
 
 Open items from the portal-token-savings plan: `loom ask`, the deny-once read gate and its Bash forms,
 `LOOM_TOKEN_SEPS`, and the usage Attribution section. Mechanisms: [loom ask](../architecture/loom-ask.md),

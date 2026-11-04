@@ -2,7 +2,7 @@
 
 >
 >
-> oversights. See [architecture/web-dashboard.md](../architecture/web-dashboard.md) for
+> Oversights
 > context.
 
 1. **Mutex poisoning cascade.** `loom/src/commands/status/web/broadcast.rs` calls

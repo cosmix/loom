@@ -78,4 +78,6 @@ Each topic file holds the full section for its area; this file only points to th
 - `web/src/plan/header/header.tsx`, `dock.tsx`, `chat/session-home.ts`, `concept/column-keys.ts`, `help/pin-placement.ts` — app bar, chat mounting, a chat's home screen, reading-column keys, help pins
 - `loom/src/plan_server/wire/checklist_card.rs` — per-feature card facts; `loom/src/plan_server/summaries/backend.rs` and `codex_spawner.rs` — summary backend dispatch and the Codex job; `loom/src/plan_session/bridge/opening.rs` — Enter re-press and unsubmitted-opening failure
 
-→ [Planner Web Shell and Screens](architecture/planner-web-shell.md), [Planner Feature Screens](architecture/planner-feature-screens.md), [Summary Store](architecture/summary-store.md#summary-backends-claude-and-codex)
+- `loom/src/plan_server/uploads/mod.rs` (`POST /api/attachments`), `loom/src/plan_session/attachments/stored.rs` (id and sidecar grammar, media types), `loom/src/plan_server/chat/drafts.rs` and `draft_cmd.rs` (kickoff drafts, rename, set aside, continue), `web/src/plan/attachments/intake.ts`, `new/draft-view.tsx`, `home/drafts-shelf.tsx`, `review/changes-page.tsx`, `shell-footer.tsx` — uploads, drafts, the changes page and the limits footer
+
+→ [Planner Web Shell and Screens](architecture/planner-web-shell.md), [Planner Feature Screens](architecture/planner-feature-screens.md), [Planner Uploads and Kickoff Drafts](architecture/planner-uploads-and-drafts.md), [Summary Store](architecture/summary-store.md#summary-backends-claude-and-codex)

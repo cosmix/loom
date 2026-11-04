@@ -1,6 +1,6 @@
 # Planner UI Repair
 
-> Repair slips
+> Repair
 
 ## Hiding ChatPanel on the Home Route Dropped the Socket and Notifications
 
