@@ -4,6 +4,7 @@ import { useEffect, useId, useState } from "react";
 import { Link, Navigate, useLocation } from "react-router";
 
 import { useFileSocket } from "@/plan/files/api";
+import { DraftsShelf } from "@/plan/home/drafts-shelf";
 import { FeatureCards } from "@/plan/home/feature-card";
 import { StandaloneShelf } from "@/plan/home/standalone-shelf";
 import {
@@ -107,6 +108,7 @@ function LoadedHome() {
           <h2 className="plan-page-title">Features</h2>
         </div>
       )}
+      <DraftsShelf />
       {features.length > 0 ? (
         <FeatureCards lead={invitation} />
       ) : (

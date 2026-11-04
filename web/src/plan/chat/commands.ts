@@ -206,6 +206,22 @@ export function answerPermission(
   return sendChatCommand(store, { command: "permission", request_id: requestId, allow, note });
 }
 
+export function renameKickoff(store: Store, name: string) {
+  return sendChatCommand(store, { command: "rename_kickoff", name });
+}
+
+export function setAsideKickoff(store: Store, session: string) {
+  return sendChatCommand(store, { command: "set_aside_kickoff", session });
+}
+
+export function continueKickoff(store: Store, session: string) {
+  return sendChatCommand(store, { command: "continue_kickoff", session });
+}
+
+export function discardKickoff(store: Store, session: string) {
+  return sendChatCommand(store, { command: "discard_kickoff", session });
+}
+
 export function interruptChat(store: Store) {
   return sendChatCommand(store, { command: "interrupt" });
 }

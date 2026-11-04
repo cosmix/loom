@@ -39,6 +39,7 @@ const feature: ChecklistView = {
   secondary: [],
   items: [],
 };
+const LIVE = `?session=${session.id}`;
 const kickoff: KickoffView = {
   session: session.id,
   target: null,
@@ -82,12 +83,14 @@ function mount({
   view = null,
   tab = null,
   state = null,
+  search = "",
   checklists = [],
 }: {
   current?: SessionView | null;
   view?: KickoffView | null;
   tab?: string | null;
   state?: { small: unknown } | null;
+  search?: string;
   checklists?: ChecklistView[];
 } = {}) {
   const store = storeFor();
@@ -98,7 +101,7 @@ function mount({
   store.set(kickoffSessionAtom, tab);
   store.set(projectAtom, { checklists, standalone: [], moves: [] });
   const router = createMemoryRouter([{ path: "*", element: <KickoffRoute /> }], {
-    initialEntries: [{ pathname: "/new", state }],
+    initialEntries: [{ pathname: "/new", search, state }],
   });
   const navigate = vi.spyOn(router, "navigate");
   const rendered = render(
@@ -114,9 +117,11 @@ beforeEach(() => {
   resetKickoffLanding();
   vi.stubGlobal(
     "fetch",
-    vi
-      .fn<typeof fetch>()
-      .mockImplementation(() => Promise.resolve(new Response(JSON.stringify(treeFixture)))),
+    vi.fn<typeof fetch>().mockImplementation((input) => {
+      const draft = String(input).startsWith("/api/kickoffs/");
+      const body = draft ? { error: "not_found" } : treeFixture;
+      return Promise.resolve(new Response(JSON.stringify(body), { status: draft ? 404 : 200 }));
+    }),
   );
 });
 afterEach(() => {
@@ -166,9 +171,14 @@ it.each([
 });
 
 it("shows the real transcript, composer, Taking shape and an unconfirmed proposal", () => {
-  mount({ current: session, view: kickoff });
+  mount({ current: session, view: kickoff, search: LIVE });
   const conversation = screen.getByRole("region", { name: "Kickoff conversation" });
   expect(conversation.classList.contains("kickoff-transcript")).toBe(true);
+  expect(
+    within(conversation).getByRole("heading", { level: 1, name: "planner-search" }),
+  ).toBeTruthy();
+  expect(within(conversation).getByText("Feature", { selector: ".plan-eyebrow" })).toBeTruthy();
+  expect(screen.queryByText("New work")).toBeNull();
   expect(within(conversation).getByRole("log", { name: "Chat transcript" })).toBeTruthy();
   expect(within(conversation).getByRole("textbox", { name: "Message" })).toBeTruthy();
   const panel = screen.getByRole("complementary", { name: "Taking shape" });
@@ -185,7 +195,7 @@ it("shows the real transcript, composer, Taking shape and an unconfirmed proposa
 });
 
 it("asks the session to change the size from the segmented control", async () => {
-  const { socket } = mount({ current: session, view: kickoff });
+  const { socket } = mount({ current: session, view: kickoff, search: LIVE });
   const feature = screen.getByRole("button", { name: "Feature" });
   const plan = screen.getByRole("button", { name: "Standalone plan" });
   expect(feature.getAttribute("aria-pressed")).toBe("true");
@@ -200,9 +210,10 @@ it("asks the session to change the size from the segmented control", async () =>
   await act(async () => socket.result());
 });
 
-it("recognizes the tab's kickoff before its shape arrives and consumes live snapshots", () => {
-  const { socket } = mount({ current: session, tab: session.id });
+it("recognizes the addressed kickoff before its shape arrives and consumes live snapshots", () => {
+  const { socket } = mount({ current: session, search: LIVE });
   expect(screen.getByRole("log", { name: "Chat transcript" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Untitled");
   expect(
     screen.getByText("Nothing yet. The shape appears here as the conversation settles it."),
   ).toBeTruthy();
@@ -215,7 +226,9 @@ it("recognizes the tab's kickoff before its shape arrives and consumes live snap
       previous: null,
     }),
   );
-  expect(screen.getByRole("heading", { name: "What do you want to build?" })).toBeTruthy();
+  // The ended kickoff is a draft now: its conversation is gone and its draft is being opened.
+  expect(screen.queryByRole("log")).toBeNull();
+  expect(screen.getByRole("status", { name: "Opening the draft" })).toBeTruthy();
 });
 
 it.each([null, "doc/product/planner-search/index.md"])(
@@ -224,7 +237,7 @@ it.each([null, "doc/product/planner-search/index.md"])(
     const next = { ...session, id: "next-session" };
     const { store, router, navigate } = mount({
       current: next,
-      tab: next.id,
+      search: "?session=next-session",
       view: { ...kickoff, target },
       checklists: [feature],
     });
@@ -266,7 +279,7 @@ it.each([
 
 it("lands an active kickoff when its feature appears and dedupes remounts", async () => {
   const view = { ...kickoff, target: "doc/product/planner-search/index.md" };
-  const first = mount({ current: session, view });
+  const first = mount({ current: session, view, search: LIVE });
   expect(first.navigate).not.toHaveBeenCalled();
   act(() => first.store.set(projectAtom, { checklists: [feature], standalone: [], moves: [] }));
   await waitFor(() => expect(first.router.state.location.pathname).toBe("/f/planner-search"));
@@ -274,7 +287,12 @@ it("lands an active kickoff when its feature appears and dedupes remounts", asyn
   expect(first.navigate.mock.calls[0]?.[1]).toMatchObject({ replace: true });
   first.unmount();
 
-  const remounted = mount({ current: session, view, checklists: [feature] });
+  const remounted = mount({
+    current: session,
+    view,
+    search: LIVE,
+    checklists: [feature],
+  });
   expect(remounted.router.state.location.pathname).toBe("/new");
   expect(remounted.navigate).not.toHaveBeenCalled();
 });
@@ -295,7 +313,7 @@ it.each(["feature", "plan"] as const)("writes the confirmed %s through chat", as
   const target =
     size === "feature" ? "doc/product/planner-search/index.md" : "doc/plans/PLAN-planner-search.md";
   const label = size === "feature" ? "Write the vision" : "Write the plan";
-  const { store, socket } = mount({ current: session, view: kickoff });
+  const { store, socket } = mount({ current: session, view: kickoff, search: LIVE });
   act(() => store.set(kickoffAtom, { ...kickoff, target, shape: { ...kickoff.shape, size } }));
   expect(screen.queryByRole("region", { name: "Proposal" })).toBeNull();
   expect(screen.getByText(target)).toBeTruthy();
@@ -317,6 +335,7 @@ it.each(["starting", "working", "permission", "ending"] as const)(
     const { socket } = mount({
       current: { ...session, state },
       view: { ...kickoff, target: "doc/product/planner-search/index.md" },
+      search: LIVE,
     });
     const write = screen.getByRole("button", { name: "Write the vision" });
     expect(write.getAttribute("aria-disabled")).toBe("true");
@@ -330,6 +349,7 @@ it("keeps writing authoring-gated and isolates the holder's name", () => {
   const { store, socket } = mount({
     current: session,
     view: { ...kickoff, target: "doc/product/planner-search/index.md" },
+    search: LIVE,
   });
   act(() =>
     store.set(authoringAtom, {
@@ -348,6 +368,7 @@ it("shows a refused write and lets the user retry", async () => {
   const { socket } = mount({
     current: session,
     view: { ...kickoff, target: "doc/product/planner-search/index.md" },
+    search: LIVE,
   });
   const write = screen.getByRole("button", { name: "Write the vision" });
   fireEvent.click(write);
