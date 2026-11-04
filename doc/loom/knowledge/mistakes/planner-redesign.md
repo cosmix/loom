@@ -1,6 +1,6 @@
 # Planner Redesign
 
-> Redesign slips
+> Redesign
 
 ## Offer Ownership Was Keyed on the Page, Not on the Offer's Id
 

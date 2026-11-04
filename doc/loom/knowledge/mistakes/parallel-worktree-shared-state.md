@@ -1,6 +1,6 @@
 # Parallel Worktree Shared State
 >
-> Merge, daemon, broker incidents
+> Incidents
 >
 >
 

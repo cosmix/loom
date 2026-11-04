@@ -224,3 +224,7 @@ The chat plan left the live-session operator test unrun, a SHA-256 ref gap and g
 Teardown closes an iTerm2 or Terminal.app window by its title. The iTerm2 spawn arm names the window and spawn and teardown address the same application name, but no macOS run of the close is on record, and Terminal.app's displayed title may not match.
 
 Full detail: [iterm2-window-teardown.md](concerns/iterm2-window-teardown.md).
+
+## Planner Review Fixes Follow-ups
+
+Operator checks no stage sandbox can run (rebuilt summaries, a real image read, a kickoff round trip, journeys J2-J5 and J8), one open question about server-written sends returned on end, and about forty unimplemented reviewer suggestions on uploads, drafts, summaries and the web screens. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md#planner-review-fixes-unchecked-here-and-reviewer-suggestions)
