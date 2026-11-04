@@ -51,7 +51,7 @@
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 257 |
 | [plan-server](architecture/plan-server.md) | Chat | 245 |
 | [planner-feature-screens](architecture/planner-feature-screens.md) | Layout route, spine, offers | 30 |
-| [planner-uploads-and-drafts](architecture/planner-uploads-and-drafts.md) | Uploads, drafts | 34 |
+| [planner-uploads-and-drafts](architecture/planner-uploads-and-drafts.md) | Uploads, drafts | 35 |
 | [planner-web-shell](architecture/planner-web-shell.md) | Shell and screens | 71 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 180 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 35 |
@@ -165,7 +165,7 @@
 | [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 79 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Delivery | 371 |
 | [planner-redesign](mistakes/planner-redesign.md) | Redesign | 80 |
-| [planner-review-fixes](mistakes/planner-review-fixes.md) | Review-fix slips | 47 |
+| [planner-review-fixes](mistakes/planner-review-fixes.md) | Review-fix slips | 48 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 131 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
