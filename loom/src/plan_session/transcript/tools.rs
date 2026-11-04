@@ -5,6 +5,8 @@ use std::path::{Component, Path};
 use serde_json::Value;
 
 use crate::models::dispute::truncate_to_byte_limit;
+use crate::plan_session::attachments::stored::{extension, valid_id, MEDIA_TYPES};
+use crate::planning::runtime::ATTACHMENTS_DIR;
 
 const TEXT_BYTES: usize = 64 * 1024;
 
@@ -54,8 +56,27 @@ fn relative_path(path: &str, project_root: &Path) -> String {
     }
 }
 
+/// `attachment <id>.<ext>` for a path of the upload store, `<...>/attachments/<id>.<ext>`.
+fn stored_file_label(path: &str) -> Option<String> {
+    let path = Path::new(path);
+    let name = path.file_name()?.to_str()?;
+    let (id, ext) = name.split_once('.')?;
+    let in_store = path.parent()?.file_name()? == ATTACHMENTS_DIR;
+    let stored_ext = MEDIA_TYPES
+        .iter()
+        .any(|media| extension(media) == Some(ext));
+    (in_store && valid_id(id) && stored_ext).then(|| format!("attachment {name}"))
+}
+
+/// [`relative_path`], except that an uploaded file's absolute path stays out of the browser:
+/// its chip carries only the id.
+fn display_path(path: &str, project_root: &Path) -> String {
+    stored_file_label(path).unwrap_or_else(|| relative_path(path, project_root))
+}
+
 fn read_summary(input: &Value, project_root: &Path) -> String {
-    let path = relative_path(field(input, "file_path"), project_root);
+    let raw = field(input, "file_path");
+    let path = display_path(raw, project_root);
     let offset = input.get("offset").and_then(Value::as_u64);
     let limit = input.get("limit").and_then(Value::as_u64);
     if offset.is_none() && limit.is_none() {
@@ -72,7 +93,7 @@ fn search_summary(input: &Value, project_root: &Path) -> String {
     if path.is_empty() {
         return pattern.to_owned();
     }
-    let path = relative_path(path, project_root);
+    let path = display_path(path, project_root);
     format!("{pattern} in {path}")
 }
 

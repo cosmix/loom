@@ -1,9 +1,9 @@
 //! The content checks, the display name and the route's declaration.
 
-use super::check::{content, display_name, DEFAULT_NAME};
+use super::check::{content, display_name};
 use super::{routes, MAX_UPLOAD_BYTES};
 use crate::plan_server::routes::{BodyKind, Method, Role};
-use crate::plan_session::attachments::stored::{extension, MEDIA_TYPES, NAME_CHARS};
+use crate::plan_session::attachments::stored::{extension, DEFAULT_NAME, MEDIA_TYPES, NAME_CHARS};
 
 fn webp() -> Vec<u8> {
     let mut body = b"RIFF\x24\0\0\0WEBPVP8 ".to_vec();
