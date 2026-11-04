@@ -51,5 +51,17 @@
   {
     "command": "end",
     "client_id": "985785a6-c6b3-4901-870e-fd9ed044d799"
+  },
+  {
+    "command": "send",
+    "client_id": "7c0f2b1e-3a64-4d8e-9b75-2e41a6d0c913",
+    "text": "The sketch shows the layout I mean.",
+    "attachments": [
+      {
+        "kind": "file",
+        "id": "0123456789abcdef",
+        "name": "sketch.png"
+      }
+    ]
   }
 ]

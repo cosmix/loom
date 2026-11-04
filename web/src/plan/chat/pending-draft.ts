@@ -1,7 +1,7 @@
 import { useAtomValue, useStore } from "jotai/react";
 import { useEffect, useState } from "react";
 
-import { pendingAttachmentsAtom, type AttachmentDraft } from "@/plan/attachments";
+import { pendingAttachmentsAtom, type ChatAttachment } from "@/plan/attachments";
 import { serverInfoAtom } from "@/plan/state/atoms";
 import { ATTACHMENT_LIMIT_NOTE, draftAtom, MAX_ATTACHMENTS, mergeAttachments } from "./drafts";
 
@@ -17,7 +17,7 @@ export function usePendingDraft(): string | null {
   useAtomValue(draftAtom);
   useEffect(() => {
     let updating = false;
-    const sync = (attachments: AttachmentDraft[]) => {
+    const sync = (attachments: ChatAttachment[]) => {
       if (updating) return;
       updating = true;
       if (attachments.length > MAX_ATTACHMENTS) setNote(ATTACHMENT_LIMIT_NOTE);

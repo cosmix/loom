@@ -216,8 +216,8 @@ export const CHAT_SCENES: readonly PlannerHelpScene[] = [
     panel: true,
     notes: [
       {
-        target: '[aria-label="Chat transcript"] button[aria-expanded]',
-        text: "The tool row expands to show the tool input and result.",
+        target: '[aria-label="Chat transcript"] .chat-tool-fold > summary',
+        text: "A run of tool calls folds into one line; open it to see each tool's input and result.",
       },
       {
         target: '[aria-label="Sent attachments"] button',

@@ -2,11 +2,11 @@ import { atom, type Atom } from "jotai/vanilla";
 import { atomWithStorage } from "jotai/utils";
 
 import { z } from "@/api/zod";
-import type { AttachmentDraft } from "@/plan/attachments/types";
+import type { ChatAttachment } from "@/plan/attachments/types";
 import { serverInfoAtom } from "@/plan/state/atoms";
 import { storageKey, validatedStorage } from "./storage";
 
-type Draft = { text: string; attachments: AttachmentDraft[] };
+type Draft = { text: string; attachments: ChatAttachment[] };
 
 const attachmentDraftSchema = z.discriminatedUnion("kind", [
   z.strictObject({
@@ -28,6 +28,14 @@ const attachmentDraftSchema = z.discriminatedUnion("kind", [
     restsOn: z.array(z.strictObject({ path: z.string(), anchor: z.string() })),
     hash: z.string().nullable(),
   }),
+  // Only the metadata is saved: the bytes stay on the server, behind the id.
+  z.strictObject({
+    kind: z.literal("file"),
+    id: z.string(),
+    name: z.string(),
+    media_type: z.string(),
+    bytes: z.number().int().min(0),
+  }),
 ]);
 
 const draftSchema = z.strictObject({
@@ -41,9 +49,9 @@ export const ATTACHMENT_LIMIT_NOTE = `At most ${MAX_ATTACHMENTS} attachments per
 
 /** The saved attachments, then each pending one that is not already saved (compared by content). */
 export function mergeAttachments(
-  saved: AttachmentDraft[],
-  pending: AttachmentDraft[],
-): AttachmentDraft[] {
+  saved: ChatAttachment[],
+  pending: ChatAttachment[],
+): ChatAttachment[] {
   return [
     ...saved,
     ...pending.filter((item) => !saved.some((s) => JSON.stringify(s) === JSON.stringify(item))),

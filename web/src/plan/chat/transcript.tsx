@@ -3,6 +3,7 @@ import { memo, useId, useLayoutEffect, useRef, useState, type JSX } from "react"
 
 import { compactTokens, fresh } from "@/lib/tokens";
 import type { EndedChat, Item, SessionView, Turn } from "@/plan/api/schema-chat";
+import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
 import { ItemView } from "./items";
 import { pendingPermissionsAtom, sessionAtom, snapshotAtom, turnsAtom } from "./model";
 import { PermissionCard } from "./permission-card";
@@ -75,6 +76,12 @@ function FoldedTools({
     <details aria-live="off" className="chat-tool-fold">
       <summary>
         <Untrusted text={group.label} />
+        {group.items.some((item) => item.type === "tool" && item.status === "pending") && (
+          <span className="chat-tool-fold-busy">
+            <ActivityGlyph kind="drafting" />
+            <span className="sr-only">Running</span>
+          </span>
+        )}
       </summary>
       {group.items.map((item) => (
         <TranscriptItem key={item.id} item={item} turn={turn} nested={nested} />
@@ -112,7 +119,7 @@ function TurnItems({ turn }: { turn: Turn }): JSX.Element {
   const items = mergeThinking(shown);
   return (
     <div className="chat-turn-items">
-      {groupToolRows(items, !turn.open).map((row) =>
+      {groupToolRows(items).map((row) =>
         "items" in row ? (
           <FoldedTools key={`tools-${row.items[0]?.id}`} group={row} turn={turn} nested={nested} />
         ) : (
@@ -274,7 +281,7 @@ export function Transcript(): JSX.Element {
         aria-relevant="additions"
         aria-atomic="false"
         tabIndex={0}
-        className="chat-transcript min-h-0 flex-1 overflow-y-auto overscroll-contain font-sans text-[13px] leading-[1.5]"
+        className="chat-transcript min-h-0 flex-1 overflow-y-auto overscroll-contain font-sans leading-[1.5]"
         style={{ unicodeBidi: "plaintext", direction: "ltr", overflowAnchor: "none" }}
       >
         <div ref={scroll.content} className="chat-transcript-flow">

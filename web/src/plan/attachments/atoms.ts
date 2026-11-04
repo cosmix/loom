@@ -1,10 +1,13 @@
 import { atom } from "jotai/vanilla";
 
-import type { AttachmentDraft } from "./types";
+import type { ChatAttachment } from "./types";
 
-export const pendingAttachmentsAtom = atom<AttachmentDraft[]>([]);
+export const pendingAttachmentsAtom = atom<ChatAttachment[]>([]);
 
-function identical(a: AttachmentDraft, b: AttachmentDraft): boolean {
+function identical(a: ChatAttachment, b: ChatAttachment): boolean {
+  if (a.kind === "file" || b.kind === "file") {
+    return a.kind === "file" && b.kind === "file" && a.id === b.id;
+  }
   if (a.kind !== b.kind || a.text !== b.text || a.hash !== b.hash) return false;
   if (a.kind === "source" && b.kind === "source") {
     return (
@@ -30,7 +33,7 @@ function identical(a: AttachmentDraft, b: AttachmentDraft): boolean {
   return false;
 }
 
-export const addAttachmentAtom = atom(null, (get, set, draft: AttachmentDraft) => {
+export const addAttachmentAtom = atom(null, (get, set, draft: ChatAttachment) => {
   const pending = get(pendingAttachmentsAtom);
   if (!pending.some((existing) => identical(existing, draft))) {
     set(pendingAttachmentsAtom, [...pending, draft]);

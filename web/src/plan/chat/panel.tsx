@@ -7,6 +7,7 @@ import { useMediaQuery } from "@/lib/use-media-query";
 import { pendingAttachmentsAtom } from "@/plan/attachments";
 import { useReviewLive } from "@/plan/review/live";
 import { registerSendToAuthor } from "@/plan/review/send-to-author";
+import { readingFaceAtom, readingSizeAtom } from "@/plan/settings/preferences";
 import { canAuthorAtom } from "@/plan/state/atoms";
 import { AnnouncerRegions, ChatAnnouncer } from "./announcer";
 import { useAttention } from "./attention";
@@ -148,18 +149,40 @@ export function ChatSheetButton() {
   );
 }
 
+/** The state the rail spells out, when a chat is shown; a waiting decision outranks the state. */
+function useRailState(): string | null {
+  const session = useAtomValue(shownSessionAtom);
+  const decisions = useAtomValue(pendingPermissionsAtom).length;
+  if (decisions > 0) return STATE_NAME.permission;
+  return session ? STATE_NAME[session.state] : null;
+}
+
+/**
+ * The collapsed panel: one tall tab, the glyph over the word "Chat" set vertically and the state
+ * word under it. The whole strip is the button, so it opens in one click from anywhere on it.
+ * The words are drawn for sight; the button's name carries them for everyone else.
+ */
 function CollapsedRail() {
   const setCollapsed = useSetAtom(panelCollapsedAtom);
   const name = useChatButtonName("Expand chat");
+  const state = useRailState();
   return (
     <aside aria-label="Chat" className="chat-rail" style={{ width: "2.5rem", flexShrink: 0 }}>
       <button
         type="button"
         aria-label={name}
         onClick={() => setCollapsed(false)}
-        className="flex w-full flex-col items-center gap-2 py-3"
+        className="chat-rail-tab"
       >
         <ChatGlyph />
+        <span className="chat-rail-word" aria-hidden="true">
+          Chat
+        </span>
+        {state && (
+          <span className="chat-rail-state" aria-hidden="true">
+            {state}
+          </span>
+        )}
         <PermissionBadge />
       </button>
     </aside>
@@ -285,13 +308,20 @@ function PanelBody({ sheet }: { sheet: boolean }) {
   return here ? <SessionBody sheet={sheet} /> : <ElsewhereBody sheet={sheet} />;
 }
 
+/** The portal leaves the shell's `[data-loom-plan]` root, which defines the reading face the
+ * assistant's prose is set in, so the sheet carries the root's attributes itself. */
 function ChatSheet() {
   const [open, setOpen] = useAtom(chatSheetOpenAtom);
+  const face = useAtomValue(readingFaceAtom);
+  const size = useAtomValue(readingSizeAtom);
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-(--dialog-backdrop)" />
         <Dialog.Content
+          data-loom-plan
+          data-reading-face={face}
+          data-reading-size={String(size)}
           className="chat-sheet fixed inset-y-0 right-0 z-50 max-w-2xl outline-none"
           aria-describedby={undefined}
           onCloseAutoFocus={(event) => {

@@ -35,11 +35,12 @@ export const noticeKindSchema = z.enum([
   "info",
 ]);
 export const attachmentKindSchema = z.enum(["source", "summary"]);
+// A delivered chip also has the `file` kind: an upload, named by id and never by path.
+export const chipKindSchema = z.enum(["source", "summary", "file"]);
 export const lockedTagSchema = z.enum(["running", "done", "retired", "knowledge", "brief"]);
 
 // Paths and rests_on addresses retain their repo-relative wire form (doc/...).
 const attachmentFields = {
-  kind: attachmentKindSchema,
   path: z.string(),
   anchor: z.string().nullable(),
   lines: z.tuple([u32, u32]).nullable(),
@@ -48,15 +49,32 @@ const attachmentFields = {
   rests_on: z.array(z.string()),
   quote: z.string(),
 };
+export const fileMetaSchema = z.strictObject({
+  id: z.string(),
+  name: z.string(),
+  media_type: z.string(),
+  bytes: u64,
+});
+// A file chip has `path: ""` and `file` set; the other kinds omit `file`.
 export const attachmentSchema = z.strictObject({
+  kind: chipKindSchema,
   ...attachmentFields,
   changed_since_selected: z.boolean(),
   locked: lockedTagSchema.nullable(),
+  file: fileMetaSchema.optional(),
 });
 export const attachmentInputSchema = z.strictObject({
+  kind: attachmentKindSchema,
   ...attachmentFields,
   selected_hash: z.string().nullable(),
 });
+// An upload travels by the id the server issued; the client never sends a path.
+export const fileAttachmentInputSchema = z.strictObject({
+  kind: z.literal("file"),
+  id: z.string(),
+  name: z.string(),
+});
+export const anyAttachmentInputSchema = z.union([fileAttachmentInputSchema, attachmentInputSchema]);
 
 export const failureSchema = z.strictObject({
   kind: failureKindSchema,
@@ -241,13 +259,13 @@ export const chatCommandSchema = z.discriminatedUnion("command", [
     feature: z.string().nullable().optional(),
     plan: z.string().nullable().optional(),
     text: z.string().nullable(),
-    attachments: z.array(attachmentInputSchema),
+    attachments: z.array(anyAttachmentInputSchema),
   }),
   z.strictObject({
     command: z.literal("send"),
     ...clientId,
     text: z.string(),
-    attachments: z.array(attachmentInputSchema),
+    attachments: z.array(anyAttachmentInputSchema),
   }),
   z.strictObject({
     command: z.literal("confirm_kickoff"),
@@ -281,7 +299,10 @@ export type NoticeKind = z.infer<typeof noticeKindSchema>;
 export type AttachmentKind = z.infer<typeof attachmentKindSchema>;
 export type LockedTag = z.infer<typeof lockedTagSchema>;
 export type Attachment = z.infer<typeof attachmentSchema>;
+export type FileMeta = z.infer<typeof fileMetaSchema>;
 export type AttachmentInput = z.infer<typeof attachmentInputSchema>;
+export type FileAttachmentInput = z.infer<typeof fileAttachmentInputSchema>;
+export type AnyAttachmentInput = z.infer<typeof anyAttachmentInputSchema>;
 export type Failure = z.infer<typeof failureSchema>;
 export type SessionView = z.infer<typeof sessionViewSchema>;
 export type TokenCounts = z.infer<typeof tokenCountsSchema>;

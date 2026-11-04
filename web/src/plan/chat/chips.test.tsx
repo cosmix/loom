@@ -1,142 +1,42 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { createStore, Provider } from "jotai";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { createStore } from "jotai";
 import { afterEach, expect, it, vi } from "vitest";
-import { MemoryRouter, useLocation } from "react-router";
 
-import chatJson from "@/plan/api/fixtures/chat-snapshot.json";
 import checklist from "@/plan/api/fixtures/checklist.json";
 import { projectChecklistViewSchema } from "@/plan/api/schema";
-import { chatSnapshotSchema, type Attachment, type Item, type Turn } from "@/plan/api/schema-chat";
-import {
-  addAttachmentAtom,
-  pendingAttachmentsAtom,
-  type AttachmentDraft,
-} from "@/plan/attachments";
+import { pendingAttachmentsAtom } from "@/plan/attachments";
 import { attachmentsFromSelection } from "@/plan/concept/selection";
 import { hashesAtom } from "@/plan/review/live";
 import { projectAtom, serverInfoAtom } from "@/plan/state/atoms";
-import { PendingChips, SentChips, chipLabel } from "./chips";
+import { PendingChips } from "./chips";
+import {
+  add,
+  baseAttachment,
+  baseTurn,
+  currentProjectKey,
+  mount,
+  sections,
+  sent,
+  setup,
+  snapshot,
+  source,
+  summary,
+} from "./chips-test-kit";
 import { draftAtom } from "./drafts";
 import { snapshotAtom } from "./model";
 import { storageKey } from "./storage";
 
-type Store = ReturnType<typeof createStore>;
-const snapshot = chatSnapshotSchema.parse(chatJson);
-const baseTurn = snapshot.turns[0];
-const baseUser = baseTurn.items.find(
-  (item): item is Extract<Item, { type: "user" }> => item.type === "user",
-)!;
-const baseAttachment = baseUser.attachments[0];
-let project = 0;
-
-function source(path = "doc/product/section_02.md"): AttachmentDraft {
-  return {
-    kind: "source",
-    path,
-    anchor: "Port",
-    text: "The entire selected passage",
-    lines: null,
-    stageId: null,
-    hash: "selected",
-  };
-}
-function summary(): Extract<AttachmentDraft, { kind: "summary" }> {
-  return {
-    kind: "summary",
-    summary: "demo/product/section_01",
-    sentence: "sentence-1",
-    text: "The summary passage",
-    restsOn: [],
-    hash: null,
-  };
-}
-function setup() {
-  const store = createStore();
-  store.set(serverInfoAtom, {
-    project: "p",
-    project_key: `chips-${++project}`,
-    port: 1,
-    remote: false,
-    stopping: false,
-    read_only: [],
-    you: { public_id: "me", name: "Me" },
-  });
-  store.set(snapshotAtom, snapshot);
-  return store;
-}
-function Location() {
-  const location = useLocation();
-  return (
-    <output aria-label="Location">
-      {location.pathname}
-      {location.search}
-      {location.hash}
-    </output>
-  );
-}
-function mount(store: Store, children = <PendingChips />, pathname = "/files") {
-  return render(
-    <Provider store={store}>
-      <MemoryRouter initialEntries={[pathname]}>
-        {children}
-        <Location />
-      </MemoryRouter>
-    </Provider>,
-  );
-}
-function add(store: Store, draft = source()) {
-  act(() => store.set(addAttachmentAtom, draft));
-}
-function sent(store: Store, attachments: Attachment[], turn: Turn = baseTurn) {
-  return mount(store, <SentChips item={{ ...baseUser, attachments }} turn={turn} />);
-}
-function sections(files: { path: string; anchors: string[] }[]) {
-  return vi
-    .spyOn(globalThis, "fetch")
-    .mockResolvedValue(new Response(JSON.stringify({ turn: baseTurn.id, files })));
-}
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   localStorage.clear();
 });
 
-it("labels per origin", () => {
-  const a = {
-    ...baseAttachment,
-    path: "doc/product/section_02.md",
-    anchor: "Port",
-    lines: null,
-    stage: null,
-  };
-  expect(chipLabel(a)).toBe("section_02.md › Port");
-  expect(chipLabel({ ...a, lines: [54, 60] })).toBe("section_02.md › Port · lines 54–60");
-  expect(chipLabel({ ...a, path: "doc/plans/PLAN-foo.md", stage: "build" })).toBe(
-    "PLAN-foo.md › stage build",
-  );
-  expect(chipLabel({ ...a, kind: "summary" })).toBe("Summary · section_02");
-  expect(
-    chipLabel({ ...a, kind: "summary", path: "doc/loom/summaries/overview/demo/product.md" }),
-  ).toBe("Product overview");
-});
-
-it.each([
-  ["overview/demo/engineering", "Engineering overview"],
-  ["plans/product", "Summary · product"],
-  ["plans/engineering", "Summary · engineering"],
-  ["demo/engineering/product", "Summary · product"],
-  ["demo/engineering/engineering", "Summary · engineering"],
-])("labels summary %s by its page kind", (id, label) => {
-  expect(
-    chipLabel({ ...baseAttachment, kind: "summary", path: `doc/loom/summaries/${id}.md` }),
-  ).toBe(label);
-});
-
 it("hover full text, click opens, x removes", () => {
   const store = setup();
   mount(store);
   add(store);
-  const chip = screen.getByRole("button", { name: "section_02.md › Port" });
+  const chip = screen.getByRole("button", { name: "“The entire selected passage”" });
   fireEvent.mouseEnter(chip);
   expect(screen.getByRole("tooltip").textContent).toBe("The entire selected passage");
   fireEvent.mouseLeave(chip);
@@ -145,7 +45,7 @@ it("hover full text, click opens, x removes", () => {
   expect(screen.getByRole("tooltip").textContent).toBe("The entire selected passage");
   fireEvent.click(chip);
   expect(screen.getByLabelText("Location").textContent).toBe("/files/product/section_02.md#Port");
-  fireEvent.click(screen.getByRole("button", { name: "Remove section_02.md › Port" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove “The entire selected passage”" }));
   expect(store.get(pendingAttachmentsAtom)).toEqual([]);
   expect(store.get(draftAtom).attachments).toEqual([]);
 });
@@ -186,10 +86,10 @@ it("changed since selection", () => {
 });
 
 it.each([
-  ["demo/product/section_01", "/f/demo/product/section_01#sentence-1", "section_01"],
-  ["plans/x", "/f/demo/engineering/x#sentence-1", "x"],
-  ["plans/y", "/plans/y#sentence-1", "y"],
-])("chips from file and concept modes accumulate and open %s", (id, href, label) => {
+  ["demo/product/section_01", "/f/demo/product/section_01#sentence-1"],
+  ["plans/x", "/f/demo/engineering/x#sentence-1"],
+  ["plans/y", "/plans/y#sentence-1"],
+])("chips from file and concept modes accumulate and open %s", (id, href) => {
   const store = setup();
   store.set(
     projectAtom,
@@ -211,8 +111,8 @@ it.each([
   mount(store);
   add(store);
   add(store, { ...summary(), summary: id });
-  expect(screen.getByRole("button", { name: "section_02.md › Port" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: `Summary · ${label}` }));
+  expect(screen.getByRole("button", { name: "“The entire selected passage”" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "“The summary passage”" }));
   expect(screen.getByLabelText("Location").textContent).toBe(href);
   expect(store.get(draftAtom).attachments).toHaveLength(2);
 });
@@ -221,8 +121,8 @@ it("an invalid summary chip is plain text", () => {
   const store = setup();
   mount(store);
   add(store, { ...summary(), summary: "product/section_01" });
-  expect(screen.getByText("Summary · section_01")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Summary · section_01" })).toBeNull();
+  expect(screen.getByText("“The summary passage”")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "“The summary passage”" })).toBeNull();
 });
 
 it("adding a chip sends nothing", () => {
@@ -254,10 +154,11 @@ it("spanning selection adds one chip per part", () => {
   selection.addRange(range);
   const drafts = attachmentsFromSelection(selection, () => undefined);
   drafts.forEach((draft) => add(store, draft));
-  expect(store.get(pendingAttachmentsAtom).map((draft) => draft.text)).toEqual([
-    "First part",
-    "Second part",
-  ]);
+  expect(
+    store
+      .get(pendingAttachmentsAtom)
+      .map((draft) => (draft.kind === "file" ? draft.name : draft.text)),
+  ).toEqual(["First part", "Second part"]);
   selection.removeAllRanges();
 });
 
@@ -284,14 +185,16 @@ it("unchanged", async () => {
 it("eleventh add is dropped with a note and two rows disclose the rest", () => {
   const store = setup();
   mount(store);
-  for (let n = 1; n <= 11; n++) add(store, source(`doc/note-${n}.md`));
+  for (let n = 1; n <= 11; n++) {
+    add(store, { ...source(`doc/note-${n}.md`), text: `Selected text of note ${n}` });
+  }
   const tray = within(screen.getByLabelText("Pending attachments"));
   expect(tray.getByRole("status").textContent).toBe("At most 10 attachments per message");
   expect(store.get(pendingAttachmentsAtom)).toHaveLength(10);
   expect(store.get(draftAtom).attachments).toHaveLength(10);
-  expect(screen.queryByRole("button", { name: "note-11.md › Port" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "“Selected text of note 11”" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "+7 more" }));
-  expect(screen.getByRole("button", { name: "note-10.md › Port" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "“Selected text of note 10”" })).toBeTruthy();
 });
 
 it("draft storage restores chips across stores and preserves text", async () => {
@@ -300,7 +203,7 @@ it("draft storage restores chips across stores and preserves text", async () => 
   const view = mount(store);
   add(store);
   await waitFor(() =>
-    expect(localStorage.getItem(storageKey(`chips-${project}`, "draft"))).toContain(
+    expect(localStorage.getItem(storageKey(currentProjectKey(), "draft"))).toContain(
       "entire selected",
     ),
   );
@@ -308,7 +211,7 @@ it("draft storage restores chips across stores and preserves text", async () => 
   const restored = createStore();
   restored.set(serverInfoAtom, store.get(serverInfoAtom));
   mount(restored);
-  expect(screen.getByRole("button", { name: "section_02.md › Port" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "“The entire selected passage”" })).toBeTruthy();
   expect(restored.get(draftAtom).text).toBe("Keep typing");
 });
 
@@ -324,7 +227,9 @@ it("untrusted paths and preview text display format controls visibly", () => {
   const store = setup();
   mount(store);
   add(store, { ...source("doc/a\u202e.md"), text: "safe\u200btext" });
-  const chip = screen.getByRole("button", { name: "a⟨U+202E⟩.md › Port" });
+  const chip = screen.getByRole("button", { name: "“safe⟨U+200B⟩text”" });
+  // The path is the secondary text now, and its control characters show as well.
+  expect(screen.getByLabelText("Pending attachments").textContent).toContain("a⟨U+202E⟩.md › Port");
   fireEvent.focus(chip);
   expect(screen.getByRole("tooltip").textContent).toBe("safe⟨U+200B⟩text");
 });
