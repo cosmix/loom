@@ -190,6 +190,7 @@ mod tests {
             ("overview/demo/product", Some("demo")),
             ("overview/demo/engineering", Some("demo")),
             ("demo/product/section_01", Some("demo")),
+            ("demo/metaplan/index", Some("demo")),
             ("plans/a", Some("demo")),
             ("plans/archived", Some("demo")),
             ("plans/b", Some("other")),

@@ -11,7 +11,7 @@ import { useState, type JSX } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { useNow } from "@/components/hooks/use-now";
-import { overviewKey, pageHref, summaryKey } from "@/plan/api/page-key";
+import { pageHref, summaryKey } from "@/plan/api/page-key";
 import type { DocView, EntryKind, PlanView, ValidationView } from "@/plan/api/schema-files";
 import { addAttachmentAtom, docAttachment } from "@/plan/attachments";
 import { focusComposerAtom } from "@/plan/chat/composer-hooks";
@@ -92,7 +92,6 @@ function summaryTarget(doc: DocView): string | null {
       : pageHref(summaryKey(doc.feature, "engineering", doc.plan.slug));
   }
   if (doc.feature === null) return null;
-  if (doc.kind === "metaplan") return pageHref(overviewKey(doc.feature, "engineering"));
   const key = docSummaryKey(doc);
   return key ? pageHref(key) : null;
 }

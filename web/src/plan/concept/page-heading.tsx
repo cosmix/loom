@@ -54,6 +54,9 @@ function breadcrumb(page: ConceptPage, facts: ReturnType<typeof useFeatureFacts>
   if (parts.kind === "summary" && parts.scope === "product" && parts.doc === VISION_DOC) {
     return [...crumbs, { label: page.title }];
   }
+  if (parts.kind === "summary" && parts.scope === "metaplan") {
+    return [...crumbs, { label: "Metaplan" }];
+  }
   const product = parts.scope === "product";
   const overview = parts.kind === "overview";
   const area = product ? "Product spec" : overview ? "Engineering" : "Plans";

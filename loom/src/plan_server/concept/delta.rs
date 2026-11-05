@@ -224,8 +224,10 @@ fn key_row_pages(before: &Snapshot, after: &Snapshot) -> Vec<String> {
             continue;
         };
         for key in before.features.keys().chain(after.features.keys()) {
+            // A metaplan summary page embeds the engineering key row (concept/key.rs).
             if matches!(PageKey::parse(key), Some(PageKey::Summary { feature: Some(ref f), scope: s, .. })
-                if *f == feature && s == scope)
+                if *f == feature && (s == scope
+                    || (scope == Scope::Engineering && s == Scope::Metaplan)))
             {
                 pages.insert(key.clone());
             }
@@ -284,6 +286,9 @@ pub(crate) fn page_keys(id: &str, scope: &store::Scope) -> Vec<String> {
             .filter(|key| key.feature() == Some(scope.feature.as_str()))
             .map(|key| vec![key.as_key()])
             .unwrap_or_default();
+    }
+    if store::metaplan_feature(id) == Some(scope.feature.as_str()) {
+        return vec![id.to_owned()];
     }
     let (page, overview, members) = if id.starts_with(&format!("{}/product/", scope.feature)) {
         (

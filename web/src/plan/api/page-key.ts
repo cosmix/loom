@@ -6,7 +6,13 @@ import { isFeatureName } from "../new/feature-name";
 export const VISION_DOC = "vision";
 
 /** The document family of a feature's concept page. */
-export type ConceptScope = "product" | "engineering";
+export type ConceptScope = "product" | "engineering" | "metaplan";
+
+/** The summary stem of a feature's first metaplan (`doc/plans/<feature>/index.md`), served at `/f/<feature>/metaplan`. */
+export const FIRST_METAPLAN = "index";
+
+/** A metaplan summary's stem: the metaplan file's name without `.md`, as the server names it. */
+const METAPLAN_STEM = /^[a-z0-9][a-z0-9-]*$/;
 
 /** The validated components of a concept page key. */
 export type PageKeyParts =
@@ -43,6 +49,9 @@ export function parsePageKey(key: string): PageKeyParts | null {
     if (second === "product" || second === "engineering") {
       return { kind: "summary", feature: first, scope: second, doc: third };
     }
+    if (second === "metaplan" && METAPLAN_STEM.test(third)) {
+      return { kind: "summary", feature: first, scope: second, doc: third };
+    }
   }
   return null;
 }
@@ -52,6 +61,7 @@ export function docKindOfPageKey(key: string): DocKind | null {
   const parts = parsePageKey(key);
   if (parts === null) return null;
   if (parts.kind === "overview") return parts.scope === "product" ? "vision" : "metaplan";
+  if (parts.kind === "summary" && parts.scope === "metaplan") return "metaplan";
   if (parts.kind === "summary" && parts.scope === "product") {
     return parts.doc === VISION_DOC ? "vision" : "section";
   }
@@ -98,11 +108,24 @@ export function pageHref(key: string): string {
   if (parts.kind === "summary" && parts.scope === "product" && parts.doc === VISION_DOC) {
     return `/f/${encodeURIComponent(parts.feature)}/${VISION_DOC}`;
   }
+  if (parts.kind === "summary" && parts.scope === "metaplan") {
+    const feature = encodeURIComponent(parts.feature);
+    return parts.doc === FIRST_METAPLAN
+      ? `/f/${feature}/metaplan`
+      : `/f/${feature}/metaplan/${encodeURIComponent(parts.doc)}.md`;
+  }
   const segments =
     parts.kind === "standalone"
       ? ["plans", parts.doc]
       : ["f", parts.feature, parts.scope, ...(parts.kind === "summary" ? [parts.doc] : [])];
   return `/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
+}
+
+/** The key of `/f/<feature>/<page>`: the vision, the first metaplan, or an overview. */
+function pageKeyOf4(feature: string, page: string): string {
+  if (page === VISION_DOC) return `${feature}/product/${VISION_DOC}`;
+  if (page === "metaplan") return `${feature}/metaplan/${FIRST_METAPLAN}`;
+  return `overview/${feature}/${page}`;
 }
 
 /** Decode a concept page pathname, rejecting other routes and malformed escapes. */
@@ -120,10 +143,9 @@ export function pageKeyOfPath(pathname: string): string | null {
   if (route === "plans" && segments.length === 3) {
     key = summaryKey(null, "engineering", feature);
   } else if (route === "f" && segments.length === 4) {
-    key =
-      scope === VISION_DOC ? `${feature}/product/${VISION_DOC}` : `overview/${feature}/${scope}`;
+    key = pageKeyOf4(feature, scope);
   } else if (route === "f" && segments.length === 5) {
-    key = `${feature}/${scope}/${doc}`;
+    key = `${feature}/${scope}/${scope === "metaplan" ? doc.replace(/\.md$/, "") : doc}`;
   } else {
     return null;
   }
@@ -139,6 +161,7 @@ export function pageKeyOfSummaryId(
   if (parts === null) return null;
   if (parts.kind === "overview") return id;
   if (parts.kind === "summary") {
+    if (parts.scope === "metaplan") return id;
     const listed = parts.doc === VISION_DOC || /^section_[0-9]{2,}$/.test(parts.doc);
     return parts.scope === "product" && listed ? id : null;
   }

@@ -16,7 +16,7 @@ pub(crate) fn key_chips(
     let members = store::scope(project, feature);
     let ids = match scope {
         Scope::Product => &members.product,
-        Scope::Engineering => &members.engineering,
+        Scope::Engineering | Scope::Metaplan => &members.engineering,
     };
     let mut chips: Vec<KeyChip> =
         ids.iter()
@@ -70,7 +70,7 @@ fn chip_label(
                     .is_some_and(|n| !feature.implemented_by.contains_key(&n));
             Some((number.to_string(), id.to_owned(), no_plan))
         }
-        Scope::Engineering => {
+        Scope::Engineering | Scope::Metaplan => {
             let slug = id.strip_prefix("plans/")?;
             Some((slug.to_string(), page_key_of(project, id)?, false))
         }

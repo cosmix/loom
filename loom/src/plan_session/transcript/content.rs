@@ -117,7 +117,8 @@ impl Mapper {
     }
 
     /// An interrupt record: a notice, every pending tool of the turn not finished, the turn
-    /// closed (a later `end_turn` for it publishes nothing).
+    /// closed (a later `end_turn` for it publishes nothing). When the turn's last item is the
+    /// "Stopped" notice the Stop button already added, the record adds no second notice.
     pub(super) fn interrupt(&mut self, uuid: &str, at: Option<DateTime<Utc>>, out: &mut Ingest) {
         if let Some(at) = at {
             #[cfg(test)]
@@ -129,12 +130,21 @@ impl Mapper {
         let Some(turn) = self.current_or_last() else {
             return;
         };
-        let notice = Item::Notice {
-            id: format!("n-{uuid}"),
-            kind: NoticeKind::Interrupted,
-            text: "Interrupted".into(),
-        };
-        self.push_item(turn, notice, &mut out.deltas);
+        let stopped = matches!(
+            self.turns[turn].items.last(),
+            Some(Item::Notice {
+                kind: NoticeKind::Stopped,
+                ..
+            })
+        );
+        if !stopped {
+            let notice = Item::Notice {
+                id: format!("n-{uuid}"),
+                kind: NoticeKind::Interrupted,
+                text: "Interrupted".into(),
+            };
+            self.push_item(turn, notice, &mut out.deltas);
+        }
         let turn_id = self.turns[turn].id.clone();
         for item in &mut self.turns[turn].items {
             if let Item::Tool {

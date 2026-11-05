@@ -25,18 +25,22 @@ it("opens a feature with no vision and no metaplan on the vision", () => {
   expect(landingPath(feature({ has_product: false, metaplans: [] }))).toBe("/f/atlas/vision");
 });
 
-it("opens a feature with a vision and a missing section on the vision", () => {
+it("opens a feature with a vision and a missing section on the product overview", () => {
   const sections = [section("01", true), section("02", false)];
-  expect(landingPath(feature({ has_product: true, sections }))).toBe("/f/atlas/vision");
+  expect(landingPath(feature({ has_product: true, sections }))).toBe("/f/atlas/product");
 });
 
-it("opens a feature with a vision and every listed section written on the vision", () => {
+it("opens a feature with a vision and every listed section written on the product overview", () => {
   const sections = [section("01", true), section("02", true)];
-  expect(landingPath(feature({ has_product: true, sections }))).toBe("/f/atlas/vision");
+  expect(landingPath(feature({ has_product: true, sections }))).toBe("/f/atlas/product");
 });
 
-it("opens a feature whose vision lists no sections yet on the vision", () => {
-  expect(landingPath(feature({ has_product: true, sections: [] }))).toBe("/f/atlas/vision");
+it("opens a feature whose vision lists no sections yet on the product overview", () => {
+  expect(landingPath(feature({ has_product: true, sections: [] }))).toBe("/f/atlas/product");
+});
+
+it("opens a feature with a product spec and a metaplan on the product overview", () => {
+  expect(landingPath(feature({ has_product: true, metaplans: metaplan }))).toBe("/f/atlas/product");
 });
 
 it("opens a feature with a metaplan and no vision on the plans", () => {

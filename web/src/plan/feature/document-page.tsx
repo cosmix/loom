@@ -1,7 +1,8 @@
 import { useAtomValue, useStore } from "jotai/react";
 import { ArrowRight } from "lucide-react";
-import { Link, useLocation, useParams } from "react-router";
+import { Link, Navigate, useLocation, useParams } from "react-router";
 
+import { FIRST_METAPLAN } from "@/plan/api/page-key";
 import type { ChecklistView } from "@/plan/api/schema";
 import { ConceptRoute } from "@/plan/concept/concept-route";
 import { EmptyOffer } from "@/plan/concept/empty-offer";
@@ -9,10 +10,11 @@ import { hashAnchor, repoRel } from "@/plan/files/address";
 import { useFileSocket } from "@/plan/files/api";
 import { treeAtom } from "@/plan/files/atoms";
 import { ReadingColumn } from "@/plan/files/reading-column";
+import { metaplanSummaryKey } from "@/plan/files/section-chips";
 import { missingDocumentOffer } from "@/plan/feature/page-offer";
 import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
 import { metaplanFile } from "@/plan/feature/spine-model";
-import { useFeature } from "@/plan/feature/use-feature";
+import { featureHref, useFeature } from "@/plan/feature/use-feature";
 import { LoadState } from "@/plan/ui/load-state";
 
 /** A document's source, read in the reading column; `anchor` scrolls to one of its sections. */
@@ -79,7 +81,12 @@ export function VisionPage() {
   );
 }
 
-/** `/f/:feature/metaplan[/:file]`: a metaplan's source; the first one when no file is named. */
+/**
+ * `/f/:feature/metaplan[/:file]`: a metaplan's summary page (its Source link opens the file); the
+ * first metaplan when no file is named. The summary key is read from the path, where the bare route
+ * names `index`, so a first metaplan with another name moves to its own file route. A metaplan
+ * whose file name is no valid summary stem has no summary and opens as its source.
+ */
 export function MetaplanPage() {
   const { checklist } = useFeature();
   const { file } = useParams();
@@ -97,7 +104,17 @@ export function MetaplanPage() {
     ? checklist.metaplans.find((candidate) => metaplanFile(candidate.path) === file)
     : checklist.metaplans[0];
   if (!metaplan) return <LoadState state="not_found" title="No such metaplan" />;
-  return <SourcePage path={metaplan.path} />;
+  // A file name outside the summary stem grammar (`metaplan_02.md`) has no summary: show its source.
+  const { path: sourcePath } = metaplan;
+  if (metaplanSummaryKey(checklist.feature, sourcePath) === null) {
+    return <SourcePage path={sourcePath} />;
+  }
+  const name = metaplanFile(metaplan.path);
+  if (!file && name.replace(/\.md$/, "") !== FIRST_METAPLAN) {
+    const to = featureHref(checklist.feature, `metaplan/${encodeURIComponent(name)}`);
+    return <Navigate replace to={to} />;
+  }
+  return <ConceptRoute />;
 }
 
 /**

@@ -42,6 +42,16 @@ const pages: { key: string; parts: PageKeyParts; href: string }[] = [
     href: "/f/demo/engineering/feat-x.v2",
   },
   {
+    key: "demo/metaplan/index",
+    parts: { kind: "summary", feature: "demo", scope: "metaplan", doc: "index" },
+    href: "/f/demo/metaplan",
+  },
+  {
+    key: "demo/metaplan/metaplan-02",
+    parts: { kind: "summary", feature: "demo", scope: "metaplan", doc: "metaplan-02" },
+    href: "/f/demo/metaplan/metaplan-02.md",
+  },
+  {
     key: "plans/standalone",
     parts: { kind: "standalone", doc: "standalone" },
     href: "/plans/standalone",
@@ -80,6 +90,9 @@ describe("concept page keys", () => {
     "plans/..",
     "plans/a b",
     `plans/${"a".repeat(129)}`,
+    "demo/metaplan/Index",
+    "demo/metaplan/-x",
+    "overview/demo/metaplan",
   ])("rejects invalid key %j", (key) => {
     expect(parsePageKey(key)).toBeNull();
     expect(docKindOfPageKey(key)).toBeNull();
@@ -116,6 +129,7 @@ describe("concept page keys", () => {
     { key: "demo/product/section_01", overview: false, scope: "product", feature: "demo" },
     { key: "demo/engineering/plan", overview: false, scope: "engineering", feature: "demo" },
     { key: "plans/plan", overview: false, scope: "engineering", feature: null },
+    { key: "demo/metaplan/index", overview: false, scope: "metaplan", feature: "demo" },
   ])("reads metadata for $key", ({ key, overview, scope, feature }) => {
     expect(isOverviewKey(key)).toBe(overview);
     expect(scopeOfKey(key)).toBe(scope);
@@ -128,6 +142,7 @@ describe("concept page keys", () => {
     ["demo/product/section_01", "section"],
     ["demo/product/vision", "vision"],
     ["demo/engineering/plan", "plan"],
+    ["demo/metaplan/index", "metaplan"],
     ["plans/standalone", "plan"],
   ])("maps %s to document kind %s", (key, kind) => {
     expect(docKindOfPageKey(key)).toBe(kind);
@@ -146,6 +161,7 @@ describe("concept page URLs", () => {
     ["/f/%64emo/vision", "demo/product/vision"],
     ["/f/demo/product/section%5F01", "demo/product/section_01"],
     ["/plans/feat%2Dx%2Ev2", "plans/feat-x.v2"],
+    ["/f/demo/metaplan/index.md", "demo/metaplan/index"],
   ])("decodes segments in %s", (pathname, key) => {
     expect(pageKeyOfPath(pathname)).toBe(key);
   });
@@ -166,6 +182,8 @@ describe("concept page URLs", () => {
     "/plans/%2E%2E",
     "/plans/a%252Fb",
     "/f/Bad/product",
+    "/f/demo/metaplan/Index.md",
+    "/f/demo/metaplan/a/b",
   ])("rejects pathname %j", (pathname) => {
     expect(pageKeyOfPath(pathname)).toBeNull();
   });
@@ -178,6 +196,8 @@ describe("summary ids", () => {
     "demo/product/section_01",
     "demo/product/section_123",
     "demo/product/vision",
+    "demo/metaplan/index",
+    "demo/metaplan/metaplan-02",
   ])("preserves summary id %s", (id) => {
     expect(pageKeyOfSummaryId(id, () => null)).toBe(id);
   });

@@ -71,7 +71,7 @@ fn overview_source(
                 feature: feature.into(),
             },
         ),
-        Scope::Engineering => (
+        Scope::Engineering | Scope::Metaplan => (
             project
                 .feature(feature)
                 .is_some_and(|f| !f.metaplans.is_empty()),

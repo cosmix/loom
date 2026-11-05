@@ -13,7 +13,9 @@ use crate::planning::kinds::DocKind;
 use crate::planning::project::Project;
 use crate::planning::summary::evaluate::{sentences_of, Evaluation, SummaryState};
 use crate::planning::summary::format::{self, LinkTarget, SummaryFile};
-use crate::planning::summary::store::{is_overview, source_of, summary_id_for, vision_feature};
+use crate::planning::summary::store::{
+    is_overview, metaplan_feature, source_of, summary_id_for, vision_feature,
+};
 
 /// Which kind of summary a body belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,8 +215,8 @@ fn mark(cx: &Cx, cited: &Cited) -> Option<Mark> {
         Level::Overview => overview_stand_in(doc),
         Level::Document => doc,
     };
-    // Metaplans, and the vision when an overview cites it, carry the overview's id but have no
-    // summary of their own.
+    // Metaplans and the vision, when an overview cites them, carry the overview's id: the overview
+    // cites their passages directly.
     let out_of_date = if is_overview(&doc.id) {
         None
     } else {
@@ -231,19 +233,21 @@ fn mark(cx: &Cx, cited: &Cited) -> Option<Mark> {
     })
 }
 
-/// An overview cites the vision's passages directly, so the vision link there stands for the
-/// product overview, not for the vision's own summary page.
+/// An overview cites the passages of the vision and of the metaplans directly, so their links
+/// there stand for the product and engineering overviews, not for their own summary pages.
 fn overview_stand_in(mut doc: DocLink) -> DocLink {
-    if let Some(feature) = vision_feature(&doc.id) {
-        let id = format!("overview/{feature}/product");
-        doc.id = id.clone();
-        doc.page = id;
-    }
+    let id = match (vision_feature(&doc.id), metaplan_feature(&doc.id)) {
+        (Some(feature), _) => format!("overview/{feature}/product"),
+        (None, Some(feature)) => format!("overview/{feature}/engineering"),
+        (None, None) => return doc,
+    };
+    doc.id = id.clone();
+    doc.page = id;
     doc
 }
 
-/// The link to a document's concept page: a metaplan stands for its overview; the vision, once
-/// summarized, for its own summary page.
+/// The link to a document's concept page: a document with a summary id, vision and metaplan
+/// included, links its own summary page; a metaplan with no summary id stands for its overview.
 /// `None` for documents concept mode has no page for, and for a document whose page key the
 /// web client would reject (a slug past the 128-character page name).
 pub(crate) fn doc_link(project: &Project, path: &Path) -> Option<DocLink> {

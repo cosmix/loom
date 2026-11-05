@@ -245,7 +245,7 @@ describe("FileDocHeading", () => {
   it.each<[EntryKind, string | null, string | null]>([
     ["section", "demo", "/f/demo/product/section_03"],
     ["vision", "demo", "/f/demo/vision"],
-    ["metaplan", "demo", "/f/demo/engineering"],
+    ["metaplan", "demo", "/f/demo/metaplan"],
     ["plan", null, "/plans/file-mode"],
     ["section", null, null],
     ["vision", null, null],
@@ -257,7 +257,7 @@ describe("FileDocHeading", () => {
         {
           kind,
           feature,
-          path: "doc/product/demo/section_03.md",
+          path: kind === "metaplan" ? "doc/plans/demo/index.md" : "doc/product/demo/section_03.md",
           ...(kind === "plan" ? {} : { plan: null }),
         },
         { slug: "file-mode" },

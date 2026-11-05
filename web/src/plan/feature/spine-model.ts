@@ -8,10 +8,15 @@ import { featureHref } from "@/plan/feature/use-feature";
 import { decode, docRel } from "@/plan/files/address";
 import { PLAN_STATE_GLYPHS, type PlanState } from "@/plan/ui/glyphs";
 
-export type GroupId = "vision" | "product" | "metaplan" | "plans" | "pressure" | "run";
+export type GroupId = "vision" | "product" | "metaplan" | "plans" | "run";
 
 /** How a document's name is set: section names are Markdown phrasing, plan names are slugs. */
 export type NameStyle = "markdown" | "mono" | "plain";
+
+/** A plan's pressure-test record: the date of the last test, null while it was never tested. */
+export interface PlanPressure {
+  date: string | null;
+}
 
 export interface SpineChild {
   key: string;
@@ -24,6 +29,8 @@ export interface SpineChild {
   /** The word beside the name: a plan's state, or "not written". */
   note: string | null;
   icon: LucideIcon | null;
+  /** A plan's pressure record; null for every other child and for a retired plan. */
+  pressure: PlanPressure | null;
 }
 
 export interface SpineGroup {
@@ -48,7 +55,6 @@ const GROUPS: { id: GroupId; label: string; step: number; page: string }[] = [
   { id: "product", label: "Product spec", step: STEP.product, page: "product" },
   { id: "metaplan", label: "Metaplan", step: STEP.metaplan, page: "metaplan" },
   { id: "plans", label: "Plans", step: STEP.plans, page: "engineering" },
-  { id: "pressure", label: "Pressure test", step: STEP.pressure, page: "pressure" },
   { id: "run", label: "Run", step: STEP.run, page: "run" },
 ];
 
@@ -102,6 +108,7 @@ function overviewChild(feature: string, page: string): SpineChild {
     number: null,
     note: null,
     icon: null,
+    pressure: null,
   };
 }
 
@@ -116,6 +123,7 @@ function sectionChildren(checklist: ChecklistView): SpineChild[] {
     number: section.number,
     note: section.written ? null : "not written",
     icon: null,
+    pressure: null,
   }));
 }
 
@@ -130,6 +138,7 @@ function planChildren(checklist: ChecklistView): SpineChild[] {
     icon: Object.hasOwn(PLAN_STATE_GLYPHS, plan.state)
       ? PLAN_STATE_GLYPHS[plan.state as PlanState]
       : null,
+    pressure: plan.state === "retired" ? null : { date: plan.pressure_date },
   }));
 }
 
@@ -151,6 +160,7 @@ function metaplanChildren(checklist: ChecklistView): SpineChild[] {
     number: null,
     note: null,
     icon: null,
+    pressure: null,
   }));
 }
 
@@ -159,15 +169,6 @@ const MARK_WORDS: Record<Exclude<MarkView, "gap">, string> = {
   active: "in progress",
   optional: "optional",
 };
-
-/**
- * The server marks the pressure test done while no written plan waits for one, which holds with no
- * test on record at all. That reads as optional, as the Pressure page's own count does.
- */
-function markOf(id: GroupId, mark: MarkView, checklist: ChecklistView): MarkView {
-  const noneOnRecord = !checklist.plan_rows.some((plan) => plan.pressure_date !== null);
-  return id === "pressure" && mark === "done" && noneOnRecord ? "optional" : mark;
-}
 
 /** The word for a group's mark; a group with nothing in it yet reads "not started". */
 function wordOf(id: GroupId, mark: MarkView, checklist: ChecklistView): string {
@@ -217,6 +218,19 @@ export function summaryPathnameOfSource(checklist: ChecklistView, pathname: stri
   return listed.find((candidate) => candidate.key === key)?.to ?? null;
 }
 
+/**
+ * The pathname whose spine row is the current one. A source route stands for its summary row
+ * (`summaryPathnameOfSource`); `/f/<f>/metaplan/<file>` of a lone metaplan, which has no row of its
+ * own, stands for the group's head, where the bare `/metaplan` route redirects away from.
+ */
+export function currentPathname(checklist: ChecklistView, pathname: string): string {
+  const fromSource = summaryPathnameOfSource(checklist, pathname);
+  if (fromSource !== null) return fromSource;
+  if (featurePage(pathname)?.page !== "metaplan") return pathname;
+  const head = spineGroups(checklist).find((group) => group.id === groupOfPathname(pathname));
+  return head && head.children.length === 0 ? head.to : pathname;
+}
+
 function childrenOf(id: GroupId, checklist: ChecklistView, page: string): SpineChild[] {
   if (id === "product") {
     return [overviewChild(checklist.feature, page), ...sectionChildren(checklist)];
@@ -231,7 +245,7 @@ export function spineGroups(checklist: ChecklistView): SpineGroup[] {
     const server: StepView | undefined = checklist.steps.find(
       (candidate) => candidate.number === step,
     );
-    const mark = markOf(id, server?.mark ?? "gap", checklist);
+    const mark = server?.mark ?? "gap";
     const count = id === "vision" || id === "metaplan" ? null : (server?.count ?? null);
     return {
       id,

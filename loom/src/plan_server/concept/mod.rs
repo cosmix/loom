@@ -24,6 +24,8 @@ mod key_tests;
 #[cfg(test)]
 mod links_tests;
 #[cfg(test)]
+mod metaplan_tests;
+#[cfg(test)]
 mod route_tests;
 #[cfg(test)]
 mod state_tests;

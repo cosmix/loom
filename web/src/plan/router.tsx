@@ -4,7 +4,6 @@ import { ConceptRoute } from "@/plan/concept/concept-route";
 import { FeatureSourcePage, MetaplanPage, VisionPage } from "@/plan/feature/document-page";
 import { FeatureLanding, FeatureLayout } from "@/plan/feature/feature-layout";
 import { Gaps } from "@/plan/feature/gaps";
-import { PressurePage } from "@/plan/feature/pressure-page";
 import { RunPage } from "@/plan/feature/run-page";
 import { HomeRoute } from "@/plan/home/home";
 import { KickoffRoute } from "@/plan/new/kickoff-route";
@@ -33,7 +32,6 @@ const featureRoutes: RouteObject = {
     { path: "metaplan", element: <MetaplanPage /> },
     { path: "metaplan/:file", element: <MetaplanPage /> },
     ...conceptRoutes("engineering"),
-    { path: "pressure", element: <PressurePage /> },
     { path: "run", element: <RunPage /> },
     // Any other child of a feature is a mistyped link: say so rather than draw a blank page.
     { path: "*", element: <LoadState state="error" title="No such page" /> },

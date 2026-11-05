@@ -139,6 +139,7 @@ it.each([
   ["overview/demo/product", "vision"],
   ["overview/demo/engineering", "metaplan"],
   ["demo/engineering/feature-x", "plan"],
+  ["demo/metaplan/index", "metaplan"],
   ["plans/feature-x", "plan"],
 ])("derives the DocMark kind for %s", (page, kind) => {
   const chip = chipOf();

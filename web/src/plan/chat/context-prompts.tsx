@@ -23,7 +23,6 @@ const PROMPTS: Record<NonNullable<ViewedKind>, readonly string[]> = {
     "Does this cover what its sections ask for?",
     "Change this plan so that",
   ],
-  pressure: ["Which plan should be tested first?"],
   run: ["What did the build change compared to the spec?"],
   file: [],
 };

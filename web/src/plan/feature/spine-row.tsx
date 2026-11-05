@@ -1,10 +1,10 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, FlaskConical, Gauge } from "lucide-react";
 import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
-import type { NameStyle, SpineChild, SpineGroup } from "@/plan/feature/spine-model";
+import type { NameStyle, PlanPressure, SpineChild, SpineGroup } from "@/plan/feature/spine-model";
 import { STEP_MARK_GLYPHS } from "@/plan/ui/glyphs";
 
 /** A document's name as its kind needs it: Markdown phrasing, a slug in mono, or plain text. */
@@ -12,6 +12,24 @@ export function Name({ name, style }: { name: string; style: NameStyle }) {
   if (style === "markdown") return <SentenceText text={name} />;
   const text = <Untrusted text={name} />;
   return style === "mono" ? <span className="plan-spine__mono">{text}</span> : text;
+}
+
+/** The plan's pressure record, in the same words as the plan page's chip (`pressureChip`). */
+function PressureBadge({ pressure }: { pressure: PlanPressure }) {
+  const { date } = pressure;
+  const Icon = date === null ? Gauge : FlaskConical;
+  return (
+    <span className="plan-spine__badge plan-fine" data-tested={date !== null}>
+      <Icon aria-hidden="true" />
+      {date !== null ? (
+        <>
+          Pressure-tested <Untrusted text={date} />
+        </>
+      ) : (
+        "Not pressure-tested"
+      )}
+    </span>
+  );
 }
 
 function ChildRow({ child, pathname }: { child: SpineChild; pathname: string }) {
@@ -36,6 +54,12 @@ function ChildRow({ child, pathname }: { child: SpineChild; pathname: string }) 
             {Icon && <Icon aria-hidden="true" />}
             <Untrusted text={child.note} />
           </span>
+        </>
+      )}
+      {child.pressure !== null && (
+        <>
+          {" "}
+          <PressureBadge pressure={child.pressure} />
         </>
       )}
     </>
