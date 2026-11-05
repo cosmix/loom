@@ -7,7 +7,7 @@ export function livePlans(checklist: ChecklistView): PlanRow[] {
   return checklist.plan_rows.filter((row) => row.state !== "retired");
 }
 
-export function allPlansDone(checklist: ChecklistView): boolean {
+function allPlansDone(checklist: ChecklistView): boolean {
   const live = livePlans(checklist);
   return live.length > 0 && live.every((row) => row.state === "done");
 }

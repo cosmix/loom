@@ -9,8 +9,7 @@ import { authorBlockReasonAtom, isHolderAtom } from "@/plan/state/atoms";
 import { type ButtonLook, DisabledReason } from "@/plan/ui/disabled-reason";
 
 /**
- * A written plan's Pressure-test and Start a run. A done plan has nothing here: the follow-ups
- * (compare the spec with the build, a new metaplan round) are the feature's, drawn on its Run page.
+ * A written plan's Pressure-test and Start a run. A done plan has nothing here.
  */
 export function PlanRunActions({ path, state }: { path: string; state: PlanStateView }) {
   return state === "written" ? <WrittenPlanActions path={path} /> : null;

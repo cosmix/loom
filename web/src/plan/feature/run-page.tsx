@@ -1,21 +1,13 @@
 import { useAtomValue, useStore } from "jotai/react";
 import { useEffect, useState } from "react";
 
-import type { ChecklistView, OfferView } from "@/plan/api/schema";
+import type { ChecklistView } from "@/plan/api/schema";
 import { ConfigBlockNotice } from "@/plan/chat/pressure/config-block-notice";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { offerOfKind } from "@/plan/feature/page-offer";
 import { NoPlans, PlanPage, UnwrittenPlans } from "@/plan/feature/plan-page";
 import { PlanName, PlanStateStatus } from "@/plan/feature/plan-state";
-import {
-  allPlansDone,
-  runScope,
-  runSentence,
-  startControl,
-  type RunRead,
-} from "@/plan/feature/run-scope";
+import { runScope, runSentence, startControl, type RunRead } from "@/plan/feature/run-scope";
 import { useFeature } from "@/plan/feature/use-feature";
-import { OfferButton } from "@/plan/offers/offer-button";
 import { DashboardLink, webUrl } from "@/plan/run/dashboard-button";
 import { StartRunButton } from "@/plan/run/plan-run-actions";
 import { fetchRunState, runStateAtom, runStripAtom } from "@/plan/run/use-run";
@@ -64,36 +56,6 @@ function RunActions({ checklist, read }: { checklist: ChecklistView; read: RunRe
 }
 
 /**
- * Once every plan is done, the feature's retro and next round: secondaries, drawn only here
- * (DESIGN.md, Buttons). The sentence explains the comparison, so its button stays short.
- */
-function Followups({ checklist }: { checklist: ChecklistView }) {
-  if (!allPlansDone(checklist)) return null;
-  const compare = offerOfKind(checklist, "refine_spec");
-  const offers = [compare, offerOfKind(checklist, "new_metaplan_round")].filter(
-    (offer): offer is OfferView => offer !== undefined,
-  );
-  if (offers.length === 0) return null;
-  return (
-    <section className="plan-page__section" aria-labelledby="plan-followups">
-      <h2 id="plan-followups" className="plan-section-title">
-        Next round
-      </h2>
-      {compare && (
-        <p className="plan-page__note">
-          Comparing starts a chat that reads the done plans and their run reviews against the spec.
-        </p>
-      )}
-      <div className="plan-page__offers">
-        {offers.map((offer) => (
-          <OfferButton key={offer.kind} offer={offer} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/**
  * The server pushes no run state, so the page asks for it on arrival, as the run dialog does. A
  * failed request reads as failed, never as idle. An answer is applied even when a newer request
  * overtook it while no state is known (`fetchRunState`), so an answered request always ends the
@@ -115,7 +77,7 @@ function useRunRead(): RunRead {
   return read;
 }
 
-/** `/f/:feature/run`: the run's state, the one start action, each plan's state, then follow-ups. */
+/** `/f/:feature/run`: the run's state, the one start action, each plan's state. */
 export function RunPage() {
   const { checklist } = useFeature();
   const state = useAtomValue(runStateAtom);
@@ -144,7 +106,6 @@ export function RunPage() {
           <RunActions checklist={checklist} read={read} />
           <PlanRows checklist={checklist} />
           <UnwrittenPlans checklist={checklist} />
-          <Followups checklist={checklist} />
         </>
       )}
     </PlanPage>

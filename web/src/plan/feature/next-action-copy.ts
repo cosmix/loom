@@ -29,7 +29,6 @@ const SENTENCES: Record<OfferKind, (names: Names) => string> = {
   add_section_to_vision: ({ section }) =>
     `Section ${section} needs an entry in the vision's section table.`,
   start_metaplan: ({ owner }) => `The product spec for ${owner} is ready for its first metaplan.`,
-  refine_spec: ({ owner }) => `The spec for ${owner} is ready to reflect what was built.`,
   draft_all_sections: ({ owner }) =>
     `The product spec sections missing for ${owner} are ready to draft.`,
   move_into_feature: ({ offer, plan }) => `${offer.target ?? plan} needs a feature of its own.`,
@@ -39,7 +38,7 @@ const SENTENCES: Record<OfferKind, (names: Names) => string> = {
       ? untestedSentence(checklist.untested)
       : `Plan ${plan} is ready for pressure testing.`,
   start_run: ({ owner }) => `The plans for ${owner} are ready to run.`,
-  new_metaplan_round: ({ owner }) => `The next round for ${owner} is ready to begin.`,
+  plan_follow_ups: ({ owner }) => `Every plan for ${owner} is done; follow-ups start from here.`,
   draft_all_plans: ({ owner }) => `The plans missing for ${owner} are ready to draft.`,
 };
 

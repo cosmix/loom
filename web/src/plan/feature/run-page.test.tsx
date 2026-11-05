@@ -24,10 +24,7 @@ let unregister: (() => void)[] = [];
 
 beforeEach(() => {
   handler.mockReset();
-  unregister = [
-    registerOfferAction("refine_spec", handler),
-    registerOfferAction("new_metaplan_round", handler),
-  ];
+  unregister = [registerOfferAction("plan_follow_ups", handler)];
 });
 
 afterEach(() => {
@@ -271,34 +268,13 @@ it("lists every plan with its state, linked to its concept page", () => {
 const finished = (secondary: ReturnType<typeof offer>[]) =>
   atlas({ plan_rows: [planRow("one", "done"), planRow("two", "done")], secondary });
 
-it("holds the two follow-ups once every plan is done, each a button that runs its offer", () => {
-  const compare = offer("refine_spec", "Compare spec with build");
-  const round = offer("new_metaplan_round", "New metaplan round");
-  renderPage(<RunPage />, PATH, finished([compare, round]));
+it("draws no follow-up section once every plan is done", () => {
+  renderPage(<RunPage />, PATH, finished([offer("plan_follow_ups", "Plan follow-ups")]));
 
   expect(screen.getByText("Every plan is done.")).toBeTruthy();
-  expect(
-    screen.getByText(/reads the done plans and their run reviews against the spec/),
-  ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Compare spec with build" }));
-  fireEvent.click(screen.getByRole("button", { name: "New metaplan round" }));
-  expect(handler.mock.calls).toEqual([[compare], [round]]);
-  expect(screen.queryByRole("button", { name: "Start a run" })).toBeNull();
-});
-
-it("holds no follow-up while a plan is unfinished, or when the server makes none", () => {
-  const compare = offer("refine_spec", "Compare spec with build");
-  const open = atlas({
-    plan_rows: [planRow("one", "done"), planRow("two", "written")],
-    secondary: [compare],
-  });
-  const first = renderPage(<RunPage />, PATH, open);
-  expect(screen.queryByRole("button", { name: "Compare spec with build" })).toBeNull();
-  first.unmount();
-
-  renderPage(<RunPage />, PATH, finished([]));
-  expect(screen.queryByRole("button", { name: "Compare spec with build" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Plan follow-ups" })).toBeNull();
   expect(screen.queryByText("Next round")).toBeNull();
+  expect(handler).not.toHaveBeenCalled();
 });
 
 it("sends an empty feature to Plans with one sentence", () => {

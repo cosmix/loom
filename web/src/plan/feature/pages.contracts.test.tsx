@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
@@ -34,9 +34,9 @@ const SPINE = "Feature documents";
 const TESTED = "ledger";
 const UNTESTED = "gateway";
 const TESTED_DATE = "2026-10-20";
-const COMPARE = "Compare spec with build";
+const FOLLOW_UPS = "Plan follow-ups";
 
-let compareRuns: OfferView[] = [];
+let followUpRuns: OfferView[] = [];
 let unregister: (() => void)[] = [];
 
 function json(body: unknown, status = 200): Response {
@@ -102,7 +102,7 @@ function atlas(patch: Record<string, unknown>): ChecklistView {
   });
 }
 
-/** Every plan done, so the feature has no primary and the retro is a secondary. */
+/** Every plan done, so the feature has no primary and Plan follow-ups is its secondary. */
 function finishedChecklist(): ChecklistView {
   return atlas({
     plan_rows: [planRow(TESTED, "done", TESTED_DATE), planRow(UNTESTED, "done", TESTED_DATE)],
@@ -111,7 +111,7 @@ function finishedChecklist(): ChecklistView {
     current: { kind: "ready_all_done" },
     steps: checklistFixture.checklists[0]!.steps.map((step) => ({ ...step, mark: "done" })),
     primary: null,
-    secondary: [offer("refine_spec", COMPARE), offer("new_metaplan_round", "New metaplan round")],
+    secondary: [offer("plan_follow_ups", FOLLOW_UPS)],
     items: [],
   });
 }
@@ -157,13 +157,12 @@ function offerButtons(root: HTMLElement, label: string): HTMLElement[] {
 
 beforeEach(() => {
   window.localStorage.clear();
-  compareRuns = [];
+  followUpRuns = [];
   stubWideScreen();
   stubServer();
   unregister = [
     registerOfferAction("pressure_test", () => {}),
-    registerOfferAction("refine_spec", (run) => compareRuns.push(run)),
-    registerOfferAction("new_metaplan_round", () => {}),
+    registerOfferAction("plan_follow_ups", (run) => followUpRuns.push(run)),
   ];
 });
 
@@ -173,19 +172,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("a finished feature's Run page holds the compare offer once", async () => {
+it("a finished feature's Run page lists every plan and holds no follow-up offer", async () => {
   renderRoute("/f/atlas/run", finishedChecklist());
   const page = await routedPage();
 
-  // A real button that starts the retro: a page naming the offer in prose starts nothing.
-  await waitFor(() => expect(offerButtons(page, COMPARE)).toHaveLength(1));
-  fireEvent.click(offerButtons(page, COMPARE)[0]!);
-  expect(compareRuns.map((run) => run.kind)).toEqual(["refine_spec"]);
-
-  const spine = screen.getByRole("navigation", { name: SPINE });
-  expect(offerButtons(spine, COMPARE)).toEqual([]);
-  expect(offerButtons(document.body, COMPARE)).toHaveLength(1);
-
   await planRowOf(page, TESTED, UNTESTED);
   await planRowOf(page, UNTESTED, TESTED);
+
+  expect(offerButtons(page, FOLLOW_UPS)).toEqual([]);
+  expect(followUpRuns).toEqual([]);
 });
