@@ -135,10 +135,6 @@ fn features_keep_their_own_documents_and_standalone_plans_are_separate() {
             "# B\n\n## 1. `PLAN-b.md`\n".into(),
         ),
         (
-            "doc/plans/alpha/metaplan-02.md",
-            "# A2\n\n## 1. `PLAN-a.md`\n".into(),
-        ),
-        (
             "doc/plans/alpha/index.md",
             "# A\n\n## 1. `PLAN-a.md`\n".into(),
         ),
@@ -163,7 +159,7 @@ fn features_keep_their_own_documents_and_standalone_plans_are_separate() {
     assert!(project.moves.is_empty());
     assert!(project.feature("missing").is_none());
     let alpha = project.feature("alpha").unwrap();
-    assert_feature(alpha, 1, "a", &["index.md", "metaplan-02.md"]);
+    assert_feature(alpha, 1, "a", &["index.md"]);
     assert_feature(project.feature("beta").unwrap(), 7, "b", &["index.md"]);
 }
 

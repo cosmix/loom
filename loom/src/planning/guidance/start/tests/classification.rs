@@ -20,7 +20,6 @@ fn spec_offers_use_spec_class() {
         Offer::DraftAllSections {
             feature: "f".into(),
         },
-        Offer::RefineSpec,
     ] {
         let start = AuthoringStart::from_offer(&offer).unwrap();
         assert_eq!(step_class(&start), StepClass::Spec, "{offer:?}");
@@ -39,7 +38,7 @@ fn plan_offers_use_plan_class() {
             metaplan: "doc/plans/f/index.md".into(),
             slug: "delivery-truth".into(),
         },
-        Offer::NewMetaplanRound,
+        Offer::PlanFollowUps,
         Offer::DraftAllPlans {
             feature: "f".into(),
         },

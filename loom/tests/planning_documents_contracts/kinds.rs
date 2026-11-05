@@ -56,16 +56,16 @@ fn misplaced_product_kinds_keep_their_ids() {
 #[test]
 fn plans_kinds_and_ids_in_standalone_and_feature_homes() {
     for (home, feature) in [("doc/plans", None), ("doc/plans/demo", Some("demo".into()))] {
-        for name in ["index.md", "round-2-metaplan.md"] {
-            let rel = format!("{home}/{name}");
-            kind_and_id(
-                &rel,
-                DocKind::Metaplan {
-                    feature: feature.clone(),
-                },
-                &rel[4..],
-            );
-        }
+        let index = format!("{home}/index.md");
+        kind_and_id(
+            &index,
+            DocKind::Metaplan {
+                feature: feature.clone(),
+            },
+            &index[4..],
+        );
+        let round = format!("{home}/round-2-metaplan.md");
+        kind_and_id(&round, DocKind::Other, &round[4..]);
         for (name, state) in [
             ("IN_PROGRESS-PLAN-x.md", PlanState::Running),
             ("archive/DONE-PLAN-x.md", PlanState::Done),

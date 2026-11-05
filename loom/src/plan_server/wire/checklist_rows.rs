@@ -168,7 +168,7 @@ mod tests {
     }
 
     #[test]
-    fn test_metaplan_rows_preserve_document_headings() {
+    fn test_metaplan_rows_preserve_document_headings_and_hold_one_row() {
         let project = project(&[
             ("doc/plans/demo/index.md", "# Demo Engineering Metaplan\n"),
             ("doc/plans/demo/round-2-metaplan.md", "# Second round\n"),
@@ -178,16 +178,10 @@ mod tests {
 
         assert_eq!(
             metaplans,
-            vec![
-                MetaplanRowView {
-                    path: "doc/plans/demo/index.md".into(),
-                    title: "Demo Engineering Metaplan".into(),
-                },
-                MetaplanRowView {
-                    path: "doc/plans/demo/round-2-metaplan.md".into(),
-                    title: "Second round".into(),
-                },
-            ]
+            vec![MetaplanRowView {
+                path: "doc/plans/demo/index.md".into(),
+                title: "Demo Engineering Metaplan".into(),
+            }]
         );
     }
 
@@ -195,11 +189,10 @@ mod tests {
     fn test_plan_rows_follow_headings_once_then_unlisted_feature_plans() {
         let first = "# First\n\n## 1. B (`PLAN-b.md`)\n\n\
                      ## 2. A (`PLAN-a.md`)\n\n## 3. Gap (`PLAN-missing.md`)\n\n\
-                     ## 4. Foreign (`PLAN-foreign.md`)\n";
-        let second = "# Second\n\n## 1. B (`PLAN-b.md`)\n\n## 2. C (`PLAN-c.md`)\n";
+                     ## 4. Foreign (`PLAN-foreign.md`)\n\n## Follow-ups\n\n\
+                     ## 5. B (`PLAN-b.md`)\n\n## 6. C (`PLAN-c.md`)\n";
         let project = project(&[
             ("doc/plans/demo/index.md", first),
-            ("doc/plans/demo/round-2-metaplan.md", second),
             ("doc/plans/demo/PLAN-a.md", "# A\n"),
             ("doc/plans/demo/PLAN-b.md", "# B\n"),
             ("doc/plans/demo/PLAN-c.md", "# C\n"),

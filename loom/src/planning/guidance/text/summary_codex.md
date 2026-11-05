@@ -19,9 +19,8 @@ Run `loom plan summary status --json` to inspect the assigned summaries and thei
 dependencies. Separate document summaries from overviews without adding ids to the
 batch. Leave another session's claims alone. A feature summary's id names its feature:
 feature ids are `overview/<feature>/product`, `overview/<feature>/engineering`,
-`<feature>/product/vision`, `<feature>/product/section_<nn>`, and `<feature>/metaplan/<stem>`
-(one per metaplan file of the feature whose name without `.md`, the `<stem>`, matches
-`[a-z0-9][a-z0-9-]*`; any other metaplan file has none). Plan summary ids are
+`<feature>/product/vision`, `<feature>/product/section_<nn>`, and `<feature>/metaplan/index`
+(one per feature, for its `index.md`). Plan summary ids are
 `plans/<slug>` with repository-wide unique slugs; plan document ids remain `plan/<slug>`.
 
 Process document summaries first, one at a time in the listed order. Then process
@@ -63,8 +62,8 @@ Use this exact draft body format for document summaries:
 
 - A section or plan summary takes at most 15 sentences. A vision summary (id
   `<feature>/product/vision`) takes at most 8 sentences in at most 3 paragraphs, distilling the
-  vision so a reader grasps it in under a minute. A metaplan summary (id `<feature>/metaplan/<stem>`)
-  takes at most 15 sentences: it summarizes the metaplan's plan map and its sequencing decisions,
+  vision so a reader grasps it in under a minute. A metaplan summary (id `<feature>/metaplan/index`,
+  one per feature) takes at most 15 sentences: it summarizes the metaplan's plan map and its sequencing decisions,
   citing the metaplan's own passages. Write one sentence per line, with blank lines
   between paragraphs.
 - A sentence compresses its cited section; never copy a sentence of the source.

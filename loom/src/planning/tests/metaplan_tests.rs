@@ -5,16 +5,13 @@ use std::path::Path;
 use crate::planning::metaplan::{entries, is_metaplan};
 
 #[test]
-fn recognizes_only_direct_metaplan_paths() {
-    for path in [
-        "doc/plans/index.md",
-        "doc/plans/optim-token-metaplan.md",
-        "doc/plans/a/index.md",
-        "doc/plans/b/metaplan-02.md",
-    ] {
+fn recognizes_only_direct_index_paths() {
+    for path in ["doc/plans/index.md", "doc/plans/a/index.md"] {
         assert!(is_metaplan(Path::new(path)), "{path}");
     }
     for path in [
+        "doc/plans/optim-token-metaplan.md",
+        "doc/plans/b/metaplan-02.md",
         "doc/plans/archive/metaplan.md",
         "doc/plans/metaplan.txt",
         "doc/product/metaplan.md",

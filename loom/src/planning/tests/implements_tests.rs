@@ -1,6 +1,35 @@
 //! Tests for `crate::planning::implements`.
 
-use crate::planning::implements::{parse, Implements};
+use crate::planning::implements::{implemented_section_paths, parse, Implements};
+use std::path::{Path, PathBuf};
+
+#[test]
+fn section_paths_follow_declaration_order_and_skip_bad_tokens() {
+    let paths = implemented_section_paths(
+        Path::new("doc/plans/beta/PLAN-y.md"),
+        "# Y\n\nImplements: section_04, chapter_2, [s](../product/section_01.md), section_04.md\n",
+    );
+    assert_eq!(
+        paths,
+        [
+            PathBuf::from("doc/product/beta/section_04.md"),
+            PathBuf::from("doc/product/beta/section_01.md"),
+        ]
+    );
+}
+
+#[test]
+fn section_paths_need_a_relative_feature_plan_path() {
+    let text = "# Y\n\nImplements: section_04\n";
+    for path in [
+        "/repo/doc/plans/beta/PLAN-y.md",
+        "doc/product/beta/section_04.md",
+        "doc/plans/beta/index.md",
+    ] {
+        let paths = implemented_section_paths(Path::new(path), text);
+        assert!(paths.is_empty(), "{path}: {paths:?}");
+    }
+}
 
 #[test]
 fn token_forms_and_link_sides() {

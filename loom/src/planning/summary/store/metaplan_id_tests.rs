@@ -1,4 +1,4 @@
-//! The metaplan summary id grammar: `<feature>/metaplan/<stem>`.
+//! The metaplan summary id grammar: `<feature>/metaplan/index`, one per feature.
 
 use std::path::{Path, PathBuf};
 
@@ -7,17 +7,15 @@ use super::{
 };
 
 #[test]
-fn only_a_lowercase_stem_under_a_valid_feature_is_a_metaplan_id() {
-    for id in [
-        "alpha/metaplan/index",
-        "alpha/metaplan/metaplan-02",
-        "a1/metaplan/0",
-    ] {
+fn only_the_index_stem_under_a_valid_feature_is_a_metaplan_id() {
+    for id in ["alpha/metaplan/index", "a1/metaplan/index"] {
         assert!(validate_id(id).is_ok(), "{id} is rejected");
         assert!(is_metaplan(id), "{id}");
     }
     assert_eq!(metaplan_feature("alpha/metaplan/index"), Some("alpha"));
     for id in [
+        "alpha/metaplan/metaplan-02",
+        "a1/metaplan/0",
         "alpha/metaplan/",
         "alpha/metaplan/..",
         "alpha/metaplan/../x",

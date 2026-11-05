@@ -170,11 +170,8 @@ fn written_plans_follow_metaplan_then_filename_order_without_duplicates() {
     let (_temp, project) = project(&[
         (
             "doc/plans/feature/index.md",
-            "# Plans\n\n## First `PLAN-z.md`\n\n## Again `PLAN-z.md`\n",
-        ),
-        (
-            "doc/plans/feature/other-metaplan.md",
-            "# Other\n\n## First `PLAN-y.md`\n\n## Again `PLAN-z.md`\n",
+            "# Plans\n\n## First `PLAN-z.md`\n\n## Again `PLAN-z.md`\n\n\
+             ## Follow-ups\n\n## Next `PLAN-y.md`\n\n## Again `PLAN-z.md`\n",
         ),
         ("doc/plans/feature/PLAN-a.md", "# A\n"),
         ("doc/plans/feature/PLAN-a-child.md", "# A child\n"),
