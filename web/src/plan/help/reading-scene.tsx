@@ -93,7 +93,9 @@ function samplePage(key: string, sentences: Sentence[]): ConceptPage {
     plan_state: null,
     last_pressure: null,
     key_chips: [],
-    blocks: [{ kind: "paragraph", sentences }],
+    // One paragraph per sentence: sentences that rest on one passage merge into a fragment only
+    // inside a paragraph, and the scene shows a closed sentence above an opened one.
+    blocks: sentences.map((sentence) => ({ kind: "paragraph", sentences: [sentence] })),
     unlisted: [],
     implements: null,
     implemented_by: [],

@@ -108,6 +108,8 @@ export const conceptPageSchema = z.strictObject({
   last_pressure: z.string().nullable(),
   key_chips: z.array(keyChipSchema),
   blocks: z.array(blockSchema),
+  /** The detail sentences the opening sentences of a two-level plan page cite; absent otherwise. */
+  detail: z.array(sentenceSchema).optional(),
   unlisted: z.array(docLinkSchema),
   implements: implementsViewSchema.nullable(),
   implemented_by: z.array(planLinkSchema),

@@ -9,14 +9,15 @@ import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import {
   firstWords,
   passageAnchors,
-  runAt,
   runDomId,
   sentenceCitations,
   sentenceKey,
+  summaryIdOfKey,
   useColumn,
   type SentenceSite,
 } from "./column-context";
 import { FoldCap } from "./fold-handle";
+import { runAt, runSentences, type RunEntry } from "./fragments";
 import { citedMarks, docColour, pageMark } from "./marks";
 import {
   conceptPageAtom,
@@ -70,7 +71,8 @@ type RunProps = { site: SentenceSite; run: OpenRun; leading?: JSX.Element };
 function InlineRun({ site, run, leading }: RunProps): JSX.Element {
   const column = useColumn();
   const { sentence, parent } = site;
-  const citations = sentenceCitations(sentence);
+  const entries = runSentences(sentence, column.lookup);
+  const colour = runColour(site, entries[0]?.citation.summary ?? site.summary);
   const id = runDomId(parent, sentence.id);
   const onFold = () => column.foldRun(run);
   const start = (
@@ -85,20 +87,18 @@ function InlineRun({ site, run, leading }: RunProps): JSX.Element {
       role="group"
       aria-label={groupLabel(site)}
       className="concept-run"
-      style={
-        { "--run-colour": runColour(site, citations[0]?.summary ?? site.summary) } as CSSProperties
-      }
+      style={{ "--run-colour": colour } as CSSProperties}
       tabIndex={-1}
       data-focus={sentenceKey(parent, sentence.id)}
     >
-      {citations.map((citation, index) => (
+      {entries.map((entry, index) => (
         // One sentence may cite the same member sentence twice; the index keeps keys unique.
-        <Fragment key={`${index}|${citation.summary}|${citation.id}`}>
+        <Fragment key={`${index}|${entry.citation.summary}|${entry.citation.id}`}>
           {index > 0 && " "}
           <CitedSentence
             citing={sentence}
-            citation={citation}
-            first={index === 0 || citations[index - 1]!.summary !== citation.summary}
+            entry={entry}
+            first={index === 0 || entries[index - 1]!.citation.summary !== entry.citation.summary}
             leading={index === 0 ? start : undefined}
           />
         </Fragment>
@@ -107,8 +107,6 @@ function InlineRun({ site, run, leading }: RunProps): JSX.Element {
     </span>
   );
 }
-
-type SentenceCitation = ReturnType<typeof sentenceCitations>[number];
 
 type NoticeProps = { text: string; title: string; to: string };
 
@@ -135,7 +133,7 @@ function failedNotice(state: ConceptPageState, title: string, to: string): JSX.E
 
 type CitedProps = {
   citing: Sentence;
-  citation: SentenceCitation;
+  entry: RunEntry;
   first: boolean;
   leading?: JSX.Element;
 };
@@ -146,13 +144,13 @@ type CitedProps = {
  * rebuilt before the overview), it says so and links to that summary page, so the run stays
  * readable.
  */
-function CitedSentence({ citing, citation, first, leading }: CitedProps): JSX.Element {
+function CitedSentence({ citing, entry, first, leading }: CitedProps): JSX.Element {
   const column = useColumn();
+  const { citation, sentence: cited } = entry;
   const key = pageKeyOfSummary(column.page, citation.summary);
   const state = useAtomValue(conceptPageAtom(key));
   const linked = linkedPageKey(column.page, citation.summary) !== null;
   const page = column.citedPage(citation.summary);
-  const cited = column.lookup(citation.summary, citation.id);
   if (!page || !cited) {
     const title = citing.marks.find((mark) => mark.doc.id === citation.summary)?.doc.title;
     const name = title ?? citation.summary;
@@ -191,7 +189,8 @@ function CitedSentence({ citing, citation, first, leading }: CitedProps): JSX.El
         parent: citing.id,
         marks: citedMarks(citing, citation.summary, cited, fallback),
       }}
-      glyph={first}
+      // The plan page's own header already names what the plan implements.
+      glyph={first && citation.summary !== summaryIdOfKey(column.pageKey)}
       flashPage={key}
       leading={leading}
     />

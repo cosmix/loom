@@ -75,6 +75,17 @@
     box-shadow 120ms;
 }
 
+/*
+ * A fragment (two or more sentences opening to the same content) is one unit at rest: a 1px
+ * edge at 35% runs under its sentences, spaces and marks alike, cloned across line wraps.
+ * 35% is the floor that still measures 1.5:1 on Ledger's paper (1.6:1; 2.0:1 in the dark). The
+ * same property as the hover edge, at lower specificity, so hover replaces it instead of
+ * stacking on it.
+ */
+.concept-sentence-wrap[data-fragment] {
+  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--sentence-colour) 35%, transparent);
+}
+
 .concept-sentence-wrap:has(> .concept-sentence:not(.concept-sentence-plain)):is(
     :hover,
     :has(:focus-visible)

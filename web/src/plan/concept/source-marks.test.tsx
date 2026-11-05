@@ -19,7 +19,8 @@ it("shows source marks by default", () => {
 
   expect(store.get(sourceMarksAtom)).toBe(true);
   expect(column.hasAttribute("data-source-marks")).toBe(false);
-  expect(within(column).getAllByRole("button", { name: /^Planning: doc\// })).toHaveLength(3);
+  // The fixture's last two sentences share a section, so they are one fragment with one mark.
+  expect(within(column).getAllByRole("button", { name: /^Planning: doc\// })).toHaveLength(2);
 });
 
 it("turning source marks off selects the CSS rule that hides sentence glyphs", () => {

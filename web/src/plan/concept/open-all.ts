@@ -4,8 +4,9 @@ import { useCallback } from "react";
 import { isOverviewKey } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
 
-import { canOpen, runAt, summaryIdOfKey, type SentenceSite } from "./column-context";
+import { canOpen, summaryIdOfKey, type SentenceSite } from "./column-context";
 import { paragraphIds, runFor } from "./column-model";
+import { columnPage, runAt } from "./fragments";
 import { pageSentences } from "./open-state";
 import type { OpenRun } from "./types";
 import { clearNotesIn, openRunsAtom } from "./view-state";
@@ -16,10 +17,10 @@ import { clearNotesIn, openRunsAtom } from "./view-state";
  * shows the previous one, and the label must describe what the reader sees.
  */
 
-/** The page's openable sentences that are not open yet, at their top-level sites. */
+/** The page's openable fragments that are not open yet, at their top-level sites. */
 function closedSites(page: ConceptPage, open: OpenRun[]): SentenceSite[] {
   const summary = summaryIdOfKey(page.key);
-  return pageSentences(page)
+  return pageSentences(columnPage(page))
     .filter(canOpen)
     .map((sentence) => ({ sentence, summary, parent: null, marks: sentence.marks }))
     .filter((site) => !runAt(open, site));
@@ -27,7 +28,7 @@ function closedSites(page: ConceptPage, open: OpenRun[]): SentenceSite[] {
 
 /** Whether the page has a sentence that opens at all; a page without one draws no control. */
 export function hasOpenable(page: ConceptPage): boolean {
-  return pageSentences(page).some(canOpen);
+  return pageSentences(columnPage(page)).some(canOpen);
 }
 
 /** Whether every openable sentence of the page is open, so the control offers Fold all. */
@@ -49,7 +50,8 @@ export function useOpenAll(page: ConceptPage): () => void {
     if (sites.length === 0) return;
     const overview = isOverviewKey(page.key);
     store.set(runs, [...open, ...sites.map((site) => runFor(site, overview))]);
-    const paragraphs = new Set(sites.flatMap((site) => paragraphIds(page, site.sentence.id)));
+    const view = columnPage(page);
+    const paragraphs = new Set(sites.flatMap((site) => paragraphIds(view, site.sentence.id)));
     for (const id of paragraphs) clearNotesIn(store, page.key, id);
   }, [store, page]);
 }

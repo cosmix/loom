@@ -14,8 +14,12 @@ Summary ids are `overview/<feature>/product`, `overview/<feature>/engineering`,
 `<feature>/product/vision`, `<feature>/product/section_<nn>`, and `plans/<slug>`. Plan
 summary ids use the repository-wide unique slug; plan document ids remain `plan/<slug>`.
 A vision summary (`<feature>/product/vision`) takes at most 8 sentences in at most 3
-paragraphs, distilling the vision so a reader grasps it in under a minute; section and
-plan summaries take at most 15 sentences.
+paragraphs, distilling the vision so a reader grasps it in under a minute; a section
+summary takes at most 15 sentences. A plan summary has two levels: an opening level of at
+most 8 sentences, each citing whole detail paragraphs as `[d](#s-xxxxxxxx)`, then a detail
+level of at most 15 sentences citing the plan. The summary subagent writes the detail level
+first, seals, reads the detail ids from the refusal, adds the opening level above it, and
+seals again.
 
 Write only the runtime draft files named by `loom plan summary brief <id>`, at the
 draft paths that brief gives; never assume a drafts directory. Publish summaries under `doc/loom/summaries/`
@@ -47,7 +51,8 @@ Never stage, commit, branch, or run `loom init`, `loom run`, or `loom pressure`.
    sentence it cites to say what the cited sentences add up to, even when the brief
    marks it `[keep]`. An overview sentence that cites member sentences cites at least
    two of them and says what they add up to; it may cite one only when that member's
-   summary holds a single sentence. Write only the draft path it names.
+   summary holds a single citable sentence. Cite a plan summary's detail sentences, never
+   its opening level. Write only the draft path it names.
 5. Run `loom plan summary seal <id>`. On exit 1, read each
    `<draft path>:<line>: <message>` problem, correct the draft, and seal again.
    Seal only when every citation resolves to a current source sentence; never

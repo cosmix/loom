@@ -89,6 +89,7 @@ fn blank(key: &PageKey, title: String, ctx: &PageContext) -> ConceptPage {
         last_pressure: None,
         key_chips: Vec::new(),
         blocks: Vec::new(),
+        detail: Vec::new(),
         unlisted: Vec::new(),
         implements: None,
         implemented_by: Vec::new(),
@@ -161,7 +162,9 @@ fn overview_page(
     page.state = summary.map(|summary| state_view(&id, summary.state, ctx));
     match summary.and_then(|summary| summary.file.as_ref()) {
         Some(file) => {
-            page.blocks = body::blocks(project, file, eval, &chips, Level::Overview, ctx);
+            let rendered = body::blocks(project, &id, file, eval, &chips, Level::Overview, ctx);
+            page.blocks = rendered.blocks;
+            page.detail = rendered.detail;
             page.file_hash = summary_file_hash(project, &id);
         }
         None => page.empty = Some(empty_state(project, eval, feature, scope)),
@@ -255,7 +258,9 @@ fn summary_body(
     page.state = summary.map(|summary| state_view(id, summary.state, ctx));
     match summary.and_then(|summary| summary.file.as_ref()) {
         Some(file) => {
-            page.blocks = body::blocks(project, file, eval, chips, Level::Document, ctx);
+            let rendered = body::blocks(project, id, file, eval, chips, Level::Document, ctx);
+            page.blocks = rendered.blocks;
+            page.detail = rendered.detail;
             page.file_hash = summary_file_hash(project, id);
         }
         None => page.empty = Some(summary_empty(summary.map(|one| one.state))),

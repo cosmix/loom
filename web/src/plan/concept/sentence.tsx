@@ -1,11 +1,12 @@
 import { cn } from "cn";
 import { ChevronDown } from "lucide-react";
-import type { CSSProperties, JSX } from "react";
+import { Fragment, type CSSProperties, type JSX } from "react";
 
 import type { ConceptPage, PlanLink, SectionLink, Sentence } from "@/plan/api/schema-concept";
 
 import { canOpen, runDomId, sentenceKey, useColumn, type SentenceSite } from "./column-context";
 import { FLASH_CLASS, flashKey } from "./flash";
+import { fragmentMembers } from "./fragments";
 import { docColour, Marks } from "./marks";
 import { PlanGlyph } from "./plan-glyph";
 import { SentenceText } from "./sentence-text";
@@ -40,19 +41,42 @@ function SentenceTail({ site, button }: { site: SentenceSite; button: boolean })
 }
 
 /**
+ * The text of a fragment of two or more sentences: one span per member, so a selection inside
+ * it keeps each sentence's provenance (`selection.ts` reads the closest `data-sentence-id`).
+ */
+function FragmentText({ members, summary }: { members: Sentence[]; summary: string }): JSX.Element {
+  return (
+    <>
+      {members.map((member, index) => (
+        <Fragment key={member.id}>
+          {index > 0 && " "}
+          <span data-sentence-id={member.id} data-summary={summary}>
+            <SentenceText text={member.text} />
+          </span>
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+/**
  * A summary sentence that is not open. With citations it is a button that opens in place; with
  * none it is a defect (section 05) and shows a muted "no source" mark instead of colour marks.
  * Marks, the chevron hint and the plan glyph sit after the inline text, outside the button.
+ * A fragment (several sentences that open to the same content) is one button with one tail;
+ * its wrap carries `data-fragment` with the member count, which a single sentence's does not.
  */
 export function ClosedSentence({ site, glyph, flashPage }: ClosedSentenceProps): JSX.Element {
   const column = useColumn();
   const { sentence, summary, parent } = site;
+  const members = fragmentMembers(sentence);
   const button = canOpen(sentence);
-  const flashing = column.flashing.has(flashKey(flashPage, sentence.id));
+  const flashing = members.some((member) => column.flashing.has(flashKey(flashPage, member.id)));
   const cited = glyph ? column.citedPage(summary) : null;
   return (
     <span
       className="concept-sentence-wrap"
+      data-fragment={members.length > 1 ? members.length : undefined}
       style={{ "--sentence-colour": docColour(site.marks[0]?.colour ?? 0) } as CSSProperties}
     >
       <span
@@ -79,7 +103,11 @@ export function ClosedSentence({ site, glyph, flashPage }: ClosedSentenceProps):
             : undefined
         }
       >
-        <SentenceText text={sentence.text} />
+        {members.length > 1 ? (
+          <FragmentText members={members} summary={summary} />
+        ) : (
+          <SentenceText text={sentence.text} />
+        )}
       </span>
       <SentenceTail site={site} button={button} />
       {cited && <PlanGlyph plans={plansOf(cited, sentence)} sections={implementsOf(cited)} />}

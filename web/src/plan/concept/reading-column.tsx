@@ -31,11 +31,13 @@ import { handleColumnKey } from "./column-keys";
 import { passagesRecord } from "./column-model";
 import { useCitedPages, type CitedPages } from "./cited-pages";
 import { useSentenceFlash } from "./flash";
+import { columnPage } from "./fragments";
 import { carryOpenState } from "./open-state";
 import { citedLookup, conceptPageAtom } from "./page-state";
 import { Blocks } from "./paragraph";
 import { sectionInShownDoc } from "./passage-doc";
 import { columnOrder } from "./reading-order";
+import { firstPassageKeys, SamePassageContext, type SamePassage } from "./same-passage";
 import type { ColumnTarget, OpenRun } from "./types";
 import { notesAtom, openRunsAtom } from "./view-state";
 
@@ -89,7 +91,8 @@ function useCarryOnReplace(
     if (!previous || previous === page) return;
     const open = store.get(openRunsAtom(pageKey));
     const inFile = (anchor: SourceAnchor) => sectionInShownDoc(store, anchor);
-    const result = carryOpenState(previous, page, open, citedLookup(store, page), inFile);
+    const lookup = citedLookup(store, page);
+    const result = carryOpenState(columnPage(previous), columnPage(page), open, lookup, inFile);
     if (JSON.stringify(result.open) !== JSON.stringify(open)) {
       store.set(openRunsAtom(pageKey), result.open);
       carried.current = true;
@@ -103,6 +106,8 @@ function useCarryOnReplace(
 }
 
 type ColumnModel = {
+  /** The page with each paragraph's fragments merged: what the column draws and navigates. */
+  view: ConceptPage;
   open: OpenRun[];
   cited: CitedPages;
   flashing: ReadonlySet<string>;
@@ -131,15 +136,16 @@ function useColumnModel(
     cited.states,
     useCallback((count) => setArrival((last) => ({ count, seq: (last?.seq ?? 0) + 1 })), []),
   );
+  const view = columnPage(page);
   const order = useMemo(
-    () => columnOrder(page, open, passagesRecord(page, open, cited.lookup)),
-    [page, open, cited.lookup],
+    () => columnOrder(view, open, passagesRecord(view, open, cited.lookup), cited.lookup),
+    [view, open, cited.lookup],
   );
   const roving = useRovingFocus(columnRef, order, open, { replacement: page, carried });
-  const actions = useColumnActions(store, pageKey, page, roving.move);
+  const actions = useColumnActions(store, pageKey, view, roving.move);
   useScrollAnchor(columnRef, roving, page, carried);
   useOpenScroll(columnRef, actions.pendingOpen, open);
-  return { open, cited, flashing, arrival, order, roving, actions };
+  return { view, open, cited, flashing, arrival, order, roving, actions };
 }
 
 /** The value the column's sentences, runs and passages read through `useColumn`. */
@@ -153,12 +159,12 @@ function useContextValue(
   const docPaths = useDocPaths(page);
   const openPage = useCallback((target: string) => void navigate(pageHref(target)), [navigate]);
   const openAddress = useCallback((address: string) => void navigate(address), [navigate]);
-  const { open, flashing, cited } = model;
+  const { view, open, flashing, cited } = model;
   const { openSentence, foldRun } = model.actions;
   return useMemo<ColumnContextValue>(
     () => ({
       pageKey,
-      page,
+      page: view,
       open,
       notes,
       flashing,
@@ -172,7 +178,7 @@ function useContextValue(
     }),
     [
       pageKey,
-      page,
+      view,
       open,
       notes,
       flashing,
@@ -200,7 +206,6 @@ type Props = {
 
 function columnKeyHandler(
   pageKey: string,
-  page: ConceptPage,
   store: Store,
   model: ColumnModel,
   openAddress: (address: string) => void,
@@ -208,7 +213,7 @@ function columnKeyHandler(
 ) {
   return (event: KeyboardEvent<HTMLDivElement>) => {
     handleColumnKey(event, model.roving.current, {
-      page,
+      page: model.view,
       pageKey,
       lookup: model.cited.lookup,
       citedPage: model.cited.citedPage,
@@ -235,26 +240,36 @@ export function ReadingColumn({ pageKey, page, dropTitle = false, onAttach }: Pr
   const columnRef = useRef<HTMLDivElement>(null);
   const model = useColumnModel(store, columnRef, pageKey, page);
   const context = useContextValue(pageKey, page, model);
-  const onKeyDown = columnKeyHandler(pageKey, page, store, model, context.openAddress, onAttach);
+  const onKeyDown = columnKeyHandler(pageKey, store, model, context.openAddress, onAttach);
+  const samePassage = useMemo<SamePassage>(
+    () => ({ first: firstPassageKeys(model.order), goTo: model.roving.move }),
+    [model.order, model.roving.move],
+  );
 
   return (
     <TooltipProvider>
       <ColumnContext.Provider value={context}>
-        <div
-          ref={columnRef}
-          role="document"
-          aria-label="Reading column"
-          // The column steps aside while focus roves; fold caps keep their own Tab stops.
-          tabIndex={model.roving.inside ? -1 : 0}
-          className="concept-column"
-          data-source-marks={sourceMarks ? undefined : "off"}
-          onKeyDown={onKeyDown}
-          onFocus={model.roving.onFocus}
-          onBlur={model.roving.onBlur}
-        >
-          <Blocks blocks={dropTitle ? withoutTitleBlock(page.blocks, page.title) : page.blocks} />
-          <Announcer title={visibleControls(page.title)} arrival={model.arrival} />
-        </div>
+        <SamePassageContext.Provider value={samePassage}>
+          <div
+            ref={columnRef}
+            role="document"
+            aria-label="Reading column"
+            // The column steps aside while focus roves; fold caps keep their own Tab stops.
+            tabIndex={model.roving.inside ? -1 : 0}
+            className="concept-column"
+            data-source-marks={sourceMarks ? undefined : "off"}
+            onKeyDown={onKeyDown}
+            onFocus={model.roving.onFocus}
+            onBlur={model.roving.onBlur}
+          >
+            <Blocks
+              blocks={
+                dropTitle ? withoutTitleBlock(model.view.blocks, page.title) : model.view.blocks
+              }
+            />
+            <Announcer title={visibleControls(page.title)} arrival={model.arrival} />
+          </div>
+        </SamePassageContext.Provider>
       </ColumnContext.Provider>
     </TooltipProvider>
   );

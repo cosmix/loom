@@ -10,6 +10,8 @@ import {
   caps as foldCaps,
   installColumnTestHooks,
   mount,
+  mountProduct,
+  openable,
   pages,
 } from "./reading-column-harness";
 
@@ -18,11 +20,13 @@ installColumnTestHooks();
 const pageKey = "demo/product/section_01";
 const firstSentence = "A plan starts from a short statement of intent.";
 const secondSentence = "Each stage names the files it may change.";
+// The second sentence shares `stages` with the third, so its button holds both.
+const secondButton = new RegExp("^" + secondSentence);
 
 it("both caps of each opened run are named Fold and tabbable in reading order", () => {
   const { column } = mount(pageKey, conceptPageSchema.parse(summaryFixture));
   fireEvent.click(within(column).getByRole("button", { name: firstSentence }));
-  fireEvent.click(within(column).getByRole("button", { name: secondSentence }));
+  fireEvent.click(within(column).getByRole("button", { name: secondButton }));
 
   const runs = within(column).getAllByRole("group", { name: /^Detail of/ });
   const caps = within(column).getAllByRole("button", { name: "Fold" });
@@ -80,7 +84,7 @@ it.each([
 it("Shift+Escape from a cap folds all runs", () => {
   const { column } = mount(pageKey, conceptPageSchema.parse(summaryFixture));
   fireEvent.click(within(column).getByRole("button", { name: firstSentence }));
-  fireEvent.click(within(column).getByRole("button", { name: secondSentence }));
+  fireEvent.click(within(column).getByRole("button", { name: secondButton }));
   const cap = within(column).getAllByRole("button", { name: "Fold" })[0]!;
 
   fireEvent.keyDown(cap, { key: "Escape", shiftKey: true });
@@ -91,7 +95,7 @@ it("Shift+Escape from a cap folds all runs", () => {
 it("Shift+Escape from the first run's cap returns focus to the sentence that opened it", async () => {
   const { column } = mount(pageKey, conceptPageSchema.parse(summaryFixture));
   fireEvent.click(within(column).getByRole("button", { name: firstSentence }));
-  fireEvent.click(within(column).getByRole("button", { name: secondSentence }));
+  fireEvent.click(within(column).getByRole("button", { name: secondButton }));
   const cap = foldCaps(column).find((item) => item.getAttribute("data-side") === "end")!;
   act(() => cap.focus());
   blurOnRemoval();
@@ -104,6 +108,31 @@ it("Shift+Escape from the first run's cap returns focus to the sentence that ope
       within(column).getByRole("button", { name: firstSentence }),
     );
   });
+});
+
+it("a cap click focuses the folded sentence once and never the departing run", async () => {
+  const { column } = mountProduct([openable("a", "Alpha opens the intro.")]);
+  fireEvent.click(within(column).getByRole("button", { name: "Alpha opens the intro." }));
+  const run = await within(column).findByRole("group", { name: /^Detail of/ });
+  // The click opened the run under the roving key it already held; the pointer then rests the
+  // DOM focus on the cap, as a mousedown does, while the roving key still names the run.
+  const cap = foldCaps(run).find((item) => item.getAttribute("data-side") === "end")!;
+  act(() => cap.focus());
+  blurOnRemoval();
+  const focused: EventTarget[] = [];
+  const record = (event: Event) => focused.push(event.target!);
+  document.addEventListener("focusin", record, true);
+  try {
+    fireEvent.click(cap);
+
+    expect(within(column).queryByRole("group", { name: /^Detail of/ })).toBeNull();
+    const sentence = within(column).getByRole("button", { name: "Alpha opens the intro." });
+    await waitFor(() => expect(document.activeElement).toBe(sentence));
+    expect(focused.filter((target) => run.contains(target as Node))).toEqual([]);
+    expect(focused).toEqual([sentence]);
+  } finally {
+    document.removeEventListener("focusin", record, true);
+  }
 });
 
 it("an opened passage carries its caps inline: start before the chip, end after the body", () => {

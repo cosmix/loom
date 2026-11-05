@@ -3,6 +3,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type FocusEvent,
@@ -101,6 +102,7 @@ export function useRovingFocus(
   carry: Carry,
 ): Roving {
   const [focusKey, setFocusKey] = useState<string | null>(null);
+  const [, bump] = useReducer((n: number) => n + 1, 0);
   const [inside, setInside] = useState(false);
   const insideRef = useRef(false);
   const want = useRef(false);
@@ -114,6 +116,10 @@ export function useRovingFocus(
   const move = useCallback((key: string) => {
     want.current = true;
     setFocusKey(key);
+    // A caller writes the store in the same handler, so the target's element may be about to
+    // change (a sentence becomes its run group, or the reverse): focus is taken by the layout
+    // effect after that commit, never here. The bump forces the commit when the key is unchanged.
+    bump();
   }, []);
   const onFocus = (event: FocusEvent<HTMLElement>) => {
     insideRef.current = true;

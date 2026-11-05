@@ -14,7 +14,8 @@ use super::*;
 
 pub const ID: &str = "demo/product/section_01";
 pub const PLAN_Y: &str = "doc/plans/demo/PLAN-y.md";
-pub const DRAFT_X: &str = "# X\n\nX does x. [§](../../../plans/demo/PLAN-x.md#plan-x)\n";
+pub const DRAFT_X: &str = "# X\n\nX is planned. [d](#s-a1edcae5)\n\n\
+                           X does x. [§](../../../plans/demo/PLAN-x.md#plan-x)\n";
 pub const CLAIM_S1: &str =
     r#"{"summary":"plans/x","session":"s1","pid":1,"created_at":"2026-10-27T00:00:00Z"}"#;
 pub const UUID: &str = "0b8f6c2e-4d1a-4e8b-9c3f-2a7d5e6f1b90";
