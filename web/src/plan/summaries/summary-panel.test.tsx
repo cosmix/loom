@@ -21,6 +21,13 @@ const NOW_SECS = 1793261460;
 const ADA = { public_id: "0123456789abcdef", name: "Ada" };
 const DANA = { public_id: "bbbbbbbbbbbbbbbb", name: "Dana" };
 const LAST = costLineSchema.parse(panelFixture.last);
+const RUNNING = summaryPanelSchema.parse(panelFixture).running!;
+const POST = (body: object) => ({
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+  credentials: "same-origin",
+});
 
 function show(fields: Partial<SummaryPanelData> = {}, holder = ADA) {
   const store = createStore();
@@ -41,6 +48,7 @@ function show(fields: Partial<SummaryPanelData> = {}, holder = ADA) {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -49,7 +57,7 @@ it("lists the running rebuild's progress and ids", () => {
   show();
 
   const running = within(screen.getByRole("region", { name: "Running rebuild" }));
-  expect(running.getByText("Rebuilding 1 of 3")).toBeTruthy();
+  expect(running.getByRole("heading", { name: "Rebuilding 1 of 3" })).toBeTruthy();
   expect(running.getAllByRole("listitem").map((item) => item.textContent)).toEqual([
     "demo/product/section_01",
     "demo/product/section_02",
@@ -57,23 +65,41 @@ it("lists the running rebuild's progress and ids", () => {
   ]);
 });
 
-const RUNNING = summaryPanelSchema.parse(panelFixture).running!;
+it("draws the running rebuild's progress as a labelled progress line", () => {
+  show();
+
+  const running = within(screen.getByRole("region", { name: "Running rebuild" }));
+  const bar = running.getByRole("progressbar", { name: "Rebuild progress" });
+  expect(bar.getAttribute("aria-valuemin")).toBe("0");
+  expect(bar.getAttribute("aria-valuemax")).toBe("3");
+  expect(bar.getAttribute("aria-valuenow")).toBe("1");
+  expect(screen.queryByText(/^Idle/)).toBeNull();
+});
+
+it("states Idle with the last run's age while no rebuild runs", () => {
+  show({ running: null, last: { ...LAST, time: "2026-10-29T08:01:00Z" } });
+  expect(screen.getByText("Idle · last run 10 min ago")).toBeTruthy();
+  cleanup();
+
+  show({ running: null, last: null });
+  expect(screen.getByText("Idle · no runs yet")).toBeTruthy();
+});
 
 it("shows a Codex job's log path in mono, and nothing for a Claude session", () => {
   show();
   expect(screen.queryByText(/^Log:/)).toBeNull();
   cleanup();
 
-  show({ running: { ...RUNNING, log_path: "/home/me/.loom/summary-2.log\u202E" } });
+  show({ running: { ...RUNNING, log_path: "/home/me/.loom/summary-2.log‮" } });
   const path = screen.getByText("/home/me/.loom/summary-2.log⟨U+202E⟩");
-  expect(path.closest("code")?.className).toContain("font-mono");
+  expect(path.closest("code")?.className).toContain("sp-mono");
   expect(
     within(screen.getByRole("region", { name: "Running rebuild" })).getByText(/^Log:/),
   ).toBeTruthy();
 });
 
 it("spells out control characters in every server string it shows", () => {
-  const bad = (text: string) => `${text}\u202E`;
+  const bad = (text: string) => `${text}‮`;
   show({
     running: { ...RUNNING, ids: [bad("run-id")] },
     queue: [bad("queued-id")],
@@ -101,7 +127,7 @@ it("lists queued ids", () => {
   expect(queue.getByRole("listitem").textContent).toBe("demo/product/section_03");
 });
 
-it("pairs each failed id with its error", () => {
+it("pairs each failed id with its error in a row that offers Retry", () => {
   show({
     failed: [
       { id: "demo/product/section_04", error: "Summary failed to seal" },
@@ -110,10 +136,75 @@ it("pairs each failed id with its error", () => {
   });
 
   const failed = within(screen.getByRole("region", { name: "Failed rebuilds" }));
-  expect(failed.getAllByRole("listitem").map((item) => item.textContent)).toEqual([
-    "demo/product/section_04Summary failed to seal",
-    "demo/product/section_05Session stopped",
+  const rows = failed.getAllByRole("listitem");
+  expect(
+    rows.map((row) => [
+      row.querySelector(".sp-mono")?.textContent,
+      row.querySelector(".sp-row-sub")?.textContent,
+    ]),
+  ).toEqual([
+    ["demo/product/section_04", "Summary failed to seal"],
+    ["demo/product/section_05", "Session stopped"],
   ]);
+  expect(failed.getAllByRole("button", { name: "Retry" })).toHaveLength(2);
+});
+
+it("posts only the failed id whose Retry was pressed", async () => {
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(new Response(JSON.stringify(panelFixture), { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+  const { store } = show({
+    failed: [
+      { id: "demo/product/section_04", error: "Summary failed to seal" },
+      { id: "demo/product/section_05", error: "Session stopped" },
+    ],
+  });
+  const row = screen.getByText("demo/product/section_05").closest("li");
+  if (!row) throw new Error("Missing failed row");
+
+  fireEvent.click(within(row).getByRole("button", { name: "Retry" }));
+
+  await waitFor(() => expect(store.get(panelLoadAtom).status).toBe("ready"));
+  expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+    "/api/summaries/rebuild",
+    POST({ ids: ["demo/product/section_05"] }),
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("posts one rebuild request for a double click on Retry", async () => {
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(new Response(JSON.stringify(panelFixture), { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+  show();
+  const retry = screen.getByRole("button", { name: "Retry" });
+
+  fireEvent.click(retry);
+  fireEvent.click(retry);
+
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+it("shows a retry error in an alert under the row", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ error: "busy", message: "A rebuild is running" }), {
+        status: 409,
+      }),
+    ),
+  );
+  show();
+
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe("A rebuild is running");
+  expect(alert.closest("li")?.textContent).toContain("plans/loom-planner-ui");
 });
 
 it("shows a failed start as an alert", () => {
@@ -122,104 +213,12 @@ it("shows a failed start as an alert", () => {
   expect(screen.getByRole("alert").textContent).toBe("Could not start the rebuild session");
 });
 
-/** One span's labelled figures: each figure label's `dt` paired with the `dd` beside it. */
-function figuresIn(scope: HTMLElement): Record<string, string | null> {
-  const labels = ["fresh", "cache reads", "output"];
-  const terms = Array.from(scope.querySelectorAll("dt")).filter((term) =>
-    labels.includes(term.textContent ?? ""),
-  );
-  return Object.fromEntries(
-    terms.map((term) => [term.textContent, term.nextElementSibling?.textContent ?? null]),
-  );
-}
-
-const lastRebuild = () => screen.getByRole("region", { name: "Last rebuild" });
-const span = (name: string) => {
-  const totals = within(screen.getByRole("region", { name: "Token totals" }));
-  const term = totals.getByText(name);
-  expect(term.tagName).toBe("DT");
-  return term.parentElement!;
-};
-
-it("pairs each of the last cost's labels with its figure", () => {
-  show();
-
-  expect(figuresIn(lastRebuild())).toEqual({
-    fresh: "1,840",
-    "cache reads": "9,200",
-    output: "760",
-  });
-});
-
-it("captions the last rebuild with its age", () => {
-  show({ last: { ...LAST, time: "2026-10-29T08:01:00Z" } });
-
-  const time = lastRebuild().querySelector("time");
-  expect(time?.getAttribute("dateTime")).toBe("2026-10-29T08:01:00Z");
-  expect(time?.textContent).toBe("10 min ago");
-});
-
-it.each([
-  [
-    { cache_read: 9200, output: 760 },
-    { fresh: "unknown", "cache reads": "9,200", output: "760" },
-  ],
-  [
-    { fresh_input: 1840, output: 760 },
-    { fresh: "1,840", "cache reads": "unknown", output: "760" },
-  ],
-  [
-    { fresh_input: 1840, cache_read: 9200 },
-    { fresh: "1,840", "cache reads": "9,200", output: "unknown" },
-  ],
-])("shows unknown for absent cost fields: %s", (tokens, expected) => {
-  show({ last: { ...LAST, tokens } });
-
-  expect(figuresIn(lastRebuild())).toEqual(expected);
-});
-
-const UNKNOWN = { fresh: "unknown", "cache reads": "unknown", output: "unknown" };
-
-it("shows unknown when there is no last rebuild", () => {
-  show({ last: null });
-
-  expect(within(lastRebuild()).getByText("None yet")).toBeTruthy();
-  expect(figuresIn(lastRebuild())).toEqual(UNKNOWN);
-});
-
-it("shows today and seven-day totals with formatted figures", () => {
-  show();
-
-  expect(figuresIn(span("Today"))).toEqual({
-    fresh: "12,400",
-    "cache reads": "68,000",
-    output: "4,800",
-  });
-  expect(figuresIn(span("7 days"))).toEqual({
-    fresh: "74,600",
-    "cache reads": "412,000",
-    output: "29,600",
-  });
-});
-
-it("distinguishes absent total fields from recorded zeroes", () => {
-  show({ today: {}, week: { fresh_input: 0, cache_read: 0, output: 0 } });
-
-  expect(figuresIn(span("Today"))).toEqual(UNKNOWN);
-  expect(figuresIn(span("7 days"))).toEqual({ fresh: "0", "cache reads": "0", output: "0" });
-});
-
-it("draws no provider limit meters: the footer is their one place", () => {
-  show();
-
-  expect(screen.queryByRole("img", { name: /window .*% used/ })).toBeNull();
-});
-
 it("shows the panel's read-only reason without action controls", () => {
   show({ read_only: "tmux is not installed" });
 
   expect(screen.getByText("tmux is not installed")).toBeTruthy();
   expect(screen.getByText("plans/loom-rebuilds")).toBeTruthy();
+  expect(screen.getByText("plans/loom-planner-ui")).toBeTruthy();
   expect(screen.queryByRole("button")).toBeNull();
 });
 
@@ -251,12 +250,10 @@ it("posts only the selected terminal claim to the release endpoint", async () =>
   fireEvent.click(within(selected).getByRole("button", { name: "Release" }));
 
   await waitFor(() => expect(store.get(panelLoadAtom).status).toBe("ready"));
-  expect(fetchMock).toHaveBeenCalledExactlyOnceWith("/api/summaries/release", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids: ["plans/loom-rebuilds"] }),
-    credentials: "same-origin",
-  });
+  expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+    "/api/summaries/release",
+    POST({ ids: ["plans/loom-rebuilds"] }),
+  );
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
