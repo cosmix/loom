@@ -7,7 +7,6 @@
 @import "@xyflow/react/dist/style.css";
 /* aurora-ui: tokens before anything that reads them, then its per-component sheets. */
 @import "./aurora-ui/shared/styles/tokens.css";
-@import "./aurora-ui/shared/styles/tokens-dark-variants.css";
 @import "./aurora-ui/shared/styles/animations.css";
 @import "./aurora-ui/feedback/busy-roundel.css";
 @import "./aurora-ui/feedback/hazard.css";
@@ -81,6 +80,9 @@
    * ink, in the dark the ink itself. */
   --highlight: var(--primary);
   --highlight-foreground: var(--primary-foreground);
+  /* Accent-coloured text and lines: on paper the amber fill is 1.5:1 against the card, so they
+   * take the darker ochre ring (3.8:1); in the dark themes the accent itself. */
+  --accent-ink: var(--ring);
   --logo: var(--foreground);
   /* Ledger stock: blue ruling between table rows, a double rule under the heads. */
   --ledger-rule: oklch(0.8 0.045 240);
@@ -98,20 +100,22 @@
   --tone-blocked: oklch(0.72 0.16 22);
   --tone-pending: oklch(0.66 0.025 325);
   --tone-queued: oklch(0.79 0.1 205);
-  --tone-warning: oklch(0.77 0.15 58);
+  /* Amber at hue 80: the dark accent is orange at hue 55, so the warning sits 25 degrees off it
+   * (8.2:1 on the Walnut card, 8.0:1 on Graphite's). */
+  --tone-warning: oklch(0.77 0.15 80);
   --tone-merged: oklch(0.7 0.07 155);
   --tone-dimmed: oklch(0.55 0.025 325);
   --tone-control: oklch(0.72 0.17 25);
   --tone-contract: oklch(0.75 0.14 300);
-  /* Against the Aubergine --background:
-   *   --doc-1 hue 155: 8.94:1
-   *   --doc-2 hue 200: 8.96:1
-   *   --doc-3 hue 245: 8.56:1
-   *   --doc-4 hue 285: 8.21:1
-   *   --doc-5 hue 325: 8.0:1
-   *   --doc-6 hue 355: 7.96:1
-   *   --doc-7 hue 20: 8.0:1
-   *   --doc-8 hue 175: 8.98:1
+  /* Against the Walnut --background:
+   *   --doc-1 hue 155: 8.47:1
+   *   --doc-2 hue 200: 8.49:1
+   *   --doc-3 hue 245: 8.11:1
+   *   --doc-4 hue 285: 7.77:1
+   *   --doc-5 hue 325: 7.58:1
+   *   --doc-6 hue 355: 7.54:1
+   *   --doc-7 hue 20: 7.58:1
+   *   --doc-8 hue 175: 8.51:1
    */
   --doc-1: oklch(0.74 0.13 155);
   --doc-2: oklch(0.74 0.13 200);
@@ -129,6 +133,7 @@
   --series-6: #d95926;
   --highlight: color-mix(in oklch, var(--primary) 18%, transparent);
   --highlight-foreground: var(--primary);
+  --accent-ink: var(--primary);
   --logo: oklch(1 0 0);
   --ledger-rule: var(--hairline);
   --ledger-head-rule: 1px solid var(--hairline);

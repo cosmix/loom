@@ -10,13 +10,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { PlannerThemeSwatch } from "./planner-swatch";
-import {
-  ReadingFaceGroup,
-  ReadingSizeGroup,
-  ReadingTogglesGroup,
-  SettingsGroup,
-  SummariesGroup,
-} from "./settings-sections";
+import { ReadingFaceGroup, ReadingSizeGroup } from "./reading-sections";
+import { ReadingTogglesGroup, SettingsGroup, SummariesGroup } from "./settings-sections";
 import "./settings.css";
 
 export function SettingsDialog({

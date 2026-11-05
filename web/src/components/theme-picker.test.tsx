@@ -7,7 +7,7 @@ import { darkVariantAtom, lightVariantAtom, themeAtom } from "@/aurora-ui/shared
 import { ThemeProvider } from "@/aurora-ui/theme/ThemeProvider";
 import { THEME_OPTIONS, ThemePicker } from "@/components/theme-picker";
 
-const THEME_LABELS = ["Ledger", "Aubergine", "Pacific", "Graphite"] as const;
+const THEME_LABELS = ["Ledger", "Walnut", "Graphite"] as const;
 
 const APPLIED_THEMES = [
   {
@@ -19,19 +19,11 @@ const APPLIED_THEMES = [
     storageKey: "loom:light-variant",
   },
   {
-    label: "Aubergine",
+    label: "Walnut",
     scheme: "dark",
     dark: true,
     datasetKey: "darkTheme",
-    variant: "aubergine",
-    storageKey: "loom:dark-variant",
-  },
-  {
-    label: "Pacific",
-    scheme: "dark",
-    dark: true,
-    datasetKey: "darkTheme",
-    variant: "blue",
+    variant: "walnut",
     storageKey: "loom:dark-variant",
   },
   {
@@ -63,10 +55,10 @@ afterEach(() => {
 });
 
 describe("ThemePicker", () => {
-  it("renders four buttons with the option names", () => {
+  it("renders three buttons with the option names", () => {
     renderThemePicker();
 
-    expect(screen.getAllByRole("button")).toHaveLength(4);
+    expect(screen.getAllByRole("button")).toHaveLength(3);
     for (const label of THEME_LABELS) {
       expect(screen.getByRole("button", { name: `${label} theme` })).toBeTruthy();
     }
@@ -97,7 +89,7 @@ describe("ThemePicker", () => {
       </Provider>,
     );
 
-    expect(screen.getAllByText("Custom swatch")).toHaveLength(4);
+    expect(screen.getAllByText("Custom swatch")).toHaveLength(3);
     for (const option of THEME_OPTIONS) {
       const button = screen.getByRole("button", { name: `${option.label} theme` });
       const swatch = button.querySelector("[data-testid='custom-swatch']");
@@ -137,22 +129,24 @@ describe("ThemePicker", () => {
         <ThemePicker swatch={() => <span>Custom swatch</span>} />
       </Provider>,
     );
-    const pacific = screen.getByRole("button", { name: "Pacific theme" });
+    const walnut = screen.getByRole("button", { name: "Walnut theme" });
 
-    fireEvent.click(pacific);
+    fireEvent.click(walnut);
 
     expect(store.get(themeAtom)).toBe("dark");
-    expect(store.get(darkVariantAtom)).toBe("blue");
-    expect(pacific.getAttribute("aria-pressed")).toBe("true");
+    expect(store.get(darkVariantAtom)).toBe("walnut");
+    expect(walnut.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("selects the Pacific dark variant", () => {
-    const { store } = renderThemePicker();
+  it("selects the Walnut dark variant from the light scheme", () => {
+    const store = createStore();
+    store.set(themeAtom, "light");
+    renderThemePicker(store);
 
-    fireEvent.click(screen.getByRole("button", { name: "Pacific theme" }));
+    fireEvent.click(screen.getByRole("button", { name: "Walnut theme" }));
 
     expect(store.get(themeAtom)).toBe("dark");
-    expect(store.get(darkVariantAtom)).toBe("blue");
+    expect(store.get(darkVariantAtom)).toBe("walnut");
   });
 
   it("selects the Ledger light variant", () => {
@@ -199,14 +193,16 @@ describe("ThemePicker", () => {
   it("exports complete palettes backed by scoped CSS variables", () => {
     const paletteValues = THEME_OPTIONS.flatMap((option) => Object.values(option.palette));
 
-    expect(paletteValues).toHaveLength(28);
+    expect(paletteValues).toHaveLength(21);
     expect(paletteValues.every((value) => value.startsWith("var(--"))).toBe(true);
   });
 
   it("does not mark an unoffered dark variant as active", () => {
+    // A variant stored by an earlier build: the store reads it as is (no migration), the page
+    // draws Walnut through the plain `.dark` rule, and no card claims it.
+    localStorage.setItem("loom:dark-variant", JSON.stringify("retired-variant"));
     const store = createStore();
     store.set(themeAtom, "dark");
-    store.set(darkVariantAtom, "green");
     renderThemePicker(store);
 
     const pressed = screen

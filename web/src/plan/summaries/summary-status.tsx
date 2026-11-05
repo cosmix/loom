@@ -115,7 +115,7 @@ function StatusContent({ load, reload }: { load: PanelLoad; reload: () => void }
   }
   // The popover shows what needs attention: the question, queue and failures. The token totals live
   // in Settings (SummaryPanel); the provider limits live in the footer only. One gap between
-  // sections, the gap SummaryPanel sets between its own.
+  // sections (--space-4); SummaryPanel's own sections use the wider --space-5.
   return (
     <div className="space-y-[var(--space-4)] text-[13px] [overflow-wrap:anywhere]">
       {/* The question comes first so its answer buttons stay above the fold on a phone. */}

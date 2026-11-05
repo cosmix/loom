@@ -6,8 +6,7 @@
  *   2. @import "tw-animate-css";
  *   3. @import "shadcn/tailwind.css";
  *   4. @import "./tokens.css";         ← this file
- *   5. @import "./tokens-dark-variants.css";  ← green, slate, sand dark palettes
- *   6. @import "./animations.css";     ← optional
+ *   5. @import "./animations.css";     ← optional
  *
  * Assumptions: Tailwind v4, tw-animate-css, shadcn/tailwind.css are already
  * imported before this file. Font imports (Inter Variable, etc.) are the
@@ -141,50 +140,54 @@ html.dark {
   --sidebar-ring: oklch(0.708 0 0);
 }
 
-/* ── Default dark theme (aubergine, hue 325) ─────────────────────────── */
+/* ── Default dark theme (walnut: warm brown-black, hue 55) ───────────── */
+/* Every surface stays under chroma 0.015 (card < muted < secondary < accent < border in
+   lightness), so the only saturated colours are the orange accent and the status tones. The
+   accent is the one lit hue: dark text on it reads at 7.7:1 (ui/DESIGN.md, Colour). The
+   warning hazard is amber (hue 80), 25 degrees off the accent, so it never reads as it. */
 .dark {
-  --background: oklch(0.16 0.035 325);
-  --foreground: oklch(0.94 0.012 325);
-  --card: oklch(0.195 0.04 325);
-  --card-foreground: oklch(0.94 0.012 325);
-  --popover: oklch(0.195 0.04 325);
-  --popover-foreground: oklch(0.94 0.012 325);
-  --primary: oklch(0.83 0.165 82);
-  --primary-foreground: oklch(0.2 0.04 325);
-  --secondary: oklch(0.23 0.045 325);
-  --secondary-foreground: oklch(0.92 0.015 325);
-  --muted: oklch(0.225 0.045 325);
-  --muted-foreground: oklch(0.73 0.03 325);
-  --accent: oklch(0.26 0.05 325);
-  --accent-foreground: oklch(0.92 0.015 325);
+  --background: oklch(0.19 0.014 55);
+  --foreground: oklch(0.92 0.012 80);
+  --card: oklch(0.22 0.015 55);
+  --card-foreground: oklch(0.92 0.012 80);
+  --popover: oklch(0.22 0.015 55);
+  --popover-foreground: oklch(0.92 0.012 80);
+  --primary: oklch(0.74 0.15 55);
+  --primary-foreground: oklch(0.19 0.014 55);
+  --secondary: oklch(0.255 0.015 55);
+  --secondary-foreground: oklch(0.92 0.012 80);
+  --muted: oklch(0.25 0.015 55);
+  --muted-foreground: oklch(0.71 0.014 60);
+  --accent: oklch(0.28 0.015 55);
+  --accent-foreground: oklch(0.92 0.012 80);
   --destructive: oklch(0.704 0.191 22.216);
-  --hazard-warning: oklch(0.74 0.16 55);
+  --hazard-warning: oklch(0.78 0.14 80);
   --hazard-error: oklch(0.65 0.21 25);
-  --border: oklch(0.31 0.045 325);
-  --input: oklch(0.27 0.04 325);
-  --ring: oklch(0.83 0.165 82);
+  --border: oklch(0.31 0.014 55);
+  --input: oklch(0.28 0.015 55);
+  --ring: oklch(0.74 0.15 55);
   --chart-1: oklch(0.72 0.18 255);
   --chart-2: oklch(0.72 0.18 165);
   --chart-3: oklch(0.68 0.20 310);
   --chart-4: oklch(0.72 0.18 15);
   --chart-5: oklch(0.70 0.14 220);
-  --ost-opp: oklch(0.25 0.055 285);
-  --ost-opp-border: oklch(0.38 0.07 285);
-  --ost-idea: oklch(0.17 0.04 285);
-  --ost-idea-border: oklch(0.30 0.055 285);
-  --ost-line: oklch(0.48 0.06 285);
-  --postit-bg: oklch(0.34 0.085 285);
-  --postit-border: oklch(0.46 0.115 285);
-  --postit-text: oklch(0.96 0.025 285);
-  --postit-sidebar: oklch(0.255 0.05 285);
-  --sidebar: oklch(0.16 0.035 285);
-  --sidebar-foreground: oklch(0.94 0.015 285);
-  --sidebar-primary: oklch(0.72 0.19 285);
-  --sidebar-primary-foreground: oklch(0.16 0.03 285);
-  --sidebar-accent: oklch(0.26 0.06 285);
-  --sidebar-accent-foreground: oklch(0.92 0.02 285);
-  --sidebar-border: oklch(0.38 0.07 285);
-  --sidebar-ring: oklch(0.65 0.17 285);
+  --ost-opp: oklch(0.25 0.015 55);
+  --ost-opp-border: oklch(0.38 0.015 55);
+  --ost-idea: oklch(0.17 0.012 55);
+  --ost-idea-border: oklch(0.30 0.015 55);
+  --ost-line: oklch(0.48 0.015 55);
+  --postit-bg: oklch(0.34 0.015 55);
+  --postit-border: oklch(0.46 0.015 55);
+  --postit-text: oklch(0.96 0.012 80);
+  --postit-sidebar: oklch(0.255 0.015 55);
+  --sidebar: oklch(0.19 0.014 55);
+  --sidebar-foreground: oklch(0.92 0.012 80);
+  --sidebar-primary: oklch(0.74 0.15 55);
+  --sidebar-primary-foreground: oklch(0.19 0.014 55);
+  --sidebar-accent: oklch(0.28 0.015 55);
+  --sidebar-accent-foreground: oklch(0.92 0.012 80);
+  --sidebar-border: oklch(0.31 0.014 55);
+  --sidebar-ring: oklch(0.74 0.15 55);
 }
 
 /* ── Light variant: gray (neutral, near-zero chroma, hue 270) ──────────── */
@@ -277,96 +280,47 @@ html.dark {
   --sidebar-ring: oklch(0.55 0.10 235);
 }
 
-/* ── Dark variant: gray (graphite, near-zero chroma, hue 270) ──────────── */
+/* ── Dark variant: gray (graphite: neutral charcoal, hue 270) ──────────── */
+/* The one lit hue in Graphite is the same orange lamp as Walnut's; dark text on it reads at 7.5:1. */
 .dark[data-dark-theme="gray"] {
-  --background: oklch(0.18 0.005 270);
-  --foreground: oklch(0.95 0.005 270);
-  --card: oklch(0.225 0.005 270);
-  --card-foreground: oklch(0.95 0.005 270);
-  --popover: oklch(0.215 0.005 270);
-  --popover-foreground: oklch(0.95 0.005 270);
-  /* The one lit hue in Graphite: a periwinkle on the greys' own 270 axis, at the highest chroma
-     sRGB holds at this lightness. Dark text on it reads at 7.4:1 (ui/DESIGN.md, Colour). */
-  --primary: oklch(0.72 0.14 272);
-  --primary-foreground: oklch(0.18 0.005 270);
-  --secondary: oklch(0.29 0.006 270);
-  --secondary-foreground: oklch(0.95 0.005 270);
-  --muted: oklch(0.275 0.005 270);
-  --muted-foreground: oklch(0.74 0.008 270);
-  --accent: oklch(0.36 0.008 270);
-  --accent-foreground: oklch(0.95 0.005 270);
+  --background: oklch(0.20 0.003 270);
+  --foreground: oklch(0.93 0.004 80);
+  --card: oklch(0.23 0.003 270);
+  --card-foreground: oklch(0.93 0.004 80);
+  --popover: oklch(0.23 0.003 270);
+  --popover-foreground: oklch(0.93 0.004 80);
+  --primary: oklch(0.74 0.15 55);
+  --primary-foreground: oklch(0.20 0.003 270);
+  --secondary: oklch(0.265 0.004 270);
+  --secondary-foreground: oklch(0.93 0.004 80);
+  --muted: oklch(0.26 0.004 270);
+  --muted-foreground: oklch(0.71 0.005 270);
+  --accent: oklch(0.29 0.004 270);
+  --accent-foreground: oklch(0.93 0.004 80);
   --destructive: oklch(0.704 0.191 22);
-  --border: oklch(0.42 0.006 270);
-  --input: oklch(0.34 0.006 270);
-  --ring: oklch(0.72 0.14 272);
+  --border: oklch(0.32 0.004 270);
+  --input: oklch(0.29 0.004 270);
+  --ring: oklch(0.74 0.15 55);
   --chart-1: oklch(0.78 0.06 270);
   --chart-2: oklch(0.72 0.12 220);
   --chart-3: oklch(0.74 0.10 175);
   --chart-4: oklch(0.74 0.13 90);
   --chart-5: oklch(0.72 0.14 320);
-  --ost-opp: oklch(0.225 0.005 270);
-  --ost-opp-border: oklch(0.42 0.006 270);
-  --ost-idea: oklch(0.18 0.005 270);
-  --ost-idea-border: oklch(0.34 0.006 270);
-  --ost-line: oklch(0.50 0.008 270);
-  --postit-bg: oklch(0.33 0.012 270);
-  --postit-border: oklch(0.46 0.018 270);
-  --postit-text: oklch(0.96 0.006 270);
-  --postit-sidebar: oklch(0.235 0.008 270);
-  --sidebar: oklch(0.16 0.005 270);
-  --sidebar-foreground: oklch(0.95 0.005 270);
-  --sidebar-primary: oklch(0.78 0.015 270);
-  --sidebar-primary-foreground: oklch(0.18 0.005 270);
-  --sidebar-accent: oklch(0.29 0.006 270);
-  --sidebar-accent-foreground: oklch(0.95 0.005 270);
-  --sidebar-border: oklch(0.42 0.006 270);
-  --sidebar-ring: oklch(0.74 0.04 270);
-}
-
-/* ── Dark variant: blue (pacific, hue 258) ─────────────────────────────── */
-.dark[data-dark-theme="blue"] {
-  --background: oklch(0.18 0.045 258);
-  --foreground: oklch(0.95 0.018 258);
-  --card: oklch(0.225 0.045 258);
-  --card-foreground: oklch(0.95 0.018 258);
-  --popover: oklch(0.215 0.045 258);
-  --popover-foreground: oklch(0.95 0.018 258);
-  /* The one lit hue in Pacific: a violet at hue 305, 47 degrees off the navy's 258 axis, 20 degrees
-     from the dark document hues 285 and 325 and 33 from Graphite's periwinkle (272), at chroma 0.15
-     inside sRGB. A blue on the navy's own hue read as more of the same. Dark text on it reads at
-     8.1:1 (ui/DESIGN.md, Colour). */
-  --primary: oklch(0.75 0.15 305);
-  --primary-foreground: oklch(0.17 0.045 258);
-  --secondary: oklch(0.29 0.06 258);
-  --secondary-foreground: oklch(0.95 0.018 258);
-  --muted: oklch(0.275 0.05 258);
-  --muted-foreground: oklch(0.76 0.04 258);
-  --accent: oklch(0.34 0.085 258);
-  --accent-foreground: oklch(0.95 0.018 258);
-  --destructive: oklch(0.704 0.191 22);
-  --border: oklch(0.42 0.06 258);
-  --input: oklch(0.34 0.05 258);
-  --ring: oklch(0.75 0.15 305);
-  --chart-1: oklch(0.78 0.135 258);
-  --chart-2: oklch(0.74 0.10 200);
-  --chart-3: oklch(0.78 0.13 78);
-  --chart-4: oklch(0.74 0.085 158);
-  --chart-5: oklch(0.72 0.18 22);
-  --ost-opp: oklch(0.225 0.045 258);
-  --ost-opp-border: oklch(0.42 0.06 258);
-  --ost-idea: oklch(0.18 0.04 258);
-  --ost-idea-border: oklch(0.34 0.05 258);
-  --ost-line: oklch(0.50 0.06 258);
-  --postit-bg: oklch(0.33 0.085 258);
-  --postit-border: oklch(0.46 0.11 258);
-  --postit-text: oklch(0.96 0.018 258);
-  --postit-sidebar: oklch(0.235 0.05 258);
-  --sidebar: oklch(0.16 0.04 258);
-  --sidebar-foreground: oklch(0.95 0.018 258);
-  --sidebar-primary: oklch(0.75 0.15 305);
-  --sidebar-primary-foreground: oklch(0.17 0.045 258);
-  --sidebar-accent: oklch(0.29 0.06 258);
-  --sidebar-accent-foreground: oklch(0.95 0.018 258);
-  --sidebar-border: oklch(0.42 0.06 258);
-  --sidebar-ring: oklch(0.75 0.15 305);
+  --ost-opp: oklch(0.23 0.003 270);
+  --ost-opp-border: oklch(0.42 0.004 270);
+  --ost-idea: oklch(0.18 0.003 270);
+  --ost-idea-border: oklch(0.34 0.004 270);
+  --ost-line: oklch(0.50 0.005 270);
+  --postit-bg: oklch(0.33 0.006 270);
+  --postit-border: oklch(0.46 0.008 270);
+  --postit-text: oklch(0.96 0.004 80);
+  --postit-sidebar: oklch(0.235 0.004 270);
+  --sidebar: oklch(0.20 0.003 270);
+  --sidebar-foreground: oklch(0.93 0.004 80);
+  --sidebar-primary: oklch(0.74 0.15 55);
+  --sidebar-primary-foreground: oklch(0.20 0.003 270);
+  --sidebar-accent: oklch(0.29 0.004 270);
+  --sidebar-accent-foreground: oklch(0.93 0.004 80);
+  --sidebar-border: oklch(0.32 0.004 270);
+  --sidebar-ring: oklch(0.74 0.15 55);
 }

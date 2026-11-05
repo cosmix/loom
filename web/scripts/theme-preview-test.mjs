@@ -16,8 +16,7 @@ try {
   await page.setContent(`<style>${css}</style><span class="theme-preview"></span>`);
   for (const [scheme, variant] of [
     ["light", "ledger"],
-    ["dark", "aubergine"],
-    ["dark", "blue"],
+    ["dark", "walnut"],
     ["dark", "gray"],
   ]) {
     const colors = await page.evaluate(
@@ -28,8 +27,7 @@ try {
         preview.classList.toggle("dark", scheme === "dark");
         root.dataset.lightTheme = preview.dataset.lightTheme =
           scheme === "light" ? variant : "ledger";
-        root.dataset.darkTheme = preview.dataset.darkTheme =
-          scheme === "dark" ? variant : "aubergine";
+        root.dataset.darkTheme = preview.dataset.darkTheme = scheme === "dark" ? variant : "walnut";
         const names = [
           "background",
           "card",

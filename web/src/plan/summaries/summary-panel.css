@@ -1,0 +1,357 @@
+/*
+ * The summary statistics (summary-panel.tsx): the token totals as two figure cards, the last
+ * rebuild row, the running rebuild's progress line, the compact rows of failures and claims.
+ * Unlayered `.sp-` rules: the panel is mounted in the settings dialog and `RebuildActivity` in
+ * the activity popover, both portaled out of `[data-loom-plan]`, so only the global tokens and
+ * design.css's :root scales apply. Colour is the foreground and its mixes with `--muted`: the
+ * bars carry no hue, so the two tone dots (last rebuild ok / failed) are the only colour.
+ */
+
+.sp-panel {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+  overflow-wrap: anywhere;
+}
+
+.sp-section {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sp-title {
+  margin: 0;
+  font-size: var(--type-ui);
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.sp-muted {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.sp-alert {
+  margin: 0;
+  color: var(--destructive);
+}
+
+.sp-mono {
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+}
+
+.sp-ids {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+}
+
+.sp-idle {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+/* ── The figure cards ─────────────────────────────────────────────────────── */
+
+/* Two cards beside each other once the panel is 480px wide, divided by one hairline; under that
+   they stack with the hairline between them. No box: the dialog is the one surface. */
+.sp-cards {
+  --sp-ramp-0: color-mix(in oklch, var(--foreground) 88%, var(--muted));
+  --sp-ramp-1: color-mix(in oklch, var(--foreground) 62%, var(--muted));
+  --sp-ramp-2: color-mix(in oklch, var(--foreground) 40%, var(--muted));
+  --sp-ramp-3: color-mix(in oklch, var(--foreground) 22%, var(--muted));
+  container-type: inline-size;
+  min-width: 0;
+}
+
+/* A container query cannot style its own container, so the grid is the container's child. */
+.sp-cards-grid {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.sp-card {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sp-card + .sp-card {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--hairline);
+}
+
+@container (min-width: 480px) {
+  .sp-cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sp-card + .sp-card {
+    padding-top: 0;
+    padding-inline-start: var(--space-4);
+    border-top: 0;
+    border-inline-start: 1px solid var(--hairline);
+  }
+}
+
+.sp-card-caption {
+  font-size: var(--type-ui);
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.sp-total {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.sp-total-figure {
+  font-family: var(--font-mono);
+  font-size: 1.75rem;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+
+.sp-total-unit {
+  font-size: var(--type-fine);
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.1em;
+  color: var(--muted-foreground);
+}
+
+.sp-unknown {
+  color: var(--muted-foreground);
+}
+
+/* The stacked bar: a muted track, the segments in the monochrome ramp, the tick over the track. */
+.sp-bar {
+  position: relative;
+  margin: var(--space-1) 0;
+}
+
+.sp-track {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--muted);
+}
+
+.sp-segment {
+  display: block;
+  flex: none;
+  height: 100%;
+}
+
+.sp-tick {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--foreground);
+  transform: translateX(-50%);
+}
+
+.sp-segment[data-ramp="0"],
+.sp-swatch[data-ramp="0"] {
+  background: var(--sp-ramp-0);
+}
+
+.sp-segment[data-ramp="1"],
+.sp-swatch[data-ramp="1"] {
+  background: var(--sp-ramp-1);
+}
+
+.sp-segment[data-ramp="2"],
+.sp-swatch[data-ramp="2"] {
+  background: var(--sp-ramp-2);
+}
+
+.sp-segment[data-ramp="3"],
+.sp-swatch[data-ramp="3"] {
+  background: var(--sp-ramp-3);
+}
+
+/* The legend: four labelled figures on one wrapping line, each with its swatch. */
+.sp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+
+.sp-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-inline-end: var(--space-1);
+  border-radius: 2px;
+  vertical-align: 0;
+}
+
+.sp-figure {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.sp-figure dt {
+  color: var(--muted-foreground);
+}
+
+.sp-figure dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+
+.sp-figure dd.sp-unknown {
+  color: var(--muted-foreground);
+}
+
+/* ── The last rebuild ─────────────────────────────────────────────────────── */
+
+.sp-last {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.sp-last-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  align-items: baseline;
+  margin: 0;
+}
+
+.sp-last-state {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.sp-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.sp-dot[data-state="ok"] {
+  background: var(--tone-completed);
+}
+
+.sp-dot[data-state="failed"] {
+  background: var(--tone-blocked);
+}
+
+/* The cost line: three labelled figures on one line, a middle dot between them. */
+.sp-cost {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+}
+
+.sp-cost .sp-figure + .sp-figure::before {
+  margin-inline-end: var(--space-1);
+  color: var(--muted-foreground);
+  content: "·";
+}
+
+/* ── The running rebuild ──────────────────────────────────────────────────── */
+
+.sp-running-head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.sp-pulse {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--foreground);
+  animation: sp-pulse 2s ease-in-out infinite;
+}
+
+@keyframes sp-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.sp-progress {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--muted);
+}
+
+.sp-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--foreground);
+  transition: width 300ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-pulse {
+    animation: none;
+  }
+
+  .sp-progress-fill {
+    transition: none;
+  }
+}
+
+/* ── Compact rows: failed rebuilds, terminal claims ───────────────────────── */
+
+/* `.plan-list` (design.css) draws the hairlines and the row height; the row's own parts here. */
+.sp-rows > li.sp-row {
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.sp-row-main {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sp-row-sub {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.sp-row-action {
+  flex: none;
+}

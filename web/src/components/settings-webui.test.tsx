@@ -51,11 +51,11 @@ afterEach(() => {
 });
 
 describe("dashboard settings", () => {
-  it("renders the dashboard heading and four theme buttons", async () => {
+  it("renders the dashboard heading and three theme buttons", async () => {
     renderAt("?settings=1", fakeClient().client);
 
     expect(await screen.findByText("dashboard", { selector: ".eyebrow" })).toBeTruthy();
-    expect(screen.getByRole("group", { name: "theme" }).querySelectorAll("button")).toHaveLength(4);
+    expect(screen.getByRole("group", { name: "theme" }).querySelectorAll("button")).toHaveLength(3);
   });
 
   it("renders the desktop notifications switch", () => {
