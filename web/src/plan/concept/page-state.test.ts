@@ -295,14 +295,10 @@ describe("resync and remount", () => {
     const store = createStore();
     store.set(serverInfoAtom, server);
     await loadConceptPage(store, key);
-    expect(store.get(openRunsAtom(key))).toEqual([
-      {
-        level: 1,
-        sentenceId: "s2",
-        restsOn: [{ path: SECTION_01, anchor: "stages" }],
-        parent: null,
-      },
-    ]);
+    const runs = store.get(openRunsAtom(key));
+    expect(runs).toMatchObject([{ level: 1, sentenceId: "s2", parent: null }]);
+    // s2 and s3 share `stages`: the run moved onto that fragment, so it rests on both sections.
+    expect(runs[0]?.restsOn.map((r) => r.anchor)).toEqual(["stages", "intent"]);
     expect(store.get(notesAtom(key))).toEqual([
       {
         paragraphOf: "",

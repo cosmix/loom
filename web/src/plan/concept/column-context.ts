@@ -3,7 +3,7 @@ import { createContext, useContext } from "react";
 import { parsePageKey } from "@/plan/api/page-key";
 import type { ConceptPage, Mark, Sentence, SourceAnchor } from "@/plan/api/schema-concept";
 
-import { anchorKey, type CitedLookup } from "./open-state";
+import { anchorKey, type CitedLookup } from "./cited-lookup";
 import type { ColumnTarget, FoldNote, OpenRun } from "./types";
 
 /**
@@ -90,13 +90,6 @@ export function sentenceCitations(sentence: Sentence) {
 /** Whether a sentence is a button: it cites something it can open. */
 export function canOpen(sentence: Sentence): boolean {
   return sentence.citations.length > 0;
-}
-
-/** The open run of a sentence at its site, if any. */
-export function runAt(open: OpenRun[], site: SentenceSite): OpenRun | undefined {
-  return open.find(
-    (run) => run.sentenceId === site.sentence.id && run.parent === site.parent && run.level < 2,
-  );
 }
 
 /** Engineering summary pages and standalone plans share the `plans/<slug>` summary id. */

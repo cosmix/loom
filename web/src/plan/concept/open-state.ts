@@ -1,15 +1,12 @@
 import type { ConceptPage, Sentence, SourceAnchor } from "@/plan/api/schema-concept";
+
+import { removedSectionNote, rewrittenNote } from "./carry-notes";
+import { anchorKey, type CitedLookup } from "./cited-lookup";
+import { runSentences } from "./fragments";
 import type { FoldNote, OpenRun, SourceAnchorRef } from "./types";
 
+export { anchorKey, type CitedLookup } from "./cited-lookup";
 export type { FoldNote, OpenRun, SourceAnchorRef } from "./types";
-
-/**
- * Resolves a sentence citation (`{ summary, id }`) to the cited sentence of another loaded
- * page. An overview's level-1 sentences live on the summary pages it cites, so carrying a
- * nested level-1 run needs their `rests_on`; without a lookup the run keeps its id when the
- * parent still cites it.
- */
-export type CitedLookup = (summary: string, id: string) => Sentence | undefined;
 
 export type CarryResult = { open: OpenRun[]; notes: FoldNote[] };
 
@@ -42,33 +39,9 @@ export function pageSentences(page: ConceptPage): Sentence[] {
   return page.blocks.flatMap((block) => (block.kind === "paragraph" ? block.sentences : []));
 }
 
-export function anchorKey(anchor: SourceAnchor): string {
-  return `${anchor.path}#${anchor.anchor}`;
-}
-
-function fileName(path: string): string {
-  return path.slice(path.lastIndexOf("/") + 1);
-}
-
-function titleOf(anchor: SourceAnchorRef): string {
-  return anchor.title ?? anchor.anchor;
-}
-
-/** "Section Port was removed from section_02.md" (section 05, "What stays open"). */
-export function removedSectionNote(anchor: SourceAnchorRef, paragraphOf: string): FoldNote {
-  const text = `Section ${titleOf(anchor)} was removed from ${fileName(anchor.path)}`;
-  return { paragraphOf, text, path: anchor.path };
-}
-
-/** "This summary was rewritten and no longer draws on Port", named for the first anchor. */
-export function rewrittenNote(
-  anchor: SourceAnchorRef | undefined,
-  paragraphOf: string,
-  fallbackPath: string,
-): FoldNote {
-  if (!anchor) return { paragraphOf, text: "This summary was rewritten", path: fallbackPath };
-  const text = `This summary was rewritten and no longer draws on ${titleOf(anchor)}`;
-  return { paragraphOf, text, path: anchor.path };
+/** The sentences a citation can name on this page: its own, then the detail of a two-level plan. */
+export function citableSentences(page: ConceptPage): Sentence[] {
+  return [...pageSentences(page), ...(page.detail ?? [])];
 }
 
 function keysOf(anchors: SourceAnchor[]): Set<string> {
@@ -197,16 +170,25 @@ function carryTop(ctx: Context, run: OpenRun): OpenRun | null {
   return { level: run.level, sentenceId: picked.id, restsOn, parent: null };
 }
 
+/**
+ * What the new parent shows when open, merged as the column merges it: a fragment is one
+ * candidate with its lead's id and the union of its members' anchors, so a run opened on a
+ * fragment keeps the lead id the reading order lists. An unresolved entry keeps the run's own
+ * anchors when it is the run's sentence.
+ */
+function nestedCandidates(ctx: Context, run: OpenRun, parent: Sentence): Candidate[] {
+  const lookup: CitedLookup = ctx.cited ?? (() => undefined);
+  return runSentences(parent, lookup).map(({ citation, sentence }) => ({
+    id: citation.id,
+    restsOn: sentence?.rests_on ?? (citation.id === run.sentenceId ? run.restsOn : []),
+  }));
+}
+
 /** A level-1 run inside a level-0 run: candidates are the cited sentences of the new parent. */
 function carryNested(ctx: Context, run: OpenRun, parent: OpenRun): OpenRun | null {
   const index = ctx.topIndex.get(parent.sentenceId);
   const parentSentence = index === undefined ? undefined : ctx.top[index];
-  const candidates = (parentSentence?.citations ?? []).flatMap((citation) => {
-    if (citation.kind !== "sentence") return [];
-    const cited = ctx.cited?.(citation.summary, citation.id);
-    const fallback = citation.id === run.sentenceId ? run.restsOn : [];
-    return [{ id: citation.id, restsOn: cited?.rests_on ?? fallback }];
-  });
+  const candidates = parentSentence ? nestedCandidates(ctx, run, parentSentence) : [];
   const picked = pick(run, candidates);
   if (!picked) {
     ctx.notes.push(rewrittenNote(run.restsOn[0], parent.sentenceId, ctx.fallbackPath));

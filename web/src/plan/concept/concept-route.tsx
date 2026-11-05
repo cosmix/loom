@@ -29,7 +29,7 @@ import { summaryIdOfKey } from "./column-context";
 import { foldedWith } from "./column-model";
 import { DocumentKey } from "./document-key";
 import { ConceptNotFound, EmptyStates } from "./empty-states";
-import { pageSentences } from "./open-state";
+import { citableSentences } from "./open-state";
 import { hasOpenable } from "./open-all";
 import { OpenAllButton, PageHeading } from "./page-heading";
 import {
@@ -166,7 +166,7 @@ function sentenceResolver(store: Store, page: ConceptPage, pageKey: string): Sen
   return (summary, id) => {
     const own = summary === summaryIdOfKey(pageKey);
     const source = own ? page : store.get(conceptPageAtom(pageKeyOfSummary(page, summary))).page;
-    const sentence = source ? pageSentences(source).find((item) => item.id === id) : undefined;
+    const sentence = source ? citableSentences(source).find((item) => item.id === id) : undefined;
     return source && sentence ? { sentence, hash: source.file_hash } : undefined;
   };
 }

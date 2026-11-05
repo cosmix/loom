@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import type { ConceptPage, Sentence } from "@/plan/api/schema-concept";
+
 import { sentenceKey } from "./column-context";
-import { movedRun, survivorKey } from "./column-model";
+import { findSite, movedRun, passagesRecord, survivorKey } from "./column-model";
+import { columnPage } from "./fragments";
+import type { CitedLookup } from "./open-state";
 import type { ColumnTarget, OpenRun } from "./types";
 
 const INTRO = { path: "doc/a.md", anchor: "intro" };
@@ -73,5 +77,64 @@ describe("survivorKey", () => {
   it("falls back to the target nearest the old position when nothing moved", () => {
     const next = { order: [top("o2"), top("r")], open: [] };
     expect(survivorKey(prev, next, sentenceKey("o", "x1"))).toBe(sentenceKey(null, "r"));
+  });
+});
+
+/** A sentence that cites and rests on the sections `anchors` of doc/a.md. */
+const resting = (id: string, anchors: string[]): Sentence => ({
+  id,
+  text: id,
+  marks: [],
+  citations: anchors.map((anchor) => ({ kind: "source" as const, path: "doc/a.md", anchor })),
+  rests_on: anchors.map((anchor) => ({ path: "doc/a.md", anchor })),
+  plans: [],
+});
+
+const citing = (id: string, cited: string[]): Sentence => ({
+  ...resting(id, []),
+  citations: cited.map((target) => ({ kind: "sentence" as const, summary: "s", id: target })),
+});
+
+function pageOf(sentences: Sentence[]): ConceptPage {
+  return {
+    feature: "demo",
+    key: "demo/product/section_01",
+    title: "Planning",
+    path: null,
+    file_hash: null,
+    colour: null,
+    state: null,
+    plan_state: null,
+    last_pressure: null,
+    key_chips: [],
+    blocks: [{ kind: "paragraph", sentences }],
+    unlisted: [],
+    implements: null,
+    implemented_by: [],
+    empty: null,
+    building: null,
+    estimate: null,
+  };
+}
+
+describe("merged fragments", () => {
+  const view = columnPage(pageOf([resting("a", ["one"]), resting("b", ["one", "two"])]));
+  const none: CitedLookup = () => undefined;
+
+  it("gives an open fragment the union of its members' passages, each once", () => {
+    expect(passagesRecord(view, [run("a")], none)).toEqual({ a: ["doc/a.md#one", "doc/a.md#two"] });
+  });
+
+  it("opens a fragment when the run was stored under one of its members", () => {
+    expect(passagesRecord(view, [run("b")], none)).toEqual({ a: ["doc/a.md#one", "doc/a.md#two"] });
+  });
+
+  it("finds a cited fragment's site as the merged sentence", () => {
+    const cited: Record<string, Sentence> = { x: resting("x", ["one"]), y: resting("y", ["one"]) };
+    const lookup: CitedLookup = (_summary, id) => cited[id];
+    const merged = columnPage(pageOf([citing("o", ["x", "y"])]));
+    const site = findSite(merged, lookup, "demo/product/section_01", "x", "o");
+    expect(site?.sentence.text).toBe("x y");
+    expect(findSite(merged, lookup, "demo/product/section_01", "y", "o")).toBeNull();
   });
 });
