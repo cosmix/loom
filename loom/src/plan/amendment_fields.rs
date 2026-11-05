@@ -149,7 +149,11 @@ pub(super) fn sync_stage_from_definition(
     def: &StageDefinition,
     field: AmendmentField,
 ) {
-    if !stage_field_matches(stage, def, field) {
+    // Clearing the commit forces an unfinished stage to verify again. A merged
+    // stage cannot re-verify, and the scheduler reads merged-without-commit as
+    // an unverifiable dependency, so its commit stays.
+    let landed = stage.merged || stage.merge_assumed;
+    if !landed && !stage_field_matches(stage, def, field) {
         stage.completed_commit = None;
     }
     match field {
