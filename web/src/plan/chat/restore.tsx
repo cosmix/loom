@@ -17,6 +17,7 @@ import { fetchTurnDiff } from "@/plan/files/api";
 import { docChangedAtom } from "@/plan/files/atoms";
 import { postRestore, type RestoreResponse } from "@/plan/review/api";
 import { authorBlockReasonAtom, connectionEpochAtom, isHolderAtom } from "@/plan/state/atoms";
+import { BusyText } from "@/plan/ui/busy-text";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 
 import { snapshotAtom } from "./model";
@@ -158,7 +159,7 @@ function useRestore(props: Props, files: ModifiedFile[], available: boolean) {
   const [error, setError] = useState<string | null>(null);
   const { changed, applyChanges, openMerge } = useMerge(props, files, setError);
   const block = useAtomValue(authorBlockReasonAtom);
-  const reason = block ?? (pending ? "Restoring…" : null);
+  const reason = block ?? (pending ? <BusyText>Restoring…</BusyText> : null);
   async function apply(results: FileResult[]) {
     setInvalid(results.filter((file): file is Invalid => file.result === "invalid"));
     setNotes(

@@ -1,0 +1,73 @@
+/* Notices and text actions on the panel: a failure notice, the elsewhere line, a refused offer,
+ * the link-styled button inside a line. Imported by chat-surface.css; see its header for why
+ * these rules are unlayered.
+ */
+
+/* A failure notice: a toned glyph, a 600 title, body in --foreground. No box. */
+.chat-notice {
+  display: grid;
+  gap: var(--space-1);
+  max-width: 48ch;
+  padding-block: var(--space-1) var(--space-2);
+  color: var(--foreground);
+  font-size: var(--type-body);
+  font-weight: 400;
+  line-height: var(--leading-body);
+}
+
+.chat-notice-title {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  font-weight: 600;
+}
+
+.chat-notice[data-tone="error"] .chat-notice-glyph {
+  color: var(--tone-blocked);
+}
+
+.chat-notice p,
+.chat-notice ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-notice li + li {
+  margin-block-start: var(--space-2);
+}
+
+.chat-elsewhere,
+.chat-offer-error {
+  margin: 0;
+  padding: 0 var(--chat-gutter) var(--space-2);
+  font-size: var(--type-body);
+}
+
+.chat-offer-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.chat-elsewhere a {
+  border-radius: 4px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* A text action inside a line (Show, Hide, Dismiss, Show all): underlined on hover only. */
+.chat-link-button {
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-underline-offset: 2px;
+}
+
+.chat-link-button:hover {
+  text-decoration: underline;
+}

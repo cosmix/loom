@@ -51,6 +51,20 @@ it("every state row", () => {
   }
 });
 
+it("every busy state draws the roundel, hidden from assistive technology", () => {
+  for (const state of ["starting", "working", "ending"] as const) {
+    const { container } = harness(session({ state })).show();
+    const glyph = container.querySelector(".chat-state-glyph");
+    expect(glyph?.getAttribute("aria-hidden"), state).toBe("true");
+    const roundel = glyph?.querySelector(".aurora-roundel");
+    expect(roundel?.getAttribute("data-busy"), state).toBe("true");
+    cleanup();
+  }
+  const { container } = harness(session({ state: "idle" })).show();
+  expect(container.querySelector(".aurora-roundel")).toBeNull();
+  expect(container.querySelector(".chat-led")?.getAttribute("aria-hidden")).toBe("true");
+});
+
 it("none draws no workflow offer; New chat is the panel head's", () => {
   const h = harness(null);
   const primary = {

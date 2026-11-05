@@ -121,5 +121,5 @@ export const PRESSURE_SCENES: readonly PlannerHelpScene[] = [
 export const PRESSURE_TIPS: readonly string[] = [
   "Each pressure round runs two reviews in parallel before an address step edits the plan and its briefs.",
   "A finished run summarizes the edited files and links to the diff of the changes.",
-  "Starting a pressure test ends an open authoring chat with its closing write.",
+  "A test starts from the Pressure test button on a written plan's page or from the spine's next step, and it ends an open authoring chat with its closing write.",
 ];

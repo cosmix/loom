@@ -81,6 +81,11 @@ it.each(PRESSURE_SCENES)("keeps $title free of network activity", async ({ Scene
   expect(globalThis.WebSocket).not.toHaveBeenCalled();
 });
 
+it("says where a pressure test starts", () => {
+  expect(PRESSURE_TIPS.join(" ")).toContain("Pressure test button on a written plan's page");
+  expect(PRESSURE_TIPS.join(" ")).toContain("spine's next step");
+});
+
 it("provides one to three single sentence pressure facts", () => {
   expect(PRESSURE_TIPS.length).toBeGreaterThanOrEqual(1);
   expect(PRESSURE_TIPS.length).toBeLessThanOrEqual(3);

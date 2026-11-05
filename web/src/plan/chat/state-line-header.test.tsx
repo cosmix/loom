@@ -54,3 +54,16 @@ it("holder and watcher count with names", () => {
   act(() => h.store.set(youAtom, { public_id: "viewer1", name: "Alex" }));
   expect(container.textContent).toContain("Read-only · Dana is authoring");
 });
+
+it("the run line is three segments on one line: the name gives way, the count drops last", () => {
+  const { container } = harness().header();
+  const header = container.querySelector(".chat-run-header")!;
+  const segments = [...header.querySelectorAll(":scope > .chat-run-seg")];
+  expect(segments).toHaveLength(3);
+  expect(segments[0].hasAttribute("data-cut")).toBe(true);
+  expect(segments[0].textContent).toContain("authoring");
+  expect(segments[1].textContent).toBe("· 0 watching");
+  expect(segments[2].classList.contains("chat-run-tokens")).toBe(true);
+  expect(segments[2].textContent).toMatch(/^· \S+ tokens$/);
+  expect(header.classList.contains("chat-run-line")).toBe(true);
+});

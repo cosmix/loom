@@ -14,7 +14,7 @@
   border-block: 1px solid var(--hairline);
   background: var(--muted);
   color: var(--foreground);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
   line-height: var(--leading-body);
 }
 
@@ -49,7 +49,7 @@
   border-radius: var(--corner-control);
   background: var(--background);
   color: var(--foreground);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
 }
 
 .chat-decision-input:focus-visible {
@@ -63,7 +63,7 @@
   display: grid;
   gap: var(--space-2);
   color: var(--muted-foreground);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
   font-weight: 400;
   line-height: var(--leading-ui);
 }
@@ -89,11 +89,29 @@
   min-width: 0;
   color: var(--foreground);
   font-family: var(--font-mono);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
   font-weight: 400;
   overflow-wrap: anywhere;
 }
 
 .chat-file-counts {
   color: var(--muted-foreground);
+  font-size: var(--type-ui);
+}
+
+/* The decision's label and its "1 of N": secondary text in the band. */
+.chat-decision-label {
+  display: block;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+}
+
+/* An answered request, kept as one muted line of history. */
+.chat-decision-outcome {
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
 }

@@ -310,8 +310,9 @@ it("Settings shows the summary totals", async () => {
   const dialog = screen.getByRole("dialog", { name: "Settings" });
   expect(within(dialog).getByRole("heading", { name: "Summaries" })).toBeTruthy();
 
-  expect(await within(dialog).findByRole("region", { name: "Token totals" })).toBeTruthy();
-  expect(within(dialog).getByRole("img", { name: /^claude 5h window/ })).toBeTruthy();
+  const totals = await within(dialog).findByRole("region", { name: "Token totals" });
+  expect(within(totals).getByText("12,400")).toBeTruthy();
+  expect(within(dialog).getByText("Rebuild token totals")).toBeTruthy();
 });
 
 it("Settings keeps the heading outline: the panel's h3 sections sit under an h2 Summaries", async () => {

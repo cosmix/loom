@@ -108,7 +108,7 @@ it("lock glyph for locked and knowledge docs", () => {
   }
 });
 
-it.each([null, 3])("file chips show the kind's DocMark with concept colour %s", (colour) => {
+it.each([null, 3])("file chips show the kind's bare mark in the document's hue %s", (colour) => {
   const store = setup();
   store.set(
     treeAtom,
@@ -130,9 +130,10 @@ it.each([null, 3])("file chips show the kind's DocMark with concept colour %s", 
   const mark = tray.querySelector(".lucide-book-open")?.parentElement;
   expect(mark).toBeTruthy();
   expect(mark?.getAttribute("aria-hidden")).toBe("true");
-  expect((colour === null ? mark : mark?.parentElement)?.getAttribute("style")).toContain(
-    `var(--doc-${colour ?? 2})`,
-  );
+  // The hue colours the glyph itself; no tile stands behind it (DESIGN.md, one surface level).
+  expect(mark?.className).toBe("chat-chip-glyph");
+  expect(mark?.getAttribute("style")).toContain(`var(--doc-${colour ?? 2})`);
+  expect(mark?.getAttribute("style")).not.toContain("background");
 });
 
 it("sent chips from model attachments", () => {

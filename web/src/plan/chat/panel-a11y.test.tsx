@@ -61,12 +61,11 @@ function concluded(state: "idle" | "ended") {
   return { session: { ...session!, state, failure: null }, turns: [], queue: [], previous: null };
 }
 
-it("a new permission request is announced with the panel collapsed or the sheet closed", async () => {
+it("a new permission request is announced with the side panel shown or the sheet closed", async () => {
   const store = storeFor();
   store.set(snapshotAtom, { ...permissionSnapshot(), session: null, turns: [] });
   mount(store);
-  fireEvent.click(screen.getByRole("button", { name: "Collapse chat" }));
-  expect(screen.queryByRole("log")).toBeNull();
+  expect(screen.queryByRole("button", { name: /Collapse chat|Expand chat/ })).toBeNull();
   act(() => store.set(snapshotAtom, permissionSnapshot()));
   await waitFor(() => expect(announced("alert")).toBe("Needs a decision: Bash"));
   cleanup();
@@ -117,10 +116,9 @@ it("moving the announcements between the page and the sheet repeats and drops no
   expect(screen.getByRole("dialog").contains(alerts()[0])).toBe(true);
 });
 
-it("a failed or ended chat is announced with the panel collapsed", () => {
+it("a failed or ended chat is announced with the side panel shown", () => {
   const store = storeFor();
   mount(store);
-  fireEvent.click(screen.getByRole("button", { name: "Collapse chat" }));
   const { session } = chatSnapshotSchema.parse(fixture);
   const set = (state: "failed" | "ended") =>
     act(() =>

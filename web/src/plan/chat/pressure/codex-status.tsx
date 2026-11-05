@@ -68,7 +68,7 @@ export function CodexStatusItem({
         )}
       </div>
       {running && (
-        <span className="font-mono text-[11.5px] text-muted-foreground">
+        <span className="font-mono text-xs text-muted-foreground">
           <LiveElapsed startMs={startedMs} />
         </span>
       )}

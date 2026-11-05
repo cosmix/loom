@@ -200,9 +200,7 @@ it("panel shows running rebuild, last cost, totals and quota", async () => {
   expect(all).toMatch(/7.day|week/i);
   expect(all).toMatch(new RegExp(figure(12400)));
   expect(all).toMatch(new RegExp(figure(74600)));
-  expect(screen.getByRole("img", { name: /^claude 5h window 48% used/ })).toBeTruthy();
-  expect(screen.getByRole("img", { name: /^claude 7d window 31% used/ })).toBeTruthy();
-  expect(screen.getByRole("img", { name: /^codex 7d window 63% used/ })).toBeTruthy();
+  expect(screen.queryByRole("img", { name: /window .*% used/ })).toBeNull();
   cleanup();
 
   const last = { ...panelFixture.last, tokens: { fresh_input: 1840, cache_read: 9200 } };

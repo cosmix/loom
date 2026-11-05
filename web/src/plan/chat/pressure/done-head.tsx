@@ -10,7 +10,7 @@ import { runEndMs } from "./steps";
 /** The plan's file name on a line of its own, under a run head's top row. */
 export function RunFileName({ plan }: { plan: string }): JSX.Element {
   return (
-    <div className="font-mono text-[11.5px] break-all">
+    <div className="font-mono text-xs break-all">
       <Untrusted text={plan.split("/").at(-1) ?? plan} />
     </div>
   );
@@ -29,8 +29,8 @@ export function DoneHead({ run }: { run: PressureRunView }): JSX.Element {
     <div className="chat-run-header grid gap-2 border-b border-hairline px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <CircleCheck aria-hidden="true" className="size-4 shrink-0 text-(--tone-completed)" />
-        <span className="text-[13.5px] font-bold text-foreground">Pressure test finished</span>
-        <span className="inline-flex h-5 items-center gap-1 rounded-md bg-muted px-1.5 text-[11.5px] font-medium">
+        <span className="text-[13px] font-bold text-foreground">Pressure test finished</span>
+        <span className="inline-flex h-5 items-center gap-1 rounded-md bg-muted px-1.5 text-xs font-medium">
           <span>{plural(run.rounds, "round")}</span>
           <span aria-hidden="true">·</span>
           <span>{formatElapsed(seconds)}</span>

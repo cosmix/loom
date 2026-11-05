@@ -50,7 +50,7 @@ const HOLD_NOTE =
 function DraftKept() {
   const draft = useAtomValue(draftAtom);
   if (!draft.text && draft.attachments.length === 0) return null;
-  return <p className="text-[13px] text-muted-foreground">Your draft is kept</p>;
+  return <p className="chat-composer-note">Your draft is kept</p>;
 }
 
 /** The banner carries the server's message and fix; this line names the state once. */
@@ -59,7 +59,7 @@ function ReadOnlyLine() {
   const serverReadOnly = !!useAtomValue(serverInfoAtom)?.read_only.length;
   return (
     <div>
-      <p className="text-[13px] text-muted-foreground">
+      <p className="chat-composer-note">
         {holder && !serverReadOnly ? (
           <>
             Read-only · <Untrusted text={holder.name} /> is authoring
@@ -99,11 +99,11 @@ function StorageNotes() {
   return (
     <>
       {(localFull || globalFull) && (
-        <p className="text-[13px] text-muted-foreground">
+        <p className="chat-composer-note">
           Unsaved text is not being kept: browser storage is full
         </p>
       )}
-      {firstHold && <p className="text-[13px] text-muted-foreground">{HOLD_NOTE}</p>}
+      {firstHold && <p className="chat-composer-note">{HOLD_NOTE}</p>}
     </>
   );
 }
@@ -189,10 +189,42 @@ function ComposerBox({ children }: { children: ReactNode }) {
       {children}
       {dragging && (
         <p className="chat-drop-target">
-          <Paperclip size={15} aria-hidden="true" />
+          <Paperclip size={16} aria-hidden="true" />
           Drop to attach
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * The action row under the box: the paperclip at the start; New chat (after a concluded chat),
+ * Stop (while a turn runs; never for a pressure run, which stops from its own head) and Send
+ * together at the end, Send last. Send stays enabled while a turn runs: a message sent then is
+ * queued.
+ */
+function ComposerActions({
+  afterConcluded,
+  reason,
+  send,
+}: {
+  afterConcluded: boolean;
+  reason: string | null;
+  send: () => Promise<void>;
+}) {
+  const session = useAtomValue(sessionAtom);
+  return (
+    <div className="chat-composer-actions">
+      <AttachDocument />
+      <div className="chat-composer-end">
+        {afterConcluded && <NewChatBesideBox />}
+        {session?.kind !== "pressure" && <StopControl />}
+        <div className="chat-composer-send">
+          <DisabledReason reason={reason} onClick={() => void send()}>
+            Send
+          </DisabledReason>
+        </div>
+      </div>
     </div>
   );
 }
@@ -210,22 +242,14 @@ function ComposerInput({ afterConcluded }: { afterConcluded: boolean }) {
       <ComposerBox>
         <MessageBox reason={reason} send={send} describedBy={describedBy || undefined} />
       </ComposerBox>
-      <div className="chat-composer-actions">
-        <AttachDocument />
-        {afterConcluded && <NewChatBesideBox />}
-        <div className="chat-composer-send">
-          <DisabledReason reason={reason} onClick={() => void send()}>
-            Send
-          </DisabledReason>
-        </div>
-      </div>
+      <ComposerActions afterConcluded={afterConcluded} reason={reason} send={send} />
       {afterConcluded && (
         <p id={noteId} className="plan-fine">
           Sending starts a new chat
         </p>
       )}
       {error && (
-        <p id={id} role="status" className="text-[13px] text-muted-foreground">
+        <p id={id} role="status" className="chat-composer-status">
           <Untrusted text={error} />
         </p>
       )}
@@ -250,7 +274,7 @@ function UnconfirmedSends({
   const sends = useAtomValue(composerUnconfirmedAtom);
   const connection = useAtomValue(connectionAtom);
   return (
-    <div className="max-h-24 overflow-y-auto text-[13px]">
+    <div className="chat-unconfirmed">
       {sends.map((item) => (
         <div key={item.client_id}>
           <p>
@@ -318,7 +342,6 @@ export function ComposerArea() {
   const authoring = useAtomValue(authoringAtom);
   const server = useAtomValue(serverInfoAtom);
   const shown = useAtomValue(shownSessionAtom);
-  const session = useAtomValue(sessionAtom);
   const composeAfter = useAtomValue(composeAfterAtom);
   const viewer = !!server?.read_only.length || (!canAuthor && !!authoring?.holder);
   const concluded = shown !== null && (shown.state === "ended" || shown.state === "failed");
@@ -351,7 +374,6 @@ export function ComposerArea() {
       ) : (
         <ComposerInput afterConcluded={concluded} />
       )}
-      {!server?.read_only.length && session?.kind !== "pressure" && <StopControl />}
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider, createStore } from "jotai";
-import { expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router";
+import { describe, expect, it, vi } from "vitest";
 
+import roundelCss from "@/aurora-ui/feedback/busy-roundel.css?raw";
 import fixture from "@/plan/api/fixtures/chat-snapshot.json";
 import hello from "@/plan/api/fixtures/hello.json";
 import { offerViewSchema } from "@/plan/api/schema";
@@ -30,7 +32,7 @@ import {
 } from "./panel-test-kit";
 import { useSuggestionFeed } from "./suggestion-cards";
 import chatCss from "./chat.css?raw";
-import { panelCollapsedAtom, panelWidthAtom } from "./prefs";
+import { panelWidthAtom } from "./prefs";
 import { chatSheetOpenAtom } from "./sheet-state";
 import { storageKey } from "./storage";
 
@@ -43,7 +45,9 @@ vi.mock("./start-chat", () => ({
   StartingBrief: () => <div>Starting brief</div>,
 }));
 vi.mock("./end-chat", () => ({
-  EndChatMenuItem: () => <button>End chat</button>,
+  EndChatMenuItem: ({ onEnded }: { onEnded?: () => void }) => (
+    <button onClick={onEnded}>End chat</button>
+  ),
   useCanEndChat: vi.fn(() => true),
 }));
 vi.mock("./suggestion-cards", async (original) => ({
@@ -114,30 +118,18 @@ it("separator arrow keys resize", () => {
   expect(store.get(panelWidthAtom)).toBe(40);
 });
 
-it("collapse rail badge", () => {
+it("the panel has no collapse: a stored collapsed flag is ignored and no rail or toggle draws", () => {
   const store = storeFor();
+  const key = store.get(serverInfoAtom)!.project_key;
+  localStorage.setItem(storageKey(key, "panel-collapsed"), "true");
   store.set(snapshotAtom, permissionSnapshot());
   mount(store);
-  fireEvent.click(screen.getByRole("button", { name: "Collapse chat" }));
-  const rail = screen.getByRole("complementary", { name: "Chat" });
-  expect(rail.style.width).toBe("2.5rem");
-  const expand = within(rail).getByRole("button", { name: "Expand chat, 1 decision waiting" });
-  expect(expand.textContent).toContain("1");
-  expect(screen.queryByRole("log")).toBeNull();
-  fireEvent.click(expand);
+  const panel = screen.getByRole("complementary", { name: "Chat" });
+  expect(panel.style.width).toBe("21.25rem");
   expect(screen.getByRole("log")).toBeTruthy();
-});
-
-it("collapsed flag persists", () => {
-  const { store, unmount } = mount();
-  fireEvent.click(screen.getByRole("button", { name: "Collapse chat" }));
-  const server = store.get(serverInfoAtom)!;
-  expect(localStorage.getItem(storageKey(server.project_key, "panel-collapsed"))).toBe("true");
-  unmount();
-  const next = createStore();
-  next.set(serverInfoAtom, server);
-  mount(next);
-  expect(screen.getByRole("button", { name: "Expand chat" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Collapse chat|Expand chat/ })).toBeNull();
+  // The sheet's Close chat is the only window control; the side panel has none.
+  expect(within(panel).queryByRole("button", { name: "Close chat" })).toBeNull();
 });
 
 it("sheet below lg", () => {
@@ -177,7 +169,8 @@ it("adding a chip opens the chat sheet and holds the attachment", () => {
 });
 
 it("reduced motion stops the roundel", () => {
-  expect(chatCss).toMatch(
+  // The roundel's own stylesheet owns this; the panel adds no second rule for it.
+  expect(roundelCss).toMatch(
     /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*\.aurora-roundel[\s\S]*animation:\s*none/,
   );
 });
@@ -233,10 +226,6 @@ it("two pending permissions name both tools and count 2", () => {
   store.set(snapshotAtom, permissionSnapshot(2));
   mount(store);
   expect(screen.getAllByText("Needs 2 decisions: Bash, Edit").length).toBeGreaterThan(0);
-  fireEvent.click(screen.getByRole("button", { name: "Collapse chat" }));
-  expect(
-    screen.getByRole("button", { name: "Expand chat, 2 decisions waiting" }).textContent,
-  ).toContain("2");
   cleanup();
   media(false);
   mount(store);
@@ -245,15 +234,33 @@ it("two pending permissions name both tools and count 2", () => {
   ).toContain("2");
 });
 
-it("compact header keeps the chat button; changed-since lives in the activity popover", () => {
+it.each([
+  ["/f/demo", true],
+  ["/", false],
+  ["/new", false],
+])("the header's chat button at %s below the desktop width: %s", (path, shown) => {
   media(false);
   render(
     <Provider store={storeFor()}>
-      <HeaderExtras compact />
+      <MemoryRouter initialEntries={[path]}>
+        <HeaderExtras />
+      </MemoryRouter>
     </Provider>,
   );
-  expect(screen.getByRole("button", { name: "Open chat" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Open chat" }) !== null).toBe(shown);
   expect(screen.queryByRole("button", { name: "Changed since" })).toBeNull();
+});
+
+it("the header shows no chat button while the side panel is shown", () => {
+  media(true);
+  render(
+    <Provider store={storeFor()}>
+      <MemoryRouter initialEntries={["/f/demo"]}>
+        <HeaderExtras />
+      </MemoryRouter>
+    </Provider>,
+  );
+  expect(screen.queryByRole("button", { name: /^Open chat/ })).toBeNull();
 });
 
 it("below lg with the sheet closed, an OfferButton is a button", async () => {
@@ -316,7 +323,6 @@ it("a refused offer start shows a dismissible alert inside the panel until the n
   await start();
   const alert = within(screen.getByRole("complementary", { name: "Chat" })).getByRole("alert");
   expect(alert.textContent).toContain("Ada started a chat first");
-  expect(store.get(panelCollapsedAtom)).toBe(false);
   fireEvent.click(within(alert).getByRole("button", { name: "Dismiss" }));
   expect(screen.queryByRole("alert")).toBeNull();
   vi.mocked(startChat).mockRejectedValueOnce(new Error("Chat already running"));
@@ -336,30 +342,55 @@ it("the Chat menu renders only when it has an item", () => {
   vi.mocked(useCanEndChat).mockReturnValue(true);
 });
 
-it("the button name carries the session state", () => {
+describe("the Chat menu", () => {
+  const open = () => {
+    mount();
+    const menu = screen.getByLabelText("Chat menu").closest("details")!;
+    menu.open = true;
+    return menu;
+  };
+
+  it("closes on Escape and returns focus to its summary", () => {
+    const menu = open();
+    const summary = screen.getByLabelText("Chat menu");
+    expect(menu.open).toBe(true);
+    fireEvent.keyDown(screen.getByRole("button", { name: "End chat" }), { key: "Escape" });
+    expect(menu.open).toBe(false);
+    expect(document.activeElement).toBe(summary);
+  });
+
+  it("closes on a pointer-down outside and stays open for one inside", () => {
+    const menu = open();
+    fireEvent.pointerDown(screen.getByRole("button", { name: "End chat" }));
+    expect(menu.open).toBe(true);
+    fireEvent.pointerDown(document.body);
+    expect(menu.open).toBe(false);
+  });
+
+  // The stub row reports `onEnded` on click; the real row's outcomes are in panel-head-menu.test.tsx.
+  it("closes when the End chat row reports the chat ended", () => {
+    const menu = open();
+    fireEvent.click(screen.getByRole("button", { name: "End chat" }));
+    expect(menu.open).toBe(false);
+  });
+
+  it("leaves a closed menu alone on Escape, so the sheet's own Escape still works", () => {
+    mount();
+    const menu = screen.getByLabelText("Chat menu").closest("details")!;
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    const stop = vi.spyOn(event, "stopPropagation");
+    document.body.dispatchEvent(event);
+    expect(menu.open).toBe(false);
+    expect(stop).not.toHaveBeenCalled();
+  });
+});
+
+it("the sheet button's name carries the session state", () => {
+  media(false);
   const store = storeFor();
   const { session } = chatSnapshotSchema.parse(fixture);
   const working = { ...session!, state: "working" as const };
   store.set(snapshotAtom, { session: working, turns: [], queue: [], previous: null });
   mount(store);
-  fireEvent.click(screen.getByRole("button", { name: "Collapse chat" }));
-  expect(screen.getByRole("button", { name: "Expand chat, Working" })).toBeTruthy();
-});
-
-it("the collapsed rail spells out Chat and the state, and opens in one click", () => {
-  const store = storeFor();
-  const { session } = chatSnapshotSchema.parse(fixture);
-  store.set(snapshotAtom, {
-    session: { ...session!, state: "idle" as const },
-    turns: [],
-    queue: [],
-    previous: null,
-  });
-  mount(store);
-  fireEvent.click(screen.getByRole("button", { name: "Collapse chat" }));
-  const expand = screen.getByRole("button", { name: "Expand chat, Waiting for you" });
-  expect(expand.querySelector(".chat-rail-word")?.textContent).toBe("Chat");
-  expect(expand.querySelector(".chat-rail-state")?.textContent).toBe("Waiting for you");
-  fireEvent.click(expand);
-  expect(screen.getByRole("log")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Open chat, Working" })).toBeTruthy();
 });

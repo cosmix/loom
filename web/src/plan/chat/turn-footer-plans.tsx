@@ -9,6 +9,7 @@ import { treeAtom } from "@/plan/files/atoms";
 import { getImplementedBy, type ImplementedByResponse } from "@/plan/review/api";
 import { connectionEpochAtom, featuresAtom, isHolderAtom } from "@/plan/state/atoms";
 import { pageHref, pageKeyOfSummaryId } from "@/plan/api/page-key";
+import { BusyText } from "@/plan/ui/busy-text";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { draftAtom } from "./drafts";
 import { ErrorLine } from "./error-line";
@@ -219,7 +220,7 @@ export function ImplementingPlans({ path, loaded }: { path: string; loaded: Impl
   if (!sections)
     return (
       <p role="status" className="ml-3 text-[13px] text-muted-foreground">
-        Loading implementing plans…
+        <BusyText>Loading implementing plans…</BusyText>
       </p>
     );
   return (

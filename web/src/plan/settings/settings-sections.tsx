@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { panelLoadAtom, summaryReloadAtom } from "@/plan/summaries/state";
 import { SummaryPanel } from "@/plan/summaries/summary-panel";
+import { BusyText } from "@/plan/ui/busy-text";
 import { notificationStatus, useNotificationToggle } from "@/state/notifications";
 import {
   autoRebuildAtom,
@@ -186,8 +187,8 @@ function NotificationRow(): ReactElement {
 }
 
 /**
- * The whole summary panel (last rebuild, token totals, limits, terminal claims), read from the
- * feed the shell runs. Plain text stands in for the panel until the feed answers; a status
+ * The whole summary panel (last rebuild, token totals, terminal claims), read from the feed the
+ * shell runs. The provider limits show only in the footer. Plain text stands in for the panel until the feed answers; a status
  * role here would collide with the notification row's.
  */
 export function SummariesGroup(): ReactElement {
@@ -195,11 +196,13 @@ export function SummariesGroup(): ReactElement {
   const { reload } = useAtomValue(summaryReloadAtom);
   const nowSecs = Math.floor(useNow() / 1000);
   return (
-    <SettingsGroup title="Summaries" hint="Rebuild totals and provider limits" level={2}>
+    <SettingsGroup title="Summaries" hint="Rebuild token totals" level={2}>
       {load.status === "ready" ? (
         <SummaryPanel panel={load.panel} nowSecs={nowSecs} />
       ) : load.status === "loading" ? (
-        <p className="ps-hint">Loading summaries</p>
+        <p className="ps-hint">
+          <BusyText>Loading summaries</BusyText>
+        </p>
       ) : (
         <div className="space-y-2 text-[13px]">
           <p role="alert">

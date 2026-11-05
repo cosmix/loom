@@ -65,12 +65,14 @@ describe("DocMark", () => {
       const activity = container.querySelector('[data-kind="summaries"]');
       expect(activity).not.toBeNull();
       expect(activity?.classList.contains(glyphClass)).toBe(true);
-      expect(container.querySelectorAll("svg")).toHaveLength(1);
+      // Rebuilding is the roundel in the kind glyph's place: no icon remains in the mark.
+      expect(activity?.querySelector(".aurora-roundel[data-busy='true']")).not.toBeNull();
+      expect(container.querySelectorAll("svg")).toHaveLength(0);
       expect(container.contains(kindGlyph)).toBe(false);
 
       rerender(<DocMark kind="vision" size={size} />);
 
-      expect(container.querySelector(".lucide-refresh-cw")).toBeNull();
+      expect(container.querySelector(".aurora-roundel")).toBeNull();
       expect(container.querySelector("svg")?.innerHTML).toBe(kindDrawing);
     },
   );

@@ -10,6 +10,11 @@ import { turnsAtom } from "./model";
 import { PressureHeader } from "./pressure/pressure-header";
 import { Untrusted, visibleControls } from "./visible-controls";
 
+/**
+ * The run line under the head: who is authoring, who is watching, what the chat has cost. One
+ * line that never wraps (chat-surface.css): the name segment is cut with an ellipsis first, each
+ * separator belongs to the segment after it, and under 22rem the token count drops.
+ */
 export function RunHeader({ session }: { session: SessionView }) {
   const authoring = useAtomValue(authoringAtom);
   const presence = useAtomValue(presenceAtom);
@@ -21,6 +26,7 @@ export function RunHeader({ session }: { session: SessionView }) {
   const watchers =
     presence?.entries.filter((entry) => !entry.holder && entry.public_id !== holder?.public_id) ??
     [];
+  const names = visibleControls(watchers.map((entry) => entry.name).join(", "));
   const total = turns.reduce(
     (sum, turn) => sum + turn.tokens.input + turn.tokens.cache_write + turn.tokens.output,
     0,
@@ -33,28 +39,32 @@ export function RunHeader({ session }: { session: SessionView }) {
       ? "waiting"
       : null;
   return (
-    <div className="chat-run-header chat-holder-row flex flex-wrap items-center gap-x-1 px-3 text-xs text-muted-foreground">
+    <div className="chat-run-header chat-run-line">
       {activity && <ActivityGlyph kind={activity} />}
-      {awayUntil ? (
-        <span>
-          <Untrusted text={name} /> is away · authoring frees at{" "}
-          {formatClock(awayUntil).slice(0, 5)}
-        </span>
-      ) : (
-        <span>
-          {!isHolder && "Read-only · "}
-          <Untrusted text={name} /> {isHolder ? "authoring" : "is authoring"}
-        </span>
-      )}
-      <span>·</span>
-      <span
-        tabIndex={0}
-        title={visibleControls(watchers.map((entry) => entry.name).join(", "))}
-        aria-label={`${watchers.length} watching${watchers.length ? `: ${visibleControls(watchers.map((entry) => entry.name).join(", "))}` : ""}`}
-      >
-        {watchers.length} watching
+      <span className="chat-run-seg" data-cut>
+        {awayUntil ? (
+          <>
+            <Untrusted text={name} /> is away · authoring frees at{" "}
+            {formatClock(awayUntil).slice(0, 5)}
+          </>
+        ) : (
+          <>
+            {!isHolder && "Read-only · "}
+            <Untrusted text={name} /> {isHolder ? "authoring" : "is authoring"}
+          </>
+        )}
       </span>
-      <span>· {compactTokens(total)} tokens</span>
+      <span className="chat-run-seg">
+        <span aria-hidden="true">· </span>
+        <span
+          tabIndex={0}
+          title={names}
+          aria-label={`${watchers.length} watching${watchers.length ? `: ${names}` : ""}`}
+        >
+          {watchers.length} watching
+        </span>
+      </span>
+      <span className="chat-run-seg chat-run-tokens">· {compactTokens(total)} tokens</span>
     </div>
   );
 }
