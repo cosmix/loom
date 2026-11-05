@@ -35,7 +35,8 @@ In file mode it has, in order:
 - A title row in a three-column grid: DocMark, title, actions. The actions are **Summary | Source**,
   **Edit** when editing is allowed, and **Discuss** for the authoring browser. Summary | Source
   switches between the same document's summary page and file mode; Summary is disabled when
-  no summary page is available. Discuss opens chat with the document attached and focuses the
+  no summary page is available. A metaplan has one, its Metaplan route (section 05), and the
+  spine's Metaplan row opens it with Source one click away. Discuss opens chat with the document attached and focuses the
   composer.
 - One wrapping row of state chips, where applicable: state, Implements links, pressure-test
   state, validation, and last change. The validation chip expands the errors and warnings.

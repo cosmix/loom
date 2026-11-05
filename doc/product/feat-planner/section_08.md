@@ -28,27 +28,31 @@ browser.
 ┌ Chat ─────────────────────────────────────── ⋯ ┐
 │ ◐ Working · 41s · Edit section_02.md           │  state line
 │ Dana authoring · 2 watching · 18.4k tokens     │  session line
-│ About section_02                          [×]  │  context line
 ├────────────────────────────────────────────────┤
 │  turns, oldest first                           │  transcript
 │  …                                             │
 │  Suggested prompts (no chat, empty draft)      │  context prompts
 ├────────────────────────────────────────────────┤
 │ Queued (1)                                     │  queue
-│ [section_02.md › Port · lines 54–60] [×]       │  attachment chips
-│ Ask about section_02, or say what to change    │  composer
-│                                  Stop   Send   │
+│ ┌────────────────────────────────────────────┐ │
+│ │ ▤ About section_02                       × │ │  context row
+│ │ ▤ "Port the server…"  section_02.md  ×     │ │  reference rows
+│ │ Ask about section_02, or say what to change│ │  composer
+│ │ ⌀                              Stop   Send │ │
+│ └────────────────────────────────────────────┘ │
 └────────────────────────────────────────────────┘
 ```
 
-- **Width.** 26rem by default, resizable by dragging its left edge between 20rem and 40rem. The
+- **Width.** 21.25rem by default, resizable by dragging its left edge between 20rem and 40rem. The
   width is kept in the browser's local storage. (My call.)
-- **Collapsing.** A control in the panel header collapses it to a 2.5rem rail that keeps the
-  state glyph and a badge when a permission decision is waiting. The reading column recentres in
-  the freed width. Collapsed or not is kept per browser. (My call.)
-- **Narrow screens.** Below the `lg` breakpoint the panel leaves the layout and becomes a sheet
-  over the reading column, opened from a header button that carries the state glyph and the
-  permission badge. Selecting "Add to chat" in the reading column (sections 05, 06) adds the
+- **Always shown.** At 1280px and wider the panel is a fixed column beside the reading column on
+  every route that has a chat panel (not Home and not `/new`), so the reading column keeps about
+  40rem beside the 18rem spine. The panel cannot be collapsed. (My call: a reader who wants to
+  discuss a passage should never have to find the panel first.)
+- **Narrow screens.** Below 1280px the panel leaves the layout and becomes a sheet over the
+  reading column, opened from the header's Chat button, which carries the state glyph and the
+  permission badge. The button shows on every route that has a chat panel and is hidden at 1280px
+  and wider. Selecting "Add to chat" in the reading column (sections 05, 06) adds the
   chip without opening the sheet; the button shows the attachment count. (My call: on a phone
   the reader collects passages first and writes once.)
 - **Surface.** The panel sits on `--card` with a `--hairline` left border, beside the reading
@@ -58,12 +62,15 @@ browser.
   floating in it. A permission decision is the one item allowed real emphasis, and even that does
   not nest boxes. No coloured spine marks anything in it
   (`conventions/web-dashboard-typography.md`, "Stage thread chips").
-- **Header.** The title is "Chat", with Collapse in the dock and Close in the sheet. A live
-  chat adds **New chat**; an ended or failed chat offers it in the composer area. The menu
-  appears when the browser can end the chat. Below the state line, a chat's session line names
+- **Header.** The title, the state ("Waiting for you" as a glyph and a word) and the chat menu
+  share one centre line, with Close in the sheet. The menu (a "Chat menu" disclosure) appears
+  when the browser can end the chat, holds **End chat** as a full-width row on the header
+  popovers' surface, and closes on Escape, on a click outside and on choosing End chat. An ended
+  or failed chat offers **New chat** in the composer area. Below the state line, a chat's session line names
   the authoring browser, the watcher count and the running token total; another browser sees
   "Read-only · Dana is authoring". An away holder shows when authoring frees. With no chat,
-  there is no session line. The context line (below) sits under the session line, in the head.
+  there is no session line. The context row (below) is the first attachment row of the
+  composer, not part of the head.
 - **No offers.** The panel draws no offer to start a step. Offers sit in the feature's spine and
   on the pages that own them (section 01), so no screen shows one offer twice. The panel offers
   New chat and the context prompts only.
@@ -100,10 +107,11 @@ restart every draft reads as ended.
 
 ## Message rendering
 
-Each item in section 07's model renders as follows. Type is 14px with a 1.5 line height for
-message text, Inter for the user's messages and the reading face for the assistant's, between the
-dashboard's 12-13px chrome and concept mode's 17, 19 (default) or 21px reading text;
-state words, tool rows, and footers use the 12-13px chrome size. Monospace only for paths,
+Each item in section 07's model renders as follows. Chat chrome (state words, tool
+rows, footers, the composer) is 14px, a user's message 15px in Inter, and the assistant's prose
+16px in the reading face, all with a 1.5 line height, between concept mode's 17, 19 (default) or
+21px reading text and the 13px floor that no transcript or panel text goes below, except a
+chip's source and a file's size at 12px. Monospace only for paths,
 commands, and identifiers (`conventions/web-dashboard-typography.md`). (My call.)
 
 | Item         | Rendering                                                                                                                                                         |
@@ -198,8 +206,8 @@ the only signal. The states are section 07's.
 | none       | "No chat"; "New chat" and the context prompts (below) sit beneath it                  | Enabled; sending starts a chat               |
 | Starting   | `BusyRoundel` turning, "Starting session", the session's name and model               | Enabled; messages queue                      |
 | Idle       | Roundel at rest, "Waiting for you"                                                    | Enabled; Send delivers                       |
-| Working    | Roundel turning, "Working · 41s", the newest tool row's summary, "2 subagents" if any | Enabled; Send queues; Stop shown             |
-| Permission | `--tone-warning` glyph, "Needs a decision: Bash"; the card is pinned (below)          | Enabled; Send queues; Stop shown             |
+| Working    | Roundel turning, "Working · 41s", the newest tool row's summary, "2 subagents" if any | Enabled; Send queues; Stop beside Send        |
+| Permission | `--tone-warning` glyph, "Needs a decision: Bash"; the card is pinned (below)          | Enabled; Send queues; Stop beside Send        |
 | Ending     | Roundel turning, "Writing final notes into the documents"; the 10-minute bound        | Disabled, with the reason                    |
 | Ended      | Muted stamp, "Chat ended · 3m ago"                                                    | Replaced by "New chat" and the prompts       |
 | Failed     | `HazardPanel` (`web/src/aurora-ui/feedback/HazardPanel.tsx:116`) in its error tone    | Replaced by "New chat"                       |
@@ -208,7 +216,7 @@ the only signal. The states are section 07's.
 draft, the context prompts beneath it. The panel carries no offer from section 01. The composer
 stays available to the authoring browser; sending its text and attachments starts a chat.
 
-**Header glyphs.** The collapsed rail and the sheet-opening button use `ChatGlyph`: a turning
+**Header glyphs.** The sheet-opening Chat button uses `ChatGlyph`: a turning
 `LoaderCircle` for Starting, a writing `PenLine` for Working and Ending, and a ringing `BellRing`
 in `--tone-warning` while permission is needed. Pending permissions take priority over the
 session's state. Idle and no chat use a resting roundel; Failed shows `!`, Ended `✓`. The session
@@ -317,7 +325,9 @@ the count only.
 
 ### Interrupt
 
-While the session works or waits on a permission, a **Stop** button sits beside Send. It sends
+While the session works or waits on a permission, a **Stop** button sits in the composer's action
+row immediately before Send, at Send's size; it is absent otherwise. Send stays enabled, because a
+message sent then is queued. Stop sends
 section 07's interrupt. The transcript then shows "Stopped by Dana" as a notice, and any
 permission card collapses as denied by the interrupt. Stop has no keyboard shortcut. (My call:
 `Escape` already folds concept mode runs, and an accidental interrupt costs a turn.)
@@ -330,7 +340,7 @@ want.)
 ## Attachments
 
 Selecting text in the reading column and choosing "Add to chat" (sections 05, 06), or pressing
-`a` on a focused sentence (section 05), adds an attachment chip above the composer. **Discuss**
+`a` on a focused sentence (section 05), adds an attachment row inside the composer box, above the field. **Discuss**
 in a document header attaches the whole document, opens the panel or sheet and focuses the
 composer. Its quote previews the first 2,000 characters of the document. Sending starts a chat
 if none runs. The chip labels the document and any passage, line range or stage:
@@ -343,6 +353,10 @@ if none runs. The chip labels the document and any passage, line range or stage:
 | A plan's Stages panel       | `PLAN-foo.md › stage integration-verify`       |
 | A summary sentence          | `Summary · section_02` (or `Product overview`) |
 
+- The attachments are one column of one-line rows: a glyph, the quote cut with an ellipsis in
+  balanced quote marks, its source on the same line, and `×`. The context row ("Now viewing")
+  and the reference rows share this anatomy. The area is capped at 7.5rem and scrolls inside the
+  box, so the field stays in view with any number of attachments.
 - Hovering or focusing a chip shows the selected text in full. Clicking it opens the passage in
   the reading column, in the mode it came from. `×` removes it.
 - A chip whose document has changed since the selection was made shows "changed" in
@@ -468,7 +482,7 @@ A chat starts in one of three ways, all from the browser that will hold authorin
    the composer's text and attachments, the viewed document included (below). (My call: a
    reviewer who selected a passage and typed a question should not need a separate start step.)
 
-Starting opens the panel if it is collapsed and shows the Starting state with the session's name
+Starting shows the Starting state with the session's name
 (section 07's display name, `loom plan: section 08`), its model and effort (section 09), and a
 **Brief** link that opens the brief the session was started with in a read-only dialog, so the
 user can see what the session was told. (My call.) The opening message appears as the first user
