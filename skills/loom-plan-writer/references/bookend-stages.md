@@ -29,6 +29,7 @@ In a `version: 2` plan (`v2-contracts.md` Section 5):
 
 - **Full test command** — its `acceptance` lists a whole-suite run an adapter recognises (`cargo test`, `cargo test --all-targets`); `loom plan verify` rejects the stage without one.
 - **Never defers a finding** — every finding of a recorded review round, and every finding an earlier stage deferred to it, is fixed and closed by a later round or disputed with `loom stage dispute-findings`. An adjudicator cannot defer a finding from integration-verify.
+- **Spec conformance** — when the plan's `Implements:` line names sections, the stage's signal lists them under `## Product Sections`. The stage reads each one, fixes the code for every gap between the section and the build, and corrects the section when the build is right and the section is wrong. It records `spec-conformance:` decisions for corrections and `spec-conformance:` questions for gaps it neither fixed nor corrected; the run review collects both. It needs write access to `doc/product/<f>/` (the worktree default grants it).
 - **Reviewer suggestions** — its signal lists every pending `suggestion` memory entry of the plan's stages. It weighs each one and implements, defers or ignores it, resolves each one it implements with `loom memory resolve <id> --outcome implemented --reason <what changed>`, and leaves the rest pending for knowledge-distill.
 
 ## knowledge-distill (last)

@@ -13,8 +13,8 @@ Planning a loom project happens in Claude Code today, in a sequence the user dri
 1. Brainstorm a product vision (`doc/product/<feature>/index.md`) that names the sections the product
    spec needs.
 2. Write each product section under `doc/product/<feature>/`.
-3. Brainstorm a metaplan (`doc/plans/<feature>/index.md` or
-   `doc/plans/<feature>/metaplan-NN.md`): one entry per loom plan, three or four paragraphs each.
+3. Brainstorm the feature's one metaplan (`doc/plans/<feature>/index.md`): one entry per loom plan,
+   three or four paragraphs each.
 4. Author the loom plans under `doc/plans/<feature>/`, usually with an agent team.
 5. Pressure-test the first plans with `loom pressure`.
 6. Review the plans as a human.
@@ -50,7 +50,7 @@ whichever step the feature is at: vision, product sections, metaplan, plans, pre
 - **File mode.** Browse and read any document: product spec, metaplan, loom plans, briefs, and
   the knowledge base under `doc/loom/knowledge/`.
 - **Concept mode.** Start from a short overview of a feature's product (built from its vision and
-  sections) or of its engineering decisions (built from its metaplans and plans). Opening a
+  sections) or of its engineering decisions (built from its metaplan and plans). Opening a
   sentence replaces it in place with the more detailed sentences it summarizes, set in the same
   type and flowing in the same paragraph, so the document grows where the reader is looking;
   opening one of those replaces it with the source passage it came from. Any opened passage
@@ -58,7 +58,7 @@ whichever step the feature is at: vision, product sections, metaplan, plans, pre
   read the full text to form a view, and anybody can reach the full text from any claim in the
   summary. Concept mode is where every document with a summary opens: the feature's spine links
   each section, plan, metaplan and the vision straight to it, with Source on the same page.
-  Each metaplan has a document summary of its own (Summary levels, below).
+  The metaplan has a document summary of its own (Summary levels, below).
 
 Review and authoring connect: from either mode, the user can point at a passage and take it into
 a chat ("this plan assumes the daemon is running; it should not"), and the session that answers
@@ -292,9 +292,9 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
 - **Summary levels (04, 05).** Two summary levels above the raw text:
   - _Overviews_: two per feature: one for the product, built from
     `doc/product/<feature>/index.md` and its sections; one for the engineering decisions, built
-    from its metaplans and plans.
+    from its metaplan and plans.
   - _Document summaries_: one for the vision (at most 8 sentences in at most 3 paragraphs), one per
-    product section, one per metaplan and one per plan. No overview cites a metaplan's summary: an
+    product section, one for the feature's metaplan and one per plan. No overview cites a metaplan's summary: an
     engineering overview sentence that draws on a metaplan links to its source passage.
 
   An overview sentence links to the document summaries it draws on (one or several); a document
@@ -331,7 +331,7 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
   with its own manifest entry, so a git merge of two people's rebuilds conflicts only on the same
   summary, and any conflicted summary is resolved by regenerating it.
 - **Spec location (03).** `doc/product/<feature>/`, with sections at
-  `doc/product/<feature>/section_NN.md`. Metaplans and feature plans live in
+  `doc/product/<feature>/section_NN.md`. The metaplan and feature plans live in
   `doc/plans/<feature>/`; standalone plans live at the top of `doc/plans/`.
 - **Approval (10).** Not recorded. Reviewing is the user reading, which has no step in the app;
   starting execution is their act.
