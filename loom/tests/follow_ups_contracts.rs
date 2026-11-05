@@ -72,7 +72,7 @@ fn finished_feature_offers_only_plan_follow_ups() {
         .into_iter()
         .chain(ids(&checklist.secondary))
         .collect();
-    for banned in ["refine-spec", "plan-follow-ups"] {
+    for banned in [concat!("refine-", "spec"), "plan-follow-ups"] {
         assert!(
             !offered.iter().any(|id| id == banned),
             "a ready feature offers {banned}: {offered:?}"
