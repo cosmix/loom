@@ -20,12 +20,6 @@ it.each([
   ["/f/atlas/product/section_05", "section", "doc/product/atlas/section_05.md", "section_05"],
   ["/f/atlas/metaplan", "metaplan", "doc/plans/atlas/index.md", "metaplan"],
   [
-    "/f/atlas/metaplan/second-round.md",
-    "metaplan",
-    "doc/plans/atlas/second-round.md",
-    "second-round",
-  ],
-  [
     "/f/atlas/engineering",
     "engineering-overview",
     "doc/plans/atlas/index.md",
@@ -63,9 +57,9 @@ it("a section the loaded checklist does not list, or has not written, has no doc
   expect(view("/f/atlas/product/notes")).toEqual(NO_DOCUMENT);
 });
 
-it("a plan or metaplan the loaded checklist does not list has no document", () => {
+it("a plan the loaded checklist does not list has no document, nor does a metaplan file address", () => {
   expect(view("/f/atlas/engineering/atlas-09-missing")).toEqual(NO_DOCUMENT);
-  expect(view("/f/atlas/metaplan/gone.md")).toEqual(NO_DOCUMENT);
+  expect(view("/f/atlas/metaplan/index.md")).toEqual(NO_DOCUMENT);
 });
 
 it("a standalone plan nobody lists keeps its name and no path", () => {

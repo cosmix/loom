@@ -266,15 +266,27 @@ it("lists every plan with its state, linked to its concept page", () => {
 });
 
 const finished = (secondary: ReturnType<typeof offer>[]) =>
-  atlas({ plan_rows: [planRow("one", "done"), planRow("two", "done")], secondary });
+  atlas({
+    plan_rows: [planRow("one", "done"), planRow("two", "done")],
+    current: { kind: "ready_all_done" },
+    secondary,
+  });
 
-it("draws no follow-up section once every plan is done", () => {
+it("links a built feature's Run page to what was built and draws no follow-up button", () => {
   renderPage(<RunPage />, PATH, finished([offer("plan_follow_ups", "Plan follow-ups")]));
 
-  expect(screen.getByText("Every plan is done.")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "See what was built" }).getAttribute("href")).toBe(
+    "/f/atlas/built",
+  );
   expect(screen.queryByRole("button", { name: "Plan follow-ups" })).toBeNull();
   expect(screen.queryByText("Next round")).toBeNull();
   expect(handler).not.toHaveBeenCalled();
+});
+
+it("draws no built link while a plan is still written", () => {
+  renderPage(<RunPage />, PATH, written);
+
+  expect(screen.queryByRole("link", { name: "See what was built" })).toBeNull();
 });
 
 it("sends an empty feature to Plans with one sentence", () => {

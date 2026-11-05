@@ -44,49 +44,8 @@ function renderMetaplan(path: string, file: string) {
   );
 }
 
-it("a metaplan whose file name is no summary stem opens as its source, not as a missing page", async () => {
-  renderMetaplan("/f/atlas/metaplan/metaplan_02.md", "metaplan_02.md");
-  await waitFor(() => expect(document.querySelector(".plan-document")).not.toBeNull());
-  expect(conceptKeys().filter((key) => key.includes("metaplan"))).toEqual([]);
-});
-
-it("the bare metaplan route of a metaplan with an invalid stem does not redirect to a summary", async () => {
-  const { router } = renderMetaplan("/f/atlas/metaplan", "metaplan_02.md");
-  await waitFor(() => expect(document.querySelector(".plan-document")).not.toBeNull());
-  expect(router.state.location.pathname).toBe("/f/atlas/metaplan");
-  expect(conceptKeys().filter((key) => key.includes("metaplan"))).toEqual([]);
-});
-
 it("a metaplan with a valid stem still opens its summary page", async () => {
   renderMetaplan("/f/atlas/metaplan", "index.md");
   await waitFor(() => expect(conceptKeys()).toContain("atlas/metaplan/index"));
   expect(document.querySelector(".plan-document")).toBeNull();
-});
-
-function renderTwoMetaplans(path: string) {
-  const checklist = checklistViewSchema.parse({
-    ...checklistFixture.checklists[0]!,
-    feature: "atlas",
-    metaplans: [
-      { path: "doc/plans/atlas/a-metaplan.md", title: "Alpha" },
-      { path: "doc/plans/atlas/index.md", title: "Roadmap" },
-    ],
-  });
-  return renderAt(path, (store) =>
-    store.set(projectAtom, { checklists: [checklist], standalone: [], moves: [] }),
-  );
-}
-
-it("the bare metaplan route of two metaplans shows the index summary, not the first by path", async () => {
-  const { router } = renderTwoMetaplans("/f/atlas/metaplan");
-  await waitFor(() => expect(conceptKeys()).toContain("atlas/metaplan/index"));
-  expect(conceptKeys()).not.toContain("atlas/metaplan/a-metaplan");
-  expect(router.state.location.pathname).toBe("/f/atlas/metaplan");
-});
-
-it("the bare metaplan route marks the index metaplan's row as current", async () => {
-  renderTwoMetaplans("/f/atlas/metaplan");
-  await waitFor(() => expect(conceptKeys()).toContain("atlas/metaplan/index"));
-  const current = document.querySelector('.plan-spine__link[aria-current="page"]');
-  expect(current?.getAttribute("href")).toBe("/f/atlas/metaplan/index.md");
 });

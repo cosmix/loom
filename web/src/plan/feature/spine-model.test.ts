@@ -12,6 +12,7 @@ it.each([
   ["/f/atlas/engineering/atlas-01", "plans"],
   ["/f/atlas/metaplan", "metaplan"],
   ["/f/atlas/run", "run"],
+  ["/f/atlas/built", "run"],
 ])("selects the group of %s", (pathname, group) => {
   expect(groupOfPathname(pathname)).toBe(group);
 });
@@ -98,15 +99,6 @@ it.each([
   expect(summaryPathnameOfSource(atlas(), pathname)).toBeNull();
 });
 
-it("maps a metaplan to its own route when the feature has several", () => {
-  const metaplans = [
-    { path: "doc/plans/atlas/index.md", title: "Roadmap" },
-    { path: "doc/plans/atlas/round 2.md", title: "Round two" },
-  ];
-  expect(
-    summaryPathnameOfSource(atlas({ metaplans }), "/f/atlas/source/plans/atlas/round%202.md"),
-  ).toBe("/f/atlas/metaplan/round%202.md");
-  expect(
-    summaryPathnameOfSource(atlas({ metaplans }), "/f/atlas/source/plans/atlas/other.md"),
-  ).toBeNull();
+it("maps a metaplan file the checklist does not list to no summary route", () => {
+  expect(summaryPathnameOfSource(atlas(), "/f/atlas/source/plans/atlas/round%202.md")).toBeNull();
 });

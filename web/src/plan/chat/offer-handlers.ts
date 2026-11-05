@@ -14,12 +14,16 @@ const authoringKinds = [
 ] as const satisfies readonly OfferKind[];
 
 /** What an authoring offer asks for; the command layer adds the rest of the wire message. */
-export type OfferStart = { offer: string; feature?: string };
+export type OfferStart = { offer: string; feature?: string; text?: string };
 
 export function registerAuthoringOffers(send: (start: OfferStart) => unknown): () => void {
   const unregister = authoringKinds.map((kind) =>
-    registerOfferAction(kind, (offer) => {
-      send({ offer: offer.id, ...(offer.feature !== undefined ? { feature: offer.feature } : {}) });
+    registerOfferAction(kind, (offer, seed) => {
+      send({
+        offer: offer.id,
+        ...(offer.feature !== undefined ? { feature: offer.feature } : {}),
+        ...(seed !== undefined ? { text: seed } : {}),
+      });
     }),
   );
   return () => unregister.forEach((remove) => remove());

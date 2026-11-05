@@ -94,12 +94,12 @@ export function startError(store: Store, error: unknown): string {
  * sheet so the message is never hidden. One start runs at a time.
  */
 export function createOfferStarter(store: Store): {
-  start: (offer: string, feature?: string) => Promise<void>;
+  start: (offer: string, feature?: string, text?: string) => Promise<void>;
   dispose: () => void;
 } {
   let request: AbortController | null = null;
   const reveal = () => revealChat(store);
-  const start = async (offer: string, feature?: string): Promise<void> => {
+  const start = async (offer: string, feature?: string, text?: string): Promise<void> => {
     if (request) return;
     // The end wait can last minutes: the chat belongs to the screen the offer was chosen on.
     // `plan_follow_ups` names no feature on the wire, so the screen's applies.
@@ -120,7 +120,7 @@ export function createOfferStarter(store: Store): {
       if (isActiveSession(running))
         await endCurrentChat(store, running, controller.signal, "choose the offer");
       if (controller.signal.aborted) return;
-      await startChat(store, offer, undefined, undefined, ownerFeature, plan);
+      await startChat(store, offer, text, undefined, ownerFeature, plan);
       // Disposed while the start was in flight: the panel is gone, so write and reveal nothing.
       if (controller.signal.aborted) return;
       store.set(offerErrorAtom, null);

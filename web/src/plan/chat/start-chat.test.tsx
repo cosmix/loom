@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 
 import brief from "@/plan/api/fixtures/session-brief.json";
 import { EmptyOffer } from "@/plan/concept/empty-offer";
+import { runOffer } from "@/plan/offers/actions";
 import { OfferButton } from "@/plan/offers/offer-button";
 import { authoringAtom, checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { BriefDialog, BriefDialogHost } from "./brief-dialog";
@@ -71,6 +72,37 @@ it.each([
     text: null,
     attachments: [],
     ...scope,
+  });
+  h.result();
+  await act(async () => {});
+});
+
+it("a seeded offer start sends the seed as the text of the start", async () => {
+  const h = harness();
+  const starter = createOfferStarter(h.store);
+  disposers.push(
+    registerAuthoringOffers(({ offer, feature, text }) => starter.start(offer, feature, text)),
+    starter.dispose,
+  );
+  const followUps = {
+    ...offer,
+    kind: "plan_follow_ups" as const,
+    id: "plan-follow-ups",
+    feature: "demo",
+  };
+
+  act(() => {
+    runOffer(followUps, "Settings look bland (open finding from REVIEW-PLAN-a.md, stage chat)");
+  });
+
+  expect(h.send).toHaveBeenCalledExactlyOnceWith({
+    type: "chat",
+    command: "start",
+    client_id: expect.any(String),
+    offer: "plan-follow-ups",
+    text: "Settings look bland (open finding from REVIEW-PLAN-a.md, stage chat)",
+    attachments: [],
+    feature: "demo",
   });
   h.result();
   await act(async () => {});

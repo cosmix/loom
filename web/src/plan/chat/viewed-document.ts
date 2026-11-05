@@ -2,7 +2,6 @@ import { atom } from "jotai/vanilla";
 
 import type { ChecklistView, StandalonePlanView } from "@/plan/api/schema";
 import { featureOfDocPath } from "@/plan/feature/source-href";
-import { firstMetaplan } from "@/plan/feature/spine-model";
 import { parseAddress } from "@/plan/files/address";
 
 export type ViewedKind =
@@ -93,16 +92,8 @@ function ownChecklist(feature: string, checklist: ChecklistView | null): Checkli
   return checklist !== null && checklist.feature === feature ? checklist : null;
 }
 
-function metaplanOf(
-  segments: string[],
-  checklist: ChecklistView | null,
-): { path: string | null; name: string } {
-  const file = segments[3];
-  const metaplans = checklist?.metaplans ?? [];
-  const found = file
-    ? metaplans.find((candidate) => candidate.path.split("/").at(-1) === file)
-    : firstMetaplan(metaplans);
-  return { path: found?.path ?? null, name: file ? file.replace(/\.md$/, "") : "metaplan" };
+function metaplanOf(checklist: ChecklistView | null): { path: string | null; name: string } {
+  return { path: checklist?.metaplans[0]?.path ?? null, name: "metaplan" };
 }
 
 /*
@@ -127,7 +118,7 @@ function productPage(segments: string[], own: ChecklistView | null): ViewedDocum
 function engineeringPage(segments: string[], own: ChecklistView | null): ViewedDocument {
   const doc = segments[3];
   if (doc === undefined) {
-    const path = own?.metaplans[0]?.path ?? null;
+    const { path } = metaplanOf(own);
     if (own && path === null) return NO_DOCUMENT;
     return { kind: "engineering-overview", path, name: "Engineering overview" };
   }
@@ -154,7 +145,8 @@ function featurePageOf(segments: string[], checklist: ChecklistView | null): Vie
     case "product":
       return productPage(segments, own);
     case "metaplan": {
-      const metaplan = metaplanOf(segments, own);
+      if (rest.length > 0) return NO_DOCUMENT;
+      const metaplan = metaplanOf(own);
       return own && metaplan.path === null ? NO_DOCUMENT : { kind: "metaplan", ...metaplan };
     }
     case "engineering":

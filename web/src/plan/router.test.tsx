@@ -150,33 +150,45 @@ describe("plan routes", () => {
     expect(within(shell!).queryByRole("link", { name: "Read the full vision" })).toBeNull();
   });
 
-  it.each(["/f/demo/metaplan", "/f/demo/metaplan/index.md"])(
-    "shows the metaplan's summary page at %s, not its source",
-    (path) => {
-      seedFeature({ metaplans: [{ path: "doc/plans/demo/index.md", title: "Roadmap" }] });
-      const shell = renderRoute(path);
-      expect(within(shell!).getByText("Concept page")).toBeTruthy();
-      expect(within(shell!).queryByText(/^Source of/)).toBeNull();
-    },
-  );
-
-  it("moves a first metaplan that is not the index to its own file route", () => {
-    seedFeature({ metaplans: [{ path: "doc/plans/demo/round-two.md", title: "Round two" }] });
-    const router = createMemoryRouter(routes, { initialEntries: ["/f/demo/metaplan"] });
-    render(<RouterProvider router={router} />);
-    expect(router.state.location.pathname).toBe("/f/demo/metaplan/round-two.md");
-    expect(screen.getByText("Concept page")).toBeTruthy();
+  it("shows the metaplan's summary page at /f/demo/metaplan, not its source", () => {
+    seedFeature({ metaplans: [{ path: "doc/plans/demo/index.md", title: "Roadmap" }] });
+    const shell = renderRoute("/f/demo/metaplan");
+    expect(within(shell!).getByText("Concept page")).toBeTruthy();
+    expect(within(shell!).queryByText(/^Source of/)).toBeNull();
   });
 
-  it("keeps the offer to start a metaplan while there is none, and refuses an unknown file", () => {
+  it("keeps the offer to start a metaplan while there is none, and has no per-file route", () => {
     seedFeature({ metaplans: [] });
     const none = renderRoute("/f/demo/metaplan");
     expect(within(none!).getByText("This feature has no metaplan yet.")).toBeTruthy();
     cleanup();
     seedFeature({ metaplans: [{ path: "doc/plans/demo/index.md", title: "Roadmap" }] });
     const shell = renderRoute("/f/demo/metaplan/other.md");
-    expect(within(shell!).getByText("No such metaplan")).toBeTruthy();
+    expect(within(shell!).getByText("No such page")).toBeTruthy();
     expect(within(shell!).queryByText("Concept page")).toBeNull();
+  });
+
+  it("routes /f/demo/built to the Built page of a feature whose every plan is done", () => {
+    seedFeature({
+      plan_rows: [
+        {
+          slug: "alpha",
+          path: "doc/plans/demo/archive/DONE-PLAN-alpha.md",
+          title: "Alpha plan",
+          state: "done",
+          pressure_date: null,
+          listed: true,
+        },
+      ],
+      plans: { listed: 1, total: 1, written: 1, running: 0, done: 1 },
+      current: { kind: "ready_all_done" },
+      primary: null,
+      secondary: [],
+    });
+    const shell = renderRoute("/f/demo/built");
+    expect(within(shell!).getByText("Feature page")).toBeTruthy();
+    expect(within(shell!).getByRole("heading", { level: 1, name: "Built" })).toBeTruthy();
+    expect(within(shell!).queryByText("No such page")).toBeNull();
   });
 
   it.each([
