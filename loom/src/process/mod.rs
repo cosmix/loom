@@ -7,8 +7,10 @@ mod environment;
 mod errors;
 mod identity;
 mod owned;
+mod spawn;
 mod tail;
 pub(crate) use owned::OwnedProcess;
+pub use spawn::spawn_retrying_text_busy;
 pub(crate) use tail::run_bounded_tail_output;
 #[doc(hidden)]
 pub mod sandbox_probe;

@@ -196,13 +196,13 @@ fn start_dashboard(
     if terminals {
         command.arg("--terminals");
     }
-    let process = command
+    command
         .current_dir(root)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .process_group(0)
-        .spawn()?;
+        .process_group(0);
+    let process = crate::process::spawn_retrying_text_busy(&mut command)?;
     let mut child = DashboardChild {
         process,
         url: String::new(),

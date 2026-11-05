@@ -91,7 +91,7 @@ fn call(ctx: &PlanContext, bin: &Path) -> ApiResponse {
     post_dashboard_with_bin(
         &request(ctx, &head(), &BrowserId::mint().unwrap(), &PublicId::mint()),
         bin,
-        Duration::from_secs(3),
+        STARTUP_TIMEOUT,
     )
 }
 
@@ -129,7 +129,7 @@ fn response_reveals_token_only_to_holder() {
     let held = post_dashboard_with_bin(
         &request(&ctx, &head, &holder, &public),
         &bin,
-        Duration::from_secs(3),
+        STARTUP_TIMEOUT,
     );
     let viewer = call(&ctx, &bin);
 
@@ -271,7 +271,7 @@ fn child_arguments_follow_host_and_terminal_backend() {
         &bin,
         "::1".parse().unwrap(),
         true,
-        Duration::from_secs(3),
+        STARTUP_TIMEOUT,
     )
     .unwrap();
     assert_eq!(
@@ -285,7 +285,7 @@ fn child_arguments_follow_host_and_terminal_backend() {
         &bin,
         "127.0.0.1".parse().unwrap(),
         false,
-        Duration::from_secs(3),
+        STARTUP_TIMEOUT,
     )
     .unwrap();
     assert_eq!(
