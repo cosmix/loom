@@ -1,6 +1,6 @@
 import { useAtomValue } from "jotai";
 import { ArrowUp, Paperclip } from "lucide-react";
-import { useId, useRef, useState, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type RefObject } from "react";
 
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { OpenDraftNotice } from "@/plan/new/draft-view";
@@ -30,6 +30,9 @@ import "./threshold.css";
 
 type KickoffDraft = ReturnType<typeof useKickoffDraft>;
 
+/** The foot's line while Start is live; the blocked reason takes its place otherwise. */
+const KEYS = "Enter to send · Shift+Enter for a new line";
+
 /** The element that opened the picker, when it can take focus back. */
 function focusable(element: Element | null): HTMLElement | null {
   return element instanceof HTMLElement && element !== document.body ? element : null;
@@ -54,10 +57,27 @@ function usePicker(kindRoot: RefObject<HTMLFieldSetElement | null>) {
   return { picking, open, close, dismiss: () => setPicking(false) };
 }
 
-/** The form's state: the kind and its feature, the words, the documents, and the open picker. */
-function useKickoffDraft(initial: { kind: WorkKind; feature: string | null }) {
+/**
+ * The kind and its feature. A preset feature that arrives after the first render (the feature list
+ * still loading on a reload of /new carrying the Built page's state) is applied once, when it
+ * arrives.
+ */
+function useKindAndFeature(initial: { kind: WorkKind; feature: string | null }) {
   const [kind, setKindState] = useState(initial.kind);
   const [feature, setFeature] = useState(initial.feature);
+  const presetApplied = useRef(initial.feature !== null);
+  useEffect(() => {
+    if (initial.feature === null || presetApplied.current) return;
+    presetApplied.current = true;
+    setKindState("follow-up");
+    setFeature(initial.feature);
+  }, [initial.feature]);
+  return { kind, setKindState, feature, setFeature };
+}
+
+/** The form's state: the kind and its feature, the words, the documents, and the open picker. */
+function useKickoffDraft(initial: { kind: WorkKind; feature: string | null }) {
+  const { kind, setKindState, feature, setFeature } = useKindAndFeature(initial);
   const [text, setText] = useState("");
   const [documents, setDocuments] = useState<PickedDocument[]>([]);
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -147,7 +167,7 @@ function KickoffComposer({
   );
 }
 
-/** The field's foot: attach, the blocked reason, and the round primary Start. */
+/** The field's foot: attach, the blocked reason or the keys, and the round primary Start. */
 function KickoffFoot({
   draft,
   disabled,
@@ -173,13 +193,13 @@ function KickoffFoot({
         disabled={disabled}
       >
         <Paperclip aria-hidden="true" />
-        <span className="kickoff-attach__word">Attach a document</span>
-      </DocumentStarter>
-      {reason !== null && (
-        <span id={reasonId} className="plan-fine kickoff-field__reason">
-          <Untrusted text={reason} />
+        <span className="kickoff-attach__word">
+          {draft.documents.length > 0 ? "Attach another" : "Attach a document"}
         </span>
-      )}
+      </DocumentStarter>
+      <span id={reasonId} className="plan-fine kickoff-field__reason">
+        {reason !== null ? <Untrusted text={reason} /> : KEYS}
+      </span>
       <DisabledReason
         reason={reason}
         reasonId={reasonId}
@@ -214,7 +234,12 @@ function KickoffField({ draft, features, picked, disabled, reason, error, submit
         }
       >
         {draft.picker.picking && (
-          <FeaturePicker features={features} onPick={draft.pick} onClose={draft.picker.close} />
+          <FeaturePicker
+            features={features}
+            onPick={draft.pick}
+            onClose={draft.picker.close}
+            onLeave={draft.picker.dismiss}
+          />
         )}
       </KindControl>
       <KickoffComposer draft={draft} picked={picked} disabled={disabled} start={submit} />

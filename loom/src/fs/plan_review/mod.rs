@@ -11,6 +11,9 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
+/// Memory entries of each stage, keyed by stage id.
+type Journals = HashMap<String, Vec<MemoryEntry>>;
+
 mod changes_section;
 mod sections;
 mod stages;
@@ -57,11 +60,11 @@ fn plan_description(source: Option<PathBuf>, root: &Path, ai: bool) -> String {
         .map(|text| summary::fallback_description(&text))
         .unwrap_or_else(|_| "No plan description available.".to_string())
 }
-fn load_journals(work_dir: &Path) -> Result<HashMap<String, Vec<MemoryEntry>>> {
+fn load_journals(work_dir: &Path) -> Result<Journals> {
     // Load all memory journals, keyed by stage_id
     let journal_names = list_journals(work_dir).context("Failed to list memory journals")?;
 
-    let mut journals: HashMap<String, Vec<MemoryEntry>> = HashMap::new();
+    let mut journals: Journals = HashMap::new();
     for stage_id in &journal_names {
         let journal = read_journal(work_dir, stage_id)
             .with_context(|| format!("Failed to read memory journal for stage '{stage_id}'"))?;
@@ -77,7 +80,7 @@ fn render(
     plan_name: &str,
     plan_description: &str,
     stages: &[StageInfo],
-    journals: &HashMap<String, Vec<MemoryEntry>>,
+    journals: &Journals,
 ) -> String {
     // Generate the review document
     let timestamp = Utc::now().format("%Y-%m-%d %H:%M UTC").to_string();

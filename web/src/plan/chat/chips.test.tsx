@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import checklist from "@/plan/api/fixtures/checklist.json";
 import { projectChecklistViewSchema } from "@/plan/api/schema";
-import { pendingAttachmentsAtom } from "@/plan/attachments";
+import { pendingAttachmentsAtom, uploadStatusAtom } from "@/plan/attachments";
 import { attachmentsFromSelection } from "@/plan/concept/selection";
 import { hashesAtom } from "@/plan/review/live";
 import { projectAtom, serverInfoAtom } from "@/plan/state/atoms";
@@ -262,4 +262,20 @@ it("a failed section check is one status line in the server's words, with no box
   const line = words.closest(".chat-notice");
   expect(line?.getAttribute("role")).toBe("status");
   expect(line?.getAttribute("data-tone")).toBe("error");
+});
+
+it("an upload under way is words only: the pane's one roundel is a turn's", () => {
+  const store = setup();
+  const view = mount(store);
+  act(() => store.set(uploadStatusAtom, { busy: 2, problems: [] }));
+  expect(view.container.querySelector(".chat-chip-status")?.textContent).toBe("Uploading 2 files…");
+  expect(view.container.querySelector(".aurora-roundel")).toBeNull();
+});
+
+it("a finished turn's section check in flight is words only, with no roundel", () => {
+  vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => {}));
+  const view = sent(setup(), [baseAttachment]);
+  const line = view.container.querySelector(".chat-chip-status");
+  expect(line?.textContent).toBe("Checking attached passages…");
+  expect(view.container.querySelector(".aurora-roundel")).toBeNull();
 });

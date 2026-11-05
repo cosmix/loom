@@ -189,7 +189,7 @@ it.each<[PressureStepKind, string, string]>([
   ["claude_pressure", "/pressure", "pressure"],
   ["claude_address", "/address", "drafting"],
 ])("shows the %s activity glyph for a running step", (kind, label, glyph) => {
-  mount({ ...run, steps: [step(1, kind, "running")] });
+  mount({ ...run, round: 1, step: kind, steps: [step(1, kind, "running")] });
 
   const card = screen.getByRole("group", { name: `Round 1 ${label}` });
   const activity = card.querySelector(`[data-kind="${glyph}"]`);
@@ -221,11 +221,11 @@ it.each<StepState>(["running", "done", "failed", "stopped"])(
   },
 );
 
-it("pauses the header gauge when a socket update ends the run", () => {
+it("draws the header gauge at rest while the run works and after a socket update ends it", () => {
   const { container, socket } = mount();
   const gauge = container.querySelector('.chat-run-header [data-kind="pressure"]');
   expect(gauge).not.toBeNull();
-  expect(gauge?.hasAttribute("data-paused")).toBe(false);
+  expect(gauge?.getAttribute("data-paused")).toBe("true");
 
   act(() =>
     socket.receive({

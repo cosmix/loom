@@ -37,15 +37,16 @@ const FEATURES: FollowUpFeature[] = [
 function mount(features = FEATURES) {
   const onPick = vi.fn<(feature: string) => void>();
   const onClose = vi.fn();
+  const onLeave = vi.fn();
   render(
     <div>
-      <FeaturePicker features={features} onPick={onPick} onClose={onClose} />
+      <FeaturePicker features={features} onPick={onPick} onClose={onClose} onLeave={onLeave} />
       <button type="button">elsewhere</button>
     </div>,
   );
   const picker = screen.getByRole("listbox", { name: "Which feature?" });
   const active = () => document.getElementById(picker.getAttribute("aria-activedescendant")!);
-  return { picker, active, onPick, onClose };
+  return { picker, active, onPick, onClose, onLeave };
 }
 
 it("lists every feature with its mark and status, focused with the first option active", () => {
@@ -128,10 +129,26 @@ it("closes on Escape and on a press outside, and picks nothing", () => {
   expect(onPick).not.toHaveBeenCalled();
 });
 
+it("closes when focus moves on to something outside it, and not when the window loses focus", () => {
+  const { picker, onClose, onLeave } = mount();
+
+  fireEvent.blur(picker, { relatedTarget: within(picker).getAllByRole("option")[1] });
+  fireEvent.blur(picker, { relatedTarget: null });
+  expect(onLeave).not.toHaveBeenCalled();
+
+  fireEvent.blur(picker, { relatedTarget: screen.getByRole("button", { name: "elsewhere" }) });
+
+  expect(onLeave).toHaveBeenCalledOnce();
+  expect(onClose).not.toHaveBeenCalled();
+});
+
 it("says when no feature has a metaplan and lets nothing be picked", () => {
   const { picker, onPick, onClose } = mount([]);
 
   expect(within(picker).getByText("No feature has a metaplan yet.")).toBeTruthy();
+  const sentence = within(picker).getByText("No feature has a metaplan yet.");
+  expect(sentence.id).not.toBe("");
+  expect(picker.getAttribute("aria-describedby")).toBe(sentence.id);
   expect(within(picker).queryAllByRole("option")).toEqual([]);
   expect(picker.hasAttribute("aria-activedescendant")).toBe(false);
   fireEvent.keyDown(picker, { key: "ArrowDown" });

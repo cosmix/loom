@@ -26,10 +26,10 @@ function useRecordedSeconds(run: PressureRunView): number {
 export function DoneHead({ run }: { run: PressureRunView }): JSX.Element {
   const seconds = useRecordedSeconds(run);
   return (
-    <div className="chat-run-header grid gap-2 border-b border-hairline px-4 py-3">
+    <div className="chat-run-header grid gap-2 px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <CircleCheck aria-hidden="true" className="size-4 shrink-0 text-(--tone-completed)" />
-        <span className="text-[13px] font-bold text-foreground">Pressure test finished</span>
+        <span className="text-[13px] font-semibold text-foreground">Pressure test finished</span>
         <span className="inline-flex h-5 items-center gap-1 rounded-md bg-muted px-1.5 text-xs font-medium">
           <span>{plural(run.rounds, "round")}</span>
           <span aria-hidden="true">·</span>

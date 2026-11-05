@@ -4,7 +4,7 @@ import { expect, it, vi } from "vitest";
 
 import helloFixture from "@/plan/api/fixtures/hello.json";
 import { checklistViewSchema } from "@/plan/api/schema";
-import type { SessionView } from "@/plan/api/schema-chat";
+import type { Item, SessionView } from "@/plan/api/schema-chat";
 import { registerOfferAction } from "@/plan/offers/actions";
 import { checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { FailureNotice } from "./failure-notice";
@@ -23,6 +23,15 @@ import {
 } from "./state-line-kit";
 
 setupStateLineTests();
+
+const said: Item = {
+  type: "user",
+  id: "said",
+  text: "Hello",
+  attachments: [],
+  delivery: "sent",
+  origin: null,
+};
 
 it("every state's visible words", () => {
   const cases: Array<[SessionView["state"], string | null]> = [
@@ -173,6 +182,7 @@ it("announces state changes only, never elapsed time or tool summaries", () => {
   h.setTurns([turn([tool("Second tool")])]);
   expect(container.textContent).not.toContain("Second tool");
   expect(status.textContent).toBe("Working");
+  h.setTurns([turn([said, tool("Second tool")])]);
   h.setSession(session({ state: "ending" }));
   expect(status.textContent).toBe(
     "Writing final notes into the documents · This can take up to 10 minutes.",
@@ -243,4 +253,11 @@ it("session strings expose controls as visible text", () => {
     </Provider>,
   );
   expect(notice.container.textContent).toContain("Failed⟨U+200B⟩here");
+});
+
+it("a chat the user never wrote to is announced as ending, with no closing write promised", () => {
+  const h = harness(session({ state: "ending" }), [turn([tool("A tool")])]);
+  h.show();
+  const [status] = screen.getAllByRole("status");
+  expect(status.textContent).toBe("Ending the chat");
 });

@@ -1,8 +1,10 @@
 import type { JSX } from "react";
 import { Link } from "react-router";
 
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { toAddress } from "@/plan/files/address";
 
+import { fileName } from "./passages";
 import type { FoldNote } from "./types";
 
 /**
@@ -12,10 +14,13 @@ import type { FoldNote } from "./types";
 export function FoldNoteLine({ note }: { note: FoldNote }): JSX.Element {
   return (
     <div role="note" className="concept-note">
-      {note.text}.{" "}
+      <Untrusted text={note.text} />.{" "}
       <Link to={toAddress(note.path)}>
-        Open <span className="font-mono">{note.path.slice(note.path.lastIndexOf("/") + 1)}</span> in
-        file mode
+        Open{" "}
+        <span className="font-mono">
+          <Untrusted text={fileName(note.path)} />
+        </span>{" "}
+        in file mode
       </Link>
     </div>
   );

@@ -136,6 +136,21 @@ describe("leftBehind", () => {
     });
   });
 
+  it("an over-long decision or question refuses the whole block", () => {
+    const only = (body: unknown) =>
+      leftBehind([turn([user("closing"), block(JSON.stringify(body))])]);
+
+    expect(only({ decisions: ["x".repeat(500)], questions: [] }).decisions).toHaveLength(1);
+    expect(only({ decisions: ["x".repeat(501)], questions: ["Fine"] })).toMatchObject({
+      decisions: [],
+      questions: [],
+    });
+    expect(only({ decisions: ["Fine"], questions: ["x".repeat(501)] })).toMatchObject({
+      decisions: [],
+      questions: [],
+    });
+  });
+
   it("a chat with no closing turn still lists its documents", () => {
     const left = leftBehind([talk]);
 

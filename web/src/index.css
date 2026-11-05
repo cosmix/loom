@@ -80,9 +80,12 @@
    * ink, in the dark the ink itself. */
   --highlight: var(--primary);
   --highlight-foreground: var(--primary-foreground);
-  /* Accent-coloured text and lines: on paper the amber fill is 1.5:1 against the card, so they
+  /* Accent-coloured lines and glyphs: on paper the amber fill is 1.5:1 against the card, so they
    * take the darker ochre ring (3.8:1); in the dark themes the accent itself. */
   --accent-ink: var(--ring);
+  /* Accent-coloured text: a text run needs 4.5:1, so on paper it takes a deeper ochre than the
+   * ring (4.9:1 on the page, 5.3:1 on the card); in the dark themes the accent itself. */
+  --accent-text: oklch(0.5 0.11 80);
   --logo: var(--foreground);
   /* Ledger stock: blue ruling between table rows, a double rule under the heads. */
   --ledger-rule: oklch(0.8 0.045 240);
@@ -134,6 +137,7 @@
   --highlight: color-mix(in oklch, var(--primary) 18%, transparent);
   --highlight-foreground: var(--primary);
   --accent-ink: var(--primary);
+  --accent-text: var(--primary);
   --logo: oklch(1 0 0);
   --ledger-rule: var(--hairline);
   --ledger-head-rule: 1px solid var(--hairline);

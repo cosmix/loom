@@ -14,6 +14,11 @@ type Passage = {
   hash: string;
 };
 
+/** The last segment of a repository path: the document's file name. */
+export function fileName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
 export function passageOf(doc: DocView, anchor: string): Passage | null {
   const section = anchor === "" ? undefined : doc.sections.find((item) => item.anchor === anchor);
   if (anchor !== "" && !section) return null;

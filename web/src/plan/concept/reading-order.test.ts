@@ -88,7 +88,7 @@ describe("readingOrder", () => {
       readingOrder(
         page([sentence("a", [cite("x"), cite("y")])]),
         [run("a", 0), run("x", 1, "a")],
-        { x: ["doc/a.md#one", "doc/b.md#two"] },
+        { "a|x": ["doc/a.md#one", "doc/b.md#two"] },
         known,
       ),
     ).toEqual([
@@ -105,7 +105,7 @@ describe("readingOrder", () => {
       readingOrder(
         page([sentence("a", [cite("x")])]),
         [run("x", 1, "a")],
-        { x: ["doc/a.md#one"] },
+        { "a|x": ["doc/a.md#one"] },
         known,
       ),
     ).toEqual([{ kind: "sentence", id: "a", level: 0, runOf: null }]);
@@ -115,7 +115,7 @@ describe("readingOrder", () => {
     const order = readingOrder(
       page([sentence("a", [cite("x")]), sentence("b", [cite("x")])]),
       [run("a", 0), run("b", 0), run("x", 1, "a")],
-      { x: ["doc/a.md#one"] },
+      { "a|x": ["doc/a.md#one"] },
       known,
     );
     expect(order).toEqual([
@@ -131,7 +131,7 @@ describe("readingOrder", () => {
     const order = readingOrder(
       page([sentence("x"), sentence("a", [cite("x")])]),
       [run("x", 1), run("a", 0)],
-      { x: ["doc/a.md#one"] },
+      { "|x": ["doc/a.md#one"] },
       known,
     );
     expect(order.filter((target) => target.kind === "passage")).toEqual([
@@ -146,7 +146,12 @@ describe("readingOrder", () => {
       anchor: "one",
     };
     expect(
-      readingOrder(page([sentence("a", [source])]), [run("a", 0)], { a: ["doc/a.md#one"] }, known),
+      readingOrder(
+        page([sentence("a", [source])]),
+        [run("a", 0)],
+        { "|a": ["doc/a.md#one"] },
+        known,
+      ),
     ).toEqual([
       { kind: "sentence", id: "a", level: 0, runOf: null },
       { kind: "passage", id: "doc/a.md#one", level: 1, runOf: "a" },
@@ -158,7 +163,7 @@ describe("readingOrder", () => {
       page([sourceSentence("a", ["one"]), sourceSentence("b", ["one", "two"])]),
     );
     expect(
-      readingOrder(merged, [run("a", 0)], { a: ["doc/a.md#one", "doc/a.md#two"] }, known),
+      readingOrder(merged, [run("a", 0)], { "|a": ["doc/a.md#one", "doc/a.md#two"] }, known),
     ).toEqual([
       { kind: "sentence", id: "a", level: 0, runOf: null },
       { kind: "passage", id: "doc/a.md#one", level: 1, runOf: "a" },
@@ -176,7 +181,7 @@ describe("readingOrder", () => {
       readingOrder(
         page([sentence("a", [cite("x"), cite("y")])]),
         [run("a", 0), run("x", 1, "a")],
-        { x: ["doc/a.md#one"] },
+        { "a|x": ["doc/a.md#one"] },
         lookup,
       ),
     ).toEqual([

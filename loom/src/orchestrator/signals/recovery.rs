@@ -69,6 +69,8 @@ pub fn generate_recovery_signal(
     // spawns only once a v2 stage's contracts are frozen: it needs the same
     // frozen-contracts block a fresh implementation signal carries.
     super::v2_section::append_v2_section(&mut signal_content, stage, work_dir);
+    // A resumed integration-verify stage keeps the spec-conformance duty and its section list.
+    super::generate::append_product_sections(&mut signal_content, stage, work_dir);
     // A stage handed back from a merge resolver must see the failure it has to
     // fix on every resume, not only in its first signal.
     super::section_formatters::append_merge_handback_section(&mut signal_content, stage);
@@ -295,6 +297,41 @@ mod tests {
         };
         let path = generate_recovery_signal(&content, &v1, work_dir)?;
         assert!(!fs::read_to_string(&path)?.contains("## Frozen Contracts"));
+        Ok(())
+    }
+
+    /// A resumed integration-verify stage keeps the section list and the spec-conformance duty.
+    #[test]
+    fn recovery_signal_carries_product_sections_for_integration_verify() -> Result<()> {
+        use crate::orchestrator::signals::recovery_types::RecoverySignalContent;
+        let tmp = TempDir::new()?;
+        let work_dir = tmp.path().join(".loom/work");
+        fs::create_dir_all(work_dir.join("signals"))?;
+        let plan = "doc/plans/alpha/IN_PROGRESS-PLAN-x.md";
+        let config = format!("[plan]\nplan_id = \"PLAN-x\"\nsource_path = \"{plan}\"\n");
+        fs::write(work_dir.join("config.toml"), config)?;
+        fs::create_dir_all(tmp.path().join("doc/plans/alpha"))?;
+        fs::write(tmp.path().join(plan), "# X\n\nImplements: section_02\n")?;
+        let content = RecoverySignalContent::for_crash(
+            "session-recovery".to_string(),
+            "test-stage".to_string(),
+            "session-crashed".to_string(),
+            None,
+            1,
+        );
+
+        let verify = Stage {
+            stage_type: crate::models::stage::StageType::IntegrationVerify,
+            ..create_test_stage()
+        };
+        let path = generate_recovery_signal(&content, &verify, &work_dir)?;
+        let signal = fs::read_to_string(&path)?;
+        assert!(signal.contains("## Product Sections"), "{signal}");
+        assert!(signal.contains("- `doc/product/alpha/section_02.md`\n"));
+        assert!(signal.contains("loom memory question \"spec-conformance:"));
+
+        let path = generate_recovery_signal(&content, &create_test_stage(), &work_dir)?;
+        assert!(!fs::read_to_string(&path)?.contains("## Product Sections"));
         Ok(())
     }
 }

@@ -1,7 +1,8 @@
 import { useAtomValue } from "jotai/react";
 
 import type { Item, SessionView } from "@/plan/api/schema-chat";
-import { pendingPermissionsAtom } from "./model";
+import { userWrote } from "./closing";
+import { pendingPermissionsAtom, turnsAtom } from "./model";
 import { panelSessionAtom } from "./session-home";
 import { Untrusted } from "./visible-controls";
 
@@ -27,7 +28,7 @@ export function hasStateWords(session: SessionView | null): boolean {
  * summaries stay out, or the region would re-announce every few seconds for the whole turn. An idle
  * chat announces nothing: the composer is the cue.
  */
-function stateWords(session: SessionView | null, pending: Permission[]): string {
+function stateWords(session: SessionView | null, pending: Permission[], writes: boolean): string {
   if (!session) return "No chat";
   switch (session.state) {
     case "starting":
@@ -41,7 +42,10 @@ function stateWords(session: SessionView | null, pending: Permission[]): string 
         ? `Needs ${pending.length} decisions: ${pending.map((item) => item.tool).join(", ")}`
         : `Needs a decision${pending[0] ? `: ${pending[0].tool}` : ""}`;
     case "ending":
-      return "Writing final notes into the documents · This can take up to 10 minutes.";
+      // A chat the user never wrote to is torn down with no closing write to wait for.
+      return writes
+        ? "Writing final notes into the documents · This can take up to 10 minutes."
+        : "Ending the chat";
     case "ended":
     case "failed":
       // The visible words and the failure notice carry these; ChatAnnouncer says them aloud.
@@ -82,7 +86,8 @@ function StateWords({ state, hideWords }: { state: SessionView["state"]; hideWor
 export function StateLine() {
   const session = useAtomValue(panelSessionAtom);
   const pending = useAtomValue(pendingPermissionsAtom);
-  const words = stateWords(session, pending);
+  const turns = useAtomValue(turnsAtom);
+  const words = stateWords(session, pending, userWrote(turns));
   const elsewhere = announcedElsewhere(session);
   return (
     <div

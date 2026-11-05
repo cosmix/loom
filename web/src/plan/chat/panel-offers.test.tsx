@@ -13,6 +13,7 @@ import { snapshotAtom } from "./model";
 import { offerErrorAtom } from "./offer-error";
 import { ChatPanel, ChatRegistrations } from "./panel";
 import { chatSheetOpenAtom, DESKTOP } from "./sheet-state";
+import { wroteTurns } from "./start-chat-test-kit";
 
 vi.mock("./transcript", () => ({ Transcript: () => <div role="log">Transcript</div> }));
 vi.mock("./composer", () => ({ ComposerArea: () => <div>Composer</div> }));
@@ -57,7 +58,12 @@ function mount(session = running as typeof running | null, selectedOffer = offer
   store.set(youAtom, hello.you);
   store.set(authoringAtom, { holder: { ...hello.you, away_since: null, frees_at: null } });
   store.set(connectionAtom, { phase: "open", everOpen: true, lastMessageAt: Date.now() });
-  store.set(snapshotAtom, { session, turns: [], queue: [], previous: null });
+  store.set(snapshotAtom, {
+    session,
+    turns: session ? wroteTurns : [],
+    queue: [],
+    previous: null,
+  });
   render(
     <Provider store={store}>
       <ChatRegistrations />

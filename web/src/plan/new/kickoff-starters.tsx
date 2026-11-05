@@ -1,4 +1,4 @@
-import { Check, FileUp, FolderInput, History, Lightbulb, Plus, Wrench } from "lucide-react";
+import { Check, Plus } from "lucide-react";
 
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { followUpSeed } from "@/plan/feature/built-model";
@@ -6,12 +6,12 @@ import { DocumentStarter, type StarterDocument } from "@/plan/new/document-start
 import type { FollowUpFeature } from "@/plan/new/follow-up-features";
 import type { WorkKind } from "@/plan/new/kickoff-start";
 
+/** A starter is words alone (DESIGN.md, New work); only a finding pill carries a glyph. */
 export type Starter = {
   label: string;
   kind: WorkKind;
   /** The words the starter puts in the field; a follow-up leaves the field as it is. */
   text: string | null;
-  Icon: typeof Lightbulb;
 };
 
 export const STARTERS: readonly Starter[] = [
@@ -19,25 +19,21 @@ export const STARTERS: readonly Starter[] = [
     label: "A new feature for this project",
     kind: "feature",
     text: "I want to build a new feature: ",
-    Icon: Lightbulb,
   },
   {
     label: "A small fix or improvement",
     kind: "plan",
     text: "I want to fix or improve: ",
-    Icon: Wrench,
   },
   {
     label: "Grow standalone plans into a feature",
     kind: "feature",
     text: "I have standalone plans that belong together and want to grow them into a feature.",
-    Icon: FolderInput,
   },
   {
     label: "New plans for a feature that is already built",
     kind: "follow-up",
     text: null,
-    Icon: History,
   },
 ];
 
@@ -77,12 +73,10 @@ export function KickoffStarters({
           className="hearth-pill kickoff-starter"
           onClick={() => onChoose(starter)}
         >
-          <starter.Icon aria-hidden="true" />
           {starter.label}
         </button>
       ))}
       <DocumentStarter onPick={onAttach} variant="ghost" className="hearth-pill kickoff-starter">
-        <FileUp aria-hidden="true" />
         Start from a document I have
       </DocumentStarter>
     </fieldset>

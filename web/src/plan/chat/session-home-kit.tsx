@@ -17,6 +17,7 @@ import {
   youAtom,
 } from "@/plan/state/atoms";
 import { snapshotAtom } from "./model";
+import { wroteTurns } from "./start-chat-test-kit";
 
 // The test file owns its `vi.mock` calls (vitest hoists them per file); this kit holds the rest.
 export const offer = offerViewSchema.parse(hello.checklists[0]!.primary);
@@ -42,7 +43,12 @@ export function setup(path: string, current: SessionView | null, selected = offe
     standalone: [{ slug: "solo", path: "doc/plans/PLAN-solo.md", state: "written", title: "Solo" }],
     moves: [],
   });
-  store.set(snapshotAtom, { session: current, turns: [], queue: [], previous: null });
+  store.set(snapshotAtom, {
+    session: current,
+    turns: current ? wroteTurns : [],
+    queue: [],
+    previous: null,
+  });
   const router = createMemoryRouter(
     [
       {

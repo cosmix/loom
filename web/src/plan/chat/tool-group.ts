@@ -26,7 +26,11 @@ function foldRun(items: ToolItem[]): Array<Item | ToolGroup> {
   }
   const tools = items.length === 1 ? "tool" : "tools";
   return [
-    { kind: "group", items, label: `Used ${items.length} ${tools} · edited ${paths.size} files` },
+    {
+      kind: "group",
+      items,
+      label: `Used ${items.length} ${tools} · edited ${paths.size} ${paths.size === 1 ? "file" : "files"}`,
+    },
   ];
 }
 

@@ -14,13 +14,13 @@ use crate::plan_session::bridge::LaunchGuidance;
 use crate::plan_session::kind::SessionDir;
 use crate::planning::checklist::Offer;
 use crate::planning::guidance::start::follow_ups_open;
+use crate::planning::guidance::CLOSING_MESSAGE;
 use crate::planning::kinds::{is_feature_name, plans_dir, product_dir, vision_path};
 use crate::planning::project::{Feature, Project};
 
 const BRIEF: &str = "You are a planning session started by `loom plan`. Write only under doc/. Ask in plain text, never with a question tool.";
 const PLUGIN: &str =
     r#"{"name": "loom-plan", "version": "0.0.0", "description": "loom plan session"}"#;
-const CLOSING: &str = "Record the remaining open questions and anything still pending into the documents now, then stop.";
 
 /// Supplies launch files and messages without coupling guidance to the bridge.
 pub trait GuidanceProvider: Send + Sync {
@@ -151,7 +151,7 @@ impl GuidanceProvider for FixedGuidance {
     }
 
     fn closing_message(&self) -> String {
-        CLOSING.to_owned()
+        CLOSING_MESSAGE.to_owned()
     }
 }
 

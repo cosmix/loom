@@ -2,44 +2,32 @@ import type { ReactElement } from "react";
 
 import type { ReadingSize } from "./preferences";
 
-/** A text line in the little page: its x offset and width, drawn as a rounded bar. */
-type Line = { x: number; width: number };
+/** A text line in the little page: its width, drawn as a rounded bar. */
+type Line = { width: number };
+
+/** Every bar starts here: 3.5px inside the outline's left edge (4.5). */
+const LINE_X = 8;
 
 /**
  * The page's lines per reading size, in the 40 by 32 box. Compact packs five thin lines, Comfortable
- * four, Large three thick ones headed by a short first bar; each set keeps the same 4px margin
+ * four, Large three thick ones headed by a short first bar; each set keeps the same 3.5px margin
  * inside the page outline, so the tiles read as the same page at three settings.
  */
 const PAGES: Record<ReadingSize, { height: number; gap: number; lines: Line[] }> = {
   17: {
     height: 2,
     gap: 2,
-    lines: [
-      { x: 8, width: 24 },
-      { x: 8, width: 24 },
-      { x: 8, width: 20 },
-      { x: 8, width: 24 },
-      { x: 8, width: 16 },
-    ],
+    lines: [{ width: 24 }, { width: 24 }, { width: 20 }, { width: 24 }, { width: 16 }],
   },
   19: {
     height: 2.5,
     gap: 2.5,
-    lines: [
-      { x: 8, width: 24 },
-      { x: 8, width: 22 },
-      { x: 8, width: 24 },
-      { x: 8, width: 14 },
-    ],
+    lines: [{ width: 24 }, { width: 22 }, { width: 24 }, { width: 14 }],
   },
   21: {
     height: 3,
     gap: 3.5,
-    lines: [
-      { x: 8, width: 14 },
-      { x: 8, width: 24 },
-      { x: 8, width: 20 },
-    ],
+    lines: [{ width: 14 }, { width: 24 }, { width: 20 }],
   },
 };
 
@@ -67,7 +55,7 @@ export function SizePicture({ size }: { size: ReadingSize }): ReactElement {
         <rect
           key={index}
           data-line=""
-          x={line.x}
+          x={LINE_X}
           y={top + index * (height + gap)}
           width={line.width}
           height={height}

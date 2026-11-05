@@ -4,8 +4,6 @@ use super::*;
 use crate::fs::memory::{MemoryEntryType, Receipt, ReceiptOutcome};
 use chrono::{Duration, TimeZone};
 
-type Journals = HashMap<String, Vec<MemoryEntry>>;
-
 fn stages(specs: &[(&str, &str)]) -> Vec<StageInfo> {
     let dir = tempfile::tempdir().unwrap();
     for (index, (id, name)) in specs.iter().enumerate() {
@@ -107,6 +105,21 @@ fn review_item_line_escapes_the_name_and_collapses_the_text() {
     assert_eq!(
         review_item_line("A \\ *b* c", "s-1", "  one\n\ttwo   three \n"),
         "- **A \\\\ \\*b\\* c** (`s-1`): one two three"
+    );
+}
+
+#[test]
+fn a_multi_line_stage_name_stays_one_bullet_the_parser_reads_back() {
+    use crate::planning::run_review::{review_items, ReviewSection};
+    let line = review_item_line("Wire the\n  *bridge*", "wire", "done");
+    assert_eq!(line, "- **Wire the \\*bridge\\*** (`wire`): done");
+    let doc = format!("{OPEN_QUESTIONS_HEADING}\n\n{line}\n");
+    let items = review_items(&doc, ReviewSection::OpenQuestions);
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].stage_name, "Wire the *bridge*");
+    assert_eq!(
+        (items[0].stage_id.as_str(), items[0].text.as_str()),
+        ("wire", "done")
     );
 }
 

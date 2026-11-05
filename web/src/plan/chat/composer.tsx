@@ -100,7 +100,7 @@ function MessageBox({
   const inFeature = useAtomValue(screenAtom)?.feature != null;
   const placeholder =
     context.kind !== null
-      ? `Ask about ${visibleControls(context.name)}, or say what to change`
+      ? `Ask about ${visibleControls(context.name)}…`
       : inFeature
         ? "Ask about this feature"
         : undefined;
