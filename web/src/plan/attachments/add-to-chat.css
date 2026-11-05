@@ -1,0 +1,107 @@
+/*
+ * The selection actions float over the text the user selected (ui/DESIGN.md, Surfaces): a
+ * full-radius pill on the popover surface with the floating shadow, holding the one action the
+ * selection exists for as a `--primary` pill button, a hairline rule, then the ghost secondaries.
+ * It rises 4px into place; the oversize note sits under the pill in `--destructive` text.
+ */
+
+.add-to-chat {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  font-family: var(--font-sans);
+  animation: add-to-chat-rise 120ms ease-out;
+}
+
+.add-to-chat__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--plan-shadow), var(--popover-lift);
+}
+
+/* A hairline between the primary and the secondaries, inset from the pill's curve. */
+.add-to-chat__rule {
+  align-self: stretch;
+  width: 1px;
+  margin-block: var(--space-1);
+  background: var(--border);
+}
+
+.add-to-chat__primary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 28px;
+  margin: 0;
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border: 0;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-family: inherit;
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms;
+}
+
+.add-to-chat__primary > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.add-to-chat__primary:hover {
+  background: color-mix(in oklch, var(--primary) 88%, var(--primary-foreground));
+}
+
+.add-to-chat__primary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* The note stands on the popover surface too: it sits over document text and needs its own ground. */
+.add-to-chat__note {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
+  background: var(--popover);
+  box-shadow: var(--plan-shadow), var(--popover-lift);
+  color: var(--destructive);
+  font-size: var(--type-fine);
+  line-height: 1.4;
+}
+
+@keyframes add-to-chat-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .add-to-chat {
+    animation: none;
+  }
+
+  .add-to-chat__primary {
+    transition: none;
+  }
+}

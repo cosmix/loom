@@ -219,7 +219,7 @@ function SendButton({
   const holder = useAtomValue(authoringAtom)?.holder;
   if (canAuthor || !holder) return null;
   return (
-    <Button type="button" size="sm" onClick={() => open(store, draft, holder)}>
+    <Button type="button" size="sm" variant="ghost" onClick={() => open(store, draft, holder)}>
       Send to author
     </Button>
   );
