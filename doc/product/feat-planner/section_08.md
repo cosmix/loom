@@ -16,23 +16,23 @@ section 10's.
 The chat panel docks on the right of every page except `/new` (vision, "The screen"). It shows one
 conversation, the project's authoring session (section 07), as a list of turns; each turn is the
 user's message, then the session's reply rendered one transcript block at a time, then a footer
-with what the turn changed and cost. A state line at the top of the panel always says what the
-session is doing and what it needs. Only the browser holding authoring has a composer; every
-other browser sees the same conversation live with no input box. Nothing in the panel is stored
-on the server beyond section 07's model: drafts, panel width, and scroll position live in the
-browser.
+with what the turn changed. The head's sub-line says in a few words what the session is doing
+and what it needs; an idle chat has no words there. Before the first message the panel shows a
+greeting and the composer, and no session exists. Only the browser holding authoring has a
+composer; every other browser sees the same conversation live with no input box. Nothing in the
+panel is stored on the server beyond section 07's model: drafts, panel width, and scroll
+position live in the browser.
 
 ## Layout
 
 ```text
-┌ Chat ─────────────────────────────────────── ⋯ ┐
-│ ◐ Working · 41s · Edit section_02.md           │  state line
-│ Dana authoring · 2 watching · 18.4k tokens     │  session line
+┌ Write section 02 ─────────────────────────── ✎ ┐
+│ Working · section_02.md                        │  head: title, state words · place
 ├────────────────────────────────────────────────┤
 │  turns, oldest first                           │  transcript
-│  …                                             │
-│  Suggested prompts (no chat, empty draft)      │  context prompts
+│  …                                             │  (no session: the greeting)
 ├────────────────────────────────────────────────┤
+│ (What is still undecided?)                     │  context prompts, as pills
 │ Queued (1)                                     │  queue
 │ ┌────────────────────────────────────────────┐ │
 │ │ ▤ About section_02                       × │ │  context row
@@ -57,23 +57,26 @@ browser.
   the reader collects passages first and writes once.)
 - **Surface.** The panel sits on `--card` with a `--hairline` left border, beside the reading
   column on `--background`. It is one continuous surface: hierarchy comes from type, space and a
-  single hairline, with no nested cards. A user turn is set apart without a bubble in a box, tool
-  activity is a quiet run of lines that folds, and the composer is part of the panel with no card
-  floating in it. A permission decision is the one item allowed real emphasis, and even that does
-  not nest boxes. No coloured spine marks anything in it
-  (`conventions/web-dashboard-typography.md`, "Stage thread chips").
-- **Header.** The title, the state ("Waiting for you" as a glyph and a word) and the chat menu
-  share one centre line, with Close in the sheet. The menu (a "Chat menu" disclosure) appears
-  when the browser can end the chat, holds **End chat** as a full-width row on the header
-  popovers' surface, and closes on Escape, on a click outside and on choosing End chat. An ended
-  or failed chat offers **New chat** in the composer area. Below the state line, a chat's session line names
-  the authoring browser, the watcher count and the running token total; another browser sees
-  "Read-only · Dana is authoring". An away holder shows when authoring frees. With no chat,
-  there is no session line. The context row (below) is the first attachment row of the
-  composer, not part of the head.
+  single hairline. A user turn is a tinted block aligned to the right, tool activity is a quiet
+  run of lines that folds, assistant text has no box, and the composer is one round box with a
+  round Send and a round Stop. A permission decision is the one item allowed real emphasis, and
+  even that does not nest boxes. No coloured spine marks anything in it
+  (`conventions/web-dashboard-typography.md`, "Stage thread chips"). The pane draws at most one
+  roundel: on what is working now, and none when nothing works. It is an activity signal, never
+  an avatar, so no message carries one.
+- **Header.** The title sits over a sub-line. The title is the session's brief label ("Write
+  section 08 — Chat interface"), "Chat" until it loads, and "New chat" while no session exists.
+  The sub-line names the state in a few words, then the place the chat concerns (the feature or
+  plan it belongs to, else the document being read): Starting, Working, "Needs your answer",
+  Wrapping up, Ended or Stopped. An idle chat and an empty panel show no state words. The head
+  has no menu, no run line and no relative time. **New chat** is the head's round, icon-only
+  button, drawn only while a chat is live and this browser holds authoring; Close sits beside it
+  in the sheet. Another browser sees "Read-only · Dana is authoring" in place of the composer
+  (below), and the header's presence list shows an away holder and when authoring frees (section
+  02). The context row (below) is the first attachment row of the composer, not part of the head.
 - **No offers.** The panel draws no offer to start a step. Offers sit in the feature's spine and
   on the pages that own them (section 01), so no screen shows one offer twice. The panel offers
-  New chat and the context prompts only.
+  New chat (while a chat is live) and the context prompts only.
 
 On `/new`, an active kickoff conversation puts the transcript and composer in the main column,
 with **Taking shape** in place of the chat dock. The transcript uses the selected reading face;
@@ -116,9 +119,9 @@ commands, and identifiers (`conventions/web-dashboard-typography.md`). (My call.
 
 | Item         | Rendering                                                                                                                                                         |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `user`       | Set apart by type and space, not a bubble in a box; attachment chips under it                                                                                     |
-| `text`       | Full-width Markdown in the reading face (section 06's renderer), no bubble                                                                                        |
-| `thinking`   | One muted line, "Thought for 3s"; consecutive markers in one message merge into one line                                                                          |
+| `user`       | A tinted block aligned to the right, a quoted passage above the words inside it; attachment chips under it                                                         |
+| `text`       | Full-width Markdown in the reading face (section 06's renderer), no box                                                                                           |
+| `thinking`   | Nothing: the chat shows the model's words and its work, not its timing                                                                                            |
 | `tool`       | A tool row (below)                                                                                                                                                |
 | `permission` | A permission decision (below)                                                                                                                                     |
 | `notice`     | A centred muted line with a small glyph; API errors in `--tone-blocked`; an auto-mode block (below) reads as "the session was stopped here", not as an error card |
@@ -132,8 +135,8 @@ open in a new tab. A chat reply never navigates away from the app.
 
 **Block by block.** Text appears one content block at a time, as Claude Code writes each block to
 the transcript (section 07, "Streaming granularity"). A block appears whole, without a typing
-animation. While the session works and the newest block has not arrived, the state line says so;
-the transcript shows no placeholder bubble. (My call: a fake typing effect would claim a
+animation. While the session works and the newest block has not arrived, the head says "Working" and the
+turn carries the pane's roundel; the transcript shows no placeholder bubble. (My call: a fake typing effect would claim a
 granularity the bridge does not have.)
 
 **Hover controls.** Each user message and each assistant text block shows on hover a copy
@@ -141,13 +144,22 @@ control (copies the Markdown source) and its time. Items are not editable after 
 
 **Opening messages and server messages.** The first user message of a session started from an
 offer is section 09's opening message. It renders as a user message labelled with the offer's
-name ("Write section 08 — Chat interface"), collapsed to its first line with a "Show" control,
-since its audience is the session. The closing message the server delivers
-before a session ends (section 07, "Interrupt and end") renders the same way, labelled "Closing
-message from loom plan". (My call.)
+name ("Write section 08 — Chat interface"), drawn as one quiet centred line with that label and a
+"Show" control, since its audience is the session; the prompt is not in the page until Show. The
+closing message the server delivers before a session ends (section 07, "Interrupt and end") is
+never shown. Its turn is drawn as the ending (below). (My call.)
+
+**The ending.** The closing turn is not drawn as a turn. While its write runs it is a card with
+the pane's one roundel, "Writing down what we decided", and a tick for each document the write
+has reached. When it is done the card reads "Here's what this chat left behind": the documents
+changed with their line counts, the decisions (Decided), and the open questions (Still open),
+read from the `loom-closing` block the closing message asks for (section 09), with a link to
+the changes when a document changed. A chat whose closing write never ran or was cut off shows
+the same card from its turns, listing the documents it changed, and only when one changed. A
+chat the user sent no message to has no closing write and no card.
 
 **Long conversations.** The 20 most recent turns render in full. Older turns render as one line
-each ("Turn 3 · 2 files changed · 4.1k tokens") that expands in place. (My call: a long
+each ("Turn 3 · 2 files changed") that expands in place. (My call: a long
 refinement session would otherwise put thousands of rows in the page.)
 
 **Scrolling.** The transcript follows new items while it is scrolled to the bottom. When the
@@ -171,8 +183,8 @@ is section 07's `summary` field, which the bridge forms from the tool input:
 
 | Status       | Shows                                                                           |
 | ------------ | ------------------------------------------------------------------------------- |
-| pending      | a small `BusyRoundel` (`web/src/aurora-ui/feedback/BusyRoundel.tsx:57`)         |
-| done         | a muted check                                                                   |
+| pending      | the word "Pending"; the pane's one roundel is on the working turn, not in the row |
+| done         | nothing beyond the row; an edit shows its `+a −b` counts                        |
 | error        | `--tone-blocked` cross and the error's first line under the row, without expanding |
 | denied       | "Denied", with the deny note if one was given                                   |
 | not finished | muted "Not finished" for a call the turn's interrupt cut off                    |
@@ -190,54 +202,60 @@ files", that expands to the rows. A row in error or denied stays outside the fol
 reader of a finished turn wants the text and the changed files; the tool trail is there on
 demand.)
 
-**Subagents.** An `Agent` row carries the count of the subagent's own tool calls and a
-`BusyRoundel` while it runs. Its nested rows (section 07: items with `subagent` set) render under
+**Subagents.** An `Agent` row carries the count of the subagent's own tool calls. Its nested rows (section 07: items with `subagent` set) render under
 it, indented one step, collapsed by default. Expanding the row also shows the subagent's final
 result. The summary rebuild a refinement turn runs (section 04) is one such row, labelled by its
 description.
 
 ## Session states
 
-The state line at the top of the panel names the state in words, with a glyph; colour is never
-the only signal. The states are section 07's.
+The head's sub-line names the state in words, and a glyph never stands alone: colour is never the
+only signal. The states are section 07's, with one more before the first message.
 
-| State      | State line                                                                            | Composer (authoring browser)                 |
-| ---------- | ------------------------------------------------------------------------------------- | -------------------------------------------- |
-| none       | "No chat"; "New chat" and the context prompts (below) sit beneath it                  | Enabled; sending starts a chat               |
-| Starting   | `BusyRoundel` turning, "Starting session", the session's name and model               | Enabled; messages queue                      |
-| Idle       | Roundel at rest, "Waiting for you"                                                    | Enabled; Send delivers                       |
-| Working    | Roundel turning, "Working · 41s", the newest tool row's summary, "2 subagents" if any | Enabled; Send queues; Stop beside Send        |
-| Permission | `--tone-warning` glyph, "Needs a decision: Bash"; the card is pinned (below)          | Enabled; Send queues; Stop beside Send        |
-| Ending     | Roundel turning, "Writing final notes into the documents"; the 10-minute bound        | Disabled, with the reason                    |
-| Ended      | Muted stamp, "Chat ended · 3m ago"                                                    | Replaced by "New chat" and the prompts       |
-| Failed     | `HazardPanel` (`web/src/aurora-ui/feedback/HazardPanel.tsx:116`) in its error tone    | Replaced by "New chat"                       |
+| State      | Head sub-line                                      | Panel                                                                        | Composer (authoring browser)                                  |
+| ---------- | -------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| none       | no words                                           | The greeting (below)                                                         | Enabled with the context prompts; the first message starts a chat |
+| Starting   | "Starting"                                         | A card with the pane's roundel: "Starting the session", the name, model, effort | Enabled; messages queue                                       |
+| Idle       | no words                                           | The conversation                                                             | Enabled; Send delivers                                        |
+| Working    | "Working"                                          | The roundel on the newest turn; the running tool's own row                   | Enabled; Send queues; Stop beside Send                        |
+| Permission | "Needs your answer", with a `--tone-warning` mark  | The permission card, pinned (below)                                          | Enabled; Send queues; Stop beside Send                        |
+| Ending     | "Wrapping up"                                      | The ending card (above)                                                      | Replaced by "The composer comes back with your next chat."    |
+| Ended      | "Ended"                                            | The conversation, then what the chat left behind                             | Replaced by "This chat has ended." and **Start a new chat**   |
+| Failed     | "Stopped"                                          | The failure notice (below)                                                   | Replaced by "This chat has ended." and **Start a new chat**   |
 
-**Empty state.** "No chat" stands beside its resting glyph, with **New chat** and, for an empty
-draft, the context prompts beneath it. The panel carries no offer from section 01. The composer
-stays available to the authoring browser; sending its text and attachments starts a chat.
+The Idle row has no words in the head: the composer is the cue that the chat waits for the user.
+A screen reader hears the state through a polite live region in the head, and a permission
+request, an ended chat and a failed one through the chat announcer. The header's activity pill
+keeps its own row for an idle chat, "Waiting for you" (section 02). The sub-line carries no timer,
+tool summary or subagent count; the running tool's row says what is happening.
 
-**Header glyphs.** The sheet-opening Chat button uses `ChatGlyph`: a turning
-`LoaderCircle` for Starting, a writing `PenLine` for Working and Ending, and a ringing `BellRing`
-in `--tone-warning` while permission is needed. Pending permissions take priority over the
-session's state. Idle and no chat use a resting roundel; Failed shows `!`, Ended `✓`. The session
-line uses the drafting glyph for Starting, Working and Ending, and a breathing status LED for
-"Waiting for you". These activity glyphs freeze under `prefers-reduced-motion`.
+**Empty state.** With no session the panel shows a greeting in place of the transcript:
+"Good morning. What are we deciding?" (morning before 12:00, afternoon before 18:00, otherwise
+evening, by the browser's clock), then "I'll read the documents beside you and write down what we
+settle. Your first message starts the session." Below it the context prompts (below) show as
+pills above the composer. The panel carries no offer from section 01. New chat starts nothing: it
+clears the concluded chat from the panel, and the composer takes focus. The user's first message,
+with its attachments, starts the chat.
 
-The roundel and the stamp reuse the dashboard's patterns: `WorkRoundel` and `ActivityRoundel`
-(`web/src/components/activity-roundel.tsx:11`, `:37`) for the turning disc, the terminal well's
-`Stamp` (`web/src/components/terminal/terminal-notice.tsx:57`) for an ended state with its age.
-Elapsed times use `formatElapsed` (`web/src/lib/format.ts:42`).
+**Header glyphs.** The sheet-opening Chat button uses `ChatGlyph`: the turning roundel for
+Starting, Working and Ending, a ringing `BellRing` in `--tone-warning` while permission is
+needed, `!` for Failed, `✓` for Ended, and a resting `MessageSquare` for Idle and no chat.
+Pending permissions take priority over the session's state. The panel draws one roundel at most:
+on what is working now, and none when nothing works, so the head's sub-line draws no glyph of its
+own for those states. The glyphs freeze under `prefers-reduced-motion`.
 
-- **Working** counts from the turn's first `UserPromptSubmit`. The summary of the newest tool row
-  tells a viewer what is happening without scrolling the transcript.
+The roundel reuses `RoundelGlyph` (`web/src/plan/ui/roundel-glyph.tsx`), the planner's one sign of
+work in progress.
+
 - **Failed** says which kind of failure: "The session could not start" with the spawn error, or
   "The session stopped unexpectedly" with the time of its last transcript activity. Both add:
   "The documents keep what the session recorded as it went. A new chat starts fresh." (section
   07, "Crashes and kills").
 - **Ended** keeps the conversation readable until the next chat starts in this server (section
-  07, "Reattaching and resume"). The ended conversation stays in place above the new one's
-  starting state, under a divider with the end time, and leaves the panel when the new session
-  writes its first item.
+  07, "Reattaching and resume"). **Start a new chat** clears it from the panel at once. A
+  message sent from the composer after a clicked prompt starts the next chat without clearing it:
+  the ended conversation stays above the new one's starting state, under a divider with the end
+  time ("Chat ended at 14:32"), and leaves the panel when the new session writes its first item.
 
 The browser tab's title names the place and carries the state when it needs the user. On
 `/f/<feature>/...` it reads `<slug> · loom plan`, elsewhere `<project> · loom plan`. A `(!)`
@@ -396,9 +414,9 @@ repository-relative source path to attach. The pressure and run pages have no pa
    Dismissing clears the context for that document until the reader opens another.
 2. **Composer placeholder.** "Ask about section_05, or say what to change"; with no context, "Ask
    about this feature".
-3. **Prompts.** With no session and an empty draft, the panel shows two or three prompts for the
-   kind, in a list named "Suggested prompts". A click fills the composer, focuses it and sends
-   nothing, so no click spends tokens.
+3. **Prompts.** While no chat runs and the draft is empty, the composer area shows the prompts
+   for the kind as a row of suggestion pills above the box, in a list named "Suggested prompts".
+   A click fills the composer, focuses it and sends nothing, so no click spends tokens.
 
    | Kind                 | Prompts                                                                                                       |
    | -------------------- | ------------------------------------------------------------------------------------------------------------- |
@@ -425,14 +443,12 @@ repository-relative source path to attach. The pressure and run pages have no pa
 Each turn ends with a footer under its last item.
 
 ```text
-41s · 2.8k tokens
 Changed 3 files
   product/feat-planner/section_02.md +12 −4    Diff
   plans/PLAN-plan-server.md        +3 −1     Diff
   product/feat-planner/section_09.md new       Diff
 Rebuilt summaries
-  section_02                       3.1k tokens
-  Product overview                 6.4k tokens
+  section_02                       left for the background rebuild
 ```
 
 **Changed files.** One file row per entry in section 07's `changed_files`: the path relative to
@@ -454,33 +470,32 @@ their state; section 10 says what that list is for.
 A turn that changed no file shows no list.
 
 **Rebuilt summaries.** Section 07's `summaries_rebuilding`, one row per summary with a link to its
-summary page (section 05). While the rebuild subagent runs the rows read "Rebuilding" with a
-`BusyRoundel`. When the turn ends each row shows its tokens (section 04, "Cost"), or "failed" with
-the last `seal` error on hover, or "left for the background rebuild" for a summary that was still
-stale at the turn's end (section 04, "Who rebuilds what"). Overviews built in one batch show one
-figure for the batch.
+summary page (section 05). While the turn runs the footer shows "N summaries rebuilding" and each
+row reads "Rebuilding". When the turn ends each row reads "left for the background rebuild" for a
+summary that was still stale at the turn's end (section 04, "Who rebuilds what").
 
-**Cost.** The footer's first line is the turn's duration (`system` `turn_duration`) and its tokens:
-fresh tokens (input, cache writes, and output, the `fresh` sum the dashboard uses,
-`web/src/lib/tokens.ts:11`) formatted with `compactTokens` (`web/src/lib/tokens.ts:35`), with a
-tooltip giving the four parts: fresh input, cache writes, cache reads, output. The figure covers
-the main agent and its subagents, the summary rebuild included; the rebuilt-summaries rows break
-that part out. The session line shows the session's running total the same way, and, when the
-quota poller (section 04) has a figure, the time left in the five-hour window from
-`quotaLeftText` (`web/src/lib/tokens.ts:57`). (My call: cost is an anti-goal concern, so it shows
-where the spending happens.)
+**Cost.** The chat shows no token counts: no duration line in the footer, no running total, no
+count on a collapsed turn or on a rebuilt-summary row. Where cost is still visible: Settings >
+Summaries shows the rebuild token totals and the last rebuild (section 04, "Cost"); the footer
+shows the Claude and Codex limits; a pressure test's header, its steps and its end card keep
+their token totals (section 11). (My call: cost is an anti-goal concern, so it shows where the
+spending is steered, not in the conversation.)
 
 ## Starting a chat
 
-A chat starts in one of three ways, all from the browser that will hold authoring:
+A chat starts in one of two ways, all from the browser that will hold authoring:
 
 1. **An offer** (section 01) on the page that owns it: the spine's next step, a queue row on the
    product or engineering page, the Pressure test or Run page, an empty state's offer (section
    05), or a missing entry in file mode's tree (section 06). The panel offers none.
-2. **New chat**: a refinement session with no step-specific brief (section 09 owns its brief).
-3. **Sending a message** when no chat runs: a new refinement session whose opening message is
-   the composer's text and attachments, the viewed document included (below). (My call: a
-   reviewer who selected a passage and typed a question should not need a separate start step.)
+2. **Sending a message** when no chat runs: a new refinement session whose opening message is
+   the composer's text and attachments, the viewed document included (below), with the brief of
+   a message start (section 09 owns it). (My call: a reviewer who selected a passage and typed
+   a question should not need a separate start step.)
+
+**New chat** is not a way to start. It starts no session: it clears the concluded chat from the
+panel and focuses the composer, and the user's first message then starts the chat as above. While
+a chat is live the head's New chat button ends it first, after the confirmation below.
 
 Starting shows the Starting state with the session's name
 (section 07's display name, `loom plan: section 08`), its model and effort (section 09), and a
@@ -498,9 +513,11 @@ When two browsers start a chat at the same moment, the server grants the first; 
 
 ## Ending a chat
 
-The panel header's menu has **End chat**, for the holding browser. It confirms first: "End this
-chat? The session will write its open questions and anything pending into the documents, then
-stop." The session then shows Ending until it reaches Ended (section 07).
+The panel has no End chat control. A chat ends when the user starts a new chat, opens another
+offer, or leaves the planner (the holder's grace period, below). Starting a new chat or opening
+an offer while a chat is live asks first (see "Starting a chat"). The session then shows Ending
+until it reaches Ended (section 07). The closing write runs only when the user sent at least one
+message (section 07); a chat without one ends at once, with no Ending card.
 
 Closing the tab or the browser needs no action. A note under the composer says so the first time
 a browser holds authoring: "Closing this tab keeps the session for 10 minutes. After that it
@@ -508,9 +525,9 @@ writes its notes into the documents and ends." The app sets no `beforeunload` pr
 the grace period and the closing write make leaving safe, and an unload prompt on every reload
 would teach users to dismiss it.)
 
-While the holding browser is away, every other browser sees in the session line: "Dana is away ·
-authoring frees at 14:32", from section 07's `away_until`. When the holder returns within the
-grace period the line returns to normal. When it runs out, the session goes through Ending, and
+While the holding browser is away, every other browser sees in the header's presence list that Dana is
+away and that authoring "frees at 14:32" (section 02), from section 07's `away_until`. When the holder
+returns within the grace period the list returns to normal. When it runs out, the session goes through Ending, and
 any browser can start the next chat.
 
 ## Pressure runs
@@ -518,10 +535,10 @@ any browser can start the next chat.
 A pressure run (section 11) occupies the panel the way an authoring session does. Starting one
 takes authoring like starting a chat (section 02).
 
-- **Run header.** Under the state line, in place of the session line, a header names the plan,
+- **Run header.** Under the head, a header names the plan,
   the round, and the step: "Pressure test · `PLAN-foo.md` · round 2 of 3 · /address", with the
-  run's elapsed time and its token total. The state line shows the running step's state as for
-  any session.
+  run's elapsed time and its token total. The head's sub-line shows the running step's state as
+  for any session.
 - **Claude steps.** Each Claude step renders as a run of turns, as any session's do, under a
   divider naming the step and its model. Its footer lists the plan edits the step made, with
   Diff links (above, "What a turn changed"), and its tokens, teammates included (section 11).
@@ -535,7 +552,7 @@ takes authoring like starting a chat (section 02).
 - **Stop.** Stop is shown for the whole run and stops the whole run (section 11, "Stopping,
   failure, and server stops"), after confirming: "Stop the pressure test? The plan keeps the
   edits made so far, and no record is written." (My call: unlike a chat interrupt, stopping a run
-  discards its progress.) There is no End chat while a run lasts.
+  discards its progress.)
 - **The end.** The header's last line says how the run ended: "Pressure test recorded", "Stopped
   by Dana", or "Step 3 failed" with the reason section 11 gives. The run's turns stay readable
   like an ended chat until the next chat or run starts.
@@ -549,17 +566,15 @@ panel exactly as the holder does, live, with these differences:
 
 - no composer while another browser holds authoring: in its place a muted line, "Read-only ·
   Dana is authoring". When nobody holds authoring there is no read-only browser: every browser
-  gets the composer and "New chat", and the first to use one takes authoring
-  (section 02);
-- no Allow or Deny on permission cards, no Stop, no End chat (the Brief link still opens);
+  gets the composer, and the first to send takes authoring (section 02);
+- no Allow or Deny on permission cards, no Stop, no New chat (the Brief link still opens);
 - queued messages as a count only;
 - no "Add to chat" in the reading column (section 05); in its place "Send to author", whose
   suggestions reach the holder's panel as cards above the composer (section 10, "Read-only
   viewers").
 
-**Presence.** The session line names the holder and counts the other browsers: "Dana authoring · 2
-watching". Hovering the count lists them by their browser names, as the header's presence list
-does (section 02). The chat panel shows no typing indicator. (My call: it would need a new
+**Presence.** The header's presence list (section 02) names the holder and lists the other
+browsers by their browser names; the chat panel carries no presence line and no typing indicator. (My call: it would need a new
 message lane for little gain.)
 
 When `loom plan` runs in its read-only mode (section 02, "Missing prerequisites": `tmux` or
@@ -595,8 +610,8 @@ received, dimmed, with "Last update 3m ago". (My call.)
 ## Accessibility
 
 - The transcript is `role="log"` with `aria-live="polite"`; each new assistant text block is
-  announced once. Tool rows are not announced; the state line is a polite live region that
-  announces state changes, at most once every five seconds while Working.
+  announced once. Tool rows are not announced; the head holds a visually hidden polite live region that
+  announces state changes, and says nothing for an idle chat.
 - A new permission request is announced assertively once, naming the tool, and moves focus to
   the pinned card only when focus was already inside the chat panel.
 - Every glyph has a text label; the state is always in words.

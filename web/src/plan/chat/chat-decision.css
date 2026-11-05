@@ -2,17 +2,17 @@
  * for why these rules are unlayered.
  */
 
-/* The one place with real emphasis: a band across the panel between two hairlines, with a wash
- * behind it. It stops 4px short of each edge so its focus ring stays inside the scroll
- * container. */
+/* The one place with real emphasis: a card with aurora-ui's HazardRail (the caution tape as one
+ * narrow band on its start) and a clean body. The edge is the hazard warning at 25%, a
+ * transparency of that tone; no shadow. */
 .chat-decision {
   display: grid;
   min-width: 0;
-  gap: var(--space-3);
-  margin-inline: calc(4px - var(--chat-gutter));
-  padding: var(--space-4) calc(var(--chat-gutter) - 4px);
-  border-block: 1px solid var(--hairline);
-  background: var(--muted);
+  grid-template-columns: 10px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--hazard-warning) 25%, transparent);
+  border-radius: var(--chat-card-corner, 14px);
+  background: var(--background);
   color: var(--foreground);
   font-size: var(--type-body);
   line-height: var(--leading-body);
@@ -23,19 +23,51 @@
   outline-offset: 2px;
 }
 
+/* The rail's own classes carry the stripes; its edge and wash take the planner's tone here. */
+.chat-decision-rail {
+  width: 10px;
+  border-right: 1px solid color-mix(in oklab, var(--hazard-warning) 25%, transparent);
+  background-color: color-mix(in oklab, var(--hazard-warning) 6%, transparent);
+}
+
+.chat-decision-body {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
 .chat-decision-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin: 0;
+  font-size: var(--type-title);
   font-weight: 600;
+  line-height: 1.3;
+}
+
+.chat-decision-title svg {
+  flex: none;
+  color: var(--tone-warning);
 }
 
 .chat-decision p {
   margin: 0;
 }
 
+/* The command, path or patch the holder approves: mono at the secondary size on --muted. */
+.chat-decision .chat-tool-pre {
+  padding: 6px var(--space-2);
+  border-radius: 6px;
+  background: var(--muted);
+}
+
 .chat-decision-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  margin-block-start: var(--space-1);
 }
 
 .chat-decision-input {
@@ -47,7 +79,7 @@
   padding: 0 var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--corner-control);
-  background: var(--background);
+  background: var(--card);
   color: var(--foreground);
   font-size: var(--type-body);
 }
@@ -57,13 +89,32 @@
   outline-offset: 2px;
 }
 
+/* The decision's label and its "1 of N": secondary text in the card. */
+.chat-decision-label {
+  display: block;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+}
+
+/* An answered request, kept as one muted line of history. */
+.chat-decision-outcome {
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+}
+
 /* ── Turn footer ───────────────────────────────────────────────────────────── */
 
+/* The changed files as quiet chips on one wrapping row under the turn, Diff and Restore as
+ * quiet row buttons beside each. */
 .chat-turn-footer {
   display: grid;
   gap: var(--space-2);
   color: var(--muted-foreground);
-  font-size: var(--type-body);
+  font-size: var(--type-ui);
   font-weight: 400;
   line-height: var(--leading-ui);
 }
@@ -80,38 +131,71 @@
   list-style: none;
 }
 
-/* A changed file or a rebuilt summary: glyph, mono name, counts. No edge. */
+.chat-changed {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.chat-turn-footer .chat-changed-files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px var(--space-2);
+}
+
+.chat-changed-files > li {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+  gap: var(--space-1);
+}
+
+.chat-changed-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+/* A changed file or a rebuilt summary: a quiet chip on --muted, glyph, mono name, counts. */
 .chat-file-chip,
 .chat-rebuild-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
+  max-width: 100%;
+  height: var(--control-height-sm);
+  padding: 0 var(--space-2);
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--muted);
   color: var(--foreground);
   font-family: var(--font-mono);
-  font-size: var(--type-body);
+  font-size: var(--type-ui);
   font-weight: 400;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+}
+
+.chat-file-chip > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-file-chip svg {
+  flex: none;
 }
 
 .chat-file-counts {
   color: var(--muted-foreground);
-  font-size: var(--type-ui);
+  font-size: var(--type-fine);
 }
 
-/* The decision's label and its "1 of N": secondary text in the band. */
-.chat-decision-label {
-  display: block;
-  margin: 0;
-  color: var(--muted-foreground);
-  font-size: var(--type-ui);
-  font-weight: 500;
-  line-height: var(--leading-ui);
-}
-
-/* An answered request, kept as one muted line of history. */
-.chat-decision-outcome {
-  color: var(--muted-foreground);
-  font-size: var(--type-body);
-  line-height: var(--leading-body);
+/* Diff is a link drawn at the quiet row button's size. */
+.chat-footer-action {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }

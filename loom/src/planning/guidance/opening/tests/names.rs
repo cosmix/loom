@@ -101,7 +101,6 @@ fn other_authoring_display_names() {
             AuthoringStart::Message { paths: vec![] },
             "loom plan: refine",
         ),
-        (AuthoringStart::NoStep, "loom plan: chat"),
     ] {
         assert_eq!(display_name("authoring", Some(&start)), expected);
     }

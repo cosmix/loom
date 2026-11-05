@@ -95,6 +95,58 @@ describe("DisabledReason", () => {
     expect(sized.getAttribute("data-size")).toBe("sm");
   });
 
+  it("draws a hearth shape as data-shape and none by default", () => {
+    render(
+      <>
+        <DisabledReason reason={null} onClick={vi.fn()}>
+          Plain
+        </DisabledReason>
+        <DisabledReason reason={null} shape="pill" look="primary" onClick={vi.fn()}>
+          Start a new chat
+        </DisabledReason>
+        <DisabledReason reason={null} shape="round" onClick={vi.fn()}>
+          Send
+        </DisabledReason>
+      </>,
+    );
+
+    expect(screen.getByRole("button", { name: "Plain" }).hasAttribute("data-shape")).toBe(false);
+    const pill = screen.getByRole("button", { name: "Start a new chat" });
+    expect(pill.getAttribute("data-shape")).toBe("pill");
+    expect(pill.getAttribute("data-look")).toBe("primary");
+    expect(pill.classList.contains("plan-button")).toBe(true);
+    expect(screen.getByRole("button", { name: "Send" }).getAttribute("data-shape")).toBe("round");
+  });
+
+  it("describes the button by the caller's element when given a reasonId, drawing no reason", () => {
+    const { rerender } = render(
+      <>
+        <DisabledReason reason="Read-only" reasonId="foot" onClick={vi.fn()}>
+          Send
+        </DisabledReason>
+        <p id="foot">Read-only</p>
+      </>,
+    );
+
+    const button = screen.getByRole("button", { name: "Send", description: "Read-only" });
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(button.getAttribute("aria-describedby")).toBe("foot");
+    expect(screen.getAllByText("Read-only")).toHaveLength(1);
+    expect(button.parentElement?.childElementCount).toBe(1);
+
+    rerender(
+      <>
+        <DisabledReason reason={null} reasonId="foot" onClick={vi.fn()}>
+          Send
+        </DisabledReason>
+        <p id="foot">Enter to send</p>
+      </>,
+    );
+    expect(screen.getByRole("button", { name: "Send" }).hasAttribute("aria-describedby")).toBe(
+      false,
+    );
+  });
+
   it("sets the reason beneath the button by default", () => {
     render(
       <DisabledReason reason="Read-only" onClick={vi.fn()}>

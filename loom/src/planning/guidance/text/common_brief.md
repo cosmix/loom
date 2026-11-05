@@ -74,7 +74,7 @@ and the summary rebuilds before ending the turn.
 
 Expect the following message when the session ends. Follow it and ask nothing after
 it arrives; nobody will answer. If there is nothing to write, reply
-`Closing write done.` at once and stop.
+`Closing write done.` with empty lists at once and stop.
 
 ```text
 loom plan is ending this session; nobody will answer further questions.
@@ -82,5 +82,7 @@ loom plan is ending this session; nobody will answer further questions.
 2. Add every point still open as an item under "## Open questions" in the document it concerns,
    with the options and your recommendation.
 3. Finish the turn-end duty for what you changed.
-Then reply "Closing write done." and stop.
+Then reply "Closing write done." followed by a fenced block whose info string is loom-closing,
+holding one JSON object {"decisions": [...], "questions": [...]}: one plain sentence for each
+decision this conversation settled and for each point it left open. Then stop.
 ```

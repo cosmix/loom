@@ -221,6 +221,9 @@ it("states the current planner behavior in the notes, tips and intros", () => {
   expect(aroundTips).toContain("product overview");
   expect(aroundTips).toContain("Claude and Codex limits");
   expect(aroundTips).toContain("rebuild statistics");
-  expect(chat!.intro).toMatch(/Chat button.*End chat.*Stop sits beside Send/);
+  expect(chat!.intro).toMatch(
+    /Chat button.*New chat starts nothing until you send.*ends when you start another or leave.*Stop sits beside Send/,
+  );
+  expect(chat!.intro).not.toContain("End chat");
   expect((pressure!.tips ?? []).join(" ")).toContain("Pressure test button");
 });

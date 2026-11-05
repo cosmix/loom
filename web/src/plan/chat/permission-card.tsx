@@ -1,7 +1,9 @@
 import { useAtomValue, useStore } from "jotai/react";
+import { TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
 
 import type { Item } from "@/plan/api/schema-chat";
+import { HazardRail } from "@/aurora-ui/feedback/HazardPanel";
 import { authoringAtom, isHolderAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { answerPermission } from "./commands";
@@ -207,12 +209,13 @@ function InitialButtons({
   onDeny: () => void;
 }): JSX.Element {
   const reason = busy ? "Sending" : null;
+  // Allow is the card's primary: the decision is the one thing the panel asks of the holder.
   return (
     <div className="chat-decision-actions">
-      <DisabledReason reason={reason} onClick={() => void answer(true)}>
+      <DisabledReason reason={reason} look="primary" shape="pill" onClick={() => void answer(true)}>
         Allow
       </DisabledReason>
-      <DisabledReason reason={reason} onClick={onDeny}>
+      <DisabledReason reason={reason} shape="pill" onClick={onDeny}>
         Deny
       </DisabledReason>
     </div>
@@ -331,19 +334,26 @@ function PendingPermission({ item }: Props): JSX.Element {
       onKeyDown={onKeyDown}
       className="chat-decision"
     >
-      {pending.length > 1 && <p className="plan-fine">1 of {pending.length} decisions</p>}
-      <p className="chat-decision-title">
-        Needs a decision: <Untrusted text={item.tool} />
-      </p>
-      <PermissionBody item={item} />
-      <TimeLeft expiresAt={item.expires_at} />
-      <DecisionFooter
-        denyOpen={denyOpen}
-        setDenyOpen={setDenyOpen}
-        answer={answer}
-        busy={busy}
-        error={error}
-      />
+      {/* The caution tape is one narrow band on the card's start; the body stays clean. */}
+      <HazardRail tone="warning" className="chat-decision-rail" />
+      <div className="chat-decision-body">
+        {pending.length > 1 && <p className="plan-fine">1 of {pending.length} decisions</p>}
+        <p className="chat-decision-title">
+          <TriangleAlert size={16} aria-hidden="true" />
+          <span>
+            Needs a decision: <Untrusted text={item.tool} />
+          </span>
+        </p>
+        <PermissionBody item={item} />
+        <TimeLeft expiresAt={item.expires_at} />
+        <DecisionFooter
+          denyOpen={denyOpen}
+          setDenyOpen={setDenyOpen}
+          answer={answer}
+          busy={busy}
+          error={error}
+        />
+      </div>
     </div>
   );
 }

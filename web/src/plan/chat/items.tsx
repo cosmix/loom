@@ -138,12 +138,43 @@ function DeliveryState({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JS
   );
 }
 
-function UserItem({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JSX.Element {
+/**
+ * An offer's opening: one quiet centred line, its label and Show, never a bubble. The prompt is
+ * not in the DOM until Show, so no text query or screen reader reads it; `bodyId` still names the
+ * paragraph Show controls. A closing turn never reaches here: the transcript draws it as a card
+ * (closing.ts).
+ */
+function OpeningItem({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   const bodyId = useId();
-  // A collapsed origin draws its label and Show only. The prompt is not in the DOM until Show, so
-  // no text query or screen reader reads it; `bodyId` still names the paragraph Show controls.
-  const collapsed = item.origin !== null && !expanded;
+  return (
+    <div className="chat-user chat-opening">
+      <p className="chat-opening-line">
+        <span>
+          <OpeningLabel turn={turn} />
+        </span>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={bodyId}
+          className="chat-link-button"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "Hide" : "Show"}
+        </button>
+      </p>
+      <p id={bodyId} className="chat-opening-prompt">
+        {expanded && <Untrusted text={item.text} />}
+      </p>
+      <DeliveryState item={item} turn={turn} />
+      <SentChips item={item} turn={turn} />
+    </div>
+  );
+}
+
+/** The user's words: a bubble on the right, a quoted passage above the words inside it. */
+function UserItem({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JSX.Element {
+  if (item.origin === "offer") return <OpeningItem item={item} turn={turn} />;
   return (
     <div className="chat-user group/message">
       <div className="chat-user-body">
@@ -152,28 +183,8 @@ function UserItem({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JSX.Ele
             <Untrusted text={attachment.quote} />
           </blockquote>
         ))}
-        {item.origin !== null && (
-          <div className="chat-user-meta">
-            <div>
-              {item.origin === "closing" ? (
-                <Untrusted text="Closing message from loom plan" />
-              ) : (
-                <OpeningLabel turn={turn} />
-              )}
-            </div>
-            <button
-              type="button"
-              aria-expanded={expanded}
-              aria-controls={bodyId}
-              className="chat-link-button shrink-0"
-              onClick={() => setExpanded((value) => !value)}
-            >
-              {expanded ? "Hide" : "Show"}
-            </button>
-          </div>
-        )}
-        <p id={bodyId} className="whitespace-pre-wrap break-words">
-          {!collapsed && <Untrusted text={item.text} />}
+        <p className="whitespace-pre-wrap break-words">
+          <Untrusted text={item.text} />
         </p>
       </div>
       <DeliveryState item={item} turn={turn} />
@@ -213,18 +224,6 @@ function TextItem({ item, turn }: { item: ItemOf<"text">; turn: Turn }): JSX.Ele
       </div>
       <MessageControls source={shown} turn={turn} />
     </div>
-  );
-}
-
-function ThinkingItem({ item }: { item: ItemOf<"thinking"> }): JSX.Element {
-  // Transcript merges consecutive markers before passing the item here. A marker without a
-  // duration says only that the model thought: "0s" would claim a measurement nobody made.
-  return (
-    <p className="chat-thinking">
-      {item.duration_ms === null
-        ? "Thought"
-        : `Thought for ${Number((item.duration_ms / 1000).toFixed(1))}s`}
-    </p>
   );
 }
 
@@ -271,7 +270,8 @@ export function ItemView({
     case "text":
       return <TextItem item={item} turn={turn} />;
     case "thinking":
-      return <ThinkingItem item={item} />;
+      // The model's thinking is not drawn: the chat shows its words and its work, not its timing.
+      return null;
     case "tool":
       return <ToolRow item={item} nested={nested} />;
     case "permission":

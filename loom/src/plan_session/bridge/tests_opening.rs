@@ -161,6 +161,6 @@ fn a_start_without_an_offer_keeps_its_chips_on_the_sent_item() {
     });
 
     let sent = user_items(&h.bridge.chat_snapshot(true).turns);
-    let origin = Some(Origin::Start);
+    let origin = None;
     assert_eq!(sent, [(TYPED.to_owned(), 1, origin, Delivery::Sent)]);
 }

@@ -6,7 +6,7 @@ import fixture from "@/plan/api/fixtures/chat-snapshot.json";
 import hello from "@/plan/api/fixtures/hello.json";
 import { checklistViewSchema } from "@/plan/api/schema";
 import { chatSnapshotSchema, type SessionView } from "@/plan/api/schema-chat";
-import { checklistAtom, presenceAtom } from "@/plan/state/atoms";
+import { checklistAtom } from "@/plan/state/atoms";
 import { snapshotAtom } from "./model";
 import {
   installPanelLifecycle,
@@ -24,7 +24,7 @@ vi.mock("./start-chat", () => ({
   NewChatButton: () => <button>New chat</button>,
   StartingBrief: () => <div>Starting brief</div>,
 }));
-vi.mock("./end-chat", () => ({ EndChatMenuItem: () => null, useCanEndChat: () => false }));
+vi.mock("./end-chat", () => ({ useCanEndChat: () => false }));
 vi.mock("./suggestion-cards", async (original) => ({
   ...(await original<typeof import("./suggestion-cards")>()),
   useSuggestionFeed: vi.fn(),
@@ -49,71 +49,63 @@ it.each([true, false])(
     });
     const { container } = mount(store);
     const line = container.querySelector<HTMLElement>(".chat-state-line")!;
-    const row = line.querySelector<HTMLElement>('[aria-live="off"] > .flex')!;
-    const label = within(row.children[1] as HTMLElement).getByText("No chat");
-    const hint = within(row).queryByText(title);
-    expect(row.children[0].getAttribute("aria-hidden")).toBe("true");
-    expect(row.children[1].contains(label)).toBe(true);
-    expect(row.children[1].contains(hint)).toBe(false);
-    // The panel offers New chat and prompts; the workflow offer belongs to the page.
-    expect(row.children).toHaveLength(2);
-    // With no chat the head offers New chat, so the row does not repeat it.
-    expect(within(row).queryByText("New chat")).toBeNull();
-    expect(within(container.querySelector("header")!).getByText("New chat")).toBeTruthy();
+    // With no chat the line draws no visible words, only the polite region's "No chat".
+    expect(line.querySelector(".chat-state-row")).toBeNull();
     expect(within(line).getByRole("status").textContent).toBe("No chat");
+    expect(within(container).queryByText(title)).toBeNull();
+    const head = container.querySelector("header")!;
+    const heading = within(head).getByRole("heading", { name: "New chat" });
+    expect(heading.hasAttribute("data-new")).toBe(true);
   },
 );
 
-const headerStates: Array<[SessionView["state"], string | null]> = [
-  ["starting", "led"],
-  ["working", "led"],
-  ["ending", "led"],
-  ["idle", "waiting"],
-  ["permission", null],
-  ["ended", null],
-  ["failed", null],
+it.each(["starting", "working", "idle", "permission", "ending", "ended", "failed"] as const)(
+  "the run line draws nothing for an authoring chat while %s",
+  (state) => {
+    const store = storeFor();
+    const snapshot = chatSnapshotSchema.parse(fixture);
+    const session = { ...snapshot.session!, kind: "authoring" as const, state };
+    store.set(snapshotAtom, { ...snapshot, session });
+    const { container } = render(
+      <Provider store={store}>
+        <RunHeader session={session} />
+      </Provider>,
+    );
+    expect(container.textContent).toBe("");
+    expect(container.querySelector(".chat-run-header")).toBeNull();
+  },
+);
+
+const subLines: Array<[SessionView["state"], string | null]> = [
+  ["starting", "Starting"],
+  ["working", "Working"],
+  ["idle", null],
+  ["ending", "Wrapping up"],
+  ["ended", "Ended"],
+  ["failed", "Stopped"],
 ];
 
-it.each(headerStates)("run header uses the expected glyph while %s", (state, kind) => {
+it.each(subLines)("the head's sub-line for %s shows %s", (state, words) => {
   const store = storeFor();
   const snapshot = chatSnapshotSchema.parse(fixture);
-  const session = { ...snapshot.session!, kind: "section", state };
   store.set(snapshotAtom, {
     ...snapshot,
-    session,
-    turns: [
-      {
-        ...snapshot.turns[0],
-        tokens: { input: 1000, cache_write: 200, cache_read: 9999, output: 300 },
-      },
-    ],
+    session: { ...snapshot.session!, kind: "authoring", state, failure: null },
+    previous: null,
   });
-  store.set(presenceAtom, {
-    entries: [
-      { public_id: "watcher", name: "Alex", holder: false, away: false, reading: null, tabs: 1 },
-    ],
-  });
-  const { container } = render(
-    <Provider store={store}>
-      <RunHeader session={session} />
-    </Provider>,
-  );
-  const header = container.querySelector<HTMLElement>(".chat-run-header")!;
-  const glyph = header.querySelector(".activity-glyph");
-  if (kind === "led") {
-    expect(header.firstElementChild?.classList.contains("chat-led")).toBe(true);
-    expect(header.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
-    expect(glyph).toBeNull();
-  } else if (kind) {
-    expect(glyph?.getAttribute("data-kind")).toBe(kind);
-    expect(glyph?.getAttribute("aria-hidden")).toBe("true");
-    expect(header.firstElementChild).toBe(glyph);
-  } else {
-    expect(glyph).toBeNull();
-  }
-  expect(header.textContent).toContain(`${hello.you.name} authoring`);
-  expect(screen.getByLabelText("1 watching: Alex").getAttribute("title")).toBe("Alex");
-  expect(screen.getByText("· 1.5k tokens")).toBeTruthy();
+  const { container } = mount(store);
+  const sub = container.querySelector<HTMLElement>("header .chat-head-sub .chat-state-row");
+  expect(sub?.textContent ?? null).toBe(words);
+});
+
+it("the head's sub-line shows Needs your answer for a permission state", () => {
+  const store = storeFor();
+  store.set(snapshotAtom, permissionSnapshot());
+  const { container } = mount(store);
+  const row = container.querySelector<HTMLElement>("header .chat-head-sub .chat-state-row")!;
+  expect(row.textContent).toContain("Needs your answer");
+  expect(row.querySelector("[aria-hidden=true]")?.textContent).toBe("⚠");
+  expect(container.querySelectorAll(".aurora-roundel")).toHaveLength(0);
 });
 
 it("the sheet button's permission glyph keeps its role and accessible name", () => {

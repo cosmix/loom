@@ -11,6 +11,7 @@ const HOUR_MINUTE = new Intl.DateTimeFormat(undefined, {
   hourCycle: "h23",
 });
 
+/** The break between an ended chat and the next: a centred muted line between two hairlines. */
 export function SessionDivider({
   previous,
   next,
@@ -26,12 +27,14 @@ export function SessionDivider({
   const since = previous.session.state_since;
   const known = !Number.isNaN(Date.parse(since));
   return (
-    <div className="py-3 text-center text-xs text-muted-foreground">
-      {step
-        ? `${stepLabel(step.kind)} · ${step.model}`
-        : known
-          ? `Chat ended at ${HOUR_MINUTE.format(new Date(since))}`
-          : "Chat ended"}
+    <div className="chat-session-divider">
+      <span>
+        {step
+          ? `${stepLabel(step.kind)} · ${step.model}`
+          : known
+            ? `Chat ended at ${HOUR_MINUTE.format(new Date(since))}`
+            : "Chat ended"}
+      </span>
     </div>
   );
 }

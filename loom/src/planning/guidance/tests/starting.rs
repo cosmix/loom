@@ -3,17 +3,16 @@ use crate::planning::checklist::Offer;
 use crate::planning::slug::PlanState;
 
 #[test]
-fn starting_point_without_documents_has_no_skill_and_reports_absence() {
+fn a_message_start_without_documents_names_the_refine_skill_and_reports_no_feature() {
     let text = common_brief();
     let (_, start) = text.split_once("## Starting point\n\n").unwrap();
     assert_eq!(
         start,
         concat!(
-            "Step: none chosen.\nTarget: Ask me what I want to work on.\n\n",
+            "Step: any, Refine.\nSkill: loom-plan:refine.\n\n",
             "No feature selected; no feature checklist applies.\n",
         )
     );
-    assert!(!start.contains("Skill:"));
 }
 
 #[test]
@@ -35,7 +34,12 @@ fn starting_point_reports_loaded_vision_metaplan_and_running_plan() {
             "# Plan\n\nImplements: section_01\n",
         ),
     ]);
-    let text = brief::common_brief(&AuthoringStart::NoStep, &project, Some("f")).unwrap();
+    let text = brief::common_brief(
+        &AuthoringStart::Message { paths: Vec::new() },
+        &project,
+        Some("f"),
+    )
+    .unwrap();
     for line in [
         "- Vision: present, 2 sections listed, 2 written (01, 07).",
         "- Metaplans: doc/plans/f/index.md.",
@@ -71,7 +75,12 @@ fn starting_point_uses_checklist_counts_and_sorts_only_locked_plan_files() {
     ]
     .map(Into::into)
     .into();
-    let text = brief::common_brief(&AuthoringStart::NoStep, &project, Some("f")).unwrap();
+    let text = brief::common_brief(
+        &AuthoringStart::Message { paths: Vec::new() },
+        &project,
+        Some("f"),
+    )
+    .unwrap();
     assert!(text.contains("- Plans: 3 written (1 unlisted), 2 running, 4 done, 1 retired.\n"));
     assert!(text.contains("- Metaplans: doc/plans/f/index.md.\n"));
     assert_eq!(

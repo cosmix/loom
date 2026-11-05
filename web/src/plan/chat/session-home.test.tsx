@@ -11,7 +11,7 @@ import { endChat, startChat } from "./commands";
 import { focusComposerAtom } from "./composer-hooks";
 import { offerErrorAtom } from "./offer-error";
 import { createOfferStarter } from "./offer-flow";
-import { screenOfPath } from "./session-home";
+import { screenOfPath, startOwnerAtom } from "./session-home";
 import {
   clickOffer,
   installHomeLifecycle,
@@ -76,7 +76,9 @@ it.each(["/f/alpha/product", "/f/alpha", "/files/product/alpha/section_01.md"])(
   (path) => {
     setup(path, session());
     expect(within(panel()).getByRole("log")).toBeTruthy();
-    expect(panel().querySelector(".chat-state")?.textContent).toBe("Waiting for you");
+    // An idle chat draws no state words: the composer is the cue.
+    expect(panel().querySelector(".chat-state-row")).toBeNull();
+    expect(panel().textContent).not.toContain("Waiting for you");
     expect(notice("alpha")).toBeNull();
   },
 );
@@ -87,8 +89,9 @@ it.each(["/f/beta/product", "/files/product/beta/section_01.md", "/plans/solo", 
     setup(path, session());
     expect(within(panel()).queryByRole("log")).toBeNull();
     expect(within(panel()).queryByText("Composer")).toBeNull();
-    expect(within(panel()).getByRole("heading", { name: "Chat" })).toBeTruthy();
-    expect(within(panel()).getByRole("button", { name: "New chat" })).toBeTruthy();
+    expect(within(panel()).getByRole("heading", { name: "New chat" })).toBeTruthy();
+    // A chat that belongs to another screen reads as no chat here: nothing to end, so no New chat.
+    expect(within(panel()).queryByRole("button", { name: "New chat" })).toBeNull();
     expect(notice("alpha")?.getAttribute("href")).toBe("/f/alpha");
   },
 );
@@ -107,7 +110,7 @@ it("a concluded session from another feature leaves a plain empty state, with no
   setup("/f/beta/product", session({ state: "ended" }));
   expect(within(panel()).queryByRole("log")).toBeNull();
   expect(within(panel()).queryByRole("link")).toBeNull();
-  expect(within(panel()).getByRole("button", { name: "New chat" })).toBeTruthy();
+  expect(within(panel()).queryByRole("button", { name: "New chat" })).toBeNull();
 });
 
 it("a chat started for no feature belongs to the project and shows on every screen", () => {
@@ -128,13 +131,15 @@ it("a pressure test of a standalone plan belongs to that plan", () => {
   expect(notice("Solo")?.getAttribute("href")).toBe("/plans/solo");
 });
 
-it("the empty state of another session's screen offers no End chat", () => {
+it("another session's screen offers neither End chat nor New chat; its own screen offers New chat only", () => {
   setup("/f/beta/product", session());
   expect(within(panel()).queryByRole("button", { name: "End chat" })).toBeNull();
+  expect(within(panel()).queryByRole("button", { name: "New chat" })).toBeNull();
   expect(within(panel()).queryByLabelText("Chat menu")).toBeNull();
   cleanup();
   setup("/f/alpha/product", session());
-  expect(within(panel()).getByRole("button", { name: "End chat" })).toBeTruthy();
+  expect(within(panel()).queryByRole("button", { name: "End chat", hidden: true })).toBeNull();
+  expect(within(panel()).getByRole("button", { name: "New chat" })).toBeTruthy();
 });
 
 it("the c key does nothing while the panel has no composer to focus", () => {
@@ -183,16 +188,6 @@ it("an offer with the open session on another screen raises no confirm and says 
   expect(store.get(offerErrorAtom)).not.toBeNull();
 });
 
-it("New chat with the open session on another screen raises no confirm", async () => {
-  setup("/f/beta/product", session());
-  fireEvent.click(within(panel()).getByRole("button", { name: "New chat" }));
-  await act(async () => {});
-  expect(window.confirm).not.toHaveBeenCalled();
-  expect(endChat).not.toHaveBeenCalled();
-  expect(startChat).not.toHaveBeenCalled();
-  expect(within(panel()).getByRole("alert").textContent).toContain("alpha");
-});
-
 it("with nothing open anywhere an offer raises no confirm and starts", async () => {
   const { store } = setup("/f/beta/product", null);
   await clickOffer();
@@ -229,25 +224,20 @@ it("a refusal goes with the screen it was raised on", async () => {
   expect(store.get(offerErrorAtom)).toBeNull();
 });
 
-it("New chat on a feature's screen starts the chat for that feature", async () => {
-  const { store } = setup("/f/beta/product", null);
-  fireEvent.click(within(panel()).getByRole("button", { name: "New chat" }));
-  await act(async () => {});
-  expect(startChat).toHaveBeenCalledWith(store, null, null, [], "beta", undefined);
-});
-
+// New chat starts nothing; the first Send starts the chat for the owner read here.
 it.each([
+  ["/f/beta/product", "beta", undefined],
   ["/plans/solo", undefined, "solo"],
   ["/files/plans/briefs/solo/common.md", undefined, "solo"],
   // Names no feature or plan exists for: the server would refuse them as a start's owner.
   ["/f/ghost", undefined, undefined],
   ["/plans/ghost", undefined, undefined],
   ["/files/plans/briefs/ghost/common.md", undefined, undefined],
-])("New chat on %s starts the chat for feature %s, plan %s", async (path, feature, plan) => {
+])("a first send on %s starts the chat for feature %s, plan %s", (path, feature, plan) => {
   const { store } = setup(path, null);
-  fireEvent.click(within(panel()).getByRole("button", { name: "New chat" }));
-  await act(async () => {});
-  expect(startChat).toHaveBeenCalledWith(store, null, null, [], feature, plan);
+  expect(store.get(startOwnerAtom)).toEqual({ feature, plan });
+  expect(within(panel()).queryByRole("button", { name: "New chat" })).toBeNull();
+  expect(startChat).not.toHaveBeenCalled();
 });
 
 it("an offer that names no feature, chosen on a plan's screen, starts for that plan", async () => {
@@ -290,18 +280,20 @@ it.each([
   expect(within(panel()).getByRole("heading", { name: title })).toBeTruthy();
 });
 
-it("the head reads Chat with New chat when empty, and the state pill with a session", () => {
+it("the head reads New chat when empty, and the state line with a session", () => {
   setup("/f/beta/product", null);
   const head = () => within(panel()).getAllByRole("banner", { hidden: true })[0]!;
-  expect(within(head()).getByRole("heading", { name: "Chat" })).toBeTruthy();
-  expect(within(head()).getByRole("button", { name: "New chat" })).toBeTruthy();
+  const title = within(head()).getByRole("heading", { name: "New chat" });
+  expect(title.hasAttribute("data-new")).toBe(true);
+  expect(within(head()).queryByRole("button", { name: "New chat" })).toBeNull();
   cleanup();
   setup("/f/alpha/product", session({ state: "permission" }));
-  const pill = within(head()).getByText("Needs a decision");
-  expect(pill.getAttribute("data-state")).toBe("permission");
-  // Beside a running chat the head offers no New chat; the pill holds its place, the menu holds End.
-  expect(within(head()).queryByRole("button", { name: "New chat", hidden: true })).toBeNull();
-  expect(within(head()).getByLabelText("Chat menu").closest("details")).not.toBeNull();
+  const line = head().querySelector(".chat-state-line")!;
+  expect(line.getAttribute("data-state")).toBe("permission");
+  expect(within(head()).getByText("Needs your answer")).toBeTruthy();
+  // The head offers New chat beside a running chat, and no menu: New chat ends it first.
+  expect(within(head()).getByRole("button", { name: "New chat" })).toBeTruthy();
+  expect(within(head()).queryByLabelText("Chat menu")).toBeNull();
 });
 
 const draft = {

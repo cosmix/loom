@@ -9,7 +9,6 @@ import { serverInfoSchema } from "@/plan/api/schema";
 import { chatSnapshotSchema, type Item, type SessionView, type Turn } from "@/plan/api/schema-chat";
 import { authoringAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
 import { snapshotAtom } from "./model";
-import { RunHeader } from "./run-header";
 import { StateLine } from "./state-line";
 
 const snapshot = chatSnapshotSchema.parse(snapshotFixture);
@@ -84,14 +83,7 @@ export function harness(current: SessionView | null = session(), turns = [turn()
       </Provider>,
     );
   }
-  function header(value = current!) {
-    return render(
-      <Provider store={store}>
-        <RunHeader session={value} />
-      </Provider>,
-    );
-  }
-  return { store, setSession, setTurns, show, header };
+  return { store, setSession, setTurns, show };
 }
 
 export function setupStateLineTests() {

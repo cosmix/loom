@@ -1,9 +1,10 @@
-/* The composer: part of the panel, under its one hairline. The box is a bordered input on the
- * page ground (DESIGN.md, Surfaces), so the place to type stands apart from the transcript. It
- * holds what the next message carries (the context row, the attachment rows) above the text, and
- * is the drop target for files. Under it one action row: the paperclip at the start, Stop and
- * Send at the end. Imported by chat-surface.css; see its header for why these rules are
- * unlayered. The rows inside the box are in chat-chips.css.
+/* The composer: the foot of the panel, over the hearth glow (chat-surface.css). The box is one
+ * round bordered input on the page ground (DESIGN.md, Surfaces and Chat), so the place to type
+ * stands apart from the transcript. It holds what the next message carries (the context row, the
+ * attachment rows) above the text, and the tools (the paperclip, Stop, Send) at the end of the
+ * text's last line; it is the drop target for files. Under the box one fine line: Send's reason
+ * while it is blocked, else a hint, then the composer's notes. Imported by chat-surface.css; see
+ * its header for why these rules are unlayered. The rows inside the box are in chat-chips.css.
  */
 
 .chat-composer {
@@ -11,35 +12,58 @@
   grid-template-columns: minmax(0, 1fr);
   min-height: 0;
   flex-shrink: 0;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--chat-gutter) var(--space-3);
-  border-block-start: 1px solid var(--hairline);
+  gap: var(--space-3);
+  padding: var(--space-2) var(--chat-gutter) var(--space-4);
   font-size: var(--type-body);
   line-height: var(--leading-body);
+  animation: hearth-rise 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* The queue strip and the suggestion cards; empty, they take no row of the grid. */
+.chat-composer-extras {
+  display: grid;
+  gap: var(--space-2);
+  min-height: 0;
+  max-height: 33vh;
+  overflow-y: auto;
+}
+
+.chat-composer-extras:empty {
+  display: none;
 }
 
 .chat-composer-input {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
-/* The box's edge sits on the gutter, so it lines up with the transcript and the actions below. */
+/* ── The box ────────────────────────────────────────────────────────────── */
+
+/* Two columns: the text, and the tools on its last line. The attached rows span both above. The
+ * edge sits on the gutter, so it lines up with the transcript. */
 .chat-composer-box {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-1);
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "attached attached"
+    "text tools";
+  gap: var(--space-1) var(--space-2);
+  align-items: end;
   box-sizing: border-box;
   min-width: 0;
-  padding: var(--space-2) var(--space-3);
+  padding: 10px 8px 8px 16px;
   border: 1px solid var(--border);
-  border-radius: var(--corner-control);
+  border-radius: 22px;
   background: var(--background);
   color: var(--foreground);
+  transition: border-color 120ms;
 }
 
+/* Focus in the text: the edge takes the ring and the ring stands off it. Keyed on the field, not
+ * `:focus-within`, so a focused tool keeps its own ring alone. */
 .chat-composer-box:has(> .chat-composer-field:focus-visible) {
   border-color: var(--ring);
   outline: 2px solid var(--ring);
@@ -62,7 +86,7 @@
   justify-content: center;
   gap: var(--space-2);
   margin: 0;
-  border-radius: calc(var(--corner-control) - 1px);
+  border-radius: 21px;
   background: var(--background);
   color: var(--foreground);
   font-size: var(--type-body);
@@ -73,11 +97,11 @@
 /* The text itself: no edge of its own, the box draws it. It is set at the user's size, the same
  * as the user's turns in the transcript, so the words do not change size when sent. */
 .chat-composer-field {
+  grid-area: text;
   display: block;
   box-sizing: border-box;
   width: 100%;
-  /* Two lines of the user's size: the longest placeholder shows in full. */
-  min-height: calc(2 * var(--type-title) * var(--leading-body));
+  min-height: 44px;
   margin: 0;
   padding: var(--space-1) 0;
   overflow-y: auto;
@@ -100,6 +124,7 @@
 /* What the next message carries, as rows above the text; empty, it takes no space. The area
  * caps at about four rows and scrolls inside the box, so the field never leaves the panel. */
 .chat-composer-attached {
+  grid-area: attached;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
@@ -118,93 +143,93 @@
   border-block-end: 1px solid var(--hairline);
 }
 
-/* ── The action row ─────────────────────────────────────────────────────── */
+/* ── The tools ──────────────────────────────────────────────────────────── */
 
-/* One centre line under the box: the paperclip at the start; New chat (after a concluded chat),
- * Stop (while a turn runs) and Send at the end, each at the control height. A blocked control's
- * reason hangs under it, so the row aligns at its top edge. */
+/* One centre line at the end of the text's last line: the paperclip, then New chat (after a
+ * concluded chat), Stop (while a turn runs) and Send, each a 32px round or pill. */
 .chat-composer-actions {
+  grid-area: tools;
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
+  align-items: center;
+  gap: var(--space-1);
   min-width: 0;
 }
 
+/* The paperclip: a round quiet button (`DocumentStarter` takes no shape, so the rounding is here). */
 .chat-attach {
-  width: var(--control-height);
-  height: var(--control-height);
-  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  flex: none;
   padding: 0;
-  border-radius: var(--corner-control);
-  color: var(--muted-foreground);
+  border-radius: 999px;
+  justify-content: center;
 }
 
-.chat-attach:hover {
-  background: var(--muted);
-  color: var(--foreground);
+.chat-composer-actions .chat-attach svg {
+  width: 15px;
+  height: 15px;
 }
 
-.chat-attach svg {
-  width: 16px;
-  height: 16px;
+.chat-attach:active {
+  transform: scale(0.98);
 }
 
-/* The end cluster: New chat, Stop, Send, in that order, pushed to the row's end. It wraps so that
- * Send's reason can take a row of its own under the buttons (below); the buttons keep one line. */
 .chat-composer-end {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: flex-end;
-  column-gap: var(--space-2);
-  row-gap: var(--space-1);
-  margin-inline-start: auto;
+  align-items: center;
+  gap: var(--space-1);
   min-width: 0;
 }
 
-/* Stop's column gives way only down to its button (the automatic minimum of a flex item is its
- * min-content width, and the reason's words may break anywhere), so a reason or an error wraps
- * under it and never widens the row. */
+/* Stop's reason ("Stopping the current turn") follows it on the line for the moment the request
+ * takes; a failed request's error hangs under it, at the line's end. */
 .chat-composer-stop {
-  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .chat-composer-stop .plan-fine {
   overflow-wrap: anywhere;
-}
-
-/* DisabledReason stacks its reason under the button; at the row's end both align right. */
-.chat-composer-stop > div {
-  align-items: flex-end;
   text-align: end;
 }
 
-/* Send's reason ("Write a message or attach a passage") is wider than Send and Stop together.
- * Kept in Send's own column it would set the column's width and push Send past the panel's edge
- * at 340px, so the column and DisabledReason's wrapper dissolve into the cluster: Send is one more
- * button on the line and the reason is a full-width row under all of them, aligned to Send's
- * edge, wrapping only when the cluster is narrower than its words. */
-.chat-composer-send,
-.chat-composer-send > div {
-  display: contents;
+.chat-composer-send {
+  display: flex;
+  flex: none;
 }
 
-.chat-composer-send .plan-button {
-  flex-shrink: 0;
-}
+/* ── The foot ───────────────────────────────────────────────────────────── */
 
-.chat-composer-send .plan-fine {
-  flex: 1 1 100%;
+/* The fine line under the box, 6px off its edge: Send's reason or the hint, then the notes. */
+.chat-composer-foot {
+  display: grid;
+  gap: var(--space-1);
   min-width: 0;
+  margin-block-start: calc(6px - var(--space-3));
+  padding: 0 var(--space-2);
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  line-height: var(--leading-ui);
+}
+
+.chat-composer-foot > p {
+  margin: 0;
   overflow-wrap: anywhere;
-  text-align: end;
+}
+
+/* The chat lifts `.plan-fine` to 13px (chat-surface.css); the foot's note keeps the foot's size. */
+.chat-composer .chat-composer-foot .plan-fine {
+  font-size: var(--type-fine);
 }
 
 .chat-composer-note,
 .chat-composer-status {
   margin: 0;
   color: var(--muted-foreground);
-  font-size: var(--type-ui);
+  font-size: var(--type-fine);
   line-height: var(--leading-ui);
 }
 
@@ -219,6 +244,33 @@
 
 .chat-unconfirmed p {
   margin: 0 0 var(--space-1);
+}
+
+/* ── Ending and ended ───────────────────────────────────────────────────── */
+
+/* The composer steps back to one italic line in the reading face; ended, the line shares it with
+ * Start a new chat, the primary pill, over the glow. */
+.chat-composer-ending,
+.chat-composer-ended {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-family: var(--font-reading);
+  font-size: var(--type-title);
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.chat-composer-concluded {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-1) var(--space-1);
+}
+
+.chat-composer-concluded > p {
+  flex: 1 1 auto;
 }
 
 /* ── Queued messages ────────────────────────────────────────────────────── */
@@ -291,4 +343,18 @@
 .chat-suggestion-actions {
   display: flex;
   gap: var(--space-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-composer {
+    animation: none;
+  }
+
+  .chat-composer-box {
+    transition: none;
+  }
+
+  .chat-attach:active {
+    transform: none;
+  }
 }

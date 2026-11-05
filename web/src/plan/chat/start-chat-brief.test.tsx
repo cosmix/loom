@@ -1,19 +1,21 @@
+import { useAtomValue } from "jotai";
 import { act, fireEvent, renderHook, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
-import helloFixture from "@/plan/api/fixtures/hello.json";
 import brief from "@/plan/api/fixtures/session-brief.json";
-import { checklistViewSchema } from "@/plan/api/schema";
-import { projectAtom } from "@/plan/state/atoms";
 import { BriefDialog, BriefDialogHost } from "./brief-dialog";
-import { snapshotAtom } from "./model";
-import { screenAtom } from "./session-home";
-import { StateLine } from "./state-line";
+import { sessionAtom, snapshotAtom } from "./model";
 import { harness, installStartChatLifecycle, session } from "./start-chat-test-kit";
-import { NewChatButton, StartingBrief } from "./start-chat";
+import { StartingBrief } from "./start-chat";
 import { useSessionBrief } from "./use-session-brief";
 
 installStartChatLifecycle();
+
+/** The Starting row as the transcript draws it: it follows the live session and leaves with it. */
+function LiveStartingBrief() {
+  const current = useAtomValue(sessionAtom);
+  return current ? <StartingBrief session={current} /> : null;
+}
 
 it("closing the Brief returns focus to the link while the Starting row is still there", async () => {
   const h = harness(session);
@@ -41,7 +43,7 @@ it("an open Brief outlives the Starting row, and closing it lands on the panel h
       <h2 tabIndex={-1} data-chat-heading>
         Chat
       </h2>
-      <StateLine />
+      <LiveStartingBrief />
       <BriefDialogHost />
     </>,
   );
@@ -121,29 +123,4 @@ it("a pressure test's start row has no brief to load or fail", () => {
   expect(screen.queryByRole("button", { name: "Brief" })).toBeNull();
   expect(screen.queryByRole("status")).toBeNull();
   expect(fetchMock).not.toHaveBeenCalled();
-});
-
-it("New chat starts for the screen it was clicked on, whatever the end wait lasts", async () => {
-  const current = { ...session, state: "idle" as const };
-  const h = harness(current);
-  const checklist = checklistViewSchema.parse(helloFixture.checklists[0]);
-  const features = ["alpha", "beta"].map((feature) => ({ ...checklist, feature }));
-  h.store.set(projectAtom, { checklists: features, standalone: [], moves: [] });
-  h.store.set(screenAtom, { feature: "alpha", plan: null });
-  h.mount(<NewChatButton />);
-  fireEvent.click(screen.getByRole("button", { name: "New chat" }));
-  expect(h.send.mock.calls[0]![0]).toMatchObject({ command: "end" });
-  h.result();
-  await act(async () => {});
-  act(() => {
-    h.store.set(screenAtom, { feature: "beta", plan: null });
-    h.store.set(snapshotAtom, {
-      session: { ...current, state: "ended" },
-      turns: [],
-      queue: [],
-      previous: null,
-    });
-  });
-  await waitFor(() => expect(h.send).toHaveBeenCalledTimes(2));
-  expect(h.send.mock.calls[1]![0]).toMatchObject({ command: "start", feature: "alpha" });
 });

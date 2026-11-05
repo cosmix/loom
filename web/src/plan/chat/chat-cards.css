@@ -1,0 +1,341 @@
+/* The ending's cards and the starting line. Imported by chat-transcript.css; unlayered like the
+ * rest of the chat (see chat-surface.css). Each card is --background on the --card panel with the
+ * transcript's 14px corner and no border: the wrap-up while the closing write runs, what the chat
+ * left behind once it ended, and the starting line with the pane's one roundel.
+ */
+
+/* ── Wrap-up ───────────────────────────────────────────────────────────────── */
+
+.chat-wrap {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--chat-card-corner, 14px);
+  background: var(--background);
+}
+
+.chat-wrap-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* The roundel centred in a 36px --muted circle. */
+.chat-wrap-mark {
+  display: inline-flex;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.chat-wrap-head h3 {
+  margin: 0;
+  font-size: var(--type-title);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.chat-wrap-head p {
+  margin: 1px 0 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+}
+
+.chat-wrap-ticks {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-wrap-ticks li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--muted-foreground);
+}
+
+/* A 20px circle: a done one fills with the completed tone and draws its check; the live one
+ * takes the accent edge; the next ones wait on the hairline edge. */
+.chat-wrap-tick {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+}
+
+.chat-wrap-tick svg {
+  width: 12px;
+  height: 12px;
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+}
+
+@keyframes chat-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.chat-wrap-ticks li[data-state="done"] .chat-wrap-tick {
+  border-color: var(--tone-completed);
+  background: var(--tone-completed);
+  color: var(--card);
+}
+
+.chat-wrap-ticks li[data-state="done"] .chat-wrap-tick svg {
+  animation: chat-draw 500ms var(--chat-ease, cubic-bezier(0.16, 1, 0.3, 1)) 300ms forwards;
+}
+
+.chat-wrap-ticks li[data-state="live"] .chat-wrap-tick {
+  border-color: var(--primary);
+}
+
+.chat-wrap-path {
+  overflow: hidden;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Left behind ───────────────────────────────────────────────────────────── */
+
+.chat-left-behind {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--chat-card-corner, 14px);
+  background: var(--background);
+}
+
+.chat-left-behind h3 {
+  margin: 0;
+  font-family: var(--font-reading);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+/* The counts: neutral pills on --muted; only the glyph takes a tone. */
+.chat-left-behind-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-left-behind-counts li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--muted);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.chat-left-behind-counts li[data-glyph="check"] > [aria-hidden] {
+  color: var(--tone-completed);
+}
+
+.chat-left-behind-counts li[data-glyph="question"] > [aria-hidden] {
+  color: var(--tone-warning);
+}
+
+.chat-left-behind-n {
+  font-weight: 600;
+}
+
+/* The documents: a dot, the path cut by an ellipsis, the counts. */
+.chat-left-behind-docs {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-left-behind-docs li {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  line-height: 1.5;
+}
+
+.chat-left-behind-docs i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+
+.chat-left-behind-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-left-behind h4 {
+  margin: var(--space-1) 0 0;
+  font-size: var(--type-ui);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.chat-left-behind ol,
+.chat-left-behind-questions {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A decision is led by its number in a 20px --muted disc; a question by its mark. */
+.chat-left-behind ol {
+  counter-reset: chat-decided;
+}
+
+.chat-left-behind ol > li,
+.chat-left-behind-questions > li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 6px;
+  font-family: var(--font-reading);
+  font-size: var(--type-title);
+  line-height: 1.45;
+}
+
+.chat-left-behind ol > li {
+  counter-increment: chat-decided;
+}
+
+.chat-left-behind ol > li::before,
+.chat-left-behind-questions > li::before {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+}
+
+.chat-left-behind ol > li::before {
+  content: counter(chat-decided);
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.chat-left-behind-questions > li {
+  font-style: italic;
+}
+
+.chat-left-behind-questions > li::before {
+  content: "?";
+  background: color-mix(in oklab, var(--hazard-warning) 18%, transparent);
+  color: var(--tone-warning);
+  font-size: var(--type-fine);
+}
+
+.chat-left-behind-empty {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+/* "See the changes": a quiet pill link. */
+.chat-left-behind-link {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+
+.chat-left-behind-link:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.chat-left-behind-link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* ── Starting ──────────────────────────────────────────────────────────────── */
+
+.chat-starting {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.chat-starting > .plan-roundel-glyph {
+  margin-block-start: 2px;
+}
+
+.chat-starting-text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+}
+
+/* The brief's line keeps its own 13px: the chat's lift of that utility to --type-body (see
+ * chat-surface.css) is for chrome, and this line sits under the title as its secondary. */
+.chat-transcript .chat-starting-text .text-\[13px\] {
+  font-size: var(--type-ui);
+}
+
+.chat-starting-title {
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--type-body);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-wrap-tick svg,
+  .chat-wrap-ticks li[data-state="done"] .chat-wrap-tick svg {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+
+  .chat-left-behind-link {
+    transition: none;
+  }
+}
