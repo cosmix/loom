@@ -44,11 +44,11 @@ function editAddress(snapshot: ChatSnapshot, step: PressureStepView, path: strin
     : toAddress(path);
 }
 
-function StepGlyph({ step }: { step: PressureStepView }): JSX.Element {
+function StepGlyph({ step, turning }: { step: PressureStepView; turning: boolean }): JSX.Element {
   if (step.state === "running") {
     const kind =
       step.kind === "codex" ? "codex" : step.kind === "claude_pressure" ? "pressure" : "drafting";
-    return <ActivityGlyph kind={kind} className="text-sm" />;
+    return <ActivityGlyph kind={kind} paused={!turning} className="text-sm" />;
   }
   const Glyph = step.state === "done" ? OTHER_GLYPHS.stepDone : X;
   const tone = step.state === "done" ? "text-(--tone-completed)" : "text-muted-foreground";
@@ -94,7 +94,8 @@ const ROW_GRID = "grid grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-x-2 
 // a snapshot from queuing placeholder rows without end.
 const MAX_QUEUED_ROUNDS = 10;
 
-function StepRow({ step }: { step: PressureStepView }): JSX.Element {
+// At most one roundel turns in the pane: the step the run is on; side-by-side steps rest.
+function StepRow({ step, turning }: { step: PressureStepView; turning: boolean }): JSX.Element {
   const snapshot = useAtomValue(snapshotAtom);
   const tokens = step.tokens;
   const hasExtras = step.edits.length > 0 || tokens !== null || step.codex !== null;
@@ -105,7 +106,7 @@ function StepRow({ step }: { step: PressureStepView }): JSX.Element {
       className={ROW_GRID}
     >
       <Row
-        glyph={<StepGlyph step={step} />}
+        glyph={<StepGlyph step={step} turning={turning} />}
         text={ROW_TEXT[step.kind]}
         state={step.state}
         time={<StepTime step={step} />}
@@ -160,10 +161,12 @@ function RoundRows({
   round,
   steps,
   queue,
+  current,
 }: {
   round: number;
   steps: PressureStepView[];
   queue: boolean;
+  current: string | null;
 }): JSX.Element {
   return (
     <section data-pressure-round={round} className="grid gap-0.5">
@@ -173,7 +176,9 @@ function RoundRows({
       {STEP_ORDER.flatMap((kind) => {
         const present = steps.filter((step) => step.kind === kind);
         if (present.length > 0) {
-          return present.map((step) => <StepRow key={`${round}/${kind}`} step={step} />);
+          return present.map((step) => (
+            <StepRow key={`${round}/${kind}`} step={step} turning={step.kind === current} />
+          ));
         }
         return queue ? [<QueuedRow key={`${round}/${kind}`} text={ROW_TEXT[kind]} />] : [];
       })}
@@ -215,7 +220,13 @@ export function StepTimeline({ run }: { run: PressureRunView }): JSX.Element {
       {[...byRound]
         .sort(([left], [right]) => left - right)
         .map(([round, steps]) => (
-          <RoundRows key={round} round={round} steps={steps} queue={live && round >= run.round} />
+          <RoundRows
+            key={round}
+            round={round}
+            steps={steps}
+            queue={live && round >= run.round}
+            current={live && round === run.round ? run.step : null}
+          />
         ))}
       <RecordRow run={run} />
     </div>

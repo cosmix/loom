@@ -58,7 +58,7 @@ it("a working chat ends its newest open turn with the one roundel", () => {
   expect(activity.closest("section")?.getAttribute("aria-label")).toBe("Turn 2");
 });
 
-it("a working pressure run draws no turn roundel: its head carries the pane's one", () => {
+it("a working pressure run draws no turn roundel in the transcript", () => {
   const open = turn([said("u1")], { open: true });
   const pressure = { ...session("working"), kind: "pressure" } as ChatSnapshot["session"];
   const { log } = mount([], { session: pressure, turns: [open] });

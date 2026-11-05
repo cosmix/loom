@@ -93,7 +93,7 @@ describe("groupToolRows labels", () => {
       tool("3", { input: '{"file_path":"doc/beta.md"}' }),
     ];
 
-    expect(groupToolRows(items)).toEqual([group(items, "Used 3 tools · edited 1 files")]);
+    expect(groupToolRows(items)).toEqual([group(items, "Used 3 tools · edited 1 file")]);
   });
 
   it.each(["{", "null", "{}", "[]", '{"file_path":7}', '{"file_path":""}'])(

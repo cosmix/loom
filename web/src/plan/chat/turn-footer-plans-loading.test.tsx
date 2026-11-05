@@ -47,6 +47,7 @@ it("the first load shows one line of status, not a skeleton block", () => {
   expect(status.tagName).toBe("P");
   expect(status.textContent).toBe("Loading implementing plans…");
   expect(status.querySelector('[data-slot="skeleton"], .animate-pulse')).toBeNull();
+  expect(status.querySelector(".aurora-roundel")).toBeNull();
 });
 
 it.each(["doc/product/demo/section_2.md", "doc/product/demo/section_002.md"])(

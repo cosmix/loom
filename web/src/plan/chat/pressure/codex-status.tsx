@@ -15,9 +15,9 @@ const SETTLED_ICON = {
 } as const satisfies Record<Exclude<CodexState, "running">, JSX.Element>;
 
 function CodexTile({ state }: { state: CodexState }): JSX.Element {
-  // Only a running review animates: a settled one shows a static mark.
+  // The pane turns one roundel, the running step's glyph; this tile rests (DESIGN.md, Status).
   return state === "running" ? (
-    <ActivityTile kind="codex" />
+    <ActivityTile kind="codex" paused />
   ) : (
     <ActivityTile>{SETTLED_ICON[state]}</ActivityTile>
   );

@@ -8,7 +8,6 @@ import type { PressureRunView } from "@/plan/api/schema-pressure";
 import { authorBlockReasonAtom, isHolderAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { ActionError } from "@/plan/ui/action-error";
 import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
-import { BusyText } from "@/plan/ui/busy-text";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { Untrusted } from "../visible-controls";
 import { Elapsed, LiveElapsed } from "./elapsed";
@@ -20,10 +19,6 @@ import { pressureRunWaitingAtom, stopPressure, usePressureRun } from "./use-pres
 
 const STOP_CONFIRM =
   "Stop the pressure test? The plan keeps the edits made so far, and no record is written.";
-
-// DisabledReason fixes its button's look, so the danger outline is laid over it from outside.
-const STOP_LOOK =
-  "ml-auto [&_button]:h-[26px] [&_button]:gap-1.5 [&_button]:border [&_button]:border-(--tone-blocked) [&_button]:bg-transparent [&_button]:px-2 [&_button]:text-xs [&_button]:font-medium [&_button]:text-(--tone-blocked) [&_button]:hover:bg-[color-mix(in_oklch,var(--tone-blocked)_12%,transparent)] [&_button]:aria-disabled:hover:bg-transparent";
 
 function EndedElapsed({ run }: { run: PressureRunView }): JSX.Element {
   const [arrived] = useState(Date.now);
@@ -61,23 +56,24 @@ type StopRun = ReturnType<typeof useStopRun>;
 
 function RunHead({ run, stop }: { run: PressureRunView; stop: StopRun }): JSX.Element {
   return (
-    <div className="chat-run-header grid gap-2 border-b border-hairline px-4 py-3">
+    <div className="chat-run-header grid gap-2 px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
-        <ActivityGlyph kind="pressure" paused={run.ended !== null} className="text-sm" />
-        <span className="text-[13px] font-bold text-foreground">Pressure test</span>
+        {/* The head rests: the one turning roundel of the pane is the running step's. */}
+        <ActivityGlyph kind="pressure" paused className="text-sm" />
+        <span className="text-[13px] font-semibold text-foreground">Pressure test</span>
         <span className="inline-flex h-5 items-center rounded-md bg-muted px-1.5 text-xs font-medium">
           round {run.round} of {run.rounds}
         </span>
         {stop.writable && !run.ended && (
-          <div className={STOP_LOOK}>
+          <div className="ml-auto">
             <DisabledReason
-              reason={stop.stopping ? <BusyText>Stopping…</BusyText> : stop.reason}
+              reason={stop.stopping ? "Stopping…" : stop.reason}
               onClick={() => {
                 void stop.stop();
               }}
               size="sm"
             >
-              <Square aria-hidden="true" className="fill-current" />
+              <Square aria-hidden="true" className="fill-current text-(--tone-blocked)" />
               Stop
             </DisabledReason>
           </div>

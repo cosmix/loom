@@ -48,7 +48,7 @@ function useNewChat() {
       store.set(offerErrorAtom, elsewhereRefusal(elsewhere));
       return;
     }
-    if (isActiveSession(store.get(sessionAtom)) && !confirmEndFirst()) return;
+    if (isActiveSession(store.get(sessionAtom)) && !confirmEndFirst(store)) return;
     const controller = new AbortController();
     request.current = controller;
     setPending(true);
@@ -75,7 +75,8 @@ export function NewChatButton({ variant }: { variant: "head" | "concluded" }) {
   const reason = useAtomValue(authorBlockReasonAtom);
   const server = useAtomValue(serverInfoAtom);
   const { start, pending, error } = useNewChat();
-  if (variant === "head" && !canEnd) return null;
+  // A rejected end-then-wait may leave no live chat; its error must still show.
+  if (variant === "head" && !canEnd && !error) return null;
   if ((!canAuthor && !error) || (server?.read_only.length ?? 0) > 0) return null;
   const head = variant === "head";
   return (

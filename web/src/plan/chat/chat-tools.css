@@ -132,7 +132,9 @@
   color: var(--tone-blocked);
 }
 
-/* +N and −M: mono at the fine size; the counts take the tones, the row keeps its colour. */
+/* +N and −M: mono at the fine size; the counts take the tones, the row keeps its colour. The
+ * removed count is the blocked tone, not --destructive: at 12px the figure is text, and Ledger's
+ * --destructive is 3.8:1 on the page where the blocked red is 4.9:1. */
 .chat-counts {
   flex: none;
   font-family: var(--font-mono);
@@ -145,17 +147,18 @@
 }
 
 .chat-count-removed {
-  color: var(--destructive);
+  color: var(--tone-blocked);
 }
 
-/* A pending row: the target in the accent ink, and a soft shimmer sweeping across the row. The
- * sweep is the accent at 10% through color-mix, a transparency of the one accent, not a hue. */
+/* A pending row: the target in the accent text colour, and a soft shimmer sweeping across the
+ * row. The sweep is the accent at 10% through color-mix, a transparency of the one accent, not a
+ * hue. */
 .chat-tool-head[data-status="pending"] {
   color: var(--foreground);
 }
 
 .chat-tool-head[data-status="pending"] .chat-tool-target {
-  color: var(--accent-ink);
+  color: var(--accent-text);
 }
 
 @keyframes chat-shimmer {
