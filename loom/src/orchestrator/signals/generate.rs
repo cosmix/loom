@@ -226,7 +226,7 @@ fn assemble_signal(
     );
     let original_len = formatted.content.len();
     super::v2_section::append_v2_section(&mut formatted.content, stage, work_dir);
-    append_product_sections(&mut formatted.content, stage, work_dir);
+    product_sections::append_product_sections(&mut formatted.content, stage, work_dir);
     append_stage_feedback(&mut formatted.content, stage, work_dir);
     // Stage-specific suffixes belong to the dynamic stage content bucket.
     formatted.metrics.dynamic_bytes += formatted.content.len() - original_len;
