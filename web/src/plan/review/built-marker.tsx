@@ -9,6 +9,7 @@ import { DiffView } from "@/plan/diff/diff-view";
 import { toAddress } from "@/plan/files/address";
 import { fetchDoc } from "@/plan/files/api";
 import { connectionEpochAtom } from "@/plan/state/atoms";
+import { BusyText } from "@/plan/ui/busy-text";
 import { LoadState } from "@/plan/ui/load-state";
 
 import { getAtCommit, getBuilt, type BuiltResponse } from "./api";
@@ -192,7 +193,7 @@ export function BuiltMarker({ section }: { section: string }) {
   if (!load)
     return (
       <p role="status" className="text-[13px] text-muted-foreground">
-        Loading build markers…
+        <BusyText>Loading build markers…</BusyText>
       </p>
     );
   if (!load.ok)

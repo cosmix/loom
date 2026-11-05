@@ -48,7 +48,6 @@ const widthAtom = projectPref(
   DEFAULT_WIDTH,
   z.number().transform((width) => Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, width))),
 );
-const collapsedAtom = projectPref("panel-collapsed", false, z.boolean());
 
 export const panelWidthAtom = atom(
   (get) => get(widthAtom),
@@ -59,11 +58,6 @@ export const panelWidthAtom = atom(
       Number.isFinite(width) ? Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, width)) : DEFAULT_WIDTH,
     );
   },
-);
-
-export const panelCollapsedAtom = atom(
-  (get) => get(collapsedAtom),
-  (_get, set, update: Update<boolean>) => set(collapsedAtom, update),
 );
 
 /** Set once the first-hold note has been shown, per project. */

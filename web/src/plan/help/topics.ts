@@ -52,7 +52,7 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
           },
           {
             target: 'nav[aria-label="Feature documents"]',
-            text: "The spine lists the feature's documents in workflow order, marks what is done, and opens each document or the page that holds it.",
+            text: "The spine has five groups: Vision, Product spec, Metaplan, Plans and Run. It marks what is done, and each plan row reads Pressure-tested with a date or Not pressure-tested.",
           },
           {
             target: ".plan-spine-next",
@@ -60,7 +60,7 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
           },
           {
             target: '[aria-label$="Waiting for you"]',
-            text: "The activity pill counts what is in progress, such as a chat waiting for you, and opens the list.",
+            text: "The activity pill counts what is in progress, such as a chat waiting for you, and opens the list. A roundel marks work that is running.",
           },
           {
             target: "nav.view-switch",
@@ -75,6 +75,8 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
     ],
     tips: [
       "The spine belongs to a feature and is hidden on the project home.",
+      "A feature opens on its product overview; the metaplan opens as a summary, and its Source is one click away.",
+      "The footer shows the Claude and Codex limits side by side; Settings > Summaries shows the rebuild statistics.",
       'The activity pill lists a running plan, a pressure test, a Codex review or a summary rebuild, and a chat that is starting, drafting a document, needs permission or is waiting for you; a chat that is working does not appear, and the pill reads "Idle" when nothing applies.',
     ],
   },
@@ -106,7 +108,7 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
     Icon: MessagesSquareIcon,
     hue: 4,
     intro:
-      "Sessions work on your documents while you chat; their tool use and changes appear inline.",
+      "Sessions work on your documents while you chat; their tool use and changes appear inline. The chat panel stays beside the page on wide screens and opens from the header's Chat button on narrow ones; its menu holds End chat, and Stop sits beside Send while a turn runs.",
     scenes: CHAT_SCENES,
     tips: CHAT_TIPS,
   },

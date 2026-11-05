@@ -30,8 +30,8 @@ type Suggestion = Extract<ReviewMessage, { kind: "suggestion" }>;
 const suggestionsAtom = atom<Suggestion[]>([]);
 
 /**
- * Keeps the pending suggestions in the store so frames arriving while the panel is collapsed or
- * the sheet is closed are not lost. Mount it once, beside the panel, in a component that stays
+ * Keeps the pending suggestions in the store so frames arriving while the sheet is closed
+ * (below 1280px) or on a screen with no panel are not lost. Mount it once, beside the panel, in a component that stays
  * mounted. A resync or a replaced socket resets the list: status frames sent meanwhile are gone.
  * So does a change of the authoring holder: the server empties its box on every take and free and
  * tells only the senders, so a card kept across one would be refused as unknown when answered.

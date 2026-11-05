@@ -17,7 +17,12 @@ export function useCanEndChat(): boolean {
   return holder && isActiveSession(session) && session.kind !== "pressure";
 }
 
-export function EndChatMenuItem() {
+/**
+ * End chat as one full-width row of the chat menu: a quiet button, left-aligned, its own hover.
+ * `onEnded` runs only after the end command succeeded; a failure or a blocked click shows its
+ * text here and calls nothing, so the menu holding it stays open.
+ */
+export function EndChatMenuItem({ onEnded }: { onEnded?: () => void }) {
   const store = useStore();
   const session = useAtomValue(panelSessionAtom);
   const canEnd = useCanEndChat();
@@ -36,23 +41,26 @@ export function EndChatMenuItem() {
     setPending(true);
     setError(null);
     void endChat(store)
-      .catch((error: unknown) => setError(error instanceof Error ? error.message : String(error)))
+      .then(
+        () => onEnded?.(),
+        (error: unknown) => setError(error instanceof Error ? error.message : String(error)),
+      )
       .finally(() => setPending(false));
   };
   return (
-    <div className="text-[13px]">
+    <div className="chat-menu-item">
       <DisabledReason
         reason={
           reason ??
           (pending || session.state === "ending" ? "Writing final notes into the documents" : null)
         }
         onClick={end}
-        size="sm"
+        look="quiet"
       >
         End chat
       </DisabledReason>
       {error && (
-        <p role="status">
+        <p role="status" className="plan-fine">
           <Untrusted text={error} />
         </p>
       )}

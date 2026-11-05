@@ -7,6 +7,7 @@ import fixture from "@/plan/api/fixtures/chat-snapshot.json";
 import hello from "@/plan/api/fixtures/hello.json";
 import { chatSnapshotSchema } from "@/plan/api/schema-chat";
 import { authoringAtom, connectionAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
+import { DESKTOP } from "./offer-flow";
 import { ChatPanel, ChatRegistrations, ChatSheetButton } from "./panel";
 
 // The test files own their `vi.mock` calls (vitest hoists them per file); this kit holds the rest of the setup.
@@ -14,7 +15,7 @@ let serial = 0;
 
 export function media(desktop: boolean) {
   vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
-    matches: query === "(min-width: 1024px)" ? desktop : false,
+    matches: query === DESKTOP ? desktop : false,
     media: query,
     onchange: null,
     addEventListener: vi.fn(),

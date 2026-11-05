@@ -121,7 +121,9 @@ it("an invalid summary chip is plain text", () => {
   const store = setup();
   mount(store);
   add(store, { ...summary(), summary: "product/section_01" });
-  expect(screen.getByText("“The summary passage”")).toBeTruthy();
+  // The quote and its closing mark are two elements (chat-chips.css), so the label is read whole.
+  const label = screen.getByLabelText("Pending attachments").querySelector(".chat-chip-label");
+  expect(label?.textContent).toBe("“The summary passage”");
   expect(screen.queryByRole("button", { name: "“The summary passage”" })).toBeNull();
 });
 

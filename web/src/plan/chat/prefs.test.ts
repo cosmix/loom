@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import helloJson from "@/plan/api/fixtures/hello.json";
 import { planMessageSchema } from "@/plan/api/schema";
 import { serverInfoAtom } from "@/plan/state/atoms";
-import { holdNoteSeenAtom, panelCollapsedAtom, panelWidthAtom } from "./prefs";
+import { holdNoteSeenAtom, panelWidthAtom } from "./prefs";
 import { storageKey } from "./storage";
 
 const hello = planMessageSchema.parse(helloJson);
@@ -23,21 +23,15 @@ afterEach(() => {
   localStorage.clear();
 });
 
-it("persists both preferences per project", () => {
+it("persists the width per project", () => {
   const store = readyStore();
   expect(store.get(panelWidthAtom)).toBe(21.25);
-  expect(store.get(panelCollapsedAtom)).toBe(false);
   store.set(panelWidthAtom, 32);
-  store.set(panelCollapsedAtom, true);
   expect(localStorage.getItem(storageKey("prefs-test", "panel-width"))).toBe("32");
-  expect(localStorage.getItem(storageKey("prefs-test", "panel-collapsed"))).toBe("true");
   const reloaded = readyStore();
   const unsubWidth = reloaded.sub(panelWidthAtom, () => {});
-  const unsubCollapsed = reloaded.sub(panelCollapsedAtom, () => {});
   expect(reloaded.get(panelWidthAtom)).toBe(32);
-  expect(reloaded.get(panelCollapsedAtom)).toBe(true);
   unsubWidth();
-  unsubCollapsed();
   expect(readyStore("another-project").get(panelWidthAtom)).toBe(21.25);
 });
 
@@ -55,9 +49,7 @@ it("keeps preferences in memory when storage writes fail", () => {
     throw new DOMException("Storage is full", "QuotaExceededError");
   });
   store.set(panelWidthAtom, 30);
-  store.set(panelCollapsedAtom, true);
   expect(store.get(panelWidthAtom)).toBe(30);
-  expect(store.get(panelCollapsedAtom)).toBe(true);
 });
 
 it.each([
@@ -72,13 +64,6 @@ it.each([
   const store = readyStore("prefs-bad-width");
   store.sub(panelWidthAtom, () => {});
   expect(store.get(panelWidthAtom)).toBe(expected);
-});
-
-it.each(['"false"', "1", "null", "{"])("reads collapsed %s from storage as false", (stored) => {
-  localStorage.setItem(storageKey("prefs-bad-collapsed", "panel-collapsed"), stored);
-  const store = readyStore("prefs-bad-collapsed");
-  store.sub(panelCollapsedAtom, () => {});
-  expect(store.get(panelCollapsedAtom)).toBe(false);
 });
 
 it("keeps the hold note flag per project and validates what it reads", () => {

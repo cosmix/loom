@@ -153,9 +153,7 @@ it("shows turning summary activity when the chip is rebuilding", () => {
   const link = showChip(chipOf({ out_of_date: { reason: "rebuilding", detail: null } }));
   const mark = link.querySelector('[data-kind="section"][data-rebuilding="true"]');
 
-  expect(
-    mark?.querySelector('[data-kind="summaries"] .lucide-refresh-cw.activity-glyph__motion'),
-  ).not.toBeNull();
+  expect(mark?.querySelector('[data-kind="summaries"] .aurora-roundel')).not.toBeNull();
   expect(mark?.querySelector(".lucide-book-open")).toBeNull();
 });
 

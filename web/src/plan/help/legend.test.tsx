@@ -2,7 +2,6 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it } from "vitest";
 
-import { ACTIVITY_KINDS, ACTIVITY_LABELS } from "../ui/activity-glyphs";
 import {
   DOC_KIND_GLYPHS,
   OTHER_GLYPHS,
@@ -68,6 +67,9 @@ const STATE_NAMES = [
   ...STEP_NAMES,
 ];
 
+/** One sign of work in progress, then the two that mean "your turn". */
+const PROGRESS_NAMES = ["Working", "Needs permission", "Waiting for you"] as const;
+
 afterEach(cleanup);
 
 /** The name of a legend term: its text without the aria-hidden glyph tile. */
@@ -105,7 +107,7 @@ it("lists each group's entries in order, once, with a meaning", () => {
   const groups: [string, readonly string[]][] = [
     ["Reading", READING_NAMES],
     ["States", STATE_NAMES],
-    ["In progress", ACTIVITY_KINDS.map((kind) => ACTIVITY_LABELS[kind])],
+    ["In progress", PROGRESS_NAMES],
   ];
   for (const [title, names] of groups) {
     const group = screen.getByRole("region", { name: title });
@@ -210,11 +212,31 @@ it("uses each production document, state and activity glyph", () => {
   }
 
   const group = screen.getByRole("region", { name: "In progress" });
-  expect(within(group).getAllByRole("term")).toHaveLength(ACTIVITY_KINDS.length);
-  for (const kind of ACTIVITY_KINDS) {
-    const tile = tileOf(group, ACTIVITY_LABELS[kind]);
-    expect(tile.querySelectorAll(`.activity-glyph[data-kind="${kind}"]`)).toHaveLength(1);
-  }
+  expect(within(group).getAllByRole("term")).toHaveLength(PROGRESS_NAMES.length);
+  expect(
+    tileOf(group, "Needs permission").querySelectorAll(
+      '.activity-glyph[data-kind="permission"] svg',
+    ),
+  ).toHaveLength(1);
+  expect(
+    tileOf(group, "Waiting for you").querySelectorAll(
+      '.activity-glyph[data-kind="waiting"] .activity-glyph__led',
+    ),
+  ).toHaveLength(1);
+});
+
+it("shows the roundel once, as the one sign of work in progress", () => {
+  const { container } = render(<PlannerLegend />, { wrapper: MemoryRouter });
+  const group = screen.getByRole("region", { name: "In progress" });
+
+  const working = tileOf(group, "Working");
+  expect(
+    working.querySelectorAll(".activity-glyph .aurora-roundel[data-busy='true']"),
+  ).toHaveLength(1);
+  expect(container.querySelectorAll(".aurora-roundel")).toHaveLength(1);
+  // The States group keeps the static state glyphs (a plan's "running" arrows); the progress
+  // group draws no turning icon beside the disc.
+  expect(group.querySelectorAll(".lucide-refresh-cw, .lucide-loader-circle")).toHaveLength(0);
 });
 
 it("sets no legend text below 13px", () => {

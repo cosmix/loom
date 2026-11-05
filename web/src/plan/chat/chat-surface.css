@@ -1,13 +1,15 @@
 /* The chat panel's look: one continuous surface where hierarchy comes from type, space and a
- * single hairline. Chrome is Inter at --type-ui in --muted-foreground; the user's words are Inter
- * in --foreground; the assistant's prose is the reading face. The transcript, the decision band
- * and the composer have their own files, imported below. All of them are unlayered on purpose:
- * they override the utility classes of the shared Button. chat.css keeps the panel's frame,
- * whose test pins that the frame carries no tone or fade.
+ * single hairline. Chrome is Inter at --type-body in --muted-foreground; the user's words are
+ * Inter in --foreground; the assistant's prose is the reading face. The transcript, the decision
+ * band, the composer, the chips and the notices have their own files, imported below. All of them are
+ * unlayered on purpose: they override the utility classes of the shared Button. chat.css keeps
+ * the panel's frame, whose test pins that the frame carries no tone or fade.
  */
 @import "./chat-transcript.css";
 @import "./chat-decision.css";
 @import "./chat-composer.css";
+@import "./chat-chips.css";
+@import "./chat-notices.css";
 
 /* The side gutter every part of the chat keeps. Set on the transcript and composer too: the
  * kickoff route and the help scene mount them outside a .chat-panel. */
@@ -17,19 +19,42 @@
   --chat-gutter: var(--space-4);
 }
 
+/* The type step of the chat: body chrome at --type-body, secondary text at --type-ui, nothing
+ * under 13px. The shared fine print, a blocked control's reason and the compact button are 12px
+ * elsewhere; here they take --type-ui, and the full-size button the chrome size. */
+:is(.chat-panel, .chat-transcript, .chat-composer) .plan-fine,
+:is(.chat-panel, .chat-transcript, .chat-composer) .plan-button[data-size="sm"] {
+  font-size: var(--type-ui);
+}
+
+:is(.chat-panel, .chat-transcript, .chat-composer) .plan-button:not([data-size="sm"]) {
+  font-size: var(--type-body);
+}
+
+/* Lines set with the shared utilities (a divider, a plans note, a patch) take the same step. */
+:is(.chat-panel, .chat-transcript, .chat-composer) .text-xs {
+  font-size: var(--type-ui);
+}
+
+:is(.chat-panel, .chat-transcript, .chat-composer) .text-\[13px\] {
+  font-size: var(--type-body);
+}
+
 /* ── Head ───────────────────────────────────────────────────────────────── */
 
-/* The top block (head, state row, holder row, banner) closes with the panel's one hairline. */
+/* The top block (head, state row, run line, banner) closes with the panel's one hairline. It
+ * is no size container: layout containment would make it a stacking context and put the menu
+ * pop under the transcript. */
 .chat-panel-top {
   min-width: 0;
   border-block-end: 1px solid var(--hairline);
 }
 
-/* One line: title, state word, menu and the window control share one centre line. */
+/* One line: title, state word and menu share one centre line. */
 .chat-head {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
   box-sizing: border-box;
   min-height: calc(var(--control-height) + 2 * var(--space-2));
   padding: var(--space-2) var(--chat-gutter);
@@ -53,12 +78,11 @@
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
 }
 
-/* Quiet icon buttons: the window controls, the menu and the context chip's dismiss. */
-.chat-head-button,
-.chat-context-dismiss {
+/* Quiet icon buttons: the menu, the sheet's close. */
+.chat-head-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -77,24 +101,17 @@
     color 120ms;
 }
 
-.chat-context-dismiss {
-  height: var(--control-height-sm);
-  min-width: var(--control-height-sm);
-}
-
 .chat-head-button::-webkit-details-marker {
   display: none;
 }
 
 .chat-head-button:hover,
-.chat-context-dismiss:hover,
 .chat-menu[open] > .chat-head-button {
   background: var(--muted);
   color: var(--foreground);
 }
 
 .chat-head-button:focus-visible,
-.chat-context-dismiss:focus-visible,
 .chat-link-button:focus-visible,
 .chat-context-prompt:focus-visible,
 .chat-elsewhere a:focus-visible {
@@ -102,26 +119,53 @@
   outline-offset: 2px;
 }
 
-/* The menu floats, so it is the one thing here with an edge and a shadow. */
+/* The menu floats, on the header popovers' surface (header/popover.tsx): --popover, a 12px
+ * corner, a one-pixel ring of the foreground at a tenth and the dialog shadow. Its one row is
+ * End chat, full width and left-aligned, with the row's own hover. */
 .chat-menu-pop {
   position: absolute;
   inset-inline-end: 0;
   z-index: 10;
   display: grid;
-  gap: 2px;
-  min-width: 10rem;
+  min-width: 12rem;
   margin-block-start: var(--space-1);
   padding: var(--space-1);
-  border: 1px solid var(--hairline);
-  border-radius: var(--corner-surface);
-  background: var(--card);
-  box-shadow: var(--dialog-shadow);
+  border-radius: 12px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent),
+    var(--dialog-shadow);
+}
+
+.chat-menu-item {
+  display: grid;
+  min-width: 0;
+}
+
+.chat-menu-item > div {
+  display: grid;
+  gap: 0;
+}
+
+/* exception: the row is the quiet button stretched to the pop's width (DESIGN.md asks for
+ * `look`, not a wrapper rule); a menu row has no other owner for its width and alignment. */
+.chat-menu-item .plan-button {
+  width: 100%;
+  height: 32px;
+  justify-content: flex-start;
+  padding: 0 var(--space-3);
+  color: var(--foreground);
+}
+
+.chat-menu-item .plan-fine {
+  padding: 0 var(--space-3) var(--space-2);
 }
 
 /* Status in the head: a glyph and a word, no pill. The LED takes the state's tone. */
-.chat-state {
+.chat-head .chat-state {
   color: var(--muted-foreground);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -157,62 +201,92 @@
   }
 }
 
-/* ── Collapsed rail (CollapsedRail in panel.tsx) ──────────────────────────────── */
-
-/* The whole strip is the tab: the glyph, "Chat" set vertically, then the state word. */
-.chat-rail-tab {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  padding: var(--space-4) 0;
-  border: 0;
-  background: transparent;
-  color: var(--foreground);
-  font-family: var(--font-sans);
-  cursor: pointer;
-  transition: background-color 120ms;
-}
-
-.chat-rail-tab:hover {
-  background: var(--muted);
-}
-
-.chat-rail-tab:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: -2px;
-}
-
-.chat-rail-word,
-.chat-rail-state {
-  writing-mode: vertical-rl;
-  white-space: nowrap;
-  line-height: 1;
-}
-
-.chat-rail-word {
-  font-size: var(--type-ui);
+/* Decisions waiting, on the sheet button: a count, not a badge. */
+.chat-permission-badge {
+  font-size: var(--type-body);
   font-weight: 600;
-  letter-spacing: 0.02em;
+  line-height: 1;
+  color: var(--foreground);
 }
 
-.chat-rail-state {
-  color: var(--muted-foreground);
-  font-size: var(--type-ui);
+/* ── State row and run line under the head ───────────────────────────────── */
+
+.chat-state-line {
+  font-size: var(--type-body);
   font-weight: 500;
 }
 
-/* Decisions waiting, on the collapsed rail and the sheet button: a count, not a badge. */
-.chat-permission-badge {
-  font-size: var(--type-ui);
-  font-weight: 600;
-  line-height: 1;
-  color: var(--foreground);
+/* The head's status word says what this row would repeat; it keeps its sr-only announcement.
+ * Padding sits on the visible row, so a state with nothing to show takes no space. */
+.chat-panel .chat-state-line > [aria-live="off"] {
+  padding: 0 var(--chat-gutter) var(--space-2);
+  color: var(--muted-foreground);
+  font-weight: 400;
+  line-height: var(--leading-ui);
 }
 
-/* ── Context prompts (context-prompts.tsx); the context chip is in chat-composer.css ── */
+.chat-state-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+/* A pressure run's head states its own elapsed time; the row would repeat it alone. */
+.chat-panel .chat-state-line[data-kind="pressure"][data-state="working"] > [aria-live="off"],
+.chat-panel .chat-state-line:is([data-state="idle"], [data-state="permission"]) > [aria-live="off"],
+.chat-panel
+  .chat-state-line[data-state="working"]
+  :is(.chat-state-glyph, .chat-state-words, .chat-state-sep) {
+  display: none;
+}
+
+/* The run line: who is authoring, who is watching, what the chat has cost, on one line that
+ * never wraps. The name is the one segment that gives way, cut with an ellipsis; each separator
+ * belongs to the segment after it, so a cut never strands a dot. The pressure head shares
+ * `.chat-run-header` (tests and the help scene query it) and keeps its own layout, so the line's
+ * rules hang on `.chat-run-line`. */
+.chat-run-line {
+  container-type: inline-size;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0 var(--chat-gutter) var(--space-2);
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+  line-height: var(--leading-ui);
+  white-space: nowrap;
+}
+
+.chat-run-line > .activity-glyph {
+  flex-shrink: 0;
+}
+
+.chat-run-seg {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.chat-run-seg[data-cut] {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-run-seg [tabindex]:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* The line is its own size container; 20rem of line is a 22rem panel, less the two gutters. */
+@container (max-width: 19.99rem) {
+  .chat-run-tokens {
+    display: none;
+  }
+}
+
+/* ── Context prompts (context-prompts.tsx); the context chip is in chat-chips.css ── */
 
 /* Prompts sit on the panel as a list of quiet text buttons; no card, no edge. The list
  * carries the gutter unless a padded block (the composer) already does. */
@@ -239,7 +313,7 @@
   background: transparent;
   color: var(--muted-foreground);
   font-family: var(--font-sans);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
   font-weight: 500;
   line-height: var(--leading-ui);
   text-align: start;
@@ -260,106 +334,6 @@
   color: var(--foreground);
 }
 
-/* ── State rows under the head ─────────────────────────────────────────────── */
-
-/* The head's status word says what these rows would repeat; each keeps its sr-only
- * announcement. Padding sits on the visible row, so a state with nothing to show takes no space. */
-.chat-panel .chat-holder-row,
-.chat-panel .chat-state-line > [aria-live="off"] {
-  padding: 0 var(--chat-gutter) var(--space-2);
-  color: var(--muted-foreground);
-  font-size: var(--type-ui);
-  font-weight: 400;
-  line-height: var(--leading-ui);
-}
-
-/* A pressure run's head states its own elapsed time; the row would repeat it alone. */
-.chat-panel .chat-state-line[data-kind="pressure"][data-state="working"] > [aria-live="off"],
-.chat-panel .chat-state-line:is([data-state="idle"], [data-state="permission"]) > [aria-live="off"],
-.chat-panel
-  .chat-state-line[data-state="working"]
-  :is(.chat-state-glyph, .chat-state-words, .chat-state-sep) {
-  display: none;
-}
-
-/* The type floor: no chat text under 13px. The shared fine print, a blocked control's reason and
- * the compact button are 12px elsewhere; here they take the chrome size. A chip's source and a
- * file's size stay fine print, the one secondary text the chips are given. */
-:is(.chat-panel, .chat-transcript, .chat-composer)
-  .plan-fine:not(.chat-chip-source, .chat-chip-size),
-:is(.chat-panel, .chat-transcript, .chat-composer) .plan-button[data-size="sm"] {
-  font-size: var(--type-ui);
-}
-
-/* A failure notice: a toned glyph, a 600 title, body in --foreground. No box. */
-.chat-notice {
-  display: grid;
-  gap: var(--space-1);
-  max-width: 48ch;
-  padding-block: var(--space-1) var(--space-2);
-  color: var(--foreground);
-  font-size: var(--type-ui);
-  font-weight: 400;
-  line-height: var(--leading-body);
-}
-
-.chat-notice-title {
-  display: flex;
-  gap: var(--space-2);
-  margin: 0;
-  font-weight: 600;
-}
-
-.chat-notice[data-tone="error"] .chat-notice-glyph {
-  color: var(--tone-blocked);
-}
-
-.chat-notice p,
-.chat-notice ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.chat-notice li + li {
-  margin-block-start: var(--space-2);
-}
-
-.chat-elsewhere,
-.chat-offer-error {
-  margin: 0;
-  padding: 0 var(--chat-gutter) var(--space-2);
-  font-size: var(--type-ui);
-}
-
-.chat-offer-error {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-}
-
-.chat-elsewhere a {
-  border-radius: 4px;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-/* A text action inside a line (Show, Hide, Dismiss, Show all): underlined on hover only. */
-.chat-link-button {
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  text-underline-offset: 2px;
-}
-
-.chat-link-button:hover {
-  text-decoration: underline;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .chat-led,
   .chat-state[data-state="idle"] .chat-led {
@@ -367,9 +341,7 @@
   }
 
   .chat-head-button,
-  .chat-context-dismiss,
-  .chat-context-prompt,
-  .chat-rail-tab {
+  .chat-context-prompt {
     transition: none;
   }
 }

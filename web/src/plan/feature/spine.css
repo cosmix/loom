@@ -1,9 +1,10 @@
 /*
  * The feature spine: the documents of one feature in workflow order, with the next step at its
- * head. Chrome set in --type-ui and --muted-foreground, the current row in --foreground; the
- * accent marks the current group's glyph and the current document's dot, and nothing else
- * (ui/DESIGN.md). Groups divide by
- * hairlines, children sit under their group with no rule of their own.
+ * head. Chrome set in --type-body and --muted-foreground, with its mono ids, counts and notes at
+ * --type-ui (one step above the rest of the chrome, ui/DESIGN.md Type), the current row in
+ * --foreground; the accent marks the current group's glyph and the current document's dot, and
+ * nothing else. Groups divide by hairlines, children sit under their group with no rule of their
+ * own.
  */
 [data-loom-plan] .plan-spine {
   position: sticky;
@@ -20,8 +21,14 @@
   overflow-y: auto;
   padding: var(--space-4) var(--space-2) var(--space-5) var(--space-3);
   font-family: var(--font-sans);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
   line-height: var(--leading-ui);
+}
+
+/* Fine text in the spine (counts, notes, the pressure record) sits one step up with the rest of
+   the spine, at the 13px floor. */
+[data-loom-plan] .plan-spine .plan-fine {
+  font-size: var(--type-ui);
 }
 
 [data-loom-plan] .plan-spine__menu {
@@ -56,7 +63,7 @@
   max-width: 48ch;
   margin: 0;
   color: var(--foreground);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }
@@ -161,7 +168,7 @@
 [data-loom-plan] .plan-spine__mono,
 [data-loom-plan] .plan-spine__number {
   font-family: var(--font-mono);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
 }
 
 [data-loom-plan] .plan-spine__number {
@@ -219,6 +226,49 @@
   font-weight: 500;
 }
 
+/* A plan's pressure record: a quiet glyph and word after the state (ui/DESIGN.md, Status). Tested
+   and untested differ in glyph and in word; only the tested glyph takes a tone. The badge keeps
+   its width and never wraps under the name: the name gives way first, and in a row too narrow for
+   the name beside the whole record the date is the first thing to go. It goes from view only
+   (the clip below), so the link's accessible name keeps it. */
+[data-loom-plan] .plan-spine__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  white-space: nowrap;
+}
+
+[data-loom-plan] .plan-spine__badge > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+[data-loom-plan] .plan-spine__badge[data-tested="true"] > svg {
+  color: var(--tone-completed);
+}
+
+/* Each child row measures itself: the 18rem spine's rows are under 20rem, the full-width rows of
+   the narrow layout are not until the viewport is close to its floor. */
+[data-loom-plan] .plan-spine__children > li {
+  container: spine-row / inline-size;
+}
+
+@container spine-row (max-width: 20rem) {
+  [data-loom-plan] .plan-spine__badge-date {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
 /* On a document's source (`data-view="source"`, set by spine.tsx) the current row says "Source" on
    a quiet line under its name, so the sidebar keeps the document and names the view. The row is
    the current link when the route marks one; otherwise the head of the group the route is in.
@@ -244,7 +294,7 @@
   content: "Source";
   flex-basis: 100%;
   color: var(--muted-foreground);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
   font-weight: 400;
   line-height: var(--leading-ui);
 }

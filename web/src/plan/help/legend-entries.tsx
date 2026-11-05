@@ -5,12 +5,7 @@ import type { StepView } from "@/plan/api/schema";
 import { FoldCap } from "@/plan/concept/fold-handle";
 import { Marks } from "@/plan/concept/marks";
 import { PlanGlyph } from "@/plan/concept/plan-glyph";
-import {
-  ACTIVITY_KINDS,
-  ACTIVITY_LABELS,
-  ActivityGlyph,
-  type ActivityKind,
-} from "@/plan/ui/activity-glyphs";
+import { ACTIVITY_LABELS, ActivityGlyph, type YourTurnKind } from "@/plan/ui/activity-glyphs";
 import { DocMark } from "@/plan/ui/doc-mark";
 import {
   DOC_KIND_GLYPHS,
@@ -228,19 +223,22 @@ export const STATES: readonly LegendEntry[] = [
   },
 ];
 
-const ACTIVITY_MEANINGS: Record<ActivityKind, string> = {
+/** The signs that mean "your turn"; every progress kind draws the one roundel instead. */
+const YOUR_TURN: Record<YourTurnKind, string> = {
   permission: "A session needs your permission before it can continue.",
   waiting: "A session is waiting for your reply.",
-  running: "Loom is executing the stages of a plan.",
-  pressure: "Reviewers are pressure-testing a plan.",
-  codex: "Codex is reviewing the plan.",
-  drafting: "A session is writing a document.",
-  summaries: "Loom is rebuilding summaries from their sources.",
-  starting: "A session is starting up.",
 };
 
-export const ACTIVITIES: readonly LegendEntry[] = ACTIVITY_KINDS.map((kind) => ({
-  name: ACTIVITY_LABELS[kind],
-  meaning: ACTIVITY_MEANINGS[kind],
-  glyph: <ActivityGlyph kind={kind} className="size-4" />,
-}));
+export const ACTIVITIES: readonly LegendEntry[] = [
+  {
+    name: "Working",
+    meaning:
+      "The roundel turns wherever work is in progress: a plan running, a document being drafted, summaries rebuilding, a pressure test or Codex review, a session starting. It rests when the work pauses.",
+    glyph: <ActivityGlyph kind="running" className="size-4" />,
+  },
+  ...(Object.keys(YOUR_TURN) as YourTurnKind[]).map((kind) => ({
+    name: ACTIVITY_LABELS[kind],
+    meaning: YOUR_TURN[kind],
+    glyph: <ActivityGlyph kind={kind} className="size-4" />,
+  })),
+];

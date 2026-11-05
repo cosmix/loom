@@ -195,6 +195,11 @@ it("pins the whole spine, which holds no removed step and cannot scroll the scen
   const spine = container.querySelector(SPINE)!;
   expect(container.querySelectorAll(SPINE)).toHaveLength(1);
   expect(spine.textContent).not.toContain("Plan review");
+  // Five groups: the pressure test is a plan's record, not a row of its own.
+  expect(spine.textContent).not.toContain("Pressure test");
+  for (const group of ["Vision", "Product spec", "Metaplan", "Plans", "Run"]) {
+    expect(spine.textContent, group).toContain(group);
+  }
   // The stage clips a header wider than itself instead of growing a scrollbar in the scene.
   const css = readFileSync(join(import.meta.dirname, "pinned-scene.css"), "utf8");
   expect(css).toMatch(/__stage\s*\{[^}]*overflow-x:\s*clip;/);
@@ -206,4 +211,16 @@ it("keeps the scene inert without HTTP requests or a live socket", () => {
   expect(container.querySelector("[inert]")).not.toBeNull();
   expect(globalThis.fetch).not.toHaveBeenCalled();
   expect(globalThis.WebSocket).not.toHaveBeenCalled();
+});
+
+it("states the current planner behavior in the notes, tips and intros", () => {
+  const [around, , , chat, pressure] = PLANNER_HELP_TOPICS;
+  expect(around!.scenes[0]!.notes[1]!.text).toMatch(/five groups.*Not pressure-tested/);
+  expect(around!.scenes[0]!.notes[3]!.text).toContain("roundel");
+  const aroundTips = (around!.tips ?? []).join(" ");
+  expect(aroundTips).toContain("product overview");
+  expect(aroundTips).toContain("Claude and Codex limits");
+  expect(aroundTips).toContain("rebuild statistics");
+  expect(chat!.intro).toMatch(/Chat button.*End chat.*Stop sits beside Send/);
+  expect((pressure!.tips ?? []).join(" ")).toContain("Pressure test button");
 });

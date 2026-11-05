@@ -119,7 +119,9 @@ it.each([
 
     const chip = screen.getByText(label).closest("[data-chip]");
     expect(chip?.getAttribute("data-tone")).toBe(tone);
-    expect(chip?.querySelector(`svg.lucide-${glyph}`)).not.toBeNull();
+    // A running plan draws the activity roundel, not an icon.
+    const mark = glyph === "refresh-cw" ? ".aurora-roundel" : `svg.lucide-${glyph}`;
+    expect(chip?.querySelector(mark)).not.toBeNull();
     expect(screen.queryByRole("note")?.textContent ?? null).toBe(notice);
   },
 );

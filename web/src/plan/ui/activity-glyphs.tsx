@@ -1,5 +1,7 @@
-import { BellRing, LoaderCircle, PenLine, RefreshCw } from "lucide-react";
+import { BellRing } from "lucide-react";
 import type { JSX, ReactNode } from "react";
+
+import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 
 import "./activity-glyphs.css";
 
@@ -35,48 +37,28 @@ export const ACTIVITY_LABELS: Record<ActivityKind, string> = {
   starting: "Session starting",
 };
 
-function PressureGauge(): JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path d="M3 15a9 9 0 0 1 18 0" strokeLinecap="round" />
-      <path d="M5.6 8.6l1.4 1.4M12 6v2M18.4 8.6L17 10" strokeWidth={1.5} strokeLinecap="round" />
-      <path className="activity-glyph__needle" d="M12 15V9" strokeLinecap="round" />
-      <circle cx={12} cy={15} r={1.5} fill="currentColor" stroke="none" />
-    </svg>
-  );
+/**
+ * The kinds that mean work is in progress. They all draw the one roundel (`ui/DESIGN.md`, Status);
+ * the rest (`YourTurnKind`) mean "your turn" and keep their own glyphs.
+ */
+export const PROGRESS_KINDS = [
+  "running",
+  "pressure",
+  "codex",
+  "drafting",
+  "summaries",
+  "starting",
+] as const satisfies readonly ActivityKind[];
+
+export type ProgressKind = (typeof PROGRESS_KINDS)[number];
+export type YourTurnKind = Exclude<ActivityKind, ProgressKind>;
+
+export function isProgressKind(kind: ActivityKind): kind is ProgressKind {
+  return (PROGRESS_KINDS as readonly ActivityKind[]).includes(kind);
 }
 
-function CodexScan(): JSX.Element {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5" />
-      <path className="activity-glyph__beam" d="M12 6v12" />
-    </svg>
-  );
-}
-
-function ActivityShape({ kind }: { kind: ActivityKind }): JSX.Element {
+function YourTurnShape({ kind }: { kind: YourTurnKind }): JSX.Element {
   switch (kind) {
-    case "summaries":
-      return <RefreshCw className="activity-glyph__motion" />;
-    case "pressure":
-      return <PressureGauge />;
-    case "codex":
-      return <CodexScan />;
-    case "drafting":
-      return <PenLine className="activity-glyph__motion" />;
-    case "running":
-      // Rotating arrows mean "running" across the planner.
-      return <RefreshCw className="activity-glyph__motion" />;
-    case "starting":
-      return <LoaderCircle className="activity-glyph__motion" />;
     case "waiting":
       return <span className="activity-glyph__led" />;
     case "permission":
@@ -84,6 +66,16 @@ function ActivityShape({ kind }: { kind: ActivityKind }): JSX.Element {
   }
 }
 
+function ActivityShape({ kind, paused }: { kind: ActivityKind; paused: boolean }): JSX.Element {
+  if (!isProgressKind(kind)) return <YourTurnShape kind={kind} />;
+  // A paused roundel rests upright and dims (busy-roundel.css); it is not frozen mid-turn.
+  return <BusyRoundel busy={!paused} size="100%" busyLabel="" idleLabel="" />;
+}
+
+/**
+ * The decorative glyph of an activity kind. The root is `aria-hidden`: the caller's label is the
+ * announcement. Work in progress is the roundel; a paused one rests.
+ */
 export function ActivityGlyph({
   kind,
   className,
@@ -100,7 +92,7 @@ export function ActivityGlyph({
       data-paused={paused || undefined}
       aria-hidden="true"
     >
-      <ActivityShape kind={kind} />
+      <ActivityShape kind={kind} paused={paused} />
     </span>
   );
 }

@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { expect, it, vi } from "vitest";
 
 import { snapshotAtom } from "@/plan/chat/model";
-import { panelCollapsedAtom } from "@/plan/chat/prefs";
 import { screenAtom } from "@/plan/chat/session-home";
 import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
 import { harness, installStartChatLifecycle, session } from "@/plan/chat/start-chat-test-kit";
@@ -102,7 +101,6 @@ it.each([
 
 it("starts kickoff with the draft and selected document and waits for the session snapshot", async () => {
   const h = mount();
-  h.store.set(panelCollapsedAtom, true);
   enterText();
   fireEvent.click(screen.getByRole("button", { name: "Attach notes or a document" }));
   expect(screen.getByRole("listitem").textContent).toContain("Attached: My notes");
@@ -122,7 +120,6 @@ it("starts kickoff with the draft and selected document and waits for the sessio
   expect(h.store.get(kickoffSessionAtom)).toBeNull();
   showSession(h);
   await waitFor(() => expect(h.store.get(kickoffSessionAtom)).toBe(session.id));
-  expect(h.store.get(panelCollapsedAtom)).toBe(true);
   expect(h.store.get(chatSheetOpenAtom)).toBe(false);
 });
 

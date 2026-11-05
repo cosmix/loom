@@ -32,6 +32,10 @@ export function useQueueRefill(): void {
   }, [store]);
 }
 
+/**
+ * Stop, in the composer's action row immediately before Send and at Send's size, while a turn
+ * runs or waits on a decision. Its error sits under it, in the row's reason size.
+ */
 export function StopControl({ confirm }: { confirm?: string }) {
   const store = useStore();
   const session = useAtomValue(sessionAtom);
@@ -50,16 +54,15 @@ export function StopControl({ confirm }: { confirm?: string }) {
       .finally(() => setPending(false));
   };
   return (
-    <div>
+    <div className="chat-composer-stop">
       <DisabledReason
         reason={reason ?? (pending ? "Stopping the current turn" : null)}
         onClick={stop}
-        size="sm"
       >
         Stop
       </DisabledReason>
       {error && (
-        <p role="status" className="text-xs text-muted-foreground">
+        <p role="status" className="plan-fine">
           <Untrusted text={error} />
         </p>
       )}

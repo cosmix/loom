@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/dialog";
 import { startChat } from "@/plan/chat/commands";
 import { noPanelRefusal, startError } from "@/plan/chat/offer-flow";
-import { panelCollapsedAtom } from "@/plan/chat/prefs";
 import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { IsolatedSentence } from "@/plan/concept/sentence-text";
@@ -66,7 +65,6 @@ async function beginMove(store: Store, paths: string[], name: string, signal: Ab
   const standalone = paths.every((path) => plans.some((item) => item.path === path));
   await startChat(store, null, moveText(paths, name, standalone), [], known ? name : undefined);
   if (signal.aborted) return null;
-  store.set(panelCollapsedAtom, false);
   store.set(chatSheetOpenAtom, true);
   if (known) return `/f/${encodeURIComponent(name)}`;
   const first = paths[0]!;

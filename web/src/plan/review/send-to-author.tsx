@@ -9,6 +9,7 @@ import { registerSelectionSecondary, type AttachmentDraft } from "@/plan/attachm
 import { suggest, toAttachmentInput } from "@/plan/chat/commands";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { authoringAtom, canAuthorAtom, planSocketAtom } from "@/plan/state/atoms";
+import { BusyText } from "@/plan/ui/busy-text";
 import type { Store } from "@/state/store";
 
 import type { ReviewMessage, SuggestedPassage } from "./api";
@@ -105,7 +106,7 @@ function NoteForm({
         {tooLong ? "; shorten your note to send it." : ""}
       </p>
       <Button type="submit" size="sm" disabled={disabled || pending || tooLong}>
-        {pending ? "Sending…" : "Send"}
+        {pending ? <BusyText>Sending…</BusyText> : "Send"}
       </Button>
     </form>
   );

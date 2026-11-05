@@ -3,7 +3,6 @@ import type { ReactNode, RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { SectionView } from "@/plan/api/schema-files";
-import { panelCollapsedAtom } from "@/plan/chat/prefs";
 import { elsewhereSessionAtom } from "@/plan/chat/session-home";
 import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
 import { canAuthorAtom } from "@/plan/state/atoms";
@@ -50,9 +49,8 @@ export function AddToChat({ draft, rect, onAdded }: AddToChatProps) {
             size="sm"
             onClick={() => {
               add(draft);
-              // The chip lands in a composer the user can see: the panel opens, or the sheet on a
-              // narrow screen, as New chat does (chat/start-chat.tsx).
-              store.set(panelCollapsedAtom, false);
+              // The chip lands in a composer the user can see: the panel is always shown on a wide
+              // screen, and the sheet opens on a narrow one, as New chat does (chat/start-chat.tsx).
               store.set(chatSheetOpenAtom, true);
               onAdded();
             }}

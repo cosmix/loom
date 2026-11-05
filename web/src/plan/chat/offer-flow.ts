@@ -4,7 +4,6 @@ import type { Store } from "@/state/store";
 import { endChat, startChat } from "./commands";
 import { sessionAtom } from "./model";
 import { offerErrorAtom } from "./offer-error";
-import { panelCollapsedAtom } from "./prefs";
 import {
   elsewhereSessionAtom,
   isActiveSession,
@@ -13,8 +12,8 @@ import {
 } from "./session-home";
 import { chatSheetOpenAtom } from "./sheet-state";
 
-/** The width at which the panel is a side rail. */
-export const DESKTOP = "(min-width: 1024px)";
+/** The width at which the panel is a side rail; below it the panel is the sheet. */
+export const DESKTOP = "(min-width: 1280px)";
 const END_FIRST_CONFIRM =
   "End the current chat first? It will write its open questions into the documents before it stops.";
 
@@ -94,8 +93,8 @@ export function startError(store: Store, error: unknown): string {
 /**
  * Starts a chat from an offer for every registered offer handler. With a chat running on this
  * screen it asks first, ends it and waits for it to be over; with one running elsewhere it refuses
- * without asking. A refusal is shown in the panel, which a start opens in the layout in use so the
- * message is never hidden. One start runs at a time.
+ * without asking. A refusal is shown in the panel; where there is no side panel a start opens the
+ * sheet so the message is never hidden. One start runs at a time.
  */
 export function createOfferStarter(store: Store): {
   start: (offer: string, feature?: string) => Promise<void>;
@@ -103,8 +102,8 @@ export function createOfferStarter(store: Store): {
 } {
   let request: AbortController | null = null;
   const reveal = () => {
-    if (window.matchMedia(DESKTOP).matches) store.set(panelCollapsedAtom, false);
-    else store.set(chatSheetOpenAtom, true);
+    // The side panel is always shown; only the sheet needs opening.
+    if (!window.matchMedia(DESKTOP).matches) store.set(chatSheetOpenAtom, true);
   };
   const start = async (offer: string, feature?: string): Promise<void> => {
     if (request) return;

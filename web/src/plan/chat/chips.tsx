@@ -3,22 +3,20 @@ import { useEffect, useId, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 
 import type { Item, Turn } from "@/plan/api/schema-chat";
-import { docKindOfPageKey, pageKeyOfPath, pageKeyOfSummaryId } from "@/plan/api/page-key";
 import type { TreeEntry } from "@/plan/api/schema-files";
 import { forgetPreview, uploadStatusAtom } from "@/plan/attachments/intake";
 import { pendingAttachmentsAtom, type ChatAttachment } from "@/plan/attachments";
-import { docColour } from "@/plan/concept/marks";
-import { conceptPageAtom } from "@/plan/concept/page-state";
 import { openDiff } from "@/plan/diff/open-diff";
 import { toAddress } from "@/plan/files/address";
-import { openDocAtom, treeAtom } from "@/plan/files/atoms";
-import { treeDocs } from "@/plan/files/tree";
+import { treeAtom } from "@/plan/files/atoms";
 import { getTurnSections, type TurnSectionsResponse } from "@/plan/review/api";
 import { hashesAtom } from "@/plan/review/live";
 import { connectionEpochAtom } from "@/plan/state/atoms";
-import { DocMark } from "@/plan/ui/doc-mark";
-import { DOC_KIND_GLYPHS, OTHER_GLYPHS } from "@/plan/ui/glyphs";
+import { BusyText } from "@/plan/ui/busy-text";
+import { OTHER_GLYPHS } from "@/plan/ui/glyphs";
 import { chipLabel, chipSource, summaryIdOf, type LabelInput } from "./chip-label";
+import { ChipMark } from "./chip-mark";
+import { ChipRemove } from "./chip-remove";
 import { toAttachmentInput } from "./commands";
 import { ErrorLine } from "./error-line";
 import { FileChip } from "./file-chip";
@@ -57,79 +55,9 @@ function useOpenChip() {
   };
 }
 
-function ChipMark({ attachment }: { attachment: LabelInput }) {
-  const tree = useAtomValue(treeAtom);
-  const openDoc = useAtomValue(openDocAtom)?.doc;
-  const planFeature = usePlanFeature();
-  const location = useLocation();
-  const id = attachment.kind === "summary" ? summaryIdOf(attachment.path) : "";
-  const key = pageKeyOfSummaryId(id, planFeature);
-  const page = useAtomValue(conceptPageAtom(pageKeyOfPath(location.pathname) ?? "")).page;
-  const summary = useAtomValue(conceptPageAtom(key ?? "")).page;
-  const entry =
-    (tree ? treeDocs(tree).find((entry) => entry.path === attachment.path) : null) ??
-    (openDoc?.path === attachment.path ? openDoc : null);
-  const kind = entry?.kind ?? (key === null ? null : docKindOfPageKey(key));
-  const chip = page?.key_chips.find(
-    ({ doc }) => doc.path === attachment.path || (key !== null && doc.page === key),
-  );
-  const colour =
-    chip?.colour ?? summary?.colour ?? (page?.path === attachment.path ? page.colour : null);
-  if (kind === null || !Object.hasOwn(DOC_KIND_GLYPHS, kind)) return null;
-  const docKind = kind as keyof typeof DOC_KIND_GLYPHS;
-  return colour == null ? (
-    <DocMark kind={docKind} />
-  ) : (
-    <span
-      aria-hidden="true"
-      className="inline-flex rounded"
-      style={{
-        color: docColour(colour),
-        backgroundColor: `color-mix(in oklch, ${docColour(colour)} 14%, transparent)`,
-      }}
-    >
-      <DocMark kind={docKind} className="!text-inherit !bg-inherit" />
-    </span>
-  );
-}
-
-function ChipTrailing({
-  label,
-  locked,
-  onRemove,
-}: {
-  label: string;
-  locked: boolean;
-  onRemove?: () => void;
-}) {
-  return (
-    <>
-      {locked && (
-        <span role="img" aria-label="Locked document">
-          <ReadOnlyGlyph aria-hidden="true" className="size-3" />
-        </span>
-      )}
-      {onRemove && (
-        <button
-          type="button"
-          className="chat-chip-remove"
-          aria-label={`Remove ${label}`}
-          onClick={onRemove}
-        >
-          ×
-        </button>
-      )}
-    </>
-  );
-}
-
 function ChipTooltip({ id, quote }: { id: string; quote: string }) {
   return (
-    <div
-      id={id}
-      role="tooltip"
-      className="chat-passage fixed z-50 max-h-64 max-w-sm overflow-auto whitespace-pre-wrap rounded border bg-popover p-3 shadow-(--dialog-shadow)"
-    >
+    <div id={id} role="tooltip" className="chat-passage">
       <Untrusted text={quote} />
     </div>
   );
@@ -145,43 +73,72 @@ type ChipProps = {
   children?: ReactNode;
 };
 
+/**
+ * The label's words. A quote (`“…”`, chip-label.ts) is split before its closing mark, which gets a
+ * non-shrinking element of its own (chat-chips.css), so a quote cut by the row's width ends in
+ * `…”` and never loses its mark to the ellipsis.
+ */
+function ChipLabelText({ label, quoted }: { label: string; quoted: boolean }) {
+  if (!quoted) return <Untrusted text={label} />;
+  return (
+    <>
+      <span className="chat-chip-quote">
+        <Untrusted text={label.slice(0, -1)} />
+      </span>
+      <span className="chat-chip-quote-mark">{label.slice(-1)}</span>
+    </>
+  );
+}
+
+/**
+ * One row: the document's mark, the label (a quoted start, a file name, a place), its source as
+ * secondary text on the same line, then what the row knows (locked, changed) and the remove at
+ * the end. The label logic is chip-label.ts; this is its presentation only.
+ */
 function Chip({ attachment, quote, changed, locked, onOpen, onRemove, children }: ChipProps) {
-  const label = visibleControls(chipLabel(attachment));
+  const text = chipLabel(attachment);
+  const label = visibleControls(text);
   const source = chipSource(attachment);
+  // A chip with a source is a selection, and a selection's label is its quote.
+  const quoted = source !== null;
   const [preview, setPreview] = useState(false);
   const previewId = useId();
   return (
     <div className="chat-chip">
-      <div className="chat-chip-row">
-        <ChipMark attachment={attachment} />
-        {onOpen === null ? (
-          <span className="truncate">
-            <Untrusted text={chipLabel(attachment)} />
-          </span>
-        ) : (
-          <button
-            type="button"
-            className="chat-chip-open"
-            aria-label={label}
-            aria-describedby={preview ? previewId : undefined}
-            onClick={onOpen}
-            onMouseEnter={() => setPreview(true)}
-            onMouseLeave={() => setPreview(false)}
-            onFocus={() => setPreview(true)}
-            onBlur={() => setPreview(false)}
-          >
-            <Untrusted text={chipLabel(attachment)} />
-          </button>
-        )}
-        <ChipTrailing label={label} locked={locked} onRemove={onRemove} />
-      </div>
+      <ChipMark attachment={attachment} />
+      {onOpen === null ? (
+        <span className="chat-chip-label" title={label} data-quoted={quoted || undefined}>
+          <ChipLabelText label={text} quoted={quoted} />
+        </span>
+      ) : (
+        <button
+          type="button"
+          className="chat-chip-open"
+          aria-label={label}
+          aria-describedby={preview ? previewId : undefined}
+          data-quoted={quoted || undefined}
+          onClick={onOpen}
+          onMouseEnter={() => setPreview(true)}
+          onMouseLeave={() => setPreview(false)}
+          onFocus={() => setPreview(true)}
+          onBlur={() => setPreview(false)}
+        >
+          <ChipLabelText label={text} quoted={quoted} />
+        </button>
+      )}
       {source !== null && (
-        <span className="chat-chip-source plan-fine">
+        <span className="chat-chip-source" title={visibleControls(source)}>
           <Untrusted text={source} />
+        </span>
+      )}
+      {locked && (
+        <span role="img" aria-label="Locked document" className="chat-chip-lock">
+          <ReadOnlyGlyph aria-hidden="true" className="size-3" />
         </span>
       )}
       {changed && <span className="chat-chip-note">△ changed</span>}
       {children}
+      {onRemove && <ChipRemove label={label} onRemove={onRemove} />}
       {preview && <ChipTooltip id={previewId} quote={quote} />}
     </div>
   );
@@ -239,9 +196,13 @@ function UploadNotes() {
   const { busy, problems } = useAtomValue(uploadStatusAtom);
   return (
     <>
-      {busy > 0 && <p role="status">Uploading {busy === 1 ? "a file" : `${busy} files`}…</p>}
+      {busy > 0 && (
+        <p role="status" className="chat-chip-status">
+          <BusyText>Uploading {busy === 1 ? "a file" : `${busy} files`}…</BusyText>
+        </p>
+      )}
       {problems.map((problem, index) => (
-        <p key={index} role="alert" className="text-destructive">
+        <p key={index} role="alert" className="chat-chip-status" data-tone="error">
           <Untrusted text={problem} />
         </p>
       ))}
@@ -259,8 +220,8 @@ export function PendingChips() {
   const keys = chipKeys(pending);
   if (!pending.length && !note && upload.busy === 0 && upload.problems.length === 0) return null;
   return (
-    <div aria-label="Pending attachments" className="text-[13px]">
-      <div className="chat-chip-list" data-scroll={expanded || undefined}>
+    <div aria-label="Pending attachments">
+      <div className="chat-chip-list">
         {pending.slice(0, count).map((draft, index) => (
           <PendingChip
             key={keys[index]}
@@ -274,7 +235,7 @@ export function PendingChips() {
         {count < pending.length && (
           <button
             type="button"
-            className="chat-link-button plan-fine"
+            className="chat-link-button chat-chip-more"
             aria-expanded={false}
             onClick={() => setExpanded(true)}
           >
@@ -285,14 +246,18 @@ export function PendingChips() {
       {expanded && pending.length > 4 && (
         <button
           type="button"
-          className="chat-link-button plan-fine"
+          className="chat-link-button chat-chip-more"
           aria-expanded={true}
           onClick={() => setExpanded(false)}
         >
           Show fewer attachments
         </button>
       )}
-      {note && <p role="status">{note}</p>}
+      {note && (
+        <p role="status" className="chat-chip-status">
+          {note}
+        </p>
+      )}
       <UploadNotes />
     </div>
   );
@@ -363,14 +328,14 @@ export function SentChips({ item, turn }: { item: Extract<Item, { type: "user" }
                   △ changed in this turn
                 </Link>
               ) : (
-                <span>unchanged</span>
+                <span className="chat-chip-state">unchanged</span>
               ))}
           </Chip>
         );
       })}
       {!turn.open && !result && (
-        <p role="status" className="text-muted-foreground">
-          Checking attached passages…
+        <p role="status" className="chat-chip-status">
+          <BusyText>Checking attached passages…</BusyText>
         </p>
       )}
       {result?.error && <ErrorLine role="status" text={result.error} />}
