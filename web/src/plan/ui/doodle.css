@@ -53,6 +53,20 @@
   animation: loom-doodle-pop 2.4s linear;
 }
 
+/* On arrival (`data-draw`, set by /new alone) the thread draws itself once, the dot pops at its
+   end and the sparks twinkle; the hover rules above draw it again. */
+.loom-doodle[data-draw] .loom-doodle__thread {
+  animation: loom-doodle-draw 2.4s cubic-bezier(0.45, 0.05, 0.35, 1) both;
+}
+
+.loom-doodle[data-draw] .loom-doodle__spark {
+  animation: loom-doodle-twinkle 1.2s ease-in-out 3;
+}
+
+.loom-doodle[data-draw] .loom-doodle__dot {
+  animation: loom-doodle-pop 2.4s linear both;
+}
+
 @keyframes loom-doodle-draw {
   from {
     stroke-dashoffset: 1;

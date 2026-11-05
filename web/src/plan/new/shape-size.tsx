@@ -2,7 +2,7 @@ import type { KickoffSize } from "@/plan/api/schema-kickoff";
 import { KIND_WORD } from "@/plan/new/kickoff-head";
 import { useProposalActions } from "@/plan/new/proposal";
 
-import "./kind-control.css";
+import "./taking-shape.css";
 
 const CHOICES: ReadonlyArray<{ size: KickoffSize; label: string; message: string }> = [
   { size: "feature", label: KIND_WORD.feature, message: "Make this a feature instead." },
@@ -10,7 +10,7 @@ const CHOICES: ReadonlyArray<{ size: KickoffSize; label: string; message: string
 ];
 
 /**
- * Feature | Standalone plan, one segmented track (kind-control.css). Neither is pressed until the
+ * Feature | Standalone plan, one segmented track (taking-shape.css). Neither is pressed until the
  * conversation settles a size; a click asks the session to change it, the same message the
  * proposal's alternative sends.
  */

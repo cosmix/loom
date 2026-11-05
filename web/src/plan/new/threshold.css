@@ -1,0 +1,319 @@
+/*
+ * The threshold: /new with no session (empty-kickoff.tsx). One centred column under a faint wash
+ * of the accent: the doodle drawing its thread, the heading in the reading face, then one round
+ * field holding the kind switch, the words, the documents and the foot, then the starter pills
+ * and the note. The page grid and the live conversation are in kickoff.css; the kind switch in
+ * kind-control.css; the feature picker and the picked chip in feature-picker.css. Every colour
+ * is a theme token (ui/DESIGN.md, New work).
+ */
+
+/* ---- Column and glow ------------------------------------------------------------------------ */
+
+[data-loom-plan] .kickoff-page[data-state="empty"] {
+  position: relative;
+  isolation: isolate;
+  padding-block: var(--space-6) var(--space-7);
+}
+
+/* A radial wash of the accent behind the head and the field, in both themes. It sits under the
+   column and never reaches the field's own surface, so the text keeps its contrast. */
+[data-loom-plan] .kickoff-page[data-state="empty"]::before {
+  content: "";
+  position: absolute;
+  top: 110px;
+  left: 50%;
+  z-index: -1;
+  width: min(760px, 100%);
+  height: 420px;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    closest-side,
+    color-mix(in oklch, var(--primary) 9%, transparent),
+    transparent
+  );
+  pointer-events: none;
+}
+
+[data-loom-plan] .kickoff-threshold {
+  gap: var(--space-5);
+  justify-items: center;
+  text-align: center;
+}
+
+[data-loom-plan] .kickoff-doodle {
+  width: 300px;
+  margin-bottom: calc(-1 * var(--space-2));
+  color: var(--muted-foreground);
+}
+
+/* ---- Head: eyebrow, the reading-face heading, the lead -------------------------------------- */
+
+[data-loom-plan] .kickoff-threshold__head {
+  gap: var(--space-2);
+  justify-items: center;
+}
+
+[data-loom-plan] .kickoff-eyebrow {
+  color: var(--accent-ink);
+}
+
+[data-loom-plan] .kickoff-heading {
+  margin: 0;
+  font-family: var(--font-reading);
+  font-size: 38px;
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+[data-loom-plan] .kickoff-lead {
+  max-width: 56ch;
+  margin: var(--space-1) 0 0;
+  color: var(--muted-foreground);
+  font-size: 15px;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+/* The open-draft notice (draft-view.tsx) keeps its own left-set line in the centred column. */
+[data-loom-plan] .kickoff-threshold .kickoff-open {
+  justify-self: stretch;
+  text-align: left;
+}
+
+/* ---- The field ------------------------------------------------------------------------------ */
+
+[data-loom-plan] .kickoff-field {
+  display: grid;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 10px 10px 18px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--card);
+  text-align: left;
+  transition: border-color 120ms;
+}
+
+[data-loom-plan] .kickoff-field:focus-within {
+  border-color: var(--ring);
+}
+
+/* The ring itself only while the words have focus: a focused button draws its own. */
+[data-loom-plan] .kickoff-field:has(> .kickoff-composer:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+[data-loom-plan] .kickoff-composer {
+  display: block;
+  width: 100%;
+  min-height: 96px;
+  padding: 2px 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.55;
+  resize: none;
+}
+
+[data-loom-plan] .kickoff-composer::placeholder {
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .kickoff-composer:disabled {
+  opacity: 0.5;
+}
+
+/* The attached documents are the chat composer's rows (chat-chips.css); the list only drops its
+   own margins and marker. */
+[data-loom-plan] .kickoff-attachments {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-loom-plan] .kickoff-field__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* The reason sits before Start at the end of the line; without one, Start alone takes the end. */
+[data-loom-plan] .kickoff-field__foot > :last-child,
+[data-loom-plan] .kickoff-field__reason {
+  margin-inline-start: auto;
+}
+
+[data-loom-plan] .kickoff-field__reason + * {
+  margin-inline-start: 0;
+}
+
+[data-loom-plan] .kickoff-field__reason {
+  min-width: 0;
+  text-align: right;
+}
+
+/* ---- Under the field: the starter pills, the findings, the note ----------------------------- */
+
+[data-loom-plan] .kickoff-starters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: 40rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+[data-loom-plan] .kickoff-starters:disabled {
+  opacity: 0.5;
+}
+
+/* Floated, the legend is an ordinary flex item, so it takes the line above the pills. */
+[data-loom-plan] .kickoff-starters__label {
+  float: left;
+  flex-basis: 100%;
+  margin: 0 0 2px;
+  padding: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .kickoff-starter {
+  gap: 7px;
+  max-width: 100%;
+  padding: 0 14px 0 11px;
+}
+
+/* The fieldset already dims the whole group; a starter is a Button that would dim again. */
+[data-loom-plan] .kickoff-starters .kickoff-starter:disabled {
+  opacity: 1;
+}
+
+[data-loom-plan] .kickoff-starter:focus-visible {
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+[data-loom-plan] .kickoff-starter svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .kickoff-starter > span {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+/* A pressed finding: filled, no edge, its check in the completed tone. */
+[data-loom-plan] .kickoff-starter[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--muted);
+}
+
+[data-loom-plan] .kickoff-starter[aria-pressed="true"] svg {
+  color: var(--tone-completed);
+}
+
+[data-loom-plan] .kickoff-error {
+  margin: 0;
+  font-size: var(--type-body);
+}
+
+[data-loom-plan] .kickoff-note {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-family: var(--font-reading);
+  font-size: var(--type-body);
+  font-style: italic;
+  line-height: var(--leading-body);
+}
+
+/* ---- Motion: the column rises in once, staggered 60ms ---------------------------------------- */
+
+[data-loom-plan] .kickoff-threshold > * {
+  animation: kickoff-rise 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+[data-loom-plan] .kickoff-threshold > :nth-child(2) {
+  animation-delay: 60ms;
+}
+
+[data-loom-plan] .kickoff-threshold > :nth-child(3) {
+  animation-delay: 120ms;
+}
+
+[data-loom-plan] .kickoff-threshold > :nth-child(4) {
+  animation-delay: 180ms;
+}
+
+[data-loom-plan] .kickoff-threshold > :nth-child(5) {
+  animation-delay: 240ms;
+}
+
+[data-loom-plan] .kickoff-threshold > :nth-child(n + 6) {
+  animation-delay: 300ms;
+}
+
+/* ---- Narrow: left-set, the switch fills the field's top, attach is a glyph ------------------ */
+
+@media (max-width: 480px) {
+  [data-loom-plan] .kickoff-threshold,
+  [data-loom-plan] .kickoff-threshold__head {
+    justify-items: start;
+    text-align: left;
+  }
+
+  [data-loom-plan] .kickoff-doodle {
+    width: 240px;
+  }
+
+  [data-loom-plan] .kickoff-heading {
+    font-size: 30px;
+  }
+
+  [data-loom-plan] .kickoff-field {
+    padding: 10px 10px 10px 14px;
+    border-radius: 20px;
+  }
+
+  [data-loom-plan] .kickoff-attach {
+    width: var(--hearth-control);
+    padding: 0;
+  }
+
+  [data-loom-plan] .kickoff-attach__word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  [data-loom-plan] .kickoff-starters {
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-loom-plan] .kickoff-field,
+  [data-loom-plan] .kickoff-threshold > * {
+    animation: none;
+    transition: none;
+  }
+}

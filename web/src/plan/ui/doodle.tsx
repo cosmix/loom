@@ -22,10 +22,21 @@ const WEFT =
 
 const SPARKS = ["M62 32V42M57 37H67", "M130 22V32M125 27H135", "M80 12V20M76 16H84"] as const;
 
-export function LoomDoodle({ className }: { className?: string }): JSX.Element {
+/**
+ * `draw` draws the thread once on arrival (`/new`); without it the drawing is complete at rest and
+ * redraws only under the pointer or focus, as on home.
+ */
+export function LoomDoodle({
+  className,
+  draw = false,
+}: {
+  className?: string;
+  draw?: boolean;
+}): JSX.Element {
   return (
     <svg
       className={className ? `loom-doodle ${className}` : "loom-doodle"}
+      data-draw={draw || undefined}
       viewBox="0 0 270 128"
       role="img"
       aria-label={TITLE}

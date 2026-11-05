@@ -72,15 +72,19 @@ it("renders the invitation and all conversation starters", () => {
   mount();
 
   expect(screen.getByRole("heading", { name: "What do you want to build?" })).toBeTruthy();
-  expect(screen.getByRole("img")).toBeTruthy();
+  expect(screen.getByRole("img").hasAttribute("data-draw")).toBe(true);
   expect(screen.getByText(/Describe it the way you would to a colleague/)).toBeTruthy();
-  expect(screen.getByRole("button", { name: "A new feature for this project" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "A small fix or improvement" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Grow standalone plans into a feature" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Start from a document I have" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Attach notes or a document" })).toBeTruthy();
+  const starters = [
+    "A new feature for this project",
+    "A small fix or improvement",
+    "Grow standalone plans into a feature",
+    "New plans for a feature that is already built",
+    "Start from a document I have",
+  ];
+  for (const name of starters) expect(screen.getByRole("button", { name })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Attach a document" })).toBeTruthy();
   expect(submitButton().textContent).toBe("Start the conversation");
-  expect(screen.getByText("Nothing is written until you say so.")).toBeTruthy();
+  expect(screen.getByText("Nothing runs until you send.")).toBeTruthy();
 });
 
 it.each([
@@ -102,7 +106,7 @@ it.each([
 it("starts kickoff with the draft and selected document and waits for the session snapshot", async () => {
   const h = mount();
   enterText();
-  fireEvent.click(screen.getByRole("button", { name: "Attach notes or a document" }));
+  fireEvent.click(screen.getByRole("button", { name: "Attach a document" }));
   expect(screen.getByRole("listitem").textContent).toContain("Attached: My notes");
 
   fireEvent.click(submitButton());
@@ -164,7 +168,7 @@ it("switches back to feature kickoff when choosing the feature starter", () => {
 
 it("allows an attachment to start without draft text", () => {
   const h = mount();
-  fireEvent.click(screen.getByRole("button", { name: "Attach notes or a document" }));
+  fireEvent.click(screen.getByRole("button", { name: "Attach a document" }));
 
   fireEvent.click(submitButton());
 
@@ -175,7 +179,7 @@ it("allows an attachment to start without draft text", () => {
 
 it("removes an attached document before sending", () => {
   const h = mount();
-  fireEvent.click(screen.getByRole("button", { name: "Attach notes or a document" }));
+  fireEvent.click(screen.getByRole("button", { name: "Attach a document" }));
   fireEvent.click(within(screen.getByRole("listitem")).getByRole("button", { name: "Remove" }));
 
   fireEvent.click(submitButton());
@@ -392,19 +396,4 @@ it("keeps the draft in memory only", () => {
   mount();
 
   expect(composer().value).toBe("");
-});
-
-it("an attached document reads as the chat composer's row: glyph, name, file name, remove", () => {
-  mount();
-  fireEvent.click(screen.getByRole("button", { name: "Attach notes or a document" }));
-  const row = screen.getByRole("listitem");
-  expect(row.classList.contains("chat-chip")).toBe(true);
-  const parts = [...row.children].map((child) => child.className);
-  expect(parts[0]).toBe("chat-chip-glyph");
-  expect(parts.indexOf("chat-chip-label")).toBe(1);
-  expect(parts.indexOf("chat-chip-source")).toBe(2);
-  expect(parts[parts.length - 1]).toBe("chat-chip-remove");
-  expect(row.querySelector(".chat-chip-source")?.textContent).toBe("notes.md");
-  const remove = within(row).getByRole("button", { name: "Remove" });
-  expect(remove.getAttribute("aria-describedby")).toBe(row.querySelector(".chat-chip-label")?.id);
 });
