@@ -9,10 +9,11 @@ export function hasChatPanel(pathname: string): boolean {
 }
 
 /**
- * Right-hand dock beside the routed page: the chat panel (a docked region at lg and above, a
+ * Right-hand dock beside the routed page: the chat panel (a docked region at 1280px and above, a
  * sheet below), except on the home screen and the kickoff. The registrations mount here too so
  * offers, Send to author, the permission and conclusion announcements and the Brief dialog work
- * at every width, whether the panel is collapsed or the sheet is open or closed. Where no panel
+ * at every width. The panel is always shown at 1280px and wider; below it the sheet sits behind
+ * the header's Chat button and may be open or closed. Where no panel
  * mounts, the registrations also own the chat socket and attention watcher, except on `/new`,
  * whose kickoff route opens its own socket, and the `c` shortcut has no composer to focus.
  */

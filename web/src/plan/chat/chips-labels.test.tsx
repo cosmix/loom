@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { rememberPreview } from "@/plan/attachments/intake";
 import { chipLabel, chipSource } from "./chips";
-import { add, baseAttachment, baseTurn, mount, sent, setup } from "./chips-test-kit";
+import { add, baseAttachment, baseTurn, mount, sent, setup, source } from "./chips-test-kit";
 import { draftAtom } from "./drafts";
 
 afterEach(() => {
@@ -65,6 +65,56 @@ it("a whole document keeps its file name and has no secondary text", () => {
   };
   expect(chipLabel(whole)).toBe("section_04.md");
   expect(chipSource(whole)).toBeNull();
+});
+
+it("a selection chip is one row: its quoted start, then its source, then the remove", () => {
+  const store = setup();
+  mount(store);
+  add(store, source());
+  const row = screen.getByLabelText("Pending attachments").querySelector(".chat-chip")!;
+  const parts = [...row.children].map((child) => child.className);
+  const open = parts.indexOf("chat-chip-open");
+  const sourceAt = parts.indexOf("chat-chip-source");
+  const remove = parts.indexOf("chat-chip-remove");
+  expect(open).toBeGreaterThanOrEqual(0);
+  expect(sourceAt).toBeGreaterThan(open);
+  expect(remove).toBeGreaterThan(sourceAt);
+  expect(remove).toBe(row.children.length - 1);
+  expect(row.querySelector(".chat-chip-open")?.textContent).toBe("“The entire selected passage”");
+  expect(row.querySelector(".chat-chip-source")?.textContent).toBe("section_02.md › Port");
+});
+
+it("a quoted label keeps its closing mark in its own element, outside the cut", () => {
+  const store = setup();
+  mount(store);
+  const base = {
+    kind: "source",
+    path: "doc/product/section_02.md",
+    anchor: "Port",
+    lines: null,
+    stageId: null,
+    hash: "selected",
+  } as const;
+  add(store, {
+    ...base,
+    text: "A selection long enough that its chip has to cut it somewhere before the end",
+  });
+  add(store, { ...base, path: "doc/product/section_03.md", anchor: null, text: "" });
+  const opens = [
+    ...screen.getByLabelText("Pending attachments").querySelectorAll(".chat-chip-open"),
+  ];
+  expect(opens).toHaveLength(2);
+  const [quoted, whole] = opens as [Element, Element];
+  expect(quoted.getAttribute("data-quoted")).toBe("true");
+  expect(quoted.querySelector(".chat-chip-quote")?.textContent).toBe(
+    "“A selection long enough that its chip has to cut…",
+  );
+  expect(quoted.querySelector(".chat-chip-quote-mark")?.textContent).toBe("”");
+  expect(quoted.textContent).toBe("“A selection long enough that its chip has to cut…”");
+  // A whole document's label is no quote: one text run, no mark of its own.
+  expect(whole.textContent).toBe("section_03.md");
+  expect(whole.hasAttribute("data-quoted")).toBe(false);
+  expect(whole.querySelector(".chat-chip-quote")).toBeNull();
 });
 
 it("a file chip reads its name and size, and removing it frees its thumbnail", () => {

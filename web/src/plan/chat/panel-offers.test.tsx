@@ -11,8 +11,8 @@ import { authoringAtom, connectionAtom, serverInfoAtom, youAtom } from "@/plan/s
 import { endChat, startChat } from "./commands";
 import { snapshotAtom } from "./model";
 import { offerErrorAtom } from "./offer-error";
+import { DESKTOP } from "./offer-flow";
 import { ChatPanel, ChatRegistrations } from "./panel";
-import { panelCollapsedAtom } from "./prefs";
 import { chatSheetOpenAtom } from "./sheet-state";
 
 vi.mock("./transcript", () => ({ Transcript: () => <div role="log">Transcript</div> }));
@@ -42,7 +42,7 @@ let serial = 0;
 
 function media(desktop: boolean) {
   vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
-    matches: query === "(min-width: 1024px)" ? desktop : false,
+    matches: query === DESKTOP ? desktop : false,
     media: query,
     onchange: null,
     addEventListener: vi.fn(),
@@ -92,35 +92,32 @@ afterEach(() => {
 });
 
 it.each([
-  ["a collapsed desktop rail", true],
-  ["a closed sheet below lg", false],
-])("a refused offer start opens %s so the alert is visible", async (_name, desktop) => {
+  ["the side panel, which is always shown,", true],
+  ["a closed sheet below the desktop width", false],
+])("a refused offer start shows its alert in %s", async (_name, desktop) => {
   media(desktop);
   vi.mocked(startChat).mockRejectedValueOnce(new Error("Chat failed to start"));
   const store = mount(null);
-  act(() => store.set(panelCollapsedAtom, true));
   expect(screen.queryByRole("alert")).toBeNull();
   await clickOffer();
   expect(screen.getByRole("alert").textContent).toContain("Chat failed to start");
-  // Only the layout in use is revealed; the other keeps its state.
-  expect(store.get(panelCollapsedAtom)).toBe(!desktop);
+  // Only the sheet needs opening; the side panel is already there.
   expect(store.get(chatSheetOpenAtom)).toBe(!desktop);
 });
 
 it("an offer start disposed while in flight writes no error and reveals nothing", async () => {
-  media(true);
+  media(false);
   let fail: (error: Error) => void = () => {};
   vi.mocked(startChat).mockImplementationOnce(
     () => new Promise((_resolve, reject) => (fail = reject)),
   );
   const store = mount(null);
-  act(() => store.set(panelCollapsedAtom, true));
   await clickOffer();
   cleanup();
   fail(new Error("Chat failed to start"));
   await act(async () => {});
   expect(store.get(offerErrorAtom)).toBeNull();
-  expect(store.get(panelCollapsedAtom)).toBe(true);
+  expect(store.get(chatSheetOpenAtom)).toBe(false);
 });
 
 it("an offer with a chat running asks, ends it, waits, then starts", async () => {

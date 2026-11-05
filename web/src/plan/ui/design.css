@@ -188,11 +188,14 @@
 /* ── Shell ────────────────────────────────────────────────────────────────── */
 
 /* The footer pairs with the app bar (header/header.css): a hairline on the edge facing the page,
-   the page gutter, and fine type, so the provider limits read as chrome, never as content. */
+   the page gutter, and fine type, so the provider limits read as chrome, never as content. Its
+   grid is the dashboard footer's (routes/shell.tsx): the meters take a `minmax(0, 1fr)` track, so
+   their container queries measure a real width and lay the providers side by side, and the notes
+   take an `auto` track at the end. Under 1024px the tracks stack, as the dashboard's do. */
 .plan-footer {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   flex-shrink: 0;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-5);
   min-width: 0;
@@ -203,6 +206,38 @@
   font-size: var(--type-fine);
   line-height: var(--leading-ui);
   color: var(--muted-foreground);
+}
+
+.plan-footer__notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .plan-footer {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  /* The notes alone sit in the first track; beside the meters they end the line. */
+  .plan-footer__notes:not(:first-child) {
+    justify-self: end;
+  }
+}
+
+/* A text-only busy message (`ui/busy-text.tsx`): the roundel, then the words. The roundel is
+   decoration sized from the text; the words carry the meaning and the caller's role. */
+.plan-busy-text {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.plan-busy-text__roundel {
+  display: inline-flex;
+  flex: none;
 }
 
 /* ── Buttons ──────────────────────────────────────────────────────────────── */

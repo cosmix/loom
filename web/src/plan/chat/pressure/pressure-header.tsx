@@ -8,6 +8,7 @@ import type { PressureRunView } from "@/plan/api/schema-pressure";
 import { authorBlockReasonAtom, isHolderAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { ActionError } from "@/plan/ui/action-error";
 import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
+import { BusyText } from "@/plan/ui/busy-text";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { Untrusted } from "../visible-controls";
 import { Elapsed, LiveElapsed } from "./elapsed";
@@ -63,14 +64,14 @@ function RunHead({ run, stop }: { run: PressureRunView; stop: StopRun }): JSX.El
     <div className="chat-run-header grid gap-2 border-b border-hairline px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <ActivityGlyph kind="pressure" paused={run.ended !== null} className="text-sm" />
-        <span className="text-[13.5px] font-bold text-foreground">Pressure test</span>
-        <span className="inline-flex h-5 items-center rounded-md bg-muted px-1.5 text-[11.5px] font-medium">
+        <span className="text-[13px] font-bold text-foreground">Pressure test</span>
+        <span className="inline-flex h-5 items-center rounded-md bg-muted px-1.5 text-xs font-medium">
           round {run.round} of {run.rounds}
         </span>
         {stop.writable && !run.ended && (
           <div className={STOP_LOOK}>
             <DisabledReason
-              reason={stop.stopping ? "Stopping…" : stop.reason}
+              reason={stop.stopping ? <BusyText>Stopping…</BusyText> : stop.reason}
               onClick={() => {
                 void stop.stop();
               }}
@@ -84,7 +85,7 @@ function RunHead({ run, stop }: { run: PressureRunView; stop: StopRun }): JSX.El
       </div>
       <RunFileName plan={run.plan} />
       {/* No separator glyph: at a wrap, a dangling one would lead or trail a line. */}
-      <div className="flex flex-wrap gap-x-3 font-mono text-[11.5px] text-muted-foreground">
+      <div className="flex flex-wrap gap-x-3 font-mono text-xs text-muted-foreground">
         <RunElapsed run={run} />
         <span>{compactTokens(run.tokens_total)} tokens</span>
       </div>

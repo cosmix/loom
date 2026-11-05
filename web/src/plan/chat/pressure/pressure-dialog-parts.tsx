@@ -40,7 +40,7 @@ export function PressureRounds({
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h3 className="text-sm font-semibold">What happens</h3>
       <div className="flex items-center gap-2">
-        <span id={labelId} className="text-xs font-medium text-muted-foreground">
+        <span id={labelId} className="text-[13px] font-medium text-muted-foreground">
           Rounds
         </span>
         <div
@@ -55,7 +55,7 @@ export function PressureRounds({
               aria-pressed={rounds === value}
               onClick={() => setRounds(value)}
               className={cn(
-                "h-[26px] w-[30px] rounded-full text-[12.5px] font-medium focus-visible:outline-2 focus-visible:outline-ring",
+                "h-[26px] w-[30px] rounded-full text-[13px] font-medium focus-visible:outline-2 focus-visible:outline-ring",
                 rounds === value
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -80,7 +80,7 @@ function Fact({
   children: ReactNode;
 }): JSX.Element {
   return (
-    <li className={cn("flex items-start gap-2 text-[12.5px] text-muted-foreground", className)}>
+    <li className={cn("flex items-start gap-2 text-[13px] text-muted-foreground", className)}>
       <span aria-hidden="true" className="mt-0.5 inline-flex shrink-0 [&_svg]:size-3.5">
         {icon}
       </span>
@@ -117,7 +117,7 @@ export function PressureConsequences({
       <Fact icon={<FilePlus />}>
         <span>
           <strong className="font-semibold text-foreground">Writes</strong>{" "}
-          <code className="font-mono text-xs">planning-omissions.md</code>
+          <code className="font-mono text-[13px]">planning-omissions.md</code>
         </span>
       </Fact>
       {chatName !== null && (

@@ -6,10 +6,20 @@ import { LoadState } from "./load-state";
 afterEach(cleanup);
 
 describe("LoadState", () => {
-  it("renders a skeleton while loading", () => {
-    const { container } = render(<LoadState state="loading" />);
+  it("draws the roundel with its title while loading, under one status role", () => {
+    const { container } = render(<LoadState state="loading" title="Loading the feature" />);
+    const status = screen.getByRole("status");
+    expect(status.getAttribute("aria-label")).toBe("Loading the feature");
+    expect(status.querySelector('[aria-hidden="true"] .aurora-roundel')).not.toBeNull();
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.getByText("Loading the feature")).toBeTruthy();
+    expect(container.querySelector('[data-slot="skeleton"]')).toBeNull();
+  });
+
+  it("titles the loading state Loading by default", () => {
+    render(<LoadState state="loading" />);
     expect(screen.getByRole("status").getAttribute("aria-label")).toBe("Loading");
-    expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+    expect(screen.getByText("Loading")).toBeTruthy();
   });
 
   it.each(["empty", "not_found"] as const)("renders an empty state for %s", (state) => {

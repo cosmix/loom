@@ -1,9 +1,10 @@
-/* Chat uses the dashboard body face. Chrome is compact; the transcript sets its own sizes
- * (chat-transcript.css), so the kickoff screen, which mounts it outside the panel, reads the same.
- * Import beside the panel, as concept.css is imported by its reading column.
+/* The chat panel's frame: a fixed column of the page, one hairline on its page-side edge, with
+ * the body size of the design scale. The transcript sets its own sizes (chat-transcript.css), so
+ * the kickoff screen, which mounts it outside the panel, reads the same. Import beside the panel,
+ * as concept.css is imported by its reading column. This file carries no tone, shadow or fade:
+ * panel-a11y.test pins that.
  */
 .chat-panel,
-.chat-rail,
 .chat-sheet {
   box-sizing: border-box;
   min-width: 0;
@@ -11,8 +12,8 @@
   background: var(--card);
   color: var(--foreground);
   font-family: var(--font-sans), Inter, sans-serif;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
 }
 
 /* minmax(0, 1fr): a bare 1fr track grows with the transcript and pushes it under the head. The
@@ -22,15 +23,6 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-columns: minmax(0, 1fr);
-  height: 100%;
-  border-inline-start: 1px solid var(--hairline);
-}
-
-/* The collapsed panel is one tab the height of the page; its look is in chat-surface.css. */
-.chat-rail {
-  display: flex;
-  flex-direction: column;
-  width: 2.5rem;
   height: 100%;
   border-inline-start: 1px solid var(--hairline);
 }
@@ -51,26 +43,28 @@
 
 .chat-connection-banner,
 .chat-last-update {
-  font-size: 13px;
+  font-size: var(--type-body);
   font-weight: 500;
 }
 
 .chat-connection-banner {
   flex-shrink: 0;
-  padding: 0 16px 8px;
+  padding: 0 var(--space-4) var(--space-2);
   overflow-wrap: anywhere;
 }
 
 .chat-connection-banner p + p {
-  margin-block-start: 4px;
+  margin-block-start: var(--space-1);
 }
 
 .chat-last-update {
   margin: 0;
-  padding: 4px 16px;
+  padding: var(--space-1) var(--space-4);
   color: var(--muted-foreground);
 }
 
+/* The resize handle straddles the panel's edge. At rest it is the edge itself; under the pointer
+ * or focus a 2px line in --border shows where the column can be dragged. */
 .chat-resize-handle {
   position: absolute;
   z-index: 1;
@@ -79,6 +73,21 @@
   width: 8px;
   cursor: col-resize;
   touch-action: none;
+}
+
+.chat-resize-handle::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background-color 120ms;
+}
+
+.chat-resize-handle:hover::after,
+.chat-resize-handle:focus-visible::after {
+  background: var(--border);
 }
 
 .chat-resize-handle:focus-visible {
@@ -93,10 +102,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :is(.chat-panel, .chat-rail, .chat-sheet) .aurora-roundel,
-  :is(.chat-panel, .chat-rail, .chat-sheet) .aurora-roundel[data-busy="true"] {
-    animation: none;
+  .chat-resize-handle::after {
     transition: none;
-    transform: rotate(0turn);
   }
 }

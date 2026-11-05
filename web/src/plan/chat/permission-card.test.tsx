@@ -10,7 +10,8 @@ it("bash body", () => {
   harness().show(permission({ input: JSON.stringify({ command }) }));
 
   expect(screen.getByText(/printf/).closest("pre")?.textContent).toBe(command);
-  expect(screen.getByText(/printf/).closest("pre")?.className).toContain("font-mono");
+  // Mono at the chat's secondary size comes from the class (chat-transcript.css), not a utility.
+  expect(screen.getByText(/printf/).closest("pre")?.className).toContain("chat-tool-pre");
 });
 
 it("edit body diff", () => {

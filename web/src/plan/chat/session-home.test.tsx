@@ -11,7 +11,6 @@ import { endChat, startChat } from "./commands";
 import { focusComposerAtom } from "./composer-hooks";
 import { offerErrorAtom } from "./offer-error";
 import { createOfferStarter } from "./offer-flow";
-import { panelCollapsedAtom } from "./prefs";
 import { screenOfPath } from "./session-home";
 import {
   clickOffer,
@@ -140,10 +139,8 @@ it("the empty state of another session's screen offers no End chat", () => {
 
 it("the c key does nothing while the panel has no composer to focus", () => {
   const away = setup("/f/beta/product", session());
-  act(() => away.store.set(panelCollapsedAtom, true));
   fireEvent.keyDown(document.body, { key: "c" });
   expect(away.store.get(focusComposerAtom)).toBe(false);
-  expect(away.store.get(panelCollapsedAtom)).toBe(true);
   cleanup();
   const home = setup("/f/alpha/product", session());
   fireEvent.keyDown(document.body, { key: "c" });

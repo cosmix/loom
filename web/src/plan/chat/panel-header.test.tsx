@@ -8,8 +8,13 @@ import { checklistViewSchema } from "@/plan/api/schema";
 import { chatSnapshotSchema, type SessionView } from "@/plan/api/schema-chat";
 import { checklistAtom, presenceAtom } from "@/plan/state/atoms";
 import { snapshotAtom } from "./model";
-import { installPanelLifecycle, mount, permissionSnapshot, storeFor } from "./panel-test-kit";
-import { panelCollapsedAtom } from "./prefs";
+import {
+  installPanelLifecycle,
+  media,
+  mount,
+  permissionSnapshot,
+  storeFor,
+} from "./panel-test-kit";
 import { RunHeader } from "./run-header";
 
 vi.mock("./transcript", () => ({ Transcript: () => <div role="log">Transcript</div> }));
@@ -107,21 +112,22 @@ it.each(headerStates)("run header uses the expected glyph while %s", (state, kin
   expect(screen.getByText("· 1.5k tokens")).toBeTruthy();
 });
 
-it("permission glyph keeps its role and accessible name", () => {
+it("the sheet button's permission glyph keeps its role and accessible name", () => {
+  media(false);
   const store = storeFor();
   store.set(snapshotAtom, permissionSnapshot());
-  store.set(panelCollapsedAtom, true);
   mount(store);
-  const glyph = screen.getByRole("img", { name: "Needs a decision" });
+  const button = screen.getByRole("button", { name: "Open chat, 1 decision waiting" });
+  const glyph = within(button).getByRole("img", { name: "Needs a decision" });
   expect(glyph.querySelector('[data-kind="permission"]')).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Expand chat, 1 decision waiting" })).toBeTruthy();
 });
 
 it.each([
   ["starting", "Starting session", "starting"],
   ["working", "Working", "drafting"],
   ["ending", "Writing final notes", "drafting"],
-] as const)("collapsed %s glyph keeps its status text", (state, label, kind) => {
+] as const)("the sheet button's %s glyph keeps its status text", (state, label, kind) => {
+  media(false);
   const store = storeFor();
   const snapshot = chatSnapshotSchema.parse(fixture);
   store.set(snapshotAtom, {
@@ -129,9 +135,8 @@ it.each([
     session: { ...snapshot.session!, state },
     turns: [],
   });
-  store.set(panelCollapsedAtom, true);
   mount(store);
-  const button = screen.getByRole("button", { name: `Expand chat, ${label}` });
+  const button = screen.getByRole("button", { name: `Open chat, ${label}` });
   expect(within(button).getByRole("status").textContent).toBe(label);
   expect(button.querySelector(`.activity-glyph[data-kind="${kind}"]`)).toBeTruthy();
 });

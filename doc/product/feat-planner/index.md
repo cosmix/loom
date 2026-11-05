@@ -57,8 +57,8 @@ whichever step the feature is at: vision, product sections, metaplan, plans, pre
   folds back to the sentence it replaced. The user decides how deep to go and where. Nobody has to
   read the full text to form a view, and anybody can reach the full text from any claim in the
   summary. Concept mode is where every document with a summary opens: the feature's spine links
-  each section, plan and the vision straight to it, with Source on the same page. The
-  metaplans have no summaries (Summary levels, below), so they read as source.
+  each section, plan, metaplan and the vision straight to it, with Source on the same page.
+  Each metaplan has a document summary of its own (Summary levels, below).
 
 Review and authoring connect: from either mode, the user can point at a passage and take it into
 a chat ("this plan assumes the daemon is running; it should not"), and the session that answers
@@ -87,7 +87,6 @@ Logo  feat-planner ▾                     Idle   Home   Files   Settings
     Overview           │                           │
     01 documents  done │                           │
     …                  │                           │
-– Pressure test        │                           │
 ✓ Run        12 done   │                           │
 ```
 
@@ -98,9 +97,10 @@ A feature page has one header row above three columns:
   ThemeToggle, Settings and Help. File mode uses `/files/...`, with the file's feature named in
   the header breadcrumb.
 - **Spine**, on the left of every `/f/<feature>` page: a navigation named "Feature documents"
-  with one row per step in workflow order (Vision, Product spec, Metaplan, Plans, Pressure test,
-  Run). Each row shows a glyph for its state and a count where it has one. Product spec and
-  Plans expand into an Overview row and one row per section or plan, a plan with its state. The
+  with one row per group in workflow order (Vision, Product spec, Metaplan, Plans, Run). Each
+  row shows a glyph for its state and a count where it has one. Product spec and Plans expand
+  into an Overview row and one row per section or plan, a plan with its state and a badge,
+  "Pressure-tested <date>" or "Not pressure-tested". The
   rows open the real content, and the spine is the only place a feature's progress is drawn. At
   its head, the **next step** is one sentence and at most one button. A feature with no gap and
   nothing to start shows the sentence only. While a page lists missing sections or plans (the
@@ -109,7 +109,9 @@ A feature page has one header row above three columns:
   source, or the overview or document being read in concept mode, expanding in place as described
   above. Each overview sentence carries small colour marks, one per document it draws on, in that
   document's colour; a mark drawn dashed means that summary is out of date and being rebuilt.
-- **Chat panel**, docked on the right: the current session's conversation. It knows which
+- **Chat panel**, a fixed column on the right at 1280px and wider (resizable, 20 to 40rem) and
+  a sheet behind the header's Chat button below that; it is never collapsed. It shows the current
+  session's conversation. It knows which
   document the reader is viewing, shows it as a context line, offers prompts that fit it, and
   attaches the document to the next message (section 08). Selecting text in the reading column
   attaches the selection to the next message. Each turn lists the files it changed with a
@@ -130,14 +132,13 @@ The app works out each feature's step from its directories under `doc/` on every
 stores no step of its own. A repository with no feature opens on Home's invitation to start a
 kickoff conversation. Opening `/f/<feature>` lands on the page where the feature's work is:
 
-| What exists for the feature                | The feature opens on                                         |
-| ------------------------------------------ | ------------------------------------------------------------ |
-| No vision and no metaplan                  | The vision page, with the offer to write it                  |
-| A vision whose listed sections are missing | The vision, with the offer to write the next missing section |
-| A vision with every listed section written | The product overview                                         |
-| No vision, a metaplan                      | The engineering overview                                     |
+| What exists for the feature     | The feature opens on                        |
+| ------------------------------- | ------------------------------------------- |
+| No product spec and no metaplan | The vision page, with the offer to write it |
+| A product spec                  | The product overview                        |
+| No product spec, a metaplan     | The engineering overview                    |
 
-A finished feature therefore opens on the product overview, where its reading starts. The
+A feature with a product spec opens on the product overview, where its reading starts. The
 spine's next-step sentence suggests what to do and never forces it; accepting an offer opens a
 new session briefed for that step. Refining is available at every step, including after
 everything exists. How "finished", "pressure-tested" and "listed sections" are detected from the
@@ -293,7 +294,8 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
     `doc/product/<feature>/index.md` and its sections; one for the engineering decisions, built
     from its metaplans and plans.
   - _Document summaries_: one for the vision (at most 8 sentences in at most 3 paragraphs), one per
-    product section and one per plan.
+    product section, one per metaplan and one per plan. No overview cites a metaplan's summary: an
+    engineering overview sentence that draws on a metaplan links to its source passage.
 
   An overview sentence links to the document summaries it draws on (one or several); a document
   summary sentence links to the heading section of the raw document it draws on. Briefs are

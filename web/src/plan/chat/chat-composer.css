@@ -1,8 +1,9 @@
 /* The composer: part of the panel, under its one hairline. The box is a bordered input on the
  * page ground (DESIGN.md, Surfaces), so the place to type stands apart from the transcript. It
- * holds what the next message carries (the context chip, pending chips) above the text, and is
- * the drop target for files. Imported by chat-surface.css; see its header for why these rules
- * are unlayered.
+ * holds what the next message carries (the context row, the attachment rows) above the text, and
+ * is the drop target for files. Under it one action row: the paperclip at the start, Stop and
+ * Send at the end. Imported by chat-surface.css; see its header for why these rules are
+ * unlayered. The rows inside the box are in chat-chips.css.
  */
 
 .chat-composer {
@@ -13,6 +14,8 @@
   gap: var(--space-2);
   padding: var(--space-2) var(--chat-gutter) var(--space-3);
   border-block-start: 1px solid var(--hairline);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
 }
 
 .chat-composer-input {
@@ -30,7 +33,7 @@
   gap: var(--space-1);
   box-sizing: border-box;
   min-width: 0;
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--corner-control);
   background: var(--background);
@@ -62,25 +65,26 @@
   border-radius: calc(var(--corner-control) - 1px);
   background: var(--background);
   color: var(--foreground);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
   font-weight: 500;
   pointer-events: none;
 }
 
-/* The text itself: no edge of its own, the box draws it. */
+/* The text itself: no edge of its own, the box draws it. It is set at the user's size, the same
+ * as the user's turns in the transcript, so the words do not change size when sent. */
 .chat-composer-field {
   display: block;
   box-sizing: border-box;
   width: 100%;
-  /* Two lines of body text: the longest placeholder shows in full. */
-  min-height: calc(2 * var(--type-body) * var(--leading-body));
+  /* Two lines of the user's size: the longest placeholder shows in full. */
+  min-height: calc(2 * var(--type-title) * var(--leading-body));
   margin: 0;
-  padding: 0;
+  padding: var(--space-1) 0;
   overflow-y: auto;
   border: 0;
   background: transparent;
   color: inherit;
-  font-size: var(--type-body);
+  font-size: var(--type-title);
   line-height: var(--leading-body);
   resize: none;
 }
@@ -93,206 +97,175 @@
   outline: none;
 }
 
-/* What the next message carries, stacked above the text; empty, it takes no space. */
+/* What the next message carries, as rows above the text; empty, it takes no space. The area
+ * caps at about four rows and scrolls inside the box, so the field never leaves the panel. */
 .chat-composer-attached {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  justify-items: start;
-  gap: var(--space-1);
+  gap: 0;
   min-width: 0;
-}
-
-/* Each sits at its own width from the start, never past the box: a chip's one-line quote has a
- * min-content as wide as the whole quote, which would otherwise carry the row out of the panel. */
-.chat-composer-attached > * {
-  max-width: 100%;
-  min-width: 0;
+  max-height: 7.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .chat-composer-attached:empty {
   display: none;
 }
 
-/* "About section_05": a quiet chip, words and a dismiss, no fill and no edge. */
-.chat-context-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  max-width: 100%;
-  min-width: 0;
-  min-height: var(--control-height-sm);
-  color: var(--muted-foreground);
-  font-size: var(--type-ui);
-  line-height: var(--leading-ui);
+.chat-composer-attached:not(:empty) {
+  padding-block-end: var(--space-1);
+  border-block-end: 1px solid var(--hairline);
 }
 
-.chat-context-chip > svg {
-  flex-shrink: 0;
-}
+/* ── The action row ─────────────────────────────────────────────────────── */
 
-.chat-context-chip > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-context-name {
-  color: var(--foreground);
-  font-weight: 500;
-}
-
+/* One centre line under the box: the paperclip at the start; New chat (after a concluded chat),
+ * Stop (while a turn runs) and Send at the end, each at the control height. A blocked control's
+ * reason hangs under it, so the row aligns at its top edge. */
 .chat-composer-actions {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .chat-attach {
   width: var(--control-height);
   height: var(--control-height);
+  flex-shrink: 0;
   padding: 0;
   border-radius: var(--corner-control);
   color: var(--muted-foreground);
 }
 
-.chat-composer-send {
+.chat-attach:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.chat-attach svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* The end cluster: New chat, Stop, Send, in that order, pushed to the row's end. It wraps so that
+ * Send's reason can take a row of its own under the buttons (below); the buttons keep one line. */
+.chat-composer-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-end;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
   margin-inline-start: auto;
   min-width: 0;
 }
 
+/* Stop's column gives way only down to its button (the automatic minimum of a flex item is its
+ * min-content width, and the reason's words may break anywhere), so a reason or an error wraps
+ * under it and never widens the row. */
+.chat-composer-stop {
+  flex: 0 1 auto;
+}
+
+.chat-composer-stop .plan-fine {
+  overflow-wrap: anywhere;
+}
+
 /* DisabledReason stacks its reason under the button; at the row's end both align right. */
-.chat-composer-send > div {
+.chat-composer-stop > div {
   align-items: flex-end;
   text-align: end;
 }
 
-/* Keeps the chips off the panel edges while no chat is open. */
-.chat-pending-chips {
-  padding: 0 var(--chat-gutter) var(--space-2);
+/* Send's reason ("Write a message or attach a passage") is wider than Send and Stop together.
+ * Kept in Send's own column it would set the column's width and push Send past the panel's edge
+ * at 340px, so the column and DisabledReason's wrapper dissolve into the cluster: Send is one more
+ * button on the line and the reason is a full-width row under all of them, aligned to Send's
+ * edge, wrapping only when the cluster is narrower than its words. */
+.chat-composer-send,
+.chat-composer-send > div {
+  display: contents;
 }
 
-.chat-pending-chips:empty {
-  display: none;
+.chat-composer-send .plan-button {
+  flex-shrink: 0;
 }
 
-/* Pending and sent attachments flow as quiet chips that wrap; none scrolls sideways. */
-.chat-chip-list {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-3);
+.chat-composer-send .plan-fine {
+  flex: 1 1 100%;
   min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: end;
 }
 
-.chat-chip-list[data-scroll="true"] {
-  max-height: 8rem;
-  overflow-y: auto;
-}
-
-.chat-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
-}
-
-.chat-chip {
-  position: relative;
-  min-width: 0;
-  max-width: 100%;
+.chat-composer-note,
+.chat-composer-status {
+  margin: 0;
   color: var(--muted-foreground);
   font-size: var(--type-ui);
   line-height: var(--leading-ui);
 }
 
-/* A selection chip: the quote on one line, its source under it in the fine size. The source
- * wraps rather than widen the chip; what follows it (a change note) keeps a gap on its line, and
- * the gap falls at the line's end, unseen, when the note wraps under it. */
-.chat-chip-source {
-  margin-inline-end: var(--space-2);
+/* Messages the server has not confirmed: each with its own Resend. */
+.chat-unconfirmed {
+  display: grid;
+  gap: var(--space-2);
+  max-height: 6rem;
+  overflow-y: auto;
+  font-size: var(--type-ui);
+}
+
+.chat-unconfirmed p {
+  margin: 0 0 var(--space-1);
+}
+
+/* ── Queued messages ────────────────────────────────────────────────────── */
+
+.chat-queue {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--type-body);
+}
+
+.chat-queue > p,
+.chat-queue ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-queue > p {
   color: var(--muted-foreground);
-  font-size: var(--type-fine);
-  overflow-wrap: anywhere;
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
 }
 
-/* A file chip's size, after its name on the chip's one row. */
-.chat-chip-size {
-  flex-shrink: 0;
-  color: var(--muted-foreground);
-  font-size: var(--type-fine);
-  white-space: nowrap;
-}
-
-/* An image chip shows the picture itself, 32px square. */
-.chat-chip-thumb {
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  border-radius: 4px;
-  object-fit: cover;
-}
-
-.chat-chip-row {
+.chat-queue-row {
   display: flex;
+  align-items: center;
+  gap: var(--space-2);
   min-width: 0;
   min-height: var(--control-height-sm);
-  align-items: center;
-  gap: var(--space-1);
 }
 
-.chat-chip-open {
+.chat-queue-row > span {
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--foreground);
-  font: inherit;
-  text-align: start;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.chat-queue summary {
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
   cursor: pointer;
 }
 
-.chat-chip-open:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.chat-chip-remove {
-  display: inline-grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted-foreground);
-  font-size: 14px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.chat-chip-remove:hover {
-  background: var(--muted);
-  color: var(--foreground);
-}
-
-.chat-chip-remove:focus-visible,
-.chat-chip-open:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-/* "△ changed" stays one text run (its tests read it whole), so it carries weight, not a tone. */
-.chat-chip-note {
-  color: var(--muted-foreground);
-  font-weight: 500;
-}
+/* ── Suggestions ────────────────────────────────────────────────────────── */
 
 /* A suggestion is a row on the panel, set off by the hairline above it: no card and no edge
  * around it. The list that holds them draws nothing of its own. */
@@ -306,8 +279,8 @@
   gap: var(--space-2);
   padding-block: var(--space-3);
   border-block-start: 1px solid var(--hairline);
-  font-size: var(--type-ui);
-  line-height: var(--leading-ui);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
 }
 
 .chat-suggestion:first-child {

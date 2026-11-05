@@ -201,7 +201,7 @@ export const CHAT_SCENES: readonly PlannerHelpScene[] = [
         text: "Send submits your text and attached passages to the session.",
       },
       {
-        target: ".chat-composer-input + div button",
+        target: ".chat-composer-actions .chat-composer-stop button",
         text: "Stop interrupts the current turn.",
       },
       {

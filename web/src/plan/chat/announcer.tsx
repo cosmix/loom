@@ -89,7 +89,8 @@ export function AnnouncerRegions(): JSX.Element | null {
 
 /**
  * Announcements that must not depend on the panel being open. The chat panel unmounts its state
- * line and composer while it is a collapsed rail or a closed sheet, so a permission request or a
+ * line and composer while it is a closed sheet (the panel is always shown from 1280px; below that
+ * the sheet opens from the header Chat button), so a permission request or a
  * failed or ended chat would otherwise arrive in silence. Mounted beside the panel with the other
  * registrations; the state line's own polite region leaves these states to it.
  *

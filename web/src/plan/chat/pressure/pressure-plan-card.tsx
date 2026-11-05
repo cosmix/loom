@@ -65,7 +65,7 @@ function StatusChip({
     <span
       title={title === undefined ? undefined : visibleControls(title)}
       className={cn(
-        "inline-flex h-6 items-center gap-1.5 rounded-[6px] px-2 text-xs font-medium",
+        "inline-flex h-6 items-center gap-1.5 rounded-[6px] px-2 text-[13px] font-medium",
         CHIP_FILL[tone],
       )}
     >
@@ -126,7 +126,7 @@ export function PressurePlanCard({
             <Untrusted text={facts.title} />
           </h3>
         )}
-        <p className="font-mono text-xs text-muted-foreground">
+        <p className="font-mono text-[13px] text-muted-foreground">
           <Untrusted text={fileName} />
         </p>
         <PlanChips facts={facts} />
@@ -147,7 +147,7 @@ function PlanChoice({
 }): JSX.Element {
   const id = useId();
   return (
-    <div className="relative inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] border border-border px-2 text-[12.5px] font-medium hover:bg-muted focus-within:outline-2 focus-within:outline-ring">
+    <div className="relative inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] border border-border px-2 text-[13px] font-medium hover:bg-muted focus-within:outline-2 focus-within:outline-ring">
       {/* The accessible name contains the visible word "Change" (WCAG 2.5.3). */}
       <label htmlFor={id} className="sr-only">
         Change plan

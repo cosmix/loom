@@ -1,9 +1,8 @@
-import { Link, useLocation } from "react-router";
+import { Link } from "react-router";
 
 import { ThemeToggle } from "@/aurora-ui/theme/ThemeToggle";
 import { Logo } from "@/components/logo";
 import { useMediaQuery } from "@/lib/use-media-query";
-import { hasChatPanel } from "@/plan/dock";
 import { HeaderExtras } from "@/plan/header-extras";
 import { ActivityPill } from "@/plan/header/activity";
 import { Identity } from "@/plan/header/feature-switcher";
@@ -28,12 +27,11 @@ function HeaderControls({
   onOpenSettings,
   onOpenHelp,
 }: HeaderActions & { narrow: boolean; sample: boolean }) {
-  const { pathname } = useLocation();
   return (
     <div className="plan-header-controls header-controls">
       <ActivityPill compact={narrow} sample={sample} />
-      {/* The chat button only means something where the dock mounts the panel. */}
-      {!sample && <HeaderExtras compact={narrow && hasChatPanel(pathname)} />}
+      {/* HeaderExtras shows the chat button only where the dock mounts a sheet. */}
+      {!sample && <HeaderExtras />}
       {narrow ? (
         <Overflow onOpenSettings={onOpenSettings} onOpenHelp={onOpenHelp} />
       ) : (

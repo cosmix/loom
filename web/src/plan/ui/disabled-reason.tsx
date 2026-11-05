@@ -1,4 +1,4 @@
-import { useId, type ComponentProps, type ReactNode } from "react";
+import { useId, type ComponentProps, type ReactElement, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Untrusted } from "@/plan/chat/visible-controls";
@@ -33,7 +33,8 @@ export function DisabledReason({
   reasonPlacement = "below",
   children,
 }: {
-  reason: string | null;
+  /** Text is untrusted; an element is the caller's own markup (e.g. `BusyText`). */
+  reason: string | ReactElement | null;
   onClick: () => void;
   size?: ComponentProps<typeof Button>["size"];
   look?: ButtonLook;
@@ -61,7 +62,7 @@ export function DisabledReason({
       {blocked && (
         <span id={reasonId} className="plan-fine text-muted-foreground">
           {/* The reason can carry a server name or message (`authorBlockReasonAtom`). */}
-          <Untrusted text={reason} />
+          {typeof reason === "string" ? <Untrusted text={reason} /> : reason}
         </span>
       )}
     </Wrapper>

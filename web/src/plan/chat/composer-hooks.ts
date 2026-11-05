@@ -23,7 +23,7 @@ import { contextWish, recordGiven, withinLimit } from "./context-attach";
 import { draftAtom, MAX_ATTACHMENTS } from "./drafts";
 import { messageProblem } from "./message-problem";
 import { sessionAtom, unconfirmedSendsAtom, type UnconfirmedSend } from "./model";
-import { holdNoteSeenAtom, panelCollapsedAtom } from "./prefs";
+import { holdNoteSeenAtom } from "./prefs";
 import { isActiveSession, sessionHereAtom, startOwnerAtom } from "./session-home";
 import { chatSheetOpenAtom } from "./sheet-state";
 
@@ -42,7 +42,7 @@ const TYPING_TARGET =
   "input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=textbox]";
 
 /**
- * Registers the `c` key. It opens a collapsed panel or a closed sheet first, then asks the
+ * Registers the `c` key. It opens a closed sheet first (the panel is always shown from 1280px), then asks the
  * composer to focus. Call it from a component that stays mounted while the panel is hidden.
  * With `enabled` false (a screen that mounts no panel) the key is left alone: nothing there
  * would clear the requests it sets, so the sheet would open unasked on the next screen.
@@ -65,7 +65,6 @@ export function useComposerShortcut(enabled = true): void {
       // A session that belongs elsewhere leaves the panel with no composer to focus.
       if (!store.get(sessionHereAtom)) return;
       event.preventDefault();
-      store.set(panelCollapsedAtom, false);
       store.set(chatSheetOpenAtom, true);
       store.set(focusComposerAtom, true);
     };

@@ -328,7 +328,9 @@ html.dark {
   --card-foreground: oklch(0.95 0.005 270);
   --popover: oklch(0.215 0.005 270);
   --popover-foreground: oklch(0.95 0.005 270);
-  --primary: oklch(0.78 0.015 270);
+  /* The one lit hue in Graphite: a periwinkle on the greys' own 270 axis, at the highest chroma
+     sRGB holds at this lightness. Dark text on it reads at 7.4:1 (ui/DESIGN.md, Colour). */
+  --primary: oklch(0.72 0.14 272);
   --primary-foreground: oklch(0.18 0.005 270);
   --secondary: oklch(0.29 0.006 270);
   --secondary-foreground: oklch(0.95 0.005 270);
@@ -339,7 +341,7 @@ html.dark {
   --destructive: oklch(0.704 0.191 22);
   --border: oklch(0.42 0.006 270);
   --input: oklch(0.34 0.006 270);
-  --ring: oklch(0.74 0.04 270);
+  --ring: oklch(0.72 0.14 272);
   --chart-1: oklch(0.78 0.06 270);
   --chart-2: oklch(0.72 0.12 220);
   --chart-3: oklch(0.74 0.10 175);

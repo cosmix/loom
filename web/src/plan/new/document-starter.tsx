@@ -19,6 +19,7 @@ import { docRel } from "@/plan/files/address";
 import { treeAtom } from "@/plan/files/atoms";
 import { treeDocs } from "@/plan/files/tree";
 import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
+import { BusyText } from "@/plan/ui/busy-text";
 import type { ButtonLook } from "@/plan/ui/disabled-reason";
 
 /** `file` is set for an upload: the attachment then names it by id and the chip needs its size. */
@@ -162,7 +163,11 @@ function StarterMenu({ documents, pick, files }: StarterMenuProps) {
       >
         A file from this computer…
       </button>
-      {files.uploading && <p role="status">Uploading…</p>}
+      {files.uploading && (
+        <p role="status">
+          <BusyText>Uploading…</BusyText>
+        </p>
+      )}
       {files.problems.map((problem, index) => (
         <p key={index} role="alert" className="text-destructive">
           <Untrusted text={problem} />
@@ -175,7 +180,11 @@ function StarterMenu({ documents, pick, files }: StarterMenuProps) {
         ))}
       </ul>
       {documents.length === 0 && <p className="text-muted-foreground">No documents available.</p>}
-      {pending && <p role="status">Loading document…</p>}
+      {pending && (
+        <p role="status">
+          <BusyText>Loading document…</BusyText>
+        </p>
+      )}
       {error !== null && (
         <p role="alert" className="text-destructive">
           Could not load the document: <Untrusted text={error} />

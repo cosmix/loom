@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import snapshotFixture from "@/plan/api/fixtures/chat-snapshot.json";
 import { sessionViewSchema } from "@/plan/api/schema-chat";
 import { snapshotAtom } from "@/plan/chat/model";
-import { panelCollapsedAtom } from "@/plan/chat/prefs";
 import { screenAtom } from "@/plan/chat/session-home";
 import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
 import { authoringAtom, canAuthorAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
@@ -77,9 +76,8 @@ describe("AddToChat", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("opens the chat panel and the narrow sheet when a selection is added", () => {
+  it("opens the narrow sheet when a selection is added", () => {
     const store = storeWith(null);
-    store.set(panelCollapsedAtom, true);
     expect(store.get(chatSheetOpenAtom)).toBe(false);
     const onAdded = vi.fn();
     mount(store, draft(), onAdded);
@@ -87,7 +85,6 @@ describe("AddToChat", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add to chat" }));
 
     expect(store.get(pendingAttachmentsAtom)).toHaveLength(1);
-    expect(store.get(panelCollapsedAtom)).toBe(false);
     expect(store.get(chatSheetOpenAtom)).toBe(true);
     expect(onAdded).toHaveBeenCalledOnce();
   });

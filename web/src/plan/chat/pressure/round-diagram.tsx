@@ -70,7 +70,7 @@ export function RoundDiagram(props: RoundDiagramProps): JSX.Element {
 
 function RoundsLegend({ rounds }: { rounds: number }): JSX.Element {
   return (
-    <span className="absolute -top-[11px] left-3.5 inline-flex h-[22px] items-center gap-1.5 rounded-full border border-hairline bg-card px-2.5 text-xs font-medium text-muted-foreground">
+    <span className="absolute -top-[11px] left-3.5 inline-flex h-[22px] items-center gap-1.5 rounded-full border border-hairline bg-card px-2.5 text-[13px] font-medium text-muted-foreground">
       <Repeat aria-hidden="true" className="size-3" />
       {roundsLegend(rounds)}
     </span>
@@ -80,7 +80,7 @@ function RoundsLegend({ rounds }: { rounds: number }): JSX.Element {
 function AgentLine({ agent, command }: { agent: string; command: string }): JSX.Element {
   return (
     <>
-      {agent} <code className="font-mono text-[11.5px] text-foreground">{command}</code>
+      {agent} <code className="font-mono text-[13px] text-foreground">{command}</code>
     </>
   );
 }
@@ -116,12 +116,12 @@ function RoundNode({
         </span>
         <span className="text-[13px] font-semibold">{title}</span>
         {background && (
-          <span className="ml-auto rounded-full border border-hairline px-2 py-0.5 text-[11px] text-muted-foreground">
+          <span className="ml-auto rounded-full border border-hairline px-2 py-0.5 text-[13px] text-muted-foreground">
             background
           </span>
         )}
       </div>
-      <p className="text-xs text-muted-foreground">{line}</p>
+      <p className="text-[13px] text-muted-foreground">{line}</p>
       <div className="min-w-0">{children}</div>
     </section>
   );

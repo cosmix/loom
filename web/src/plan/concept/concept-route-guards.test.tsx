@@ -137,7 +137,8 @@ describe("selection spanning sentences", () => {
       .get(pendingAttachmentsAtom)
       .map((draft) => (draft.kind === "summary" ? draft.sentence : draft.kind));
     expect(sentences).toEqual(["s1", "s2", "s3"]);
-    expect(window.getSelection()?.rangeCount).toBe(0);
+    // The opened chat sheet moves focus to a button, and jsdom parks a collapsed range there.
+    expect(window.getSelection()?.toString()).toBe("");
   });
 });
 
@@ -193,7 +194,7 @@ describe("a selection whose later part is over the attachment limit", () => {
   it("adds the sentence and a passage within the limit", async () => {
     const store = await selectSentenceAndPassage("Stages list their files.", /^Stages list/);
     fireEvent.click(await screen.findByRole("button", { name: "Add to chat" }));
-    await waitFor(() => expect(window.getSelection()?.rangeCount).toBe(0));
+    await waitFor(() => expect(window.getSelection()?.toString()).toBe(""));
     expect(store.get(pendingAttachmentsAtom).map((draft) => draft.kind)).toEqual([
       "summary",
       "source",

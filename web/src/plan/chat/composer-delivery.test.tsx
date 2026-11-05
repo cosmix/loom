@@ -1,5 +1,5 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
-import { getDefaultStore, useAtomValue } from "jotai";
+import { getDefaultStore } from "jotai";
 import { expect, it } from "vitest";
 
 import suggestion from "@/plan/api/fixtures/review-suggestion.json";
@@ -25,22 +25,10 @@ import { ComposerArea } from "./composer";
 import { draftAtom } from "./drafts";
 import { snapshotAtom } from "./model";
 import { Transcript } from "./transcript";
-import { panelCollapsedAtom } from "./prefs";
 import { chatSheetOpenAtom } from "./sheet-state";
 import { storageFullAtom } from "./storage";
 
 installComposerLifecycle();
-
-// The panel unmounts its composer when collapsed; the shortcut lives beside it.
-function CollapsiblePanel() {
-  const collapsed = useAtomValue(panelCollapsedAtom);
-  return (
-    <>
-      <ShortcutHost />
-      {collapsed ? null : <ComposerArea />}
-    </>
-  );
-}
 
 it("draft kept when the send is rejected", async () => {
   const h = setup();
@@ -244,14 +232,18 @@ it.each(["/compactly", "\u0001 /clear", "\u0085/clear", "\uFEFF/clear"])(
     expect(screen.getByText("Slash commands are not available here; `/compact` is.")).toBeTruthy();
   },
 );
-it("c opens a collapsed panel and a closed sheet, then focuses the composer", () => {
+it("c opens a closed sheet, then focuses the composer of the shown panel", () => {
   const h = setup();
-  h.store.set(panelCollapsedAtom, true);
   h.store.set(chatSheetOpenAtom, false);
-  mount(h.store, <CollapsiblePanel />);
-  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  mount(
+    h.store,
+    <>
+      <ShortcutHost />
+      <ComposerArea />
+    </>,
+  );
+  expect(document.activeElement).not.toBe(box());
   fireEvent.keyDown(document.body, { key: "c" });
-  expect(h.store.get(panelCollapsedAtom)).toBe(false);
   expect(h.store.get(chatSheetOpenAtom)).toBe(true);
   expect(document.activeElement).toBe(box());
 });
