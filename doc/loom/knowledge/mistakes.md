@@ -214,3 +214,7 @@ A `loom-kickoff` fence and a composite opening reached the transcript because no
 ## Claude Code Changed Its Record Format and Text Matches Broke Silently
 
 Claude Code began wrapping a delivered prompt in `<pasted_content id="X">` tags in the transcript and the prompt hook; every match on the delivered text stopped matching with no failing test, because the fixtures carried the old bare format. Prevention: capture fixtures from real transcripts after a Claude Code upgrade, and test a match on Claude Code's output with both forms. → [Claude Code wrapped delivered prompts](mistakes/planner-ui-repair.md#claude-code-wrapped-delivered-prompts-and-every-text-match-broke-silently-2026-11-03)
+
+## Planner Polish
+
+A container-query component in an unsized flex item (footer meters stacked), a stop notice produced twice from one event, spine plan rows that lost their slug to badge words, layout and glyph fixes judged from a stubbed payload or one surface, and worker slips. → [Planner Polish Mistakes](mistakes/planner-polish.md)
