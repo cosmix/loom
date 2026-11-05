@@ -226,15 +226,19 @@ it("shows the config block beside the actions and re-enables Pressure-test after
   );
 });
 
-// The follow-ups of a finished feature are drawn on its Run page (feature/run-page.test.tsx).
+// The follow-ups offer of a finished feature belongs to the feature, never to one plan's row.
 it("draws no follow-up for a done plan, whatever the checklist offers", () => {
   const store = createStore();
-  const review: OfferView = { id: "review-id", kind: "refine_spec", label: "Review", target: null };
-  const round: OfferView = { ...review, id: "round-id", kind: "new_metaplan_round" };
+  const followUps: OfferView = {
+    id: "plan-follow-ups",
+    kind: "plan_follow_ups",
+    label: "Plan follow-ups",
+    target: null,
+  };
   store.set(checklistAtom, {
     ...checklistViewSchema.parse(fixture.checklists[0]),
-    primary: review,
-    secondary: [round],
+    primary: null,
+    secondary: [followUps],
   });
   const { container } = render(
     <Provider store={store}>

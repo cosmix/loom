@@ -263,11 +263,8 @@ it("an offer that names no feature, chosen on a plan's screen, starts for that p
   );
 });
 
-// The wire carries no feature for these two offers (`Offer::feature`), so the screen's names it.
-it.each([
-  ["refine_spec", "refine-spec", "Refine the spec in light of what was built"],
-  ["new_metaplan_round", "new-metaplan-round", "Start a new metaplan round"],
-] as const)(
+// The wire carries no feature for this offer (`Offer::feature`), so the screen's names it.
+it.each([["plan_follow_ups", "plan-follow-ups", "Plan follow-ups"]] as const)(
   "the %s offer chosen on a feature's screen starts for that feature",
   async (kind, id, label) => {
     const wire = offerViewSchema.parse({ id, kind, label, target: null });

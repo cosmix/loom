@@ -37,20 +37,6 @@
   margin-bottom: var(--space-5);
 }
 
-[data-loom-plan] .plan-page__note {
-  max-width: 48ch;
-  margin: 0 0 var(--space-3);
-  font-size: var(--type-body);
-  line-height: var(--leading-body);
-  color: var(--muted-foreground);
-}
-
-[data-loom-plan] .plan-page__offers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
 /* A plan row: the slug on the left (truncated), its state, record and action on the right. */
 [data-loom-plan] .plan-page__rows > li {
   flex-wrap: wrap;

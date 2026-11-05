@@ -377,7 +377,7 @@ it.each([
   [path, "section"],
   ["doc/product/demo/index.md", "vision"],
   ["doc/plans/demo/index.md", "metaplan"],
-  ["doc/plans/demo/metaplan-02.md", "metaplan"],
+  ["doc/plans/demo/metaplan-02.md", null],
   ["doc/plans/demo/PLAN-draft.md", "plan"],
   ["doc/plans/demo/PLAN-metaplan.md", "plan"],
   ["doc/plans/archive/DONE-PLAN-built.md", "plan"],
