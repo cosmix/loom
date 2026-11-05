@@ -164,7 +164,7 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 79 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Delivery | 371 |
-| [planner-polish](mistakes/planner-polish.md) | Polish | 58 |
+| [planner-polish](mistakes/planner-polish.md) | Polish | 59 |
 | [planner-redesign](mistakes/planner-redesign.md) | Redesign | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) | Review-fix slips | 48 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 131 |
