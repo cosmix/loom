@@ -1,9 +1,10 @@
-import { ChevronRight, FlaskConical, Gauge } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
+import { NOT_PRESSURE_TESTED, PRESSURE_TESTED, pressureIcon } from "@/plan/files/heading-parts";
 import type { NameStyle, PlanPressure, SpineChild, SpineGroup } from "@/plan/feature/spine-model";
 import { STEP_MARK_GLYPHS } from "@/plan/ui/glyphs";
 
@@ -20,19 +21,19 @@ export function Name({ name, style }: { name: string; style: NameStyle }) {
  */
 function PressureBadge({ pressure }: { pressure: PlanPressure }) {
   const { date } = pressure;
-  const Icon = date === null ? Gauge : FlaskConical;
+  const Icon = pressureIcon(date);
   return (
     <span className="plan-spine__badge plan-fine" data-tested={date !== null}>
       <Icon aria-hidden="true" />
       {date !== null ? (
         <>
-          Pressure-tested{" "}
+          {PRESSURE_TESTED}{" "}
           <span className="plan-spine__badge-date">
             <Untrusted text={date} />
           </span>
         </>
       ) : (
-        "Not pressure-tested"
+        NOT_PRESSURE_TESTED
       )}
     </span>
   );

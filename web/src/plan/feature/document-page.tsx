@@ -13,7 +13,7 @@ import { ReadingColumn } from "@/plan/files/reading-column";
 import { metaplanSummaryKey } from "@/plan/files/section-chips";
 import { missingDocumentOffer } from "@/plan/feature/page-offer";
 import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
-import { metaplanFile } from "@/plan/feature/spine-model";
+import { firstMetaplan, metaplanFile } from "@/plan/feature/spine-model";
 import { featureHref, useFeature } from "@/plan/feature/use-feature";
 import { LoadState } from "@/plan/ui/load-state";
 
@@ -102,7 +102,7 @@ export function MetaplanPage() {
   }
   const metaplan = file
     ? checklist.metaplans.find((candidate) => metaplanFile(candidate.path) === file)
-    : checklist.metaplans[0];
+    : firstMetaplan(checklist.metaplans);
   if (!metaplan) return <LoadState state="not_found" title="No such metaplan" />;
   // A file name outside the summary stem grammar (`metaplan_02.md`) has no summary: show its source.
   const { path: sourcePath } = metaplan;

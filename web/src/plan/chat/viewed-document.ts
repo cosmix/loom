@@ -2,6 +2,7 @@ import { atom } from "jotai/vanilla";
 
 import type { ChecklistView, StandalonePlanView } from "@/plan/api/schema";
 import { featureOfDocPath } from "@/plan/feature/source-href";
+import { firstMetaplan } from "@/plan/feature/spine-model";
 import { parseAddress } from "@/plan/files/address";
 
 export type ViewedKind =
@@ -100,7 +101,7 @@ function metaplanOf(
   const metaplans = checklist?.metaplans ?? [];
   const found = file
     ? metaplans.find((candidate) => candidate.path.split("/").at(-1) === file)
-    : metaplans[0];
+    : firstMetaplan(metaplans);
   return { path: found?.path ?? null, name: file ? file.replace(/\.md$/, "") : "metaplan" };
 }
 
