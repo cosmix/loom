@@ -128,6 +128,7 @@ pub(crate) fn page_key_of(project: &Project, id: &str) -> Option<String> {
     let feature = project.tree.get(&path)?.kind.feature().map(str::to_owned);
     let (scope, doc) = match id.strip_prefix("plans/") {
         Some(slug) => (Scope::Engineering, slug),
+        None if store::is_metaplan(id) => (Scope::Metaplan, id.rsplit('/').next()?),
         None => (Scope::Product, id.rsplit('/').next()?),
     };
     let key = PageKey::Summary {
@@ -152,7 +153,7 @@ fn overview_page(
     let id = key.as_key();
     let title = match scope {
         Scope::Product => "Product overview",
-        Scope::Engineering => "Engineering overview",
+        Scope::Engineering | Scope::Metaplan => "Engineering overview",
     };
     let mut page = blank(&key, title.to_owned(), ctx);
     let chips = key_chips(project, eval, feature, scope, ctx);
@@ -197,7 +198,7 @@ fn unlisted(
 fn id_prefix(feature: &str, scope: Scope) -> String {
     match scope {
         Scope::Product => format!("{feature}/product/"),
-        Scope::Engineering => "plans/".to_owned(),
+        Scope::Engineering | Scope::Metaplan => "plans/".to_owned(),
     }
 }
 
@@ -216,6 +217,7 @@ fn summary_page(
     let id = match scope {
         Scope::Product => format!("{}{doc}", id_prefix(feature?, scope)),
         Scope::Engineering => format!("plans/{doc}"),
+        Scope::Metaplan => format!("{}/metaplan/{doc}", feature?),
     };
     let path = source_of(project, &id)?;
     let document = project.docs.get(&path)?;

@@ -229,6 +229,7 @@ fn summary_scope_table() {
     let mut ids = store::expected_ids(&p);
     ids.sort();
     let want = [
+        "demo/metaplan/index",
         ID,
         "demo/product/section_02",
         "demo/product/vision",

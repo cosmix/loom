@@ -4,20 +4,22 @@
 //! - `STORE_DIR: &str` is `doc/loom/summaries`.
 //! - `validate_id(id: &str) -> anyhow::Result<()>` accepts only
 //!   `overview/<feature>/{product,engineering}`, `<feature>/product/section_<2+ digits>`,
-//!   `<feature>/product/vision` and `plans/<slug>`. Features use `kinds::is_feature_name`; slugs start with an ASCII
-//!   alphanumeric, continue with `[A-Za-z0-9._-]` and cannot contain `..`.
+//!   `<feature>/product/vision`, `<feature>/metaplan/<stem>` and `plans/<slug>`. Features use
+//!   `kinds::is_feature_name`; a metaplan stem matches `[a-z0-9][a-z0-9-]*`; slugs start with an
+//!   ASCII alphanumeric, continue with `[A-Za-z0-9._-]` and cannot contain `..`.
 //! - `is_overview(id: &str) -> bool` recognizes valid feature overview ids.
 //! - `summary_path(id: &str) -> PathBuf` returns `<STORE_DIR>/<id>.md`, empty if invalid.
 //! - `summary_id_for(project: &Project, rel: &Path) -> Option<String>` identifies an
 //!   eligible section or winning plan; `source_of(project: &Project, id: &str) ->
 //!   Option<PathBuf>` finds that document's current path.
-//!   Sections need a feature; plans must sit directly in their home (`doc/plans` or
+//!   Sections and metaplans need a feature (a metaplan summary is a document summary of the
+//!   metaplan file whose stem the id carries); plans must sit directly in their home (`doc/plans` or
 //!   `doc/plans/<feature>`) or be named by a metaplan of their own feature. Losing copies and top-level sections are excluded.
 //! - `expected_ids(project: &Project) -> Vec<String>` includes eligible documents and
 //!   each feature's overviews with existing vision/metaplan sources, including empty ones.
 //! - `scope(project: &Project, feature: &str) -> Scope` computes one feature's ordered
 //!   `product` and `engineering` members and sorted `outside` documents. The vision
-//!   summary (`<feature>/product/vision`) is in none of the three lists. `Scope.feature`
+//!   summary (`<feature>/product/vision`) and the metaplan summaries are in none of the three lists. `Scope.feature`
 //!   is the requested name; unknown features have empty lists. Other features and standalone
 //!   plans are excluded. Standalone plans remain in `expected_ids`.
 //! - `Scope::of(project: &Project, overview_id: &str) -> Option<Scope>` selects that
@@ -60,9 +62,26 @@ pub fn is_vision(id: &str) -> bool {
     vision_feature(id).is_some()
 }
 
+/// The feature of a metaplan summary id `<feature>/metaplan/<stem>`, else `None`.
+/// A stem matches `[a-z0-9][a-z0-9-]*`, so it can never hold `.` or `/`.
+pub fn metaplan_feature(id: &str) -> Option<&str> {
+    let (feature, stem) = id.split_once("/metaplan/")?;
+    let mut bytes = stem.bytes();
+    let stem_ok = bytes
+        .next()
+        .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    (stem_ok && is_feature_name(feature)).then_some(feature)
+}
+
+/// Whether `id` is a feature metaplan's document summary, `<feature>/metaplan/<stem>`.
+pub fn is_metaplan(id: &str) -> bool {
+    metaplan_feature(id).is_some()
+}
+
 /// Validate a summary id before using it as a path.
 pub fn validate_id(id: &str) -> Result<()> {
-    let valid = if is_overview(id) {
+    let valid = if is_overview(id) || is_metaplan(id) {
         true
     } else if let Some(slug) = id.strip_prefix("plans/") {
         !slug.contains("..")
@@ -124,6 +143,9 @@ pub fn summary_id_for(project: &Project, rel: &Path) -> Option<String> {
         DocKind::Vision {
             feature: Some(feature),
         } => format!("{feature}/product/vision"),
+        DocKind::Metaplan {
+            feature: Some(feature),
+        } => format!("{feature}/metaplan/{}", rel.file_stem()?.to_str()?),
         DocKind::Plan { slug, .. } => {
             let plan = project.tree.plans.get(slug)?;
             if plan.path != rel
@@ -235,7 +257,7 @@ pub fn scope(project: &Project, feature: &str) -> Scope {
         .tree
         .feature_docs(&feature.name)
         .filter_map(|doc| summary_id_for(project, &doc.path))
-        .filter(|id| !is_vision(id) && seen.insert(id.clone()))
+        .filter(|id| !is_vision(id) && !is_metaplan(id) && seen.insert(id.clone()))
         .collect();
     result.outside.sort();
     result
@@ -324,6 +346,10 @@ pub fn resolve_link(summary_id: &str, href: &str) -> Option<(PathBuf, Option<Str
     Some((normalized(&resolved)?, fragment))
 }
 
+#[cfg(test)]
+mod metaplan_contract_tests;
+#[cfg(test)]
+mod metaplan_id_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

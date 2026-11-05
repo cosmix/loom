@@ -235,7 +235,10 @@ fn a_plan_added_to_the_metaplan_names_every_summary_page_of_the_scope() {
         .into_iter()
         .next()
         .expect("a delta");
-    assert_eq!(delta.pages, ALL_THREE_PAGES);
+    // The edited metaplan file is itself a summarized document with a page of its own.
+    let mut named = ALL_THREE_PAGES.to_vec();
+    named.insert(3, "demo/metaplan/index");
+    assert_eq!(delta.pages, named);
 }
 
 #[test]
@@ -261,13 +264,14 @@ fn a_key_row_change_names_the_summary_pages_of_unlisted_plans_too() {
         "demo/engineering/w",
         "demo/engineering/x",
         "demo/engineering/y",
+        "demo/metaplan/index",
         "overview/demo/engineering",
     ];
     assert_eq!(delta.pages, named);
 }
 
 #[test]
-fn a_retitled_plan_names_every_summary_page_of_the_scope() {
+fn a_retitled_plan_names_every_summary_page_of_the_scope_and_the_metaplan_page() {
     let fixture = three_plans();
     let listed = fixtures::metaplan(&["PLAN-x.md", "PLAN-y.md", "PLAN-w.md"]);
     fixtures::put(&fixture.root, META, &listed);
@@ -280,7 +284,10 @@ fn a_retitled_plan_names_every_summary_page_of_the_scope() {
         .into_iter()
         .next()
         .expect("a delta");
-    assert_eq!(delta.pages, ALL_THREE_PAGES);
+    // The metaplan page embeds the engineering key row, so the retitle reaches it too.
+    let mut named = ALL_THREE_PAGES.to_vec();
+    named.insert(3, "demo/metaplan/index");
+    assert_eq!(delta.pages, named);
 }
 
 #[test]
