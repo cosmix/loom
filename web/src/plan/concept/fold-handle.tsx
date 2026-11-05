@@ -6,6 +6,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 /** Room the tooltip keeps from the edge of the reading area before it flips below the cap. */
 const COLLISION_PADDING = 8;
 
+const CHEVRON = { start: ChevronLeft, end: ChevronRight } as const;
+
 /**
  * Each end of a run folds it; Escape remains the column's keyboard shortcut. The tooltip sits
  * above the cap and flips below when there is no room above inside the reading area: the
@@ -24,6 +26,7 @@ export function FoldCap({
 }): JSX.Element {
   const trigger = useRef<HTMLButtonElement>(null);
   const [boundary, setBoundary] = useState<Element | null>(null);
+  const Chevron = CHEVRON[side];
   return (
     <Tooltip
       onOpenChange={(open) => {
@@ -50,21 +53,23 @@ export function FoldCap({
             onFold();
           }}
         >
-          {side === "start" ? (
-            <ChevronLeft aria-hidden="true" className="concept-run-cap-icon" strokeWidth={2.5} />
-          ) : (
-            <ChevronRight aria-hidden="true" className="concept-run-cap-icon" strokeWidth={2.5} />
-          )}
+          <Chevron aria-hidden="true" className="concept-run-cap-icon" strokeWidth={2.5} />
         </button>
       </TooltipTrigger>
-      <TooltipContent
-        side="top"
-        avoidCollisions
-        collisionBoundary={boundary}
-        collisionPadding={COLLISION_PADDING}
-      >
-        Fold · Esc
-      </TooltipContent>
+      <FoldTooltip boundary={boundary} />
     </Tooltip>
+  );
+}
+
+function FoldTooltip({ boundary }: { boundary: Element | null }): JSX.Element {
+  return (
+    <TooltipContent
+      side="top"
+      avoidCollisions
+      collisionBoundary={boundary}
+      collisionPadding={COLLISION_PADDING}
+    >
+      Fold · Esc
+    </TooltipContent>
   );
 }

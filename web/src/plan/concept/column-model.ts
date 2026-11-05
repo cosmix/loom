@@ -2,6 +2,7 @@ import type { ConceptPage, Sentence } from "@/plan/api/schema-concept";
 
 import {
   passageAnchors,
+  siteKey,
   sentenceCitations,
   sentenceKey,
   summaryIdOfKey,
@@ -15,7 +16,7 @@ import type { ColumnTarget, OpenRun } from "./types";
 const isTop = (run: OpenRun, id: string) => run.sentenceId === id && run.parent === null;
 
 /**
- * The passages each opened sentence shows, by sentence id, in the form `readingOrder` takes.
+ * The passages each opened sentence shows, by site (`siteKey`), in the form `readingOrder` takes.
  * Only sentences that are open at their own site get an entry, so a cited sentence sharing an
  * id with a page sentence does not borrow that one's passages.
  */
@@ -29,9 +30,10 @@ export function passagesRecord(
   for (const sentence of pageSentences(page)) {
     if (!runOfSentence(open, sentence, null)) continue;
     const entries = runSentences(sentence, lookup);
-    if (entries.length === 0) out[sentence.id] = keysOf(sentence);
+    if (entries.length === 0) out[siteKey(null, sentence.id)] = keysOf(sentence);
     for (const { sentence: cited } of entries) {
-      if (cited && runOfSentence(open, cited, sentence.id)) out[cited.id] = keysOf(cited);
+      if (cited && runOfSentence(open, cited, sentence.id))
+        out[siteKey(sentence.id, cited.id)] = keysOf(cited);
     }
   }
   return out;

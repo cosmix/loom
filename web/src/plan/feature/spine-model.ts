@@ -73,13 +73,25 @@ const GROUP_OF_PAGE: Record<string, GroupId> = {
 /** A plan file name, lifecycle prefix included (`PLAN-x.md`, `IN_PROGRESS-PLAN-x.md`). */
 const PLAN_FILE = /^(?:[A-Z_]+-)?PLAN-/;
 
-/** The group a feature document belongs to: its vision, a section, a plan or a metaplan file. */
+/**
+ * A run review file (`REVIEW-PLAN-x.md`, `REVIEW-DONE-PLAN-x.md`), which the Run group shows.
+ * Tested before `PLAN_FILE`, whose optional prefix also matches `REVIEW-`.
+ */
+const REVIEW_FILE = /^REVIEW-/;
+
+/**
+ * The group a feature document belongs to: its vision, a section, a plan, the metaplan
+ * (`doc/plans/<f>/index.md`, the only one) or a run review. Other files under `doc/plans/<f>/`
+ * (briefs, stray notes) belong to no group, as the server classifies them as Other.
+ */
 function groupOfDocPath(repoPath: string): GroupId | null {
   const [root, , ...rest] = docRel(repoPath).split("/");
   const file = rest.at(-1) ?? "";
   if (root === "product") return rest.length === 1 && file === "index.md" ? "vision" : "product";
-  if (root === "plans") return PLAN_FILE.test(file) ? "plans" : "metaplan";
-  return null;
+  if (root !== "plans") return null;
+  if (REVIEW_FILE.test(file)) return "run";
+  if (PLAN_FILE.test(file)) return "plans";
+  return rest.length === 1 && file === "index.md" ? "metaplan" : null;
 }
 
 /**

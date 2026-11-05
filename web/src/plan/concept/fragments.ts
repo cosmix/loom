@@ -24,7 +24,7 @@ const VIEWS = new WeakMap<ConceptPage, ConceptPage>();
 export function openKeys(sentence: Sentence): string[] {
   if (sentence.citations.length === 0) return [];
   const cited = sentenceCitations(sentence);
-  if (cited.length > 0) return cited.map((citation) => `s|${citation.summary}#${citation.id}`);
+  if (cited.length > 0) return cited.map(citationKey);
   return passageAnchors(sentence).map((anchor) => `p|${anchorKey(anchor)}`);
 }
 

@@ -13,7 +13,7 @@ import { passageKey, useColumn } from "./column-context";
 import { FLASH_CLASS, useFlashOnChange } from "./flash";
 import { anchorKey } from "./open-state";
 import { useKeptDoc } from "./passage-doc";
-import { passageOf } from "./passages";
+import { fileName, passageOf } from "./passages";
 import { useSamePassage } from "./same-passage";
 
 type Passage = NonNullable<ReturnType<typeof passageOf>>;
@@ -27,10 +27,6 @@ export function passageHref(anchor: SourceAnchor, lines: { start: number; end: n
     lines,
     anchor: anchor.anchor,
   });
-}
-
-function fileName(path: string): string {
-  return path.slice(path.lastIndexOf("/") + 1);
 }
 
 /** The passage body through file mode's renderer, as an excerpt of its document. */

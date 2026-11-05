@@ -113,7 +113,7 @@ export function FeatureSourcePage() {
       <LoadState
         state="error"
         title="Not a document of this feature"
-        message="Only the feature's vision, sections, metaplans and plans open here."
+        message="Only the feature's vision, sections, metaplan and plans open here."
       />
     );
   }
