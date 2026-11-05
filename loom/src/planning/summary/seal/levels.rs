@@ -137,18 +137,25 @@ fn limits(draft: &Draft<'_>) -> Vec<FormatError> {
     opening.into_iter().chain(detail).collect()
 }
 
-/// Headings and opening paragraphs that follow the first detail paragraph, and paragraphs that
-/// mix the two levels.
+/// Headings and opening paragraphs that follow the first detail paragraph, headings between the
+/// last opening paragraph and the first detail paragraph, and paragraphs that mix the two levels.
 fn order(id: &str, body: &SummaryBody) -> Vec<FormatError> {
     let mut lines = Vec::new();
     let mut detail_begun = false;
+    // Headings since the last opening paragraph: refused once the detail level begins after them.
+    let mut after_opening = Vec::new();
     for block in &body.blocks {
         match block {
             Block::Heading { line, .. } if detail_begun => lines.push(line + 1),
-            Block::Heading { .. } => {}
+            Block::Heading { line, .. } => after_opening.push(line + 1),
             Block::Paragraph(sentences) => {
                 lines.extend(misplaced(id, sentences, detail_begun));
-                detail_begun |= sentences.iter().any(|s| !cites_own(id, s));
+                let begins_detail = sentences.iter().any(|s| !cites_own(id, s));
+                if begins_detail && !detail_begun {
+                    lines.append(&mut after_opening);
+                }
+                after_opening.clear();
+                detail_begun |= begins_detail;
             }
         }
     }
@@ -173,7 +180,8 @@ fn misplaced(id: &str, sentences: &[Sentence], detail_begun: bool) -> Option<usi
 }
 
 /// Problems of one opening sentence: a source link beside its self-links, a self-link to no
-/// detail sentence, part of a detail paragraph, or a restatement of a sentence it opens.
+/// detail sentence, a detail sentence cited twice, part of a detail paragraph, or a restatement
+/// of a sentence it opens.
 fn opening_problems(draft: &Draft<'_>, sentence: &Sentence) -> Vec<FormatError> {
     let mut errors = Vec::new();
     let source = |link: &Link| matches!(link.resolved, LinkTarget::Source { .. });
@@ -190,14 +198,24 @@ fn opening_problems(draft: &Draft<'_>, sentence: &Sentence) -> Vec<FormatError> 
         targets.into_iter().partition(|id| draft.is_detail(id));
     let unknown: BTreeSet<&str> = unknown.into_iter().collect();
     for target in unknown {
+        // The target is draft text (the format only checks its `s-` prefix), so it is made
+        // terminal-safe here for every consumer of the refusal.
         let message = format!(
-            "sentence {} cites {target}, which is not a detail sentence of this summary; {}",
+            "sentence {} cites {}, which is not a detail sentence of this summary; {}",
             sentence.id,
+            terminal_safe(target),
             draft.detail_list()
         );
         errors.push(at(sentence, message));
     }
-    if !cited.is_empty() && !opens_whole_paragraphs(&cited, &draft.paragraphs) {
+    let twice = cited
+        .iter()
+        .enumerate()
+        .find(|(index, id)| cited[..*index].contains(id));
+    if let Some((_, id)) = twice {
+        let message = format!("sentence {} cites detail sentence {id} twice", sentence.id);
+        errors.push(at(sentence, message));
+    } else if !cited.is_empty() && !opens_whole_paragraphs(&cited, &draft.paragraphs) {
         let message = format!(
             "sentence {} opens part of a detail paragraph; cite every sentence of each paragraph \
              it opens, in order",

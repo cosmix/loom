@@ -12,6 +12,7 @@ use enrichment::{build_cross_stage_summary, wants_stage_enrichment};
 pub(super) use findings::build_dependency_findings;
 pub(super) use findings::build_dependency_findings_with_changes;
 pub(super) use findings::DEPENDENCY_FINDINGS_HEADING;
+pub(super) use product_sections::append_product_sections;
 // Read only by tests (this crate's and the dependency harness), so the lib
 // build would flag an unconditional re-export as unused.
 #[cfg(test)]
@@ -225,7 +226,7 @@ fn assemble_signal(
     );
     let original_len = formatted.content.len();
     super::v2_section::append_v2_section(&mut formatted.content, stage, work_dir);
-    product_sections::append_product_sections(&mut formatted.content, stage, work_dir);
+    append_product_sections(&mut formatted.content, stage, work_dir);
     append_stage_feedback(&mut formatted.content, stage, work_dir);
     // Stage-specific suffixes belong to the dynamic stage content bucket.
     formatted.metrics.dynamic_bytes += formatted.content.len() - original_len;

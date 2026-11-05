@@ -3,8 +3,10 @@
 use std::path::Path;
 
 use super::{built_view, BuiltView, CandidateKind};
+use crate::fs::memory::{append_entry, MemoryEntry, MemoryEntryType};
 use crate::fs::plan_review::{
-    review_item_line, OPEN_FINDINGS_HEADING, OPEN_QUESTIONS_HEADING, SPEC_CONFORMANCE_HEADING,
+    generate, review_item_line, OPEN_FINDINGS_HEADING, OPEN_QUESTIONS_HEADING,
+    SPEC_CONFORMANCE_HEADING, SPEC_CONFORMANCE_PREFIX,
 };
 use crate::plan_server::wire::checklist::{ChecklistView, ProjectChecklistView};
 use crate::planning::project::Project;
@@ -142,4 +144,41 @@ fn the_wire_reads_what_the_generator_writes() {
             (CandidateKind::Question, "Close on send?")
         ]
     );
+}
+
+/// The run review the generator writes for a run whose integration-verify stage recorded a
+/// decision and a question, both tagged `spec-conformance:`.
+fn generated_spec_review() -> String {
+    let scratch = tempfile::tempdir().unwrap();
+    let work = scratch.path().join(".loom/work");
+    std::fs::create_dir_all(work.join("stages")).unwrap();
+    std::fs::write(work.join("config.toml"), "[plan]\nplan_id = \"PLAN-one\"\n").unwrap();
+    let stage = "---\nid: integration-verify\nname: Verify\n---\n";
+    std::fs::write(work.join("stages/00-integration-verify.md"), stage).unwrap();
+    let tag = SPEC_CONFORMANCE_PREFIX;
+    for (kind, text) in [
+        (
+            MemoryEntryType::Decision,
+            format!("{tag} s_01.md: corrected"),
+        ),
+        (MemoryEntryType::Question, format!("{tag} s_02.md: gap")),
+    ] {
+        let entry = MemoryEntry::new(kind, text);
+        append_entry(&work, "integration-verify", &entry).unwrap();
+    }
+    let path = generate(&work, scratch.path(), scratch.path(), false).unwrap();
+    std::fs::read_to_string(path).unwrap()
+}
+
+#[test]
+fn a_question_in_both_sections_is_listed_once_as_a_candidate() {
+    let temp = tempfile::tempdir().unwrap();
+    let text = generated_spec_review();
+    // The generator strips the prefix under Spec Conformance only, so the question is in both.
+    assert!(text.contains("): spec-conformance: s_02.md: gap"), "{text}");
+    let built = checklist(temp.path(), &[("doc/plans/REVIEW-PLAN-one.md", &text)]).built;
+
+    let spec: Vec<_> = built.spec.iter().map(|s| s.text.as_str()).collect();
+    assert_eq!(spec, ["s_01.md: corrected"]);
+    assert_eq!(candidate_texts(&built), ["spec-conformance: s_02.md: gap"]);
 }
