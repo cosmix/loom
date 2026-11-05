@@ -8,7 +8,6 @@ import { authoringAtom, checklistAtom, stoppingAtom } from "@/plan/state/atoms";
 import composerCss from "./chat-composer.css?raw";
 import { ComposerArea } from "./composer";
 import { snapshotAtom, unconfirmedSendsAtom } from "./model";
-import { StopControl } from "./stop-control";
 import {
   box,
   installComposerLifecycle,
@@ -317,17 +316,6 @@ it("composerBlock reason disables send", () => {
   type();
   fireEvent.click(send());
   expect(h.sent).toEqual([]);
-});
-it("stop confirm prop asks first", () => {
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-  const h = setup("working");
-  mount(h.store, <StopControl confirm="Stop this turn?" />);
-  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-  expect(confirm).toHaveBeenCalledWith("Stop this turn?");
-  expect(h.sent).toEqual([]);
-  confirm.mockReturnValue(true);
-  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-  expect(h.sent[0].command).toBe("interrupt");
 });
 const starting = (store: ReturnType<typeof setup>["store"]) =>
   act(() =>

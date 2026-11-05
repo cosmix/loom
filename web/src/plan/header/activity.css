@@ -48,14 +48,6 @@
     color: var(--tone-completed);
   }
 
-  .activity-pill[data-tone="executing"] .activity-glyph {
-    color: var(--tone-executing);
-  }
-
-  .activity-pill[data-tone="ring"] .activity-glyph {
-    color: var(--ring);
-  }
-
   .activity-pill[data-tone="completed"] .activity-glyph {
     color: var(--tone-completed);
   }

@@ -1,11 +1,12 @@
 import type { JSX, ReactNode } from "react";
 
-import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
+import { RoundelGlyph } from "@/plan/ui/roundel-glyph";
 
 /**
- * A text-only busy message led by the roundel (`ui/DESIGN.md`, Status). The roundel sits in an
- * `aria-hidden` wrapper, so the words are the only announcement: the caller keeps its own role
- * (`role="status"`, a notice, a row) around this. The disc is sized from the text it leads.
+ * A text-only busy message led by the roundel (`ui/DESIGN.md`, Status). The roundel is the
+ * decorative glyph (`aria-hidden`), so the words are the only announcement: the caller keeps its
+ * own role (`role="status"`, a notice, a row) around this. The disc is sized from the text it
+ * leads.
  */
 export function BusyText({
   children,
@@ -16,9 +17,8 @@ export function BusyText({
 }): JSX.Element {
   return (
     <span className={`plan-busy-text${className ? ` ${className}` : ""}`}>
-      <span className="plan-busy-text__roundel" aria-hidden="true">
-        <BusyRoundel busy size="0.9em" busyLabel="" idleLabel="" />
-      </span>
+      {/* The disc fills 86% of its box (roundel-glyph.css), so this box draws it at 0.9em. */}
+      <RoundelGlyph className="plan-busy-text__roundel" size="1.05em" />
       {children}
     </span>
   );

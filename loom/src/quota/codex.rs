@@ -101,7 +101,7 @@ fn spawn_app_server(mut command: Command) -> Result<(Child, ChildStdin, ChildStd
         command.process_group(0);
     }
 
-    let mut child = spawn_retrying_text_busy(&mut command).with_context(|| {
+    let mut child = crate::process::spawn_retrying_text_busy(&mut command).with_context(|| {
         format!(
             "failed to spawn {}",
             command.get_program().to_string_lossy()
@@ -173,27 +173,6 @@ fn poll_command(
     drop(receiver);
     teardown(child, stdin, reader_handle);
     outcome
-}
-
-/// `Command::spawn` briefly, and rarely, fails with `ETXTBSY` ("text file
-/// busy") when the target binary is still settling right after being
-/// written - e.g. a `codex` self-update in progress, or (in tests) a fake
-/// script written moments earlier. A handful of short retries clears it
-/// without treating it as a real spawn failure.
-fn spawn_retrying_text_busy(command: &mut Command) -> std::io::Result<Child> {
-    const MAX_ATTEMPTS: u32 = 5;
-    const RETRY_DELAY: Duration = Duration::from_millis(20);
-
-    for attempt in 1..=MAX_ATTEMPTS {
-        match command.spawn() {
-            Ok(child) => return Ok(child),
-            Err(e) if attempt < MAX_ATTEMPTS && e.raw_os_error() == Some(libc::ETXTBSY) => {
-                thread::sleep(RETRY_DELAY);
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    unreachable!("loop always returns on its final attempt")
 }
 
 fn write_requests(stdin: &mut ChildStdin) -> std::io::Result<()> {

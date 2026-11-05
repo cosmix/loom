@@ -1,10 +1,10 @@
 // J1 (every spine row opens real content) and J2 (a summary opens its passages and its source)
-// of web/scripts/plan-journeys.mjs. J1 starts from the feature's landing, the vision.
+// of web/scripts/plan-journeys.mjs. J1 starts from the feature's landing, the product overview
+// (feat-planner has a product spec; web/src/plan/feature/landing.ts).
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
-  Pending,
   ROOT,
   SECTION_5,
   SPEC_DIR,
@@ -49,34 +49,33 @@ export async function j1(env, width) {
   const shot = shooter(outDir, `J1-${width}`);
   await visit(page, origin, ROOT);
   try {
-    await page.waitForURL((u) => u.pathname === `${ROOT}/vision`);
+    await page.waitForURL((u) => u.pathname === `${ROOT}/product`);
   } catch {
-    throw new Error(`${ROOT} landed on ${pathOf(page.url())}, not ${ROOT}/vision`);
+    throw new Error(`${ROOT} landed on ${pathOf(page.url())}, not ${ROOT}/product`);
   }
+  // The first row (Vision) is not the landing. Narrow, openRow does not wait for React to commit
+  // the new route, so the first row must differ from the landing's text to count as opened.
+  await pageState(page, `${ROOT}/product`, "");
+  let prev = await mainText(page);
   const nav = await openSpine(page);
   await expandGroups(nav);
   const hrefs = await spineHrefs(nav);
   if (hrefs.length === 0) throw new Error("the spine has no rows");
   await shot(page, "spine");
   const fails = [];
-  const later = [];
-  let prev = "";
   for (const href of hrefs) {
     try {
       await openRow(page, href, width >= 1024);
-      const state = await pageState(page, href, prev);
+      await pageState(page, href, prev);
       prev = await mainText(page);
-      if (state === "pending") later.push(pathOf(href));
-      else env.routes.add(href);
+      env.routes.add(href);
       await shot(page, `row-${pathOf(href).split("/").slice(3).join("-") || "root"}`);
     } catch (error) {
       fails.push(`${width}px ${error.message.split("\n")[0]}`);
     }
   }
   if (fails.length) throw new Error(fails.join(" | "));
-  const opened = `${hrefs.length - later.length} of ${hrefs.length} rows open real content at ${width}px`;
-  if (later.length) throw new Pending(`${later.join(", ")} page not built yet (${opened})`);
-  return opened;
+  return `${hrefs.length} of ${hrefs.length} rows open real content at ${width}px`;
 }
 
 // J2 --------------------------------------------------------------------------------------------

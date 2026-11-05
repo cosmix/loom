@@ -10,10 +10,7 @@ import {
   startOwnerAtom,
   type SessionHome,
 } from "./session-home";
-import { chatSheetOpenAtom } from "./sheet-state";
-
-/** The width at which the panel is a side rail; below it the panel is the sheet. */
-export const DESKTOP = "(min-width: 1280px)";
+import { revealChat } from "./sheet-state";
 const END_FIRST_CONFIRM =
   "End the current chat first? It will write its open questions into the documents before it stops.";
 
@@ -101,10 +98,7 @@ export function createOfferStarter(store: Store): {
   dispose: () => void;
 } {
   let request: AbortController | null = null;
-  const reveal = () => {
-    // The side panel is always shown; only the sheet needs opening.
-    if (!window.matchMedia(DESKTOP).matches) store.set(chatSheetOpenAtom, true);
-  };
+  const reveal = () => revealChat(store);
   const start = async (offer: string, feature?: string): Promise<void> => {
     if (request) return;
     // The end wait can last minutes: the chat belongs to the screen the offer was chosen on.

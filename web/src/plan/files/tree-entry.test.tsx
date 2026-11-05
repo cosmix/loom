@@ -67,7 +67,9 @@ it.each([
   expect(mark?.classList.contains("size-5")).toBe(true);
   expect(mark?.getAttribute("aria-hidden")).toBe("true");
   expect(mark?.getAttribute("style")).toContain("var(--doc-5)");
-  expect(screen.getByText(state).querySelector(`.lucide-${glyph}`)).not.toBeNull();
+  // A running plan draws the activity roundel, not an icon.
+  const stateMark = glyph === "refresh-cw" ? ".aurora-roundel" : `.lucide-${glyph}`;
+  expect(screen.getByText(state).querySelector(stateMark)).not.toBeNull();
   expect(container.querySelector(".lucide-file-text")).toBeNull();
 });
 

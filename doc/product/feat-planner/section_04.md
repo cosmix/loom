@@ -26,12 +26,13 @@ doc/loom/summaries/
   overview/<f>/engineering.md      one engineering overview per feature with a metaplan
   <f>/product/vision.md            one per feature's vision
   <f>/product/section_01.md         one per feature's product section, named after the section file
+  <f>/metaplan/<stem>.md           one per metaplan file whose stem is a valid summary stem
   plans/<slug>.md                  one per eligible plan, named by the plan's slug
 ```
 
 A summary's **id** is its path under `doc/loom/summaries/` without `.md`:
 `overview/<f>/product`, `overview/<f>/engineering`, `<f>/product/vision`,
-`<f>/product/section_<nn>`, or `plans/<slug>`.
+`<f>/product/section_<nn>`, `<f>/metaplan/<stem>`, or `plans/<slug>`.
 Here `<f>` is a feature name (section 03), and `<nn>` has at least two digits. `plans` and
 `overview` are reserved feature names, so plan and overview ids cannot collide with a feature's
 section ids. For example: `overview/feat-planner/product`, `feat-planner/product/section_01`,
@@ -47,7 +48,9 @@ Which documents get a summary:
 | A plan directly in the standalone home, `doc/plans/`, in any lifecycle state                    | `plans/<slug>`             |
 | A plan in `doc/plans/<f>/archive/` named by a metaplan of feature `<f>`                         | `plans/<slug>`             |
 | An archived plan no metaplan of its feature names, including every plan in `doc/plans/archive/` | none                       |
-| Metaplans, briefs, knowledge                                                                    | none                       |
+| `doc/plans/<f>/<stem>.md`, a metaplan of feature `<f>` whose stem matches `[a-z0-9][a-z0-9-]*`  | `<f>/metaplan/<stem>`      |
+| Any other metaplan file of `<f>` (for example `metaplan_02.md`), whose route shows its source   | none                       |
+| A misplaced top-level `doc/plans/index.md`, briefs, knowledge                                   | none                       |
 
 Plan summaries are keyed by slug, unique repository-wide, so lifecycle renames and moves between
 homes keep the same id; a move into an archive keeps the summary only while the plan is eligible.
@@ -56,8 +59,12 @@ can hold dozens of them and summarizing them would cost more than any reader gai
 readable in file mode. Standalone plans have no metaplan, so their archived plans get no summary.
 The vision's summary is built and rebuilt like a section summary. It is not a member of the
 product overview and not listed among the documents outside it: the product overview cites the
-vision's heading sections directly. Metaplans have no document summary of their own: their feature's engineering
-overview cites them directly (below).
+vision's heading sections directly. Each metaplan of a feature whose file stem matches
+`[a-z0-9][a-z0-9-]*` has a document summary with id
+`<feature>/metaplan/<stem>`, stored at `doc/loom/summaries/<feature>/metaplan/<stem>.md`; `<stem>`
+is the file stem. A metaplan file with any other stem has no summary. Its sentences cite that metaplan's passages
+only. Like the vision summary it is a member of neither overview: the engineering overview
+still cites the metaplans' raw passages and the plan summaries (below).
 
 **Overview scope.** Each feature has its own scope. Its product overview covers its vision and
 the product sections that vision's table lists (section 01); its engineering overview covers
@@ -381,10 +388,9 @@ against the subscription's quota.
   starting figure while the log is empty). It is labelled an estimate.
 - **Showing.** Each chat turn lists the summaries it rebuilt with their tokens (section 08). A
   summary panel shows the running rebuild, the cost of the last rebuild, and totals for today
-  and the last 7 days, next to the five-hour and weekly quota meters. `loom plan` polls quota
-  through the account-shared poller (`loom/src/quota/shared.rs:130`), which adds no requests
-  when a daemon already polls for the same account, and renders it with the dashboard's
-  `web/src/components/quota-meters.tsx`.
+  and the last 7 days. The five-hour and weekly limits show in the footer only, not in the panel.
+  `loom plan` polls quota through the account-shared poller (`loom/src/quota/shared.rs:130`),
+  which adds no requests when a daemon already polls for the same account.
 
 ## In read-only mode
 

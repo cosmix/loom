@@ -1,0 +1,24 @@
+@layer components {
+  /* The roundel in a glyph's place (`ui/roundel-glyph.tsx`). A lucide glyph's strokes reach about
+     86% of its box, so the disc keeps the weight of the glyphs beside it. The disc's own
+     stylesheet turns it, rests it upright when idle and stops the spin under reduced motion. */
+  .plan-roundel-glyph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    vertical-align: middle;
+  }
+
+  /* The planner's 14px glyph box, at zero specificity so any class that sizes the glyph (`size-4`,
+     `.activity-glyph`) wins the way it would over an icon; the `size` prop sets it inline. */
+  :where(.plan-roundel-glyph) {
+    width: 14px;
+    height: 14px;
+  }
+
+  .plan-roundel-glyph > .aurora-roundel-wrap {
+    width: 86%;
+    height: 86%;
+  }
+}

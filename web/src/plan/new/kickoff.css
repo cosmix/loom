@@ -202,41 +202,12 @@
   text-align: right;
 }
 
+/* The attached documents are the chat composer's rows (`.chat-chip-list`, chat-chips.css), at the
+ * chat's sizes; the list only drops its own margins and marker. */
 [data-loom-plan] .kickoff-attachments {
-  display: grid;
-  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: var(--type-ui);
-}
-
-[data-loom-plan] .kickoff-attachment {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-[data-loom-plan] .kickoff-attachment > span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-[data-loom-plan] .kickoff-attachment__remove {
-  flex-shrink: 0;
-  color: var(--muted-foreground);
-  font-size: var(--type-ui);
-  text-decoration: underline;
-}
-
-[data-loom-plan] .kickoff-attachment__remove:hover {
-  color: var(--foreground);
-}
-
-[data-loom-plan] .kickoff-attachment__remove:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
 }
 
 [data-loom-plan] .kickoff-error {

@@ -1,10 +1,10 @@
 import { useAtomValue } from "jotai/react";
 import type { ReactNode } from "react";
 
-import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 import { useNow } from "@/components/hooks/use-now";
 import { formatElapsed } from "@/lib/format";
 import type { Item, SessionView, Turn } from "@/plan/api/schema-chat";
+import { RoundelGlyph } from "@/plan/ui/roundel-glyph";
 import { BUSY_STATES } from "./chat-state-glyph";
 import { pendingPermissionsAtom, turnsAtom } from "./model";
 import { panelSessionAtom } from "./session-home";
@@ -74,14 +74,14 @@ function announcedElsewhere(session: SessionView | null): boolean {
  * The state as a glyph: the roundel for every busy state (starting, working, ending), the warning
  * mark for a decision, the quiet LED for a chat waiting or none. Each is hidden from assistive
  * technology; the words beside it carry the state. Exported so the head can draw the same glyph
- * beside its state word.
+ * beside its state word; inside the panel the head's roundel is the one that turns, and the
+ * row's copy is hidden under it (chat-surface.css).
  */
 export function StateGlyph({ state }: { state: SessionView["state"] | undefined }) {
   if (state !== undefined && BUSY_STATES.has(state)) {
     return (
-      <span aria-hidden="true" className="chat-state-glyph">
-        <BusyRoundel size={14} busy busyLabel="" idleLabel="" />
-      </span>
+      // The disc is 86% of the glyph box, so this box draws it at 14px.
+      <RoundelGlyph className="chat-state-glyph" size="calc(14px / 0.86)" />
     );
   }
   if (state === "permission") {
@@ -137,6 +137,8 @@ function Failure({ session, now }: { session: SessionView; now: number }) {
 /**
  * `hideWords` hides the state words from browse mode (the sr-only region announces them);
  * `detail` (elapsed time, newest tool, subagents) is not announced there, so it stays exposed.
+ * The detail stays one text run (its test reads it whole); while working, chat-surface.css keeps
+ * it on one line and cuts the tool's summary with an ellipsis, so the row's `title` holds all of it.
  */
 function StateRow(props: {
   session: SessionView | null;
@@ -146,12 +148,12 @@ function StateRow(props: {
 }) {
   const { session, text, detail, hideWords } = props;
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="chat-state-row flex items-center gap-2">
       <StateGlyph state={session?.state} />
       {session?.state === "starting" ? (
         <StartingBrief session={session} />
       ) : (
-        <span>
+        <span className="chat-state-text" title={detail || undefined}>
           <span className="chat-state-words" aria-hidden={hideWords || undefined}>
             <Untrusted text={text} />
           </span>

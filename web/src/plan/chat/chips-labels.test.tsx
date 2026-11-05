@@ -2,6 +2,7 @@ import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { rememberPreview } from "@/plan/attachments/intake";
+import chipsCss from "./chat-chips.css?raw";
 import { chipLabel, chipSource } from "./chips";
 import { add, baseAttachment, baseTurn, mount, sent, setup, source } from "./chips-test-kit";
 import { draftAtom } from "./drafts";
@@ -187,4 +188,27 @@ it("a sent file chip shows the name and size and fetches no section status", () 
   expect(tray.textContent).toContain("2.0 KiB");
   expect(screen.queryByRole("button", { name: /remove/i })).toBeNull();
   expect(request).not.toHaveBeenCalled();
+});
+
+it("the hovered passage carries the chip's source in its attribute, outside its text", () => {
+  const store = setup();
+  mount(store);
+  add(store, source());
+  const chip = screen.getByRole("button", { name: "“The entire selected passage”" });
+  fireEvent.mouseEnter(chip);
+  const passage = screen.getByRole("tooltip");
+  expect(passage.getAttribute("data-source")).toBe("section_02.md › Port");
+  expect(passage.textContent).toBe("The entire selected passage");
+});
+
+it("the source gives way before the label (chat-chips.css)", () => {
+  const rule = (selector: string) => {
+    const start = chipsCss.indexOf(`${selector} {`);
+    expect(start, selector).toBeGreaterThanOrEqual(0);
+    return chipsCss.slice(start, chipsCss.indexOf("}", start));
+  };
+  expect(rule(".chat-chip-source")).toContain("flex-shrink: 100");
+  const label = rule(".chat-chip-open,\n.chat-chip-label");
+  expect(label).toContain("flex: 0 1 auto");
+  expect(label).toContain("min-width: 8ch");
 });

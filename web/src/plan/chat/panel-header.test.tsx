@@ -65,9 +65,9 @@ it.each([true, false])(
 );
 
 const headerStates: Array<[SessionView["state"], string | null]> = [
-  ["starting", "drafting"],
-  ["working", "drafting"],
-  ["ending", "drafting"],
+  ["starting", "led"],
+  ["working", "led"],
+  ["ending", "led"],
   ["idle", "waiting"],
   ["permission", null],
   ["ended", null],
@@ -100,7 +100,11 @@ it.each(headerStates)("run header uses the expected glyph while %s", (state, kin
   );
   const header = container.querySelector<HTMLElement>(".chat-run-header")!;
   const glyph = header.querySelector(".activity-glyph");
-  if (kind) {
+  if (kind === "led") {
+    expect(header.firstElementChild?.classList.contains("chat-led")).toBe(true);
+    expect(header.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
+    expect(glyph).toBeNull();
+  } else if (kind) {
     expect(glyph?.getAttribute("data-kind")).toBe(kind);
     expect(glyph?.getAttribute("aria-hidden")).toBe("true");
     expect(header.firstElementChild).toBe(glyph);

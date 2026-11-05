@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai/react";
-import { Clock, FlaskConical, Gauge, Layers } from "lucide-react";
+import { Clock, Gauge, Layers } from "lucide-react";
 
 import { pageHref, summaryKey } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
@@ -83,18 +83,25 @@ function today(): string {
   ].join("-");
 }
 
+/** The words and glyph of a plan's pressure record, shared by the page chip and the spine badge. */
+export const PRESSURE_TESTED = "Pressure-tested";
+export const NOT_PRESSURE_TESTED = "Not pressure-tested";
+export const pressureIcon = (date: string | null) =>
+  date === null ? Gauge : OTHER_GLYPHS.pressureTested;
+
 /** "Not pressure-tested" (warn), "Pressure-tested <date>" (ok), or the live run (go). */
 export function pressureChip(date: string | null, active: boolean): HeadingChip {
+  const Icon = pressureIcon(date);
   if (active) {
     return { key: "pressure", label: "Being pressure-tested", icon: <Gauge />, tone: "accent" };
   }
   if (date === null) {
-    return { key: "pressure", label: "Not pressure-tested", icon: <Gauge />, tone: "warning" };
+    return { key: "pressure", label: NOT_PRESSURE_TESTED, icon: <Icon />, tone: "warning" };
   }
   return {
     key: "pressure",
-    label: `Pressure-tested ${date === today() ? "today" : date}`,
-    icon: <FlaskConical />,
+    label: `${PRESSURE_TESTED} ${date === today() ? "today" : date}`,
+    icon: <Icon />,
     tone: "ok",
   };
 }

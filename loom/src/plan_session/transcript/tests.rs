@@ -297,6 +297,23 @@ fn an_interrupt_after_a_stopped_notice_adds_no_second_notice() {
     assert_eq!(only_turn(&mapper).items, items);
 }
 
+/// The Stopped notice only suppresses "Interrupted" for the user item it follows: a user item the
+/// server adds later in the same turn leaves the interrupt unaccounted for, so it adds its notice.
+#[test]
+fn an_interrupt_after_a_later_user_item_still_adds_its_notice() {
+    let mut mapper = mapper();
+    let lines = lines("interrupt.jsonl");
+    let (interrupt, before) = lines.split_last().expect("fixture lines");
+    drive(&mut mapper, before);
+    mapper.add_server_item(notice("stopped-1", NoticeKind::Stopped, "Stopped"));
+    mapper.add_server_item(user("s-2", "Try again.", None));
+    mapper.ingest_main(interrupt);
+
+    let last = mapper.turns().last().expect("a turn");
+    let interrupted = notice("n-u3", NoticeKind::Interrupted, "Interrupted");
+    assert!(last.items.contains(&interrupted), "{:?}", last.items);
+}
+
 #[test]
 fn compaction_and_api_errors_become_notices() {
     let mut mapper = mapper();

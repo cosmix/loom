@@ -68,12 +68,12 @@ fn stdout_keeps_draining_after_startup() {
         done.send(()).unwrap();
     });
     assert_eq!(
-        startup_url(&receiver, Instant::now() + Duration::from_secs(3)).unwrap(),
+        startup_url(&receiver, Instant::now() + STARTUP_TIMEOUT).unwrap(),
         URL
     );
     drop(receiver);
 
-    finished.recv_timeout(Duration::from_secs(3)).unwrap();
+    finished.recv_timeout(STARTUP_TIMEOUT).unwrap();
     producer.join().unwrap();
     reader.join().unwrap();
 }
@@ -98,7 +98,7 @@ fn startup_url_reads_a_concrete_remote_bind_across_lines() {
     }
 
     assert_eq!(
-        startup_url(&receiver, Instant::now() + Duration::from_secs(3)).unwrap(),
+        startup_url(&receiver, Instant::now() + STARTUP_TIMEOUT).unwrap(),
         REMOTE_URL
     );
 }
@@ -117,7 +117,7 @@ fn child_bound_to_one_remote_address_yields_its_bootstrap_url() {
         &bin,
         "192.168.1.5".parse().unwrap(),
         true,
-        Duration::from_secs(3),
+        STARTUP_TIMEOUT,
     )
     .unwrap();
 

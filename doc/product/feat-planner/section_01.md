@@ -232,17 +232,17 @@ Pace belongs to the session request; it adds no stored workflow state or approva
 
 ## Where a feature opens
 
-Opening `/f/<feature>` redirects by what the feature's checklist finds:
+Opening `/f/<feature>` redirects by what exists for the feature:
 
-| State                                            | Opens on      |
-| ------------------------------------------------ | ------------- |
-| No vision and no metaplan                        | `vision`      |
-| A vision exists, a listed section is missing     | `vision`      |
-| A vision exists, every listed section is written | `product`     |
-| No vision, a metaplan exists                     | `engineering` |
+| State                                | Opens on      |
+| ------------------------------------ | ------------- |
+| A vision exists                      | `product`     |
+| No vision, a metaplan exists         | `engineering` |
+| No vision and no metaplan            | `vision`      |
 
-A finished feature (every plan done) whose spec is written opens on the product overview, where
-its reading starts. The pages behind these routes are section 05's table.
+A feature with a vision opens on the product overview, where its reading starts, whether or not
+every listed section is written. The `vision` page of a feature with no vision offers to start
+one. The pages behind these routes are section 05's table.
 
 ## Skipped and reordered steps
 
