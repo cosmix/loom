@@ -2,7 +2,7 @@
 //
 // Usage: node web/scripts/plan-screens.mjs [--themes=<id>,<id>] <token-url> <out-dir> <route>...
 //
-// Each route is shot at 1440x900 and 390x844, in Ledger (light) and Aubergine (dark) unless
+// Each route is shot at 1440x900 and 390x844, in Ledger (light) and Walnut (dark) unless
 // --themes names others from THEMES, full page, to <out-dir>/<route-slug>-<width>-<theme>.png.
 // Exit 1 on any console error, page error, HTTP status >= 400 on a route, or a navigation that
 // never renders #root.
@@ -20,12 +20,11 @@ const VIEWPORTS = [
 // Same ids and variants as the options in web/src/components/theme-picker.tsx; the storage keys in
 // themeInitScript match web/src/aurora-ui/shared/atoms/theme.ts (jotai atomWithStorage stores JSON).
 const THEMES = {
-  ledger: { name: "ledger", scheme: "light", dark: "aubergine" },
-  aubergine: { name: "aubergine", scheme: "dark", dark: "aubergine" },
-  pacific: { name: "pacific", scheme: "dark", dark: "blue" },
+  ledger: { name: "ledger", scheme: "light", dark: "walnut" },
+  walnut: { name: "walnut", scheme: "dark", dark: "walnut" },
   graphite: { name: "graphite", scheme: "dark", dark: "gray" },
 };
-const DEFAULT_THEMES = ["ledger", "aubergine"];
+const DEFAULT_THEMES = ["ledger", "walnut"];
 
 const ROOT_TIMEOUT_MS = 15_000;
 const SETTLE_MS = 400;
