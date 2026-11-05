@@ -25,7 +25,7 @@ import { messageProblem } from "./message-problem";
 import { sessionAtom, unconfirmedSendsAtom, type UnconfirmedSend } from "./model";
 import { holdNoteSeenAtom } from "./prefs";
 import { isActiveSession, sessionHereAtom, startOwnerAtom } from "./session-home";
-import { chatSheetOpenAtom } from "./sheet-state";
+import { revealChat } from "./sheet-state";
 
 /** Set by the `c` shortcut after it opens the panel; the mounted composer focuses on it. */
 export const focusComposerAtom = atom(false);
@@ -65,7 +65,7 @@ export function useComposerShortcut(enabled = true): void {
       // A session that belongs elsewhere leaves the panel with no composer to focus.
       if (!store.get(sessionHereAtom)) return;
       event.preventDefault();
-      store.set(chatSheetOpenAtom, true);
+      revealChat(store);
       store.set(focusComposerAtom, true);
     };
     document.addEventListener("keydown", onKey);

@@ -11,9 +11,8 @@ import { authoringAtom, connectionAtom, serverInfoAtom, youAtom } from "@/plan/s
 import { endChat, startChat } from "./commands";
 import { snapshotAtom } from "./model";
 import { offerErrorAtom } from "./offer-error";
-import { DESKTOP } from "./offer-flow";
 import { ChatPanel, ChatRegistrations } from "./panel";
-import { chatSheetOpenAtom } from "./sheet-state";
+import { chatSheetOpenAtom, DESKTOP } from "./sheet-state";
 
 vi.mock("./transcript", () => ({ Transcript: () => <div role="log">Transcript</div> }));
 vi.mock("./composer", () => ({ ComposerArea: () => <div>Composer</div> }));

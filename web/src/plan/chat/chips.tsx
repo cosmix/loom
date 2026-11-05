@@ -55,9 +55,19 @@ function useOpenChip() {
   };
 }
 
-function ChipTooltip({ id, quote }: { id: string; quote: string }) {
+/**
+ * The hovered chip's full quote. Its source rides in `data-source`, drawn under the quote by
+ * chat-chips.css: the row may have no room for the source, and the tooltip's text stays the quote
+ * alone (its test reads it whole).
+ */
+function ChipTooltip({ id, quote, source }: { id: string; quote: string; source: string | null }) {
   return (
-    <div id={id} role="tooltip" className="chat-passage">
+    <div
+      id={id}
+      role="tooltip"
+      className="chat-passage"
+      data-source={source === null ? undefined : visibleControls(source)}
+    >
       <Untrusted text={quote} />
     </div>
   );
@@ -71,6 +81,17 @@ type ChipProps = {
   onOpen: (() => void) | null;
   onRemove?: () => void;
   children?: ReactNode;
+};
+
+type ChipNameProps = {
+  /** The label's words (chip-label.ts) and the same with control characters made visible. */
+  text: string;
+  label: string;
+  source: string | null;
+  onOpen: (() => void) | null;
+  preview: boolean;
+  previewId: string;
+  onPreview: (on: boolean) => void;
 };
 
 /**
@@ -91,21 +112,14 @@ function ChipLabelText({ label, quoted }: { label: string; quoted: boolean }) {
 }
 
 /**
- * One row: the document's mark, the label (a quoted start, a file name, a place), its source as
- * secondary text on the same line, then what the row knows (locked, changed) and the remove at
- * the end. The label logic is chip-label.ts; this is its presentation only.
+ * The row's name and, after it, its source: two items of the row's line (chat-chips.css), the
+ * name keeping its width first and the source giving way before it.
  */
-function Chip({ attachment, quote, changed, locked, onOpen, onRemove, children }: ChipProps) {
-  const text = chipLabel(attachment);
-  const label = visibleControls(text);
-  const source = chipSource(attachment);
+function ChipName({ text, label, source, onOpen, preview, previewId, onPreview }: ChipNameProps) {
   // A chip with a source is a selection, and a selection's label is its quote.
   const quoted = source !== null;
-  const [preview, setPreview] = useState(false);
-  const previewId = useId();
   return (
-    <div className="chat-chip">
-      <ChipMark attachment={attachment} />
+    <>
       {onOpen === null ? (
         <span className="chat-chip-label" title={label} data-quoted={quoted || undefined}>
           <ChipLabelText label={text} quoted={quoted} />
@@ -118,10 +132,10 @@ function Chip({ attachment, quote, changed, locked, onOpen, onRemove, children }
           aria-describedby={preview ? previewId : undefined}
           data-quoted={quoted || undefined}
           onClick={onOpen}
-          onMouseEnter={() => setPreview(true)}
-          onMouseLeave={() => setPreview(false)}
-          onFocus={() => setPreview(true)}
-          onBlur={() => setPreview(false)}
+          onMouseEnter={() => onPreview(true)}
+          onMouseLeave={() => onPreview(false)}
+          onFocus={() => onPreview(true)}
+          onBlur={() => onPreview(false)}
         >
           <ChipLabelText label={text} quoted={quoted} />
         </button>
@@ -131,6 +145,33 @@ function Chip({ attachment, quote, changed, locked, onOpen, onRemove, children }
           <Untrusted text={source} />
         </span>
       )}
+    </>
+  );
+}
+
+/**
+ * One row: the document's mark, the label (a quoted start, a file name, a place), its source as
+ * secondary text on the same line, then what the row knows (locked, changed) and the remove at
+ * the end. The label logic is chip-label.ts; this is its presentation only.
+ */
+function Chip({ attachment, quote, changed, locked, onOpen, onRemove, children }: ChipProps) {
+  const text = chipLabel(attachment);
+  const label = visibleControls(text);
+  const source = chipSource(attachment);
+  const [preview, setPreview] = useState(false);
+  const previewId = useId();
+  return (
+    <div className="chat-chip">
+      <ChipMark attachment={attachment} />
+      <ChipName
+        text={text}
+        label={label}
+        source={source}
+        onOpen={onOpen}
+        preview={preview}
+        previewId={previewId}
+        onPreview={setPreview}
+      />
       {locked && (
         <span role="img" aria-label="Locked document" className="chat-chip-lock">
           <ReadOnlyGlyph aria-hidden="true" className="size-3" />
@@ -139,7 +180,7 @@ function Chip({ attachment, quote, changed, locked, onOpen, onRemove, children }
       {changed && <span className="chat-chip-note">△ changed</span>}
       {children}
       {onRemove && <ChipRemove label={label} onRemove={onRemove} />}
-      {preview && <ChipTooltip id={previewId} quote={quote} />}
+      {preview && <ChipTooltip id={previewId} quote={quote} source={source} />}
     </div>
   );
 }
