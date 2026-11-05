@@ -27,7 +27,7 @@
   background: transparent;
   color: var(--muted-foreground);
   font-family: var(--font-sans);
-  font-size: var(--type-fine);
+  font-size: var(--type-ui);
   font-weight: 500;
   line-height: 1;
   cursor: pointer;
@@ -84,9 +84,21 @@
   animation: kickoff-pop 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* The listbox is what has focus (its options are `aria-activedescendant` targets, never focused
+ * themselves), so its ring is drawn on the active option, inset, while the list is focused: the
+ * option Enter picks is the thing to see. With no option to carry it, the ring is the listbox's. */
 [data-loom-plan] .kickoff-picker:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+[data-loom-plan] .kickoff-picker:focus-visible:has([role="option"]) {
+  outline: none;
+}
+
+[data-loom-plan] .kickoff-picker:focus .kickoff-feature[aria-selected="true"] {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
 }
 
 [data-loom-plan] .kickoff-picker__title {
@@ -202,7 +214,7 @@
   background: var(--muted);
   color: var(--foreground);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--type-fine);
   font-weight: 500;
   line-height: 1;
 }

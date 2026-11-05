@@ -203,12 +203,61 @@ it("a dismissed picker is reopened by Pick a feature, which gives way to Change 
   expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
 });
 
-it("followUp preselects a listed feature and opens with it picked", () => {
+it("followUp opens on Follow-up with that feature picked and the picker closed", () => {
   mount({ followUp: "atlas" });
   expect(radio("Follow-up").checked).toBe(true);
   expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
   expect(screen.queryByRole("listbox", { name: PICKER })).toBeNull();
   expect(composer().placeholder.startsWith("What should change in atlas?")).toBe(true);
+});
+
+it("applies followUp once the features arrive after the first render", () => {
+  const h = harness();
+  h.mount(<EmptyKickoff followUp="atlas" />);
+  expect(radio("Feature").checked).toBe(true);
+  expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
+
+  act(() => {
+    h.store.set(projectAtom, { checklists: [atlas(), beacon()], standalone: [], moves: [] });
+  });
+
+  expect(radio("Follow-up").checked).toBe(true);
+  expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
+  expect(screen.queryByRole("listbox", { name: PICKER })).toBeNull();
+  expect(composer().placeholder.startsWith("What should change in atlas?")).toBe(true);
+});
+
+it("the foot's line is the reason while Start is blocked and the keys while it is live", () => {
+  mount();
+  const line = () => document.querySelector(".kickoff-field__reason")!;
+  expect(line().textContent).toBe("Describe what you want to build or attach a document");
+  expect(startButton().getAttribute("aria-describedby")).toBe(line().id);
+
+  fireEvent.change(composer(), { target: { value: "Something" } });
+
+  expect(line().textContent).toBe("Enter to send · Shift+Enter for a new line");
+  expect(startButton().hasAttribute("aria-describedby")).toBe(false);
+});
+
+it("Attach reads Attach another once a document is attached", () => {
+  mount();
+  fireEvent.click(screen.getByRole("button", { name: "Attach a document" }));
+
+  expect(screen.getByRole("button", { name: "Attach another" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Attach a document" })).toBeNull();
+});
+
+it("a starter is words alone; a finding pill carries its glyph", () => {
+  mount();
+  for (const name of ["A new feature for this project", "Start from a document I have"]) {
+    expect(screen.getByRole("button", { name }).querySelector("svg")).toBeNull();
+  }
+
+  fireEvent.click(radio("Follow-up"));
+  pickAtlas();
+
+  const pill = screen.getByRole("button", { name: "Settings statistics look bland" });
+  expect(pill.querySelector("svg")).toBeTruthy();
 });
 
 it("ignores a followUp feature that has no metaplan", () => {

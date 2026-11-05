@@ -1,5 +1,13 @@
 import { Check } from "lucide-react";
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FocusEvent,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import type { FollowUpFeature } from "@/plan/new/follow-up-features";
@@ -110,27 +118,29 @@ function useCloseOutside(root: RefObject<HTMLElement | null>, onClose: () => voi
   }, [root]);
 }
 
-/**
- * The feature a follow-up is for: a listbox floating under the kind switch, focused on open, one
- * option per feature with a metaplan. Arrows move without wrapping, Home and End jump, Enter or
- * Space picks, a click picks, Escape closes; the caller returns focus to what opened it.
- */
-export function FeaturePicker({
-  features,
-  onPick,
-  onClose,
-}: {
-  features: FollowUpFeature[];
+type PickerEvents = {
   onPick: (feature: string) => void;
   onClose: () => void;
-}) {
-  const id = useId();
+  onLeave: () => void;
+};
+
+/**
+ * The listbox's focus and keys: focused on open, the active option moved by arrows (no wrap), Home
+ * and End, picked by Enter or Space, closed by Escape or a press outside; focus moving on, as by
+ * Tab, leaves. A null relatedTarget is the window losing focus, not the user moving on: the list
+ * waits.
+ */
+function useListbox(features: FollowUpFeature[], { onPick, onClose, onLeave }: PickerEvents) {
   const root = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
   useEffect(() => root.current?.focus({ preventScroll: true }), []);
   useCloseOutside(root, onClose);
   const last = features.length - 1;
-  const optionId = (index: number) => `${id}-${index}`;
+  const onBlur = (event: FocusEvent<HTMLDivElement>) => {
+    const next = event.relatedTarget;
+    if (!(next instanceof Node) || root.current?.contains(next)) return;
+    onLeave();
+  };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const next = step(active, event.key, last);
     if (next !== null) {
@@ -146,50 +156,104 @@ export function FeaturePicker({
       onPick(features[active]!.name);
     }
   };
+  return { root, active, setActive, last, onBlur, onKeyDown };
+}
+
+/** One option: the mark, the slug in mono and the status, named for assistive technology. */
+function FeatureOption({
+  feature,
+  id,
+  active,
+  onActivate,
+  onPick,
+}: {
+  feature: FollowUpFeature;
+  id: string;
+  active: boolean;
+  onActivate: () => void;
+  onPick: () => void;
+}) {
+  return (
+    <li
+      id={id}
+      role="option"
+      aria-selected={active}
+      aria-label={`${visibleControls(feature.name)}, ${feature.status}`}
+      className="kickoff-feature"
+      onPointerMove={onActivate}
+      onClick={onPick}
+    >
+      <FeatureMark feature={feature} />
+      <span className="kickoff-feature__id">
+        <Untrusted text={feature.name} />
+      </span>
+      <FeatureStatus status={feature.status} />
+    </li>
+  );
+}
+
+/**
+ * The feature a follow-up is for: a listbox floating under the kind switch, focused on open, one
+ * option per feature with a metaplan. Arrows move without wrapping, Home and End jump, Enter or
+ * Space picks, a click picks, Escape and a press outside close through `onClose` (the caller
+ * returns focus to what opened it); focus moving on, as by Tab, closes through `onLeave` and stays
+ * where it went.
+ */
+export function FeaturePicker({
+  features,
+  ...events
+}: { features: FollowUpFeature[] } & PickerEvents) {
+  const id = useId();
+  const { root, active, setActive, last, onBlur, onKeyDown } = useListbox(features, events);
+  const optionId = (index: number) => `${id}-${index}`;
+  const emptyId = `${id}-empty`;
   return (
     <div
       ref={root}
       role="listbox"
       aria-label="Which feature?"
       aria-activedescendant={last >= 0 ? optionId(active) : undefined}
+      aria-describedby={last < 0 ? emptyId : undefined}
       tabIndex={0}
       className="kickoff-picker"
       onKeyDown={onKeyDown}
+      onBlur={onBlur}
     >
       <p className="kickoff-picker__title" aria-hidden="true">
         Which feature is this for?
       </p>
       {last < 0 ? (
-        <p className="kickoff-picker__empty">{EMPTY}</p>
+        <p id={emptyId} className="kickoff-picker__empty">
+          {EMPTY}
+        </p>
       ) : (
         // role="none" keeps the list out of the tree so each option sits directly in the listbox.
         <ul role="none" className="kickoff-picker__list">
           {features.map((feature, index) => (
-            <li
+            <FeatureOption
               key={feature.name}
+              feature={feature}
               id={optionId(index)}
-              role="option"
-              aria-selected={index === active}
-              aria-label={`${visibleControls(feature.name)}, ${feature.status}`}
-              className="kickoff-feature"
-              onPointerMove={() => setActive(index)}
-              onClick={() => onPick(feature.name)}
-            >
-              <FeatureMark feature={feature} />
-              <span className="kickoff-feature__id">
-                <Untrusted text={feature.name} />
-              </span>
-              <FeatureStatus status={feature.status} />
-            </li>
+              active={index === active}
+              onActivate={() => setActive(index)}
+              onPick={() => events.onPick(feature.name)}
+            />
           ))}
         </ul>
       )}
-      <p className="kickoff-picker__foot" aria-hidden="true">
-        <span>
-          <kbd>↑↓</kbd> choose · <kbd>↵</kbd> pick
-        </span>
-        <span>A done feature offers its open findings</span>
-      </p>
+      <PickerFoot />
     </div>
+  );
+}
+
+/** The keys and the one promise, unspoken: the listbox's label and options say what is needed. */
+function PickerFoot() {
+  return (
+    <p className="kickoff-picker__foot" aria-hidden="true">
+      <span>
+        <kbd>↑↓</kbd> choose · <kbd>↵</kbd> pick
+      </span>
+      <span>A done feature offers its open findings</span>
+    </p>
   );
 }
