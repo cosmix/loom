@@ -54,7 +54,7 @@
 }
 
 [data-loom-plan] .kickoff-eyebrow {
-  color: var(--accent-ink);
+  color: var(--accent-text);
 }
 
 [data-loom-plan] .kickoff-heading {
@@ -146,13 +146,16 @@
   min-width: 0;
 }
 
-/* The reason sits before Start at the end of the line; without one, Start alone takes the end. */
+/* The reason, or the keys while Start is live, is right-set before Start at the end of the line;
+   without one in the flow (narrow, below), Start alone takes the end. `:last-child` weighs as a
+   class, so the reset that follows the reason has to name it too, or Start keeps its own auto
+   margin and the reason floats mid-foot. */
 [data-loom-plan] .kickoff-field__foot > :last-child,
 [data-loom-plan] .kickoff-field__reason {
   margin-inline-start: auto;
 }
 
-[data-loom-plan] .kickoff-field__reason + * {
+[data-loom-plan] .kickoff-field__reason + :last-child {
   margin-inline-start: 0;
 }
 
@@ -190,10 +193,15 @@
   line-height: var(--leading-ui);
 }
 
+/* A starter is words alone; a finding pill leads with its 14px glyph and sits 3px closer to it. */
 [data-loom-plan] .kickoff-starter {
   gap: 7px;
   max-width: 100%;
-  padding: 0 14px 0 11px;
+  padding: 0 14px;
+}
+
+[data-loom-plan] .kickoff-starter:has(> svg) {
+  padding-inline-start: 11px;
 }
 
 /* The fieldset already dims the whole group; a starter is a Button that would dim again. */
@@ -269,7 +277,7 @@
   animation-delay: 300ms;
 }
 
-/* ---- Narrow: left-set, the switch fills the field's top, attach is a glyph ------------------ */
+/* ---- Narrow: left-set, the switch fills the field's top, the foot is its two buttons -------- */
 
 @media (max-width: 480px) {
   [data-loom-plan] .kickoff-threshold,
@@ -296,13 +304,21 @@
     padding: 0;
   }
 
-  [data-loom-plan] .kickoff-attach__word {
+  /* Attach's word and the reason line leave the flow but stay readable: the reason is still
+     Start's description, and the foot is the mockup's two buttons on one line. */
+  [data-loom-plan] .kickoff-attach__word,
+  [data-loom-plan] .kickoff-field__reason {
     position: absolute;
     width: 1px;
     height: 1px;
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+
+  /* Out of the flow, the reason pushes nothing: Start takes the end on its own. */
+  [data-loom-plan] .kickoff-field__reason + :last-child {
+    margin-inline-start: auto;
   }
 
   [data-loom-plan] .kickoff-starters {

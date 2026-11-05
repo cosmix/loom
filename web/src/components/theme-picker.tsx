@@ -242,7 +242,7 @@ export function ThemePicker({
               if (option.lightVariant !== null) setLightVariant(option.lightVariant);
               if (option.darkVariant !== null) setDarkVariant(option.darkVariant);
             }}
-            className={`flex flex-col items-start gap-1 rounded-lg border bg-card p-2 text-left transition-shadow ${
+            className={`flex flex-col items-start gap-1 rounded-lg border bg-card p-2 text-left transition-shadow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
               active ? "border-primary ring-2 ring-primary" : "border-border"
             }${optionClassName ? ` ${optionClassName}` : ""}`}
           >

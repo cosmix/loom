@@ -60,18 +60,29 @@ export function KindControl({
         </div>
         {children}
       </div>
-      {CHOICES.map((choice) => (
-        <span
-          key={choice.kind}
-          id={hintId(choice.kind)}
-          className={
-            beside === undefined && choice.kind === kind ? "kickoff-kind__hint" : "sr-only"
-          }
-        >
-          {choice.hint}
-        </span>
-      ))}
+      <KindHints kind={kind} shown={beside === undefined} hintId={hintId} />
       {beside}
     </fieldset>
   );
+}
+
+/** Every kind's hint, each the id its radio describes itself by; only the chosen one is seen. */
+function KindHints({
+  kind,
+  shown,
+  hintId,
+}: {
+  kind: WorkKind;
+  shown: boolean;
+  hintId: (choice: WorkKind) => string;
+}) {
+  return CHOICES.map((choice) => (
+    <span
+      key={choice.kind}
+      id={hintId(choice.kind)}
+      className={shown && choice.kind === kind ? "kickoff-kind__hint" : "sr-only"}
+    >
+      {choice.hint}
+    </span>
+  ));
 }
