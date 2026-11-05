@@ -33,9 +33,10 @@ export function promptsOf(kind: ViewedKind): readonly string[] {
 }
 
 /**
- * Starting points for the page being read, shown while no chat runs and the draft is empty. A
- * click puts the words in the composer and focuses it; nothing is sent, so a click costs nothing.
- * On a concluded chat it also brings the composer in place of New chat.
+ * Starting points for the page being read, shown while no chat runs and the draft is empty, as a
+ * row of suggestion pills (`.hearth-pill`, ui/hearth.css) above the composer box. A click puts
+ * the words in the composer and focuses it; nothing is sent, so a click costs nothing. On a
+ * concluded chat it also brings the composer in place of New chat.
  */
 export function ContextPrompts(): JSX.Element | null {
   const store = useStore();
@@ -58,7 +59,7 @@ export function ContextPrompts(): JSX.Element | null {
     <ul aria-label="Suggested prompts" className="chat-context-prompts">
       {prompts.map((prompt) => (
         <li key={prompt}>
-          <button type="button" className="chat-context-prompt" onClick={() => fill(prompt)}>
+          <button type="button" className="hearth-pill" onClick={() => fill(prompt)}>
             {prompt}
           </button>
         </li>

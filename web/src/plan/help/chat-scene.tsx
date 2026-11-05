@@ -237,7 +237,7 @@ export const CHAT_SCENES: readonly PlannerHelpScene[] = [
       },
       {
         target: ".chat-state-line",
-        text: "The state line says the session needs a decision and names the tool that is waiting.",
+        text: "The head's state line says the session needs your answer.",
       },
     ],
   },

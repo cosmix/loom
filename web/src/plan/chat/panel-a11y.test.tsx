@@ -23,10 +23,6 @@ vi.mock("./start-chat", () => ({
   NewChatButton: () => <button>New chat</button>,
   StartingBrief: () => <div>Starting brief</div>,
 }));
-vi.mock("./end-chat", () => ({
-  EndChatMenuItem: () => <button>End chat</button>,
-  useCanEndChat: vi.fn(() => true),
-}));
 vi.mock("./suggestion-cards", async (original) => ({
   ...(await original<typeof import("./suggestion-cards")>()),
   useSuggestionFeed: vi.fn(),
@@ -152,7 +148,7 @@ it("the resize handle announces whole rem while a drag stores fractions", () => 
   expect(separator.getAttribute("aria-valuetext")).toBe(`${Math.round(width)} rem`);
 });
 
-it("the chat menu offers End chat while a chat runs, and never New chat", () => {
+it("the head has no menu in any state: ending a chat is New chat", () => {
   const store = storeFor();
   const { session } = chatSnapshotSchema.parse(fixture);
   const show = (state: "idle" | "failed" | "ended") =>
@@ -164,15 +160,13 @@ it("the chat menu offers End chat while a chat runs, and never New chat", () => 
         previous: null,
       }),
     );
-  mount(store);
-  show("idle");
-  // The menu is a closed <details>: the item is in the document, a click away. New chat is not in it.
-  expect(screen.getByLabelText("Chat menu").parentElement?.textContent).toContain("End chat");
-  expect(screen.getByLabelText("Chat menu").parentElement?.textContent).not.toContain("New chat");
-  show("failed");
-  expect(screen.queryByText("New chat")).toBeNull();
-  show("ended");
-  expect(screen.queryByText("New chat")).toBeNull();
+  const { container } = mount(store);
+  for (const state of ["idle", "failed", "ended"] as const) {
+    show(state);
+    expect(screen.queryByLabelText("Chat menu")).toBeNull();
+    expect(container.querySelector("details")).toBeNull();
+    expect(screen.queryByRole("button", { name: "End chat", hidden: true })).toBeNull();
+  }
 });
 
 it("a stale transcript carries no coloured mark and no fade", () => {

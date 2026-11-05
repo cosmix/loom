@@ -28,16 +28,16 @@ describe("ToolRow status", () => {
     expect(screen.getByRole("button").getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("pending shows roundel", () => {
+  it("pending says Pending and draws no roundel: the pane has one, on the turn", () => {
     const { container } = render(<ToolRow item={tool({ status: "pending" })} />);
 
-    expect(container.querySelector(".aurora-roundel")?.getAttribute("data-busy")).toBe("true");
+    expect(container.querySelector(".aurora-roundel")).toBeNull();
     expect(screen.getByText("Pending")).toBeTruthy();
     expect(screen.queryByRole("status")).toBeNull();
   });
 
-  it("done shows check", () => {
-    const { container } = render(<ToolRow item={tool()} />);
+  it("done without counts shows the word and its check", () => {
+    const { container } = render(<ToolRow item={tool({ added: null, removed: null })} />);
 
     expect(screen.getByText("Done").querySelector("svg")).toBeTruthy();
     expect(container.querySelector(".aurora-roundel")).toBeNull();
@@ -57,6 +57,25 @@ describe("ToolRow status", () => {
     render(<ToolRow item={tool({ status: "not_finished" })} />);
 
     expect(screen.getByText("Not finished")).toBeTruthy();
+  });
+
+  it("a finished edit ends its row with toned counts instead of the status word", () => {
+    render(<ToolRow item={tool({ name: "Edit", summary: "doc/a.md", added: 14, removed: 6 })} />);
+
+    const row = screen.getByRole("button");
+    expect(row.getAttribute("data-status")).toBe("done");
+    expect(within(row).getByText("+14").className).toBe("chat-count-added");
+    expect(within(row).getByText("−6").className).toBe("chat-count-removed");
+    expect(screen.queryByText("Done")).toBeNull();
+  });
+
+  it("each row leads with one glyph in its column and the target in mono", () => {
+    render(<ToolRow item={tool({ name: "Bash", summary: "Run ls" })} />);
+
+    const row = screen.getByRole("button", { name: /^Bash Run ls/ });
+    expect(row.querySelectorAll(".chat-tool-glyph svg")).toHaveLength(1);
+    expect(screen.getByText("Run ls").closest(".chat-tool-target")).not.toBeNull();
+    expect(row.querySelector(".chat-tool-name, .chat-tool-chevron")).toBeNull();
   });
 });
 
@@ -139,13 +158,13 @@ describe("ToolRow agent rows", () => {
     expect(within(container).getByText("nested result")).toBeTruthy();
   });
 
-  it("running agent shows count and roundel", () => {
+  it("running agent shows its count and no roundel", () => {
     const { container } = render(
       <ToolRow item={tool({ name: "Agent", status: "pending", nested_tools: 1 })} />,
     );
 
     expect(screen.getByText("1 tool call")).toBeTruthy();
-    expect(container.querySelectorAll(".aurora-roundel[data-busy='true']")).toHaveLength(1);
+    expect(container.querySelector(".aurora-roundel")).toBeNull();
   });
 });
 

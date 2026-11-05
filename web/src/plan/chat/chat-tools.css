@@ -1,0 +1,228 @@
+/* The working card and the tool rows. Imported by chat-transcript.css; unlayered like the rest
+ * of the chat (see chat-surface.css).
+ *
+ * The fold is a card, --background on the --card panel, with the frozen label as its summary
+ * line ("Used 3 tools · edited 2 files"); open while the turn runs, folded once it ends. Each
+ * tool row is one line: the tool's glyph, its target in mono cut by an ellipsis, and at the end
+ * the counts of an edit or the status word. A pending row shimmers. Error and denied rows stay
+ * outside the card with their note, drawn by the same rules.
+ */
+
+.chat-tool-fold {
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--chat-card-corner, 14px);
+  background: var(--background);
+}
+
+.chat-tool-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  border-radius: var(--corner-control);
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+  list-style: none;
+  cursor: pointer;
+}
+
+.chat-tool-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-tool-fold > summary::before {
+  content: "›" / "";
+  display: inline-block;
+  width: 1ch;
+  flex-shrink: 0;
+  text-align: center;
+  transition: transform 120ms;
+}
+
+.chat-tool-fold[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.chat-tool-fold > summary:hover {
+  color: var(--foreground);
+}
+
+.chat-tool-fold > summary + .chat-tool-run {
+  margin-block-start: var(--space-2);
+}
+
+.chat-tool-fold > .chat-tool-run + .chat-tool-run {
+  margin-block-start: 6px;
+}
+
+.chat-tool-run {
+  min-width: 0;
+}
+
+/* Nested tools (under an Agent row) hang under their parent's details. */
+.chat-tool-nested .chat-tool-run + .chat-tool-run {
+  margin-block-start: 6px;
+}
+
+.chat-tool {
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  line-height: 1.4;
+}
+
+/* ── One row ───────────────────────────────────────────────────────────────── */
+
+.chat-tool-head {
+  position: relative;
+  display: flex;
+  width: calc(100% + 2 * var(--space-2));
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+  margin-inline: calc(-1 * var(--space-2));
+  padding: 3px var(--space-2);
+  border: 0;
+  border-radius: var(--corner-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color 120ms;
+}
+
+.chat-tool-head:hover {
+  background: var(--muted);
+}
+
+/* An 18px column holding the 14px glyph. */
+.chat-tool-glyph {
+  display: inline-flex;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-tool-target {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-tool-extra,
+.chat-tool-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.chat-tool-status[data-status="error"] svg {
+  color: var(--tone-blocked);
+}
+
+/* +N and −M: mono at the fine size; the counts take the tones, the row keeps its colour. */
+.chat-counts {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+  white-space: nowrap;
+}
+
+.chat-count-added {
+  color: var(--tone-completed);
+}
+
+.chat-count-removed {
+  color: var(--destructive);
+}
+
+/* A pending row: the target in the accent ink, and a soft shimmer sweeping across the row. The
+ * sweep is the accent at 10% through color-mix, a transparency of the one accent, not a hue. */
+.chat-tool-head[data-status="pending"] {
+  color: var(--foreground);
+}
+
+.chat-tool-head[data-status="pending"] .chat-tool-target {
+  color: var(--accent-ink);
+}
+
+@keyframes chat-shimmer {
+  from {
+    background-position: 120% 0;
+  }
+
+  to {
+    background-position: -120% 0;
+  }
+}
+
+.chat-tool-head[data-status="pending"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in oklch, var(--primary) 10%, transparent) 50%,
+    transparent 80%
+  );
+  background-size: 240% 100%;
+  animation: chat-shimmer 1.8s linear infinite;
+  pointer-events: none;
+}
+
+/* ── A row's note and details ──────────────────────────────────────────────── */
+
+.chat-tool-note {
+  margin: 0;
+  padding-block-end: var(--space-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A tool's input, patch and result: mono at the secondary size, wrapped. */
+.chat-tool-pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  line-height: var(--leading-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-tool-details {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+  padding-block: var(--space-1) var(--space-2);
+}
+
+.chat-tool-details-label {
+  margin: 0 0 var(--space-1);
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-tool-head,
+  .chat-tool-fold > summary::before {
+    transition: none;
+  }
+
+  .chat-tool-head[data-status="pending"]::after {
+    animation: none;
+    background: none;
+  }
+}

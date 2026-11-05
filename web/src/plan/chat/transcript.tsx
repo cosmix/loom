@@ -1,20 +1,31 @@
 import { useAtomValue } from "jotai";
 import { memo, useId, useLayoutEffect, useRef, useState, type JSX } from "react";
 
-import { compactTokens, fresh } from "@/lib/tokens";
 import type { EndedChat, Item, SessionView, Turn } from "@/plan/api/schema-chat";
-import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
+import { plural } from "@/plan/ui/plural";
+import { RoundelGlyph } from "@/plan/ui/roundel-glyph";
+import { closingTicks, isClosingTurn, leftBehind, userWrote } from "./closing";
+import { FailureNotice } from "./failure-notice";
 import { ItemView } from "./items";
 import { pendingPermissionsAtom, sessionAtom, snapshotAtom, turnsAtom } from "./model";
 import { PermissionCard } from "./permission-card";
 import { SessionDivider } from "./session-divider";
+import { clearedChatAtom, shownSessionAtom } from "./shown-session";
 import { groupToolRows, type ToolGroup } from "./tool-group";
 import { TurnFooter } from "./turn-footer";
 import { Untrusted } from "./visible-controls";
+import { LeftBehindCard, StartingCard, WrapUpCard } from "./wrap-up";
 import "./chat-surface.css";
 
 type ToolItem = Extract<Item, { type: "tool" }>;
-type TurnProps = { turn: Turn; sessionId: string; number: number; collapsed: boolean };
+type TurnProps = {
+  turn: Turn;
+  sessionId: string;
+  number: number;
+  collapsed: boolean;
+  /** The turn the model is working on now: it ends with the pane's one roundel. */
+  working: boolean;
+};
 
 function chronological(turns: Turn[]): Turn[] {
   return [...turns].sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at));
@@ -72,16 +83,12 @@ function FoldedTools({
   turn: Turn;
   nested: ToolItem[];
 }): JSX.Element {
+  // The working card: open while the turn runs, folded to its line once the turn ends. The
+  // reader's own toggle sticks until the turn's state changes, which is when `open` re-renders.
   return (
-    <details aria-live="off" className="chat-tool-fold">
+    <details aria-live="off" className="chat-tool-fold" open={turn.open}>
       <summary>
         <Untrusted text={group.label} />
-        {group.items.some((item) => item.type === "tool" && item.status === "pending") && (
-          <span className="chat-tool-fold-busy">
-            <ActivityGlyph kind="drafting" />
-            <span className="sr-only">Running</span>
-          </span>
-        )}
       </summary>
       {group.items.map((item) => (
         <TranscriptItem key={item.id} item={item} turn={turn} nested={nested} />
@@ -90,33 +97,17 @@ function FoldedTools({
   );
 }
 
-/**
- * Consecutive thinking markers become one marker whose duration is their sum. A marker without a
- * duration makes the sum unknown ("Thought"): counting it as 0s would understate the time.
- */
-function mergeThinking(items: Item[]): Item[] {
-  const merged: Item[] = [];
-  for (const item of items) {
-    const last = merged[merged.length - 1];
-    if (item.type === "thinking" && last?.type === "thinking") {
-      const total =
-        last.duration_ms !== null && item.duration_ms !== null
-          ? last.duration_ms + item.duration_ms
-          : null;
-      merged[merged.length - 1] = { ...last, duration_ms: total };
-    } else merged.push(item);
-  }
-  return merged;
-}
-
 function TurnItems({ turn }: { turn: Turn }): JSX.Element {
   const nested = nestedTools(turn);
   const nestedIds = new Set(nested.map((item) => item.id));
-  // A pending request is drawn once, at the end of the transcript (PendingDecision).
-  const shown = turn.items.filter(
-    (item) => !nestedIds.has(item.id) && !(item.type === "permission" && item.status === "pending"),
+  // A pending request is drawn once, at the end of the transcript (PendingDecision). Thinking
+  // markers draw nothing, so they are dropped before tool rows are grouped.
+  const items = turn.items.filter(
+    (item) =>
+      !nestedIds.has(item.id) &&
+      item.type !== "thinking" &&
+      !(item.type === "permission" && item.status === "pending"),
   );
-  const items = mergeThinking(shown);
   return (
     <div className="chat-turn-items">
       {groupToolRows(items).map((row) =>
@@ -131,8 +122,17 @@ function TurnItems({ turn }: { turn: Turn }): JSX.Element {
 }
 
 function turnLabel(turn: Turn, number: number): string {
-  const tokens = compactTokens(fresh(turn.tokens));
-  return `Turn ${number} · ${turn.changed_files.length} files changed · ${tokens} tokens`;
+  return `Turn ${number} · ${plural(turn.changed_files.length, "file")} changed`;
+}
+
+/** The one roundel of the pane while the model works; the words are for screen readers. */
+function TurnActivity(): JSX.Element {
+  return (
+    <div className="chat-turn-activity" aria-live="off">
+      <RoundelGlyph size={16} />
+      <span className="sr-only">Working</span>
+    </div>
+  );
 }
 
 /** Memoised on the turn object: a delta replaces only the turn it touches, so the rest skip. */
@@ -141,6 +141,7 @@ const TranscriptTurn = memo(function TranscriptTurn({
   sessionId,
   number,
   collapsed,
+  working,
 }: TurnProps): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
@@ -171,6 +172,7 @@ const TranscriptTurn = memo(function TranscriptTurn({
             <div aria-live="off">
               <TurnFooter turn={turn} sessionId={sessionId} />
             </div>
+            {working && <TurnActivity />}
           </>
         )}
       </div>
@@ -224,6 +226,70 @@ function useFollow(turns: Turn[], previous: unknown) {
   return { scroller, content, activity, follow, onScroll };
 }
 
+/**
+ * The closing turn is never a turn: a card while its write runs, then what the chat left behind.
+ * A closing turn still open in a chat that is not `ending` (the write was cut off) is left behind.
+ */
+function ClosingCard({
+  turn,
+  chat,
+  sessionId,
+}: {
+  turn: Turn;
+  chat: Turn[];
+  sessionId: string;
+}): JSX.Element {
+  const shown = useAtomValue(shownSessionAtom);
+  const writing = turn.open && shown?.id === sessionId && shown.state === "ending";
+  return writing ? (
+    <WrapUpCard ticks={closingTicks(turn)} />
+  ) : (
+    <LeftBehindCard summary={leftBehind(chat)} />
+  );
+}
+
+type ChatTurnsProps = {
+  turns: Turn[];
+  sessionId: string;
+  /** Turns of this conversation drawn before `turns`, and how many of all of them fold. */
+  before: number;
+  cutoff: number;
+  workingId: string | null;
+};
+
+function ChatTurns({ turns, sessionId, before, cutoff, workingId }: ChatTurnsProps): JSX.Element {
+  return (
+    <>
+      {turns.map((turn, index) =>
+        isClosingTurn(turn) ? (
+          <ClosingCard
+            key={`${sessionId}/${turn.id}`}
+            turn={turn}
+            chat={turns}
+            sessionId={sessionId}
+          />
+        ) : (
+          <TranscriptTurn
+            key={`${sessionId}/${turn.id}`}
+            turn={turn}
+            sessionId={sessionId}
+            number={index + 1}
+            collapsed={before + index < cutoff}
+            working={turn.id === workingId}
+          />
+        ),
+      )}
+    </>
+  );
+}
+
+function newestOpenId(turns: Turn[], session: SessionView | null): string | null {
+  // A pressure run's head carries that session's roundel: the pane draws one at most.
+  if (session?.state !== "working" || session.kind === "pressure") return null;
+  return turns.findLast((turn) => turn.open && !isClosingTurn(turn))?.id ?? null;
+}
+
+/** What New chat cleared is not drawn: the concluded chat's id is `clearedChatAtom`. */
 function TurnList({
   turns,
   session,
@@ -233,36 +299,61 @@ function TurnList({
   session: SessionView | null;
   previous: EndedChat | null;
 }): JSX.Element {
-  const current = chronological(turns);
-  const earlier = chronological(previous?.turns ?? []);
+  const cleared = useAtomValue(clearedChatAtom);
+  const concluded = session?.state === "ended" || session?.state === "failed";
+  const current = chronological(concluded && session?.id === cleared ? [] : turns);
+  const shownPrevious = previous && previous.session.id !== cleared ? previous : null;
+  const earlier = chronological(shownPrevious?.turns ?? []);
   const cutoff = Math.max(0, earlier.length + current.length - 20);
   return (
     <>
-      {previous && (
+      {shownPrevious && (
         <div aria-live="off" className="chat-transcript-flow">
-          {earlier.map((turn, index) => (
-            <TranscriptTurn
-              key={`${previous.session.id}/${turn.id}`}
-              turn={turn}
-              sessionId={previous.session.id}
-              number={index + 1}
-              collapsed={index < cutoff}
-            />
-          ))}
-          <SessionDivider previous={previous} next={session} />
+          <ChatTurns
+            turns={earlier}
+            sessionId={shownPrevious.session.id}
+            before={0}
+            cutoff={cutoff}
+            workingId={null}
+          />
+          <SessionDivider previous={shownPrevious} next={session} />
         </div>
       )}
-      {current.map((turn, index) => (
-        <TranscriptTurn
-          key={`${session?.id}/${turn.id}`}
-          turn={turn}
-          sessionId={session?.id ?? ""}
-          number={index + 1}
-          collapsed={earlier.length + index < cutoff}
-        />
-      ))}
+      <ChatTurns
+        turns={current}
+        sessionId={session?.id ?? ""}
+        before={earlier.length}
+        cutoff={cutoff}
+        workingId={newestOpenId(current, session)}
+      />
     </>
   );
+}
+
+/**
+ * The end of the flow, by the shown session's state: the starting brief, the wrap-up before the
+ * closing turn exists, a failure, and what an ended chat left behind when its closing write never
+ * ran or was cut off (a closing turn draws its own card).
+ */
+function ChatOutcome({ turns }: { turns: Turn[] }): JSX.Element | null {
+  const shown = useAtomValue(shownSessionAtom);
+  if (!shown) return null;
+  const closed = turns.some(isClosingTurn);
+  switch (shown.state) {
+    case "starting":
+      return <StartingCard session={shown} />;
+    case "failed":
+      return <FailureNotice session={shown} />;
+    case "ending":
+      return userWrote(turns) && !closed ? <WrapUpCard ticks={[]} /> : null;
+    case "ended": {
+      if (closed || !userWrote(turns)) return null;
+      const summary = leftBehind(turns);
+      return summary.documents.length > 0 ? <LeftBehindCard summary={summary} /> : null;
+    }
+    default:
+      return null;
+  }
 }
 
 export function Transcript(): JSX.Element {
@@ -270,6 +361,8 @@ export function Transcript(): JSX.Element {
   const session = useAtomValue(sessionAtom);
   const { previous } = useAtomValue(snapshotAtom);
   const scroll = useFollow(turns, previous);
+  // The conversation the outcome belongs to: the live session's turns, else the concluded one's.
+  const chat = chronological(session ? turns : (previous?.turns ?? []));
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div
@@ -287,6 +380,7 @@ export function Transcript(): JSX.Element {
         <div ref={scroll.content} className="chat-transcript-flow">
           <TurnList turns={turns} session={session} previous={previous} />
           <PendingDecision />
+          <ChatOutcome turns={chat} />
         </div>
       </div>
       {scroll.activity && (

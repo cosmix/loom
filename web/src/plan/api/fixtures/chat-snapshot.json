@@ -107,7 +107,7 @@
           "text": "Please update the bridge plan.",
           "attachments": [],
           "delivery": "delivered",
-          "origin": "start"
+          "origin": null
         },
         {
           "type": "user",

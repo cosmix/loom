@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
 import brief from "@/plan/api/fixtures/session-brief.json";
@@ -7,12 +7,13 @@ import { OfferButton } from "@/plan/offers/offer-button";
 import { authoringAtom, checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { BriefDialog, BriefDialogHost } from "./brief-dialog";
 import { sendMessage, startChat } from "./commands";
-import { EndChatMenuItem } from "./end-chat";
+import { focusComposerAtom } from "./composer-hooks";
 import { snapshotAtom } from "./model";
 import { createOfferStarter } from "./offer-flow";
 import { registerAuthoringOffers } from "./offer-handlers";
 import { SessionDivider } from "./session-divider";
 import { chatSheetOpenAtom } from "./sheet-state";
+import { clearedChatAtom, shownSessionAtom } from "./shown-session";
 import {
   disposers,
   harness,
@@ -75,16 +76,23 @@ it.each([
   await act(async () => {});
 });
 
-it("new chat start", async () => {
+it("new chat on a concluded chat sends no command and asks for an empty composer", async () => {
+  const ended = { ...session, state: "ended" as const };
   const h = harness();
-  h.mount(<NewChatButton />);
-  fireEvent.click(screen.getByRole("button", { name: "New chat" }));
-  expect(h.send).toHaveBeenCalledWith(
-    expect.objectContaining({ command: "start", offer: null, text: null, attachments: [] }),
-  );
-  expect(h.store.get(chatSheetOpenAtom)).toBe(false);
-  h.result();
-  await waitFor(() => expect(h.store.get(chatSheetOpenAtom)).toBe(true));
+  h.store.set(snapshotAtom, {
+    session: null,
+    turns: [],
+    queue: [],
+    previous: { session: ended, turns: [] },
+  });
+  h.mount(<NewChatButton variant="concluded" />);
+  expect(h.store.get(shownSessionAtom)?.id).toBe(ended.id);
+  fireEvent.click(screen.getByRole("button", { name: "Start a new chat" }));
+  await waitFor(() => expect(h.store.get(clearedChatAtom)).toBe(ended.id));
+  expect(h.send).not.toHaveBeenCalled();
+  expect(h.store.get(shownSessionAtom)).toBeNull();
+  expect(h.store.get(focusComposerAtom)).toBe(true);
+  expect(h.store.get(chatSheetOpenAtom)).toBe(true);
 });
 
 it("first message start", async () => {
@@ -135,10 +143,10 @@ it("brief dialog read-only", async () => {
   expect(within(dialog).queryByRole("button", { name: /save|edit/i })).toBeNull();
 });
 
-it("new chat waits for the current chat to end", async () => {
+it("new chat on a live chat ends it and starts nothing", async () => {
   const current = { ...session, state: "idle" as const };
   const h = harness(current);
-  h.mount(<NewChatButton />);
+  h.mount(<NewChatButton variant="head" />);
   fireEvent.click(screen.getByRole("button", { name: "New chat" }));
   expect(window.confirm).toHaveBeenCalledWith(
     "End the current chat first? It will write its open questions into the documents before it stops.",
@@ -155,7 +163,7 @@ it("new chat waits for the current chat to end", async () => {
       previous: null,
     }),
   );
-  expect(h.send).toHaveBeenCalledTimes(1);
+  expect(h.store.get(clearedChatAtom)).toBeNull();
   act(() =>
     h.store.set(snapshotAtom, {
       session: { ...current, state: "ended" },
@@ -164,10 +172,11 @@ it("new chat waits for the current chat to end", async () => {
       previous: null,
     }),
   );
-  await waitFor(() => expect(h.send).toHaveBeenCalledTimes(2));
-  expect(h.send.mock.calls[1][0]).toMatchObject({ command: "start" });
-  h.result(1);
+  await waitFor(() => expect(h.store.get(clearedChatAtom)).toBe(current.id));
   await act(async () => {});
+  expect(h.send).toHaveBeenCalledTimes(1);
+  expect(h.send).not.toHaveBeenCalledWith(expect.objectContaining({ command: "start" }));
+  expect(h.store.get(focusComposerAtom)).toBe(true);
 });
 
 it("end current chat first", async () => {
@@ -204,67 +213,43 @@ it("end current chat first", async () => {
 it("cancelling end current chat keeps it running", () => {
   const h = harness({ ...session, state: "idle" });
   vi.mocked(window.confirm).mockReturnValue(false);
-  h.mount(<NewChatButton />);
+  h.mount(<NewChatButton variant="head" />);
   fireEvent.click(screen.getByRole("button", { name: "New chat" }));
   expect(h.send).not.toHaveBeenCalled();
 });
 
-it("lost race message", async () => {
-  const h = harness();
-  h.mount(<NewChatButton />);
-  fireEvent.click(screen.getByRole("button", { name: "New chat" }));
-  act(() =>
-    h.store.set(snapshotAtom, {
-      session: { ...session, holder: "Alex" },
-      turns: [],
-      queue: [],
-      previous: null,
-    }),
-  );
-  act(() =>
-    h.store.set(authoringAtom, {
-      holder: { public_id: "winner", name: "Alex", away_since: null, frees_at: null },
-    }),
-  );
-  h.result(0, "Another browser holds authoring (Alex)");
-  expect(await screen.findByText("Alex started a chat first")).toBeTruthy();
-  expect(h.store.get(chatSheetOpenAtom)).toBe(false);
-});
-
-it("end chat confirms then ends", async () => {
+it("a refused end shows its reason beside the button", async () => {
   const h = harness({ ...session, state: "idle" });
-  h.mount(<EndChatMenuItem />);
-  vi.mocked(window.confirm).mockReturnValueOnce(false);
-  fireEvent.click(screen.getByRole("button", { name: "End chat" }));
-  expect(h.send).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "End chat" }));
-  expect(window.confirm).toHaveBeenLastCalledWith(
-    "End this chat? The session will write its open questions and anything pending into the documents, then stop.",
-  );
-  expect(h.send).toHaveBeenCalledWith(expect.objectContaining({ command: "end" }));
-  h.result();
-  await act(async () => {});
+  h.mount(<NewChatButton variant="head" />);
+  fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+  h.result(0, "Chat is busy");
+  expect(await screen.findByText("Chat is busy")).toBeTruthy();
+  expect(h.store.get(clearedChatAtom)).toBeNull();
 });
 
-it("end chat hidden for pressure sessions", () => {
-  const h = harness({ ...session, kind: "pressure" });
-  h.mount(<EndChatMenuItem />);
-  expect(screen.queryByRole("button", { name: "End chat" })).toBeNull();
+it("the head New chat is drawn only for a live chat the user may end", () => {
+  const none = harness();
+  none.mount(<NewChatButton variant="head" />);
+  expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
+  cleanup();
+  const pressure = harness({ ...session, state: "idle", kind: "pressure" });
+  pressure.mount(<NewChatButton variant="head" />);
+  expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
 });
 
-it("viewer has no end chat, brief opens", async () => {
+it("viewer has no New chat, brief opens", async () => {
   const h = harness(session);
   h.store.set(authoringAtom, {
     holder: { public_id: "another-browser", name: "Alex", away_since: null, frees_at: null },
   });
   h.mount(
     <>
-      <EndChatMenuItem />
+      <NewChatButton variant="head" />
       <StartingBrief session={session} />
       <BriefDialogHost />
     </>,
   );
-  expect(screen.queryByRole("button", { name: "End chat" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Brief" }));
   const dialog = await screen.findByRole("dialog", { name: "Brief" });
   expect(

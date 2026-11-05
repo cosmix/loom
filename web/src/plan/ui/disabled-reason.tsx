@@ -2,9 +2,16 @@ import { useId, type ComponentProps, type ReactElement, type ReactNode } from "r
 
 import { Button } from "@/components/ui/button";
 import { Untrusted } from "@/plan/chat/visible-controls";
+import "./hearth.css";
 
 /** The three button looks of `ui/design.css` (DESIGN.md, Buttons). Primary is one per screen. */
 export type ButtonLook = "quiet" | "secondary" | "primary";
+
+/**
+ * The hearth shapes of `ui/hearth.css` (DESIGN.md, Chat), drawn only in the chat and on `/new`:
+ * `pill` is the full-radius 32px button, `round` the same height squared for a glyph alone.
+ */
+export type ButtonShape = "pill" | "round";
 
 /** Where a blocked control's reason goes: beneath it (the default), or after it on its line. */
 export type ReasonPlacement = "below" | "inline";
@@ -23,25 +30,34 @@ const PLACEMENT: Record<ReasonPlacement, string> = {
  * The planner's button, secondary unless its owner passes `look="primary"`: `.plan-button` in
  * `ui/design.css` sets the scale (28px, 13px/500, one line) over Button's own utilities, and
  * `data-look` picks the look. `size` passes through to Button, whose `data-size="sm"` the
- * stylesheet reads for the compact row variant.
+ * stylesheet reads for the compact row variant; `data-shape` picks a hearth shape over both.
  */
 export function DisabledReason({
   reason,
+  reasonId,
   onClick,
   size,
   look = "secondary",
+  shape,
   reasonPlacement = "below",
   children,
 }: {
   /** Text is untrusted; an element is the caller's own markup (e.g. `BusyText`). */
   reason: string | ReactElement | null;
+  /**
+   * The id of an element the caller draws the reason in (the chat composer's foot line, shared by
+   * the notes beside it). The button is described by it and no reason is drawn here, so the
+   * reason is still drawn once; the caller keeps that element in the DOM while `reason` is set.
+   */
+  reasonId?: string;
   onClick: () => void;
   size?: ComponentProps<typeof Button>["size"];
   look?: ButtonLook;
+  shape?: ButtonShape;
   reasonPlacement?: ReasonPlacement;
   children: ReactNode;
 }) {
-  const reasonId = useId();
+  const ownId = useId();
   const blocked = reason !== null;
   const Wrapper = reasonPlacement === "inline" ? "span" : "div";
 
@@ -52,15 +68,16 @@ export function DisabledReason({
         type="button"
         size={size}
         data-look={look}
+        data-shape={shape}
         className="plan-button aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
         aria-disabled={blocked || undefined}
-        aria-describedby={blocked ? reasonId : undefined}
+        aria-describedby={blocked ? (reasonId ?? ownId) : undefined}
         onClick={blocked ? undefined : onClick}
       >
         {children}
       </Button>
-      {blocked && (
-        <span id={reasonId} className="plan-fine text-muted-foreground">
+      {blocked && reasonId === undefined && (
+        <span id={ownId} className="plan-fine text-muted-foreground">
           {/* The reason can carry a server name or message (`authorBlockReasonAtom`). */}
           {typeof reason === "string" ? <Untrusted text={reason} /> : reason}
         </span>

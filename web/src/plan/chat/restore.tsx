@@ -347,6 +347,7 @@ function RestoreControl(props: Props & { all: boolean }) {
       ) : (
         <DisabledReason
           size="sm"
+          look="quiet"
           reason={action.reason}
           onClick={() => {
             void action.submit(paths);

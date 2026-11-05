@@ -1,4 +1,5 @@
 import { useAtomValue, useSetAtom, useStore } from "jotai";
+import { SquarePen } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { SessionView } from "@/plan/api/schema-chat";
@@ -7,28 +8,29 @@ import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
 import { briefOpenAtom } from "./brief-dialog";
-import { startChat } from "./commands";
+import { focusComposerAtom, composeAfterAtom } from "./composer-hooks";
+import { useCanEndChat } from "./end-chat";
 import { sessionAtom } from "./model";
 import { offerErrorAtom } from "./offer-error";
 import { confirmEndFirst, elsewhereRefusal, endCurrentChat, startError } from "./offer-flow";
-import {
-  elsewhereSessionAtom,
-  isActiveSession,
-  startOwnerAtom,
-  type StartOwner,
-} from "./session-home";
+import { elsewhereSessionAtom, isActiveSession } from "./session-home";
 import { revealChat } from "./sheet-state";
+import { clearedChatAtom, shownSessionAtom } from "./shown-session";
 import { useSessionBrief } from "./use-session-brief";
 import { Untrusted, visibleControls } from "./visible-controls";
 
-// New chat renders only without an active session, but a chat started by another tab between render
-// and click reaches the end-then-start branch; it stays as the guard for that race.
-// start-chat-brief.test drives it.
-async function beginChat(store: Store, owner: StartOwner, signal: AbortSignal): Promise<void> {
+// A live chat is ended first (the user confirmed in `useNewChat`). New chat then starts nothing: it
+// clears the concluded chat from the panel and focuses an empty composer, and the first Send starts
+// the session (`useSendDraft`). The head draws New chat only for a live chat; a chat started by
+// another tab between render and click reaches the end-then-clear branch. start-chat-brief.test
+// drives it.
+async function beginChat(store: Store, signal: AbortSignal): Promise<void> {
   const current = store.get(sessionAtom);
   if (isActiveSession(current)) await endCurrentChat(store, current, signal, "start a new chat");
   if (signal.aborted) return;
-  await startChat(store, null, null, [], owner.feature, owner.plan);
+  store.set(clearedChatAtom, store.get(shownSessionAtom)?.id ?? null);
+  store.set(composeAfterAtom, null);
+  store.set(focusComposerAtom, true);
   revealChat(store);
 }
 
@@ -47,14 +49,12 @@ function useNewChat() {
       return;
     }
     if (isActiveSession(store.get(sessionAtom)) && !confirmEndFirst()) return;
-    // Read at the click: ending the running chat can take minutes, and the user may navigate.
-    const owner = store.get(startOwnerAtom);
     const controller = new AbortController();
     request.current = controller;
     setPending(true);
     setError(null);
     try {
-      await beginChat(store, owner, controller.signal);
+      await beginChat(store, controller.signal);
     } catch (cause) {
       if (!controller.signal.aborted) setError(startError(store, cause));
     } finally {
@@ -65,14 +65,21 @@ function useNewChat() {
   return { start, pending, error };
 }
 
-export function NewChatButton() {
+/**
+ * `head`: an icon-only button in the panel head, drawn only while this browser may end the live
+ * chat; its name is "New chat". `concluded`: the labelled primary button beside an ended chat.
+ */
+export function NewChatButton({ variant }: { variant: "head" | "concluded" }) {
   const canAuthor = useAtomValue(canAuthorAtom);
+  const canEnd = useCanEndChat();
   const reason = useAtomValue(authorBlockReasonAtom);
   const server = useAtomValue(serverInfoAtom);
   const { start, pending, error } = useNewChat();
+  if (variant === "head" && !canEnd) return null;
   if ((!canAuthor && !error) || (server?.read_only.length ?? 0) > 0) return null;
+  const head = variant === "head";
   return (
-    <div className="text-[13px]">
+    <div className="chat-new-chat text-[13px]" data-variant={variant}>
       {canAuthor && (
         <DisabledReason
           reason={reason ?? (pending ? "Starting a new chat" : null)}
@@ -80,8 +87,17 @@ export function NewChatButton() {
             void start();
           }}
           size="sm"
+          shape={head ? "round" : "pill"}
+          look={head ? "quiet" : "primary"}
         >
-          New chat
+          {head ? (
+            <>
+              <SquarePen size={15} aria-hidden="true" />
+              <span className="sr-only">New chat</span>
+            </>
+          ) : (
+            "Start a new chat"
+          )}
         </DisabledReason>
       )}
       {error && (

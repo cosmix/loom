@@ -1,0 +1,112 @@
+/* The hearth shapes (DESIGN.md, Chat): the rounder controls of the chat panel and the kickoff
+ * screen, and nowhere else. A shaped `.plan-button` (`DisabledReason shape`, drawn as `data-shape`)
+ * is 32px high with a full radius: `pill` keeps its label, `round` is a 32px square for a glyph
+ * alone. The suggestion pill (`.hearth-pill`) is the chat's context prompt and the kickoff's
+ * starter. Both press to 0.98 and sit still under `prefers-reduced-motion`. Imported once, by
+ * `ui/disabled-reason.tsx`, which declares the prop; unlayered, so it wins over Button's utilities
+ * and over `data-size="sm"`, whose rule is wrapped in `:where()`.
+ */
+
+.plan-button[data-shape] {
+  --hearth-control: 32px;
+  height: var(--hearth-control);
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: var(--type-body);
+  transition:
+    background-color 120ms,
+    border-color 120ms,
+    color 120ms,
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.plan-button[data-shape="round"] {
+  width: var(--hearth-control);
+  padding: 0;
+  justify-content: center;
+}
+
+.plan-button[data-shape] svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.plan-button[data-shape][data-look="primary"] {
+  font-weight: 600;
+}
+
+.plan-button[data-shape]:active {
+  transform: scale(0.98);
+}
+
+.plan-button[data-shape][aria-disabled="true"]:active,
+.plan-button[data-shape]:disabled:active {
+  transform: none;
+}
+
+/* The suggestion pill: a 30px full-radius choice with a hairline edge, lifting a pixel under the
+ * pointer. It is a plain button; the list that holds it lays the pills out. */
+.hearth-pill {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 30px;
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    border-color 120ms,
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hearth-pill:hover {
+  background: var(--muted);
+  transform: translateY(-1px);
+}
+
+.hearth-pill:active {
+  transform: scale(0.98);
+}
+
+.hearth-pill:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* The rise the chat's messages enter with (chat-transcript.css): the empty state and the composer
+ * share it, so the panel's parts arrive the same way. */
+@keyframes hearth-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-button[data-shape],
+  .hearth-pill {
+    transition: none;
+  }
+
+  .plan-button[data-shape]:active,
+  .hearth-pill:hover,
+  .hearth-pill:active {
+    transform: none;
+  }
+}

@@ -188,7 +188,7 @@ async function replayItems(store: Store, chat: HTMLElement): Promise<void> {
   present(within(log).getByRole("button", { name: /Edit.*Update the bridge plan.*Pending/i }));
   replay(store, framesFixture[1]);
   const completed = within(log).getByRole("button", {
-    name: /Edit.*Update the bridge plan.*Done/i,
+    name: /Edit.*Update the bridge plan.*\+1 −1/i,
   });
   fireEvent.click(completed);
   present(within(log).getByText("Updated doc/plans/bridge.md", { exact: true }));

@@ -1,6 +1,6 @@
-import { getDefaultStore, useAtomValue, useStore } from "jotai";
-import { Paperclip } from "lucide-react";
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, type ReactNode } from "react";
+import { useAtomValue, useStore } from "jotai";
+import { ArrowUp, Paperclip } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, type ReactNode } from "react";
 
 import {
   authorBlockReasonAtom,
@@ -14,13 +14,14 @@ import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { AttachDocument } from "./attach-document";
 import { PendingChips } from "./chips";
 import { composerBlock } from "./composer-gate";
+import { ConcludedChat, DraftKept, EndingChat, NewChatBesideBox } from "./composer-concluded";
+import { ComposerFoot } from "./composer-foot";
 import {
   composeAfterAtom,
   focusComposerAtom,
   useClearFocusRequest,
   useComposerBox,
   useDeliveredAttachments,
-  useFirstHoldNote,
   useFileIntake,
   useSendDraft,
 } from "./composer-hooks";
@@ -35,23 +36,11 @@ import { pressureRunAtom } from "./pressure/use-pressure";
 import { QueueStrip } from "./queue-strip";
 import { shownSessionAtom } from "./shown-session";
 import { isActiveSession, screenAtom } from "./session-home";
-import { NewChatButton } from "./start-chat";
 import { StopControl } from "./stop-control";
-import { storageFullAtom } from "./storage";
 import { SuggestionCards } from "./suggestion-cards";
 import { contextDocumentAtom } from "./viewed-document";
 import { Untrusted, visibleControls } from "./visible-controls";
 import "./chat-surface.css";
-
-const HOLD_NOTE =
-  "Closing this tab keeps the session for 10 minutes. After that it writes its notes into the documents and ends.";
-
-/** A draft the visible view cannot show: the one line that says it is still there. */
-function DraftKept() {
-  const draft = useAtomValue(draftAtom);
-  if (!draft.text && draft.attachments.length === 0) return null;
-  return <p className="chat-composer-note">Your draft is kept</p>;
-}
 
 /** The banner carries the server's message and fix; this line names the state once. */
 function ReadOnlyLine() {
@@ -90,22 +79,6 @@ function useBlockReasons(pending: boolean) {
     (connection.phase !== "open" ? "Not connected; the message is kept" : null) ??
     (pending ? "Sending" : messageProblem(draft.text, attachments));
   return { reason, resendBlock: reason === "Sending" ? reason : blocked };
-}
-
-function StorageNotes() {
-  const localFull = useAtomValue(storageFullAtom);
-  const globalFull = useAtomValue(storageFullAtom, { store: getDefaultStore() });
-  const firstHold = useFirstHoldNote();
-  return (
-    <>
-      {(localFull || globalFull) && (
-        <p className="chat-composer-note">
-          Unsaved text is not being kept: browser storage is full
-        </p>
-      )}
-      {firstHold && <p className="chat-composer-note">{HOLD_NOTE}</p>}
-    </>
-  );
 }
 
 /** The text box and its placeholder, which names the page the context chip shows. */
@@ -152,27 +125,6 @@ function MessageBox({
 }
 
 /**
- * New chat beside the box on a concluded chat. When the next chat starts the button leaves and the
- * box stays, so focus on the button moves to the box. A layout cleanup runs before React detaches
- * the button, so focus can still be read here.
- */
-function NewChatBesideBox() {
-  const store = useStore();
-  const area = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const node = area.current;
-    return () => {
-      if (node?.contains(document.activeElement)) store.set(focusComposerAtom, true);
-    };
-  }, [store]);
-  return (
-    <div ref={area}>
-      <NewChatButton />
-    </div>
-  );
-}
-
-/**
  * The bordered box the user types in: what the next message carries (the context chip, the
  * pending chips) above the text, and the drop target. Files dropped or pasted anywhere on it
  * attach. While a file is dragged over it, "Drop to attach" covers the box inside its own edge,
@@ -198,18 +150,20 @@ function ComposerBox({ children }: { children: ReactNode }) {
 }
 
 /**
- * The action row under the box: the paperclip at the start; New chat (after a concluded chat),
- * Stop (while a turn runs; never for a pressure run, which stops from its own head) and Send
- * together at the end, Send last. Send stays enabled while a turn runs: a message sent then is
- * queued.
+ * The tools at the box's end, on the text's last line: the paperclip, then New chat (after a
+ * concluded chat), Stop (while a turn runs; never for a pressure run, which stops from its own
+ * head) and Send, round and last. Send stays enabled while a turn runs: a message sent then is
+ * queued. Its reason, when blocked, is the foot line under the box (`footId`), not a line here.
  */
 function ComposerActions({
   afterConcluded,
   reason,
+  footId,
   send,
 }: {
   afterConcluded: boolean;
   reason: string | null;
+  footId: string;
   send: () => Promise<void>;
 }) {
   const session = useAtomValue(sessionAtom);
@@ -220,8 +174,15 @@ function ComposerActions({
         {afterConcluded && <NewChatBesideBox />}
         {session?.kind !== "pressure" && <StopControl />}
         <div className="chat-composer-send">
-          <DisabledReason reason={reason} onClick={() => void send()}>
-            Send
+          <DisabledReason
+            reason={reason}
+            reasonId={footId}
+            look="primary"
+            shape="round"
+            onClick={() => void send()}
+          >
+            <ArrowUp size={15} strokeWidth={2.4} aria-hidden="true" />
+            <span className="sr-only">Send</span>
           </DisabledReason>
         </div>
       </div>
@@ -236,24 +197,31 @@ function ComposerInput({ afterConcluded }: { afterConcluded: boolean }) {
   const shown = useAtomValue(shownSessionAtom);
   const id = useId();
   const noteId = `${id}-new-chat`;
+  const footId = `${id}-foot`;
   const describedBy = [afterConcluded ? noteId : null, error ? id : null].filter(Boolean).join(" ");
   return (
     <div className="chat-composer-input">
       <ComposerBox>
         <MessageBox reason={reason} send={send} describedBy={describedBy || undefined} />
+        <ComposerActions
+          afterConcluded={afterConcluded}
+          reason={reason}
+          footId={footId}
+          send={send}
+        />
       </ComposerBox>
-      <ComposerActions afterConcluded={afterConcluded} reason={reason} send={send} />
-      {afterConcluded && (
-        <p id={noteId} className="plan-fine">
-          Sending starts a new chat
-        </p>
-      )}
-      {error && (
-        <p id={id} role="status" className="chat-composer-status">
-          <Untrusted text={error} />
-        </p>
-      )}
-      <StorageNotes />
+      <ComposerFoot footId={footId} reason={reason}>
+        {afterConcluded && (
+          <p id={noteId} className="plan-fine">
+            Sending starts a new chat
+          </p>
+        )}
+        {error && (
+          <p id={id} role="status" className="chat-composer-status">
+            <Untrusted text={error} />
+          </p>
+        )}
+      </ComposerFoot>
       {/* A concluded chat takes no messages, so nothing is left to resend into. */}
       {(shown === null || isActiveSession(shown)) && (
         <UnconfirmedSends blocked={resendBlock} resend={(clientId) => void send(clientId)} />
@@ -296,26 +264,7 @@ function UnconfirmedSends({
   );
 }
 
-/**
- * Section 08, Session states: Ended and Failed offer "New chat".
- * Starting the next chat swaps this view for the composer, and the button that held focus leaves
- * with it; `onLeave` reports whether focus was inside so the text box can take it.
- */
-function ConcludedChat({ onLeave }: { onLeave: (hadFocus: boolean) => void }) {
-  const area = useRef<HTMLDivElement>(null);
-  // A layout cleanup runs before React detaches the button, so focus can still be read here.
-  useLayoutEffect(() => {
-    const node = area.current;
-    return () => onLeave(!!node?.contains(document.activeElement));
-  }, [onLeave]);
-  return (
-    <div ref={area} className="flex flex-wrap items-center gap-2">
-      <NewChatButton />
-    </div>
-  );
-}
-
-type View = "read-only" | "concluded" | "composer";
+type View = "read-only" | "ending" | "concluded" | "composer";
 
 /**
  * Moves focus into the text box that replaces the concluded view when focus was on that view's
@@ -350,20 +299,24 @@ export function ComposerArea() {
   // keeps it and a stale or returned draft never brings it back. Sending from it starts a new chat.
   const view: View = viewer
     ? "read-only"
-    : concluded && composeAfter !== shown.id
-      ? "concluded"
-      : "composer";
+    : shown?.state === "ending"
+      ? "ending"
+      : concluded && composeAfter !== shown.id
+        ? "concluded"
+        : "composer";
   const onLeave = useFocusHandoff(view);
   return (
     <div className="chat-composer font-sans">
       <ConfigBlockNotice context="chat" />
-      {view !== "read-only" && <ContextPrompts />}
-      <div className="max-h-[33vh] min-h-0 overflow-y-auto space-y-2">
+      {view !== "read-only" && view !== "ending" && <ContextPrompts />}
+      <div className="chat-composer-extras">
         <QueueStrip />
         <SuggestionCards />
       </div>
       {view === "read-only" ? (
         <ReadOnlyLine />
+      ) : view === "ending" ? (
+        <EndingChat />
       ) : view === "concluded" ? (
         <>
           {/* An attachment made on a concluded session's own screen waits for the next chat. */}

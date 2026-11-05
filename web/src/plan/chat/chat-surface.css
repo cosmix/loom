@@ -1,9 +1,10 @@
-/* The chat panel's look: one continuous surface where hierarchy comes from type, space and a
- * single hairline. Chrome is Inter at --type-body in --muted-foreground; the user's words are
- * Inter in --foreground; the assistant's prose is the reading face. The transcript, the decision
- * band, the composer, the chips and the notices have their own files, imported below. All of them are
- * unlayered on purpose: they override the utility classes of the shared Button. chat.css keeps
- * the panel's frame, whose test pins that the frame carries no tone or fade.
+/* The chat panel's look, the hearth: one warm continuous surface where hierarchy comes from type,
+ * space and the one hairline on the panel's start edge. Chrome is Inter at --type-body in
+ * --muted-foreground; the user's words are Inter in --foreground; the assistant's prose is the
+ * reading face. The transcript, the decision band, the composer, the chips and the notices have
+ * their own files, imported below. All of them are unlayered on purpose: they override the utility
+ * classes of the shared Button. chat.css keeps the panel's frame, whose test pins that the frame
+ * carries no tone, shadow or fade, so the glow and every other look is here.
  */
 @import "./chat-transcript.css";
 @import "./chat-decision.css";
@@ -16,12 +17,13 @@
 .chat-panel,
 .chat-transcript,
 .chat-composer {
-  --chat-gutter: var(--space-4);
+  --chat-gutter: 1.125rem;
 }
 
 /* The type step of the chat: body chrome at --type-body, secondary text at --type-ui, nothing
- * under 13px. The shared fine print, a blocked control's reason and the compact button are 12px
- * elsewhere; here they take --type-ui, and the full-size button the chrome size. */
+ * under 13px but the composer's foot. The shared fine print, a blocked control's reason and the
+ * compact button are 12px elsewhere; here they take --type-ui, and the full-size button the
+ * chrome size. */
 :is(.chat-panel, .chat-transcript, .chat-composer) .plan-fine,
 :is(.chat-panel, .chat-transcript, .chat-composer) .plan-button[data-size="sm"] {
   font-size: var(--type-ui);
@@ -40,29 +42,54 @@
   font-size: var(--type-body);
 }
 
-/* ── Head ───────────────────────────────────────────────────────────────── */
+/* ── The hearth ─────────────────────────────────────────────────────────── */
 
-/* The top block (head, state row, run line, banner) closes with the panel's one hairline. It
- * is no size container: layout containment would make it a stacking context and put the menu
- * pop under the transcript. */
-.chat-panel-top {
-  min-width: 0;
-  border-block-end: 1px solid var(--hairline);
+/* The one glow in the planner: the accent at a seventh, fading out from a point 10px above the
+ * panel's foot, behind the composer, in every state. The ellipse is 520 by 260px, its centre
+ * 120px below the panel's bottom edge once its lower half is left out; the pseudo-element is only
+ * the 140px the glow reaches into the panel, so it clips itself and the panel keeps its overflow
+ * (the resize handle straddles the edge). It paints over the composer, as the mockup's does: a
+ * tint, not a surface. */
+.chat-panel::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  height: 140px;
+  pointer-events: none;
+  background: radial-gradient(
+    260px 130px at 50% 130px,
+    color-mix(in oklch, var(--primary) 14%, transparent),
+    transparent
+  );
 }
 
-/* One line: title, state word and menu share one centre line. */
+/* ── Head ───────────────────────────────────────────────────────────────── */
+
+/* The top block (head, banner, the pressure run's head) draws no rule under itself: the head sits
+ * on the surface, and the transcript's first turn follows at its own spacing. */
+.chat-panel-top {
+  min-width: 0;
+}
+
+/* Title over sub-line at the start, the buttons at the end, on one centre line. */
 .chat-head {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   box-sizing: border-box;
-  min-height: calc(var(--control-height) + 2 * var(--space-2));
-  padding: var(--space-2) var(--chat-gutter);
+  min-width: 0;
+  padding: var(--space-4) var(--chat-gutter) var(--space-3);
+}
+
+.chat-head-text {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 1px;
+  min-width: 0;
 }
 
 .chat-head-title {
-  flex: 1 1 auto;
-  min-width: 0;
   overflow: hidden;
   margin: 0;
   font-family: var(--font-sans);
@@ -74,6 +101,44 @@
   white-space: nowrap;
 }
 
+/* No session yet: the title is the quiet "New chat". */
+.chat-head-title[data-new] {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+/* The state in a few words, then the place the chat concerns, one line cut with an ellipsis. The
+ * state word is the one thing in --foreground. */
+.chat-head-sub {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Nothing to say (idle, no place): the line takes no height. */
+.chat-head-sub:not(:has(.chat-state-row, .chat-head-place)) {
+  display: none;
+}
+
+/* The state line's root is a block; in the sub-line its words run inline with the place. */
+.chat-head-sub .chat-state-line {
+  display: contents;
+}
+
+.chat-head-sub .chat-state-words {
+  color: var(--foreground);
+}
+
+.chat-state-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  margin-inline-end: var(--space-1);
+}
+
 .chat-head-side {
   display: flex;
   flex-shrink: 0;
@@ -81,124 +146,40 @@
   gap: var(--space-2);
 }
 
-/* Quiet icon buttons: the menu, the sheet's close. */
+/* The sheet's Close: a 32px round quiet button, New chat's twin. */
 .chat-head-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  height: var(--control-height);
-  min-width: var(--control-height);
-  padding: 0 var(--space-1);
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border: 0;
-  border-radius: var(--corner-control);
+  border-radius: 999px;
   background: transparent;
   color: var(--muted-foreground);
   cursor: pointer;
-  list-style: none;
   transition:
     background-color 120ms,
-    color 120ms;
+    color 120ms,
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.chat-head-button::-webkit-details-marker {
-  display: none;
-}
-
-.chat-head-button:hover,
-.chat-menu[open] > .chat-head-button {
+.chat-head-button:hover {
   background: var(--muted);
   color: var(--foreground);
 }
 
+.chat-head-button:active {
+  transform: scale(0.98);
+}
+
 .chat-head-button:focus-visible,
 .chat-link-button:focus-visible,
-.chat-context-prompt:focus-visible,
 .chat-elsewhere a:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
-}
-
-/* The menu floats, on the header popovers' surface (header/popover.tsx): --popover, a 12px
- * corner, a one-pixel ring of the foreground at a tenth and the dialog shadow. Its one row is
- * End chat, full width and left-aligned, with the row's own hover. */
-.chat-menu-pop {
-  position: absolute;
-  inset-inline-end: 0;
-  z-index: 10;
-  display: grid;
-  min-width: 12rem;
-  margin-block-start: var(--space-1);
-  padding: var(--space-1);
-  border-radius: 12px;
-  background: var(--popover);
-  color: var(--popover-foreground);
-  box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent),
-    var(--dialog-shadow);
-}
-
-.chat-menu-item {
-  display: grid;
-  min-width: 0;
-}
-
-.chat-menu-item > div {
-  display: grid;
-  gap: 0;
-}
-
-/* exception: the row is the quiet button stretched to the pop's width (DESIGN.md asks for
- * `look`, not a wrapper rule); a menu row has no other owner for its width and alignment. */
-.chat-menu-item .plan-button {
-  width: 100%;
-  height: 32px;
-  justify-content: flex-start;
-  padding: 0 var(--space-3);
-  color: var(--foreground);
-}
-
-.chat-menu-item .plan-fine {
-  padding: 0 var(--space-3) var(--space-2);
-}
-
-/* Status in the head: a glyph and a word, no pill. The LED takes the state's tone. */
-.chat-head .chat-state {
-  color: var(--muted-foreground);
-  font-size: var(--type-body);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.chat-led {
-  width: 7px;
-  height: 7px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--muted-foreground);
-}
-
-.chat-state[data-state="idle"] .chat-led {
-  background: var(--tone-completed);
-  animation: chat-led-breathe 2.4s ease-in-out infinite;
-}
-
-.chat-state:is([data-state="working"], [data-state="starting"], [data-state="ending"]) .chat-led {
-  background: var(--tone-executing);
-}
-
-.chat-state[data-state="permission"] .chat-led {
-  background: var(--tone-warning);
-}
-
-.chat-state[data-state="failed"] .chat-led {
-  background: var(--tone-blocked);
-}
-
-@keyframes chat-led-breathe {
-  50% {
-    opacity: 0.35;
-  }
 }
 
 /* Decisions waiting, on the sheet button: a count, not a badge. */
@@ -209,162 +190,60 @@
   color: var(--foreground);
 }
 
-/* ── State row and run line under the head ───────────────────────────────── */
+/* ── Empty state (empty-chat.tsx) ───────────────────────────────────────── */
 
-.chat-state-line {
-  font-size: var(--type-body);
+/* Before any message: a greeting and a line, bottom-aligned above the composer and its prompt
+ * pills, start-aligned. The title is the one reading-face line of chrome in the panel. */
+.chat-empty {
+  display: grid;
+  flex: 1 1 auto;
+  align-content: end;
+  justify-items: start;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: 0 var(--chat-gutter) var(--space-2);
+  animation: hearth-rise 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.chat-empty-title {
+  max-width: 14ch;
+  margin: 0;
+  font-family: var(--font-reading);
+  font-size: 26px;
   font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
 }
 
-/* The head's status word says what this row would repeat; it keeps its sr-only announcement.
- * Padding sits on the visible row, so a state with nothing to show takes no space. */
-.chat-panel .chat-state-line > [aria-live="off"] {
-  padding: 0 var(--chat-gutter) var(--space-2);
+.chat-empty-lede {
+  max-width: 38ch;
+  margin: 0;
   color: var(--muted-foreground);
-  font-weight: 400;
-  line-height: var(--leading-ui);
-}
-
-.chat-state-glyph {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-}
-
-/* The row (a flex line, state-line.tsx; its test queries `.flex`): the glyph, then the words
- * and the detail as one shrinkable run beside it, never wrapped under the glyph. */
-.chat-state-row {
-  flex-wrap: nowrap;
-  min-width: 0;
-}
-
-.chat-state-text {
-  min-width: 0;
-}
-
-/* Working: the elapsed time and the newest tool's summary (a path, mostly) keep one line; the
- * run is cut with an ellipsis at the panel's width, and the whole of it stays in the DOM and in
- * the row's title. */
-.chat-state-line[data-state="working"] .chat-state-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* A pressure run's head states its own elapsed time; the row would repeat it alone. The head's
- * state word turns the one roundel for every busy state (DESIGN.md, Status), so the row's copy
- * of it is hidden a line under it; the row keeps the words or the detail the head lacks. */
-.chat-panel .chat-state-line[data-kind="pressure"][data-state="working"] > [aria-live="off"],
-.chat-panel .chat-state-line:is([data-state="idle"], [data-state="permission"]) > [aria-live="off"],
-.chat-panel .chat-state-line:is([data-state="starting"], [data-state="ending"]) .chat-state-glyph,
-.chat-panel
-  .chat-state-line[data-state="working"]
-  :is(.chat-state-glyph, .chat-state-words, .chat-state-sep) {
-  display: none;
-}
-
-/* The run line: who is authoring, who is watching, what the chat has cost, on one line that
- * never wraps. The name is the one segment that gives way, cut with an ellipsis; each separator
- * belongs to the segment after it, so a cut never strands a dot. The pressure head shares
- * `.chat-run-header` (tests and the help scene query it) and keeps its own layout, so the line's
- * rules hang on `.chat-run-line`. */
-.chat-run-line {
-  container-type: inline-size;
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-width: 0;
-  padding: 0 var(--chat-gutter) var(--space-2);
-  color: var(--muted-foreground);
-  font-size: var(--type-body);
-  line-height: var(--leading-ui);
-  white-space: nowrap;
-}
-
-.chat-run-line > .activity-glyph {
-  flex-shrink: 0;
-}
-
-.chat-run-seg {
-  flex: 0 0 auto;
-  min-width: 0;
-}
-
-.chat-run-seg[data-cut] {
-  flex: 0 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.chat-run-seg [tabindex]:focus-visible {
-  border-radius: 4px;
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-/* The line is its own size container; 20rem of line is a 22rem panel, less the two gutters. */
-@container (max-width: 19.99rem) {
-  .chat-run-tokens {
-    display: none;
-  }
 }
 
 /* ── Context prompts (context-prompts.tsx); the context chip is in chat-chips.css ── */
 
-/* Prompts sit on the panel as a list of quiet text buttons; no card, no edge. The list
- * carries the gutter unless a padded block (the composer) already does. */
+/* The prompts are suggestion pills (ui/hearth.css) in a wrapping row above the box; the list
+ * draws nothing of its own. With no prompts the row is absent and nothing else moves. */
 .chat-context-prompts {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   margin: 0;
-  padding: var(--space-2) var(--chat-gutter);
+  padding: 0;
   list-style: none;
 }
 
-.chat-composer .chat-context-prompts {
-  padding-inline: 0;
-}
-
-.chat-context-prompt {
-  display: block;
-  width: 100%;
-  min-height: var(--control-height);
-  margin-inline: calc(-1 * var(--space-2));
-  padding: var(--space-1) var(--space-2);
-  border: 0;
-  border-radius: var(--corner-control);
-  background: transparent;
-  color: var(--muted-foreground);
-  font-family: var(--font-sans);
-  font-size: var(--type-body);
-  font-weight: 500;
-  line-height: var(--leading-ui);
-  text-align: start;
-  cursor: pointer;
-  transition:
-    background-color 120ms,
-    color 120ms;
-}
-
-/* The empty alternative text keeps the arrow out of the prompt's accessible name. */
-.chat-context-prompt::before {
-  content: "→ " / "";
-  color: var(--muted-foreground);
-}
-
-.chat-context-prompt:hover {
-  background: var(--muted);
-  color: var(--foreground);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .chat-led,
-  .chat-state[data-state="idle"] .chat-led {
-    animation: none;
+  .chat-head-button {
+    transition: none;
   }
 
-  .chat-head-button,
-  .chat-context-prompt {
-    transition: none;
+  .chat-head-button:active {
+    transform: none;
+  }
+
+  .chat-empty {
+    animation: none;
   }
 }
