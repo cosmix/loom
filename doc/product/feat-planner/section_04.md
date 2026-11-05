@@ -129,6 +129,16 @@ Rules for the body, enforced when the summary is sealed (below):
   agents use a short label (`§`, a section number, a plan slug).
 - **A document summary cites only its own source**: heading sections of that file, by the
   anchors section 03 defines. A link with no fragment cites the text before the first heading.
+- **A plan summary has two levels.** The opening level comes first: the title, optional `##`
+  headings, and about one sentence per topic, each citing every sentence of the detail
+  paragraph or paragraphs it opens, whole and in order, by a link to its own sentence id
+  (`[d](#s-3fa9c2d1)`) and nothing else. The detail level follows: short paragraphs whose
+  sentences cite the plan's heading sections, with no heading among them. An opening sentence
+  says what its paragraphs add up to and never restates one of their sentences. Sentence ids are
+  hashes an agent cannot compute, so every refusal about the levels lists the draft's detail
+  sentences by id with their first words: the agent writes the detail level, seals, copies the
+  ids into the opening level and seals again. Overviews cite only sentences that cite no
+  sentence, so they cite a plan summary's detail sentences, never its opening level.
 - **An overview cites document-summary sentences and raw passages.** It links a document
   summary's sentence by the sentence's id as fragment (`#s-3fa9c2d1`), and links heading
   sections of its feature's vision (product overview) or metaplan (engineering overview) directly;
@@ -136,10 +146,11 @@ Rules for the body, enforced when the summary is sealed (below):
   at least one overview sentence, so no section or plan drops out of the overview silently.
 - **An overview sentence draws on at least two member sentences.** A sentence that cites member
   sentences cites at least two of them and says what they add up to; the seal rejects a sentence
-  that cites exactly one, unless that member's summary holds a single sentence.
-- **Length.** A section or plan summary holds at most 15 sentences, a vision summary at most 8 in
-  at most 3 paragraphs, an overview at most 30. (My call: the overview has to be readable in the
-  few minutes the vision's reviewer goal allows.)
+  that cites exactly one, unless that member's summary holds a single citable sentence.
+- **Length.** A section summary holds at most 15 sentences, a plan summary at most 8 opening and
+  15 detail sentences, a vision summary at most 8 in at most 3 paragraphs, an overview at most
+  30. (My call: the overview has to be readable in the few minutes the vision's reviewer goal
+  allows.)
 
 A **sentence id** is `s-` plus the first 8 hex digits of the SHA-256 of the sentence's text with
 its links removed and its whitespace collapsed. The id is never written into the file; anyone can

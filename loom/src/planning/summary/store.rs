@@ -75,6 +75,11 @@ pub fn is_metaplan(id: &str) -> bool {
     metaplan_feature(id).is_some()
 }
 
+/// Whether `id` is a plan's document summary, `plans/<slug>`. Assumes a validated id.
+pub fn is_plan(id: &str) -> bool {
+    id.starts_with("plans/")
+}
+
 /// Validate a summary id before using it as a path.
 pub fn validate_id(id: &str) -> Result<()> {
     let valid = if is_overview(id) || is_metaplan(id) {

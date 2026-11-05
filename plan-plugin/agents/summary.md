@@ -24,16 +24,25 @@ anything.
 3. Write only the draft file named by the brief, in the runtime directory. Write the summary
    body without store frontmatter, hashes, or sentence ids; sealing generates the metadata.
    Follow every body rule in the brief:
-   - A section or plan summary takes at most 15 sentences. A vision summary (id
+   - A section summary takes at most 15 sentences. A vision summary (id
      `<feature>/product/vision`) takes at most 8 sentences in at most 3 paragraphs, distilling
      the vision so a reader grasps it in under a minute. A metaplan summary (id
      `<feature>/metaplan/index`, one per feature) takes at most 15 sentences: it summarizes the metaplan's plan
      map and its sequencing decisions, citing the metaplan's own passages. Write one sentence per
      line, with blank lines between paragraphs.
+   - A plan summary (id `plans/<slug>`) has two levels. First the opening level: about one
+     sentence per topic, each citing every sentence of the detail paragraph(s) it opens, in
+     order, as `[d](#s-xxxxxxxx)`, and nothing else. Then the detail level: short paragraphs
+     whose sentences cite the plan's heading sections. No heading after the opening level. At
+     most 8 opening and 15 detail sentences. An opening sentence says what its paragraphs add
+     up to; it never repeats a detail sentence. Write the detail level first and seal: the
+     refusal lists each detail sentence's id. Then add the opening level above it, citing
+     those ids, and seal again.
    - A sentence compresses its cited section; never copy a sentence of the source.
    - Use only `#` and `##` headings to group prose; headings carry no links.
    - End every sentence with one or more plain Markdown links to heading sections of this
-     summary's own source document. Use a link without a fragment only for text before the
+     summary's own source document; only a plan summary's opening sentences cite its detail
+     sentences instead. Use a link without a fragment only for text before the
      first heading. Resolve links relative to the final summary file, not the runtime draft.
    - Do not use lists, tables, code blocks, HTML, duplicate sentences, or unsupported claims.
 4. Run `loom plan summary seal <id>`. Exit 1 reports problems as

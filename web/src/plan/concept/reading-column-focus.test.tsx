@@ -26,6 +26,8 @@ const PLANNING = [mark("section_01", "Planning", 1)];
 async function sharedCitation() {
   const overview = pageOf("overview/demo/product", [
     sent("a", "First overview.", [cite("section_01", "x")], PLANNING),
+    // A sentence between them keeps the two from merging into one fragment.
+    sent("m", "Middle line."),
     sent("b", "Second overview.", [cite("section_01", "x")], PLANNING),
     sent("c", "Closing line."),
   ]);
@@ -102,6 +104,8 @@ it("Escape on a passage under the second citer folds that citer's run only", asy
 async function siblingRuns() {
   const overview = pageOf("overview/demo/product", [
     sent("a", "First overview.", [cite("section_01", "x")], PLANNING),
+    // A sentence between them keeps the two from merging into one fragment.
+    sent("m", "Middle line."),
     sent("b", "Second overview.", [cite("section_01", "x")], PLANNING),
     sent("c", "Closed sentence.", [src(S1, "intro")]),
   ]);

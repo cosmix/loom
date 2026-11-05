@@ -15,7 +15,7 @@ Concept mode has three levels of text, each a step closer to the files:
 | Level | Text                                                                                          | A sentence opens to                                        |
 | ----- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | 0     | An overview: product, or engineering                                                          | The level 1 sentences it cites, from one or more documents |
-| 1     | A document summary: the vision, one per product section, the feature's metaplan, one per plan | The source passages it cites                               |
+| 1     | A document summary: the vision, one per product section, the feature's metaplan               | The source passages it cites                               |
 | 2     | A source passage: one heading section of a file under `doc/`                                  | Nothing further; it links to file mode                     |
 
 The vision has a document summary of its own: at most 8 sentences in at most 3 paragraphs, short
@@ -26,9 +26,16 @@ summary is not one of the overview's members. An engineering overview sentence t
 metaplan does the same, and no overview cites a metaplan's summary. (My call: this follows from
 the vision's two summary levels.)
 
-Depth is fixed at these three levels. A passage is the end of the chain; the only way further is
-file mode. A reader starting from a document summary page (below) has two levels: summary and
-source.
+A plan's summary has two levels of its own: an opening level of about one sentence per topic,
+and a detail level of short paragraphs. A plan page reads its opening sentences, then its detail
+sentences, then the passages they cite. An opening sentence opens to the detail sentences it
+cites, in place, and a detail sentence opens to its source passages. An engineering overview's
+sentences cite a plan's detail sentences, so an overview sentence that draws on a plan opens to
+those detail sentences and then to their passages.
+
+Depth is fixed at these levels. A passage is the end of the chain; the only way further is file
+mode. A reader starting from a vision, section or metaplan summary page (below) has two levels:
+summary and source. A reader starting from a plan page has three: opening, detail and source.
 
 ## The two overviews
 
@@ -84,7 +91,8 @@ section 01) and the date of its last pressure test, if any. Running, done and re
 the read-only notice of the vision's "Locked plans" decision.
 
 The body is the summary's text, every sentence opening to its source passages exactly as level 1
-sentences do inside an overview.
+sentences do inside an overview. A plan page shows its opening level; each opening sentence opens
+to its detail sentences in place, and each detail sentence opens to its source passages.
 
 ## Sentences and their marks
 
@@ -116,6 +124,10 @@ carries two marks; a level 1 sentence carries one, its own document's.
   to 1.35 and a small `ChevronDown` fades in after them. Keyboard focus looks the same. The
   cursor is a pointer. A click that ends a text selection does not open anything (selection is
   for chat, below).
+- **A fragment.** Consecutive sentences of a paragraph or an opened run that open to the same
+  content (a shared source passage, or the same cited sentences) form one fragment: one hover
+  wash over all of its text, one chevron after its last mark, one button. Opening it shows what
+  its sentences open to, each passage once.
 - **A mark.** Clicking a mark opens that document's summary page.
 - **A key chip.** Opens that document's summary page.
 - **The passage header.** Each source passage starts with a small chip naming the file and
@@ -144,6 +156,10 @@ passages follow in citation order. Passages render with the same Markdown render
 uses (section 06); lists, tables and code keep their Markdown layout. No card, coloured left
 border or spine marks the passage (`conventions/web-dashboard-typography.md`, "Stage thread
 chips").
+
+A passage that an earlier fragment in the same view already shows appears as one line: its chip,
+then a **Same passage as above** button. The button moves focus to the first showing, scrolling
+it into view. The first showing in reading order keeps the full text.
 
 Opened text sits on a 10% tint of its document's colour; a nested run uses its own document's
 colour, so the reader can see what has been opened.

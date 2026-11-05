@@ -14,6 +14,7 @@ import { FLASH_CLASS, useFlashOnChange } from "./flash";
 import { anchorKey } from "./open-state";
 import { useKeptDoc } from "./passage-doc";
 import { passageOf } from "./passages";
+import { useSamePassage } from "./same-passage";
 
 type Passage = NonNullable<ReturnType<typeof passageOf>>;
 
@@ -63,6 +64,17 @@ function missingText(failed: boolean, doc: DocView | null): string {
   return doc ? "This section no longer exists." : "Loading";
 }
 
+/** A repeated passage: one line pointing back to the first showing in this view. */
+function SamePassageLine({ goFirst }: { goFirst: () => void }): JSX.Element {
+  return (
+    <p className="concept-muted">
+      <button type="button" className="underline" onClick={goFirst}>
+        Same passage as above
+      </button>
+    </p>
+  );
+}
+
 /**
  * One source passage: a heading section of a file under `doc/`, flowing inline in the opened
  * run after a chip naming its file and heading, with no card or border. Its body goes through
@@ -89,10 +101,12 @@ export function PassageBlock({
   const flashing = useFlashOnChange(passage?.hash ?? null);
   const key = anchorKey(anchor);
   const lines = passage ? { start: passage.startLine, end: passage.endLine } : null;
+  const focusKey = passageKey(parent, sentenceId, key);
+  const goFirst = useSamePassage(key, focusKey);
   return (
     <div
       className={cn("concept-passage", flashing && FLASH_CLASS)}
-      data-focus={passageKey(parent, sentenceId, key)}
+      data-focus={focusKey}
       data-passage={key}
       data-hash={doc?.hash}
       data-start-line={lines?.start}
@@ -108,7 +122,9 @@ export function PassageBlock({
         {" › "}
         <Untrusted text={passage?.title ?? anchor.anchor} />
       </Link>
-      {passage && doc ? (
+      {goFirst ? (
+        <SamePassageLine goFirst={goFirst} />
+      ) : passage && doc ? (
         <PassageBody anchor={anchor} passage={passage} doc={doc} />
       ) : (
         <p className="concept-muted">{missingText(failed, doc)}</p>

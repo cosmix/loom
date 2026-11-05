@@ -60,16 +60,25 @@ For each id, complete these steps before moving to the next id:
 
 Use this exact draft body format for document summaries:
 
-- A section or plan summary takes at most 15 sentences. A vision summary (id
+- A section summary takes at most 15 sentences. A vision summary (id
   `<feature>/product/vision`) takes at most 8 sentences in at most 3 paragraphs, distilling the
   vision so a reader grasps it in under a minute. A metaplan summary (id `<feature>/metaplan/index`,
   one per feature) takes at most 15 sentences: it summarizes the metaplan's plan map and its sequencing decisions,
   citing the metaplan's own passages. Write one sentence per line, with blank lines
   between paragraphs.
+- A plan summary (id `plans/<slug>`) has two levels. First the opening level: about one
+  sentence per topic, each citing every sentence of the detail paragraph(s) it opens, in
+  order, as `[d](#s-xxxxxxxx)`, and nothing else. Then the detail level: short paragraphs
+  whose sentences cite the plan's heading sections. No heading after the opening level. At
+  most 8 opening and 15 detail sentences. An opening sentence says what its paragraphs add up
+  to; it never repeats a detail sentence. Write the detail level first and seal: the refusal
+  lists each detail sentence's id. Then add the opening level above it, citing those ids, and
+  seal again.
 - A sentence compresses its cited section; never copy a sentence of the source.
 - Use only `#` and `##` headings to group prose; headings carry no links.
 - End every sentence with one or more plain Markdown links to heading sections of this
-  summary's own source document. Use a link without a fragment only for text before the
+  summary's own source document; only a plan summary's opening sentences cite its detail
+  sentences instead. Use a link without a fragment only for text before the
   first heading. Resolve links relative to the final summary file, not the runtime draft.
 - Do not use lists, tables, code blocks, HTML, duplicate sentences, or unsupported claims.
 
@@ -82,8 +91,9 @@ Use this exact draft body format for overviews:
   or metaplans directly. Do not replace document-summary citations with raw section or
   plan citations. Resolve links relative to the final overview file, not the runtime draft.
 - Cite every document in the overview's scope with at least one overview sentence.
+- Cite a plan summary's detail sentences, never its opening level.
 - An overview sentence that cites member sentences cites at least two of them, and says what
-  they add up to. Cite one only when that member's summary holds a single sentence.
+  they add up to. Cite one only when that member's summary holds a single citable sentence.
 - Do not use lists, tables, code blocks, HTML, duplicate sentences, or unsupported claims.
 
 Seal only when every citation resolves to a current source sentence. Stop when every

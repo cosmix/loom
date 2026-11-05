@@ -4,7 +4,8 @@ import { useEffect, useMemo } from "react";
 import type { ConceptPage } from "@/plan/api/schema-concept";
 
 import type { KeyedState } from "./flash";
-import { pageSentences, type CitedLookup } from "./open-state";
+import { summaryIdOfKey } from "./column-context";
+import { citableSentences, pageSentences, type CitedLookup } from "./open-state";
 import {
   conceptPageAtom,
   linkedPageKey,
@@ -22,17 +23,18 @@ export type CitedPages = {
 };
 
 /**
- * Page keys of the summaries any sentence of `page` cites that the page can name. A citation of a
- * document with no link (a plan deleted since the overview was committed) is left out: its id is
- * not a page the server has, and fetching it logs a 404.
+ * Page keys of the summaries any sentence of `page` cites that the page can name, except the
+ * page itself (a two-level plan page cites its own detail sentences). A citation of a document
+ * with no link (a plan deleted since the overview was committed) is left out: its id is not a
+ * page the server has, and fetching it logs a 404.
  */
-function citedKeys(page: ConceptPage): string[] {
+function citedKeys(page: ConceptPage, pageKey: string): string[] {
   const keys = new Set<string>();
   for (const sentence of pageSentences(page)) {
     for (const citation of sentence.citations) {
       if (citation.kind !== "sentence") continue;
       const key = linkedPageKey(page, citation.summary);
-      if (key !== null) keys.add(key);
+      if (key !== null && key !== pageKey) keys.add(key);
     }
   }
   return [...keys];
@@ -45,7 +47,7 @@ function citedKeys(page: ConceptPage): string[] {
 export function useCitedPages(pageKey: string, page: ConceptPage): CitedPages {
   const store = useStore();
   const ownState = useAtomValue(conceptPageAtom(pageKey));
-  const joined = useMemo(() => citedKeys(page).join("\n"), [page]);
+  const joined = useMemo(() => citedKeys(page, pageKey).join("\n"), [page, pageKey]);
   const keys = useMemo(() => (joined === "" ? [] : joined.split("\n")), [joined]);
   const statesAtom = useMemo(
     () => atom((get): ConceptPageState[] => keys.map((key) => get(conceptPageAtom(key)))),
@@ -71,11 +73,13 @@ export function useCitedPages(pageKey: string, page: ConceptPage): CitedPages {
   );
   return useMemo(() => {
     const byKey = new Map(keys.map((key, index) => [key, citedStates[index]?.page ?? null]));
-    const citedPage = (summary: string) => byKey.get(pageKeyOfSummary(page, summary)) ?? null;
+    const own = summaryIdOfKey(pageKey);
+    const citedPage = (summary: string) =>
+      summary === own ? page : (byKey.get(pageKeyOfSummary(page, summary)) ?? null);
     const lookup: CitedLookup = (summary, id) => {
       const cited = citedPage(summary);
-      return cited ? pageSentences(cited).find((item) => item.id === id) : undefined;
+      return cited ? citableSentences(cited).find((item) => item.id === id) : undefined;
     };
     return { states, lookup, citedPage };
-  }, [states, keys, citedStates, page]);
+  }, [states, keys, citedStates, page, pageKey]);
 }

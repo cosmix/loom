@@ -127,8 +127,12 @@ fn archived_plan_named_by_metaplan_seals() {
             "# Plan: B\n\nDoes b.\n",
         ),
     ]);
-    let body = "# B\n\nB does b. [p](../../../plans/demo/archive/DONE-PLAN-b.md#plan-b)\n";
-    seal_text(&f, "plans/b", body).expect("archived plan sealed");
+    let body = format!(
+        "# B\n\nB is planned. [d](#{})\n\n\
+         B does b. [p](../../../plans/demo/archive/DONE-PLAN-b.md#plan-b)\n",
+        sentence_id("B does b.")
+    );
+    seal_text(&f, "plans/b", &body).expect("archived plan sealed");
     assert_eq!(
         sealed_file(&f, "plans/b").front.of,
         "doc/plans/demo/archive/DONE-PLAN-b.md"

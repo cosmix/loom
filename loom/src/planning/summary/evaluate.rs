@@ -10,13 +10,15 @@ mod feature_tests;
 #[cfg(test)]
 pub(crate) mod fixtures;
 #[cfg(test)]
+mod levels_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod vision_tests;
 
 pub use cite::cite_key;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use super::claims::Claim;
@@ -221,6 +223,8 @@ fn evaluate_one(
         }
     };
     let ctx = cite::Context::new(project, done, id, &file, source.as_deref());
+    let own = own_current(id, &file, &ctx);
+    let ctx = ctx.with_own(own);
     eval.sentences = sentences_of(&file)
         .map(|s| sentence_eval(s, &ctx))
         .collect();
@@ -239,6 +243,21 @@ fn evaluate_one(
     };
     eval.file = Some(file);
     eval
+}
+
+/// Ids of the current sentences of summary `id` that cite none of its own sentences: a plan
+/// summary's detail level, what its opening sentences rest on. Only those are evaluated here, so
+/// opening sentences citing each other (a hand edit) read stale instead of recursing.
+fn own_current(id: &str, file: &SummaryFile, ctx: &cite::Context<'_>) -> BTreeSet<String> {
+    if !sentences_of(file).any(|s| format::cites_own(id, s)) {
+        return BTreeSet::new();
+    }
+    sentences_of(file)
+        .filter(|s| !format::cites_own(id, s))
+        .map(|s| sentence_eval(s, ctx))
+        .filter(|s| s.state == SentenceState::Current)
+        .map(|s| s.id)
+        .collect()
 }
 
 fn sentence_eval(sentence: &Sentence, ctx: &cite::Context<'_>) -> SentenceEval {

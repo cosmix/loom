@@ -10,6 +10,7 @@ import type { Store } from "@/state/store";
 import { sentenceCitations, targetKey, type SentenceSite } from "./column-context";
 import { focusElement } from "./column-focus";
 import { findSite } from "./column-model";
+import { fragmentMembers, runAt } from "./fragments";
 import { pageSentences, type CitedLookup } from "./open-state";
 import { pageKeyOfSummary } from "./page-state";
 import { docViewAtom, passageOf } from "./passages";
@@ -39,25 +40,21 @@ function siteOfTarget(env: KeyEnv, target: ColumnTarget): SentenceSite | null {
 }
 
 function isOpenAt(env: KeyEnv, target: ColumnTarget): boolean {
-  return (
-    target.kind === "sentence" &&
-    env.open.some(
-      (run) => run.sentenceId === target.id && run.parent === target.runOf && run.level < 2,
-    )
-  );
+  if (target.kind !== "sentence") return false;
+  const site = siteOfTarget(env, target);
+  return site !== null && runAt(env.open, site) !== undefined;
 }
 
 /** The innermost run around the focus: the sentence's own when open, else the run holding it. */
 function runAround(env: KeyEnv, target: ColumnTarget): OpenRun | undefined {
-  if (isOpenAt(env, target)) {
-    return env.open.find((run) => run.sentenceId === target.id && run.parent === target.runOf);
-  }
+  const own = target.kind === "sentence" ? siteOfTarget(env, target) : null;
+  const ownRun = own && runAt(env.open, own);
+  if (ownRun) return ownRun;
   if (target.runOf === null) return undefined;
   // A cited sentence's run is a page sentence's (parent null); a passage names its run's parent.
   const parent = target.kind === "passage" ? (target.parent ?? null) : null;
-  return env.open.find(
-    (run) => run.sentenceId === target.runOf && run.parent === parent && run.level < 2,
-  );
+  const holder = findSite(env.page, env.lookup, env.pageKey, target.runOf, parent);
+  return holder ? runAt(env.open, holder) : undefined;
 }
 
 function firstSource(env: KeyEnv, target: ColumnTarget): { path: string; anchor: string } | null {
@@ -140,14 +137,17 @@ function attach(env: KeyEnv, target: ColumnTarget): void {
   const site = siteOfTarget(env, target);
   if (!site) return;
   const summaryPage = site.parent === null ? env.page : env.citedPage(site.summary);
-  onAttach({
-    kind: "summary",
-    summary: site.summary,
-    sentence: site.sentence.id,
-    text: site.sentence.text,
-    restsOn: site.sentence.rests_on,
-    hash: summaryPage?.file_hash ?? env.page.file_hash,
-  });
+  // A fragment stands for several sentences; each is attached on its own so a draft names one.
+  for (const member of fragmentMembers(site.sentence)) {
+    onAttach({
+      kind: "summary",
+      summary: site.summary,
+      sentence: member.id,
+      text: member.text,
+      restsOn: member.rests_on,
+      hash: summaryPage?.file_hash ?? env.page.file_hash,
+    });
+  }
 }
 
 /** What j/k and the up and down arrows stop on: openable sentences and fold caps. */

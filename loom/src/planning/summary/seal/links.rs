@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 
 use crate::planning::kinds::vision_path;
 use crate::planning::project::Project;
-use crate::planning::summary::evaluate::{cite_key, Evaluation, SentenceState, SummaryState};
+use crate::planning::summary::evaluate::{
+    cite_key, Evaluation, SentenceEval, SentenceState, SummaryState,
+};
 use crate::planning::summary::format::{Block, FormatError, LinkTarget, Sentence, SummaryBody};
 use crate::planning::summary::store;
 
@@ -136,7 +138,8 @@ fn source_problem(
 }
 
 /// Problem with the overview `sentence` citing sentence `id` of member `summary`: a bad target,
-/// a stale member sentence, or a sentence that only repeats the one it cites.
+/// a member sentence that opens to detail sentences or is stale, or a sentence that only repeats
+/// the one it cites. A plan summary's links to its own sentences are the levels' to check.
 fn sentence_problem(
     rules: &Rules<'_>,
     sentence: &Sentence,
@@ -145,6 +148,9 @@ fn sentence_problem(
     cited: &mut Cited,
 ) -> Option<String> {
     if !store::is_overview(rules.id) {
+        if store::is_plan(rules.id) && summary == rules.id {
+            return None;
+        }
         return Some("a document summary cites only its source document".to_string());
     }
     if !rules.members().iter().any(|m| m == summary) {
@@ -156,6 +162,10 @@ fn sentence_problem(
         .and_then(|e| e.sentences.iter().find(|s| s.id == id));
     match member {
         None => Some(format!("{summary} has no sentence {id}")),
+        Some(s) if !citable(s) => Some(format!(
+            "sentence {id} of {summary} opens to detail sentences; cite those detail sentences \
+             instead"
+        )),
         Some(s) if s.state != SentenceState::Current => {
             Some(format!("sentence {id} of {summary} is stale"))
         }
@@ -172,19 +182,31 @@ fn sentence_problem(
     }
 }
 
+/// Whether an overview may cite member sentence `sentence`: it cites no summary sentence. A
+/// plan summary's opening sentences cite its detail sentences, and only those are citable.
+fn citable(sentence: &SentenceEval) -> bool {
+    !sentence
+        .citations
+        .iter()
+        .any(|citation| matches!(citation.target, LinkTarget::Sentence { .. }))
+}
+
 /// An overview sentence that opens to a single member sentence shows the reader little more
 /// than itself, so it must cite at least two. The exemption is a member whose summary holds only
-/// that one sentence: there is nothing else to cite.
+/// that one citable sentence: there is nothing else to cite.
 fn single_member_problem(
     rules: &Rules<'_>,
     sentence: &Sentence,
     drawn: &BTreeSet<(&str, &str)>,
 ) -> Option<String> {
+    if !store::is_overview(rules.id) {
+        return None;
+    }
     let (summary, _) = drawn.first().filter(|_| drawn.len() == 1)?;
     let only_sentence = rules
         .evaluation
         .and_then(|e| e.summaries.get(*summary))
-        .is_some_and(|e| e.sentences.len() == 1);
+        .is_some_and(|e| e.sentences.iter().filter(|s| citable(s)).count() == 1);
     (!only_sentence).then(|| {
         format!(
             "sentence {} cites one member sentence; an overview sentence draws on at least two",
