@@ -15,7 +15,7 @@ export const sessionStateSchema = z.enum([
 ]);
 export const failureKindSchema = z.enum(["spawn", "died"]);
 export const deliverySchema = z.enum(["sent", "delivered", "undelivered"]);
-export const originSchema = z.enum(["offer", "start", "closing"]);
+export const originSchema = z.enum(["offer", "closing"]);
 export const toolStatusSchema = z.enum(["pending", "done", "error", "denied", "not_finished"]);
 export const permissionStatusSchema = z.enum(["pending", "allowed", "denied"]);
 export const denyReasonSchema = z.enum([

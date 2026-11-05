@@ -62,12 +62,13 @@ beforeEach(() => {
   vi.spyOn(Date, "now").mockReturnValue(4000);
 });
 
-it("RunHeader switches between the normal and pressure headers with unconditional hooks", () => {
+it("RunHeader draws the pressure head for a pressure test and nothing for an authoring chat", () => {
   const { store } = setup("working");
   store.set(pressureRunAtom, pressureRunSchema.parse(runFixture));
   const view = mount(<RunHeader session={initial.session!} />, store);
-  expect(screen.getByText("authoring").textContent).toContain("Me authoring");
+  expect(document.querySelector(".chat-run-header")).toBeNull();
   expect(screen.queryByText("Pressure test")).toBeNull();
+  expect(screen.queryByText("authoring")).toBeNull();
 
   view.rerender(<RunHeader session={pressureSession} />);
 
@@ -79,7 +80,8 @@ it("RunHeader switches between the normal and pressure headers with unconditiona
   expect(screen.queryByText("authoring")).toBeNull();
 
   view.rerender(<RunHeader session={initial.session!} />);
-  expect(screen.getByText("authoring").textContent).toContain("Me authoring");
+  expect(document.querySelector(".chat-run-header")).toBeNull();
+  expect(screen.queryByText("Pressure test")).toBeNull();
 });
 
 it("SessionDivider names the next pressure step and model", () => {

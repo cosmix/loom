@@ -135,11 +135,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("duration and token tooltip", () => {
-  mount(turn({ changed_files: [] }));
-  expect(screen.getByText("1m5s")).toBeTruthy();
-  const tokens = screen.getByText("1.5k fresh tokens");
-  expect(tokens.title).toBe("Input: 1000; cache write: 200; cache read: 9000; output: 300");
+it("the footer shows neither duration nor tokens", () => {
+  const { container } = mount(turn({ changed_files: [] }));
+  expect(screen.queryByText("1m5s")).toBeNull();
+  expect(container.textContent).not.toMatch(/tokens/);
   expect(screen.getByRole("group", { name: "Turn 2 changes" })).toBeTruthy();
 });
 
@@ -218,7 +217,7 @@ it("rebuilt rows states", () => {
   const { container, rerender } = mount(value);
   expect(screen.getAllByText("Rebuilding")).toHaveLength(3);
   expect(screen.getByText("3 summaries rebuilding")).toBeTruthy();
-  expect(container.querySelectorAll('[data-kind="summaries"]')).toHaveLength(1);
+  expect(container.querySelector(".aurora-roundel")).toBeNull();
   expect(screen.getByRole("link", { name: "demo/product/section_01" }).getAttribute("href")).toBe(
     "/f/demo/product/section_01",
   );
@@ -232,7 +231,7 @@ it("rebuilt rows states", () => {
     </MemoryRouter>,
   );
   expect(screen.getAllByText("left for the background rebuild")).toHaveLength(3);
-  expect(container.querySelector('[data-kind="summaries"]')).toBeNull();
+  expect(container.querySelector(".aurora-roundel")).toBeNull();
 });
 
 it("check these plans fills composer and attaches section and plans", async () => {

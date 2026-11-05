@@ -2,8 +2,6 @@ import { Link } from "react-router";
 
 import { pageHref, pageKeyOfSummaryId } from "@/plan/api/page-key";
 import type { Turn } from "@/plan/api/schema-chat";
-import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
-import { RebuiltSummaryExtras } from "./rebuilt-summary-extras";
 import { usePlanFeature } from "./turn-footer-plans";
 import { Untrusted } from "./visible-controls";
 
@@ -25,7 +23,6 @@ export function RebuiltSummaries({ turn }: { turn: Turn }) {
     <div className="space-y-1">
       {turn.open && (
         <p className="chat-rebuild-chip">
-          <ActivityGlyph kind="summaries" className="size-3" />
           {count} {count === 1 ? "summary" : "summaries"} rebuilding
         </p>
       )}
@@ -44,7 +41,6 @@ export function RebuiltSummaries({ turn }: { turn: Turn }) {
                 </Link>
               )}
               {turn.open ? "Rebuilding" : "left for the background rebuild"}
-              <RebuiltSummaryExtras id={id} turn={turn} />
             </li>
           );
         })}

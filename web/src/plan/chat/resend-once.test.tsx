@@ -382,13 +382,10 @@ it("no Resend on an undelivered message of the previous chat", () => {
   expect(resends()).toHaveLength(0);
 });
 
-it.each(["offer", "start", "closing"] as const)(
-  "no Resend on the server's %s message",
-  (origin) => {
-    const h = setup("working");
-    mount(h.store, panel);
-    snapshot(h, [lost({ origin })]);
-    expect(screen.getByText("Not delivered")).toBeTruthy();
-    expect(resends()).toHaveLength(0);
-  },
-);
+it("no Resend on the server's offer message", () => {
+  const h = setup("working");
+  mount(h.store, panel);
+  snapshot(h, [lost({ origin: "offer" })]);
+  expect(screen.getByText("Not delivered")).toBeTruthy();
+  expect(resends()).toHaveLength(0);
+});

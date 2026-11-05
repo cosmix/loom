@@ -37,6 +37,24 @@
   margin-block-start: var(--space-2);
 }
 
+/* The break between an ended chat and the next: a centred muted line between two hairlines. */
+.chat-session-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-block: var(--space-1);
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  text-align: center;
+}
+
+.chat-session-divider::before,
+.chat-session-divider::after {
+  content: "";
+  flex: 1 1 0;
+  border-block-start: 1px solid var(--hairline);
+}
+
 .chat-elsewhere,
 .chat-offer-error {
   margin: 0;

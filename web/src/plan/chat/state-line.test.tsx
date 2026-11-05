@@ -1,4 +1,5 @@
-import { act, cleanup, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
+import { Provider } from "jotai/react";
 import { expect, it, vi } from "vitest";
 
 import helloFixture from "@/plan/api/fixtures/hello.json";
@@ -6,11 +7,11 @@ import { checklistViewSchema } from "@/plan/api/schema";
 import type { SessionView } from "@/plan/api/schema-chat";
 import { registerOfferAction } from "@/plan/offers/actions";
 import { checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { FailureNotice } from "./failure-notice";
 import { snapshotAtom } from "./model";
 import {
   base,
   harness,
-  now,
   permission,
   server,
   session,
@@ -23,46 +24,47 @@ import {
 
 setupStateLineTests();
 
-it("every state row", () => {
-  const cases: Array<[SessionView["state"] | null, string]> = [
-    [null, "No chat"],
-    ["starting", "Starting session"],
-    ["idle", "Waiting for you"],
-    ["working", "Working · 41s"],
-    ["permission", "Needs a decision: Bash"],
-    ["ending", "Writing final notes into the documents"],
-    ["ended", "41s ago"],
-    ["failed", "The session could not start"],
+it("every state's visible words", () => {
+  const cases: Array<[SessionView["state"], string | null]> = [
+    ["starting", "Starting"],
+    ["idle", null],
+    ["working", "Working"],
+    ["permission", "⚠Needs your answer"],
+    ["ending", "Wrapping up"],
+    ["ended", "Ended"],
+    ["failed", "Stopped"],
   ];
   for (const [state, words] of cases) {
-    const h = harness(
-      state ? session({ state, failure: { kind: "spawn", message: "spawn refused" } }) : null,
-      [turn([permission("Bash")])],
-    );
-    const { container } = h.show();
-    expect(container.textContent).toContain(words);
+    const { container, unmount } = harness(session({ state }), [turn([permission("Bash")])]).show();
+    const row = container.querySelector(".chat-state-row");
+    expect(row?.textContent ?? null, state).toBe(words);
     expect(screen.getAllByRole("status")[0].getAttribute("aria-live")).toBe("polite");
-    if (state === "starting") {
-      expect(container.textContent).toContain(base.name);
-      expect(container.textContent).toContain(base.model);
-    }
-    if (state === "ending") expect(container.textContent).toContain("up to 10 minutes");
-    cleanup();
+    unmount();
   }
 });
 
-it("every busy state draws the roundel, hidden from assistive technology", () => {
-  for (const state of ["starting", "working", "ending"] as const) {
-    const { container } = harness(session({ state })).show();
-    const glyph = container.querySelector(".chat-state-glyph");
-    expect(glyph?.getAttribute("aria-hidden"), state).toBe("true");
-    const roundel = glyph?.querySelector(".aurora-roundel");
-    expect(roundel?.getAttribute("data-busy"), state).toBe("true");
-    cleanup();
+it("an idle chat and no chat draw no visible element", () => {
+  for (const current of [session({ state: "idle" }), null]) {
+    const { container, unmount } = harness(current).show();
+    expect(container.querySelector(".chat-state-row")).toBeNull();
+    expect(container.textContent).not.toContain("Waiting for you");
+    unmount();
   }
-  const { container } = harness(session({ state: "idle" })).show();
-  expect(container.querySelector(".aurora-roundel")).toBeNull();
-  expect(container.querySelector(".chat-led")?.getAttribute("aria-hidden")).toBe("true");
+});
+
+it("the line draws no roundel in any state", () => {
+  for (const state of ["starting", "working", "ending", "idle", "permission"] as const) {
+    const { container, unmount } = harness(session({ state })).show();
+    expect(container.querySelector(".aurora-roundel"), state).toBeNull();
+    unmount();
+  }
+});
+
+it("a decision's warning glyph is hidden from assistive technology", () => {
+  const { container } = harness(session({ state: "permission" })).show();
+  const glyph = container.querySelector(".chat-state-glyph");
+  expect(glyph?.textContent).toBe("⚠");
+  expect(glyph?.getAttribute("aria-hidden")).toBe("true");
 });
 
 it("none draws no workflow offer; New chat is the panel head's", () => {
@@ -94,51 +96,34 @@ it("none draws no workflow offer; New chat is the panel head's", () => {
   expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
 });
 
-it("working shows elapsed, newest tool, subagents", () => {
-  const h = harness(
-    session({ state: "working", subagents_running: 2, state_since: now.toISOString() }),
-    [turn([tool("Old summary"), tool("Inspect doc/product.md")])],
-  );
-  const { container } = h.show();
-  expect(container.textContent).toContain("Working · 41s · Inspect doc/product.md · 2 subagents");
-  expect(container.textContent).not.toContain("Old summary");
-  act(() => vi.advanceTimersByTime(1000));
-  expect(container.textContent).toContain("Working · 42s");
-});
-
-it("working falls back to the open turn start", () => {
-  const { container } = harness(
-    session({ state: "working", working_since: null, state_since: now.toISOString() }),
-  ).show();
-  expect(container.textContent).toContain("Working · 41s");
-});
-
-it("starting shows the Brief link and no other state does", () => {
-  const h = harness(session({ state: "starting" }));
-  const { container } = h.show();
-  expect(screen.getByRole("button", { name: "Brief" })).toBeTruthy();
-  expect(container.textContent).toContain(`Starting session · ${base.name} · ${base.model}`);
-  h.setSession(session({ state: "working" }));
-  expect(screen.queryByRole("button", { name: "Brief" })).toBeNull();
-});
-
-it("two pending permissions name both tools and count 2", () => {
+it("two pending permissions are announced with both tools, once", () => {
   const h = harness(session({ state: "permission" }), [
     turn([permission("Edit")], { id: "newer", started_at: "2026-10-28T09:59:30Z" }),
     turn([permission("Bash")], { id: "older", started_at: since }),
   ]);
   const { container } = h.show();
-  expect(container.textContent).toContain("Needs 2 decisions: Bash, Edit");
+  expect(container.textContent).toContain("Needs your answer");
   // ChatAnnouncer says it assertively, once; the polite region here would be a second announcement.
   expect(screen.getAllByRole("status")[0].textContent).toBe("");
-  const words = screen.getByText("Needs 2 decisions: Bash, Edit");
-  expect(words.closest("[aria-hidden='true']")).toBeNull();
+  expect(screen.getByText("Needs your answer").closest("[aria-hidden='true']")).toBeNull();
 });
 
-it("failed spawn text", () => {
-  const { container } = harness(
-    session({ state: "failed", failure: { kind: "spawn", message: "tmux refused" } }),
-  ).show();
+it("the starting words are hidden from browse mode and the region names the session", () => {
+  const { container } = harness(session({ state: "starting" })).show();
+  expect(screen.getAllByRole("status")[0].textContent).toBe(
+    `Starting session · ${base.name} · ${base.model}`,
+  );
+  expect(container.querySelector(".chat-state-row")?.getAttribute("aria-hidden")).toBe("true");
+  expect(screen.queryByRole("button", { name: "Brief" })).toBeNull();
+});
+
+it("a failed spawn's notice", () => {
+  const failed = session({ state: "failed", failure: { kind: "spawn", message: "tmux refused" } });
+  const { container } = render(
+    <Provider store={harness(failed).store}>
+      <FailureNotice session={failed} />
+    </Provider>,
+  );
   expect(container.textContent).toContain("The session could not start");
   expect(screen.getByText("tmux refused")).toBeTruthy();
   expect(
@@ -146,17 +131,21 @@ it("failed spawn text", () => {
       "The documents keep what the session recorded as it went. A new chat starts fresh.",
     ),
   ).toBeTruthy();
+  expect(container.querySelector('.chat-notice[data-tone="error"]')).toBeTruthy();
 });
 
-it("failed died text with last activity", () => {
-  const { container } = harness(
-    session({ state: "failed", failure: { kind: "died", message: "Process exited" } }),
-  ).show();
+it("a died session's notice names its last activity", () => {
+  const died = session({ state: "failed", failure: { kind: "died", message: "Process exited" } });
+  const { container } = render(
+    <Provider store={harness(died).store}>
+      <FailureNotice session={died} />
+    </Provider>,
+  );
   expect(container.textContent).toContain("The session stopped unexpectedly");
   expect(container.textContent).toContain(`Last activity ${since} (41s ago)`);
 });
 
-it("a read-only server leaves the state row as it is: the banner carries the problems", () => {
+it("a read-only server leaves the state line as it is: the banner carries the problems", () => {
   const h = harness(null);
   h.store.set(serverInfoAtom, {
     ...server,
@@ -166,7 +155,6 @@ it("a read-only server leaves the state row as it is: the banner carries the pro
     ],
   });
   const { container } = h.show();
-  expect(container.textContent).toContain("No chat");
   for (const text of ["Read-only", "tmux missing", "Install tmux", "Claude logged out"]) {
     expect(container.textContent).not.toContain(text);
   }
@@ -180,32 +168,30 @@ it("announces state changes only, never elapsed time or tool summaries", () => {
   const { container } = h.show();
   const [status] = screen.getAllByRole("status");
   expect(status.textContent).toBe("Working");
-  expect(container.textContent).toContain("Working · 41s · First tool");
+  expect(container.textContent).not.toContain("First tool");
   act(() => vi.advanceTimersByTime(20_000));
   h.setTurns([turn([tool("Second tool")])]);
-  expect(container.textContent).toContain("Second tool");
+  expect(container.textContent).not.toContain("Second tool");
   expect(status.textContent).toBe("Working");
   h.setSession(session({ state: "ending" }));
   expect(status.textContent).toBe(
     "Writing final notes into the documents · This can take up to 10 minutes.",
   );
-  // Permission, ended and failed are ChatAnnouncer's, which stays mounted with the panel closed.
+  // An idle chat announces nothing; permission, ended and failed are ChatAnnouncer's.
+  h.setSession(session({ state: "idle" }));
+  expect(status.textContent).toBe("");
   h.setSession(session({ state: "permission" }));
   expect(status.textContent).toBe("");
   h.setSession(session({ state: "ended" }));
-  act(() => vi.advanceTimersByTime(20_000));
   expect(status.textContent).toBe("");
   h.setSession(session({ state: "failed", failure: { kind: "died", message: "gone" } }));
   expect(status.textContent).toBe("");
 });
 
-it("no chat hides its duplicated words from browse mode", () => {
+it("no chat announces itself in the polite region and draws no words", () => {
   const { container } = harness(null).show();
-  const hidden = [...container.querySelectorAll("[aria-hidden='true']")].filter(
-    (node) => node.textContent === "No chat",
-  );
-  expect(hidden).toHaveLength(1);
   expect(screen.getAllByRole("status")[0].textContent).toBe("No chat");
+  expect(container.querySelector(".chat-state-row")).toBeNull();
 });
 
 const concluded = (fields: Partial<SessionView>) => ({
@@ -215,28 +201,25 @@ const concluded = (fields: Partial<SessionView>) => ({
   previous: { session: session(fields), turns: [] },
 });
 
-it("a browser that connects after a chat failed shows the failure, not No chat", () => {
+it("a browser that connects after a chat failed shows Stopped, not No chat", () => {
   const h = harness(null);
   h.store.set(
     snapshotAtom,
     concluded({ state: "failed", failure: { kind: "died", message: "Process exited" } }),
   );
   const { container } = h.show();
+  expect(container.textContent).toContain("Stopped");
   expect(container.textContent).not.toContain("No chat");
-  expect(container.textContent).toContain("The session stopped unexpectedly");
-  expect(screen.getByText("Process exited")).toBeTruthy();
-  expect(container.textContent).toContain(`Last activity ${since} (41s ago)`);
-  expect(container.querySelector('.chat-notice[data-tone="error"]')).toBeTruthy();
 });
 
-it("a browser that connects after a chat ended shows the Ended line, not No chat", () => {
+it("a browser that connects after a chat ended shows Ended, not No chat", () => {
   const h = harness(null);
   h.store.set(snapshotAtom, concluded({ state: "ended" }));
   const { container } = h.show();
   expect(container.textContent).not.toContain("No chat");
-  // Exposed to browse mode and no status region of its own: ChatAnnouncer does the announcing.
-  const line = screen.getByText("41s ago");
-  expect(line.closest("[aria-hidden='true'], [role='status']")).toBeNull();
+  // Exposed to browse mode and no status text of its own: ChatAnnouncer does the announcing.
+  const line = screen.getByText("Ended");
+  expect(line.closest("[aria-hidden='true']")).toBeNull();
 });
 
 it("a previous chat that was not concluded does not stand in for the current state", () => {
@@ -246,46 +229,18 @@ it("a previous chat that was not concluded does not stand in for the current sta
   expect(container.textContent).toContain("No chat");
 });
 
-it("hides only the duplicated state words, so the working detail stays reachable", () => {
-  const h = harness(session({ state: "working", subagents_running: 1 }), [
-    turn([tool("Inspect doc/product.md")]),
-  ]);
-  const { container } = h.show();
-  const hidden = [...container.querySelectorAll("[aria-hidden='true']")].filter(
-    (node) => node.textContent === "Working",
-  );
-  expect(hidden).toHaveLength(1);
-  const exposed = screen.getByText(/41s · Inspect doc\/product\.md · 1 subagent/);
-  expect(exposed.closest("[aria-hidden='true']")).toBeNull();
-  h.setSession(session({ state: "idle" }));
-  const idleHidden = [...container.querySelectorAll("[aria-hidden='true']")].map(
-    (node) => node.textContent,
-  );
-  expect(idleHidden).toContain("Waiting for you");
-});
-
 it("session strings expose controls as visible text", () => {
-  const h = harness(session({ state: "starting", name: "Plan\u202Ename" }));
+  const h = harness(session({ state: "starting", name: "Plan‮name" }));
   const { container } = h.show();
   expect(container.textContent).toContain("Plan⟨U+202E⟩name");
-  h.setSession(
-    session({ state: "failed", failure: { kind: "spawn", message: "Failed\u200Bhere" } }),
+  const failed = session({
+    state: "failed",
+    failure: { kind: "spawn", message: "Failed​here" },
+  });
+  const notice = render(
+    <Provider store={h.store}>
+      <FailureNotice session={failed} />
+    </Provider>,
   );
-  expect(container.textContent).toContain("Failed⟨U+200B⟩here");
-});
-
-it("the working detail is one run on a row that cuts it, with the whole of it as the row's title", () => {
-  const h = harness(
-    session({ state: "working", subagents_running: 2, state_since: now.toISOString() }),
-    [turn([tool("Inspect doc/plans/feat-planner/product.md")])],
-  );
-  const { container } = h.show();
-  const text = container.querySelector(".chat-state-row > .chat-state-text");
-  expect(text?.getAttribute("title")).toBe(
-    "41s · Inspect doc/plans/feat-planner/product.md · 2 subagents",
-  );
-  // One text run: a split would read as separate words to the test above and to a screen reader.
-  expect(screen.getByText("41s · Inspect doc/plans/feat-planner/product.md · 2 subagents")).toBe(
-    text?.lastElementChild,
-  );
+  expect(notice.container.textContent).toContain("Failed⟨U+200B⟩here");
 });

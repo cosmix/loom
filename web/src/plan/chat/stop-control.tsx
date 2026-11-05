@@ -1,4 +1,5 @@
 import { useAtomValue, useStore } from "jotai";
+import { Square } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { authorBlockReasonAtom, isHolderAtom } from "@/plan/state/atoms";
@@ -10,7 +11,7 @@ import { queueReturnedAtom, sessionAtom } from "./model";
 import { Untrusted } from "./visible-controls";
 
 /**
- * Moves the texts the server returns after Stop or End chat into the draft. It is mounted with the
+ * Moves the texts the server returns after Stop or when the chat ends into the draft. It is mounted with the
  * chat registrations, so it runs while the composer is replaced by the concluded-chat view.
  */
 export function useQueueRefill(): void {
@@ -33,8 +34,10 @@ export function useQueueRefill(): void {
 }
 
 /**
- * Stop, in the composer's action row immediately before Send and at Send's size, while a turn
- * runs or waits on a decision. Its error sits under it, in the row's reason size.
+ * Stop, among the composer box's tools immediately before Send and at Send's size: a round
+ * secondary button with a filled square, while a turn runs or waits on a decision. Its reason
+ * (only "Stopping the current turn", since a holder is never otherwise blocked) follows it on the
+ * tools line for the moment the request takes; a failed request's error sits under it.
  */
 export function StopControl() {
   const store = useStore();
@@ -56,9 +59,12 @@ export function StopControl() {
     <div className="chat-composer-stop">
       <DisabledReason
         reason={reason ?? (pending ? "Stopping the current turn" : null)}
+        reasonPlacement="inline"
+        shape="round"
         onClick={stop}
       >
-        Stop
+        <Square size={15} fill="currentColor" strokeWidth={0} aria-hidden="true" />
+        <span className="sr-only">Stop</span>
       </DisabledReason>
       {error && (
         <p role="status" className="plan-fine">

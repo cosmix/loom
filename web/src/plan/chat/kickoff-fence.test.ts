@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { withoutKickoffFence } from "./kickoff-fence";
+import { fenceBody, withoutFence, withoutKickoffFence } from "./kickoff-fence";
 
 const tick = "`".repeat(3);
 const block = `${tick}loom-kickoff\n{"problem":"p","questions":["Which hosts?"]}\n${tick}`;
@@ -53,5 +53,46 @@ describe("withoutKickoffFence", () => {
     const code = `${tick}ts\nconst a = 1;\n${tick}`;
 
     expect(withoutKickoffFence(`${block}\n${code}\n${block}`)).toBe(code);
+  });
+});
+
+describe("withoutFence", () => {
+  it("drops only the fence with the given info string", () => {
+    const closing = `${tick}loom-closing\n{"decisions":[]}\n${tick}`;
+
+    expect(withoutFence(`Done.\n\n${closing}`, "loom-closing")).toBe("Done.");
+    expect(withoutFence(`${block}\n${closing}`, "loom-closing")).toBe(block);
+  });
+});
+
+describe("fenceBody", () => {
+  const closing = (body: string) => `${tick}loom-closing\n${body}\n${tick}`;
+
+  it("returns the body of the last matching fence", () => {
+    const text = `${closing('{"a":1}')}\nthen\n${closing('{"a":2}\n{"b":3}')}`;
+
+    expect(fenceBody(text, "loom-closing")).toBe('{"a":2}\n{"b":3}');
+  });
+
+  it("returns null without a matching fence", () => {
+    expect(fenceBody("plain text", "loom-closing")).toBeNull();
+    expect(fenceBody(`${tick}json\n{}\n${tick}`, "loom-closing")).toBeNull();
+    expect(fenceBody(`${tick}loom-closing-notes\n{}\n${tick}`, "loom-closing")).toBeNull();
+  });
+
+  it("returns null for a fence that is still open", () => {
+    expect(fenceBody(`${tick}loom-closing\n{"decisions":[`, "loom-closing")).toBeNull();
+  });
+
+  it("ignores a block quoted inside a longer fence", () => {
+    const long = "`".repeat(4);
+
+    expect(fenceBody(`${long}md\n${closing("{}")}\n${long}`, "loom-closing")).toBeNull();
+  });
+
+  it("returns null when the last block is still open, even after a closed one", () => {
+    const text = `${closing('{"a":1}')}\n${tick}loom-closing\n{"a":`;
+
+    expect(fenceBody(text, "loom-closing")).toBeNull();
   });
 });
