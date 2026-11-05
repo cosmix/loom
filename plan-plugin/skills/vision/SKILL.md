@@ -84,8 +84,9 @@ write only the vision. Do not create or rewrite the section as part of this repa
 
 When the closing-write message arrives, ask no further questions. Write any settled
 decisions still missing and put unresolved points under `## Open questions`, each with
-options and your recommendation. Finish the turn-end duty, reply `Closing write done.`
-and stop. If there is nothing to write, reply at once.
+options and your recommendation. Finish the turn-end duty, reply as the closing message
+asks (`Closing write done.` and its `loom-closing` block), then stop. If there is nothing
+to write, reply at once.
 
 ## Finish each editing turn
 
