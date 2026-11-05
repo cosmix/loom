@@ -228,3 +228,7 @@ Full detail: [iterm2-window-teardown.md](concerns/iterm2-window-teardown.md).
 ## Planner Review Fixes Follow-ups
 
 Operator checks no stage sandbox can run (rebuilt summaries, a real image read, a kickoff round trip, journeys J2-J5 and J8), one open question about server-written sends returned on end, and about forty unimplemented reviewer suggestions on uploads, drafts, summaries and the web screens. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md#planner-review-fixes-unchecked-here-and-reviewer-suggestions)
+
+## Planner Polish Follow-ups
+
+Operator checks no stage sandbox can run (a rebuilt metaplan summary, a real Stop, journeys J3-J5 and J8) and about twenty unimplemented reviewer suggestions on chat tests, the Stop button look, roundel CSS, spine row accessibility and metaplan breadcrumbs. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md#planner-polish-unchecked-here-and-reviewer-suggestions)
