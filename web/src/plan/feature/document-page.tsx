@@ -105,8 +105,9 @@ export function MetaplanPage() {
     : checklist.metaplans[0];
   if (!metaplan) return <LoadState state="not_found" title="No such metaplan" />;
   // A file name outside the summary stem grammar (`metaplan_02.md`) has no summary: show its source.
-  if (metaplanSummaryKey(checklist.feature, metaplan.path) === null) {
-    return <SourcePage path={metaplan.path} />;
+  const { path: sourcePath } = metaplan;
+  if (metaplanSummaryKey(checklist.feature, sourcePath) === null) {
+    return <SourcePage path={sourcePath} />;
   }
   const name = metaplanFile(metaplan.path);
   if (!file && name.replace(/\.md$/, "") !== FIRST_METAPLAN) {
