@@ -25,12 +25,18 @@ it.each([
   ["/f/atlas/source/product/atlas/index.md", "vision"],
   ["/f/atlas/source/product/atlas/section_02.md", "product"],
   ["/f/atlas/source/plans/atlas/index.md", "metaplan"],
-  ["/f/atlas/source/plans/atlas/METAPLAN.md", "metaplan"],
+  ["/f/atlas/source/plans/atlas/archive/REVIEW-DONE-PLAN-x.md", "run"],
+  ["/f/atlas/source/plans/atlas/archive/REVIEW-PLAN-x.md", "run"],
   ["/f/atlas/source/plans/atlas/PLAN-x.md", "plans"],
   ["/f/atlas/source/plans/atlas/IN_PROGRESS-PLAN-x.md", "plans"],
   ["/f/atlas/source/plans/atlas/DONE-PLAN-x.md", "plans"],
 ])("selects the group of the document shown at %s", (pathname, group) => {
   expect(groupOfPathname(pathname)).toBe(group);
+});
+
+it("selects no group for a stray file under the plans folder", () => {
+  expect(groupOfPathname("/f/atlas/source/plans/atlas/METAPLAN.md")).toBeNull();
+  expect(groupOfPathname("/f/atlas/source/plans/atlas/briefs/common.md")).toBeNull();
 });
 
 it("selects no group for a source path it cannot read", () => {
