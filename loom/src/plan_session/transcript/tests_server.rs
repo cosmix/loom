@@ -331,3 +331,30 @@ fn malformed_or_oversized_records_never_panic() {
     };
     assert_eq!(markdown.chars().count(), 64 * 1024);
 }
+
+#[test]
+fn an_interrupt_after_stopped_and_late_assistant_text_adds_no_second_notice() {
+    let mut mapper = mapper();
+    let lines = lines("interrupt.jsonl");
+    let (interrupt, before) = lines.split_last().expect("fixture lines");
+    drive(&mut mapper, before);
+    mapper.add_server_item(notice("stopped-1", NoticeKind::Stopped, "Stopped"));
+    let late = json!({
+        "type": "assistant", "uuid": "a2", "parentUuid": "u2", "isSidechain": false,
+        "timestamp": "2026-10-27T10:00:04.000Z",
+        "message": {"id": "msg_late", "role": "assistant",
+            "content": [{"type": "text", "text": "Written before the Stop arrived."}]}
+    });
+    mapper.ingest_main(&late.to_string());
+    mapper.ingest_main(interrupt);
+
+    let notices: Vec<_> = only_turn(&mapper)
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Notice { kind, .. } => Some(kind),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(notices, [&NoticeKind::Stopped], "{:?}", mapper.turns()[0]);
+}
