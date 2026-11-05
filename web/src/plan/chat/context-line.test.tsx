@@ -129,8 +129,8 @@ it("a dismissal on a page without a source ends at any navigation", async () => 
   fireEvent.click(screen.getByRole("button", { name: "Dismiss context" }));
   expect(line("Run")).toBeNull();
 
-  await go(router, "/f/atlas/pressure");
-  expect(line("Pressure test")).not.toBeNull();
+  await go(router, "/f/atlas/engineering");
+  expect(line("Engineering overview")).not.toBeNull();
 });
 
 it("shows a name with an invisible control character spelled out", () => {

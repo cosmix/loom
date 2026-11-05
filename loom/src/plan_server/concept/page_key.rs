@@ -9,6 +9,8 @@ pub enum Scope {
     Product,
     /// Engineering plans of a feature.
     Engineering,
+    /// A feature's metaplan documents. Only a summary page has this scope; no overview does.
+    Metaplan,
 }
 
 /// The page a request addresses.
@@ -21,13 +23,13 @@ pub enum PageKey {
         /// The overview's document family.
         scope: Scope,
     },
-    /// A section or plan summary; standalone plans have no feature.
+    /// A section, plan or metaplan summary; standalone plans have no feature.
     Summary {
         /// The owning feature, absent for a standalone plan.
         feature: Option<String>,
         /// The document family.
         scope: Scope,
-        /// A product section stem or plan slug.
+        /// A product section stem, plan slug or metaplan file stem.
         doc: String,
     },
 }
@@ -39,7 +41,7 @@ impl PageKey {
         match parts.as_slice() {
             ["overview", feature, scope] if is_feature_name(feature) => Some(Self::Overview {
                 feature: (*feature).to_owned(),
-                scope: parse_scope(scope)?,
+                scope: parse_scope(scope).filter(|scope| *scope != Scope::Metaplan)?,
             }),
             [feature, scope, doc] if is_feature_name(feature) && safe_doc(doc) => {
                 Some(Self::Summary {
@@ -89,6 +91,7 @@ fn parse_scope(scope: &str) -> Option<Scope> {
     match scope {
         "product" => Some(Scope::Product),
         "engineering" => Some(Scope::Engineering),
+        "metaplan" => Some(Scope::Metaplan),
         _ => None,
     }
 }
@@ -97,6 +100,7 @@ fn scope_name(scope: Scope) -> &'static str {
     match scope {
         Scope::Product => "product",
         Scope::Engineering => "engineering",
+        Scope::Metaplan => "metaplan",
     }
 }
 

@@ -1,5 +1,5 @@
 /*
- * The Pressure test and Run pages: an eyebrow, the page title, then rows on hairlines (DESIGN.md,
+ * The Run page: an eyebrow, the page title, then rows on hairlines (DESIGN.md,
  * Page rhythm). The page keeps its own column inside the layout's scroll container, so nothing
  * here scrolls sideways at 390px: a long slug truncates and the row's side wraps under its name.
  */

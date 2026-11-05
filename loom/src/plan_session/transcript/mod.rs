@@ -14,6 +14,8 @@ mod opening_contract_tests;
 mod paste_contract_tests;
 mod records;
 #[cfg(test)]
+mod stop_contract_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_opening;

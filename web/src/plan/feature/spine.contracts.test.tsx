@@ -39,14 +39,7 @@ const WIDE_QUERY = "(min-width: 1024px)";
 const SECTION_NAMES = { "01": "Workflow model", "02": "Command surface", "03": "Review path" };
 
 /** Case-sensitive, so a row may carry a mark or a count beside its name. */
-const SPINE_ROWS = [
-  /\bVision\b/,
-  /\bProduct spec\b/,
-  /\bMetaplan\b/,
-  /\bPlans\b/,
-  /\bPressure test\b/,
-  /\bRun\b/,
-];
+const SPINE_ROWS = [/\bVision\b/, /\bProduct spec\b/, /\bMetaplan\b/, /\bPlans\b/, /\bRun\b/];
 
 let unregister: (() => void)[] = [];
 
@@ -244,19 +237,6 @@ afterEach(() => {
   cleanup();
   unregister.forEach((remove) => remove());
   vi.unstubAllGlobals();
-});
-
-it("a feature opens its vision", async () => {
-  const { router } = renderRoutes("/f/atlas", finishedChecklist());
-
-  await waitFor(() => expect(router.state.location.pathname).toBe("/f/atlas/vision"));
-  expect(router.state.location.search).toBe("");
-
-  const column = await screen.findByRole("document", { name: "Reading column" });
-  await waitFor(() => expect(column.textContent).toContain(VISION_SENTENCE));
-
-  const rows = within(spine());
-  for (const name of SPINE_ROWS) expect(rows.getByRole("link", { name })).toBeTruthy();
 });
 
 it("the Vision row opens the vision document", async () => {

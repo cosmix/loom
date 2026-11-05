@@ -6,11 +6,13 @@ import { vi } from "vitest";
 
 import { initClient } from "@/plan/api/client";
 import authoringFixture from "@/plan/api/fixtures/authoring.json";
+import checklistFixture from "@/plan/api/fixtures/checklist.json";
+import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
-import { authoringViewSchema, serverInfoSchema } from "@/plan/api/schema";
+import { authoringViewSchema, checklistViewSchema, serverInfoSchema } from "@/plan/api/schema";
 import { routes } from "@/plan/router";
-import { authoringAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { authoringAtom, checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 /** Fixtures and drivers shared by the concept route tests. */
 export type Store = ReturnType<typeof createStore>;
@@ -79,6 +81,43 @@ export function canAuthor(store: Store): void {
   store.set(serverInfoAtom, serverInfoSchema.parse({ ...serverInfoFixture, read_only: [] }));
   store.set(authoringAtom, authoringViewSchema.parse({ ...authoringFixture, holder: null }));
 }
+
+/** The offers plan 1 sends in the checklist; `EmptyOffer` looks its offer up there. */
+export function withOffers(store: Store): void {
+  store.set(
+    checklistAtom,
+    checklistViewSchema.parse({
+      ...checklistFixture.checklists[0]!,
+      secondary: [
+        {
+          id: "start-vision",
+          kind: "start_vision",
+          label: "Start the product vision",
+          target: null,
+        },
+        {
+          id: "start-metaplan",
+          kind: "start_metaplan",
+          label: "Start a metaplan from the product spec",
+          target: null,
+        },
+      ],
+    }),
+  );
+}
+
+export const authorWithOffers = (store: Store): void => {
+  canAuthor(store);
+  withOffers(store);
+};
+
+/** An overview page in the empty state `kind`, with no key chips or blocks. */
+export const empty = (kind: string, extra: Page = {}) => ({
+  ...clone(overviewFixture),
+  key_chips: [],
+  blocks: [],
+  empty: { kind, count: null, offer: null, docs: [], ...extra },
+});
 
 /**
  * Below 1024px the header moves Settings and the view tabs into its overflow menu. At 1024px

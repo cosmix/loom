@@ -26,8 +26,10 @@ anything.
    Follow every body rule in the brief:
    - A section or plan summary takes at most 15 sentences. A vision summary (id
      `<feature>/product/vision`) takes at most 8 sentences in at most 3 paragraphs, distilling
-     the vision so a reader grasps it in under a minute. Write one sentence per line, with blank
-     lines between paragraphs.
+     the vision so a reader grasps it in under a minute. A metaplan summary (id
+     `<feature>/metaplan/<stem>`) takes at most 15 sentences: it summarizes the metaplan's plan
+     map and its sequencing decisions, citing the metaplan's own passages. Write one sentence per
+     line, with blank lines between paragraphs.
    - A sentence compresses its cited section; never copy a sentence of the source.
    - Use only `#` and `##` headings to group prose; headings carry no links.
    - End every sentence with one or more plain Markdown links to heading sections of this
