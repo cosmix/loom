@@ -3,6 +3,7 @@
 //! Every bullet is written by [`review_item_line`]; `planning::run_review` parses them back.
 
 use super::stages::StageInfo;
+use super::Journals;
 use crate::fs::memory::{MemoryEntry, MemoryEntryType, ReceiptOutcome};
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
@@ -16,15 +17,16 @@ pub const OPEN_FINDINGS_HEADING: &str = "## Open Findings";
 /// The prefix integration-verify gives the decisions and questions that record spec outcomes.
 pub const SPEC_CONFORMANCE_PREFIX: &str = "spec-conformance:";
 
-type Journals = HashMap<String, Vec<MemoryEntry>>;
-
 /// One bullet in the shared format: ``- **<stage name>** (`<stage-id>`): <text>``.
 ///
-/// The name escapes `\` and `*` with a backslash; every whitespace run in the text, newlines
-/// included, collapses to one space, trimmed. No trailing newline.
+/// The name escapes `\` and `*` with a backslash; every whitespace run in the name and in the
+/// text, newlines included, collapses to one space, trimmed. No trailing newline.
 pub fn review_item_line(stage_name: &str, stage_id: &str, text: &str) -> String {
-    let name = stage_name.replace('\\', "\\\\").replace('*', "\\*");
-    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let collapse = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let name = collapse(stage_name)
+        .replace('\\', "\\\\")
+        .replace('*', "\\*");
+    let text = collapse(text);
     format!("- **{name}** (`{stage_id}`): {text}")
 }
 

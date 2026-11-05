@@ -11,7 +11,11 @@ use crate::models::stage::{Stage, StageType};
 use crate::planning::implements::implemented_section_paths;
 
 /// Append the block for an integration-verify stage whose plan implements product sections.
-pub(super) fn append_product_sections(content: &mut String, stage: &Stage, work_dir: &Path) {
+pub(in crate::orchestrator::signals) fn append_product_sections(
+    content: &mut String,
+    stage: &Stage,
+    work_dir: &Path,
+) {
     if !matches!(stage.stage_type, StageType::IntegrationVerify) {
         return;
     }
@@ -25,17 +29,9 @@ pub(super) fn append_product_sections(content: &mut String, stage: &Stage, work_
 /// The section paths the active plan implements; empty when there are none or the plan cannot
 /// be read. A read failure never fails signal generation.
 fn plan_section_paths(work_dir: &Path) -> Vec<PathBuf> {
-    let rel = match crate::fs::get_source_path(work_dir) {
-        Ok(Some(rel)) if rel.is_relative() => rel,
+    let (rel, path) = match crate::fs::resolve_source(work_dir) {
+        Ok(Some((rel, path))) if rel.is_relative() => (rel, path),
         Ok(_) => return Vec::new(),
-        Err(error) => {
-            tracing::warn!("product sections: cannot read the plan source path: {error:#}");
-            return Vec::new();
-        }
-    };
-    let path = match crate::fs::resolve_source_path(work_dir) {
-        Ok(Some(path)) => path,
-        Ok(None) => return Vec::new(),
         Err(error) => {
             tracing::warn!("product sections: cannot resolve the plan source: {error:#}");
             return Vec::new();
@@ -101,8 +97,8 @@ mod tests {
         assert!(product_sections_block(&[]).is_none());
     }
 
-    #[test]
-    fn only_an_integration_verify_stage_with_a_feature_plan_gets_the_block() {
+    /// A project whose active plan carries `text`; returns its root and `.loom/work`.
+    fn project_with_plan(text: &str) -> (tempfile::TempDir, PathBuf) {
         let root = tempfile::tempdir().unwrap();
         let work = root.path().join(".loom/work");
         std::fs::create_dir_all(&work).unwrap();
@@ -110,8 +106,43 @@ mod tests {
         let config = format!("[plan]\nplan_id = \"PLAN-x\"\nsource_path = \"{plan}\"\n");
         std::fs::write(work.join("config.toml"), config).unwrap();
         std::fs::create_dir_all(root.path().join("doc/plans/alpha")).unwrap();
-        let text = "# X\n\nImplements: section_03, section_01\n";
         std::fs::write(root.path().join(plan), text).unwrap();
+        (root, work)
+    }
+
+    /// The signal `generate_signal` writes for `stage` in `work`, through `assemble_signal`.
+    fn generated_signal(stage: &Stage, work: &Path) -> String {
+        let mut session = crate::models::session::Session::new();
+        session.assign_to_stage(stage.id.clone());
+        let worktree = crate::models::worktree::Worktree::new(
+            stage.id.clone(),
+            PathBuf::from("/repo/.worktrees/integration-verify"),
+            "loom/integration-verify".to_string(),
+        );
+        let path = super::super::generate_signal(&session, stage, &worktree, &[], None, None, work)
+            .unwrap();
+        std::fs::read_to_string(path).unwrap()
+    }
+
+    #[test]
+    fn the_generated_signal_carries_the_block_only_when_the_plan_implements_sections() {
+        let verify = stage(StageType::IntegrationVerify);
+        let (_root, work) = project_with_plan("# X\n\nImplements: section_02\n");
+        let signal = generated_signal(&verify, &work);
+        assert!(signal.contains(HEADING), "{signal}");
+        assert!(signal.contains("- `doc/product/alpha/section_02.md`\n"));
+
+        let (_root, work) = project_with_plan("# X\n\nImplements: none\n");
+        let signal = generated_signal(&verify, &work);
+        assert!(!signal.contains(HEADING), "{signal}");
+        let mut content = String::new();
+        append_product_sections(&mut content, &verify, &work);
+        assert!(content.is_empty(), "{content}");
+    }
+
+    #[test]
+    fn only_an_integration_verify_stage_with_a_feature_plan_gets_the_block() {
+        let (_root, work) = project_with_plan("# X\n\nImplements: section_03, section_01\n");
 
         let mut content = String::from("signal");
         let verify = stage(StageType::IntegrationVerify);

@@ -128,18 +128,18 @@ pub fn get_source_path(work_dir: &Path) -> Result<Option<PathBuf>> {
 ///
 /// Absolute paths are returned as-is for backward compatibility.
 pub fn resolve_source_path(work_dir: &Path) -> Result<Option<PathBuf>> {
-    let config = match load_config(work_dir)? {
-        Some(c) => c,
-        None => return Ok(None),
-    };
+    Ok(resolve_source(work_dir)?.map(|(_, resolved)| resolved))
+}
 
-    let source_path = match config.source_path() {
-        Some(p) => p,
-        None => return Ok(None),
+/// The plan source path as configured (usually relative to the project root) together with its
+/// resolved form (see [`resolve_source_path`]), from one config load.
+pub fn resolve_source(work_dir: &Path) -> Result<Option<(PathBuf, PathBuf)>> {
+    let Some(source_path) = load_config(work_dir)?.and_then(|config| config.source_path()) else {
+        return Ok(None);
     };
 
     if source_path.is_absolute() {
-        return Ok(Some(source_path));
+        return Ok(Some((source_path.clone(), source_path)));
     }
 
     // Resolve relative paths from the main project root, following the
@@ -156,7 +156,8 @@ pub fn resolve_source_path(work_dir: &Path) -> Result<Option<PathBuf>> {
                 .unwrap_or_else(|| work_dir.to_path_buf())
         });
 
-    Ok(Some(project_root.join(&source_path)))
+    let resolved = project_root.join(&source_path);
+    Ok(Some((source_path, resolved)))
 }
 
 #[cfg(test)]
