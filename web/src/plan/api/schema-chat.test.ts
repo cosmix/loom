@@ -75,7 +75,7 @@ describe("chat wire enums", () => {
     ],
     ["FailureKind", failureKindSchema, ["spawn", "died"]],
     ["Delivery", deliverySchema, ["sent", "delivered", "undelivered"]],
-    ["Origin", originSchema, ["offer", "start", "closing"]],
+    ["Origin", originSchema, ["offer", "closing"]],
     ["ToolStatus", toolStatusSchema, ["pending", "done", "error", "denied", "not_finished"]],
     ["PermissionStatus", permissionStatusSchema, ["pending", "allowed", "denied"]],
     [

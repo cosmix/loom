@@ -16,6 +16,7 @@ import { ChatGlyph, STATE_NAME } from "./chat-state-glyph";
 import { PendingChips } from "./chips";
 import { ComposerArea } from "./composer";
 import { ConnectionBanner, useConnectionDim } from "./connection-banner";
+import { EmptyChat } from "./empty-chat";
 import { pendingPermissionsAtom, sessionAtom, useChatSocket } from "./model";
 import { offerErrorAtom } from "./offer-error";
 import { createOfferStarter } from "./offer-flow";
@@ -27,7 +28,6 @@ import { ScreenSync } from "./screen-sync";
 import { elsewhereSessionAtom, sessionHereAtom } from "./session-home";
 import { chatSheetOpenAtom, DESKTOP } from "./sheet-state";
 import { shownSessionAtom } from "./shown-session";
-import { StateLine } from "./state-line";
 import { useQueueRefill } from "./stop-control";
 import { useComposerShortcut } from "./composer-hooks";
 import { useSuggestionFeed } from "./suggestion-cards";
@@ -219,7 +219,6 @@ function ElsewhereBody({ sheet }: { sheet: boolean }) {
   return (
     <div className="chat-panel-top">
       <PanelHead sheet={sheet} />
-      <StateLine />
       {elsewhere ? (
         <p className="chat-elsewhere">
           <Link to={elsewhere.href}>
@@ -242,19 +241,19 @@ function ElsewhereBody({ sheet }: { sheet: boolean }) {
 
 function SessionBody({ sheet }: { sheet: boolean }) {
   const session = useAtomValue(sessionAtom);
+  const shown = useAtomValue(shownSessionAtom);
   const dim = useConnectionDim();
   return (
     <>
       <div className="chat-panel-top">
         <PanelHead sheet={sheet} />
-        <StateLine />
         <OfferError />
         {session && <RunHeader session={session} />}
         <ConnectionBanner />
       </div>
       <div className="chat-panel-middle">
         {dim && <p className="chat-last-update">{dim}</p>}
-        <Transcript />
+        {shown ? <Transcript /> : <EmptyChat />}
       </div>
       <ComposerArea />
     </>

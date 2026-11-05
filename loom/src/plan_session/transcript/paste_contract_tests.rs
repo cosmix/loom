@@ -59,7 +59,7 @@ fn wrapped_opening_replaces_the_sent_item() {
         text: OPENING.into(),
         attachments: Vec::new(),
         delivery: Delivery::Sent,
-        origin: Some(Origin::Start),
+        origin: Some(Origin::Offer),
     };
     let mut mapper = mapper();
     mapper.add_server_item(sent);
@@ -69,7 +69,7 @@ fn wrapped_opening_replaces_the_sent_item() {
         .iter()
         .filter(|item| matches!(item, Item::User { .. }))
         .collect();
-    let delivered = user("u-u1", OPENING, Some(Origin::Start));
+    let delivered = user("u-u1", OPENING, Some(Origin::Offer));
     assert_eq!(users, [&delivered], "the opening shows once, unwrapped");
 }
 

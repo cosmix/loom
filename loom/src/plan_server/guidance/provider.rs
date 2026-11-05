@@ -154,6 +154,6 @@ fn authoring_start(
                 .map(|attachment| PathBuf::from(attachment.path))
                 .collect(),
         }),
-        (None, None) => Ok(AuthoringStart::NoStep),
+        (None, None) => anyhow::bail!("a chat starts with a message or an offer"),
     }
 }

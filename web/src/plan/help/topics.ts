@@ -108,7 +108,7 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
     Icon: MessagesSquareIcon,
     hue: 4,
     intro:
-      "Sessions work on your documents while you chat; their tool use and changes appear inline. The chat panel stays beside the page on wide screens and opens from the header's Chat button on narrow ones; its menu holds End chat, and Stop sits beside Send while a turn runs.",
+      "Sessions work on your documents while you chat; their tool use and changes appear inline. The chat panel stays beside the page on wide screens and opens from the header's Chat button on narrow ones. New chat starts nothing until you send your first message, a chat ends when you start another or leave the planner, and Stop sits beside Send while a turn runs.",
     scenes: CHAT_SCENES,
     tips: CHAT_TIPS,
   },

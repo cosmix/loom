@@ -13,7 +13,7 @@ fn send_after_chat_with(f: &Fixture, tab: &Tab, feature: Option<&str>, plan: Opt
         offer: None,
         feature: feature.map(str::to_owned),
         plan: plan.map(str::to_owned),
-        text: None,
+        text: Some("Plan the next step.".into()),
         attachments: Vec::new(),
     };
     assert_eq!(f.command(tab, cmd), ok_result());
@@ -83,7 +83,7 @@ fn start_for_plan(plan: &str) -> ChatCommand {
         offer: None,
         feature: None,
         plan: Some(plan.into()),
-        text: None,
+        text: Some("Plan the next step.".into()),
         attachments: Vec::new(),
     }
 }
@@ -119,7 +119,7 @@ fn a_start_naming_both_a_feature_and_a_plan_is_refused() {
         offer: None,
         feature: Some("demo".into()),
         plan: Some("solo".into()),
-        text: None,
+        text: Some("Plan the next step.".into()),
         attachments: Vec::new(),
     };
     assert_eq!(

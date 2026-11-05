@@ -86,6 +86,18 @@ it("two buttons only", () => {
   ).toEqual(["Allow", "Deny"]);
 });
 
+it("the card is a hazard-railed card whose Allow is its primary", () => {
+  harness().show();
+
+  const region = card();
+  expect(region.className).toBe("chat-decision");
+  expect(region.firstElementChild?.className).toContain("chat-decision-rail");
+  expect(region.firstElementChild?.className).toContain("hazard-warning");
+  expect(region.querySelector(".chat-decision-title svg")).not.toBeNull();
+  expect(screen.getByRole("button", { name: "Allow" }).getAttribute("data-look")).toBe("primary");
+  expect(screen.getByRole("button", { name: "Deny" }).getAttribute("data-look")).toBe("secondary");
+});
+
 it("edit replace_all is shown and the diff ignores patch and diff fields", () => {
   harness().show(
     permission({

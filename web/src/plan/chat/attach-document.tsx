@@ -6,8 +6,10 @@ import { DocumentStarter, type StarterDocument } from "@/plan/new/document-start
 import { draftAtom, MAX_ATTACHMENTS } from "./drafts";
 
 /**
- * The composer's Attach menu: a document in this project, or a file from this computer. Either
- * adds a chip to the draft; an uploaded file arrives already stored and travels by its id.
+ * The composer's Attach menu, the first of the box's tools: a document in this project, or a file
+ * from this computer. Either adds a chip to the draft; an uploaded file arrives already stored and
+ * travels by its id. `look="quiet"` draws it as a `.plan-button`; `.chat-attach` rounds it
+ * (chat-composer.css), since `DocumentStarter` takes no shape.
  */
 export function AttachDocument() {
   const add = useSetAtom(addAttachmentAtom);
@@ -29,7 +31,13 @@ export function AttachDocument() {
     });
   };
   return (
-    <DocumentStarter onPick={attach} variant="ghost" className="chat-attach" room={room}>
+    <DocumentStarter
+      onPick={attach}
+      variant="ghost"
+      look="quiet"
+      className="chat-attach"
+      room={room}
+    >
       <Paperclip aria-hidden="true" />
       <span className="sr-only">Attach a file or document</span>
     </DocumentStarter>

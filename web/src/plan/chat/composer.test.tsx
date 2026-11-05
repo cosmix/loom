@@ -7,6 +7,7 @@ import { registerOfferAction } from "@/plan/offers/actions";
 import { authoringAtom, checklistAtom, stoppingAtom } from "@/plan/state/atoms";
 import composerCss from "./chat-composer.css?raw";
 import { ComposerArea } from "./composer";
+import { draftAtom } from "./drafts";
 import { snapshotAtom, unconfirmedSendsAtom } from "./model";
 import {
   box,
@@ -90,24 +91,35 @@ it("stop sits at the action row's end, immediately before Send and at its size",
   expect(stop.getAttribute("data-size")).toBe(send().getAttribute("data-size"));
   expect(stop.closest(".chat-composer-actions")?.querySelector(".chat-attach")).not.toBeNull();
 });
-it("send's reason is a row of the end cluster under the buttons, not a column beside Stop", () => {
-  // Layout is not measurable here; the rules that keep Stop, Send and the reason inside a 320px
-  // panel are pinned by text, as the composer's border is (chat-fixes.contracts.test.tsx).
-  const cluster = composerCss.match(/\.chat-composer-end \{[^}]*\}/)?.[0] ?? "";
-  expect(cluster).toContain("flex-wrap: wrap;");
-  expect(composerCss).toMatch(
-    /\.chat-composer-send,\s*\.chat-composer-send > div \{\s*display: contents;/,
-  );
-  const reason = composerCss.match(/\.chat-composer-send \.plan-fine \{[^}]*\}/)?.[0] ?? "";
-  expect(reason).toContain("flex: 1 1 100%;");
-  expect(composerCss).not.toMatch(/\.chat-composer-send \{[^}]*flex-shrink: 0/);
+it("the tools sit inside the box, round, and send's reason is the foot line under it, drawn once", () => {
+  const h = setup();
+  mount(h.store);
+  const box = send().closest(".chat-composer-box")!;
+  expect(box).not.toBeNull();
+  expect(box.querySelector(".chat-composer-actions .chat-attach")).not.toBeNull();
+  expect(send().getAttribute("data-shape")).toBe("round");
+  expect(send().getAttribute("data-look")).toBe("primary");
+  const input = box.parentElement!;
+  const foot = input.querySelector<HTMLElement>(".chat-composer-foot .chat-composer-hint")!;
+  expect(foot.textContent).toBe("Write a message or attach a passage");
+  expect(screen.getAllByText("Write a message or attach a passage")).toHaveLength(1);
+  expect(send().getAttribute("aria-describedby")).toBe(foot.id);
+  expect(box.contains(foot)).toBe(false);
+  type();
+  expect(send().hasAttribute("aria-describedby")).toBe(false);
+  expect(foot.textContent).toBe("Enter to send");
 });
-it("ending disables with reason", () => {
-  const h = setup("ending");
+it("the foot says a message waits while a turn runs or a decision is pending", () => {
+  const h = setup("working");
   mount(h.store);
   type();
-  expect(send().getAttribute("aria-disabled")).toBe("true");
-  expect(screen.getByText("the chat is closing")).toBeTruthy();
+  expect(screen.getByText("Your message waits for the turn to finish").className).toBe(
+    "chat-composer-hint",
+  );
+  expect(screen.getByRole("button", { name: "Stop" }).getAttribute("data-shape")).toBe("round");
+  // The foot is the one 12px line of the panel (DESIGN.md, Chat); the rule is pinned by text.
+  const foot = composerCss.match(/\.chat-composer-foot \{[^}]*\}/)?.[0] ?? "";
+  expect(foot).toContain("font-size: var(--type-fine);");
 });
 function offerPrimary(store: ReturnType<typeof setup>["store"]) {
   const primary = {
@@ -137,7 +149,8 @@ it("ended replaces the composer with New chat and no workflow offer", () => {
   mount(h.store);
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
-  expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
+  expect(screen.getByText("This chat has ended.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Start a new chat" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Write section 05" })).toBeNull();
   unregister();
 });
@@ -147,7 +160,7 @@ it("failed replaces the composer with New chat alone", () => {
   mount(h.store);
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
-  expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Start a new chat" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Write section 05" })).toBeNull();
   unregister();
 });
@@ -163,14 +176,14 @@ it.each(["failed", "ended"] as const)(
     }));
     mount(h.store);
     expect(screen.queryByRole("textbox")).toBeNull();
-    expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Start a new chat" })).toBeTruthy();
   },
 );
 it("a viewer of an ended chat still sees the read-only line", () => {
   const { store } = setup("ended", true);
   mount(store);
   expect(screen.getByText(/is authoring/)).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /new chat/i })).toBeNull();
 });
 it("stopping disables", () => {
   const h = setup();
@@ -310,11 +323,15 @@ it("no beforeunload listener", () => {
   mount(h.store);
   expect(listener.mock.calls.some(([event]) => event === "beforeunload")).toBe(false);
 });
-it("composerBlock reason disables send", () => {
+it("the ending view hides the input and says the composer comes back", () => {
   const h = setup("ending");
+  h.store.set(draftAtom, { text: "keep me", attachments: [] });
   mount(h.store);
-  type();
-  fireEvent.click(send());
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /new chat/i })).toBeNull();
+  expect(screen.getByText("The composer comes back with your next chat.")).toBeTruthy();
+  expect(screen.getByText("Your draft is kept")).toBeTruthy();
   expect(h.sent).toEqual([]);
 });
 const starting = (store: ReturnType<typeof setup>["store"]) =>
@@ -327,11 +344,11 @@ it.each(["ended", "failed"] as const)(
   (state) => {
     const h = setup(state);
     mount(h.store);
-    const newChat = screen.getByRole("button", { name: "New chat" });
+    const newChat = screen.getByRole("button", { name: "Start a new chat" });
     newChat.focus();
     expect(document.activeElement).toBe(newChat);
     starting(h.store);
-    expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Start a new chat" })).toBeNull();
     expect(document.activeElement).toBe(box());
   },
 );

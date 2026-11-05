@@ -15,7 +15,7 @@ use super::tests::{append_record, wait_for, wait_until};
 use super::TurnPins;
 use super::{Bridge, BridgeConfig, BridgeEvent, EndOutcome, LaunchGuidance, StartRequest};
 use crate::plan_session::kind::{SessionDir, SessionKind};
-use crate::plan_session::model::{ChatDelta, DenyReason, Origin, SessionState};
+use crate::plan_session::model::{ChatDelta, DenyReason, SessionState};
 use crate::plan_session::permission::{Answer, Behavior};
 use crate::plan_session::spool::append_event;
 use crate::planning::runtime::{create_runtime_dir, runtime_paths_under, RuntimePaths};
@@ -120,7 +120,7 @@ impl Harness {
                 opening_on_argv: on_argv,
             })
         });
-        let opening_origin = Some(Origin::Start);
+        let opening_origin = None;
         let extra_env = Vec::new();
         StartRequest {
             kind,

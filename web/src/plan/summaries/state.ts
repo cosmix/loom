@@ -1,7 +1,6 @@
 import { useAtomValue, useStore } from "jotai/react";
 import { atom, type Atom, type PrimitiveAtom } from "jotai/vanilla";
-import { selectAtom } from "jotai/vanilla/utils";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { apiGet, apiPost } from "@/plan/api/client";
 import {
@@ -32,18 +31,6 @@ export const summaryPanelAtom: Atom<SummaryPanel | null> = atom((get) => {
 export const summaryQuestionAtom: Atom<SummaryQuestion | null> = atom(
   (get) => get(summaryPanelAtom)?.question ?? null,
 );
-// Filled only from live `summary_turn_cost` frames and never pruned. Deliberate limit: it holds
-// rows only for turns rebuilt while this tab was open, so after a reload rows show no figure, and
-// it grows for the life of the tab. Revisit when the server can replay per-turn costs on connect
-// (seed this map from that), or when a long-lived tab makes the growth matter.
-export const turnCostsAtom: PrimitiveAtom<ReadonlyMap<string, number | null>> = atom<
-  ReadonlyMap<string, number | null>
->(new Map());
-
-export function turnCostKey(session: string, turn: string, id: string): string {
-  return JSON.stringify([session, turn, id]);
-}
-
 // Counts socket pushes that write the panel. An HTTP response (seed GET, action POST) that started
 // before a push is older than it, so it must not overwrite what the push set. Only deltas are
 // compared, so a single module-level counter is enough as long as one live feed runs per page; two
@@ -82,15 +69,6 @@ function subscribeSummaryFeed(
           ? { ...load, panel: { ...load.panel, question: null } }
           : load,
       );
-    }),
-    socket.subscribe("summary_turn_cost", ({ session, turn, rows }) => {
-      store.set(turnCostsAtom, (current) => {
-        const costs = new Map(current);
-        for (const row of rows) {
-          costs.set(turnCostKey(session, turn, row.id), row.tokens ?? null);
-        }
-        return costs;
-      });
     }),
     socket.onResync(reload),
   ];
@@ -194,15 +172,4 @@ export function useAutoRebuildSync(): void {
     if (!isHolder || readOnly) return;
     void postPanel(store, "/api/summaries/auto", { enabled });
   }, [store, enabled, isHolder, readOnly, epoch]);
-}
-
-export function useTurnTokens(
-  session: string,
-  turn: string,
-  id: string,
-): number | null | undefined {
-  const key = turnCostKey(session, turn, id);
-  // Selecting one entry keeps a row from re-rendering when another turn's cost arrives.
-  const costAtom = useMemo(() => selectAtom(turnCostsAtom, (costs) => costs.get(key)), [key]);
-  return useAtomValue(costAtom);
 }

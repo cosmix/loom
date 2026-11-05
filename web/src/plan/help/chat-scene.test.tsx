@@ -47,7 +47,7 @@ it("draws a single warning glyph, inside the state line", () => {
   const { container } = render(<ChatConversationScene />);
   const stateLine = container.querySelector(".chat-state-line");
 
-  expect(stateLine?.textContent).toContain("Needs a decision: Bash");
+  expect(stateLine?.textContent).toContain("Needs your answer");
   expect(container.textContent?.split("⚠")).toHaveLength(2);
   expect(stateLine?.textContent?.split("⚠")).toHaveLength(2);
 });

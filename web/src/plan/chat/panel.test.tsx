@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider, createStore } from "jotai";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import roundelCss from "@/aurora-ui/feedback/busy-roundel.css?raw";
 import fixture from "@/plan/api/fixtures/chat-snapshot.json";
@@ -20,7 +20,6 @@ import { OfferButton } from "@/plan/offers/offer-button";
 import { connectionAtom, serverInfoAtom, stoppingAtom, youAtom } from "@/plan/state/atoms";
 import { useReviewLive } from "@/plan/review/live";
 import { startChat } from "./commands";
-import { useCanEndChat } from "./end-chat";
 import { snapshotAtom, useChatSocket } from "./model";
 import {
   installPanelLifecycle,
@@ -43,12 +42,6 @@ vi.mock("./run-header", () => ({ RunHeader: () => <div>Run header</div> }));
 vi.mock("./start-chat", () => ({
   NewChatButton: () => <button>New chat</button>,
   StartingBrief: () => <div>Starting brief</div>,
-}));
-vi.mock("./end-chat", () => ({
-  EndChatMenuItem: ({ onEnded }: { onEnded?: () => void }) => (
-    <button onClick={onEnded}>End chat</button>
-  ),
-  useCanEndChat: vi.fn(() => true),
 }));
 vi.mock("./suggestion-cards", async (original) => ({
   ...(await original<typeof import("./suggestion-cards")>()),
@@ -210,7 +203,9 @@ it("stopping", () => {
 });
 
 it("a stale transcript is marked by its Last update line, with no dimming class", () => {
-  const { store } = mount();
+  const live = storeFor();
+  live.set(snapshotAtom, permissionSnapshot());
+  const { store } = mount(live);
   disconnect(store);
   const wrapper = screen.getByRole("log").parentElement!;
   expect(screen.getByText(/Last update 30s ago/)).toBeTruthy();
@@ -225,7 +220,7 @@ it("two pending permissions name both tools and count 2", () => {
   const store = storeFor();
   store.set(snapshotAtom, permissionSnapshot(2));
   mount(store);
-  expect(screen.getAllByText("Needs 2 decisions: Bash, Edit").length).toBeGreaterThan(0);
+  expect(screen.getByText("Needs your answer").closest("header")).toBeTruthy();
   cleanup();
   media(false);
   mount(store);
@@ -332,57 +327,29 @@ it("a refused offer start shows a dismissible alert inside the panel until the n
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
-it("the Chat menu renders only when it has an item", () => {
+it("with no chat the panel shows the empty state in place of the transcript", () => {
   mount();
-  expect(screen.getByLabelText("Chat menu")).toBeTruthy();
+  expect(screen.queryByRole("log")).toBeNull();
+  const empty = screen.getByRole("region", { name: /What are we deciding\?$/ });
+  expect(empty.className).toBe("chat-empty");
+  expect(empty.textContent).toContain("Your first message starts the session.");
   cleanup();
-  vi.mocked(useCanEndChat).mockReturnValue(false);
-  mount();
-  expect(screen.queryByLabelText("Chat menu")).toBeNull();
-  vi.mocked(useCanEndChat).mockReturnValue(true);
+  const store = storeFor();
+  store.set(snapshotAtom, permissionSnapshot());
+  mount(store);
+  expect(screen.getByRole("log")).toBeTruthy();
+  expect(screen.queryByRole("region", { name: /What are we deciding\?$/ })).toBeNull();
 });
 
-describe("the Chat menu", () => {
-  const open = () => {
-    mount();
-    const menu = screen.getByLabelText("Chat menu").closest("details")!;
-    menu.open = true;
-    return menu;
-  };
-
-  it("closes on Escape and returns focus to its summary", () => {
-    const menu = open();
-    const summary = screen.getByLabelText("Chat menu");
-    expect(menu.open).toBe(true);
-    fireEvent.keyDown(screen.getByRole("button", { name: "End chat" }), { key: "Escape" });
-    expect(menu.open).toBe(false);
-    expect(document.activeElement).toBe(summary);
-  });
-
-  it("closes on a pointer-down outside and stays open for one inside", () => {
-    const menu = open();
-    fireEvent.pointerDown(screen.getByRole("button", { name: "End chat" }));
-    expect(menu.open).toBe(true);
-    fireEvent.pointerDown(document.body);
-    expect(menu.open).toBe(false);
-  });
-
-  // The stub row reports `onEnded` on click; the real row's outcomes are in panel-head-menu.test.tsx.
-  it("closes when the End chat row reports the chat ended", () => {
-    const menu = open();
-    fireEvent.click(screen.getByRole("button", { name: "End chat" }));
-    expect(menu.open).toBe(false);
-  });
-
-  it("leaves a closed menu alone on Escape, so the sheet's own Escape still works", () => {
-    mount();
-    const menu = screen.getByLabelText("Chat menu").closest("details")!;
-    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
-    const stop = vi.spyOn(event, "stopPropagation");
-    document.body.dispatchEvent(event);
-    expect(menu.open).toBe(false);
-    expect(stop).not.toHaveBeenCalled();
-  });
+it("the panel has no Chat menu and no End chat button, with or without a chat", () => {
+  mount();
+  expect(screen.queryByLabelText("Chat menu")).toBeNull();
+  cleanup();
+  const store = storeFor();
+  store.set(snapshotAtom, permissionSnapshot());
+  mount(store);
+  expect(screen.queryByLabelText("Chat menu")).toBeNull();
+  expect(screen.queryByRole("button", { name: "End chat", hidden: true })).toBeNull();
 });
 
 it("the sheet button's name carries the session state", () => {

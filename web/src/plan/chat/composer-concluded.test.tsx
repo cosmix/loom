@@ -16,7 +16,7 @@ const FIRST_PROMPT = "What does this section decide?";
 const NEW_CHAT_NOTE = "Sending starts a new chat";
 
 const prompts = () => screen.queryByRole("list", { name: "Suggested prompts" });
-const newChat = () => screen.queryByRole("button", { name: "New chat" });
+const newChat = () => screen.queryByRole("button", { name: /new chat/i });
 const newSession = (store: ReturnType<typeof setup>["store"], id: string, state: SessionState) =>
   act(() => store.set(snapshotAtom, (s) => ({ ...s, session: { ...s.session!, id, state } })));
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { Provider, createStore } from "jotai";
 import { MemoryRouter } from "react-router";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -8,8 +8,7 @@ import { chatSnapshotSchema } from "@/plan/api/schema-chat";
 import composerCss from "@/plan/chat/chat-composer.css?raw";
 import { ItemView } from "./items";
 import { snapshotAtom } from "./model";
-import { PanelHead } from "./panel-head";
-import { installPanelLifecycle, storeFor } from "./panel-test-kit";
+import { installPanelLifecycle } from "./panel-test-kit";
 import { item, turn } from "./transcript-test-kit";
 
 // Wide matchMedia, cleanup, mock restore and global unstub per test.
@@ -60,28 +59,9 @@ function cssRules(css: string): Rule[] {
   return rules;
 }
 
-it("a live chat's menu offers End chat and not New chat", () => {
-  const store = storeFor();
-  store.set(snapshotAtom, {
-    session: { ...snapshot.session!, state: "idle", kind: "authoring", failure: null },
-    turns: [],
-    queue: [],
-    previous: null,
-  });
-  const { container } = render(
-    <Provider store={store}>
-      <PanelHead sheet={false} />
-    </Provider>,
-  );
-  const menu = screen.getByLabelText("Chat menu").closest("details");
-  expect(menu).not.toBeNull();
-  expect(within(menu!).getByRole("button", { name: "End chat", hidden: true })).toBeTruthy();
-  expect(within(container).queryByRole("button", { name: "New chat", hidden: true })).toBeNull();
-});
-
 it("an opening shows its label and hides the prompt until Show", () => {
   const prompt = "loom plan: no step chosen.\nAsk me what I want to work on.";
-  const opening = item("user", { text: prompt, origin: "start", attachments: [] });
+  const opening = item("user", { text: prompt, origin: "offer", attachments: [] });
   const store = createStore();
   store.set(snapshotAtom, {
     ...snapshot,

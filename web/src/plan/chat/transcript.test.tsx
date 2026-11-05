@@ -37,27 +37,14 @@ it("user item layout and chips", () => {
   expect(within(log).getByRole("button", { name: /Plan the session bridge/ })).toBeTruthy();
 });
 
-it("thinking markers merge", () => {
+it("thinking markers draw nothing, with or without a duration", () => {
   const { log } = mount([
     item("thinking", { id: "think1", duration_ms: 2000 }),
-    item("thinking", { id: "think2", duration_ms: 3000 }),
+    item("thinking", { id: "think2", duration_ms: null }),
     item("text", { markdown: "Done" }),
   ]);
-  expect(within(log).getAllByText(/Thought for/)).toHaveLength(1);
-  expect(within(log).getByText(/Thought for 5s/)).toBeTruthy();
-});
-
-it.each<[string, Array<number | null>]>([
-  ["a later", [2000, null]],
-  ["an earlier", [null, 3000]],
-  ["a middle", [2000, null, 3000]],
-])("%s thinking marker without a duration leaves the merged duration unknown", (_, durations) => {
-  const markers = durations.map((duration_ms, index) =>
-    item("thinking", { id: `think${index}`, duration_ms }),
-  );
-  const { log } = mount([...markers, item("text", { markdown: "Done" })]);
-  expect(within(log).queryByText(/Thought for/)).toBeNull();
-  expect(within(log).getByText("Thought")).toBeTruthy();
+  expect(log.textContent).not.toMatch(/Thought/);
+  expect(within(log).getByText("Done")).toBeTruthy();
 });
 
 it("api_error notice toned blocked", () => {
@@ -118,7 +105,9 @@ it("http link opens new tab with noopener", () => {
 it("no placeholder while working", () => {
   const { log } = mount();
   expect(log.querySelector(".md")).toBeNull();
-  expect(log.textContent).not.toMatch(/thinking|working|typing|\.\.\./i);
+  // The sr-only "Working" belongs to the turn's one roundel (chat-turn-activity).
+  expect(log.textContent).not.toMatch(/thinking|typing|\.\.\./i);
+  expect(log.querySelectorAll(".chat-turn-activity .aurora-roundel")).toHaveLength(1);
 });
 
 it("copy control copies markdown source", async () => {
@@ -142,12 +131,18 @@ it("offer origin collapsed with brief label", async () => {
   expect(within(log).getByText(/Hidden instructions/)).toBeTruthy();
 });
 
-it("closing origin labelled Closing message from loom plan", () => {
-  const { log } = mount([
-    item("user", { origin: "closing", attachments: [], text: "Close\nHidden close" }),
-  ]);
-  expect(within(log).getByText("Closing message from loom plan")).toBeTruthy();
-  expect(within(log).queryByText(/Hidden close/)).toBeNull();
+it("a closing turn is a wrap-up card and never shows its prompt, reply or tools", () => {
+  const { log } = mount(
+    [
+      item("user", { origin: "closing", attachments: [], text: "Close\nHidden close" }),
+      item("text", { id: "reply", markdown: "Closing write done." }),
+    ],
+    { session: { ...fixture.session!, state: "ending" } },
+  );
+  expect(log.querySelector(".chat-wrap")?.textContent).toContain("Writing down what we decided");
+  expect(log.textContent).not.toMatch(/Hidden close|Closing write done|Closing message/);
+  expect(within(log).queryByRole("button", { name: /show/i })).toBeNull();
+  expect(log.querySelector(".chat-turn-activity")).toBeNull();
 });
 
 it("null origin renders plainly", () => {
@@ -164,13 +159,11 @@ it("older turns collapse to one line and expand", () => {
       id: `t${index + 1}`,
       started_at: new Date(index * 60000).toISOString(),
       open: false,
-      // Cache reads are not fresh tokens: the label must agree with the turn footer.
-      tokens: { input: 4000, output: 100, cache_read: 90000, cache_write: 0 },
     }),
   );
   const { log } = mount([], { turns: [...turns].reverse() });
   const toggle = within(log).getByRole("button", {
-    name: "Turn 1 · 0 files changed · 4.1k tokens",
+    name: "Turn 1 · 0 files changed",
   });
   expect(within(log).queryByText("Reply 1")).toBeNull();
   expect(log.querySelectorAll(".md")).toHaveLength(20);
@@ -318,23 +311,30 @@ it("ended tools fold while errors remain visible", () => {
   expect(summary.closest("details")?.open).toBe(true);
 });
 
-it("a running turn folds a single tool row into one line that ends with the activity glyph", () => {
-  const { log } = mount([
-    item("tool", { id: "only", name: "Read", summary: "Read notes", status: "pending" }),
-  ]);
+it("a running turn's working card is open, folds when the turn ends, and draws no roundel", () => {
+  const pending = item("tool", {
+    id: "only",
+    name: "Read",
+    summary: "Read notes",
+    status: "pending",
+  });
+  const h = mount([pending]);
 
-  const summary = within(log).getByText("Used 1 tool · edited 0 files").closest("summary")!;
+  const summary = within(h.log).getByText("Used 1 tool · edited 0 files").closest("summary")!;
+  const card = summary.closest("details")!;
+  expect(card.open).toBe(true);
+  expect(card.className).toContain("chat-tool-fold");
+  expect(summary.querySelector(".aurora-roundel")).toBeNull();
+  const row = within(h.log).getByRole("button", { name: /Read notes/ });
+  expect(row.closest("details")).toBe(card);
+  expect(row.getAttribute("data-status")).toBe("pending");
+
+  const open = h.store.get(snapshotAtom).turns[0]!;
+  h.update([{ ...open, open: false, items: [{ ...pending, status: "done" }] }]);
   expect(summary.closest("details")?.open).toBe(false);
-  expect(summary.querySelector(".chat-tool-fold-busy .activity-glyph")).not.toBeNull();
-  // The row stays in the details, so expanding the line shows it.
-  expect(
-    within(log)
-      .getByRole("button", { name: /Read notes/ })
-      .closest("details"),
-  ).toBe(summary.closest("details"));
 });
 
-it("a finished tool row folds without the glyph, and a Skill row never renders", () => {
+it("a finished tool row folds, and a Skill row never renders", () => {
   const { log } = mount([
     item("tool", {
       id: "skill",
@@ -346,7 +346,7 @@ it("a finished tool row folds without the glyph, and a Skill row never renders",
   ]);
 
   const summary = within(log).getByText("Used 1 tool · edited 0 files").closest("summary")!;
-  expect(summary.querySelector(".chat-tool-fold-busy")).toBeNull();
+  expect(summary.querySelector(".aurora-roundel")).toBeNull();
   expect(log.textContent).not.toContain("loom-plan:kickoff");
   expect(within(log).getByText(/Run ls/)).toBeTruthy();
 });
@@ -384,7 +384,9 @@ it("session divider shows the end time, or no time when it is unparsable", () =>
     turns: [turn([item("text", { markdown: "Previous reply" })], { open: false })],
   });
   const first = mount([], { previous: previous("2026-03-01T14:03:22Z") });
-  expect(within(first.log).getByText(/^Chat ended at \d{2}:\d{2}$/)).toBeTruthy();
+  const line = within(first.log).getByText(/^Chat ended at \d{2}:\d{2}$/);
+  // A centred line between two hairlines, drawn by its class (chat-notices.css), no utilities.
+  expect(line.closest(".chat-session-divider")).not.toBeNull();
   cleanup();
   const second = mount([], { previous: previous("not a time") });
   expect(within(second.log).getByText("Chat ended")).toBeTruthy();

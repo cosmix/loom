@@ -1,15 +1,37 @@
 import { useId, useState, type JSX } from "react";
-import { Check, ChevronRight, X } from "lucide-react";
+import {
+  Bot,
+  Check,
+  FileText,
+  Pencil,
+  Search,
+  Terminal,
+  Wrench,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 
 import type { Item } from "@/plan/api/schema-chat";
-import { RoundelGlyph } from "@/plan/ui/roundel-glyph";
 import { PatchView } from "./patch-view";
 import { Untrusted } from "./visible-controls";
 
 type ToolItem = Extract<Item, { type: "tool" }>;
 
-/** A finished row reads as what happened; a tool without an entry keeps its own name. */
-const DONE_VERB: Record<string, string> = { Edit: "Edited", MultiEdit: "Edited", Write: "Wrote" };
+/** The glyph that stands for a tool in its row; a tool without an entry gets the wrench. */
+const TOOL_GLYPHS: Record<string, LucideIcon> = {
+  Read: FileText,
+  Edit: Pencil,
+  Write: Pencil,
+  MultiEdit: Pencil,
+  Bash: Terminal,
+  Grep: Search,
+  Glob: Search,
+  Agent: Bot,
+};
+
+function toolGlyph(name: string): LucideIcon {
+  return Object.hasOwn(TOOL_GLYPHS, name) ? TOOL_GLYPHS[name]! : Wrench;
+}
 
 const STATUS_WORD: Record<ToolItem["status"], string> = {
   pending: "Pending",
@@ -19,17 +41,33 @@ const STATUS_WORD: Record<ToolItem["status"], string> = {
   not_finished: "Not finished",
 };
 
-/** The word keeps the row's colour; only the glyph beside it takes a tone (chat-transcript.css). */
+/** The word keeps the row's colour; only the glyph beside it takes a tone (chat-tools.css). */
 function ToolStatus({ status }: { status: ToolItem["status"] }): JSX.Element {
   return (
     <span className="chat-tool-status" data-status={status}>
-      {status === "pending" && (
-        // The disc is 86% of the glyph box, so this box draws it at 13px.
-        <RoundelGlyph size="calc(13px / 0.86)" />
-      )}
       {status === "error" && <X size={13} aria-hidden="true" />}
       {status === "done" && <Check size={13} aria-hidden="true" />}
       {STATUS_WORD[status]}
+    </span>
+  );
+}
+
+/**
+ * Lines added and removed, as a tool row and the left-behind card end: `+N` in the completed
+ * tone, `−M` in the destructive one (chat-tools.css). Nothing when the bridge reported neither.
+ */
+export function ChangeCounts({
+  added,
+  removed,
+}: {
+  added: number | null;
+  removed: number | null;
+}): JSX.Element | null {
+  if (added === null && removed === null) return null;
+  return (
+    <span className="chat-counts">
+      <span className="chat-count-added">+{added ?? 0}</span>{" "}
+      <span className="chat-count-removed">−{removed ?? 0}</span>
     </span>
   );
 }
@@ -114,36 +152,38 @@ function ToolHeader({
   detailsId: string;
   onToggle: () => void;
 }): JSX.Element {
+  // One line: the tool's glyph, its target (the bridge's summary names the verb), and at the end
+  // the counts of a finished edit or the status word. The row is a button that opens its details.
+  const Glyph = toolGlyph(item.name);
+  const counted = item.status === "done" && (item.added !== null || item.removed !== null);
   return (
     <button
       type="button"
       aria-expanded={expanded}
       aria-controls={detailsId}
       className="chat-tool-head"
+      data-status={item.status}
       onClick={onToggle}
     >
-      <ChevronRight size={13} aria-hidden="true" className="chat-tool-chevron" />
-      <span className="flex min-w-0 flex-1 items-baseline gap-2">
-        <span className="chat-tool-name">
-          <Untrusted
-            text={
-              (item.status === "done" &&
-                Object.hasOwn(DONE_VERB, item.name) &&
-                DONE_VERB[item.name]) ||
-              item.name
-            }
-          />
-        </span>{" "}
-        <span className="chat-tool-target">
-          <Untrusted text={item.summary} />
+      <span className="chat-tool-glyph">
+        <Glyph size={14} aria-hidden="true" />
+        <span className="sr-only">
+          <Untrusted text={item.name} />
         </span>
-        {item.name === "Agent" && (
-          <span className="shrink-0">
-            {item.nested_tools} tool {item.nested_tools === 1 ? "call" : "calls"}
-          </span>
-        )}
+      </span>{" "}
+      <span className="chat-tool-target">
+        <Untrusted text={item.summary} />
       </span>
-      <ToolStatus status={item.status} />
+      {item.name === "Agent" && (
+        <span className="chat-tool-extra">
+          {item.nested_tools} tool {item.nested_tools === 1 ? "call" : "calls"}
+        </span>
+      )}
+      {counted ? (
+        <ChangeCounts added={item.added} removed={item.removed} />
+      ) : (
+        <ToolStatus status={item.status} />
+      )}
     </button>
   );
 }

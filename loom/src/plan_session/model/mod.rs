@@ -164,7 +164,6 @@ pub enum Delivery {
 #[serde(rename_all = "snake_case")]
 pub enum Origin {
     Offer,
-    Start,
     Closing,
 }
 

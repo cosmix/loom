@@ -149,13 +149,6 @@ it("read-only server mode line says Read-only and leaves the message to the bann
   expect(screen.queryByText(/Claude is not logged in/)).toBeNull();
   expect(screen.queryByRole("textbox")).toBeNull();
 });
-it("reasons are accessible descriptions", () => {
-  const h = setup("ending");
-  mount(h.store);
-  type();
-  const id = send().getAttribute("aria-describedby");
-  expect(document.getElementById(id!)?.textContent).toBe("the chat is closing");
-});
 it("server read-only mode also hides a holder's composer", () => {
   const h = setup();
   h.store.set(serverInfoAtom, (s) => ({
@@ -166,11 +159,6 @@ it("server read-only mode also hides a holder's composer", () => {
   expect(screen.getByText(/Read-only/).textContent).toBe("Read-only");
   expect(screen.queryByText(/tmux is unavailable/)).toBeNull();
   expect(screen.queryByRole("textbox")).toBeNull();
-});
-it("ending shows the closing reason", () => {
-  const h = setup("ending");
-  mount(h.store);
-  expect(screen.getByText("the chat is closing")).toBeTruthy();
 });
 it("refill uses only queue_returned when the queue changed after Stop", async () => {
   const h = setup("working");
@@ -185,7 +173,7 @@ it("refill uses only queue_returned when the queue changed after Stop", async ()
   h.receive("chat", { frame: "queue_returned", texts: ["Authoritative", "New queue"] });
   await waitFor(() => expect(box().value).toBe("Draft\n\nAuthoritative\n\nNew queue"));
 });
-it("the texts End chat returns reach the draft although the concluded view has no composer", async () => {
+it("the texts ending a chat returns reach the draft although the concluded view has no composer", async () => {
   const h = setup("working");
   mount(h.store);
   void endChat(h.store);

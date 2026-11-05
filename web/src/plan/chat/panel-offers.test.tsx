@@ -19,7 +19,6 @@ vi.mock("./composer", () => ({ ComposerArea: () => <div>Composer</div> }));
 vi.mock("./attention", () => ({ useAttention: vi.fn() }));
 vi.mock("./run-header", () => ({ RunHeader: () => <div>Run header</div> }));
 vi.mock("./start-chat", () => ({ NewChatButton: () => null, StartingBrief: () => null }));
-vi.mock("./end-chat", () => ({ EndChatMenuItem: () => null, useCanEndChat: () => false }));
 vi.mock("./suggestion-cards", () => ({ useSuggestionFeed: vi.fn() }));
 vi.mock("@/plan/review/live", () => ({ useReviewLive: vi.fn() }));
 vi.mock("@/plan/review/changed-since", () => ({ ChangedSinceControl: () => null }));

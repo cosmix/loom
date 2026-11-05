@@ -345,7 +345,13 @@ fn start_block_refuses_a_provider_created_after_a_restart() {
     let restarted = PlanGuidance::new(models());
 
     let error = restarted
-        .authoring(&fixture.ctx, &fixture.session, None, None, None)
+        .authoring(
+            &fixture.ctx,
+            &fixture.session,
+            None,
+            Some("Plan the next step."),
+            None,
+        )
         .unwrap_err();
 
     assert!(format!("{error:#}").contains(reason), "{error:#}");

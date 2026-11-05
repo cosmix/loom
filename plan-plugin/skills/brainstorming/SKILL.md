@@ -152,4 +152,5 @@ recommendation. Make no hand-off to a plan-writing skill; return to the step ski
 
 If the session-ending message says nobody will answer further questions,
 ask none. Record any settled decisions still missing and all open points with
-options and a recommendation, then reply "Closing write done." and stop.
+options and a recommendation, then reply as the closing message asks
+("Closing write done." and its `loom-closing` block), then stop.

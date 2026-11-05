@@ -1,10 +1,13 @@
-/* The transcript's parts: turns, the user's words, the assistant's prose, notices and tool
- * runs. Imported by chat-surface.css; see its header for why these rules are unlayered.
+/* The transcript's parts: turns, the user's bubble, the assistant's prose, notices and the
+ * breaks. Imported by chat-surface.css; see its header for why these rules are unlayered. The
+ * working card and the tool rows are in chat-tools.css, the ending's cards in chat-cards.css.
  * Every size is set here, on classes the transcript carries wherever it mounts (the panel, the
  * kickoff screen, the help scene), so it never shrinks outside the panel. Chrome is --type-body,
- * secondary text (a time, a control) --type-ui, the user's words --type-title and the assistant's
- * prose the reading face at 16px. Nothing is set below 13px.
+ * secondary text (a time, a control) --type-ui, the user's words 15px and the assistant's prose
+ * the reading face at 16px.
  */
+@import "./chat-tools.css";
+@import "./chat-cards.css";
 
 .chat-panel-middle {
   display: flex;
@@ -14,18 +17,21 @@
 }
 
 .chat-transcript {
-  padding: var(--space-4) var(--chat-gutter) var(--space-5);
+  /* The cards' corner and the rise's curve, shared by every part of the transcript. */
+  --chat-card-corner: 14px;
+  --chat-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  padding: var(--space-2) var(--chat-gutter) var(--space-4);
   color: var(--foreground);
   font-family: var(--font-sans);
   font-size: var(--type-body);
   line-height: var(--leading-body);
 }
 
-/* Turns are set apart by space alone. */
+/* The transcript is a column with one 16px gap; turns are set apart by that space alone. */
 .chat-transcript-flow {
   display: grid;
   min-width: 0;
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
 .chat-turn {
@@ -34,22 +40,14 @@
   gap: var(--space-3);
 }
 
-/* Items inside a turn: consecutive tool rows touch, so their rails join into one run. The
- * column is pinned to the turn's width: an auto track grows to the widest item's min-content
- * (an unbroken chip quote, a tool row), and every item, the assistant's lists with them, would
- * then run past the transcript's right gutter. */
+/* Items inside a turn. The column is pinned to the turn's width: an auto track grows to the
+ * widest item's min-content (an unbroken chip quote, a tool row), and every item, the assistant's
+ * lists with them, would then run past the transcript's right gutter. */
 .chat-turn-items {
   display: grid;
   min-width: 0;
   grid-template-columns: minmax(0, 1fr);
-}
-
-.chat-turn-items > * + * {
-  margin-block-start: var(--space-3);
-}
-
-.chat-turn-items > .chat-tool-run + .chat-tool-run {
-  margin-block-start: 0;
+  gap: var(--space-3);
 }
 
 .chat-turn-toggle {
@@ -103,32 +101,38 @@
 
 /* ── The user's words ──────────────────────────────────────────────────────── */
 
-/* Set apart by type (Inter, 500) and a rule at its side. */
+/* A bubble on the right, --muted on the --card panel, with one square corner at its foot. What
+ * follows the bubble (a delivery state, the sent chips, Copy and the time) sits under it, right. */
 .chat-user {
   display: grid;
   min-width: 0;
   grid-template-columns: minmax(0, 1fr);
+  justify-items: end;
   gap: var(--space-2);
 }
 
 .chat-user-body {
   display: grid;
   gap: var(--space-2);
-  max-width: 60ch;
-  padding-inline-start: var(--space-3);
-  border-inline-start: 2px solid var(--border);
+  max-width: 86%;
+  min-width: 0;
+  padding: 10px 14px;
+  border-radius: var(--chat-card-corner) var(--chat-card-corner) 4px var(--chat-card-corner);
+  background: var(--muted);
   color: var(--foreground);
   font-family: var(--font-sans);
   font-size: var(--type-title);
-  font-weight: 500;
+  font-weight: 400;
   line-height: var(--leading-body);
 }
 
 .chat-user-body > p {
   margin: 0;
+  min-width: 0;
 }
 
-/* A passage the user attached: the reading face, muted, three lines at most. */
+/* A passage the user attached sits inside the bubble above the words: the reading face, muted,
+ * three lines at most. */
 .chat-user-quote {
   display: -webkit-box;
   overflow: hidden;
@@ -141,16 +145,6 @@
   -webkit-line-clamp: 3;
 }
 
-.chat-user-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  color: var(--muted-foreground);
-  font-size: var(--type-body);
-  font-weight: 400;
-}
-
 .chat-message-controls {
   display: flex;
   align-items: center;
@@ -159,11 +153,43 @@
   font-size: var(--type-ui);
 }
 
+/* An offer's opening: one quiet centred line, the label and Show, never a bubble. Shown, the
+ * prompt opens under it as muted pre-wrapped text. */
+.chat-opening {
+  justify-items: center;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+}
+
+.chat-opening-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0;
+  text-align: center;
+}
+
+.chat-opening-prompt {
+  margin: 0;
+  justify-self: stretch;
+  font-weight: 400;
+  text-align: start;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-opening-prompt:empty {
+  display: none;
+}
+
 /* ── The assistant's prose ─────────────────────────────────────────────────── */
 
-/* The reading face, two sizes over the chrome: a serif at the chrome's 14px reads small. */
+/* The reading face at the reply's full width, two sizes over the chrome. */
 .chat-assistant-text .md {
-  max-width: min(100%, 62ch);
+  max-width: 100%;
   font-family: var(--font-reading);
   font-size: 16px;
   line-height: 1.55;
@@ -173,11 +199,15 @@
   font-family: var(--font-mono);
 }
 
-.chat-thinking {
-  margin: 0;
-  color: var(--muted-foreground);
-  font-size: var(--type-body);
+/* The pane's one roundel, at the end of the working turn at the reply's left edge. */
+.chat-turn-activity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 16px;
 }
+
+/* ── Notices ───────────────────────────────────────────────────────────────── */
 
 /* A notice is a centred muted line. A stop (auto mode, interrupt) is drawn as a break in the
  * transcript: the line between two rules, so it reads as "the session stopped here". */
@@ -209,175 +239,50 @@
   color: var(--tone-blocked);
 }
 
-/* ── Tool runs ─────────────────────────────────────────────────────────────── */
+/* ── Motion ────────────────────────────────────────────────────────────────── */
 
-/* A quiet run of lines beside a hairline rail that divides the run from the prose. A folded run
- * is one line with no rail; opened, its rows hang under the glyph on the rail. Nested tools drop
- * the rail so rails never double. */
-.chat-tool-run {
-  min-width: 0;
-  padding-inline-start: var(--space-3);
-  border-inline-start: 1px solid var(--hairline);
+/* A new message, card or row enters with a rise; items arriving together are staggered 70ms.
+ * The roundel's turn is BusyRoundel's own. */
+@keyframes chat-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-.chat-tool-fold {
-  min-width: 0;
+.chat-turn-items > *,
+.chat-tool-fold > .chat-tool-run,
+.chat-decision,
+.chat-wrap,
+.chat-left-behind,
+.chat-starting {
+  animation: chat-rise 460ms var(--chat-ease, cubic-bezier(0.16, 1, 0.3, 1)) both;
 }
 
-.chat-tool-fold > .chat-tool-run {
-  margin-inline-start: calc(0.5ch - 0.5px);
+:is(.chat-turn-items, .chat-tool-fold) > :nth-child(2) {
+  animation-delay: 70ms;
 }
 
-.chat-tool-fold > summary + .chat-tool-run {
-  margin-block-start: var(--space-1);
+:is(.chat-turn-items, .chat-tool-fold) > :nth-child(3) {
+  animation-delay: 140ms;
 }
 
-.chat-tool-nested .chat-tool-run {
-  padding-inline-start: 0;
-  border-inline-start: 0;
-}
-
-.chat-tool {
-  min-width: 0;
-  color: var(--muted-foreground);
-  font-size: var(--type-body);
-  line-height: var(--leading-ui);
-}
-
-/* A tool's input, patch and result: mono at the secondary size, wrapped. */
-.chat-tool-pre {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: var(--type-ui);
-  line-height: var(--leading-body);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.chat-tool-head {
-  display: flex;
-  width: calc(100% + 2 * var(--space-1));
-  min-width: 0;
-  align-items: flex-start;
-  gap: var(--space-2);
-  margin-inline: calc(-1 * var(--space-1));
-  padding: 3px var(--space-1);
-  border: 0;
-  border-radius: var(--corner-control);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
-  transition: background-color 120ms;
-}
-
-.chat-tool-head:hover {
-  background: var(--muted);
-}
-
-.chat-tool-chevron {
-  flex-shrink: 0;
-  margin-block-start: 2px;
-  transition: transform 120ms;
-}
-
-.chat-tool-head[aria-expanded="true"] .chat-tool-chevron {
-  transform: rotate(90deg);
-}
-
-.chat-tool-name {
-  flex-shrink: 0;
-  font-weight: 500;
-}
-
-.chat-tool-target {
-  min-width: 0;
-  flex: 1 1 auto;
-  font-family: var(--font-mono);
-  font-size: inherit;
-  overflow-wrap: anywhere;
-}
-
-.chat-tool-status {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.chat-tool-status[data-status="error"] svg {
-  color: var(--tone-blocked);
-}
-
-.chat-tool-note {
-  margin: 0;
-  padding-block-end: var(--space-1);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.chat-tool-details {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-2);
-  padding-block: var(--space-1) var(--space-2);
-}
-
-.chat-tool-details-label {
-  margin: 0 0 var(--space-1);
-  font-weight: 500;
-}
-
-/* The fold line: one quiet line, a glyph then the words ("Used 3 tools · edited 2 files"),
- * that opens in place to the rows it holds. The glyph turns as it opens. */
-.chat-tool-fold > summary {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  min-height: var(--control-height-sm);
-  border-radius: var(--corner-control);
-  color: var(--muted-foreground);
-  font-size: var(--type-body);
-  font-weight: 500;
-  line-height: var(--leading-ui);
-  list-style: none;
-  cursor: pointer;
-}
-
-/* The busy mark after the fold's words while one of its tools still runs. */
-.chat-tool-fold-busy {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-}
-
-.chat-tool-fold > summary::-webkit-details-marker {
-  display: none;
-}
-
-.chat-tool-fold > summary::before {
-  content: "›" / "";
-  display: inline-block;
-  width: 1ch;
-  flex-shrink: 0;
-  text-align: center;
-  transition: transform 120ms;
-}
-
-.chat-tool-fold[open] > summary::before {
-  transform: rotate(90deg);
-}
-
-.chat-tool-fold > summary:hover {
-  color: var(--foreground);
+:is(.chat-turn-items, .chat-tool-fold) > :nth-child(n + 4) {
+  animation-delay: 210ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-tool-head,
-  .chat-tool-chevron,
-  .chat-tool-fold > summary::before {
-    transition: none;
+  .chat-turn-items > *,
+  .chat-tool-fold > .chat-tool-run,
+  .chat-decision,
+  .chat-wrap,
+  .chat-left-behind,
+  .chat-starting {
+    animation: none;
   }
 }

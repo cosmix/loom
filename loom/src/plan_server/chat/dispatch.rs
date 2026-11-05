@@ -27,6 +27,7 @@ use crate::plan_session::model::Origin;
 const UNAVAILABLE: &str = "the chat is not available";
 pub(super) const NO_CHAT: &str = "no chat is running";
 const NO_TURN: &str = "no turn is running";
+const NO_MESSAGE: &str = "a chat starts with your first message";
 pub(super) const CLOSING: &str = "the chat is closing";
 
 /// The queued texts to hand back to the connection, or the error it is shown.
@@ -138,8 +139,11 @@ fn start(
     inputs: Vec<AttachmentInput>,
     owner: ChatOwner,
 ) -> Outcome {
+    let typed = text.as_deref().is_some_and(|text| !text.trim().is_empty()) || !inputs.is_empty();
+    if offer.is_none() && !typed {
+        return Err(NO_MESSAGE.to_owned());
+    }
     draft_cmd::writable(ctx)?;
-    let typed = text.is_some() || !inputs.is_empty();
     let text = text.unwrap_or_default();
     let draft = draft_cmd::StartDraft::of(offer.as_deref(), &text, &inputs);
     let message = typed.then(|| checked(ctx, &text, inputs)).transpose()?;
@@ -217,12 +221,8 @@ pub(super) fn launch(
     let Some(slot) = ctx.extensions().get::<GuidanceSlot>() else {
         return Err(UNAVAILABLE.to_owned());
     };
-    // px-seams-07: an offer, the user's own first message (no origin), or a New chat.
-    let opening_origin = match (&offer, &message) {
-        (Some(_), _) => Some(Origin::Offer),
-        (None, Some(_)) => None,
-        (None, None) => Some(Origin::Start),
-    };
+    // An offer, or the user's own first message (no origin); `start` refuses neither.
+    let opening_origin = offer.is_some().then_some(Origin::Offer);
     let extra_env = super::team::extra_env(offer.as_deref(), feature.as_deref())?;
     let first_message = message.map(|message| message.formatted);
     let (provider, guide_ctx, guide_offer) = (slot.get(), Arc::clone(ctx), offer.clone());

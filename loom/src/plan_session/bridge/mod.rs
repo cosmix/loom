@@ -29,6 +29,8 @@ pub mod team;
 mod turns;
 
 #[cfg(test)]
+mod closing_contract_tests;
+#[cfg(test)]
 mod fake_host;
 #[cfg(test)]
 mod harness;

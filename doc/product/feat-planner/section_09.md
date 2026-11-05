@@ -352,8 +352,8 @@ Load the skill loom-plan:plan, then begin by telling me what you read and what y
 | Plan follow-ups                        | done | `doc/plans/<f>/index.md` and the done plans' run reviews | `loom-plan:metaplan`  |
 | Change the knowledge base              | any  | the knowledge file, if one was open                      | `loom-plan:knowledge` |
 
-A chat the user starts with no offer (an empty chat box) gets the common brief with
-`Step: none chosen` and an opening message that asks the user what they want to work on.
+New chat starts no session. The user's first message starts it, with the common brief of a
+message start (`Step: any, Refine`, skill `loom-plan:refine`) and that message as the opening.
 
 ## Recording as you go, and the closing write
 
@@ -370,11 +370,15 @@ loom plan is ending this session; nobody will answer further questions.
 2. Add every point still open as an item under "## Open questions" in the document it concerns,
    with the options and your recommendation.
 3. Finish the turn-end duty for what you changed.
-Then reply "Closing write done." and stop.
+Then reply "Closing write done." followed by a fenced block whose info string is loom-closing,
+holding one JSON object {"decisions": [...], "questions": [...]}: one plain sentence for each
+decision this conversation settled and for each point it left open. Then stop.
 ```
 
 The brief tells the session to expect this message and to ask nothing after it. When there is
-nothing to write, the reply comes at once. (Wording: my call.)
+nothing to write, the reply comes at once, with empty lists. The server delivers the closing
+message only when the user sent at least one message; a chat with none ends without a model turn.
+(Wording: my call.)
 
 ## Write limits
 
@@ -470,7 +474,7 @@ The pressure steps keep the existing `[pressure]` keys
 app and one started from a terminal resolve the same way.
 
 **Spec steps** are the product-spec work: step 1 (vision), step 2 (product sections), a refinement
-started on a document under `doc/product/`, a knowledge change, and a chat started with no step. **Plan steps** are step 3
+started on a document under `doc/product/`, and a knowledge change. **Plan steps** are step 3
 (metaplans), step 4 (loom plans), a refinement started on a document under `doc/plans/`, and plan
 follow-ups. A chat started by sending a message counts as a plan step when its first
 attached document is under `doc/plans/`, and as a spec step otherwise. Spec steps run at medium

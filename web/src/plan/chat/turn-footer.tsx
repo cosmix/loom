@@ -2,8 +2,6 @@ import { FileDiff } from "lucide-react";
 import { memo, useMemo, type JSX } from "react";
 import { Link } from "react-router";
 
-import { formatElapsed } from "@/lib/format";
-import { compactTokens, fresh } from "@/lib/tokens";
 import type { Turn } from "@/plan/api/schema-chat";
 import type { DiffTexts } from "@/plan/api/schema-files";
 import { openDiff } from "@/plan/diff/open-diff";
@@ -46,14 +44,22 @@ type RowProps = { file: File; row?: TurnRow; rows: TurnRow[]; turn: Turn; sessio
 function RowActions({ file, row, rows, turn, sessionId }: RowProps) {
   if (turn.open)
     return (
-      <DisabledReason reason="Available when the turn ends" onClick={() => {}} size="sm">
+      <DisabledReason
+        reason="Available when the turn ends"
+        onClick={() => {}}
+        size="sm"
+        look="quiet"
+      >
         Diff
       </DisabledReason>
     );
+  // A link drawn at the quiet row button's size, beside Restore (restore.tsx, a `sm` button).
   return (
     <>
       <Link
-        className="chat-link-button"
+        className="plan-button chat-footer-action"
+        data-look="quiet"
+        data-size="sm"
         to={openDiff("turn", docRel(file.path), `${sessionId}/${turn.id}`)}
       >
         Diff
@@ -72,7 +78,7 @@ function ChangedRow(props: RowProps) {
   // Line counting walks both whole documents: redo it only when the fetched texts change.
   const label = useMemo(() => changeLabel(file, row?.texts), [file, row?.texts]);
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+    <div className="chat-changed-row">
       <span
         className="chat-file-chip"
         data-doc-kind={kind ?? undefined}
@@ -102,21 +108,6 @@ function ChangedRow(props: RowProps) {
   );
 }
 
-function TurnStats({ turn }: { turn: Turn }) {
-  const tokens = turn.tokens;
-  const tooltip = `Input: ${tokens.input}; cache write: ${tokens.cache_write}; cache read: ${tokens.cache_read}; output: ${tokens.output}`;
-  return (
-    <p className="flex flex-wrap gap-2">
-      {turn.duration_ms !== null && (
-        <span>{formatElapsed(Math.floor(turn.duration_ms / 1000))}</span>
-      )}
-      <span title={tooltip} tabIndex={0}>
-        {compactTokens(fresh(tokens))} fresh tokens
-      </span>
-    </p>
-  );
-}
-
 function ChangedFiles({
   turn,
   sessionId,
@@ -132,12 +123,13 @@ function ChangedFiles({
     turn.changed_files.some((file) => sectionFile.test(file.path)),
   );
   if (turn.changed_files.length === 0) return null;
+  // The files are quiet chips on one wrapping row under the turn, each with its actions.
   return (
-    <div>
+    <div className="chat-changed">
       <p>
         {turn.open ? "Changing" : "Changed"} {plural(turn.changed_files.length, "file")}
       </p>
-      <ul>
+      <ul className="chat-changed-files">
         {turn.changed_files.map((file) => (
           <li key={file.path}>
             <ChangedRow
@@ -183,7 +175,6 @@ function TurnFooterView({ turn, sessionId }: { turn: Turn; sessionId: string }):
       className="chat-turn-footer"
       style={displayStyle}
     >
-      <TurnStats turn={turn} />
       <ChangedFiles turn={turn} sessionId={sessionId} rows={rows} />
       {modified.length >= 2 && (
         <RestoreAll sessionId={sessionId} turn={turn} paths={modified} texts={rows} />

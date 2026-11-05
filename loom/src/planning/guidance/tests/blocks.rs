@@ -79,7 +79,7 @@ impl Fixture {
 
 fn kinds() -> [SessionGuidanceKind; 4] {
     [
-        SessionGuidanceKind::Authoring(AuthoringStart::NoStep),
+        SessionGuidanceKind::Authoring(AuthoringStart::Message { paths: Vec::new() }),
         SessionGuidanceKind::Summary {
             ids: vec!["f/product/section_01".into()],
         },
@@ -172,7 +172,7 @@ fn test_start_block_survives_reloading_all_guidance_inputs() {
     assert_eq!(block.reason, REASON);
     assert_eq!(block.changed, vec![".mcp.json".to_owned()]);
     let session = session(temp.path(), "restarted");
-    let kind = SessionGuidanceKind::Authoring(AuthoringStart::NoStep);
+    let kind = SessionGuidanceKind::Authoring(AuthoringStart::Message { paths: Vec::new() });
     assert_refused(&restarted, &kind, &session, REASON);
 }
 
