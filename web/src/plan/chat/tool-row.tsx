@@ -1,8 +1,8 @@
 import { useId, useState, type JSX } from "react";
 import { Check, ChevronRight, X } from "lucide-react";
 
-import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 import type { Item } from "@/plan/api/schema-chat";
+import { RoundelGlyph } from "@/plan/ui/roundel-glyph";
 import { PatchView } from "./patch-view";
 import { Untrusted } from "./visible-controls";
 
@@ -24,9 +24,8 @@ function ToolStatus({ status }: { status: ToolItem["status"] }): JSX.Element {
   return (
     <span className="chat-tool-status" data-status={status}>
       {status === "pending" && (
-        <span aria-hidden="true">
-          <BusyRoundel busy size={13} busyLabel="" idleLabel="" />
-        </span>
+        // The disc is 86% of the glyph box, so this box draws it at 13px.
+        <RoundelGlyph size="calc(13px / 0.86)" />
       )}
       {status === "error" && <X size={13} aria-hidden="true" />}
       {status === "done" && <Check size={13} aria-hidden="true" />}

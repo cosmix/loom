@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai/react";
-import { CircleCheck, CircleDashed, MessageCircleQuestion, type LucideIcon } from "lucide-react";
+import { CircleCheck, CircleDashed, MessageCircleQuestion } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 
@@ -14,7 +14,7 @@ import { planSlug } from "@/plan/files/tree";
 import { OfferButton } from "@/plan/offers/offer-button";
 import { authorBlockReasonAtom, draftTeamAtom } from "@/plan/state/atoms";
 import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
-import { PLAN_STATE_GLYPHS, type PlanState } from "@/plan/ui/glyphs";
+import { PLAN_STATE_GLYPHS, type Glyph, type PlanState } from "@/plan/ui/glyphs";
 import { plural } from "@/plan/ui/plural";
 
 export type QueueKind = "section" | "plan";
@@ -31,7 +31,7 @@ type QueueRow = {
   path: string | null;
   /** The word beside the row's glyph: "Written", "Missing", or a plan's lifecycle state. */
   state: string;
-  icon: LucideIcon;
+  icon: Glyph;
   /** The `tone-*` class that colours the glyph, for a finished document. */
   tone?: string;
   written: boolean;
@@ -40,7 +40,7 @@ type QueueRow = {
   offer: OfferView | null;
 };
 
-function planIcon(state: string): LucideIcon {
+function planIcon(state: string): Glyph {
   return Object.hasOwn(PLAN_STATE_GLYPHS, state)
     ? PLAN_STATE_GLYPHS[state as PlanState]
     : CircleCheck;
@@ -130,7 +130,7 @@ function Status({
   tone,
   children,
 }: {
-  icon: LucideIcon;
+  icon: Glyph;
   tone?: string;
   children: ReactNode;
 }) {

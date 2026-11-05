@@ -19,7 +19,7 @@ import { offerErrorAtom } from "@/plan/chat/offer-error";
 import { elsewhereRefusal } from "@/plan/chat/offer-flow";
 import { usePressureRun } from "@/plan/chat/pressure/use-pressure";
 import { elsewhereSessionAtom } from "@/plan/chat/session-home";
-import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
+import { revealChat } from "@/plan/chat/sheet-state";
 import { IsolatedSentence } from "@/plan/concept/sentence-text";
 import { openDiff } from "@/plan/diff/open-diff";
 import { sourceHref } from "@/plan/feature/source-href";
@@ -176,7 +176,7 @@ function EditAction({ doc, hidden }: { doc: DocView; hidden: boolean }): JSX.Ele
 }
 
 function discussDoc(store: Store, doc: DocView): void {
-  store.set(chatSheetOpenAtom, true);
+  revealChat(store);
   // An open session on another screen has no composer here: a chip added now would wait in its
   // draft, unseen, and ride the next send into that session. Say why nothing happened instead.
   const elsewhere = store.get(elsewhereSessionAtom);
