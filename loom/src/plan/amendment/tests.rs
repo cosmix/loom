@@ -223,3 +223,22 @@ fn harness_audit_row_reads_back() {
     assert_eq!(cells[3], "harness");
     assert_eq!(field_from_name(cells[3]), Some(AmendmentField::Harness));
 }
+
+#[test]
+fn amending_a_merged_stage_keeps_its_completed_commit() {
+    let def = StageDefinition {
+        harness: vec!["tests/new".to_string()],
+        ..StageDefinition::default()
+    };
+    let mut merged = Stage::new("S".to_string(), None);
+    merged.completed_commit = Some("abc123".to_string());
+    merged.merged = true;
+    sync_stage_from_definition(&mut merged, &def, AmendmentField::Harness);
+    assert_eq!(merged.completed_commit.as_deref(), Some("abc123"));
+    assert_eq!(merged.harness, vec!["tests/new"]);
+
+    let mut unmerged = Stage::new("S".to_string(), None);
+    unmerged.completed_commit = Some("abc123".to_string());
+    sync_stage_from_definition(&mut unmerged, &def, AmendmentField::Harness);
+    assert_eq!(unmerged.completed_commit, None);
+}
