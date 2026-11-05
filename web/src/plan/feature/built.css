@@ -1,0 +1,126 @@
+/*
+ * The Built page, the Run page's sibling: pages.css gives the page column, its head and the done
+ * plan rows; design.css the hairline lists, fine print and buttons. Here is only what those do not
+ * give: the sections' rhythm, the entry rows of the Spec check and Candidate follow-ups lists, and
+ * the free-text box with its action row. Theme tokens only (DESIGN.md).
+ */
+[data-loom-plan] .plan-built {
+  display: grid;
+  gap: var(--space-6);
+}
+
+/* A done plan's slug keeps its full width; the title takes the rest and wraps under it when the
+   row is narrow (the row wraps, pages.css). The review link sits at the row's end. */
+[data-loom-plan] .plan-built__plans .plan-page__name {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
+[data-loom-plan] .plan-built__title {
+  flex: 1 1 16ch;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* An entry row: the kind word over the text, the source line under it, and for a candidate the
+   action at the row's end. Nothing truncates: a long review path or stage name wraps. */
+[data-loom-plan] .plan-built__entries > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "kind kind"
+    "text action"
+    "source source";
+  align-items: start;
+  column-gap: var(--space-4);
+  row-gap: var(--space-1);
+  padding: var(--space-3) 0;
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .plan-built__kind {
+  grid-area: kind;
+  margin: 0;
+}
+
+[data-loom-plan] .plan-built__text {
+  grid-area: text;
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+}
+
+[data-loom-plan] .plan-built__source {
+  grid-area: source;
+  margin: 0;
+}
+
+/* The button centres on the text's first line: half the difference between that line's box and
+   the row control's height comes off its top. */
+[data-loom-plan] .plan-built__action {
+  grid-area: action;
+  margin-top: calc((var(--type-body) * var(--leading-body) - var(--control-height-sm)) / 2);
+}
+
+@media (max-width: 480px) {
+  [data-loom-plan] .plan-built__entries > li {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "kind"
+      "text"
+      "source"
+      "action";
+  }
+
+  [data-loom-plan] .plan-built__action {
+    justify-self: start;
+    margin-top: var(--space-1);
+  }
+}
+
+/* The free-text box: an input, so it keeps its border; the one primary and the quiet link to New
+   work sit on one line under it. */
+[data-loom-plan] .plan-built__free {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
+[data-loom-plan] .plan-built__label {
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .plan-built__field {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  resize: vertical;
+}
+
+[data-loom-plan] .plan-built__field:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+[data-loom-plan] .plan-built__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-1);
+}
+
+/* The link beside the button reads on the button's line. */
+[data-loom-plan] .plan-built__aside {
+  line-height: var(--control-height);
+}

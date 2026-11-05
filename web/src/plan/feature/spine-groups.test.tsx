@@ -1,0 +1,186 @@
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { createStore } from "jotai";
+import { Provider } from "jotai/react";
+import { createMemoryRouter, RouterProvider } from "react-router";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import checklistFixture from "@/plan/api/fixtures/checklist.json";
+import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
+import { checklistViewSchema, serverInfoSchema, type ChecklistView } from "@/plan/api/schema";
+import { Spine } from "@/plan/feature/spine";
+import spineSheet from "@/plan/feature/spine.css?raw";
+import { projectAtom, serverInfoAtom } from "@/plan/state/atoms";
+
+beforeEach(() => window.localStorage.clear());
+afterEach(cleanup);
+
+const section = (number: string, written: boolean, name = `Section ${number}`) => ({
+  number,
+  name,
+  written,
+  open_questions: 0,
+});
+
+const plan = (slug: string, state: string) => ({
+  slug,
+  path: `doc/plans/atlas/PLAN-${slug}.md`,
+  title: `Plan ${slug}`,
+  state,
+  pressure_date: null,
+  listed: true,
+});
+
+function atlas(patch: Record<string, unknown> = {}): ChecklistView {
+  return checklistViewSchema.parse({
+    ...checklistFixture.checklists[0]!,
+    feature: "atlas",
+    sections: [section("01", true, "The `Run` loop"), section("02", false)],
+    plan_rows: [plan("atlas-01", "done"), plan("atlas-02", "running")],
+    ...patch,
+  });
+}
+
+function renderSpine(path: string, checklist: ChecklistView = atlas()) {
+  const store = createStore();
+  store.set(serverInfoAtom, serverInfoSchema.parse(serverInfoFixture));
+  store.set(projectAtom, { checklists: [checklist], standalone: [], moves: [] });
+  const router = createMemoryRouter([{ path: "/f/:feature/*", element: <Spine /> }], {
+    initialEntries: [path],
+  });
+  const view = render(
+    <Provider store={store}>
+      <RouterProvider router={router} />
+    </Provider>,
+  );
+  return { ...view, router, store };
+}
+
+const spine = () => screen.getByRole("navigation", { name: "Feature documents" });
+/** The row's text with its `.sr-only` spans taken out: what a sighted reader sees. */
+const visibleText = (row: Element) => {
+  const copy = row.cloneNode(true) as Element;
+  for (const hidden of copy.querySelectorAll(".sr-only")) hidden.remove();
+  return copy.textContent?.replace(/\s+/g, " ").trim();
+};
+const link = (name: string | RegExp) => within(spine()).getByRole("link", { name });
+
+describe("hostile names and marks", () => {
+  it("renders for a feature named like an Object.prototype member", () => {
+    renderSpine("/f/constructor/product", atlas({ feature: "constructor" }));
+
+    expect(link(/\bPlans\b/)).toBeTruthy();
+    fireEvent.click(within(spine()).getByRole("button", { name: "Expand Plans" }));
+    expect(link(/atlas-01/)).toBeTruthy();
+  });
+
+  it("draws a plan whose state names an Object.prototype member with no icon", () => {
+    renderSpine("/f/atlas/engineering", atlas({ plan_rows: [plan("atlas-03", "constructor")] }));
+
+    const row = link(/atlas-03/);
+    expect(row.textContent).toContain("constructor");
+    // The pressure badge draws its own glyph; the state draws none.
+    expect(row.querySelector(".plan-status svg")).toBeNull();
+  });
+});
+
+describe("the pressure record on a plan row", () => {
+  const withDate = (slug: string, state: string, date: string | null) => ({
+    ...plan(slug, state),
+    pressure_date: date,
+  });
+
+  it("reads the test date, or that there is none, after the plan's state", () => {
+    const rows = [
+      withDate("atlas-01", "written", "2026-10-20"),
+      withDate("atlas-02", "written", null),
+    ];
+    renderSpine("/f/atlas/engineering", atlas({ plan_rows: rows }));
+
+    const tested = link(/atlas-01/);
+    expect(tested.textContent).toBe("atlas-01 written Pressure-tested 2026-10-20");
+    expect(tested.querySelector('[data-tested="true"]')).not.toBeNull();
+    expect(link(/atlas-02/).querySelector('[data-tested="false"]')?.textContent).toBe(
+      "Not pressure-tested",
+    );
+  });
+
+  it("shows the record on a running and a done plan, and nothing on a retired one", () => {
+    const rows = [
+      withDate("atlas-01", "running", null),
+      withDate("atlas-02", "done", "2026-10-01"),
+      withDate("atlas-03", "retired", "2026-09-01"),
+    ];
+    renderSpine("/f/atlas/engineering", atlas({ plan_rows: rows }));
+
+    expect(link(/atlas-01/).textContent).toContain("Not pressure-tested");
+    expect(link(/atlas-02/).textContent).toContain("Pressure-tested 2026-10-01");
+    expect(link(/atlas-03/).querySelector(".plan-spine__badge")).toBeNull();
+  });
+
+  it("has no Pressure test group", () => {
+    renderSpine("/f/atlas/engineering");
+
+    expect(within(spine()).queryByRole("link", { name: /^Pressure test\b/ })).toBeNull();
+  });
+
+  it("shows the state and the record as hidden glyphs whose words are read, not seen", () => {
+    const rows = [
+      withDate("atlas-01", "done", "2026-10-20"),
+      withDate("atlas-02", "retired", null),
+    ];
+    renderSpine("/f/atlas/engineering", atlas({ plan_rows: rows }));
+
+    // The accessible name keeps the words, each glyph's tooltip repeats its own, and the slug is
+    // the row's only visible text.
+    const tested = link("atlas-01 done Pressure-tested 2026-10-20");
+    const glyphs = [...tested.querySelectorAll(".plan-spine__glyph")];
+    const titled = (glyph: Element) => [
+      glyph.getAttribute("aria-hidden"),
+      glyph.getAttribute("title"),
+    ];
+    expect(glyphs.map(titled)).toEqual([
+      ["true", "done"],
+      ["true", "Pressure-tested 2026-10-20"],
+    ]);
+    expect(glyphs.map((glyph) => glyph.querySelector("svg") !== null)).toEqual([true, true]);
+    expect(visibleText(tested)).toBe("atlas-01");
+    expect(tested.querySelector(".plan-spine__glyph[aria-label]")).toBeNull();
+
+    const retired = link("atlas-02 retired");
+    expect(retired.querySelector(".plan-spine__glyph")?.getAttribute("title")).toBe("retired");
+    expect(visibleText(retired)).toBe("atlas-02");
+  });
+
+  it("keeps a section's note as a visible word with no glyph", () => {
+    renderSpine("/f/atlas/product");
+
+    const missing = within(spine()).getByText("Section 02").closest("li")!;
+    expect(missing.querySelector(".plan-spine__glyph")).toBeNull();
+    expect(visibleText(missing)).toBe("02 Section 02 not written");
+  });
+
+  it("lays a plan row out on one line, the slug giving way before the glyphs", () => {
+    const css = spineSheet.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+    expect(css).toContain(".plan-spine__glyph { display: inline-flex; flex: none;");
+    expect(css).toContain(".plan-spine__glyph > svg { width: 14px; height: 14px; }");
+    expect(css).toContain(
+      '.plan-spine__badge[data-tested="true"] > .plan-spine__glyph { color: var(--tone-completed); }',
+    );
+    // No rule breaks the name onto its own line or clips a date: the row has no second line.
+    expect(css).not.toContain(":has(> .plan-spine__badge)");
+    expect(css).not.toContain("@container spine-row");
+    expect(css).not.toContain(".plan-spine__badge-date");
+  });
+
+  it("gives the badge to plan rows and no other row", () => {
+    renderSpine("/f/atlas/engineering");
+
+    const badged = within(spine())
+      .getAllByRole("link")
+      .filter((anchor) => anchor.querySelector(".plan-spine__badge") !== null);
+    expect(badged.map((anchor) => anchor.textContent?.split(" ")[0])).toEqual([
+      "atlas-01",
+      "atlas-02",
+    ]);
+  });
+});

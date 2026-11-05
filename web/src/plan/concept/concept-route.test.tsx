@@ -324,7 +324,7 @@ describe("wiring", () => {
     expect(conceptPageLabel("/f/demo/engineering/feat-x")).toBe("feat-x summary");
     expect(conceptPageLabel("/plans/x")).toBe("x summary");
     expect(conceptPageLabel("/f/demo/metaplan")).toBe("Metaplan summary");
-    expect(conceptPageLabel("/f/demo/metaplan/index.md")).toBe("Metaplan summary");
+    expect(conceptPageLabel("/f/demo/metaplan")).toBe("Metaplan summary");
     expect(conceptPageLabel("/product")).toBeNull();
     expect(conceptPageLabel("/engineering/a")).toBeNull();
     expect(conceptPageLabel("/f/demo/product/a%2Fb")).toBeNull();
