@@ -83,7 +83,13 @@ with **Taking shape** in place of the chat dock. The transcript uses the selecte
 Taking shape uses Inter and lists the size, name, problem, settled decisions, open questions and,
 for a feature, proposed sections. On narrow screens the panel follows the transcript.
 
-`/new` always opens the empty form. While a kickoff is open the form also says "<name or
+`/new` always opens the empty form: one field, with the kind of work as a three-way switch on
+its top edge (Feature, Standalone plan, Follow-up). Follow-up opens a picker of the features that
+have a metaplan, done or not, each with its state and plan count; the picked feature's open
+findings and open questions from its run reviews appear as suggestions under the field. Start
+for a follow-up starts Plan follow-ups for that feature with the typed text and opens the
+feature's metaplan page with the chat. The Built page's "Start it on New work" arrives with the
+feature picked. While a kickoff is open the form also says "<name or
 Untitled> is still open", with Continue and Set it aside. A kickoff persists as a draft under the
 runtime directory (`kickoffs/<session id>.json`): the user's typed texts (at most 40 of 4 KiB),
 the agent's last shape, the start's attachments, the user's rename and the confirmed target. The

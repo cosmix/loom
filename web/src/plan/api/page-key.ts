@@ -8,11 +8,11 @@ export const VISION_DOC = "vision";
 /** The document family of a feature's concept page. */
 export type ConceptScope = "product" | "engineering" | "metaplan";
 
-/** The summary stem of the metaplan file `doc/plans/<feature>/index.md`, which the bare `/f/<feature>/metaplan` route shows. */
+/**
+ * The summary stem of a feature's one metaplan, `doc/plans/<feature>/index.md`: the only metaplan
+ * summary key is `<feature>/metaplan/index`, and `/f/<feature>/metaplan` is its only address.
+ */
 export const FIRST_METAPLAN = "index";
-
-/** A metaplan summary's stem: the metaplan file's name without `.md`, as the server names it. */
-const METAPLAN_STEM = /^[a-z0-9][a-z0-9-]*$/;
 
 /** The validated components of a concept page key. */
 export type PageKeyParts =
@@ -49,7 +49,7 @@ export function parsePageKey(key: string): PageKeyParts | null {
     if (second === "product" || second === "engineering") {
       return { kind: "summary", feature: first, scope: second, doc: third };
     }
-    if (second === "metaplan" && METAPLAN_STEM.test(third)) {
+    if (second === "metaplan" && third === FIRST_METAPLAN) {
       return { kind: "summary", feature: first, scope: second, doc: third };
     }
   }
@@ -109,10 +109,7 @@ export function pageHref(key: string): string {
     return `/f/${encodeURIComponent(parts.feature)}/${VISION_DOC}`;
   }
   if (parts.kind === "summary" && parts.scope === "metaplan") {
-    const feature = encodeURIComponent(parts.feature);
-    return parts.doc === FIRST_METAPLAN
-      ? `/f/${feature}/metaplan`
-      : `/f/${feature}/metaplan/${encodeURIComponent(parts.doc)}.md`;
+    return `/f/${encodeURIComponent(parts.feature)}/metaplan`;
   }
   const segments =
     parts.kind === "standalone"
@@ -121,7 +118,7 @@ export function pageHref(key: string): string {
   return `/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
 }
 
-/** The key of `/f/<feature>/<page>`: the vision, the first metaplan, or an overview. */
+/** The key of `/f/<feature>/<page>`: the vision, the metaplan, or an overview. */
 function pageKeyOf4(feature: string, page: string): string {
   if (page === VISION_DOC) return `${feature}/product/${VISION_DOC}`;
   if (page === "metaplan") return `${feature}/metaplan/${FIRST_METAPLAN}`;
@@ -144,8 +141,8 @@ export function pageKeyOfPath(pathname: string): string | null {
     key = summaryKey(null, "engineering", feature);
   } else if (route === "f" && segments.length === 4) {
     key = pageKeyOf4(feature, scope);
-  } else if (route === "f" && segments.length === 5) {
-    key = `${feature}/${scope}/${scope === "metaplan" ? doc.replace(/\.md$/, "") : doc}`;
+  } else if (route === "f" && segments.length === 5 && scope !== "metaplan") {
+    key = `${feature}/${scope}/${doc}`;
   } else {
     return null;
   }

@@ -146,6 +146,30 @@ fn kickoff_ids_are_offered_without_a_matching_checklist_or_feature() {
 }
 
 #[test]
+fn plan_follow_ups_is_offered_for_a_feature_with_a_metaplan_that_is_not_done() {
+    let temp = tempfile::tempdir().unwrap();
+    let plans = temp.path().join("doc/plans/demo");
+    fs::create_dir_all(&plans).unwrap();
+    fs::write(
+        plans.join("index.md"),
+        "# Metaplan\n\n## 1. One (`PLAN-one.md`)\n",
+    )
+    .unwrap();
+    fs::write(plans.join("PLAN-one.md"), "# Plan: one\n").unwrap();
+    let bind = BindInfo::new("127.0.0.1:7272".parse().unwrap(), &"ab".repeat(32));
+    let ctx = PlanContext::new(
+        temp.path().to_path_buf(),
+        ReadOnly::from_problems(Vec::new()),
+        bind,
+        OwnWrites::default(),
+    )
+    .unwrap();
+    assert!(offered(&ctx, "plan-follow-ups", Some("demo")));
+    assert!(!offered(&ctx, "plan-follow-ups", Some("absent")));
+    assert!(!offered(&ctx, "plan-follow-ups", None));
+}
+
+#[test]
 fn refuses_a_symlinked_plugin_directory() {
     let (_root, ctx, dir) = fixture();
     let outside = tempfile::tempdir().unwrap();

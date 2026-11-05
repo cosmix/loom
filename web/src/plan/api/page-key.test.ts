@@ -47,11 +47,6 @@ const pages: { key: string; parts: PageKeyParts; href: string }[] = [
     href: "/f/demo/metaplan",
   },
   {
-    key: "demo/metaplan/metaplan-02",
-    parts: { kind: "summary", feature: "demo", scope: "metaplan", doc: "metaplan-02" },
-    href: "/f/demo/metaplan/metaplan-02.md",
-  },
-  {
     key: "plans/standalone",
     parts: { kind: "standalone", doc: "standalone" },
     href: "/plans/standalone",
@@ -161,7 +156,6 @@ describe("concept page URLs", () => {
     ["/f/%64emo/vision", "demo/product/vision"],
     ["/f/demo/product/section%5F01", "demo/product/section_01"],
     ["/plans/feat%2Dx%2Ev2", "plans/feat-x.v2"],
-    ["/f/demo/metaplan/index.md", "demo/metaplan/index"],
   ])("decodes segments in %s", (pathname, key) => {
     expect(pageKeyOfPath(pathname)).toBe(key);
   });
@@ -182,7 +176,8 @@ describe("concept page URLs", () => {
     "/plans/%2E%2E",
     "/plans/a%252Fb",
     "/f/Bad/product",
-    "/f/demo/metaplan/Index.md",
+    "/f/demo/metaplan/index.md",
+    "/f/demo/metaplan/index",
     "/f/demo/metaplan/a/b",
   ])("rejects pathname %j", (pathname) => {
     expect(pageKeyOfPath(pathname)).toBeNull();
@@ -197,9 +192,13 @@ describe("summary ids", () => {
     "demo/product/section_123",
     "demo/product/vision",
     "demo/metaplan/index",
-    "demo/metaplan/metaplan-02",
   ])("preserves summary id %s", (id) => {
     expect(pageKeyOfSummaryId(id, () => null)).toBe(id);
+  });
+
+  it("rejects a metaplan summary id other than index", () => {
+    expect(parsePageKey("demo/metaplan/metaplan-02")).toBeNull();
+    expect(pageKeyOfSummaryId("demo/metaplan/metaplan-02", () => null)).toBeNull();
   });
 
   it("uses a plan's feature for its engineering page", () => {

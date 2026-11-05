@@ -1,0 +1,228 @@
+/*
+ * The feature picker and the picked feature's chip (feature-picker.tsx), on the threshold
+ * (threshold.css). The picker is the one thing on /new that floats, so it carries the one shadow;
+ * the chip sits where the kind's hint was. Every colour is a theme token (ui/DESIGN.md, New work).
+ */
+
+/* ---- The picked feature: a chip where the hint was ------------------------------------------ */
+
+[data-loom-plan] .kickoff-picked {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px 0 10px;
+  border-radius: 999px;
+  background: var(--muted);
+  font-size: var(--type-ui);
+}
+
+[data-loom-plan] .kickoff-picked__change {
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-fine);
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+}
+
+[data-loom-plan] .kickoff-picked__change:hover {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+[data-loom-plan] .kickoff-picked__change:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Follow-up with no feature yet: the same chip, a quiet button that reopens the picker. */
+[data-loom-plan] .kickoff-pick {
+  padding: 0 10px;
+  border: 0;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+[data-loom-plan] .kickoff-pick:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+[data-loom-plan] .kickoff-pick:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* ---- The listbox: the one floating surface -------------------------------------------------- */
+
+[data-loom-plan] .kickoff-picker {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: 3;
+  box-sizing: border-box;
+  width: 380px;
+  max-width: calc(100vw - 2 * var(--page-gutter));
+  padding: var(--space-2);
+  border-radius: var(--corner-surface);
+  background: var(--card);
+  box-shadow:
+    var(--plan-shadow),
+    var(--popover-lift),
+    0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent);
+  text-align: left;
+  animation: kickoff-pop 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+[data-loom-plan] .kickoff-picker:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+[data-loom-plan] .kickoff-picker__title {
+  margin: var(--space-1) var(--space-2) 6px;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .kickoff-picker__list {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-loom-plan] .kickoff-feature {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-2) 10px;
+  border-radius: var(--corner-control);
+  cursor: pointer;
+}
+
+[data-loom-plan] .kickoff-feature[aria-selected="true"] {
+  background: var(--muted);
+}
+
+[data-loom-plan] .kickoff-feature__id {
+  overflow: hidden;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--type-body);
+  font-weight: 500;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-loom-plan] .kickoff-picked .kickoff-feature__id {
+  font-size: var(--type-ui);
+}
+
+[data-loom-plan] .kickoff-feature__status {
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  white-space: nowrap;
+}
+
+[data-loom-plan] .kickoff-feature__status > b {
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+/* The mark: a check in the completed tone for a built feature, else a ring in the accent. */
+[data-loom-plan] .kickoff-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--primary);
+}
+
+[data-loom-plan] .kickoff-mark[data-built] {
+  color: var(--tone-completed);
+}
+
+[data-loom-plan] .kickoff-mark svg {
+  width: 14px;
+  height: 14px;
+}
+
+[data-loom-plan] .kickoff-ring__track {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 2.5;
+}
+
+[data-loom-plan] .kickoff-ring__fill {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  transform: rotate(-90deg);
+  transform-origin: center;
+}
+
+[data-loom-plan] .kickoff-picker__empty {
+  margin: var(--space-1) var(--space-2) var(--space-2);
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+}
+
+[data-loom-plan] .kickoff-picker__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 6px 10px 2px;
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .kickoff-picker__foot kbd {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--muted);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+@keyframes kickoff-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+/* Narrow: the picker is as wide as the track it hangs from, which fills the field's top. */
+@media (max-width: 480px) {
+  [data-loom-plan] .kickoff-picker {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-loom-plan] .kickoff-picker {
+    animation: none;
+  }
+}

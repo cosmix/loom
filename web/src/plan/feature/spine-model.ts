@@ -1,4 +1,3 @@
-import { FIRST_METAPLAN } from "@/plan/api/page-key";
 import type { ChecklistView, MarkView, StepView } from "@/plan/api/schema";
 import { featurePage } from "@/plan/feature/page-offer";
 import { STEP } from "@/plan/feature/steps";
@@ -65,9 +64,11 @@ function unitOf(server: StepView | undefined, count: string | null): string | nu
 }
 
 /** The page segment each group lives under, for finding the group of a pathname. */
-const GROUP_OF_PAGE: Record<string, GroupId> = Object.fromEntries(
-  GROUPS.map((group) => [group.page, group.id]),
-);
+const GROUP_OF_PAGE: Record<string, GroupId> = {
+  ...Object.fromEntries(GROUPS.map((group) => [group.page, group.id])),
+  // The Built page belongs to the Run group: a finished feature's run is what it shows.
+  built: "run",
+};
 
 /** A plan file name, lifecycle prefix included (`PLAN-x.md`, `IN_PROGRESS-PLAN-x.md`). */
 const PLAN_FILE = /^(?:[A-Z_]+-)?PLAN-/;
@@ -141,35 +142,6 @@ function planChildren(checklist: ChecklistView): SpineChild[] {
   }));
 }
 
-/** A metaplan file is named in the route by its file name. */
-export function metaplanFile(path: string): string {
-  return path.split("/").at(-1) ?? path;
-}
-
-/** The metaplan the bare `/metaplan` route shows: the file `index.md`, else the first in path order. */
-export function firstMetaplan<T extends { path: string }>(metaplans: T[]): T | undefined {
-  return (
-    metaplans.find((item) => metaplanFile(item.path) === `${FIRST_METAPLAN}.md`) ?? metaplans[0]
-  );
-}
-
-function metaplanChildren(checklist: ChecklistView): SpineChild[] {
-  if (checklist.metaplans.length < 2) return [];
-  return checklist.metaplans.map((metaplan) => ({
-    key: metaplan.path,
-    to: featureHref(
-      checklist.feature,
-      `metaplan/${encodeURIComponent(metaplanFile(metaplan.path))}`,
-    ),
-    name: metaplan.title,
-    style: "plain",
-    number: null,
-    note: null,
-    icon: null,
-    pressure: null,
-  }));
-}
-
 const MARK_WORDS: Record<Exclude<MarkView, "gap">, string> = {
   done: "done",
   active: "in progress",
@@ -218,7 +190,7 @@ export function summaryPathnameOfSource(checklist: ChecklistView, pathname: stri
   if (group.id === "vision") return group.to;
   const key = childKeyOf(checklist, group.id, repoPath);
   if (key === null) return null;
-  if (group.id === "metaplan" && group.children.length === 0) return group.to;
+  if (group.id === "metaplan") return group.to;
   // The overview child (first, where a group has one) shares the group's target and lists no document.
   const listed = group.overview ? group.children.slice(1) : group.children;
   return listed.find((candidate) => candidate.key === key)?.to ?? null;
@@ -226,22 +198,10 @@ export function summaryPathnameOfSource(checklist: ChecklistView, pathname: stri
 
 /**
  * The pathname whose spine row is the current one. A source route stands for its summary row
- * (`summaryPathnameOfSource`); `/f/<f>/metaplan/<file>` of a lone metaplan, which has no row of its
- * own, stands for the group's head, where the bare `/metaplan` route redirects away from.
+ * (`summaryPathnameOfSource`); every other route stands for itself.
  */
 export function currentPathname(checklist: ChecklistView, pathname: string): string {
-  const fromSource = summaryPathnameOfSource(checklist, pathname);
-  if (fromSource !== null) return fromSource;
-  const shown = featurePage(pathname);
-  if (shown?.page !== "metaplan") return pathname;
-  const head = spineGroups(checklist).find((group) => group.id === groupOfPathname(pathname));
-  if (head && head.children.length === 0) return head.to;
-  // The bare route shows the first metaplan, whose child row is then the current one.
-  const first = firstMetaplan(checklist.metaplans);
-  if (shown.doc === null && first) {
-    return head?.children.find((child) => child.key === first.path)?.to ?? pathname;
-  }
-  return pathname;
+  return summaryPathnameOfSource(checklist, pathname) ?? pathname;
 }
 
 function childrenOf(id: GroupId, checklist: ChecklistView, page: string): SpineChild[] {
@@ -249,7 +209,7 @@ function childrenOf(id: GroupId, checklist: ChecklistView, page: string): SpineC
     return [overviewChild(checklist.feature, page), ...sectionChildren(checklist)];
   }
   if (id === "plans") return [overviewChild(checklist.feature, page), ...planChildren(checklist)];
-  return id === "metaplan" ? metaplanChildren(checklist) : [];
+  return [];
 }
 
 /** The spine's groups in workflow order. A feature with nothing yet hides no group. */

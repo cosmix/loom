@@ -62,6 +62,7 @@ impl AuthoringStart {
         match id {
             "kickoff" => return Ok(Self::Kickoff { small: false }),
             "kickoff-small" => return Ok(Self::Kickoff { small: true }),
+            _ if id == Offer::PlanFollowUps.id() => return follow_up_start(project, feature, id),
             _ => {}
         }
         let checklist = feature.and_then(|name| project.feature(name));
@@ -115,6 +116,28 @@ impl AuthoringStart {
             Self::Knowledge { open_file: None } => "Change the knowledge base".into(),
             Self::Message { .. } => "New chat".into(),
         }
+    }
+}
+
+/// Whether Plan follow-ups can start in `feature`: the feature has its metaplan.
+pub fn follow_ups_open(project: &Project, feature: &str) -> bool {
+    project
+        .feature(feature)
+        .is_some_and(|feature| !feature.metaplans.is_empty())
+}
+
+/// Plan follow-ups for a feature that has its metaplan, done or not; the checklist offers it
+/// only once every plan is done, so it is not looked up there.
+fn follow_up_start(
+    project: &Project,
+    feature: Option<&str>,
+    id: &str,
+) -> Result<AuthoringStart, StartError> {
+    let feature = feature.ok_or(StartError::FeatureRequired)?;
+    if follow_ups_open(project, feature) {
+        Ok(AuthoringStart::Offer(Offer::PlanFollowUps))
+    } else {
+        Err(StartError::NotOffered(id.into()))
     }
 }
 
@@ -189,5 +212,7 @@ pub fn step_class(start: &AuthoringStart) -> StepClass {
     }
 }
 
+#[cfg(test)]
+mod follow_up_contract_tests;
 #[cfg(test)]
 mod tests;

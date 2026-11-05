@@ -147,6 +147,35 @@ describe("DisabledReason", () => {
     );
   });
 
+  it("joins a passed describedBy after the reason's id, and alone when not blocked", () => {
+    const { rerender } = render(
+      <>
+        <DisabledReason reason="Read-only" describedBy="subject" onClick={vi.fn()}>
+          Write
+        </DisabledReason>
+        <p id="subject">The subject</p>
+      </>,
+    );
+
+    const button = screen.getByRole("button", { name: "Write" });
+    const ids = (button.getAttribute("aria-describedby") ?? "").split(" ");
+    expect(ids).toHaveLength(2);
+    expect(document.getElementById(ids[0]!)?.textContent).toBe("Read-only");
+    expect(ids[1]).toBe("subject");
+
+    rerender(
+      <>
+        <DisabledReason reason={null} describedBy="subject" onClick={vi.fn()}>
+          Write
+        </DisabledReason>
+        <p id="subject">The subject</p>
+      </>,
+    );
+    expect(screen.getByRole("button", { name: "Write" }).getAttribute("aria-describedby")).toBe(
+      "subject",
+    );
+  });
+
   it("sets the reason beneath the button by default", () => {
     render(
       <DisabledReason reason="Read-only" onClick={vi.fn()}>
