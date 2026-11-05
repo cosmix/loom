@@ -3,7 +3,7 @@
 use super::{found, tree, Path, Project};
 
 #[test]
-fn each_metaplan_reports_entries_without_plan_files() {
+fn each_index_reports_entries_without_plan_files_and_other_files_report_none() {
     let text = "# Metaplan\n\n## 1. Missing plan\n";
     let temp = tree(&[
         ("doc/plans/a/index.md", text),
@@ -15,7 +15,6 @@ fn each_metaplan_reports_entries_without_plan_files() {
     let code = "metaplan-entry-without-plan";
     let want = [
         (code, Path::new("doc/plans/a/index.md"), Some(3)),
-        (code, Path::new("doc/plans/a/metaplan-02.md"), Some(3)),
         (code, Path::new("doc/plans/b/index.md"), Some(3)),
         (code, Path::new("doc/plans/index.md"), Some(3)),
     ];

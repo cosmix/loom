@@ -97,10 +97,7 @@ fn document_id_cases() -> [IdCase; 20] {
         ("doc/plans/alpha/archive/DONE-PLAN-foreign-only.md", None),
         ("doc/plans/alpha/archive/DONE-PLAN-unnamed.md", None),
         ("doc/plans/beta/index.md", Some("beta/metaplan/index")),
-        (
-            "doc/plans/alpha/metaplan-02.md",
-            Some("alpha/metaplan/metaplan-02"),
-        ),
+        ("doc/plans/alpha/metaplan-02.md", None),
         ("doc/product/alpha/index.md", Some("alpha/product/vision")),
         ("doc/product/beta/index.md", Some("beta/product/vision")),
         ("doc/plans/briefs/solo/note.md", None),
@@ -153,7 +150,6 @@ fn expected_ids_cover_two_features_and_the_standalone_shelf() {
         ids,
         [
             "alpha/metaplan/index",
-            "alpha/metaplan/metaplan-02",
             "alpha/product/section_01",
             "alpha/product/section_02",
             "alpha/product/section_03",

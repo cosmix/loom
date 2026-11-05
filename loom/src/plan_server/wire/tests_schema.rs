@@ -132,8 +132,7 @@ fn all_offers() -> Vec<Offer> {
         | Offer::WritePlan { .. }
         | Offer::PressureTest { .. }
         | Offer::StartRun
-        | Offer::RefineSpec
-        | Offer::NewMetaplanRound
+        | Offer::PlanFollowUps
         | Offer::DraftAllSections { .. }
         | Offer::DraftAllPlans { .. }
         | Offer::MoveIntoFeature { .. } => {}
@@ -142,8 +141,7 @@ fn all_offers() -> Vec<Offer> {
     offers.extend(plan_offers());
     offers.extend([
         Offer::StartRun,
-        Offer::RefineSpec,
-        Offer::NewMetaplanRound,
+        Offer::PlanFollowUps,
         Offer::MoveIntoFeature {
             path: "doc/product/index.md".into(),
         },
@@ -161,8 +159,7 @@ fn all_offer_kinds() -> Vec<OfferKind> {
         | OfferKind::WritePlan
         | OfferKind::PressureTest
         | OfferKind::StartRun
-        | OfferKind::RefineSpec
-        | OfferKind::NewMetaplanRound
+        | OfferKind::PlanFollowUps
         | OfferKind::DraftAllSections
         | OfferKind::DraftAllPlans
         | OfferKind::MoveIntoFeature => {}
@@ -176,8 +173,7 @@ fn all_offer_kinds() -> Vec<OfferKind> {
         OfferKind::WritePlan,
         OfferKind::PressureTest,
         OfferKind::StartRun,
-        OfferKind::RefineSpec,
-        OfferKind::NewMetaplanRound,
+        OfferKind::PlanFollowUps,
         OfferKind::DraftAllSections,
         OfferKind::DraftAllPlans,
         OfferKind::MoveIntoFeature,

@@ -23,7 +23,7 @@ fn write_fixture(root: &Path) {
     write(root, "doc/product/demo/section_03.md", "# Third title\n");
     write(
         root,
-        "doc/plans/demo/metaplan.md",
+        "doc/plans/demo/index.md",
         "# Roadmap\n\n## 1. `PLAN-alpha.md`\n\n## 2. `PLAN-missing.md`\n",
     );
     write(

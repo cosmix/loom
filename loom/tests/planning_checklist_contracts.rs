@@ -157,7 +157,7 @@ fn checklist_state_rows() {
         let steps: Vec<_> = c.steps.iter().map(|(s, _)| *s as u8).collect();
         assert_eq!(steps, [1, 2, 3, 4, 5, 6]);
         if current == CurrentStep::ReadyAllDone {
-            assert_eq!(secondary(&c), ["refine-spec", "new-metaplan-round"]);
+            assert_eq!(secondary(&c), ["plan-follow-ups"]);
         }
         if i == 4 {
             assert!(secondary(&c).contains(&"start-run".to_string()), "{c:?}");
@@ -238,12 +238,11 @@ fn implements_token_forms() {
 
 #[test]
 fn metaplan_entry_any_spelling() {
-    let round_2 = "doc/plans/demo/round-2-metaplan.md";
     let index = "# Metaplan\n\n## 1. Delivery truth (`PLAN-02-delivery-truth.md`)\n\n\
                  ## 2. Old (`DONE-PLAN-old.md`)\n\n## Policy notes (no plan file)\n\n\
-                 ## 3. Missing name\n\n## 4. Policy notes (no plan file)\n";
-    let next = "# Round 2\n\n## 1. Next (`PLAN-next.md`)\n\n\
-                ## 2. Delivery again (`PLAN-02-delivery-truth.md`)\n";
+                 ## 3. Missing name\n\n## 4. Policy notes (no plan file)\n\n\
+                 ## Follow-ups\n\n## 5. Next (`PLAN-next.md`)\n\n\
+                 ## 6. Delivery again (`PLAN-02-delivery-truth.md`)\n";
     let old = (
         "doc/plans/demo/archive/DONE-PLAN-old.md",
         plan("Old", "section_01"),
@@ -252,21 +251,21 @@ fn metaplan_entry_any_spelling() {
         "doc/plans/demo/PLAN-02-delivery-truth.md",
         plan("D", "section_01"),
     );
-    let (meta, round) = ((META, index.to_string()), (round_2, next.to_string()));
-    let (_temp, root) = tree(&[meta, round, old, truth, (VISION, vision(&[1])), section(1)]);
+    let meta = (META, index.to_string());
+    let (_temp, root) = tree(&[meta, old, truth, (VISION, vision(&[1])), section(1)]);
     let project = Project::load(&root).unwrap();
     let feature = project.feature("demo").unwrap();
     let paths: Vec<&PathBuf> = feature.metaplans.iter().map(|(path, _)| path).collect();
-    assert_eq!(paths, [&p(META), &p(round_2)]);
-    let first = feature.metaplans[0].1.iter().map(|e| e.slug.as_deref());
+    assert_eq!(paths, [&p(META)]);
+    let entries = &feature.metaplans[0].1;
+    let first = entries.iter().map(|e| e.slug.as_deref());
     let slugs: Vec<Option<&str>> = first.collect();
-    assert_eq!(slugs, [Some("02-delivery-truth"), Some("old"), None]);
-    let second = &feature.metaplans[1];
-    assert_eq!(second.1.len(), 2, "{second:?}");
+    assert_eq!(slugs[..3], [Some("02-delivery-truth"), Some("old"), None]);
+    assert_eq!(entries.len(), 5, "{entries:?}");
     let slug = "next".to_string();
     let want = Offer::WritePlan {
         feature: "demo".into(),
-        metaplan: p(round_2),
+        metaplan: p(META),
         slug,
     };
     assert_eq!(feature.checklist.primary, Some(want));

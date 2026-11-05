@@ -16,11 +16,8 @@ pub(in crate::planning::guidance) fn fixture() -> (TempDir, Project) {
             "doc/plans/f/index.md",
             "# Metaplan\n\n## Zeta (`PLAN-zeta.md`)\n\n## Written (`PLAN-written.md`)\n\n\
              ## Running (`PLAN-running.md`)\n\n## Done (`PLAN-done.md`)\n\n\
-             ## Retired (`PLAN-retired.md`)\n\n## Alpha (`PLAN-alpha.md`)\n",
-        ),
-        (
-            "doc/plans/f/metaplan-02.md",
-            "# Round two\n\n## Zeta again (`PLAN-zeta.md`)\n\n## Omega (`PLAN-omega.md`)\n\n\
+             ## Retired (`PLAN-retired.md`)\n\n## Alpha (`PLAN-alpha.md`)\n\n\
+             ## Follow-ups\n\n## Omega (`PLAN-omega.md`)\n\n\
              ## Beta (`PLAN-beta.md`)\n\n## Gamma (`PLAN-gamma.md`)\n\n## Delta (`PLAN-delta.md`)\n",
         ),
         ("doc/plans/f/PLAN-written.md", "# Written\n"),

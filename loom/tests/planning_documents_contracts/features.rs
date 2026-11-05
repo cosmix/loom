@@ -60,13 +60,15 @@ fn misplaced_documents_need_features_and_offer_moves_without_a_fallback_feature(
     let (_temp, root) = tmp();
     let misplaced = [
         "doc/plans/index.md",
-        "doc/plans/round-2-metaplan.md",
         "doc/product/index.md",
         "doc/product/section_07.md",
     ];
     for rel in misplaced {
         put(&root, rel, "# Misplaced\n");
     }
+    // A top-level `*metaplan*.md` is another document: no problem and no move offer.
+    let round_2 = "doc/plans/round-2-metaplan.md";
+    put(&root, round_2, "# Round two\n");
     put(
         &root,
         "doc/plans/PLAN-solo.md",
@@ -78,6 +80,10 @@ fn misplaced_documents_need_features_and_offer_moves_without_a_fallback_feature(
         project.moves,
         misplaced.map(|rel| Offer::MoveIntoFeature { path: p(rel) })
     );
+    assert!(!problem_paths(&project, "needs-feature").contains(&p(round_2)));
+    assert!(!project
+        .moves
+        .contains(&Offer::MoveIntoFeature { path: p(round_2) }));
     assert!(project.features.is_empty());
     assert!(project.tree.feature_names().is_empty());
     assert_eq!(project.standalone, ["solo"]);

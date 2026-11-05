@@ -245,11 +245,11 @@ mod tests {
     }
 
     #[test]
-    fn test_listed_plan_count_deduplicates_across_metaplans() {
-        let meta = "# Metaplan\n\n## 1. Alpha (`PLAN-a.md`)\n";
+    fn test_listed_plan_count_deduplicates_within_the_metaplan() {
+        let meta = "# Metaplan\n\n## 1. Alpha (`PLAN-a.md`)\n\n## Follow-ups\n\n\
+                    ## 2. Alpha again (`PLAN-a.md`)\n";
         let temp = tree(&[
             ("doc/plans/demo/index.md", meta),
-            ("doc/plans/demo/round-2-metaplan.md", meta),
             ("doc/plans/demo/PLAN-a.md", "# Alpha\n"),
         ]);
 
@@ -257,7 +257,7 @@ mod tests {
 
         assert_eq!(
             (step(&view, 3).count.as_deref(), view.plans.listed),
-            (Some("2"), 1)
+            (Some("1"), 1)
         );
     }
 }

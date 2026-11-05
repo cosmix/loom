@@ -121,21 +121,11 @@ fn write_plan_names_entry_heading() {
 }
 
 #[test]
-fn refine_spec() {
+fn plan_follow_ups_appends_to_the_index() {
     assert_opening(
-        AuthoringStart::Offer(Offer::RefineSpec),
-        "done, Compare spec with build",
-        "Review the done plans and their run reviews in doc/plans/f/ against the product spec in doc/product/f/.",
-        "retro",
-    );
-}
-
-#[test]
-fn new_metaplan_round_starts_at_two() {
-    assert_opening(
-        AuthoringStart::Offer(Offer::NewMetaplanRound),
-        "done, New metaplan round",
-        "Write doc/plans/f/metaplan-02.md, the next metaplan round.",
+        AuthoringStart::Offer(Offer::PlanFollowUps),
+        "done, Plan follow-ups",
+        "Append follow-up entries under \"## Follow-ups\" in doc/plans/f/index.md.",
         "metaplan",
     );
 }
@@ -223,28 +213,6 @@ fn pressure_and_run_have_no_authoring_start() {
             .unwrap_err();
         assert!(error.to_string().contains(&offer.id()));
     }
-}
-
-#[test]
-fn new_metaplan_round_uses_first_gap() {
-    let (temp, _) = fixture();
-    for name in ["metaplan-02.md", "metaplan-04.md"] {
-        fs::write(temp.path().join("doc/plans/f").join(name), "# Round\n").unwrap();
-    }
-    let project = Project::load(temp.path()).unwrap();
-    assert_eq!(
-        instruction_lines(
-            &opening_message(
-                &AuthoringStart::Offer(Offer::NewMetaplanRound),
-                &project,
-                Some("f")
-            )
-            .unwrap()
-        ),
-        "loom plan: done, New metaplan round.\nWrite doc/plans/f/metaplan-03.md, the next \
-        metaplan round.\nLoad the skill loom-plan:metaplan, then begin by telling me what \
-        you read and what you plan to ask."
-    );
 }
 
 #[test]

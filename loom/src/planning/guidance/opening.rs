@@ -111,8 +111,7 @@ fn offer_step_and_skill(offer: &Offer) -> Result<(&'static str, &'static str)> {
         Offer::StartMetaplan { .. } => ("step 3, Metaplan", "metaplan"),
         Offer::WritePlan { .. } => ("step 4, Plans", "plan"),
         Offer::DraftAllPlans { .. } => ("step 4, Draft all missing plans", "plan"),
-        Offer::RefineSpec => ("done, Compare spec with build", "retro"),
-        Offer::NewMetaplanRound => ("done, New metaplan round", "metaplan"),
+        Offer::PlanFollowUps => ("done, Plan follow-ups", "metaplan"),
         _ => bail!("{} is not an authoring offer", offer.id()),
     })
 }
@@ -142,15 +141,9 @@ fn offer_target(offer: &Offer, project: &Project, feature: &str) -> Result<Strin
         Offer::DraftAllSections { .. } | Offer::DraftAllPlans { .. } => {
             team_target(offer, project, feature)?
         }
-        Offer::RefineSpec => format!(
-            "Review the done plans and their run reviews in {}/ against the product spec in {}/.",
-            plans.display(),
-            product.display()
-        ),
-        Offer::NewMetaplanRound => format!(
-            "Write {}/metaplan-{:02}.md, the next metaplan round.",
-            plans.display(),
-            next_round(project, feature)
+        Offer::PlanFollowUps => format!(
+            "Append follow-up entries under \"## Follow-ups\" in {}/index.md.",
+            plans.display()
         ),
         _ => bail!("{} is not an authoring offer", offer.id()),
     })
@@ -270,17 +263,6 @@ fn plan_heading<'a>(
         .as_deref()
         .and_then(|suffix| heading.strip_suffix(suffix))
         .unwrap_or(heading))
-}
-
-fn next_round(project: &Project, feature: &str) -> u64 {
-    let mut number = 2;
-    while project
-        .docs
-        .contains_key(&plans_dir(Some(feature)).join(format!("metaplan-{number:02}.md")))
-    {
-        number += 1;
-    }
-    number
 }
 
 /// Render the summary rebuilding instruction, preserving the requested id order.

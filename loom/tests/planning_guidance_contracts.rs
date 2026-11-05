@@ -15,14 +15,13 @@ use std::path::PathBuf;
 use std::process::Command;
 use support::{files, frontmatter, listing, put, repo_file, Fixture};
 
-const SKILLS: [&str; 10] = [
+const SKILLS: [&str; 9] = [
     "brainstorming",
     "kickoff",
     "knowledge",
     "metaplan",
     "plan",
     "refine",
-    "retro",
     "section",
     "summaries",
     "vision",
@@ -239,20 +238,6 @@ fn write_plan_opening_names_entry_heading() {
          Load the skill loom-plan:plan, then begin by telling me what you read and what you \
          plan to ask."
     );
-}
-
-#[test]
-fn compare_spec_with_build_keeps_retro_guidance() {
-    let fx = Fixture::new();
-    let offer = Offer::RefineSpec;
-    assert_eq!(offer.label(), "Compare spec with build");
-    let start = AuthoringStart::Offer(offer);
-    let message = opening_message(&start, &fx.project, Some("f")).unwrap();
-    assert_eq!(
-        message.lines().next(),
-        Some("loom plan: done, Compare spec with build.")
-    );
-    assert!(message.contains("Load the skill loom-plan:retro"));
 }
 
 #[test]

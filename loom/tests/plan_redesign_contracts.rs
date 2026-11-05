@@ -281,9 +281,10 @@ fn finished_feature_has_no_primary() {
     let view = card(&root, "demo");
     assert_eq!(view.primary.as_ref().map(|o| o.id.as_str()), None);
     let secondary: Vec<&str> = view.secondary.iter().map(|o| o.id.as_str()).collect();
-    for id in ["refine-spec", "new-metaplan-round"] {
-        assert!(secondary.contains(&id), "{id} missing from {secondary:?}");
-    }
+    assert!(
+        secondary.contains(&"plan-follow-ups"),
+        "plan-follow-ups missing from {secondary:?}"
+    );
 }
 
 #[test]

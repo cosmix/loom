@@ -63,19 +63,15 @@ fn sealed_sections() -> Fixture {
 }
 
 #[test]
-fn two_metaplans_give_chips_in_metaplan_then_entry_order() {
+fn follow_up_entries_give_chips_after_the_numbered_entries() {
     let (pa, ta) = plan("a", "");
     let (pb, tb) = plan("b", "");
     let (pc, tc) = plan("c", "");
-    let first = fx::metaplan(&["PLAN-b.md"]);
-    let second = fx::metaplan(&["PLAN-a.md", "PLAN-c.md"]);
-    let f = fx::fixture(&[
-        (fx::META, &first),
-        ("doc/plans/demo/second-metaplan.md", &second),
-        (&pa, &ta),
-        (&pb, &tb),
-        (&pc, &tc),
-    ]);
+    let index = format!(
+        "{}## Follow-ups\n\n## 2. E2 (`PLAN-a.md`)\n\n## 3. E3 (`PLAN-c.md`)\n",
+        fx::metaplan(&["PLAN-b.md"])
+    );
+    let f = fx::fixture(&[(fx::META, &index), (&pa, &ta), (&pb, &tb), (&pc, &tc)]);
     let chips = page(&f, &engineering()).key_chips;
     let slugs: Vec<_> = chips.iter().map(|c| c.label.as_str()).collect();
     assert_eq!(slugs, ["b", "a", "c"]);

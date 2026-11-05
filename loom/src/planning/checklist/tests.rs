@@ -100,7 +100,7 @@ fn offer_ids_targets_and_json() {
         feature: FEATURE.into(),
     };
     assert_eq!(start_vision.target(), None);
-    assert_eq!(Offer::NewMetaplanRound.id(), "new-metaplan-round");
+    assert_eq!(Offer::PlanFollowUps.id(), "plan-follow-ups");
     let value = serde_json::to_value(&write).unwrap();
     let want = json!({
         "id": "write-plan:a", "kind": "write-plan", "feature": FEATURE,
@@ -142,13 +142,44 @@ fn ready_rows_secondaries() {
     let (_temp, project) = load(&tested);
     let c = checklist(&project);
     assert_eq!(c.current, CurrentStep::Ready);
-    assert_eq!(ids(&c.secondary), ["refine-spec"]);
+    assert!(c.secondary.is_empty(), "{:?}", c.secondary);
     let done = plan("doc/plans/demo/archive/DONE-PLAN-a.md", true);
     let (_temp, project) = load(&spec(vec![owned(metaplan(&["a"])), done]));
     let c = checklist(&project);
     assert_eq!(c.current, CurrentStep::ReadyAllDone);
-    assert_eq!(ids(&c.secondary), ["refine-spec", "new-metaplan-round"]);
+    assert_eq!(ids(&c.secondary), ["plan-follow-ups"]);
     assert_eq!(c.steps[5], (Step::Run, StepMark::Done));
+}
+
+#[test]
+fn a_follow_up_entry_reopens_the_plans_step() {
+    let done = plan("doc/plans/demo/archive/DONE-PLAN-a.md", true);
+    let (_temp, project) = load(&spec(vec![owned(metaplan(&["a"])), done.clone()]));
+    let c = checklist(&project);
+    assert_eq!(c.current, CurrentStep::ReadyAllDone);
+    assert_eq!(c.primary, None);
+    assert_eq!(ids(&c.secondary), ["plan-follow-ups"]);
+
+    let (rel, mut text) = metaplan(&["a"]);
+    text.push_str("## Follow-ups\n\n## 2. Polish (`PLAN-polish.md`)\n");
+    let (_temp, project) = load(&spec(vec![(rel.to_string(), text), done]));
+    let c = checklist(&project);
+    assert_eq!(c.current, CurrentStep::Step(Step::Plans));
+    assert_eq!(
+        c.primary,
+        Some(Offer::WritePlan {
+            feature: FEATURE.into(),
+            metaplan: PathBuf::from(META),
+            slug: "polish".into(),
+        })
+    );
+    let all: Vec<String> = c
+        .primary
+        .iter()
+        .map(Offer::id)
+        .chain(ids(&c.secondary))
+        .collect();
+    assert!(!all.iter().any(|id| id == "plan-follow-ups"), "{all:?}");
 }
 
 #[test]
@@ -215,7 +246,7 @@ fn unlisted_plans_have_no_add_offer_with_or_without_a_metaplan() {
     ]);
     let (_temp, project) = load(&with);
     let c = checklist(&project);
-    assert_eq!(ids(&c.secondary), ["refine-spec"]);
+    assert!(c.secondary.is_empty(), "{:?}", c.secondary);
     let unlisted = c.items.iter().find(|i| i.status == ItemStatus::Unlisted);
     assert_eq!(unlisted.map(|i| i.offer.is_none()), Some(true));
     let (_temp, project) = load(&spec(vec![z]));

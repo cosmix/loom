@@ -77,7 +77,7 @@ fn feature_write_classification_folds_names_and_allows_new_documents() {
     for rel in [
         "doc/plans/feature/PLAN-new.md",
         "doc/plans/feature/index.md",
-        "doc/plans/feature/metaplan-02.md",
+        "doc/plans/feature/notes.md",
         "doc/plans/feature/briefs/run2/common.md",
         "doc/plans/other/briefs/run/common.md",
         "doc/product/feature/index.md",

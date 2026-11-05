@@ -229,7 +229,7 @@ fn complete_documents_have_no_draft_all_offer() {
     ]));
     let c = checklist(&root);
     assert_eq!(c.current, CurrentStep::Ready);
-    assert_eq!(offers(&c), ["start-run", "refine-spec"]);
+    assert_eq!(offers(&c), ["start-run"]);
 }
 
 #[test]

@@ -167,8 +167,7 @@ pub fn step_class(start: &AuthoringStart) -> StepClass {
             | Offer::FixVisionTable { .. }
             | Offer::AddSectionToVision { .. }
             | Offer::WriteSection { .. }
-            | Offer::DraftAllSections { .. }
-            | Offer::RefineSpec => StepClass::Spec,
+            | Offer::DraftAllSections { .. } => StepClass::Spec,
             _ => StepClass::Plan,
         },
         AuthoringStart::Refine { target, .. } => {
