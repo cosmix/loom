@@ -50,17 +50,17 @@ group their documents by feature name, alphabetically. Documents without a featu
 the feature groups. Every document entry shows its title (its first `#` heading, else its file
 name); the file name shows on hover.
 
-| Group     | Contents, in order                                                                                                                  |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Product   | Per feature: its vision; listed sections in the vision's table order; unlisted sections; then misplaced top-level product documents |
-| Plans     | Per feature: metaplans with entries in heading order, then unlisted active plans; then misplaced metaplans and the standalone shelf |
-| Knowledge | `INDEX.md`; the tier-1 files; one folder per tier-2 category                                                                        |
-| Other     | Other Markdown under `doc/` that section 03 discovers, grouped by feature where applicable, then by path                            |
-| Archive   | Per feature, then standalone: done and retired plans no metaplan names, other archived files, and orphan brief bundles              |
+| Group     | Contents, in order                                                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Product   | Per feature: its vision; listed sections in the vision's table order; unlisted sections; then misplaced top-level product documents        |
+| Plans     | Per feature: the metaplan with its entries in heading order, then unlisted active plans; then misplaced metaplans and the standalone shelf |
+| Knowledge | `INDEX.md`; the tier-1 files; one folder per tier-2 category                                                                               |
+| Other     | Other Markdown under `doc/` that section 03 discovers, grouped by feature where applicable, then by path                                   |
+| Archive   | Per feature, then standalone: done and retired plans no metaplan names, other archived files, and orphan brief bundles                     |
 
 A feature is the name shared by `doc/product/<feature>/` and `doc/plans/<feature>/`; either
 directory alone is enough. Each feature's Product and Plans groups use only its own vision,
-sections and metaplans. The standalone shelf holds active plans whose home is `doc/plans/`,
+sections and metaplan. The standalone shelf holds active plans whose home is `doc/plans/`,
 with no feature or checklist. A top-level product document or metaplan remains reachable with
 the `needs-feature` problem section 03 defines.
 
