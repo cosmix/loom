@@ -273,6 +273,31 @@ fn interrupt_closes_the_turn_and_leaves_pending_tools_not_finished() {
 }
 
 #[test]
+fn an_interrupt_after_a_stopped_notice_adds_no_second_notice() {
+    let mut mapper = mapper();
+    let lines = lines("interrupt.jsonl");
+    let (interrupt, before) = lines.split_last().expect("fixture lines");
+    drive(&mut mapper, before);
+    mapper.add_server_item(notice("stopped-1", NoticeKind::Stopped, "Stopped"));
+    mapper.ingest_main(interrupt);
+
+    let input = json!({"file_path": "/work/proj/doc/a.md"});
+    let read = tool("a-a1-0", "toolu_01Rd", "Read", "doc/a.md", input);
+    let input = json!({"command": "sleep 600", "description": "Wait for the run"});
+    let mut bash = tool("a-a1-1", "toolu_01Sl", "Bash", "sleep 600", input);
+    if let Item::Tool { status, .. } = &mut bash {
+        *status = ToolStatus::NotFinished;
+    }
+    let items = [
+        user("u-u1", "Watch the run.", None),
+        finished(read, ToolStatus::Done, "     1\tA"),
+        bash,
+        notice("stopped-1", NoticeKind::Stopped, "Stopped"),
+    ];
+    assert_eq!(only_turn(&mapper).items, items);
+}
+
+#[test]
 fn compaction_and_api_errors_become_notices() {
     let mut mapper = mapper();
     let lines = lines("compaction.jsonl");
