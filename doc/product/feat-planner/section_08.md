@@ -614,7 +614,7 @@ received, dimmed, with "Last update 3m ago". (My call.)
 - The briefs, opening and closing messages, and models per step: section 09.
 - Diff views and the file-mode side of "Add to chat": section 06; concept mode's side: section
   05.
-- Cost measurement, the summary panel, and quota meters: section 04.
+- Cost measurement, and the summary panel: section 04.
 - The header's presence list and browser naming: section 02.
 - Which paths sessions may write and the access checks on chat commands: section 12.
 - Running a pressure run, its steps, and how it stops: section 11; the share link's access
